@@ -4,8 +4,8 @@
 // so an upstream with nothing to report contributes nothing and its row stays
 // one line high.
 
+import { latestCredits, latestQuotaEntry, planLabel as chatgptPlanLabel, quotaEntries } from './chatgpt-account';
 import { findCredential, planLabel as claudeCodePlanLabel, quotaWindows, rateLimitedUntil, WINDOW_MINUTES } from './claude-code-account';
-import { latestCredits, latestQuotaEntry, planLabel as codexPlanLabel, quotaEntries } from './codex-account';
 import { copilotQuota, copilotQuotaName, readBuckets } from './copilot-quota';
 import { planLabel as copilotPlanLabel } from './copilot-seat';
 import { planLabel as ollamaPlanLabel } from './ollama-account';
@@ -137,9 +137,9 @@ const copilotSignals = (record: Extract<UpstreamRecord, { kind: 'copilot' }>, t:
     }));
 };
 
-const codexSignals = (record: Extract<UpstreamRecord, { kind: 'codex' }>, t: TFunction, locale: string, now: number, quotaDisplay: QuotaDisplay): UpstreamSignal[] => {
-  const entry = latestQuotaEntry(quotaEntries(record.codex_quota, now));
-  const credits = latestCredits(record.codex_quota);
+const chatgptSignals = (record: Extract<UpstreamRecord, { kind: 'chatgpt' }>, t: TFunction, locale: string, now: number, quotaDisplay: QuotaDisplay): UpstreamSignal[] => {
+  const entry = latestQuotaEntry(quotaEntries(record.chatgpt_quota, now));
+  const credits = latestCredits(record.chatgpt_quota);
   const signals: UpstreamSignal[] = entry === null ? [] : entry.windows.map(item => {
     // Codex states each window's length in minutes and nothing else names it,
     // so an unlabelled window falls back to the position it arrived in.
@@ -248,7 +248,7 @@ const upstreamSignals = (record: UpstreamRecord, t: TFunction, locale: string, n
   case 'azure':
     return [];
   case 'copilot': return copilotSignals(record, t, locale, quotaDisplay);
-  case 'codex': return codexSignals(record, t, locale, now, quotaDisplay);
+  case 'chatgpt': return chatgptSignals(record, t, locale, now, quotaDisplay);
   case 'claude-code': return claudeCodeSignals(record, t, locale, now, quotaDisplay);
   case 'ollama': return ollamaSignals(record, t, locale, quotaDisplay);
   }
@@ -265,7 +265,7 @@ const upstreamPlan = (record: UpstreamRecord): string | null => {
     return null;
   case 'copilot': return copilotPlanLabel(record);
   case 'ollama': return ollamaPlanLabel(record);
-  case 'codex': return codexPlanLabel(record.config.accounts[0]);
+  case 'chatgpt': return chatgptPlanLabel(record.config.accounts[0]);
   case 'claude-code': return claudeCodePlanLabel(record.config.accounts[0]);
   }
 };

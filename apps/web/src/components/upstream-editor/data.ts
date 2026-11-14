@@ -80,7 +80,7 @@ export const providerDefaultName: Record<UpstreamProviderKind, string> = {
   custom: 'Custom upstream',
   azure: 'Azure AI',
   copilot: 'GitHub Copilot',
-  codex: 'ChatGPT Codex',
+  chatgpt: 'ChatGPT',
   'claude-code': 'Claude Code',
   ollama: 'Ollama',
 };
@@ -303,7 +303,7 @@ export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues)
     proxy_fallback_list: values.proxyFallbackList,
     model_prefix: values.modelPrefix,
     config: configFromValues(record, values),
-    ...((record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code')
+    ...((record.kind === 'copilot' || record.kind === 'chatgpt' || record.kind === 'claude-code')
       ? { state: values.state }
       : {}),
   } as CreateUpstreamBody;

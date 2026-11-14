@@ -10,11 +10,11 @@ Maintain the per-token rate cards in:
 | Provider | Table | Live catalog | Preferred rate source |
 |---|---|---|---|
 | Copilot | `packages/provider-copilot/src/pricing.ts` | Copilot `/models` | model vendor's first-party API |
-| Codex | `packages/provider-codex/src/pricing.ts` | authenticated `/codex/models` | OpenAI API pricing |
+| ChatGPT | `packages/provider-chatgpt/src/pricing.ts` | authenticated `/codex/models` | OpenAI API pricing |
 | Claude Code | `packages/provider-claude-code/src/pricing.ts` | authenticated Anthropic `/v1/models` | Anthropic API pricing |
 | Ollama | `packages/provider-ollama/src/pricing.ts` | `/api/tags` + `/api/show` | Ollama official standard rates; vendor/host valuation for other models |
 
-Copilot, Codex and Claude Code use API-equivalent valuation. Ollama uses its
+Copilot, ChatGPT and Claude Code use API-equivalent valuation. Ollama uses its
 published standard token rates for covered models and retains vendor/host
 valuation for other models. These are request estimates; account consumption
 from `/api/usage` includes Ollama billing adjustments such as off-peak discounts.
@@ -80,7 +80,7 @@ subset for a model.
    USD per million tokens. `tokenPricingEntry` and `tokenBasePricing` apply the
    existing `perMillionTokenRates` conversion, so their resulting `PriceVector`
    values are USD per base token. Do not divide manually or pass number literals.
-   Follow `packages/provider-codex/src/pricing.ts` for a complete production
+   Follow `packages/provider-chatgpt/src/pricing.ts` for a complete production
    example instead of copying a rate vector into this skill.
 
    `collectModelPricingIssues` in
@@ -138,7 +138,7 @@ ineligible.
   normalizes nothing itself.
 - Claude Code resolves pricing from the dated raw upstream id before catalog
   aliases are merged into public ids.
-- Codex and Ollama use the raw upstream slug directly.
+- ChatGPT and Ollama use the raw upstream slug directly.
 
 ## Source Cautions
 

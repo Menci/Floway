@@ -115,7 +115,7 @@ export function UpstreamConfigSidebar({
               onRefreshModels={onRefreshModels}
             />
           </EditorSection>
-          {(record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code' || record.kind === 'ollama') && <EditorSection
+          {(record.kind === 'copilot' || record.kind === 'chatgpt' || record.kind === 'claude-code' || record.kind === 'ollama') && <EditorSection
             title={t('dashboard.upstreamEditor.usageRefresh.title')}
           >
             <Controller control={control} name="usageRefreshIntervalMinutes" render={({ field }) => (

@@ -1,13 +1,13 @@
 // Matched client-catalog entries retain their model-specific instructions and
 // opaque fields. Registry metadata controls the public identity, priced tiers,
-// modalities, reasoning and limits. Codex providers additionally supply their
+// modalities, reasoning and limits. ChatGPT providers additionally supply their
 // private default window; other providers expose a single input budget.
 
 import type { CatalogModel, CodexCatalogCapabilities, CodexReasoningLevel, CodexServiceTier } from './catalog.ts';
 import { synthesizedBaseInstructions } from './synthesized-base-instructions.ts';
 import type { Modality } from '@floway-dev/protocols/common';
 import type { InternalModel } from '@floway-dev/provider';
-import type { CodexContextWindow } from '@floway-dev/provider-codex';
+import type { ChatGPTContextWindow } from '@floway-dev/provider-chatgpt';
 
 // Keep the established 128K compaction policy for synthesized models whose
 // provider has no published limit. Operators can replace it with a model limit.
@@ -79,7 +79,7 @@ export const synthesizeCatalogEntry = (
   base?: CatalogModel,
   capabilities: CodexCatalogCapabilities = {},
   catalogServiceTiers: readonly CodexServiceTier[] = [],
-  codexContextWindow?: CodexContextWindow,
+  codexContextWindow?: ChatGPTContextWindow,
 ): CatalogModel => {
   const source: CatalogModel = base ?? BASELINE;
 

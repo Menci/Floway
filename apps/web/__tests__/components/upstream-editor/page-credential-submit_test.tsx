@@ -48,7 +48,7 @@ vi.mock('../../../src/components/upstream-editor/config-sidebar', () => ({
 
 vi.mock('../../../src/components/upstream-editor/workspace', () => ({ UpstreamWorkspace: () => null }));
 
-const blueprint = upstreamRecord('', { kind: 'codex', config: { accounts: [] }, state: { accounts: [] } });
+const blueprint = upstreamRecord('', { kind: 'chatgpt', config: { accounts: [] }, state: { accounts: [] } });
 
 const renderPage = (record: UpstreamRecord, mode: 'create' | 'edit') => {
   const router = createMemoryRouter([
@@ -65,17 +65,17 @@ const renderPage = (record: UpstreamRecord, mode: 'create' | 'edit') => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  apiMocks.create.mockResolvedValue({ data: { ...blueprint, id: 'up_codex', ...imported }, error: null });
+  apiMocks.create.mockResolvedValue({ data: { ...blueprint, id: 'up_chatgpt', ...imported }, error: null });
 });
 
-test('creating a Codex upstream saves the imported credential', async () => {
+test('creating a ChatGPT upstream saves the imported credential', async () => {
   renderPage(blueprint, 'create');
   fireEvent.click(screen.getByRole('button', { name: 'Import credential' }));
   fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') }));
 
   await waitFor(() => expect(apiMocks.create).toHaveBeenCalledWith({
     json: expect.objectContaining({
-      kind: 'codex',
+      kind: 'chatgpt',
       config: imported.config,
       state: imported.state,
     }),
@@ -83,8 +83,8 @@ test('creating a Codex upstream saves the imported credential', async () => {
   expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.fetchDirty.unsavedCredential'))).toBeNull();
 });
 
-test('editing a saved Codex upstream still rejects unsaved credential changes', async () => {
-  renderPage({ ...blueprint, id: 'up_codex' }, 'edit');
+test('editing a saved ChatGPT upstream still rejects unsaved credential changes', async () => {
+  renderPage({ ...blueprint, id: 'up_chatgpt' }, 'edit');
   fireEvent.click(screen.getByRole('button', { name: 'Edit credential draft' }));
   fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') }));
 
