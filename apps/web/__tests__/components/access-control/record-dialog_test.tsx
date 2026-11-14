@@ -49,6 +49,16 @@ const renderDialog = async (props: Partial<Parameters<typeof AccessRecordDialog>
   return result;
 };
 
+const renderResolvedDialog = async (props: Partial<Parameters<typeof AccessRecordDialog>[0]>) => {
+  const result = await renderDialog(props);
+  await waitFor(() => {
+    const fields = document.querySelector('[data-permission-editor]');
+    expect(fields).not.toBeNull();
+    expect(fields!.getAttribute('aria-busy')).toBe('false');
+  });
+  return result;
+};
+
 test('new records start at the root slash and reject an incomplete scope inline', async () => {
   const fetch = vi.fn();
   vi.stubGlobal('fetch', fetch);
@@ -115,7 +125,7 @@ test('updates permission controls from each valid JSON scope draft', async () =>
     ? { ...groupRecord, ...JSON.parse(init.body as string) }
     : { values: { 'User.Audit': false, 'Permission.Audit': false }, records: [], decisions: [] }));
   vi.stubGlobal('fetch', fetch);
-  await renderDialog({ record: groupRecord });
+  await renderResolvedDialog({ record: groupRecord });
   fireEvent.click(screen.getByRole('tab', { name: 'JSON' }));
   const editor = screen.getByRole('textbox', { name: 'JSON' });
 
@@ -140,7 +150,7 @@ test('an administrator target keeps its permission fields and saves normally', a
     ? { ...record, ...JSON.parse(init.body as string) }
     : { values: { 'Model.Use': true, 'Upstream.Audit': true, 'Upstream.Edit': 'full' }, records: [], decisions: [] }));
   vi.stubGlobal('fetch', fetch);
-  await renderDialog({ record: { ...record, principal: { kind: 'user', id: 1 } } });
+  await renderResolvedDialog({ record: { ...record, principal: { kind: 'user', id: 1 } } });
 
   const save = screen.getByRole<HTMLButtonElement>('button', { name: 'Save rule' });
   expect(save.disabled).toBe(false);
@@ -160,7 +170,7 @@ test('shows the exact inherited upstream edit level for a concrete user target',
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({
     values: { 'Model.Use': true, 'Upstream.Audit': false, 'Upstream.Edit': 'models' },
   })));
-  await renderDialog({ record });
+  await renderResolvedDialog({ record });
 
   const edit = await screen.findByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.Upstream.Edit') });
   const inherited = await within(edit).findByRole<HTMLInputElement>('radio', { name: i18n.t('dashboard.accessControl.states.models') });
@@ -171,7 +181,7 @@ test('shows the exact inherited upstream edit level for a concrete user target',
 test('resolves group inheritance through the same API as personal inheritance', async () => {
   const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json({ values: { 'Model.Use': false, 'Upstream.Audit': true, 'Upstream.Edit': 'full' }, records: [], decisions: [] }));
   vi.stubGlobal('fetch', fetch);
-  await renderDialog({ record: { ...record, principal: { kind: 'group', id: 3 } } });
+  await renderResolvedDialog({ record: { ...record, principal: { kind: 'group', id: 3 } } });
 
   const edit = screen.getByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.Upstream.Edit') });
   const inherited = await within(edit).findByRole<HTMLInputElement>('radio', { name: i18n.t('dashboard.accessControl.states.full') });
@@ -228,7 +238,7 @@ test('switching scope keeps the settled permission fields disabled until the new
 test('moving a fixed rule into a model boundary uses the available append order', async () => {
   const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => Response.json(init?.method === 'PUT' ? { ...record, ...JSON.parse(init.body as string) } : { values: { 'Model.Use': true }, records: [], decisions: [] }));
   vi.stubGlobal('fetch', fetch);
-  await renderDialog({ record, suggestedSortOrder: 99 });
+  await renderResolvedDialog({ record, suggestedSortOrder: 99 });
   fireEvent.click(screen.getByRole('tab', { name: 'JSON' }));
   fireEvent.change(screen.getByRole('textbox', { name: 'JSON' }), { target: { value: JSON.stringify({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } }) } });
   await vi.waitFor(() => expect(document.querySelector('[data-permission-editor]')!.getAttribute('aria-busy')).toBe('false'));
@@ -242,7 +252,7 @@ test.each(['Visual', 'JSON'])('locks the complete %s form through a save and res
   vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => init?.method === 'PUT'
     ? await new Promise<Response>(resolve => { finish = resolve; })
     : Response.json({ values: { 'Model.Use': false, 'Upstream.Audit': false, 'Upstream.Edit': 'off' }, records: [], decisions: [] })));
-  await renderDialog({ record });
+  await renderResolvedDialog({ record });
   if (mode === 'JSON') fireEvent.click(screen.getByRole('tab', { name: mode }));
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save rule' })); });
   const principal = screen.getByRole<HTMLInputElement>('combobox', { name: 'Applies to' });
