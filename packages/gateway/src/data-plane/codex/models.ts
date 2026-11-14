@@ -19,7 +19,7 @@ import { synthesizeCatalogEntry } from './synthesize.ts';
 import type { ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import type { User } from '../../repo/types.ts';
 import { enumerateAddressableModelIds, type AddressableIdEntry } from '../shared/listing/addressable.ts';
-import { codexModelContextWindow } from '@floway-dev/provider-codex';
+import { chatgptModelContextWindow } from '@floway-dev/provider-chatgpt';
 
 // Pure transformation: client catalog + addressable entries →
 // codex-shaped catalog (drops unlisted alternates and non-chat kinds).
@@ -61,10 +61,10 @@ export const assembleCodexCatalog = (
     // different provider must use its own advertised input budget.
     const primaryUpstream = entry.upstreams[0];
     let codexContextWindow;
-    if (primaryUpstream?.kind === 'codex') {
+    if (primaryUpstream?.kind === 'chatgpt') {
       const providerModel = entry.model.providerModels?.[primaryUpstream.upstreamId];
       if (providerModel === undefined) throw new Error(`Codex catalog model ${entry.id} has no primary provider model`);
-      codexContextWindow = codexModelContextWindow(providerModel);
+      codexContextWindow = chatgptModelContextWindow(providerModel);
     }
     models.push(synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities, catalogServiceTiers, codexContextWindow));
   }

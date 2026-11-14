@@ -12,7 +12,7 @@ import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
 import { eventsOf, installDumpStubs, runRecordOf } from '../../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../../repo/upstreams.ts';
 import { FakeTime } from '../../../test-time.ts';
-import { buildCodexUpstreamRecord, codexModels, copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseOpenAIResponsesResponse, warmModelsForTest } from '../../../test-utils/app.ts';
+import { buildChatGPTUpstreamRecord, chatgptModels, copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseOpenAIResponsesResponse, warmModelsForTest } from '../../../test-utils/app.ts';
 import { installWorkerWebSocketRuntime, type TestWorkerWebSocket } from '../../../test-utils/worker-websocket.ts';
 import { createRunReader, type DumpEvent } from '@floway-dev/pipeline';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -1950,7 +1950,7 @@ test('OpenAI Responses WebSocket outer catch records a failed perf sample attrib
 
 test('OpenAI Responses WebSocket dispatches each Codex turn with the metadata blob that turn carried', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await saveUpstreamForTest(repo.upstreams, buildCodexUpstreamRecord({
+  await saveUpstreamForTest(repo.upstreams, buildChatGPTUpstreamRecord({
     flagOverrides: { 'openai-responses-compact-decrypt': false },
   }));
   const upstreamBodies: Record<string, unknown>[] = [];
@@ -1975,7 +1975,7 @@ test('OpenAI Responses WebSocket dispatches each Codex turn with the metadata bl
         return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
       }
       if (url.pathname === '/models') return jsonResponse(copilotModels([]));
-      if (url.pathname === '/backend-api/codex/models') return jsonResponse(codexModels([{ slug: 'gpt-5.4' }]));
+      if (url.pathname === '/backend-api/codex/models') return jsonResponse(chatgptModels([{ slug: 'gpt-5.4' }]));
       if (url.pathname === '/backend-api/codex/responses') {
         upstreamBodies.push(JSON.parse(await request.text()) as Record<string, unknown>);
         const turn = upstreamBodies.length;
@@ -2071,7 +2071,7 @@ test('OpenAI Responses WebSocket dispatches each Codex turn with the metadata bl
 
 test('OpenAI Responses WebSocket replays Codex Lite input items without rebuilding their prefix', async () => {
   const { apiKey, repo } = await setupAppTest();
-  await saveUpstreamForTest(repo.upstreams, buildCodexUpstreamRecord());
+  await saveUpstreamForTest(repo.upstreams, buildChatGPTUpstreamRecord());
   const upstreamBodies: Record<string, unknown>[] = [];
   const prefix = [
     { type: 'additional_tools', role: 'developer', id: 'at_ws_lite', tools: [{ type: 'namespace', name: 'functions', description: '', tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object' } }] }] },

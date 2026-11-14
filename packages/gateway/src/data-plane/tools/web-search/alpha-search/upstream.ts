@@ -46,7 +46,7 @@ export const resolveAlphaSearchCandidate = async ({
   if (candidate === undefined) {
     throw new AlphaSearchModelNotFoundError();
   }
-  if (candidate.provider.kind !== 'codex' && candidate.provider.kind !== 'custom') {
+  if (candidate.provider.kind !== 'chatgpt' && candidate.provider.kind !== 'custom') {
     throw new Error('Selected upstream does not support OpenAI search passthrough');
   }
   return candidate;

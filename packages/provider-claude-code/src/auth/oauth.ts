@@ -49,7 +49,7 @@ export class ClaudeCodeOAuthSessionTerminatedError extends Error {
 }
 
 // Terminal-code sets are split by grant type, mirroring codex
-// (provider-codex/src/auth/oauth.ts:100-104, :117-123). The refresh-side
+// (provider-chatgpt/src/auth/oauth.ts:100-104, :117-123). The refresh-side
 // codes match sub2api's `isNonRetryableRefreshError`
 // (backend/internal/service/token_refresh_service.go:429-451) — all signal
 // a dead credential that only re-import can recover. `invalid_grant`

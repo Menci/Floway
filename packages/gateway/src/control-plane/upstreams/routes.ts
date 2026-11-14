@@ -29,27 +29,27 @@ import {
   type UpstreamRecord,
 } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
+import { type ChatGPTQuotaSnapshotMap, type ChatGPTUpstreamConfig, assertChatGPTUpstreamRecord, assertChatGPTUpstreamState, getChatGPTQuota, patchChatGPTIdentityMetadata } from '@floway-dev/provider-chatgpt';
 import { assertClaudeCodeUpstreamRecord, readClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
-import { type CodexQuotaSnapshotMap, type CodexUpstreamConfig, assertCodexUpstreamRecord, assertCodexUpstreamState, getCodexQuota, patchCodexIdentityMetadata } from '@floway-dev/provider-codex';
 import { parseCopilotUpstreamConfig, readCopilotUpstreamState } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
 
-type CodexQuotaProjection = { codex_quota?: CodexQuotaSnapshotMap | null };
+type ChatGPTQuotaProjection = { chatgpt_quota?: ChatGPTQuotaSnapshotMap | null };
 
 type SerializedUpstreamRecord = FullSerializedUpstreamRecord | RedactedSerializedUpstreamRecord;
 
-type UpstreamResponse = SerializedUpstreamRecord & CodexQuotaProjection;
+type UpstreamResponse = SerializedUpstreamRecord & ChatGPTQuotaProjection;
 
 type UpstreamWithCacheResponse = UpstreamResponse & {
   modelsCache: ModelsCacheStatus;
 };
 
-const codexQuotaForResponse = async (record: UpstreamRecord): Promise<CodexQuotaProjection> => {
-  if (record.kind !== 'codex') return {};
-  assertCodexUpstreamRecord(record);
+const chatgptQuotaForResponse = async (record: UpstreamRecord): Promise<ChatGPTQuotaProjection> => {
+  if (record.kind !== 'chatgpt') return {};
+  assertChatGPTUpstreamRecord(record);
   return {
-    codex_quota: await getCodexQuota(record.id, record.config.accounts[0].chatgptAccountId),
+    chatgpt_quota: await getChatGPTQuota(record.id, record.config.accounts[0].chatgptAccountId),
   };
 };
 
@@ -67,7 +67,7 @@ const pruneDeletedProxyEntries = (
 ): ProxyFallbackEntry[] => entries.filter(entry => isDirectFallbackId(entry.id) || knownProxyIds.has(entry.id));
 
 // Response-only projections, which serialize.ts excludes so it stays a pure
-// persisted-record transform: the Codex quota because it needs provider I/O,
+// persisted-record transform: the ChatGPT quota because it needs provider I/O,
 // the models-cache freshness because a dump must not carry the catalog. The
 // optional baseSerialize override lets callers swap in upstreamRecordToFullJson
 // to round-trip unredacted secrets instead of the redacted default.
@@ -77,13 +77,13 @@ const serializeForResponse = async (
   baseSerialize: (r: UpstreamRecord) => SerializedUpstreamRecord = upstreamRecordToJson,
   includeQuota = true,
 ): Promise<UpstreamWithCacheResponse> => {
-  const codexQuota = includeQuota ? await codexQuotaForResponse(record) : {};
+  const chatgptQuota = includeQuota ? await chatgptQuotaForResponse(record) : {};
   const serialized = baseSerialize(record);
   return {
     ...serialized,
     proxy_fallback_list: pruneDeletedProxyEntries(serialized.proxy_fallback_list, knownProxyIds),
     modelsCache: modelsCacheStatus(record),
-    ...codexQuota,
+    ...chatgptQuota,
   };
 };
 
@@ -133,8 +133,8 @@ const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
     if (record.kind === 'custom') return { ok: true, value: assertCustomUpstreamRecord(record).config };
     if (record.kind === 'azure') return { ok: true, value: assertAzureUpstreamRecord(record).config };
     if (record.kind === 'ollama') return { ok: true, value: assertOllamaUpstreamRecord(record).config };
-    if (record.kind === 'codex') {
-      assertCodexUpstreamRecord(record);
+    if (record.kind === 'chatgpt') {
+      assertChatGPTUpstreamRecord(record);
       return { ok: true, value: record.config };
     }
     if (record.kind === 'claude-code') {
@@ -336,14 +336,14 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   const modelPrefix = modelPrefixResult.value;
 
   const now = new Date().toISOString();
-  // Copilot / Codex / Claude Code carry OAuth-derived server-owned fields
+  // Copilot / ChatGPT / Claude Code carry OAuth-derived server-owned fields
   // (config.githubToken + config.user for Copilot; config.accounts +
   // state.accounts for the multi-account providers) that the create page
   // populated in draft via the corresponding OAuth-exchange helper before
   // Save. The per-kind assertXxxUpstreamRecord below narrows those opaque
   // payloads into their typed shape and rejects a POST that skipped the
   // credential step.
-  const stateFromBody = body.kind === 'copilot' || body.kind === 'codex' || body.kind === 'claude-code' ? body.state ?? null : null;
+  const stateFromBody = body.kind === 'copilot' || body.kind === 'chatgpt' || body.kind === 'claude-code' ? body.state ?? null : null;
   const upstream: UpstreamRecord = {
     id: shortId('up'),
     kind: body.kind,
@@ -375,11 +375,11 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   // accepts state on create — a caller who bypasses the exchange helpers
   // could otherwise persist garbage that only surfaces on the first
   // data-plane call. Copilot's reader accepts null as the empty blueprint
-  // shape; codex / claude-code assert against null too — their blueprints
+  // shape; chatgpt / claude-code assert against null too — their blueprints
   // carry `{accounts: []}`, so an incoming null is a malformed request.
   try {
     if (upstream.kind === 'copilot') readCopilotUpstreamState(stateFromBody);
-    else if (upstream.kind === 'codex') assertCodexUpstreamState(stateFromBody);
+    else if (upstream.kind === 'chatgpt') assertChatGPTUpstreamState(stateFromBody);
     else if (upstream.kind === 'claude-code') readClaudeCodeUpstreamState(stateFromBody);
   } catch (err) {
     return c.json({ error: `Invalid state for ${upstream.kind}: ${errorMessage(err)}` }, 400);
@@ -432,14 +432,14 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   // PATCH. Full edits can change metadata here; models-only writes have passed
   // the narrower allowlist above.
   //
-  // Codex full edits can correct an email or plan without replacing a working
+  // ChatGPT full edits can correct an email or plan without replacing a working
   // credential. The account id stays bound to re-import because it is the
   // stored credential's join key.
-  let patchedCodexConfig: CodexUpstreamConfig | undefined;
-  if (body.config !== undefined && existing.kind === 'codex') {
+  let patchedChatGPTConfig: ChatGPTUpstreamConfig | undefined;
+  if (body.config !== undefined && existing.kind === 'chatgpt') {
     try {
-      assertCodexUpstreamRecord(existing);
-      patchedCodexConfig = patchCodexIdentityMetadata(existing.config, body.config);
+      assertChatGPTUpstreamRecord(existing);
+      patchedChatGPTConfig = patchChatGPTIdentityMetadata(existing.config, body.config);
     } catch (err) {
       return c.json({ error: errorMessage(err) }, 400);
     }
@@ -471,8 +471,8 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   }
   if (body.hue !== undefined) next = { ...next, hue: body.hue };
   if (body.config !== undefined) {
-    if (patchedCodexConfig !== undefined) {
-      next = { ...next, config: patchedCodexConfig };
+    if (patchedChatGPTConfig !== undefined) {
+      next = { ...next, config: patchedChatGPTConfig };
     } else {
       let configPatch = body.config;
       if (editLevel === 'models' && existing.kind === 'custom' && isRecord(body.config.modelsFetch)) {

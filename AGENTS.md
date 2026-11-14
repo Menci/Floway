@@ -66,8 +66,8 @@
 | Package | `packages/protocols` | Defines protocol contracts. |
 | Package | `packages/provider` | Defines provider contracts. |
 | Package | `packages/provider-azure` | Integrates Azure OpenAI. |
+| Package | `packages/provider-chatgpt` | Integrates ChatGPT subscriptions. |
 | Package | `packages/provider-claude-code` | Integrates Claude Code subscriptions. |
-| Package | `packages/provider-codex` | Integrates OpenAI Codex subscriptions. |
 | Package | `packages/provider-copilot` | Integrates GitHub Copilot subscriptions. |
 | Package | `packages/provider-custom` | Integrates OpenAI-compatible providers. |
 | Package | `packages/provider-ollama` | Integrates Ollama. |

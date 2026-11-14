@@ -7,7 +7,7 @@ import { UpstreamMetricsChartSection } from '../../../src/components/upstream-me
 import { buildUpstreamMetricsChart, type UpstreamMetricsChart } from '../../../src/components/upstream-metrics/plot';
 import { renderInApp } from '../../render';
 import { upstreamMetricAxisPriority, type UpstreamMetricSample } from '@floway-dev/provider/browser';
-import { resolveUpstreamMetricDisplays } from '@floway-dev/provider-codex/browser';
+import { resolveUpstreamMetricDisplays } from '@floway-dev/provider-chatgpt/browser';
 
 afterEach(() => vi.restoreAllMocks());
 beforeEach(() => vi.spyOn(HTMLSpanElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 40, 12)));
@@ -273,7 +273,7 @@ it('renders provider-converted observations consistently in curves, axes, and to
     { name: 'credits.balance', labels: {}, timestamp: 60_000, value: 200 },
   ];
   const series = resolveUpstreamMetricDisplays(source, { quotaDisplay: 'remaining' });
-  const converted = buildUpstreamMetricsChart(series, { id: 'seat', kind: 'codex', name: 'Seat', hue: 210 });
+  const converted = buildUpstreamMetricsChart(series, { id: 'seat', kind: 'chatgpt', name: 'Seat', hue: 210 });
   const view = renderInApp(<UpstreamMetricsChartSection chart={converted} start={0} end={60_000} />);
   const application = await screen.findByRole('application', { name: 'Seat' });
   await waitFor(() => expect(view.container.querySelector('.recharts-area-curve')).not.toBeNull());

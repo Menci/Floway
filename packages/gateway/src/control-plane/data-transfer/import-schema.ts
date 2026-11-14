@@ -19,8 +19,8 @@ import { parseUpstreamIdsValue } from '../shared/upstream-ids.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, parseNonNegativeDecimalString, parseUserPreferences, type PricingSelector, type UserPreferences } from '@floway-dev/protocols/common';
 import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamHue, normalizeUpstreamMetricIdentity, parseFlagOverridesWire, parsePerformanceOperation, type ProxyFallbackEntry, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
+import { assertChatGPTUpstreamRecord, assertChatGPTUpstreamState } from '@floway-dev/provider-chatgpt';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
-import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
 import { parseCopilotUpstreamConfig } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
@@ -120,8 +120,8 @@ const normalizeUpstreamConfig = (record: UpstreamRecord): unknown => {
   case 'custom': return assertCustomUpstreamRecord(record).config;
   case 'azure': return assertAzureUpstreamRecord(record).config;
   case 'ollama': return assertOllamaUpstreamRecord(record).config;
-  case 'codex':
-    assertCodexUpstreamRecord(record);
+  case 'chatgpt':
+    assertChatGPTUpstreamRecord(record);
     return record.config;
   case 'claude-code':
     assertClaudeCodeUpstreamRecord(record);
@@ -130,13 +130,13 @@ const normalizeUpstreamConfig = (record: UpstreamRecord): unknown => {
   }
 };
 
-// Codex and Claude Code state contains refresh credentials and health that
+// ChatGPT and Claude Code state contains refresh credentials and health that
 // cannot be re-derived, so it round-trips through their strict runtime
 // assertions. Every other provider owns no durable state or can re-mint it.
 const normalizeUpstreamState = (kind: UpstreamProviderKind, value: unknown): unknown => {
-  if (kind !== 'codex' && kind !== 'claude-code') return null;
+  if (kind !== 'chatgpt' && kind !== 'claude-code') return null;
   if (value === null || value === undefined) throw new Error(`${kind} upstream is missing state — re-export with current code`);
-  if (kind === 'codex') assertCodexUpstreamState(value);
+  if (kind === 'chatgpt') assertChatGPTUpstreamState(value);
   else assertClaudeCodeUpstreamState(value);
   return value;
 };

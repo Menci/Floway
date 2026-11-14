@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { codexImportExchangeBody, codexImportPreviewBody, createUpstreamBody } from '../../src/control-plane/schemas.ts';
+import { chatgptImportExchangeBody, chatgptImportPreviewBody, createUpstreamBody } from '../../src/control-plane/schemas.ts';
 
 const baseAzure = {
   kind: 'azure' as const,
@@ -17,20 +17,20 @@ const baseAzure = {
   },
 };
 
-describe('Codex import schemas', () => {
-  const record = { id: '', kind: 'codex', config: { accounts: [] }, state: { accounts: [] } };
+describe('ChatGPT import schemas', () => {
+  const record = { id: '', kind: 'chatgpt', config: { accounts: [] }, state: { accounts: [] } };
 
   test.each([
     { json: { raw_json: '{}', source_index: 0 } },
     { callback: { code: 'code', verifier: 'verifier' } },
     { manual: { access_token: 'opaque' } },
   ])('accepts exactly one import source', source => {
-    expect(codexImportExchangeBody.safeParse({ record, ...source }).success).toBe(true);
+    expect(chatgptImportExchangeBody.safeParse({ record, ...source }).success).toBe(true);
   });
 
   test('rejects missing or multiple import sources', () => {
-    expect(codexImportExchangeBody.safeParse({ record }).success).toBe(false);
-    expect(codexImportExchangeBody.safeParse({
+    expect(chatgptImportExchangeBody.safeParse({ record }).success).toBe(false);
+    expect(chatgptImportExchangeBody.safeParse({
       record,
       json: { raw_json: '{}', source_index: 0 },
       manual: { access_token: 'opaque' },
@@ -38,7 +38,7 @@ describe('Codex import schemas', () => {
   });
 
   test('requires only access_token for a manual import', () => {
-    expect(codexImportExchangeBody.safeParse({
+    expect(chatgptImportExchangeBody.safeParse({
       record,
       manual: {
         access_token: 'opaque',
@@ -48,12 +48,12 @@ describe('Codex import schemas', () => {
         expires_at: null,
       },
     }).success).toBe(true);
-    expect(codexImportExchangeBody.safeParse({ record, manual: {} }).success).toBe(false);
+    expect(chatgptImportExchangeBody.safeParse({ record, manual: {} }).success).toBe(false);
   });
 
   test('validates the JSON preview envelope', () => {
-    expect(codexImportPreviewBody.safeParse({ raw_json: '{"accounts":[]}' }).success).toBe(true);
-    expect(codexImportPreviewBody.safeParse({ raw_json: '' }).success).toBe(false);
+    expect(chatgptImportPreviewBody.safeParse({ raw_json: '{"accounts":[]}' }).success).toBe(true);
+    expect(chatgptImportPreviewBody.safeParse({ raw_json: '' }).success).toBe(false);
   });
 });
 

@@ -23,7 +23,7 @@ const providerLabels: Record<UpstreamProviderKind, string> = {
   custom: 'Custom',
   azure: 'Azure',
   copilot: 'Copilot',
-  codex: 'Codex',
+  chatgpt: 'ChatGPT',
   'claude-code': 'Claude Code',
   ollama: 'Ollama',
 };
@@ -112,8 +112,7 @@ export function ProviderBadge({ label, title, to, upstream }: {
 const providerIconUrls: Record<Exclude<UpstreamProviderKind, 'custom'>, string> = {
   azure: azureIconUrl,
   copilot: githubCopilotIconUrl,
-  // Codex is the ChatGPT subscription, so it wears OpenAI's mark.
-  codex: openaiIconUrl,
+  chatgpt: openaiIconUrl,
   'claude-code': claudeIconUrl,
   ollama: ollamaIconUrl,
 };
@@ -123,7 +122,7 @@ const providerIconUrls: Record<Exclude<UpstreamProviderKind, 'custom'>, string> 
 const providerIconMaskSizes: Record<Exclude<UpstreamProviderKind, 'custom'>, string> = {
   azure: '85% 85%',
   copilot: '100% 100%',
-  codex: '80% 80%',
+  chatgpt: '80% 80%',
   'claude-code': '80% 80%',
   ollama: '86% 86%',
 };

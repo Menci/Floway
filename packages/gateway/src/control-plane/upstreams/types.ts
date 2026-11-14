@@ -8,6 +8,16 @@ import type {
 } from '@floway-dev/provider';
 import type { AzureUpstreamConfig as StoredAzureUpstreamConfig } from '@floway-dev/provider-azure';
 import type {
+  ChatGPTAccountCredential,
+  ChatGPTAccountIdentity,
+  ChatGPTQuotaSnapshot,
+  ChatGPTQuotaSnapshotMap,
+  ChatGPTRateLimitResetCredit,
+  ChatGPTRateLimitResetCredits,
+  ChatGPTUpstreamConfig as StoredChatGPTUpstreamConfig,
+  ChatGPTUpstreamState as StoredChatGPTUpstreamState,
+} from '@floway-dev/provider-chatgpt';
+import type {
   ClaudeCodeAccessTokenEntry,
   ClaudeCodeAccountCredential,
   ClaudeCodeAccountIdentity,
@@ -18,16 +28,6 @@ import type {
   ClaudeCodeUpstreamState as StoredClaudeCodeUpstreamState,
   ClaudeCodeUsageProbeSnapshotEntry,
 } from '@floway-dev/provider-claude-code';
-import type {
-  CodexAccountCredential,
-  CodexAccountIdentity,
-  CodexQuotaSnapshot,
-  CodexQuotaSnapshotMap,
-  CodexRateLimitResetCredit,
-  CodexRateLimitResetCredits,
-  CodexUpstreamConfig as StoredCodexUpstreamConfig,
-  CodexUpstreamState as StoredCodexUpstreamState,
-} from '@floway-dev/provider-codex';
 import type {
   CopilotQuotaSnapshotEntry,
   CopilotSeatEntry as StoredCopilotSeatEntry,
@@ -43,7 +43,7 @@ import type {
   OllamaUpstreamState as StoredOllamaUpstreamState,
 } from '@floway-dev/provider-ollama';
 
-export type { ClaudeCodeQuotaWindow, CodexQuotaSnapshot, CodexQuotaSnapshotMap, CodexRateLimitResetCredit, CodexRateLimitResetCredits, CustomModelsFetch, ProxyFallbackEntry };
+export type { ClaudeCodeQuotaWindow, ChatGPTQuotaSnapshot, ChatGPTQuotaSnapshotMap, ChatGPTRateLimitResetCredit, ChatGPTRateLimitResetCredits, CustomModelsFetch, ProxyFallbackEntry };
 export type { ProviderModelsFailureResponse } from '@floway-dev/provider';
 
 type CustomConfigFields = Pick<
@@ -81,8 +81,8 @@ export interface CopilotUpstreamState {
   quotaSnapshot: CopilotQuotaSnapshotEntry | null;
 }
 
-export type CodexUpstreamConfig = Omit<StoredCodexUpstreamConfig, 'accounts'> & {
-  accounts: CodexAccountIdentity[];
+export type ChatGPTUpstreamConfig = Omit<StoredChatGPTUpstreamConfig, 'accounts'> & {
+  accounts: ChatGPTAccountIdentity[];
 };
 
 export type OllamaUpstreamConfig = Omit<StoredOllamaUpstreamConfig, 'apiKey'> & {
@@ -90,17 +90,17 @@ export type OllamaUpstreamConfig = Omit<StoredOllamaUpstreamConfig, 'apiKey'> & 
   apiKeySet?: boolean;
 };
 
-export type CodexAccountCredentialState = Pick<
-  CodexAccountCredential,
+export type ChatGPTAccountCredentialState = Pick<
+  ChatGPTAccountCredential,
   'chatgptAccountId' | 'state' | 'state_message' | 'state_updated_at'
 > & {
-  accessToken?: CodexAccountCredential['accessToken'];
+  accessToken?: ChatGPTAccountCredential['accessToken'];
   refresh_token?: string | null;
   refresh_token_set?: boolean;
 };
 
-export interface CodexUpstreamState {
-  accounts: CodexAccountCredentialState[];
+export interface ChatGPTUpstreamState {
+  accounts: ChatGPTAccountCredentialState[];
 }
 
 export type ClaudeCodeUpstreamConfig = Omit<StoredClaudeCodeUpstreamConfig, 'accounts'> & {
@@ -150,8 +150,8 @@ type RedactedAzureConfig = Omit<StoredAzureUpstreamConfig, 'apiKey'> & { apiKeyS
 type RedactedCopilotConfig = Omit<StoredCopilotUpstreamConfig, 'githubToken'> & { githubTokenSet: boolean };
 type RedactedOllamaConfig = Omit<StoredOllamaUpstreamConfig, 'apiKey'> & { apiKeySet: boolean };
 
-type RedactedCodexCredential = Pick<
-  CodexAccountCredential,
+type RedactedChatGPTCredential = Pick<
+  ChatGPTAccountCredential,
   'chatgptAccountId' | 'state' | 'state_message' | 'state_updated_at'
 > & { refresh_token_set: boolean };
 
@@ -169,7 +169,7 @@ export type RedactedSerializedUpstreamRecord =
   | (SerializedUpstreamRecordBase & { kind: 'custom'; config: RedactedCustomConfig; state: null })
   | (SerializedUpstreamRecordBase & { kind: 'azure'; config: RedactedAzureConfig; state: null })
   | (SerializedUpstreamRecordBase & { kind: 'copilot'; config: RedactedCopilotConfig; state: CopilotUpstreamState | null })
-  | (SerializedUpstreamRecordBase & { kind: 'codex'; config: StoredCodexUpstreamConfig; state: { accounts: RedactedCodexCredential[] } })
+  | (SerializedUpstreamRecordBase & { kind: 'chatgpt'; config: StoredChatGPTUpstreamConfig; state: { accounts: RedactedChatGPTCredential[] } })
   | (SerializedUpstreamRecordBase & { kind: 'claude-code'; config: StoredClaudeCodeUpstreamConfig; state: { accounts: RedactedClaudeCodeCredential[] } })
   | (SerializedUpstreamRecordBase & { kind: 'ollama'; config: RedactedOllamaConfig; state: StoredOllamaUpstreamState | null });
 
@@ -177,7 +177,7 @@ export type FullSerializedUpstreamRecord =
   | (SerializedUpstreamRecordBase & { kind: 'custom'; config: StoredCustomUpstreamConfig; state: null })
   | (SerializedUpstreamRecordBase & { kind: 'azure'; config: StoredAzureUpstreamConfig; state: null })
   | (SerializedUpstreamRecordBase & { kind: 'copilot'; config: StoredCopilotUpstreamConfig; state: StoredCopilotUpstreamState | null })
-  | (SerializedUpstreamRecordBase & { kind: 'codex'; config: StoredCodexUpstreamConfig; state: StoredCodexUpstreamState })
+  | (SerializedUpstreamRecordBase & { kind: 'chatgpt'; config: StoredChatGPTUpstreamConfig; state: StoredChatGPTUpstreamState })
   | (SerializedUpstreamRecordBase & { kind: 'claude-code'; config: StoredClaudeCodeUpstreamConfig; state: StoredClaudeCodeUpstreamState })
   | (SerializedUpstreamRecordBase & { kind: 'ollama'; config: StoredOllamaUpstreamConfig; state: StoredOllamaUpstreamState | null });
 
@@ -189,7 +189,7 @@ export type BlueprintSerializedUpstreamRecord =
   | (BlueprintUpstreamRecordBase & { kind: 'custom'; config: StoredCustomUpstreamConfig; state: null })
   | (BlueprintUpstreamRecordBase & { kind: 'azure'; config: StoredAzureUpstreamConfig; state: null })
   | (BlueprintUpstreamRecordBase & { kind: 'copilot'; config: StoredCopilotUpstreamConfig; state: null })
-  | (BlueprintUpstreamRecordBase & { kind: 'codex'; config: { accounts: CodexAccountIdentity[] }; state: { accounts: CodexAccountCredential[] } })
+  | (BlueprintUpstreamRecordBase & { kind: 'chatgpt'; config: { accounts: ChatGPTAccountIdentity[] }; state: { accounts: ChatGPTAccountCredential[] } })
   | (BlueprintUpstreamRecordBase & { kind: 'claude-code'; config: { accounts: ClaudeCodeAccountIdentity[] }; state: { accounts: ClaudeCodeAccountCredential[] } })
   | (BlueprintUpstreamRecordBase & { kind: 'ollama'; config: StoredOllamaUpstreamConfig; state: null });
 
@@ -201,8 +201,8 @@ export interface ModelsCacheStatus {
   modelCount: number | null;
 }
 
-type WithResponseProjections<T> = T extends { kind: 'codex' }
-  ? T & { modelsCache: ModelsCacheStatus; codex_quota: CodexQuotaSnapshotMap | null }
+type WithResponseProjections<T> = T extends { kind: 'chatgpt' }
+  ? T & { modelsCache: ModelsCacheStatus; chatgpt_quota: ChatGPTQuotaSnapshotMap | null }
   : T & { modelsCache: ModelsCacheStatus };
 
 export type RedactedUpstreamResponse = WithResponseProjections<RedactedSerializedUpstreamRecord>;
@@ -217,7 +217,7 @@ export type UpstreamRecord =
   | (DashboardUpstreamRecordBase & { kind: 'custom'; config: CustomUpstreamConfig; state: null })
   | (DashboardUpstreamRecordBase & { kind: 'azure'; config: AzureUpstreamConfig; state: null })
   | (DashboardUpstreamRecordBase & { kind: 'copilot'; config: CopilotUpstreamConfig; state: CopilotUpstreamState | StoredCopilotUpstreamState | null })
-  | (DashboardUpstreamRecordBase & { kind: 'codex'; config: CodexUpstreamConfig; state: CodexUpstreamState; codex_quota?: CodexQuotaSnapshotMap | null })
+  | (DashboardUpstreamRecordBase & { kind: 'chatgpt'; config: ChatGPTUpstreamConfig; state: ChatGPTUpstreamState; chatgpt_quota?: ChatGPTQuotaSnapshotMap | null })
   | (DashboardUpstreamRecordBase & { kind: 'claude-code'; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState })
   | (DashboardUpstreamRecordBase & { kind: 'ollama'; config: OllamaUpstreamConfig; state: StoredOllamaUpstreamState | null });
 
