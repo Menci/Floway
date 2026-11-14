@@ -90,7 +90,6 @@ export const stubProvider = (overrides: Partial<ProviderInstance> = {}): Provide
   callOpenAIImagesEdits: overrides.callOpenAIImagesEdits ?? (() => Promise.reject(new Error('stubProvider.callOpenAIImagesEdits was called'))),
   callOpenAIAudioTranscriptions: overrides.callOpenAIAudioTranscriptions ?? (() => Promise.reject(new Error('stubProvider.callOpenAIAudioTranscriptions was called'))),
   callRerank: overrides.callRerank ?? (() => Promise.reject(new Error('stubProvider.callRerank was called'))),
-  callDecision: overrides.callDecision ?? (() => Promise.reject(new Error('stubProvider.callDecision was called'))),
 });
 
 // Stitches together a candidate whose `model.providerModels` map carries an

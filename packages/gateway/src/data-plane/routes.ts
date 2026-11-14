@@ -3,7 +3,7 @@ import type { Hono } from 'hono';
 import { mountAlphaSearchRoutes } from './alpha-search/routes.ts';
 import { mountChatRoutes } from './chat/routes.ts';
 import { mountCodexRoutes } from './codex/routes.ts';
-import { decision } from './decision/serve.ts';
+import { decision } from './decision/http.ts';
 import { serveGeminiModelInfo } from './models/gemini.ts';
 import { serveModels } from './models/http.ts';
 import { openaiAudioTranscriptions } from './openai-audio/http.ts';

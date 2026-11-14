@@ -10,4 +10,5 @@ export const createAzurePipelines = (config: AzureUpstreamConfig): ProviderPipel
   openaiImagesGenerations: compose<ProviderRequest<ProviderOperationPayloads['openaiImagesGenerations']>, ProviderOperationResponse<'openaiImagesGenerations'>>('azure.openaiImagesGenerations', [prepareAzureRequest(config, 'openaiImagesGenerations'), http]),
   openaiImagesEdits: compose<ProviderRequest<ProviderOperationPayloads['openaiImagesEdits']>, ProviderOperationResponse<'openaiImagesEdits'>>('azure.openaiImagesEdits', [prepareAzureRequest(config, 'openaiImagesEdits'), http]),
   openaiAudioTranscriptions: compose<ProviderRequest<ProviderOperationPayloads['openaiAudioTranscriptions']>, ProviderOperationResponse<'openaiAudioTranscriptions'>>('azure.openaiAudioTranscriptions', [prepareAzureRequest(config, 'openaiAudioTranscriptions'), http]),
+  decision: compose<ProviderRequest<ProviderOperationPayloads['decision']>, ProviderOperationResponse<'decision'>>('azure.decision', [prepareAzureRequest(config, 'decision'), http]),
 });

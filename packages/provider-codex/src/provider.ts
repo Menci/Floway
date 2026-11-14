@@ -162,7 +162,6 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     },
     callOpenAIAudioTranscriptions: () => unsupportedCallResult(),
     callRerank: () => Promise.reject(new Error('Codex provider does not support callRerank')),
-    callDecision: () => Promise.reject(new Error('Codex provider does not support callDecision')),
   };
 
   return {

@@ -3,7 +3,7 @@ import { COMPACTION_TRIGGER, compactionResponse } from './compaction.ts';
 import { assertCopilotUpstreamRecord } from './config.ts';
 import { COPILOT_DEFAULT_FLAGS, defaultFlagsForCopilotModel } from './defaults.ts';
 import { fetchCopilotModels } from './fetch-models.ts';
-import { copilotFetchOpenAIChatCompletions, copilotFetchOpenAIEmbeddings, copilotFetchAnthropicMessages, copilotFetchAnthropicMessagesCountTokens, copilotFetchOpenAIImagesEdits, copilotFetchOpenAIImagesGenerations, copilotFetchOpenAIResponses, copilotFetchDecision, type CopilotDataPlaneFetchOptions } from './fetch.ts';
+import { copilotFetchOpenAIChatCompletions, copilotFetchOpenAIEmbeddings, copilotFetchAnthropicMessages, copilotFetchAnthropicMessagesCountTokens, copilotFetchOpenAIImagesEdits, copilotFetchOpenAIImagesGenerations, copilotFetchOpenAIResponses, type CopilotDataPlaneFetchOptions } from './fetch.ts';
 import { COPILOT_ANTHROPIC_MESSAGES_BOUNDARY, COPILOT_ANTHROPIC_MESSAGES_COUNT_TOKENS_BOUNDARY } from './interceptors/anthropic-messages/index.ts';
 import type { AnthropicMessagesBoundaryCtx } from './interceptors/anthropic-messages/types.ts';
 import { COPILOT_OPENAI_CHAT_COMPLETIONS_BOUNDARY } from './interceptors/openai-chat-completions/index.ts';
@@ -23,7 +23,6 @@ import type { CopilotRawModel } from './types.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { parseAnthropicMessagesStream, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type ModelEndpoints, type ProtocolFrame, isFastServiceTier, kindForEndpoints } from '@floway-dev/protocols/common';
-import { DEFAULT_DECISION_PATHS, serializeDecisionRequest, type CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import { parseOpenAIChatCompletionsStream, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 import { eventResult, getProviderRepo, headersForAnthropicMessagesCall, jsonRequestBody, serializeOpenAIImagesEditsRequest, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FetchInit, type FlagOverrides, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
@@ -459,19 +458,6 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     },
     callOpenAIAudioTranscriptions: rejectUnsupported('callOpenAIAudioTranscriptions'),
     callRerank: rejectUnsupported('callRerank'),
-    callDecision: async (model: ProviderModel, request: CanonicalDecisionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => {
-      const target = model.decisionTarget;
-      if (target === undefined) throw new Error(`Decision model ${model.id} has no outbound target`);
-      const rawModel = rawModelFor(model, 'decision');
-      const body = serializeDecisionRequest(target.protocol, rawModel.id, request);
-      const response = await copilotFetchDecision(
-        upstreamConfig,
-        target.path ?? DEFAULT_DECISION_PATHS[target.protocol],
-        { method: 'POST', body: jsonRequestBody(body), signal },
-        { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
-      );
-      return { response, modelKey: rawModel.id, target };
-    },
   };
 
   return {

@@ -3,6 +3,7 @@ import { type HttpHeaders, type HttpRequestFacts, type HttpResponseFacts } from 
 import { multipartBody, type HttpBody, type HttpBodyEncoding } from '@floway-dev/http/request-content';
 import { defineStage, isSecret, move, secret, type Secret } from '@floway-dev/pipeline';
 import type { RerankTarget } from '@floway-dev/protocols/common';
+import { DEFAULT_DECISION_PATHS, serializeDecisionRequest } from '@floway-dev/protocols/decision';
 import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
 import { joinBaseAndPath, mergeHttpHeaders, prepareOpenAIImagesEditsBody, replaceHttpHeader, withHttpContentType, type ProviderOperation, type ProviderOperationPayloads, type ProviderRequest, type ProviderResponse, type ProviderServices } from '@floway-dev/provider';
 
@@ -41,7 +42,7 @@ const resolvedHeaders = (config: CustomUpstreamConfig, incoming: HttpHeaders): H
 
 export const prepareCustomRequest = <O extends ProviderOperation>(config: CustomUpstreamConfig, operation: O) => {
   const prepare = defineStage<ProviderRequest<ProviderOperationPayloads[O]>, CustomHttpFacts, HttpResponseFacts, CustomResponse, ProviderServices>({
-    name: `prepareCustom${operation.replace(/^openai/, 'OpenAI').replace(/^alpha/, 'Alpha').replace(/^rerank/, 'Rerank')}`,
+    name: `prepareCustom${operation.replace(/^openai/, 'OpenAI').replace(/^alpha/, 'Alpha').replace(/^rerank/, 'Rerank').replace(/^decision/, 'Decision')}`,
     through: {
       request: {
         needs: ['request.provider.model', 'request.provider.payload', 'request.http.callId', 'request.http.headers'],
@@ -68,6 +69,13 @@ export const prepareCustomRequest = <O extends ProviderOperation>(config: Custom
         path = target.path ?? DEFAULT_RERANK_PATHS[target.protocol];
         body = serializeRerankRequest(target.protocol, modelKey, payload as ProviderOperationPayloads['rerank']);
         break;
+      case 'decision': {
+        const decisionTarget = model.decisionTarget;
+        if (decisionTarget === undefined) throw new Error(`Decision model ${model.id} has no outbound target`);
+        path = decisionTarget.path ?? DEFAULT_DECISION_PATHS[decisionTarget.protocol];
+        body = serializeDecisionRequest(decisionTarget.protocol, modelKey, payload as ProviderOperationPayloads['decision']);
+        break;
+      }
       case 'openaiImagesEdits': {
         const prepared = await prepareOpenAIImagesEditsBody(payload as ProviderOperationPayloads['openaiImagesEdits'], modelKey);
         body = prepared.body;

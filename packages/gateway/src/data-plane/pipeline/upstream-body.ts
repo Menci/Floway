@@ -16,10 +16,12 @@ export interface UpstreamBody {
   readonly json?: unknown;
 }
 
-export const readUpstreamBody = async (response: Response): Promise<UpstreamBody> => {
+/** `parse` is the protocol's own JSON reader, for a protocol whose numbers must keep their
+ *  source tokens through a round trip. */
+export const readUpstreamBody = async (response: Response, parse: (text: string) => unknown = JSON.parse): Promise<UpstreamBody> => {
   const text = await response.text();
   try {
-    return { text, json: JSON.parse(text) as unknown };
+    return { text, json: parse(text) };
   } catch {
     return { text };
   }

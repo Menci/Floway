@@ -54,7 +54,6 @@ export type {
   ProviderInstance,
   ProviderCallResult,
   ProviderRerankCallResult,
-  ProviderDecisionCallResult,
   ProviderModule,
   AnthropicMessagesUpstreamCallOptions,
   ProviderOpenAIResponsesResult,

@@ -5,6 +5,7 @@ import type { ProviderModel } from './model.ts';
 import type { HttpResponseFacts, HttpHeaders, HttpServices } from '@floway-dev/http/pipeline';
 import type { Pipeline } from '@floway-dev/pipeline';
 import type { RerankTarget } from '@floway-dev/protocols/common';
+import type { CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import type { OpenAICompletionsPayload } from '@floway-dev/protocols/openai-completions';
 import type { OpenAIEmbeddingsPayload } from '@floway-dev/protocols/openai-embeddings';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
@@ -18,6 +19,7 @@ export interface ProviderOperationPayloads {
   openaiImagesEdits: OpenAIImagesEditsRequest;
   openaiAudioTranscriptions: OpenAIAudioTranscriptionRequest;
   rerank: CanonicalRerankRequest;
+  decision: CanonicalDecisionRequest;
 }
 
 export type ProviderOperation = keyof ProviderOperationPayloads;

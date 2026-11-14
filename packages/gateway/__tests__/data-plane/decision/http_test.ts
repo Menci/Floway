@@ -305,7 +305,7 @@ test('/v1/decisions surfaces a cross-dialect upstream body it cannot parse', asy
   );
 });
 
-test('/v1/systemone forwards an unparseable same-dialect body verbatim', async () => {
+test('/v1/systemone answers an unreadable same-dialect body with its own error', async () => {
   const { apiKey, repo } = await setupAppTest();
   await saveDecisionUpstream(repo, { protocol: 'typesafe-systemone' });
 
@@ -317,9 +317,12 @@ test('/v1/systemone forwards an unparseable same-dialect body verbatim', async (
         headers: requestHeaders(apiKey.key),
         body: JSON.stringify(choiceRequest),
       });
-      // Same dialect: the body needs no translation, so it passes through.
-      assertEquals(response.status, 200);
-      assertEquals(await response.text(), 'opaque upstream bytes');
+      // The protocol requires JSON, so a body that is not JSON is not an answer the gateway
+      // can carry — even to a client on the upstream's own dialect.
+      assertEquals(response.status, 502);
+      assertEquals(await response.json(), {
+        error: { message: 'The upstream answered 200 with a body the decision protocol cannot read: opaque upstream bytes', type: 'api_error' },
+      });
     },
   );
 });

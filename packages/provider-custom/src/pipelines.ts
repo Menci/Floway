@@ -12,4 +12,5 @@ export const createCustomPipelines = (config: CustomUpstreamConfig): ProviderPip
   openaiImagesEdits: compose<ProviderRequest<ProviderOperationPayloads['openaiImagesEdits']>, ProviderOperationResponse<'openaiImagesEdits'>>('custom.openaiImagesEdits', [prepareCustomRequest(config, 'openaiImagesEdits'), http]),
   openaiAudioTranscriptions: compose<ProviderRequest<ProviderOperationPayloads['openaiAudioTranscriptions']>, ProviderOperationResponse<'openaiAudioTranscriptions'>>('custom.openaiAudioTranscriptions', [prepareCustomRequest(config, 'openaiAudioTranscriptions'), http]),
   rerank: compose<ProviderRequest<ProviderOperationPayloads['rerank']>, ProviderOperationResponse<'rerank'>>('custom.rerank', [prepareCustomRequest(config, 'rerank'), http]),
+  decision: compose<ProviderRequest<ProviderOperationPayloads['decision']>, ProviderOperationResponse<'decision'>>('custom.decision', [prepareCustomRequest(config, 'decision'), http]),
 });

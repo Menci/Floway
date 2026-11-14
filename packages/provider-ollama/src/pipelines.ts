@@ -12,5 +12,6 @@ export const createOllamaPipelines = (upstreamId: string, config: OllamaUpstream
     openaiCompletions: compose<ProviderRequest<ProviderOperationPayloads['openaiCompletions']>, ProviderOperationResponse<'openaiCompletions'>>('ollama.openaiCompletions', [observe, prepareOllamaRequest(config, 'openaiCompletions'), http]),
     openaiEmbeddings: compose<ProviderRequest<ProviderOperationPayloads['openaiEmbeddings']>, ProviderOperationResponse<'openaiEmbeddings'>>('ollama.openaiEmbeddings', [observe, prepareOllamaRequest(config, 'openaiEmbeddings'), http]),
     openaiAudioTranscriptions: compose<ProviderRequest<ProviderOperationPayloads['openaiAudioTranscriptions']>, ProviderOperationResponse<'openaiAudioTranscriptions'>>('ollama.openaiAudioTranscriptions', [observe, prepareOllamaRequest(config, 'openaiAudioTranscriptions'), http]),
+    decision: compose<ProviderRequest<ProviderOperationPayloads['decision']>, ProviderOperationResponse<'decision'>>('ollama.decision', [prepareOllamaRequest(config, 'decision'), http]),
   };
 };

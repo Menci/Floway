@@ -1,16 +1,17 @@
 import type { OllamaUpstreamConfig } from '../config.ts';
 import type { HttpRequestFacts, HttpResponseFacts } from '@floway-dev/http/pipeline';
-import { multipartBody } from '@floway-dev/http/request-content';
+import { multipartBody, type HttpBody } from '@floway-dev/http/request-content';
 import { defineStage, move, secret } from '@floway-dev/pipeline';
+import { DEFAULT_DECISION_PATHS, serializeDecisionRequest } from '@floway-dev/protocols/decision';
 import { joinBaseAndPath, mergeHttpHeaders, withHttpContentType, type ProviderOperationPayloads, type ProviderRequest, type ProviderResponse, type ProviderServices } from '@floway-dev/provider';
 
-type OllamaOperation = 'openaiCompletions' | 'openaiEmbeddings' | 'openaiAudioTranscriptions';
+type OllamaOperation = 'openaiCompletions' | 'openaiEmbeddings' | 'openaiAudioTranscriptions' | 'decision';
 
 interface OllamaHttpFacts extends HttpRequestFacts {
   'request.ollama.modelKey': string;
 }
 
-const PATHS: Record<OllamaOperation, string> = {
+const PATHS: Record<Exclude<OllamaOperation, 'decision'>, string> = {
   openaiCompletions: '/v1/completions',
   openaiEmbeddings: '/v1/embeddings',
   // https://github.com/ollama/ollama/blob/573386c35eac76124ffce571f4b0fefa0a7fe13c/server/routes.go#L1916-L1922
@@ -19,7 +20,7 @@ const PATHS: Record<OllamaOperation, string> = {
 
 export const prepareOllamaRequest = <O extends OllamaOperation>(config: OllamaUpstreamConfig, operation: O) => {
   const prepare = defineStage<ProviderRequest<ProviderOperationPayloads[O]>, OllamaHttpFacts, HttpResponseFacts, ProviderResponse, ProviderServices>({
-    name: `prepareOllama${operation.replace(/^openai/, 'OpenAI').replace(/^alpha/, 'Alpha').replace(/^rerank/, 'Rerank')}`,
+    name: `prepareOllama${operation.replace(/^openai/, 'OpenAI').replace(/^alpha/, 'Alpha').replace(/^rerank/, 'Rerank').replace(/^decision/, 'Decision')}`,
     through: {
       request: {
         needs: ['request.provider.model', 'request.provider.payload', 'request.http.callId', 'request.http.headers'],
@@ -32,15 +33,25 @@ export const prepareOllamaRequest = <O extends OllamaOperation>(config: OllamaUp
       const { 'request.provider.model': model, 'request.provider.payload': payload, ...rest } = facts;
       const modelKey = model.providerData as string;
       const encoding = operation === 'openaiAudioTranscriptions' ? 'multipart' as const : 'json' as const;
-      const body = operation === 'openaiAudioTranscriptions'
-        ? multipartBody((payload as ProviderOperationPayloads['openaiAudioTranscriptions']).entries.map(entry => entry.name === 'model' ? { ...entry, value: modelKey } : entry))
-        : { ...payload, model: modelKey };
+      let path: string;
+      let body: HttpBody;
+      if (operation === 'decision') {
+        const target = model.decisionTarget;
+        if (target === undefined) throw new Error(`Decision model ${model.id} has no outbound target`);
+        path = target.path ?? DEFAULT_DECISION_PATHS[target.protocol];
+        body = serializeDecisionRequest(target.protocol, modelKey, payload as ProviderOperationPayloads['decision']);
+      } else {
+        path = PATHS[operation as Exclude<OllamaOperation, 'decision'>];
+        body = operation === 'openaiAudioTranscriptions'
+          ? multipartBody((payload as ProviderOperationPayloads['openaiAudioTranscriptions']).entries.map(entry => entry.name === 'model' ? { ...entry, value: modelKey } : entry))
+          : { ...payload, model: modelKey };
+      }
       const base = config.apiKey ? [['Authorization', secret(`Bearer ${config.apiKey}`)] as const] : [];
       const headers = mergeHttpHeaders(withHttpContentType(base, body, encoding), facts['request.http.headers']);
       const back = await next(move({
         ...rest,
         'request.ollama.modelKey': modelKey,
-        'request.http.url': joinBaseAndPath(config.baseUrl, PATHS[operation]),
+        'request.http.url': joinBaseAndPath(config.baseUrl, path),
         'request.http.method': 'POST',
         'request.http.headers': headers,
         'request.http.body': body,
