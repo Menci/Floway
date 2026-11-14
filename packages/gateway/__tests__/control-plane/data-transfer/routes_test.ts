@@ -193,10 +193,10 @@ const OLLAMA_UPSTREAM: StoredUpstreamRecord = {
   state: null,
 };
 
-const CODEX_UPSTREAM: StoredUpstreamRecord = {
-  id: 'up_codex_a',
-  kind: 'codex',
-  name: 'ChatGPT Codex (alice)',
+const CHATGPT_UPSTREAM: StoredUpstreamRecord = {
+  id: 'up_chatgpt_a',
+  kind: 'chatgpt',
+  name: 'ChatGPT (alice)',
   enabled: true,
   usageRefreshIntervalMinutes: 0,
   sortOrder: 30,
@@ -862,21 +862,21 @@ test('ollama upstreams export and import round-trip', async () => {
   assertEquals(await repo.upstreams.list(), [{ ...OLLAMA_UPSTREAM, sortOrder: 0 }]);
 });
 
-test('codex upstreams export and import round-trip with state intact', async () => {
+test('ChatGPT upstreams export and import round-trip with state intact', async () => {
   const { app, repo } = setup();
-  await saveUpstreamForTest(repo.upstreams, CODEX_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, CHATGPT_UPSTREAM);
   await repo.webSearchConfig.save(DEFAULT_WEB_SEARCH_CONFIG);
 
   const result = await doExport(app);
-  const exportedCodex = result.data.upstreams.find((upstream: any) => upstream.id === 'up_codex_a');
-  assertEquals(exportedCodex.config, CODEX_UPSTREAM.config);
-  assertEquals(exportedCodex.state, CODEX_UPSTREAM.state);
+  const exportedChatGPT = result.data.upstreams.find((upstream: any) => upstream.id === 'up_chatgpt_a');
+  assertEquals(exportedChatGPT.config, CHATGPT_UPSTREAM.config);
+  assertEquals(exportedChatGPT.state, CHATGPT_UPSTREAM.state);
 
   const replaceResult = await doImport(app, 'replace', {
     ...EMPTY_ACCESS_TRANSFER,
     users: [SEED_ADMIN],
     apiKeys: [],
-    upstreams: [exportedCodex],
+    upstreams: [exportedChatGPT],
     usage: [],
     searchUsage: [],
     upstreamMetrics: [],
@@ -885,12 +885,12 @@ test('codex upstreams export and import round-trip with state intact', async () 
     siteSettings: { siteName: null },
   });
   assertEquals(replaceResult.status, 200);
-  assertEquals(await repo.upstreams.list(), [{ ...CODEX_UPSTREAM, sortOrder: 0 }]);
+  assertEquals(await repo.upstreams.list(), [{ ...CHATGPT_UPSTREAM, sortOrder: 0 }]);
 });
 
-test('codex import rejects when state is missing', async () => {
+test('ChatGPT import rejects when state is missing', async () => {
   const { app } = setup();
-  const { state: _dropped, ...stateless } = upstreamRecordToFullJson(CODEX_UPSTREAM);
+  const { state: _dropped, ...stateless } = upstreamRecordToFullJson(CHATGPT_UPSTREAM);
   const result = await doImport(app, 'replace', {
     ...EMPTY_ACCESS_TRANSFER,
     users: [SEED_ADMIN],
@@ -904,12 +904,12 @@ test('codex import rejects when state is missing', async () => {
     siteSettings: { siteName: null },
   });
   assertEquals(result.status, 400);
-  assertEquals(result.body.error.includes('codex upstream is missing state'), true);
+  assertEquals(result.body.error.includes('chatgpt upstream is missing state'), true);
 });
 
-test('codex import rejects unknown keys in state', async () => {
+test('ChatGPT import rejects unknown keys in state', async () => {
   const { app } = setup();
-  const exported = upstreamRecordToFullJson(CODEX_UPSTREAM);
+  const exported = upstreamRecordToFullJson(CHATGPT_UPSTREAM);
   const result = await doImport(app, 'replace', {
     ...EMPTY_ACCESS_TRANSFER,
     users: [SEED_ADMIN],
@@ -1804,7 +1804,7 @@ test('a full v25 export re-imports verbatim — the export→import round trip i
   await saveUpstreamForTest(repo.upstreams, COPILOT_UPSTREAM);
   await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
   await saveUpstreamForTest(repo.upstreams, AZURE_UPSTREAM);
-  await saveUpstreamForTest(repo.upstreams, CODEX_UPSTREAM);
+  await saveUpstreamForTest(repo.upstreams, CHATGPT_UPSTREAM);
   await repo.usage.set(USAGE_1);
   await repo.usage.set(USAGE_2);
   await repo.webSearchUsage.set(WEB_SEARCH_USAGE_1);
@@ -1831,7 +1831,7 @@ test('a full v25 export re-imports verbatim — the export→import round trip i
   assertEquals(result.body.imported, { users: 2, userPreferences: 0, groups: 0, accessRecords: 0, apiKeys: 2, upstreams: 4, proxies: 0, usage: 2, searchUsage: 2, upstreamMetrics: 0, performance: 2 });
 
   // Spot-check fidelity across collection types (order-independent).
-  assertEquals((await repo.upstreams.list()).find(u => u.id === 'up_codex_a')?.state, CODEX_UPSTREAM.state);
+  assertEquals((await repo.upstreams.list()).find(u => u.id === 'up_chatgpt_a')?.state, CHATGPT_UPSTREAM.state);
   assertEquals((await repo.users.listIncludingDeleted()).find(u => u.id === USER_BOB.id), USER_BOB);
   assertEquals((await repo.apiKeys.findByRawKey(KEY_B.key))?.userId, USER_BOB.id);
   const restoredKeyA = await repo.apiKeys.findByRawKey(KEY_A.key);

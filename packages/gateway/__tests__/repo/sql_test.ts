@@ -13,8 +13,8 @@ const goodAccount = { chatgptAccountId: 'aid', refresh_token: 'rt_v1', state: 'a
 const GENERATION = '2026-06-05T00:00:00.000Z';
 const baseRecord = (overrides: Partial<StoredUpstreamRecord> = {}): StoredUpstreamRecord => ({
   id: 'up_test',
-  kind: 'codex',
-  name: 'Codex Test',
+  kind: 'chatgpt',
+  name: 'ChatGPT Test',
   enabled: true,
   usageRefreshIntervalMinutes: 0,
   sortOrder: 0,

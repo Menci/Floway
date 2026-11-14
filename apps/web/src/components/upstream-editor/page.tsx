@@ -100,7 +100,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     // with, and the editor never sends it back.
     if (data.mode !== 'create') return;
     if (record.kind === 'copilot' && !values.config.githubToken) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.copilot', path: ['config'] });
-    if ((record.kind === 'codex' || record.kind === 'claude-code') && values.config.accounts.length === 0) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.credential', path: ['config'] });
+    if ((record.kind === 'chatgpt' || record.kind === 'claude-code') && values.config.accounts.length === 0) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.credential', path: ['config'] });
   }), [data.mode, record.kind]);
   const form = useForm<UpstreamEditorValues>({
     defaultValues: initialValues,
@@ -153,7 +153,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const manualModelsDirty = Boolean(formState.dirtyFields.manualModels);
   const discoveryInputsDirty = hasUnsavedDiscoveryInputs(formState.dirtyFields)
     || (record.kind === 'ollama' && manualModelsDirty);
-  const oauth = record.kind === 'copilot' || record.kind === 'codex' || record.kind === 'claude-code';
+  const oauth = record.kind === 'copilot' || record.kind === 'chatgpt' || record.kind === 'claude-code';
   const fetchDialog = useDialogInvocation<void>();
   // Save resets the form and record in one commit. The immediately following
   // Fetch must use that saved record even before React commits the new render.

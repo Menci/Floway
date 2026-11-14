@@ -4,7 +4,7 @@ import { expect, test } from 'vitest';
 
 import { migrationSqlByFilename } from '../repo/test-sqlite.ts';
 
-const MIGRATION = '0098_drop_edge_dump_records.sql';
+const MIGRATION = '0099_drop_edge_dump_records.sql';
 
 test('deletes historical edge records and retires all their files while preserving run records', () => {
   const db = new DatabaseSync(':memory:');

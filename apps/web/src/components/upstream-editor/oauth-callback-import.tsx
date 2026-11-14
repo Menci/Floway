@@ -20,11 +20,11 @@ const { Button, Field, Link, Spinner, Text } = fluentComponents;
 
 type OAuthFlow = 'oauth' | 'setup-token';
 
-type OAuthImportRecord = Extract<UpstreamRecord, { kind: 'codex' | 'claude-code' }>;
+type OAuthImportRecord = Extract<UpstreamRecord, { kind: 'chatgpt' | 'claude-code' }>;
 
 type OAuthCallbackImportProps =
   | {
-    kind: 'codex';
+    kind: 'chatgpt';
     hasAccount: boolean;
     record: OAuthImportRecord;
     getValues: () => UpstreamEditorValues;
@@ -39,12 +39,12 @@ type OAuthCallbackImportProps =
     onImported: (patch: { config?: unknown; state?: unknown }) => void;
   };
 
-// The codex OAuth tab opens with a hint the claude-code OAuth and Setup-Token
+// The ChatGPT OAuth tab opens with a hint the claude-code OAuth and Setup-Token
 // tabs never carried; the kind prop decides which copy this shared surface
 // shows.
 export function OAuthCallbackImport(props: OAuthCallbackImportProps) {
   const { kind, hasAccount, record, getValues, onImported } = props;
-  const flowKind: OAuthFlow = kind === 'codex' ? 'oauth' : props.flowKind;
+  const flowKind: OAuthFlow = kind === 'chatgpt' ? 'oauth' : props.flowKind;
   const { t } = useTranslation();
   const values = useWatch<UpstreamEditorValues>() as UpstreamEditorValues;
   const { copy, outcomeFor } = useCopyToClipboard();
@@ -67,8 +67,8 @@ export function OAuthCallbackImport(props: OAuthCallbackImportProps) {
     if (generation.current !== mine) return;
     stashPkce(kind, flowKind, { verifier: pkce.verifier, state: pkce.state });
     const body = { record: previewRecord(record, getValues()), challenge: pkce.challenge, state: pkce.state };
-    const result = kind === 'codex'
-      ? await callApi(() => api.api.upstreams.codex.oauth['authorize-url'].$post({ json: body }))
+    const result = kind === 'chatgpt'
+      ? await callApi(() => api.api.upstreams.chatgpt.oauth['authorize-url'].$post({ json: body }))
       : flowKind === 'setup-token'
         ? await callApi(() => api.api.upstreams['claude-code']['setup-token']['authorize-url'].$post({ json: body }))
         : await callApi(() => api.api.upstreams['claude-code'].oauth['authorize-url'].$post({ json: body }));
@@ -98,8 +98,8 @@ export function OAuthCallbackImport(props: OAuthCallbackImportProps) {
       setBusy(false); setError(errorMessage(err)); return;
     }
     const editorRecord = previewRecord(record, values);
-    const result = kind === 'codex'
-      ? await callApi(() => api.api.upstreams.codex.import.exchange.$post({
+    const result = kind === 'chatgpt'
+      ? await callApi(() => api.api.upstreams.chatgpt.import.exchange.$post({
           json: { record: editorRecord, callback: { code: parsed.code, verifier: recalled.verifier } },
         }))
       : flowKind === 'setup-token'
@@ -117,7 +117,7 @@ export function OAuthCallbackImport(props: OAuthCallbackImportProps) {
   };
 
   return <div className="grid gap-3">
-    {kind === 'codex' && <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.codex.import.oauthHint')}</Text>}
+    {kind === 'chatgpt' && <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.chatgpt.import.oauthHint')}</Text>}
     {busy && !authorizeUrl
       ? <Spinner label={t('dashboard.upstreamEditor.oauth.preparing')} />
       : authorizeUrl && <div className="flex items-center gap-2 min-w-0">

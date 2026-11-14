@@ -8,9 +8,9 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 
+import { ChatGPTAccountCard } from './chatgpt-account-card';
+import { ChatGPTImportForm } from './chatgpt-import';
 import { ClaudeCodeAccountCard } from './claude-code-account-card';
-import { CodexAccountCard } from './codex-account-card';
-import { CodexImportForm } from './codex-import';
 import { CopilotQuotaCard } from './copilot-quota-card';
 import { CustomIngressHeaderRules } from './custom-ingress-header-rules';
 import type { UpstreamEditorValues } from './data';
@@ -421,7 +421,7 @@ function CopilotConfig({ onPatch, readOnly, record }: {
   </div>;
 }
 
-type OAuthKind = 'codex' | 'claude-code';
+type OAuthKind = 'chatgpt' | 'claude-code';
 function OAuthConfig({ onPatch, readOnly, record }: {
   readOnly: boolean;
   record: Extract<UpstreamRecord, { kind: OAuthKind }>;
@@ -438,8 +438,8 @@ function OAuthConfig({ onPatch, readOnly, record }: {
     setRefreshing(true);
     setError(null);
     const body = { record: previewRecord(record, values) };
-    const result = record.kind === 'codex'
-      ? await callApi(() => api.api.upstreams.codex.oauth.refresh.$post({ json: body }))
+    const result = record.kind === 'chatgpt'
+      ? await callApi(() => api.api.upstreams.chatgpt.oauth.refresh.$post({ json: body }))
       : await callApi(() => api.api.upstreams['claude-code'].oauth.refresh.$post({ json: body }));
     setRefreshing(false);
     if (result.error) { setError(result.error.message); return; }
@@ -487,8 +487,8 @@ function OAuthConfig({ onPatch, readOnly, record }: {
   };
 
   return <div className="grid gap-4">
-    {hasAccount && (record.kind === 'codex'
-      ? <CodexAccountCard readOnly={readOnly} record={{ ...record, kind: 'codex', config: config as Extract<UpstreamRecord, { kind: 'codex' }>['config'], state: values.state as Extract<UpstreamRecord, { kind: 'codex' }>['state'] }} />
+    {hasAccount && (record.kind === 'chatgpt'
+      ? <ChatGPTAccountCard readOnly={readOnly} record={{ ...record, kind: 'chatgpt', config: config as Extract<UpstreamRecord, { kind: 'chatgpt' }>['config'], state: values.state as Extract<UpstreamRecord, { kind: 'chatgpt' }>['state'] }} />
       : <ClaudeCodeAccountCard
           onRefreshQuota={() => void probeQuota()}
           probing={probing}
@@ -503,11 +503,11 @@ function OAuthConfig({ onPatch, readOnly, record }: {
       <Button onClick={() => setOpen(value => !value)}>{open ? t('common.cancel') : t('dashboard.upstreamEditor.oauth.reimport')}</Button>
     </div>}
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
-    {open && !readOnly && (record.kind === 'codex'
-      ? <CodexImportForm
+    {open && !readOnly && (record.kind === 'chatgpt'
+      ? <ChatGPTImportForm
           hasAccount={hasAccount}
           onImported={patch => { onPatch(patch, isPersisted(record)); setOpen(false); }}
-          record={{ ...record, kind: 'codex', config: config as Extract<UpstreamRecord, { kind: 'codex' }>['config'], state: values.state as Extract<UpstreamRecord, { kind: 'codex' }>['state'] }}
+          record={{ ...record, kind: 'chatgpt', config: config as Extract<UpstreamRecord, { kind: 'chatgpt' }>['config'], state: values.state as Extract<UpstreamRecord, { kind: 'chatgpt' }>['state'] }}
         />
       : <>
           <TabList aria-label={t('dashboard.upstreamEditor.oauth.importMethod')} selectedValue={tab} onTabSelect={(_, data) => setTab(String(data.value))}>

@@ -3,8 +3,8 @@ import { modelsRefreshInputHash } from '../../repo/models-refresh-inputs.ts';
 import type { StoredUpstreamRecord } from '../../repo/types.ts';
 import type { FlagDefaults, Provider, ProviderModule, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { azureProviderModule } from '@floway-dev/provider-azure';
+import { chatgptProviderModule } from '@floway-dev/provider-chatgpt';
 import { claudeCodeProviderModule } from '@floway-dev/provider-claude-code';
-import { codexProviderModule } from '@floway-dev/provider-codex';
 import { copilotProviderModule } from '@floway-dev/provider-copilot';
 import { customProviderModule } from '@floway-dev/provider-custom';
 import { ollamaProviderModule } from '@floway-dev/provider-ollama';
@@ -13,7 +13,7 @@ const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
   copilot: copilotProviderModule,
   custom: customProviderModule,
   azure: azureProviderModule,
-  codex: codexProviderModule,
+  chatgpt: chatgptProviderModule,
   'claude-code': claudeCodeProviderModule,
   ollama: ollamaProviderModule,
 };
