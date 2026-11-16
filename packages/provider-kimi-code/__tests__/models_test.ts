@@ -59,21 +59,37 @@ test('malformed catalog metadata fails through the shared model-discovery error 
   });
 });
 
-test('all six catalog rows expose presentation ids while preserving raw upstream identities', async () => {
-  const rows = [
+test('the published catalog exposes presentation ids while preserving raw upstream identities', async () => {
+  const catalog = [
     ['kimi-for-coding', 'K2.8 Preview', 'kimi-k2.8-preview'],
-    ['kimi-for-coding-highspeed', 'K2.7 Code Highspeed', 'kimi-kimi-for-coding-highspeed'],
+    ['kimi-for-coding-highspeed', 'K2.7 Code Highspeed', 'kimi-k2.7-code-highspeed'],
     ['k3', 'K3', 'kimi-k3'],
     ['k3-256k', 'K3-256k', 'kimi-k3-256k'],
     ['k3.1-pro', 'K3.1 Pro', 'kimi-k3.1-pro'],
     ['k3.1-pro-highspeed', 'K3.1 Pro Highspeed 2x Usage Cost', 'kimi-k3.1-pro-highspeed'],
   ];
+  // `k3-256k` is a context-capped duplicate of `k3` and stays unpublished.
+  const expected = catalog.filter(([id]) => id !== 'k3-256k');
   const provider = createKimiCodeProvider(record());
-  await withMockedFetch(() => Response.json({ data: rows.map(([id, display_name]) => rawModel({ id, display_name })) }), async () => {
+  await withMockedFetch(() => Response.json({ data: catalog.map(([id, display_name]) => rawModel({ id, display_name })) }), async () => {
     const models = await provider.instance.getProvidedModels(testFetcher);
-    expect(models.map(model => [model.upstreamModelId, model.display_name, model.id])).toEqual(rows);
-    expect(models.map(model => model.providerData)).toEqual(rows.map(([id]) => id));
+    expect(models.map(model => [model.upstreamModelId, model.display_name, model.id])).toEqual(expected);
+    expect(models.map(model => model.providerData)).toEqual(expected.map(([id]) => id));
     expect(models.some(model => model.id === 'kimi-for-coding')).toBe(false);
+  });
+});
+
+// The exclusion reads the derived public id, so it applies to any context-capped
+// variant the catalog may add rather than to one known id.
+test('every derived context-capped id is withheld, not just the observed one', async () => {
+  const provider = createKimiCodeProvider(record());
+  const catalog = [
+    rawModel({ id: 'k9.9-future', display_name: 'K9.9' }),
+    rawModel({ id: 'k9.9-future-256k', display_name: 'K9.9-256k' }),
+  ];
+  await withMockedFetch(() => Response.json({ data: catalog }), async () => {
+    const models = await provider.instance.getProvidedModels(testFetcher);
+    expect(models.map(model => model.id)).toEqual(['kimi-k9.9-future']);
   });
 });
 

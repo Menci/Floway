@@ -10,6 +10,14 @@ import { fetchUpstreamModels, identityWrapUpstreamCall, ProviderModelsUnavailabl
 // the invented id; K3 ids are validated by the service.
 // https://www.kimi.com/code/docs/en/kimi-code/models.html
 // https://github.com/MoonshotAI/kimi-cli/blob/9ab1286b8fe4e6bcd116949a27ce5e0ac3389c82/src/kimi_cli/auth/platforms.py#L27-L50
+// Context-capped variants are not published. `k3-256k` is `k3` at a 256K cap,
+// and a plan without the 1M grant receives `k3` at that cap anyway, so the
+// variant reaches no capability the fuller id cannot. Measured against a live
+// account, equal prompt sizes consumed the same quota through either id, so
+// the documented 2x cost of `k3` did not apply below the cap either.
+// https://www.kimi.com/code/docs/en/kimi-code/models.html
+const isContextCappedVariant = (publicId: string): boolean => publicId.endsWith('-256k');
+
 const projectCatalog = (value: unknown, enabledFlags: ReadonlySet<FlagId>): ProviderModel[] => {
   const body = object(value, 'Kimi Code models');
   if (!Array.isArray(body.data)) throw new TypeError('Kimi Code models.data must be an array');
@@ -22,6 +30,7 @@ const projectCatalog = (value: unknown, enabledFlags: ReadonlySet<FlagId>): Prov
       console.warn('Skipping Kimi Code model with an unrecognized display name:', upstreamModelId, displayName);
       return [];
     }
+    if (isContextCappedVariant(id)) return [];
     const chat: NonNullable<ProviderModel['chat']> = {
       modalities: { input: raw.supports_image_in === true ? ['text', 'image'] : ['text'], output: ['text'] },
     };
