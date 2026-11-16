@@ -144,8 +144,8 @@ test('an administrator target keeps its permission fields and saves normally', a
 
   const save = screen.getByRole<HTMLButtonElement>('button', { name: 'Save rule' });
   expect(save.disabled).toBe(false);
-  expect(screen.getAllByRole<HTMLInputElement>('radio').every(input => !input.disabled)).toBe(true);
   const edit = await screen.findByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.Upstream.Edit') });
+  expect(screen.getAllByRole<HTMLInputElement>('radio').every(input => !input.disabled)).toBe(true);
   fireEvent.click(within(edit).getByRole('radio', { name: i18n.t('dashboard.accessControl.states.off') }));
   await act(async () => { fireEvent.click(save); });
   const write = fetch.mock.calls.find(([, init]) => init?.method === 'PUT');
@@ -173,7 +173,7 @@ test('resolves group inheritance through the same API as personal inheritance', 
   vi.stubGlobal('fetch', fetch);
   await renderDialog({ record: { ...record, principal: { kind: 'group', id: 3 } } });
 
-  const edit = screen.getByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.Upstream.Edit') });
+  const edit = await screen.findByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.Upstream.Edit') });
   const inherited = await within(edit).findByRole<HTMLInputElement>('radio', { name: i18n.t('dashboard.accessControl.states.full') });
   await vi.waitFor(() => expect(inherited.checked).toBe(true));
   expect(fetch).toHaveBeenCalledOnce();
@@ -189,7 +189,7 @@ test('switching scope keeps the settled permission fields disabled until the new
     return await new Promise<Response>(resolve => { pending.push(resolve); });
   }));
   await renderDialog({ record });
-  const modelUse = screen.getByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.Model.Use') });
+  const modelUse = await screen.findByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.Model.Use') });
   await vi.waitFor(() => expect(within(modelUse).getByRole<HTMLInputElement>('radio', { name: i18n.t('dashboard.accessControl.states.on') }).checked).toBe(true));
   const fields = () => [...document.querySelectorAll('[data-permission-field]')].map(field => field.getAttribute('data-permission-field'));
   const snapshots: string[] = [];
@@ -243,6 +243,9 @@ test.each(['Visual', 'JSON'])('locks the complete %s form through a save and res
     ? await new Promise<Response>(resolve => { finish = resolve; })
     : Response.json({ values: { 'Model.Use': false, 'Upstream.Audit': false, 'Upstream.Edit': 'off' }, records: [], decisions: [] })));
   await renderDialog({ record });
+  // Save does nothing while the target resolves, so the lock this test drives
+  // cannot begin before its fields are there to be locked.
+  await screen.findByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.Model.Use') });
   if (mode === 'JSON') fireEvent.click(screen.getByRole('tab', { name: mode }));
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save rule' })); });
   const principal = screen.getByRole<HTMLInputElement>('combobox', { name: 'Applies to' });
