@@ -39,7 +39,7 @@ describe('upstream readout by provider', () => {
     expect(readoutOf(record, 'used')).toMatchObject({
       plan: 'Kimi Code', signals: [
         { key: 'five_hour', percent: 20, value: '20%', label: '5h' },
-        { key: 'monthly', percent: 70, value: '70%', label: 'Monthly' },
+        { key: 'monthly', percent: 70, value: '70%', label: 'until Dec 1, 2026' },
       ],
     });
     expect(readoutOf(kimiCodeRecord(legacyUsage), 'remaining').signals.map(signal => [signal.key, signal.value, signal.label]))
@@ -52,8 +52,8 @@ describe('upstream readout by provider', () => {
     expect(readoutOf(kimiCodeRecord(null)).signals).toEqual([]);
   });
   it.each([
-    ['en', en, 'Kimi Ultra:  ◔ 11% 5h  ◔ 4% Monthly', '7d', ['5h: 11% used', 'Monthly: 4% used']],
-    ['zh-Hans', zhHans, 'Kimi Ultra：  ◔ 11% 5 小时  ◔ 4% 月度', '7 天', ['5 小时：已用11%', '月度：已用4%']],
+    ['en', en, 'Kimi Ultra:  ◔ 11% 5h  ◔ 4% until Dec 1, 2026', '7d', ['5h: 11% used', 'until Dec 1, 2026: 4% used']],
+    ['zh-Hans', zhHans, 'Kimi Ultra：  ◔ 11% 5 小时  ◔ 4% 至 2026/12/01', '7 天', ['5 小时：已用11%', '至 2026/12/01：已用4%']],
   ] as const)('uses compact calendar and duration copy in %s rows and tooltip headings', (locale, resource, expectedRow, weeklyLabel, detailHeadings) => {
     const translate = translationFor(resource.translation);
     const record = kimiCodeRecord({

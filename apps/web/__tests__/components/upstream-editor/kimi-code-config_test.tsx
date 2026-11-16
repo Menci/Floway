@@ -38,8 +38,7 @@ test('Kimi Code exposes the background usage interval in the connection sidebar'
 test('quota refresh uses the edited region and API key', async () => {
   mocks.refresh.mockResolvedValue({ data: { observation: { fetchedAt: 2000, data: currentUsage }, account: null, accountError: null }, error: null });
   renderInApp(<Harness />);
-  fireEvent.click(screen.getByRole('combobox', { name: i18n.t('dashboard.upstreamEditor.kimiCode.region') }));
-  fireEvent.click(await screen.findByRole('option', { name: i18n.t('dashboard.upstreamEditor.kimiCode.regions.overseas') }));
+  fireEvent.click(screen.getByRole('radio', { name: i18n.t('dashboard.upstreamEditor.kimiCode.regions.overseas') }));
   fireEvent.change(screen.getByLabelText(i18n.t('dashboard.upstreamEditor.fields.apiKey')), { target: { value: 'sk-kimi-fake-replacement' } });
   expect(screen.queryAllByRole('progressbar')).toHaveLength(0);
   fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.kimiCode.usage.load') }));

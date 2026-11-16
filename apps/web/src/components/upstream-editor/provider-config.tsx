@@ -27,6 +27,7 @@ import type { DeviceFlowStart, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { errorMessage } from '../../lib/error-message';
+import { ChoiceGroup } from '../ui/choice-group';
 import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
 import { CHECKBOX_LIST_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
@@ -261,16 +262,22 @@ function KimiCodeConfig({ readOnly, record }: { readOnly: boolean; record: Extra
   const matchesStoredConnection = config.region === record.config.region && config.apiKey === record.config.apiKey;
   return <div className="grid gap-4">
     <Controller control={control} name="config.region" render={({ field }) => (
-      <Field label={t('dashboard.upstreamEditor.kimiCode.region')}>
-        <Dropdown
+      // The service publishes the same catalog and quota on both hosts, so the
+      // region is a two-way switch rather than a list that may grow. The label
+      // sits beside it, as the editor's other paired settings do.
+      <div className="flex items-center justify-between gap-3">
+        <Text>{t('dashboard.upstreamEditor.kimiCode.region')}</Text>
+        <ChoiceGroup
+          ariaLabel={t('dashboard.upstreamEditor.kimiCode.region')}
+          items={[
+            { value: 'china', label: t('dashboard.upstreamEditor.kimiCode.regions.china') },
+            { value: 'overseas', label: t('dashboard.upstreamEditor.kimiCode.regions.overseas') },
+          ]}
+          onChange={field.onChange}
           readOnly={readOnly}
-          selectedOptions={[field.value]}
-          value={t(`dashboard.upstreamEditor.kimiCode.regions.${field.value}`)}
-          onOptionSelect={(_, data) => field.onChange(data.optionValue)}
-        >
-          {(['china', 'overseas'] as const).map(region => <Option key={region} value={region}>{t(`dashboard.upstreamEditor.kimiCode.regions.${region}`)}</Option>)}
-        </Dropdown>
-      </Field>
+          value={field.value}
+        />
+      </div>
     )} />
     <SecretField readOnly={readOnly} />
     {(readOnly || Boolean(config.apiKey?.trim())) && <KimiCodeUsageCard

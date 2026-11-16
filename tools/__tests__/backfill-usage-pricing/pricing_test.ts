@@ -94,8 +94,6 @@ test('Kimi Code valuation resolves the public family independently of opaque or 
     });
   }
   assertEquals(resolveUsagePricing(kimi, { model: 'kimi-k3.1-pro', modelKey: 'k3.1-pro-highspeed' }).status, 'priced');
-  assertEquals(resolveUsagePricing(kimi, { model: 'kimi-k2.8-preview', modelKey: 'kimi-for-coding' }), {
-    status: 'unpriced', source: 'provider:kimi-code', guardsModelsCache: false,
-  });
+  assertEquals(resolveUsagePricing(kimi, { model: 'kimi-k2.8-preview', modelKey: 'kimi-for-coding' }).status, 'priced');
   assertEquals(resolveUsagePricing(kimi, { model: 'kimi-k3-256k', modelKey: 'k3-256k' }).status, 'unpriced');
 });

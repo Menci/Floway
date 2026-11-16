@@ -247,8 +247,11 @@ const kimiCodeSignals = (record: KimiCodeRecord, t: TFunction, locale: string, q
   const observation = record.state?.usageProbe?.observation ?? null;
   if (observation === null) return [];
   return readKimiCodeWindows(readKimiCodeUsage(observation.data)).map(window => {
+    // The monthly allowance is a calendar boundary, not a length: it reports the
+    // instant it resets and nothing states how many days that spans. A duration
+    // would invent one, so it reads as the date it ends, as Copilot's does.
     const label = window.id === 'monthly'
-      ? t('dashboard.upstreams.signals.window.monthly')
+      ? t('dashboard.upstreams.signals.until', { date: shortDate(window.resetsAt, locale) })
       : windowLengthLabel(window.id === 'five_hour' ? FIVE_HOUR_WINDOW_MINUTES : SEVEN_DAY_WINDOW_MINUTES, locale);
     return {
       key: window.id,

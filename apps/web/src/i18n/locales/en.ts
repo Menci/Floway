@@ -523,7 +523,7 @@ const en = {
           used: '{{label}}: {{percent, number}}% used',
           resets: 'Resets {{time}}',
           observed: 'Observed {{time}}',
-          window: { primary: 'Primary', secondary: 'Secondary', monthly: 'Monthly' },
+          window: { primary: 'Primary', secondary: 'Secondary' },
           rateLimited: 'Rate limited',
           rateLimitedDetail: 'This upstream is refusing requests until {{time}}',
           credits: '{{balance, number}} credits',
