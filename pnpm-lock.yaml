@@ -396,6 +396,9 @@ importers:
       '@floway-dev/provider-custom':
         specifier: workspace:*
         version: link:../provider-custom
+      '@floway-dev/provider-kimi-code':
+        specifier: workspace:*
+        version: link:../provider-kimi-code
       '@floway-dev/provider-ollama':
         specifier: workspace:*
         version: link:../provider-ollama
@@ -614,6 +617,19 @@ importers:
         version: link:../test-utils
 
   packages/provider-custom:
+    dependencies:
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
+      '@floway-dev/provider':
+        specifier: workspace:*
+        version: link:../provider
+    devDependencies:
+      '@floway-dev/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
+
+  packages/provider-kimi-code:
     dependencies:
       '@floway-dev/protocols':
         specifier: workspace:*

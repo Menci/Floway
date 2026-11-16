@@ -101,6 +101,8 @@ export const resolveUsagePricing = (
   case 'ollama':
     if (manual?.pricing !== undefined) return staticResolution(manual.pricing, `upstream:${upstream.id}:config`);
     return staticResolution(pricingForOllamaModelKey(identity.modelKey), 'provider:ollama');
+  case 'kimi-code':
+    return staticResolution(null, 'provider:kimi-code');
   case 'copilot':
     return staticResolution(pricingForCopilotPublicModelId(identity.model), 'provider:copilot');
   case 'chatgpt':

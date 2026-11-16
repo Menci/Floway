@@ -50,6 +50,7 @@
     "@floway-dev/provider-chatgpt": "workspace:*",
     "@floway-dev/provider-copilot": "workspace:*",
     "@floway-dev/provider-custom": "workspace:*",
+    "@floway-dev/provider-kimi-code": "workspace:*",
     "@floway-dev/provider-ollama": "workspace:*",
     "@floway-dev/proxy": "workspace:*",
     "@floway-dev/translate": "workspace:*",

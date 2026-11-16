@@ -1983,3 +1983,19 @@ test('invalid upstream gauge imports fail before replacement deletes data', asyn
   assertEquals(invalid.status, 400);
   assertEquals(await repo.upstreamMetrics.listAll(), [record]);
 });
+
+test('Kimi Code subscription credentials export and import without fabricated pricing or runtime observations', async () => {
+  const { app, repo } = setup();
+  const kimi = { ...CUSTOM_UPSTREAM, id: 'up_kimi_code', kind: 'kimi-code' as const, config: { region: 'china', apiKey: 'sk-kimi-fake-test-key' }, state: null };
+  await saveUpstreamForTest(repo.upstreams, kimi);
+  await repo.webSearchConfig.save(DEFAULT_WEB_SEARCH_CONFIG);
+  const exported = await doExport(app);
+  const item = exported.data.upstreams.find((upstream: any) => upstream.id === kimi.id);
+  assertEquals(item.config, kimi.config);
+  const result = await doImport(app, 'replace', {
+    ...EMPTY_ACCESS_TRANSFER, users: [SEED_ADMIN], apiKeys: [], upstreams: [item], usage: [], searchUsage: [], upstreamMetrics: [],
+    performanceIncluded: false, searchConfig: DEFAULT_WEB_SEARCH_CONFIG, siteSettings: { siteName: null },
+  });
+  assertEquals(result.status, 200);
+  assertEquals(await repo.upstreams.list(), [{ ...kimi, sortOrder: 0 }]);
+});

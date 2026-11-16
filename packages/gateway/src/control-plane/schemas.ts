@@ -213,6 +213,11 @@ const azureConfigSchema = z.object({
   path: ['models'],
 });
 
+const kimiCodeConfigSchema = z.object({
+  region: z.enum(['china', 'overseas']),
+  apiKey: z.string().min(1),
+});
+
 const ollamaConfigSchema = z.object({
   baseUrl: z.string().min(1),
   // Optional: required against ollama.com, typically absent for a private
@@ -410,6 +415,7 @@ export const createUpstreamBody = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('copilot'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().optional() }),
   z.object({ kind: z.literal('chatgpt'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().optional() }),
   z.object({ kind: z.literal('claude-code'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().optional() }),
+  z.object({ kind: z.literal('kimi-code'), ...upstreamBaseFields, config: kimiCodeConfigSchema }),
   z.object({ kind: z.literal('ollama'), ...upstreamBaseFields, config: ollamaConfigSchema }),
 ]);
 
@@ -423,7 +429,7 @@ export const createUpstreamBody = z.discriminatedUnion('kind', [
 // without this field the schema would silently strip it and the API would
 // look like it had accepted the change.
 export const updateUpstreamBody = z.object({
-  kind: z.enum(['custom', 'azure', 'copilot', 'chatgpt', 'claude-code', 'ollama']).optional(),
+  kind: z.enum(['custom', 'azure', 'copilot', 'chatgpt', 'claude-code', 'kimi-code', 'ollama']).optional(),
   name: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   usage_refresh_interval_minutes: z.number().int().nonnegative().optional(),
@@ -581,6 +587,10 @@ export const previewModelsBody = z.object({
     model_prefix: modelPrefixSchema.optional(),
   }),
 });
+// --- kimi-code ---
+
+export const kimiCodeUsageBody = recordOnlyBody;
+
 // --- ollama ---
 
 export const ollamaUsageBody = recordOnlyBody;

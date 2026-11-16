@@ -69,6 +69,7 @@
 | Package | `packages/provider-claude-code` | Integrates Claude Code subscriptions. |
 | Package | `packages/provider-copilot` | Integrates GitHub Copilot subscriptions. |
 | Package | `packages/provider-custom` | Integrates OpenAI-compatible providers. |
+| Package | `packages/provider-kimi-code` | Integrates Kimi Code subscriptions. |
 | Package | `packages/provider-ollama` | Integrates Ollama. |
 | Package | `packages/proxy` | Routes traffic through configured proxies. |
 | Package | `packages/test-utils` | Provides shared test infrastructure. |

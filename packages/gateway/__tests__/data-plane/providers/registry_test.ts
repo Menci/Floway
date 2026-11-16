@@ -1,11 +1,11 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
 import { seedModelsCache, storedModelsRefreshIdentity } from '../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, setupAppTest } from '../../test-utils/app.ts';
-import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
+import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, MOCKED_FETCH_EGRESS, requestAppWithWarmModels, setupAppTest, sseOpenAIChatCompletionsResponse, sseOpenAIResponsesResponse, sseAnthropicMessagesResponse } from '../../test-utils/app.ts';
+import { assertEquals, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 test('listModelProviders creates enabled provider instances with upstream row ids', async () => {
   const { githubAccount, repo } = await setupAppTest();
@@ -109,4 +109,43 @@ test('listModelProviders carries each row cached catalog onto its instance', asy
   assertEquals(byId.up_cached.modelsCache?.revision, MODEL_CATALOG_REVISION);
   assertEquals(byId.up_cached.modelsCache?.models.map(model => model.id), ['cached-model']);
   assertEquals(byId.up_cold.modelsCache, null);
+});
+
+for (const protocol of ['chat/completions', 'responses', 'messages'] as const) test(`Floway routes Kimi Code ${protocol} to its native endpoint and returns upstream output`, async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await saveUpstreamForTest(repo.upstreams, {
+    ...buildCustomUpstreamRecord({ id: 'up_kimi_code' }), kind: 'kimi-code', config: { region: 'china', apiKey: 'sk-kimi-fake-test-key' }, proxyFallbackList: MOCKED_FETCH_EGRESS,
+    state: { usageProbe: { attemptedAt: Date.now(), observation: null, error: null }, accountProbe: { attemptedAt: Date.now(), observation: null, error: null } },
+  });
+  const inferencePaths: string[] = [];
+  await withMockedFetch(async request => {
+    const path = new URL(request.url).pathname;
+    if (path === '/coding/v1/models') return Response.json({ data: [{ id: 'catalog-model', display_name: 'Catalog model', context_length: 1_048_576, supports_reasoning: true, supports_image_in: true, supports_thinking_type: 'only' }] });
+    inferencePaths.push(path);
+    expect(path).toBe(`/coding/v1/${protocol}`);
+    expect(request.headers.get('authorization')).toBe('Bearer sk-kimi-fake-test-key');
+    const body = await request.json();
+    expect(body.model).toBe('catalog-model');
+    expect(body.stream).toBe(true);
+    expect(body).not.toHaveProperty('thinking');
+    if (protocol === 'chat/completions') return sseOpenAIChatCompletionsResponse({
+      id: 'turn', model: 'catalog-model', created: 1, choices: [{ message: { role: 'assistant', content: 'PONG' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    });
+    if (protocol === 'responses') return sseOpenAIResponsesResponse({
+      id: 'turn', object: 'response', model: 'catalog-model', status: 'completed', created_at: 1,
+      output: [{ id: 'msg', type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'PONG', annotations: [] }] }],
+      usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+    });
+    return sseAnthropicMessagesResponse({ id: 'turn', model: 'catalog-model', content: [{ type: 'text', text: 'PONG' }], stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 } });
+  }, async () => {
+    const body = protocol === 'responses'
+      ? { model: 'catalog-model', input: 'hello', stream: false }
+      : { model: 'catalog-model', messages: [{ role: 'user', content: 'hello' }], max_tokens: 64, stream: false };
+    const response = await requestAppWithWarmModels(`/v1/${protocol}`, { method: 'POST', headers: { authorization: `Bearer ${apiKey.key}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    expect(response.status).toBe(200);
+    const result = await response.json();
+    expect(JSON.stringify(result)).toContain('PONG');
+  });
+  expect(inferencePaths).toEqual([`/coding/v1/${protocol}`]);
 });

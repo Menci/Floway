@@ -79,3 +79,9 @@ test('selector lookup falls back to the whole Base vector without merging fields
     rates: { input_tokens: '0.01' },
   });
 });
+
+test('Kimi Code subscription quota has no fabricated per-token dollar price', () => {
+  assertEquals(resolveUsagePricing(upstream('kimi-code', { region: 'china', apiKey: 'sk-kimi-fake-test-key' }), { model: 'catalog-model', modelKey: 'catalog-model' }), {
+    status: 'unpriced', source: 'provider:kimi-code', guardsModelsCache: false,
+  });
+});
