@@ -57,7 +57,7 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
     const next = await loadPermissionsData(data, signal);
     if (!signal.aborted) { setData(next); setError(next.error); }
   };
-  const { refresh, refreshInBackground, backgroundRefreshing, refreshing } = useRefresh(reload);
+  const { cancel, refresh, refreshInBackground, backgroundRefreshing, refreshing } = useRefresh(reload);
   const query = params.get('q') ?? '';
   const scopeData = useMemo<ScopeExpressionData>(() => ({
     users: data.directory?.users ?? [], groups: data.directory?.groups ?? [],
@@ -169,7 +169,18 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
       const result = await callApi(() => api.api['access-records'][':id'].$delete({ param: { id: String(record.id) } }));
       if (result.error) { handle.settle(); return result.error.message; }
       handle.succeed(t('dashboard.accessControl.toast.delete.success'));
-      await refreshInBackground();
+      // The DELETE is the whole write: nothing else this page holds -- the
+      // directory, the upstreams, the model list -- derives from the rule. So
+      // the acknowledged removal is applied here rather than awaited through a
+      // page read, which would keep both the confirmation surface and the row
+      // on screen until every upstream's model catalogue had been enumerated
+      // again. A read already in flight predates the write and is dropped, and
+      // clearing the retained snapshot lets the view be derived again from the
+      // records that remain -- which is also what closes a page whose last rule
+      // just left.
+      cancel();
+      setData(current => current.records === null ? current : { ...current, records: current.records.filter(candidate => candidate.id !== record.id) });
+      setDisplayed(null);
       return null;
     } finally {
       setRemoving(false);
