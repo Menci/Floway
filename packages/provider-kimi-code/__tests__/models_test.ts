@@ -1,9 +1,11 @@
-import { expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 
 import { config, rawModel, record } from './fixtures.ts';
 import { createKimiCodeProvider } from '../src/provider.ts';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import { testFetcher, withMockedFetch } from '@floway-dev/test-utils';
+
+afterEach(() => { vi.restoreAllMocks(); });
 
 test('the live catalog owns model capabilities, context, thinking requirement and effort', async () => {
   const provider = createKimiCodeProvider(record());
@@ -15,7 +17,7 @@ test('the live catalog owns model capabilities, context, thinking requirement an
     const models = await provider.instance.getProvidedModels(testFetcher);
     expect(models).toHaveLength(3);
     expect(models[0]).toMatchObject({
-      id: 'arbitrary-model', display_name: 'A catalog model', upstreamModelId: 'arbitrary-model', kind: 'chat',
+      id: 'kimi-arbitrary-model', display_name: 'A catalog model', upstreamModelId: 'arbitrary-model', kind: 'chat',
       limits: { max_context_window_tokens: 1_048_576 },
       endpoints: { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} },
       chat: { modalities: { input: ['text', 'image'], output: ['text'] }, reasoning: { mandatory: true, effort: { supported: ['low', 'high', 'max'], default: 'high' } } },
@@ -54,5 +56,33 @@ test('malformed catalog metadata fails through the shared model-discovery error 
   const provider = createKimiCodeProvider(record());
   await withMockedFetch(() => Response.json({ data: [rawModel({ think_efforts: { support: true, valid_efforts: ['high'], default_effort: 'unadvertised' } })] }), async () => {
     await expect(provider.instance.getProvidedModels(testFetcher)).rejects.toMatchObject({ name: 'ProviderModelsUnavailableError', cause: expect.any(TypeError) });
+  });
+});
+
+test('all six catalog rows expose presentation ids while preserving raw upstream identities', async () => {
+  const rows = [
+    ['kimi-for-coding', 'K2.8 Preview', 'kimi-k2.8-preview'],
+    ['kimi-for-coding-highspeed', 'K2.7 Code Highspeed', 'kimi-kimi-for-coding-highspeed'],
+    ['k3', 'K3', 'kimi-k3'],
+    ['k3-256k', 'K3-256k', 'kimi-k3-256k'],
+    ['k3.1-pro', 'K3.1 Pro', 'kimi-k3.1-pro'],
+    ['k3.1-pro-highspeed', 'K3.1 Pro Highspeed 2x Usage Cost', 'kimi-k3.1-pro-highspeed'],
+  ];
+  const provider = createKimiCodeProvider(record());
+  await withMockedFetch(() => Response.json({ data: rows.map(([id, display_name]) => rawModel({ id, display_name })) }), async () => {
+    const models = await provider.instance.getProvidedModels(testFetcher);
+    expect(models.map(model => [model.upstreamModelId, model.display_name, model.id])).toEqual(rows);
+    expect(models.map(model => model.providerData)).toEqual(rows.map(([id]) => id));
+    expect(models.some(model => model.id === 'kimi-for-coding')).toBe(false);
+  });
+});
+
+test('an unparseable coding alias is logged and skipped without hiding other catalog rows', async () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const provider = createKimiCodeProvider(record());
+  await withMockedFetch(() => Response.json({ data: [rawModel({ id: 'kimi-for-coding', display_name: 'a name with no version' }), rawModel({ id: 'unrelated', display_name: 'another name without a version' })] }), async () => {
+    const models = await provider.instance.getProvidedModels(testFetcher);
+    expect(models.map(model => [model.id, model.upstreamModelId])).toEqual([['kimi-unrelated', 'unrelated']]);
+    expect(warn).toHaveBeenCalledWith('Skipping Kimi Code model with an unrecognized display name:', 'kimi-for-coding', 'a name with no version');
   });
 });

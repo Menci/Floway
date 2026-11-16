@@ -15,7 +15,7 @@ for (const protocol of ['chat', 'responses', 'messages'] as const) test(`${proto
   const provider = createKimiCodeProvider(record());
   let captured: Record<string, unknown> | null = null;
   await withMockedFetch(async request => {
-    if (request.url.endsWith('/models')) return Response.json({ data: [rawModel()] });
+    if (request.url.endsWith('/models')) return Response.json({ data: [rawModel({ id: 'kimi-for-coding', display_name: 'K9.9 Preview' })] });
     const path = protocol === 'chat' ? '/chat/completions' : protocol === 'responses' ? '/responses' : '/messages';
     expect(request.url).toBe(`https://api.kimi.com/coding/v1${path}`);
     expect(request.method).toBe('POST');
@@ -26,6 +26,9 @@ for (const protocol of ['chat', 'responses', 'messages'] as const) test(`${proto
     return new Response(frames[protocol], { headers: { 'content-type': 'text/event-stream', 'x-upstream': 'kept' } });
   }, async () => {
     const [model] = await provider.instance.getProvidedModels(testFetcher);
+    expect(model.id).toBe('kimi-k9.9-preview');
+    expect(model.upstreamModelId).toBe('kimi-for-coding');
+    expect(model.providerData).toBe('kimi-for-coding');
     const signal = new AbortController().signal;
     const payload = { thinking: { type: 'disabled' as const }, vendor_extension: { arbitrary: 'kept' } };
     const result = protocol === 'chat'
@@ -33,8 +36,8 @@ for (const protocol of ['chat', 'responses', 'messages'] as const) test(`${proto
       : protocol === 'responses'
         ? await provider.instance.callOpenAIResponses(model, { ...payload, input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hello' }] }] }, 'generate', signal, noopUpstreamCallOptions())
         : await provider.instance.callAnthropicMessages(model, { ...payload, max_tokens: 64, messages: [{ role: 'user', content: 'hello' }] }, signal, noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: ['future-beta'] }));
-    expect(captured).toMatchObject({ ...payload, model: 'arbitrary-model', stream: true });
-    expect(result.modelKey).toBe('arbitrary-model');
+    expect(captured).toMatchObject({ ...payload, model: 'kimi-for-coding', stream: true });
+    expect(result.modelKey).toBe('kimi-for-coding');
     expect(result.ok).toBe(true);
     if (!result.ok || !('events' in result)) throw new Error('Expected a streaming result');
     expect(result.headers?.get('x-upstream')).toBe('kept');

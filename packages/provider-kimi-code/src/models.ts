@@ -1,20 +1,27 @@
 import type { KimiCodeUpstreamConfig } from './config.ts';
 import { kimiCodeFetch } from './fetch.ts';
+import { publicKimiCodeModelId } from './public-model-id.ts';
 import { object, string, number } from './validation.ts';
 import { fetchUpstreamModels, identityWrapUpstreamCall, ProviderModelsUnavailableError, type Fetcher, type FlagId, type ProviderModel } from '@floway-dev/provider';
 
-// The coding catalog carries capability and effort metadata; model names do not
-// determine these properties. Only returned ids are addressable: live probes
-// found that unknown K2 ids silently run the default model while echoing the
-// invented id; K3 ids are validated by the service.
+// Capability and effort metadata are authoritative; display names affect only
+// public presentation ids through publicKimiCodeModelId. Only catalog ids are
+// sent upstream: unknown K2 ids silently run the default model while echoing
+// the invented id; K3 ids are validated by the service.
 // https://www.kimi.com/code/docs/en/kimi-code/models.html
 // https://github.com/MoonshotAI/kimi-cli/blob/9ab1286b8fe4e6bcd116949a27ce5e0ac3389c82/src/kimi_cli/auth/platforms.py#L27-L50
 const projectCatalog = (value: unknown, enabledFlags: ReadonlySet<FlagId>): ProviderModel[] => {
   const body = object(value, 'Kimi Code models');
   if (!Array.isArray(body.data)) throw new TypeError('Kimi Code models.data must be an array');
-  return body.data.map(value => {
+  return body.data.flatMap(value => {
     const raw = object(value, 'Kimi Code model');
-    const id = string(raw.id, 'Kimi Code model.id');
+    const upstreamModelId = string(raw.id, 'Kimi Code model.id');
+    const displayName = string(raw.display_name, 'Kimi Code model.display_name');
+    const id = publicKimiCodeModelId(upstreamModelId, displayName);
+    if (id === null) {
+      console.warn('Skipping Kimi Code model with an unrecognized display name:', upstreamModelId, displayName);
+      return [];
+    }
     const chat: NonNullable<ProviderModel['chat']> = {
       modalities: { input: raw.supports_image_in === true ? ['text', 'image'] : ['text'], output: ['text'] },
     };
@@ -33,14 +40,14 @@ const projectCatalog = (value: unknown, enabledFlags: ReadonlySet<FlagId>): Prov
     }
     return {
       id,
-      upstreamModelId: id,
-      display_name: string(raw.display_name, 'Kimi Code model.display_name'),
+      upstreamModelId,
+      display_name: displayName,
       ...(raw.created !== undefined ? { created: number(raw.created, 'Kimi Code model.created') } : {}),
       owned_by: 'kimi',
       limits: { max_context_window_tokens: number(raw.context_length, 'Kimi Code model.context_length') },
       kind: 'chat',
       endpoints: { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} },
-      providerData: id,
+      providerData: upstreamModelId,
       enabledFlags,
       chat,
       opaqueBlobCompatibilityScope: { bindToUpstream: true },

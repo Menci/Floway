@@ -140,8 +140,8 @@ for (const protocol of ['chat/completions', 'responses', 'messages'] as const) t
     return sseAnthropicMessagesResponse({ id: 'turn', model: 'catalog-model', content: [{ type: 'text', text: 'PONG' }], stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 } });
   }, async () => {
     const body = protocol === 'responses'
-      ? { model: 'catalog-model', input: 'hello', stream: false }
-      : { model: 'catalog-model', messages: [{ role: 'user', content: 'hello' }], max_tokens: 64, stream: false };
+      ? { model: 'kimi-catalog-model', input: 'hello', stream: false }
+      : { model: 'kimi-catalog-model', messages: [{ role: 'user', content: 'hello' }], max_tokens: 64, stream: false };
     const response = await requestAppWithWarmModels(`/v1/${protocol}`, { method: 'POST', headers: { authorization: `Bearer ${apiKey.key}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
     expect(response.status).toBe(200);
     const result = await response.json();
