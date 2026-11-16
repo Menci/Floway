@@ -209,7 +209,7 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
       const [providerModel] = await instance.instance.getProvidedModels(testFetcher);
       const result = await instance.instance.callOpenAIChatCompletions(
         providerModel,
-        { messages: [{ role: 'user', content: 'hi' }] },
+        { messages: [{ role: 'user', content: 'hi' }], max_completion_tokens: 32000 },
         undefined,
         noopUpstreamCallOptions(),
       );
@@ -219,9 +219,12 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
 
   assertEquals(chatRequest!.url, 'https://ollama.com/v1/chat/completions');
   assertEquals(chatRequest!.headers.get('Authorization'), 'Bearer ollama_test');
-  const body = chatBody as { model: string; stream: boolean };
+  const body = chatBody as { model: string; stream: boolean; max_tokens?: number; max_completion_tokens?: number };
   assertEquals(body.model, 'gpt-oss:120b');
   assertEquals(body.stream, true);
+  // Ollama reads only `max_tokens` into `num_predict`.
+  assertEquals(body.max_tokens, 32000);
+  assertEquals('max_completion_tokens' in body, false);
 });
 
 test('Anthropic Messages methods serialize typed anthropic-beta metadata only on Anthropic Messages wire calls', async () => {
