@@ -110,7 +110,7 @@ export function ProviderBadge({ label, title, to, upstream }: {
 // `?no-inline` because Vite inlines an asset under 4 KB as a data URI, and an
 // unquoted `url(data:image/svg+xml,<svg …>)` is not a valid CSS value — the
 // mask-image declaration is dropped and the mask box paints as a solid block.
-// https://github.com/vitejs/vite/blob/5e7fe129a4dde4f41934083b25e490059985f4e6/docs/guide/assets.md#explicit-url-imports
+// https://github.com/vitejs/vite/blob/5e7fe129a4dde4f41934083b25e490059985f4e6/docs/guide/assets.md#explicit-inline-handling
 const providerIconUrls: Record<Exclude<UpstreamProviderKind, 'custom'>, string> = {
   azure: azureIconUrl,
   copilot: githubCopilotIconUrl,

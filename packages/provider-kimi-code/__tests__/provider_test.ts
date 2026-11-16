@@ -1,15 +1,16 @@
 import { expect, test } from 'vitest';
 
 import { config, rawModel, record, speedCatalog } from './fixtures.ts';
+import { selectKimiCodeModel } from '../src/model-selection.ts';
 import { createKimiCodeProvider } from '../src/provider.ts';
 import { priceRequest } from '@floway-dev/protocols/common';
 import { initProviderRepo } from '@floway-dev/provider';
 import { noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
 
 const frames = {
-  chat: 'data: {"id":"turn","object":"chat.completion.chunk","created":1,"model":"arbitrary-model","choices":[{"index":0,"delta":{"content":"PONG"},"finish_reason":null}]}\n\ndata: [DONE]\n\n',
-  responses: 'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","item_id":"msg","output_index":0,"content_index":0,"delta":"PONG"}\n\nevent: response.completed\ndata: {"type":"response.completed","response":{"id":"turn","object":"response","status":"completed","output":[]}}\n\n',
-  messages: 'event: message_start\ndata: {"type":"message_start","message":{"id":"turn","type":"message","role":"assistant","model":"arbitrary-model","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}\n\nevent: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"PONG"}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n',
+  chat: 'data: {"id":"turn","object":"chat.completion.chunk","created":1,"model":"kimi-for-coding","choices":[{"index":0,"delta":{"content":"PONG"},"finish_reason":null}]}\n\ndata: [DONE]\n\n',
+  responses: 'event: response.output_text.delta\ndata: {"type":"response.output_text.delta","item_id":"msg","output_index":0,"content_index":0,"delta":"PONG"}\n\nevent: response.completed\ndata: {"type":"response.completed","response":{"id":"turn","object":"response","status":"completed","model":"kimi-for-coding","output":[]}}\n\n',
+  messages: 'event: message_start\ndata: {"type":"message_start","message":{"id":"turn","type":"message","role":"assistant","model":"kimi-for-coding","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}\n\nevent: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"PONG"}}\n\nevent: message_stop\ndata: {"type":"message_stop"}\n\n',
 };
 
 for (const protocol of ['chat', 'responses', 'messages'] as const) test(`${protocol} forwards request fields and consumes native SSE events`, async () => {
@@ -45,6 +46,7 @@ for (const protocol of ['chat', 'responses', 'messages'] as const) test(`${proto
     const events = [];
     for await (const event of result.events) events.push(event);
     expect(JSON.stringify(events)).toContain('PONG');
+    expect(JSON.stringify(events)).toContain('\"model\":\"kimi-for-coding\"');
   });
 });
 
@@ -87,6 +89,21 @@ test('thinking remains absent when omitted and count_tokens issues no quota refr
     expect(await result.response.json()).toEqual({ input_tokens: 7 });
     expect(result.response.headers.get('x-count')).toBe('kept');
     expect(background).toHaveLength(0);
+  });
+});
+
+test('model selection returns the chosen id and lane for paired, standard-only and fast-only models', async () => {
+  const provider = createKimiCodeProvider(record());
+  await withMockedFetch(() => Response.json({ data: speedCatalog() }), async () => {
+    const models = await provider.instance.getProvidedModels(testFetcher);
+    const paired = models.find(model => model.id === 'kimi-k3.1-pro')!;
+    const standard = models.find(model => model.id === 'kimi-k2.8-preview')!;
+    const fast = models.find(model => model.id === 'kimi-k2.7-code')!;
+    expect(selectKimiCodeModel(paired, false)).toEqual({ modelId: 'k3.1-pro', lane: 'standard' });
+    expect(selectKimiCodeModel(paired, true)).toEqual({ modelId: 'k3.1-pro-highspeed', lane: 'fast' });
+    expect(selectKimiCodeModel(standard, true)).toEqual({ modelId: 'kimi-for-coding', lane: 'standard' });
+    expect(selectKimiCodeModel(fast, true)).toEqual({ modelId: 'kimi-for-coding-highspeed', lane: 'fast' });
+    expect(selectKimiCodeModel(fast, false)).toBeUndefined();
   });
 });
 

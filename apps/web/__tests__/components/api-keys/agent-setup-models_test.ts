@@ -56,7 +56,7 @@ describe('Agent Setup persisted model values', () => {
       catalogModel('claude-sonnet-4-5', { contextWindow: 1_000_000 }),
       catalogModel('claude-sonnet-4-5[1m]', { contextWindow: 1_000_000 }),
     ], { family: 'claude', picker: 'sonnet' })).toEqual([
-      { value: 'claude-sonnet-4-5[1m]', publicModelId: 'claude-sonnet-4-5' },
+      { value: 'claude-sonnet-4-5[1m]', label: 'claude-sonnet-4-5' },
     ]);
   });
 

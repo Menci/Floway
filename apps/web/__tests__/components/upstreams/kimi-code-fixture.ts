@@ -1,6 +1,10 @@
 import type { KimiCodeRecord } from '../../../src/components/upstreams/kimi-code-account';
 import { upstreamRecord } from '../../api/upstream-fixture';
-import type { KimiCodeUsageData } from '@floway-dev/provider-kimi-code/browser';
+
+interface KimiCodeUsageData {
+  [field: string]: unknown;
+  usages: Record<string, { used_ratio: number | string; reset_time: string }>;
+}
 
 export const resetAt = '2026-12-01T00:00:00Z';
 

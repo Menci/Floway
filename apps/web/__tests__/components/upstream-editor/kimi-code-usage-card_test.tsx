@@ -53,9 +53,9 @@ test('a successful quota refresh remains successful when account details are una
   fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.kimiCode.usage.refresh') }));
   expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.kimiCode.usage.window.weekly'))).toBeTruthy();
   expect(screen.getAllByRole('progressbar')).toHaveLength(2);
-  expect(screen.queryByText('Old name')).toBeNull();
+  expect(screen.getByText('Old name')).toBeTruthy();
   expect(screen.queryByText(/old quota failure/)).toBeNull();
-  expect(screen.queryByText(/account details unavailable/)).toBeNull();
+  expect(screen.getByText(i18n.t('dashboard.upstreamEditor.kimiCode.usage.accountFailed', { message: 'account details unavailable' }))).toBeTruthy();
 });
 
 test.each(['HTTP 429: subscription quota exhausted', 'HTTP 403: subscription access restricted'])('preserves the upstream failure: %s', async message => {

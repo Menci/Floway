@@ -2,12 +2,10 @@
 // channel rather than a model, so their published ids are derived from the
 // catalog display name; every other family gets a `kimi-` prefix. Highspeed
 // names a request-time lane, so it does not survive in a public family id.
-// The catalog id stays authoritative on the wire.
-// https://www.kimi.com/code/docs/en/kimi-code/models.html
-//
-// A mistyped id is not rejected by the service: it routes to the default K2
-// model while echoing the id it was given, so a derived id must never be sent
-// upstream. The same page documents the fallback.
+// The catalog id stays authoritative on the wire. The documentation describes
+// a mistyped-id fallback to K2.8 Preview without thinking. In observed chat
+// generation, a nonexistent kimi- id echoed that id with a successful response,
+// while a nonexistent k3- id was rejected; count_tokens accepted both.
 // https://www.kimi.com/code/docs/en/kimi-code/models.html
 const OPAQUE_CODING_ID = /^kimi-for-coding(?:-|$)/;
 

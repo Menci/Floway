@@ -33,7 +33,7 @@ import { type ChatGPTQuotaSnapshotMap, type ChatGPTUpstreamConfig, assertChatGPT
 import { assertClaudeCodeUpstreamRecord, readClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { parseCopilotUpstreamConfig, readCopilotUpstreamState } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
-import { assertKimiCodeUpstreamRecord, kimiCodeStateSurvivesConfigChange } from '@floway-dev/provider-kimi-code';
+import { assertKimiCodeUpstreamRecord, kimiCodeStateSurvivesConfigChange, type KimiCodeUpstreamConfig } from '@floway-dev/provider-kimi-code';
 import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
 
 type ChatGPTQuotaProjection = { chatgpt_quota?: ChatGPTQuotaSnapshotMap | null };
@@ -490,7 +490,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   const config = normalizeConfig(next);
   if (!config.ok) return c.json({ error: config.error }, 400);
   next = { ...next, config: config.value };
-  if (next.kind === 'kimi-code' && !kimiCodeStateSurvivesConfigChange(existing.config, next.config)) next = { ...next, state: null };
+  if (next.kind === 'kimi-code' && !kimiCodeStateSurvivesConfigChange(existing.config, next.config as KimiCodeUpstreamConfig)) next = { ...next, state: null };
 
   const saved = await saveUpstream({ previous: existing, next });
   const access = (await resolveUpstreamAccesses(subject, [id])).get(id)!;

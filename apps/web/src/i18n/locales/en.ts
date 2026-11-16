@@ -1095,6 +1095,7 @@ const en = {
             updated: 'Updated {{time}}',
             empty: 'Load subscription usage to check the key and available allowance.',
             backgroundFailed: 'The last background refresh failed: {{message}}',
+            accountFailed: 'Could not refresh account details: {{message}}',
           },
         },
         ollama: {

@@ -51,7 +51,7 @@ export function AliasTargetRow({
   const model = catalog.get(target.target_model_id);
   const modelWarning = computeModelWarning(target.target_model_id, model, kind);
   const ruleWarnings = computeRuleWarnings(target.rules, model);
-  const options = useMemo(() => filterModelOptions(targetIds.map(id => ({ value: id, label: catalog.get(id)?.display_name ?? id })), target.target_model_id), [catalog, target.target_model_id, targetIds]);
+  const options = useMemo(() => filterModelOptions(targetIds.map(id => ({ value: id, label: catalog.get(id)!.display_name })), target.target_model_id), [catalog, target.target_model_id, targetIds]);
   const patchRules = (patch: Partial<AliasTarget['rules']>) => onChange({ ...target, rules: { ...target.rules, ...patch } });
   const patchReasoning = (patch: Partial<NonNullable<AliasTarget['rules']['reasoning']>>) => {
     const reasoning = { ...(target.rules.reasoning ?? {}), ...patch };

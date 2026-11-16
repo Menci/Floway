@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import { RESET, usage } from './fixtures.ts';
 import { kimiCodeMetrics, resolveUpstreamMetricDisplay } from '../src/upstream-metrics.ts';
-import { readKimiCodeUsage } from '../src/usage.ts';
+import { KIMI_CODE_WINDOW_SECONDS, readKimiCodeUsage } from '../src/usage.ts';
 
 test('new subscriptions expose five-hour and monthly quota with a Code contribution', () => {
   expect(readKimiCodeUsage(usage())).toEqual({
@@ -48,6 +48,7 @@ test('metrics contain percentages of subscription quota with used and remaining 
 
 test('all subscription windows resolve through localized metric keys without interpolating internal ids', () => {
   for (const [id, seconds] of [['five_hour', 18_000], ['weekly', 604_800], ['monthly', null]] as const) {
+    expect(KIMI_CODE_WINDOW_SECONDS[id]).toBe(seconds);
     for (const direction of ['used', 'remaining'] as const) {
       const display = resolveUpstreamMetricDisplay({ name: 'quota.used_percent', labels: { window: id } }, { quotaDisplay: direction })!;
       expect(display.labelKey).toBe(id === 'monthly'

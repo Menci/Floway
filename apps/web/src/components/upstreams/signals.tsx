@@ -12,7 +12,7 @@ import { kimiCodePlanLabel, readKimiCodeWindows, type KimiCodeRecord } from './k
 import { planLabel as ollamaPlanLabel } from './ollama-account';
 import { activityCostHint, activityCostText, includedCreditsHint, includedCreditsUsed, readWindows } from './ollama-usage';
 import { providerLabel } from './provider-badge';
-import { FIVE_HOUR_WINDOW_MINUTES, quotaRingTone, SEVEN_DAY_WINDOW_MINUTES, WALL_CLOCK_REFRESH_MS, windowLengthLabel } from './subscription-quota';
+import { quotaRingTone, WALL_CLOCK_REFRESH_MS, windowLengthLabel } from './subscription-quota';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { type TFunction, useTranslation } from '../../i18n/translation';
@@ -23,7 +23,7 @@ import { useNow } from '../../lib/use-now';
 import { useUserPreferences } from '../../lib/use-preferences';
 import { ProgressRing } from '../ui/progress-ring';
 import type { QuotaDisplay } from '@floway-dev/protocols/browser';
-import { readKimiCodeUsage } from '@floway-dev/provider-kimi-code/browser';
+import { KIMI_CODE_WINDOW_SECONDS, readKimiCodeUsage } from '@floway-dev/provider-kimi-code/browser';
 import { readOllamaAccountUsage } from '@floway-dev/provider-ollama/browser';
 
 const { Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
@@ -247,12 +247,11 @@ const kimiCodeSignals = (record: KimiCodeRecord, t: TFunction, locale: string, q
   const observation = record.state?.usageProbe?.observation ?? null;
   if (observation === null) return [];
   return readKimiCodeWindows(readKimiCodeUsage(observation.data)).map(window => {
-    // The monthly allowance is a calendar boundary, not a length: it reports the
-    // instant it resets and nothing states how many days that spans. A duration
-    // would invent one, so it reads as the date it ends, as Copilot's does.
+    // The monthly window reports a reset time but not its duration, so display
+    // its end date without inventing a length.
     const label = window.id === 'monthly'
       ? t('dashboard.upstreams.signals.until', { date: shortDate(window.resetsAt, locale) })
-      : windowLengthLabel(window.id === 'five_hour' ? FIVE_HOUR_WINDOW_MINUTES : SEVEN_DAY_WINDOW_MINUTES, locale);
+      : windowLengthLabel(KIMI_CODE_WINDOW_SECONDS[window.id] / 60, locale);
     return {
       key: window.id,
       percent: window.percent,

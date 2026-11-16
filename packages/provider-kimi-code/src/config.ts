@@ -25,5 +25,5 @@ export const assertKimiCodeUpstreamRecord = (record: UpstreamRecord): KimiCodeUp
 // Account identity and quota belong to the credential; the regional coding
 // endpoints serve the same subscription.
 // https://www.kimi.com/code/docs/en/kimi-code/models.html
-export const kimiCodeStateSurvivesConfigChange = (previous: unknown, next: unknown): boolean =>
-  parseKimiCodeUpstreamConfig(previous).apiKey === parseKimiCodeUpstreamConfig(next).apiKey;
+export const kimiCodeStateSurvivesConfigChange = (previous: unknown, next: KimiCodeUpstreamConfig): boolean =>
+  parseKimiCodeUpstreamConfig(previous).apiKey === next.apiKey;

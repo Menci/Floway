@@ -2,12 +2,13 @@ import { assertKimiCodeUpstreamRecord, type KimiCodeUpstreamConfig } from './con
 import { kimiCodeFetch, readKimiCodeJson } from './fetch.ts';
 import { readKimiCodeUpstreamState, readKimiCodeAccount, type KimiCodeAccount, type KimiCodeObservation, type KimiCodeUpstreamState } from './state.ts';
 import { kimiCodeMetrics } from './upstream-metrics.ts';
-import { readKimiCodeUsage, type KimiCodeUsageData } from './usage.ts';
+import { readKimiCodeUsage } from './usage.ts';
 import { object } from './validation.ts';
 import { getProviderRepo, identityWrapUpstreamCall, recordUpstreamMetrics, runScheduledUsageRefresh, type Fetcher, type ProviderScheduledOptions, type UpstreamRecord } from '@floway-dev/provider';
 
-// Request-triggered quota reads debounce for one minute; identity changes much
-// less frequently and is refreshed once a day. These are Floway polling policies.
+// Request-triggered probes require the last persisted attempt to be at least one
+// minute old for usage or one day old for identity. A 429 or 403 forces a usage
+// refresh regardless of age. These are Floway polling policies.
 const USAGE_INTERVAL_MS = 60_000;
 const ACCOUNT_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -68,13 +69,13 @@ const refreshProbe = async <T>(
   return observation;
 };
 
-// The current CLI uses the same bearer token for /usages and optional /me.
-// https://github.com/MoonshotAI/kimi-cli/blob/9ab1286b8fe4e6bcd116949a27ce5e0ac3389c82/src/kimi_cli/auth/platforms.py#L27-L50
-// https://github.com/MoonshotAI/kimi-cli/blob/9ab1286b8fe4e6bcd116949a27ce5e0ac3389c82/src/kimi_cli/ui/shell/usage.py#L85-L200
-export const refreshKimiCodeUsageProbe = (upstreamId: string, config: KimiCodeUpstreamConfig, fetcher: Fetcher): Promise<KimiCodeObservation<KimiCodeUsageData>> =>
+// The official client uses bearer authentication for /usages and /me.
+// https://github.com/MoonshotAI/kimi-code/blob/fec742878d73678082b304c887e4fb1564088c54/packages/oauth/src/managed-usage.ts#L218-L233
+// https://github.com/MoonshotAI/kimi-code/blob/fec742878d73678082b304c887e4fb1564088c54/packages/oauth/src/managed-userinfo.ts#L163-L178
+export const refreshKimiCodeUsageProbe = (upstreamId: string, config: KimiCodeUpstreamConfig, fetcher: Fetcher): Promise<KimiCodeObservation<unknown>> =>
   refreshProbe(upstreamId, config, fetcher, 'usageProbe', '/usages', value => {
     readKimiCodeUsage(value);
-    return value as KimiCodeUsageData;
+    return value;
   });
 
 // /me enriches the account's display identity; a failed profile read does not

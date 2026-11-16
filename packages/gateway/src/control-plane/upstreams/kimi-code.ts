@@ -29,6 +29,6 @@ export const kimiCodeUsage = async (c: CtxWithJson<typeof kimiCodeUsageBody>) =>
   return c.json({
     observation: usage.value,
     account: account.status === 'fulfilled' ? account.value : null,
-    accountError: account.status === 'rejected' ? upstreamErrorMessage(account.reason) : null,
+    accountError: account.status === 'rejected' ? upstreamErrorMessage(account.reason).replaceAll(config.apiKey, '[redacted]') : null,
   });
 };

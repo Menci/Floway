@@ -1,4 +1,4 @@
-import { readKimiCodeUsage, type KimiCodeUsageData } from './usage.ts';
+import { readKimiCodeUsage } from './usage.ts';
 import { object, number, string } from './validation.ts';
 
 export interface KimiCodeAccount {
@@ -19,7 +19,7 @@ export interface KimiCodeProbeEntry<T> {
 }
 
 export interface KimiCodeUpstreamState {
-  usageProbe: KimiCodeProbeEntry<KimiCodeUsageData> | null;
+  usageProbe: KimiCodeProbeEntry<unknown> | null;
   accountProbe: KimiCodeProbeEntry<KimiCodeAccount> | null;
 }
 
@@ -51,7 +51,7 @@ export const readKimiCodeUpstreamState = (value: unknown): KimiCodeUpstreamState
   return {
     usageProbe: readProbe(body.usageProbe, data => {
       readKimiCodeUsage(data);
-      return data as KimiCodeUsageData;
+      return data;
     }),
     accountProbe: readProbe(body.accountProbe, readKimiCodeAccount),
   };

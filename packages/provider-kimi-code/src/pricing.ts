@@ -1,5 +1,5 @@
-// Notional USD per million tokens at Moonshot's first-party API list prices,
-// so operators can compare Kimi Code subscription value with direct spend.
+// Notional USD per million tokens for comparing subscription value with direct
+// API spend. Published API prices and estimates are identified below.
 // Public ids own pricing: kimi-for-coding is K2.8 Preview, whereas its
 // -highspeed sibling is K2.7 Code, so raw channel ids cannot identify a card.
 // https://www.kimi.com/code/docs/en/kimi-code/models.html
@@ -20,9 +20,8 @@ const KIMI_CODE_MODEL_PRICING: Record<string, ModelPricing> = {
     { input_tokens: '2', input_cache_read_tokens: '0.2', input_cache_write_tokens: '2', input_cache_write_1h_tokens: '4', output_tokens: '10' },
     { input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '4', input_cache_write_1h_tokens: '8', output_tokens: '20' },
   ),
-  // No fast K3 card is published, and the catalog lists no accelerated K3 row
-  // today. The doubled vector is carried anyway so an accelerated variant
-  // reaching the catalog is priced rather than recorded at a null rate.
+  // The API publishes no fast K3 card. The estimated fast vector doubles each
+  // published standard rate to value accelerated variants when they appear.
   // https://platform.kimi.ai/docs/pricing/chat
   // https://platform.kimi.ai/docs/pricing/batch
   'kimi-k3': fastPricing(
@@ -41,8 +40,8 @@ const KIMI_CODE_MODEL_PRICING: Record<string, ModelPricing> = {
     { input_tokens: '0.95', input_cache_read_tokens: '0.19', output_tokens: '4' },
     { input_tokens: '1.9', input_cache_read_tokens: '0.38', output_tokens: '8' },
   ),
-  // K2.8 Preview appears in neither the published API model list nor the price
-  // table; these rates are the family's own card for that preview build.
+  // K2.8 Preview values were supplied by the operator; there is no published
+  // equivalent. The estimated fast vector doubles those supplied values.
   'kimi-k2.8-preview': fastPricing(
     { input_tokens: '0.95', input_cache_read_tokens: '0.25', output_tokens: '4' },
     { input_tokens: '1.9', input_cache_read_tokens: '0.5', output_tokens: '8' },

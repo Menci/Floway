@@ -5,9 +5,8 @@ export interface KimiCodeProviderData {
   fastModelId?: string;
 }
 
-export const kimiCodeFastModelId = (model: ProviderModel): string | undefined => (model.providerData as KimiCodeProviderData).fastModelId;
-
-export const selectKimiCodeModelId = (model: ProviderModel, fast: boolean): string | undefined => {
+export const selectKimiCodeModel = (model: ProviderModel, fast: boolean): { modelId: string; lane: 'fast' | 'standard' } | undefined => {
   const lanes = model.providerData as KimiCodeProviderData;
-  return fast ? lanes.fastModelId ?? lanes.standardModelId : lanes.standardModelId;
+  if (fast && lanes.fastModelId !== undefined) return { modelId: lanes.fastModelId, lane: 'fast' };
+  return lanes.standardModelId === undefined ? undefined : { modelId: lanes.standardModelId, lane: 'standard' };
 };

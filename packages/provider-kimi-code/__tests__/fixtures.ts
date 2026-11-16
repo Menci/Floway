@@ -1,6 +1,10 @@
 import type { KimiCodeUpstreamState } from '../src/state.ts';
-import type { KimiCodeUsageData } from '../src/usage.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
+
+interface KimiCodeUsageData {
+  [field: string]: unknown;
+  usages: Record<string, { used_ratio: number | string; reset_time: string }>;
+}
 
 export const RESET = '2026-11-20T00:00:00Z';
 export const config = { region: 'china', apiKey: 'sk-kimi-obviously-fake-test-key' } as const;

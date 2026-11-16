@@ -8,8 +8,10 @@ import { fetchUpstreamModels, identityWrapUpstreamCall, ProviderModelsUnavailabl
 
 // Capability and effort metadata are authoritative; display names establish
 // public presentation ids and model-version identity. Only catalog ids are
-// sent upstream: unknown K2 ids silently run the default model while echoing
-// the invented id; K3 ids are validated by the service.
+// sent upstream: documentation describes a mistyped-id fallback to K2.8 Preview
+// without thinking. In observed chat generation, a nonexistent kimi- id succeeded
+// and echoed the id, while a nonexistent k3- id was rejected. count_tokens
+// accepted both.
 // https://www.kimi.com/code/docs/en/kimi-code/models.html
 // https://github.com/MoonshotAI/kimi-cli/blob/9ab1286b8fe4e6bcd116949a27ce5e0ac3389c82/src/kimi_cli/auth/platforms.py#L27-L50
 // We withhold context-capped variants as a catalog presentation policy. The
@@ -46,6 +48,7 @@ const projectCatalog = (value: unknown, enabledFlags: ReadonlySet<FlagId>): Prov
         }
       }
     }
+    const providerData: KimiCodeProviderData = upstreamModelId.endsWith('-highspeed') ? { fastModelId: upstreamModelId } : { standardModelId: upstreamModelId };
     return {
       id,
       upstreamModelId,
@@ -58,20 +61,20 @@ const projectCatalog = (value: unknown, enabledFlags: ReadonlySet<FlagId>): Prov
       // The catalog has no standard-speed K2.7 Code: its sole Highspeed row
       // remains honest under a speed-free public id only with a fast selector.
       // https://www.kimi.com/code/docs/en/kimi-code/models.html
-      providerData: (upstreamModelId.endsWith('-highspeed') ? { fastModelId: upstreamModelId } : { standardModelId: upstreamModelId }) satisfies KimiCodeProviderData,
+      providerData,
       enabledFlags,
       chat: { ...chat, modalities },
       opaqueBlobCompatibilityScope: { bindToUpstream: true },
     } satisfies ProviderModel;
   });
-  const standardByPublicId = new Map(models.filter(model => !model.upstreamModelId.endsWith('-highspeed')).map(model => [model.id, model]));
+  const standardByPublicId = new Map(models.filter(model => model.providerData.standardModelId !== undefined).map(model => [model.id, model]));
   const fastByBaseId = new Map<string, (typeof models)[number]>();
   for (const model of models) {
     // The suffix alone is not model identity: kimi-for-coding is K2.8 Preview,
     // but kimi-for-coding-highspeed is K2.7 Code. Pair only matching versions,
     // or a fast request would silently switch the model generation.
     // https://www.kimi.com/code/docs/en/kimi-code/models.html
-    if (!model.upstreamModelId.endsWith('-highspeed')) continue;
+    if (model.providerData.fastModelId === undefined) continue;
     const base = standardByPublicId.get(model.id);
     const name = parseKimiCodeModelName(model.display_name);
     const baseName = base === undefined ? null : parseKimiCodeModelName(base.display_name);

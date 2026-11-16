@@ -111,17 +111,18 @@ test('listModelProviders carries each row cached catalog onto its instance', asy
   assertEquals(byId.up_cold.modelsCache, null);
 });
 
-// https://platform.kimi.ai/docs/pricing/chat
 // https://www.kimi.com/code/docs/en/kimi-code/models.html
 for (const protocol of ['chat/completions', 'responses', 'messages'] as const) test.each([
   ['catalog-model', 'Catalog model', 'kimi-catalog-model', undefined, null, null, null],
+  // The K3.1 and K2.7 rates are published by Moonshot.
+  // https://platform.kimi.ai/docs/pricing/chat
   ['k3.1-pro', 'K3.1 Pro', 'kimi-k3.1-pro', undefined, '0.000002', '0.0000002', '0.00001'],
   ['k3.1-pro-highspeed', 'K3.1 Pro Highspeed', 'kimi-k3.1-pro', 'fast', '0.000004', '0.0000002', '0.00002'],
   ['kimi-for-coding-highspeed', 'K2.7 Code Highspeed', 'kimi-k2.7-code', 'fast', '0.0000019', '0.00000038', '0.000008'],
+  // K2.8 has no published equivalent; its values were supplied by the operator.
   ['kimi-for-coding', 'K2.8 Preview', 'kimi-k2.8-preview', undefined, '0.00000095', '0.00000025', '0.000004'],
-  // K2.8 has no fast lane. On the OpenAI protocols a fast request falls back to
-  // the standard lane and is priced as default; Anthropic rejects it instead, so
-  // that combination is covered by the fast-only rejection tests rather than here.
+  // K2.8 has no fast lane. OpenAI requests fall back to standard speed and
+  // are priced as default; Anthropic rejects fast requests for this model.
   ...(protocol === 'messages'
     ? []
     : [['kimi-for-coding', 'K2.8 Preview', 'kimi-k2.8-preview', 'fast', '0.00000095', '0.00000025', '0.000004'] as const]),

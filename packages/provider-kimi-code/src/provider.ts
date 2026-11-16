@@ -1,7 +1,7 @@
 import { assertKimiCodeUpstreamRecord } from './config.ts';
 import { KIMI_CODE_DEFAULT_FLAGS } from './defaults.ts';
 import { kimiCodeFetch } from './fetch.ts';
-import { kimiCodeFastModelId, selectKimiCodeModelId } from './model-selection.ts';
+import { selectKimiCodeModel } from './model-selection.ts';
 import { fetchKimiCodeModels } from './models.ts';
 import { scheduleKimiCodeProbes, runKimiCodeScheduledTask } from './probe.ts';
 import { kimiCodeChatSpeedParser, kimiCodeMessagesSpeedParser, kimiCodeMessagesWireBody, kimiCodeResponsesSpeedParser } from './speed.ts';
@@ -21,29 +21,30 @@ const fastModeRequired = (model: ProviderModel, field: 'service_tier' | 'speed')
 });
 
 const selectMessagesModel = (model: ProviderModel, speed: unknown) => {
-  // Anthropic requires fast requests to fail when the model has no lane;
-  // OpenAI permits a standard-speed response carrying the actual tier.
+  // Anthropic generally rejects fast requests on unsupported models, with a
+  // documented exception. We reject them here; OpenAI permits a standard-speed
+  // response carrying the selected tier.
   // https://platform.claude.com/docs/en/build-with-claude/fast-mode
   // https://developers.openai.com/api/docs/guides/priority-processing
-  if (speed === 'fast' && kimiCodeFastModelId(model) === undefined) {
+  const selection = selectKimiCodeModel(model, speed === 'fast');
+  if (speed === 'fast' && selection?.lane !== 'fast') {
     return {
       ok: false as const,
       response: Response.json({ type: 'error', error: { type: 'invalid_request_error', message: `'${model.id}' does not support fast mode; omit \`speed\` or set \`speed: "standard"\`.` } }, { status: 400 }),
       modelKey: model.upstreamModelId,
     };
   }
-  const modelId = selectKimiCodeModelId(model, speed === 'fast');
-  return modelId === undefined ? fastModeRequired(model, 'speed') : { modelId };
+  return selection ?? fastModeRequired(model, 'speed');
 };
 
 export const createKimiCodeProvider = (record: UpstreamRecord): Provider => {
   const { config } = assertKimiCodeUpstreamRecord(record);
   const enabledFlags = resolveEffectiveFlags([KIMI_CODE_DEFAULT_FLAGS, record.flagOverrides]);
 
-  // Forward thinking and effort unchanged. Some models advertise thinking-only
-  // yet accept disabled thinking. K3 and K2.7 Code Highspeed may route disabled
-  // thinking to K2.8 Preview; the response reports the served model. We preserve
-  // this upstream policy: model-scoped UI restrictions would misrepresent a
+  // Forward thinking and effort unchanged. The documented disabled-thinking
+  // reroute from K3 and K2.7 Code Highspeed to K2.8 Preview is invisible in
+  // observed responses: they echo the requested id, so passthrough cannot tell
+  // callers which model ran. Model-scoped restrictions would misrepresent this
   // request-dependent routing rule as a gateway capability restriction.
   // https://www.kimi.com/code/docs/en/kimi-code/models.html
   const call = async (path: string, modelId: string, body: Record<string, unknown>, signal: AbortSignal | undefined, headers: HttpHeaderLines, opts: UpstreamCallOptions, probes: boolean) => {
@@ -69,17 +70,19 @@ export const createKimiCodeProvider = (record: UpstreamRecord): Provider => {
     runScheduledTask: options => runKimiCodeScheduledTask(record, options),
     callOpenAIChatCompletions: async (model, body, signal, opts) => {
       const fast = isFastServiceTier(body.service_tier);
-      const modelId = selectKimiCodeModelId(model, fast);
-      if (modelId === undefined) return fastModeRequired(model, 'service_tier');
-      const tier = fast && kimiCodeFastModelId(model) !== undefined ? FAST_SERVICE_TIER : 'default';
+      const selection = selectKimiCodeModel(model, fast);
+      if (selection === undefined) return fastModeRequired(model, 'service_tier');
+      const { modelId, lane } = selection;
+      const tier = lane === 'fast' ? FAST_SERVICE_TIER : 'default';
       return await streaming('/chat/completions', modelId, fast ? { ...body, service_tier: tier } : body, signal, [...opts.headers], fast ? kimiCodeChatSpeedParser(tier) : parseOpenAIChatCompletionsStream, opts);
     },
     callOpenAIResponses: async (model, body, action, signal, opts) => {
       if (action === 'compact') throw new Error('Kimi Code does not expose a native Responses compaction endpoint');
       const fast = isFastServiceTier(body.service_tier);
-      const modelId = selectKimiCodeModelId(model, fast);
-      if (modelId === undefined) return { ...fastModeRequired(model, 'service_tier'), action: 'generate' };
-      const tier = fast && kimiCodeFastModelId(model) !== undefined ? FAST_SERVICE_TIER : 'default';
+      const selection = selectKimiCodeModel(model, fast);
+      if (selection === undefined) return { ...fastModeRequired(model, 'service_tier'), action: 'generate' };
+      const { modelId, lane } = selection;
+      const tier = lane === 'fast' ? FAST_SERVICE_TIER : 'default';
       const result = await streaming('/responses', modelId, fast ? { ...body, service_tier: tier } : body, signal, [...opts.headers], fast ? kimiCodeResponsesSpeedParser(tier) : parseOpenAIResponsesStream, opts);
       return { ...result, action: 'generate' };
     },

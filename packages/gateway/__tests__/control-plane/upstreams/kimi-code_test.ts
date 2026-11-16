@@ -57,7 +57,7 @@ test('draft quota and optional profile probes use coding auth and do not persist
   await withMockedFetch(request => {
     paths.push(new URL(request.url).pathname);
     expect(request.headers.get('authorization')).toBe(`Bearer ${config.apiKey}`);
-    return request.url.endsWith('/usages') ? Response.json(quota) : new Response('profile not available', { status: 404 });
+    return request.url.endsWith('/usages') ? Response.json(quota) : new Response(`profile not available for ${config.apiKey}`, { status: 404 });
   }, async () => {
     const response = await requestApp('/api/upstreams/kimi-code/usage', authed(adminSession, { record: draft() }));
     expect(response.status).toBe(200);
@@ -65,10 +65,20 @@ test('draft quota and optional profile probes use coding auth and do not persist
     expect(body.observation.data).toEqual(quota);
     expect(body.account).toBeNull();
     expect(body.accountError).toContain('404');
+    expect(body.accountError).toContain('profile not available for [redacted]');
     expect(JSON.stringify(body)).not.toContain(config.apiKey);
   });
   expect(paths.sort()).toEqual(['/coding/v1/me', '/coding/v1/usages']);
   expect(await repo.upstreams.list()).toEqual(before);
+});
+
+test('ordinary account errors remain intact in a successful quota response', async () => {
+  const { adminSession } = await setupAppTest();
+  await withMockedFetch(request => request.url.endsWith('/usages') ? Response.json(quota) : new Response('profile not available', { status: 404 }), async () => {
+    const response = await requestApp('/api/upstreams/kimi-code/usage', authed(adminSession, { record: draft() }));
+    expect(response.status).toBe(200);
+    expect((await response.json()).accountError).toBe('Kimi Code /me returned 404: profile not available');
+  });
 });
 
 test('saved quota and profile actions persist observations, metrics and a redacted dashboard record', async () => {

@@ -28,7 +28,7 @@ export function KimiCodeUsageCard({ probeRecord, readOnly = false, record }: { p
   const [error, setError] = useState<string | null>(null);
   const stored = record.state?.usageProbe ?? null;
   const observation = refreshed?.observation ?? stored?.observation ?? null;
-  const account = refreshed === null ? kimiCodeAccount(record) : refreshed.account?.data ?? null;
+  const account = refreshed?.account?.data ?? kimiCodeAccount(record);
   const usage = observation === null ? null : readKimiCodeUsage(observation.data);
   const windows = usage === null ? [] : readKimiCodeWindows(usage);
   const backgroundError = refreshed === null ? stored?.error ?? null : null;
@@ -74,6 +74,9 @@ export function KimiCodeUsageCard({ probeRecord, readOnly = false, record }: { p
     {observation === null && !loading && <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.kimiCode.usage.empty')}</Text>}
     {backgroundError !== null && <OutcomeMessageBar intent="warning">
       {t('dashboard.upstreamEditor.kimiCode.usage.backgroundFailed', { message: backgroundError })}
+    </OutcomeMessageBar>}
+    {refreshed?.accountError && <OutcomeMessageBar intent="warning">
+      {t('dashboard.upstreamEditor.kimiCode.usage.accountFailed', { message: refreshed.accountError })}
     </OutcomeMessageBar>}
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
   </section>;

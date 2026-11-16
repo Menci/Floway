@@ -8,9 +8,9 @@ const mapParser = <T>(parser: ProviderStreamParser<T>, map: (event: T) => T): Pr
   for await (const frame of parser(body, options)) yield frame.type === 'done' ? frame : eventFrame(map(frame.event));
 };
 
-// Kimi accepts priority without selecting a lane, rejects its fast synonym,
-// and ignores Anthropic speed. The selected catalog id owns the actual lane;
-// expose that selection even when the upstream omits or misreports the marker.
+// In observed chat requests Kimi accepted priority without a response tier marker
+// and rejected fast. Messages accepted fast without a usage speed marker. Expose
+// the catalog lane selected by Floway when the upstream omits its marker.
 // https://www.kimi.com/code/docs/en/kimi-code/models.html
 // https://developers.openai.com/api/docs/guides/priority-processing
 // https://platform.claude.com/docs/en/build-with-claude/fast-mode

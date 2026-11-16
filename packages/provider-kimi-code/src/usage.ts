@@ -7,15 +7,13 @@ export interface KimiCodeQuotaWindow {
   resetsAt: string;
 }
 
-export interface KimiCodeUsageData {
-  [field: string]: unknown;
-  usages: Record<string, { used_ratio: number | string; reset_time: string }>;
-}
+// https://github.com/MoonshotAI/kimi-code/blob/fec742878d73678082b304c887e4fb1564088c54/apps/kimi-code/src/utils/usage/usage-format.ts#L92-L114
+export const KIMI_CODE_WINDOW_SECONDS = { five_hour: 18_000, monthly: null, weekly: 604_800 } as const satisfies Record<KimiCodeQuotaWindow['id'], number | null>;
 
 // The two plan generations publish different windows. Both report ratios in
-// `usages`; the absolute counters use subscription units, not token counts.
-// The official CLI likewise renders percentages rather than assigning a unit.
-// https://github.com/MoonshotAI/kimi-cli/blob/9ab1286b8fe4e6bcd116949a27ce5e0ac3389c82/src/kimi_cli/ui/shell/usage.py#L85-L200
+// `usages`; the absolute counters are not documented as token counts.
+// The official CLI renders percentages rather than assigning a unit.
+// https://github.com/MoonshotAI/kimi-cli/blob/9ab1286b8fe4e6bcd116949a27ce5e0ac3389c82/src/kimi_cli/ui/shell/usage.py#L255-L270
 export interface KimiCodeAccountUsage {
   windows: KimiCodeQuotaWindow[];
   /** Code usage as a fraction of the shared monthly allowance, not a second cap. */
@@ -23,6 +21,7 @@ export interface KimiCodeAccountUsage {
 }
 
 // https://github.com/MoonshotAI/kimi-code/blob/fec742878d73678082b304c887e4fb1564088c54/packages/oauth/src/managed-usage.ts#L114-L145
+// https://github.com/MoonshotAI/kimi-code/blob/fec742878d73678082b304c887e4fb1564088c54/packages/oauth/src/managed-usage.ts#L198-L204
 const ratio = (value: unknown, path: string): number => {
   const parsed = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
   const result = number(parsed, path);

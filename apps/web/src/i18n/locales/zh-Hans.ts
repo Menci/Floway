@@ -1052,6 +1052,7 @@ const zhHansCN = {
             updated: '更新于 {{time}}',
             empty: '加载订阅用量，检查密钥和可用额度。',
             backgroundFailed: '最近一次后台刷新失败：{{message}}',
+            accountFailed: '无法刷新账号信息：{{message}}',
           },
         },
         ollama: {

@@ -262,9 +262,6 @@ function KimiCodeConfig({ readOnly, record }: { readOnly: boolean; record: Extra
   const matchesStoredConnection = config.region === record.config.region && config.apiKey === record.config.apiKey;
   return <div className="grid gap-4">
     <Controller control={control} name="config.region" render={({ field }) => (
-      // The service publishes the same catalog and quota on both hosts, so the
-      // region is a two-way switch rather than a list that may grow. The label
-      // sits beside it, as the editor's other paired settings do.
       <div className="flex items-center justify-between gap-3">
         <Text>{t('dashboard.upstreamEditor.kimiCode.region')}</Text>
         <ChoiceGroup
