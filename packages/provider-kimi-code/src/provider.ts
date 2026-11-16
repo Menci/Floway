@@ -20,12 +20,31 @@ const fastModeRequired = (model: ProviderModel, field: 'service_tier' | 'speed')
   modelKey: model.upstreamModelId,
 });
 
+const selectMessagesModel = (model: ProviderModel, speed: unknown) => {
+  // Anthropic requires fast requests to fail when the model has no lane;
+  // OpenAI permits a standard-speed response carrying the actual tier.
+  // https://platform.claude.com/docs/en/build-with-claude/fast-mode
+  // https://developers.openai.com/api/docs/guides/priority-processing
+  if (speed === 'fast' && kimiCodeFastModelId(model) === undefined) {
+    return {
+      ok: false as const,
+      response: Response.json({ type: 'error', error: { type: 'invalid_request_error', message: `'${model.id}' does not support fast mode; omit \`speed\` or set \`speed: "standard"\`.` } }, { status: 400 }),
+      modelKey: model.upstreamModelId,
+    };
+  }
+  const modelId = selectKimiCodeModelId(model, speed === 'fast');
+  return modelId === undefined ? fastModeRequired(model, 'speed') : { modelId };
+};
+
 export const createKimiCodeProvider = (record: UpstreamRecord): Provider => {
   const { config } = assertKimiCodeUpstreamRecord(record);
   const enabledFlags = resolveEffectiveFlags([KIMI_CODE_DEFAULT_FLAGS, record.flagOverrides]);
 
   // Forward thinking and effort unchanged. Some models advertise thinking-only
-  // yet accept disabled thinking; the service's own rejection is authoritative.
+  // yet accept disabled thinking. K3 and K2.7 Code Highspeed may route disabled
+  // thinking to K2.8 Preview; the response reports the served model. We preserve
+  // this upstream policy: model-scoped UI restrictions would misrepresent a
+  // request-dependent routing rule as a gateway capability restriction.
   // https://www.kimi.com/code/docs/en/kimi-code/models.html
   const call = async (path: string, modelId: string, body: Record<string, unknown>, signal: AbortSignal | undefined, headers: HttpHeaderLines, opts: UpstreamCallOptions, probes: boolean) => {
     const response = await kimiCodeFetch(config, path,
@@ -65,25 +84,19 @@ export const createKimiCodeProvider = (record: UpstreamRecord): Provider => {
       return { ...result, action: 'generate' };
     },
     callAnthropicMessages: async (model, body, signal, opts) => {
-      // Anthropic requires fast requests to fail when the model has no lane;
-      // OpenAI permits a standard-speed response carrying the actual tier.
-      // https://platform.claude.com/docs/en/build-with-claude/fast-mode
-      // https://developers.openai.com/api/docs/guides/priority-processing
-      if (body.speed === 'fast' && kimiCodeFastModelId(model) === undefined) {
-        return {
-          ok: false,
-          response: Response.json({ type: 'error', error: { type: 'invalid_request_error', message: `'${model.id}' does not support the \`speed\` parameter.` } }, { status: 400 }),
-          modelKey: model.upstreamModelId,
-        };
-      }
-      const modelId = selectKimiCodeModelId(model, body.speed === 'fast');
-      if (modelId === undefined) return fastModeRequired(model, 'speed');
+      const selection = selectMessagesModel(model, body.speed);
+      if ('response' in selection) return selection;
+      const { modelId } = selection;
       return await streaming('/messages', modelId, kimiCodeMessagesWireBody(body), signal, headersForAnthropicMessagesCall([...opts.headers], opts.anthropicBeta), body.speed === 'fast' || body.speed === 'standard' ? kimiCodeMessagesSpeedParser(body.speed === 'fast' ? 'fast' : 'standard') : parseAnthropicMessagesStream, opts);
     },
-    callAnthropicMessagesCountTokens: async (model, body, signal, opts) => ({
-      response: await call('/messages/count_tokens', model.upstreamModelId, kimiCodeMessagesWireBody(body), signal, headersForAnthropicMessagesCall([...opts.headers], opts.anthropicBeta), opts, false),
-      modelKey: model.upstreamModelId,
-    }),
+    callAnthropicMessagesCountTokens: async (model, body, signal, opts) => {
+      const selection = selectMessagesModel(model, body.speed);
+      if ('response' in selection) return selection;
+      return {
+        response: await call('/messages/count_tokens', selection.modelId, kimiCodeMessagesWireBody(body), signal, headersForAnthropicMessagesCall([...opts.headers], opts.anthropicBeta), opts, false),
+        modelKey: selection.modelId,
+      };
+    },
     callAlphaSearch: unsupported('callAlphaSearch'),
     callOpenAICompletions: unsupported('callOpenAICompletions'),
     callOpenAIEmbeddings: unsupported('callOpenAIEmbeddings'),

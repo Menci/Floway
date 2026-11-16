@@ -102,9 +102,7 @@ test('a highspeed row without a real base becomes a fast-only family', async () 
   });
 });
 
-// The exclusion reads the derived public id, so it applies to any context-capped
-// variant the catalog may add rather than to one known id.
-test('every derived context-capped id is withheld, not just the observed one', async () => {
+test('derived context-capped ids are withheld across catalog families', async () => {
   const provider = createKimiCodeProvider(record());
   const catalog = [
     rawModel({ id: 'k9.9-future', display_name: 'K9.9' }),
@@ -152,11 +150,11 @@ test('unrecognized identity cannot merge conflicting raw rows into one public fa
   });
 });
 
-test('an unrecognized Preview Highspeed alias is logged and skipped', async () => {
+test('a catalog containing only an unrecognized Preview Highspeed alias fails after logging the skipped row', async () => {
   const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
   const provider = createKimiCodeProvider(record());
   await withMockedFetch(() => Response.json({ data: [rawModel({ id: 'kimi-for-coding-highspeed', display_name: 'K4.2 Preview Highspeed' })] }), async () => {
-    expect(await provider.instance.getProvidedModels(testFetcher)).toEqual([]);
+    await expect(provider.instance.getProvidedModels(testFetcher)).rejects.toMatchObject({ name: 'ProviderModelsUnavailableError', cause: new TypeError('Kimi Code catalog contains no publishable models') });
     expect(warn).toHaveBeenCalledWith('Skipping Kimi Code model with an unrecognized display name:', 'kimi-for-coding-highspeed', 'K4.2 Preview Highspeed');
   });
 });

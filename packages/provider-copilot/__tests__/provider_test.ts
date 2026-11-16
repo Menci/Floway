@@ -92,8 +92,11 @@ const setupCopilotTest = async (recordOverrides: Partial<UpstreamRecord> = {}): 
   initProviderRepo(() => ({
     recordUpstreamMetric: async () => {},
     upstreams: {
-      getById: () => getByIdImpl(),
-      saveState: (id, mutate) => saveStateImpl(id, mutate),
+      getById: async () => {
+        const record = await getByIdImpl();
+        return record === null ? null : { ...record, configVersion: 1 };
+      },
+      saveState: (id, mutate) => saveStateImpl(id, current => mutate(current, 1)),
     },
   }));
   initImageProcessor(createInMemoryImageProcessor());

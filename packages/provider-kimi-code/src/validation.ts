@@ -3,8 +3,8 @@ export const object = (value: unknown, path: string): Record<string, unknown> =>
   return value as Record<string, unknown>;
 };
 
-export const string = (value: unknown, path: string): string => {
-  if (typeof value !== 'string' || value.length === 0) throw new TypeError(`${path} must be a nonempty string`);
+export const string = (value: unknown, path: string, allowEmpty = false): string => {
+  if (typeof value !== 'string' || (!allowEmpty && value.length === 0)) throw new TypeError(`${path} must be a ${allowEmpty ? 'string' : 'nonempty string'}`);
   return value;
 };
 

@@ -2,8 +2,7 @@
 // channel rather than a model, so their published ids are derived from the
 // catalog display name; every other family gets a `kimi-` prefix. Highspeed
 // names a request-time lane, so it does not survive in a public family id.
-// Only the derivation is presentation: the catalog id stays authoritative on
-// the wire, and a future explicit public-id catalog field would supersede it.
+// The catalog id stays authoritative on the wire.
 // https://www.kimi.com/code/docs/en/kimi-code/models.html
 //
 // A mistyped id is not rejected by the service: it routes to the default K2

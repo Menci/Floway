@@ -13,14 +13,16 @@ const ACCOUNT_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 const persistProbe = async <T>(
   upstreamId: string,
+  configVersion: number,
   slot: keyof KimiCodeUpstreamState,
   attemptedAt: number,
   observation: KimiCodeObservation<T> | null,
   error: string | null,
 ): Promise<boolean> => {
   let accepted = false;
-  await getProviderRepo().upstreams.saveState(upstreamId, current => {
+  await getProviderRepo().upstreams.saveState(upstreamId, (current, currentVersion) => {
     accepted = false;
+    if (currentVersion !== configVersion) return current;
     const state = readKimiCodeUpstreamState(current);
     const previous = state[slot];
     if (previous !== null && previous.attemptedAt > attemptedAt) return current;
@@ -39,22 +41,28 @@ const refreshProbe = async <T>(
   read: (value: unknown) => T,
 ): Promise<KimiCodeObservation<T>> => {
   const attemptedAt = Date.now();
+  // Draft credentials can be read under a saved id. Bind persistence only to
+  // the saved configuration that produced this request; the SQL CAS rechecks
+  // its version even when rotation occurs between the state read and write.
+  const saved = upstreamId === '' ? null : await getProviderRepo().upstreams.getById(upstreamId);
+  const savedConfig = saved === null ? null : assertKimiCodeUpstreamRecord(saved).config;
+  const configVersion = saved !== null && savedConfig?.apiKey === config.apiKey && savedConfig.region === config.region ? saved.configVersion : null;
   let observation: KimiCodeObservation<T>;
   try {
     const response = await kimiCodeFetch(config, path, { method: 'GET', headers: new Headers({ accept: 'application/json' }) }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     observation = { fetchedAt: Date.now(), data: read(await readKimiCodeJson(response, path)) };
   } catch (error) {
-    if (upstreamId !== '') {
+    if (configVersion !== null) {
       try {
-        await persistProbe(upstreamId, slot, attemptedAt, null, error instanceof Error ? error.message : String(error));
+        await persistProbe(upstreamId, configVersion, slot, attemptedAt, null, error instanceof Error ? error.message : String(error));
       } catch (persistenceError) {
         throw new AggregateError([error, persistenceError], 'Kimi Code probe and outcome persistence failed');
       }
     }
     throw error;
   }
-  if (upstreamId !== '') {
-    const accepted = await persistProbe(upstreamId, slot, attemptedAt, observation, null);
+  if (configVersion !== null) {
+    const accepted = await persistProbe(upstreamId, configVersion, slot, attemptedAt, observation, null);
     if (slot === 'usageProbe' && accepted) await recordUpstreamMetrics(upstreamId, kimiCodeMetrics(observation.data), observation.fetchedAt);
   }
   return observation;
@@ -75,7 +83,7 @@ export const refreshKimiCodeUsageProbe = (upstreamId: string, config: KimiCodeUp
 export const refreshKimiCodeAccountProbe = (upstreamId: string, config: KimiCodeUpstreamConfig, fetcher: Fetcher): Promise<KimiCodeObservation<KimiCodeAccount>> =>
   refreshProbe(upstreamId, config, fetcher, 'accountProbe', '/me', value => {
     const body = object(value, 'Kimi Code /me');
-    return readKimiCodeAccount({ userId: body.user_id, nickname: body.nickname, planName: body.user_level_name, goodsVersion: body.goods_version });
+    return readKimiCodeAccount({ userId: body.user_id, nickname: body.nickname, planName: body.user_level_name });
   });
 
 export const scheduleKimiCodeProbes = (record: UpstreamRecord, config: KimiCodeUpstreamConfig, fetcher: Fetcher, waitUntil: (promise: Promise<unknown>) => void, forceUsage: boolean): void => {

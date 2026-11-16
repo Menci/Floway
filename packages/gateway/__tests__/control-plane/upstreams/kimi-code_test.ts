@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson } from '../../../src/control-plane/upstreams/serialize.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
@@ -78,10 +78,11 @@ test('saved quota and profile actions persist observations, metrics and a redact
   await withMockedFetch(request => Response.json(request.url.endsWith('/usages') ? quota : profile), async () => {
     const response = await requestApp('/api/upstreams/kimi-code/usage', authed(adminSession, { record: upstreamRecordToFullJson(record) }));
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ observation: { data: quota }, account: { data: { userId: 'fake-user', nickname: 'Test account', planName: 'Ultra', goodsVersion: 2 } }, accountError: null });
+    expect(await response.json()).toMatchObject({ observation: { data: quota }, account: { data: { userId: 'fake-user', nickname: 'Test account', planName: 'Ultra' } }, accountError: null });
   });
   const saved = (await repo.upstreams.getById(record.id))!;
   expect(saved.state).toMatchObject({ usageProbe: { observation: { data: quota }, error: null }, accountProbe: { observation: { data: { planName: 'Ultra' } }, error: null } });
+  expect(await repo.upstreamMetrics.listAll()).toHaveLength(2);
   expect(upstreamRecordToJson(saved)).toMatchObject({ kind: 'kimi-code', config: { region: 'china', apiKeySet: true }, state: saved.state });
 });
 
@@ -116,7 +117,7 @@ test('Kimi Code credential replacement clears account observations while regiona
   const { adminSession, repo } = await setupAppTest();
   const state = {
     usageProbe: { attemptedAt: 1, observation: { fetchedAt: 1, data: quota }, error: null },
-    accountProbe: { attemptedAt: 1, observation: { fetchedAt: 1, data: { userId: 'original-account', nickname: 'Original', planName: 'Ultra', goodsVersion: 2 } }, error: null },
+    accountProbe: { attemptedAt: 1, observation: { fetchedAt: 1, data: { userId: 'original-account', nickname: 'Original', planName: 'Ultra' } }, error: null },
   };
   const record = kimiRecord({ state });
   await saveUpstreamForTest(repo.upstreams, record);
@@ -131,4 +132,67 @@ test('Kimi Code credential replacement clears account observations while regiona
     expect(response.status).toBe(200);
     expect((await repo.upstreams.getById(record.id))?.state).toBeNull();
   }
+});
+
+test.each([false, true])('a saved-id draft key returns its own readings without persisting outcomes (failure=%s)', async fail => {
+  const { adminSession, repo } = await setupAppTest();
+  const record = kimiRecord();
+  await saveUpstreamForTest(repo.upstreams, record);
+  const saved = (await repo.upstreams.getById(record.id))!;
+  const edited = { ...upstreamRecordToFullJson(saved), config: { ...config, apiKey: 'sk-kimi-fake-unsaved-key' } };
+  await withMockedFetch(request => {
+    expect(request.headers.get('authorization')).toBe(`Bearer ${edited.config.apiKey}`);
+    return fail ? new Response('draft key rejected', { status: 401 }) : Response.json(request.url.endsWith('/usages') ? quota : profile);
+  }, async () => {
+    const response = await requestApp('/api/upstreams/kimi-code/usage', authed(adminSession, { record: edited }));
+    expect(response.status).toBe(fail ? 502 : 200);
+    if (!fail) expect(await response.json()).toMatchObject({ observation: { data: quota }, account: { data: { userId: profile.user_id } } });
+  });
+  expect(await repo.upstreams.getById(record.id)).toEqual(saved);
+  expect(await repo.upstreamMetrics.listAll()).toEqual([]);
+});
+
+test.each([{ fail: false, restore: false }, { fail: true, restore: false }, { fail: false, restore: true }])('a key rotation discards in-flight probe outcomes (failure=$fail, restored=$restore)', async ({ fail, restore }) => {
+  const { adminSession, repo } = await setupAppTest();
+  const record = kimiRecord();
+  await saveUpstreamForTest(repo.upstreams, record);
+  const releases: Array<() => void> = [];
+  await withMockedFetch(request => new Promise(resolve => {
+    expect(request.headers.get('authorization')).toBe(`Bearer ${config.apiKey}`);
+    releases.push(() => resolve(fail ? new Response('old key rejected', { status: 401 }) : Response.json(request.url.endsWith('/usages') ? quota : profile)));
+  }), async () => {
+    const pending = requestApp('/api/upstreams/kimi-code/usage', authed(adminSession, { record: upstreamRecordToFullJson(record) }));
+    await vi.waitFor(() => expect(releases).toHaveLength(2));
+    const patched = await requestApp(`/api/upstreams/${record.id}`, authed(adminSession, { config: { apiKey: 'sk-kimi-fake-rotated-key' } }, 'PATCH'));
+    expect(patched.status).toBe(200);
+    if (restore) {
+      const restored = await requestApp(`/api/upstreams/${record.id}`, authed(adminSession, { config: { apiKey: config.apiKey } }, 'PATCH'));
+      expect(restored.status).toBe(200);
+    }
+    const rotated = (await repo.upstreams.getById(record.id))!;
+    expect(rotated.state).toBeNull();
+    releases.forEach(release => release());
+    expect((await pending).status).toBe(fail ? 502 : 200);
+    expect(await repo.upstreams.getById(record.id)).toEqual(rotated);
+  });
+  expect(await repo.upstreamMetrics.listAll()).toEqual([]);
+});
+
+test.each([{ data: [] }, { data: [{ ...catalog.data[0], id: 'kimi-for-coding', display_name: 'Unrecognized opaque name' }] }])('an empty projected catalog preserves the saved model cache: %j', async body => {
+  const { adminSession, repo } = await setupAppTest();
+  const record = kimiRecord();
+  await saveUpstreamForTest(repo.upstreams, record);
+  await withMockedFetch(() => Response.json(catalog), async () => {
+    const first = await requestApp(`/api/upstreams/${record.id}/list-models`, authed(adminSession, {}));
+    expect(first.status).toBe(200);
+  });
+  const cache = (await repo.upstreams.getById(record.id))!.modelsCache!;
+  expect(cache.models).toHaveLength(1);
+  await withMockedFetch(() => Response.json(body), async () => {
+    const response = await requestApp(`/api/upstreams/${record.id}/list-models`, authed(adminSession, {}));
+    expect(response.status).toBe(502);
+  });
+  const after = (await repo.upstreams.getById(record.id))!.modelsCache!;
+  expect(after.models).toEqual(cache.models);
+  expect(after.lastError).not.toBeNull();
 });

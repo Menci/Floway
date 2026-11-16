@@ -8,11 +8,8 @@ export interface KimiCodeQuotaWindow {
 }
 
 export interface KimiCodeUsageData {
-  limits: unknown[];
+  [field: string]: unknown;
   usages: Record<string, { used_ratio: number | string; reset_time: string }>;
-  usage?: Record<string, unknown>;
-  /** Native wallet fields; its balance.amount has no documented currency scale. */
-  booster_wallet?: Record<string, unknown>;
 }
 
 // The two plan generations publish different windows. Both report ratios in
@@ -37,9 +34,6 @@ const ratio = (value: unknown, path: string): number => {
 export const readKimiCodeUsage = (value: unknown): KimiCodeAccountUsage => {
   const body = object(value, 'Kimi Code usages');
   const usages = object(body.usages, 'Kimi Code usages.usages');
-  if (!Array.isArray(body.limits)) throw new TypeError('Kimi Code usages.limits must be an array');
-  if (body.usage !== undefined) object(body.usage, 'Kimi Code usages.usage');
-  if (body.booster_wallet !== undefined) object(body.booster_wallet, 'Kimi Code usages.booster_wallet');
   const ids = body.usage === undefined
     ? [['five_hour', 'limit_5h'], ['monthly', 'limit_month_total']] as const
     : [['five_hour', 'limit_5h'], ['weekly', 'limit_7d']] as const;

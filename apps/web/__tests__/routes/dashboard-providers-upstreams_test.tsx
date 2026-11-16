@@ -78,7 +78,7 @@ it('shows Kimi Code identities and subscription readings in the upstream list', 
   const record = kimiCodeRecord();
   record.state!.accountProbe = {
     attemptedAt: 1000, error: null,
-    observation: { fetchedAt: 1000, data: { userId: 'fake-user', nickname: '', planName: 'Ultra', goodsVersion: 2 } },
+    observation: { fetchedAt: 1000, data: { userId: 'fake-user', nickname: '', planName: 'Ultra' } },
   };
   renderPage(user, { ...loaderData, upstreams: [toListed(record)] });
   expect(await screen.findByText('fake-user')).toBeTruthy();

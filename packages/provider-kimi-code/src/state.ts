@@ -5,7 +5,6 @@ export interface KimiCodeAccount {
   userId: string;
   nickname: string;
   planName: string;
-  goodsVersion: number;
 }
 
 export interface KimiCodeObservation<T> {
@@ -28,9 +27,8 @@ export const readKimiCodeAccount = (value: unknown): KimiCodeAccount => {
   const body = object(value, 'Kimi Code account');
   return {
     userId: string(body.userId, 'Kimi Code account.userId'),
-    nickname: string(body.nickname, 'Kimi Code account.nickname'),
-    planName: string(body.planName, 'Kimi Code account.planName'),
-    goodsVersion: number(body.goodsVersion, 'Kimi Code account.goodsVersion'),
+    nickname: string(body.nickname, 'Kimi Code account.nickname', true),
+    planName: string(body.planName, 'Kimi Code account.planName', true),
   };
 };
 

@@ -46,7 +46,7 @@ describe('upstream readout by provider', () => {
       .toEqual([['five_hour', '90%'], ['weekly', '70%']]);
     record.state!.accountProbe = {
       attemptedAt: 1000, error: null,
-      observation: { fetchedAt: 1000, data: { userId: 'fake-user', nickname: '', planName: 'Pro', goodsVersion: 2 } },
+      observation: { fetchedAt: 1000, data: { userId: 'fake-user', nickname: '', planName: 'Pro' } },
     };
     expect(readoutOf(record).plan).toBe('Pro');
     expect(readoutOf(kimiCodeRecord(null)).signals).toEqual([]);

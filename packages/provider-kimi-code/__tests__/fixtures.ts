@@ -12,7 +12,7 @@ export const usage = (legacy = false): KimiCodeUsageData => ({
   ...(legacy ? { usage: { limit: '100', used: '50', remaining: '50', resetTime: RESET }, booster_wallet: { balance: { amount: '10000000000', unit: 'UNIT_CURRENCY' }, monthlyUsed: { currency: 'CNY', priceInCents: '0' } } } : {}),
 });
 export const profile = { user_id: 'fake-user', nickname: 'Test account', user_level_name: 'Ultra', goods_version: 2 };
-export const account = { userId: 'fake-user', nickname: 'Test account', planName: 'Ultra', goodsVersion: 2 };
+export const account = { userId: 'fake-user', nickname: 'Test account', planName: 'Ultra' };
 export const recentState = (): KimiCodeUpstreamState => ({
   usageProbe: { attemptedAt: Date.now(), observation: { fetchedAt: Date.now(), data: usage() }, error: null },
   accountProbe: { attemptedAt: Date.now(), observation: { fetchedAt: Date.now(), data: account }, error: null },

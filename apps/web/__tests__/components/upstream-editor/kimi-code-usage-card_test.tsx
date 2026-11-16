@@ -39,7 +39,7 @@ test('a successful quota refresh remains successful when account details are una
   record.state!.usageProbe!.error = 'old quota failure';
   record.state!.accountProbe = {
     attemptedAt: 1000, error: null,
-    observation: { fetchedAt: 1000, data: { userId: 'fake-user', nickname: 'Old name', planName: 'Pro', goodsVersion: 2 } },
+    observation: { fetchedAt: 1000, data: { userId: 'fake-user', nickname: 'Old name', planName: 'Pro' } },
   };
   mocks.refresh.mockResolvedValue({
     data: {
@@ -71,7 +71,7 @@ test('read-only quota retains identity fallback and hides refresh actions', () =
   const record = kimiCodeRecord();
   record.state!.accountProbe = {
     attemptedAt: 1000, error: null,
-    observation: { fetchedAt: 1000, data: { userId: 'fake-user', nickname: '', planName: 'Ultra', goodsVersion: 2 } },
+    observation: { fetchedAt: 1000, data: { userId: 'fake-user', nickname: '', planName: 'Ultra' } },
   };
   renderInApp(<KimiCodeUsageCard readOnly record={record} probeRecord={{ ...record }} />);
   expect(screen.getByText('fake-user')).toBeTruthy();

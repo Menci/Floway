@@ -11,11 +11,9 @@ import { fetchUpstreamModels, identityWrapUpstreamCall, ProviderModelsUnavailabl
 // the invented id; K3 ids are validated by the service.
 // https://www.kimi.com/code/docs/en/kimi-code/models.html
 // https://github.com/MoonshotAI/kimi-cli/blob/9ab1286b8fe4e6bcd116949a27ce5e0ac3389c82/src/kimi_cli/auth/platforms.py#L27-L50
-// Context-capped variants are not published. `k3-256k` is `k3` at a 256K cap,
-// and a plan without the 1M grant receives `k3` at that cap anyway, so the
-// variant reaches no capability the fuller id cannot. Measured against a live
-// account, equal prompt sizes consumed the same quota through either id, so
-// the documented 2x cost of `k3` did not apply below the cap either.
+// We withhold context-capped variants as a catalog presentation policy. The
+// documented 256K variant differs in context and quota cost; hiding it is not
+// a claim that its billing or capabilities equal the uncapped model.
 // https://www.kimi.com/code/docs/en/kimi-code/models.html
 const isContextCappedVariant = (publicId: string): boolean => publicId.endsWith('-256k');
 
@@ -100,6 +98,7 @@ const projectCatalog = (value: unknown, enabledFlags: ReadonlySet<FlagId>): Prov
     if (publicIds.has(family.id)) throw new TypeError(`Kimi Code catalog contains conflicting model families: ${family.id}`);
     publicIds.add(family.id);
   }
+  if (families.length === 0) throw new TypeError('Kimi Code catalog contains no publishable models');
   return families;
 };
 

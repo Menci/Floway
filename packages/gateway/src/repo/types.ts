@@ -441,7 +441,7 @@ export interface UpstreamRepo {
   // a CAS, retrying against the winner when it loses; exhausting the retries
   // throws. See UpstreamsRepoSlim in @floway-dev/provider for why the change
   // is a function.
-  saveState(id: string, mutate: (current: unknown) => unknown): Promise<void>;
+  saveState(id: string, mutate: (current: unknown, configVersion: number) => unknown): Promise<void>;
   publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean>;
   recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean>;
 }

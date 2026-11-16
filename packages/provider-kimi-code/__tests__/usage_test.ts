@@ -58,3 +58,10 @@ test('all subscription windows resolve through localized metric keys without int
     }
   }
 });
+
+test.each([false, true])('unconsumed quota fields cannot invalidate usable windows (legacy=%s)', legacy => {
+  const body = usage(legacy);
+  expect(readKimiCodeUsage({ ...body, limits: null, booster_wallet: 'opaque' })).toEqual(readKimiCodeUsage(body));
+  const { limits: _limits, booster_wallet: _wallet, ...consumed } = body;
+  expect(readKimiCodeUsage(consumed)).toEqual(readKimiCodeUsage(body));
+});

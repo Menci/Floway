@@ -1588,21 +1588,21 @@ class SqlUpstreamRepo implements UpstreamRepo {
   // retries is not, because the caller's change — a rotated refresh token the
   // vendor has already invalidated — cannot be reconstructed later, so it
   // throws rather than returning a flag a caller can drop.
-  async saveState(id: string, mutate: (current: unknown) => unknown): Promise<void> {
+  async saveState(id: string, mutate: (current: unknown, configVersion: number) => unknown): Promise<void> {
     for (let attempt = 0; attempt < UPSTREAM_STATE_WRITE_ATTEMPTS; attempt++) {
       const row = await this.db
-        .prepare('SELECT state_json FROM upstreams WHERE id = ?')
+        .prepare('SELECT state_json, config_version FROM upstreams WHERE id = ?')
         .bind(id)
-        .first<{ state_json: string | null }>();
+        .first<{ state_json: string | null; config_version: number }>();
       if (!row) throw new UpstreamGoneError(id);
       const current = row.state_json === null ? null : decodeUpstreamState(row.state_json, id);
-      const next = serializeStoredState(mutate(current));
+      const next = serializeStoredState(mutate(current, row.config_version));
       // A mutator that decided there is nothing to do returns what it was
       // given, which serializes back to the stored text.
       if (next === row.state_json) return;
       const result = await this.db
-        .prepare('UPDATE upstreams SET state_json = ? WHERE id = ? AND state_json IS ?')
-        .bind(next, id, row.state_json)
+        .prepare('UPDATE upstreams SET state_json = ? WHERE id = ? AND state_json IS ? AND config_version = ?')
+        .bind(next, id, row.state_json, row.config_version)
         .run();
       if ((result.meta.changes ?? 0) > 0) return;
     }

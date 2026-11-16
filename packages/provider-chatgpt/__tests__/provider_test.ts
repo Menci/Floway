@@ -332,7 +332,7 @@ describe('createChatGPTProvider', () => {
   });
 
   test('callOpenAIResponses re-reads state per request (operator re-import takes effect)', async () => {
-    repo.getById.mockResolvedValueOnce({ ...baseRecord, state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'session_terminated', state_updated_at: '2026-01-02T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: null, quotaSnapshot: null }] } as ChatGPTUpstreamState });
+    repo.getById.mockResolvedValueOnce({ ...baseRecord, configVersion: 1, state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'session_terminated', state_updated_at: '2026-01-02T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: null, quotaSnapshot: null }] } as ChatGPTUpstreamState });
     const instance = createChatGPTProvider(baseRecord);
     const result = await instance.instance.callOpenAIResponses(
       stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } }),

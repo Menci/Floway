@@ -1125,10 +1125,10 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   // the current state and the write always lands. Serialization still round-
   // trips through the canonical encoder so a mutator that returns its argument
   // unchanged is a no-op here too.
-  saveState(id: string, mutate: (current: unknown) => unknown): Promise<void> {
+  saveState(id: string, mutate: (current: unknown, configVersion: number) => unknown): Promise<void> {
     const existing = this.store.get(id);
     if (!existing) throw new UpstreamGoneError(id);
-    const next = mutate(existing.state);
+    const next = mutate(existing.state, existing.configVersion);
     const serialized = serializeStoredState(next);
     existing.state = serialized === null ? null : (JSON.parse(serialized) as unknown);
     return Promise.resolve();

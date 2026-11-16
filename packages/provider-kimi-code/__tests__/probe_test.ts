@@ -12,8 +12,8 @@ const setupRepo = (initial: unknown = null) => {
   initProviderRepo(() => ({
     recordUpstreamMetric: async (_id, name, _labels, value) => { metrics.push({ name, value }); },
     upstreams: {
-      getById: async () => record({ state }),
-      saveState: async (_id, update) => { state = update(state); },
+      getById: async () => ({ ...record({ state }), configVersion: 1 }),
+      saveState: async (_id, update) => { state = update(state, 1); },
     },
   }));
   return { read: () => readKimiCodeUpstreamState(state), metrics };
@@ -81,6 +81,7 @@ test('older concurrent probes cannot replace newer state or metrics', async () =
   let resolveSlow!: (response: Response) => void;
   const slow: Fetcher = () => new Promise(resolve => { resolveSlow = resolve; });
   const first = refreshKimiCodeUsageProbe('up_kimi_code', config, slow);
+  await vi.waitFor(() => expect(resolveSlow).toBeTypeOf('function'));
   vi.setSystemTime(2000);
   const newest = usage();
   newest.usages.limit_5h.used_ratio = 0.9;
@@ -120,7 +121,7 @@ test('request-time debounce, opt-out and scheduled intervals issue only due read
 test('probe errors preserve the network error and any persistence failure', async () => {
   const network = new Error('network failed');
   const disk = new Error('write failed');
-  initProviderRepo(() => ({ recordUpstreamMetric: async () => {}, upstreams: { getById: async () => null, saveState: async () => { throw disk; } } }));
+  initProviderRepo(() => ({ recordUpstreamMetric: async () => {}, upstreams: { getById: async () => ({ ...record(), configVersion: 1 }), saveState: async () => { throw disk; } } }));
   try {
     await refreshKimiCodeUsageProbe('up_kimi_code', config, () => Promise.reject(network));
     throw new Error('Expected failure');
@@ -128,4 +129,17 @@ test('probe errors preserve the network error and any persistence failure', asyn
     expect(error).toBeInstanceOf(AggregateError);
     expect((error as AggregateError).errors).toEqual([network, disk]);
   }
+});
+
+test.each([
+  { ...profile, nickname: '' },
+  { ...profile, user_level_name: '' },
+  { user_id: profile.user_id, nickname: profile.nickname, user_level_name: profile.user_level_name },
+])('profile parsing accepts zero display values and absent goods version: %j', async body => {
+  const repo = setupRepo();
+  await withMockedFetch(() => Response.json(body), async () => {
+    const observation = await refreshKimiCodeAccountProbe('up_kimi_code', config, testFetcher);
+    expect(observation.data).toEqual({ userId: body.user_id, nickname: body.nickname, planName: body.user_level_name });
+    expect(repo.read().accountProbe?.observation).toEqual(observation);
+  });
 });
