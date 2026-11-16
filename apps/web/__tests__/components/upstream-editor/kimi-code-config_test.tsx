@@ -52,7 +52,7 @@ test('redacted read-only connections retain the subscription quota card', () => 
   expect(screen.queryByRole('button', { name: i18n.t('dashboard.upstreamEditor.kimiCode.usage.refresh') })).toBeNull();
 });
 
-test('Kimi Code model details lead with the catalog display name and omit token pricing', () => {
+test('Kimi Code model details lead with the catalog display name and show the pricing panel for unpriced models', () => {
   renderInApp(<ModelDetail
     onChange={() => {}} onDelete={() => {}} onSourceChange={() => {}} onUpstreamModelIdCommit={() => {}}
     readOnly record={kimiCodeRecord()} revealValidation={false} section="details" upstreamFlags={{}}
@@ -61,5 +61,17 @@ test('Kimi Code model details lead with the catalog display name and omit token 
   expect(screen.getByRole('heading', { name: 'K2.8 Preview' })).toBeTruthy();
   expect(screen.getByDisplayValue('kimi-k2.8-preview')).toBeTruthy();
   expect(screen.queryByDisplayValue('kimi-for-coding')).toBeNull();
-  expect(screen.queryByRole('heading', { name: i18n.t('dashboard.upstreamEditor.models.pricing') })).toBeNull();
+  expect(screen.getByRole('heading', { name: i18n.t('dashboard.upstreamEditor.models.pricing') })).toBeTruthy();
+});
+
+test('catalog-owned Kimi Code model pricing stays read-only for editable connections', () => {
+  const onChange = vi.fn();
+  renderInApp(<ModelDetail
+    onChange={onChange} onDelete={() => {}} onSourceChange={() => {}} onUpstreamModelIdCommit={() => {}}
+    readOnly={false} record={kimiCodeRecord()} revealValidation={false} section="details" upstreamFlags={{}}
+    row={{ key: 'auto:k3.1-pro', source: 'auto', manualIndex: null, hasAuto: true, config: { upstreamModelId: 'k3.1-pro', publicModelId: 'kimi-k3.1-pro', display_name: 'K3.1 Pro', kind: 'chat', endpoints: { openaiChatCompletions: {} }, pricing: { entries: [{ rates: { input_tokens: '0.000002' } }] } } }}
+  />);
+  expect(screen.getByRole('heading', { name: i18n.t('dashboard.upstreamEditor.models.pricing') })).toBeTruthy();
+  expect(screen.getByDisplayValue<HTMLInputElement>('2').readOnly).toBe(true);
+  expect(onChange).not.toHaveBeenCalled();
 });

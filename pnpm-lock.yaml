@@ -718,6 +718,9 @@ importers:
       '@floway-dev/provider-copilot':
         specifier: workspace:*
         version: link:../packages/provider-copilot
+      '@floway-dev/provider-kimi-code':
+        specifier: workspace:*
+        version: link:../packages/provider-kimi-code
       '@floway-dev/provider-ollama':
         specifier: workspace:*
         version: link:../packages/provider-ollama

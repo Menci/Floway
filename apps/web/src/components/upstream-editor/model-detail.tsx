@@ -275,14 +275,14 @@ export function ModelDetail({
           </>}
         </EditorSection>}
 
-        {record.kind !== 'kimi-code' && <EditorSection level={3} title={t('dashboard.upstreamEditor.models.pricing')} description={t('dashboard.upstreamEditor.models.pricingHint')}>
+        <EditorSection level={3} title={t('dashboard.upstreamEditor.models.pricing')} description={t('dashboard.upstreamEditor.models.pricingHint')}>
           <PricingEditor
             readOnly={fieldsReadOnly}
             kind={row.config.kind}
             onChange={pricing => patch({ pricing })}
             value={row.config.pricing}
           />
-        </EditorSection>}
+        </EditorSection>
 
         {!fieldsReadOnly && <Button icon={<DeleteRegular />} onClick={onDelete}>
           {t('dashboard.upstreamEditor.models.delete')}

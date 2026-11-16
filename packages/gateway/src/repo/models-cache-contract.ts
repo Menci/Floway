@@ -3,7 +3,8 @@ import type { UpstreamModelsCache } from '@floway-dev/provider';
 // Persisted ProviderModel rows contain code-derived metadata as well as the
 // upstream response. Increment this whenever that derived catalog contract or
 // its serialization changes so older rows become cold across deployments.
-export const MODEL_CATALOG_REVISION = 23;
+// Kimi Code catalogs now carry normalized model labels and API-equivalent pricing.
+export const MODEL_CATALOG_REVISION = 25;
 
 const AUTOMATIC_REFRESH_INTERVAL_MS = 10 * 60_000;
 

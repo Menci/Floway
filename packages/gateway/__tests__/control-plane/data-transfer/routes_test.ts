@@ -1984,7 +1984,7 @@ test('invalid upstream gauge imports fail before replacement deletes data', asyn
   assertEquals(await repo.upstreamMetrics.listAll(), [record]);
 });
 
-test('Kimi Code subscription credentials export and import without fabricated pricing or runtime observations', async () => {
+test('Kimi Code subscription credentials export and import without runtime observations', async () => {
   const { app, repo } = setup();
   const kimi = { ...CUSTOM_UPSTREAM, id: 'up_kimi_code', kind: 'kimi-code' as const, config: { region: 'china', apiKey: 'sk-kimi-fake-test-key' }, state: null };
   await saveUpstreamForTest(repo.upstreams, kimi);

@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 
 import { config, rawModel, record, speedCatalog } from './fixtures.ts';
 import { createKimiCodeProvider } from '../src/provider.ts';
+import { priceRequest } from '@floway-dev/protocols/common';
 import { initProviderRepo } from '@floway-dev/provider';
 import { noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -129,6 +130,9 @@ for (const protocol of ['chat', 'responses'] as const) test.each([
     for (const event of events) {
       const resource = 'response' in event ? event.response : event;
       expect(resource).toMatchObject({ model: rawId, service_tier: servedTier });
+      if (servedTier === 'priority') {
+        expect(priceRequest(model.pricing!, { serviceTier: servedTier }).rates?.input_tokens).toBe(publicId === 'kimi-k3.1-pro' ? '0.000004' : '0.0000019');
+      }
     }
   });
 });
@@ -162,6 +166,9 @@ test.each([
     if (start?.type !== 'message_start') throw new Error('Expected message_start');
     if (speed === undefined || speed === 'future-speed') expect(start.message.usage).not.toHaveProperty('speed');
     else expect(start.message.usage.speed).toBe(speed);
+    if (speed === 'fast') {
+      expect(priceRequest(model.pricing!, { serviceTier: start.message.usage.speed }).rates?.input_tokens).toBe(publicId === 'kimi-k3.1-pro' ? '0.000004' : '0.0000019');
+    }
     expect(events.some(event => event.type === 'message_stop')).toBe(true);
   });
 });

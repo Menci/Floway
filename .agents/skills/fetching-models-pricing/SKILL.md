@@ -12,9 +12,10 @@ Maintain the per-token rate cards in:
 | Copilot | `packages/provider-copilot/src/pricing.ts` | Copilot `/models` | model vendor's first-party API |
 | ChatGPT | `packages/provider-chatgpt/src/pricing.ts` | authenticated `/codex/models` | OpenAI API pricing |
 | Claude Code | `packages/provider-claude-code/src/pricing.ts` | authenticated Anthropic `/v1/models` | Anthropic API pricing |
+| Kimi Code | `packages/provider-kimi-code/src/pricing.ts` | Kimi Code `/models` | Moonshot API pricing |
 | Ollama | `packages/provider-ollama/src/pricing.ts` | `/api/tags` + `/api/show` | Ollama official standard rates; vendor/host valuation for other models |
 
-Copilot, ChatGPT and Claude Code use API-equivalent valuation. Ollama uses its
+Copilot, ChatGPT, Claude Code and Kimi Code use API-equivalent valuation. Ollama uses its
 published standard token rates for covered models and retains vendor/host
 valuation for other models. These are request estimates; account consumption
 from `/api/usage` includes Ollama billing adjustments such as off-peak discounts.
@@ -138,6 +139,8 @@ ineligible.
   normalizes nothing itself.
 - Claude Code resolves pricing from the dated raw upstream id before catalog
   aliases are merged into public ids.
+- Kimi Code uses the final public family id after lane merging. Its opaque
+  `kimi-for-coding` channel and `-highspeed` sibling name different model versions.
 - ChatGPT and Ollama use the raw upstream slug directly.
 
 ## Source Cautions

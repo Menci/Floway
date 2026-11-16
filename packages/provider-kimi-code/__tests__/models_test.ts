@@ -2,6 +2,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 
 import { config, rawModel, record, speedCatalog } from './fixtures.ts';
 import { createKimiCodeProvider } from '../src/provider.ts';
+import { priceRequest } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import { testFetcher, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -74,6 +75,11 @@ test.each([false, true])('the published catalog labels grouped families while pr
     expect(models.map(model => [model.upstreamModelId, model.display_name, model.id])).toEqual(expect.arrayContaining(expected));
     expect(models.map(model => model.providerData)).toEqual(expect.arrayContaining([{ standardModelId: 'kimi-for-coding' }, { fastModelId: 'kimi-for-coding-highspeed' }, { standardModelId: 'k3' }, { standardModelId: 'k3.1-pro', fastModelId: 'k3.1-pro-highspeed' }]));
     expect(models.some(model => model.id === 'kimi-for-coding')).toBe(false);
+    expect(models.find(model => model.id === 'kimi-k2.8-preview')?.pricing).toBeUndefined();
+    expect(models.find(model => model.id === 'kimi-k3-256k')).toBeUndefined();
+    expect(priceRequest(models.find(model => model.id === 'kimi-k3')!.pricing!, {}).rates?.input_tokens).toBe('0.000003');
+    expect(priceRequest(models.find(model => model.id === 'kimi-k3.1-pro')!.pricing!, { serviceTier: 'priority' }).rates?.output_tokens).toBe('0.00002');
+    expect(priceRequest(models.find(model => model.id === 'kimi-k2.7-code')!.pricing!, { serviceTier: 'fast' }).rates?.input_tokens).toBe('0.0000019');
   });
 });
 
