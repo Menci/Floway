@@ -22,6 +22,20 @@ const displayOf = (
 };
 afterEach(() => setLanguage('en'));
 
+it('localizes Kimi Code subscription windows without exposing internal window ids', async () => {
+  for (const [language, remaining, usage] of [
+    ['en', ['5-hour remaining', 'Monthly remaining', '7-day remaining'], ['5-hour usage', 'Monthly usage', '7-day usage']],
+    ['zh-Hans', ['5 小时余量', '月度余量', '7 天余量'], ['5 小时用量', '月度用量', '7 天用量']],
+  ] as const) {
+    await setLanguage(language);
+    for (const [index, window] of ['five_hour', 'monthly', 'weekly'].entries()) {
+      const identity = { name: 'quota.used_percent', labels: { window } };
+      expect(displayOf('kimi-code', identity, 'remaining')).toMatchObject({ name: remaining[index], unit: 'percent' });
+      expect(displayOf('kimi-code', identity, 'used')).toMatchObject({ name: usage[index], unit: 'percent' });
+    }
+  }
+});
+
 it('renders arbitrary label values independently of JavaScript object prototypes', () => {
   for (const quota of ['constructor', '__proto__', 'toString', 'future_metric']) {
     expect(displayOf('copilot', { name: 'quota.remaining', labels: { quota } })).toMatchObject({ name: `${quota} remaining`, unit: 'count', windowSeconds: null });

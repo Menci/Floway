@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { currentUsage, kimiCodeRecord, legacyUsage } from './kimi-code-fixture';
 import { creditBalance, legacyBalance, usageTotals } from './ollama-usage-fixture';
 import type { UpstreamRecord } from '../../../src/api/types';
 import { upstreamReadout } from '../../../src/components/upstreams/signals';
@@ -33,6 +34,23 @@ const rowOf = (record: unknown) => {
 };
 
 describe('upstream readout by provider', () => {
+  it('reports Kimi Code quota independently of optional account details', () => {
+    const record = kimiCodeRecord(currentUsage);
+    expect(readoutOf(record, 'used')).toMatchObject({
+      plan: 'Kimi Code', signals: [
+        { key: 'five_hour', percent: 20, value: '20%', label: '5-hour window' },
+        { key: 'monthly', percent: 70, value: '70%', label: 'Monthly window' },
+      ],
+    });
+    expect(readoutOf(kimiCodeRecord(legacyUsage), 'remaining').signals.map(signal => [signal.key, signal.value]))
+      .toEqual([['five_hour', '90%'], ['weekly', '70%']]);
+    record.state!.accountProbe = {
+      attemptedAt: 1000, error: null,
+      observation: { fetchedAt: 1000, data: { userId: 'fake-user', nickname: '', planName: 'Pro', goodsVersion: 2 } },
+    };
+    expect(readoutOf(record).plan).toBe('Pro');
+    expect(readoutOf(kimiCodeRecord(null)).signals).toEqual([]);
+  });
   it('names the provider itself when the upstream publishes nothing about its account', () => {
     expect(readoutOf({ kind: 'custom', config: { baseUrl: 'https://api.openai.com' } }))
       .toEqual({ plan: 'Custom', signals: [] });

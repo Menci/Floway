@@ -65,6 +65,7 @@ const zhHansCN = {
       copilot: 'Copilot',
       chatgpt: 'ChatGPT',
       'claude-code': 'Claude Code',
+      'kimi-code': 'Kimi Code',
       ollama: 'Ollama',
     },
     dashboard: {
@@ -517,6 +518,7 @@ const zhHansCN = {
           copilot: 'GitHub Copilot 账号',
           chatgpt: 'ChatGPT Plus、Pro 或 Team',
           'claude-code': 'Claude Pro、Max 或 Team 订阅',
+          'kimi-code': 'Kimi Code 订阅',
           ollama: 'ollama.com 或自托管服务',
         },
         models: {
@@ -1030,12 +1032,27 @@ const zhHansCN = {
           },
         },
         usageRefresh: {
-          title: '后台刷新余额',
+          title: '后台刷新用量',
           description: '填 0 或留空禁用后台刷新。不会额外消耗模型额度。',
           claudeCodeRequirement: '需要使用 OAuth 登录。',
           ollamaRequirement: '需要开启「获取账号余额」功能。',
           interval: '刷新间隔（分钟）',
           invalid: '请输入大于或等于 0 的整数分钟数。',
+        },
+        kimiCode: {
+          region: '区域',
+          regions: { china: '中国', overseas: '海外' },
+          usage: {
+            title: '订阅额度',
+            load: '加载',
+            refresh: '刷新',
+            window: { five_hour: '5 小时窗口', monthly: '每月窗口', weekly: '每周窗口' },
+            resets: '{{time}} 重置',
+            monthlyCodeShare: '其中 Kimi Code 已用共享月度额度的 {{percent, number}}%。',
+            updated: '更新于 {{time}}',
+            empty: '加载订阅用量，检查密钥和可用额度。',
+            backgroundFailed: '最近一次后台刷新失败：{{message}}',
+          },
         },
         ollama: {
           cloudUsage: '获取账号余额',
@@ -1219,6 +1236,7 @@ const zhHansCN = {
         metrics: {
           window: '{{name}} {{window}}',
           usage: '{{window}}用量', remaining: '{{window}}余量',
+          monthlyUsage: '月度用量', monthlyRemaining: '月度余量',
           namedUsage: '{{window}} {{name}} 用量', namedRemaining: '{{window}} {{name}} 余量',
           includedAllowance: '套餐额度',
           extraUsage: '超额用量',

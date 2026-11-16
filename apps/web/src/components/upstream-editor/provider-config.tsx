@@ -16,6 +16,7 @@ import { CustomIngressHeaderRules } from './custom-ingress-header-rules';
 import type { UpstreamEditorValues } from './data';
 import { isPersisted, previewRecord } from './data';
 import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, PATH_OVERRIDE_PATHS } from './endpoints';
+import { KimiCodeUsageCard } from './kimi-code-usage-card';
 import { useMonoLabelClass } from './mono-label';
 import { OAuthCallbackImport } from './oauth-callback-import';
 import { OllamaUsageCard } from './ollama-usage-card';
@@ -79,6 +80,7 @@ export function ProviderConfigSection({
   if (record.kind === 'custom') return <CustomConfig modelsFetchReadOnly={modelsFetchReadOnly} onRefreshModels={onRefreshModels} readOnly={readOnly} />;
   if (record.kind === 'azure') return <AzureConfig readOnly={readOnly} />;
   if (record.kind === 'ollama') return <OllamaConfig readOnly={readOnly} record={record} />;
+  if (record.kind === 'kimi-code') return <KimiCodeConfig readOnly={readOnly} record={record} />;
   if (record.kind === 'copilot') return <CopilotConfig onPatch={onPatch} readOnly={readOnly} record={record} />;
   return <OAuthConfig onPatch={onPatch} readOnly={readOnly} record={record} />;
 }
@@ -251,9 +253,38 @@ function OllamaConfig({ readOnly, record }: { readOnly: boolean; record: Extract
   </div>;
 }
 
+function KimiCodeConfig({ readOnly, record }: { readOnly: boolean; record: Extract<UpstreamRecord, { kind: 'kimi-code' }> }) {
+  const { t } = useTranslation();
+  const { control } = useFormContext<ValuesForKind<'kimi-code'>>();
+  const values = useWatch<UpstreamEditorValues>() as UpstreamEditorValues;
+  const config = values.config as typeof record.config;
+  const matchesStoredConnection = config.region === record.config.region && config.apiKey === record.config.apiKey;
+  return <div className="grid gap-4">
+    <Controller control={control} name="config.region" render={({ field }) => (
+      <Field label={t('dashboard.upstreamEditor.kimiCode.region')}>
+        <Dropdown
+          readOnly={readOnly}
+          selectedOptions={[field.value]}
+          value={t(`dashboard.upstreamEditor.kimiCode.regions.${field.value}`)}
+          onOptionSelect={(_, data) => field.onChange(data.optionValue)}
+        >
+          {(['china', 'overseas'] as const).map(region => <Option key={region} value={region}>{t(`dashboard.upstreamEditor.kimiCode.regions.${region}`)}</Option>)}
+        </Dropdown>
+      </Field>
+    )} />
+    <SecretField readOnly={readOnly} />
+    {(readOnly || Boolean(config.apiKey?.trim())) && <KimiCodeUsageCard
+      key={`${config.region}:${config.apiKey}`}
+      readOnly={readOnly}
+      record={readOnly || matchesStoredConnection ? record : { ...record, state: null }}
+      probeRecord={previewRecord(record, values)}
+    />}
+  </div>;
+}
+
 function SecretField({ optional, readOnly }: { optional?: boolean; readOnly: boolean }) {
   const { t } = useTranslation();
-  const { control } = useFormContext<ValuesForKind<'custom' | 'azure' | 'ollama'>>();
+  const { control } = useFormContext<ValuesForKind<'custom' | 'azure' | 'ollama' | 'kimi-code'>>();
   const [visible, setVisible] = useState(false);
   return <Field
     label={`${t('dashboard.upstreamEditor.fields.apiKey')}${optional ? ` (${t('dashboard.upstreamEditor.optional')})` : ''}`}

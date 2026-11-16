@@ -8,6 +8,7 @@ import { latestCredits, latestQuotaEntry, planLabel as chatgptPlanLabel, quotaEn
 import { findCredential, planLabel as claudeCodePlanLabel, quotaWindows, rateLimitedUntil, WINDOW_MINUTES } from './claude-code-account';
 import { copilotQuota, copilotQuotaName, readBuckets } from './copilot-quota';
 import { planLabel as copilotPlanLabel } from './copilot-seat';
+import { kimiCodePlanLabel, readKimiCodeWindows, type KimiCodeRecord } from './kimi-code-account';
 import { planLabel as ollamaPlanLabel } from './ollama-account';
 import { activityCostHint, activityCostText, includedCreditsHint, includedCreditsUsed, readWindows } from './ollama-usage';
 import { providerLabel } from './provider-badge';
@@ -22,6 +23,7 @@ import { useNow } from '../../lib/use-now';
 import { useUserPreferences } from '../../lib/use-preferences';
 import { ProgressRing } from '../ui/progress-ring';
 import type { QuotaDisplay } from '@floway-dev/protocols/browser';
+import { readKimiCodeUsage } from '@floway-dev/provider-kimi-code/browser';
 import { readOllamaAccountUsage } from '@floway-dev/provider-ollama/browser';
 
 const { Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
@@ -241,6 +243,21 @@ const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: T
   return signals;
 };
 
+const kimiCodeSignals = (record: KimiCodeRecord, t: TFunction, locale: string, quotaDisplay: QuotaDisplay): UpstreamSignal[] => {
+  const observation = record.state?.usageProbe?.observation ?? null;
+  if (observation === null) return [];
+  return readKimiCodeWindows(readKimiCodeUsage(observation.data)).map(window => {
+    const label = t(`dashboard.upstreamEditor.kimiCode.usage.window.${window.id}`);
+    return {
+      key: window.id,
+      percent: window.percent,
+      value: shownPercent(t, window.percent, quotaDisplay),
+      label,
+      detail: meterDetail(t, label, window.percent, quotaDisplay, window.resetsAt, observation.fetchedAt, locale),
+    };
+  });
+};
+
 const upstreamSignals = (record: UpstreamRecord, t: TFunction, locale: string, now: number, quotaDisplay: QuotaDisplay): UpstreamSignal[] => {
   switch (record.kind) {
   // An operator-configured endpoint publishes no account of its own to report on.
@@ -251,6 +268,7 @@ const upstreamSignals = (record: UpstreamRecord, t: TFunction, locale: string, n
   case 'chatgpt': return chatgptSignals(record, t, locale, now, quotaDisplay);
   case 'claude-code': return claudeCodeSignals(record, t, locale, now, quotaDisplay);
   case 'ollama': return ollamaSignals(record, t, locale, quotaDisplay);
+  case 'kimi-code': return kimiCodeSignals(record, t, locale, quotaDisplay);
   }
 };
 
@@ -265,6 +283,7 @@ const upstreamPlan = (record: UpstreamRecord): string | null => {
     return null;
   case 'copilot': return copilotPlanLabel(record);
   case 'ollama': return ollamaPlanLabel(record);
+  case 'kimi-code': return kimiCodePlanLabel(record);
   case 'chatgpt': return chatgptPlanLabel(record.config.accounts[0]);
   case 'claude-code': return claudeCodePlanLabel(record.config.accounts[0]);
   }

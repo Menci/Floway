@@ -1,10 +1,13 @@
 import { fireEvent, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import { ProviderConfigHarness } from './provider-config-harness';
 import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
+import { primeDefaultSession } from '../../test-session';
+
+beforeEach(() => { primeDefaultSession(); });
 
 const apiKeyLabel = i18n.t('dashboard.upstreamEditor.fields.apiKey');
 const showLabel = i18n.t('dashboard.upstreamEditor.actions.showSecret');
@@ -36,6 +39,10 @@ const ollamaRecord = (apiKey: string) => upstreamRecord('up_ollama', {
   state: null,
 });
 
+const kimiCodeRecord = (apiKey: string) => upstreamRecord('up_kimi', {
+  kind: 'kimi-code', config: { region: 'overseas', apiKey }, state: null,
+});
+
 // The optional variant appends its qualifier to the label.
 const keyInput = () => screen.getByLabelText(new RegExp(`^${apiKeyLabel}`)) as HTMLInputElement;
 
@@ -44,6 +51,7 @@ describe('the API key field', () => {
     ['custom', customRecord],
     ['azure', azureRecord],
     ['ollama', ollamaRecord],
+    ['kimi-code', kimiCodeRecord],
   ])('opens a %s upstream on its stored key, masked, and reveals it on demand', (_kind, record) => {
     renderInApp(<ProviderConfigHarness record={record('sk-live-key')} />);
 

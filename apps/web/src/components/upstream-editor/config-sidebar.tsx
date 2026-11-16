@@ -115,7 +115,7 @@ export function UpstreamConfigSidebar({
               onRefreshModels={onRefreshModels}
             />
           </EditorSection>
-          {(record.kind === 'copilot' || record.kind === 'chatgpt' || record.kind === 'claude-code' || record.kind === 'ollama') && <EditorSection
+          {(record.kind === 'copilot' || record.kind === 'chatgpt' || record.kind === 'claude-code' || record.kind === 'ollama' || record.kind === 'kimi-code') && <EditorSection
             title={t('dashboard.upstreamEditor.usageRefresh.title')}
           >
             <Controller control={control} name="usageRefreshIntervalMinutes" render={({ field }) => (
@@ -177,10 +177,11 @@ export const buildDisabledModelOptions = (
   catalogAvailable: boolean,
 ) => {
   const availableIds = new Set([...discovered, ...manual].map(publicModelId).filter(Boolean));
+  const names = new Map([...discovered, ...manual].map(model => [publicModelId(model), model.display_name]));
   const missingIds = catalogAvailable ? new Set(disabled.filter(id => !availableIds.has(id))) : new Set<string>();
   return [...new Set([...availableIds, ...disabled])]
     .toSorted((left, right) => left.localeCompare(right))
-    .map(id => ({ id, missing: missingIds.has(id) }));
+    .map(id => ({ id, label: names.get(id) ?? id, missing: missingIds.has(id) }));
 };
 
 function DisabledModelsCombobox({ catalogAvailable, discovered, readOnly }: { catalogAvailable: boolean; discovered: UpstreamModelConfig[]; readOnly: boolean }) {
@@ -197,13 +198,16 @@ function DisabledModelsCombobox({ catalogAvailable, discovered, readOnly }: { ca
     <MultiselectCombobox
       ariaLabel={t('dashboard.upstreamEditor.sections.disabledModels')}
       onChange={next => setValue('disabledPublicModelIds', next, { shouldDirty: true })}
-      options={valuesAsOptions(options.map(option => option.id))}
+      options={options.map(option => ({ value: option.id, label: option.label }))}
       readOnly={readOnly}
       placeholder={disabled.length === 0
         ? t('dashboard.upstreamEditor.disabledModelsPlaceholder')
         : t('dashboard.upstreamEditor.disabledModelsSelected', { count: disabled.length })}
-      renderOption={({ value }) => <span className="flex items-center justify-between gap-3 min-w-0 w-full">
-        <span className="font-mono min-w-0 truncate">{value}</span>
+      renderOption={({ value, label }) => <span className="flex items-center justify-between gap-3 min-w-0 w-full">
+        <span className="grid min-w-0">
+          <span className="truncate">{label}</span>
+          {label !== value && <span className="font-mono text-fui-fg2 truncate">{value}</span>}
+        </span>
         {missing.includes(value) && <StatusBadge tone="warning">{t('dashboard.upstreamEditor.disabledModelsUnavailable')}</StatusBadge>}
       </span>}
       value={disabled}

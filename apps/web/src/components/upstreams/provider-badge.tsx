@@ -5,6 +5,7 @@ import { Link } from 'react-router';
 import azureIconUrl from '../../assets/azure-color.svg?no-inline';
 import claudeIconUrl from '../../assets/claude-color.svg?no-inline';
 import githubCopilotIconUrl from '../../assets/githubcopilot.svg?no-inline';
+import kimiIconUrl from '../../assets/kimi.svg?no-inline';
 import ollamaIconUrl from '../../assets/ollama.svg?no-inline';
 import openaiIconUrl from '../../assets/openai.svg?no-inline';
 import { fluentComponents } from '../../fluent';
@@ -25,6 +26,7 @@ const providerLabels: Record<UpstreamProviderKind, string> = {
   copilot: 'Copilot',
   chatgpt: 'ChatGPT',
   'claude-code': 'Claude Code',
+  'kimi-code': 'Kimi Code',
   ollama: 'Ollama',
 };
 
@@ -114,6 +116,7 @@ const providerIconUrls: Record<Exclude<UpstreamProviderKind, 'custom'>, string> 
   copilot: githubCopilotIconUrl,
   chatgpt: openaiIconUrl,
   'claude-code': claudeIconUrl,
+  'kimi-code': kimiIconUrl,
   ollama: ollamaIconUrl,
 };
 
@@ -124,6 +127,7 @@ const providerIconMaskSizes: Record<Exclude<UpstreamProviderKind, 'custom'>, str
   copilot: '100% 100%',
   chatgpt: '80% 80%',
   'claude-code': '80% 80%',
+  'kimi-code': '80% 80%',
   ollama: '86% 86%',
 };
 

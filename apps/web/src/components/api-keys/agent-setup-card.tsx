@@ -383,7 +383,10 @@ function ModelSelect({ family, info, label, models, onChange, picker, value }: {
       {defaultVisible && <Option value={MODEL_DEFAULT}>{defaultLabel}</Option>}
       {filtered.map(option => (
         <Option key={option.value} text={option.label} value={option.value}>
-          <span className="font-mono truncate">{option.label}</span>
+          <span className="grid min-w-0">
+            <span className="truncate">{option.label}</span>
+            {option.label !== option.value && <span className="font-mono text-fui-fg2 truncate">{option.value}</span>}
+          </span>
         </Option>
       ))}
     </Combobox>

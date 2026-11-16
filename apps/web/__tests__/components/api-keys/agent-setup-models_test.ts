@@ -87,6 +87,12 @@ describe('Agent Setup persisted model values', () => {
 });
 
 describe('Agent Setup model picker', () => {
+  it('labels subscription models by catalog name while retaining the public model id', () => {
+    const options = modelOptions([catalogModel('kimi-k2.8-preview', { display_name: 'K2.8 Preview' })], 'codex', 'default');
+    expect(options).toEqual([{ value: 'kimi-k2.8-preview', label: 'K2.8 Preview' }]);
+    expect(filterModelOptions(options, 'k2.8')).toEqual(options);
+    expect(filterModelOptions(options, 'kimi-k2.8-preview')).toEqual(options);
+  });
   it('offers the full chat catalog while ranking the requested family', () => {
     const options = modelOptions([
       catalogModel('gpt-5.6', { contextWindow: 400_000 }),

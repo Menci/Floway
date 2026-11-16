@@ -4,6 +4,7 @@ import { resolveUpstreamMetricDisplaySeries, type UpstreamMetricDisplay, type Up
 import { resolveUpstreamMetricDisplays as chatgptDisplays } from '@floway-dev/provider-chatgpt/browser';
 import { resolveUpstreamMetricDisplays as claudeCodeDisplays } from '@floway-dev/provider-claude-code/browser';
 import { resolveUpstreamMetricDisplays as copilotDisplays } from '@floway-dev/provider-copilot/browser';
+import { resolveUpstreamMetricDisplays as kimiCodeDisplays } from '@floway-dev/provider-kimi-code/browser';
 import { resolveUpstreamMetricDisplays as ollamaDisplays } from '@floway-dev/provider-ollama/browser';
 
 export type ResolvedUpstreamMetricDisplay = UpstreamMetricDisplay;
@@ -32,6 +33,8 @@ const providerLabelKeys: ReadonlyArray<UpstreamMetricLabelKey> = [
   'dashboard.upstreamMetrics.metrics.extraUsage',
   'dashboard.upstreamMetrics.metrics.includedAllowance',
   'dashboard.upstreamMetrics.metrics.includedBalance',
+  'dashboard.upstreamMetrics.metrics.monthlyRemaining',
+  'dashboard.upstreamMetrics.metrics.monthlyUsage',
   'dashboard.upstreamMetrics.metrics.namedRemaining',
   'dashboard.upstreamMetrics.metrics.namedUsage',
   'dashboard.upstreamMetrics.metrics.past24HoursCost',
@@ -61,6 +64,7 @@ const decodeProviderMetrics = (
   case 'chatgpt': return chatgptDisplays(samples, options);
   case 'copilot': return copilotDisplays(samples, options);
   case 'claude-code': return claudeCodeDisplays(samples, options);
+  case 'kimi-code': return kimiCodeDisplays(samples, options);
   case 'ollama': return ollamaDisplays(samples, options);
   default: return resolveUpstreamMetricDisplaySeries(samples, options, () => null);
   }

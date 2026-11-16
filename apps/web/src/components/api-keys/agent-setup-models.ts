@@ -106,6 +106,8 @@ export const buildAgentModelOptions = (
   return options;
 };
 
-export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'codex' | 'pi' | 'omp', picker: ClaudePicker) =>
-  buildAgentModelOptions(models, family === 'claude' ? { family, picker } : { family })
-    .map(option => ({ value: option.value, label: option.publicModelId }));
+export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'codex' | 'pi' | 'omp', picker: ClaudePicker) => {
+  const names = new Map(models.map(model => [model.id, model.display_name]));
+  return buildAgentModelOptions(models, family === 'claude' ? { family, picker } : { family })
+    .map(option => ({ value: option.value, label: names.get(option.publicModelId) ?? option.publicModelId }));
+};
