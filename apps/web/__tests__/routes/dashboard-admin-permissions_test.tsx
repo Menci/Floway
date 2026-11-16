@@ -296,6 +296,62 @@ test('has one filter toolbar, subtitle and no tabs or redundant rule count', asy
   expect(toggle.checked).toBe(false);
 });
 
+test('a confirmed delete retires its rule and its confirmation without reading the page again', async () => {
+  const originalFetch = vi.mocked(fetch).getMockImplementation()!;
+  const requests: string[] = [];
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(String(input), 'http://localhost').pathname;
+    requests.push(`${init?.method ?? 'GET'} ${path}`);
+    if (path === '/api/access-records/2' && init?.method === 'DELETE') return Response.json({ ok: true });
+    return originalFetch(input, init);
+  }));
+  const { container } = renderPage();
+  await screen.findByRole('table');
+  const reads = () => requests.filter(request => request.includes('/api/permissions')).length;
+  const before = reads();
+  const row = container.querySelector('[data-rule-id="2"]') as HTMLElement;
+  await act(async () => { fireEvent.click(within(row).getByRole('button', { name: 'Delete rule' })); });
+  const confirmation = screen.getByRole('dialog');
+  await act(async () => { fireEvent.click(within(confirmation).getByRole('button', { name: 'Delete rule' })); });
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(container.querySelector('[data-rule-id="2"]')).toBeNull();
+  expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(2);
+  expect(reads()).toBe(before);
+  expect(await screen.findByText('Deleted rule')).toBeTruthy();
+});
+
+test('an effective view drops a deleted rule before its resolution arrives', async () => {
+  const originalFetch = vi.mocked(fetch).getMockImplementation()!;
+  const deleted = new Set<number>();
+  let holdResolution = false;
+  let release!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = new URL(String(input), 'http://localhost').pathname;
+    if (path === '/api/access-records/3' && init?.method === 'DELETE') { deleted.add(3); return Response.json({ ok: true }); }
+    if (path === '/api/access-resolve') {
+      if (holdResolution) await held;
+      const response = await originalFetch(input, init);
+      const body = await response.json() as { records: Array<{ id: number }>; decisions: Array<{ recordId: number }> };
+      const records = body.records.filter(record => !deleted.has(record.id));
+      return Response.json({ ...body, records, decisions: body.decisions.filter(decision => !deleted.has(decision.recordId)) });
+    }
+    return await originalFetch(input, init);
+  }));
+  const { container } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}&effective=true`);
+  await screen.findByRole('table');
+  await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(3));
+  const row = container.querySelector('[data-rule-id="3"]') as HTMLElement;
+  await act(async () => { fireEvent.click(within(row).getByRole('button', { name: 'Delete rule' })); });
+  const confirmation = screen.getByRole('dialog');
+  holdResolution = true;
+  await act(async () => { fireEvent.click(within(confirmation).getByRole('button', { name: 'Delete rule' })); });
+  await waitFor(() => expect(container.querySelector('[data-rule-id="3"]')).toBeNull());
+  expect([...container.querySelectorAll<HTMLElement>('[data-rule-id]')].map(element => element.dataset.ruleId)).toEqual(['1', '2']);
+  await act(async () => { release(); await held; });
+  await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(2));
+});
+
 test('locks all mutations while deleting and restores them after a failed write', async () => {
   const originalFetch = vi.mocked(fetch).getMockImplementation()!;
   let finish!: (response: Response) => void;
