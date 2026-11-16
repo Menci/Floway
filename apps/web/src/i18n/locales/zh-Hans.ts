@@ -498,7 +498,7 @@ const zhHansCN = {
           used: '{{label}}：已用{{percent, number}}%',
           resets: '{{time}} 重置',
           observed: '观测于 {{time}}',
-          window: { primary: '主窗口', secondary: '次窗口' },
+          window: { primary: '主窗口', secondary: '次窗口', monthly: '月度' },
           rateLimited: '限流',
           rateLimitedDetail: '该上游在 {{time}} 之前拒绝请求',
           credits: '{{balance, number}} Credit',

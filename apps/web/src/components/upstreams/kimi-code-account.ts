@@ -12,7 +12,7 @@ export const kimiCodeAccountName = (account: KimiCodeAccount): string =>
 
 export const kimiCodePlanLabel = (record: KimiCodeRecord): string | null => {
   const account = kimiCodeAccount(record);
-  return account === null || account.planName === '' ? null : account.planName;
+  return account === null || account.planName === '' ? null : `Kimi ${account.planName}`;
 };
 
 export const readKimiCodeWindows = (usage: KimiCodeAccountUsage) =>

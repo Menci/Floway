@@ -120,14 +120,14 @@ const providerIconUrls: Record<Exclude<UpstreamProviderKind, 'custom'>, string> 
   ollama: ollamaIconUrl,
 };
 
-// The source SVGs share a 24×24 viewBox but not optical weight; these scales
-// normalize each silhouette to ServerRegular's 16px height inside a 20px box.
+// Normalize silhouettes with different viewBoxes and optical weights to
+// ServerRegular's 16px height inside a 20px box.
 const providerIconMaskSizes: Record<Exclude<UpstreamProviderKind, 'custom'>, string> = {
   azure: '85% 85%',
   copilot: '100% 100%',
   chatgpt: '80% 80%',
   'claude-code': '80% 80%',
-  'kimi-code': '80% 80%',
+  'kimi-code': '85% 85%',
   ollama: '86% 86%',
 };
 

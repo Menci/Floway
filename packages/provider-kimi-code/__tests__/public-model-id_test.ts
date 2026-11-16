@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { parseKimiCodeModelName, publicKimiCodeModelId } from '../src/public-model-id.ts';
+import { kimiCodeModelLabel, parseKimiCodeModelName, publicKimiCodeModelId } from '../src/public-model-id.ts';
 
 const versions = ['K2.7', 'K2.8', 'K3', 'K3.1', 'K4', 'K4.2'];
 
@@ -48,4 +48,32 @@ test.each([
 
 test('the live non-opaque Highspeed row derives its id from the raw catalog id', () => {
   expect(publicKimiCodeModelId('k3.1-pro-highspeed', 'K3.1 Pro Highspeed 2x Usage Cost')).toBe('kimi-k3.1-pro');
+});
+
+test.each(versions.flatMap(version => ['', 'Preview', 'Code', 'Pro'].map(family => [version, family])))('presentation normalizes version %s and family %s independently of identity', (version, family) => {
+  const expected = `Kimi ${version}${family === '' ? '' : ` ${family}`}`;
+  const name = `${version}${family === '' ? '' : ` ${family}`}`;
+  for (const variant of [name, `Kimi ${name}`, `kImI ${name.toLowerCase()}`, name.toLowerCase().replace(' ', '-'), name.replace('Pro', 'pRo'), `  ${name.toLowerCase().replace(' ', '   ')}  `]) {
+    for (const suffix of ['', ' Highspeed', ' hIgHsPeEd 2x Usage Cost', ' Highspeed (2x Usage Cost)', ' (Highspeed 2x Usage Cost)']) {
+      expect(kimiCodeModelLabel(`${variant}${suffix}`)).toBe(expected);
+    }
+  }
+});
+
+test.each([
+  ['K9.9 Experimental', 'Kimi K9.9 Experimental'],
+  ['k9.9 eXpErImEnTaL', 'Kimi K9.9 eXpErImEnTaL'],
+  ['K9.9 Experimental Highspeed 2x Usage Cost', 'Kimi K9.9 Experimental'],
+  ['K3 Mini Highspeed', 'Kimi K3 Mini'],
+  ['Kimi K3 Mini (Highspeed 2x Usage Cost)', 'Kimi K3 Mini'],
+  ['Kimiko Ultra', 'Kimi Kimiko Ultra'],
+  ['K3 HighspeedX', 'Kimi K3 HighspeedX'],
+  ['K3 MiniHighspeed', 'Kimi K3 MiniHighspeed'],
+])('presentation labels %s as %s without broadening model identity', (name, expected) => {
+  expect(kimiCodeModelLabel(name)).toBe(expected);
+  expect(parseKimiCodeModelName(name)).toBeNull();
+});
+
+test.each(['', '   ', 'Kimi', ' KIMI ', 'Highspeed', 'Highspeed 2x Usage Cost', '(Highspeed)', 'Kimi (Highspeed 2x Usage Cost)'])('presentation rejects empty or marker-only name %j', name => {
+  expect(() => kimiCodeModelLabel(name)).toThrow(TypeError);
 });

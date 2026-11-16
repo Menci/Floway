@@ -29,3 +29,17 @@ export const publicKimiCodeModelId = (upstreamModelId: string, displayName: stri
     ? null
     : `kimi-${name.version}${name.family === undefined ? '' : `-${name.family}`}`;
 };
+
+// Presentation accepts branded, hyphenated and unknown names independently of
+// the strict catalog identity grammar used to pair request-time lanes.
+export const kimiCodeModelLabel = (displayName: string): string => {
+  const name = displayName.trim()
+    .replace(/^kimi(?:\s+|$)/i, '')
+    .replace(/(?:^|[\s(-]+)highspeed\b[\s\S]*$/i, '')
+    .trim();
+  if (name === '') throw new TypeError('Kimi Code model display name must contain a model name');
+  const match = /^(k\d+(?:\.\d+)?)(?:[\s-]+(preview|code|pro))?$/i.exec(name);
+  if (match === null) return `Kimi ${name.replace(/^k(?=\d)/i, 'K')}`;
+  const family = match[2]?.toLowerCase();
+  return `Kimi ${match[1].replace(/^k/i, 'K')}${family === undefined ? '' : ` ${family[0].toUpperCase()}${family.slice(1)}`}`;
+};

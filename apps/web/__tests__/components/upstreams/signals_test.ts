@@ -5,6 +5,7 @@ import { creditBalance, legacyBalance, usageTotals } from './ollama-usage-fixtur
 import type { UpstreamRecord } from '../../../src/api/types';
 import { upstreamReadout } from '../../../src/components/upstreams/signals';
 import en from '../../../src/i18n/locales/en';
+import zhHans from '../../../src/i18n/locales/zh-Hans';
 import type { TFunction } from '../../../src/i18n/translation';
 
 const OBSERVED = '2026-07-28T11:00:00.000Z';
@@ -12,14 +13,13 @@ const OBSERVED = '2026-07-28T11:00:00.000Z';
 // The real resources rather than a key echo, so the assertions read as the copy
 // an operator sees and a key that does not exist fails here rather than
 // rendering as itself.
-const resolve = (key: string): unknown =>
-  key.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown> | undefined)?.[part], en.translation);
-
-const t = ((key: string, values?: Record<string, unknown>) => {
-  const template = resolve(key);
+const translationFor = (resource: Record<string, unknown>) => ((key: string, values?: Record<string, unknown>) => {
+  const template = key.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown> | undefined)?.[part], resource);
   if (typeof template !== 'string') throw new Error(`Missing i18n key: ${key}`);
   return template.replace(/\{\{(\w+)[^}]*\}\}/g, (_, name: string) => String(values?.[name]));
 }) as unknown as TFunction;
+
+const t = translationFor(en.translation);
 
 // Intl writes a narrow no-break space before a day-period (U+202F), which a
 // literal expectation cannot spell readably; collapsing it keeps the assertion
@@ -38,18 +38,40 @@ describe('upstream readout by provider', () => {
     const record = kimiCodeRecord(currentUsage);
     expect(readoutOf(record, 'used')).toMatchObject({
       plan: 'Kimi Code', signals: [
-        { key: 'five_hour', percent: 20, value: '20%', label: '5-hour window' },
-        { key: 'monthly', percent: 70, value: '70%', label: 'Monthly window' },
+        { key: 'five_hour', percent: 20, value: '20%', label: '5h' },
+        { key: 'monthly', percent: 70, value: '70%', label: 'Monthly' },
       ],
     });
-    expect(readoutOf(kimiCodeRecord(legacyUsage), 'remaining').signals.map(signal => [signal.key, signal.value]))
-      .toEqual([['five_hour', '90%'], ['weekly', '70%']]);
+    expect(readoutOf(kimiCodeRecord(legacyUsage), 'remaining').signals.map(signal => [signal.key, signal.value, signal.label]))
+      .toEqual([['five_hour', '90%', '5h'], ['weekly', '70%', '7d']]);
     record.state!.accountProbe = {
       attemptedAt: 1000, error: null,
       observation: { fetchedAt: 1000, data: { userId: 'fake-user', nickname: '', planName: 'Pro' } },
     };
-    expect(readoutOf(record).plan).toBe('Pro');
+    expect(readoutOf(record).plan).toBe('Kimi Pro');
     expect(readoutOf(kimiCodeRecord(null)).signals).toEqual([]);
+  });
+  it.each([
+    ['en', en, 'Kimi Ultra:  ◔ 11% 5h  ◔ 4% Monthly', '7d', ['5h: 11% used', 'Monthly: 4% used']],
+    ['zh-Hans', zhHans, 'Kimi Ultra：  ◔ 11% 5 小时  ◔ 4% 月度', '7 天', ['5 小时：已用11%', '月度：已用4%']],
+  ] as const)('uses compact calendar and duration copy in %s rows and tooltip headings', (locale, resource, expectedRow, weeklyLabel, detailHeadings) => {
+    const translate = translationFor(resource.translation);
+    const record = kimiCodeRecord({
+      ...currentUsage,
+      usages: {
+        limit_5h: { used_ratio: 0.11, reset_time: '2026-12-01T00:00:00Z' },
+        limit_month_total: { used_ratio: 0.04, reset_time: '2026-12-01T00:00:00Z' },
+        limit_month_code: { used_ratio: 0.04, reset_time: '2026-12-01T00:00:00Z' },
+      },
+    });
+    record.state!.accountProbe = {
+      attemptedAt: 1000, error: null,
+      observation: { fetchedAt: 1000, data: { userId: 'fake-user', nickname: '', planName: 'Ultra' } },
+    };
+    const { plan, signals } = upstreamReadout(record, translate, locale, NOW, 'used');
+    expect([translate('dashboard.upstreams.signals.plan', { plan }), ...signals.map(signal => `◔ ${signal.value} ${signal.label}`)].join('  ')).toBe(expectedRow);
+    expect(signals.map(signal => signal.detail.split('\n')[0])).toEqual(detailHeadings);
+    expect(upstreamReadout(kimiCodeRecord(legacyUsage), translate, locale, NOW, 'used').signals[1].label).toBe(weeklyLabel);
   });
   it('names the provider itself when the upstream publishes nothing about its account', () => {
     expect(readoutOf({ kind: 'custom', config: { baseUrl: 'https://api.openai.com' } }))

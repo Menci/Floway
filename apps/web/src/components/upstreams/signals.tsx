@@ -12,7 +12,7 @@ import { kimiCodePlanLabel, readKimiCodeWindows, type KimiCodeRecord } from './k
 import { planLabel as ollamaPlanLabel } from './ollama-account';
 import { activityCostHint, activityCostText, includedCreditsHint, includedCreditsUsed, readWindows } from './ollama-usage';
 import { providerLabel } from './provider-badge';
-import { quotaRingTone, WALL_CLOCK_REFRESH_MS, windowLengthLabel } from './subscription-quota';
+import { FIVE_HOUR_WINDOW_MINUTES, quotaRingTone, SEVEN_DAY_WINDOW_MINUTES, WALL_CLOCK_REFRESH_MS, windowLengthLabel } from './subscription-quota';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { type TFunction, useTranslation } from '../../i18n/translation';
@@ -247,7 +247,9 @@ const kimiCodeSignals = (record: KimiCodeRecord, t: TFunction, locale: string, q
   const observation = record.state?.usageProbe?.observation ?? null;
   if (observation === null) return [];
   return readKimiCodeWindows(readKimiCodeUsage(observation.data)).map(window => {
-    const label = t(`dashboard.upstreamEditor.kimiCode.usage.window.${window.id}`);
+    const label = window.id === 'monthly'
+      ? t('dashboard.upstreams.signals.window.monthly')
+      : windowLengthLabel(window.id === 'five_hour' ? FIVE_HOUR_WINDOW_MINUTES : SEVEN_DAY_WINDOW_MINUTES, locale);
     return {
       key: window.id,
       percent: window.percent,

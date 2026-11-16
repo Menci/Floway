@@ -17,7 +17,7 @@ test('the live catalog owns model capabilities, context, thinking requirement an
     const models = await provider.instance.getProvidedModels(testFetcher);
     expect(models).toHaveLength(3);
     expect(models[0]).toMatchObject({
-      id: 'kimi-arbitrary-model', display_name: 'A catalog model', upstreamModelId: 'arbitrary-model', kind: 'chat',
+      id: 'kimi-arbitrary-model', display_name: 'Kimi A catalog model', upstreamModelId: 'arbitrary-model', kind: 'chat',
       limits: { max_context_window_tokens: 1_048_576 },
       endpoints: { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} },
       chat: { modalities: { input: ['text', 'image'], output: ['text'] }, reasoning: { mandatory: true, effort: { supported: ['low', 'high', 'max'], default: 'high' } } },
@@ -59,18 +59,20 @@ test('malformed catalog metadata fails through the shared model-discovery error 
   });
 });
 
-test('the published catalog exposes presentation ids while preserving raw upstream identities', async () => {
+test.each([false, true])('the published catalog labels grouped families while preserving raw identities (reversed: %s)', async reversed => {
   const expected = [
-    ['kimi-for-coding', 'K2.8 Preview', 'kimi-k2.8-preview'],
-    ['kimi-for-coding-highspeed', 'K2.7 Code Highspeed', 'kimi-k2.7-code'],
-    ['k3', 'K3', 'kimi-k3'],
-    ['k3.1-pro', 'K3.1 Pro', 'kimi-k3.1-pro'],
+    ['kimi-for-coding', 'Kimi K2.8 Preview', 'kimi-k2.8-preview'],
+    ['kimi-for-coding-highspeed', 'Kimi K2.7 Code', 'kimi-k2.7-code'],
+    ['k3', 'Kimi K3', 'kimi-k3'],
+    ['k3.1-pro', 'Kimi K3.1 Pro', 'kimi-k3.1-pro'],
   ];
   const provider = createKimiCodeProvider(record());
-  await withMockedFetch(() => Response.json({ data: speedCatalog() }), async () => {
+  const catalog = speedCatalog();
+  await withMockedFetch(() => Response.json({ data: reversed ? catalog.toReversed() : catalog }), async () => {
     const models = await provider.instance.getProvidedModels(testFetcher);
-    expect(models.map(model => [model.upstreamModelId, model.display_name, model.id])).toEqual(expected);
-    expect(models.map(model => model.providerData)).toEqual([{ standardModelId: 'kimi-for-coding' }, { fastModelId: 'kimi-for-coding-highspeed' }, { standardModelId: 'k3' }, { standardModelId: 'k3.1-pro', fastModelId: 'k3.1-pro-highspeed' }]);
+    expect(models).toHaveLength(expected.length);
+    expect(models.map(model => [model.upstreamModelId, model.display_name, model.id])).toEqual(expect.arrayContaining(expected));
+    expect(models.map(model => model.providerData)).toEqual(expect.arrayContaining([{ standardModelId: 'kimi-for-coding' }, { fastModelId: 'kimi-for-coding-highspeed' }, { standardModelId: 'k3' }, { standardModelId: 'k3.1-pro', fastModelId: 'k3.1-pro-highspeed' }]));
     expect(models.some(model => model.id === 'kimi-for-coding')).toBe(false);
   });
 });
@@ -86,7 +88,7 @@ test('a same-version lane inherits its base presentation and intersects context 
     const models = await provider.instance.getProvidedModels(testFetcher);
     expect(models).toHaveLength(1);
     expect(models[0]).toMatchObject({
-      id: 'kimi-k9.9-code', display_name: 'K9.9 Code', upstreamModelId: 'kimi-for-coding',
+      id: 'kimi-k9.9-code', display_name: 'Kimi K9.9 Code', upstreamModelId: 'kimi-for-coding',
       providerData: { standardModelId: 'kimi-for-coding', fastModelId: 'kimi-for-coding-highspeed' },
       limits: { max_context_window_tokens: 262_144 }, chat: { modalities: { input: ['text'], output: ['text'] } },
     });

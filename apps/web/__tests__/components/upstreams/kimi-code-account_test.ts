@@ -17,5 +17,7 @@ test('account identity is optional and empty names retain a readable identity', 
   record.state!.accountProbe = { attemptedAt: 1000, observation: { fetchedAt: 1000, data: account }, error: null };
   expect(kimiCodeAccountName(account)).toBe('fake-user');
   expect(kimiCodeAccountName({ ...account, nickname: 'Operator' })).toBe('Operator');
-  expect(kimiCodePlanLabel(record)).toBe('Allegretto');
+  expect(kimiCodePlanLabel(record)).toBe('Kimi Allegretto');
+  account.planName = '';
+  expect(kimiCodePlanLabel(record)).toBeNull();
 });

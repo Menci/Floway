@@ -1,7 +1,7 @@
 import type { KimiCodeUpstreamConfig } from './config.ts';
 import { kimiCodeFetch } from './fetch.ts';
 import type { KimiCodeProviderData } from './model-selection.ts';
-import { parseKimiCodeModelName, publicKimiCodeModelId } from './public-model-id.ts';
+import { kimiCodeModelLabel, parseKimiCodeModelName, publicKimiCodeModelId } from './public-model-id.ts';
 import { object, string, number } from './validation.ts';
 import { fetchUpstreamModels, identityWrapUpstreamCall, ProviderModelsUnavailableError, type Fetcher, type FlagId, type ProviderModel } from '@floway-dev/provider';
 
@@ -99,7 +99,7 @@ const projectCatalog = (value: unknown, enabledFlags: ReadonlySet<FlagId>): Prov
     publicIds.add(family.id);
   }
   if (families.length === 0) throw new TypeError('Kimi Code catalog contains no publishable models');
-  return families;
+  return families.map(model => ({ ...model, display_name: kimiCodeModelLabel(model.display_name) }));
 };
 
 export const fetchKimiCodeModels = (config: KimiCodeUpstreamConfig, fetcher: Fetcher, enabledFlags: ReadonlySet<FlagId>): Promise<ProviderModel[]> =>
