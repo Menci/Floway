@@ -88,10 +88,10 @@ test('saved quota and profile actions persist observations, metrics and a redact
   await withMockedFetch(request => Response.json(request.url.endsWith('/usages') ? quota : profile), async () => {
     const response = await requestApp('/api/upstreams/kimi-code/usage', authed(adminSession, { record: upstreamRecordToFullJson(record) }));
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ observation: { data: quota }, account: { data: { userId: 'fake-user', nickname: 'Test account', planName: 'Ultra' } }, accountError: null });
+    expect(await response.json()).toMatchObject({ observation: { data: quota }, account: { data: { userId: 'fake-user', globalId: null, nickname: 'Test account', status: '', region: '', userLevel: 0, userLevelName: 'Ultra', domain: 0, domainName: '', goodsVersion: 2, username: null, email: null, bio: null, avatar: null, phone: null, createdTime: null, lastLoginTime: null } }, accountError: null });
   });
   const saved = (await repo.upstreams.getById(record.id))!;
-  expect(saved.state).toMatchObject({ usageProbe: { observation: { data: quota }, error: null }, accountProbe: { observation: { data: { planName: 'Ultra' } }, error: null } });
+  expect(saved.state).toMatchObject({ usageProbe: { observation: { data: quota }, error: null }, accountProbe: { observation: { data: { userLevelName: 'Ultra' } }, error: null } });
   expect(await repo.upstreamMetrics.listAll()).toHaveLength(2);
   expect(upstreamRecordToJson(saved)).toMatchObject({ kind: 'kimi-code', config: { region: 'china', apiKeySet: true }, state: saved.state });
 });
@@ -127,7 +127,7 @@ test('Kimi Code credential replacement clears account observations while regiona
   const { adminSession, repo } = await setupAppTest();
   const state = {
     usageProbe: { attemptedAt: 1, observation: { fetchedAt: 1, data: quota }, error: null },
-    accountProbe: { attemptedAt: 1, observation: { fetchedAt: 1, data: { userId: 'original-account', nickname: 'Original', planName: 'Ultra' } }, error: null },
+    accountProbe: { attemptedAt: 1, observation: { fetchedAt: 1, data: { userId: 'original-account', globalId: null, nickname: 'Original', status: '', region: '', userLevel: 0, userLevelName: 'Ultra', domain: 0, domainName: '', goodsVersion: 2, username: null, email: null, bio: null, avatar: null, phone: null, createdTime: null, lastLoginTime: null } }, error: null },
   };
   const record = kimiRecord({ state });
   await saveUpstreamForTest(repo.upstreams, record);

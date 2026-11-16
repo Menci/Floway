@@ -46,7 +46,7 @@ describe('upstream readout by provider', () => {
       .toEqual([['five_hour', '90%', '5h'], ['weekly', '70%', '7d']]);
     record.state!.accountProbe = {
       attemptedAt: 1000, error: null,
-      observation: { fetchedAt: 1000, data: { userId: 'fake-user', nickname: '', planName: 'Pro' } },
+      observation: { fetchedAt: 1000, data: { userId: 'fake-user', globalId: null, nickname: '', status: '', region: '', userLevel: 0, userLevelName: 'Pro', domain: 0, domainName: '', goodsVersion: null, username: null, email: null, bio: null, avatar: null, phone: null, createdTime: null, lastLoginTime: null } },
     };
     expect(readoutOf(record).plan).toBe('Kimi Pro');
     expect(readoutOf(kimiCodeRecord(null)).signals).toEqual([]);
@@ -66,7 +66,7 @@ describe('upstream readout by provider', () => {
     });
     record.state!.accountProbe = {
       attemptedAt: 1000, error: null,
-      observation: { fetchedAt: 1000, data: { userId: 'fake-user', nickname: '', planName: 'Ultra' } },
+      observation: { fetchedAt: 1000, data: { userId: 'fake-user', globalId: null, nickname: '', status: '', region: '', userLevel: 0, userLevelName: 'Ultra', domain: 0, domainName: '', goodsVersion: null, username: null, email: null, bio: null, avatar: null, phone: null, createdTime: null, lastLoginTime: null } },
     };
     const { plan, signals } = upstreamReadout(record, translate, locale, NOW, 'used');
     expect([translate('dashboard.upstreams.signals.plan', { plan }), ...signals.map(signal => `◔ ${signal.value} ${signal.label}`)].join('  ')).toBe(expectedRow);

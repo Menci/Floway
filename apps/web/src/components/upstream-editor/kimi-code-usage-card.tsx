@@ -50,7 +50,7 @@ export function KimiCodeUsageCard({ probeRecord, readOnly = false, record }: { p
     {account !== null && <div className="flex items-center gap-3 min-w-0">
       <ProviderIcon kind="kimi-code" className="h-8 w-8 shrink-0" />
       <Text block className="min-w-0 flex-1" weight="semibold" truncate wrap={false}>{kimiCodeAccountName(account)}</Text>
-      {account.planName && <StatusBadge tone="accent">{account.planName}</StatusBadge>}
+      {account.userLevelName && <StatusBadge tone="accent">{account.userLevelName}</StatusBadge>}
     </div>}
     <SectionHeader level={3} title={t('dashboard.upstreamEditor.kimiCode.usage.title')} actions={!readOnly &&
       <ResourceListActions

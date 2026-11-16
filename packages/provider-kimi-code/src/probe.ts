@@ -3,7 +3,6 @@ import { kimiCodeFetch, readKimiCodeJson } from './fetch.ts';
 import { readKimiCodeUpstreamState, readKimiCodeAccount, type KimiCodeAccount, type KimiCodeObservation, type KimiCodeUpstreamState } from './state.ts';
 import { kimiCodeMetrics } from './upstream-metrics.ts';
 import { readKimiCodeUsage } from './usage.ts';
-import { object } from './validation.ts';
 import { getProviderRepo, identityWrapUpstreamCall, recordUpstreamMetrics, runScheduledUsageRefresh, type Fetcher, type ProviderScheduledOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 // Request-triggered probes require the last persisted attempt to be at least one
@@ -57,7 +56,10 @@ const refreshProbe = async <T>(
       try {
         await persistProbe(upstreamId, configVersion, slot, attemptedAt, null, error instanceof Error ? error.message : String(error));
       } catch (persistenceError) {
-        throw new AggregateError([error, persistenceError], 'Kimi Code probe and outcome persistence failed');
+        // Both failures matter and neither may be dropped. The aggregate's
+        // message is the read failure's, so a caller matching on the upstream
+        // status still sees it, while `errors` carries both.
+        throw new AggregateError([error, persistenceError], error instanceof Error ? error.message : String(error));
       }
     }
     throw error;
@@ -82,10 +84,7 @@ export const refreshKimiCodeUsageProbe = (upstreamId: string, config: KimiCodeUp
 // invalidate quota or inference.
 // https://github.com/MoonshotAI/kimi-code/blob/fec742878d73678082b304c887e4fb1564088c54/packages/oauth/src/managed-userinfo.ts#L43-L47
 export const refreshKimiCodeAccountProbe = (upstreamId: string, config: KimiCodeUpstreamConfig, fetcher: Fetcher): Promise<KimiCodeObservation<KimiCodeAccount>> =>
-  refreshProbe(upstreamId, config, fetcher, 'accountProbe', '/me', value => {
-    const body = object(value, 'Kimi Code /me');
-    return readKimiCodeAccount({ userId: body.user_id, nickname: body.nickname, planName: body.user_level_name });
-  });
+  refreshProbe(upstreamId, config, fetcher, 'accountProbe', '/me', readKimiCodeAccount);
 
 export const scheduleKimiCodeProbes = (record: UpstreamRecord, config: KimiCodeUpstreamConfig, fetcher: Fetcher, waitUntil: (promise: Promise<unknown>) => void, forceUsage: boolean): void => {
   const state = readKimiCodeUpstreamState(record.state);

@@ -139,7 +139,7 @@ test.each([
   const repo = setupRepo();
   await withMockedFetch(() => Response.json(body), async () => {
     const observation = await refreshKimiCodeAccountProbe('up_kimi_code', config, testFetcher);
-    expect(observation.data).toEqual({ userId: body.user_id, nickname: body.nickname, planName: body.user_level_name });
+    expect(observation.data).toMatchObject({ userId: body.user_id, nickname: body.nickname ?? '', userLevelName: body.user_level_name ?? '' });
     expect(repo.read().accountProbe?.observation).toEqual(observation);
   });
 });
