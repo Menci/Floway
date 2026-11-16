@@ -30,9 +30,12 @@ import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.
 import { OLLAMA_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchOllamaCatalog, type OllamaCatalog } from './fetch-models.ts';
 import { ollamaFetchDecision, ollamaFetchOpenAIAudioTranscriptions, ollamaFetchOpenAIChatCompletions, ollamaFetchOpenAICompletions, ollamaFetchOpenAIEmbeddings, ollamaFetchAnthropicMessages, ollamaFetchAnthropicMessagesCountTokens, ollamaFetchOpenAIResponses, ollamaFetchOpenAIResponsesCompact } from './fetch.ts';
+import { OLLAMA_OPENAI_CHAT_COMPLETIONS_BOUNDARY } from './interceptors/openai-chat-completions/index.ts';
+import type { OpenAIChatCompletionsBoundaryCtx } from './interceptors/openai-chat-completions/types.ts';
 import { pricingForOllamaModelKey } from './pricing.ts';
 import { readOllamaUpstreamState } from './state.ts';
 import { scheduleOllamaUsageProbe, runOllamaScheduledTask } from './usage-probe.ts';
+import { runInterceptors } from '@floway-dev/interceptor';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { DEFAULT_DECISION_PATHS, serializeDecisionRequest, type CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
@@ -184,7 +187,13 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       return [...manualModels, ...auto];
     },
     callOpenAICompletions: (model, body, signal, opts) => withProbes(opts, call(ollamaFetchOpenAICompletions, model, body, signal, [...opts.headers], opts)),
-    callOpenAIChatCompletions: (model, body, signal, opts) => withProbes(opts, callStreaming(ollamaFetchOpenAIChatCompletions, model, body, signal, [...opts.headers], parseOpenAIChatCompletionsStream, opts)),
+    callOpenAIChatCompletions: async (model, body, signal, opts) => {
+      const ctx: OpenAIChatCompletionsBoundaryCtx = { payload: body, model };
+      return await withProbes(opts, runInterceptors(
+        ctx, {}, OLLAMA_OPENAI_CHAT_COMPLETIONS_BOUNDARY,
+        async () => await callStreaming(ollamaFetchOpenAIChatCompletions, model, ctx.payload, signal, [...opts.headers], parseOpenAIChatCompletionsStream, opts),
+      ));
+    },
     callOpenAIResponses: async (model, body, action, signal, opts) => {
       switch (action) {
       case 'generate': {

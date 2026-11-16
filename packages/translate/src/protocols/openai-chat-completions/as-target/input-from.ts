@@ -278,12 +278,12 @@ export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): 
   const reasoningEffort = chatReasoningEffort(settings);
 
   return {
-    // State both cap spellings. OpenAI uses the replacement
-    // `max_completion_tokens`, while compatible targets such as Ollama still
-    // read only `max_tokens`.
+    // OpenAI replaces the deprecated `max_tokens` with `max_completion_tokens`,
+    // and compatible upstreams reject a request that carries both spellings.
+    // A target that only reads the legacy field renames this one at its own
+    // provider boundary.
     // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/chat/completions/completions.ts
-    // https://github.com/ollama/ollama/blob/c1db5f9/openai/openai.go
-    ...(ceiling === undefined ? {} : { max_tokens: ceiling, max_completion_tokens: ceiling }),
+    ...(ceiling === undefined ? {} : { max_completion_tokens: ceiling }),
     ...(settings.temperature === undefined ? {} : { temperature: settings.temperature }),
     ...(settings.top_p === undefined ? {} : { top_p: settings.top_p }),
     ...(settings.stop === undefined ? {} : { stop: [...settings.stop] }),
