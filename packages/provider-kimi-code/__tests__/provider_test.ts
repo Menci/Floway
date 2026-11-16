@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { config, rawModel, record } from './fixtures.ts';
+import { config, rawModel, record, speedCatalog } from './fixtures.ts';
 import { createKimiCodeProvider } from '../src/provider.ts';
 import { initProviderRepo } from '@floway-dev/provider';
 import { noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
@@ -28,7 +28,7 @@ for (const protocol of ['chat', 'responses', 'messages'] as const) test(`${proto
     const [model] = await provider.instance.getProvidedModels(testFetcher);
     expect(model.id).toBe('kimi-k9.9-preview');
     expect(model.upstreamModelId).toBe('kimi-for-coding');
-    expect(model.providerData).toBe('kimi-for-coding');
+    expect(model.providerData).toEqual({ standardModelId: 'kimi-for-coding' });
     const signal = new AbortController().signal;
     const payload = { thinking: { type: 'disabled' as const }, vendor_extension: { arbitrary: 'kept' } };
     const result = protocol === 'chat'
@@ -86,5 +86,152 @@ test('thinking remains absent when omitted and count_tokens issues no quota refr
     expect(await result.response.json()).toEqual({ input_tokens: 7 });
     expect(result.response.headers.get('x-count')).toBe('kept');
     expect(background).toHaveLength(0);
+  });
+});
+
+for (const protocol of ['chat', 'responses'] as const) test.each([
+  ['kimi-k3.1-pro', 'priority', 'k3.1-pro-highspeed', 'priority'],
+  ['kimi-k3.1-pro', 'fast', 'k3.1-pro-highspeed', 'priority'],
+  ['kimi-k3.1-pro', 'default', 'k3.1-pro', 'default'],
+  ['kimi-k3.1-pro', undefined, 'k3.1-pro', 'default'],
+  ['kimi-k3', 'priority', 'k3', 'default'],
+  ['kimi-k3', 'fast', 'k3', 'default'],
+  ['kimi-k2.8-preview', 'priority', 'kimi-for-coding', 'default'],
+  ['kimi-k2.8-preview', 'fast', 'kimi-for-coding', 'default'],
+  ['kimi-k2.7-code', 'priority', 'kimi-for-coding-highspeed', 'priority'],
+  ['kimi-k2.7-code', 'fast', 'kimi-for-coding-highspeed', 'priority'],
+  ['kimi-k3.1-pro', 'future-tier', 'k3.1-pro', 'future-tier'],
+])(`${protocol} selects %s at requested tier %s using raw id %s and reports %s`, async (publicId, requestedTier, rawId, servedTier) => {
+  const provider = createKimiCodeProvider(record());
+  await withMockedFetch(async request => {
+    if (request.url.endsWith('/models')) return Response.json({ data: speedCatalog() });
+    const body = await request.json() as Record<string, unknown>;
+    expect(body).toMatchObject({ model: rawId, vendor_extension: 'kept' });
+    if (requestedTier === undefined) expect(body).not.toHaveProperty('service_tier');
+    else expect(body.service_tier).toBe(servedTier);
+    expect(request.url).toBe(`https://api.kimi.com/coding/v1/${protocol === 'chat' ? 'chat/completions' : 'responses'}`);
+    const data = protocol === 'chat'
+      ? `data: ${JSON.stringify({ id: 'turn', object: 'chat.completion.chunk', created: 1, model: rawId, choices: [], usage: { prompt_tokens: 1, completion_tokens: 1 }, service_tier: body.service_tier === 'future-tier' ? 'future-tier' : 'default' })}\n\ndata: [DONE]\n\n`
+      : ['response.created', 'response.in_progress', 'response.completed'].map(type => `event: ${type}\ndata: ${JSON.stringify({ type, response: { id: 'turn', object: 'response', status: type === 'response.completed' ? 'completed' : 'in_progress', output: [], model: rawId, service_tier: body.service_tier === 'future-tier' ? 'future-tier' : 'default' } })}\n\n`).join('');
+    return new Response(data, { headers: { 'content-type': 'text/event-stream', 'x-upstream': 'kept' } });
+  }, async () => {
+    const model = (await provider.instance.getProvidedModels(testFetcher)).find(model => model.id === publicId)!;
+    const common = { service_tier: requestedTier, vendor_extension: 'kept' };
+    const result = protocol === 'chat'
+      ? await provider.instance.callOpenAIChatCompletions(model, { ...common, messages: [] }, undefined, noopUpstreamCallOptions())
+      : await provider.instance.callOpenAIResponses(model, { ...common, input: [] }, 'generate', undefined, noopUpstreamCallOptions());
+    expect(result.modelKey).toBe(rawId);
+    if (!result.ok || !('events' in result)) throw new Error('Expected a streaming result');
+    expect(result.headers?.get('x-upstream')).toBe('kept');
+    const events = [];
+    for await (const frame of result.events) if (frame.type === 'event') events.push(frame.event);
+    expect(events.length).toBeGreaterThan(0);
+    for (const event of events) {
+      const resource = 'response' in event ? event.response : event;
+      expect(resource).toMatchObject({ model: rawId, service_tier: servedTier });
+    }
+  });
+});
+
+test.each([
+  ['kimi-k3.1-pro', 'fast', 'k3.1-pro-highspeed'],
+  ['kimi-k3.1-pro', 'standard', 'k3.1-pro'],
+  ['kimi-k3.1-pro', undefined, 'k3.1-pro'],
+  ['kimi-k3.1-pro', 'future-speed', 'k3.1-pro'],
+  ['kimi-k3', 'standard', 'k3'],
+  ['kimi-k2.8-preview', 'standard', 'kimi-for-coding'],
+  ['kimi-k2.7-code', 'fast', 'kimi-for-coding-highspeed'],
+])('Anthropic selects %s at speed %s using %s and stamps the requested known speed', async (publicId, speed, rawId) => {
+  const provider = createKimiCodeProvider(record());
+  await withMockedFetch(async request => {
+    if (request.url.endsWith('/models')) return Response.json({ data: speedCatalog() });
+    const body = await request.json() as Record<string, unknown>;
+    expect(body).toMatchObject({ model: rawId, vendor_extension: 'kept' });
+    if (speed === 'future-speed') expect(body.speed).toBe(speed);
+    else expect(body).not.toHaveProperty('speed');
+    return new Response(frames.messages, { headers: { 'content-type': 'text/event-stream' } });
+  }, async () => {
+    const model = (await provider.instance.getProvidedModels(testFetcher)).find(model => model.id === publicId)!;
+    const payload = { speed, max_tokens: 64, messages: [], vendor_extension: 'kept' };
+    const result = await provider.instance.callAnthropicMessages(model, payload, undefined, noopAnthropicMessagesUpstreamCallOptions());
+    expect(result.modelKey).toBe(rawId);
+    if (!result.ok) throw new Error('Expected a streaming result');
+    const events = [];
+    for await (const frame of result.events) if (frame.type === 'event') events.push(frame.event);
+    const start = events.find(event => event.type === 'message_start');
+    if (start?.type !== 'message_start') throw new Error('Expected message_start');
+    if (speed === undefined || speed === 'future-speed') expect(start.message.usage).not.toHaveProperty('speed');
+    else expect(start.message.usage.speed).toBe(speed);
+    expect(events.some(event => event.type === 'message_stop')).toBe(true);
+  });
+});
+
+test.each(['kimi-k3', 'kimi-k2.8-preview'])('Anthropic refuses fast on %s before issuing any inference request', async publicId => {
+  const provider = createKimiCodeProvider(record());
+  let requests = 0;
+  await withMockedFetch(request => {
+    requests++;
+    expect(request.url).toBe('https://api.kimi.com/coding/v1/models');
+    return Response.json({ data: speedCatalog() });
+  }, async () => {
+    const model = (await provider.instance.getProvidedModels(testFetcher)).find(model => model.id === publicId)!;
+    const result = await provider.instance.callAnthropicMessages(model, { speed: 'fast', max_tokens: 64, messages: [] }, undefined, noopAnthropicMessagesUpstreamCallOptions());
+    if (result.ok) throw new Error('Expected unsupported speed error');
+    expect(result.modelKey).toBe(model.upstreamModelId);
+    expect(result.response.status).toBe(400);
+    expect(await result.response.json()).toEqual({ type: 'error', error: { type: 'invalid_request_error', message: `'${publicId}' does not support the \`speed\` parameter.` } });
+    expect(requests).toBe(1);
+  });
+});
+
+for (const protocol of ['chat', 'responses', 'messages'] as const) test(`${protocol} sends the catalog fast id for a matching opaque family, never the derived id`, async () => {
+  const provider = createKimiCodeProvider(record());
+  await withMockedFetch(async request => {
+    if (request.url.endsWith('/models')) return Response.json({
+      data: [
+        rawModel({ id: 'kimi-for-coding', display_name: 'K9.9 Code' }),
+        rawModel({ id: 'kimi-for-coding-highspeed', display_name: 'K9.9 Code Highspeed' }),
+      ],
+    });
+    expect(await request.json()).toMatchObject({ model: 'kimi-for-coding-highspeed' });
+    return new Response(frames[protocol], { headers: { 'content-type': 'text/event-stream' } });
+  }, async () => {
+    const [model] = await provider.instance.getProvidedModels(testFetcher);
+    expect(model.id).toBe('kimi-k9.9-code');
+    const result = protocol === 'chat'
+      ? await provider.instance.callOpenAIChatCompletions(model, { service_tier: 'fast', messages: [] }, undefined, noopUpstreamCallOptions())
+      : protocol === 'responses'
+        ? await provider.instance.callOpenAIResponses(model, { service_tier: 'priority', input: [] }, 'generate', undefined, noopUpstreamCallOptions())
+        : await provider.instance.callAnthropicMessages(model, { speed: 'fast', max_tokens: 64, messages: [] }, undefined, noopAnthropicMessagesUpstreamCallOptions());
+    expect(result.modelKey).toBe('kimi-for-coding-highspeed');
+    if (!result.ok || !('events' in result)) throw new Error('Expected a streaming result');
+    for await (const frame of result.events) expect(frame.type).toMatch(/event|done/);
+  });
+});
+
+for (const protocol of ['chat', 'responses', 'messages'] as const) test.each([undefined, null, 'standard', 'default', 'auto', 'flex', 'future-value'])(`${protocol} refuses the fast-only family when its speed selector is %s`, async selector => {
+  const provider = createKimiCodeProvider(record());
+  let requests = 0;
+  await withMockedFetch(request => {
+    requests++;
+    expect(request.url).toBe('https://api.kimi.com/coding/v1/models');
+    return Response.json({ data: speedCatalog() });
+  }, async () => {
+    const model = (await provider.instance.getProvidedModels(testFetcher)).find(model => model.id === 'kimi-k2.7-code')!;
+    const openAIFields = selector === undefined ? {} : { service_tier: selector };
+    const anthropicFields = selector === undefined ? {} : { speed: selector };
+    const result = protocol === 'chat'
+      ? await provider.instance.callOpenAIChatCompletions(model, { ...openAIFields, messages: [] }, undefined, noopUpstreamCallOptions())
+      : protocol === 'responses'
+        ? await provider.instance.callOpenAIResponses(model, { ...openAIFields, input: [] }, 'generate', undefined, noopUpstreamCallOptions())
+        : await provider.instance.callAnthropicMessages(model, { ...anthropicFields, max_tokens: 64, messages: [] }, undefined, noopAnthropicMessagesUpstreamCallOptions());
+    if (result.ok) throw new Error('Expected fast-only model error');
+    expect(result.modelKey).toBe('kimi-for-coding-highspeed');
+    expect(result.response.status).toBe(400);
+    expect(await result.response.json()).toEqual({
+      ...(protocol === 'messages' ? { type: 'error' } : {}),
+      error: { type: 'invalid_request_error', message: `'kimi-k2.7-code' is only available with fast mode selected; set \`${protocol === 'messages' ? 'speed: "fast"' : 'service_tier: "priority"'}\`.` },
+    });
+    expect(requests).toBe(1);
   });
 });

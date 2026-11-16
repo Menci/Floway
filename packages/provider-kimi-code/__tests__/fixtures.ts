@@ -29,3 +29,12 @@ export const rawModel = (overrides: Record<string, unknown> = {}) => ({
   supports_thinking_type: 'only', think_efforts: { support: true, valid_efforts: ['low', 'high', 'max'], default_effort: 'high' },
   ...overrides,
 });
+
+export const speedCatalog = () => [
+  rawModel({ id: 'kimi-for-coding', display_name: 'K2.8 Preview' }),
+  rawModel({ id: 'kimi-for-coding-highspeed', display_name: 'K2.7 Code Highspeed', context_length: 262_144 }),
+  rawModel({ id: 'k3', display_name: 'K3' }),
+  rawModel({ id: 'k3-256k', display_name: 'K3-256k', context_length: 262_144 }),
+  rawModel({ id: 'k3.1-pro', display_name: 'K3.1 Pro' }),
+  rawModel({ id: 'k3.1-pro-highspeed', display_name: 'K3.1 Pro Highspeed 2x Usage Cost' }),
+];

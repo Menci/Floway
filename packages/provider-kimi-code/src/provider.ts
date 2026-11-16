@@ -1,12 +1,24 @@
 import { assertKimiCodeUpstreamRecord } from './config.ts';
 import { KIMI_CODE_DEFAULT_FLAGS } from './defaults.ts';
 import { kimiCodeFetch } from './fetch.ts';
+import { kimiCodeFastModelId, selectKimiCodeModelId } from './model-selection.ts';
 import { fetchKimiCodeModels } from './models.ts';
 import { scheduleKimiCodeProbes, runKimiCodeScheduledTask } from './probe.ts';
+import { kimiCodeChatSpeedParser, kimiCodeMessagesSpeedParser, kimiCodeMessagesWireBody, kimiCodeResponsesSpeedParser } from './speed.ts';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
+import { FAST_SERVICE_TIER, isFastServiceTier } from '@floway-dev/protocols/common';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream } from '@floway-dev/protocols/openai-responses';
 import { headersForAnthropicMessagesCall, jsonRequestBody, resolveEffectiveFlags, streamingProviderCall, type HttpHeaderLines, type Provider, type ProviderInstance, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+
+const fastModeRequired = (model: ProviderModel, field: 'service_tier' | 'speed') => ({
+  ok: false as const,
+  response: Response.json({
+    ...(field === 'speed' ? { type: 'error' } : {}),
+    error: { type: 'invalid_request_error', message: `'${model.id}' is only available with fast mode selected; set \`${field}: "${field === 'speed' ? 'fast' : FAST_SERVICE_TIER}"\`.` },
+  }, { status: 400 }),
+  modelKey: model.upstreamModelId,
+});
 
 export const createKimiCodeProvider = (record: UpstreamRecord): Provider => {
   const { config } = assertKimiCodeUpstreamRecord(record);
@@ -15,9 +27,9 @@ export const createKimiCodeProvider = (record: UpstreamRecord): Provider => {
   // Forward thinking and effort unchanged. Some models advertise thinking-only
   // yet accept disabled thinking; the service's own rejection is authoritative.
   // https://www.kimi.com/code/docs/en/kimi-code/models.html
-  const call = async (path: string, model: ProviderModel, body: Record<string, unknown>, signal: AbortSignal | undefined, headers: HttpHeaderLines, opts: UpstreamCallOptions, probes: boolean) => {
+  const call = async (path: string, modelId: string, body: Record<string, unknown>, signal: AbortSignal | undefined, headers: HttpHeaderLines, opts: UpstreamCallOptions, probes: boolean) => {
     const response = await kimiCodeFetch(config, path,
-      { method: 'POST', body: jsonRequestBody({ ...body, model: model.upstreamModelId }), signal },
+      { method: 'POST', body: jsonRequestBody({ ...body, model: modelId }), signal },
       { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
     // Quota exhaustion (429) and plan restrictions (403) warrant a current read.
     // https://www.kimi.com/code/docs/en/kimi-code/error-reference.html
@@ -25,8 +37,8 @@ export const createKimiCodeProvider = (record: UpstreamRecord): Provider => {
     return response;
   };
 
-  const streaming = <T>(path: string, model: ProviderModel, body: Record<string, unknown>, signal: AbortSignal | undefined, headers: HttpHeaderLines, parser: ProviderStreamParser<T>, opts: UpstreamCallOptions) =>
-    streamingProviderCall(call(path, model, { ...body, stream: true }, signal, headers, opts, true), parser, model.upstreamModelId, signal);
+  const streaming = <T>(path: string, modelId: string, body: Record<string, unknown>, signal: AbortSignal | undefined, headers: HttpHeaderLines, parser: ProviderStreamParser<T>, opts: UpstreamCallOptions) =>
+    streamingProviderCall(call(path, modelId, { ...body, stream: true }, signal, headers, opts, true), parser, modelId, signal);
 
   const unsupported = (method: string) => () => Promise.reject(new Error(`Kimi Code provider does not implement ${method}`));
 
@@ -36,15 +48,40 @@ export const createKimiCodeProvider = (record: UpstreamRecord): Provider => {
   const instance: ProviderInstance = {
     getProvidedModels: fetcher => fetchKimiCodeModels(config, fetcher, enabledFlags),
     runScheduledTask: options => runKimiCodeScheduledTask(record, options),
-    callOpenAIChatCompletions: (model, body, signal, opts) => streaming('/chat/completions', model, body, signal, [...opts.headers], parseOpenAIChatCompletionsStream, opts),
+    callOpenAIChatCompletions: async (model, body, signal, opts) => {
+      const fast = isFastServiceTier(body.service_tier);
+      const modelId = selectKimiCodeModelId(model, fast);
+      if (modelId === undefined) return fastModeRequired(model, 'service_tier');
+      const tier = fast && kimiCodeFastModelId(model) !== undefined ? FAST_SERVICE_TIER : 'default';
+      return await streaming('/chat/completions', modelId, fast ? { ...body, service_tier: tier } : body, signal, [...opts.headers], fast ? kimiCodeChatSpeedParser(tier) : parseOpenAIChatCompletionsStream, opts);
+    },
     callOpenAIResponses: async (model, body, action, signal, opts) => {
       if (action === 'compact') throw new Error('Kimi Code does not expose a native Responses compaction endpoint');
-      const result = await streaming('/responses', model, body, signal, [...opts.headers], parseOpenAIResponsesStream, opts);
+      const fast = isFastServiceTier(body.service_tier);
+      const modelId = selectKimiCodeModelId(model, fast);
+      if (modelId === undefined) return { ...fastModeRequired(model, 'service_tier'), action: 'generate' };
+      const tier = fast && kimiCodeFastModelId(model) !== undefined ? FAST_SERVICE_TIER : 'default';
+      const result = await streaming('/responses', modelId, fast ? { ...body, service_tier: tier } : body, signal, [...opts.headers], fast ? kimiCodeResponsesSpeedParser(tier) : parseOpenAIResponsesStream, opts);
       return { ...result, action: 'generate' };
     },
-    callAnthropicMessages: (model, body, signal, opts) => streaming('/messages', model, body, signal, headersForAnthropicMessagesCall([...opts.headers], opts.anthropicBeta), parseAnthropicMessagesStream, opts),
+    callAnthropicMessages: async (model, body, signal, opts) => {
+      // Anthropic requires fast requests to fail when the model has no lane;
+      // OpenAI permits a standard-speed response carrying the actual tier.
+      // https://platform.claude.com/docs/en/build-with-claude/fast-mode
+      // https://developers.openai.com/api/docs/guides/priority-processing
+      if (body.speed === 'fast' && kimiCodeFastModelId(model) === undefined) {
+        return {
+          ok: false,
+          response: Response.json({ type: 'error', error: { type: 'invalid_request_error', message: `'${model.id}' does not support the \`speed\` parameter.` } }, { status: 400 }),
+          modelKey: model.upstreamModelId,
+        };
+      }
+      const modelId = selectKimiCodeModelId(model, body.speed === 'fast');
+      if (modelId === undefined) return fastModeRequired(model, 'speed');
+      return await streaming('/messages', modelId, kimiCodeMessagesWireBody(body), signal, headersForAnthropicMessagesCall([...opts.headers], opts.anthropicBeta), body.speed === 'fast' || body.speed === 'standard' ? kimiCodeMessagesSpeedParser(body.speed === 'fast' ? 'fast' : 'standard') : parseAnthropicMessagesStream, opts);
+    },
     callAnthropicMessagesCountTokens: async (model, body, signal, opts) => ({
-      response: await call('/messages/count_tokens', model, body, signal, headersForAnthropicMessagesCall([...opts.headers], opts.anthropicBeta), opts, false),
+      response: await call('/messages/count_tokens', model.upstreamModelId, kimiCodeMessagesWireBody(body), signal, headersForAnthropicMessagesCall([...opts.headers], opts.anthropicBeta), opts, false),
       modelKey: model.upstreamModelId,
     }),
     callAlphaSearch: unsupported('callAlphaSearch'),

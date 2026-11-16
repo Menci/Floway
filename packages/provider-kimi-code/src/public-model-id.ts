@@ -1,6 +1,7 @@
 // Public naming policy. The catalog's opaque `kimi-for-coding*` ids describe a
 // channel rather than a model, so their published ids are derived from the
-// catalog display name; every other id is published under a `kimi-` prefix.
+// catalog display name; every other family gets a `kimi-` prefix. Highspeed
+// names a request-time lane, so it does not survive in a public family id.
 // Only the derivation is presentation: the catalog id stays authoritative on
 // the wire, and a future explicit public-id catalog field would supersede it.
 // https://www.kimi.com/code/docs/en/kimi-code/models.html
@@ -11,10 +12,21 @@
 // https://www.kimi.com/code/docs/en/kimi-code/models.html
 const OPAQUE_CODING_ID = /^kimi-for-coding(?:-|$)/;
 
+export const parseKimiCodeModelName = (displayName: string): { version: string; family?: string } | null => {
+  // Family words define identity; prose after Highspeed is advertising copy,
+  // as in the catalog's "K3.1 Pro Highspeed 2x Usage Cost" display name.
+  // https://www.kimi.com/code/docs/en/kimi-code/models.html
+  const match = /^(k\d+(?:\.\d+)?)(?:\s+(preview|code|pro))?(?:\s+(highspeed)(?:\s+.*)?)?$/i.exec(displayName.trim());
+  if (match === null) return null;
+  const family = match[2]?.toLowerCase();
+  if (family === 'preview' && match[3] !== undefined) return null;
+  return { version: match[1].toLowerCase(), ...(family === undefined ? {} : { family }) };
+};
+
 export const publicKimiCodeModelId = (upstreamModelId: string, displayName: string): string | null => {
-  if (!OPAQUE_CODING_ID.test(upstreamModelId)) return `kimi-${upstreamModelId}`;
-  const match = /^\s*(k\d+\.\d+)(?:\s+(preview|code))?(?:\s+highspeed)?\s*$/i.exec(displayName);
-  return match === null
+  if (!OPAQUE_CODING_ID.test(upstreamModelId)) return `kimi-${upstreamModelId.replace(/-highspeed$/, '')}`;
+  const name = parseKimiCodeModelName(displayName);
+  return name === null
     ? null
-    : `kimi-${match[1].toLowerCase()}${match[2] === undefined ? '' : `-${match[2].toLowerCase()}`}${upstreamModelId.endsWith('-highspeed') ? '-highspeed' : ''}`;
+    : `kimi-${name.version}${name.family === undefined ? '' : `-${name.family}`}`;
 };
