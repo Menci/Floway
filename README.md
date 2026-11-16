@@ -48,3 +48,12 @@ pnpm run dev:node
 ## License
 
 MIT
+
+## Sponsors
+
+<a href="https://memoh.net/">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/sponsor-memoh-dark.svg">
+    <img alt="Memoh — give your agent a cloud computer" src=".github/assets/sponsor-memoh-light.svg" width="100%">
+  </picture>
+</a>
