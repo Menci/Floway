@@ -48,6 +48,9 @@ export type UpstreamEditorLoaderData = UpstreamEditorLoaderDataBase & (
 // record.
 export const isPersisted = (record: UpstreamRecord): boolean => record.id !== '';
 
+export const isOAuthUpstream = (record: UpstreamRecord): boolean =>
+  record.kind === 'copilot' || record.kind === 'chatgpt' || record.kind === 'claude-code';
+
 export const hasUnsavedDiscoveryInputs = (
   dirtyFields: Partial<Record<keyof UpstreamEditorValues, unknown>>,
 ): boolean => [dirtyFields.config, dirtyFields.state, dirtyFields.proxyFallbackList, dirtyFields.flagOverrides].some(Boolean);
@@ -82,6 +85,7 @@ export const providerDefaultName: Record<UpstreamProviderKind, string> = {
   copilot: 'GitHub Copilot',
   chatgpt: 'ChatGPT',
   'claude-code': 'Claude Code',
+  'kimi-code': 'Kimi Code',
   ollama: 'Ollama',
 };
 
@@ -114,6 +118,8 @@ export const canFetchModelCatalog = (record: UpstreamRecord, config: UpstreamEdi
   }
   case 'ollama':
     return Boolean((config as Extract<UpstreamRecord, { kind: 'ollama' }>['config']).baseUrl);
+  case 'kimi-code':
+    return isPersisted(record) || Boolean((config as Extract<UpstreamRecord, { kind: 'kimi-code' }>['config']).apiKey?.trim());
   case 'azure':
     return false;
   default:
@@ -223,7 +229,7 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
         ],
         modelsFetch: withRegisteredKey('endpoint', structuredClone(record.config.modelsFetch)),
       }
-    : record.kind === 'azure' || record.kind === 'ollama'
+    : record.kind === 'azure' || record.kind === 'ollama' || record.kind === 'kimi-code'
       ? withApiKeyField(record.config)
       : structuredClone(record.config);
   const manualModels = manualModelsSupported(record) ? structuredClone(record.config.models) : [];
@@ -246,14 +252,10 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
 // is assembled structurally and only becomes a specific union member here.
 const configFromValues = (record: UpstreamRecord, values: UpstreamEditorValues): UpstreamRecord['config'] => {
   const config = structuredClone(values.config) as unknown as Record<string, unknown>;
-  if (manualModelsSupported(record)) {
-    config.models = structuredClone(values.manualModels);
-    // The input carries the stored key, so an emptied field is the operator
-    // clearing it. Sending the empty value lets the provider reject a required
-    // credential and an optional one drop it; a missing key here would instead
-    // leave the stored one in place through the patch merge.
-    if (typeof config.apiKey === 'string') config.apiKey = config.apiKey.trim();
-  }
+  // An emptied key must reach the provider as a cleared credential; omitting
+  // it would let the config merge restore the stored key.
+  if (typeof config.apiKey === 'string') config.apiKey = config.apiKey.trim();
+  if (manualModelsSupported(record)) config.models = structuredClone(values.manualModels);
   if (record.kind === 'custom') {
     const custom = config as Record<string, unknown>;
     if (custom.authStyle === 'none') delete custom.apiKey;
@@ -303,7 +305,7 @@ export const createBody = (record: UpstreamRecord, values: UpstreamEditorValues)
     proxy_fallback_list: values.proxyFallbackList,
     model_prefix: values.modelPrefix,
     config: configFromValues(record, values),
-    ...((record.kind === 'copilot' || record.kind === 'chatgpt' || record.kind === 'claude-code')
+    ...(isOAuthUpstream(record)
       ? { state: values.state }
       : {}),
   } as CreateUpstreamBody;
@@ -330,7 +332,7 @@ export const updateBody = (record: UpstreamRecord, values: UpstreamEditorValues,
     disabled_public_model_ids: values.disabledPublicModelIds,
     proxy_fallback_list: values.proxyFallbackList,
     model_prefix: values.modelPrefix,
-    ...(manualModelsSupported(record) ? { config: configFromValues(record, values) } : {}),
+    ...(!isOAuthUpstream(record) ? { config: configFromValues(record, values) } : {}),
   } as UpdateUpstreamBody;
 };
 

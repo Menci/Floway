@@ -23,6 +23,7 @@ import { assertChatGPTUpstreamRecord, assertChatGPTUpstreamState } from '@floway
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { parseCopilotUpstreamConfig } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
+import { assertKimiCodeUpstreamRecord } from '@floway-dev/provider-kimi-code';
 import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
 import { parseProxyUri } from '@floway-dev/proxy';
 
@@ -119,6 +120,7 @@ const normalizeUpstreamConfig = (record: UpstreamRecord): unknown => {
   switch (record.kind) {
   case 'custom': return assertCustomUpstreamRecord(record).config;
   case 'azure': return assertAzureUpstreamRecord(record).config;
+  case 'kimi-code': return assertKimiCodeUpstreamRecord(record).config;
   case 'ollama': return assertOllamaUpstreamRecord(record).config;
   case 'chatgpt':
     assertChatGPTUpstreamRecord(record);

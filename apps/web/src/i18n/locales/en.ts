@@ -67,6 +67,7 @@ const en = {
       copilot: 'Copilot',
       chatgpt: 'ChatGPT',
       'claude-code': 'Claude Code',
+      'kimi-code': 'Kimi Code',
       ollama: 'Ollama',
     },
     dashboard: {
@@ -542,6 +543,7 @@ const en = {
           copilot: 'GitHub Copilot account',
           chatgpt: 'ChatGPT Plus, Pro, or Team',
           'claude-code': 'Claude Pro, Max, or Team subscription',
+          'kimi-code': 'Kimi Code subscription',
           ollama: 'ollama.com or self-hosted',
         },
         models: {
@@ -1080,6 +1082,22 @@ const en = {
           interval: 'Refresh interval (minutes)',
           invalid: 'Enter a nonnegative whole number of minutes.',
         },
+        kimiCode: {
+          region: 'Region',
+          regions: { china: 'China', overseas: 'Overseas' },
+          usage: {
+            title: 'Subscription allowance',
+            load: 'Load',
+            refresh: 'Refresh',
+            window: { five_hour: '5-hour window', monthly: 'Monthly window', weekly: 'Weekly window' },
+            resets: 'Resets {{time}}',
+            monthlyCodeShare: 'Kimi Code uses {{percent, number}}% of the shared monthly allowance.',
+            updated: 'Updated {{time}}',
+            empty: 'Load subscription usage to check the key and available allowance.',
+            backgroundFailed: 'The last background refresh failed: {{message}}',
+            accountFailed: 'Could not refresh account details: {{message}}',
+          },
+        },
         ollama: {
           cloudUsage: 'Fetch account usage',
           cloudUsageHint: 'Update account balances and period usage after model requests. Requires an Ollama Cloud API key.',
@@ -1267,6 +1285,7 @@ const en = {
         metrics: {
           window: '{{name}} {{window}}',
           usage: '{{window}} usage', remaining: '{{window}} remaining',
+          monthlyUsage: 'Monthly usage', monthlyRemaining: 'Monthly remaining',
           namedUsage: '{{window}} {{name}} usage', namedRemaining: '{{window}} {{name}} remaining',
           includedAllowance: 'Included allowance',
           extraUsage: 'Extra usage',

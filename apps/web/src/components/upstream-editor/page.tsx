@@ -12,6 +12,7 @@ import {
   fetchSavedModelCatalog,
   hasUnsavedDiscoveryInputs,
   isPersisted,
+  isOAuthUpstream,
   modelPrefixIsValid,
   previewDraftModelCatalog,
   updateBody,
@@ -153,7 +154,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const manualModelsDirty = Boolean(formState.dirtyFields.manualModels);
   const discoveryInputsDirty = hasUnsavedDiscoveryInputs(formState.dirtyFields)
     || (record.kind === 'ollama' && manualModelsDirty);
-  const oauth = record.kind === 'copilot' || record.kind === 'chatgpt' || record.kind === 'claude-code';
+  const oauth = isOAuthUpstream(record);
   const fetchDialog = useDialogInvocation<void>();
   // Save resets the form and record in one commit. The immediately following
   // Fetch must use that saved record even before React commits the new render.

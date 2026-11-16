@@ -34,6 +34,8 @@ export type UpstreamMetricLabelKey =
   | 'dashboard.upstreamMetrics.metrics.extraUsage'
   | 'dashboard.upstreamMetrics.metrics.includedBalance'
   | 'dashboard.upstreamMetrics.metrics.includedAllowance'
+  | 'dashboard.upstreamMetrics.metrics.monthlyRemaining'
+  | 'dashboard.upstreamMetrics.metrics.monthlyUsage'
   | 'dashboard.upstreamMetrics.metrics.namedRemaining'
   | 'dashboard.upstreamMetrics.metrics.namedUsage'
   | 'dashboard.upstreamMetrics.metrics.past24HoursCost'

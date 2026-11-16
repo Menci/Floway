@@ -79,3 +79,21 @@ test('selector lookup falls back to the whole Base vector without merging fields
     rates: { input_tokens: '0.01' },
   });
 });
+
+test('Kimi Code valuation resolves the public family independently of opaque or fast upstream ids', () => {
+  const kimi = upstream('kimi-code', { region: 'china', apiKey: 'sk-kimi-fake-test-key' });
+  const resolved = resolveUsagePricing(kimi, { model: 'kimi-k2.7-code', modelKey: 'kimi-for-coding-highspeed' });
+  assertEquals(resolved.status, 'priced');
+  if (resolved.status !== 'priced') throw new Error('Expected Kimi Code API-equivalent pricing');
+  assertEquals(resolved.source, 'provider:kimi-code');
+  assertEquals(resolved.guardsModelsCache, false);
+  for (const serviceTier of ['fast', 'priority']) {
+    assertEquals(ratesForStoredSelector(resolved.pricing, JSON.stringify({ serviceTier })), {
+      exact: true,
+      rates: { input_tokens: '0.0000019', input_cache_read_tokens: '0.00000038', output_tokens: '0.000008' },
+    });
+  }
+  assertEquals(resolveUsagePricing(kimi, { model: 'kimi-k3.1-pro', modelKey: 'k3.1-pro-highspeed' }).status, 'priced');
+  assertEquals(resolveUsagePricing(kimi, { model: 'kimi-k2.8-preview', modelKey: 'kimi-for-coding' }).status, 'priced');
+  assertEquals(resolveUsagePricing(kimi, { model: 'kimi-k3-256k', modelKey: 'k3-256k' }).status, 'unpriced');
+});

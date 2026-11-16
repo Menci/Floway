@@ -158,7 +158,7 @@ const discoverModels = async (record: UpstreamRecord, fetcher: Fetcher, fetchCus
 export const executeModelsRefresh = async (input: ModelsRefreshExecutionInput): Promise<ModelsRefreshExecutionResult> => {
   const repo = getRepo().upstreams;
   if (input.kind === 'draft') {
-    if (input.record.kind !== 'custom' && input.record.kind !== 'ollama') throw new TypeError('Draft model discovery requires custom or ollama');
+    if (input.record.kind !== 'custom' && input.record.kind !== 'ollama' && input.record.kind !== 'kimi-code') throw new TypeError('Draft model discovery requires custom, ollama or kimi-code');
     const fetcher = (await createValidatedPerRequestFetcher(input.runtimeLocation, [input.record]))(input.record.id);
     return { kind: 'discovered', ...await discoverModels(input.record, fetcher, true), publication: 'draft' };
   }

@@ -42,6 +42,8 @@ const copyableRecord = (source: UpstreamRecord, name: string, hue: number): Upst
     return { ...base, kind: 'azure', config: structuredClone(source.config), state: null };
   case 'ollama':
     return { ...base, kind: 'ollama', config: structuredClone(source.config), state: null };
+  case 'kimi-code':
+    return { ...base, kind: 'kimi-code', config: structuredClone(source.config), state: null };
   case 'copilot':
     return {
       ...base,

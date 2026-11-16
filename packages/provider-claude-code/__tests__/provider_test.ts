@@ -72,9 +72,9 @@ beforeEach(() => {
   initProviderRepo(() => ({
     recordUpstreamMetric: async () => {},
     upstreams: {
-      getById: async () => currentRecord,
+      getById: async () => ({ ...currentRecord, configVersion: 1 }),
       saveState: async (_id, mutate) => {
-        currentRecord = { ...currentRecord, state: mutate(currentRecord.state) };
+        currentRecord = { ...currentRecord, state: mutate(currentRecord.state, 1) };
       },
     },
   }));

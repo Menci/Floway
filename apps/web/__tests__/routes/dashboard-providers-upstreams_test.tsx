@@ -6,6 +6,7 @@ import type { ListedUpstreamRecord, UpstreamRecord } from '../../src/api/types';
 import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
 import DashboardProvidersUpstreams from '../../src/routes/dashboard-providers-upstreams';
 import { upstreamRecord } from '../api/upstream-fixture';
+import { kimiCodeRecord } from '../components/upstreams/kimi-code-fixture';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
 import { primeDefaultSession } from '../test-session';
@@ -72,6 +73,30 @@ const stubGateway = (
   if (url.pathname === '/api/models') return Response.json({ data: [] });
   return await handler(url, init?.signal as AbortSignal | undefined);
 }));
+
+it('shows Kimi Code identities and subscription readings in the upstream list', async () => {
+  const record = kimiCodeRecord();
+  record.state!.accountProbe = {
+    attemptedAt: 1000, error: null,
+    observation: { fetchedAt: 1000, data: { userId: 'fake-user', globalId: null, nickname: '', status: '', region: '', userLevel: 0, userLevelName: 'Ultra', domain: 0, domainName: '', goodsVersion: null, username: null, email: null, bio: null, avatar: null, phone: null, createdTime: null, lastLoginTime: null } },
+  };
+  renderPage(user, { ...loaderData, upstreams: [toListed(record)] });
+  expect(await screen.findByText('fake-user')).toBeTruthy();
+  expect(screen.getByText('Kimi Ultra:')).toBeTruthy();
+  expect(screen.getByText('5h')).toBeTruthy();
+  expect(screen.getAllByText(/^until /).length).toBeGreaterThan(0);
+  expect(screen.getByText('80%')).toBeTruthy();
+  expect(screen.getByText('30%')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'New upstream' }));
+  expect((await screen.findByRole('menuitem', { name: /Kimi Code/ })).querySelector('a')?.getAttribute('href')).toBe('/dashboard/providers/upstreams/new/kimi-code');
+});
+
+it('keeps Kimi Code quota visible without optional account details', async () => {
+  renderPage(user, { ...loaderData, upstreams: [toListed(kimiCodeRecord())] });
+  expect(await screen.findByText('China')).toBeTruthy();
+  expect(screen.queryByText('No account connected')).toBeNull();
+  expect(screen.getAllByText(/^until /).length).toBeGreaterThan(0);
+});
 
 it('blocks the surface until both readings load, then opens a single row with Usage above Metrics', async () => {
   let finishUsage!: () => void;

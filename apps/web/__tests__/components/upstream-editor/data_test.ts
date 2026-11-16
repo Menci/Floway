@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import type { UpstreamRecord } from '../../../src/api/types';
-import { createBody, hasUnsavedDiscoveryInputs, previewRecord, updateBody, valuesFromRecord } from '../../../src/components/upstream-editor/data';
+import { canFetchModelCatalog, createBody, hasUnsavedDiscoveryInputs, manualModelsSupported, previewRecord, updateBody, valuesFromRecord } from '../../../src/components/upstream-editor/data';
 import { upstreamRecord } from '../../api/upstream-fixture';
 
 type CustomRecord = Extract<UpstreamRecord, { kind: 'custom' }>;
@@ -101,4 +101,18 @@ test('an emptied API key field is sent as an empty key', () => {
 
 test('an absent API key opens as an empty field', () => {
   expect((valuesFromRecord(withKey('')).config as CustomRecord['config']).apiKey).toBe('');
+});
+
+test('Kimi Code uses its entered key for unsaved discovery and preserves connection settings on save', () => {
+  const record = upstreamRecord('', { kind: 'kimi-code', config: { region: 'china', apiKey: '' }, state: null });
+  const values = valuesFromRecord(record);
+  expect(canFetchModelCatalog(record, values.config)).toBe(false);
+  values.config = { region: 'overseas', apiKey: ' sk-kimi-fake-test-key ' };
+  expect(canFetchModelCatalog(record, values.config)).toBe(true);
+  expect(manualModelsSupported(record)).toBe(false);
+  const expected = { region: 'overseas', apiKey: 'sk-kimi-fake-test-key' };
+  expect(createBody(record, values).config).toEqual(expected);
+  expect(previewRecord(record, values).config).toEqual(expected);
+  expect(updateBody(record, values, 'full').config).toEqual(expected);
+  expect(canFetchModelCatalog({ ...record, id: 'up_kimi' }, { region: 'china', apiKeySet: true })).toBe(true);
 });

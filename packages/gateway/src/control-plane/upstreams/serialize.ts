@@ -10,6 +10,7 @@ import { assertChatGPTUpstreamRecord, assertChatGPTUpstreamState } from '@floway
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { assertCopilotUpstreamRecord, assertCopilotUpstreamState } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
+import { assertKimiCodeUpstreamRecord, readKimiCodeUpstreamState } from '@floway-dev/provider-kimi-code';
 import { assertOllamaUpstreamRecord, readOllamaUpstreamState } from '@floway-dev/provider-ollama';
 
 export type { FullSerializedUpstreamRecord } from './types.ts';
@@ -134,6 +135,10 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
     };
     return { ...base, kind: 'claude-code', config: clone(upstream.config), state };
   }
+  case 'kimi-code': {
+    const { config } = assertKimiCodeUpstreamRecord(upstream);
+    return { ...base, kind: 'kimi-code', config: { region: config.region, apiKeySet: hasSecret(config.apiKey) }, state: upstream.state === null ? null : readKimiCodeUpstreamState(upstream.state) };
+  }
   case 'ollama': {
     const { config } = assertOllamaUpstreamRecord(upstream);
     return {
@@ -174,6 +179,10 @@ export const upstreamRecordToFullJson = (upstream: UpstreamRecord): FullSerializ
     assertClaudeCodeUpstreamState(upstream.state);
     return { ...base, kind: 'claude-code', config: clone(upstream.config), state: clone(upstream.state) };
   }
+  case 'kimi-code': {
+    const { config } = assertKimiCodeUpstreamRecord(upstream);
+    return { ...base, kind: 'kimi-code', config: clone(config), state: upstream.state === null ? null : readKimiCodeUpstreamState(upstream.state) };
+  }
   case 'ollama': {
     const record = assertOllamaUpstreamRecord(upstream);
     return { ...base, kind: 'ollama', config: clone(record.config), state: upstream.state === null ? null : readOllamaUpstreamState(upstream.state) };
@@ -213,6 +222,8 @@ export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): BlueprintSe
     return { ...base, kind, config: { accounts: [] }, state: { accounts: [] } };
   case 'claude-code':
     return { ...base, kind, config: { accounts: [] }, state: { accounts: [] } };
+  case 'kimi-code':
+    return { ...base, kind, config: { region: 'china', apiKey: '' }, state: null };
   case 'ollama':
     return { ...base, kind, config: { baseUrl: '', apiKey: '', cloudUsage: false, models: [] }, state: null };
   }

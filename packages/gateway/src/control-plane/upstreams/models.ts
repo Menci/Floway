@@ -22,8 +22,8 @@ export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) =>
   const accessError = await fullUpstreamActionError(userFromContext(c), record.id);
   if (accessError) return c.json({ error: accessError.error }, accessError.status);
   const kind = record.kind;
-  if (kind !== 'custom' && kind !== 'ollama') {
-    return c.json({ error: { message: `Draft model discovery requires custom or ollama: ${kind}`, type: 'invalid_request_error' } }, 400);
+  if (kind !== 'custom' && kind !== 'ollama' && kind !== 'kimi-code') {
+    return c.json({ error: { message: `Draft model discovery requires custom, ollama or kimi-code: ${kind}`, type: 'invalid_request_error' } }, 400);
   }
   const synthRecord: UpstreamRecord = {
     id: record.id || 'draft',

@@ -51,7 +51,7 @@ export function AliasTargetRow({
   const model = catalog.get(target.target_model_id);
   const modelWarning = computeModelWarning(target.target_model_id, model, kind);
   const ruleWarnings = computeRuleWarnings(target.rules, model);
-  const options = useMemo(() => filterModelOptions(targetIds, target.target_model_id), [target.target_model_id, targetIds]);
+  const options = useMemo(() => filterModelOptions(targetIds.map(id => ({ value: id, label: catalog.get(id)!.display_name })), target.target_model_id), [catalog, target.target_model_id, targetIds]);
   const patchRules = (patch: Partial<AliasTarget['rules']>) => onChange({ ...target, rules: { ...target.rules, ...patch } });
   const patchReasoning = (patch: Partial<NonNullable<AliasTarget['rules']['reasoning']>>) => {
     const reasoning = { ...(target.rules.reasoning ?? {}), ...patch };
@@ -87,11 +87,16 @@ export function AliasTargetRow({
           disabled={disabled}
           freeform
           onChange={event => onChange({ ...target, target_model_id: event.target.value })}
-          onOptionSelect={(_, data) => data.optionText != null && onChange({ ...target, target_model_id: data.optionText })}
+          onOptionSelect={(_, data) => data.optionValue != null && onChange({ ...target, target_model_id: data.optionValue })}
           placeholder={t('dashboard.modelAliases.target.placeholder')}
           value={target.target_model_id}
         >
-          {options.map(id => <Option className="font-mono" key={id} text={id}>{id}</Option>)}
+          {options.map(option => <Option key={option.value} text={option.label} value={option.value}>
+            <span className="grid min-w-0">
+              <span className="truncate">{option.label}</span>
+              {option.label !== option.value && <span className="font-mono text-fui-fg2 truncate">{option.value}</span>}
+            </span>
+          </Option>)}
         </Combobox>
         <div className="grid grid-cols-3 gap-0.5 w-[100px] max-[620px]:col-span-2 max-[620px]:justify-self-end">
           {modelWarning

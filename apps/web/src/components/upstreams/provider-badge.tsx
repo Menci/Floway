@@ -5,6 +5,7 @@ import { Link } from 'react-router';
 import azureIconUrl from '../../assets/azure-color.svg?no-inline';
 import claudeIconUrl from '../../assets/claude-color.svg?no-inline';
 import githubCopilotIconUrl from '../../assets/githubcopilot.svg?no-inline';
+import kimiIconUrl from '../../assets/kimi.svg?no-inline';
 import ollamaIconUrl from '../../assets/ollama.svg?no-inline';
 import openaiIconUrl from '../../assets/openai.svg?no-inline';
 import { fluentComponents } from '../../fluent';
@@ -25,6 +26,7 @@ const providerLabels: Record<UpstreamProviderKind, string> = {
   copilot: 'Copilot',
   chatgpt: 'ChatGPT',
   'claude-code': 'Claude Code',
+  'kimi-code': 'Kimi Code',
   ollama: 'Ollama',
 };
 
@@ -108,22 +110,24 @@ export function ProviderBadge({ label, title, to, upstream }: {
 // `?no-inline` because Vite inlines an asset under 4 KB as a data URI, and an
 // unquoted `url(data:image/svg+xml,<svg …>)` is not a valid CSS value — the
 // mask-image declaration is dropped and the mask box paints as a solid block.
-// https://github.com/vitejs/vite/blob/5e7fe129a4dde4f41934083b25e490059985f4e6/docs/guide/assets.md#explicit-url-imports
+// https://github.com/vitejs/vite/blob/5e7fe129a4dde4f41934083b25e490059985f4e6/docs/guide/assets.md#explicit-inline-handling
 const providerIconUrls: Record<Exclude<UpstreamProviderKind, 'custom'>, string> = {
   azure: azureIconUrl,
   copilot: githubCopilotIconUrl,
   chatgpt: openaiIconUrl,
   'claude-code': claudeIconUrl,
+  'kimi-code': kimiIconUrl,
   ollama: ollamaIconUrl,
 };
 
-// The source SVGs share a 24×24 viewBox but not optical weight; these scales
-// normalize each silhouette to ServerRegular's 16px height inside a 20px box.
+// Normalize silhouettes with different viewBoxes and optical weights to
+// ServerRegular's 16px height inside a 20px box.
 const providerIconMaskSizes: Record<Exclude<UpstreamProviderKind, 'custom'>, string> = {
   azure: '85% 85%',
   copilot: '100% 100%',
   chatgpt: '80% 80%',
   'claude-code': '80% 80%',
+  'kimi-code': '85% 85%',
   ollama: '86% 86%',
 };
 

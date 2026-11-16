@@ -410,3 +410,19 @@ test('SQL upstream repo saveState skips the write when the mutator changes nothi
 // comparison required for the CAS predicate). The createSqliteTestDb helper
 // applies every migration so SqlRepo runs end-to-end against the same SQL
 // the production platforms execute.
+
+for (const initialState of [null, { accounts: [goodAccount] }]) test(`SQL state CAS rechecks the config version after a competing config write (state=${initialState === null ? 'null' : 'populated'})`, async () => {
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db).upstreams;
+  await saveUpstreamForTest(repo, baseRecord({ state: initialState }));
+  const version = (await repo.getById('up_test'))!.configVersion;
+  const racing = new SqlRepo(withWriterRacingReads(db, () =>
+    db.prepare('UPDATE upstreams SET config_version = config_version + 1 WHERE id = ?').bind('up_test').run(), 1)).upstreams;
+  const seen: number[] = [];
+  await racing.saveState('up_test', (current, currentVersion) => {
+    seen.push(currentVersion);
+    return currentVersion === version ? { accounts: [{ ...goodAccount, refresh_token: 'stale-probe' }] } : current;
+  });
+  assertEquals((await repo.getById('up_test'))?.state, initialState);
+  assertEquals(seen, [version, version + 1]);
+});

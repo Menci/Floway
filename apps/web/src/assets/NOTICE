@@ -65,6 +65,16 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+Kimi
+----
+
+kimi.svg is the official K-only mark from MoonshotAI/Branding-Guide at commit
+67b20b1315f96d05f3192b24050635745abd3d90, preserved verbatim:
+
+https://github.com/MoonshotAI/Branding-Guide/blob/67b20b1315f96d05f3192b24050635745abd3d90/scenarios/04-k-only/k-only-color.svg
+
+Its opaque paths supply the alpha silhouette for the provider icon's CSS mask.
+
 Meslo LG S
 ----------
 

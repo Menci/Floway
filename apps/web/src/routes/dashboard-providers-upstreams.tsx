@@ -36,6 +36,7 @@ import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefresh } from '../components/ui/use-refresh';
 import { shortAccountId } from '../components/upstreams/account-id';
 import { planLabel } from '../components/upstreams/chatgpt-account';
+import { kimiCodeAccountName } from '../components/upstreams/kimi-code-account';
 import { MODEL_ERROR_TOOLTIP_LENGTH, modelErrorExcerpt } from '../components/upstreams/model-error';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { UpstreamSignals } from '../components/upstreams/signals';
@@ -94,6 +95,7 @@ const PROVIDER_MENU_ORDER: readonly UpstreamProviderKind[] = [
   'copilot',
   'chatgpt',
   'claude-code',
+  'kimi-code',
   'ollama',
 ];
 
@@ -798,6 +800,10 @@ const upstreamSummary = (record: ListedUpstreamRecord, t: TFunction): string => 
   // endpoint every cloud upstream shares. A self-hosted daemon has no account,
   // so its address is the whole identity.
   case 'ollama': return record.state?.account?.email ?? (record.config.baseUrl || t('dashboard.upstreams.summary.ollama'));
+  case 'kimi-code': {
+    const account = record.state?.accountProbe?.observation?.data;
+    return account ? kimiCodeAccountName(account) : t(`dashboard.upstreamEditor.kimiCode.regions.${record.config.region}`);
+  }
   case 'copilot': return record.config.user.login ? `${record.config.githubHost}/${record.config.user.login}` : t('dashboard.upstreams.summary.copilot');
   case 'chatgpt': {
     const account = record.config.accounts[0];
