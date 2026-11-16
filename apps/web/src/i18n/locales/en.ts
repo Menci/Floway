@@ -795,6 +795,11 @@ const en = {
               description:
                   'The OpenAI API counts cached tokens as part of the input token total, but some upstreams report them separately, so that the input token count covers only what the cache did not serve. This is the Anthropic convention.\nEnable this option to add the cache read and cache write counts back into the input token total, so that usage and cost are recorded correctly.\nWhen the upstream reports a `total_tokens` that settles the question, Floway follows it and this option is not needed. Enable it for an upstream whose totals leave the two conventions indistinguishable.',
             },
+            'openai-chat-completions-legacy-max-tokens': {
+              label: 'Use Legacy Chat Completions Token Limit',
+              description:
+                  'Some OpenAI-compatible upstreams, such as Ollama, read only the legacy `max_tokens` output limit.\nEnable this option to send the Chat Completions output limit as `max_tokens` instead of `max_completion_tokens`. Floway removes the modern field so the two are never sent together. Leave this option off for upstreams that require `max_completion_tokens`.',
+            },
             'openai-responses-store-false': {
               label: 'Request Stateful Upstreams to Use Stateless Mode',
               description:

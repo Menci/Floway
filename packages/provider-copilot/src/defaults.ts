@@ -29,6 +29,7 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
   'usage-exclusive-cached-tokens': false,
+  'openai-chat-completions-legacy-max-tokens': false,
   // Copilot's `/responses` rejects `store: true` with
   // `400 {"error":{"message":"store is not
   // supported","code":"unsupported_value","param":"store"}}`.

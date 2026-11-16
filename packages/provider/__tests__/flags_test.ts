@@ -1,9 +1,18 @@
 import { test } from 'vitest';
 
-import { OPTIONAL_FLAG_IDS, resolveEffectiveFlags } from '../src/flags.ts';
+import { OPTIONAL_FLAG_IDS, parseFlagOverridesWire, resolveEffectiveFlags } from '../src/flags.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const FLAG_ID_PATTERN = /^[a-z][a-z0-9-]+$/;
+
+test('provider flags: legacy Chat Completions token limits support operator and model overrides', () => {
+  const id = 'openai-chat-completions-legacy-max-tokens';
+  const enabled = parseFlagOverridesWire({ [id]: true });
+  const disabled = parseFlagOverridesWire({ [id]: false });
+  assertEquals([...resolveEffectiveFlags([enabled])], [id]);
+  assertEquals([...resolveEffectiveFlags([enabled, disabled])], []);
+  assertEquals([...resolveEffectiveFlags([disabled, enabled])], [id]);
+});
 
 test('provider flags: every catalog id is kebab-case', () => {
   for (const id of OPTIONAL_FLAG_IDS) {

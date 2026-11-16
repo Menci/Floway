@@ -24,6 +24,7 @@ export const CHATGPT_DEFAULT_FLAGS: FlagDefaults = {
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
   'usage-exclusive-cached-tokens': false,
+  'openai-chat-completions-legacy-max-tokens': false,
   // Do not turn on stateless on OpenAI's official servers.
   // Intermediate results of server tools like `web_search` are stored only on
   // the server side. Therefore, turning on stateless mode would cause models to

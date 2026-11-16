@@ -351,6 +351,50 @@ test('generate defers the role rewrite until after translation to OpenAI Chat Co
   ]);
 });
 
+test.each([false, true])('Floway sends one output cap after Responses translation with legacy mode %s', async legacy => {
+  installRepo();
+  const enabledFlags = new Set<FlagId>(legacy ? ['openai-chat-completions-legacy-max-tokens'] : []);
+  const endpoints = { openaiChatCompletions: {} };
+  const base = makeCandidate(async () => { throw new Error('unexpected native Responses dispatch'); });
+  const candidate: ModelCandidate = {
+    ...base,
+    model: stubInternalModel({
+      id: 'DeepSeek-4.1 Flash', endpoints,
+      providerModels: { up_test: stubProviderModel({ endpoints, enabledFlags }) },
+    }, 'up_test'),
+  };
+  const callOpenAIChatCompletions = vi.fn(async (
+    _model: ProviderModel, body: Omit<OpenAIChatCompletionsPayload, 'model'>,
+  ): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+    // Model an upstream that rejects the mutually exclusive cap spellings.
+    if ('max_tokens' in body && 'max_completion_tokens' in body) {
+      return { ok: false, response: new Response('max_tokens and max_completion_tokens cannot be set at the same time', { status: 400 }), modelKey: 'deepseek-test' };
+    }
+    assertEquals(legacy ? body.max_tokens : body.max_completion_tokens, 128000);
+    assertEquals(legacy ? 'max_completion_tokens' in body : 'max_tokens' in body, false);
+    return {
+      ok: true, modelKey: 'deepseek-test',
+      events: (async function* () {
+        yield eventFrame<OpenAIChatCompletionsStreamEvent>({
+          id: 'chatcmpl_tokens', object: 'chat.completion.chunk', created: 0, model: 'DeepSeek-4.1 Flash',
+          choices: [{ index: 0, delta: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
+        });
+        yield doneFrame();
+      })(),
+    };
+  });
+  candidate.provider.instance.callOpenAIChatCompletions = callOpenAIChatCompletions;
+  const payload = makePayload({ model: 'DeepSeek-4.1 Flash', max_output_tokens: 128000 });
+  const result = await openaiResponsesAttempt.generate({ payload, ctx: makeGatewayCtx(), candidate, headers: new Headers() });
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('expected successful translated stream');
+  const events = await collectEvents(result.events);
+  assert(events.some(event => event.type === 'response.completed'), 'expected the translated response to complete');
+  assertEquals(callOpenAIChatCompletions.mock.calls.length, 1);
+  assertEquals(payload.max_output_tokens, 128000);
+  assertEquals('max_tokens' in payload, false);
+});
+
 test('generate passes non-events provider result through unchanged', async () => {
   installRepo();
   const wrapSpy = vi.spyOn(outputModule, 'wrapOpenAIResponsesClientOutput');

@@ -40,6 +40,7 @@ export const OPTIONAL_FLAG_IDS = [
   'strip-billing-attribution',
   'strip-prompt-cache-key',
   'usage-exclusive-cached-tokens',
+  'openai-chat-completions-legacy-max-tokens',
   'openai-responses-store-false',
 ] as const;
 

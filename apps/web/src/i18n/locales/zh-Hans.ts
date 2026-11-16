@@ -764,6 +764,11 @@ const zhHansCN = {
               description:
                   'OpenAI API 将缓存命中的 Token 计入输入 Token 总数，但部分上游会将两者分开上报，使输入 Token 仅表示未命中缓存的部分。这是 Anthropic 的约定。\n开启此开关，以将缓存读取与缓存写入的 Token 数加回输入 Token 总数，使用量与费用得以正确记录。\n当上游上报的 `total_tokens` 足以判定采用的是哪一种约定时，Floway 会据此自行处理，无需开启此开关。当上游的 `total_tokens` 无法区分两种约定时，才需要开启。',
             },
+            'openai-chat-completions-legacy-max-tokens': {
+              label: '使用旧版 Chat Completions Token 上限字段',
+              description:
+                  '部分 OpenAI-compatible 上游（如 Ollama）仅读取旧版 `max_tokens` 输出上限。\n开启此开关后，Floway 会使用 `max_tokens` 而非 `max_completion_tokens` 发送 Chat Completions 输出上限，并移除新版字段，避免同时发送两者。对要求使用 `max_completion_tokens` 的上游，请保持关闭。',
+            },
             'openai-responses-store-false': {
               label: '向有状态的上游请求使用无状态模式',
               description:

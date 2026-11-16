@@ -13,6 +13,14 @@ const buildWithTestSidecar = async (payload: OpenAIResponsesRequestPayloadEx) =>
   };
 };
 
+test('Floway translates a Responses output cap without conflicting Chat token fields', async () => {
+  const { target } = await buildWithTestSidecar({
+    model: 'DeepSeek-4.1 Flash', input: 'test', max_output_tokens: 128000,
+  });
+  assertEquals(target.max_completion_tokens, 128000);
+  assertEquals('max_tokens' in target, false);
+});
+
 test('preserves a refusal-only assistant turn between client turns', async () => {
   const { target } = await buildWithTestSidecar({
     model: 'model', input: [
@@ -128,7 +136,7 @@ test('buildTargetPayload merges adjacent assistant reasoning text and tool calls
   });
 
   assertEquals(result.target.model, 'gpt-test');
-  assertEquals(result.target.max_tokens, 256);
+  assertEquals('max_tokens' in result.target, false);
   assertEquals(result.target.max_completion_tokens, 256);
   assertEquals(result.target.metadata, { trace_id: 'trace_123' });
   assertEquals(result.target.store, false);

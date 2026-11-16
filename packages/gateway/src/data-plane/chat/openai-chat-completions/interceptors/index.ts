@@ -1,6 +1,7 @@
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import { withUsageStreamOptionsIncluded } from './include-usage-stream-options.ts';
+import { withLegacyMaxTokens } from './legacy-max-tokens.ts';
 import { withEmptyToolsToolChoiceNormalized } from './normalize-empty-tools-tool-choice.ts';
 import { withExclusiveCachedTokensNormalized } from './normalize-exclusive-cached-tokens.ts';
 import { withUsageNormalized } from './normalize-usage.ts';
@@ -30,6 +31,9 @@ import { withVendorQwenOpenAIChatCompletionsNormalize } from './vendor-qwen-norm
 //   - withRoleCompatibilityApplied: applies role flags in the fixed order
 //     `system → developer → system → user`; later rewrites are authoritative
 //     when flags overlap, and the final step affects only mid-conversation system.
+//   - withLegacyMaxTokens: gated by `openai-chat-completions-legacy-max-tokens`.
+//     Renames the canonical output cap only at a final Chat target; never sends
+//     both spellings. Ollama enables it by default; custom upstreams can opt in.
 //   - withPromptCacheKeyStripped: gated by `strip-prompt-cache-key`. Drops
 //     the top-level `prompt_cache_key` field for upstreams that reject it as
 //     an unknown argument (e.g. Azure DeepSeek). Runs before vendor
@@ -56,6 +60,7 @@ export const openaiChatCompletionsInterceptors: readonly OpenAIChatCompletionsIn
   withReasoningDisabledOnForcedToolChoice,
   withEmptyToolsToolChoiceNormalized,
   withRoleCompatibilityApplied,
+  withLegacyMaxTokens,
   withPromptCacheKeyStripped,
   withExclusiveCachedTokensNormalized,
   withVendorDeepSeekOpenAIChatCompletionsNormalize,

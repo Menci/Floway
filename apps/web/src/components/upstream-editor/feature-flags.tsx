@@ -30,6 +30,7 @@ const flagGroupById = {
   'rewrite-developer-to-system': 'apiCompatibility',
   'rewrite-system-to-developer': 'apiCompatibility',
   'usage-exclusive-cached-tokens': 'apiCompatibility',
+  'openai-chat-completions-legacy-max-tokens': 'apiCompatibility',
   'strip-billing-attribution': 'sanitization',
   'strip-prompt-cache-key': 'sanitization',
   'openai-responses-store-false': 'sanitization',

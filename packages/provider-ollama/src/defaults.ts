@@ -21,6 +21,9 @@ export const OLLAMA_DEFAULT_FLAGS: FlagDefaults = {
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
   'usage-exclusive-cached-tokens': false,
+  // Ollama's Chat Completions shim reads only max_tokens into num_predict.
+  // https://github.com/ollama/ollama/blob/c1db5f9/openai/openai.go
+  'openai-chat-completions-legacy-max-tokens': true,
   // As of October 2026, Ollama silently ignores `previous_response_id`.
   // So a subsequent turn would look like a fresh context with no history to models.
   // There is no point to request stateful mode from Ollama.

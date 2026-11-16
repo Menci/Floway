@@ -63,7 +63,7 @@ test('nullable token limits and cache controls remain explicit in source IR', as
   expect(responses.target.max_output_tokens).toBeNull();
   const chat = await routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'm', stream: true, input: 'hi', max_output_tokens: null }, options);
   if (chat.type !== 'trip') throw new Error(chat.message);
-  expect(chat.target.max_tokens).toBeNull();
+  expect(chat.target).not.toHaveProperty('max_tokens');
   expect(chat.target.max_completion_tokens).toBeNull();
 });
 
@@ -104,7 +104,7 @@ test.each([
   const second = await routeOpenAIResponsesViaOpenAIChatCompletions(first.target, options);
   if (second.type !== 'trip') throw new Error(second.message);
   const expected = limits.max_completion_tokens ?? limits.max_tokens;
-  expect(second.target.max_tokens).toBe(expected);
+  expect(second.target).not.toHaveProperty('max_tokens');
   expect(second.target.max_completion_tokens).toBe(expected);
 });
 
