@@ -7,7 +7,8 @@ import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 import type { AnnouncedMetadata } from '@floway-dev/protocols/browser';
 
-const imageDetailOriginalLabel = i18n.t('dashboard.modelAliases.metadata.imageDetailOriginal');
+const imageInputLabel = i18n.t('dashboard.upstreamEditor.models.imageInput');
+const imageDetailOriginalLabel = i18n.t('dashboard.upstreamEditor.models.imageDetailOriginal');
 
 const initialValue: AnnouncedMetadata = {
   chat: {
@@ -59,13 +60,13 @@ describe('model alias metadata editor', () => {
     // one heading over one row carrying both switches, the shape the upstream
     // editor gives these fields.
     renderInApp(<DetailHarness initial={{ chat: { modalities: { input: ['text', 'image'], output: ['text'] }, image_detail_original: true } }} />);
-    const group = screen.getByRole('group', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') });
+    const group = screen.getByRole('group', { name: imageInputLabel });
 
     // A switch's root carries `fui-Switch` and nests its input, so the row is
     // the second ancestor up.
     expect(group.querySelector('h4')).toBeNull();
     const detailSwitch = screen.getByRole('switch', { name: imageDetailOriginalLabel });
-    expect(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }).parentElement?.parentElement)
+    expect(screen.getByRole('switch', { name: imageInputLabel }).parentElement?.parentElement)
       .toBe(detailSwitch.parentElement?.parentElement);
   });
 
@@ -73,7 +74,7 @@ describe('model alias metadata editor', () => {
     renderInApp(<DetailHarness initial={{}} />);
     expect(screen.queryByRole('switch', { name: imageDetailOriginalLabel })).toBeNull();
 
-    fireEvent.click(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }));
+    fireEvent.click(screen.getByRole('switch', { name: imageInputLabel }));
     expect(screen.getByRole('switch', { name: imageDetailOriginalLabel })).toBeDefined();
     expect(screen.getByTestId('detail').textContent).toBe('false');
   });
@@ -81,7 +82,7 @@ describe('model alias metadata editor', () => {
   it('preserves an existing detail claim when image input is enabled', () => {
     renderInApp(<DetailHarness initial={{ chat: { image_detail_original: true } }} />);
 
-    fireEvent.click(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }));
+    fireEvent.click(screen.getByRole('switch', { name: imageInputLabel }));
 
     expect(screen.getByRole<HTMLInputElement>('switch', { name: imageDetailOriginalLabel }).checked).toBe(true);
     expect(screen.getByTestId('detail').textContent).toBe('true');
@@ -91,13 +92,35 @@ describe('model alias metadata editor', () => {
     // The detail switch is only reachable while image input is on, so a stored
     // claim must not outlive its parent toggle.
     renderInApp(<DetailHarness initial={{ chat: { modalities: { input: ['text', 'image'], output: ['text'] }, image_detail_original: true } }} />);
-    fireEvent.click(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }));
+    fireEvent.click(screen.getByRole('switch', { name: imageInputLabel }));
 
     expect(screen.getByTestId('detail').textContent).toBe('undefined');
 
-    fireEvent.click(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }));
+    fireEvent.click(screen.getByRole('switch', { name: imageInputLabel }));
     expect(screen.getByRole<HTMLInputElement>('switch', { name: imageDetailOriginalLabel }).checked).toBe(false);
     expect(screen.getByTestId('detail').textContent).toBe('false');
+  });
+
+  it('keeps audio input enabled when changing image support', () => {
+    renderInApp(<DetailHarness initial={{}} />);
+    const audio = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('dashboard.upstreamEditor.models.audioInput') });
+    const image = screen.getByRole<HTMLInputElement>('switch', { name: imageInputLabel });
+    fireEvent.click(audio);
+    fireEvent.click(image);
+    expect(audio.checked && image.checked).toBe(true);
+    fireEvent.click(image);
+    expect(audio.checked).toBe(true);
+  });
+
+  it('can select audio alone and cannot deselect the last input', () => {
+    renderInApp(<DetailHarness initial={{}} />);
+    const text = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('dashboard.upstreamEditor.models.textInput') });
+    const audio = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('dashboard.upstreamEditor.models.audioInput') });
+    expect(text.disabled).toBe(true);
+    fireEvent.click(audio);
+    fireEvent.click(text);
+    expect(text.checked).toBe(false);
+    expect(audio.checked && audio.disabled).toBe(true);
   });
 
   // A prompt budget only exists to share the window with an output budget, so
