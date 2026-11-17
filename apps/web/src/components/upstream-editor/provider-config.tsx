@@ -16,9 +16,8 @@ import { CopilotQuotaCard } from './copilot-quota-card';
 import { CustomIngressHeaderRules } from './custom-ingress-header-rules';
 import type { UpstreamEditorValues } from './data';
 import { isPersisted, previewRecord } from './data';
-import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, PATH_OVERRIDE_PATHS } from './endpoints';
+import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, PATH_OVERRIDE_OPTIONS } from './endpoints';
 import { KimiCodeUsageCard } from './kimi-code-usage-card';
-import { useMonoLabelClass } from './mono-label';
 import { OAuthCallbackImport } from './oauth-callback-import';
 import { OllamaUsageCard } from './ollama-usage-card';
 import { clearPkce } from './pkce';
@@ -100,7 +99,6 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
   const { t } = useTranslation();
   const { control } = useFormContext<ValuesForKind<'custom'>>();
   const fetchesCatalog = useWatch({ control, name: 'config.modelsFetch.enabled' });
-  const apiKey = useWatch({ control, name: 'config.apiKey' }) ?? '';
   const modelsFetchAuthStyleLabel = (value: Extract<UpstreamRecord, { kind: 'custom' }>['config']['modelsFetch']['authStyle']) => {
     switch (value) {
     case 'bearer': return t('dashboard.upstreamEditor.auth.bearer');
@@ -127,7 +125,7 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
           )}
         />
       </Field>
-      <SecretField optional readOnly={readOnly} />
+      <SecretField readOnly={readOnly} />
       <Controller control={control} name="config.modelsFetch.enabled" render={({ field }) => (
         <Switch
           checked={field.value}
@@ -144,34 +142,35 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
           className: '!w-full !max-w-full',
           children: <span className="flex w-full min-w-0 items-center justify-between gap-3">
             <span className="floway-control-label truncate">{t('dashboard.upstreamEditor.fields.catalogPath')}</span>
-            {apiKey.trim() !== '' && (
-              <Controller control={control} name="config.modelsFetch.authStyle" render={({ field }) => (
-                <Menu
-                  checkedValues={{ authStyle: [field.value] }}
-                  onCheckedValueChange={(_, data) => {
-                    if (!modelsFetchReadOnly && data.checkedItems[0] !== undefined) field.onChange(data.checkedItems[0]);
-                  }}
-                >
-                  <MenuTrigger disableButtonEnhancement>
-                    <button
-                      aria-label={t('dashboard.upstreamEditor.fields.fetchModelsAuthStyle')}
-                      className="winui-focus-rect floway-control-label inline-flex flex-none items-center gap-1 border-0 bg-transparent p-0 text-fui-fg1"
-                      disabled={modelsFetchReadOnly}
-                      type="button"
-                    >
-                      <span>{modelsFetchAuthStyleLabel(field.value)}</span>
-                      <ChevronDown12Regular aria-hidden className="block flex-none" />
-                    </button>
-                  </MenuTrigger>
-                  <MenuPopover>
-                    <MenuList>
-                      <MenuItemRadio name="authStyle" value="bearer">{t('dashboard.upstreamEditor.auth.bearer')}</MenuItemRadio>
-                      <MenuItemRadio name="authStyle" value="x-api-key">x-api-key</MenuItemRadio>
-                    </MenuList>
-                  </MenuPopover>
-                </Menu>
-              )} />
-            )}
+            <Controller control={control} name="config.modelsFetch.authStyle" render={({ field }) => (
+              <Menu
+                // The trigger sits at the right edge of the field's label row,
+                // so the menu opens from that edge rather than the left one.
+                positioning={{ position: 'below', align: 'end' }}
+                checkedValues={{ authStyle: [field.value] }}
+                onCheckedValueChange={(_, data) => {
+                  if (!modelsFetchReadOnly && data.checkedItems[0] !== undefined) field.onChange(data.checkedItems[0]);
+                }}
+              >
+                <MenuTrigger disableButtonEnhancement>
+                  <button
+                    aria-label={t('dashboard.upstreamEditor.fields.fetchModelsAuthStyle')}
+                    className="winui-focus-rect floway-control-label inline-flex flex-none items-center gap-1.5 border-0 bg-transparent p-0 text-fui-fg1"
+                    disabled={modelsFetchReadOnly}
+                    type="button"
+                  >
+                    <span>{modelsFetchAuthStyleLabel(field.value)}</span>
+                    <ChevronDown12Regular aria-hidden className="block flex-none" />
+                  </button>
+                </MenuTrigger>
+                <MenuPopover>
+                  <MenuList>
+                    <MenuItemRadio name="authStyle" value="bearer">{t('dashboard.upstreamEditor.auth.bearer')}</MenuItemRadio>
+                    <MenuItemRadio name="authStyle" value="x-api-key">x-api-key</MenuItemRadio>
+                  </MenuList>
+                </MenuPopover>
+              </Menu>
+            )} />
           </span>,
         }}>
           <Controller control={control} name="config.modelsFetch.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="/v1/models" readOnly={modelsFetchReadOnly} ref={field.ref} value={field.value ?? ''} />} />
@@ -184,7 +183,6 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
 
 function CustomApiPaths({ readOnly }: { readOnly: boolean }) {
   const { t } = useTranslation();
-  const monoLabel = useMonoLabelClass();
   const { control } = useFormContext<ValuesForKind<'custom'>>();
   return (
     <div className="grid gap-4">
@@ -195,19 +193,19 @@ function CustomApiPaths({ readOnly }: { readOnly: boolean }) {
         title={t('dashboard.upstreamEditor.fields.pathOverrides')}
       >
         <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
-          {PATH_OVERRIDE_PATHS.map(path => (
+          {PATH_OVERRIDE_OPTIONS.map(({ label, path, defaultPath }) => (
             <Controller
               control={control}
               key={path}
               name={`config.pathOverrides.${path}`}
               render={({ field }) => (
-                <Field className="min-w-0" label={{ children: path, className: monoLabel }}>
+                <Field className="min-w-0" label={{ children: <span className="block truncate" title={label}>{label}</span> }}>
                   <Input
                     className="!w-full font-mono"
                     name={field.name}
                     onBlur={field.onBlur}
                     onChange={(_, data) => field.onChange(data.value)}
-                    placeholder={`/v1${path}`}
+                    placeholder={defaultPath}
                     readOnly={readOnly}
                     ref={field.ref}
                     value={field.value ?? ''}
@@ -346,19 +344,18 @@ const endpointOptions = endpointOptionsFor(CHAT_ENDPOINT_KEYS);
 
 function EndpointPicker({ readOnly }: { readOnly: boolean }) {
   const { t } = useTranslation();
-  const monoLabel = useMonoLabelClass();
   const { control, getValues, setValue } = useFormContext<UpstreamEditorValues>();
   const config = useWatch({ control, name: 'config' });
   const customConfig = config as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
   const value = customConfig.endpoints;
   return <EditorSection level={3} title={t('dashboard.upstreamEditor.fields.defaultEndpoints')}>
     <div className={`grid ${CHECKBOX_LIST_CLASS}`}>
-      {endpointOptions.map(([key, label]) => {
+      {endpointOptions.map(({ key, label }) => {
         const selected = value[key] !== undefined;
         return <Checkbox
           key={key}
           checked={selected}
-          label={{ children: label, className: monoLabel }}
+          label={label}
           readOnly={readOnly}
           onChange={(_, data) => {
             const latestConfig = getValues('config') as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
