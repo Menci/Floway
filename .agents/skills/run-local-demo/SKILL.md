@@ -7,7 +7,7 @@ description: Start, inspect, and stop a local Floway demo from the current workt
 
 Keep one local instance per worktree. The instance comprises a Node gateway and
 the web dashboard served by Vite. Its state lives in `.tmp/run-local-demo/`
-inside that worktree; never reuse another worktree's state or ports.
+inside that worktree; the lifecycle implementation lives in `tools`.
 
 ## Start
 
@@ -23,10 +23,10 @@ inside that worktree; never reuse another worktree's state or ports.
    choose workerd for ordinary dashboard, control-plane, API, provider, or
    translation work.
 
-3. Keep the launcher's live output attached while it starts. It prints the
-   dashboard URL, the API origin, and the authentication mode after it has
-   verified all of them. If it exits unsuccessfully, read the diagnostic and
-   fix the instance rather than reporting a guessed URL.
+3. Read the launcher's result. It prints the dashboard URL, the API origin,
+   and the authentication mode after it has verified all of them. If it exits
+   unsuccessfully, read the diagnostic and fix the instance rather than
+   reporting a guessed URL. On success, the services stay in the background.
 4. Open the printed dashboard URL before describing the demo as available.
 
 Authentication is selected by the gateway runtime before startup: Node uses
