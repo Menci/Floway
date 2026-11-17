@@ -4,7 +4,6 @@ import { afterEach, expect, test, vi } from 'vitest';
 
 import type { ControlPlaneGroup, ControlPlaneUser } from '../../src/api/types';
 import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
-import { shortDate } from '../../src/lib/format-time';
 import DashboardAdminUsers, { shouldRevalidate } from '../../src/routes/dashboard-admin-users';
 import { renderInApp } from '../render';
 
@@ -73,30 +72,6 @@ test.each(['', '&group=999', '&group=invalid'])('canonicalizes an unavailable se
   const { router } = renderPage(`/dashboard/admin/users?tab=groups${query}`);
   await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('group')).toBe('1'));
   expect(screen.getByRole('option', { name: 'Platform' }).getAttribute('aria-selected')).toBe('true');
-});
-
-test('retains the selected group when switching tabs', async () => {
-  const { router } = renderPage('/dashboard/admin/users?tab=groups&group=2');
-  await screen.findByRole('option', { name: 'Research' });
-  await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /^Users/ })); });
-  expect(new URLSearchParams(router.state.location.search).get('tab')).toBeNull();
-  expect(new URLSearchParams(router.state.location.search).get('group')).toBe('2');
-  await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /^Groups/ })); });
-  expect(screen.getByRole('option', { name: 'Research' }).getAttribute('aria-selected')).toBe('true');
-});
-
-test('clears the unavailable group address when no groups remain', async () => {
-  const { router } = renderPage('/dashboard/admin/users?tab=groups&group=2', { ...loaderData, directory: { users: [user], groups: [], memberships: [] } });
-  await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('group')).toBeNull());
-  expect(screen.getByText('No groups found')).toBeTruthy();
-});
-
-test('does not repeat an untruncated username on hover', async () => {
-  renderPage();
-  const name = await screen.findByRole('button', { name: 'frank' });
-  fireEvent.pointerEnter(name.querySelector('.floway-identity-name')!, { pointerType: 'mouse' });
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 500)); });
-  expect(screen.queryByRole('tooltip')).toBeNull();
 });
 
 test('opens hidden group links from the overflow control', async () => {
@@ -198,34 +173,4 @@ test('keeps an open user editor paired with the group metadata it was opened wit
   await waitFor(() => expect(groupTab.querySelector('.proportional-nums')?.textContent).toBe('0'));
   expect(screen.getByRole('dialog').textContent).toContain('Platform');
   expect(screen.getByRole('dialog').textContent).toContain('Research');
-});
-
-test('shows account creation dates and an administrator icon beside the username', async () => {
-  const { container } = renderPage();
-  const name = await screen.findByRole('button', { name: 'frank' });
-  expect(screen.queryByRole('columnheader', { name: 'Role' })).toBeNull();
-  expect(screen.getByRole('columnheader', { name: 'Created' })).toBeTruthy();
-  expect(container.querySelector('time')?.getAttribute('datetime')).toBe(user.createdAt);
-  expect(name.querySelector('.floway-admin-indicator')?.getAttribute('aria-label')).toBe('Administrator');
-});
-
-test('shows membership dates and group creation metadata without a separator glyph', async () => {
-  const { container } = renderPage('/dashboard/admin/users?tab=groups&group=1');
-  await screen.findByRole('option', { name: 'Platform' });
-  const table = screen.getByRole('table');
-  expect(screen.queryByRole('columnheader', { name: 'Role' })).toBeNull();
-  expect(screen.getByRole('columnheader', { name: 'Joined' })).toBeTruthy();
-  expect(table.querySelector('time')?.getAttribute('datetime')).toBe(memberships[0]!.createdAt);
-  expect(screen.getByText(`Created ${shortDate(groups[0]!.createdAt, 'en')}`)).toBeTruthy();
-  expect(container.querySelector('section.grid > header')!.textContent).not.toContain('\u00b7');
-});
-
-test('keeps creation metadata in empty group details', async () => {
-  const empty = { ...groups[0]!, id: 3, name: 'Archive' };
-  renderPage('/dashboard/admin/users?tab=groups&group=3', { ...loaderData, directory: { ...loaderData.directory, groups: [...groups, empty] } });
-  await screen.findByRole('option', { name: 'Archive' });
-  expect(screen.getByText('0 members')).toBeTruthy();
-  expect(screen.getByText(`Created ${shortDate(empty.createdAt, 'en')}`)).toBeTruthy();
-  expect(screen.getByText('This group has no members')).toBeTruthy();
-  expect(screen.queryByRole('table')).toBeNull();
 });

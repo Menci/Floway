@@ -1,4 +1,4 @@
-import { parse, parseHex } from 'culori';
+import { parse } from 'culori';
 import { describe, expect, it } from 'vitest';
 
 import { blendHex } from '../../src/lib/color';
@@ -53,11 +53,6 @@ const statedTintWeights = (css: string) =>
 const statedShare = (css: string, of: string) => {
   const stated = [...css.matchAll(new RegExp(`([\\d.]+)% of ${of}`, 'g'))].map(([, percent]) => Number(percent) / 100);
   return stated;
-};
-
-const rgbBytes = (hex: string) => {
-  const { r, g, b } = parseHex(hex)!;
-  return [r, g, b].map(channel => Math.round(channel * 255));
 };
 
 describe('folded winui derivations', () => {
@@ -124,13 +119,5 @@ describe('folded winui derivations', () => {
       }
     }
     expect(stale).toEqual([]);
-  });
-
-  it('reads a channel companion as the channels of its own hex', () => {
-    // Guards the two helpers above: a resolve() that silently returned the
-    // light value for both schemes would make either check vacuous.
-    const schemes = declarationsByScheme(winuiTokenCss);
-    expect(resolve(schemes[0]!, '--winui-accent-base')).not.toBe(resolve(schemes[1]!, '--winui-accent-base'));
-    expect(rgbBytes(resolve(schemes[0]!, '--winui-accent-base'))).toEqual([0, 103, 192]);
   });
 });

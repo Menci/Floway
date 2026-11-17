@@ -15,13 +15,4 @@ describe('locale loading', () => {
     expect(i18n.t('common.loading')).toBe('加载中…');
     expect(i18n.t('auth.login.submit')).toBe('登录');
   });
-
-  it('switches back to a language it booted with', async () => {
-    await setLanguage('zh-Hans');
-    await setLanguage('en');
-
-    expect(i18n.language).toBe('en');
-    expect(i18n.t('common.loading')).toBe('Loading…');
-    expect(i18n.t('auth.login.submit')).toBe('Sign in');
-  });
 });

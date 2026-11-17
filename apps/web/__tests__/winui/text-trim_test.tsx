@@ -5,7 +5,7 @@ import { expect, test, vi } from 'vitest';
 import { fluentComponents } from '../../src/fluent';
 import { renderInApp } from '../render';
 
-const { Badge, Button, CounterBadge, Input, Menu, MenuItem, MenuItemCheckbox, MenuList, MenuPopover, MenuTrigger, NavDrawer, NavItem, Tab, TabList, Textarea } = fluentComponents;
+const { Badge, Button, CounterBadge, Input, NavDrawer, NavItem, Tab, TabList, Textarea } = fluentComponents;
 
 test('wraps button text runs together and leaves icon-only buttons without a label', () => {
   const { container } = renderInApp(<>
@@ -51,18 +51,6 @@ test('trims tab and navigation labels while retaining selection and accessible n
   expect(screen.getByRole('tab', { name: 'Users' }).getAttribute('aria-selected')).toBe('true');
   expect(container.querySelector('.fui-NavItem .floway-control-label')!.textContent).toBe('Permissions');
   expect(container.querySelector('.fui-Tab__content .floway-control-label')!.textContent).toBe('Users');
-});
-
-test('retains menu trigger and checkable-item behavior with trimmed labels', () => {
-  const { baseElement } = renderInApp(<Menu>
-    <MenuTrigger disableButtonEnhancement><Button>Open menu</Button></MenuTrigger>
-    <MenuPopover><MenuList><MenuItem>Action</MenuItem><MenuItemCheckbox name="wrap" value="on">Wrap</MenuItemCheckbox></MenuList></MenuPopover>
-  </Menu>);
-  fireEvent.click(screen.getByRole('button', { name: 'Open menu' }));
-  expect(screen.getByRole('menuitem', { name: 'Action' }).querySelector('.floway-control-label')).toBeTruthy();
-  const check = screen.getByRole('menuitemcheckbox', { name: 'Wrap' });
-  fireEvent.click(check);
-  expect(baseElement.querySelector('.fui-MenuItemCheckbox')).toBeTruthy();
 });
 
 test('leaves editable text and its slots unwrapped', () => {

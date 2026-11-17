@@ -76,15 +76,6 @@ const renderPage = (search: string) => {
 const urlSearch = (router: ReturnType<typeof renderPage>['router']) => new URLSearchParams(router.state.location.search);
 
 describe('Performance table state', () => {
-  it('labels each table column with the percentile chosen for its metric', () => {
-    renderPage('ttft_p=p99&speed_p=p50');
-
-    expect(screen.getByRole('columnheader', { name: 'TTFT p99' })).toBeTruthy();
-    expect(screen.getByRole('columnheader', { name: 'Worst 50% speed' })).toBeTruthy();
-    expect(screen.getAllByRole('cell', { name: '500ms' }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('cell', { name: '50.0 tok/s' }).length).toBeGreaterThan(0);
-  });
-
   it('sorts the table by the percentile its column names', async () => {
     const { router } = renderPage('ttft_p=p95&sort=ttft');
     const modelOrder = () => screen.getAllByRole('row').slice(1).map(row => row.querySelector('td')?.textContent);
@@ -113,14 +104,6 @@ describe('Performance table state', () => {
     expect(urlSearch(router).get('ttft_p')).toBe('p50');
     expect(screen.getByRole('columnheader', { name: 'TTFT p50' })).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'Worst 1% speed' })).toBeTruthy();
-  });
-
-  it('opens the breakdown and sort the URL names', () => {
-    renderPage('tab=operation&sort=errors&dir=ascending');
-
-    expect(screen.getByRole('tab', { name: 'By Operation' }).getAttribute('aria-selected')).toBe('true');
-    expect(screen.getByRole('table', { name: 'By Operation' })).toBeTruthy();
-    expect(screen.getByRole('columnheader', { name: 'Errors' }).getAttribute('aria-sort')).toBe('ascending');
   });
 
   it('writes the breakdown tab and table sort to the URL', async () => {

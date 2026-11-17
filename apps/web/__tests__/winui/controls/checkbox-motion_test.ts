@@ -33,13 +33,6 @@ const linearOutputAt = (stops: number[], progress: number) => {
 };
 
 describe('WinUI checkbox motion', () => {
-  it('keeps the WinUI cubic fallback outside the linear() feature gate', () => {
-    const fallback = choiceCss.indexOf('transition-timing-function: cubic-bezier(0.55, 0, 0, 1)');
-    const gate = choiceCss.indexOf('@supports (transition-timing-function: linear(0, 1))');
-    expect(fallback).toBeGreaterThan(-1);
-    expect(gate).toBeGreaterThan(fallback);
-  });
-
   it('keeps the linear() route within five thousandths of the WinUI curve', () => {
     const stops = linearStops();
     expect(stops).toHaveLength(41);

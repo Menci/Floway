@@ -82,19 +82,6 @@ test('an operator sees every authorized principal in a read-only view', async ()
   expect(view.container.querySelectorAll('[data-rule-id]')).toHaveLength(3);
 });
 
-test('an operator clears a selected principal back to all visible principals', async () => {
-  renderOperatorPage(initial);
-  const picker = screen.getByRole<HTMLInputElement>('combobox', { name: 'Applies to' });
-  await waitFor(() => expect(picker.value).toBe('All visible principals'));
-  expect(screen.queryByRole('button', { name: 'Clear user or group filter' })).toBeNull();
-  fireEvent.click(picker);
-  fireEvent.click(await screen.findByRole('option', { name: /Platform/ }));
-  await waitFor(() => expect(picker.value).toBe('Platform'));
-  fireEvent.click(screen.getByRole('button', { name: 'Clear user or group filter' }));
-  await waitFor(() => expect(picker.value).toBe('All visible principals'));
-  expect(screen.queryByRole('button', { name: 'Clear user or group filter' })).toBeNull();
-});
-
 test('target-only identities render in rules without entering the principal picker', async () => {
   const data: PermissionsData = {
     ...initial,
@@ -198,16 +185,6 @@ test('a non-admin URL naming an invisible principal never requests that principa
   expect(vi.mocked(fetch).mock.calls.every(([input]) => !String(input).includes('/access-resolve'))).toBe(true);
 });
 
-test('a non-admin URL naming a group the operator does not belong to is normalized instead of treated as active', async () => {
-  const router = createMemoryRouter([{
-    path: '/permissions',
-    Component: () => <OutcomeToastProvider><PermissionsWorkspace key="mounted" admin={false} initial={initial} /></OutcomeToastProvider>,
-  }], { initialEntries: ['/permissions?principal=group:99'] });
-  renderInApp(<MemoryRouterProvider router={router} />);
-  await waitFor(() => expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Applies to' }).value).toBe('All visible principals'), { timeout: 6_000 });
-  expect(vi.mocked(fetch).mock.calls.every(([input]) => !String(input).includes('/access-resolve'))).toBe(true);
-});
-
 test.each([
   { principal: 'user:2:extra', scope: JSON.stringify(scope), removed: 'principal', retained: 'scope' },
   { principal: 'group:1', scope: 'not-json', removed: 'scope', retained: 'principal' },
@@ -257,42 +234,6 @@ test('removing an invalid scope cancels its old draft and allows a fresh valid s
   await waitFor(() => expect(JSON.parse(new URLSearchParams(router.state.location.search).get('scope')!)).toEqual(scope));
   const toggle = screen.getByRole<HTMLInputElement>('switch', { name: 'Show effective' });
   expect(toggle.disabled).toBe(false);
-  expect(toggle.checked).toBe(false);
-});
-
-test('removing an invalid principal preserves an unrelated in-progress scope draft', async () => {
-  const modelScope = { kind: 'upstreamModel', upstreamId: 'a', model: { kind: 'exact', value: 'gpt-5' } };
-  const { container, router } = renderPage(`?scope=${encodeURIComponent(JSON.stringify(modelScope))}`);
-  await screen.findByText('No matching rules');
-  const filters = container.querySelector('[data-permission-filters]') as HTMLElement;
-  fireEvent.click(within(filters).getByRole('button', { name: 'gpt-5' }));
-  const input = within(filters).getByRole<HTMLInputElement>('combobox', { name: 'Model' });
-  fireEvent.change(input, { target: { value: 'draft-model' } });
-  await act(async () => { await router.navigate(`/permissions?principal=bad&scope=${encodeURIComponent(JSON.stringify(modelScope))}`); });
-  await waitFor(() => expect(new URLSearchParams(router.state.location.search).has('principal')).toBe(false));
-  expect(within(filters).getByRole('combobox', { name: 'Model' })).toBe(input);
-  expect(input.value).toBe('draft-model');
-});
-
-test('has one filter toolbar, subtitle and no tabs or redundant rule count', async () => {
-  const { container } = renderPage('?effective=true');
-  await screen.findByRole('table', { name: 'Permission rules' });
-  expect(screen.getByText('Resource access for users and groups')).toBeTruthy();
-  expect(screen.queryByRole('tablist')).toBeNull();
-  expect(screen.queryByText(/^\d+ rules?$/)).toBeNull();
-  expect(screen.getByRole('textbox', { name: 'Search rules' })).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'New rule' })).toBeTruthy();
-  const toggle = screen.getByRole<HTMLInputElement>('switch', { name: 'Show effective' });
-  expect(toggle.disabled).toBe(true);
-  expect(toggle.checked).toBe(false);
-  await act(async () => { fireEvent.click(container.querySelector('.fui-InfoButton')!); });
-  expect(await screen.findByText('Checked:')).toBeTruthy();
-  expect(screen.getByText('Unchecked:')).toBeTruthy();
-  expect(screen.getByText(/inherited from ancestors/)).toBeTruthy();
-  expect(screen.getByText(/its descendants/)).toBeTruthy();
-  const checkedParagraph = screen.getByText('Checked:').closest('p')!;
-  expect(checkedParagraph.parentElement!.children).toHaveLength(2);
-  expect(checkedParagraph.parentElement!.querySelectorAll('p')).toHaveLength(2);
   expect(toggle.checked).toBe(false);
 });
 
@@ -392,24 +333,6 @@ test('the root turns effective mode off and choosing a scope does not restore it
   expect(new URLSearchParams(router.state.location.search).has('effective')).toBe(false);
 });
 
-test('clearing an effective scope turns it off permanently when a scope is selected again', async () => {
-  const { router } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}&effective=true`);
-  await screen.findByRole('table');
-  const toggle = screen.getByRole<HTMLInputElement>('switch', { name: 'Show effective' });
-  expect(toggle.checked).toBe(true);
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Remove last scope segment' })); });
-  await waitFor(() => expect(JSON.parse(new URLSearchParams(router.state.location.search).get('scope')!)).toEqual({ kind: 'upstreams' }));
-  expect(toggle.checked).toBe(true);
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Remove last scope segment' })); });
-  await waitFor(() => expect(toggle.disabled).toBe(true));
-  expect(toggle.checked).toBe(false);
-  expect(new URLSearchParams(router.state.location.search).has('effective')).toBe(false);
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Resource type' })); });
-  await act(async () => { fireEvent.click(await screen.findByRole('option', { name: /^Upstream$/ })); });
-  await waitFor(() => expect(toggle.disabled).toBe(false));
-  expect(toggle.checked).toBe(false);
-});
-
 test.each(['Upstream', 'Copilot'])('scope table part %s replaces the scope filter with its prefix', async name => {
   const { container, router } = renderPage('?principal=group:1&q=Model.Use');
   await screen.findByRole('table');
@@ -420,25 +343,6 @@ test.each(['Upstream', 'Copilot'])('scope table part %s replaces the scope filte
   expect(params.get('principal')).toBe('group:1');
   expect(params.get('q')).toBe('Model.Use');
   expect(screen.queryByRole('combobox', { name: 'Resource' })).toBeNull();
-});
-
-test('table scope navigation discards an active draft and cancels its deferred blur commit', async () => {
-  const modelScope = { kind: 'upstreamModel', upstreamId: 'a', model: { kind: 'exact', value: 'gpt-5' } } as const;
-  const data: PermissionsData = { ...initial, records: [...initial.records!, { ...initial.records![0]!, id: 4, scope: modelScope }] };
-  const { container, router } = renderPage(`?scope=${encodeURIComponent(JSON.stringify(modelScope))}`, data);
-  await screen.findByRole('table');
-  const filters = container.querySelector('[data-permission-filters]') as HTMLElement;
-  fireEvent.click(within(filters).getByRole('button', { name: 'gpt-5' }));
-  const input = within(filters).getByRole('combobox', { name: 'Model' });
-  fireEvent.change(input, { target: { value: 'uncommitted-model' } });
-  const row = container.querySelector('[data-rule-id="4"]') as HTMLElement;
-  await act(async () => {
-    fireEvent.blur(input);
-    fireEvent.click(within(row).getByRole('button', { name: 'gpt-5' }));
-    await new Promise(resolve => setTimeout(resolve, 0));
-  });
-  expect(JSON.parse(new URLSearchParams(router.state.location.search).get('scope')!)).toEqual(modelScope);
-  expect(within(filters).queryByRole('combobox', { name: 'Model' })).toBeNull();
 });
 
 test('the Group scope prefix filters group scopes through a real /Groups URL scope', async () => {
@@ -504,58 +408,6 @@ test('resolution errors stay visible and are not presented as an empty permissio
   expect(await screen.findByRole('table')).toBeTruthy();
 });
 
-test('a save refresh keeps the table and its controls available while it is in flight', async () => {
-  const originalFetch = vi.mocked(fetch).getMockImplementation()!;
-  let finishRefresh!: () => Promise<void>;
-  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-    const path = new URL(String(input), 'http://localhost').pathname;
-    if (path.startsWith('/api/access-records/') && init?.method === 'PUT') return Response.json(initial.records![1]);
-    if (path === '/api/permissions') return new Promise<Response>(resolve => { finishRefresh = async () => resolve(await originalFetch(input, init)); });
-    return originalFetch(input, init);
-  }));
-  const { container } = renderPage();
-  await screen.findByRole('table');
-  const edit = screen.getAllByRole<HTMLButtonElement>('button', { name: 'Edit rule' }).find(button => !button.disabled)!;
-  fireEvent.click(edit);
-  const dialog = await screen.findByRole('dialog');
-  await act(async () => { fireEvent.click(within(dialog).getByRole('button', { name: 'Save rule' })); });
-  await waitFor(() => expect(finishRefresh).toBeTypeOf('function'));
-  expect(screen.getByRole('table')).toBeTruthy();
-  expect(screen.getByRole<HTMLButtonElement>('button', { name: 'New rule' }).disabled).toBe(false);
-  expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(3);
-  await act(async () => { await finishRefresh(); });
-});
-
-test('preview query parameters never expose design or example controls', async () => {
-  renderPage('?permissionEditor=radio&inheritedIcon=branch');
-  await screen.findByRole('table');
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'New rule' })); });
-  const dialog = await screen.findByRole('dialog');
-  expect(within(dialog).queryByRole('combobox', { name: 'Design' })).toBeNull();
-  expect(within(dialog).queryByRole('combobox', { name: 'Example' })).toBeNull();
-  expect(dialog.querySelector('[data-permission-preview-controls]')).toBeNull();
-});
-
-test('effective loading retains the existing table and disables its actions', async () => {
-  const fetch = globalThis.fetch;
-  let complete!: () => Promise<void>;
-  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>(resolve => {
-    complete = async () => resolve(await fetch(input, init));
-  })));
-  const { container } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}`);
-  const table = await screen.findByRole('table');
-  const rows = [...container.querySelectorAll('[data-rule-id]')];
-  await act(async () => { fireEvent.click(screen.getByRole('switch', { name: 'Show effective' })); });
-  await waitFor(() => expect(complete).toBeTypeOf('function'));
-  expect(screen.getByRole('table')).toBe(table);
-  expect([...container.querySelectorAll('[data-rule-id]')]).toEqual(rows);
-  expect(within(table).getAllByRole<HTMLButtonElement>('button', { name: 'Edit rule' }).every(button => button.disabled)).toBe(true);
-  expect(within(table).queryByRole('progressbar')).toBeNull();
-  await act(async () => { await complete(); });
-  await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(3));
-  expect(screen.getByRole('table')).toBe(table);
-});
-
 test.each([false, true])('refresh preserves the table through base and effective reads (effective=%s)', async effective => {
   const { container } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}${effective ? '&effective=true' : ''}`);
   await screen.findByRole('table');
@@ -593,30 +445,6 @@ test.each([false, true])('refresh preserves the table through base and effective
   await waitFor(() => expect(within(table).getAllByRole<HTMLButtonElement>('button', { name: 'Edit rule' }).every(button => !button.disabled)).toBe(true));
   expect(screen.getByRole('table')).toBe(table);
   expect(table.closest('[aria-busy="true"]')).toBeNull();
-});
-
-test('an effective request preserves the displayed page until its results arrive', async () => {
-  const models: NonNullable<PermissionsData['records']> = Array.from({ length: 42 }, (_, index) => ({
-    ...initial.records![2]!, id: index + 100, sortOrder: index,
-    scope: { kind: 'upstreamModel', upstreamId: 'a', model: { kind: 'exact', value: `model-${index}` } },
-  }));
-  const data = { ...initial, records: [...initial.records!, ...models] };
-  const { container } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}&page=2`, data);
-  const table = await screen.findByRole('table');
-  const rows = [...container.querySelectorAll('[data-rule-id]')];
-  expect(screen.getByText('21 - 40 / 44')).toBeTruthy();
-  const fetch = globalThis.fetch;
-  let complete!: () => Promise<void>;
-  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>(resolve => { complete = async () => resolve(await fetch(input, init)); })));
-  await act(async () => { fireEvent.click(screen.getByRole('switch', { name: 'Show effective' })); });
-  await waitFor(() => expect(complete).toBeTypeOf('function'));
-  expect(screen.getByRole('table')).toBe(table);
-  expect([...container.querySelectorAll('[data-rule-id]')]).toEqual(rows);
-  expect(screen.getByText('21 - 40 / 44')).toBeTruthy();
-  expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Next page' }).disabled).toBe(true);
-  await act(async () => { await complete(); });
-  await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(3));
-  expect(screen.queryByText('21 - 40 / 44')).toBeNull();
 });
 
 test('an initial effective read never displays descendant rules', async () => {

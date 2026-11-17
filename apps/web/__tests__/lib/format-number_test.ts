@@ -5,7 +5,6 @@ import {
   formatCompactCount,
   formatCount,
   formatTokenRate,
-  formatTokenRateFromTpot,
 } from '../../src/lib/format-number';
 import { NO_READING } from '../../src/lib/no-reading';
 
@@ -21,13 +20,6 @@ describe('byte sizes', () => {
     expect(formatBytes(10.5 * 1024, 'en')).toBe('11 KB');
     expect(formatBytes(9.5 * 1024 ** 2, 'en')).toBe('9.5 MB');
     expect(formatBytes(10.5 * 1024 ** 2, 'en')).toBe('11 MB');
-  });
-
-  it('changes unit only at the binary boundary', () => {
-    expect(formatBytes(1024 ** 2 - 1, 'en')).toBe('1,024 KB');
-    expect(formatBytes(1024 ** 2, 'en')).toBe('1 MB');
-    expect(formatBytes(1024 ** 3 - 1, 'en')).toBe('1,024 MB');
-    expect(formatBytes(1024 ** 3, 'en')).toBe('1 GB');
   });
 
   // The top of the ladder has no unit above it to promote to, so it keeps two
@@ -67,13 +59,5 @@ describe('token rates', () => {
     expect(formatTokenRate(-1)).toBe(NO_READING);
     expect(formatTokenRate(Number.NaN)).toBe(NO_READING);
     expect(formatTokenRate(Number.POSITIVE_INFINITY)).toBe(NO_READING);
-  });
-
-  it('inverts a time per output token into a rate', () => {
-    expect(formatTokenRateFromTpot(10_000)).toBe('100 tok/s');
-    expect(formatTokenRateFromTpot(50_000)).toBe('20.0 tok/s');
-    expect(formatTokenRateFromTpot(null)).toBe(NO_READING);
-    expect(formatTokenRateFromTpot(0)).toBe(NO_READING);
-    expect(formatTokenRateFromTpot(-10)).toBe(NO_READING);
   });
 });

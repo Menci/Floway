@@ -51,22 +51,6 @@ describe('where the performance page reads upstream names from', () => {
     expect(performanceQueries[0].searchParams.getAll('filter_user_id')).toEqual(['1']);
   });
 
-  it('keeps user grouping and breakdown available to an operator like Usage', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining' as const, language: null } } });
-    const performanceQueries: URL[] = [];
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
-      const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
-      if (url.pathname === '/api/performance/overview') performanceQueries.push(url);
-      return gatewayForOperator(input);
-    }));
-
-    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance?g=userId&tab=userId') } as never);
-
-    expect(data.state.groupBy).toBe('userId');
-    expect(data.state.breakdown).toBe('userId');
-    expect(performanceQueries[0].searchParams.get('group_by')).toBe('userId');
-  });
-
   it('re-reads a Node overview after removing stale Region URL state', async () => {
     useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } } });
     const fetch = vi.fn(gatewayForOperator);

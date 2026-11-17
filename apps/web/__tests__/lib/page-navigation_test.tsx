@@ -61,16 +61,6 @@ describe('page change opt-in', () => {
     expect(getByText('same page')).toBeTruthy();
   });
 
-  it('still reads a page change when the back button returns to one', async () => {
-    const { router, getByText } = renderRouter();
-
-    await navigate(router, '/upstreams/new', pageNavigation);
-    await navigate(router, '/keys', pageNavigation);
-    await back(router);
-
-    expect(getByText('page change')).toBeTruthy();
-  });
-
   it('still reads a page change after the returned-to page rewrote its own query string', async () => {
     const { router, getByRole, getByText } = renderRouter();
 

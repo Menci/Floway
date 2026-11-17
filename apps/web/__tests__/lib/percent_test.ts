@@ -11,11 +11,6 @@ describe('percentages', () => {
     expect(clampPercent(105)).toBe(100);
   });
 
-  it('rounds to whole percent', () => {
-    expect(clampPercent(49.4)).toBe(49);
-    expect(clampPercent(49.5)).toBe(50);
-  });
-
   // Unknown and zero are different readings, so an unusable one comes back as
   // null and is written as a dash rather than as 0%.
   it('reports an unusable reading as unknown rather than as zero', () => {

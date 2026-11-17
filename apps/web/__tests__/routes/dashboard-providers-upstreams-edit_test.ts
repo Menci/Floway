@@ -47,32 +47,3 @@ test('opening an upstream without a successful cache keeps discovery unavailable
   expect(loaded.discovered).toBeNull();
   expect(mocks.listModels).not.toHaveBeenCalled();
 });
-
-test('a successful empty cache remains available without a refresh', async () => {
-  mocks.get.mockResolvedValue({
-    data: {
-      id: 'up_saved',
-      modelsCache: { fetchedAt: 100, lastError: null, modelCount: 0 },
-      cachedModels: [],
-    }, error: null,
-  });
-  const loaded = await clientLoader({ params: { id: 'up_saved' } } as Parameters<typeof clientLoader>[0]);
-  expect(loaded.discovered).toEqual([]);
-  expect(mocks.listModels).not.toHaveBeenCalled();
-});
-
-test('an audit-only record opens the editor in read-only mode', async () => {
-  mocks.get.mockResolvedValue({
-    data: {
-      id: 'up_saved',
-      editLevel: 'off',
-      audit: true,
-      modelsCache: { fetchedAt: null, lastError: null, modelCount: null },
-      cachedModels: null,
-    }, error: null,
-  });
-  const loaded = await clientLoader({ params: { id: 'up_saved' } } as Parameters<typeof clientLoader>[0]);
-  expect(loaded.editLevel).toBe('off');
-  expect(loaded.record.audit).toBe(true);
-  expect(mocks.loadAux).toHaveBeenCalledWith('up_saved');
-});

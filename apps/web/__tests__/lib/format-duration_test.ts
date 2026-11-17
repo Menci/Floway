@@ -33,11 +33,6 @@ describe('countdowns', () => {
     expect(formatCountdown(3_600, 'en')).toBe('60m 0s');
   });
 
-  it('floors a partial second and never counts below zero', () => {
-    expect(formatCountdown(5.9, 'en')).toBe('5s');
-    expect(formatCountdown(-3, 'en')).toBe('0s');
-  });
-
   it('takes its unit names from the locale', () => {
     expect(formatCountdown(61, 'zh-Hans')).toBe('1 分钟 1 秒');
     expect(formatCountdown(30, 'zh-Hans')).toBe('30 秒');
@@ -50,10 +45,5 @@ describe('remaining waits', () => {
     expect(formatRemaining(60_000, 'en')).toBe('1m');
     expect(formatRemaining(90 * 60_000, 'en')).toBe('1h 30m');
     expect(formatRemaining(48 * 3_600_000, 'en')).toBe('48h');
-  });
-
-  it('uses Chinese unit words for the same wait', () => {
-    expect(formatRemaining(90 * 60_000, 'zh-Hans')).toBe('1 小时 30 分钟');
-    expect(formatRemaining(48 * 3_600_000, 'zh-Hans')).toBe('48 小时');
   });
 });

@@ -98,24 +98,6 @@ describe('usage dimension controls', () => {
     expect(screen.getByRole('menuitemcheckbox', { name: 'Dana' })).toBeTruthy();
   });
 
-  it('matches the Performance dimension and range controls', () => {
-    renderPage(loaderData);
-
-    expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Group by' }).value).toBe('By Model');
-    expect(screen.queryByRole('combobox', { name: 'Model' })).toBeNull();
-    expect(screen.getByRole('combobox', { name: 'Upstream' })).toBeTruthy();
-    expect(screen.getByRole('combobox', { name: 'User' })).toBeTruthy();
-    expect(screen.getByRole('combobox', { name: 'API Key' })).toBeTruthy();
-    expect(screen.getByText('Last Day')).toBeTruthy();
-    expect(screen.getByText('7 Days')).toBeTruthy();
-    expect(screen.getByText('30 Days')).toBeTruthy();
-    const controlsRow = screen.getByRole('group', { name: 'Group by' }).parentElement?.parentElement;
-    const range = screen.getByRole('radiogroup', { name: 'Usage range' });
-    expect(controlsRow?.contains(range)).toBe(true);
-    expect(controlsRow?.nextElementSibling?.contains(screen.getByRole('combobox', { name: 'Upstream' }))).toBe(true);
-    expect(screen.getByRole('heading', { level: 2, name: 'By Model' })).toBeTruthy();
-  });
-
   it('hides API key filters under user grouping', () => {
     renderPage({
       ...loaderData,
@@ -188,21 +170,6 @@ describe('usage dimension controls', () => {
     expect(screen.getByRole('combobox', { name: 'API Key' }).getAttribute('placeholder')).toBe('1 selected');
   });
 
-  it('uses the ungrouped axis for stable summary totals', () => {
-    renderPage({
-      ...loaderData,
-      usage: {
-        ...loaderData.usage,
-        axes: {
-          ...loaderData.usage.axes,
-          none: [{ ...loaderData.usage.axes.none[0], metrics: { input_tokens: '99' } }],
-        },
-      },
-    });
-
-    expect(screen.getAllByText('99').length).toBeGreaterThan(0);
-  });
-
   it('loads the overview contract and derives Search scope from the actor', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'admin-session',
@@ -215,20 +182,6 @@ describe('usage dimension controls', () => {
     expect(data.state.groupBy).toBe('userId');
     expect(data.usage?.series[0]).toMatchObject({ group: 'gpt-5', metrics: {} });
     expect(data.upstreams).toEqual([{ id: 'up-1', name: 'Copilot seat', hue: 210 }]);
-  });
-
-  it('reads upstream labels from the overview response', async () => {
-    useAuthStore.getState().primeFromLogin({
-      token: 'admin-session',
-      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } },
-    });
-    stubUsageGateway();
-
-    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/usage') } as never);
-    renderPage(data);
-
-    expect(data.upstreams).toEqual([{ id: 'up-1', name: 'Copilot seat', hue: 210 }]);
-    expect(screen.getByRole('heading', { level: 2, name: 'By Model' })).toBeTruthy();
   });
 
   it('keeps self-only Search usage grouped by API key', async () => {

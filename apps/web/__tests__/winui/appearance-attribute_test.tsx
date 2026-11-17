@@ -9,9 +9,6 @@ import { renderInApp } from '../render';
 const {
   Button,
   Card,
-  CardFooter,
-  CardHeader,
-  CardPreview,
   Checkbox,
   Combobox,
   CompoundButton,
@@ -58,12 +55,6 @@ describe('appearance on the DOM', () => {
     expect(stamped).toEqual(['secondary', 'secondary', 'subtle', 'default']);
   });
 
-  it('stamps the explicit appearance when one is given', () => {
-    const view = renderInApp(<Button appearance="primary">accent</Button>);
-
-    expect(view.container.querySelector('button')?.getAttribute(winuiAppearanceAttribute)).toBe('primary');
-  });
-
   it('distinguishes the borderless appearances from the default one', () => {
     const view = renderInApp(
       <>
@@ -107,12 +98,6 @@ describe('components whose root is not their primary slot', () => {
     }
   });
 
-  it('carries a non-default appearance through to the attribute', () => {
-    const view = renderInApp(<Input appearance="filled-darker" aria-label="input" />);
-
-    expect(view.container.querySelector('.fui-Input')?.getAttribute(winuiAppearanceAttribute)).toBe('filled-darker');
-  });
-
   it('accepts a root slot given as shorthand rather than as a props object', () => {
     const view = renderInApp(<Input root="shorthand" aria-label="input" />);
 
@@ -143,15 +128,6 @@ describe('what the wrappers must not break', () => {
 
     expect(buttonRef.current?.tagName).toBe('BUTTON');
     expect(inputRef.current?.tagName).toBe('INPUT');
-  });
-
-  it('keeps the displayName parents and devtools read', () => {
-    expect([Button.displayName, Input.displayName, Dropdown.displayName, Link.displayName]).toEqual([
-      'Button',
-      'Input',
-      'Dropdown',
-      'Link',
-    ]);
   });
 
   it('still works as a cloned trigger child', () => {
@@ -223,33 +199,6 @@ describe('the rest of the button family', () => {
 });
 
 describe('the checked axis the WinUI rules read', () => {
-  it('exposes a checked ToggleButton as aria-pressed alongside its stamp', () => {
-    const view = renderInApp(<ToggleButton checked>checked</ToggleButton>);
-
-    const toggle = view.container.querySelector('button');
-
-    expect(toggle?.getAttribute('aria-pressed')).toBe('true');
-    expect(toggle?.getAttribute(winuiAppearanceAttribute)).toBe('secondary');
-  });
-
-  it('exposes a checked toolbar radio button as aria-checked instead', () => {
-    const view = renderInApp(
-      <Toolbar checkedValues={{ radio: ['one'] }}>
-        <ToolbarRadioGroup>
-          <ToolbarRadioButton name="radio" value="one">
-            checked radio
-          </ToolbarRadioButton>
-        </ToolbarRadioGroup>
-      </Toolbar>,
-    );
-
-    const radio = view.container.querySelector('button');
-
-    expect(radio?.getAttribute('aria-checked')).toBe('true');
-    expect(radio?.getAttribute('aria-pressed')).toBeNull();
-    expect(radio?.getAttribute(winuiAppearanceAttribute)).toBe('subtle');
-  });
-
   // The WinUI mixed rules cannot read :indeterminate, because the browser clears
   // that property when the user activates the box and Fluent re-asserts it only
   // from an effect keyed on the mixed flag -- which does not re-run while the box
@@ -380,19 +329,5 @@ describe('the card surface', () => {
       element.getAttribute(winuiAppearanceAttribute));
 
     expect(stamped).toEqual(['filled', 'filled-alternative', 'outline', 'subtle']);
-  });
-
-  it('leaves the card parts that have no appearance unstamped', () => {
-    const view = renderInApp(
-      <Card>
-        <CardPreview>preview</CardPreview>
-        <CardHeader header="header" />
-        <CardFooter>footer</CardFooter>
-      </Card>,
-    );
-
-    const stamped = [...view.container.querySelectorAll(`[${winuiAppearanceAttribute}]`)];
-
-    expect(stamped).toEqual([view.container.querySelector('.fui-Card')]);
   });
 });

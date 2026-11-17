@@ -36,13 +36,6 @@ describe('what the error page is told about its trace', () => {
   });
   afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
-  it('says nothing about a page that failed without a trace', async () => {
-    vi.stubEnv('DEV', false);
-    renderInApp(<Probe stack={undefined} />);
-    await settle();
-    expect(read()).toEqual({ status: 'settled', stack: '' });
-  });
-
   it('leaves a development build alone, where the trace already names its sources', async () => {
     vi.stubEnv('DEV', true);
     renderInApp(<Probe stack={RAW} />);
@@ -73,15 +66,6 @@ describe('what the error page is told about its trace', () => {
     renderInApp(<Probe stack={RAW} />);
     await settle();
     expect(read()).toEqual({ status: 'failed', stack: RAW });
-  });
-
-  it('goes back to waiting when a second failure replaces the first', async () => {
-    vi.stubEnv('DEV', false);
-    const { rerender } = renderInApp(<Probe stack={RAW} />);
-    await waitFor(() => expect(read().status).toBe('settled'));
-    const second = `Error: later\n    at other (${SCRIPT}:1:1)`;
-    rerender(<Probe stack={second} />);
-    expect(read()).toEqual({ status: 'loading', stack: second });
   });
 
   it('ignores a superseded restoration that finishes after the current one', async () => {

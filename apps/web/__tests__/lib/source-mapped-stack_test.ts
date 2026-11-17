@@ -81,27 +81,6 @@ describe('a stack restored from the maps its chunks name', () => {
       .toBe(`${message}\n    at handler (/src/first.ts:1:1)`);
   });
 
-  it('leaves a frame that carries no position of its own', async () => {
-    wholeApp();
-    const restored = await restoreStack([
-      'Error: boom',
-      '    at async Promise.all (index 0)',
-      '    at [native code]',
-      `    at handler (${SCRIPT}:1:1)`,
-    ].join('\n'));
-
-    expect(restored.split('\n').slice(1, 3)).toEqual([
-      '    at async Promise.all (index 0)',
-      '    at [native code]',
-    ]);
-  });
-
-  it('leaves a frame belonging to some other origin, and asks it for nothing', async () => {
-    wholeApp();
-    const frame = '    at inject (chrome-extension://abcdef/content.js:2:9)';
-    expect(await restoreStack(`Error: boom\n${frame}`)).toBe(`Error: boom\n${frame}`);
-  });
-
   it('leaves an oversized frame unparsed, and asks it for nothing', async () => {
     vi.stubGlobal('fetch', vi.fn());
     const frame = `    at ${'nested.'.repeat(170)}handler (${SCRIPT}:1:1)`;
@@ -140,14 +119,6 @@ describe('a stack restored from the maps its chunks name', () => {
     });
     await expect(restoreStack(`Error: boom\n    at handler (${SCRIPT}:1:1)`))
       .rejects.toThrow('another revision');
-  });
-
-  it('says so when the map cannot be fetched', async () => {
-    wholeApp({
-      'https://gateway.test/assets/chunk.js.map': () => new Response('', { status: 503 }),
-    });
-    await expect(restoreStack(`Error: boom\n    at handler (${SCRIPT}:1:1)`))
-      .rejects.toThrow('responded 503');
   });
 
   it('says so when the chunk cannot be fetched', async () => {

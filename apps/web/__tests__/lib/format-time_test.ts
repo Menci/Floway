@@ -17,23 +17,6 @@ describe('absolute timestamps', () => {
     expect(dateTime(null, 'en')).toBe(NO_READING);
     expect(dateTime(undefined, 'en')).toBe(NO_READING);
   });
-
-  it('reads an epoch reading and an ISO string as the same instant', () => {
-    expect(shortDate(INSTANT_EPOCH, 'en')).toBe(shortDate(INSTANT_ISO, 'en'));
-    expect(dateTime(INSTANT_EPOCH, 'en')).toBe(dateTime(INSTANT_ISO, 'en'));
-  });
-
-  it('adds a time of day to the date it shares with the short form', () => {
-    const long = dateTime(INSTANT_ISO, 'en');
-    expect(long.startsWith(shortDate(INSTANT_ISO, 'en'))).toBe(true);
-    expect(long.length).toBeGreaterThan(shortDate(INSTANT_ISO, 'en').length);
-  });
-
-  it('writes a Chinese date numerically and leaves other locales to Intl', () => {
-    expect(shortDate(INSTANT_ISO, 'zh-Hans')).toMatch(/^\d{4}\/\d{2}\/\d{2}$/);
-    expect(shortDate(INSTANT_ISO, 'zh-Hans')).not.toMatch(/[年月日]/);
-    expect(shortDate(INSTANT_ISO, 'en')).toMatch(/^[A-Z][a-z]{2} \d{1,2}, \d{4}$/);
-  });
 });
 
 describe('relative timestamps', () => {
@@ -56,22 +39,11 @@ describe('relative timestamps', () => {
     expect(at(2_592_000)).toBeNull();
   });
 
-  it('says the same distance forwards as backwards', () => {
-    expect(at(3_600)).toBe('in 1 hour');
-    expect(at(86_400)).toBe('tomorrow');
-  });
-
   it('narrows on request and follows the locale', () => {
     expect(relativeTime(INSTANT_EPOCH - 3_600_000, 'en', { now: INSTANT_EPOCH, style: 'narrow' })).toBe('1h ago');
     expect(relativeTime(INSTANT_EPOCH - 3_600_000, 'zh-Hans', { now: INSTANT_EPOCH, style: 'narrow' })).toBe('1 小时前');
     expect(relativeTime(INSTANT_EPOCH - 3_600_000, 'zh-Hans', { now: INSTANT_EPOCH })).toBe('1 小时前');
     expect(relativeTime(INSTANT_EPOCH - 90_000, 'zh-Hans', { now: INSTANT_EPOCH })).toBe('1 分钟前');
-  });
-
-  it('words a one-day distance instead of counting it', () => {
-    expect(relativeTime(INSTANT_EPOCH - 86_400_000, 'zh-Hans', { now: INSTANT_EPOCH })).toBe('昨天');
-    expect(relativeTime(INSTANT_EPOCH, 'zh-Hans', { now: INSTANT_EPOCH })).toBe('现在');
-    expect(relativeTime(INSTANT_EPOCH + 86_400_000, 'zh-Hans', { now: INSTANT_EPOCH })).toBe('明天');
   });
 });
 

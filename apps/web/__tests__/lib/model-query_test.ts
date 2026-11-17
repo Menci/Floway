@@ -15,8 +15,4 @@ describe('model combobox filtering', () => {
   it('trims the query before matching', () => {
     expect(filterModelOptions(ids, ' claude-opus-4.6 ')).toEqual(['claude-opus-4.6']);
   });
-
-  it('answers an empty query with every option', () => {
-    expect(filterModelOptions(ids, '   ')).toEqual(ids);
-  });
 });

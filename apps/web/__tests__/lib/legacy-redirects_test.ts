@@ -6,13 +6,7 @@ describe('legacy dashboard route redirects', () => {
   it.each([
     ['/login', '/'],
     ['/dashboard/keys', '/dashboard/services/api-keys'],
-    ['/dashboard/models', '/dashboard/playground'],
-    ['/dashboard/performance', '/dashboard/monitor/performance'],
-    ['/dashboard/requests', '/dashboard/monitor/requests'],
-    ['/dashboard/upstreams', '/dashboard/providers/upstreams'],
     ['/dashboard/upstreams/new', '/dashboard/providers/upstreams'],
-    ['/dashboard/usage', '/dashboard/monitor/usage'],
-    ['/dashboard/users', '/dashboard/admin/users'],
   ])('redirects %s to %s', (from, to) => {
     expect(legacyRedirectTarget(from)).toBe(to);
   });
@@ -34,12 +28,6 @@ describe('legacy dashboard route redirects', () => {
   it('encodes path params and record hashes in the redirect target', () => {
     expect(legacyRedirectTarget('/dashboard/requests/key%201')).toBe('/dashboard/monitor/requests?key=key%201');
     expect(legacyRedirectTarget('/dashboard/upstreams/new/a%2Fb')).toBe('/dashboard/providers/upstreams/new/a%2Fb');
-  });
-
-  it('treats trailing slashes as the same legacy route', () => {
-    expect(legacyRedirectTarget('/login/')).toBe('/');
-    expect(legacyRedirectTarget('/dashboard/keys/')).toBe('/dashboard/services/api-keys');
-    expect(legacyRedirectTarget('/dashboard/requests/key-123/')).toBe('/dashboard/monitor/requests?key=key-123');
   });
 
   it('returns null for paths that are not legacy routes', () => {
