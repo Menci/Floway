@@ -1,6 +1,9 @@
 import type { PlaygroundApi, PlaygroundAssistantOutput, PlaygroundMessage } from './request';
 import { errorMessageFromPayload } from '../../lib/error-payload';
 import {
+  type GeminiGenerateContentPart,
+  reassembleGeminiGenerateContentEvents,
+  type GeminiGenerateContentStreamEvent,
   reassembleAnthropicMessagesEvents,
   type AnthropicMessagesStreamEventEx,
   parseSSEStream,
@@ -23,11 +26,28 @@ export interface PlaygroundRequest {
 
 const PATH_BY_API: Record<PlaygroundApi, string> = {
   anthropicMessages: '/v1/messages',
+  geminiGenerateContent: '/v1beta/models',
   openaiChatCompletions: '/v1/chat/completions',
   openaiResponses: '/v1/responses',
 };
 
+// GenerateContent puts the model and the action in one path segment.
+const pathFor = (request: PlaygroundRequest): string =>
+  request.api === 'geminiGenerateContent'
+    ? `${PATH_BY_API.geminiGenerateContent}/${encodeURIComponent(request.model)}:streamGenerateContent?alt=sse`
+    : PATH_BY_API[request.api];
+
+// GenerateContent carries turns as role-tagged contents whose parts mirror the
+// wire's own part kinds, so images stay inlineData rather than a data URL.
+const geminiPartsFor = (message: PlaygroundMessage): GeminiGenerateContentPart[] => {
+  if (!message.imageUrl) return [{ text: message.text }];
+  const [meta, data] = message.imageUrl.split(',');
+  const mimeType = /^data:([^;]+)/.exec(meta)?.[1] ?? 'image/png';
+  return [{ text: message.text }, { inlineData: { mimeType, data: data ?? '' } }];
+};
+
 const contentFor = (message: PlaygroundMessage, api: PlaygroundApi): unknown => {
+  if (api === 'geminiGenerateContent') return geminiPartsFor(message);
   if (!message.imageUrl) return message.text;
   if (api === 'anthropicMessages') {
     return [
@@ -53,7 +73,11 @@ const turnsFor = (messages: readonly PlaygroundMessage[], api: PlaygroundApi): u
     if (output?.api === api) {
       if (output.api === 'openaiResponses') return output.items;
       if (output.api === 'openaiChatCompletions') return [output.message];
+      if (output.api === 'geminiGenerateContent') return [{ role: 'model', parts: output.parts }];
       return [{ role: 'assistant', content: output.content }];
+    }
+    if (api === 'geminiGenerateContent') {
+      return [{ role: message.role === 'assistant' ? 'model' : 'user', parts: contentFor(message, api) }];
     }
     return [{ role: message.role, content: contentFor(message, api) }];
   });
@@ -65,6 +89,14 @@ const bodyFor = ({ api, model, system, messages, options }: PlaygroundRequest): 
   }
   if (api === 'openaiResponses') {
     return { model, stream: true, ...(system ? { instructions: system } : {}), input: turns, ...options };
+  }
+  if (api === 'geminiGenerateContent') {
+    // The model and the streaming action live in the path, not the body.
+    return {
+      ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+      contents: turns,
+      ...options,
+    };
   }
   return {
     model,
@@ -92,11 +124,28 @@ const assistantOutputFrom = async (
     const message = result.choices[0]?.message;
     return message ? { api: 'openaiChatCompletions', message } : null;
   }
+  if (api === 'geminiGenerateContent') {
+    const result = await reassembleGeminiGenerateContentEvents(
+      eventsFrom(events as GeminiGenerateContentStreamEvent[]),
+    );
+    const parts = result.candidates?.[0]?.content?.parts;
+    return parts ? { api: 'geminiGenerateContent', parts } : null;
+  }
   const result = await reassembleAnthropicMessagesEvents(eventsFrom(events as AnthropicMessagesStreamEventEx[]));
   return { api: 'anthropicMessages', content: result.content };
 };
 
 const textDelta = (api: PlaygroundApi, event: unknown): string => {
+  if (api === 'geminiGenerateContent') {
+    const chunk = event as GeminiGenerateContentStreamEvent;
+    if ('error' in chunk) return '';
+    // Thought parts are model output too, but the playground renders
+    // the answer; thought summaries would otherwise interleave with it.
+    return (chunk.candidates?.[0]?.content?.parts ?? [])
+      .filter(part => part.thought !== true)
+      .map(part => part.text ?? '')
+      .join('');
+  }
   if (api === 'openaiChatCompletions') {
     const chunk = event as OpenAIChatCompletionsStreamEvent;
     return chunk.choices?.[0]?.delta?.content ?? '';
@@ -124,12 +173,18 @@ export const streamPlaygroundText = async function* (
   request: PlaygroundRequest,
 ): AsyncGenerator<string, PlaygroundAssistantOutput | null> {
   const { api, apiKey, signal, fetchImpl } = request;
-  const response = await fetchImpl(PATH_BY_API[api], {
+  const response = await fetchImpl(pathFor(request), {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
+      // Each protocol presents the gateway key the way its own clients do.
       // https://docs.anthropic.com/en/api/versioning
-      ...(api === 'anthropicMessages' ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' } : { authorization: `Bearer ${apiKey}` }),
+      // https://ai.google.dev/gemini-api/docs/api-key
+      ...(api === 'anthropicMessages'
+        ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }
+        : api === 'geminiGenerateContent'
+          ? { 'x-goog-api-key': apiKey }
+          : { authorization: `Bearer ${apiKey}` }),
     },
     body: JSON.stringify(bodyFor(request)),
     signal,
