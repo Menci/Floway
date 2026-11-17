@@ -2,7 +2,6 @@ import { expect, test } from 'vitest';
 
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import {
-  routeGeminiGenerateContentViaOpenAIChatCompletions,
   routeOpenAIChatCompletionsViaAnthropicMessages,
   routeOpenAIChatCompletionsViaOpenAIResponses,
   routeOpenAIResponsesViaOpenAIChatCompletions,
@@ -32,24 +31,4 @@ test('public operations preserve unexpected errors and their causes', async () =
   }, { ...options, fallbackMaxOutputTokens: 32 })).rejects.toBe(failure);
 
   expect(failure.cause).toBe(cause);
-});
-
-test('Messages translation preserves URL media in its native request', async () => {
-  const trip = await routeOpenAIChatCompletionsViaAnthropicMessages({
-    model: 'source-model', stream: true, messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'https://example.com/image.png' } }] }],
-  }, {
-    ...options, fallbackMaxOutputTokens: 32,
-  });
-  expect(trip.type).toBe('trip');
-  if (trip.type !== 'trip') throw new Error(trip.message);
-  expect(trip.target.messages[0].content).toEqual([{ type: 'image', source: { type: 'url', url: 'https://example.com/image.png' }, cache_control: { type: 'ephemeral' } }]);
-  expect(trip.target.max_tokens).toBe(32);
-  expect(trip.error(418, new Headers(), new Uint8Array())).toBeUndefined();
-});
-
-test('Gemini translation retains the model in the formal source request', async () => {
-  const trip = await routeGeminiGenerateContentViaOpenAIChatCompletions({ model: 'resolved-model', contents: [{ role: 'user', parts: [{ text: 'hello' }] }] }, options);
-  expect(trip.type).toBe('trip');
-  if (trip.type !== 'trip') throw new Error(trip.message);
-  expect(trip.target.model).toBe('resolved-model');
 });

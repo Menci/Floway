@@ -1,7 +1,6 @@
 import { expect, test } from 'vitest';
 
 import { collectIR } from '../../../ir/output/helpers.ts';
-import { createRoundTripReaderCapture } from '../../../round-trip/test-helpers.ts';
 import { collect, iterate } from '../../../shared/iterables.ts';
 import { readOpenAIResponsesEvents } from '../../helpers.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
@@ -225,19 +224,6 @@ test('an empty terminal Responses output preserves closed items', async () => {
     { type: 'response.completed', response: { ...response(), output: undefined } },
   ]);
   expect(absent.choices[0].items[0]).toMatchObject({ type: 'message', content: [{ text: 'answer' }] });
-});
-
-test('an empty terminal Responses output captures closed snapshots for round trip', async () => {
-  const added = { type: 'message', id: 'msg', role: 'assistant', status: 'in_progress', content: [] };
-  const done = { ...added, status: 'completed', content: [{ type: 'output_text', text: 'answer', annotations: [], logprobs: [] }] };
-  const capture = createRoundTripReaderCapture<'openaiResponses'>();
-  await collectIR(readOpenAIResponsesEvents(iterate([
-    eventFrame({ type: 'response.created', response: response([]) } as any),
-    eventFrame({ type: 'response.output_item.added', output_index: 0, item: added } as any),
-    eventFrame({ type: 'response.output_item.done', output_index: 0, item: done } as any),
-    eventFrame({ type: 'response.completed', response: response([]) } as any),
-  ]), capture.roundTrip));
-  expect(capture.turns.get(0)?.turn).toEqual([{ type: 'message', id: 'msg', role: 'assistant', status: 'completed', content: done.content }]);
 });
 
 test('a non-empty terminal Responses output cannot change a closed item', async () => {

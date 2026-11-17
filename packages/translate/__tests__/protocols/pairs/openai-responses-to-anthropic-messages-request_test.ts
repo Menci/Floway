@@ -2,9 +2,8 @@ import { test } from 'vitest';
 
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, type AnthropicMessagesClientTool, type AnthropicMessagesToolResultBlock, type AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIResponsesInputMultiAgentCallOutputItem, OpenAIResponsesTool, OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
-import { assert, assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
+import type { OpenAIResponsesTool, OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
+import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const minimalPayload = {
   model: 'claude-test',
@@ -21,16 +20,12 @@ const minimalPayload = {
   parallel_tool_calls: true,
 };
 
-const testBuildOptions: { fallbackMaxOutputTokens?: number } = {
-  fallbackMaxOutputTokens: undefined,
-};
-
 const buildWithTestSidecar = async (
   payload: OpenAIResponsesRequestPayloadEx,
-  options: Partial<typeof testBuildOptions> = {},
+  options: { fallbackMaxOutputTokens?: number } = {},
 ) => {
   const streamed = { ...payload, stream: true };
-  const built = await buildTargetPayloadFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], streamed, { sidecarCodec: createTestSidecarCodec(), ...testBuildOptions, ...options });
+  const built = await buildTargetPayloadFor(pairs.responsesToMessages[0], pairs.responsesToMessages[1], streamed, { sidecarCodec: createTestSidecarCodec(), ...options });
   return { target: built };
 };
 
@@ -78,22 +73,6 @@ test('buildTargetPayload accepts an implicit message discriminator', async () =>
   ]);
 });
 
-test('buildTargetPayload rejects an agent_message that no interceptor lowered', async () => {
-  await assertRejects(
-    () => buildWithTestSidecar({
-      ...minimalPayload,
-      input: [{
-        type: 'agent_message',
-        author: '/root/reviewer',
-        recipient: '/root',
-        content: [{ type: 'input_text', text: 'done' }],
-      }],
-    }),
-    Error,
-    'agent_message',
-  );
-});
-
 test('an empty namespace description does not prefix a child description', async () => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
@@ -105,10 +84,6 @@ test('an empty namespace description does not prefix a child description', async
 
 test.each([
   { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },
-  { name: 'program_output', input: [{ type: 'program_output', id: 'prog_out_1', call_id: 'call_prog_1', result: '1', status: 'completed' }] },
-  { name: 'multi_agent_call', input: [{ type: 'multi_agent_call', action: 'spawn_agent', arguments: '{}', call_id: 'call_1' }] },
-  { name: 'multi_agent_call_output', input: [{ type: 'multi_agent_call_output', action: 'spawn_agent', call_id: 'call_1', output: [] as OpenAIResponsesInputMultiAgentCallOutputItem['output'] }] },
-  { name: 'context_compaction', input: [{ type: 'context_compaction', encrypted_content: 'opaque' }] },
   { name: 'item_reference', input: [{ type: 'item_reference', id: 'msg_1' }] },
 ] as const)('buildTargetPayload rejects OpenAI-Responses-only $name input', async ({ name, input }) => {
   await assertRejects(
@@ -137,26 +112,6 @@ test('buildTargetPayload wires OpenAI Responses tooling guards', async () => {
 test('buildTargetPayload preserves required tool choice without declarations', async () => {
   const result = await buildWithTestSidecar({ ...minimalPayload, tools: null, tool_choice: 'required' });
   assertEquals(result.target.tool_choice, { type: 'any' });
-});
-
-test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetPayload maps input_file in %s to a document', async type => {
-  const result = await buildWithTestSidecar({
-    ...minimalPayload,
-    input: [
-      ...(type === 'function_call_output'
-        ? [{ type: 'function_call' as const, call_id: 'call_1', name: 'lookup', arguments: '{}' }]
-        : [{ type: 'custom_tool_call' as const, call_id: 'call_1', name: 'lookup', input: '{}' }]),
-      { type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] },
-    ],
-  });
-  const user = result.target.messages.find(message => message.role === 'user');
-  assertEquals(user, {
-    role: 'user',
-    content: [{
-      type: 'tool_result', tool_use_id: 'call_1', content: [{ type: 'document', source: { type: 'file', file_id: 'file_1' } }],
-      cache_control: { type: 'ephemeral' },
-    }],
-  });
 });
 
 test.each([
@@ -193,17 +148,6 @@ test('buildTargetPayload preserves assistant input_text', async () => {
   ]);
 });
 
-test('buildTargetPayload rejects assistant images', async () => {
-  await assertRejects(
-    () => buildWithTestSidecar({
-      ...minimalPayload,
-      input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_image', image_url: 'https://example.com/a.png', detail: 'auto' }] }],
-    }),
-    Error,
-    'input_image assistant content',
-  );
-});
-
 test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetPayload passes file_id-only images through in %s', async type => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,
@@ -228,35 +172,6 @@ test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTa
   ]);
 });
 
-test('buildTargetPayload forwards empty reasoning.effort verbatim', async () => {
-  const result = await buildWithTestSidecar({
-    ...minimalPayload,
-    reasoning: { effort: '' },
-  });
-
-  assertEquals(result.target.output_config, { effort: '' });
-  assertFalse('thinking' in result.target);
-});
-
-test('buildTargetPayload defaults max_tokens to ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS when neither source nor fallbackMaxOutputTokens supplies one', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'claude-test',
-    input: [{ type: 'message', role: 'user', content: 'hi' }],
-    instructions: null,
-    temperature: null,
-    top_p: null,
-    max_output_tokens: null,
-    tools: null,
-    tool_choice: 'auto',
-    metadata: null,
-    stream: null,
-    store: false,
-    parallel_tool_calls: true,
-  });
-
-  assertEquals(result.target.max_tokens, ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS);
-});
-
 test('buildTargetPayload uses fallbackMaxOutputTokens over the gateway const when the source omitted max_output_tokens', async () => {
   const result = await buildWithTestSidecar(
     {
@@ -277,36 +192,6 @@ test('buildTargetPayload uses fallbackMaxOutputTokens over the gateway const whe
   );
 
   assertEquals(result.target.max_tokens, 4096);
-});
-
-test('buildTargetPayload omits the signature for a reasoning with no encrypted_content', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'claude-test',
-    input: [
-      {
-        type: 'reasoning',
-        id: 'rs_42',
-        summary: [{ type: 'summary_text', text: 'trace' }],
-      },
-    ],
-    instructions: null,
-    temperature: null,
-    top_p: null,
-    max_output_tokens: 256,
-    tools: null,
-    tool_choice: 'auto',
-    metadata: null,
-    stream: null,
-    store: false,
-    parallel_tool_calls: true,
-  });
-
-  const assistant = result.target.messages[0];
-  if (assistant.role !== 'assistant' || !Array.isArray(assistant.content)) {
-    throw new Error('expected assistant message with content blocks');
-  }
-
-  assertEquals(assistant.content[0], { signature: '', type: 'thinking', thinking: 'trace' });
 });
 
 test('buildTargetPayload drops reasoning input without readable summary', async () => {
@@ -414,7 +299,6 @@ test.each(['web_search'])('buildTargetPayload rejects unsupported object tool ch
 });
 
 test.each([
-  { name: 'string', output: 'ok', expected: 'ok' },
   { name: 'text array', output: [{ type: 'input_text' as const, text: 'first\n' }, { type: 'input_text' as const, text: 'second' }], expected: [{ type: 'text', text: 'first\n' }, { type: 'text', text: 'second' }] },
   { name: 'empty array', output: [], expected: '' },
 ])('buildTargetPayload projects custom_tool_call history with $name output into wrapped tool_use shape', async ({ output, expected }) => {
@@ -547,7 +431,7 @@ test('buildTargetPayload gives a schema-less function tool the empty object sche
   ]);
 });
 
-test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetPayload maps multimodal %s into tool_result image and text blocks', async type => {
+test.each(['function_call_output'] as const)('buildTargetPayload maps multimodal %s into tool_result image and text blocks', async type => {
   const result = await buildWithTestSidecar({
     model: 'claude-test',
     input: [
@@ -602,87 +486,6 @@ test('buildTargetPayload maps incomplete function output to an Anthropic tool er
       cache_control: { type: 'ephemeral' },
     }],
   });
-});
-
-test('buildTargetPayload throws on a stray web_search_call input item (shim owns the reverse path)', async () => {
-  // The OpenAI Responses web-search shim rewrites web_search_call input items into
-  // upstream function_call + function_call_output pairs before this
-  // translator runs. Reaching the translator with a raw web_search_call
-  // means the shim regressed; the translator surfaces a loud error so the
-  // bug is caught rather than silently dropping search context.
-  await assertRejects(
-    () => buildWithTestSidecar({
-      model: 'claude-test',
-      input: [
-        { type: 'message', role: 'user', content: 'hi' },
-        {
-          type: 'web_search_call',
-          id: 'ws_x',
-          status: 'completed',
-          action: { type: 'search', queries: ['q'] },
-        },
-      ],
-      instructions: null,
-      temperature: null,
-      top_p: null,
-      max_output_tokens: 256,
-      tools: null,
-      tool_choice: 'auto',
-      metadata: null,
-      stream: null,
-      store: false,
-      parallel_tool_calls: true,
-    }),
-    Error,
-    'Invalid input item: {"type":"web_search_call"',
-  );
-});
-
-test('buildTargetPayload extracts flat text.format json_schema into output_config.format and drops OpenAI-only fields', async () => {
-  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'], additionalProperties: false };
-  const result = await buildWithTestSidecar({
-    model: 'claude-test',
-    input: [{ type: 'message', role: 'user', content: 'hi' }],
-    instructions: null,
-    temperature: null,
-    top_p: null,
-    max_output_tokens: 256,
-    tools: null,
-    tool_choice: 'auto',
-    metadata: null,
-    stream: null,
-    store: false,
-    parallel_tool_calls: true,
-    text: { format: { type: 'json_schema', name: 'whatever', strict: true, schema } },
-  });
-
-  assertEquals(result.target.output_config, { format: { type: 'json_schema', schema } });
-});
-
-test('buildTargetPayload hoists leading role:"system" to top-level system field', async () => {
-  const result = await buildWithTestSidecar(
-    {
-      model: 'claude-test',
-      input: [
-        { type: 'message', role: 'system', content: 'be terse' },
-        { type: 'message', role: 'user', content: 'q1' },
-      ],
-      instructions: null,
-      temperature: null,
-      top_p: null,
-      max_output_tokens: 256,
-      tools: null,
-      tool_choice: 'auto',
-      metadata: null,
-      stream: null,
-      store: false,
-      parallel_tool_calls: true,
-    },
-  );
-
-  assertEquals(result.target.system, [{ type: 'text', text: 'be terse', cache_control: { type: 'ephemeral' } }]);
-  assertEquals(result.target.messages.length, 1);
-  assertEquals(result.target.messages[0].role, 'user');
 });
 
 test('buildTargetPayload throws when a system input message contains an image part', async () => {

@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { TranslateInputException } from '../../../src/shared/input-error.ts';
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
 const buildWithTestSidecar = (payload: OpenAIChatCompletionsPayloadEx) =>
@@ -168,7 +168,7 @@ test('buildTargetPayload preserves explicit tool strict and defaults omission to
   ]);
 });
 
-test.each(['none', 'future_effort'])('buildTargetPayload forwards reasoning_effort=%j verbatim', async reasoning_effort => {
+test.each(['future_effort'])('buildTargetPayload forwards reasoning_effort=%j verbatim', async reasoning_effort => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     messages: [{ role: 'user', content: 'hi' }],

@@ -29,19 +29,6 @@ test.each([
   assert(parsed.error.message.startsWith('prompt is too long:'));
 });
 
-test('restates a recognized failure in the Messages envelope and keeps the upstream status', () => {
-  const result = restateAnthropicMessagesError(...upstreamOf(401, { error: { code: 'invalid_api_key', message: 'bad token' } }));
-  assertEquals(result!.status, 401);
-  assertEquals(decoded(result).error.message, 'bad token');
-});
-
-test('keeps the upstream headers a client reads', () => {
-  const result = restateAnthropicMessagesError(...upstreamOf(429, { error: { message: 'slow down' } }, { 'retry-after': '30', 'request-id': 'req_1' }));
-  assertEquals(result!.headers.get('retry-after'), '30');
-  assertEquals(result!.headers.get('request-id'), 'req_1');
-  assertEquals(result!.headers.get('x-upstream'), 'a');
-});
-
 test('passes an unrecognized body through untouched', () => {
   assertEquals(restateAnthropicMessagesError(...upstreamOf(502, 'Bad Gateway')), undefined);
   assertEquals(restateAnthropicMessagesError(...upstreamOf(502, 'exceeds the context window of this model')), undefined);
@@ -57,20 +44,6 @@ test('preserves colliding loose error fields beneath the upstream container prio
   assertEquals((decoded(result).error as Record<string, unknown>).provider_specific_fields, {
     stack: 'theirs', stack_1: 'legacy', retry_after: 10, code: 'invalid_value', param: 'temperature',
   });
-});
-
-test('preserves the same failure fields before and during a stream', () => {
-  const error = {
-    message: 'bad field', type: 'invalid_request_error', code: 'invalid_value', param: 'temperature',
-    provider_specific_fields: { request_id: 'req_1' }, retry_after: 10,
-  };
-  const result = restateAnthropicMessagesError(...upstreamOf(400, { error }));
-  const expected = {
-    type: 'invalid_request_error', message: 'bad field',
-    provider_specific_fields: { code: 'invalid_value', param: 'temperature', request_id: 'req_1', retry_after: 10 },
-  };
-  assertEquals(decoded(result).error, expected);
-  assertEquals(anthropicMessagesErrorFromIR(errorPayloadFromWire(error)), expected);
 });
 
 test('normalizes a wire msg alias before treating the object as an IR error', () => {

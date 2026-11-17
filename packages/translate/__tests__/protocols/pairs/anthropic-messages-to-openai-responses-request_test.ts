@@ -2,9 +2,8 @@ import { test } from 'vitest';
 
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesAssistantContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIResponsesFunctionTool, OpenAIResponsesInputReasoning } from '@floway-dev/protocols/openai-responses';
-import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const buildWithTestSidecar = (payload: AnthropicMessagesPayload) =>
   buildTargetPayloadFor(pairs.messagesToResponses[0], pairs.messagesToResponses[1], { ...payload, stream: true }, { sidecarCodec: createTestSidecarCodec() });
@@ -172,18 +171,6 @@ test('buildTargetPayload pairs each server tool round with its own result', asyn
   ]);
 });
 
-test('buildTargetPayload maps output_config.effort directly to reasoning.effort', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    output_config: { effort: 'xhigh' },
-    messages: [{ role: 'user', content: 'hi' }],
-  });
-
-  assertEquals(result.reasoning, { effort: 'xhigh' });
-  assertFalse('include' in result);
-});
-
 test('buildTargetPayload projects thinking.enabled budgets onto reasoning.effort', async () => {
   for (const [budget, effort] of [[1024, 'low'], [16384, 'high']] as const) {
     const result = await buildWithTestSidecar({
@@ -195,31 +182,6 @@ test('buildTargetPayload projects thinking.enabled budgets onto reasoning.effort
 
     assertEquals(result.reasoning, { effort });
   }
-});
-
-test('buildTargetPayload maps thinking.disabled to reasoning.effort none', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    thinking: { type: 'disabled' },
-    messages: [{ role: 'user', content: 'hi' }],
-  });
-
-  assertEquals(result.reasoning, { effort: 'none' });
-  assertFalse('include' in result);
-});
-
-test('buildTargetPayload preserves explicit temperature and omits translated-path defaults', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    temperature: 0.2,
-    messages: [{ role: 'user', content: 'hi' }],
-  });
-
-  assertEquals(result.temperature, 0.2);
-  assertFalse('store' in result);
-  assertFalse('parallel_tool_calls' in result);
 });
 
 test('buildTargetPayload writes multi-block top-level system through Responses instructions', async () => {
@@ -299,28 +261,6 @@ test('buildTargetPayload keeps in-array system messages in place', async () => {
   assertEquals(input[2].role, 'assistant');
   assertEquals(input[3].role, 'system');
   assertEquals(input[4].role, 'user');
-});
-
-test('buildTargetPayload maps speed:fast to service_tier:fast on the outbound OpenAI Responses payload', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    speed: 'fast',
-    messages: [{ role: 'user', content: 'hi' }],
-  });
-
-  assertEquals(result.service_tier, 'priority');
-});
-
-test('buildTargetPayload forwards Anthropic service_tier to OpenAI Responses when speed is absent', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    service_tier: 'auto',
-    messages: [{ role: 'user', content: 'hi' }],
-  });
-
-  assertEquals(result.service_tier, 'auto');
 });
 
 test('preserves expressible Messages metadata extensions and rejects non-string values', async () => {

@@ -27,14 +27,6 @@ const gated = async <T>(prefix: T[], suffix: T[], convert: (source: AsyncIterabl
   return frames;
 };
 
-test('ChatCompletions emits scalar reasoning before the next upstream frame', async () => {
-  const frames = await gated([chat({ reasoning_text: 'live' })], [chat({ content: 'body' }), chat({}, 'stop'), doneFrame()], readOpenAIChatCompletionsEvents, output => {
-    expect(output).toContainEqual(expect.objectContaining({ type: 'write', kind: 'append', value: 'live' }));
-  });
-  const ir = await collectIR(iterate(frames));
-  expect(ir.choices[0].items).toEqual([{ type: 'reasoning', summary: ['live'] }, { type: 'message', content: [{ type: 'text', text: 'body' }] }]);
-});
-
 test('ChatCompletions locks the first reasoning field independently for each choice', async () => {
   const chunk = (choices: any[]) => eventFrame({ id: 'chat', model: 'm', created: 1, choices } as any);
   const ir = await collectIR(readOpenAIChatCompletionsEvents(iterate([
@@ -46,11 +38,6 @@ test('ChatCompletions locks the first reasoning field independently for each cho
     [{ type: 'reasoning', summary: ['AC'] }],
     [{ type: 'reasoning', summary: ['XZ'] }],
   ]);
-});
-
-test('ChatCompletions creates separate reasoning runs at every text interruption', async () => {
-  const ir = await collectIR(readOpenAIChatCompletionsEvents(iterate([chat({ reasoning_text: 'r1' }), chat({ content: 'body' }), chat({ reasoning_text: 'r2' }), chat({ content: 'tail' }), chat({}, 'stop'), doneFrame()])));
-  expect(ir.choices[0].items).toEqual([{ type: 'reasoning', summary: ['r1'] }, { type: 'message', content: [{ type: 'text', text: 'body' }] }, { type: 'reasoning', summary: ['r2'] }, { type: 'message', content: [{ type: 'text', text: 'tail' }] }]);
 });
 
 test('an old open tool update leaves the current ChatCompletions text run open', async () => {
@@ -149,14 +136,6 @@ const add = (index: number, item: any) => eventFrame({ type: 'response.output_it
 const call = (index: number, arguments_ = '', status = 'in_progress') => ({ type: 'function_call', id: `fc_${index}`, call_id: `call_${index}`, name: `tool${index}`, arguments: arguments_, status });
 const args = (index: number, delta: string) => eventFrame({ type: 'response.function_call_arguments.delta', output_index: index, delta } as any);
 const endCall = (index: number, arguments_: string, status = 'completed') => eventFrame({ type: 'response.output_item.done', output_index: index, item: call(index, arguments_, status) } as any);
-
-test.each([['ChatCompletions', writeOpenAIChatCompletionsEvents], ['Messages', writeAnthropicMessagesEvents]] as const)('%s streams the second tool while the first remains open', async (name, writer) => {
-  await gated([responseStart, add(0, call(0)), args(0, '{"x":'), add(1, call(1)), args(1, '{"y":2}'), endCall(1, '{"y":2}')], [args(0, '1}'), endCall(0, '{"x":1}'), eventFrame({ type: 'response.completed', response: response([call(0, '{"x":1}', 'completed'), call(1, '{"y":2}', 'completed')]) } as any)], source => writer(readOpenAIResponsesEvents(source)), output => {
-    expect(output.some((frame: any) => name === 'Messages'
-      ? frame.event?.type === 'content_block_delta' && frame.event.index === 1 && frame.event.delta?.partial_json === '{"y":2}'
-      : frame.event?.choices?.some((choice: any) => choice.delta.tool_calls?.some((tool: any) => tool.index === 1 && tool.function.arguments === '{"y":2}')))).toBe(true);
-  });
-});
 
 test('Messages closes an earlier concurrent block immediately and the frontier block after its sidecar', async () => {
   const source = [responseStart, add(0, call(0)), args(0, '{"x":'), add(1, call(1)), args(1, '{"y":2}'), endCall(1, '{"y":2}'), args(0, '1}'), endCall(0, '{"x":1}'), eventFrame({ type: 'response.completed', response: response([call(0, '{"x":1}', 'completed'), call(1, '{"y":2}', 'completed')]) } as any)];

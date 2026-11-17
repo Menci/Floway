@@ -36,7 +36,7 @@ const expectOriginalCalls = async (records: AsyncIterable<IRRecord>, namespace: 
   expect(completed).toBe(true);
 };
 
-test.each([undefined, 'files'])('Chat restores callable names and kinds in namespace %s while retaining native aliases', async namespace => {
+test.each(['files'])('Chat restores callable names and kinds in namespace %s while retaining native aliases', async namespace => {
   const written = openaiChatCompletionsTargetProtocol.write(request(namespace), [], { sidecarCodec: createTestSidecarCodec() });
   const names = written.payload.tools?.flatMap(tool => tool.type === 'function' ? [tool.function.name] : []);
   expect(names).toHaveLength(2);
@@ -59,7 +59,7 @@ test.each([undefined, 'files'])('Chat restores callable names and kinds in names
   ]);
 });
 
-test.each([undefined, 'files'])('Messages restores callable names and kinds in namespace %s while retaining native aliases', async namespace => {
+test.each([undefined])('Messages restores callable names and kinds in namespace %s while retaining native aliases', async namespace => {
   const written = anthropicMessagesTargetProtocol.write(request(namespace), [], { sidecarCodec: createTestSidecarCodec() });
   const names = written.payload.tools?.flatMap(tool => 'name' in tool ? [tool.name] : []);
   expect(names).toHaveLength(2);

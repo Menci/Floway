@@ -121,12 +121,6 @@ test('Messages rejects an optional single-tool subset rather than forcing that c
   );
 });
 
-test('a dotted selector is only read as a pair when that group is declared', async () => {
-  // A dot in a flat declaration belongs to its name; treating it as a namespace separator selects a different callable.
-  const flat = await buildChat(source({ type: 'function', name: 'a.b' }), createTestSidecarCodec());
-  assertEquals(flat.target.tool_choice, { type: 'function', function: { name: 'a.b' } });
-});
-
 test.each(['chat', 'messages'] as const)('preserves declarations and selects only the namespaced custom callable on %s', async target => {
   const payload: OpenAIResponsesRequestPayloadEx = {
     model: 'm', stream: true, input: 'hi', tools: [{

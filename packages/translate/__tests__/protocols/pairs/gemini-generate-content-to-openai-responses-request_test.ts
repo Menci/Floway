@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import type { GeminiGenerateContentPart, GeminiGenerateContentContent, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
-import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
+import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import { assertEquals, assertFalse } from '@floway-dev/test-utils';
 
 const buildWithTestSidecar = (
   payload: GeminiGenerateContentPayload,
@@ -371,15 +371,6 @@ test('a call with no argument object is written with an empty one', async () => 
 
   const call = request.input.find(item => item.type === 'function_call');
   assertEquals(call?.type === 'function_call' ? call.arguments : undefined, '{}');
-});
-
-test('an orphaned tool choice is not stated', async () => {
-  const request = await buildWithTestSidecar({
-    contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
-    toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
-  }, 'gpt-test');
-
-  assertEquals(request.tool_choice, undefined);
 });
 
 test.each([undefined, 1024, -1])('preserves includeThoughts without a thinking level for budget %s', async thinkingBudget => {

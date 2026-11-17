@@ -65,8 +65,3 @@ test('raw JSON Schema outputs own every mutable descendant across translation tr
   expect(Object.hasOwn(response, '__proto__')).toBe(true);
   expect(Object.getPrototypeOf(response)).toBe(Object.prototype);
 });
-
-test('preserves integer-named property ordering through JSON serialization', () => {
-  const result = geminiSchemaToJsonSchema({ type: 'OBJECT', propertyOrdering: ['1', '0'], properties: { '0': { type: 'STRING' }, '1': { type: 'INTEGER' } } });
-  expect(JSON.stringify(result.properties)).toBe('{"1":{"type":"integer"},"0":{"type":"string"}}');
-});

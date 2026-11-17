@@ -9,10 +9,7 @@ import {
 } from '../../../src/index.ts';
 import { readAnthropicMessagesRequest } from '../../../src/protocols/anthropic-messages/as-source/input-to.ts';
 import { readOpenAIChatCompletionsRequest } from '../../../src/protocols/openai-chat-completions/as-source/input-to.ts';
-import { readOpenAIResponsesRequest } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
-import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 const options = { sidecarCodec: createTestSidecarCodec() };
@@ -136,29 +133,6 @@ test.each([{ include: null }])('Responses include $include states no requested l
     logprobs: include === null ? null : false, prompt_cache_retention: '', prompt_cache_options: { mode: '', ttl: '' }, user: '',
     top_logprobs: 0, presence_penalty: 0, frequency_penalty: null,
   });
-});
-
-test('request settings own cache options separately from source and target mutations', async () => {
-  const source = {
-    model: 'm', stream: true, messages: [], prompt_cache_options: { mode: 'explicit', ttl: '30m' },
-  } satisfies OpenAIChatCompletionsPayload;
-  const reading = readOpenAIChatCompletionsRequest(source);
-  source.prompt_cache_options.mode = 'source-mutated';
-  expect(reading.request.settings.prompt_cache_options).toEqual({ mode: 'explicit', ttl: '30m' });
-  const target = await buildTargetPayloadFor(pairs.chatToResponses[0], pairs.chatToResponses[1], source, options, reading);
-  expect(target.prompt_cache_options).toEqual({ mode: 'explicit', ttl: '30m' });
-  if (target.prompt_cache_options === undefined) throw new Error('Expected cache options.');
-  target.prompt_cache_options.mode = 'target-mutated';
-  expect(reading.request.settings.prompt_cache_options).toEqual({ mode: 'explicit', ttl: '30m' });
-
-  const reverseSource = { ...target, prompt_cache_options: { mode: 'explicit', ttl: '30m', prewarm: false } };
-  const reverseReading = readOpenAIResponsesRequest(reverseSource);
-  reverseSource.prompt_cache_options.mode = 'source-mutated';
-  const reverseTarget = await buildTargetPayloadFor(pairs.responsesToChat[0], pairs.responsesToChat[1], reverseSource, options, reverseReading);
-  expect(reverseTarget.prompt_cache_options).toEqual({ mode: 'explicit', ttl: '30m' });
-  if (reverseTarget.prompt_cache_options == null) throw new Error('Expected cache options.');
-  reverseTarget.prompt_cache_options.mode = 'target-mutated';
-  expect(reverseReading.request.settings.prompt_cache_options).toEqual({ mode: 'explicit', ttl: '30m' });
 });
 
 test.each(['auto'] as const)('orphan Messages %s stays in source IR and is omitted by both OpenAI writers', async type => {

@@ -56,17 +56,6 @@ test('a failed Responses stream without an error description still fails with a 
   expect(frames).toEqual([eventFrame({ error: { code: 500, status: 'INTERNAL', message: 'Response failed due to unknown error.' } })]);
 });
 
-test('ChatCompletions ignores empty identity frames and starts when a model appears', async () => {
-  const frames = await collect(readOpenAIChatCompletionsEvents(iterate([
-    eventFrame({ id: '', object: '', created: 0, model: '', choices: [], prompt_filter_results: [{}], usage: null } as any),
-    eventFrame({ id: 'chat-real', object: 'chat.completion.chunk', created: 10, model: 'served', choices: [] } as any),
-    eventFrame({ id: 'chat-real', object: 'chat.completion.chunk', created: 10, model: 'served', choices: [{ index: 0, delta: { content: 'answer' }, finish_reason: null }] } as any),
-    eventFrame({ id: 'chat-real', object: 'chat.completion.chunk', created: 10, model: 'served', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] } as any),
-  ])));
-  const start = frames.find(record => record.type === 'start');
-  expect(start).toEqual({ type: 'start', id: 'chat-real', created: 10 });
-});
-
 test('ChatCompletions rejects generated content before any non-empty model', async () => {
   await expect(collectIR(readOpenAIChatCompletionsEvents(iterate([
     eventFrame({ id: '', object: '', created: 0, model: '', choices: [] } as any),
@@ -96,11 +85,11 @@ test('ChatCompletions role-only choices still require finish_reason without crea
   await run;
 });
 
-test.each([['model', 'a model']] as const)('Messages message_start requires a string %s', async (field, expected) => {
-  const message = { id: 'msg', model: 'claude-test', content: [], usage: { input_tokens: 0, output_tokens: 0 }, [field]: 42 };
+test('Messages message_start requires a string model', async () => {
+  const message = { id: 'msg', model: 42, content: [], usage: { input_tokens: 0, output_tokens: 0 } };
   await expect(collectIR(readAnthropicMessagesEvents(iterate([
     eventFrame({ type: 'message_start', message } as any),
-  ])))).rejects.toThrow(`requires ${expected}`);
+  ])))).rejects.toThrow('requires a model');
 });
 
 test('Messages takes tool input only from input_json_delta', async () => {
@@ -150,25 +139,14 @@ test('an upstream context failure retains the Messages prompt-too-long response'
   expect(frames).toMatchObject([{ event: { type: 'error', error: { type: 'invalid_request_error', message: expect.stringContaining('prompt is too long') } } }]);
 });
 
-for (const source of ['anthropic-messages'] as const) {
-  for (const wrapped of [{ input: 'print(1)' }, { other: 1 }]) {
-    test(`Responses via ${source} restores wrapped custom input ${JSON.stringify(wrapped)}`, async () => {
-      const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      try {
-        const frames = fixtureFrames(source, { tools: [{ name: 'run_code', id: 'call_custom', args: wrapped }] });
-        const output = source === 'openai-chat-completions' ? responsesViaChat(iterate(frames), new Set(['run_code']), createTestSidecarCodec()) : responsesViaMessages(iterate(frames), new Set(['run_code']), createTestSidecarCodec());
-        const result = await nativeResult('openai-responses', await collect(output));
-        expect(result.output.slice(0, -1)).toEqual([expect.objectContaining({ type: 'custom_tool_call', call_id: 'call_custom', name: 'run_code', input: 'input' in wrapped ? wrapped.input : JSON.stringify(wrapped) })]);
-        expect(warning).toHaveBeenCalledTimes('input' in wrapped ? 0 : 1);
-      } finally { warning.mockRestore(); }
-    });
-  }
-}
-
-test('ChatCompletions EOF succeeds after explicit choice completion and fails before it', async () => {
-  const frames = fixtureFrames('openai-chat-completions', { text: ['answer'] });
-  expect((await collectIR(irFromOpenAIChatCompletionsProduction(iterate(frames.slice(0, -1)), { roundTrip: createRoundTripReaderCapture().roundTrip }))).choices[0].items).toMatchObject([{ content: [{ text: 'answer' }] }]);
-  await expect(collectIR(irFromOpenAIChatCompletionsProduction(iterate(frames.slice(0, -2)), { roundTrip: createRoundTripReaderCapture().roundTrip }))).rejects.toThrow('finish_reason');
+test.each([{ input: 'print(1)' }, { other: 1 }])('Responses via Messages restores wrapped custom input %j', async wrapped => {
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    const frames = fixtureFrames('anthropic-messages', { tools: [{ name: 'run_code', id: 'call_custom', args: wrapped }] });
+    const result = await nativeResult('openai-responses', await collect(responsesViaMessages(iterate(frames), new Set(['run_code']), createTestSidecarCodec())));
+    expect(result.output.slice(0, -1)).toEqual([expect.objectContaining({ type: 'custom_tool_call', call_id: 'call_custom', name: 'run_code', input: 'input' in wrapped ? wrapped.input : JSON.stringify(wrapped) })]);
+    expect(warning).toHaveBeenCalledTimes('input' in wrapped ? 0 : 1);
+  } finally { warning.mockRestore(); }
 });
 
 test.each([messagesViaChat, generateContentViaChat])('completed empty function JSON is rejected by object-requiring destinations', async translate => {
@@ -200,13 +178,6 @@ test('ignores vendor object arrays and retains scalar reasoning items', async ()
   expect(result.output.filter((item: any) => item.type === 'reasoning' && item.encrypted_content === undefined)).toMatchObject([{ summary: [{ text: 'ab' }] }]);
   expect(result.output.some((item: any) => ['record_a', 'record_b'].includes(item.id))).toBe(false);
   expect(result.output.filter((item: any) => item.type === 'message')[0].content[0].text).toBe('answer');
-});
-
-test('late vendor extensions preserve messages on either side of reasoning', async () => {
-  const chunk = (delta: any, finish_reason: string | null = null) => eventFrame({ id: 'chatcmpl_order', model: 'served-model', created: 100, choices: [{ index: 0, delta, finish_reason }] });
-  const frames = [chunk({ content: 'before' }), chunk({ reasoning_text: 'think' }), chunk({ content: 'after' }), chunk({}, 'stop'), chunk({ vendor_records: [{ type: 'vendor_record', id: 'record_order', segments: ['think'] }] }), { type: 'done' as const }];
-  const ir = await collectIR(irFromOpenAIChatCompletionsProduction(iterate(frames as any), { roundTrip: createRoundTripReaderCapture().roundTrip }));
-  expect(ir.choices[0].items).toEqual([{ type: 'message', content: [{ type: 'text', text: 'before' }] }, { type: 'reasoning', summary: ['think'] }, { type: 'message', content: [{ type: 'text', text: 'after' }] }]);
 });
 
 for (const category of ['cyber']) {

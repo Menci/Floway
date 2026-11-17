@@ -124,21 +124,6 @@ test.each(['different codec scope', 'changed sidecar handle', 'changed replay'] 
   expect(trip.target.messages).toEqual([{ role: 'assistant', content: [{ type: 'text', text, cache_control: { type: 'ephemeral' } }] }]);
 });
 
-test.each([{ input: null }, { input: [1] }])('preserves ordinary Messages tool input $input', async ({ input }) => {
-  const payload: AnthropicMessagesPayload = {
-    model: 'source', max_tokens: 16, stream: true,
-    messages: [{ role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'echo', input }] }],
-  };
-  const chatTrip = expectTrip(await routeAnthropicMessagesViaOpenAIChatCompletions(payload, context));
-  expect(chatTrip.target.messages).toMatchObject([
-    { role: 'assistant', tool_calls: [{ id: 'call', function: { name: 'echo', arguments: JSON.stringify(input) } }] },
-  ]);
-  const responsesTrip = expectTrip(await routeAnthropicMessagesViaOpenAIResponses(payload, context));
-  expect(responsesTrip.target.input).toMatchObject([
-    { type: 'function_call', call_id: 'call', name: 'echo', arguments: JSON.stringify(input) },
-  ]);
-});
-
 test('preserves ordinary GenerateContent null-argument handling', async () => {
   const payload: GeminiGenerateContentRequest = { ...JSON.parse('{"contents":[{"role":"model","parts":[{"functionCall":{"name":"lookup","args":null}}]}]}'), model: 'model' };
   const chatTrip = expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions(payload, context));

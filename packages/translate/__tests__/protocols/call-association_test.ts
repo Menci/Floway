@@ -131,7 +131,7 @@ test('clears a grouped custom-tool namespace when its Chat name becomes ungroupe
   }
 });
 
-test.each([['chat', 'custom'], ['messages', 'function']] as const)('native %s %s calls share logical aliases with declarations, selectors and ordinary history', async (target, kind) => {
+test.each<readonly ['chat' | 'messages', 'function' | 'custom']>([['chat', 'custom'], ['messages', 'function']])('native %s %s calls share logical aliases with declarations, selectors and ordinary history', async (target, kind) => {
   const options = { sidecarCodec: createTestSidecarCodec() };
   const source: OpenAIResponsesRequestPayloadEx = { model: 'm', stream: true, input: 'start', tools: [group(kind)] };
   const args = kind === 'function' ? '{}' : '{"input":"raw"}';

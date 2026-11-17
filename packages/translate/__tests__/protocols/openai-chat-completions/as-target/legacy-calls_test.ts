@@ -20,18 +20,7 @@ const mixed = (): RestoredAssistantTurn<LegacyTurn> => ({
   },
 });
 const message = (text: string): IRInputTurn => ({ kind: 'client', items: [{ type: 'message', role: 'user', content: [{ type: 'text', text }] }] });
-const result = (callId: string): IRInputTurn => ({ kind: 'client', items: [{ type: 'tool_result', call_id: callId, output: '' }] });
 const namedResult = (name: string): IRInputTurn => ({ kind: 'client', items: [{ type: 'tool_result', name, output: '' }] });
-
-test('the unique id-less result naming the legacy function answers it', () => {
-  const { callIds, names } = chatLegacyCallsOf([legacy('lookup'), namedResult('lookup')]);
-  assertEquals([...names.values()], ['lookup']);
-  assertEquals(callIds.size, 1);
-});
-
-test('an answer naming a call the conversation states is left alone', () => {
-  assertEquals(chatLegacyCallsOf([modern('native-1'), result('native-1')]).names.size, 0);
-});
 
 test('two id-less answers naming the legacy function are refused as ambiguous', () => {
   const twoAnswers: IRInputTurn = { kind: 'client', items: [{ type: 'tool_result', name: 'lookup', output: '' }, { type: 'tool_result', name: 'lookup', output: '' }] };

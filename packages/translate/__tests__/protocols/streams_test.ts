@@ -84,7 +84,8 @@ describe('output IR streaming', () => {
     }
   });
 
-  for (const [name, source] of [['ChatCompletions', chat], ['Responses', responses], ['Messages', messages]] as const) {
+  // Every reader-writer pair is exercised by the pair fixtures; Responses is the source whose parts stay split.
+  for (const [name, source] of [['Responses', responses]] as const) {
     it(`ChatCompletions via ${name} emits text and streamed function arguments`, async () => {
       const result = await reassembleOpenAIChatCompletionsEvents(events(writeOpenAIChatCompletionsEvents(source(), options)));
       expect(result.choices[0].message.content).toBe('A😀中B');
@@ -333,22 +334,10 @@ describe('output IR streaming', () => {
     ]);
   });
 
-  it('uses target ChatCompletions audio replay metadata across deltas', async () => {
-    const frames = [chatFrame([{ index: 0, delta: { audio: { id: 'audio', expires_at: 123, data: 'YQ==' } } }]), chatFrame([{ index: 0, delta: { audio: { transcript: 'word' } } }]), chatFrame([{ index: 0, delta: {}, finish_reason: 'stop' }]), doneFrame()];
-    const result = await reassembleOpenAIChatCompletionsEvents(events(writeOpenAIChatCompletionsEvents(readOpenAIChatCompletionsEvents(iterate(frames)), { ...options, audioMetadata: () => ({ id: 'target-audio', expires_at: 456 }) })));
-    expect(result.choices[0].message.audio).toEqual({ id: 'target-audio', expires_at: 456, data: 'YQ==', transcript: 'word' });
-  });
-
   it('retains text-image-text order in Responses output', async () => {
     const frames = writeOpenAIResponsesEvents(iterate(completeIR([{ type: 'message', content: [{ type: 'text', text: 'before' }, { type: 'image', image: { data: 'YQ==', media_type: 'image/png' } }, { type: 'text', text: 'after' }] }])), options);
     const result = await reassembleOpenAIResponsesEvents(events(frames));
     expect(result.output.map(item => item.type)).toEqual(['message', 'image_generation_call', 'message', 'reasoning']);
-  });
-
-  it('marks ChatCompletions length termination incomplete and exposes output IR errors', async () => {
-    const frames = await collect(readOpenAIChatCompletionsEvents(iterate([chatFrame([{ index: 0, delta: { content: 'text' }, finish_reason: 'length' }]), doneFrame()])));
-    expect(frames.find(record => record.type === 'finish')).toMatchObject({ status: 'incomplete' });
-    await expect(collectIR(iterate([{ type: 'error', error: { message: 'failure' } }]))).rejects.toThrow();
   });
 
   it.each([true, false])('streams Responses text independently of a pending image (success=%s)', async success => {

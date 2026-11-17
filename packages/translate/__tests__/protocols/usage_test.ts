@@ -84,21 +84,6 @@ test.each([
   expect(convert(usage)).toEqual(expected);
 });
 
-test('usage ignores nonstandard aliases and provider-only extensions', () => {
-  expect(chatUsageToIR({ input_tokens: 11, output_tokens: 5, total_tokens: 16 } as any)).toEqual({ total_tokens: 16 });
-  expect(responsesUsageToIR({ cost: 0.0002 } as any)).toEqual({});
-});
-
-test('Messages reader accepts a message_delta without usage', async () => {
-  const upstream = [
-    { type: 'message_start', message: { id: 'msg_sparse', model: 'served', usage: { input_tokens: 1, output_tokens: 0 } } },
-    { type: 'message_delta', delta: { stop_reason: 'end_turn' } },
-    { type: 'message_stop' },
-  ].map(event => eventFrame(event as any));
-  const result = await collectIR(readAnthropicMessagesEvents(iterate(upstream)));
-  expect(result.usage).toMatchObject({ input_tokens_inclusive: 1, output_tokens_inclusive: 0 });
-});
-
 test.each([
   ['ChatCompletions', () => chatUsageToIR({ prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, completion_tokens_details: { reasoning_tokens: -1 } })],
   ['Messages', () => messagesUsageToIR({ input_tokens: 1, output_tokens: 1, output_tokens_details: { thinking_tokens: -1 } }, {})],

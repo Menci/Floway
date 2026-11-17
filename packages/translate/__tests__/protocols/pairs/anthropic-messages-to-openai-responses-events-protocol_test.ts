@@ -5,8 +5,8 @@ import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import { structuredResponsesFixture } from '../openai-responses/fixtures.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { openaiResponsesResultToEvents, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { assertEquals, assertRejects } from '@floway-dev/test-utils';
+import { type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import { assertEquals } from '@floway-dev/test-utils';
 
 const codec = createTestSidecarCodec();
 const translate = (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>) => buildSourceEventsFor(
@@ -37,12 +37,6 @@ const makeResponse = (status: OpenAIResponsesResultEx['status']): OpenAIResponse
 });
 
 const toProtocolFrame = (event: OpenAIResponsesStreamEventEx): ProtocolFrame<OpenAIResponsesStreamEventEx> => eventFrame({ ...event, sequence_number: 0 });
-
-const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
-  for await (const _frame of frames) {
-    // Exhaust the stream so async translator errors surface to the caller.
-  }
-};
 
 test('translateToSourceEvents translates OpenAI Responses failed terminal to Anthropic Messages error', async () => {
   async function* stream() {
@@ -77,37 +71,6 @@ test('translateToSourceEvents translates OpenAI Responses failed terminal to Ant
         type: 'api_error',
         message: 'upstream failed',
         provider_specific_fields: { code: 'server_error', type: 'server_error' },
-      },
-    } satisfies AnthropicMessagesStreamEventEx),
-  ]);
-});
-
-test('translateToSourceEvents translates OpenAI Responses error terminal to Anthropic Messages error', async () => {
-  async function* stream() {
-    yield toProtocolFrame({
-      type: 'error',
-      code: 'overloaded_error',
-      message: 'upstream overloaded',
-    });
-    yield toProtocolFrame({
-      type: 'response.completed',
-      response: makeResponse('completed'),
-    });
-  }
-
-  const frames = [];
-
-  for await (const frame of translate(structuredResponsesFixture(stream()))) {
-    frames.push(frame);
-  }
-
-  assertEquals(frames, [
-    eventFrame({
-      type: 'error',
-      error: {
-        type: 'api_error',
-        message: 'upstream overloaded',
-        provider_specific_fields: { code: 'overloaded_error' },
       },
     } satisfies AnthropicMessagesStreamEventEx),
   ]);

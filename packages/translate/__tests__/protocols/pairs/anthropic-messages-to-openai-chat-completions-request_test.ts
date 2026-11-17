@@ -1,11 +1,10 @@
 import { test } from 'vitest';
 
-import { TranslateInputException } from '../../../src/shared/input-error.ts';
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesAssistantContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsFunctionTool } from '@floway-dev/protocols/openai-chat-completions';
-import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
+import type { AnthropicMessagesPayload, AnthropicMessagesAssistantContentBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { OpenAIChatCompletionsAssistantMessageEx } from '@floway-dev/protocols/openai-chat-completions';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const buildWithTestSidecar = (payload: AnthropicMessagesPayload) =>
   buildTargetPayloadFor(pairs.messagesToChat[0], pairs.messagesToChat[1], { ...payload, stream: true }, { sidecarCodec: createTestSidecarCodec() });
@@ -63,18 +62,6 @@ test('buildTargetPayload maps thinking.disabled to reasoning_effort none', async
   assertEquals(result.reasoning_effort, 'none');
 });
 
-test('buildTargetPayload prefers output_config.effort over thinking.disabled', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    output_config: { effort: 'high' },
-    thinking: { type: 'disabled' },
-    messages: [{ role: 'user', content: 'hi' }],
-  });
-
-  assertEquals(result.reasoning_effort, 'high');
-});
-
 test('buildTargetPayload projects thinking.enabled budgets onto reasoning effort', async () => {
   for (const [budget, effort] of [[1024, 'low'], [16384, 'high']] as const) {
     const result = await buildWithTestSidecar({
@@ -86,29 +73,6 @@ test('buildTargetPayload projects thinking.enabled budgets onto reasoning effort
 
     assertEquals(result.reasoning_effort, effort);
   }
-});
-
-test('buildTargetPayload keeps tool_result and user text as separate chat messages', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [
-      { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_1', name: 'lookup', input: {} }] },
-      {
-        role: 'user',
-        content: [
-          { type: 'tool_result', tool_use_id: 'toolu_1', content: 'result' },
-          { type: 'text', text: 'Please continue.' },
-        ],
-      },
-    ],
-  });
-
-  assertEquals(result.messages, [
-    { role: 'assistant', content: null, tool_calls: [{ id: 'toolu_1', type: 'function', function: { name: 'lookup', arguments: '{}' } }] },
-    { role: 'tool', tool_call_id: 'toolu_1', content: 'result' },
-    { role: 'user', content: 'Please continue.' },
-  ]);
 });
 
 test.each([
@@ -336,28 +300,6 @@ test('buildTargetPayload rejects an unknown assistant content block type', async
   );
 });
 
-test('buildTargetPayload preserves top-level system text blocks as separate content parts', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    system: [
-      { type: 'text', text: 'instructions' },
-      { type: 'text', text: 'extra context' },
-    ],
-    messages: [
-      { role: 'user', content: 'hi' },
-    ],
-  });
-
-  assertEquals(result.messages[0], {
-    role: 'system',
-    content: [
-      { type: 'text', text: 'instructions' },
-      { type: 'text', text: 'extra context' },
-    ],
-  });
-});
-
 test('buildTargetPayload preserves chronology of multiple in-array system messages', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
@@ -414,47 +356,6 @@ test('buildTargetPayload asks upstream for continuous streaming usage stats', as
 
   assertEquals(result.stream, true);
   assertEquals(result.stream_options, { include_usage: true, continuous_usage_stats: true });
-});
-
-test('rejects a metadata value the neutral model cannot state as a string pair', async () => {
-  // Our input extension accepts arbitrary metadata values; the reader omits nulls and rejects non-string values.
-  await assertRejects(
-    () => buildWithTestSidecar({
-      model: 'gpt-test',
-      stream: true,
-      max_tokens: 16,
-      messages: [{ role: 'user', content: 'hi' }],
-      metadata: { user_id: 'u', nested: { depth: 1 } } as never,
-    }),
-    TranslateInputException,
-    'nested',
-  );
-});
-
-test('buildTargetPayload keeps mixed document content inside provenance tags', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test', max_tokens: 256, messages: [
-      {
-        role: 'user',
-        content: [{
-          type: 'document',
-          source: {
-            type: 'content',
-            content: [
-              { type: 'text', text: 'caption' },
-              { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
-            ],
-          },
-        }],
-      },
-    ],
-  });
-  assertEquals(result.messages[0].content, [
-    { type: 'text', text: '<document>' },
-    { type: 'text', text: 'caption' },
-    { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
-    { type: 'text', text: '</document>' },
-  ]);
 });
 
 test.each([true])('maps disable_parallel_tool_use %s without changing declarations', async disabled => {

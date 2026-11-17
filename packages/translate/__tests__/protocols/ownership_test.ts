@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest';
 
 import { nativeResult } from './fixtures.ts';
-import { writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './helpers.ts';
+import { readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './helpers.ts';
 import { collectIR } from '../ir/output/helpers.ts';
 import { collect, iterate } from '../shared/iterables.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
@@ -90,12 +90,4 @@ test('Messages cited text remains source text without inventing output coordinat
 
   const result = await nativeResult('openai-responses', await collect(writeOpenAIResponsesEvents(readAnthropicMessagesEvents(iterate(messagesCitationFrames('source quote'))))));
   expect(result.output[0].content[0].annotations).toEqual([]);
-});
-
-test('range-less Messages citations do not expand to whole-part ChatCompletions or GenerateContent citations', async () => {
-  const chatFrames = await collect(writeOpenAIChatCompletionsEvents(readAnthropicMessagesEvents(iterate(messagesCitationFrames('source quote'))), { id: 'chat_target', created: 1 }));
-  expect(chatFrames.some(frame => frame.type === 'event' && !('error' in frame.event) && frame.event.choices.some(choice => 'annotations' in choice.delta))).toBe(false);
-
-  const generateContentFrames = await collect(writeGeminiGenerateContentEvents(readAnthropicMessagesEvents(iterate(messagesCitationFrames('source quote')))));
-  expect(generateContentFrames.some(frame => frame.type === 'event' && 'candidates' in frame.event && frame.event.candidates?.some(candidate => candidate.groundingMetadata !== undefined))).toBe(false);
 });

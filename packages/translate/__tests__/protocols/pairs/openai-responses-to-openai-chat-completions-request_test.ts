@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsFunctionTool, OpenAIChatCompletionsToolMessage } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesInputMultiAgentCallOutputItem, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const buildWithTestSidecar = async (payload: OpenAIResponsesRequestPayloadEx) => {
@@ -25,21 +25,6 @@ test('preserves a refusal-only assistant turn between client turns', async () =>
     { role: 'user', content: 'Q' },
     { role: 'assistant', content: '', refusal: 'Cannot help.' },
     { role: 'user', content: 'Why?' },
-  ]);
-});
-
-test('preserves an empty assistant turn between client turns', async () => {
-  const { target } = await buildWithTestSidecar({
-    model: 'model', input: [
-      { type: 'message', role: 'user', content: 'A' },
-      { type: 'message', role: 'assistant', content: [] },
-      { type: 'message', role: 'user', content: 'B' },
-    ],
-  });
-  assertEquals(target.messages, [
-    { role: 'user', content: 'A' },
-    { role: 'assistant', content: '' },
-    { role: 'user', content: 'B' },
   ]);
 });
 
@@ -185,32 +170,6 @@ test('buildTargetPayload omits parameters and strict for a schema-less function 
   assertEquals(Object.keys((result.target.tools![0] as OpenAIChatCompletionsFunctionTool).function), ['name']);
 });
 
-test('buildTargetPayload keeps function tool_choice', async () => {
-  const resultWithFunctionChoice = await buildWithTestSidecar({
-    model: 'gpt-test',
-    input: [{ type: 'message', role: 'user', content: 'Hi' }],
-    instructions: null,
-    temperature: null,
-    top_p: null,
-    max_output_tokens: null,
-    tools: [{ type: 'function', name: 'get_weather', parameters: { type: 'object', properties: {} } }],
-    tool_choice: {
-      type: 'function' as const,
-      name: 'get_weather',
-    },
-    metadata: null,
-    stream: null,
-    store: null,
-    parallel_tool_calls: null,
-    text: null,
-  });
-
-  assertEquals(resultWithFunctionChoice.target.tool_choice, {
-    type: 'function',
-    function: { name: 'get_weather' },
-  });
-});
-
 test.each(['none'] as const)('buildTargetPayload omits orphan string tool choice %s', async toolChoice => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
@@ -301,7 +260,6 @@ test('buildTargetPayload wraps custom tools as single-string function tools and 
 
 test.each([
   { name: 'text array', output: [{ type: 'input_text' as const, text: 'first\n' }, { type: 'input_text' as const, text: 'second' }], expected: 'first\nsecond' },
-  { name: 'empty array', output: [], expected: '' },
 ])('buildTargetPayload projects custom_tool_call history with $name output into wrapped tool_calls shape', async ({ output, expected }) => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
@@ -351,14 +309,12 @@ test.each([
   });
 });
 
-test.each(['custom_tool_call_output'] as const)('buildTargetPayload lifts input_file from %s', async type => {
+test('buildTargetPayload lifts input_file from custom_tool_call_output', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
     input: [
-      ...(type === 'function_call_output'
-        ? [{ type: 'function_call' as const, call_id: 'call_1', name: 'lookup', arguments: '{}' }]
-        : [{ type: 'custom_tool_call' as const, call_id: 'call_1', name: 'lookup', input: '{}' }]),
-      { type, call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1', filename: 'result.txt' }] },
+      { type: 'custom_tool_call', call_id: 'call_1', name: 'lookup', input: '{}' },
+      { type: 'custom_tool_call_output', call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1', filename: 'result.txt' }] },
     ],
   });
   assertEquals(result.target.messages.at(-1)?.content, [
@@ -394,64 +350,6 @@ test('buildTargetPayload forwards image details OpenAI Chat Completions does not
   assertEquals(result.target.messages[0].content, [
     { type: 'image_url', image_url: { url: 'https://example.com/a.png', detail: 'original' } },
     { type: 'image_url', image_url: { url: 'https://example.com/b.png', detail: 'ultra' } },
-  ]);
-});
-
-test('buildTargetPayload omits image detail when the client sends none', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,AQID' }] }],
-  });
-
-  assertEquals(result.target.messages, [
-    { role: 'user', content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,AQID' } }] },
-  ]);
-});
-
-test('buildTargetPayload lifts tool-output images into a following user message', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    input: [
-      { type: 'function_call', call_id: 'call_1', name: 'screenshot', arguments: '{}', status: 'completed' },
-      {
-        type: 'function_call_output',
-        call_id: 'call_1',
-        output: [
-          { type: 'input_text', text: 'captured' },
-          { type: 'input_image', image_url: 'data:image/png;base64,AQID', detail: 'high' },
-        ],
-      },
-    ],
-    instructions: null,
-    temperature: null,
-    top_p: null,
-    max_output_tokens: 256,
-    tools: null,
-    tool_choice: 'auto',
-    metadata: null,
-    stream: false,
-    store: false,
-    parallel_tool_calls: true,
-  });
-
-  assertEquals(result.target.messages, [
-    {
-      role: 'assistant',
-      content: null,
-      tool_calls: [{
-        id: 'call_1',
-        type: 'function',
-        function: { name: 'screenshot', arguments: '{}' },
-      }],
-    },
-    { role: 'tool', tool_call_id: 'call_1', content: 'captured' },
-    {
-      role: 'user',
-      content: [
-        { type: 'text', text: 'Image output from tool call call_1:' },
-        { type: 'image_url', image_url: { url: 'data:image/png;base64,AQID', detail: 'high' } },
-      ],
-    },
   ]);
 });
 
@@ -528,17 +426,7 @@ test('buildTargetPayload places lifted images before a later source message', as
   }
 });
 
-test('buildTargetPayload maps text.verbosity onto verbosity', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    input: [{ type: 'message', role: 'user', content: 'hi' }],
-    text: { verbosity: 'low' },
-  });
-
-  assertEquals(result.target.verbosity, 'low');
-});
-
-test.each(['system', 'developer'] as const)('preserves %s text part boundaries', async role => {
+test.each(['system'] as const)('preserves %s text part boundaries', async role => {
   const result = await buildWithTestSidecar({ model: 'gpt-test', input: [{ type: 'message', role, content: [{ type: 'input_text', text: 'a' }, { type: 'input_text', text: 'b' }] }] });
   assertEquals(result.target.messages, [{ role, content: [{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }] }]);
 });

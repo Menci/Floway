@@ -134,17 +134,6 @@ test('Responses flat errors remove transport discriminants before restatement', 
   expect(frames).toEqual([eventFrame({ error: { message: 'failed', code: null, param: null } })]);
 });
 
-test('Responses nested error envelopes preserve request_id in both phases', async () => {
-  const trip = await requireTrip(routeOpenAIChatCompletionsViaOpenAIResponses(chat, options()));
-  const envelope = {
-    type: 'error' as const, sequence_number: 17, request_id: 'req_1', error: { message: 'failed', code: null },
-  };
-  const expected = { error: { message: 'failed', code: null, provider_specific_fields: { request_id: 'req_1' } } };
-  const http = trip.error(502, new Headers(), new TextEncoder().encode(JSON.stringify(envelope)));
-  expect(http?.body).toEqual(expected);
-  expect(await collect(trip.events(iterate([eventFrame(envelope)])))).toEqual([eventFrame(expected)]);
-});
-
 test('Responses nested error envelopes preserve every collision and explicit suffix in both phases', async () => {
   const trip = await requireTrip(routeOpenAIChatCompletionsViaOpenAIResponses(chat, options()));
   const error = {

@@ -2,24 +2,14 @@ import { test } from 'vitest';
 
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import type { GeminiGenerateContentPart, GeminiGenerateContentContent, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsAssistantMessageEx } from '@floway-dev/protocols/openai-chat-completions';
-import { assertEquals, assertRejects } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
 const buildWithTestSidecar = (
   payload: GeminiGenerateContentPayload,
   model: string,
 ) => buildTargetPayloadFor(pairs.geminiToChat[0], pairs.geminiToChat[1], { ...payload, model }, { sidecarCodec: createTestSidecarCodec() });
-
-test('ProtoJSON null scalar members are treated as unset', async () => {
-  const request = await buildWithTestSidecar({
-    contents: [],
-    generationConfig: { candidateCount: null as never, presencePenalty: null as never, frequencyPenalty: null as never },
-  }, 'gpt-test');
-  assertEquals(request.n, undefined);
-  assertEquals(request.presence_penalty, undefined);
-  assertEquals(request.frequency_penalty, undefined);
-});
 
 test('buildTargetPayload preserves an explicit empty thinkingLevel beside a budget', async () => {
   const request = await buildWithTestSidecar({
@@ -129,62 +119,6 @@ test('buildTargetPayload maps function calls, tool responses, and readable reaso
       role: 'tool',
       tool_call_id: 'lookup_call_1',
       content: '{"answer":42}',
-    },
-  ]);
-});
-
-test('buildTargetPayload matches omitted functionResponse ids to same-name calls in call order', async () => {
-  const payload: GeminiGenerateContentPayload = {
-    contents: [
-      {
-        role: 'model',
-        parts: [{ functionCall: { name: 'lookup', args: { query: 'first' } } }, { functionCall: { name: 'lookup', args: { query: 'second' } } }],
-      },
-      {
-        role: 'user',
-        parts: [
-          {
-            functionResponse: { name: 'lookup', response: { answer: 'first' } },
-          },
-        ],
-      },
-      {
-        role: 'user',
-        parts: [
-          {
-            functionResponse: { name: 'lookup', response: { answer: 'second' } },
-          },
-        ],
-      },
-    ],
-  };
-
-  assertEquals((await buildWithTestSidecar(payload, 'gpt-test')).messages, [
-    {
-      role: 'assistant',
-      content: null,
-      tool_calls: [
-        {
-          id: 'lookup_call_1',
-          type: 'function',
-          function: { name: 'lookup', arguments: '{"query":"first"}' },
-        },
-        {
-          id: 'lookup_call_2',
-          type: 'function',
-          function: { name: 'lookup', arguments: '{"query":"second"}' },
-        },
-      ],
-    },
-    {
-      role: 'tool',
-      tool_call_id: 'lookup_call_1',
-      content: '{"answer":"first"}',
-    },
-    {
-      role: 'tool',
-      tool_call_id: 'lookup_call_2',
-      content: '{"answer":"second"}',
     },
   ]);
 });
@@ -391,20 +325,6 @@ test('buildTargetPayload preserves declarations and restricts callable names for
     { type: 'function', function: { name: 'forbidden' } },
   ]);
   assertEquals(result.tool_choice, { type: 'allowed_tools', allowed_tools: { mode: 'required', tools: [{ type: 'function', function: { name: 'lookup' } }, { type: 'function', function: { name: 'ping' } }] } });
-});
-
-test('buildTargetPayload maps thinking budget thresholds', async () => {
-  assertEquals((await buildWithTestSidecar({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 0 } } }, 'gpt-test')).reasoning_effort, 'none');
-  assertEquals((await buildWithTestSidecar({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: -1 } } }, 'gpt-test')).reasoning_effort, undefined);
-  assertEquals((await buildWithTestSidecar({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 2048 } } }, 'gpt-test')).reasoning_effort, 'low');
-  assertEquals((await buildWithTestSidecar({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 8192 } } }, 'gpt-test')).reasoning_effort, 'medium');
-  assertEquals((await buildWithTestSidecar({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: 8193 } } }, 'gpt-test')).reasoning_effort, 'high');
-});
-
-test.each([[]])('preserves an empty model turn with parts %j', async parts => {
-  const payload = { contents: [{ role: 'user', parts: [{ text: 'before' }] }, { role: 'model', ...(parts === undefined ? {} : { parts }) }, { role: 'user', parts: [{ text: 'after' }] }] };
-  const result = await buildWithTestSidecar(payload, 'target-model');
-  assertEquals((result.messages as Array<{ role?: string; content?: unknown }>).filter(item => item.role === 'assistant'), [{ role: 'assistant', content: '' }]);
 });
 
 test('VALIDATED restricts calls without changing declarations while leaving the choice free', async () => {

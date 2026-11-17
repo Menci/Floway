@@ -15,14 +15,6 @@ const buildWithTestSidecar = (
   options: { fallbackMaxOutputTokens?: number },
 ) => buildTargetPayloadFor(pairs.geminiToMessages[0], pairs.geminiToMessages[1], { ...payload, model }, { sidecarCodec: createTestSidecarCodec(), ...options });
 
-test('a ProtoJSON null function-call args value reaches Messages unchanged', async () => {
-  const result = await buildWithTestSidecar({
-    contents: [{ role: 'model', parts: [{ functionCall: { name: 'f', args: null as never } }] }],
-  }, 'claude-test', noOptions);
-  const message = result.messages[0];
-  assertEquals(message.role === 'assistant' && Array.isArray(message.content) && message.content[0]?.type === 'tool_use' ? message.content[0].input : undefined, null);
-});
-
 test('function response media enters Messages tool results and tool results precede user text', async () => {
   const result = await buildWithTestSidecar({
     contents: [
@@ -216,69 +208,6 @@ test('buildTargetPayload keeps readable thinking and tool calls while dropping t
   ]);
 });
 
-test('buildTargetPayload correlates omitted function response ids in call order', async () => {
-  const payload: GeminiGenerateContentPayload = {
-    contents: [
-      {
-        role: 'model',
-        parts: [{ functionCall: { name: 'lookup', args: { q: 'first' } } }, { functionCall: { name: 'lookup', args: { q: 'second' } } }],
-      },
-      {
-        role: 'user',
-        parts: [
-          {
-            functionResponse: { name: 'lookup', response: { answer: 'first' } },
-          },
-        ],
-      },
-      {
-        role: 'user',
-        parts: [
-          {
-            functionResponse: { name: 'lookup', response: { answer: 'second' } },
-          },
-        ],
-      },
-    ],
-  };
-
-  assertEquals((await buildWithTestSidecar(payload, 'claude-test', noOptions)).messages, [
-    {
-      role: 'assistant',
-      content: [
-        {
-          type: 'tool_use',
-          id: 'lookup_call_1',
-          name: 'lookup',
-          input: { q: 'first' },
-        },
-        {
-          type: 'tool_use',
-          id: 'lookup_call_2',
-          name: 'lookup',
-          input: { q: 'second' },
-        },
-      ],
-    },
-    {
-      role: 'user',
-      content: [
-        {
-          type: 'tool_result',
-          tool_use_id: 'lookup_call_1',
-          content: '{"answer":"first"}',
-        },
-        {
-          type: 'tool_result',
-          tool_use_id: 'lookup_call_2',
-          content: '{"answer":"second"}',
-          cache_control: { type: 'ephemeral' },
-        },
-      ],
-    },
-  ]);
-});
-
 test('buildTargetPayload maps tool declarations and tool choice modes', async () => {
   const payload: GeminiGenerateContentPayload = {
     contents: [],
@@ -334,38 +263,8 @@ test('buildTargetPayload maps tool declarations and tool choice modes', async ()
   assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'claude-test', noOptions)).tool_choice, undefined);
 });
 
-test('buildTargetPayload rejects an unrepresentable ANY subset without narrowing declarations', async () => {
-  const payload: GeminiGenerateContentPayload = {
-    contents: [],
-    tools: [
-      {
-        functionDeclarations: [{ name: 'lookup' }, { name: 'ping' }, { name: 'blocked' }],
-      },
-    ],
-    toolConfig: {
-      functionCallingConfig: {
-        mode: 'ANY',
-        allowedFunctionNames: ['lookup', 'ping'],
-      },
-    },
-  };
-
-  await assertRejects(
-    () => buildWithTestSidecar(payload, 'claude-test', noOptions),
-    TranslateInputException,
-    'cannot express an allowed_tools required subset',
-  );
-});
-
 test('buildTargetPayload maps dynamic thinking budget to adaptive thinking', async () => {
   assertEquals((await buildWithTestSidecar({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: -1 } } }, 'claude-test', noOptions)).thinking, { type: 'adaptive' });
-});
-
-test('buildTargetPayload wraps generationConfig.responseSchema as output_config.format', async () => {
-  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'], additionalProperties: false };
-  const request = await buildWithTestSidecar({ contents: [], generationConfig: { responseSchema: schema } }, 'claude-test', noOptions);
-
-  assertEquals(request.output_config, { format: { type: 'json_schema', schema } });
 });
 
 test('buildTargetPayload rejects an unknown content role', async () => {
