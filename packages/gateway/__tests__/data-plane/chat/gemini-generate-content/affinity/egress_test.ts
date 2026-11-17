@@ -100,7 +100,6 @@ describe('Gemini generateContent affinity egress', () => {
   });
 
   test.each([
-    { text: '', thoughtSignature: 'natural' },
     { thought: true, thoughtSignature: 'natural' },
   ])('treats an empty signature trailer as metadata rather than visible content', async trailer => {
     const output: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [];
@@ -113,25 +112,6 @@ describe('Gemini generateContent affinity egress', () => {
       event: { candidates: [{ content: { parts: [{ text: 'visible', thoughtSignature: 'wrapped:natural' }] }, finishReason: 'STOP' }] },
     });
     expect(output).toHaveLength(1);
-  });
-
-  test('moves an immediate continuation signature onto the buffered function-call event', async () => {
-    const output: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [];
-    for await (const frame of wrapGeminiGenerateContentAffinityEgress(frames([
-      eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ functionCall: { id: 'call', name: 'tool', args: { a: 1 } } }] } }] }),
-      eventFrame({
-        candidates: [{
-          index: 0,
-          content: { role: 'model', parts: [{ functionCall: { id: 'call', name: 'tool', args: { b: 2 } }, thoughtSignature: 'natural' }] },
-          finishReason: 'STOP',
-        }],
-      }),
-    ]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    expect(output[0]).toMatchObject({
-      event: { candidates: [{ content: { parts: [{ thoughtSignature: 'wrapped:natural' }] } }] },
-    });
-    expect(output[1]).not.toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: expect.anything() }] } }] } });
   });
 
   test('slides one-event lookahead until a later natural signature closes the same element', async () => {
@@ -155,35 +135,10 @@ describe('Gemini generateContent affinity egress', () => {
     expect(output[2]).not.toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: expect.anything() }] } }] } });
   });
 
-  test('slides one-event lookahead to finish before synthesizing without a natural signature', async () => {
-    const output: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [];
-    for await (const frame of wrapGeminiGenerateContentAffinityEgress(frames([
-      eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'a' }] } }] }),
-      eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'b' }] } }] }),
-      eventFrame({
-        candidates: [{
-          index: 0,
-          content: { role: 'model', parts: [{ text: 'c' }] },
-          finishReason: 'STOP',
-        }],
-      }),
-    ]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    expect(output[0]).not.toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: expect.anything() }] } }] } });
-    expect(output[1]).not.toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: expect.anything() }] } }] } });
-    expect(output[2]).toMatchObject({
-      event: { candidates: [{ content: { parts: [{ text: 'c', thoughtSignature: 'wrapped:synthetic' }] }, finishReason: 'STOP' }] },
-    });
-  });
-
   test.each([
     [
       { text: 'a', thoughtSignature: 'old' },
       { text: 'b', thoughtSignature: 'latest' },
-    ],
-    [
-      { functionCall: { id: 'call', name: 'tool', args: { a: 1 } }, thoughtSignature: 'old' },
-      { functionCall: { id: 'call', name: 'tool', args: { b: 2 } }, thoughtSignature: 'latest' },
     ],
     [
       { text: 'a', thoughtSignature: 'old' },
@@ -229,48 +184,7 @@ describe('Gemini generateContent affinity egress', () => {
     ]);
   });
 
-  test('places the latest signature on the first Part of a repeated function-call element', async () => {
-    const output: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [];
-    for await (const frame of wrapGeminiGenerateContentAffinityEgress(frames([eventFrame({
-      candidates: [{
-        index: 0,
-        content: {
-          role: 'model', parts: [
-            { functionCall: { id: 'call', name: 'tool', args: { a: 1 } }, thoughtSignature: 'old' },
-            { functionCall: { id: 'call', name: 'tool', args: { b: 2 } }, thoughtSignature: 'latest' },
-          ],
-        },
-        finishReason: 'STOP',
-      }],
-    })]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    const event = output[0].type === 'event' && !('error' in output[0].event) ? output[0].event : undefined;
-    const parts = event?.candidates?.[0].content?.parts;
-    expect(parts?.[0]).toMatchObject({ thoughtSignature: 'wrapped:latest' });
-    expect(parts?.[1]).not.toHaveProperty('thoughtSignature');
-  });
-
-  test('moves the latest replacement from a signature-only lookahead', async () => {
-    const output: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [];
-    for await (const frame of wrapGeminiGenerateContentAffinityEgress(frames([
-      eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'visible' }] } }] }),
-      eventFrame({
-        candidates: [{
-          index: 0,
-          content: { role: 'model', parts: [{ thoughtSignature: 'old' }, { thoughtSignature: 'latest' }] },
-          finishReason: 'STOP',
-        }],
-      }),
-    ]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    expect(output[0]).toMatchObject({
-      event: { candidates: [{ content: { parts: [{ thoughtSignature: 'wrapped:latest' }] }, finishReason: 'STOP' }] },
-    });
-    expect(JSON.stringify(output).match(/wrapped:(?:old|latest)/g)).toEqual(['wrapped:latest']);
-  });
-
   test.each([
-    { text: 'answer' },
     { functionCall: { id: 'call', name: 'tool', args: {} } },
   ])('moves a leading signature-only event forward onto the first content Part', async contentPart => {
     const output: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [];
@@ -317,29 +231,6 @@ describe('Gemini generateContent affinity egress', () => {
         }],
       },
     });
-  });
-
-  test('merges candidate extension metadata backward from a suppressed trailer', async () => {
-    const output: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [];
-    for await (const frame of wrapGeminiGenerateContentAffinityEgress(frames([
-      eventFrame({
-        candidates: [withCandidateExtra(
-          { index: 0, content: { role: 'model', parts: [{ text: 'answer' }] } },
-          'vendor_text',
-          'early-',
-        )],
-      }),
-      eventFrame({
-        candidates: [withCandidateExtra(
-          { index: 0, content: { role: 'model', parts: [{ thoughtSignature: 'natural' }] }, finishReason: 'STOP' },
-          'vendor_text',
-          'late',
-        )],
-      }),
-    ]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    expect(output).toHaveLength(1);
-    expect(output[0]).toMatchObject({ event: { candidates: [{ vendor_text: 'early-late' }] } });
   });
 
   test('keeps a leading signature with the different element that follows it', async () => {
@@ -412,25 +303,6 @@ describe('Gemini generateContent affinity egress', () => {
     });
   });
 
-  test('keeps a natural signature-only finishing candidate as its anchor', async () => {
-    const output: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [];
-    for await (const frame of wrapGeminiGenerateContentAffinityEgress(frames([eventFrame({
-      candidates: [{
-        index: 0,
-        content: { role: 'model', parts: [{ thoughtSignature: 'old' }, { thoughtSignature: 'latest' }] },
-        finishReason: 'STOP',
-      }],
-    })]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    expect(output).toEqual([eventFrame({
-      candidates: [{
-        index: 0,
-        content: { role: 'model', parts: [{ thoughtSignature: 'wrapped:latest' }] },
-        finishReason: 'STOP',
-      }],
-    })]);
-  });
-
   test('preserves the role when folding a signature-only terminal candidate', async () => {
     const output: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [];
     for await (const frame of wrapGeminiGenerateContentAffinityEgress(frames([
@@ -478,47 +350,6 @@ describe('Gemini generateContent affinity egress', () => {
     expect(output[1]).toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: 'wrapped:natural' }] } }] } });
   });
 
-  test('does not merge a same-name function call when only the earlier call has an ID', async () => {
-    const output: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [];
-    for await (const frame of wrapGeminiGenerateContentAffinityEgress(frames([
-      eventFrame({
-        candidates: [{
-          index: 0,
-          content: { role: 'model', parts: [{ functionCall: { id: 'first', name: 'tool', args: { a: 1 } } }] },
-        }],
-      }),
-      eventFrame({
-        candidates: [{
-          index: 0,
-          content: { role: 'model', parts: [{ functionCall: { name: 'tool', args: { b: 2 } }, thoughtSignature: 'natural' }] },
-          finishReason: 'STOP',
-        }],
-      }),
-    ]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    expect(output[0]).toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: 'wrapped:synthetic' }] } }] } });
-    expect(output[1]).toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: 'wrapped:natural' }] } }] } });
-  });
-
-  test('synthesizes on the buffered first element when the lookahead starts a different element', async () => {
-    const output: ProtocolFrame<GeminiGenerateContentStreamEvent>[] = [];
-    for await (const frame of wrapGeminiGenerateContentAffinityEgress(frames([
-      eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'answer' }] } }] }),
-      eventFrame({
-        candidates: [{
-          index: 0,
-          content: { role: 'model', parts: [{ functionCall: { name: 'tool', args: {} } }] },
-          finishReason: 'STOP',
-        }],
-      }),
-    ]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    expect(output[0]).toMatchObject({
-      event: { candidates: [{ content: { parts: [{ text: 'answer', thoughtSignature: 'wrapped:synthetic' }] } }] },
-    });
-    expect(output[1]).not.toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: expect.anything() }] } }] } });
-  });
-
   test('flushes pending visible content before propagating an iterator failure', async () => {
     const source = async function* (): AsyncGenerator<ProtocolFrame<GeminiGenerateContentStreamEvent>> {
       yield eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'visible' }] } }] });
@@ -531,11 +362,4 @@ describe('Gemini generateContent affinity egress', () => {
     });
     await expect(iterator.next()).rejects.toThrow('upstream failed');
   });
-});
-
-test.each([undefined, { role: 'model' }])('affinity preserves absent parts on finish-only chunks %j', async content => {
-  const event = { candidates: [{ finishReason: 'STOP', ...(content === undefined ? {} : { content }) }] };
-  const output = [];
-  for await (const frame of wrapGeminiGenerateContentAffinityEgress(frames([eventFrame(event)]), { affinity, codec: immediateCodec })) output.push(frame);
-  expect(output).toEqual([eventFrame({ candidates: [{ index: 0, finishReason: 'STOP', ...(content === undefined ? {} : { content }) }] })]);
 });

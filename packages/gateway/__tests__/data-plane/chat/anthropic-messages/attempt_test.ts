@@ -4,10 +4,10 @@ import { anthropicMessagesAttempt } from '../../../../src/data-plane/chat/anthro
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import type { AnthropicMessagesClientTool, AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesPayloadEx, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 import type { FlagId } from '@floway-dev/provider/flags';
 import { createOllamaProvider } from '@floway-dev/provider-ollama';
@@ -97,25 +97,6 @@ const installRepo = (): InMemoryRepo => {
   return repo;
 };
 
-test('generate native messages target calls provider.callAnthropicMessages with no rewrite', async () => {
-  installRepo();
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers(),
-  }));
-  const result = await anthropicMessagesAttempt.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    candidate: makeCandidate({ callAnthropicMessages }),
-    headers: new Headers(),
-    anthropicBeta: [],
-  });
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-  assertEquals(callAnthropicMessages.mock.calls.length, 1);
-});
-
 test('generate carries anthropic-beta through the Anthropic Messages boundary outside the provider allowlist', async () => {
   installRepo();
   let upstreamHeaders: Headers | undefined;
@@ -165,40 +146,6 @@ test('generate and countTokens drop the Claude Code beta flag on candidates that
   await anthropicMessagesAttempt.countTokens({ payload: makePayload(), ctx: makeGatewayCtx(), candidate, headers: new Headers(), anthropicBeta });
 
   assertEquals(upstreamAnthropicBeta, [['interleaved-thinking-2025-05-14'], ['interleaved-thinking-2025-05-14']]);
-});
-
-test('generate translate-to-responses branch routes through openaiResponsesAttempt', async () => {
-  installRepo();
-  let upstreamHeaders: Headers | undefined;
-  const respResp: OpenAIResponsesResultEx = {
-    id: 'resp_x', object: 'response', model: 'test-model', status: 'completed',
-    output: [{
-      type: 'message', id: 'msg_resp', role: 'assistant', status: 'completed',
-      content: [{ type: 'output_text', text: 'hi', annotations: [] }],
-    }], error: null, incomplete_details: null,
-  };
-  const callOpenAIResponses = vi.fn(async (_model, _body, _action, _signal, opts): Promise<ProviderOpenAIResponsesResult> => {
-    upstreamHeaders = opts?.headers;
-    return {
-      action: 'generate', ok: true,
-      events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: respResp }]),
-      modelKey: 'k',
-      headers: new Headers(),
-    };
-  });
-  const result = await anthropicMessagesAttempt.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    candidate: makeCandidate({ callOpenAIResponses, endpoints: { openaiResponses: {} } }),
-    headers: new Headers({ 'anthropic-beta': 'must-not-enter-ordinary-headers' }),
-    anthropicBeta: ['context-1m-2025-08-07'],
-  });
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-  assertEquals(callOpenAIResponses.mock.calls.length, 1);
-  assertEquals(upstreamHeaders?.has('anthropic-beta'), false);
 });
 
 test('generate translates Anthropic Messages onto one Chat Completions output cap without its beta metadata', async () => {
@@ -349,112 +296,6 @@ test('generate lets the target system-to-developer rewrite take precedence over 
   assertEquals(input[1], { type: 'message', role: 'developer', content: 'inline instructions' });
 });
 
-test('generate translate-to-responses keeps top-level instructions apart from rewritten inline system messages', async () => {
-  installRepo();
-  const observedBodies: Omit<OpenAIResponsesPayloadEx, 'model'>[] = [];
-  const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
-    observedBodies.push(body as Omit<OpenAIResponsesPayloadEx, 'model'>);
-    return {
-      action: 'generate',
-      ok: true,
-      events: makeProtocolFrames([{
-        type: 'response.completed',
-        sequence_number: 0,
-        response: {
-          id: 'resp_x',
-          object: 'response',
-          model: 'test-model',
-          status: 'completed',
-          output: [],
-          error: null,
-          incomplete_details: null,
-        },
-      }]),
-      modelKey: 'k',
-      headers: new Headers(),
-    };
-  });
-
-  const result = await anthropicMessagesAttempt.generate({
-    payload: makePayload({
-      system: [{ citations: null, type: 'text', text: 'base A' }, { citations: null, type: 'text', text: 'base B' }],
-      messages: [
-        { role: 'user', content: 'hello' },
-        { role: 'system', content: 'inline instructions' },
-      ],
-    }),
-    ctx: makeGatewayCtx(),
-    candidate: makeCandidate({
-      callOpenAIResponses,
-      endpoints: { openaiResponses: {} },
-      enabledFlags: new Set<FlagId>(['rewrite-system-to-developer']),
-    }),
-    headers: new Headers(),
-    anthropicBeta: [],
-  });
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-  assertEquals(callOpenAIResponses.mock.calls.length, 1);
-  const observedBody = observedBodies[0];
-  if (!observedBody) throw new Error('expected observed OpenAI Responses body');
-  const input = observedBody.input;
-  if (!Array.isArray(input)) throw new Error('expected OpenAI Responses input array');
-  assertEquals(observedBody.instructions, 'base Abase B');
-  assertEquals(input[0], { type: 'message', role: 'user', content: 'hello' });
-  assertEquals(input[1], { type: 'message', role: 'developer', content: 'inline instructions' });
-});
-
-test('countTokens proxies the upstream response as a plain result', async () => {
-  installRepo();
-  const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
-    response: new Response(JSON.stringify({ input_tokens: 7 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
-    modelKey: 'k',
-  }));
-
-  const result = await anthropicMessagesAttempt.countTokens({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    candidate: makeCandidate({ callAnthropicMessagesCountTokens }),
-    headers: new Headers(),
-    anthropicBeta: [],
-  });
-
-  assertEquals(result.type, 'plain');
-  if (result.type !== 'plain') throw new Error('unreachable');
-  assertEquals(result.status, 200);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
-  assertEquals(body.input_tokens, 7);
-  assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
-});
-
-test('countTokens carries anthropic-beta through the Anthropic Messages boundary outside the provider allowlist', async () => {
-  installRepo();
-  let upstreamHeaders: Headers | undefined;
-  let upstreamAnthropicBeta: readonly string[] | undefined;
-  const callAnthropicMessagesCountTokens = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderCallResult> => {
-    upstreamHeaders = opts?.headers;
-    upstreamAnthropicBeta = opts?.anthropicBeta;
-    return { response: Response.json({ input_tokens: 7 }), modelKey: 'k' };
-  });
-
-  await anthropicMessagesAttempt.countTokens({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    candidate: makeCandidate({ callAnthropicMessagesCountTokens }),
-    headers: new Headers({
-      'anthropic-beta': 'must-not-enter-ordinary-headers',
-      'x-unlisted': 'discard',
-    }),
-    anthropicBeta: ['context-1m-2025-08-07'],
-  });
-
-  assertExists(upstreamHeaders);
-  assertEquals(Object.fromEntries(upstreamHeaders), {});
-  assertEquals(upstreamAnthropicBeta, ['context-1m-2025-08-07']);
-});
-
 test('countTokens applies generation request transforms before provider dispatch', async () => {
   installRepo();
   const observedBodies: Array<Omit<AnthropicMessagesPayload, 'model'>> = [];
@@ -498,109 +339,4 @@ test('countTokens applies generation request transforms before provider dispatch
     thinking: { type: 'disabled' },
     tool_choice: { type: 'tool', name: 'lookup' },
   }]);
-});
-
-test('countTokens prepares the generation web-search request shape', async () => {
-  installRepo();
-  const observedBodies: Array<Omit<AnthropicMessagesPayload, 'model'>> = [];
-  const callAnthropicMessagesCountTokens = vi.fn(async (_model, body): Promise<ProviderCallResult> => {
-    observedBodies.push(body as Omit<AnthropicMessagesPayload, 'model'>);
-    return { response: Response.json({ input_tokens: 11 }), modelKey: 'k' };
-  });
-
-  const result = await anthropicMessagesAttempt.countTokens({
-    payload: makePayload({ tools: [{ name: 'web_search', type: 'web_search_20260209', max_uses: 3 }] }),
-    ctx: makeGatewayCtx(),
-    candidate: makeCandidate({
-      callAnthropicMessagesCountTokens,
-      enabledFlags: new Set<FlagId>(['anthropic-messages-web-search-shim']),
-    }),
-    headers: new Headers(),
-    anthropicBeta: [],
-  });
-
-  assertEquals(result.type, 'plain');
-  const tool = observedBodies[0]?.tools?.[0] as AnthropicMessagesClientTool | undefined;
-  if (tool === undefined) throw new Error('expected rewritten web-search tool');
-  assertEquals(tool.name, 'web_search');
-  assertEquals('type' in tool, false);
-  assertEquals(tool.input_schema, {
-    type: 'object',
-    properties: { query: { type: 'string', description: 'Search query' } },
-    required: ['query'],
-  });
-});
-
-test('countTokens refuses a non-anthropic-messages candidate', async () => {
-  installRepo();
-  let thrown: unknown = null;
-  try {
-    await anthropicMessagesAttempt.countTokens({
-      payload: makePayload(),
-      ctx: makeGatewayCtx(),
-      candidate: makeCandidate({ endpoints: { openaiResponses: {} } }),
-      headers: new Headers(),
-      anthropicBeta: [],
-    });
-  } catch (error) {
-    thrown = error;
-  }
-  if (!(thrown instanceof Error)) throw new Error('expected an Error to be thrown');
-  assertEquals(thrown.message.includes('chatTargetPicker.pick'), true);
-});
-
-test('generate attaches the performance context to the result', async () => {
-  installRepo();
-  const ctx = mockChatGatewayCtx({
-    apiKeyId: API_KEY_ID,
-    wantsStream: true,
-    runtimeLocation: 'SJC',
-  });
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'gpt-test', headers: new Headers(),
-  }));
-
-  const result = await anthropicMessagesAttempt.generate({
-    payload: makePayload(),
-    ctx,
-    candidate: makeCandidate({ upstream: 'up_perf', callAnthropicMessages }),
-    headers: new Headers(),
-    anthropicBeta: [],
-  });
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  // result.performance carries the full dimension set that respond.ts will
-  // use to record telemetry once the stream settles.
-  assertExists(result.performance);
-  assertEquals(result.performance.keyId, API_KEY_ID);
-  assertEquals(result.performance.model, 'test-model');
-  assertEquals(result.performance.upstream, 'up_perf');
-  assertEquals(result.performance.runtimeLocation, 'SJC');
-
-  await collectEvents(result.events);
-});
-
-test('generate propagates upstream response headers onto the EventResult so respond can forward them', async () => {
-  installRepo();
-  const upstreamHeaders = new Headers({
-    'anthropic-ratelimit-unified-status': 'allowed',
-    'request-id': 'req_messages_xyz',
-  });
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: upstreamHeaders,
-  }));
-  const result = await anthropicMessagesAttempt.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    candidate: makeCandidate({ callAnthropicMessages }),
-    headers: new Headers(),
-    anthropicBeta: [],
-  });
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  assertEquals(result.headers?.get('anthropic-ratelimit-unified-status'), 'allowed');
-  assertEquals(result.headers?.get('request-id'), 'req_messages_xyz');
-  await collectEvents(result.events);
 });

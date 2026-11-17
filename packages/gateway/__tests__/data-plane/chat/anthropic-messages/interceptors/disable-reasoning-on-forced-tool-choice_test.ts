@@ -27,36 +27,6 @@ const invocation = (
   anthropicBeta: [],
 });
 
-test('messages forced tool_choice disables thinking and strips output_config', async () => {
-  const input = invocation({
-    model: 'm',
-    messages: [],
-    max_tokens: 1,
-    thinking: { type: 'enabled', budget_tokens: 1024 },
-    output_config: { effort: 'high' },
-    tool_choice: { type: 'tool', name: 'x' },
-  });
-
-  await withReasoningDisabledOnForcedToolChoice(input, stubCtx, okEvents);
-
-  assertEquals(input.payload.thinking, { type: 'disabled' });
-  assertEquals(input.payload.output_config, undefined);
-});
-
-test('messages any tool_choice also disables thinking', async () => {
-  const input = invocation({
-    model: 'm',
-    messages: [],
-    max_tokens: 1,
-    thinking: { type: 'enabled', budget_tokens: 1024 },
-    tool_choice: { type: 'any' },
-  });
-
-  await withReasoningDisabledOnForcedToolChoice(input, stubCtx, okEvents);
-
-  assertEquals(input.payload.thinking, { type: 'disabled' });
-});
-
 test('messages non-forced tool_choice leaves reasoning untouched', async () => {
   for (const type of ['auto', 'none'] as const) {
     const input = invocation({

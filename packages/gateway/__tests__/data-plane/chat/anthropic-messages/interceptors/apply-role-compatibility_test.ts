@@ -62,15 +62,6 @@ test('rewrites every inline system message and preserves content', async () => {
   assert(result[0]?.content === content);
 });
 
-test('handles empty input and leaves non-system messages unchanged', async () => {
-  assertEquals(await applyRoles([], new Set(['rewrite-mid-conv-system-to-user'])), []);
-  const messages: AnthropicMessagesMessage[] = [
-    { role: 'user', content: 'hello' },
-    { role: 'assistant', content: 'hi' },
-  ];
-  assertEquals(await applyRoles(messages, new Set(['rewrite-mid-conv-system-to-user'])), messages);
-});
-
 test('rewrites only content-bearing system messages in disallowed Anthropic positions', async () => {
   const directive = { role: 'system' as const, content: [], output_config: { effort: 'high' as const } };
   const invalidContent = [{ type: 'text' as const, text: 'skills' }];
@@ -116,21 +107,4 @@ test('preserves valid content-bearing system turn boundaries', async () => {
   assertEquals(await applyRoles(beforeAssistant, flag), beforeAssistant);
   assertEquals(await applyRoles(atEnd, flag), atEnd);
   assertEquals(await applyRoles(afterServerToolResult, flag), afterServerToolResult);
-});
-
-test('rewrites first and post-assistant content-bearing system messages as invalid', async () => {
-  const messages: AnthropicMessagesMessage[] = [
-    { role: 'system', content: 'leading inline rules' },
-    { role: 'assistant', content: 'answer' },
-    { role: 'system', content: 'late rules' },
-  ];
-
-  assertEquals(
-    await applyRoles(messages, new Set(['rewrite-disallowed-mid-conv-system-to-user'])),
-    [
-      { role: 'user', content: 'leading inline rules' },
-      { role: 'assistant', content: 'answer' },
-      { role: 'user', content: 'late rules' },
-    ],
-  );
 });

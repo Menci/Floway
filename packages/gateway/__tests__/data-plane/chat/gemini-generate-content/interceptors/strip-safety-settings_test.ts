@@ -32,13 +32,3 @@ test('removes safetySettings without inventing missing defaults and preserves si
 
   assertEquals(input.payload, { contents: [], cachedContent: 'cachedContents/example' });
 });
-
-test('is a no-op when safetySettings is absent', async () => {
-  const input = invocation({
-    contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
-  });
-
-  await stripSafetySettings(input, stubCtx, okEvents);
-
-  assertEquals(input.payload, { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] });
-});

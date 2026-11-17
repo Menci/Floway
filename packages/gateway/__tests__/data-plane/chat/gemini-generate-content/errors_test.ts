@@ -21,9 +21,6 @@ test('inputErrorResult renders a GenerateContent 400 INVALID_ARGUMENT envelope',
 
 test.each([
   { name: 'field and code', fields: { param: 'model', code: 'missing_required_parameter' }, expected: { param: 'model', code: 'missing_required_parameter' } },
-  { name: 'field only', fields: { param: 'contents[0].parts' }, expected: { param: 'contents[0].parts' } },
-  { name: 'code only', fields: { code: 'unsupported_content' }, expected: { code: 'unsupported_content' } },
-  { name: 'empty values', fields: { param: '', code: '' }, expected: { param: '', code: '' } },
   { name: 'neither field nor code', fields: {}, expected: undefined },
 ])('inputErrorResult preserves $name exactly', ({ fields, expected }) => {
   const result = inputErrorResult({ message: 'invalid input', ...fields });

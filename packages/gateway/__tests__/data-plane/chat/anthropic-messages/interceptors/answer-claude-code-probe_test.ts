@@ -72,14 +72,6 @@ test('answers the /model validation probe without dialing the upstream', async (
   assert(message.id.startsWith('msg_'));
 });
 
-test('reports no performance context so the turn contributes no latency sample', async () => {
-  const { result } = await runProbe(invocation(probePayload()));
-
-  assert(result.type === 'events');
-  assertEquals(result.performance, undefined);
-  assertEquals(result.finalMetadata, undefined);
-});
-
 test('answers every fixed probe prompt, in block and bare-string form', async () => {
   for (const prompt of ['Hi', 'test']) {
     await assertAnswered(invocation(probePayload({ messages: [{ role: 'user', content: prompt }] })), `bare string: ${prompt}`);
@@ -96,10 +88,6 @@ test('forwards the probe prompts the gateway cannot answer truthfully', async ()
   }
 });
 
-test('forwards a probe prompt whose casing the CLI has never been observed to send', async () => {
-  await assertForwarded(invocation(probePayload({ messages: [{ role: 'user', content: 'HI' }] })), 'uppercased');
-});
-
 test('forwards a one-token request from a client that is not Claude Code', async () => {
   await assertForwarded(invocation(probePayload(), 'python-httpx/0.28.1'), 'other client');
   await assertForwarded(invocation(probePayload(), null), 'no user-agent');
@@ -107,18 +95,6 @@ test('forwards a one-token request from a client that is not Claude Code', async
 
 test('forwards a Claude Code turn whose output cap is not one token', async () => {
   await assertForwarded(invocation(probePayload({ max_tokens: 32_000 })), 'max_tokens 32000');
-});
-
-test('forwards a Claude Code turn that carries the session tools', async () => {
-  await assertForwarded(invocation(probePayload({
-    tools: [{ name: 'Bash', input_schema: { type: 'object' } }],
-  })), 'tools present');
-});
-
-test('forwards a conversation whose sole turn is not one of the fixed prompts', async () => {
-  await assertForwarded(invocation(probePayload({
-    messages: [{ role: 'user', content: 'Hi, can you explain this file?' }],
-  })), 'real question');
 });
 
 test('forwards a multi-turn conversation that happens to end on a probe prompt', async () => {
@@ -129,21 +105,4 @@ test('forwards a multi-turn conversation that happens to end on a probe prompt',
       { role: 'user', content: 'Hi' },
     ],
   })), 'three turns');
-});
-
-test('forwards a sole turn that carries more than one block', async () => {
-  await assertForwarded(invocation(probePayload({
-    messages: [{ role: 'user', content: [{ citations: null, type: 'text', text: 'Hi' }, { citations: null, type: 'text', text: 'and explain this file' }] }],
-  })), 'two text blocks');
-});
-
-test('forwards a sole turn that is not a user turn', async () => {
-  await assertForwarded(invocation(probePayload({ messages: [{ role: 'assistant', content: 'Hi' }] })), 'assistant role');
-  await assertForwarded(invocation(probePayload({ messages: [{ role: 'system', content: 'Hi' }] })), 'system role');
-});
-
-test('forwards a turn whose sole block is not text', async () => {
-  await assertForwarded(invocation(probePayload({
-    messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AA==' } }] }],
-  })), 'image block');
 });

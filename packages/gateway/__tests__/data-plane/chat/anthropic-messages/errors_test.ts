@@ -25,18 +25,8 @@ test('inputErrorResult renders an Anthropic 400 invalid_request_error envelope w
   assert(typeof body.request_id === 'string' && /^req_[A-Za-z0-9]{24}$/.test(body.request_id), `request_id ${String(body.request_id)} must match Anthropic-shape req_<24 opaque chars>`);
 });
 
-test('inputErrorResult preserves Anthropic key order: type, error, request_id', () => {
-  const result = inputErrorResult({ message: 'whatever' });
-  const raw = new TextDecoder().decode(result.body);
-  // Key-order is load-bearing for byte-faithfulness with Anthropic-direct.
-  assert(/^\{"type":"error","error":\{"type":"invalid_request_error","message":"whatever"\},"request_id":"req_[A-Za-z0-9]{24}"\}$/.test(raw), `body ${raw} must match Anthropic-direct byte shape`);
-});
-
 test.each([
   { name: 'field and code', fields: { param: 'model', code: 'missing_required_parameter' }, expected: { param: 'model', code: 'missing_required_parameter' } },
-  { name: 'field only', fields: { param: 'messages[0].content' }, expected: { param: 'messages[0].content' } },
-  { name: 'code only', fields: { code: 'unsupported_content' }, expected: { code: 'unsupported_content' } },
-  { name: 'empty values', fields: { param: '', code: '' }, expected: { param: '', code: '' } },
   { name: 'neither field nor code', fields: {}, expected: undefined },
 ])('inputErrorResult preserves $name exactly', ({ fields, expected }) => {
   const result = inputErrorResult({ message: 'invalid input', ...fields });

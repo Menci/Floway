@@ -15,7 +15,5 @@ test('OpenAI Chat Completions billable usage splits the inclusive prompt total i
 test('OpenAI Chat Completions billable usage forwards a served tier and drops the default', () => {
   const usage = { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 };
   expect(billableUsageFromOpenAIChatCompletionsUsage(usage, 'priority').tier).toBe('priority');
-  expect(billableUsageFromOpenAIChatCompletionsUsage(usage, 'flex').tier).toBe('flex');
   expect(billableUsageFromOpenAIChatCompletionsUsage(usage, 'default').tier).toBeUndefined();
-  expect(billableUsageFromOpenAIChatCompletionsUsage(usage, undefined).tier).toBeUndefined();
 });

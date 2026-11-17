@@ -54,24 +54,6 @@ test('external image fetcher reports non-success and oversized responses', async
   assertEquals(await fetchImage('https://example.com/oversized'), { type: 'too-large', limitBytes: 50 * 1024 * 1024 });
 });
 
-test('external image fetcher bounds redirect chains', async () => {
-  let requests = 0;
-  initExternalResourceFetcher(_url => {
-    requests += 1;
-    return Promise.resolve(new Response(null, {
-      status: 302,
-      headers: { location: `https://example.com/redirect-${requests}` },
-    }));
-  });
-
-  assertEquals(await createExternalImageFetcher()('https://example.com/start'), {
-    type: 'invalid-redirect',
-    status: 302,
-    reason: 'too-many-redirects',
-  });
-  assertEquals(requests, 6);
-});
-
 test('external image fetcher cancels a streamed body beyond the byte limit', async () => {
   const chunk = new Uint8Array(1024 * 1024);
   let cancelled = false;

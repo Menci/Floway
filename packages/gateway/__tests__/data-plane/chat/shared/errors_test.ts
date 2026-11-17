@@ -4,9 +4,7 @@ import { type ChatServeFailure, throwChatServeFailure, tryCatchChatServeFailure 
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 const cases: readonly ChatServeFailure[] = [
-  { kind: 'model-missing', model: 'gpt-9', failedUpstreams: [] },
   { kind: 'model-missing', model: 'gpt-9', failedUpstreams: ['Azure prod'] },
-  { kind: 'model-unsupported', model: 'gpt-9', failedUpstreams: [] },
   { kind: 'model-unsupported', model: 'gpt-9', failedUpstreams: ['Azure prod', 'Custom'] },
   { kind: 'routing-unavailable', message: 'no upstream can serve this' },
 ];

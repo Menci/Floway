@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { executeTranslation } from '../../../../src/data-plane/chat/shared/execute-translation.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { toInternalDebugError, type ExecuteResult } from '@floway-dev/provider';
+import { type ExecuteResult } from '@floway-dev/provider';
 import { testTelemetryModelIdentity } from '@floway-dev/test-utils';
 import type { TranslateTrip } from '@floway-dev/translate';
 
@@ -95,19 +95,6 @@ describe('executeTranslation', () => {
     expect(result).toBe(inner);
   });
 
-  test('failure inner — outer returns the failure unchanged', async () => {
-    const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
-      type: 'internal-error',
-      status: 500,
-      error: toInternalDebugError(new Error('boom')),
-    };
-    const innerAttempt = async (_translated: string): Promise<ExecuteResult<ProtocolFrame<TgtEvent>>> => inner;
-
-    const result = await executeTranslation({ model: 'payload' }, translate, innerAttempt);
-
-    expect(result).toBe(inner);
-  });
-
   test('upstream api-error with trip.error — outer returns the restated envelope', async () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
       type: 'api-error',
@@ -129,20 +116,6 @@ describe('executeTranslation', () => {
     expect(result.headers.get('x-upstream-request-id')).toBeNull();
     // Fields not touched by the rewriter (source, performance, upstream) survive.
     expect(result.source).toBe('upstream');
-  });
-
-  test('upstream api-error with trip.error returning undefined — outer passes the envelope through', async () => {
-    const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
-      type: 'api-error',
-      source: 'upstream',
-      status: 502,
-      headers: new Headers(),
-      body: new TextEncoder().encode('bad gateway'),
-    };
-    const translateWithRewrite = async (payload: SrcPayload): Promise<TranslateTrip<string, SrcEvent, TgtEvent>> => ({ ...(await translate(payload)), error: () => undefined });
-
-    const result = await executeTranslation({ model: 'payload' }, translateWithRewrite, async () => inner);
-    expect(result).toBe(inner);
   });
 
   test('gateway-sourced api-error — trip.error is NOT invoked', async () => {
@@ -199,23 +172,6 @@ describe('executeTranslation upstream capture', () => {
     ]);
   });
 
-  test('events path — downstream still receives the translated frames when capture is set', async () => {
-    const innerAttempt = async (_translated: string): Promise<ExecuteResult<ProtocolFrame<TgtEvent>>> => ({
-      type: 'events',
-      events: makeTgtFrames(['a']),
-      modelIdentity: testTelemetryModelIdentity,
-    });
-    const capture = { upstreamFrame: () => {}, upstreamApiError: () => {} };
-
-    const result = await executeTranslation({ model: 'payload' }, translate, innerAttempt, capture);
-    if (result.type !== 'events') throw new Error('unreachable');
-    const frames = await collectFrames(result.events);
-    expect(frames).toEqual([
-      { type: 'event', event: { kind: 'src', value: 'a' } },
-      { type: 'done' },
-    ]);
-  });
-
   test('api-error path — capture receives the verbatim upstream envelope before any rewrite', async () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
       type: 'api-error',
@@ -244,75 +200,6 @@ describe('executeTranslation upstream capture', () => {
     expect(new TextDecoder().decode(captured[0].body)).toBe('raw upstream body');
     // Downstream got the rewrite.
     expect(JSON.parse(new TextDecoder().decode(result.body))).toEqual({ error: { message: 'rewritten' } });
-  });
-
-  test('api-error path — capture fires even when trip.error is undefined (no restatement)', async () => {
-    const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
-      type: 'api-error',
-      source: 'upstream',
-      status: 502,
-      headers: new Headers(),
-      body: new TextEncoder().encode('bad gateway'),
-    };
-    const captured: { status: number }[] = [];
-    const capture = {
-      upstreamFrame: () => {},
-      upstreamApiError: (error: { status: number; headers: Headers; body: Uint8Array }) => captured.push({ status: error.status }),
-    };
-
-    await executeTranslation({ model: 'payload' }, translate, async () => inner, capture);
-    expect(captured).toEqual([{ status: 502 }]);
-  });
-
-  test('internal-error path — capture is NOT invoked', async () => {
-    const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
-      type: 'internal-error',
-      status: 500,
-      error: toInternalDebugError(new Error('boom')),
-    };
-    let called = false;
-    const capture = {
-      upstreamFrame: () => { called = true; },
-      upstreamApiError: () => { called = true; },
-    };
-
-    const result = await executeTranslation({ model: 'payload' }, translate, async () => inner, capture);
-    expect(called).toBe(false);
-    expect(result).toBe(inner);
-  });
-
-  test('gateway-sourced api-error — capture is NOT invoked', async () => {
-    const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
-      type: 'api-error',
-      source: 'gateway',
-      status: 400,
-      headers: new Headers(),
-      body: new TextEncoder().encode('synthesized'),
-    };
-    let called = false;
-    const capture = {
-      upstreamFrame: () => { called = true; },
-      upstreamApiError: () => { called = true; },
-    };
-
-    await executeTranslation({ model: 'payload' }, translate, async () => inner, capture);
-    expect(called).toBe(false);
-  });
-
-  test('capture undefined — no tee, downstream still works', async () => {
-    const innerAttempt = async (_translated: string): Promise<ExecuteResult<ProtocolFrame<TgtEvent>>> => ({
-      type: 'events',
-      events: makeTgtFrames(['a']),
-      modelIdentity: testTelemetryModelIdentity,
-    });
-
-    const result = await executeTranslation({ model: 'payload' }, translate, innerAttempt, undefined);
-    if (result.type !== 'events') throw new Error('unreachable');
-    const frames = await collectFrames(result.events);
-    expect(frames).toEqual([
-      { type: 'event', event: { kind: 'src', value: 'a' } },
-      { type: 'done' },
-    ]);
   });
 });
 

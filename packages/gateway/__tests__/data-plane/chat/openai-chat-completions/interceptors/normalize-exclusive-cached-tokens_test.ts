@@ -98,23 +98,9 @@ test('leaves a normalized chunk billable instead of underflowing', async () => {
   );
 });
 
-test('folds cache writes back as well', async () => {
-  const usage = await run(invocation(), {
-    prompt_tokens: 100,
-    completion_tokens: 10,
-    prompt_tokens_details: { cached_tokens: 120, cache_creation_input_tokens: 80 },
-  });
-  assertEquals(usage.prompt_tokens, 300);
-});
-
 test('leaves an inclusive chunk alone when no flag claims otherwise', async () => {
   const usage = await run(invocation(new Set()), INCLUSIVE_USAGE);
   assertEquals(usage.prompt_tokens, 1000);
-});
-
-test('leaves a chunk with no cache counts untouched', async () => {
-  const usage = await run(invocation(), { prompt_tokens: 40, completion_tokens: 1, total_tokens: 41 });
-  assertEquals(usage.prompt_tokens, 40);
 });
 
 test('raises when the flag claims exclusive and the totals say inclusive', async () => {

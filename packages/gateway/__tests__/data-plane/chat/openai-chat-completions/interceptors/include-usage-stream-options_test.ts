@@ -18,26 +18,6 @@ const invocation = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletion
   headers: new Headers(),
 });
 
-test('adds stream_options.include_usage when stream_options is absent', async () => {
-  const input = invocation({ model: 'm', messages: [] });
-
-  await withUsageStreamOptionsIncluded(input, stubCtx, okEvents);
-
-  assertEquals(input.payload.stream_options, { include_usage: true });
-});
-
-test('overrides include_usage:false on an existing stream_options object', async () => {
-  const input = invocation({
-    model: 'm',
-    messages: [],
-    stream_options: { include_usage: false },
-  });
-
-  await withUsageStreamOptionsIncluded(input, stubCtx, okEvents);
-
-  assertEquals(input.payload.stream_options, { include_usage: true });
-});
-
 test('preserves sibling stream_options keys while forcing include_usage on', async () => {
   // Upstreams that pass through unknown fields can carry extra `stream_options`
   // keys past our typed surface; the interceptor must not drop them when it

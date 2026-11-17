@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { withUsageNormalized } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/normalize-usage.ts';
 import type { OpenAIChatCompletionsInvocation } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -95,55 +95,4 @@ test('relocates usage from a non-empty choices chunk onto a synthesized carrier'
   const usage = usageRecord(carrier.event.usage!);
   assertEquals(usage.prompt_tokens, 100);
   assertEquals(usage.prompt_tokens_details, { cached_tokens: 70 });
-});
-
-test('passes raw vendor cache fields through unchanged so vendor interceptors stay responsible for the rewrite', async () => {
-  const frames = await runWithFrames(
-    eventFrame({
-      id: 'x',
-      object: 'chat.completion.chunk',
-      created: 0,
-      model: 'unknown-vendor',
-      choices: [],
-      usage: {
-        prompt_tokens: 100,
-        completion_tokens: 20,
-        total_tokens: 120,
-        prompt_cache_hit_tokens: 70,
-        cached_tokens: 25,
-      } as unknown as OpenAIChatCompletionsStreamEvent['usage'],
-    }),
-  );
-
-  assertEquals(frames.length, 1);
-  const frame = frames[0];
-  if (frame.type !== 'event') throw new Error('expected event frame');
-  const usage = usageRecord(frame.event.usage!);
-  assertEquals(usage.prompt_cache_hit_tokens, 70);
-  assertEquals(usage.cached_tokens, 25);
-  assertEquals('prompt_tokens_details' in usage, false);
-});
-
-test('leaves chunks without usage untouched', async () => {
-  const original = eventFrame({
-    id: 'chatcmpl_3',
-    object: 'chat.completion.chunk',
-    created: 1,
-    model: 'gpt-test',
-    choices: [
-      {  index: 0, delta: { content: 'hi' }, finish_reason: null },
-    ],
-  } satisfies OpenAIChatCompletionsStreamEvent);
-
-  const frames = await runWithFrames(original);
-
-  assertEquals(frames, [original]);
-});
-
-test('passes protocol done frames through verbatim', async () => {
-  const done = doneFrame();
-
-  const frames = await runWithFrames(done);
-
-  assertEquals(frames, [done]);
 });

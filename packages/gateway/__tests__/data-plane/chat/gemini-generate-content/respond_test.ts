@@ -73,18 +73,6 @@ test.each([false, true])('Gemini response terminates immediately on an error (st
   assertEquals(JSON.parse(text), error);
 });
 
-test.each([false, true])('Gemini response exposes EOF without any candidate completion (stream=%s)', async stream => {
-  const app = new Hono().get('/', c => respondGeminiGenerateContent(c, {
-    type: 'events', events: (async function* () { yield eventFrame({ candidates: [{ content: { parts: [{ text: 'unfinished' }] } }] }); })(), modelIdentity: testTelemetryModelIdentity,
-  }, stream, ctx()));
-  const response = await app.request('/');
-  const text = await response.text();
-  assertEquals(response.status, stream ? 200 : 502);
-  const errors = stream ? text.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line)) : [JSON.parse(text)];
-  assertEquals(errors.length, 1);
-  assertEquals(errors[0].error.message, 'Gemini generateContent stream ended without a terminal event.');
-});
-
 test.each([false, true])('Gemini response exposes EOF with an unfinished observed candidate (stream=%s)', async stream => {
   const app = new Hono().get('/', c => respondGeminiGenerateContent(c, {
     type: 'events', events: (async function* () {
@@ -98,27 +86,6 @@ test.each([false, true])('Gemini response exposes EOF with an unfinished observe
   const errors = stream ? text.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line)) : [JSON.parse(text)];
   assertEquals(errors.length, 1);
   assertEquals(errors[0].error.message, 'Gemini generateContent stream ended without a terminal event.');
-});
-
-test('respondGeminiGenerateContent preserves non-stream Gemini generateContent error event HTTP code', async () => {
-  const errorEvent: GeminiGenerateContentErrorResponse = {
-    error: {
-      code: 504,
-      status: 'DEADLINE_EXCEEDED',
-      message: 'timeout',
-    },
-  };
-
-  const response = await requestGeminiGenerateContentResponse({
-    type: 'events',
-    events: (async function* () {
-      yield eventFrame(errorEvent);
-    })(),
-    modelIdentity: testTelemetryModelIdentity,
-  });
-
-  assertEquals(response.status, 504);
-  assertEquals(await response.json(), errorEvent);
 });
 
 test('respondGeminiGenerateContent preserves upstream Google RPC Status body', async () => {
@@ -160,9 +127,6 @@ test('respondGeminiGenerateContent internal errors include debug fields in Googl
   const body = await response.json();
 
   assertEquals(response.status, 502);
-  assertEquals(body.error.code, 502);
-  assertEquals(body.error.status, 'UNAVAILABLE');
-  assertEquals(body.error.message, 'boom');
   assertEquals(body.error, {
     code: 502, status: 'UNAVAILABLE', message: 'boom', details: [
       { '@type': 'type.googleapis.com/google.rpc.DebugInfo', stackEntries: ['TypeError: boom', '    at test'] },

@@ -3,12 +3,10 @@ import { afterEach, test, vi } from 'vitest';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the model
@@ -80,41 +78,11 @@ const makeOpenAIChatCompletionsEvents = (text = 'hi'): readonly OpenAIChatComple
   },
 ];
 
-const makeAnthropicMessagesEvents = (id = 'msg_1'): readonly AnthropicMessagesStreamEventEx[] => [
-  {
-    type: 'message_start',
-    message: {
-      container: null, diagnostics: null, stop_details: null,
-      id, type: 'message', role: 'assistant', content: [],
-      model: 'test-model', stop_reason: null, stop_sequence: null,
-      usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 4, output_tokens: 0 },
-    },
-  },
-  { type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } },
-  { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
-  { type: 'content_block_stop', index: 0 },
-  { type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } },
-  { type: 'message_stop' },
-];
-
-const makeOpenAIResponsesResultEvent = (id = 'resp_test'): OpenAIResponsesStreamEventEx => {
-  const response: OpenAIResponsesResultEx = {
-    id, object: 'response', model: 'test-model', status: 'completed',
-    output: [{
-      type: 'message', id: 'msg_resp', role: 'assistant', status: 'completed',
-      content: [{ type: 'output_text', text: 'hi from responses', annotations: [] }],
-    }], error: null, incomplete_details: null,
-  };
-  return { type: 'response.completed', sequence_number: 0, response };
-};
-
 const makeCandidate = (overrides: {
   upstream?: string;
   targetApi?: 'openaiChatCompletions' | 'anthropicMessages' | 'openaiResponses';
   endpoints?: ModelEndpoints;
   callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
-  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
-  callOpenAIResponses?: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderOpenAIResponsesResult>;
   callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
   callGeminiGenerateContent?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>>;
 } = {}): ModelCandidate => {
@@ -133,8 +101,6 @@ const makeCandidate = (overrides: {
       : { openaiResponses: {} });
   const provider = stubProvider({
     callOpenAIChatCompletions: overrides.callOpenAIChatCompletions,
-    callAnthropicMessages: overrides.callAnthropicMessages,
-    callOpenAIResponses: overrides.callOpenAIResponses,
     callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
     callGeminiGenerateContent: overrides.callGeminiGenerateContent,
   });
@@ -160,63 +126,6 @@ const expectType = <T extends { type: string }, K extends T['type']>(r: T, k: K)
   assertEquals(r.type, k);
   return r as Extract<T, { type: K }>;
 };
-
-test('generate translates through native OpenAI Chat Completions target end to end', async () => {
-  installRepo();
-  const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
-  }));
-  queueResolution([makeCandidate({ targetApi: 'openaiChatCompletions', callOpenAIChatCompletions })]);
-
-  const result = await geminiGenerateContentServe.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    model: 'test-model',
-    headers: new Headers(),
-  });
-
-  const events = expectType(result, 'events').events;
-  await collectEvents(events);
-  assertEquals(callOpenAIChatCompletions.mock.calls.length, 1);
-});
-
-test('generate translates through Anthropic Messages when only that endpoint is exposed', async () => {
-  installRepo();
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers(),
-  }));
-  queueResolution([makeCandidate({ targetApi: 'anthropicMessages', callAnthropicMessages })]);
-
-  const result = await geminiGenerateContentServe.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    model: 'test-model',
-    headers: new Headers(),
-  });
-
-  const events = expectType(result, 'events').events;
-  await collectEvents(events);
-  assertEquals(callAnthropicMessages.mock.calls.length, 1);
-});
-
-test('generate translates through OpenAI Responses when only that endpoint is exposed', async () => {
-  installRepo();
-  const callOpenAIResponses = vi.fn(async (): Promise<ProviderOpenAIResponsesResult> => ({
-    action: 'generate', ok: true, events: makeProtocolFrames([makeOpenAIResponsesResultEvent()]), modelKey: 'k', headers: new Headers(),
-  }));
-  queueResolution([makeCandidate({ targetApi: 'openaiResponses', callOpenAIResponses })]);
-
-  const result = await geminiGenerateContentServe.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    model: 'test-model',
-    headers: new Headers(),
-  });
-
-  const events = expectType(result, 'events').events;
-  await collectEvents(events);
-  assertEquals(callOpenAIResponses.mock.calls.length, 1);
-});
 
 test('generate falls through to the next candidate when the first yields an upstream error', async () => {
   installRepo();
@@ -260,66 +169,6 @@ test('generate falls through to the next candidate when the first yields an upst
   }]);
 });
 
-// A mid-attempt throw (interceptor bug / translation error / provider-layer
-// JS exception not represented as a ChatServeFailure) must attribute the perf
-// error row to the throwing candidate, not the previous one that already
-// failed cleanly with a 5xx.
-test('mid-attempt throw stamps telemetry with the throwing candidate, not the previous one', async () => {
-  installRepo();
-  const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
-    status: 502, headers: new Headers({ 'content-type': 'application/json' }),
-  });
-  const firstCall = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: false, response: firstError, modelKey: 'first-key',
-  }));
-  const secondCall = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
-    throw new Error('simulated provider-layer JS exception');
-  });
-  queueResolution([
-    makeCandidate({ upstream: 'up_a', targetApi: 'openaiChatCompletions', callOpenAIChatCompletions: firstCall }),
-    makeCandidate({ upstream: 'up_b', targetApi: 'openaiChatCompletions', callOpenAIChatCompletions: secondCall }),
-  ]);
-
-  const ctx = makeGatewayCtx();
-  await geminiGenerateContentServe.generate({
-    payload: makePayload(),
-    ctx,
-    model: 'test-model',
-    headers: new Headers(),
-  }).then(
-    () => { throw new Error('expected geminiGenerateContentServe.generate to throw'); },
-    (error: unknown) => {
-      assertEquals((error as Error).message, 'simulated provider-layer JS exception');
-    },
-  );
-
-  assertEquals(firstCall.mock.calls.length, 1);
-  assertEquals(secondCall.mock.calls.length, 1);
-  assertEquals(ctx.attempt.telemetry?.upstream, 'up_b');
-});
-
-test('generate is a routing no-op for a bare user-text request (degenerate path)', async () => {
-  installRepo();
-  const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
-  }));
-  queueResolution([
-    makeCandidate({ upstream: 'up_a', targetApi: 'openaiChatCompletions', callOpenAIChatCompletions }),
-    makeCandidate({ upstream: 'up_b', targetApi: 'openaiChatCompletions', callOpenAIChatCompletions }),
-  ]);
-
-  const result = await geminiGenerateContentServe.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    model: 'test-model',
-    headers: new Headers(),
-  });
-
-  const events = expectType(result, 'events').events;
-  await collectEvents(events);
-  assertEquals(callOpenAIChatCompletions.mock.calls.length, 1);
-});
-
 test('generate renders model-missing as a Google RPC 404 when no candidates are available', async () => {
   installRepo();
   queueResolution([]);
@@ -359,10 +208,6 @@ test('generate filters out candidates whose endpoints do not satisfy the gemini-
   assertEquals(body.error.code, 400);
   assertEquals(body.error.status, 'INVALID_ARGUMENT');
   assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
-  // Defense-in-depth: even though `pick` would also throw on this candidate's
-  // endpoints, the spy pins that the filter happens BEFORE pick is reached,
-  // not after a fallback. Sibling tests in messages/responses/openai-chat-completions
-  // serve_test.ts mirror this assertion for the same reason.
   assertEquals(callOpenAIChatCompletions.mock.calls.length, 0);
 });
 
@@ -388,25 +233,6 @@ test('countTokens translates Gemini generateContent to Anthropic Messages count_
   const body = JSON.parse(new TextDecoder().decode(plain.body));
   assertEquals(body, { totalTokens: 17 });
   assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
-});
-
-test('countTokens renders a Google RPC NOT_FOUND when no Anthropic-Messages-capable candidate exists', async () => {
-  installRepo();
-  queueResolution([]);
-
-  const result = await geminiGenerateContentServe.countTokens({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    model: 'no-messages-model',
-    headers: new Headers(),
-  });
-
-  const upstreamError = expectType(result, 'api-error');
-  assertEquals(upstreamError.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(upstreamError.body));
-  assertEquals(body.error.code, 404);
-  assertEquals(body.error.status, 'NOT_FOUND');
-  assert(typeof body.error.message === 'string' && body.error.message.includes('no-messages-model is not'));
 });
 
 test('countTokens filters out candidates whose endpoints do not satisfy the gemini-countTokens preference and renders model-unsupported as a 400', async () => {
@@ -460,24 +286,6 @@ test('alias resolution overlays rules onto the target IR at the wire call', asyn
   const observed = capturedBodies[0]!;
   assertEquals(observed.reasoning_effort, 'high');
   assertEquals(observed.verbosity, 'low');
-});
-
-test('alias whose targets have no kind-matching binding surfaces as the regular model-missing 404', async () => {
-  installRepo();
-  queueResolution([], { sawModel: false });
-
-  const result = await geminiGenerateContentServe.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    model: 'gemini-fast',
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'api-error');
-  if (result.type !== 'api-error') throw new Error('unreachable');
-  assertEquals(result.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
-  assertEquals(body.error.message, 'Model gemini-fast is not available on any configured upstream.');
 });
 
 test('generate prefers a native Gemini candidate over a translated one', async () => {

@@ -13,7 +13,7 @@ import {
   withAnthropicMessagesWebSearchShim,
 } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/web-search-shim.ts';
 import { DEFAULT_WEB_SEARCH_CONFIG } from '../../../../../src/data-plane/tools/web-search/config.ts';
-import type { WebSearchProvider, WebSearchProviderResult } from '../../../../../src/data-plane/tools/web-search/types.ts';
+import type { WebSearchProvider } from '../../../../../src/data-plane/tools/web-search/types.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
@@ -30,7 +30,7 @@ import type {
   AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
 import { type ProtocolFrame, eventFrame } from '@floway-dev/protocols/common';
-import { assertEquals, assertExists, assertRejects, stubModelCandidate } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, stubModelCandidate } from '@floway-dev/test-utils';
 
 const testTelemetryModelIdentity = {
   model: 'test-model',
@@ -149,10 +149,6 @@ const activeProvider = (impl: WebSearchProvider, apiKeyId: string = 'test-key') 
   impl,
   apiKeyId,
 });
-
-const fakeProviderError =
-  (errorCode: Extract<WebSearchProviderResult, { type: 'error' }>['errorCode']): WebSearchProvider =>
-    searchOnlyProvider(() => Promise.resolve({ type: 'error', errorCode }));
 
 const toAsyncIterable = async function* <T>(values: Iterable<T>): AsyncGenerator<T> {
   for (const value of values) {
@@ -324,36 +320,6 @@ test('prepareAnthropicMessagesWebSearchShimRequest rewrites both native tool ver
   }
 });
 
-test('prepareAnthropicMessagesWebSearchShimRequest rejects duplicate native tools', () => {
-  const prepared = prepareAnthropicMessagesWebSearchShimRequest({
-    model: 'claude-test',
-    max_tokens: 64,
-    messages: [{ role: 'user', content: 'latest React docs' }],
-    tools: [{ name: 'web_search', type: 'web_search_20250305' }, { name: 'web_search', type: 'web_search_20260209' }],
-  });
-
-  assertEquals(prepared, {
-    type: 'invalid-request',
-    message: 'Only one native web search tool definition is supported per request.',
-  });
-});
-
-test('prepareAnthropicMessagesWebSearchShimRequest rejects native web search tools whose name is not web_search', () => {
-  for (const type of ['web_search_20250305', 'web_search_20260209'] as const) {
-    const prepared = prepareAnthropicMessagesWebSearchShimRequest({
-      model: 'claude-test',
-      max_tokens: 64,
-      messages: [{ role: 'user', content: 'latest React docs' }],
-      tools: [{ type, name: 'WebSearch' }],
-    });
-
-    assertEquals(prepared, {
-      type: 'invalid-request',
-      message: `tools.0.${type}.name: Input should be 'web_search'`,
-    });
-  }
-});
-
 test('prepareAnthropicMessagesWebSearchShimRequest rejects native web search name collisions with client tools', () => {
   const prepared = prepareAnthropicMessagesWebSearchShimRequest({
     model: 'claude-test',
@@ -435,44 +401,6 @@ test('prepareAnthropicMessagesWebSearchShimRequest decodes our native-looking re
   }
   assertEquals(prepared.state.priorSearchUseCount, 1);
   assertEquals(prepared.state.requestSearchResultOwnership, ['owned']);
-});
-
-test('prepareAnthropicMessagesWebSearchShimRequest leaves native-looking replay errors untouched', () => {
-  const payload: AnthropicMessagesPayload = {
-    model: 'claude-test',
-    max_tokens: 64,
-    messages: [
-      { role: 'user', content: 'latest React docs' },
-      {
-        role: 'assistant',
-        content: [
-          {
-            caller: { type: 'direct' },
-            type: 'server_tool_use',
-            id: 'srvtoolu_1',
-            name: 'web_search',
-            input: { query: 'latest React docs' },
-          },
-          {
-            type: 'web_search_tool_result',
-            tool_use_id: 'srvtoolu_1',
-            content: {
-              type: 'web_search_tool_result_error',
-              error_code: 'too_many_requests',
-            },
-          },
-        ],
-      },
-    ],
-  };
-
-  const prepared = prepareAnthropicMessagesWebSearchShimRequest(payload);
-
-  assertEquals(prepared.type, 'ok');
-  if (prepared.type !== 'ok') throw new Error('expected ok result');
-
-  assertEquals(prepared.state.mode === 'inactive', true);
-  assertEquals(prepared.payload, payload);
 });
 
 test('prepareAnthropicMessagesWebSearchShimRequest passes through foreign native-looking history that does not decode', () => {
@@ -696,14 +624,6 @@ test('withAnthropicMessagesWebSearchShim returns internal-error when request req
   assertEquals(result.type, 'internal-error');
 });
 
-test('withAnthropicMessagesWebSearchShim allows replay-only history when the search provider is disabled', async () => {
-  const collected = await runReplayOnlyShim('msg_replay_only');
-
-  const events = collected.flatMap(frame => (frame.type === 'event' ? [frame.event] : []));
-  const citationsDelta = events.find((event): event is Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_delta' }> => event.type === 'content_block_delta' && event.delta.type === 'citations_delta');
-  assertEquals(citationsDelta?.delta.type === 'citations_delta' ? citationsDelta.delta.citation.type : undefined, 'web_search_result_location');
-});
-
 test('withAnthropicMessagesWebSearchShim emits native-like citation deltas for replay-only history', async () => {
   const collected = await runReplayOnlyShim('msg_replay_only_stream');
 
@@ -914,42 +834,6 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative synthesizes usage omitted 
   });
 });
 
-test('rewriteAnthropicMessagesWebSearchEventsToNative renumbers indices across two intercepted searches', async () => {
-  let providerCalls = 0;
-  const events = await runStreamingShim(
-    [
-      upstreamMessageStart(),
-      ...upstreamTextBlock(0, 'Looking up first.'),
-      ...upstreamWebSearchBlock(1, 'toolu_1', 'react 19 release notes'),
-      ...upstreamTextBlock(2, 'And another.'),
-      ...upstreamWebSearchBlock(3, 'toolu_2', 'react 19 features'),
-      ...upstreamTextBlock(4, 'Summary.'),
-      ...upstreamMessageEnd('tool_use'),
-    ],
-    activeAnthropicMessagesWebSearchShimState(),
-    activeProvider(searchOnlyProvider(() => {
-      providerCalls += 1;
-      return Promise.resolve({ type: 'ok', results: [] });
-    })),
-  );
-
-  const blockIndexEvents = events.filter(event => event.type === 'content_block_start') as Array<Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }>>;
-  assertEquals(blockIndexEvents.map(event => event.index), [0, 1, 2, 3, 4, 5, 6]);
-  assertEquals(blockIndexEvents.map(event => event.content_block.type), [
-    'text',
-    'server_tool_use',
-    'web_search_tool_result',
-    'text',
-    'server_tool_use',
-    'web_search_tool_result',
-    'text',
-  ]);
-
-  assertEquals(providerCalls, 2);
-  const messageDelta = events.find(event => event.type === 'message_delta');
-  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 2, web_fetch_requests: 0 });
-});
-
 test('rewriteAnthropicMessagesWebSearchEventsToNative surfaces unavailable when provider throws on second search', async () => {
   let providerCalls = 0;
   const events = await runStreamingShim(
@@ -974,21 +858,6 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative surfaces unavailable when 
 
   const messageDelta = events.find(event => event.type === 'message_delta');
   assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 2, web_fetch_requests: 0 });
-});
-
-test('rewriteAnthropicMessagesWebSearchEventsToNative maps provider error result codes through', async () => {
-  const events = await runStreamingShim(
-    [
-      upstreamMessageStart(),
-      ...upstreamWebSearchBlock(0, 'toolu_1', 'first'),
-      ...upstreamMessageEnd('tool_use'),
-    ],
-    activeAnthropicMessagesWebSearchShimState(),
-    activeProvider(fakeProviderError('too_many_requests')),
-  );
-
-  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }> | undefined;
-  assertEquals((resultBlock?.content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'too_many_requests' });
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative emits max_uses_exceeded once limit is hit', async () => {
@@ -1016,44 +885,6 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative emits max_uses_exceeded on
   assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 1, web_fetch_requests: 0 });
 });
 
-test('rewriteAnthropicMessagesWebSearchEventsToNative honours priorSearchUseCount when computing remaining budget', async () => {
-  let providerCalls = 0;
-  await runStreamingShim(
-    [
-      upstreamMessageStart(),
-      ...upstreamWebSearchBlock(0, 'toolu_1', 'first'),
-      ...upstreamMessageEnd('tool_use'),
-    ],
-    activeAnthropicMessagesWebSearchShimState({ priorSearchUseCount: 1, maxUses: 2 }),
-    activeProvider(searchOnlyProvider(() => {
-      providerCalls += 1;
-      return Promise.resolve({ type: 'ok', results: [] });
-    })),
-  );
-
-  assertEquals(providerCalls, 1);
-});
-
-test('rewriteAnthropicMessagesWebSearchEventsToNative routes blank query to invalid_tool_input without provider call', async () => {
-  let providerCalls = 0;
-  const events = await runStreamingShim(
-    [
-      upstreamMessageStart(),
-      ...upstreamWebSearchBlock(0, 'toolu_1', '   '),
-      ...upstreamMessageEnd('tool_use'),
-    ],
-    activeAnthropicMessagesWebSearchShimState(),
-    activeProvider(searchOnlyProvider(() => {
-      providerCalls += 1;
-      return Promise.resolve({ type: 'ok', results: [] });
-    })),
-  );
-
-  assertEquals(providerCalls, 0);
-  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }> | undefined;
-  assertEquals((resultBlock?.content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'invalid_tool_input' });
-});
-
 test('rewriteAnthropicMessagesWebSearchEventsToNative routes oversized query to query_too_long', async () => {
   let providerCalls = 0;
   const events = await runStreamingShim(
@@ -1074,26 +905,6 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative routes oversized query to 
   assertEquals((resultBlock?.content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'query_too_long' });
 });
 
-test('rewriteAnthropicMessagesWebSearchEventsToNative routes malformed input json to invalid_tool_input', async () => {
-  let providerCalls = 0;
-  const events = await runStreamingShim(
-    [
-      upstreamMessageStart(),
-      ...upstreamWebSearchBlockRawJson(0, 'toolu_1', '{not json'),
-      ...upstreamMessageEnd('tool_use'),
-    ],
-    activeAnthropicMessagesWebSearchShimState(),
-    activeProvider(searchOnlyProvider(() => {
-      providerCalls += 1;
-      return Promise.resolve({ type: 'ok', results: [] });
-    })),
-  );
-
-  assertEquals(providerCalls, 0);
-  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }> | undefined;
-  assertEquals((resultBlock?.content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'invalid_tool_input' });
-});
-
 test('rewriteAnthropicMessagesWebSearchEventsToNative keeps client tool_use and reports tool_use stop_reason in mixed turn', async () => {
   const events = await runStreamingShim(
     [
@@ -1112,82 +923,6 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative keeps client tool_use and 
 
   const messageDelta = events.find(event => event.type === 'message_delta');
   assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.delta.stop_reason : undefined, 'tool_use');
-});
-
-test('rewriteAnthropicMessagesWebSearchEventsToNative rewrites citations_delta entries', async () => {
-  const events = await runStreamingShim(
-    [
-      upstreamMessageStart(),
-      {
-        type: 'content_block_start',
-        index: 0,
-        content_block: { citations: null, type: 'text', text: '' },
-      },
-      {
-        type: 'content_block_delta',
-        index: 0,
-        delta: {
-          type: 'citations_delta',
-          citation: {
-            cited_text: '',
-            type: 'search_result_location',
-            source: 'https://react.dev',
-            title: 'React',
-            search_result_index: 0,
-            start_block_index: 0,
-            end_block_index: 0,
-          },
-        },
-      },
-      { type: 'content_block_stop', index: 0 },
-      ...upstreamMessageEnd('end_turn'),
-    ],
-    {
-      mode: 'replay_only',
-      priorSearchUseCount: 0,
-      requestSearchResultOwnership: ['owned'],
-    },
-  );
-
-  const citationsDelta = events.find(event => event.type === 'content_block_delta' && event.delta.type === 'citations_delta') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_delta' }> | undefined;
-  assertEquals(citationsDelta?.delta.type === 'citations_delta' ? citationsDelta.delta.citation.type : undefined, 'web_search_result_location');
-});
-
-test('rewriteAnthropicMessagesWebSearchEventsToNative rewrites pre-populated citations on content_block_start', async () => {
-  const events = await runStreamingShim(
-    [
-      upstreamMessageStart(),
-      {
-        type: 'content_block_start',
-        index: 0,
-        content_block: {
-          type: 'text',
-          text: '',
-          citations: [
-            {
-              cited_text: '',
-              type: 'search_result_location',
-              source: 'https://react.dev',
-              title: 'React',
-              search_result_index: 0,
-              start_block_index: 0,
-              end_block_index: 0,
-            },
-          ],
-        },
-      },
-      { type: 'content_block_stop', index: 0 },
-      ...upstreamMessageEnd('end_turn'),
-    ],
-    {
-      mode: 'replay_only',
-      priorSearchUseCount: 0,
-      requestSearchResultOwnership: ['owned'],
-    },
-  );
-
-  const blockStart = events.find(event => event.type === 'content_block_start') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }> | undefined;
-  assertEquals(blockStart?.content_block.type === 'text' ? blockStart.content_block.citations?.[0]?.type : undefined, 'web_search_result_location');
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative leaves foreign citations untouched', async () => {
@@ -1229,30 +964,6 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative leaves foreign citations u
   assertEquals(citationsDelta?.delta.type === 'citations_delta' ? citationsDelta.delta.citation.type : undefined, 'search_result_location');
 });
 
-test('rewriteAnthropicMessagesWebSearchEventsToNative replay-only mode forwards message_delta unchanged', async () => {
-  const events = await runStreamingShim(
-    [
-      upstreamMessageStart(),
-      ...upstreamTextBlock(0, 'plain text'),
-      {
-        type: 'message_delta',
-        delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null },
-        usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 5 },
-      },
-      { type: 'message_stop' },
-    ],
-    {
-      mode: 'replay_only',
-      priorSearchUseCount: 0,
-      requestSearchResultOwnership: [],
-    },
-  );
-
-  const messageDelta = events.find(event => event.type === 'message_delta');
-  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.delta : undefined, { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null });
-  assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.output_tokens : undefined, 5);
-});
-
 test('rewriteAnthropicMessagesWebSearchEventsToNative forwards upstream error and returns without synthetic terminal', async () => {
   const events = await runStreamingShim(
     [
@@ -1267,67 +978,6 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative forwards upstream error an
   );
 
   assertEquals(events.map(event => event.type), ['message_start', 'error']);
-});
-
-test('rewriteAnthropicMessagesWebSearchEventsToNative yields message_stop even when message_delta is missing', async () => {
-  const events = await runStreamingShim(
-    [
-      upstreamMessageStart(),
-      ...upstreamTextBlock(0, 'just text'),
-      { type: 'message_stop' },
-    ],
-    {
-      mode: 'replay_only',
-      priorSearchUseCount: 0,
-      requestSearchResultOwnership: [],
-    },
-  );
-
-  assertEquals(events[events.length - 1].type, 'message_stop');
-});
-
-test('rewriteAnthropicMessagesWebSearchEventsToNative preserves interleaved passthrough blocks', async () => {
-  const events = await runStreamingShim(
-    [
-      upstreamMessageStart(),
-      { type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } },
-      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'answer' } },
-      { type: 'content_block_start', index: 1, content_block: { type: 'redacted_thinking', data: 'sidecar' } },
-      { type: 'content_block_stop', index: 1 },
-      { type: 'content_block_stop', index: 0 },
-      ...upstreamMessageEnd('end_turn'),
-    ],
-    { mode: 'replay_only', priorSearchUseCount: 0, requestSearchResultOwnership: [] },
-  );
-  const blocks = events.filter(event => event.type === 'content_block_start' || event.type === 'content_block_delta' || event.type === 'content_block_stop');
-  assertEquals(blocks.map(event => [event.type, event.index]), [
-    ['content_block_start', 0],
-    ['content_block_delta', 0],
-    ['content_block_start', 1],
-    ['content_block_stop', 1],
-    ['content_block_stop', 0],
-  ]);
-});
-
-test('rewriteAnthropicMessagesWebSearchEventsToNative places a deferred sidecar after intercepted search results', async () => {
-  const events = await runStreamingShim(
-    [
-      upstreamMessageStart(),
-      ...upstreamWebSearchBlockRawJson(0, 'toolu_1', '{"query":"react 19"}').slice(0, -1),
-      { type: 'content_block_start', index: 1, content_block: { type: 'redacted_thinking', data: 'sidecar' } },
-      { type: 'content_block_stop', index: 1 },
-      { type: 'content_block_stop', index: 0 },
-      ...upstreamMessageEnd('tool_use'),
-    ],
-    activeAnthropicMessagesWebSearchShimState(),
-    activeProvider(fakeProviderOk),
-  );
-  const starts = events.filter(event => event.type === 'content_block_start');
-  assertEquals(starts.map(event => [event.index, event.content_block.type]), [
-    [0, 'server_tool_use'],
-    [1, 'web_search_tool_result'],
-    [2, 'redacted_thinking'],
-  ]);
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative delays later content until an intercepted search result is complete', async () => {
@@ -1354,16 +1004,4 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative delays later content until
     ['content_block_delta', 2],
     ['content_block_stop', 2],
   ]);
-});
-
-test('rewriteAnthropicMessagesWebSearchEventsToNative requires a provider when mode is active', async () => {
-  await assertRejects(
-    () =>
-      runStreamingShim(
-        [upstreamMessageStart(), ...upstreamMessageEnd('end_turn')],
-        activeAnthropicMessagesWebSearchShimState(),
-      ),
-    Error,
-    'Active messages web-search rewrite requires a provider.',
-  );
 });

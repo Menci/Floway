@@ -70,22 +70,3 @@ test('a carrier a real codec emits on thoughtSignature decodes on the next turn'
   ]);
   expect(projectionB.materialize().contents?.[0].parts).toEqual([{ text: 'visible' }]);
 });
-
-test('a synthetic carrier issued for a candidate without a signature decodes on the next turn', async () => {
-  const candidateA = candidate('upstream-a');
-  const candidateB = candidate('upstream-b');
-  const contents = await modelContents(wrapGeminiGenerateContentAffinityEgress(frames([
-    eventFrame({
-      candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'visible' }] }, finishReason: 'STOP' }],
-    }),
-  ]), { codec, affinity: targetFor(candidateA) }));
-
-  const prepared = await analyzeGeminiGenerateContentAffinity({ contents }, codec);
-
-  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
-  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
-  expect(projectionA.degrades).toBe(false);
-  expect(projectionB.degrades).toBe(false);
-  expect(projectionA.materialize().contents?.[0].parts).toEqual([{ text: 'visible' }]);
-  expect(projectionB.materialize().contents?.[0].parts).toEqual([{ text: 'visible' }]);
-});

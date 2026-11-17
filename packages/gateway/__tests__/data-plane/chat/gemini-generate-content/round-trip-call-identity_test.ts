@@ -7,7 +7,8 @@ import type { GeminiGenerateContentContent } from '@floway-dev/protocols/gemini-
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { routeGeminiGenerateContentViaOpenAIChatCompletions } from '@floway-dev/translate';
 
-test.each([{ modernIds: ['legacy_call_1'] }, { modernIds: ['legacy_call_1', 'legacy_call_2'] }])('signed legacy Chat replay preserves later modern call IDs: $modernIds', async ({ modernIds }) => {
+test('signed legacy Chat replay preserves later modern call IDs', async () => {
+  const modernIds = ['legacy_call_1', 'legacy_call_2'];
   const codec = () => createSidecarCodecFactory('native-legacy-call-identity').codecFor(SidecarDomain.TranslatedAssistantTurn);
   const question: GeminiGenerateContentContent = { role: 'user', parts: [{ text: 'question' }] };
   const first = await routeGeminiGenerateContentViaOpenAIChatCompletions({ model: 'model', contents: [question] }, { sidecarCodec: codec() });

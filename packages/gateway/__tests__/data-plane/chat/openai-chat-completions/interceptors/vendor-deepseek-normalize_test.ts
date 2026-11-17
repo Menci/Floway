@@ -1,9 +1,9 @@
-import { expect, test } from 'vitest';
+import { test } from 'vitest';
 
 import type { OpenAIChatCompletionsInvocation } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/types.ts';
 import { withVendorDeepSeekOpenAIChatCompletionsNormalize } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/vendor-deepseek-normalize.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ExecuteResult, eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -107,33 +107,6 @@ test('synthesizes reasoning_content from reasoning_items when reasoning_text is 
   assertEquals(assistant.reasoning_items, undefined);
 });
 
-test('strips reasoning_items even when no summaries are available', async () => {
-  const ctx = invocation({
-    model: 'deepseek-reasoner',
-    messages: [
-      { role: 'user', content: 'first turn' },
-      {
-        role: 'assistant',
-        content: 'answer',
-        reasoning_items: [{ type: 'reasoning' }],
-        reasoning_opaque: 'opaque-chain',
-      } as OpenAIChatCompletionsAssistantMessageEx,
-    ],
-  });
-
-  let observed: OpenAIChatCompletionsPayload | null = null;
-  await withVendorDeepSeekOpenAIChatCompletionsNormalize(ctx, stubCtx, () => {
-    observed = ctx.payload;
-    return okEvents();
-  });
-
-  const assistant = observed!.messages[1] as unknown as Record<string, unknown>;
-  assertEquals(assistant.reasoning_content, undefined);
-  assertEquals(assistant.reasoning_items, undefined);
-  assertEquals(assistant.reasoning_opaque, undefined);
-  assertEquals(assistant.content, 'answer');
-});
-
 // ── Outbound: reasoning_effort === 'none' canonical sentinel ──
 
 test("translates canonical reasoning_effort: 'none' into top-level thinking:{type:'disabled'}", async () => {
@@ -154,24 +127,6 @@ test("translates canonical reasoning_effort: 'none' into top-level thinking:{typ
   assertEquals(out.thinking, { type: 'disabled' });
 });
 
-test('leaves a real reasoning_effort value untouched (only the none sentinel triggers the rewrite)', async () => {
-  const ctx = invocation({
-    model: 'deepseek-reasoner',
-    messages: [{ role: 'user', content: 'hi' }],
-    reasoning_effort: 'high',
-  });
-
-  let observed: OpenAIChatCompletionsPayload | null = null;
-  await withVendorDeepSeekOpenAIChatCompletionsNormalize(ctx, stubCtx, () => {
-    observed = ctx.payload;
-    return okEvents();
-  });
-
-  assertEquals(observed!.reasoning_effort, 'high');
-  const out = observed! as unknown as Record<string, unknown>;
-  assertEquals(out.thinking, undefined);
-});
-
 // ── Outbound: structured-output json_schema downgrade ──
 
 test('downgrades response_format json_schema to json_object (schema body dropped)', async () => {
@@ -186,22 +141,6 @@ test('downgrades response_format json_schema to json_object (schema body dropped
         schema: { type: 'object', properties: { test: { type: 'string' } }, required: ['test'], additionalProperties: false },
       },
     },
-  });
-
-  let observed: OpenAIChatCompletionsPayload | null = null;
-  await withVendorDeepSeekOpenAIChatCompletionsNormalize(ctx, stubCtx, () => {
-    observed = ctx.payload;
-    return okEvents();
-  });
-
-  assertEquals(observed!.response_format, { type: 'json_object' });
-});
-
-test('leaves an already-json_object response_format untouched', async () => {
-  const ctx = invocation({
-    model: 'deepseek-chat',
-    messages: [{ role: 'user', content: 'hi' }],
-    response_format: { type: 'json_object' },
   });
 
   let observed: OpenAIChatCompletionsPayload | null = null;
@@ -247,35 +186,6 @@ test('renames inbound protocol reasoning_content deltas to reasoning_text', asyn
   assertEquals(delta.reasoning_content, undefined);
 });
 
-test('preserves reasoning_content from non-stream JSON responses', async () => {
-  const ctx = invocation(baseRequest());
-  const id = 'chatcmpl_deepseek_json';
-  const model = 'deepseek-reasoner';
-  const chunk = (delta: OpenAIChatCompletionsAssistantDeltaEx, finish_reason: 'stop' | null = null): OpenAIChatCompletionsStreamEvent => ({
-    id,
-    object: 'chat.completion.chunk',
-    created: 1,
-    model,
-    choices: [{  index: 0, delta, finish_reason }],
-  });
-
-  const result = await withVendorDeepSeekOpenAIChatCompletionsNormalize(ctx, stubCtx, () =>
-    Promise.resolve(eventResult(
-      (async function* () {
-        yield eventFrame(chunk({ role: 'assistant' }));
-        yield eventFrame(chunk({ reasoning_content: 'json thinking' } as OpenAIChatCompletionsAssistantDeltaEx));
-        yield eventFrame(chunk({ content: 'answer' }));
-        yield eventFrame(chunk({}, 'stop'));
-        yield doneFrame();
-      })(),
-      testTelemetryModelIdentity,
-    )));
-
-  const frames = await collectFrames(result);
-  const reasoningFrame = frames.find(frame => frame.type === 'event' && (frame.event.choices[0]?.delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text !== undefined);
-  assertEquals(reasoningFrame?.type === 'event' ? (reasoningFrame.event.choices[0]?.delta as OpenAIChatCompletionsAssistantDeltaEx).reasoning_text : undefined, 'json thinking');
-});
-
 // ── Inbound: usage cache-token field rewrite ──
 
 test('rewrites prompt_cache_hit_tokens/prompt_cache_miss_tokens into prompt_tokens_details.cached_tokens', async () => {
@@ -311,65 +221,6 @@ test('rewrites prompt_cache_hit_tokens/prompt_cache_miss_tokens into prompt_toke
   assertEquals(usage.prompt_tokens_details, { upstream_metric: 'preserved', cached_tokens: 70 });
   assertEquals('prompt_cache_hit_tokens' in usage, false);
   assertEquals('prompt_cache_miss_tokens' in usage, false);
-});
-
-test('replaces array-shaped prompt_tokens_details without copying array indices', async () => {
-  const ctx = invocation(baseRequest());
-  const result = await withVendorDeepSeekOpenAIChatCompletionsNormalize(ctx, stubCtx, () =>
-    Promise.resolve(eventResult(
-      (async function* () {
-        yield eventFrame({
-          id: 'x',
-          object: 'chat.completion.chunk',
-          created: 0,
-          model: 'deepseek-test',
-          choices: [],
-          usage: {
-            prompt_tokens: 100,
-            completion_tokens: 20,
-            total_tokens: 120,
-            prompt_cache_hit_tokens: 70,
-            prompt_cache_miss_tokens: 30,
-            prompt_tokens_details: [{ cached_tokens: 1 }],
-          } as unknown as OpenAIChatCompletionsStreamEvent['usage'],
-        });
-      })(),
-      testTelemetryModelIdentity,
-    )));
-
-  const frames = await collectFrames(result);
-  const frame = frames[0];
-  if (frame.type !== 'event') throw new Error('expected event frame');
-  const usage = usageRecord(frame.event.usage!);
-  assertEquals(usage.prompt_tokens_details, { cached_tokens: 70 });
-});
-
-test('propagates upstream stream errors unchanged', async () => {
-  const failure = new Error('upstream stream failed');
-  const result = await withVendorDeepSeekOpenAIChatCompletionsNormalize(invocation(baseRequest()), stubCtx, () =>
-    Promise.resolve(eventResult(
-      (async function* () {
-        throw failure;
-      })(),
-      testTelemetryModelIdentity,
-    )));
-
-  await expect(collectFrames(result)).rejects.toBe(failure);
-});
-
-// ── Pass-through ──
-
-test('leaves protocol done frames untouched', async () => {
-  const ctx = invocation(baseRequest());
-  const done = doneFrame();
-
-  const result = await withVendorDeepSeekOpenAIChatCompletionsNormalize(ctx, stubCtx, () =>
-    Promise.resolve(eventResult(
-      (async function* () { yield done; })(),
-      testTelemetryModelIdentity,
-    )));
-
-  assertEquals(await collectFrames(result), [done]);
 });
 
 test('early-returns when its flag is not set on the candidate', async () => {

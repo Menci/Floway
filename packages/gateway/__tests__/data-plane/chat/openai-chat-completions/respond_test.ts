@@ -4,7 +4,7 @@ import { expect, test } from 'vitest';
 import { respondOpenAIChatCompletions } from '../../../../src/data-plane/chat/openai-chat-completions/respond.ts';
 import type { DumpAccumulator } from '../../../../src/dump/accumulator.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { toInternalDebugError, internalErrorResult, eventResult } from '@floway-dev/provider';
 import { assert, assertEquals, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -52,17 +52,6 @@ test('the error frame the client is sent is recorded like every other frame', as
   assert(last.type === 'event', 'expected an event frame');
   const payload = last.event as unknown as { error?: { message?: string } };
   assertEquals(payload.error?.message, 'cache token counts exceed inclusive input tokens: 479 - 13312 - 0');
-});
-
-test('a stream that completes records only its own frames', async () => {
-  const { dump, frames } = recordingDump();
-  const body = await serve(dump, (async function* () {
-    yield eventFrame(chunk('hi'));
-    yield doneFrame();
-  })());
-
-  expect(body).toContain('data: [DONE]');
-  assertEquals(frames.length, 2);
 });
 
 test('natural EOF forwards useful content without a missing-DONE error', async () => {

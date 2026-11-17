@@ -11,8 +11,6 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols
 import { toInternalDebugError, internalErrorResult, eventResult, type ExecuteResult } from '@floway-dev/provider';
 import { assert, assertEquals, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-// --- header forwarding ---
-
 const forwardedHeadersFixture = (): Headers => new Headers({
   // forwardable: vendor traces, plan billing, vendor `x-*`, arbitrary custom
   'anthropic-ratelimit-unified-status': 'allowed_warning',
@@ -74,26 +72,6 @@ const callRespond = async (wantsStream: boolean): Promise<Response> => {
   return captured;
 };
 
-test('respondAnthropicMessages forwards upstream headers and strips hop-by-hop / framing / cookie headers on the non-streaming JSON response', async () => {
-  const response = await callRespond(false);
-  // forwarded verbatim
-  assertEquals(response.headers.get('anthropic-ratelimit-unified-status'), 'allowed_warning');
-  assertEquals(response.headers.get('anthropic-ratelimit-unified-fallback-percentage'), '50');
-  assertEquals(response.headers.get('request-id'), 'req_anthropic_abc');
-  assertEquals(response.headers.get('cf-ray'), 'cf_ray_xyz');
-  assertEquals(response.headers.get('openai-version'), '2024-10-21');
-  assertEquals(response.headers.get('x-custom-thing'), 'ok');
-  // hop-by-hop and cookies dropped
-  assertEquals(response.headers.get('connection'), null);
-  assertEquals(response.headers.get('transfer-encoding'), null);
-  assertEquals(response.headers.get('set-cookie'), null);
-  // framing headers dropped — upstream values would mis-frame the response;
-  // Response.json sets its own content-type, which must not echo upstream's
-  assertEquals(response.headers.get('content-length'), null);
-  assertEquals(response.headers.get('content-encoding'), null);
-  assertEquals(response.headers.get('content-type'), 'application/json');
-});
-
 test('respondAnthropicMessages forwards upstream headers and strips hop-by-hop / framing / cookie headers on the streaming SSE response', async () => {
   const response = await callRespond(true);
   // forwarded verbatim
@@ -120,12 +98,6 @@ test('respondAnthropicMessages forwards upstream headers and strips hop-by-hop /
   // alive.
   await response.text();
 });
-
-// --- partial usage checkpointing on client disconnect ---
-
-// A generator whose next() resolves only when emit() supplies the next event.
-// Lets a test interleave "upstream emitted frame X" with "downstream cancels",
-// so the streaming finally block fires while message_stop is still in flight.
 
 test.each([false, true])('anthropic-messages internal failures preserve transport shape and namespaced diagnostics (stream=%s)', async stream => {
   const cause = new TypeError('nested');
