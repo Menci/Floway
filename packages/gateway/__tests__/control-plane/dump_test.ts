@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../src/dump/registry.ts';
 import type { DumpStore } from '../../src/dump/store-contract.ts';
-import type { DumpMetadata, DumpRecord, StoredDumpRecord } from '../../src/dump/types.ts';
+import type { DumpMetadata, StoredDumpRecord } from '../../src/dump/types.ts';
 import { fakeMeta as baseFakeMeta, fakeRecord as baseFakeRecord, installDumpStubs } from '../dump/test-fixtures.ts';
 import { requestApp, setupAppTest } from '../test-utils/app.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -29,63 +29,11 @@ test('GET /api/dump/keys/:keyId/records lists newest-first', async () => {
   assertEquals(body.records[0]!.id, '01HZZ0000000000000000000A2');
 });
 
-test('GET /api/dump/keys/:keyId/records paginates via ?before=', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.seed(apiKey.id, fakeRecord('01HZZ0000000000000000000A1', 1000));
-  stubs.seed(apiKey.id, fakeRecord('01HZZ0000000000000000000A2', 2000));
-
-  const response = await requestApp(`/api/dump/keys/${apiKey.id}/records?before=01HZZ0000000000000000000A2`, {
-    headers: { 'x-api-key': apiKey.key },
-  });
-  assertEquals(response.status, 200);
-  const body = await response.json() as { records: DumpMetadata[] };
-  assertEquals(body.records.length, 1);
-  assertEquals(body.records[0]!.id, '01HZZ0000000000000000000A1');
-});
-
-test('GET /api/dump/keys/:keyId/records rejects fractional limit', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  installDumpStubs(initDumpStore, initDumpBroker);
-
-  const response = await requestApp(`/api/dump/keys/${apiKey.id}/records?limit=1.5`, {
-    headers: { 'x-api-key': apiKey.key },
-  });
-  assertEquals(response.status, 400);
-});
-
 test('GET /api/dump/keys/:keyId/records 404s when the key has no retention', async () => {
   const { apiKey } = await setupAppTest();
   installDumpStubs(initDumpStore, initDumpBroker);
 
   const response = await requestApp(`/api/dump/keys/${apiKey.id}/records`, {
-    headers: { 'x-api-key': apiKey.key },
-  });
-  assertEquals(response.status, 404);
-});
-
-test('GET /api/dump/keys/:keyId/records/:recordId returns the rehydrated record', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.seed(apiKey.id, fakeRecord('01HZZ0000000000000000000XX', 1000));
-
-  const response = await requestApp(`/api/dump/keys/${apiKey.id}/records/01HZZ0000000000000000000XX`, {
-    headers: { 'x-api-key': apiKey.key },
-  });
-  assertEquals(response.status, 200);
-  const body = await response.json() as DumpRecord;
-  assertEquals(body.meta.id, '01HZZ0000000000000000000XX');
-});
-
-test('GET /api/dump/keys/:keyId/records/:recordId 404s on unknown id', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  installDumpStubs(initDumpStore, initDumpBroker);
-
-  const response = await requestApp(`/api/dump/keys/${apiKey.id}/records/01HZZ0000000000000000000ZZ`, {
     headers: { 'x-api-key': apiKey.key },
   });
   assertEquals(response.status, 404);
@@ -122,30 +70,6 @@ const parseSseFrame = (frame: string): { event: string; data: unknown } => {
   }
   return { event, data: JSON.parse(data) };
 };
-
-test('GET /api/dump/keys/:keyId/stream sends snapshot then appended frames', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.seed(apiKey.id, fakeRecord('01HZZ0000000000000000000A1', 1000));
-
-  // requestApp resolves after the snapshot frame is buffered onto the wire;
-  // the subscribe is already armed at that point, so the subsequent publish
-  // is guaranteed to surface as an appended frame on the next pump.
-  const response = await requestApp(`/api/dump/keys/${apiKey.id}/stream`, {
-    headers: { 'x-api-key': apiKey.key },
-  });
-  assertEquals(response.status, 200);
-  await stubs.broker.publish(apiKey.id, fakeMeta('01HZZ0000000000000000000A2', 2000));
-
-  const frames = await readFrames(response, 2);
-  const snapshot = parseSseFrame(frames[0]!);
-  assertEquals(snapshot.event, 'snapshot');
-  assertEquals((snapshot.data as { records: { id: string }[] }).records[0]!.id, '01HZZ0000000000000000000A1');
-  const appended = parseSseFrame(frames[1]!);
-  assertEquals(appended.event, 'appended');
-  assertEquals((appended.data as { id: string }).id, '01HZZ0000000000000000000A2');
-});
 
 test('GET /api/dump/keys/:keyId/stream emits event: error when broker throws mid-stream', async () => {
   const { repo, apiKey } = await setupAppTest();

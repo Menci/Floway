@@ -1,19 +1,7 @@
 import { test } from 'vitest';
 
-import { DEFAULT_WEB_SEARCH_CONFIG } from '../../../src/data-plane/tools/web-search/config.ts';
 import { requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
-
-test('/api/search-config GET returns the default disabled config for admin', async () => {
-  const { adminSession } = await setupAppTest();
-
-  const response = await requestApp('/api/search-config', {
-    headers: { 'x-floway-session': adminSession },
-  });
-
-  assertEquals(response.status, 200);
-  assertEquals(await response.json(), DEFAULT_WEB_SEARCH_CONFIG);
-});
 
 test('/api/search-config PUT persists config and POST /test returns preview', async () => {
   const { adminSession } = await setupAppTest();

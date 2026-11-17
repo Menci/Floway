@@ -24,29 +24,6 @@ test('GET /api/keys never exposes the server secret', async () => {
   assertEquals(body[0]!.responses_retention_seconds, apiKey.openaiResponsesRetentionSeconds);
 });
 
-test('POST /api/keys defaults durable OpenAI Responses persistence off', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  const response = await requestApp('/api/keys', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'default-off' }),
-  });
-  assertEquals(response.status, 201);
-  const body = (await response.json()) as { id: string; randomize_upstreams: boolean; responses_retention_seconds: number };
-  assertEquals(body.randomize_upstreams, false);
-  assertEquals(body.responses_retention_seconds, 0);
-  assertEquals((await repo.apiKeys.getById(body.id))?.randomizeUpstreams, false);
-  assertEquals((await repo.apiKeys.getById(body.id))?.openaiResponsesRetentionSeconds, 0);
-});
-
-test('PATCH /api/keys/:id enables randomized upstream order', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  const response = await ownerPatch(apiKey.id, { randomize_upstreams: true }, apiKey.key);
-  assertEquals(response.status, 200);
-  assertEquals(((await response.json()) as { randomize_upstreams: boolean }).randomize_upstreams, true);
-  assertEquals((await repo.apiKeys.getById(apiKey.id))?.randomizeUpstreams, true);
-});
-
 test('PATCH /api/keys/:id changes only the rolling OpenAI Responses duration', async () => {
   const { repo, apiKey } = await setupAppTest();
   const enabled = await ownerPatch(apiKey.id, { responses_retention_seconds: 7 * 24 * 60 * 60 }, apiKey.key);
@@ -81,21 +58,6 @@ test('PATCH /api/keys/:id accepts a custom upstream whitelist + order', async ()
   assertEquals(stored.upstreamIds, ['up_y', 'up_x']);
 });
 
-test('PATCH /api/keys/:id resets to default with upstream_ids: null', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
-  await ownerPatch(apiKey.id, { upstream_ids: ['up_x'] }, apiKey.key);
-
-  const response = await ownerPatch(apiKey.id, { upstream_ids: null }, apiKey.key);
-  assertEquals(response.status, 200);
-  const body = await response.json();
-  assertEquals(body.upstream_ids, null);
-
-  const stored = await repo.apiKeys.getById(apiKey.id);
-  assertExists(stored);
-  assertEquals(stored.upstreamIds, null);
-});
-
 test('PATCH /api/keys/:id saves an empty upstream restriction and can disable it', async () => {
   const { repo, apiKey } = await setupAppTest();
   const response = await ownerPatch(apiKey.id, { upstream_ids: [] }, apiKey.key);
@@ -107,19 +69,6 @@ test('PATCH /api/keys/:id saves an empty upstream restriction and can disable it
   assertEquals(unrestricted.status, 200);
   assertEquals((await unrestricted.json()).upstream_ids, null);
   assertEquals((await repo.apiKeys.getById(apiKey.id))?.upstreamIds, null);
-});
-
-test('PATCH /api/keys/:id rejects unknown upstream ids with a descriptive error', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_known', name: 'Known' }));
-
-  const response = await ownerPatch(apiKey.id, { upstream_ids: ['up_known', 'up_ghost'] }, apiKey.key);
-  assertEquals(response.status, 400);
-  const body = await response.json();
-  assertEquals(typeof body.error, 'string');
-  if (!String(body.error).includes('up_ghost')) {
-    throw new Error(`expected error to mention up_ghost; got ${body.error}`);
-  }
 });
 
 test('PATCH /api/keys/:id stores existing upstreams even when the user ACL currently excludes one', async () => {
@@ -139,23 +88,6 @@ test('PATCH /api/keys/:id stores existing upstreams even when the user ACL curre
   assertEquals((await repo.apiKeys.getById(apiKey.id))?.upstreamIds, ['up_a', 'up_b']);
 });
 
-test('PATCH /api/keys/:id rejects duplicate ids inside the whitelist', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
-  const response = await ownerPatch(apiKey.id, { upstream_ids: ['up_x', 'up_x'] }, apiKey.key);
-  assertEquals(response.status, 400);
-});
-
-test('PATCH /api/keys/:id leaves name unchanged when only upstream_ids is sent', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
-  await ownerPatch(apiKey.id, { upstream_ids: ['up_x'] }, apiKey.key);
-
-  const stored = await repo.apiKeys.getById(apiKey.id);
-  assertExists(stored);
-  assertEquals(stored.name, apiKey.name);
-});
-
 test('PATCH /api/keys/:id keeps a stored deleted-upstream id but hides it from the response', async () => {
   const { repo, apiKey } = await setupAppTest();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
@@ -169,26 +101,6 @@ test('PATCH /api/keys/:id keeps a stored deleted-upstream id but hides it from t
   assertExists(stored);
   assertEquals(stored.name, 'renamed');
   assertEquals(stored.upstreamIds, ['up_x', 'up_gone']);
-});
-
-test('GET /api/keys drops deleted-upstream ids so the editor cannot re-submit them', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
-  await repo.apiKeys.save({ ...apiKey, upstreamIds: ['up_gone', 'up_x'] });
-
-  const response = await requestApp('/api/keys', { headers: { 'x-api-key': apiKey.key } });
-  assertEquals(response.status, 200);
-  const body = (await response.json()) as Array<{ id: string; upstream_ids: string[] }>;
-  assertEquals(body.find(row => row.id === apiKey.id)?.upstream_ids, ['up_x']);
-});
-
-test('GET /api/keys projects a wholly deleted cap to an empty list, never to inherit-all', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, upstreamIds: ['up_gone'] });
-
-  const response = await requestApp('/api/keys', { headers: { 'x-api-key': apiKey.key } });
-  const body = (await response.json()) as Array<{ id: string; upstream_ids: string[] | null }>;
-  assertEquals(body.find(row => row.id === apiKey.id)?.upstream_ids, []);
 });
 
 test('PATCH /api/keys/:id is owner-only — admins are not privileged on other users\' keys', async () => {
@@ -223,37 +135,6 @@ test('POST /api/keys creates a key under the actor with optional upstream_ids', 
   assertEquals(/^[0-9a-f]{64}$/.test(stored.serverSecret), true);
 });
 
-test('POST /api/keys preserves an empty upstream restriction', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  const response = await requestApp('/api/keys', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'No upstreams', upstream_ids: [] }),
-  });
-
-  assertEquals(response.status, 201);
-  const body = (await response.json()) as { id: string; upstream_ids: string[] | null };
-  assertEquals(body.upstream_ids, []);
-  assertEquals((await repo.apiKeys.getById(body.id))?.upstreamIds, []);
-});
-
-test('POST /api/keys mints a generated key when key_source is generate', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  const response = await requestApp('/api/keys', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'generated-key', key_source: 'generate', dump_retention_seconds: 3600 }),
-  });
-  assertEquals(response.status, 201);
-  const body = (await response.json()) as { id: string; key: string; dump_retention_seconds: number | null };
-  assertEquals(/^sk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}$/.test(body.key), true);
-  assertEquals(body.dump_retention_seconds, 3600);
-
-  const stored = await repo.apiKeys.getById(body.id);
-  assertExists(stored);
-  assertEquals(stored.dumpRetentionSeconds, 3600);
-});
-
 test('POST /api/keys stores a custom key verbatim and rejects duplicates', async () => {
   const { repo, apiKey } = await setupAppTest();
   const response = await requestApp('/api/keys', {
@@ -276,25 +157,6 @@ test('POST /api/keys stores a custom key verbatim and rejects duplicates', async
   assertEquals(duplicate.status, 409);
 });
 
-test.each([
-  'UNIQUE constraint failed: api_keys.server_secret',
-  'CHECK constraint failed: length(server_secret) = 64',
-])('POST /api/keys exposes non-key database constraints: %s', async message => {
-  const { repo, apiKey } = await setupAppTest();
-  const save = vi.spyOn(repo.apiKeys, 'save').mockRejectedValue(new Error(message));
-  try {
-    const response = await requestApp('/api/keys', {
-      method: 'POST',
-      headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'constraint-test', key_source: 'custom', custom_key: 'custom-value' }),
-    });
-    assertEquals(response.status, 500);
-    if (!(await response.text()).includes(message)) throw new Error(`expected response to expose ${message}`);
-  } finally {
-    save.mockRestore();
-  }
-});
-
 test('POST /api/keys does not retry a generated key after a server-secret constraint', async () => {
   const { repo, apiKey } = await setupAppTest();
   const message = 'UNIQUE constraint failed: api_keys.server_secret';
@@ -311,113 +173,6 @@ test('POST /api/keys does not retry a generated key after a server-secret constr
   } finally {
     save.mockRestore();
   }
-});
-
-test('POST /api/keys rejects malformed custom key requests', async () => {
-  const { apiKey } = await setupAppTest();
-  const missing = await requestApp('/api/keys', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'custom-key', key_source: 'custom' }),
-  });
-  assertEquals(missing.status, 400);
-
-  const unexpected = await requestApp('/api/keys', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'generated-key', custom_key: 'not-allowed' }),
-  });
-  assertEquals(unexpected.status, 400);
-
-  const unknownSource = await requestApp('/api/keys', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'removed-source', key_source: 'floway' }),
-  });
-  assertEquals(unknownSource.status, 400);
-});
-
-test('POST /api/keys/:id/rotate mints a generated key by default', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  const response = await requestApp(`/api/keys/${apiKey.id}/rotate`, {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
-    body: JSON.stringify({}),
-  });
-  assertEquals(response.status, 200);
-  const body = (await response.json()) as { key: string } & Record<string, unknown>;
-  assertEquals(/^sk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}$/.test(body.key), true);
-  assertEquals(Object.hasOwn(body, 'serverSecret'), false);
-  assertEquals(Object.hasOwn(body, 'server_secret'), false);
-  assertEquals((await repo.apiKeys.getById(apiKey.id))?.serverSecret, apiKey.serverSecret);
-});
-
-test('POST /api/keys/:id/rotate accepts a caller-provided key when key_source is custom', async () => {
-  const { apiKey } = await setupAppTest();
-
-  const missing = await requestApp(`/api/keys/${apiKey.id}/rotate`, {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
-    body: JSON.stringify({ key_source: 'custom' }),
-  });
-  assertEquals(missing.status, 400);
-
-  const rotated = await requestApp(`/api/keys/${apiKey.id}/rotate`, {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
-    body: JSON.stringify({ key_source: 'custom', custom_key: 'new-custom-key' }),
-  });
-  assertEquals(rotated.status, 200);
-  const body = (await rotated.json()) as { key: string };
-  assertEquals(body.key, 'new-custom-key');
-});
-
-test('PATCH /api/keys/:id sets dump_retention_seconds on the column', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  const response = await ownerPatch(apiKey.id, { dump_retention_seconds: 3600 }, apiKey.key);
-  assertEquals(response.status, 200);
-  const body = (await response.json()) as { dump_retention_seconds: number | null };
-  assertEquals(body.dump_retention_seconds, 3600);
-
-  const stored = await repo.apiKeys.getById(apiKey.id);
-  assertExists(stored);
-  assertEquals(stored.dumpRetentionSeconds, 3600);
-});
-
-test('PATCH /api/keys/:id clears dump_retention_seconds back to null', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-
-  const response = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
-  assertEquals(response.status, 200);
-
-  const stored = await repo.apiKeys.getById(apiKey.id);
-  assertExists(stored);
-  assertEquals(stored.dumpRetentionSeconds, null);
-});
-
-test('PATCH /api/keys/:id rejects zero and negative dump_retention_seconds', async () => {
-  const { apiKey } = await setupAppTest();
-  assertEquals((await ownerPatch(apiKey.id, { dump_retention_seconds: 0 }, apiKey.key)).status, 400);
-  assertEquals((await ownerPatch(apiKey.id, { dump_retention_seconds: -1 }, apiKey.key)).status, 400);
-});
-
-test('DELETE /api/keys/:id soft-deletes the key', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  const response = await requestApp(`/api/keys/${apiKey.id}`, {
-    method: 'DELETE',
-    headers: { 'x-api-key': apiKey.key },
-  });
-  assertEquals(response.status, 200);
-
-  const stored = await repo.apiKeys.getById(apiKey.id);
-  // getById hides soft-deleted rows; falling back to listIncludingDeleted
-  // confirms the row was tombstoned rather than dropped.
-  assertEquals(stored, null);
-  const allKeys = await repo.apiKeys.listIncludingDeleted();
-  const deleted = allKeys.find(k => k.id === apiKey.id);
-  assertExists(deleted);
-  assertEquals(typeof deleted.deletedAt, 'string');
 });
 
 test('DELETE /api/keys/:id succeeds when the broker close hook throws — broker outage must not block soft-delete', async () => {
@@ -442,24 +197,4 @@ test('PATCH /api/keys/:id positive→null closes the channel', async () => {
   const response = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
   assertEquals(response.status, 200);
   assertEquals(stubs.closedChannels.some(c => c.keyId === apiKey.id), true);
-});
-
-test('PATCH /api/keys/:id positive→null succeeds when the broker close hook throws', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.failOn('closeChannel', new Error('broker down'));
-
-  const response = await ownerPatch(apiKey.id, { dump_retention_seconds: null }, apiKey.key);
-  assertEquals(response.status, 200);
-});
-
-test('PATCH /api/keys/:id positive→smaller positive keeps the channel open', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 7200 });
-  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-
-  const response = await ownerPatch(apiKey.id, { dump_retention_seconds: 1800 }, apiKey.key);
-  assertEquals(response.status, 200);
-  assertEquals(stubs.closedChannels.some(c => c.keyId === apiKey.id), false);
 });

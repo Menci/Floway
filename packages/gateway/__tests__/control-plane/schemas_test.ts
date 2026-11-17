@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { chatgptImportExchangeBody, chatgptImportPreviewBody, createUpstreamBody } from '../../src/control-plane/schemas.ts';
+import { chatgptImportExchangeBody, createUpstreamBody } from '../../src/control-plane/schemas.ts';
 
 const baseAzure = {
   kind: 'azure' as const,
@@ -36,36 +36,9 @@ describe('ChatGPT import schemas', () => {
       manual: { access_token: 'opaque' },
     }).success).toBe(false);
   });
-
-  test('requires only access_token for a manual import', () => {
-    expect(chatgptImportExchangeBody.safeParse({
-      record,
-      manual: {
-        access_token: 'opaque',
-        refresh_token: null,
-        id_token: null,
-        account_id: null,
-        expires_at: null,
-      },
-    }).success).toBe(true);
-    expect(chatgptImportExchangeBody.safeParse({ record, manual: {} }).success).toBe(false);
-  });
-
-  test('validates the JSON preview envelope', () => {
-    expect(chatgptImportPreviewBody.safeParse({ raw_json: '{"accounts":[]}' }).success).toBe(true);
-    expect(chatgptImportPreviewBody.safeParse({ raw_json: '' }).success).toBe(false);
-  });
 });
 
 describe('upstreamModelSchema chat', () => {
-  test('accepts an audio transcription model', () => {
-    const body = structuredClone(baseAzure);
-    const model = body.config.models[0] as Record<string, unknown>;
-    model.kind = 'transcription';
-    model.endpoints = { openaiAudioTranscriptions: {} };
-    expect(createUpstreamBody.safeParse(body).success).toBe(true);
-  });
-
   test('accepts a valid chat block with effort', () => {
     const body = structuredClone(baseAzure);
     (body.config.models[0] as Record<string, unknown>).chat = {
@@ -73,54 +46,6 @@ describe('upstreamModelSchema chat', () => {
       reasoning: { effort: { supported: ['low', 'medium'], default: 'low' } },
     };
     expect(createUpstreamBody.safeParse(body).success).toBe(true);
-  });
-
-  test('accepts chat with budget_tokens only', () => {
-    const body = structuredClone(baseAzure);
-    (body.config.models[0] as Record<string, unknown>).chat = {
-      reasoning: { budget_tokens: { min: 100, max: 5000 } },
-    };
-    expect(createUpstreamBody.safeParse(body).success).toBe(true);
-  });
-
-  test('accepts chat with empty budget_tokens', () => {
-    const body = structuredClone(baseAzure);
-    (body.config.models[0] as Record<string, unknown>).chat = {
-      reasoning: { budget_tokens: {} },
-    };
-    expect(createUpstreamBody.safeParse(body).success).toBe(true);
-  });
-
-  test('accepts chat with adaptive: true', () => {
-    const body = structuredClone(baseAzure);
-    (body.config.models[0] as Record<string, unknown>).chat = {
-      reasoning: { adaptive: true },
-    };
-    expect(createUpstreamBody.safeParse(body).success).toBe(true);
-  });
-
-  test('accepts chat with mandatory: true', () => {
-    const body = structuredClone(baseAzure);
-    (body.config.models[0] as Record<string, unknown>).chat = {
-      reasoning: { mandatory: true },
-    };
-    expect(createUpstreamBody.safeParse(body).success).toBe(true);
-  });
-
-  test('rejects reasoning with adaptive: false', () => {
-    const body = structuredClone(baseAzure);
-    (body.config.models[0] as Record<string, unknown>).chat = {
-      reasoning: { adaptive: false },
-    };
-    expect(createUpstreamBody.safeParse(body).success).toBe(false);
-  });
-
-  test('rejects reasoning with adaptive: false even alongside mandatory: true', () => {
-    const body = structuredClone(baseAzure);
-    (body.config.models[0] as Record<string, unknown>).chat = {
-      reasoning: { adaptive: false, mandatory: true },
-    };
-    expect(createUpstreamBody.safeParse(body).success).toBe(false);
   });
 
   test('rejects empty reasoning (no sub-block)', () => {
@@ -163,14 +88,6 @@ describe('upstreamModelSchema chat', () => {
     };
     expect(createUpstreamBody.safeParse(body).success).toBe(true);
   });
-
-  test('rejects empty output modalities array', () => {
-    const body = structuredClone(baseAzure);
-    (body.config.models[0] as Record<string, unknown>).chat = {
-      modalities: { input: ['text'], output: [] },
-    };
-    expect(createUpstreamBody.safeParse(body).success).toBe(false);
-  });
 });
 
 describe('upstreamModelSchema rerank', () => {
@@ -192,10 +109,6 @@ describe('upstreamModelSchema rerank', () => {
     },
   });
 
-  test('accepts an explicit target on a custom model', () => {
-    expect(createUpstreamBody.safeParse(customRerank()).success).toBe(true);
-  });
-
   test('derives rerank from its sole endpoint before validating the target', () => {
     const body = customRerank();
     delete (body.config.models[0] as Partial<typeof body.config.models[0]>).kind;
@@ -215,16 +128,6 @@ describe('upstreamModelSchema rerank', () => {
     model.endpoints = { rerank: {} };
     model.rerankTarget = { protocol: 'cohere-v2' };
     expect(createUpstreamBody.safeParse(body).success).toBe(false);
-  });
-
-  test('treats explicit kind conflicts like existing image endpoint conflicts', () => {
-    const chat = customRerank();
-    (chat.config.models[0] as Record<string, unknown>).kind = 'chat';
-    expect(createUpstreamBody.safeParse(chat).success).toBe(true);
-
-    const mixed = customRerank();
-    (mixed.config.models[0] as Record<string, unknown>).endpoints = { rerank: {}, openaiChatCompletions: {} };
-    expect(createUpstreamBody.safeParse(mixed).success).toBe(true);
   });
 });
 

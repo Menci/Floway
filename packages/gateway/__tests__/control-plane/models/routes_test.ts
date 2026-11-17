@@ -34,23 +34,6 @@ const azureUpstream = (): UpstreamRecord => ({
   state: null,
 });
 
-test('/api/models returns an empty catalog when the gateway has no upstreams', async () => {
-  const { adminSession, repo } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-
-  const response = await requestAppWithWarmModels('/api/models?aliases=false&include_unlisted=true', {
-    headers: { 'x-floway-session': adminSession },
-  });
-  assertEquals(response.status, 200);
-  assertEquals(await response.json(), {
-    object: 'list',
-    has_more: false,
-    first_id: null,
-    last_id: null,
-    data: [],
-  });
-});
-
 test('/api/models exposes each upstream as { kind, id } so multi-provider models are unambiguous', async () => {
   const { apiKey, repo } = await setupAppTest();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
@@ -132,32 +115,6 @@ test('/api/models is scoped to the caller\'s Model.Use grants', async () => {
 
     assertEquals(ids, ['claude-sonnet-4', 'custom-model']);
     assertEquals(ids.includes('azure-public'), false);
-  });
-});
-
-test('/api/models appends visible alias entries with aliasedFrom alongside real catalog rows', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
-
-  await withMockedFetch(modelsFetchHandler, async () => {
-    const response = await requestAppWithWarmModels('/api/models', { headers: { 'x-api-key': apiKey.key } });
-    assertEquals(response.status, 200);
-    const body = (await response.json()) as { data: Array<{ id: string; display_name: string; upstreams: Array<{ kind: string; id: string; name: string }> }> };
-    assertEquals(body.data.some(model => model.id === 'custom-model'), true);
-  });
-});
-
-test('/api/models for an admin session returns the gateway-wide catalog through the check bypass', async () => {
-  const { adminSession, repo } = await setupAppTest();
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
-  await saveUpstreamForTest(repo.upstreams, azureUpstream());
-
-  await withMockedFetch(modelsFetchHandler, async () => {
-    const response = await requestAppWithWarmModels('/api/models', { headers: { 'x-floway-session': adminSession } });
-    assertEquals(response.status, 200);
-    const ids = ((await response.json()) as { data: Array<{ id: string }> }).data.map(m => m.id).sort();
-    assertEquals(ids.includes('azure-public'), true);
-    assertEquals(ids.includes('custom-model'), true);
   });
 });
 

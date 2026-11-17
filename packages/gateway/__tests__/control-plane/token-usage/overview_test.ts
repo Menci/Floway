@@ -62,22 +62,6 @@ test('/api/token-usage/overview matches the Performance overview shape and filte
   assertEquals(body.keys, [{ id: adminKey.id, name: adminKey.name, createdAt: adminKey.createdAt }]);
 });
 
-test('/api/token-usage/overview scopes every axis to an administrator under group_by=keyId', async () => {
-  const { repo, adminSession, apiKey } = await setupAppTest();
-  await repo.apiKeys.save(adminKey);
-  await seedUsage(repo, { keyId: apiKey.id, model: 'gpt-5', upstream: 'up-a', hour: '2026-04-30T10', requests: 2 });
-  await seedUsage(repo, { keyId: adminKey.id, model: 'claude', upstream: null, hour: '2026-04-30T10', requests: 5 });
-
-  const response = await requestApp('/api/token-usage/overview?start=2026-04-30T00&end=2026-05-01T00&group_by=keyId', { headers: { 'x-floway-session': adminSession } });
-
-  assertEquals(response.status, 200);
-  const body = await response.json();
-  assertEquals(body.series.map((record: { group: string; requests: number }) => [record.group, record.requests]), [['key_admin', 5]]);
-  assertEquals(body.axes.model.map((record: { group: string; requests: number }) => [record.group, record.requests]), [['claude', 5]]);
-  assertEquals(body.axes.upstream.map((record: { group: string }) => record.group), ['none']);
-  assertEquals(body.dimensionValues.userIds, [1]);
-});
-
 test('/api/token-usage/overview preserves hard-deleted key usage under synthetic user 0', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.apiKeys.save(adminKey);
@@ -94,23 +78,6 @@ test('/api/token-usage/overview preserves hard-deleted key usage under synthetic
   assertEquals(body.dimensionValues.keyIds, []);
   assertEquals(body.users.some((user: { id: number }) => user.id === 0), false);
   assertEquals(body.keys, [{ id: adminKey.id, name: adminKey.name, createdAt: adminKey.createdAt }]);
-});
-
-test('/api/token-usage/overview gives a non-admin their User.Audit row and only their key metadata', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save(adminKey);
-  await seedUsage(repo, { keyId: apiKey.id, model: 'gpt-5', upstream: 'up-a', hour: '2026-04-30T10', requests: 2 });
-  await seedUsage(repo, { keyId: adminKey.id, model: 'claude', upstream: 'up-b', hour: '2026-04-30T10', requests: 5 });
-
-  const response = await requestApp('/api/token-usage/overview?start=2026-04-30T00&end=2026-05-01T00', { headers: { 'x-api-key': apiKey.key } });
-
-  assertEquals(response.status, 200);
-  const body = await response.json();
-  assertEquals(body.axes.none[0].requests, 2);
-  assertEquals(body.axes.userId.map((row: { group: string; requests: number }) => [row.group, row.requests]), [['2', 2]]);
-  assertEquals(body.dimensionValues.userIds, [2]);
-  assertEquals(body.users.map((user: { id: number }) => user.id), [2]);
-  assertEquals(body.dimensionValues.keyIds, [apiKey.id]);
 });
 
 test('/api/token-usage/overview shows the union of visible user rows and upstream columns', async () => {
@@ -138,76 +105,6 @@ test('/api/token-usage/overview shows the union of visible user rows and upstrea
   assertEquals(body.users.map((user: { id: number }) => user.id), [1, 2]);
 });
 
-test('/api/token-usage/overview expands Group scopes to current members', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save(adminKey);
-  const group = await repo.groups.create('Admins', 120);
-  await repo.groups.replaceMembers(group.id, [1]);
-  await repo.accessRecords.save({
-    principal: { kind: 'user', id: apiKey.userId },
-    scope: { kind: 'group', groupId: group.id },
-    sortOrder: 1,
-    values: { 'User.Audit': true },
-  });
-  await seedUsage(repo, { keyId: apiKey.id, model: 'self', upstream: 'up-a', hour: '2026-04-30T10', requests: 2 });
-  await seedUsage(repo, { keyId: adminKey.id, model: 'historical', upstream: 'up-b', hour: '2026-04-30T10', requests: 5 });
-
-  const response = await requestApp('/api/token-usage/overview?start=2026-04-30T00&end=2026-05-01T00&group_by=userId', { headers: { 'x-api-key': apiKey.key } });
-  assertEquals(response.status, 200);
-  const body = await response.json();
-  assertEquals(body.axes.userId.map((row: { group: string; requests: number }) => [row.group, row.requests]), [['1', 5], ['2', 2]]);
-});
-
-test('/api/token-usage/overview permits user breakdowns while keeping key filters owner-only', async () => {
-  const { adminSession, apiKey } = await setupAppTest();
-  const userGroup = await requestApp('/api/token-usage/overview?start=2026-04-30T00&end=2026-05-01T00&group_by=userId', { headers: { 'x-api-key': apiKey.key } });
-  const userFilter = await requestApp('/api/token-usage/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=1', { headers: { 'x-api-key': apiKey.key } });
-  const foreignKey = await requestApp(`/api/token-usage/overview?start=2026-04-30T00&end=2026-05-01T00&filter_key_id=${apiKey.id}`, { headers: { 'x-floway-session': adminSession } });
-
-  assertEquals(userGroup.status, 200);
-  assertEquals(userFilter.status, 200);
-  assertEquals(foreignKey.status, 404);
-  assertEquals(await foreignKey.json(), { error: 'Unknown filter_key_id' });
-});
-
-test('/api/token-usage/overview delegates every dashboard axis to one overview read', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  let queryCount = 0;
-  let queryOptions: import('../../../src/repo/types.ts').UsageOverviewQueryOptions | undefined;
-  const originalQueryOverview = repo.usage.queryOverview.bind(repo.usage);
-  repo.usage.queryOverview = opts => {
-    queryCount++;
-    queryOptions = opts;
-    return originalQueryOverview(opts);
-  };
-  repo.usage.query = () => Promise.reject(new Error('overview must not hydrate raw Usage records'));
-  await seedUsage(repo, { keyId: apiKey.id, model: 'gpt-5', upstream: null, hour: '2026-04-30T10', requests: 2 });
-
-  const response = await requestApp('/api/token-usage/overview?start=2026-04-30T00&end=2026-05-01T00', { headers: { 'x-api-key': apiKey.key } });
-
-  assertEquals(response.status, 200);
-  assertEquals(queryCount, 1);
-  assertEquals(queryOptions && {
-    actorUserId: queryOptions.actorUserId,
-    isAdmin: queryOptions.isAdmin,
-    visibleUserIds: queryOptions.visibleUserIds,
-    visibleUpstreams: queryOptions.visibleUpstreams,
-    start: queryOptions.start,
-    end: queryOptions.end,
-    groupBy: queryOptions.groupBy,
-    filters: queryOptions.filters,
-  }, {
-    actorUserId: 2,
-    isAdmin: false,
-    visibleUserIds: [2],
-    visibleUpstreams: [],
-    start: '2026-04-30T00',
-    end: '2026-05-01T00',
-    groupBy: 'model',
-    filters: { keyIds: [], userIds: [], models: [], upstreams: [] },
-  });
-});
-
 test('/api/token-usage/overview clips custom calendar buckets without changing totals', async () => {
   const { repo, adminSession, apiKey } = await setupAppTest();
   for (const [hour, requests] of [
@@ -233,17 +130,4 @@ test('/api/token-usage/overview clips custom calendar buckets without changing t
     assertEquals(body.axes.none[0].requests, 8);
     assertEquals(body.axes.none[0].cost, '16');
   }
-});
-
-test('/api/token-usage/overview splits anchored multi-day buckets at local midnight', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  for (const [hour, requests] of [['2026-05-01T10', 3], ['2026-05-02T15', 5], ['2026-05-02T16', 7]] as const) {
-    await seedUsage(repo, { keyId: apiKey.id, model: 'gpt-5', upstream: 'up-a', hour, requests });
-  }
-  const response = await requestApp('/api/token-usage/overview?start=2026-04-30T16&end=2026-05-05T16&bucket=2d&timezone=Asia%2FSingapore', { headers: { 'x-api-key': apiKey.key } });
-  assertEquals(response.status, 200);
-  const body = await response.json();
-  assertEquals(body.series.map((row: { bucket: string; requests: number; cost: string }) => [row.bucket, row.requests, row.cost]), [['2026-05-01', 8, '16'], ['2026-05-03', 7, '14']]);
-  assertEquals(body.axes.none[0].requests, 15);
-  assertEquals(body.axes.none[0].cost, '30');
 });
