@@ -570,7 +570,6 @@ const zhHansCN = {
         documentTitleNew: '新建上游',
         documentTitleEdit: '上游详情',
         documentTitleCopy: '复制上游',
-        optional: '可选',
         unsaved: '有未保存更改',
         pathOverridesHint: '留空时使用对应的默认 /v1 路径。',
         disabledModelsHint:

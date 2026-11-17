@@ -42,8 +42,7 @@ const kimiCodeRecord = (apiKey: string) => upstreamRecord('up_kimi', {
   kind: 'kimi-code', config: { region: 'overseas', apiKey }, state: null,
 });
 
-// The optional variant appends its qualifier to the label.
-const keyInput = () => screen.getByLabelText(new RegExp(`^${apiKeyLabel}`)) as HTMLInputElement;
+const keyInput = () => screen.getByLabelText(apiKeyLabel) as HTMLInputElement;
 
 describe('the API key field', () => {
   it.each([
@@ -64,11 +63,6 @@ describe('the API key field', () => {
 
     fireEvent.click(screen.getByRole('button', { name: hideLabel }));
     expect(keyInput().type).toBe('password');
-  });
-
-  it('marks the custom key optional, since an empty key makes the upstream anonymous', () => {
-    renderInApp(<ProviderConfigHarness record={customRecord('')} />);
-    expect(screen.getByLabelText(`${apiKeyLabel} (${i18n.t('dashboard.upstreamEditor.optional')})`)).toBeTruthy();
   });
 
   it('opens an upstream whose config stores no key on an empty field', () => {

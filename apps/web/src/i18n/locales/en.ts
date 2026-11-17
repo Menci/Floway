@@ -597,7 +597,6 @@ const en = {
         documentTitleNew: 'New upstream',
         documentTitleEdit: 'Upstream details',
         documentTitleCopy: 'Copy upstream',
-        optional: 'optional',
         unsaved: 'Unsaved changes',
         pathOverridesHint:
             'Leave an entry blank to use its default /v1 path.',
