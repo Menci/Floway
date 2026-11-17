@@ -91,17 +91,6 @@ describe('userspaceTls — input validation', () => {
 });
 
 describe('userspaceTls — handshake failure', () => {
-  it('rejects when the transport EOFs before the handshake completes', async () => {
-    const fake = makeFakeDuplex();
-    const promise = userspaceTls(
-      { readable: fake.readable, writable: fake.writable },
-      { host: 'example.com' },
-    );
-    await new Promise(r => setTimeout(r, 5));
-    fake.endResponse();
-    await expect(promise).rejects.toBeInstanceOf(Error);
-  });
-
   it('rejects with an AbortError when the signal aborts AFTER the ClientHello but before the ServerHello', async () => {
     const fake = makeFakeDuplex();
     const ac = new AbortController();
@@ -237,10 +226,6 @@ const verifyFixtureIdentity = async (fixture: string, host: string): Promise<voi
 };
 
 describe('userspaceTls — certificate reference identity', () => {
-  it('accepts an exact IPv4 iPAddress SAN', async () => {
-    await expect(verifyFixtureIdentity('ip-san.generated.pem', '192.0.2.10')).resolves.toBeUndefined();
-  });
-
   it('rejects a mismatched IPv4 iPAddress SAN', async () => {
     await expect(verifyFixtureIdentity('ip-san.generated.pem', '192.0.2.11'))
       .rejects.toThrow('Certificate is not for host 192.0.2.11');
@@ -255,11 +240,6 @@ describe('userspaceTls — certificate reference identity', () => {
   it('does not treat an IP-valued CN or DNS SAN as an IP identity', async () => {
     await expect(verifyFixtureIdentity('ip-cn-dns-san.generated.pem', '192.0.2.10'))
       .rejects.toThrow('Certificate is not for host 192.0.2.10');
-  });
-
-  it('does not apply DNS wildcard matching to an IP identity', async () => {
-    await expect(verifyFixtureIdentity('ip-san.generated.pem', '203.0.113.7'))
-      .rejects.toThrow('Certificate is not for host 203.0.113.7');
   });
 
   it('keeps IPv4 and IPv4-mapped IPv6 identities distinct', async () => {

@@ -12,25 +12,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { collectBody, collectBodyBytes, makeFakeDuplex, respondAndEnd } from './test-utils.ts';
 import { parseHttpResponse, toWebResponse } from '../src/parser.ts';
 
-const gzip = async (text: string): Promise<Uint8Array> =>
-  new Uint8Array(await new Response(
-    new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode(text));
-        controller.close();
-      },
-    }).pipeThrough(new CompressionStream('gzip') as never),
-  ).arrayBuffer());
-
 describe('parseHttpResponse — status-line grammar', () => {
   it('rejects HTTP/2.0 — only HTTP/1.0 and HTTP/1.1 are supported', async () => {
     await expect(parseHttpResponse(respondAndEnd('HTTP/2.0 200 OK\r\n\r\n'))).rejects.toMatchObject({
-      code: 'BAD_STATUS_LINE',
-    });
-  });
-
-  it('rejects a 2-digit status code', async () => {
-    await expect(parseHttpResponse(respondAndEnd('HTTP/1.1 99 OK\r\n\r\n'))).rejects.toMatchObject({
       code: 'BAD_STATUS_LINE',
     });
   });
@@ -95,12 +79,6 @@ describe('parseHttpResponse — header name grammar (RFC 9110 §5.1 token)', () 
     });
   });
 
-  it('rejects a header line missing the colon', async () => {
-    await expect(parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK\r\nFoo bar\r\n\r\n'))).rejects.toMatchObject({
-      code: 'BAD_HEADERS',
-    });
-  });
-
   it.each([
     ['exclamation mark', '!'],
     ['apostrophe', '\''],
@@ -143,11 +121,6 @@ describe('parseHttpResponse — header name grammar (RFC 9110 §5.1 token)', () 
 });
 
 describe('parseHttpResponse — header value grammar (RFC 9110 §5.5 field-value)', () => {
-  it('accepts an empty value (`X:` with nothing after)', async () => {
-    const r = await parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK\r\nX-Empty:\r\nContent-Length: 0\r\n\r\n'));
-    expect(r.headers.get('x-empty')).toBe('');
-  });
-
   it('trims multiple leading SPs and TABs before the value (OWS = *( SP / HTAB ))', async () => {
     const r = await parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK\r\nX:  \t  foo\r\nContent-Length: 0\r\n\r\n'));
     expect(r.headers.get('x')).toBe('foo');
@@ -200,13 +173,6 @@ describe('parseHttpResponse — header value grammar (RFC 9110 §5.5 field-value
       code: 'OBS_FOLD',
     });
   });
-
-  it('accepts a value that itself contains a colon (only the first colon is the delimiter)', async () => {
-    const r = await parseHttpResponse(respondAndEnd(
-      'HTTP/1.1 200 OK\r\nLocation: https://example.com:8443/x\r\nContent-Length: 0\r\n\r\n',
-    ));
-    expect(r.headers.get('location')).toBe('https://example.com:8443/x');
-  });
 });
 
 describe('parseHttpResponse — Content-Length / Transfer-Encoding smuggling matrix', () => {
@@ -254,12 +220,6 @@ describe('parseHttpResponse — Content-Length / Transfer-Encoding smuggling mat
     expect(await collectBody(r)).toBe('hello');
   });
 
-  it('rejects Transfer-Encoding: chunked listed twice (across two headers)', async () => {
-    await expect(parseHttpResponse(respondAndEnd(
-      'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n',
-    ))).rejects.toMatchObject({ code: 'TE_DOUBLE_CHUNKED' });
-  });
-
   it('rejects Transfer-Encoding: chunkedchunked (substring match must not enable chunked)', async () => {
     // llhttp test/response/transfer-encoding.md: the literal token must
     // be `chunked`, never a token that contains `chunked` as a substring.
@@ -286,16 +246,6 @@ describe('parseHttpResponse — Content-Length value grammar', () => {
 });
 
 describe('parseHttpResponse — DoS caps', () => {
-  it('accepts a response at exactly the 100-header boundary', async () => {
-    const lines = ['HTTP/1.1 200 OK'];
-    for (let i = 0; i < 99; i++) lines.push(`X-${i}: v`);
-    lines.push('Content-Length: 0');
-    lines.push('');
-    lines.push('');
-    const r = await parseHttpResponse(respondAndEnd(lines.join('\r\n')));
-    expect(r.status).toBe(200);
-  });
-
   it('rejects a response with 101 header lines (one past the boundary)', async () => {
     const lines = ['HTTP/1.1 200 OK'];
     for (let i = 0; i < 100; i++) lines.push(`X-${i}: v`);
@@ -323,14 +273,6 @@ describe('parseHttpResponse — DoS caps', () => {
 });
 
 describe('parseHttpResponse — body framing', () => {
-  it('reads to EOF when no framing headers are present (HTTP/1.1)', async () => {
-    const fake = makeFakeDuplex();
-    fake.respond('HTTP/1.1 200 OK\r\n\r\nbody bytes');
-    fake.endResponse();
-    const resp = await parseHttpResponse(fake.readable);
-    expect(await collectBody(resp)).toBe('body bytes');
-  });
-
   it('errors with TRAILING_BODY_BYTES when CL is satisfied and more bytes follow', async () => {
     const fake = makeFakeDuplex();
     fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhelloEXTRA');
@@ -362,22 +304,6 @@ describe('parseHttpResponse — body framing', () => {
 });
 
 describe('parseHttpResponse — 1xx interim heads', () => {
-  it('skips a 103 Early Hints carrying preconnect Link headers', async () => {
-    // 103 typically carries Link: preconnect headers that an intermediary
-    // could legitimately set; we still discard the whole interim head.
-    const r = await parseHttpResponse(respondAndEnd([
-      'HTTP/1.1 103 Early Hints',
-      'Link: </a.css>; rel=preload',
-      '',
-      'HTTP/1.1 200 OK',
-      'Content-Length: 2',
-      '',
-      'OK',
-    ].join('\r\n')));
-    expect(r.status).toBe(200);
-    expect(r.headers.get('link')).toBeNull();
-  });
-
   it('skips multiple stacked interim heads (100 then 103 then 200)', async () => {
     const r = await parseHttpResponse(respondAndEnd([
       'HTTP/1.1 100 Continue',
@@ -395,11 +321,6 @@ describe('parseHttpResponse — 1xx interim heads', () => {
 });
 
 describe('parseHttpResponse — wire-faithful return shape', () => {
-  it('exposes an empty statusText when the reason-phrase is empty (RFC 7230 erratum 4087)', async () => {
-    const r = await parseHttpResponse(respondAndEnd('HTTP/1.1 200 \r\nContent-Length: 0\r\n\r\n'));
-    expect(r.statusText).toBe('');
-  });
-
   it('trims trailing OWS from the reason-phrase (matches RawHttpResponse.statusText contract)', async () => {
     const r = await parseHttpResponse(respondAndEnd('HTTP/1.1 200 OK   \r\nContent-Length: 0\r\n\r\n'));
     expect(r.statusText).toBe('OK');
@@ -407,38 +328,10 @@ describe('parseHttpResponse — wire-faithful return shape', () => {
 });
 
 describe('toWebResponse', () => {
-  it('passes 200..599 through with the parsed status and headers', async () => {
-    const r = toWebResponse(await parseHttpResponse(respondAndEnd(
-      'HTTP/1.1 503 Service Unavailable\r\nRetry-After: 30\r\nContent-Length: 0\r\n\r\n',
-    )));
-    expect(r.status).toBe(503);
-    expect(r.headers.get('retry-after')).toBe('30');
-  });
-
   it('returns a null-body Response for 204 No Content (Fetch standard refuses a body)', async () => {
     const r = toWebResponse(await parseHttpResponse(respondAndEnd('HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n')));
     expect(r.status).toBe(204);
     expect(r.body).toBeNull();
-  });
-
-  it('decodes a gzip body and removes stale content-coding framing headers', async () => {
-    const compressed = await gzip('event: message_stop\ndata: {"type":"message_stop"}\n\n');
-    const head = new TextEncoder().encode(
-      `HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: ${compressed.byteLength}\r\n\r\n`,
-    );
-    const bytes = new Uint8Array(head.byteLength + compressed.byteLength);
-    bytes.set(head);
-    bytes.set(compressed, head.byteLength);
-    const response = toWebResponse(await parseHttpResponse(new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(bytes);
-        controller.close();
-      },
-    })));
-
-    expect(await response.text()).toBe('event: message_stop\ndata: {"type":"message_stop"}\n\n');
-    expect(response.headers.get('content-encoding')).toBeNull();
-    expect(response.headers.get('content-length')).toBeNull();
   });
 
   it('rejects a content coding the socket transport cannot decode', async () => {

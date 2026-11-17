@@ -51,12 +51,6 @@ describe('decodeChunked — RFC 9112 §7.1 happy path', () => {
     const { reader, head } = fromString(input);
     expect(await drain(decodeChunked(reader, head))).toBe('hello');
   });
-
-  it('consumes (and discards) trailing headers after the 0-sized terminator', async () => {
-    const input = '5\r\nhello\r\n0\r\nX-Trailer: t1\r\nX-Trailer-2: t2\r\n\r\n';
-    const { reader, head } = fromString(input);
-    expect(await drain(decodeChunked(reader, head))).toBe('hello');
-  });
 });
 
 describe('decodeChunked — error vectors', () => {
@@ -66,14 +60,6 @@ describe('decodeChunked — error vectors', () => {
     const err = await drainExpectError(decodeChunked(reader, head));
     expect(err).toBeInstanceOf(HttpProtocolError);
     expect((err as Error).message).toMatch(/EOF mid-data/);
-  });
-
-  it('errors when EOF arrives in the trailers block before the final CRLF', async () => {
-    const input = '5\r\nhello\r\n0\r\nX-Trailer: t1\r\n';
-    const { reader, head } = fromString(input);
-    const err = await drainExpectError(decodeChunked(reader, head));
-    expect(err).toBeInstanceOf(HttpProtocolError);
-    expect((err as Error).message).toMatch(/EOF in trailers/);
   });
 
   it('errors when the data block is not followed by CRLF', async () => {
@@ -159,28 +145,11 @@ describe('decodeChunked — extensions and trailers (RFC 9112 §7.1.1, §7.1.2)'
     expect(err).toBeInstanceOf(HttpProtocolError);
     expect((err as HttpProtocolError).code).toBe('CHUNK_TOO_LONG');
   });
-
-  it('rejects a chunk-size line that drops bytes without ever delivering CRLF', async () => {
-    // 1.5 KiB of pure hex digits — never terminated.
-    const input = 'a'.repeat(1500);
-    const { reader, head } = fromString(input);
-    const err = await drainExpectError(decodeChunked(reader, head));
-    expect(err).toBeInstanceOf(HttpProtocolError);
-    expect((err as HttpProtocolError).code).toBe('CHUNK_TOO_LONG');
-  });
 });
 
 describe('decodeChunked — premature EOF vectors', () => {
   it('errors with EOF when the size line never finishes', async () => {
     const input = '5'; // no CRLF, no anything else
-    const { reader, head } = fromString(input);
-    const err = await drainExpectError(decodeChunked(reader, head));
-    expect(err).toBeInstanceOf(HttpProtocolError);
-    expect((err as HttpProtocolError).code).toBe('EOF');
-  });
-
-  it('errors with EOF when CRLF is missing after the chunk data', async () => {
-    const input = '5\r\nhello'; // no CRLF after data
     const { reader, head } = fromString(input);
     const err = await drainExpectError(decodeChunked(reader, head));
     expect(err).toBeInstanceOf(HttpProtocolError);

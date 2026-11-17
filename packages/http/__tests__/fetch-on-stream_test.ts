@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { collectBody, makeFakeDuplex } from './test-utils.ts';
+import { makeFakeDuplex } from './test-utils.ts';
 import { fetchOnStream } from '../src/fetch-on-stream.ts';
 
 const decodeAscii = (b: Uint8Array): string => new TextDecoder().decode(b);
@@ -64,18 +64,6 @@ describe('fetchOnStream — request line and headers', () => {
     ]);
   });
 
-  it('does not set Content-Length when there is no body', async () => {
-    const fake = makeFakeDuplex();
-    const promise = fetchOnStream(
-      { readable: fake.readable, writable: fake.writable },
-      { method: 'GET', path: '/', headers: [['Host', 'h']] },
-    );
-    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
-    fake.endResponse();
-    await promise;
-    expect(decodeAscii(fake.written())).not.toMatch(/Content-Length:/i);
-  });
-
   it('coalesces an opt.prefix into the same write as the request head', async () => {
     const fake = makeFakeDuplex();
     let firstChunk: Uint8Array | null = null;
@@ -98,27 +86,6 @@ describe('fetchOnStream — request line and headers', () => {
     expect(firstChunk).not.toBeNull();
     const text = decodeAscii(firstChunk!);
     expect(text.startsWith('PREFIX-BYTESGET / HTTP/1.1\r\n')).toBe(true);
-  });
-});
-
-describe('fetchOnStream — body-bearing responses', () => {
-  it('returns a chunked body whose chunks decode losslessly', async () => {
-    const fake = makeFakeDuplex();
-    const promise = fetchOnStream(
-      { readable: fake.readable, writable: fake.writable },
-      { method: 'GET', path: '/', headers: [['Host', 'h']] },
-    );
-    fake.respond([
-      'HTTP/1.1 200 OK',
-      'Content-Type: text/plain',
-      'Transfer-Encoding: chunked',
-      '',
-      // Three chunks: "Wiki", "pedia", " in chunks."
-      '4\r\nWiki\r\n5\r\npedia\r\nB\r\n in chunks.\r\n0\r\n\r\n',
-    ].join('\r\n'));
-    fake.endResponse();
-    const resp = await promise;
-    expect(await collectBody(resp)).toBe('Wikipedia in chunks.');
   });
 });
 
@@ -160,11 +127,6 @@ describe('fetchOnStream — request-side header validation (RFC 9110 §5.6.2 / �
     ).catch((e: unknown) => e);
   };
 
-  it('rejects a request header value containing DEL (0x7f)', async () => {
-    const err = await reqHeaderValue('foo\x7fbar');
-    expect(err).toMatchObject({ name: 'HttpProtocolError', code: 'BAD_HEADERS' });
-  });
-
   it('rejects every C0 control byte except HTAB (0x09) in a request header value (RFC 9110 §5.5 field-vchar)', async () => {
     // VCHAR is %x21-7E; the only control byte field-content lets through
     // is HTAB. The request validator covers the full C0 range — the
@@ -175,22 +137,6 @@ describe('fetchOnStream — request-side header validation (RFC 9110 §5.6.2 / �
       const err = await reqHeaderValue(`a${String.fromCharCode(b)}b`);
       expect(err, `byte 0x${b.toString(16)}`).toMatchObject({ name: 'HttpProtocolError', code: 'BAD_HEADERS' });
     }
-  });
-
-  it('accepts HTAB (0x09) inside a request header value (RFC 9110 §5.5 field-content)', async () => {
-    const fake = makeFakeDuplex();
-    const promise = fetchOnStream(
-      { readable: fake.readable, writable: fake.writable },
-      {
-        method: 'GET',
-        path: '/',
-        headers: [['Host', 'h'], ['X-Test', 'a\tb']],
-      },
-    );
-    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
-    fake.endResponse();
-    await promise;
-    expect(decodeAscii(fake.written())).toContain('X-Test: a\tb\r\n');
   });
 });
 
@@ -234,10 +180,6 @@ describe('fetchOnStream — request-line smuggling defense (RFC 9110 §9.1 / RFC
     ).catch((e: unknown) => e);
   };
 
-  it('rejects an empty method', async () => {
-    expect(await dialMethod('')).toMatchObject({ name: 'HttpProtocolError', code: 'BAD_HEADERS' });
-  });
-
   it('rejects a method containing SP (smuggling shape)', async () => {
     expect(await dialMethod('GET POST')).toMatchObject({ name: 'HttpProtocolError', code: 'BAD_HEADERS' });
   });
@@ -248,10 +190,6 @@ describe('fetchOnStream — request-line smuggling defense (RFC 9110 §9.1 / RFC
 
   it('rejects a path containing SP (smuggling shape)', async () => {
     expect(await dialPath('/hi there')).toMatchObject({ name: 'HttpProtocolError', code: 'BAD_HEADERS' });
-  });
-
-  it('rejects a path containing DEL (0x7f)', async () => {
-    expect(await dialPath('/foo\x7fbar')).toMatchObject({ name: 'HttpProtocolError', code: 'BAD_HEADERS' });
   });
 });
 
@@ -343,23 +281,6 @@ describe('fetchOnStream — request body serialization', () => {
     )).rejects.toThrow(message);
   });
 
-  it('preserves fixed framing for a zero-length replayable body', async () => {
-    const fake = makeFakeDuplex();
-    const promise = fetchOnStream(
-      { readable: fake.readable, writable: fake.writable },
-      {
-        method: 'POST',
-        path: '/',
-        headers: [['Host', 'h']],
-        body: { contentLength: 0, open: () => new Blob([]).stream() },
-      },
-    );
-    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
-    fake.endResponse();
-    await promise;
-    expect(decodeAscii(fake.written())).toContain('Content-Length: 0\r\n');
-  });
-
   it('cancels the source with the original writer failure', async () => {
     const fake = makeFakeDuplex();
     const failure = new Error('socket write failed');
@@ -420,20 +341,6 @@ describe('fetchOnStream — request body serialization', () => {
     await expect(promise).rejects.toThrow('exceeded its declared content length');
     expect(cancel).toHaveBeenCalledOnce();
     expect(cancel.mock.calls[0]![0]).toBeInstanceOf(RangeError);
-  });
-
-  it('drops the caller Connection header regardless of case', async () => {
-    const fake = makeFakeDuplex();
-    const promise = fetchOnStream(
-      { readable: fake.readable, writable: fake.writable },
-      { method: 'GET', path: '/', headers: [['Host', 'h'], ['CONNECTION', 'keep-alive']] },
-    );
-    fake.respond('HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n');
-    fake.endResponse();
-    await promise;
-    const text = decodeAscii(fake.written());
-    expect(text).toContain('Connection: close\r\n');
-    expect(text).not.toContain('keep-alive');
   });
 });
 

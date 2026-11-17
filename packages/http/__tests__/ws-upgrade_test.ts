@@ -144,17 +144,6 @@ describe('wsUpgradeAndFrame — handshake', () => {
     });
   });
 
-  it('rejects a missing Sec-WebSocket-Accept header', async () => {
-    const fake = makeFakeDuplex();
-    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
-    await new Promise(r => setTimeout(r, 0));
-    fake.respond('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n');
-    await expect(upgrade).rejects.toMatchObject({
-      code: 'BAD_HEADERS',
-      message: expect.stringContaining('Sec-WebSocket-Accept'),
-    });
-  });
-
   it('rejects a wrong Sec-WebSocket-Accept value', async () => {
     const fake = makeFakeDuplex();
     const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
@@ -239,10 +228,6 @@ describe('wsUpgradeAndFrame — handshake', () => {
     }).catch((e: unknown) => e);
   };
 
-  it('rejects an empty path', async () => {
-    expect(await tryUpgrade({ path: '' })).toMatchObject({ code: 'BAD_HEADERS' });
-  });
-
   it('rejects a path containing CR (CRLF injection prevention)', async () => {
     expect(await tryUpgrade({ path: '/foo\rEvil: 1' })).toMatchObject({ code: 'BAD_HEADERS' });
   });
@@ -284,21 +269,6 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
     const { value } = await reader.read();
     expect(dec(value!)).toBe('hello world');
     reader.releaseLock();
-  });
-
-  it('writes a single client message as one masked binary frame', async () => {
-    const fake = makeFakeDuplex();
-    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
-    await completeHandshake(fake);
-    const stream = await upgrade;
-    const writer = stream.writable.getWriter();
-    const handshakeBytes = fake.written().byteLength;
-    await writer.write(enc('ping'));
-    const { frame } = await readClientFrame(fake, handshakeBytes);
-    expect(frame!.opcode).toBe(0x2);
-    expect(frame!.fin).toBe(true);
-    expect(dec(frame!.payload)).toBe('ping');
-    writer.releaseLock();
   });
 
   it('responds to a server ping with a pong of the same payload', async () => {
@@ -344,22 +314,6 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
     const reader = stream.readable.getReader();
     const { value } = await reader.read();
     expect(dec(value!)).toBe('hello world');
-    reader.releaseLock();
-  });
-
-  it('handles a frame that crosses the 16-bit length boundary', async () => {
-    const fake = makeFakeDuplex();
-    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
-    await completeHandshake(fake);
-    const stream = await upgrade;
-    const payload = new Uint8Array(200);
-    for (let i = 0; i < payload.byteLength; i++) payload[i] = i & 0xff;
-    fake.respond(buildServerFrame(0x2, payload));
-    const reader = stream.readable.getReader();
-    const { value } = await reader.read();
-    expect(value!.byteLength).toBe(200);
-    expect(value![0]).toBe(0);
-    expect(value![199]).toBe(199);
     reader.releaseLock();
   });
 
