@@ -83,16 +83,12 @@ const pricingMetricShape = {
   rerank_searches: priceSchema.optional(),
 };
 
-// Modality arrays: both input and output require at least one entry and
-// deduplicate via transform. Input additionally requires 'text' to be present
-// (a multimodal model must accept text); output has no such constraint (an
-// image-generation model may emit only images).
 const modalityArraySchema = z.array(z.enum(['text', 'image']))
   .min(1)
   .transform(arr => Array.from(new Set(arr)));
 
-const inputModalityArraySchema = modalityArraySchema
-  .refine(arr => arr.includes('text'), { message: "must include 'text'" });
+const inputModalityArraySchema = z.array(z.enum(['text', 'image', 'audio']))
+  .min(1).transform(arr => Array.from(new Set(arr)));
 
 const modalitiesSchema = z.object({
   input: inputModalityArraySchema,
