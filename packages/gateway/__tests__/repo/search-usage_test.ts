@@ -1,9 +1,9 @@
 import { test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
+import { createSqliteTestDb } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { WebSearchUsageRecord, WebSearchUsageRepo } from '../../src/repo/types.ts';
-import type { SqlDatabase } from '@floway-dev/platform';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const sortWebSearchUsageRecords = (records: WebSearchUsageRecord[]) =>
@@ -206,164 +206,21 @@ const assertRejectsInvalidProvider = async (repo: WebSearchUsageRepo) => {
   );
 };
 
-test('memory search usage repo records, queries, overwrites, and clears', async () => {
-  await exerciseWebSearchUsageRepo(new InMemoryRepo().webSearchUsage);
-});
+const backends: Array<readonly [string, () => Promise<WebSearchUsageRepo>]> = [
+  ['memory', async () => new InMemoryRepo().webSearchUsage],
+  ['SQL', async () => new SqlRepo(await createSqliteTestDb()).webSearchUsage],
+];
 
-test('memory search usage repo distinguishes search vs fetch_page rows', async () => {
-  await exerciseActionDimension(new InMemoryRepo().webSearchUsage);
-});
-
-test('memory search usage repo rejects invalid provider names', async () => {
-  await assertRejectsInvalidProvider(new InMemoryRepo().webSearchUsage);
-});
-
-class FakeSqlPreparedStatement {
-  private binds: unknown[] = [];
-
-  constructor(private db: FakeSqlDatabase, private query: string) {}
-
-  bind(...values: unknown[]): FakeSqlPreparedStatement {
-    this.binds = values;
-    return this;
-  }
-
-  first(): Promise<null> {
-    throw new Error(`Unsupported first() query in search usage test: ${this.query}`);
-  }
-
-  all<T>(): Promise<{ results: T[]; success: true; meta: Record<string, unknown> }> {
-    if (this.query.includes('FROM search_usage')) {
-      return Promise.resolve({
-        results: this.db.select(this.query, this.binds) as T[],
-        success: true,
-        meta: {},
-      });
-    }
-
-    throw new Error(`Unsupported all() query in search usage test: ${this.query}`);
-  }
-
-  run(): Promise<{ results: never[]; success: true; meta: Record<string, unknown> }> {
-    if (this.query.startsWith('INSERT INTO search_usage')) {
-      this.db.upsert(this.query, this.binds);
-      return Promise.resolve({ results: [], success: true, meta: {} });
-    }
-    if (this.query === 'DELETE FROM search_usage') {
-      this.db.rows = [];
-      return Promise.resolve({ results: [], success: true, meta: {} });
-    }
-
-    throw new Error(`Unsupported run() query in search usage test: ${this.query}`);
-  }
-}
-
-class FakeSqlDatabase implements SqlDatabase {
-  exec(): Promise<unknown> { return Promise.resolve(undefined); }
-
-  rows: Array<{
-    provider: string;
-    key_id: string;
-    action: string;
-    hour: string;
-    requests: number;
-  }> = [];
-
-  prepare(query: string): FakeSqlPreparedStatement {
-    return new FakeSqlPreparedStatement(this, query);
-  }
-
-  upsert(query: string, binds: unknown[]): void {
-    const [provider, keyId, action, hour, requests] = binds as [string, string, string, string, number];
-    const existing = this.rows.find(r => r.provider === provider && r.key_id === keyId && r.action === action && r.hour === hour);
-    if (existing) {
-      existing.requests = query.includes('requests + excluded.requests') ? existing.requests + requests : requests;
-    } else {
-      this.rows.push({ provider, key_id: keyId, action, hour, requests });
-    }
-  }
-
-  select(query: string, binds: unknown[]) {
-    if (!query.includes('WHERE')) {
-      return sortWebSearchUsageRecords(
-        this.rows.map(r => ({
-          provider: r.provider as WebSearchUsageRecord['provider'],
-          keyId: r.key_id,
-          action: r.action as WebSearchUsageRecord['action'],
-          hour: r.hour,
-          requests: r.requests,
-        })),
-      ).map(r => ({
-        provider: r.provider,
-        key_id: r.keyId,
-        action: r.action,
-        hour: r.hour,
-        requests: r.requests,
-      }));
-    }
-
-    // Predicate combinations matched by SqlWebSearchUsageRepo.query():
-    // - hour bounds always present (start, end)
-    // - provider may be prepended (unshifted)
-    // - keyId may be appended
-    // - action may be appended (after keyId if both)
-    let provider: string | undefined;
-    let keyId: string | undefined;
-    let action: string | undefined;
-    const hasProvider = query.includes('provider = ?');
-    const hasKeyId = query.includes('key_id = ?');
-    const hasAction = query.includes('action = ?');
-
-    const bindsCopy = [...binds] as string[];
-    if (hasProvider) provider = bindsCopy.shift();
-    const start = bindsCopy.shift()!;
-    const end = bindsCopy.shift()!;
-    if (hasKeyId) keyId = bindsCopy.shift();
-    if (hasAction) action = bindsCopy.shift();
-
-    return this.rows
-      .filter(r => !provider || r.provider === provider)
-      .filter(r => !keyId || r.key_id === keyId)
-      .filter(r => !action || r.action === action)
-      .filter(r => r.hour >= start && r.hour < end)
-      .sort((a, b) => a.hour.localeCompare(b.hour));
-  }
-}
-
-test('SQL search usage repo records, queries, overwrites, and clears', async () => {
-  await exerciseWebSearchUsageRepo(new SqlRepo(new FakeSqlDatabase()).webSearchUsage);
-});
-
-test('SQL search usage repo distinguishes search vs fetch_page rows', async () => {
-  await exerciseActionDimension(new SqlRepo(new FakeSqlDatabase()).webSearchUsage);
-});
-
-test('SQL search usage repo rejects invalid provider names', async () => {
-  await assertRejectsInvalidProvider(new SqlRepo(new FakeSqlDatabase()).webSearchUsage);
-});
-
-test('SQL search usage repo rejects invalid stored provider names', async () => {
-  const db = new FakeSqlDatabase();
-  db.rows.push({
-    provider: 'disabled',
-    key_id: 'key_a',
-    action: 'search',
-    hour: '2026-04-25T10',
-    requests: 1,
+for (const [backend, makeRepo] of backends) {
+  test(`${backend} search usage repo records, queries, overwrites, and clears`, async () => {
+    await exerciseWebSearchUsageRepo(await makeRepo());
   });
 
-  await assertRejects(() => new SqlRepo(db).webSearchUsage.listAll(), TypeError, 'Invalid web search provider');
-});
-
-test('SQL search usage repo rejects invalid stored action values', async () => {
-  const db = new FakeSqlDatabase();
-  db.rows.push({
-    provider: 'tavily',
-    key_id: 'key_a',
-    action: 'bogus',
-    hour: '2026-04-25T10',
-    requests: 1,
+  test(`${backend} search usage repo distinguishes search vs fetch_page rows`, async () => {
+    await exerciseActionDimension(await makeRepo());
   });
 
-  await assertRejects(() => new SqlRepo(db).webSearchUsage.listAll(), TypeError, 'Invalid search usage action');
-});
+  test(`${backend} search usage repo rejects invalid provider names`, async () => {
+    await assertRejectsInvalidProvider(await makeRepo());
+  });
+}

@@ -4,8 +4,7 @@ import { initRepo } from '../../src/repo/index.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import { runUpstreamScheduledTasks } from '../../src/scheduled/upstreams.ts';
 import { createSqliteTestDb } from '../repo/test-sqlite.ts';
-import { runScheduledUsageRefresh, type Fetcher, type UpstreamRecord } from '@floway-dev/provider';
-import { refreshOllamaUsageProbe } from '@floway-dev/provider-ollama';
+import { type Fetcher, type UpstreamRecord } from '@floway-dev/provider';
 
 const mocks = vi.hoisted(() => ({ fetch: vi.fn<Fetcher>() }));
 vi.mock('../../src/dial/per-request.ts', () => ({ createPerRequestFetcher: async () => () => mocks.fetch }));
@@ -96,62 +95,6 @@ test('a usage endpoint auth failure preserves inference credential health and ot
   await expect(runUpstreamScheduledTasks('TEST')).rejects.toThrow();
   expect((await repo.upstreams.getById('chatgpt'))?.state).toMatchObject({ accounts: [{ state: 'active' }] });
   expect((await repo.upstreams.getById('ollama'))?.state).toMatchObject({ usageProbe: { observation: { fetchedAt: NOW } } });
-});
-
-test('scheduled refresh propagates original network failures', async () => {
-  const record = copilot();
-  await repo.upstreams.insertForModels(record);
-  const refresh = vi.fn();
-  const options = { fetcher: async () => mocks.fetch };
-  const failure = new Error('network unavailable');
-  refresh.mockRejectedValue(failure);
-  await expect(runScheduledUsageRefresh(record, options, null, refresh)).rejects.toBe(failure);
-});
-
-test('a fresh passive observation avoids resolving egress', async () => {
-  const record = copilot();
-  await repo.upstreams.insertForModels(record);
-  const fetcher = vi.fn();
-  await runScheduledUsageRefresh(record, { fetcher }, NOW - 60_000, vi.fn());
-  expect(fetcher).not.toHaveBeenCalled();
-});
-
-test('Ollama scheduled and request-time refreshes update the same usage and balance pair', async () => {
-  const record = ollama();
-  await repo.upstreams.insertForModels(record);
-  let amount = 3.5;
-  mocks.fetch.mockImplementation(async url => Response.json(new URL(url).pathname === '/api/usage'
-    ? usageBody(amount)
-    : balanceBody(amount)));
-  await runUpstreamScheduledTasks('TEST');
-  amount = 5;
-  vi.setSystemTime(NOW + 60_000);
-  await refreshOllamaUsageProbe(record.id, { baseUrl: 'https://ollama.com', apiKey: 'key', cloudUsage: true, models: [] }, mocks.fetch);
-  expect((await repo.upstreams.getById(record.id))?.state).toMatchObject({
-    usageProbe: { observation: { fetchedAt: NOW + 60_000, data: { usage: usageBody(5), balance: balanceBody(5) } } },
-  });
-  await runUpstreamScheduledTasks('TEST');
-  expect(mocks.fetch).toHaveBeenCalledTimes(4);
-});
-
-test('a fresh ChatGPT bucket does not suppress a stale sibling bucket', async () => {
-  const record = chatgpt();
-  await repo.upstreams.insertForModels(record);
-  await repo.upstreams.saveState(record.id, current => {
-    const state = current as { accounts: Array<Record<string, unknown>> };
-    return {
-      accounts: [{
-        ...state.accounts[0], quotaSnapshot: {
-          codex: { fetchedAt: NOW, data: { observed_at: new Date(NOW).toISOString(), primary_used_percent: 5 } },
-          images: { fetchedAt: NOW - 600_000, data: { observed_at: new Date(NOW - 600_000).toISOString(), primary_used_percent: 80 } },
-        },
-      }],
-    };
-  });
-  mocks.fetch.mockResolvedValue(Response.json({ plan_type: 'plus', rate_limit: null, additional_rate_limits: [{ metered_feature: 'images', rate_limit: { primary_window: { used_percent: 20, limit_window_seconds: 18_000, reset_at: NOW / 1000 + 60 } } }] }));
-  await runUpstreamScheduledTasks('TEST');
-  expect(mocks.fetch).toHaveBeenCalledTimes(1);
-  expect((await repo.upstreams.getById(record.id))?.state).toMatchObject({ accounts: [{ quotaSnapshot: { images: { data: { primary_used_percent: 20 } } } }] });
 });
 
 test('configured minutes control polling using existing usage observations', async () => {

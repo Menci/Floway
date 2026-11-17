@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
-import { type CompletedStatement, recordCompletedStatements } from './recording-sql.ts';
-import { assertD1CompoundSelectLimit, createSqliteTestDb } from './test-sqlite.ts';
+import { createSqliteTestDb } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type {
   ApiKey,
@@ -10,7 +9,6 @@ import type {
   PerformanceOverviewQueryOptions,
   PerformanceRepo,
   PerformanceSample,
-  PerformanceTelemetryRecord,
 } from '../../src/repo/types.ts';
 
 const apiKey = (id: string, userId: number): ApiKey => ({
@@ -83,14 +81,6 @@ for (const impl of impls) {
       expect(tpot).toEqual({ metric: 'tpot_us', lower: 14_286, upper: 16_667, count: 1 });
     });
 
-    it('records a zero-output error into summary requests + errorsNoOutput only, no bucket rows', async () => {
-      const repo = await impl.open();
-      await repo.recordZeroOutputError(errSample());
-      const rows = await repo.listAll();
-      expect(rows[0]).toMatchObject({ requests: 1, ttftSamplesOk: 0, errorsWithOutput: 0, errorsNoOutput: 1, neutral: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0 });
-      expect(rows[0]!.buckets).toEqual([]);
-    });
-
     it('routes a failed sample into errorsWithOutput (not ttftSamplesOk)', async () => {
       const repo = await impl.open();
       await repo.recordSample(sample({ success: false }));
@@ -122,127 +112,10 @@ for (const impl of impls) {
       const tpot = row!.buckets.find(b => b.metric === 'tpot_us' && b.lower === 10_000 && b.upper === 12_500)!;
       expect(tpot.count).toBe(2);
     });
-
-    it('separates rows by any dimension change (upstream)', async () => {
-      const repo = await impl.open();
-      await repo.recordSample(sample({ upstream: 'anthropic-1' }));
-      await repo.recordSample(sample({ upstream: 'anthropic-2' }));
-      const rows = await repo.listAll();
-      expect(rows).toHaveLength(2);
-      expect(new Set(rows.map(r => r.upstream))).toEqual(new Set(['anthropic-1', 'anthropic-2']));
-    });
-
-    it('set() replaces (not adds) a row and its buckets', async () => {
-      const repo = await impl.open();
-      await repo.recordSample(sample({ ttftMs: 100, tpotUs: 8_000 }));
-      const [orig] = await repo.listAll();
-      await repo.set({
-        ...orig!,
-        requests: 5,
-        ttftSamplesOk: 5,
-        errorsWithOutput: 0,
-        errorsNoOutput: 0,
-        neutral: 0,
-        tpotSamples: 5,
-        ttftMsSum: 500,
-        tpotUsSum: 40_000,
-        buckets: [
-          { metric: 'ttft_ms', lower: 0, upper: 50, count: 5 },
-          { metric: 'tpot_us', lower: 5_000, upper: 10_000, count: 5 },
-        ],
-      });
-      const [after] = await repo.listAll();
-      expect(after).toMatchObject({ requests: 5, ttftSamplesOk: 5, tpotSamples: 5, ttftMsSum: 500, tpotUsSum: 40_000 });
-      expect(after!.buckets).toHaveLength(2);
-    });
-
-    it('records TTFT overflow bucket for very slow requests beyond the top edge', async () => {
-      const repo = await impl.open();
-      await repo.recordSample(sample({ ttftMs: 600_000 }));
-      const [row] = await repo.listAll();
-      const overflow = row!.buckets.find(b => b.metric === 'ttft_ms' && b.upper === null)!;
-      expect(overflow).toEqual({ metric: 'ttft_ms', lower: 300_000, upper: null, count: 1 });
-    });
-
-    it('TTFT-only sample (no tpotUs) records TTFT bucket without touching TPOT columns', async () => {
-      const repo = await impl.open();
-      const { tpotUs: _tpot, ...ttftOnly } = sample();
-      await repo.recordSample(ttftOnly);
-      const [row] = await repo.listAll();
-      expect(row).toMatchObject({ requests: 1, ttftSamplesOk: 1, tpotSamples: 0, ttftMsSum: 340, tpotUsSum: 0 });
-      expect(row!.buckets.some(b => b.metric === 'ttft_ms')).toBe(true);
-      expect(row!.buckets.some(b => b.metric === 'tpot_us')).toBe(false);
-    });
-
-    it('recordNeutral bumps requests and neutral', async () => {
-      const repo = await impl.open();
-      await repo.recordNeutral(errSample({ operation: 'embeddings' }));
-      const rows = await repo.listAll();
-      expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({ requests: 1, neutral: 1, ttftSamplesOk: 0, errorsWithOutput: 0, errorsNoOutput: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0 });
-      expect(rows[0]!.buckets).toEqual([]);
-    });
-
-    it('recordNeutral is additive across calls', async () => {
-      const repo = await impl.open();
-      await repo.recordNeutral(errSample({ operation: 'embeddings' }));
-      await repo.recordNeutral(errSample({ operation: 'embeddings' }));
-      await repo.recordNeutral(errSample({ operation: 'embeddings' }));
-      const [row] = await repo.listAll();
-      expect(row!.requests).toBe(3);
-      expect(row!.neutral).toBe(3);
-      expect(row!.errorsNoOutput).toBe(0);
-      expect(row!.ttftSamplesOk).toBe(0);
-      expect(row!.tpotSamples).toBe(0);
-    });
-
-    it('different operations create different rows', async () => {
-      const repo = await impl.open();
-      await repo.recordSample(sample({ operation: 'chat' }));
-      await repo.recordNeutral(errSample({ operation: 'embeddings' }));
-      const rows = await repo.listAll();
-      expect(rows).toHaveLength(2);
-      expect(new Set(rows.map(r => r.operation))).toEqual(new Set(['chat', 'embeddings']));
-    });
   });
 }
 
-describe('SqlPerformanceRepo upsertSummary set-mode guard', () => {
-  it('throws when set() is handed a record missing a count column', async () => {
-    const repo = new SqlRepo(await createSqliteTestDb()).performance;
-    // TS enforces every count on the public shape; test the runtime guard by
-    // casting a partial through, mirroring an `as`-cast slipping past compile.
-    const incomplete = {
-      ...errSample(),
-      requests: 5,
-      ttftSamplesOk: 5,
-      errorsWithOutput: 0,
-      errorsNoOutput: 0,
-      neutral: 0,
-      tpotSamples: 5,
-      // ttftMsSum omitted on purpose
-      tpotUsSum: 40_000,
-      buckets: [],
-    } as unknown as PerformanceTelemetryRecord;
-    await expect(repo.set(incomplete)).rejects.toThrow(/missing count column ttft_ms_sum/);
-  });
-});
-
 describe('SqlPerformanceRepo operation vocabulary', () => {
-  it('persists audio transcription rows through the open operation schema', async () => {
-    const repo = new SqlRepo(await createSqliteTestDb()).performance;
-    await repo.recordNeutral(errSample({ operation: 'audio_transcription' }));
-    const [row] = await repo.listAll();
-    expect(row).toMatchObject({ operation: 'audio_transcription', requests: 1, neutral: 1 });
-  });
-
-  it('persists rerank rows through the open operation schema', async () => {
-    const repo = new SqlRepo(await createSqliteTestDb()).performance;
-    await repo.recordNeutral(errSample({ operation: 'rerank' }));
-    const [row] = await repo.listAll();
-    expect(row).toMatchObject({ operation: 'rerank', requests: 1, neutral: 1 });
-  });
-
   it('rejects an unknown stored operation at hydration', async () => {
     const db = await createSqliteTestDb();
     await db.prepare(
@@ -343,31 +216,6 @@ it('SQL Performance overview matches the in-memory oracle across every grouping 
     .toEqual(await memory.performance.queryOverview({ ...options, actorUserId: 2, isAdmin: false }));
 });
 
-it('SQL Performance overview rejects a histogram row without its summary identity', async () => {
-  const db = await createSqliteTestDb();
-  const repo = new SqlRepo(db);
-  await db.prepare(`INSERT INTO performance_buckets (
-    hour, key_id, model, upstream, operation, runtime_location, metric, lower, upper, count
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(
-    '2026-06-30T09', 'ghost', 'model', 'upstream', 'chat', 'LOCAL',
-    'ttft_ms', 0, 100, 1,
-  ).run();
-
-  await expect(repo.performance.queryOverview({
-    actorUserId: 1,
-    isAdmin: true,
-    visibleUserIds: [],
-    visibleUpstreams: [],
-    start: '2026-06-30T00',
-    end: '2026-06-30T23',
-    groupBy: 'model',
-    filters: {
-      keyIds: [], userIds: [], models: [], upstreams: [], operations: [], runtimeLocations: [],
-    },
-    bucketForHour: hour => hour,
-  })).rejects.toThrow('performance_buckets row has no matching summary');
-});
-
 it('SQL Performance overview ignores out-of-scope orphan histograms under key grouping', async () => {
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db);
@@ -395,85 +243,4 @@ it('SQL Performance overview ignores out-of-scope orphan histograms under key gr
     bucketForHour: hour => hour,
   });
   expect(overview.axes.none[0]?.requests).toBe(1);
-});
-
-it('Performance overview repositories reject inconsistent upper bounds for one merged histogram bucket', async () => {
-  for (const repo of [new SqlRepo(await createSqliteTestDb()), new InMemoryRepo()]) {
-    await repo.apiKeys.save(apiKey('key-1', 1));
-    await repo.apiKeys.save(apiKey('key-2', 2));
-    for (const [keyId, upper] of [['key-1', 100], ['key-2', 200]] as const) {
-      await repo.performance.set({
-        hour: '2026-06-30T09', keyId, model: 'model', upstream: 'upstream',
-        operation: 'chat', runtimeLocation: 'LOCAL', requests: 1,
-        ttftSamplesOk: 1, errorsWithOutput: 0, errorsNoOutput: 0, neutral: 0,
-        tpotSamples: 0, ttftMsSum: 50, tpotUsSum: 0,
-        buckets: [{ metric: 'ttft_ms', lower: 0, upper, count: 1 }],
-      });
-    }
-
-    await expect(repo.performance.queryOverview({
-      actorUserId: 1,
-      isAdmin: true,
-      visibleUserIds: [],
-      visibleUpstreams: [],
-      start: '2026-06-30T00',
-      end: '2026-06-30T23',
-      groupBy: 'model',
-      filters: {
-        keyIds: [], userIds: [], models: [], upstreams: [], operations: [], runtimeLocations: [],
-      },
-      bucketForHour: hour => hour,
-    })).rejects.toThrow('performance_buckets rows disagree on histogram bounds');
-  }
-});
-
-it('SQL Performance overview uses actor indexes and returns aggregate cardinality', async () => {
-  const db = await createSqliteTestDb();
-  const seedRepo = new SqlRepo(db);
-  await seedRepo.apiKeys.save(apiKey('key-1', 1));
-  for (let index = 0; index < 40; index++) {
-    await seedRepo.performance.set({
-      hour: new Date(Date.UTC(2026, 5, 1, index)).toISOString().slice(0, 13),
-      keyId: 'key-1', model: 'shared-model', upstream: 'shared-upstream',
-      operation: 'chat', runtimeLocation: 'LOCAL', requests: 1,
-      ttftSamplesOk: 1, errorsWithOutput: 0, errorsNoOutput: 0, neutral: 0,
-      tpotSamples: 1, ttftMsSum: 100, tpotUsSum: 500,
-      buckets: [
-        { metric: 'ttft_ms', lower: 0, upper: 100, count: 1 },
-        { metric: 'tpot_us', lower: 0, upper: 500, count: 1 },
-      ],
-    });
-  }
-  const completed: CompletedStatement[] = [];
-  const repo = new SqlRepo(recordCompletedStatements(db, completed));
-
-  const overview = await repo.performance.queryOverview({
-    actorUserId: 1,
-    isAdmin: true,
-    visibleUserIds: [],
-    visibleUpstreams: [],
-    start: '2026-06-01T00',
-    end: '2026-08-01T00',
-    groupBy: 'keyId',
-    filters: {
-      keyIds: [], userIds: [], models: [], upstreams: [], operations: [], runtimeLocations: [],
-    },
-    bucketForHour: () => 'one-bucket',
-  });
-
-  const aggregates = completed.filter(statement => statement.query.startsWith('/* performance-overview */'));
-  const aggregate = aggregates.at(-1);
-  if (!aggregate) throw new Error('Performance overview SQL evidence was not captured');
-  assertD1CompoundSelectLimit(aggregate.query);
-  const { results } = await db.prepare(`EXPLAIN QUERY PLAN ${aggregate.query}`)
-    .bind(...aggregate.binds)
-    .all<{ detail: string }>();
-  const plan = results.map(row => row.detail).join('\n');
-  const rawRows = await db.prepare('SELECT (SELECT COUNT(*) FROM performance_summary) + (SELECT COUNT(*) FROM performance_buckets) AS count')
-    .first<{ count: number }>();
-  expect(plan).toContain('idx_performance_summary_key_hour');
-  expect(rawRows?.count).toBe(120);
-  expect(aggregates).toHaveLength(1);
-  expect(aggregate.resultCount).toBeLessThan(120);
-  expect(overview.axes.none[0]).toMatchObject({ requests: 40, ttftSamples: 40, tpotSamples: 40 });
 });

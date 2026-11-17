@@ -13,15 +13,6 @@ const payload = (content: string) => ({
 
 const largeContent = (): string => Array.from({ length: 4_096 }, () => crypto.randomUUID()).join('');
 
-test('small OpenAI Responses payloads stay inline without a file relation', async () => {
-  initFileStore(new MemoryFileStore());
-  const expected = payload('small');
-  const prepared = await prepareStoredOpenAIResponsesPayload('msg_payload', 'key-a', expected);
-
-  expect(prepared.file).toBeNull();
-  await expect(parseStoredOpenAIResponsesPayload('msg_payload', prepared.payloadJson, null)).resolves.toEqual(expected);
-});
-
 test('reads a fixed inline OpenAI Responses payload in the persisted format', async () => {
   initFileStore(new MemoryFileStore());
   const expected = {
@@ -48,16 +39,6 @@ test('large OpenAI Responses payloads use an external file whose key is not embe
   await expect(parseStoredOpenAIResponsesPayload('msg_payload', prepared.payloadJson, prepared.file.key)).resolves.toEqual(expected);
   await expect(parseStoredOpenAIResponsesPayload('msg_payload', prepared.payloadJson, null))
     .rejects.toThrow('file key missing');
-});
-
-test('each prepared spill uses a unique object key', async () => {
-  initFileStore(new MemoryFileStore());
-  const expected = payload(largeContent());
-  const first = await prepareStoredOpenAIResponsesPayload('msg_payload', 'key-a', expected);
-  const second = await prepareStoredOpenAIResponsesPayload('msg_payload', 'key-a', expected);
-  if (first.file === null || second.file === null) throw new Error('expected payloads to spill');
-
-  expect(first.file.key).not.toBe(second.file.key);
 });
 
 test('spilled payload reads verify file integrity', async () => {

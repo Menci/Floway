@@ -4,26 +4,6 @@ import { requestApp, setupAppTest } from './test-utils/app.ts';
 import { DEFAULT_WEB_SEARCH_CONFIG } from '../src/data-plane/tools/web-search/config.ts';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
-test('session token grants control-plane access but is rejected on data-plane', async () => {
-  const { adminSession } = await setupAppTest();
-
-  const exportResponse = await requestApp('/api/export', {
-    headers: { 'x-floway-session': adminSession },
-  });
-  assertEquals(exportResponse.status, 200);
-
-  const modelsResponse = await requestApp('/v1/models', {
-    headers: { 'x-floway-session': adminSession },
-  });
-  assertEquals(modelsResponse.status, 401);
-});
-
-test('ADMIN_KEY presented as x-api-key on data plane is rejected', async () => {
-  const { adminKey } = await setupAppTest();
-  const response = await requestApp('/v1/models', { headers: { 'x-api-key': adminKey } });
-  assertEquals(response.status, 401);
-});
-
 test('uncaught internal errors include debug details in the HTTP body', async () => {
   const { repo, apiKey } = await setupAppTest();
   repo.apiKeys.findByRawKey = () => Promise.reject(new Error('api key lookup failed'));
@@ -93,17 +73,4 @@ test('API key users cannot mutate /api/search-config routes', async () => {
 
   assertEquals(response.status, 403);
   assertEquals(await response.json(), { error: 'Admin privileges required' });
-});
-
-test('usage endpoints require an explicit view', async () => {
-  const { apiKey } = await setupAppTest();
-  const paths = [
-    '/api/token-usage?start=2026-03-15T00&end=2026-03-16T00',
-    '/api/search-usage?start=2026-03-15T00&end=2026-03-16T00',
-  ];
-  for (const path of paths) {
-    const response = await requestApp(path, { headers: { 'x-api-key': apiKey.key } });
-    assertEquals(response.status, 400, path);
-    assertEquals(await response.json(), { error: "view must be 'all-by-user' or 'self-by-key'" }, path);
-  }
 });

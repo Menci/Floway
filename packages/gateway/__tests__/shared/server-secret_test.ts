@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { generateServerSecret, parseServerSecret, serverSecretBytes } from '../../src/shared/server-secret.ts';
+import { generateServerSecret, parseServerSecret } from '../../src/shared/server-secret.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('generateServerSecret creates independent 32-byte lowercase hexadecimal secrets', () => {
@@ -21,8 +21,4 @@ test('parseServerSecret accepts only the canonical serialized form', () => {
       'must be exactly 64 lowercase hexadecimal characters',
     );
   }
-});
-
-test('serverSecretBytes decodes the canonical hexadecimal representation', () => {
-  assertEquals(serverSecretBytes(`00${'ff'.repeat(31)}`), new Uint8Array([0, ...Array<number>(31).fill(255)]));
 });

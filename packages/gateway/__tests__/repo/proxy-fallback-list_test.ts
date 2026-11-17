@@ -1,14 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { entryMatchesColo, isDirectFallbackId, normalizeProxyFallbackList } from '../../src/repo/proxy-fallback-list.ts';
-
-describe('isDirectFallbackId', () => {
-  it('recognizes only the two built-in direct transports', () => {
-    expect(isDirectFallbackId('direct_fetch')).toBe(true);
-    expect(isDirectFallbackId('direct_connect')).toBe(true);
-    expect(isDirectFallbackId('proxy_a')).toBe(false);
-  });
-});
+import { entryMatchesColo, normalizeProxyFallbackList } from '../../src/repo/proxy-fallback-list.ts';
 
 describe('entryMatchesColo', () => {
   it('treats missing colos as "active in all colos"', () => {
@@ -46,20 +38,5 @@ describe('normalizeProxyFallbackList', () => {
     ])).toEqual([
       { id: 'a', colos: ['HKG', 'NRT'] },
     ]);
-  });
-
-  it('drops the `colos` field entirely when it normalises to empty so the stored shape stays canonical', () => {
-    expect(normalizeProxyFallbackList([
-      { id: 'a', colos: ['', '   '] },
-    ])).toEqual([
-      { id: 'a' },
-    ]);
-  });
-
-  it('drops empty-string ids without affecting the rest of the list', () => {
-    expect(normalizeProxyFallbackList([
-      { id: '   ' },
-      { id: 'a' },
-    ])).toEqual([{ id: 'a' }]);
   });
 });

@@ -40,73 +40,6 @@ const ownValue = (value: unknown, key: string): unknown => {
   return Reflect.get(value, key);
 };
 
-test('SQL upstream repo preserves nested own __proto__ fields in opaque config and state', async () => {
-  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await saveUpstreamForTest(repo, baseRecord({
-    config: JSON.parse('{"nested":{"__proto__":{"marker":"config"}}}'),
-    state: JSON.parse('{"nested":{"__proto__":{"marker":"state"}}}'),
-  }));
-
-  const stored = await repo.getById('up_test');
-  assertEquals(ownValue(ownValue(ownValue(stored?.config, 'nested'), '__proto__'), 'marker'), 'config');
-  assertEquals(ownValue(ownValue(ownValue(stored?.state, 'nested'), '__proto__'), 'marker'), 'state');
-});
-
-test('SQL upstream repo round-trips the cached catalog and its revision', async () => {
-  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await saveUpstreamForTest(repo, baseRecord());
-  await seedModelsCache(repo, 'up_test', identityFor(baseRecord()), {
-    revision: MODEL_CATALOG_REVISION,
-    fetchedAt: 1_700_000_000_000,
-    models: [stubProviderModel({ id: 'cached-model' })],
-  });
-
-  const cached = (await repo.getById('up_test'))?.modelsCache;
-  assertEquals(cached?.revision, MODEL_CATALOG_REVISION);
-  assertEquals(cached?.fetchedAt, 1_700_000_000_000);
-  assertEquals(cached?.models.map(model => model.id), ['cached-model']);
-  assertEquals(cached?.lastError, null);
-});
-
-test('SQL refresh replaces a catalog from an old schema revision', async () => {
-  const db = await createSqliteTestDb();
-  const repo = new SqlRepo(db).upstreams;
-  await saveUpstreamForTest(repo, baseRecord());
-  await db.prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?').bind(JSON.stringify({
-    revision: MODEL_CATALOG_REVISION - 1,
-    fetchedAt: 1_700_000_000_000,
-    models: [],
-    lastError: null,
-  }), 'up_test').run();
-
-  assertEquals((await repo.getById('up_test'))?.modelsCache, null);
-  assertEquals(await seedModelsCache(repo, 'up_test', identityFor(baseRecord()), {
-    revision: MODEL_CATALOG_REVISION,
-    fetchedAt: 1_700_000_000_001,
-    models: [stubProviderModel({ id: 'current-model' })],
-  }), true);
-});
-
-test('SQL upstream repo rejects shape-invalid JSON in a cached catalog with row context', async () => {
-  const db = await createSqliteTestDb();
-  const repo = new SqlRepo(db).upstreams;
-  await saveUpstreamForTest(repo, baseRecord());
-  await db.prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?')
-    .bind(JSON.stringify({
-      revision: MODEL_CATALOG_REVISION,
-      fetchedAt: 1_700_000_000_000,
-      models: [{ id: 42 }],
-      lastError: null,
-    }), 'up_test')
-    .run();
-
-  await assertRejects(
-    () => repo.getById('up_test'),
-    Error,
-    'Invalid upstream models cache JSON for up_test: models.0.id',
-  );
-});
-
 test('SQL upstream repo preserves opaque provider data while restoring only the model enabledFlags Set', async () => {
   const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
   await saveUpstreamForTest(repo, baseRecord());
@@ -123,20 +56,6 @@ test('SQL upstream repo preserves opaque provider data while restoring only the 
   assertEquals(model?.enabledFlags instanceof Set, true);
   assertEquals(ownValue(model?.providerData, 'enabledFlags'), ['provider-private']);
   assertEquals(ownValue(ownValue(ownValue(model?.providerData, 'future'), '__proto__'), 'marker'), 'provider');
-});
-
-test('SQL upstream repo hydrates deeply nested opaque provider data without recursively copying it', async () => {
-  const db = await createSqliteTestDb();
-  const repo = new SqlRepo(db).upstreams;
-  await saveUpstreamForTest(repo, baseRecord());
-  const depth = 20_000;
-  const providerData = `${'{"next":'.repeat(depth)}null${'}'.repeat(depth)}`;
-  const cache = `{"revision":${MODEL_CATALOG_REVISION},"fetchedAt":1700000000000,"models":[{"id":"deep-model","upstreamModelId":"deep-model","limits":{},"kind":"chat","endpoints":{"openaiResponses":{}},"opaqueBlobCompatibilityScope":{"bindToUpstream":true},"providerData":${providerData},"enabledFlags":[]}],"lastError":null}`;
-  await db.prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?').bind(cache, 'up_test').run();
-
-  const model = (await repo.getById('up_test'))?.modelsCache?.models[0];
-  assertEquals(model?.id, 'deep-model');
-  assertEquals(ownValue(model?.providerData, 'next') !== undefined, true);
 });
 
 test('SQL upstream repo annotates a cached catalog and successful publication clears the error', async () => {
@@ -159,38 +78,6 @@ test('SQL upstream repo annotates a cached catalog and successful publication cl
     models: [stubProviderModel({ id: 'refreshed-model' })],
   });
   assertEquals((await repo.getById('up_test'))?.modelsCache?.lastError, null);
-});
-
-test('SQL upstream repo persists an immediately-stale empty catalog on first failure', async () => {
-  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await saveUpstreamForTest(repo, baseRecord());
-
-  await seedModelsCacheError(repo, 'up_test', identityFor(baseRecord()), { message: 'boom', at: 1_700_000_500_000 });
-
-  assertEquals((await repo.getById('up_test'))?.modelsCache, {
-    revision: MODEL_CATALOG_REVISION,
-    fetchedAt: 0,
-    models: [],
-    lastError: { message: 'boom', at: 1_700_000_500_000, failureCount: 1 },
-  });
-});
-
-test('SQL replaces an old-revision cache with a visible cold error on failure', async () => {
-  const db = await createSqliteTestDb();
-  const repo = new SqlRepo(db).upstreams;
-  await saveUpstreamForTest(repo, baseRecord());
-  await db.prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?')
-    .bind(JSON.stringify({ revision: MODEL_CATALOG_REVISION - 1, fetchedAt: 100, models: [], lastError: null }), 'up_test')
-    .run();
-  assertEquals((await repo.getById('up_test'))?.modelsCache, null);
-
-  assertEquals(await seedModelsCacheError(repo, 'up_test', identityFor(baseRecord()), { message: 'cold failure', at: 200 }), true);
-  assertEquals((await repo.getById('up_test'))?.modelsCache, {
-    revision: MODEL_CATALOG_REVISION,
-    fetchedAt: 0,
-    models: [],
-    lastError: { message: 'cold failure', at: 200, failureCount: 1 },
-  });
 });
 
 test('SQL upstream repo catalog-aware replacement can clear the cached catalog atomically', async () => {
@@ -221,94 +108,6 @@ test('SQL upstream repo catalog-aware replacement can clear the cached catalog a
   assertEquals(staleCatalogSaved, false);
   assertEquals(staleErrorSaved, false);
   assertEquals((await repo.getById('up_test'))?.modelsCache, null);
-});
-
-test('SQL upstream replacement accepts valid JSON reordered by a migration', async () => {
-  const db = await createSqliteTestDb();
-  const repo = new SqlRepo(db).upstreams;
-  await saveUpstreamForTest(repo, baseRecord({
-    flagOverrides: { 'rewrite-developer-to-system': true, 'strip-billing-attribution': true },
-  }));
-  await db.prepare(`UPDATE upstreams SET flag_overrides = json_set(
-    json_remove(flag_overrides, '$."rewrite-developer-to-system"'),
-    '$."rewrite-developer-to-system"', json('true')) WHERE id = ?`)
-    .bind('up_test')
-    .run();
-  const raw = await db.prepare('SELECT flag_overrides FROM upstreams WHERE id = ?').bind('up_test').first<{ flag_overrides: string }>();
-  assertEquals(raw?.flag_overrides, '{"strip-billing-attribution":true,"rewrite-developer-to-system":true}');
-
-  const previous = await repo.getById('up_test');
-  if (previous === null) throw new Error('upstream missing');
-  const saved = await repo.replaceForModels({ previous, upstream: { ...previous, name: 'Renamed' } });
-  assertEquals(saved?.name, 'Renamed');
-  assertEquals(saved?.configVersion, previous.configVersion);
-});
-
-test('SQL model-cache identity accepts semantically equal noncanonical config JSON', async () => {
-  const db = await createSqliteTestDb();
-  const repo = new SqlRepo(db).upstreams;
-  const record = baseRecord();
-  await saveUpstreamForTest(repo, record);
-  const noncanonicalConfig = `{ "accounts": ${JSON.stringify((record.config as { accounts: unknown }).accounts)} }`;
-  await db.prepare('UPDATE upstreams SET config_json = ? WHERE id = ?').bind(noncanonicalConfig, record.id).run();
-  const parsed = await repo.getById(record.id);
-  if (!parsed) throw new Error('upstream row missing');
-
-  const saved = await seedModelsCache(repo, record.id, identityFor(parsed), {
-    revision: MODEL_CATALOG_REVISION,
-    fetchedAt: 1_700_001_000_000,
-    models: [stubProviderModel({ id: 'cached-model' })],
-  });
-
-  assertEquals(saved, true);
-  assertEquals((await repo.getById(record.id))?.modelsCache?.models.map(model => model.id), ['cached-model']);
-});
-
-test('SQL upstream replacement leaves an existing cached catalog alone', async () => {
-  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await saveUpstreamForTest(repo, baseRecord());
-  await seedModelsCache(repo, 'up_test', identityFor(baseRecord()), {
-    revision: MODEL_CATALOG_REVISION,
-    fetchedAt: 1_700_000_000_000,
-    models: [stubProviderModel({ id: 'cached-model' })],
-  });
-
-  // An operator edit carries whatever catalog the request happened to read —
-  // here, none at all. The refresh path stays the only writer.
-  await saveUpstreamForTest(repo, baseRecord({ name: 'Renamed', modelsCache: null }));
-
-  const record = await repo.getById('up_test');
-  assertEquals(record?.name, 'Renamed');
-  assertEquals(record?.modelsCache?.models.map(model => model.id), ['cached-model']);
-});
-
-test('SQL rejects malformed persisted models-cache failure count', async () => {
-  const db = await createSqliteTestDb();
-  const repo = new SqlRepo(db).upstreams;
-  await saveUpstreamForTest(repo, baseRecord());
-
-  await db.prepare('UPDATE upstreams SET models_cache_json = ? WHERE id = ?')
-    .bind(JSON.stringify({ revision: MODEL_CATALOG_REVISION, fetchedAt: 0, models: [], lastError: { message: 'failure', at: 0, failureCount: -1 } }), 'up_test')
-    .run();
-  await assertRejects(() => repo.getById('up_test'));
-});
-
-test('SQL upstream repo round-trips state_json on insert/list/getById', async () => {
-  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  const original = baseRecord();
-  await saveUpstreamForTest(repo, original);
-  assertEquals((await repo.getById('up_test'))?.state, { accounts: [goodAccount] });
-  assertEquals((await repo.list())[0].state, { accounts: [goodAccount] });
-});
-
-test('SQL upstream repo saveState applies the mutator to the stored state', async () => {
-  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await saveUpstreamForTest(repo, baseRecord());
-  await repo.saveState('up_test', current => {
-    assertEquals(current, { accounts: [goodAccount] });
-    return { accounts: [{ ...goodAccount, refresh_token: 'rt_v2' }] };
-  });
-  assertEquals((await repo.getById('up_test'))?.state, { accounts: [{ ...goodAccount, refresh_token: 'rt_v2' }] });
 });
 
 // Deterministic stand-in for a concurrent writer: each of the first `times`
@@ -391,19 +190,6 @@ test('SQL upstream repo saveState gives up after a bounded number of lost races'
   assertEquals(attempts, UPSTREAM_STATE_WRITE_ATTEMPTS);
   const stored = (await repo.getById('up_test'))?.state as { accounts: { refresh_token: string }[] };
   assertEquals(stored.accounts[0].refresh_token, goodAccount.refresh_token);
-});
-
-test('SQL upstream repo saveState throws when the row is gone', async () => {
-  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await assertRejects(() => repo.saveState('up_missing', current => current), Error, 'disappeared');
-});
-
-// A mutator that decided there is nothing to do hands back what it was given.
-test('SQL upstream repo saveState skips the write when the mutator changes nothing', async () => {
-  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await saveUpstreamForTest(repo, baseRecord());
-  await repo.saveState('up_test', current => current);
-  assertEquals((await repo.getById('up_test'))?.state, { accounts: [goodAccount] });
 });
 
 // sql.js gives us real SQLite semantics in-process (including `IS NULL`

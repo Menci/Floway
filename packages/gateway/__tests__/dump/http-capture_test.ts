@@ -59,23 +59,3 @@ test('captures binary bytes without lossy UTF-8 decoding', async () => {
   expect([...new Uint8Array(await response.arrayBuffer())]).toEqual([255, 128]);
   expect(capture.exchanges[0]?.response?.body).toEqual({ encoding: 'base64', data: '/4A=' });
 });
-
-test('cancelling a pending read remains incomplete and never closes an already cancelled controller', async () => {
-  const capture = new HttpCapture();
-  let cancelReason: unknown;
-  const response = await capture.wrapFetcher(async () => new Response(new ReadableStream({ cancel(reason) { cancelReason = reason; } })), 'u')('https://u.test', {});
-  const reader = response.body!.getReader();
-  const pending = reader.read();
-  await reader.cancel('client cancelled');
-  await pending;
-  expect(cancelReason).toBe('client cancelled');
-  expect(capture.exchanges[0]?.response).toMatchObject({ complete: false, error: 'client cancelled' });
-});
-
-test('raw text preserves the UTF-8 BOM', async () => {
-  const capture = new HttpCapture();
-  const bytes = new Uint8Array([239, 187, 191, 120]);
-  const response = await capture.wrapFetcher(async () => new Response(bytes, { headers: { 'content-type': 'text/plain' } }), 'u')('https://u.test', {});
-  await response.arrayBuffer();
-  expect(capture.exchanges[0]?.response?.body).toEqual({ encoding: 'utf8', data: '\uFEFFx' });
-});

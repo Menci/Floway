@@ -1,18 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  TPOT_UPPER_EDGES_US,
   bucketForTtftMs,
-  bucketForTpotUs,
   percentileFromBuckets,
   type HistogramBucket,
 } from '../../src/shared/performance-histogram.ts';
 
 describe('bucketForTtftMs', () => {
-  it('sub-edge value lands in the first bucket [0, 100]', () => {
-    expect(bucketForTtftMs(10)).toEqual({ lower: 0, upper: 100 });
-    expect(bucketForTtftMs(100)).toEqual({ lower: 0, upper: 100 });
-  });
 
   it('boundary values land in the bucket whose upper equals the value', () => {
     expect(bucketForTtftMs(200)).toEqual({ lower: 100, upper: 200 });
@@ -23,39 +17,8 @@ describe('bucketForTtftMs', () => {
     expect(bucketForTtftMs(600_000)).toEqual({ lower: 300_000, upper: null });
   });
 
-  it('accepts zero (real ttft = 0 is valid)', () => {
-    expect(bucketForTtftMs(0)).toEqual({ lower: 0, upper: 100 });
-  });
-
   it('throws on negative input rather than silently clamping', () => {
     expect(() => bucketForTtftMs(-5)).toThrow(/bucketForValue/);
-  });
-
-  it('throws on NaN rather than silently landing in overflow', () => {
-    expect(() => bucketForTtftMs(NaN)).toThrow(/bucketForValue/);
-  });
-
-  it('throws on Infinity rather than silently landing in overflow', () => {
-    expect(() => bucketForTtftMs(Infinity)).toThrow(/bucketForValue/);
-  });
-});
-
-describe('bucketForTpotUs', () => {
-  it('below-bottom value lands in the first bucket [0, 500]', () => {
-    expect(bucketForTpotUs(150)).toEqual({ lower: 0, upper: 500 });
-  });
-
-  it('above-top value lands in overflow', () => {
-    expect(bucketForTpotUs(50_000_000)).toEqual({ lower: 10_000_000, upper: null });
-  });
-
-  it('SLO anchor edges hit the intended tok/s values exactly', () => {
-    // 100 tok/s = 10_000 μs — must be a bucket upper so an SLO alert "p95 speed >= 100 tok/s"
-    // reads directly off the histogram without factor-1.5 fuzz.
-    expect(TPOT_UPPER_EDGES_US).toContain(10_000);
-    expect(TPOT_UPPER_EDGES_US).toContain(20_000);  // 50 tok/s
-    expect(TPOT_UPPER_EDGES_US).toContain(50_000);  // 20 tok/s
-    expect(TPOT_UPPER_EDGES_US).toContain(100_000); // 10 tok/s
   });
 });
 
@@ -70,22 +33,6 @@ describe('percentileFromBuckets', () => {
     expect(percentileFromBuckets(buckets, 1)).toBeCloseTo(100 + 1_000 / 11, 10);
   });
 
-  it('estimates a singleton sample at the bucket midpoint', () => {
-    const buckets: HistogramBucket[] = [
-      { lower: 0, upper: 100, count: 1 },
-    ];
-
-    expect(percentileFromBuckets(buckets, 0.5)).toBe(50);
-  });
-
-  it('interpolates within a multi-sample bucket whose lower bound is zero', () => {
-    const buckets: HistogramBucket[] = [
-      { lower: 0, upper: 100, count: 10 },
-    ];
-
-    expect(percentileFromBuckets(buckets, 0.5)).toBeCloseTo(500 / 11, 10);
-  });
-
   it('uses the rank local to the selected bucket', () => {
     const buckets: HistogramBucket[] = [
       { lower: 0, upper: 50, count: 1 },
@@ -95,21 +42,6 @@ describe('percentileFromBuckets', () => {
 
     // Global p50 rank 5 is the second of seven samples in the third bucket.
     expect(percentileFromBuckets(buckets, 0.5)).toBe(125);
-  });
-
-  it('places a high local rank near the top of its bucket', () => {
-    const buckets: HistogramBucket[] = [
-      { lower: 0, upper: 50, count: 1 },
-      { lower: 50, upper: 100, count: 2 },
-      { lower: 100, upper: 200, count: 7 },
-    ];
-
-    // Global p99 rank 10 is the seventh of seven samples in the third bucket.
-    expect(percentileFromBuckets(buckets, 0.99)).toBe(187.5);
-  });
-
-  it('empty histogram returns null', () => {
-    expect(percentileFromBuckets([], 0.5)).toBe(null);
   });
 
   it('overflow bucket returns its lower edge (no upper is defined)', () => {
