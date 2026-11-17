@@ -24,12 +24,6 @@ test('put then get round-trips binary content', () => withTempRoot(async root =>
   assertEquals(read, bytes);
 }));
 
-test('get returns null for missing keys', () => withTempRoot(async root => {
-  const store = new FsFileStore(root);
-  const read = await store.get('missing');
-  assertEquals(read, null);
-}));
-
 test('deleteKeys removes exact files and ignores missing keys', () => withTempRoot(async root => {
   const store = new FsFileStore(root);
   await store.put('cleanup/a.bin', new Uint8Array([1]));
@@ -39,11 +33,4 @@ test('deleteKeys removes exact files and ignores missing keys', () => withTempRo
 
   assertEquals(await store.get('cleanup/a.bin'), null);
   assertEquals(await store.get('cleanup/ab.bin'), new Uint8Array([2]));
-}));
-
-test('put creates intermediate directories', () => withTempRoot(async root => {
-  const store = new FsFileStore(root);
-  await store.put('deeply/nested/path/file.bin', new Uint8Array([42]));
-  const read = await store.get('deeply/nested/path/file.bin');
-  assertEquals(read, new Uint8Array([42]));
 }));

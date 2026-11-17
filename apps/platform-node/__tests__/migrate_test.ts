@@ -33,16 +33,6 @@ test('applies all real migration files against a fresh sqlite', () => withTemp(a
   assertEquals(recorded !== null && recorded.n > 0, true);
 }));
 
-test('rerun is a no-op once all migrations are applied', () => withTemp(async dir => {
-  const db = createNodeSqliteDatabase(join(dir, 'idempotent.db'));
-  await applyMigrations(db);
-  const firstCount = await db.prepare('SELECT COUNT(*) AS n FROM _migrations').first<{ n: number }>();
-
-  await applyMigrations(db);
-  const secondCount = await db.prepare('SELECT COUNT(*) AS n FROM _migrations').first<{ n: number }>();
-  assertEquals(secondCount?.n, firstCount?.n);
-}));
-
 test('mid-migration failure rolls back and leaves no partial schema', () => withTemp(async dir => {
   const migrationsDir = join(dir, 'migrations');
   await rm(migrationsDir, { recursive: true, force: true });

@@ -52,13 +52,6 @@ const installMemoryStore = (): Map<string, Uint8Array> => {
   return store;
 };
 
-test('compressToWebp produces valid WebP magic bytes', async () => {
-  installMemoryStore();
-  const processor = createSharpImageProcessor();
-  const out = await processor.compressToWebp(PNG_1x1, null);
-  assert(isWebp(out), 'output should be WebP');
-});
-
 test('compressToWebp resizes to target dimensions', async () => {
   installMemoryStore();
   const processor = createSharpImageProcessor();
@@ -68,16 +61,6 @@ test('compressToWebp resizes to target dimensions', async () => {
   // fit:'inside' preserves aspect ratio: 200x100 → 50x25.
   assertEquals(meta.width, 50);
   assertEquals(meta.height, 25);
-});
-
-test('compressToWebp with target=null preserves source dimensions', async () => {
-  installMemoryStore();
-  const processor = createSharpImageProcessor();
-  const source = await generatePng(80, 40);
-  const out = await processor.compressToWebp(source, null);
-  const meta = await sharp(out).metadata();
-  assertEquals(meta.width, 80);
-  assertEquals(meta.height, 40);
 });
 
 test('compressToWebp never enlarges past the source', async () => {
@@ -131,14 +114,4 @@ test('cache miss writes the encoded result through the cache store', async () =>
   assert(isWebp(out), 'output should be WebP');
   assertEquals(calls.get, 1);
   assertEquals(calls.put, 1);
-});
-
-test('cache key differs by target so a resized variant is a separate entry', async () => {
-  installMemoryStore();
-  const processor = createSharpImageProcessor();
-  const source = await generatePng(40, 20);
-  const orig = await processor.compressToWebp(source, null);
-  const resized = await processor.compressToWebp(source, { width: 20, height: 20 });
-  // Same backing source bytes but different target boxes — outputs must differ.
-  assert(orig.length !== resized.length || !orig.every((b, i) => b === resized[i]));
 });

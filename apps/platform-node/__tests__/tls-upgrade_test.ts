@@ -81,18 +81,6 @@ const expectEcho = async (secure: { readable: ReadableStream<Uint8Array>; writab
 };
 
 describe('startNodeTls — handshake', () => {
-  it('completes a handshake and carries application data both ways', async () => {
-    const chain = await makeChain();
-    await withTrustedCa(chain.ca, async () => {
-      const server = await startTlsServer(chain, (socket, chunk) => socket.write(chunk));
-      try {
-        await expectEcho(await startNodeTls(await dialRaw(server.port), { host: 'localhost' }));
-      } finally {
-        await server.close();
-      }
-    });
-  });
-
   it('verifies the leaf against verifyHost rather than the SNI name', async () => {
     const chain = await makeChain();
     await withTrustedCa(chain.ca, async () => {

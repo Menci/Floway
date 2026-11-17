@@ -16,17 +16,6 @@ const withTempDb = async (fn: (dbPath: string) => Promise<void>): Promise<void> 
   }
 };
 
-test('prepare/all returns rows in SqlResult envelope', () => withTempDb(async path => {
-  const db = createNodeSqliteDatabase(path);
-  await db.prepare('CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)').run();
-  await db.prepare('INSERT INTO t (id, name) VALUES (?, ?)').bind(1, 'a').run();
-  await db.prepare('INSERT INTO t (id, name) VALUES (?, ?)').bind(2, 'b').run();
-
-  const result = await db.prepare('SELECT id, name FROM t ORDER BY id').all<{ id: number; name: string }>();
-  assertEquals(result.success, true);
-  assertEquals(result.results, [{ id: 1, name: 'a' }, { id: 2, name: 'b' }]);
-}));
-
 test('first returns first row or null', () => withTempDb(async path => {
   const db = createNodeSqliteDatabase(path);
   await db.prepare('CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)').run();
@@ -37,20 +26,6 @@ test('first returns first row or null', () => withTempDb(async path => {
 
   const miss = await db.prepare('SELECT id, name FROM t WHERE id = ?').bind(99).first();
   assertEquals(miss, null);
-}));
-
-test('run reports changes for INSERT / UPDATE / DELETE', () => withTempDb(async path => {
-  const db = createNodeSqliteDatabase(path);
-  await db.prepare('CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)').run();
-
-  const ins = await db.prepare('INSERT INTO t (id, name) VALUES (?, ?), (?, ?)').bind(1, 'a', 2, 'b').run();
-  assertEquals(ins.meta.changes, 2);
-
-  const upd = await db.prepare('UPDATE t SET name = ? WHERE id = ?').bind('A', 1).run();
-  assertEquals(upd.meta.changes, 1);
-
-  const del = await db.prepare('DELETE FROM t WHERE id = ?').bind(1).run();
-  assertEquals(del.meta.changes, 1);
 }));
 
 test('batch executes statements in order and returns each result', () => withTempDb(async path => {

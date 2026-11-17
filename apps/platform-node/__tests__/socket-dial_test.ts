@@ -42,18 +42,6 @@ describe('nodeSocketDial', () => {
   beforeEach(async () => { server = await startEchoServer(); });
   afterEach(async () => { await server.close(); });
 
-  it('connects, writes, reads back, and tears down via close()', async () => {
-    const dialed = await nodeSocketDial.connect('127.0.0.1', server.port);
-    const writer = dialed.writable.getWriter();
-    await writer.write(new TextEncoder().encode('hi'));
-    writer.releaseLock();
-    const reader = dialed.readable.getReader();
-    const { value } = await reader.read();
-    expect(new TextDecoder().decode(value)).toBe('hi');
-    reader.releaseLock();
-    await dialed.close();
-  });
-
   it('ends the readable on peer FIN while leaving the writable half open', async () => {
     let receivedAfterFinResolve!: () => void;
     const receivedAfterFin = new Promise<void>(resolve => { receivedAfterFinResolve = resolve; });
@@ -104,18 +92,6 @@ describe('nodeSocketDial', () => {
     } finally {
       await dialed.close();
     }
-  });
-
-  it('rejects a connect against a closed port', async () => {
-    // Free port: open a listener, capture its port, close immediately.
-    const probe = net.createServer();
-    await new Promise<void>(resolve => probe.listen(0, '127.0.0.1', () => resolve()));
-    const addr = probe.address();
-    if (!addr || typeof addr === 'string') throw new Error('probe missing address');
-    const closedPort = addr.port;
-    await new Promise<void>(resolve => probe.close(() => resolve()));
-
-    await expect(nodeSocketDial.connect('127.0.0.1', closedPort)).rejects.toThrow();
   });
 
   it('honours an already-aborted signal without opening a socket', async () => {

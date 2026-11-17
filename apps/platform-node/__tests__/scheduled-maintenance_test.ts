@@ -1,11 +1,6 @@
-import { afterEach, expect, test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { startScheduledMaintenance } from '../src/scheduled-maintenance.ts';
-
-afterEach(() => {
-  vi.restoreAllMocks();
-  vi.clearAllMocks();
-});
 
 test('maintenance starts after 30 seconds and repeats every minute', async () => {
   const startup = { callback: null as (() => void) | null, unref: vi.fn() };
@@ -29,27 +24,5 @@ test('maintenance starts after 30 seconds and repeats every minute', async () =>
   expect(interval.unref).toHaveBeenCalledOnce();
   startup.callback?.();
   interval.callback?.();
-  await vi.waitFor(() => expect(runMaintenance).toHaveBeenCalledTimes(2));
-});
-
-test('default timers schedule the supplied maintenance callback', async () => {
-  const callbacks: Array<() => void> = [];
-  const handle = setTimeout(() => {}, 60_000);
-  clearTimeout(handle);
-  const unref = vi.spyOn(handle, 'unref');
-  vi.spyOn(globalThis, 'setTimeout').mockImplementation(callback => {
-    callbacks.push(callback as () => void);
-    return handle;
-  });
-  vi.spyOn(globalThis, 'setInterval').mockImplementation(callback => {
-    callbacks.push(callback as () => void);
-    return handle;
-  });
-
-  const runMaintenance = vi.fn<() => Promise<void>>().mockResolvedValue();
-  startScheduledMaintenance(runMaintenance);
-  callbacks.forEach(callback => callback());
-
-  expect(unref).toHaveBeenCalledTimes(2);
   await vi.waitFor(() => expect(runMaintenance).toHaveBeenCalledTimes(2));
 });

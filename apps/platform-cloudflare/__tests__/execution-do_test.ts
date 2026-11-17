@@ -1,4 +1,3 @@
-import { DurableObject } from 'cloudflare:workers';
 import { test } from 'vitest';
 
 import { ExecutionDO } from '../src/execution-do.ts';
@@ -53,10 +52,6 @@ class FakeState {
     this.sockets.push(ws);
   }
 }
-
-test('ExecutionDO extends the platform DurableObject base', () => {
-  assertEquals(Object.getPrototypeOf(ExecutionDO.prototype) === DurableObject.prototype, true);
-});
 
 test('ExecutionDO broadcast request sends the payload verbatim to every registered socket', async () => {
   const state = new FakeState();

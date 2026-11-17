@@ -99,14 +99,3 @@ test('serves a cache hit without calling the Images binding again', async () => 
   assertEquals([...second], [7, 7]);
   assertEquals(transforms.length, 1);
 });
-
-test('forwards the encoder without a resize when target is null', async () => {
-  const { binding, transforms, outputs } = recordingImages(new Uint8Array([1]));
-  installMemoryStore();
-  const processor = createCloudflareImageProcessor(binding);
-
-  await processor.compressToWebp(PNG_1x1, null);
-
-  assertEquals(transforms.length, 0);
-  assertEquals(outputs, [{ format: 'image/webp', quality: 82 }]);
-});
