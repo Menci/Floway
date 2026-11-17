@@ -39,21 +39,29 @@ export const geminiGenerateContentServe = {
       scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
     });
-    const affinity = await analyzeGeminiGenerateContentAffinity(payload, ctx.affinity.codec);
     const viable = enumerated.filter(c => geminiGenerateContentGenerateTarget.canServe(c.model.endpoints));
-    const selection = selectAffinityCandidates(viable, affinity);
+    // Affinity materialization prepares a payload for a *translated* target: it
+    // decodes client signatures bound to an upstream and re-mints them for the
+    // target wire. A native Gemini candidate must see those signatures
+    // verbatim, so only the translated subset takes part in that analysis.
+    const native = viable.filter(c => c.model.endpoints.geminiGenerateContent);
+    const translated = viable.filter(c => !c.model.endpoints.geminiGenerateContent);
+    const affinity = await analyzeGeminiGenerateContentAffinity(payload, ctx.affinity.codec);
+    const selection = selectAffinityCandidates(translated, affinity);
     if ('kind' in selection) return renderGeminiGenerateContentFailure(selection, 'generate');
-    if (selection.candidates.length === 0) return renderGeminiGenerateContentFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'generate');
+    const candidates = [...native, ...selection.candidates];
+    if (candidates.length === 0) return renderGeminiGenerateContentFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'generate');
 
     // Gemini generateContent carries the requested model in its URL, so affinity preparation
-    // owns each candidate payload while dispatch uses the candidate's canonical model.
+    // owns each translated candidate payload while dispatch uses the candidate's canonical model.
     return await iterateCandidates(
-      selection.candidates,
+      candidates,
       'geminiGenerateContentServe.generate',
       ctx,
       'chat',
       async candidate => {
-        const result = await geminiGenerateContentAttempt.generate({ payload: selection.payloadFor(candidate), ctx, candidate, headers });
+        const candidatePayload = candidate.model.endpoints.geminiGenerateContent === undefined ? selection.payloadFor(candidate) : payload;
+        const result = await geminiGenerateContentAttempt.generate({ payload: candidatePayload, ctx, candidate, headers });
         if (result.type === 'events') ctx.affinity.select(candidate);
         return result;
       },
@@ -71,18 +79,26 @@ export const geminiGenerateContentServe = {
       scheduler: ctx.backgroundScheduler,
       runtimeLocation: ctx.runtimeLocation,
     });
-    const affinity = await analyzeGeminiGenerateContentAffinity(payload, ctx.affinity.codec);
     const viable = enumerated.filter(c => geminiGenerateContentCountTokensTarget.canServe(c.model.endpoints));
-    const selection = selectAffinityCandidates(viable, affinity);
+    const native = viable.filter(c => c.model.endpoints.geminiGenerateContent);
+    const translated = viable.filter(c => !c.model.endpoints.geminiGenerateContent);
+    const affinity = await analyzeGeminiGenerateContentAffinity(payload, ctx.affinity.codec);
+    const selection = selectAffinityCandidates(translated, affinity);
     if ('kind' in selection) return renderGeminiGenerateContentFailure(selection, 'countTokens');
-    if (selection.candidates.length === 0) return renderGeminiGenerateContentFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'countTokens');
+    const candidates = [...native, ...selection.candidates];
+    if (candidates.length === 0) return renderGeminiGenerateContentFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'countTokens');
 
     return await iterateCandidates(
-      selection.candidates,
+      candidates,
       'geminiGenerateContentServe.countTokens',
       ctx,
       'chat',
-      candidate => geminiGenerateContentAttempt.countTokens({ payload: selection.payloadFor(candidate), ctx, candidate, headers }),
+      candidate => geminiGenerateContentAttempt.countTokens({
+        payload: candidate.model.endpoints.geminiGenerateContent === undefined ? selection.payloadFor(candidate) : payload,
+        ctx,
+        candidate,
+        headers,
+      }),
     );
   },
 };

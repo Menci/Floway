@@ -49,6 +49,7 @@ export const detectCollectKind = (path: string): CollectKind | null => {
 // The upstream view uses meta.targetApi, stamped by captureFromDump, because meta.path identifies the client protocol.
 export const collectKindFromTargetApi = (api: string | null | undefined): CollectKind | null => {
   if (api === 'anthropicMessages') return 'anthropic-messages';
+  if (api === 'geminiGenerateContent') return 'gemini-generate-content';
   if (api === 'openaiResponses') return 'openai-responses';
   if (api === 'openaiChatCompletions') return 'openai-chat-completions';
   return null;

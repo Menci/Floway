@@ -10,11 +10,11 @@ export type GeminiGenerateContentInterceptor = Interceptor<
   ExecuteResult<ProtocolFrame<GeminiGenerateContentStreamEvent>>
 >;
 
-// countTokens returns a reshaped HTTP body or an API error. The interceptor
-// chain still uses GeminiGenerateContentInvocation so payload-shaped reads
-// stay symmetric with the generate path. Interceptors
-// registered here MUST be pure header/payload mutators; post-`run()` result
-// inspection is not portable to this result type.
+// countTokens returns an upstream-shaped HTTP body or an API error. The
+// interceptor chain still uses GeminiGenerateContentInvocation so payload-shaped
+// reads stay symmetric with the generate path. Interceptors registered here
+// MUST be pure header/payload mutators; post-`run()` result inspection is not
+// portable to this result type.
 export type GeminiGenerateContentCountTokensInterceptor = Interceptor<
   GeminiGenerateContentInvocation,
   GatewayCtx,

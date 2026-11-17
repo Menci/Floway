@@ -5,7 +5,7 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -116,6 +116,7 @@ const makeCandidate = (overrides: {
   callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
   callOpenAIResponses?: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderOpenAIResponsesResult>;
   callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
+  callGeminiGenerateContent?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'openaiChatCompletions';
@@ -135,6 +136,7 @@ const makeCandidate = (overrides: {
     callAnthropicMessages: overrides.callAnthropicMessages,
     callOpenAIResponses: overrides.callOpenAIResponses,
     callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
+    callGeminiGenerateContent: overrides.callGeminiGenerateContent,
   });
   return {
     provider: {
@@ -476,4 +478,70 @@ test('alias whose targets have no kind-matching binding surfaces as the regular 
   assertEquals(result.status, 404);
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body.error.message, 'Model gemini-fast is not available on any configured upstream.');
+});
+
+test('generate prefers a native Gemini candidate over a translated one', async () => {
+  installRepo();
+  const callGeminiGenerateContent = vi.fn(async (): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => ({
+    ok: true,
+    events: makeProtocolFrames([
+      { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'native' }] }, finishReason: 'STOP' }] },
+    ]),
+    modelKey: 'k',
+    headers: new Headers(),
+  }));
+  const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+  }));
+  queueResolution([
+    makeCandidate({ endpoints: { geminiGenerateContent: {}, openaiChatCompletions: {} }, callGeminiGenerateContent, callOpenAIChatCompletions }),
+  ]);
+
+  const result = await geminiGenerateContentServe.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    model: 'test-model',
+    headers: new Headers(),
+  });
+
+  const events = await collectEvents(expectType(result, 'events').events);
+  assertEquals(events, [
+    { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'native' }] }, finishReason: 'STOP' }] },
+  ]);
+  assertEquals(callGeminiGenerateContent.mock.calls.length, 1);
+  assertEquals(callOpenAIChatCompletions.mock.calls.length, 0);
+});
+
+test('a native candidate receives the client payload verbatim, including its own signatures', async () => {
+  installRepo();
+  let observed: GeminiGenerateContentPayload | undefined;
+  const callGeminiGenerateContent = vi.fn(async (_model, body): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => {
+    observed = structuredClone(body as GeminiGenerateContentPayload);
+    return {
+      ok: true,
+      events: makeProtocolFrames([
+        { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'ok' }] }, finishReason: 'STOP' }] },
+      ]),
+      modelKey: 'k',
+      headers: new Headers(),
+    };
+  });
+  const payload = makePayload({
+    contents: [
+      { role: 'user', parts: [{ text: 'draw' }] },
+      { role: 'model', parts: [{ text: 'done', thoughtSignature: 'client-owned-signature' }] },
+    ],
+  });
+  queueResolution([makeCandidate({ endpoints: { geminiGenerateContent: {} }, callGeminiGenerateContent })]);
+
+  const result = await geminiGenerateContentServe.generate({
+    payload,
+    ctx: makeGatewayCtx(),
+    model: 'test-model',
+    headers: new Headers(),
+  });
+  await collectEvents(expectType(result, 'events').events);
+
+  assertEquals(observed, payload);
+  assertEquals(observed?.contents[1].parts?.[0].thoughtSignature, 'client-owned-signature');
 });

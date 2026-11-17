@@ -6,7 +6,7 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -78,6 +78,8 @@ const makeCandidate = (overrides: {
   callOpenAIResponses?: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderOpenAIResponsesResult>;
   callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
   callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<ProviderCallResult>;
+  callGeminiGenerateContent?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>>;
+  callGeminiGenerateContentCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const provider = stubProvider({
@@ -85,6 +87,8 @@ const makeCandidate = (overrides: {
     callOpenAIResponses: overrides.callOpenAIResponses,
     callOpenAIChatCompletions: overrides.callOpenAIChatCompletions,
     callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
+    callGeminiGenerateContent: overrides.callGeminiGenerateContent,
+    callGeminiGenerateContentCountTokens: overrides.callGeminiGenerateContentCountTokens,
   });
   return {
     provider: {
@@ -276,4 +280,62 @@ test('generate propagates upstream response headers through the openai-chat-comp
   assertEquals(result.headers?.get('anthropic-ratelimit-unified-status'), 'allowed');
   assertEquals(result.headers?.get('x-request-id'), 'req_gemini_xyz');
   await collectEvents(result.events);
+});
+
+const makeGeminiEvents = (): readonly GeminiGenerateContentStreamEvent[] => [
+  { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'hi' }] } }] },
+  { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: ' there' }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 2, totalTokenCount: 7 } },
+];
+
+test('generate dispatches natively when the candidate speaks Gemini generateContent', async () => {
+  installRepo();
+  let upstreamBody: unknown;
+  const callGeminiGenerateContent = vi.fn(async (_model, body): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => {
+    upstreamBody = body;
+    return { ok: true, events: makeProtocolFrames(makeGeminiEvents()), modelKey: 'k', headers: new Headers({ 'x-goog-request-id': 'req_1' }) };
+  });
+  const payload = makePayload({
+    tools: [{ googleSearch: {} }, { functionDeclarations: [{ name: 'lookup' }] }],
+    safetySettings: [{ category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' }],
+    contents: [{ role: 'user', parts: [{ text: 'hi' }, { fileData: { fileUri: 'gs://bucket/file.pdf' } }] }],
+  });
+
+  const result = await geminiGenerateContentAttempt.generate({
+    payload,
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({ endpoints: { geminiGenerateContent: {} }, callGeminiGenerateContent }),
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  assertEquals(result.headers?.get('x-goog-request-id'), 'req_1');
+  // The native path must hand the upstream the client's payload unchanged: a
+  // translated target strips file parts, non-function tool groups and safety
+  // settings, none of which applies here.
+  assertEquals(upstreamBody, payload);
+  const events = await collectEvents(result.events);
+  assertEquals(events.length, 2);
+  assertEquals(callGeminiGenerateContent.mock.calls.length, 1);
+});
+
+test('countTokens relays a native Gemini count verbatim', async () => {
+  installRepo();
+  const callGeminiGenerateContentCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
+    response: new Response(JSON.stringify({ totalTokens: 77 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
+    modelKey: 'k',
+  }));
+
+  const result = await geminiGenerateContentAttempt.countTokens({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({ endpoints: { geminiGenerateContent: {} }, callGeminiGenerateContentCountTokens }),
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'plain');
+  if (result.type !== 'plain') throw new Error('unreachable');
+  assertEquals(result.status, 200);
+  assertEquals(JSON.parse(new TextDecoder().decode(result.body)), { totalTokens: 77 });
+  assertEquals(callGeminiGenerateContentCountTokens.mock.calls.length, 1);
 });
