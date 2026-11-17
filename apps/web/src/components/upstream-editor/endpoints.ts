@@ -11,13 +11,14 @@ export const PATH_OVERRIDE_OPTIONS = [
   { path: '/chat/completions', label: 'OpenAI Chat Completions', defaultPath: '/v1/chat/completions' },
   { path: '/responses', label: 'OpenAI Responses', defaultPath: '/v1/responses' },
   { path: '/messages', label: 'Anthropic Messages', defaultPath: '/v1/messages' },
+  { path: '/v1beta/models', label: 'Gemini Models', defaultPath: '/v1beta/models' },
   { path: '/embeddings', label: 'OpenAI Embeddings', defaultPath: '/v1/embeddings' },
   { path: '/alpha/search', label: 'OpenAI Search', defaultPath: '/v1/alpha/search' },
   { path: '/images/generations', label: 'OpenAI Images Generations', defaultPath: '/v1/images/generations' },
   { path: '/images/edits', label: 'OpenAI Images Edits', defaultPath: '/v1/images/edits' },
 ] as const;
 
-export const CHAT_ENDPOINT_KEYS = ['openaiCompletions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages'] as const satisfies readonly (keyof ModelEndpoints)[];
+export const CHAT_ENDPOINT_KEYS = ['openaiCompletions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages', 'geminiGenerateContent'] as const satisfies readonly (keyof ModelEndpoints)[];
 export const IMAGE_ENDPOINT_KEYS = ['openaiImagesGenerations', 'openaiImagesEdits'] as const satisfies readonly (keyof ModelEndpoints)[];
 
 // The endpoints the editor lets an operator pick. Rerank and decision rows
@@ -31,6 +32,7 @@ const ENDPOINT_LABELS = {
   openaiChatCompletions: 'OpenAI Chat Completions',
   openaiResponses: 'OpenAI Responses',
   anthropicMessages: 'Anthropic Messages',
+  geminiGenerateContent: 'Gemini GenerateContent',
   openaiImagesGenerations: 'OpenAI Images Generations',
   openaiImagesEdits: 'OpenAI Images Edits',
 } as const satisfies Record<SelectableEndpointKey, string>;

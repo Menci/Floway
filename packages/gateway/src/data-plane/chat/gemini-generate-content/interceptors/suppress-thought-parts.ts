@@ -37,12 +37,16 @@ const suppressThoughtPartsFromFrames = async function* (frames: AsyncIterable<Pr
 };
 
 /**
- * Hide Gemini generateContent thought-summary parts unless the caller explicitly opted in via
- * `generationConfig.thinkingConfig.includeThoughts === true`.
+ * Hide thought-summary parts that a translated target surfaced unless the
+ * caller opted in via `generationConfig.thinkingConfig.includeThoughts`. A
+ * native Gemini upstream decides that itself from the same flag, and its own
+ * stream reaches the client untouched.
  */
 export const suppressThoughtParts: GeminiGenerateContentInterceptor = async (ctx, _gatewayCtx, run) => {
   const result = await run();
-  if (result.type !== 'events' || ctx.payload.generationConfig?.thinkingConfig?.includeThoughts === true) {
+  if (result.type !== 'events'
+    || ctx.targetApi === 'geminiGenerateContent'
+    || ctx.payload.generationConfig?.thinkingConfig?.includeThoughts === true) {
     return result;
   }
 

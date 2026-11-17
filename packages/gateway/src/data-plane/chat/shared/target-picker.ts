@@ -19,6 +19,9 @@ export const chatTargetPicker = (preference: readonly ChatTargetApi[]): {
       case 'anthropicMessages':
         if (endpoints.anthropicMessages) return 'anthropicMessages';
         break;
+      case 'geminiGenerateContent':
+        if (endpoints.geminiGenerateContent) return 'geminiGenerateContent';
+        break;
       case 'openaiResponses':
         if (endpoints.openaiResponses) return 'openaiResponses';
         break;

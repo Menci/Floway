@@ -102,6 +102,8 @@ export const createKimiCodeProvider = (record: UpstreamRecord): Provider => {
       };
     },
     callAlphaSearch: unsupported('callAlphaSearch'),
+    callGeminiGenerateContent: unsupported('callGeminiGenerateContent'),
+    callGeminiGenerateContentCountTokens: unsupported('callGeminiGenerateContentCountTokens'),
     callOpenAICompletions: unsupported('callOpenAICompletions'),
     callOpenAIEmbeddings: unsupported('callOpenAIEmbeddings'),
     callOpenAIImagesGenerations: unsupported('callOpenAIImagesGenerations'),

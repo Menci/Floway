@@ -103,8 +103,10 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
     switch (value) {
     case 'bearer': return t('dashboard.upstreamEditor.auth.bearer');
     case 'x-api-key': return 'x-api-key';
+    case 'x-goog-api-key': return 'x-goog-api-key';
     }
   };
+  const modelsFetchAuthStyle = useWatch({ control, name: 'config.modelsFetch.authStyle' });
   return (
     <div className="grid gap-4">
       <Field label={t('dashboard.upstreamEditor.fields.baseUrl')}>
@@ -167,13 +169,14 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
                   <MenuList>
                     <MenuItemRadio name="authStyle" value="bearer">{t('dashboard.upstreamEditor.auth.bearer')}</MenuItemRadio>
                     <MenuItemRadio name="authStyle" value="x-api-key">x-api-key</MenuItemRadio>
+                    <MenuItemRadio name="authStyle" value="x-goog-api-key">x-goog-api-key</MenuItemRadio>
                   </MenuList>
                 </MenuPopover>
               </Menu>
             )} />
           </span>,
         }}>
-          <Controller control={control} name="config.modelsFetch.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="/v1/models" readOnly={modelsFetchReadOnly} ref={field.ref} value={field.value ?? ''} />} />
+          <Controller control={control} name="config.modelsFetch.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder={modelsFetchAuthStyle === 'x-goog-api-key' ? '/v1beta/models' : '/v1/models'} readOnly={modelsFetchReadOnly} ref={field.ref} value={field.value ?? ''} />} />
         </Field>
       )}
       <CustomIngressHeaderRules readOnly={readOnly} />

@@ -1,5 +1,6 @@
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesContentBlockDeltaEvent, AnthropicMessagesContentBlockStartEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiGenerateContentPart, GeminiGenerateContentResult } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesOutputItemEx } from '@floway-dev/protocols/openai-responses';
 import type { ChatTargetApi } from '@floway-dev/provider';
@@ -15,6 +16,7 @@ export const firstOutputTokenSignal = <T>(frame: ProtocolFrame<T>, targetApi: Ch
 
   const event = frame.event as Record<string, unknown>;
   if (targetApi === 'anthropicMessages') return anthropicMessagesTimingSignal(event);
+  if (targetApi === 'geminiGenerateContent') return geminiGenerateContentTimingSignal(event);
   if (targetApi === 'openaiResponses') return responsesTimingSignal(event);
   return decodeSignal(isOpenAIChatCompletionsOutputEvent(event));
 };
@@ -92,6 +94,21 @@ const ANTHROPIC_DELTA_OUTPUT_FIELDS = {
   signature_delta: null,
   compaction_delta: null,
 } satisfies Record<AnthropicMessagesContentBlockDeltaEvent['delta']['type'], string | null>;
+
+// Gemini streams content as Parts. A Part's text is model output whether it is
+// ordinary answer text or a thought summary, while function calls and the
+// signature-only trailer carry generated metadata rather than decoded text.
+// https://ai.google.dev/api/generate-content#Part
+const hasGeminiGenerateContentPartOutput = (part: GeminiGenerateContentPart): boolean =>
+  nonEmptyString(part.text)
+  || (part.functionCall !== undefined && nonEmptyString(part.functionCall.name))
+  || part.inlineData !== undefined
+  || part.executableCode !== undefined;
+
+const geminiGenerateContentTimingSignal = (event: Record<string, unknown>): FirstOutputTokenSignal | null => {
+  const result = event as GeminiGenerateContentResult;
+  return decodeSignal((result.candidates ?? []).some(candidate => (candidate.content?.parts ?? []).some(hasGeminiGenerateContentPartOutput)));
+};
 
 const hasResponsesText = (part: unknown): boolean => {
   const content = part as { text?: unknown; refusal?: unknown };

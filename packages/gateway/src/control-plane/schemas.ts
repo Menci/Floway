@@ -53,6 +53,7 @@ const modelEndpointsSchema = z.object({
   openaiChatCompletions: z.object({}).optional(),
   openaiResponses: z.object({}).optional(),
   anthropicMessages: z.object({}).optional(),
+  geminiGenerateContent: z.object({}).optional(),
   openaiEmbeddings: z.object({}).optional(),
   openaiImagesGenerations: z.object({}).optional(),
   openaiImagesEdits: z.object({}).optional(),
@@ -201,7 +202,7 @@ const customConfigSchema = z.object({
   // parsing happens in the runtime.
   modelsFetch: z.object({
     enabled: z.boolean(),
-    authStyle: z.enum(['bearer', 'x-api-key']),
+    authStyle: z.enum(['bearer', 'x-api-key', 'x-goog-api-key']),
     endpoint: z.string().optional(),
   }).optional(),
   // Statically configured per-model overrides merged with the live fetch.

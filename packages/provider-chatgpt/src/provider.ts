@@ -148,6 +148,8 @@ export const createChatGPTProvider = (record: UpstreamRecord): Provider => {
     // a stray dispatch must still surface as a structured 405.
     callAnthropicMessages: () => unsupportedStreamResult(),
     callAnthropicMessagesCountTokens: () => unsupportedCallResult(),
+    callGeminiGenerateContent: () => unsupportedStreamResult(),
+    callGeminiGenerateContentCountTokens: () => unsupportedCallResult(),
     callOpenAICompletions: () => unsupportedCallResult(),
     callOpenAIChatCompletions: () => unsupportedStreamResult(),
     callOpenAIEmbeddings: () => unsupportedCallResult(),

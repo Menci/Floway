@@ -178,6 +178,8 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
   const instance: ProviderInstance = {
     runScheduledTask: options => runOllamaScheduledTask(record, options),
     callAlphaSearch: rejectUnsupported('callAlphaSearch'),
+    callGeminiGenerateContent: rejectUnsupported('callGeminiGenerateContent'),
+    callGeminiGenerateContentCountTokens: rejectUnsupported('callGeminiGenerateContentCountTokens'),
     getProvidedModels: async fetcher => {
       const catalog = await fetchOllamaCatalog(config, fetcher);
       const auto = finalizeOllamaModels(
