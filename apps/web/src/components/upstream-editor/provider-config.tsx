@@ -29,7 +29,7 @@ import { useTranslation } from '../../i18n/translation';
 import { errorMessage } from '../../lib/error-message';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Input, Textarea } from '../ui/fluent-form-controls';
-import { InfoLabelText, infoLabelSlot } from '../ui/info-label';
+import { infoLabelSlot } from '../ui/info-label';
 import { CHECKBOX_LIST_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
 import { SecretInput } from '../ui/secret-input';
@@ -202,7 +202,7 @@ function CustomApiPaths({ readOnly }: { readOnly: boolean }) {
               key={path}
               name={`config.pathOverrides.${path}`}
               render={({ field }) => (
-                <Field className="min-w-0" label={label}>
+                <Field className="min-w-0" label={{ children: <span className="block truncate" title={label}>{label}</span> }}>
                   <Input
                     className="!w-full font-mono"
                     name={field.name}
@@ -353,12 +353,12 @@ function EndpointPicker({ readOnly }: { readOnly: boolean }) {
   const value = customConfig.endpoints;
   return <EditorSection level={3} title={t('dashboard.upstreamEditor.fields.defaultEndpoints')}>
     <div className={`grid ${CHECKBOX_LIST_CLASS}`}>
-      {endpointOptions.map(({ key, label, path }) => {
+      {endpointOptions.map(({ key, label }) => {
         const selected = value[key] !== undefined;
         return <Checkbox
           key={key}
           checked={selected}
-          label={<InfoLabelText info={<code className="font-mono">{path}</code>}>{label}</InfoLabelText>}
+          label={label}
           readOnly={readOnly}
           onChange={(_, data) => {
             const latestConfig = getValues('config') as Extract<UpstreamRecord, { kind: 'custom' }>['config'];

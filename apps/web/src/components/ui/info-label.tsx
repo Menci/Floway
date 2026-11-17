@@ -10,8 +10,3 @@ const { InfoLabel } = fluentComponents;
 // https://react.fluentui.dev/?path=/docs/components-infolabel--docs
 export const infoLabelSlot = (label: ReactNode, info: InfoLabelProps['info']) =>
   (_: unknown, slotProps: LabelProps) => <InfoLabel {...slotProps} info={info}>{label}</InfoLabel>;
-
-// The same label with an info affordance, for surfaces whose label is a node
-// rather than a slot shorthand (a Checkbox label, for instance).
-export const InfoLabelText = ({ children, info }: { children: ReactNode; info: InfoLabelProps['info'] }) =>
-  <InfoLabel info={info}>{children}</InfoLabel>;

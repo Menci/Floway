@@ -17,7 +17,6 @@ import { pruneLimitsForKind } from '../models/limits';
 import { ModelLimitsFields } from '../models/limits-editor';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
-import { InfoLabelText } from '../ui/info-label';
 import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { MultiselectCombobox, valuesAsOptions } from '../ui/multiselect-combobox';
 import { SectionHeader } from '../ui/section-header';
@@ -204,11 +203,11 @@ export function ModelDetail({
 
         {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <EditorSection error={validationMessage('endpoints')} level={3} title={t('dashboard.upstreamEditor.models.endpoints')}>
           <div className={`${TWO_COLUMN_FORM_CLASS} ${CHECKBOX_LIST_CLASS}`}>
-            {modelEndpointOptions(row.config.kind).map(({ key, label, path }) => <Checkbox
+            {modelEndpointOptions(row.config.kind).map(({ key, label }) => <Checkbox
               checked={key in row.config.endpoints}
               readOnly={fieldsReadOnly}
               key={key}
-              label={<InfoLabelText info={<code className="font-mono">{path}</code>}>{label}</InfoLabelText>}
+              label={label}
               onChange={(_, data) => {
                 const endpoints = { ...row.config.endpoints };
                 if (data.checked) endpoints[key] = {}; else delete endpoints[key];

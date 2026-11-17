@@ -8,7 +8,6 @@ describe('custom upstream endpoint editor', () => {
     expect(endpointOptionsFor(CHAT_ENDPOINT_KEYS)).toContainEqual({
       key: 'geminiGenerateContent',
       label: 'Gemini GenerateContent',
-      path: '/models/{model}:generateContent',
     });
   });
 

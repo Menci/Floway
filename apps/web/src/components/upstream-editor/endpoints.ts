@@ -38,8 +38,7 @@ const PATH_OVERRIDE_KEY_FOR_ENDPOINT = {
 export const CHAT_ENDPOINT_KEYS = ['openaiCompletions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages', 'geminiGenerateContent'] as const satisfies readonly (keyof ModelEndpoints)[];
 export const IMAGE_ENDPOINT_KEYS = ['openaiImagesGenerations', 'openaiImagesEdits'] as const satisfies readonly (keyof ModelEndpoints)[];
 
-// How the editor names an endpoint. The path is the wire detail, shown as the
-// label's info; the name is what the protocol is called.
+// How the editor names an endpoint.
 export const ENDPOINT_LABELS = {
   openaiCompletions: 'OpenAI Completions',
   openaiChatCompletions: 'OpenAI Chat Completions',
@@ -75,12 +74,11 @@ export const PATH_OVERRIDE_OPTIONS = ([
 export interface EndpointOption {
   readonly key: keyof ModelEndpoints;
   readonly label: string;
-  readonly path: string;
 }
 
 export const endpointOptionsFor = (
   keys: readonly (keyof ModelEndpoints)[],
-): EndpointOption[] => keys.map(key => ({ key, label: ENDPOINT_LABELS[key], path: ENDPOINT_PATHS[key] }));
+): EndpointOption[] => keys.map(key => ({ key, label: ENDPOINT_LABELS[key] }));
 
 // The rerank dialect a row starts on. `/alpha/search` speaks six mutually
 // incompatible dialects and no upstream catalog names the one it implements,
