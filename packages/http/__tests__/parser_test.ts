@@ -315,6 +315,12 @@ describe('parseHttpResponse — wire-faithful return shape', () => {
 });
 
 describe('toWebResponse', () => {
+  it('returns a null-body Response for 204 No Content (Fetch standard refuses a body)', async () => {
+    const r = toWebResponse(await parseHttpResponse(respondAndEnd('HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n')));
+    expect(r.status).toBe(204);
+    expect(r.body).toBeNull();
+  });
+
   it('rejects a content coding the socket transport cannot decode', async () => {
     await expect(async () => {
       toWebResponse(await parseHttpResponse(respondAndEnd(
