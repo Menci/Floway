@@ -339,3 +339,47 @@ test('countTokens relays a native Gemini count verbatim', async () => {
   assertEquals(JSON.parse(new TextDecoder().decode(result.body)), { totalTokens: 77 });
   assertEquals(callGeminiGenerateContentCountTokens.mock.calls.length, 1);
 });
+
+test('countTokens runs the same shape cleanup chain generate does, and skips it natively', async () => {
+  installRepo();
+  let translatedBody: Record<string, unknown> | undefined;
+  let nativeBody: Record<string, unknown> | undefined;
+
+  const payload = makePayload({
+    tools: [{ googleSearch: {} }, { functionDeclarations: [{ name: 'lookup' }] }],
+    safetySettings: [{ category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' }],
+    contents: [{ role: 'user', parts: [{ text: 'hi' }, { fileData: { fileUri: 'gs://bucket/f.pdf' } }] }],
+  });
+
+  await geminiGenerateContentAttempt.countTokens({
+    payload,
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({
+      callAnthropicMessagesCountTokens: async (_model, body) => {
+        translatedBody = body as Record<string, unknown>;
+        return { response: Response.json({ input_tokens: 1 }), modelKey: 'k' };
+      },
+    }),
+    headers: new Headers(),
+  });
+
+  await geminiGenerateContentAttempt.countTokens({
+    payload,
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({
+      endpoints: { geminiGenerateContent: {} },
+      callGeminiGenerateContentCountTokens: async (_model, body) => {
+        nativeBody = body as Record<string, unknown>;
+        return { response: Response.json({ totalTokens: 1 }), modelKey: 'k' };
+      },
+    }),
+    headers: new Headers(),
+  });
+
+  // A translated target cannot express these fields, so the shared cleanup
+  // removes them; a native upstream receives the payload as shaped.
+  assertEquals(translatedBody?.safetySettings, undefined);
+  assertEquals(nativeBody?.safetySettings, payload.safetySettings);
+  assertEquals(nativeBody?.contents, payload.contents);
+  assertEquals(nativeBody?.tools, payload.tools);
+});

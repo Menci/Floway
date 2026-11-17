@@ -1,4 +1,4 @@
-import type { GeminiGenerateContentInterceptor } from './types.ts';
+import type { GeminiGenerateContentShapeCleanup } from './types.ts';
 
 /**
  * A translated target has no matching safety control, so forwarding the
@@ -6,7 +6,7 @@ import type { GeminiGenerateContentInterceptor } from './types.ts';
  * end-to-end. A native Gemini upstream enforces them itself and receives them
  * unchanged.
  */
-export const stripSafetySettings: GeminiGenerateContentInterceptor = (ctx, _gatewayCtx, run) => {
+export const stripSafetySettings: GeminiGenerateContentShapeCleanup = (ctx, _gatewayCtx, run) => {
   if (ctx.targetApi !== 'geminiGenerateContent') delete ctx.payload.safetySettings;
   return run();
 };

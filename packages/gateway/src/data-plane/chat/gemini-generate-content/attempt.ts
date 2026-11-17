@@ -1,7 +1,5 @@
 import { inputErrorResult, geminiGenerateContentInternalErrorPayload, gatewayErrorStatus } from './errors.ts';
 import { geminiGenerateContentCountTokensInterceptors, geminiGenerateContentInterceptors } from './interceptors/index.ts';
-import { stripUnsupportedPartFieldsFromPayload } from './interceptors/strip-unsupported-part-fields.ts';
-import { stripUnsupportedToolsFromPayload } from './interceptors/strip-unsupported-tools.ts';
 import { buildUpstreamCallOptions } from '../../shared/upstream-call-options.ts';
 import { anthropicMessagesAttempt } from '../anthropic-messages/attempt.ts';
 import { openaiChatCompletionsAttempt } from '../openai-chat-completions/attempt.ts';
@@ -71,23 +69,16 @@ export const geminiGenerateContentAttempt = {
         return await plainResultFromResponse(response, candidate.provider.upstreamId);
       }
       // Without a native target the count is synthesized from Anthropic
-      // Messages: the cleaned payload is translated, counted upstream, and the
-      // count_tokens reply reshaped into Gemini's `{ totalTokens }` envelope.
-      // The payload-mutating interceptors cannot ride the countTokens list —
-      // the post-`run()` ones inspect event streams this result type cannot
-      // carry — so they are applied inline; the attempt-owned clone keeps the
-      // caller's source intact.
+      // Messages: the payload the shared interceptor chain already cleaned is
+      // translated, counted upstream, and the reply reshaped into Gemini's
+      // `{ totalTokens }` envelope.
       const transCtx = {
         sidecarCodec: ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn),
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       };
-      const cleaned = invocation.payload;
-      stripUnsupportedPartFieldsFromPayload(cleaned);
-      stripUnsupportedToolsFromPayload(cleaned);
-      delete cleaned.safetySettings;
       // The model travels in the URL rather than the body, so the request this
-      // trip reads is the cleaned payload with the resolved model folded in.
-      const trip = await routeGeminiGenerateContentViaAnthropicMessages({ ...cleaned, model: candidate.model.id }, transCtx);
+      // trip reads is the resolved model folded into the invocation payload.
+      const trip = await routeGeminiGenerateContentViaAnthropicMessages({ ...invocation.payload, model: candidate.model.id }, transCtx);
       if (trip.type === 'input-error') return inputErrorResult(trip, ctx.attempt.telemetry);
       const { stream: _stream, ...target } = trip.target;
       const anthropicMessagesResult = await anthropicMessagesAttempt.countTokens({

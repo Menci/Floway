@@ -1,4 +1,4 @@
-import type { GeminiGenerateContentInterceptor } from './types.ts';
+import type { GeminiGenerateContentShapeCleanup } from './types.ts';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentToolGroup } from '@floway-dev/protocols/gemini-generate-content';
 
 /**
@@ -32,7 +32,7 @@ export const stripUnsupportedToolsFromPayload = (payload: GeminiGenerateContentP
   }
 };
 
-export const stripUnsupportedTools: GeminiGenerateContentInterceptor = (ctx, _gatewayCtx, run) => {
+export const stripUnsupportedTools: GeminiGenerateContentShapeCleanup = (ctx, _gatewayCtx, run) => {
   if (ctx.targetApi !== 'geminiGenerateContent') stripUnsupportedToolsFromPayload(ctx.payload);
   return run();
 };

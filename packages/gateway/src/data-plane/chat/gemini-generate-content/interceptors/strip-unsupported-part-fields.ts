@@ -1,4 +1,4 @@
-import type { GeminiGenerateContentInterceptor } from './types.ts';
+import type { GeminiGenerateContentShapeCleanup } from './types.ts';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
 
 /**
@@ -23,7 +23,7 @@ export const stripUnsupportedPartFieldsFromPayload = (payload: GeminiGenerateCon
   }
 };
 
-export const stripUnsupportedPartFields: GeminiGenerateContentInterceptor = (ctx, _gatewayCtx, run) => {
+export const stripUnsupportedPartFields: GeminiGenerateContentShapeCleanup = (ctx, _gatewayCtx, run) => {
   if (ctx.targetApi !== 'geminiGenerateContent') stripUnsupportedPartFieldsFromPayload(ctx.payload);
   return run();
 };
