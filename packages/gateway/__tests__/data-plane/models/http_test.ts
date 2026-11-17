@@ -52,7 +52,6 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
     sortOrder: 100,
     config: {
       baseUrl: 'https://oai.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-test',
       endpoints: { openaiChatCompletions: {} },
@@ -264,7 +263,6 @@ test('/models returns the same superset payload as /v1/models', async () => {
     sortOrder: 100,
     config: {
       baseUrl: 'https://images-proj.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-images-proj',
       endpoints: {  },
@@ -372,7 +370,6 @@ test('/v1/models hides upstream identity when a provider returns an invalid mode
     sortOrder: 100,
     config: {
       baseUrl: 'https://secret.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-secret',
       endpoints: { openaiChatCompletions: {} },
@@ -414,7 +411,6 @@ test('/v1/models surfaces healthy upstream models when another upstream catalog 
     sortOrder: 1,
     config: {
       baseUrl: 'https://healthy.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-h',
       endpoints: { openaiChatCompletions: {} },
@@ -426,7 +422,6 @@ test('/v1/models surfaces healthy upstream models when another upstream catalog 
     sortOrder: 2,
     config: {
       baseUrl: 'https://broken.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-b',
       endpoints: { openaiChatCompletions: {} },
@@ -467,7 +462,6 @@ test('public model list endpoints hide upstream HTTP error bodies and headers', 
     sortOrder: 100,
     config: {
       baseUrl: 'https://http-secret.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-secret',
       endpoints: { openaiChatCompletions: {} },
@@ -513,7 +507,6 @@ test('public model list endpoints hide thrown upstream request errors', async ()
     sortOrder: 100,
     config: {
       baseUrl: 'https://throw-secret.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-secret',
       endpoints: { openaiChatCompletions: {} },
@@ -551,7 +544,6 @@ test('public model list endpoints hide malformed upstream response bodies', asyn
     sortOrder: 100,
     config: {
       baseUrl: 'https://malformed-secret.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-secret',
       endpoints: { openaiChatCompletions: {} },
@@ -735,7 +727,6 @@ test('/v1/models appends visible aliases with their aliasedFrom block and folds 
     sortOrder: 100,
     config: {
       baseUrl: 'https://oai.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-test',
       endpoints: { openaiChatCompletions: {} },
@@ -841,7 +832,6 @@ test('/v1/models folds a real-id collision onto the alias even when the alias po
     sortOrder: 100,
     config: {
       baseUrl: 'https://shadow.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-shadow',
       endpoints: { openaiChatCompletions: {} },
@@ -1078,7 +1068,7 @@ test('/v1/models keeps the configured public endpoint when OMP connects through 
   await repo.upstreams.deleteAll();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     config: {
-      baseUrl: 'https://upstream.example', authStyle: 'bearer', apiKey: 'upstream-key', ingressHeadersRules: [],
+      baseUrl: 'https://upstream.example', apiKey: 'upstream-key', ingressHeadersRules: [],
       endpoints: {}, modelsFetch: { enabled: false },
       models: [
         { upstreamModelId: 'response-model', kind: 'chat', endpoints: { openaiResponses: {} }, chat: { reasoning: { effort: { supported: ['low'], default: 'low' } } } },
@@ -1127,7 +1117,6 @@ test('/v1/models serves omp-tailored catalog to omp/* callers and preserves prec
     sortOrder: 100,
     config: {
       baseUrl: 'https://omp-test.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-omp-test',
       endpoints: {},
@@ -1222,7 +1211,6 @@ test('the TypeSafe SDK user agent receives the { models } catalog its parsers re
     name: 'Decision Provider',
     config: {
       baseUrl: 'https://decision.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-decision',
       endpoints: {},

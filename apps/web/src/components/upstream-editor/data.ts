@@ -258,7 +258,6 @@ const configFromValues = (record: UpstreamRecord, values: UpstreamEditorValues):
   if (manualModelsSupported(record)) config.models = structuredClone(values.manualModels);
   if (record.kind === 'custom') {
     const custom = config as Record<string, unknown>;
-    if (custom.authStyle === 'none') delete custom.apiKey;
     const ingressHeadersRules = custom.ingressHeadersRules as { key: string; value: string | null }[];
     custom.ingressHeadersRules = ingressHeadersRules.flatMap(rule => {
       const key = rule.key.trim().toLowerCase();

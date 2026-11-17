@@ -38,7 +38,6 @@ const customRecord = upstreamRecord('up_custom', {
   kind: 'custom',
   config: {
     baseUrl: 'https://example.com',
-    authStyle: 'bearer',
     apiKey: '',
     endpoints: { openaiResponses: {} },
     ingressHeadersRules: [],

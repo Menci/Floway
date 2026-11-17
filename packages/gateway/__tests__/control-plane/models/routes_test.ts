@@ -225,7 +225,6 @@ test('/api/models keeps alias limits and endpoints identical across admin and no
     sortOrder: 100,
     config: {
       baseUrl: 'https://small.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-small',
       endpoints: { openaiChatCompletions: {} },
@@ -239,7 +238,6 @@ test('/api/models keeps alias limits and endpoints identical across admin and no
     sortOrder: 200,
     config: {
       baseUrl: 'https://big.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-big',
       endpoints: { openaiChatCompletions: {} },

@@ -49,7 +49,7 @@ export type { ProviderModelsFailureResponse } from '@floway-dev/provider';
 
 type CustomConfigFields = Pick<
   StoredCustomUpstreamConfig,
-  'authStyle' | 'baseUrl' | 'endpoints' | 'ingressHeadersRules' | 'models' | 'modelsFetch' | 'pathOverrides'
+  'baseUrl' | 'endpoints' | 'ingressHeadersRules' | 'models' | 'modelsFetch' | 'pathOverrides'
 >;
 
 export type CustomUpstreamConfig = CustomConfigFields & {

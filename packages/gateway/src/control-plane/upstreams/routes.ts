@@ -164,12 +164,6 @@ const mergeConfigPatch = (provider: UpstreamProviderKind, existing: unknown, pat
 
   if (provider === 'custom') {
     if (patch.pathOverrides === null) delete next.pathOverrides;
-    // Dead-field guard: a 'none' upstream must not carry a stale apiKey
-    // from a previous authStyle. Always strip apiKey when the merged style
-    // is 'none' so the persisted shape stays one branch of the discriminated
-    // union. The reverse (switching away from 'none') is left to the
-    // runtime parser, which rejects a missing apiKey when one is required.
-    if (next.authStyle === 'none') delete next.apiKey;
   }
   return { ok: true, value: next };
 };

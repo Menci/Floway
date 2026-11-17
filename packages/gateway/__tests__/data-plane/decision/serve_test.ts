@@ -19,7 +19,6 @@ const saveDecisionUpstream = async (
     name: 'Decision Provider',
     config: {
       baseUrl: 'https://decision.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-decision',
       endpoints: {},

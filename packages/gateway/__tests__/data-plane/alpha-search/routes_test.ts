@@ -36,7 +36,6 @@ const searchUpstream = (modelIds: readonly string[]) => buildCustomUpstreamRecor
   name: 'Alpha Search',
   config: {
     baseUrl: 'https://search.example.com',
-    authStyle: 'bearer',
     ingressHeadersRules: [],
     apiKey: 'search-secret',
     endpoints: { openaiResponses: {} },

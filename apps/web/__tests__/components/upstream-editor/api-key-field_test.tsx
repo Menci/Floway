@@ -17,7 +17,6 @@ const customRecord = (apiKey: string) => upstreamRecord('up_custom', {
   kind: 'custom',
   config: {
     baseUrl: 'https://api.example.com',
-    authStyle: 'bearer',
     apiKey,
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [],
@@ -70,6 +69,12 @@ describe('the API key field', () => {
   it('opens an upstream whose config stores no key on an empty field', () => {
     renderInApp(<ProviderConfigHarness record={customRecord('')} />);
     expect(keyInput().value).toBe('');
+  });
+
+  it('does not offer an authentication mode selector for custom upstreams', () => {
+    renderInApp(<ProviderConfigHarness record={customRecord('')} />);
+    expect(screen.queryByText('Bearer')).toBeNull();
+    expect(screen.queryByText('Anthropic')).toBeNull();
   });
 
   it('keeps the field editable so the stored key can be replaced', () => {

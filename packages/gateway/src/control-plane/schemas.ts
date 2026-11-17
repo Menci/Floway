@@ -184,13 +184,11 @@ const upstreamModelSchema = z.object({
 
 const customConfigSchema = z.object({
   baseUrl: z.string().min(1),
-  authStyle: z.enum(['bearer', 'anthropic', 'none']),
   // Structured capability map — the runtime parser permits an empty map for
   // an upstream serving only kind-derived models.
   endpoints: modelEndpointsSchema,
-  // Optional because edit-mode PATCH omits it to keep the stored secret;
-  // the runtime parser enforces presence vs. authStyle invariants.
-  apiKey: z.string().optional(),
+  // Empty means anonymous upstream access.
+  apiKey: z.string(),
   // PATCH passes `null` to explicitly clear pathOverrides; nullable() keeps
   // that escape hatch.
   pathOverrides: z.record(z.string(), z.string()).nullable().optional(),

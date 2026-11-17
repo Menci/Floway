@@ -70,7 +70,7 @@ const record = upstreamRecord('up_copilot', {
 const customRecord = upstreamRecord('up_custom', {
   kind: 'custom',
   config: {
-    baseUrl: 'https://custom.example.com', authStyle: 'none', ingressHeadersRules: [],
+    baseUrl: 'https://custom.example.com', apiKey: '', ingressHeadersRules: [],
     endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: true }, models: [],
   },
   state: null,

@@ -42,7 +42,6 @@ const record = upstreamRecord('up_test', {
   kind: 'custom',
   config: {
     baseUrl: 'https://example.com',
-    authStyle: 'bearer',
     apiKey: '',
     endpoints: { openaiResponses: {} },
     ingressHeadersRules: [],
@@ -170,7 +169,6 @@ describe('upstream model workspace field-array transitions', () => {
         kind: 'custom',
         config: {
           baseUrl: 'https://example.com',
-          authStyle: 'bearer',
           apiKey: '',
           endpoints: row.endpoints,
           ingressHeadersRules: [],

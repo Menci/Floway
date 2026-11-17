@@ -41,7 +41,7 @@ beforeEach(async () => {
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
 
 test('Floway dispatches every provider and persists read-only subscription probes', async () => {
-  for (const record of [copilot(), chatgpt(), claude(), ollama(), base('custom', 'custom', { baseUrl: 'https://custom.example', authStyle: 'none', endpoints: {}, ingressHeadersRules: [], modelsFetch: { enabled: false }, models: [] }, null), base('azure', 'azure', { endpoint: 'https://test.openai.azure.com', apiKey: 'key', models: [{ upstreamModelId: 'model', endpoints: { openaiChatCompletions: {} } }] }, null)]) {
+  for (const record of [copilot(), chatgpt(), claude(), ollama(), base('custom', 'custom', { baseUrl: 'https://custom.example', apiKey: '', endpoints: {}, ingressHeadersRules: [], modelsFetch: { enabled: false }, models: [] }, null), base('azure', 'azure', { endpoint: 'https://test.openai.azure.com', apiKey: 'key', models: [{ upstreamModelId: 'model', endpoints: { openaiChatCompletions: {} } }] }, null)]) {
     await repo.upstreams.insertForModels(record);
   }
   mocks.fetch.mockImplementation(async (url, init) => {

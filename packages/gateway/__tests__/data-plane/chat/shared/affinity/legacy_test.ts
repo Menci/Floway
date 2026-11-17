@@ -33,7 +33,6 @@ const upstream = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   hue: 210,
   config: {
     baseUrl: 'https://example.com',
-    authStyle: 'bearer',
     endpoints: { openaiResponses: {} },
     ingressHeadersRules: [],
     modelsFetch: { enabled: true },
@@ -64,7 +63,6 @@ test('resolves v1 affinity from manual configuration when the catalog is cold', 
   await saveUpstreamForTest(repo.upstreams, upstream({
     config: {
       baseUrl: 'https://example.com',
-      authStyle: 'bearer',
       endpoints: { openaiResponses: {} },
       ingressHeadersRules: [],
       modelsFetch: { enabled: false },

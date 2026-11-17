@@ -33,7 +33,6 @@ test('restricted data-plane aliases keep gateway-wide metadata and caller-scoped
       sortOrder,
       config: {
         baseUrl: `https://${host}`,
-        authStyle: 'bearer',
         apiKey: 'sk',
         ingressHeadersRules: [],
         endpoints: id === 'a' ? { openaiChatCompletions: {} } : { anthropicMessages: {} },
@@ -122,7 +121,7 @@ test('Gemini aliases use the same gateway-wide metadata and caller-scoped target
   const upstream = listingModel(buildCustomUpstreamRecord({
     id: 'a',
     config: {
-      baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'sk', ingressHeadersRules: [],
+      baseUrl: 'https://a.example.com', apiKey: 'sk', ingressHeadersRules: [],
       endpoints: { openaiChatCompletions: {} },
     },
   }));

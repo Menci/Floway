@@ -213,7 +213,6 @@ beforeEach(async () => {
     hue: 210,
     config: {
       baseUrl: 'https://unused.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'unused',
       endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },

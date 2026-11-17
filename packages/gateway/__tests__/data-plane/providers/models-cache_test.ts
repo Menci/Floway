@@ -332,7 +332,7 @@ test.each(['api_key', 'api_token', 'password', 'client_secret', 'api_secret', 's
   delete config.apiKey;
   const configured = await repo.upstreams.replaceForModels({
     previous: record,
-    upstream: { ...record, config: { ...config, authStyle: 'none', modelsFetch: { enabled: true, endpoint: `/v1/models?limit=1&monkey=banana&${parameter}=query-secret-42` } } },
+    upstream: { ...record, config: { ...config, apiKey: '', modelsFetch: { enabled: true, endpoint: `/v1/models?limit=1&monkey=banana&${parameter}=query-secret-42` } } },
   });
   if (configured === null) throw new Error('query-auth update failed');
   await withMockedFetch(
@@ -355,7 +355,7 @@ test('model discovery redacts the sent spelling of a percent-encoded query crede
   delete config.apiKey;
   const configured = await repo.upstreams.replaceForModels({
     previous: record,
-    upstream: { ...record, config: { ...config, authStyle: 'none', modelsFetch: { enabled: true, endpoint: '/v1/models?api_key=query%2fsecret' } } },
+    upstream: { ...record, config: { ...config, apiKey: '', modelsFetch: { enabled: true, endpoint: '/v1/models?api_key=query%2fsecret' } } },
   });
   if (configured === null) throw new Error('encoded query-auth update failed');
   await withMockedFetch(

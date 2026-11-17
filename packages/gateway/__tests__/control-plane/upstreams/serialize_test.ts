@@ -32,7 +32,6 @@ const custom: UpstreamRecord = {
   hue: 210,
   config: {
     baseUrl: 'https://api.example.com',
-    authStyle: 'bearer',
     ingressHeadersRules: [{ key: 'x-route', value: '' }],
     apiKey: 'sk-secret-token-12345',
     endpoints: { openaiChatCompletions: {}, openaiResponses: {} },
@@ -158,7 +157,6 @@ test('upstreamRecordToFullJson includes provider config secrets for export', () 
   const result = upstreamRecordToFullJson(custom);
   if (result.kind !== 'custom') throw new Error('Expected a Custom response');
   const { config } = result;
-  if (config.authStyle === 'none') throw new Error('Expected an authenticated Custom response');
   assertEquals(result.id, 'up_custom_test');
   assertEquals(config.apiKey, 'sk-secret-token-12345');
   assertEquals('apiKeySet' in config, false);

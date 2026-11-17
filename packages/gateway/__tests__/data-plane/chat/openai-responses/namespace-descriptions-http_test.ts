@@ -21,7 +21,7 @@ const namespace = {
 const setup = async (target: TargetApi) => await setupAppTest({
   copilotUpstream: buildCustomUpstreamRecord({
     config: {
-      baseUrl: 'https://custom.example.com', authStyle: 'none', ingressHeadersRules: [], endpoints: { [target]: {} },
+      baseUrl: 'https://custom.example.com', apiKey: '', ingressHeadersRules: [], endpoints: { [target]: {} },
     },
   }),
 });

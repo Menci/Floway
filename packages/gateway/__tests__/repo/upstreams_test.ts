@@ -212,7 +212,7 @@ const exerciseSqlUpstreamRepo = async (repo: UpstreamRepo) => {
     sortOrder: 2,
     createdAt: '2026-05-21T10:00:02.000Z',
     updatedAt: '2026-05-21T10:00:02.000Z',
-    config: { baseUrl: 'https://custom.example/v1', authStyle: 'bearer', apiKey: 'sk-custom', endpoints: { openaiChatCompletions: {} } },
+    config: { baseUrl: 'https://custom.example/v1', apiKey: 'sk-custom', endpoints: { openaiChatCompletions: {} } },
     flagOverrides: { 'vendor-deepseek': true, 'rewrite-developer-to-system': true },
     disabledPublicModelIds: [],
   });
@@ -254,7 +254,7 @@ const exerciseSqlUpstreamRepo = async (repo: UpstreamRepo) => {
     sortOrder: 0,
     createdAt: '2099-01-01T00:00:00.000Z',
     updatedAt: '2026-05-21T10:00:04.000Z',
-    config: { baseUrl: 'https://updated.example/v1', authStyle: 'bearer', apiKey: 'sk-updated', endpoints: { openaiResponses: {} } },
+    config: { baseUrl: 'https://updated.example/v1', apiKey: 'sk-updated', endpoints: { openaiResponses: {} } },
     flagOverrides: { 'anthropic-messages-web-search-shim': true, 'rewrite-developer-to-system': true },
     disabledPublicModelIds: [],
   });
@@ -454,7 +454,7 @@ test('SQL upstream repo round-trips a non-null model_prefix', async () => {
     sortOrder: 0,
     createdAt: now,
     updatedAt: now,
-    config: { baseUrl: 'https://example.com', bearerToken: 'sk', authStyle: 'bearer', endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: true } },
+    config: { baseUrl: 'https://example.com', bearerToken: 'sk', endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: true } },
     state: null,
     flagOverrides: {},
     disabledPublicModelIds: [],

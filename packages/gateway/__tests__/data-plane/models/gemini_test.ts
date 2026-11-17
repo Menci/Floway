@@ -148,7 +148,6 @@ test('the model detail answer is identical under /v1 and /v1beta', async () => {
     sortOrder: 100,
     config: {
       baseUrl: 'https://detail-alias.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-detail-alias',
       endpoints: { openaiChatCompletions: {} },
@@ -188,7 +187,6 @@ test('/v1beta/models includes custom upstream LLM models', async () => {
     createdAt: '2026-05-01T00:00:00.000Z',
     config: {
       baseUrl: 'https://custom.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-custom',
       endpoints: { openaiChatCompletions: {} },
@@ -241,7 +239,6 @@ test('/v1beta/models excludes custom upstream embedding-only models', async () =
     createdAt: '2026-05-01T00:00:00.000Z',
     config: {
       baseUrl: 'https://embed.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-embed',
       endpoints: {},
@@ -284,7 +281,6 @@ test('/v1beta/models hides upstream identity when a provider returns an invalid 
     createdAt: '2026-05-01T00:00:00.000Z',
     config: {
       baseUrl: 'https://gemini-secret.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-secret',
       endpoints: { openaiChatCompletions: {} },
@@ -323,7 +319,6 @@ test('/v1beta/models hides upstream HTTP error bodies', async () => {
     createdAt: '2026-05-01T00:00:00.000Z',
     config: {
       baseUrl: 'https://gemini-http-secret.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-secret',
       endpoints: { openaiChatCompletions: {} },
@@ -366,7 +361,6 @@ test('/v1beta/models hides thrown upstream request errors', async () => {
     createdAt: '2026-05-01T00:00:00.000Z',
     config: {
       baseUrl: 'https://gemini-throw-secret.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-secret',
       endpoints: { openaiChatCompletions: {} },
@@ -406,7 +400,6 @@ test('/v1beta/models hides malformed upstream response bodies', async () => {
     createdAt: '2026-05-01T00:00:00.000Z',
     config: {
       baseUrl: 'https://gemini-malformed-secret.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-secret',
       endpoints: { openaiChatCompletions: {} },
@@ -454,7 +447,6 @@ test('/v1beta/models emits visible aliases as models/<alias-name> entries with d
     createdAt: '2026-05-01T00:00:00.000Z',
     config: {
       baseUrl: 'https://custom-alias.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-custom',
       endpoints: { openaiChatCompletions: {} },
@@ -506,7 +498,6 @@ test('the model listing selects the Gemini shape from the client identity on eit
     sortOrder: 100,
     config: {
       baseUrl: 'https://identity.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-identity',
       endpoints: { openaiChatCompletions: {} },

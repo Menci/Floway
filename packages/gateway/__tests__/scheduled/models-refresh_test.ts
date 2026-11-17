@@ -20,7 +20,6 @@ const custom = (id: string, enabled: boolean): UpstreamRecord => ({
   updatedAt: '2026-08-01T00:00:00.000Z',
   config: {
     baseUrl: `https://${id}.example.com`,
-    authStyle: 'bearer',
     apiKey: 'key',
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [],

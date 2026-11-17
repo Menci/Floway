@@ -4,6 +4,8 @@ import { type FetchInit, type UpstreamFetchOptions, joinBaseAndPath } from '@flo
 // https://docs.anthropic.com/en/api/versioning
 const ANTHROPIC_VERSION = '2023-06-01';
 
+type CustomAuthScheme = 'bearer' | 'anthropic';
+
 // Endpoint key is the OpenAI-canonical path fragment (`/chat/completions`,
 // `/images/generations`, ...). The default upstream URL is the key prefixed
 // with `/v1`; pathOverrides (see config.ts) replace it one-for-one. The
@@ -28,20 +30,18 @@ const replace = (lines: [string, string][], name: string, value: string): void =
 
 const customFetchInternal = async (
   config: CustomUpstreamConfig,
+  authScheme: CustomAuthScheme,
   path: string,
   init: FetchInit,
   options: UpstreamFetchOptions,
 ): Promise<Response> => {
   const headers: [string, string][] = init.headers ? [...new Headers(init.headers)] : [];
-  if (config.authStyle === 'anthropic') {
+  if (config.apiKey !== '' && authScheme === 'anthropic') {
     replace(headers, 'x-api-key', config.apiKey);
     if (!has(headers, 'anthropic-version')) headers.push(['anthropic-version', ANTHROPIC_VERSION]);
-  } else if (config.authStyle === 'bearer') {
+  } else if (config.apiKey !== '') {
     replace(headers, 'Authorization', `Bearer ${config.apiKey}`);
   }
-  // authStyle === 'none' falls through with no auth header. The same goes
-  // for the /models fetch — Models Fetch shares this code path, so a 'none'
-  // upstream is queried anonymously end-to-end.
   if (init.body && !has(headers, 'content-type') && !(init.body instanceof FormData)) {
     headers.push(['Content-Type', 'application/json']);
   }
@@ -57,34 +57,45 @@ const customFetchInternal = async (
 };
 
 export const customFetchRerank = (config: CustomUpstreamConfig, path: string, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, path, init, options);
+  customFetchInternal(config, 'bearer', path, init, options);
 
 export const customFetchDecision = (config: CustomUpstreamConfig, path: string, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, path, init, options);
+  customFetchInternal(config, 'bearer', path, init, options);
 
 export const customFetchOpenAIChatCompletions = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, pathOverrideFor(config, '/chat/completions'), init, options);
+  customFetchInternal(config, 'bearer', pathOverrideFor(config, '/chat/completions'), init, options);
 export const customFetchOpenAIResponses = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, pathOverrideFor(config, '/responses'), init, options);
+  customFetchInternal(config, 'bearer', pathOverrideFor(config, '/responses'), init, options);
 export const customFetchOpenAIResponsesCompact = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, `${pathOverrideFor(config, '/responses')}/compact`, init, options);
+  customFetchInternal(config, 'bearer', `${pathOverrideFor(config, '/responses')}/compact`, init, options);
 export const customFetchAnthropicMessages = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, pathOverrideFor(config, '/messages'), init, options);
+  customFetchInternal(config, 'anthropic', pathOverrideFor(config, '/messages'), init, options);
 export const customFetchAnthropicMessagesCountTokens = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, `${pathOverrideFor(config, '/messages')}/count_tokens`, init, options);
+  customFetchInternal(config, 'anthropic', `${pathOverrideFor(config, '/messages')}/count_tokens`, init, options);
 export const customFetchOpenAIEmbeddings = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, pathOverrideFor(config, '/embeddings'), init, options);
+  customFetchInternal(config, 'bearer', pathOverrideFor(config, '/embeddings'), init, options);
 export const customFetchOpenAICompletions = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, pathOverrideFor(config, '/completions'), init, options);
+  customFetchInternal(config, 'bearer', pathOverrideFor(config, '/completions'), init, options);
 export const customFetchOpenAIImagesGenerations = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, pathOverrideFor(config, '/images/generations'), init, options);
+  customFetchInternal(config, 'bearer', pathOverrideFor(config, '/images/generations'), init, options);
 export const customFetchOpenAIImagesEdits = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, pathOverrideFor(config, '/images/edits'), init, options);
+  customFetchInternal(config, 'bearer', pathOverrideFor(config, '/images/edits'), init, options);
 export const customFetchOpenAIAudioTranscriptions = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, pathOverrideFor(config, '/audio/transcriptions'), init, options);
+  customFetchInternal(config, 'bearer', pathOverrideFor(config, '/audio/transcriptions'), init, options);
 export const customFetchAlphaSearch = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, pathOverrideFor(config, '/alpha/search'), init, options);
+  customFetchInternal(config, 'bearer', pathOverrideFor(config, '/alpha/search'), init, options);
 // /models lives on its own fetch toggle (see config.modelsFetch.endpoint),
 // not in pathOverrides.
 export const customFetchModels = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, config.modelsFetch.endpoint ?? '/v1/models', init, options);
+  customFetchInternal(
+    config,
+    config.endpoints.openaiCompletions === undefined
+      && config.endpoints.openaiChatCompletions === undefined
+      && config.endpoints.openaiResponses === undefined
+      && config.endpoints.anthropicMessages !== undefined
+      ? 'anthropic'
+      : 'bearer',
+    config.modelsFetch.endpoint ?? '/v1/models',
+    init,
+    options,
+  );

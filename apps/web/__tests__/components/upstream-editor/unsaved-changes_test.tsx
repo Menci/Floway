@@ -18,7 +18,6 @@ const customRecord = (
   kind: 'custom',
   config: {
     baseUrl: 'https://api.example.com',
-    authStyle: 'bearer',
     apiKey: '',
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [],

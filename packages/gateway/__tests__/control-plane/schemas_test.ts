@@ -180,7 +180,6 @@ describe('upstreamModelSchema rerank', () => {
     hue: 210,
     config: {
       baseUrl: 'https://rerank.example.com',
-      authStyle: 'bearer' as const,
       ingressHeadersRules: [],
       apiKey: 'key',
       endpoints: {},
@@ -227,4 +226,21 @@ describe('upstreamModelSchema rerank', () => {
     (mixed.config.models[0] as Record<string, unknown>).endpoints = { rerank: {}, openaiChatCompletions: {} };
     expect(createUpstreamBody.safeParse(mixed).success).toBe(true);
   });
+});
+
+test('custom upstream creation accepts an empty API key and requires the field', () => {
+  const body = {
+    kind: 'custom' as const,
+    name: 'Anonymous',
+    hue: 210,
+    config: {
+      baseUrl: 'https://anonymous.example.com',
+      apiKey: '',
+      ingressHeadersRules: [],
+      endpoints: {},
+    },
+  };
+  expect(createUpstreamBody.safeParse(body).success).toBe(true);
+  delete (body.config as Partial<typeof body.config>).apiKey;
+  expect(createUpstreamBody.safeParse(body).success).toBe(false);
 });

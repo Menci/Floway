@@ -19,7 +19,6 @@ const MIGRATION = '0083_canonical_protocol_names.sql';
 const LEGACY_CONFIGS = {
   up_legacy_chat: {
     baseUrl: 'https://upstream.example/v1',
-    authStyle: 'bearer',
     apiKey: 'sk-legacy',
     ingressHeadersRules: [],
     endpoints: { chatCompletions: {} },
@@ -31,7 +30,6 @@ const LEGACY_CONFIGS = {
   },
   up_legacy_media: {
     baseUrl: 'https://media.example/v1',
-    authStyle: 'bearer',
     apiKey: 'sk-media',
     ingressHeadersRules: [],
     endpoints: { audioTranscriptions: {} },

@@ -31,7 +31,6 @@ const registerAudioModel = async (
     hue: 210,
     config: {
       baseUrl: 'https://audio.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-audio',
       endpoints: {},

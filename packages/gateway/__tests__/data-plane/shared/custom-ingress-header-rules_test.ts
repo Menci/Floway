@@ -22,7 +22,6 @@ const registerUpstream = async (repo: Awaited<ReturnType<typeof setupAppTest>>['
     id: 'up_rules',
     config: {
       baseUrl: 'https://custom.example.com',
-      authStyle: 'bearer',
       apiKey: 'sk-custom',
       endpoints: {},
       ingressHeadersRules: INGRESS_HEADERS_RULES,

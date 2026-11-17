@@ -26,7 +26,6 @@ const buildCustomUpstream = (ingressHeadersRules: CustomIngressHeaderRule[], mod
   hue: 210,
   config: {
     baseUrl: 'https://custom.example.com',
-    authStyle: 'bearer',
     apiKey: 'sk-test',
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules,

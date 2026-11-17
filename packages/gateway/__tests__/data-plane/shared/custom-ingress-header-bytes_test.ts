@@ -111,7 +111,6 @@ const embeddingsThroughUpstream = async (egress: ProxyFallbackEntry[], origin: s
     proxyFallbackList: egress,
     config: {
       baseUrl: origin,
-      authStyle: 'bearer',
       apiKey: 'sk-custom',
       endpoints: {},
       ingressHeadersRules: INGRESS_HEADERS_RULES,

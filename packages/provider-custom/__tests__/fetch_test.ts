@@ -28,7 +28,6 @@ const baseRecord: UpstreamRecord = {
   updatedAt: '2026-04-29T00:00:00.000Z',
   config: {
     baseUrl: 'https://custom.example.com',
-    authStyle: 'bearer',
     apiKey: 'sk-test',
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [],
@@ -159,7 +158,7 @@ test('customFetchModels falls back to the default /v1/models path when modelsFet
   assertEquals(seen, 'https://custom.example.com/v1/models');
 });
 
-test('bearer authStyle sends the configured token via Authorization', async () => {
+test('OpenAI transport sends the configured token via Authorization', async () => {
   const { config } = assertCustomUpstreamRecord(baseRecord);
   let authHeader: string | null = null;
   let xApiKey: string | null = null;
@@ -178,42 +177,34 @@ test('bearer authStyle sends the configured token via Authorization', async () =
   assertEquals(xApiKey, null);
 });
 
-test('authStyle "anthropic" sends x-api-key + anthropic-version', async () => {
-  const { config } = assertCustomUpstreamRecord({
-    ...baseRecord,
-    config: {
-      ...(baseRecord.config as Record<string, unknown>),
-      authStyle: 'anthropic',
-    },
-  });
+test('one upstream uses Authorization for OpenAI and x-api-key for Anthropic Messages', async () => {
+  const { config } = assertCustomUpstreamRecord(baseRecord);
   let authHeader: string | null = null;
   let xApiKey: string | null = null;
   let anthropicVersion: string | null = null;
+  const observed: { authorization: string | null; xApiKey: string | null; anthropicVersion: string | null }[] = [];
   await withMockedFetch(
     request => {
       authHeader = request.headers.get('authorization');
       xApiKey = request.headers.get('x-api-key');
       anthropicVersion = request.headers.get('anthropic-version');
+      observed.push({ authorization: authHeader, xApiKey, anthropicVersion });
       return new Response('{}', { status: 200 });
     },
     async () => {
+      await customFetchOpenAIChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       await customFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
-  assertEquals(authHeader, null);
-  assertEquals(xApiKey, 'sk-test');
-  assertEquals(anthropicVersion, '2023-06-01');
+  assertEquals(observed, [
+    { authorization: 'Bearer sk-test', xApiKey: null, anthropicVersion: null },
+    { authorization: null, xApiKey: 'sk-test', anthropicVersion: '2023-06-01' },
+  ]);
 });
 
-test('authStyle "anthropic" preserves a caller-supplied anthropic-version', async () => {
-  const { config } = assertCustomUpstreamRecord({
-    ...baseRecord,
-    config: {
-      ...(baseRecord.config as Record<string, unknown>),
-      authStyle: 'anthropic',
-    },
-  });
+test('Anthropic transport preserves a caller-supplied anthropic-version', async () => {
+  const { config } = assertCustomUpstreamRecord(baseRecord);
   let anthropicVersion: string | null = null;
   await withMockedFetch(
     request => {
@@ -232,12 +223,12 @@ test('authStyle "anthropic" preserves a caller-supplied anthropic-version', asyn
   assertEquals(anthropicVersion, '2024-01-01');
 });
 
-test('authStyle "none" sends neither Authorization nor x-api-key', async () => {
+test('an empty apiKey sends neither Authorization nor x-api-key', async () => {
   const { config } = assertCustomUpstreamRecord({
     ...baseRecord,
     config: {
       baseUrl: 'https://internal.example.com',
-      authStyle: 'none',
+      apiKey: '',
       endpoints: { openaiChatCompletions: {} },
       ingressHeadersRules: [],
     },
@@ -254,6 +245,7 @@ test('authStyle "none" sends neither Authorization nor x-api-key', async () => {
     },
     async () => {
       await customFetchOpenAIChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -267,7 +259,6 @@ test('Custom provider callOpenAIImagesEdits forwards multipart body with model f
     ...baseRecord,
     config: {
       baseUrl: 'https://custom.example.com',
-      authStyle: 'bearer',
       apiKey: 'sk-custom',
       endpoints: { openaiChatCompletions: {} },
       ingressHeadersRules: [],
@@ -309,7 +300,6 @@ test('Custom provider callOpenAIAudioTranscriptions preserves multipart entries 
     ...baseRecord,
     config: {
       baseUrl: 'https://custom.example.com',
-      authStyle: 'bearer',
       apiKey: 'sk-custom',
       endpoints: {},
       ingressHeadersRules: [],

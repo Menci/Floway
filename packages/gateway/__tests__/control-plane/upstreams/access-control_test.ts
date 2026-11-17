@@ -13,7 +13,6 @@ const customRecord = () => buildCustomUpstreamRecord({
   proxyFallbackList: [{ id: 'proxy_a' }],
   config: {
     baseUrl: 'https://secret.example.com',
-    authStyle: 'bearer',
     apiKey: 'sk-secret',
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [{ key: 'x-secret', value: 'value' }],

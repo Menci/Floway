@@ -19,7 +19,6 @@ const record = (ingressHeadersRules: { key: string; value: string | null }[]): C
   kind: 'custom',
   config: {
     baseUrl: 'https://api.example.com',
-    authStyle: 'bearer',
     apiKey: '',
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules,

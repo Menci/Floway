@@ -108,7 +108,6 @@ test('Custom provider projects gpt-image-* models with kind=image and both image
     updatedAt: '2026-01-01T00:00:00.000Z',
     config: {
       baseUrl: 'https://custom.example.com',
-      authStyle: 'bearer',
       apiKey: 'sk-custom',
       endpoints: { openaiChatCompletions: {} },
       ingressHeadersRules: [],
@@ -150,7 +149,6 @@ test('Custom dashboard projection shares endpoint inference and preserves unrout
     updatedAt: '2026-01-01T00:00:00.000Z',
     config: {
       baseUrl: 'https://custom.example.com',
-      authStyle: 'bearer',
       apiKey: 'sk-custom',
       endpoints: { openaiChatCompletions: {} },
       ingressHeadersRules: [],
