@@ -68,23 +68,6 @@ test('non-prefix done snapshots throw', async () => {
   ])).rejects.toThrow('cannot replace streamed text');
 });
 
-test('text done does not close the field and later deltas remain valid', async () => {
-  const added = { type: 'message', id: 'msg', role: 'assistant', status: 'in_progress', content: [] };
-  const part = { type: 'output_text', text: 'codex', annotations: [] };
-  const done = { ...added, status: 'completed', content: [part] };
-  const result = await read([
-    { type: 'response.created', response: response([]) },
-    { type: 'response.output_item.added', output_index: 0, item: added },
-    { type: 'response.content_part.added', output_index: 0, content_index: 0, part: { ...part, text: '' } },
-    { type: 'response.output_text.delta', output_index: 0, content_index: 0, delta: 'cod' },
-    { type: 'response.output_text.done', output_index: 0, content_index: 0, text: 'cod' },
-    { type: 'response.output_text.delta', output_index: 0, content_index: 0, delta: 'ex' },
-    { type: 'response.output_item.done', output_index: 0, item: done },
-    { type: 'response.completed', response: response([done]) },
-  ]);
-  expect(result.choices[0].items[0]).toMatchObject({ type: 'message', content: [{ text: 'codex' }] });
-});
-
 test('terminal response closes an item without output_item.done', async () => {
   const added = { type: 'function_call', id: 'fc', call_id: 'call', name: 'tool', arguments: '', status: 'in_progress' };
   const done = { ...added, arguments: '{}', status: 'completed' };

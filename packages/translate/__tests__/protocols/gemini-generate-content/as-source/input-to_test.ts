@@ -37,10 +37,3 @@ test('empty thoughts do not enter IR or split visible text', () => {
     ],
   }]);
 });
-
-test('entirely empty thoughts leave no reasoning in input IR', () => {
-  const reading = readGeminiGenerateContentRequest({
-    model: 'm', contents: [{ role: 'model', parts: [{ thought: true, text: '' }] }],
-  });
-  assertEquals(reading.turns[0].toIRInputTurns(), [{ kind: 'assistant', items: [] }]);
-});

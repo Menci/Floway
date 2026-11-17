@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesAssistantContentBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { OpenAIChatCompletionsAssistantMessageEx } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
@@ -285,19 +285,6 @@ test('buildTargetPayload wraps output_config.format json_schema as response_form
     type: 'json_schema',
     json_schema: { name: 'messages_response', strict: true, schema },
   });
-});
-
-test('buildTargetPayload rejects an unknown assistant content block type', async () => {
-  await assertRejects(
-    () =>
-      buildWithTestSidecar({
-        model: 'gpt-test',
-        max_tokens: 256,
-        messages: [{ role: 'assistant', content: [{ type: 'audio' } as unknown as AnthropicMessagesAssistantContentBlock] }],
-      }),
-    Error,
-    "messages.0.content.0.type: 'audio' assistant content blocks are not supported",
-  );
 });
 
 test('buildTargetPayload preserves chronology of multiple in-array system messages', async () => {

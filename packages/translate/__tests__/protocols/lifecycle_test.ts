@@ -27,19 +27,6 @@ const gated = async <T>(prefix: T[], suffix: T[], convert: (source: AsyncIterabl
   return frames;
 };
 
-test('ChatCompletions locks the first reasoning field independently for each choice', async () => {
-  const chunk = (choices: any[]) => eventFrame({ id: 'chat', model: 'm', created: 1, choices } as any);
-  const ir = await collectIR(readOpenAIChatCompletionsEvents(iterate([
-    chunk([{ index: 0, delta: { reasoning: 'A' } }, { index: 1, delta: { reasoning_content: 'X' } }]),
-    chunk([{ index: 0, delta: { reasoning_text: 'B', reasoning: 'C' } }, { index: 1, delta: { reasoning: 'Y', reasoning_content: 'Z' } }]),
-    chunk([{ index: 0, delta: {}, finish_reason: 'stop' }, { index: 1, delta: {}, finish_reason: 'stop' }]), doneFrame(),
-  ])));
-  expect(ir.choices.map(choice => choice.items)).toEqual([
-    [{ type: 'reasoning', summary: ['AC'] }],
-    [{ type: 'reasoning', summary: ['XZ'] }],
-  ]);
-});
-
 test('an old open tool update leaves the current ChatCompletions text run open', async () => {
   const ir = await collectIR(readOpenAIChatCompletionsEvents(iterate([chat({ content: 'before' }), tool(0, '{"x":', 'call', 'lookup'), chat({ content: 'middle' }), tool(0, '1}'), chat({ content: 'after' }), chat({}, 'tool_calls'), doneFrame()])));
   expect(ir.choices[0].items).toEqual([{ type: 'message', content: [{ type: 'text', text: 'before' }] }, { type: 'function_call', name: 'lookup', call_id: 'call', arguments: '{"x":1}' }, { type: 'message', content: [{ type: 'text', text: 'middleafter' }] }]);

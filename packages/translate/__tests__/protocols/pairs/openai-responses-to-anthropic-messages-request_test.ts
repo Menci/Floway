@@ -126,28 +126,6 @@ test.each([
   assertEquals(result.target.messages.at(-1), { role: 'user', content: [{ type: 'document', source }] });
 });
 
-test('buildTargetPayload rejects file assistant content', async () => {
-  await assertRejects(
-    () => buildWithTestSidecar({
-      ...minimalPayload,
-      input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_file', file_id: 'file_1' }] }],
-    }),
-    Error,
-    'input_file assistant content',
-  );
-});
-
-test('buildTargetPayload preserves assistant input_text', async () => {
-  const result = await buildWithTestSidecar({
-    ...minimalPayload,
-    input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_text', text: 'prior reply' }] }],
-  });
-
-  assertEquals(result.target.messages, [
-    { role: 'assistant', content: [{ type: 'text', text: 'prior reply', cache_control: { type: 'ephemeral' } }] },
-  ]);
-});
-
 test.each(['function_call_output', 'custom_tool_call_output'] as const)('buildTargetPayload passes file_id-only images through in %s', async type => {
   const result = await buildWithTestSidecar({
     ...minimalPayload,

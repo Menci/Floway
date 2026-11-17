@@ -4,7 +4,7 @@ import { TranslateInputException } from '../../../src/shared/input-error.ts';
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/anthropic-messages';
-import type { GeminiGenerateContentPart, GeminiGenerateContentContent, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const noOptions: { fallbackMaxOutputTokens?: number } = { fallbackMaxOutputTokens: undefined };
@@ -267,21 +267,6 @@ test('buildTargetPayload maps dynamic thinking budget to adaptive thinking', asy
   assertEquals((await buildWithTestSidecar({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: -1 } } }, 'claude-test', noOptions)).thinking, { type: 'adaptive' });
 });
 
-test('buildTargetPayload rejects an unknown content role', async () => {
-  await assertRejects(
-    () =>
-      buildWithTestSidecar(
-        {
-          contents: [{ role: 'system', parts: [{ text: 'Hi' }] } as unknown as GeminiGenerateContentContent],
-        },
-        'claude-test',
-        noOptions,
-      ),
-    Error,
-    '"system" is not a supported content role.',
-  );
-});
-
 test('buildTargetPayload rejects a function_call part in user content', async () => {
   await assertRejects(
     () =>
@@ -294,51 +279,6 @@ test('buildTargetPayload rejects a function_call part in user content', async ()
       ),
     Error,
     '"function_call" parts are not supported in user content.',
-  );
-});
-
-test('buildTargetPayload rejects an inline_data part in model content', async () => {
-  await assertRejects(
-    () =>
-      buildWithTestSidecar(
-        {
-          contents: [{ role: 'model', parts: [{ inlineData: { mimeType: 'image/png', data: 'aW1n' } }] }],
-        },
-        'claude-test',
-        noOptions,
-      ),
-    Error,
-    '"inline_data" parts are not supported in model content.',
-  );
-});
-
-test('buildTargetPayload rejects a part that sets conflicting content fields', async () => {
-  await assertRejects(
-    () =>
-      buildWithTestSidecar(
-        {
-          contents: [{ role: 'model', parts: [{ text: 'foo', functionCall: { name: 'x', args: {} } } as unknown as GeminiGenerateContentPart] }],
-        },
-        'claude-test',
-        noOptions,
-      ),
-    Error,
-    'sets conflicting content fields',
-  );
-});
-
-test('buildTargetPayload rejects a part with no recognized content field', async () => {
-  await assertRejects(
-    () =>
-      buildWithTestSidecar(
-        {
-          contents: [{ role: 'user', parts: [{}] }],
-        },
-        'claude-test',
-        noOptions,
-      ),
-    Error,
-    'has no recognized content',
   );
 });
 

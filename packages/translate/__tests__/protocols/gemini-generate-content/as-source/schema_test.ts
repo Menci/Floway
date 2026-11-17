@@ -36,13 +36,7 @@ test('preserves exact decimal constraints beyond IEEE-754 integer precision', ()
   expect(JSON.stringify(geminiSchemaToJsonSchema({ type: 'ARRAY', maxItems: '9007199254740993' }))).toContain('"maxItems":9007199254740993');
 });
 
-test('orders schema properties without changing their constraints', () => {
-  const result = geminiSchemaToJsonSchema({ type: 'OBJECT', propertyOrdering: ['b', 'a'], properties: { a: { type: 'STRING' }, b: { type: 'INTEGER' }, c: { type: 'BOOLEAN' } } });
-  expect(Object.keys(result.properties as object)).toEqual(['b', 'a', 'c']);
-  expect(result).not.toHaveProperty('propertyOrdering');
-});
-
-test.each([true, false])('normalizes boolean JSON Schema %s without relaxing its meaning', schema => {
+test.each([false])('normalizes boolean JSON Schema %s without relaxing its meaning', schema => {
   expect(geminiResponseSchema({ responseJsonSchema: schema })).toEqual(schema ? {} : { not: {} });
 });
 

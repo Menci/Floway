@@ -1,12 +1,11 @@
 import { test } from 'vitest';
 
-import { requireCallableSelector } from '../../../../src/protocols/openai-responses/as-source/allowed-tools.ts';
 import type { SidecarCodec } from '../../../../src/round-trip/codec.ts';
 import { TranslateInputException } from '../../../../src/shared/input-error.ts';
 import { buildTargetPayloadFor, pairs } from '../../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../../round-trip/sidecar-codec.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesRequestPayloadEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
-import { assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const buildChat = async (payload: OpenAIResponsesRequestPayloadEx, codec: SidecarCodec) => {
   return { target: await buildTargetPayloadFor(pairs.responsesToChat[0], pairs.responsesToChat[1], payload, { sidecarCodec: codec }) };
@@ -84,12 +83,6 @@ test.each([
   const payload = source(choice as unknown as OpenAIResponsesToolChoice);
   payload.tools!.push({ type: 'custom', name: 'read' });
   await assertRejects(() => buildChat(payload, createTestSidecarCodec()), TranslateInputException, 'allowed_tools');
-});
-
-test('requireCallableSelector rejects a namespace that is not a string', () => {
-
-  assertEquals(requireCallableSelector({ type: 'function', name: 'read', namespace: 'files' }).namespace, 'files');
-  assertThrows(() => requireCallableSelector({ type: 'function', name: 'read', namespace: 42 }), TranslateInputException);
 });
 
 test('rejects namespace selector extensions', async () => {

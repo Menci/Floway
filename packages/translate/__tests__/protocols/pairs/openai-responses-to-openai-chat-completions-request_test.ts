@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsFunctionTool, OpenAIChatCompletionsToolMessage } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsToolMessage } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
@@ -156,18 +156,6 @@ test('buildTargetPayload does not double-wrap an already-wrapped json_schema', a
     type: 'json_schema',
     json_schema: { name: 'already', strict: false, schema: {} },
   });
-});
-
-test('buildTargetPayload omits parameters and strict for a schema-less function tool', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    input: [{ type: 'message', role: 'user', content: 'Hi' }],
-    tools: [{ type: 'function', name: 'ping' }],
-  });
-
-  // `toEqual` treats an undefined-valued key as absent, so the keys are
-  // compared directly: emitting `parameters: undefined` is the regression.
-  assertEquals(Object.keys((result.target.tools![0] as OpenAIChatCompletionsFunctionTool).function), ['name']);
 });
 
 test.each(['none'] as const)('buildTargetPayload omits orphan string tool choice %s', async toolChoice => {

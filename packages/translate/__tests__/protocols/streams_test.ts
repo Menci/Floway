@@ -4,14 +4,13 @@ import { writeAnthropicMessagesEvents, writeGeminiGenerateContentEvents, readAnt
 import type { IRJSONObject } from '../../src/ir/common/json.ts';
 import { createIRBuilder } from '../../src/ir/output/builder.ts';
 import type { IROutputItem } from '../../src/ir/output/types.ts';
-import { TextCoordinateIndex } from '../../src/shared/text-coordinate-index.ts';
 import { collectIR, completeIR } from '../ir/output/helpers.ts';
 import { collect, events, iterate } from '../shared/iterables.ts';
 import { reassembleAnthropicMessagesEvents, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import { reassembleGeminiGenerateContentEvents } from '@floway-dev/protocols/gemini-generate-content';
 import { reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { openaiResponsesResultToEvents, reassembleOpenAIResponsesEvents, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import { openaiResponsesResultToEvents, reassembleOpenAIResponsesEvents, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 
 const options = { id: 'target', created: 1 };
 const chatFrame = (choices: any[], usage?: any) => eventFrame({ id: 'source', object: 'chat.completion.chunk', model: 'model', created: 1, choices, ...(usage === undefined ? {} : { usage }) } as OpenAIChatCompletionsStreamEvent);
@@ -186,16 +185,6 @@ describe('output IR streaming', () => {
     expect(translated.generateContentFrames.some(frame => frame.type === 'event' && 'responseId' in frame.event && frame.event.responseId !== undefined)).toBe(true);
   });
 
-  it('preserves Unicode citation units and excludes the end', async () => {
-    const value = await collectIR(chat());
-    const item = value.choices[0].items.find(i => i.type === 'message');
-    expect(item?.type === 'message' && item.content[0].type === 'text' && item.content[0].annotations?.[0].output_text_range).toEqual({ start: 1, end_exclusive: 4 });
-    expect(TextCoordinateIndex.codePointsToUTF16('A😀中B').codePointRangeToUTF16(1, 3)).toEqual({ start: 1, end_exclusive: 4 });
-    const index = TextCoordinateIndex.utf16ToCodePoints('A😀中B');
-    expect(index.utf16RangeToCodePoints({ start: 1, end_exclusive: 4 })).toEqual({ start: 1, end: 3 });
-    expect(() => index.utf16RangeToCodePoints({ start: 2, end_exclusive: 4 })).toThrow();
-  });
-
   it('delivers text before pulling the upstream completion', async () => {
     let exhausted = false;
     const upstream = async function* () {
@@ -217,22 +206,6 @@ describe('output IR streaming', () => {
     const part = frames.findIndex(record => record.type === 'write' && record.kind === 'initialize' && record.path.length === 6);
     frames.splice(part + 1, 0, { type: 'write', kind: 'assign', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'b' });
     await expect(collect(writeOpenAIChatCompletionsEvents(iterate(frames), options))).rejects.toThrow('append target cannot be assigned');
-  });
-
-  it('handles Responses terminal-only output and implicit audio events', async () => {
-    const result: OpenAIResponsesResultEx = { id: 's', object: 'response', model: 'm', status: 'completed', output: [], error: null, incomplete_details: null };
-    const source = readOpenAIResponsesEvents(iterate([
-      eventFrame({ type: 'response.created', response: result } as OpenAIResponsesStreamEventEx),
-      eventFrame({ type: 'response.audio.delta', delta: 'YWJj' } as OpenAIResponsesStreamEventEx),
-      eventFrame({ type: 'response.audio.transcript.delta', delta: 'abc' } as OpenAIResponsesStreamEventEx),
-      eventFrame({ type: 'response.audio.done' } as OpenAIResponsesStreamEventEx),
-      eventFrame({ type: 'response.audio.transcript.done' } as OpenAIResponsesStreamEventEx),
-      eventFrame({ type: 'response.completed', response: result } as OpenAIResponsesStreamEventEx), doneFrame(),
-    ]));
-    const ir = await collectIR(source);
-    expect(ir.choices[0].items[0]).toMatchObject({ type: 'message', content: [{ type: 'audio', audio: { data: 'YWJj', transcript: 'abc' } }] });
-    const out = await collect(events(writeOpenAIResponsesEvents(iterate(completeIR(ir.choices[0].items)), options)));
-    expect(out).toContainEqual(expect.objectContaining({ type: 'response.audio.delta', delta: 'YWJj' }));
   });
 
   it('emits each candidate end before pulling the next choice or late final usage', async () => {

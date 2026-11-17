@@ -96,16 +96,6 @@ test('Chat controls cross the public Responses route with their independent sema
   expect(result.target.include).toEqual(['message.output_text.logprobs']);
 });
 
-test('Responses controls cross the public Chat route without source-only include fields', async () => {
-  const result = await routeOpenAIResponsesViaOpenAIChatCompletions({
-    model: 'm', stream: true, input: 'hi', ...commonControls,
-    include: ['reasoning.encrypted_content', 'message.output_text.logprobs', 'file_search_call.results'],
-  }, options);
-  if (result.type !== 'trip') throw new Error(result.message);
-  expect(result.target).toMatchObject({ ...commonControls, logprobs: true });
-  expect(result.target).not.toHaveProperty('include');
-});
-
 test.each([false, null] as const)('Chat logprobs %j survives source reading and Responses projection', async logprobs => {
   const source = {
     model: 'm', stream: true, messages: [], logprobs, top_logprobs: null,

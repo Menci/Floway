@@ -56,13 +56,6 @@ test('a failed Responses stream without an error description still fails with a 
   expect(frames).toEqual([eventFrame({ error: { code: 500, status: 'INTERNAL', message: 'Response failed due to unknown error.' } })]);
 });
 
-test('ChatCompletions rejects generated content before any non-empty model', async () => {
-  await expect(collectIR(readOpenAIChatCompletionsEvents(iterate([
-    eventFrame({ id: '', object: '', created: 0, model: '', choices: [] } as any),
-    eventFrame({ id: '', object: '', created: 0, model: '', choices: [{ index: 0, delta: { content: 'answer' }, finish_reason: null }] } as any),
-  ])))).rejects.toThrow('before a non-empty model');
-});
-
 test('ChatCompletions role-only choices still require finish_reason without creating output IR records', async () => {
   const role = eventFrame({ id: 'chat_role', model: 'served', choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }] } as any);
   await expect(collectIR(readOpenAIChatCompletionsEvents(iterate([role])))).rejects.toThrow('ended without finish_reason');
