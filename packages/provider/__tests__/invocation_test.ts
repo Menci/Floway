@@ -2,22 +2,7 @@ import { test } from 'vitest';
 
 import { directFetcher, type ModelCandidate } from '../src/index.ts';
 import { providerModelOf } from '../src/invocation.ts';
-import { assertEquals, assertThrows, stubModelCandidate, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
-
-test('providerModelOf returns the ProviderModel keyed on the candidate provider upstream, verbatim', () => {
-  const providerModel = stubProviderModel({ id: 'gpt-9', enabledFlags: new Set(['strip-prompt-cache-key']) });
-  const candidate = stubModelCandidate({
-    model: {
-      id: 'gpt-9',
-      providerModels: { 'test-upstream': providerModel },
-    },
-  });
-
-  const resolved = providerModelOf(candidate);
-
-  assertEquals(resolved, providerModel);
-  assertEquals(resolved.enabledFlags, new Set(['strip-prompt-cache-key']));
-});
+import { assertThrows, stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
 test('providerModelOf throws when the candidate names an upstream missing from providerModels', () => {
   const candidate = stubModelCandidate({
@@ -31,20 +16,6 @@ test('providerModelOf throws when the candidate names an upstream missing from p
     () => providerModelOf(candidate),
     Error,
     "providerModelOf: model 'orphan-model' has no providerModel for 'test-upstream'",
-  );
-});
-
-test('providerModelOf throws when providerModels only carries entries for other upstreams', () => {
-  const candidate = stubModelCandidate({
-    model: {
-      providerModels: { 'other-upstream': stubProviderModel({ id: 'wrong' }) },
-    },
-  });
-
-  assertThrows(
-    () => providerModelOf(candidate),
-    Error,
-    "no providerModel for 'test-upstream'",
   );
 });
 

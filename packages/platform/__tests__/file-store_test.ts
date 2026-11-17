@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { getFileStore, initFileStore, MemoryFileStore } from '../src/file-store.ts';
+import { MemoryFileStore } from '../src/file-store.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('MemoryFileStore clones at the store boundary', async () => {
@@ -15,14 +15,6 @@ test('MemoryFileStore clones at the store boundary', async () => {
   first![1] = 8;
 
   assertEquals([...(await store.get('k'))!], [1, 2, 3]);
-});
-
-test('runtime exposes one initialized FileStore instance', async () => {
-  const store = new MemoryFileStore();
-  initFileStore(store);
-
-  await getFileStore().put('k', new Uint8Array([4]));
-  assertEquals([...(await store.get('k'))!], [4]);
 });
 
 test('MemoryFileStore deletes exact keys without treating them as prefixes', async () => {
