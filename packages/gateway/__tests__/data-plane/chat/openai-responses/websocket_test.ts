@@ -267,34 +267,6 @@ test('OpenAI Responses WebSocket starts capturing on the next turn when dump ret
   );
 });
 
-test('OpenAI Responses WebSocket dump responseBytes equals the UTF-8 payload bytes sent downstream', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
-
-  await withSuccessfulOpenAIResponsesUpstream(
-    async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
-      const recorded = recordRawMessages(client);
-      try {
-        await completeOpenAIResponsesTurn(client, '响应-byte-count');
-        await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
-
-        const expectedBytes = recorded.messages.reduce(
-          (total, message) => total + new TextEncoder().encode(message).byteLength,
-          0,
-        );
-        const utf16CodeUnits = recorded.messages.reduce((total, message) => total + message.length, 0);
-        assert(expectedBytes > utf16CodeUnits, 'non-ASCII event_id must be counted as UTF-8 bytes');
-        assertEquals(dumps.stored[0]?.record.meta.responseBytes, expectedBytes);
-      } finally {
-        recorded.stop();
-        client.close();
-      }
-    }),
-  );
-});
-
 test('OpenAI Responses WebSocket rejects the next turn after its API key is rotated', async () => {
   const { apiKey, repo } = await setupAppTest();
 

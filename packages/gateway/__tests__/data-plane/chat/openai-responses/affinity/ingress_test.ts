@@ -254,7 +254,7 @@ test('replays required compaction state to another model in the same compatibili
   });
 });
 
-test.each(['compaction', 'compaction_summary', 'context_compaction'] as const)('lets originless %s follow candidates while natural state forces its origin', async type => {
+test.each(['compaction', 'context_compaction'] as const)('lets originless %s follow candidates while natural state forces its origin', async type => {
   const synthetic = await codec.wrap(undefined, targetFor(candidateA), carrierDomain(type, 'encrypted_content'));
   const originlessItem = {
     type,

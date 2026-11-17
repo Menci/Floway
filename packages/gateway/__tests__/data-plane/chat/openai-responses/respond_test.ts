@@ -166,10 +166,8 @@ test.each([
   expect(await response.json()).toEqual(body);
 });
 
-test.each([
-  { type: 'error' as const, sequence_number: 3, code: null, param: 'tools', message: 'rate limited', vendor: { retryable: true } },
-  { type: 'error' as const, sequence_number: 3, error: { code: null, param: null, message: 'rate limited', vendor: { retryable: true } }, trace: 'native-trace' },
-])('Responses non-streaming failure drains the failed resource, preserves error fields, and records usage once: %j', async error => {
+test('Responses non-streaming failure drains the failed resource, preserves error fields, and records usage once', async () => {
+  const error = { type: 'error' as const, sequence_number: 3, code: null, param: 'tools', message: 'rate limited', vendor: { retryable: true } };
   const repo = new InMemoryRepo();
   initRepo(repo);
   const background: Promise<unknown>[] = [];

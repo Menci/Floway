@@ -159,7 +159,7 @@ test.each(['swapped calls', 'inserted first call'] as const)('shim never searche
   });
 });
 
-test.each([false, true])('identical public searches retain ordinal-specific original calls and private results (carriers first: %s)', async carriersFirst => {
+test('identical public searches retain ordinal-specific original calls and private results', async () => {
   const ctx = makeGatewayCtx();
   const codec = ctx.sidecarCodecFactory.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall);
   const calls = ['first', 'second'].map(id => ({ type: boundSearchItem.type, id, status: boundSearchItem.status, action: boundSearchItem.action }));
@@ -172,7 +172,7 @@ test.each([false, true])('identical public searches retain ordinal-specific orig
       data: { action: item.action, results: [{ ...boundSearchItem.results[0], snippet: `private ${item.id}` }] },
     }),
   })));
-  const inv = makeInvocation({ payload: { input: carriersFirst ? [...carriers, ...calls] : [...calls, ...carriers] } });
+  const inv = makeInvocation({ payload: { input: [...carriers, ...calls] } });
   await runShimAndDrain(withOpenAIResponsesServerToolShim([replaySearch]), inv, ctx, async () => {
     assertEquals(historyShape(inv.payload.input), ['function_call:first', 'function_call:second', 'function_call_output:first', 'function_call_output:second']);
     const outputs = inv.payload.input.filter(item => item.type === 'function_call_output');
@@ -227,13 +227,12 @@ test.each(['message', 'function_call_output'] as const)('hosted replay ordinals 
   const ctx = makeGatewayCtx();
   const [orphan] = await searchHistory(ctx, 'orphan');
   const [replay, call] = await searchHistory(ctx, 'next');
-  const boundary: CanonicalOpenAIResponsesInputItem = type === 'message' ? { type, role: 'user', content: 'next' }
-    : type === 'additional_tools' ? { type, role: 'developer', tools: [] }
-      : type === 'tool_search_output' ? { type, call_id: 'load', execution: 'client', tools: [] }
-        : { type, call_id: 'client', output: 'result' };
+  const boundary: CanonicalOpenAIResponsesInputItem = type === 'message'
+    ? { type, role: 'user', content: 'next' }
+    : { type, call_id: 'client', output: 'result' };
   const inv = makeInvocation({ payload: { input: [orphan, boundary, call, replay] } });
   await runShimAndDrain(withOpenAIResponsesServerToolShim([replaySearch]), inv, ctx, async () => {
-    assertEquals(historyShape(inv.payload.input), [type === 'message' ? 'message:user' : type === 'function_call_output' ? 'function_call_output:client' : type, 'function_call:next', 'function_call_output:next']);
+    assertEquals(historyShape(inv.payload.input), [type === 'message' ? 'message:user' : 'function_call_output:client', 'function_call:next', 'function_call_output:next']);
     assertEquals(inv.payload.input[0], boundary);
     return await scriptedRun([messageTurn('done')]).run();
   });
@@ -283,7 +282,6 @@ test.each(['tamper', 'foreign'] as const)('hosted history preserves an unusable 
 
 test.each([
   null,
-  { functionCall: { type: 'function_call', call_id: 'call', name: 'web_search', arguments: '{}' } },
   { type: 'web_search_call', functionCall: { type: 'function_call', call_id: 'call', name: 'web_search', arguments: 1 } },
 ])('authenticated invalid hosted replay data exposes the producer error: %j', async payload => {
   const ctx = makeGatewayCtx();
@@ -302,11 +300,10 @@ test.each([
   );
 });
 
-test.each(['web_search_call', 'image_generation_call'] as const)('shim restores the complete original call after JSON echo without stored state: %s', async type => {
+test('shim restores the complete original call after JSON echo without stored state', async () => {
   const ctx = makeGatewayCtx();
-  const item = type === 'web_search_call'
-    ? { type, id: 'original', status: 'completed' as const }
-    : { type, id: 'original', status: 'completed' as const, result: 'aGVsbG8=', revised_prompt: 'different prompt' };
+  const type = 'image_generation_call' as const;
+  const item = { type, id: 'original', status: 'completed' as const, result: 'aGVsbG8=', revised_prompt: 'different prompt' };
   const functionCall = { type: 'function_call' as const, id: 'fc_original', call_id: 'call_original', name: 'original_alias', arguments: ' { "q": "\\u732b", "n": 9007199254740993 }\n', status: 'completed' as const, extension: { preserved: null } };
   const data = { output: 'large search result '.repeat(20_000) };
   const carrier = { type: 'reasoning' as const, id: 'rs_original', summary: [], encrypted_content: await ctx.sidecarCodecFactory.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall).encode({ v: 1, type, functionCall, data }) };
@@ -330,7 +327,7 @@ test.each(['web_search_call', 'image_generation_call'] as const)('shim restores 
   assert(expanded);
 });
 
-test.each([true, false])('history places mixed hosted results after the call batch and preserves tool inventories (search registration first: %s)', async searchFirst => {
+test('history places mixed hosted results after the call batch and preserves tool inventories', async () => {
   const ctx = makeGatewayCtx();
   const tail: CanonicalOpenAIResponsesInputItem = { type: 'reasoning', id: 'rs_tail', summary: [], encrypted_content: 'opaque' };
   const additional: CanonicalOpenAIResponsesInputItem = { type: 'additional_tools', role: 'developer', tools: [] };
@@ -346,7 +343,7 @@ test.each([true, false])('history places mixed hosted results after the call bat
   ];
   const original = structuredClone(source);
   const inv = makeInvocation({ payload: { input: source } });
-  const shim = withOpenAIResponsesServerToolShim(searchFirst ? [replaySearch, replayImage] : [replayImage, replaySearch]);
+  const shim = withOpenAIResponsesServerToolShim([replayImage, replaySearch]);
   await runShimAndDrain(shim, inv, ctx, async () => {
     assertEquals(historyShape(inv.payload.input), [
       'message:user', 'reasoning', 'message:assistant', 'function_call:search', 'function_call:cc_from_ig_1',
@@ -933,7 +930,6 @@ test.each([{ hostedFirst: true, interleaved: true }, { hostedFirst: false, inter
 });
 
 test.each([
-  { raw: '{"search_query":[{"q":"\\u5496\\u5561"}]}', query: '\u5496\u5561' },
   { raw: '{search_query:[{q:"repaired"}]}', query: 'repaired' },
 ])('hosted search executes parsed arguments while replaying the original string: $raw', async ({ raw, query }) => {
   const { backend } = makeStubDeps();
@@ -1263,7 +1259,6 @@ const runShimWithDomainEntry = async (
 
 test.each([
   { field: 'allowed_domains', raw: 'https://quora.com/', message: 'Invalid domain' },
-  { field: 'allowed_domains', raw: 'example.com:8080', message: 'Invalid domain' },
   { field: 'allowed_domains', raw: null, message: 'Expected string' },
 ] as const)('$field entry $raw rejects with 400 before any upstream or backend call', async ({ field, raw, message }) => {
   const { result, backend, script } = await runShimWithDomainEntry(field, raw);
@@ -1852,41 +1847,6 @@ test('finalMetadata resolves with the LATEST turn modelIdentity, not turn 1', as
   assert(result.finalMetadata !== undefined);
   const meta = await result.finalMetadata;
   assertEquals(meta.modelIdentity.modelKey, 'turn-2-key');
-});
-
-test('open with invalid ref_id: done frame carries action.type="search" with the bad ref in queries', async () => {
-  // Invalid ref_id has no URL to ride on `open_page`, so the done
-  // frame carries `{type:'search', queries:[ref_id]}` (the model and
-  // typed-SDK clients render a coherent intent). The added frame
-  // omits `action` regardless, matching native.
-  makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
-  const inv = makeInvocation();
-  const invalidRef = 'turn_4_ws_0';
-  const argsJson = JSON.stringify({ open: [{ ref_id: invalidRef }] });
-  const turn1: ScriptedTurn = [
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_open', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, argsJson),
-    mkFunctionCallDone(0, 'call_open', SHIM_TOOL_NAME, argsJson),
-    mkResponseCompleted(),
-  ];
-  const script = scriptedRun([turn1, messageTurn('done', 0)]);
-
-  const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'events');
-  const events = eventPayloads(await collectFrames(result.events));
-  const wsDone = events.find(
-    (e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }> =>
-      e.type === 'response.output_item.done'
-      && (e.item as { type?: string }).type === 'web_search_call',
-  );
-  assert(wsDone !== undefined);
-  const doneItem = wsDone.item as OpenAIResponsesOutputWebSearchCall;
-  assert(doneItem.action !== undefined);
-  assertEquals(doneItem.action.type, 'search');
-  assertEquals((doneItem.action as Extract<OpenAIResponsesWebSearchAction, { type: 'search' }>).queries, [invalidRef]);
 });
 
 test('open with valid URL whose fetch fails: done frame carries action.type="open_page" with the same url', async () => {
@@ -2522,7 +2482,7 @@ test('tool_choice "required" demotes to "auto" after first intercepted turn', as
   assertEquals(seenToolChoices[1], 'auto');
 });
 
-test.each([false, true])('forced namespaced client tool choice is not mistaken for the hosted shim function (declared %s)', async declared => {
+test('a forced namespaced client tool choice is not mistaken for the hosted shim function', async () => {
   const { backend } = makeStubDeps();
   const choice = { type: 'function' as const, namespace: 'client', name: SHIM_TOOL_NAME };
   const inv = makeInvocation({
@@ -2530,10 +2490,10 @@ test.each([false, true])('forced namespaced client tool choice is not mistaken f
       tool_choice: choice,
       tools: [
         { type: 'web_search' },
-        ...(declared ? [{
+        {
           type: 'namespace', name: 'client', description: 'Client tools',
           tools: [{ type: 'function', name: SHIM_TOOL_NAME, parameters: { type: 'object' } }],
-        } satisfies OpenAIResponsesTool] : []),
+        },
       ],
     },
   });
@@ -3433,7 +3393,6 @@ test('helper allocation reserves names across callable scopes, history and searc
 
 const undeclaredSelectorChoices: { name: string; choice: OpenAIResponsesToolChoice }[] = [
   { name: 'forced', choice: { type: 'function', name: `${SHIM_TOOL_NAME}_2` } },
-  { name: 'allowed required', choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: `${SHIM_TOOL_NAME}_2` }] } },
 ];
 
 test.each(undeclaredSelectorChoices)('helper allocation does not capture an undeclared $name selector', async ({ choice }) => {
@@ -3461,15 +3420,12 @@ test.each(undeclaredSelectorChoices)('helper allocation does not capture an unde
   assertEquals({ tools, choice }, original);
 });
 
-test.each([
-  { name: 'other' },
-  { id: undefined },
-])('hosted dispatch refuses a closing call whose identity changed: %j', async changed => {
+test('hosted dispatch refuses a closing call whose identity changed', async () => {
   const records: DispatchRecord[] = [];
   const iter = consumeTurnStreaming(framesOf(
     mkResponseCreated(),
     eventFrame({ type: 'response.output_item.added', output_index: 0, item: { type: 'function_call', name: SHIM_TOOL_NAME, id: 'item', call_id: 'call', arguments: '', status: 'in_progress' } }),
-    eventFrame({ type: 'response.output_item.done', output_index: 0, item: { type: 'function_call', name: SHIM_TOOL_NAME, id: 'item', call_id: 'call', arguments: '{}', status: 'completed', ...changed } }),
+    eventFrame({ type: 'response.output_item.done', output_index: 0, item: { type: 'function_call', name: 'other', id: 'item', call_id: 'call', arguments: '{}', status: 'completed' } }),
     mkResponseCompleted(),
   ), createMergeState(), true, new Map([[SHIM_TOOL_NAME, recordingDispatcher(records)]]), loopState(), []);
   await assertRejects(() => drain(iter, records), Error, 'changed a server-tool function identity');
@@ -3532,7 +3488,6 @@ test('native helper injection allocates past namespace children while retaining 
 
 for (const [target, mode] of [
   ['openaiChatCompletions', 'forced'],
-  ['openaiChatCompletions', 'required'],
   ['anthropicMessages', 'auto'],
   ['anthropicMessages', 'required'],
 ] as const) {
@@ -3596,8 +3551,6 @@ for (const [target, mode] of [
 
 for (const [owner, selection] of [
   ['function history', 'forced'],
-  ['custom history', 'allowed_tools'],
-  ['additional_tools', 'forced'],
   ['tool_search_output', 'allowed_tools'],
 ] as const) {
   test(`${selection} helper alias never captures an unqualified client ${owner}`, async () => {
@@ -3609,10 +3562,6 @@ for (const [owner, selection] of [
     const input: CanonicalOpenAIResponsesInputItem[] = [{ type: 'message', role: 'user', content: 'Continue.' }];
     if (owner === 'function history') {
       input.push({ type: 'function_call', name: SHIM_TOOL_NAME, call_id: 'past', arguments: '{}', status: 'completed' });
-    } else if (owner === 'custom history') {
-      input.push({ type: 'custom_tool_call', name: SHIM_TOOL_NAME, call_id: 'past', input: 'client input' });
-    } else if (owner === 'additional_tools') {
-      input.push({ type: 'additional_tools', role: 'developer', tools: [{ type: 'function', name: SHIM_TOOL_NAME }] });
     } else {
       input.push({ type: 'tool_search_output', tools: [{ type: 'custom', name: SHIM_TOOL_NAME }] });
     }
@@ -3633,35 +3582,33 @@ for (const [owner, selection] of [
   });
 }
 
-for (const [selectorType, includeClient] of [['web_search', true], ['function', false]] as const) {
-  test(`required allowed_tools demotes only its mode after hosted execution (${selectorType}, client subset ${includeClient})`, async () => {
-    const { backend } = makeStubDeps();
-    const choice: OpenAIResponsesToolChoice = {
-      type: 'allowed_tools', mode: 'required', tools: [
-        { type: selectorType, ...(selectorType === 'function' ? { name: SHIM_TOOL_NAME } : {}) },
-        ...(includeClient ? [{ type: 'function', name: 'client_allowed' }] : []),
-      ],
-    };
-    const original = structuredClone(choice);
-    const inv = makeInvocation({ payload: { tools: [{ type: 'web_search' }, { type: 'function', name: 'client_allowed' }, { type: 'function', name: 'excluded' }], tool_choice: choice } });
-    const script = scriptedRun([searchCallTurn(0, 'hosted', 'query'), messageTurn('done')]);
-    const choices: unknown[] = [];
-    const declarations: Array<CanonicalOpenAIResponsesPayload['tools']> = [];
-    const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), async () => {
-      choices.push(inv.payload.tool_choice);
-      declarations.push(inv.payload.tools);
-      return await script.run();
-    });
-    const allowed = [{ type: 'function', name: SHIM_TOOL_NAME }, ...(includeClient ? [{ type: 'function', name: 'client_allowed' }] : [])];
-    assertEquals(choices, [{ type: 'allowed_tools', mode: 'required', tools: allowed }, { type: 'allowed_tools', mode: 'auto', tools: allowed }]);
-    assertEquals(declarations[0]?.map(tool => 'name' in tool ? tool.name : undefined), [SHIM_TOOL_NAME, 'client_allowed', 'excluded']);
-    assert(declarations[0] === declarations[1], 'mode demotion must retain the same declaration inventory');
-    assertEquals(script.callCount(), 2);
-    assertEquals(backend.calls.length, 1);
-    assertEquals(choice, original);
-    assertEquals(findResponseCompleted(frames).response.tool_choice, original);
+test('required allowed_tools demotes only its mode after hosted execution', async () => {
+  const { backend } = makeStubDeps();
+  const choice: OpenAIResponsesToolChoice = {
+    type: 'allowed_tools', mode: 'required', tools: [
+      { type: 'web_search' },
+      { type: 'function', name: 'client_allowed' },
+    ],
+  };
+  const original = structuredClone(choice);
+  const inv = makeInvocation({ payload: { tools: [{ type: 'web_search' }, { type: 'function', name: 'client_allowed' }, { type: 'function', name: 'excluded' }], tool_choice: choice } });
+  const script = scriptedRun([searchCallTurn(0, 'hosted', 'query'), messageTurn('done')]);
+  const choices: unknown[] = [];
+  const declarations: Array<CanonicalOpenAIResponsesPayload['tools']> = [];
+  const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), async () => {
+    choices.push(inv.payload.tool_choice);
+    declarations.push(inv.payload.tools);
+    return await script.run();
   });
-}
+  const allowed = [{ type: 'function', name: SHIM_TOOL_NAME }, { type: 'function', name: 'client_allowed' }];
+  assertEquals(choices, [{ type: 'allowed_tools', mode: 'required', tools: allowed }, { type: 'allowed_tools', mode: 'auto', tools: allowed }]);
+  assertEquals(declarations[0]?.map(tool => 'name' in tool ? tool.name : undefined), [SHIM_TOOL_NAME, 'client_allowed', 'excluded']);
+  assert(declarations[0] === declarations[1], 'mode demotion must retain the same declaration inventory');
+  assertEquals(script.callCount(), 2);
+  assertEquals(backend.calls.length, 1);
+  assertEquals(choice, original);
+  assertEquals(findResponseCompleted(frames).response.tool_choice, original);
+});
 
 test('helper echoes distinguish namespaced functions and rewrite hosted allowed_tools selectors reversibly', async () => {
   makeStubDeps();

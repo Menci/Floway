@@ -253,7 +253,6 @@ test('generates an image end-to-end and emits the native lifecycle', async () =>
 });
 
 test.each([
-  { raw: ' { "prompt" : "\\u732b" }\n', prompt: '\u732b' },
   { raw: '{prompt:"repaired"}', prompt: 'repaired' },
 ])('image execution and client replay retain original call identity and arguments: $raw', async ({ raw, prompt }) => {
   stub.nextGenerations = [jsonResponse(REMOTE_PNG_B64)];

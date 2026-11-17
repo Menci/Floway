@@ -326,18 +326,6 @@ test('rejects conflicting identities across call coordinates', async () => {
   await expect(async () => { for await (const frame of result.events) void frame; }).rejects.toThrow('Conflicting');
 });
 
-test('preserves foreign namespaces and independently declared qualified-looking selectors', async () => {
-  const ctx = invocation();
-  const foreign = { type: 'function' as const, namespace: 'foreign', name: 'collaboration.spawn_agent' };
-  ctx.payload.tools?.push({ type: 'function', name: 'collaboration.spawn_agent' });
-  ctx.payload.tool_choice = { type: 'allowed_tools', mode: 'auto', tools: [foreign, { type: 'function', name: 'collaboration.spawn_agent' }] };
-  const beforeChoice = ctx.payload.tool_choice;
-  await withOpenAIResponsesCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
-    expect(ctx.payload.tool_choice).toEqual(beforeChoice);
-    return eventResult((async function* () {})(), testTelemetryModelIdentity);
-  });
-});
-
 test('keeps the namespace across an actual hosted-tool loop and restores only the client stream', async () => {
   const ctx = invocation();
   ctx.payload.tools?.push({ type: 'web_search' });

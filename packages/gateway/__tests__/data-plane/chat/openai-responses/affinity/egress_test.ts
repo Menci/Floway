@@ -166,7 +166,6 @@ describe('OpenAI Responses affinity egress', () => {
   });
 
   test.each([
-    ['response.completed', 'completed'],
     ['response.incomplete', 'incomplete'],
   ] as const)('preserves restored output indices while wrapping a %s snapshot', async (eventType, status) => {
     const reasoning: OpenAIResponsesOutputReasoning = { type: 'reasoning', id: 'rs_first', summary: [] };

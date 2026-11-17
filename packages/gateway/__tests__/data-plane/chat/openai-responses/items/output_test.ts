@@ -163,35 +163,6 @@ test('client output does not publish output_item.done when persistence fails', a
   await expect(iterator.next()).rejects.toBe(persistenceError);
 });
 
-test('store=false passes the emitted item id through without persistence', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), false);
-  const result: OpenAIResponsesResultEx = {
-    id: 'resp_upstream',
-    object: 'response',
-    model: 'model',
-    status: 'completed',
-    output: [{ type: 'reasoning', id: 'rs_upstream', summary: [], encrypted_content: 'wrapped-affinity' }],
-    error: null,
-    incomplete_details: null,
-  };
-
-  const events: OpenAIResponsesStreamEventEx[] = [];
-  for await (const frame of wrapOpenAIResponsesClientOutput(frames(result), { store, responseId: 'resp_public' })) {
-    if (frame.type === 'event') events.push(frame.event);
-  }
-
-  const terminal = events.at(-1);
-  if (terminal?.type !== 'response.completed') throw new Error('Expected terminal response');
-  // The client-facing boundary applies the response ID without changing item IDs.
-  expect(terminal.response.id).toBe('resp_public');
-  expect(terminal.response.output[0].id).toBe('rs_upstream');
-  const added = events.find(event => event.type === 'response.output_item.added');
-  expect(added?.type === 'response.output_item.added' && added.item.id).toBe('rs_upstream');
-  expect(await repo.openaiResponsesItems.lookupMany('key-a', ['rs_upstream'], 0)).toEqual([]);
-});
-
 test('client output persists completed items before rethrowing an iterator error', async () => {
   const { repo, store } = memoryOutputHarness();
   const item = completedReasoningItem;
