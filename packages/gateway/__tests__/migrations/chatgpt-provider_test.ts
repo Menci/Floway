@@ -20,7 +20,7 @@ test('migrates ChatGPT upstreams without changing their state or other upstreams
   }
   expect(db.prepare('SELECT id, provider, config_json, state_json, hue, config_version, usage_refresh_interval_minutes FROM upstreams ORDER BY id').all()).toEqual([
     { id: 'account', provider: 'chatgpt', config_json: '{"accounts":[{"chatgptAccountId":"account"}]}', state_json: '{"accounts":[{"refresh_token":"secret"}]}', hue: 294, config_version: 7, usage_refresh_interval_minutes: 15 },
-    { id: 'other', provider: 'custom', config_json: '{}', state_json: null, hue: 42, config_version: 3, usage_refresh_interval_minutes: 5 },
+    { id: 'other', provider: 'custom', config_json: '{"apiKey":""}', state_json: null, hue: 42, config_version: 4, usage_refresh_interval_minutes: 5 },
   ]);
   expect(() => db.prepare("UPDATE upstreams SET provider = 'codex' WHERE id = 'account'").run()).toThrow();
   expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('idx_upstreams_sort', 'idx_upstreams_provider_enabled_sort') ORDER BY name").all()).toEqual([
