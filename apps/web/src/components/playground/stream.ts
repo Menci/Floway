@@ -37,14 +37,16 @@ const pathFor = (request: PlaygroundRequest): string =>
     ? `${PATH_BY_API.geminiGenerateContent}/${encodeURIComponent(request.model)}:streamGenerateContent?alt=sse`
     : PATH_BY_API[request.api];
 
-// GenerateContent carries turns as role-tagged contents whose parts mirror the
-// wire's own part kinds, so images stay inlineData rather than a data URL.
-const geminiPartsFor = (message: PlaygroundMessage): GeminiGenerateContentPart[] => {
-  if (!message.imageUrl) return [{ text: message.text }];
-  const [meta, data] = message.imageUrl.split(',');
-  const mimeType = /^data:([^;]+)/.exec(meta)?.[1] ?? 'image/png';
-  return [{ text: message.text }, { inlineData: { mimeType, data: data ?? '' } }];
+// GenerateContent carries an image the way its own clients do: base64 bytes
+// inline, or a URL the upstream fetches itself.
+// https://ai.google.dev/gemini-api/docs/generate-content/file-input-methods
+const geminiImagePart = (imageUrl: string): GeminiGenerateContentPart => {
+  const inline = /^data:([^;,]+);base64,(.*)$/s.exec(imageUrl);
+  return inline ? { inlineData: { mimeType: inline[1], data: inline[2] } } : { fileData: { fileUri: imageUrl } };
 };
+
+const geminiPartsFor = (message: PlaygroundMessage): GeminiGenerateContentPart[] =>
+  message.imageUrl ? [{ text: message.text }, geminiImagePart(message.imageUrl)] : [{ text: message.text }];
 
 const contentFor = (message: PlaygroundMessage, api: PlaygroundApi): unknown => {
   if (api === 'geminiGenerateContent') return geminiPartsFor(message);

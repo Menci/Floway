@@ -384,4 +384,28 @@ describe('Gemini generateContent playground', () => {
     // GenerateContent authenticates with the Google header.
     expect(seenHeaders?.get('x-goog-api-key')).toBe('secret');
   });
+
+  it.each([
+    ['a base64 data URL as inline bytes', 'data:image/jpeg;base64,/9j/4AAQ', { inlineData: { mimeType: 'image/jpeg', data: '/9j/4AAQ' } }],
+    ['any other URL as file data the upstream fetches', 'https://example.com/cat.jpg', { fileData: { fileUri: 'https://example.com/cat.jpg' } }],
+  ])('sends %s', async (_label, imageUrl, part) => {
+    let seenBody: Record<string, unknown> = {};
+    vi.stubGlobal('fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
+      seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(sseBody([{ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'ok' }] }, finishReason: 'STOP' }] }]), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    });
+
+    await collectWithOutput(streamPlaygroundText({
+      api: 'geminiGenerateContent',
+      apiKey: 'secret',
+      model: 'gemini-4-argon',
+      system: '',
+      messages: [{ id: 'u1', role: 'user', text: 'what is this', imageUrl }],
+      options: {},
+      signal: new AbortController().signal,
+      fetchImpl: fetch,
+    }));
+
+    expect(seenBody.contents).toEqual([{ role: 'user', parts: [{ text: 'what is this' }, part] }]);
+  });
 });
