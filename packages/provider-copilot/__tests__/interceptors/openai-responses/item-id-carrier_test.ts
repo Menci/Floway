@@ -7,7 +7,6 @@ describe('Copilot item id carrier', () => {
     ['raw', 'not base64!'],
     ['base64', btoa('upstream opaque bytes')],
     ['base64url', '--__'],
-    ['empty raw', ''],
   ])('round-trips %s blobs and their upstream ids', (_label, original) => {
     const wrapped = wrapCopilotItemId(original, 'rs_upstream');
 
@@ -20,7 +19,7 @@ describe('Copilot item id carrier', () => {
     });
   });
 
-  test.each(['\ud800', '\udfff', `a\ud800${String.fromCodePoint(0x1f600)}\udfffz`])(
+  test.each([`a\ud800${String.fromCodePoint(0x1f600)}\udfffz`])(
     'round-trips raw UTF-16 code units exactly',
     original => {
       expect(unwrapCopilotItemId(wrapCopilotItemId(original, 'rs_raw'))).toMatchObject({

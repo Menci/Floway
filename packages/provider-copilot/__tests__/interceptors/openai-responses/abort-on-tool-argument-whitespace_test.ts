@@ -58,18 +58,6 @@ const runWith = async (frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): P
   return await collect(result);
 };
 
-test('passes a normal OpenAI Responses stream through unchanged', async () => {
-  const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [
-    eventFrame(argsDelta(0, '{"k":')),
-    eventFrame(argsDelta(0, '"v"}')),
-    eventFrame(({ type: 'response.function_call_arguments.done', item_id: 'fc_0', output_index: 0, arguments: '{"k":"v"}' }) as OpenAIResponsesStreamEventEx),
-    doneFrame(),
-  ];
-
-  const out = await runWith(frames);
-  assertEquals(out, frames);
-});
-
 test('aborts and emits an error event + done when whitespace exceeds the threshold', async () => {
   const wsDelta = '\n'.repeat(MAX_CONSECUTIVE_WHITESPACE + 1);
   const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [

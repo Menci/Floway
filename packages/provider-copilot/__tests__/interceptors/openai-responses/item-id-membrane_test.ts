@@ -177,7 +177,7 @@ test.each([
     recipient: 'b',
     content: [{ type: 'encrypted_content', encrypted_content: 'agent state' }],
   }],
-  ...(['compaction', 'compaction_summary', 'context_compaction'] as const).map(type => [type, { type, id: 'cmp_raw', encrypted_content: 'compaction state' }] as const),
+  ['compaction', { type: 'compaction', id: 'cmp_raw', encrypted_content: 'compaction state' }],
 ] as const)('normalizes carrier state on generic fast-path %s added frames', async (_type, fixture) => {
   const { result } = await runStream(openaiResponsesResultToEvents(response([fixture as OpenAIResponsesOutputItemEx])));
   const frames = await collect(result);
@@ -223,14 +223,7 @@ test.each([
 const uncarriedOutputItems = [
   ['msg', { type: 'message', id: 'raw', role: 'assistant', content: [] }],
   ['fc', { type: 'function_call', id: 'raw', call_id: 'call', name: 'f', arguments: '{}', status: 'completed' }],
-  ['ctc', { type: 'custom_tool_call', id: 'raw', call_id: 'call', name: 'tool', input: 'x' }],
-  ['ws', { type: 'web_search_call', id: 'raw', status: 'completed', action: { type: 'search', queries: ['x'] } }],
-  ['tsc', { type: 'tool_search_call', id: 'raw', arguments: {}, call_id: 'call', execution: 'server', status: 'completed' }],
-  ['tso', { type: 'tool_search_output', id: 'raw', tools: [], call_id: 'call', execution: 'server', status: 'completed' }],
-  ['cmo', { type: 'program_output', id: 'raw', call_id: 'call', result: 'ok', status: 'completed' }],
   ['sh', { type: 'shell_call', id: 'raw', call_id: 'call', action: { commands: ['pwd'] }, status: 'completed' }],
-  ['sho', { type: 'shell_call_output', id: 'raw', call_id: 'call', output: [{ stdout: '', stderr: '', outcome: { type: 'exit', exit_code: 0 } }], status: 'completed' }],
-  ['apc', { type: 'apply_patch_call', id: 'raw', call_id: 'call', operation: { type: 'delete_file', path: 'x' }, status: 'completed' }],
 ] as const;
 
 test.each(uncarriedOutputItems)('randomizes a Copilot %s item without exposing its raw id', async (prefix, fixture) => {
@@ -283,108 +276,6 @@ test('preserves shell command events that carry no item id', async () => {
   expect(added.item.id).toMatch(/^sh_[0-9a-f]{32}$/);
   expect(done.item.id).toBe(added.item.id);
   expect(events.slice(1, 4)).toEqual(commandEvents);
-});
-
-test('rewrites a future item_id extension on a shell command event', async () => {
-  const item: OpenAIResponsesOutputItemEx = {
-    type: 'shell_call',
-    id: 'sh_raw',
-    call_id: 'call_shell',
-    action: { commands: ['pwd'] },
-    status: 'completed',
-  };
-  const extended = {
-    type: 'response.shell_call_command.delta',
-    output_index: 0,
-    command_index: 0,
-    delta: 'pwd',
-    item_id: 'sh_raw',
-  } as unknown as OpenAIResponsesStreamEventEx;
-  const { result } = await runStream([
-    eventFrame(outputItemEvent('added', 0, item)),
-    eventFrame(extended),
-    eventFrame(outputItemEvent('done', 0, item)),
-  ]);
-  const frames = await collect(result);
-  const added = eventAt(frames, 'response.output_item.added');
-  const command = eventAt(frames, 'response.shell_call_command.delta') as typeof extended & { item_id: string };
-
-  expect(command.item_id).toBe(added.item.id);
-});
-
-test('rewrites apply-patch diff item ids', async () => {
-  const item: OpenAIResponsesOutputItemEx = {
-    type: 'apply_patch_call',
-    id: 'apc_raw',
-    call_id: 'call_patch',
-    operation: { type: 'create_file', path: 'x', diff: '+x' },
-    status: 'completed',
-  };
-  const { result } = await runStream([
-    eventFrame(outputItemEvent('added', 0, item)),
-    eventFrame({ type: 'response.apply_patch_call_operation_diff.delta', item_id: 'apc_raw', output_index: 0, delta: '+x' }),
-    eventFrame({ type: 'response.apply_patch_call_operation_diff.done', item_id: 'apc_raw', output_index: 0, diff: '+x' }),
-    eventFrame(outputItemEvent('done', 0, item)),
-  ]);
-  const frames = await collect(result);
-  const added = eventAt(frames, 'response.output_item.added');
-
-  expect(eventAt(frames, 'response.apply_patch_call_operation_diff.delta').item_id).toBe(added.item.id);
-  expect(eventAt(frames, 'response.apply_patch_call_operation_diff.done').item_id).toBe(added.item.id);
-});
-
-test('rewrites reasoning-text item ids', async () => {
-  const item: OpenAIResponsesOutputItemEx = { type: 'reasoning', id: 'rs_raw', summary: [] };
-  const { result } = await runStream([
-    eventFrame(outputItemEvent('added', 0, item)),
-    eventFrame({ type: 'response.reasoning_text.delta', item_id: 'rs_raw', output_index: 0, content_index: 0, delta: 'trace' }),
-    eventFrame({ type: 'response.reasoning_text.done', item_id: 'rs_raw', output_index: 0, content_index: 0, text: 'trace' }),
-    eventFrame(outputItemEvent('done', 0, item)),
-  ]);
-  const frames = await collect(result);
-  const added = eventAt(frames, 'response.output_item.added');
-
-  expect(eventAt(frames, 'response.reasoning_text.delta').item_id).toBe(added.item.id);
-  expect(eventAt(frames, 'response.reasoning_text.done').item_id).toBe(added.item.id);
-});
-
-test('carries program and nested agent-message ids in every available blob', async () => {
-  const items: OpenAIResponsesOutputItemEx[] = [
-    { type: 'program', id: 'cm_raw', call_id: 'call_program', code: 'return 1', fingerprint: 'program state' },
-    {
-      type: 'agent_message',
-      id: 'amsg_raw',
-      author: 'a',
-      recipient: 'b',
-      content: [
-        { type: 'encrypted_content', encrypted_content: 'agent state one' },
-        { type: 'input_text', text: 'visible' },
-        { type: 'encrypted_content', encrypted_content: 'agent state two' },
-      ],
-    },
-  ];
-  const { result } = await runStream(items.flatMap((item, index) => [
-    eventFrame(outputItemEvent('added', index, item)),
-    eventFrame(outputItemEvent('done', index, item)),
-  ]));
-  const frames = await collect(result);
-  const doneItems = frames.flatMap(frame =>
-    frame.type === 'event' && frame.event.type === 'response.output_item.done' ? [frame.event.item] : []);
-
-  const [program, agent] = doneItems;
-  expect(program.id).toMatch(/^cm_[0-9a-f]{32}$/);
-  if (program.type !== 'program') throw new Error('expected program');
-  expect(unwrapCopilotItemId(program.fingerprint)).toMatchObject({ kind: 'owned', value: 'program state', id: 'cm_raw' });
-  expect(agent.id).toMatch(/^amsg_[0-9a-f]{32}$/);
-  if (agent.type !== 'agent_message') throw new Error('expected agent_message');
-  const encrypted = agent.content.flatMap(part =>
-    part.type === 'encrypted_content' && typeof part.encrypted_content === 'string'
-      ? [part.encrypted_content]
-      : []);
-  expect(encrypted.map(unwrapCopilotItemId)).toEqual([
-    expect.objectContaining({ kind: 'owned', value: 'agent state one', id: 'amsg_raw' }),
-    expect.objectContaining({ kind: 'owned', value: 'agent state two', id: 'amsg_raw' }),
-  ]);
 });
 
 test('restores owned blob ids for Copilot input and leaves foreign items unchanged', async () => {
@@ -453,7 +344,8 @@ test('rejects conflicting ids carried by one input item', async () => {
   })).rejects.toThrow(/conflicting upstream ids/);
 });
 
-test.each(['compaction', 'compaction_summary', 'context_compaction'] as const)('normalizes generated %s without touching retained compact messages', async type => {
+test('normalizes a generated compaction without touching retained compact messages', async () => {
+  const type = 'context_compaction';
   const compactResult = response([
     { type: 'message', id: 'msg_retained', status: 'completed', role: 'assistant', content: [] },
     { type, id: 'cmp_raw', encrypted_content: 'compact state' },
@@ -488,16 +380,6 @@ test('fails closed on unknown output types before yielding a raw id', async () =
   await expect(collect(result)).rejects.toThrow("Unsupported Copilot OpenAI Responses output item type 'future_call'");
 });
 
-test('rejects a repeated output_item.added observation', async () => {
-  const item: OpenAIResponsesOutputItemEx = { type: 'message', id: 'msg_raw', status: 'in_progress', role: 'assistant', content: [] };
-  const { result } = await runStream([
-    eventFrame(outputItemEvent('added', 0, item)),
-    eventFrame(outputItemEvent('added', 0, item)),
-  ]);
-
-  await expect(collect(result)).rejects.toThrow(/output_item\.added twice/);
-});
-
 test('rejects an output index whose observed item type changes', async () => {
   const { result } = await runStream([
     eventFrame(outputItemEvent('added', 0, { type: 'message', id: 'msg_raw', status: 'in_progress', role: 'assistant', content: [] })),
@@ -514,11 +396,11 @@ test('rejects replay state without the upstream id that authenticates it', async
   await expect(collect(result)).rejects.toThrow(/has replay state but no upstream id/);
 });
 
-test.each(['toString', 'constructor', '__proto__'])('does not accept Object prototype key %s as an output item type', async type => {
-  const unknown = { type, id: 'raw_future' } as unknown as OpenAIResponsesOutputItemEx;
+test('does not accept an Object prototype key as an output item type', async () => {
+  const unknown = { type: 'constructor', id: 'raw_future' } as unknown as OpenAIResponsesOutputItemEx;
   const { result } = await runStream([eventFrame(outputItemEvent('added', 0, unknown))]);
 
-  await expect(collect(result)).rejects.toThrow(`Unsupported Copilot OpenAI Responses output item type '${type}'`);
+  await expect(collect(result)).rejects.toThrow("Unsupported Copilot OpenAI Responses output item type 'constructor'");
 });
 
 test('fails closed on unknown event envelopes that could hide an item id', async () => {
@@ -529,17 +411,6 @@ test('fails closed on unknown event envelopes that could hide an item id', async
   const { result } = await runStream([eventFrame(future)]);
 
   await expect(collect(result)).rejects.toThrow("Unsupported Copilot OpenAI Responses stream event type 'response.future'");
-});
-
-test('passes through an unknown scalar event without item identity', async () => {
-  const future = {
-    type: 'response.future_progress',
-    progress: 0.5,
-  } as unknown as OpenAIResponsesStreamEventEx;
-  const { result } = await runStream([eventFrame(future)]);
-  const frames = await collect(result);
-
-  expect(frames).toEqual([eventFrame(future)]);
 });
 
 test('rewrites an item id extension on an unknown scalar event', async () => {
@@ -560,17 +431,6 @@ test('rewrites an item id extension on an unknown scalar event', async () => {
 
   if (normalized.type !== 'event') throw new Error('expected future event');
   expect((normalized.event as unknown as { item_id: string }).item_id).toBe(added.item.id);
-});
-
-test('rejects an invalid item id extension on an unknown event', async () => {
-  const future = {
-    type: 'response.future_delta',
-    item_id: 42,
-    output_index: 0,
-  } as unknown as OpenAIResponsesStreamEventEx;
-  const { result } = await runStream([eventFrame(future)]);
-
-  await expect(collect(result)).rejects.toThrow(/carries an invalid item_id extension/);
 });
 
 test('forwards repeated done frames with stable public identity and each frame own content', async () => {

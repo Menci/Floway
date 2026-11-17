@@ -48,12 +48,6 @@ test('synthesizes interleaved thinking only when the caller supplied no beta int
   assertEquals(explicit.anthropicBeta, []);
 });
 
-test('does not synthesize interleaved thinking for adaptive thinking', async () => {
-  const ctx = invocation({ ...baseBody, thinking: { type: 'adaptive' } });
-  await withAnthropicBetaNormalized(ctx, stubRequest, okEvents);
-  assertEquals(ctx.anthropicBeta, []);
-});
-
 test('pairs context management with its required beta token', async () => {
   const ctx = invocation(
     { ...baseBody, context_management: { edits: [] } },

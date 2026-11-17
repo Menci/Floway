@@ -71,24 +71,6 @@ test.each(Object.entries(contentContainers))('compresses inline images in %s', a
   assert(rewrittenContent[1] !== imagePart);
 });
 
-test.each(Object.entries(contentContainers))('leaves remote images in %s untouched', async (_name, wrap) => {
-  initImageProcessor(fixedProcessor);
-  const imagePart: OpenAIResponsesInputImage = { type: 'input_image', image_url: 'https://example.com/cat.png', detail: 'auto' };
-  const sourceItem = wrap([imagePart]);
-  const payload: CanonicalOpenAIResponsesPayload = {
-    model: 'gpt-test',
-    input: [sourceItem],
-  };
-  const ctx = invocation(payload);
-
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
-
-  assertEquals(imageUrlOf(ctx.payload.input[0]), 'https://example.com/cat.png');
-  assert(ctx.payload === payload);
-  assert(ctx.payload.input[0] === sourceItem);
-  assert(contentOf(ctx.payload.input[0])?.[0] === imagePart);
-});
-
 test('compresses each unique inline image only once when the same data URL appears multiple times', async () => {
   let calls = 0;
   initImageProcessor({

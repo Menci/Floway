@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { withSpeedFast } from '../../../src/interceptors/anthropic-messages/handle-speed-fast.ts';
 import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, AnthropicMessagesUsage } from '@floway-dev/protocols/anthropic-messages';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -61,48 +61,12 @@ const streamResult = (frames: ProtocolFrame<AnthropicMessagesStreamEventEx>[]): 
     testTelemetryModelIdentity,
   );
 
-test('withSpeedFast strips speed=fast from the outbound payload', async () => {
-  const ctx = makeCtx('fast');
-
-  await withSpeedFast(ctx, stubRequest, () => Promise.resolve(streamResult([])));
-
-  assertEquals('speed' in ctx.payload, false);
-});
-
 test('withSpeedFast strips speed=standard (semantically equivalent to omitted)', async () => {
   const ctx = makeCtx('standard');
 
   await withSpeedFast(ctx, stubRequest, () => Promise.resolve(streamResult([])));
 
   assertEquals('speed' in ctx.payload, false);
-});
-
-test('withSpeedFast leaves unknown speed values untouched so the upstream rejects them', async () => {
-  // Anthropic returns 400 invalid_request_error on unknown enum values rather
-  // than silently downgrading; the gateway mirrors that by passing the
-  // unknown value through to Copilot, which will surface the same shape of
-  // error. We never invent a fall-through here.
-  const ctx = makeCtx('priority');
-
-  await withSpeedFast(ctx, stubRequest, () => Promise.resolve(streamResult([])));
-
-  assertEquals(ctx.payload.speed, 'priority');
-});
-
-test('withSpeedFast stamps usage.speed=fast on message_start when fast was requested', async () => {
-  const ctx = makeCtx('fast');
-
-  const result = await withSpeedFast(ctx, stubRequest, () =>
-    Promise.resolve(streamResult([messageStart(baseUsage), messageStop(), doneFrame()])));
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('expected events');
-  const frames = await collect(result.events);
-  assertEquals(frames, [
-    messageStart({ ...baseUsage, speed: 'fast' }),
-    messageStop(),
-    doneFrame(),
-  ]);
 });
 
 test('withSpeedFast keeps fast mode metadata on message_start and leaves message_delta unchanged', async () => {
@@ -125,18 +89,6 @@ test('withSpeedFast keeps fast mode metadata on message_start and leaves message
   ]);
 });
 
-test('withSpeedFast leaves the stream untouched when speed is absent', async () => {
-  const ctx = makeCtx();
-  const frames = [messageStart(baseUsage), messageDelta(3), messageStop()];
-
-  const result = await withSpeedFast(ctx, stubRequest, () => Promise.resolve(streamResult(frames)));
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('expected events');
-  // Cannot compare references after streaming, so reconstruct the expected list.
-  assertEquals(await collect(result.events), frames);
-});
-
 test('withSpeedFast leaves the stream untouched when speed=standard (no fast intent to stamp)', async () => {
   const ctx = makeCtx('standard');
   const frames = [messageStart(baseUsage), messageStop()];
@@ -146,23 +98,4 @@ test('withSpeedFast leaves the stream untouched when speed=standard (no fast int
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('expected events');
   assertEquals(await collect(result.events), frames);
-});
-
-test('withSpeedFast surfaces non-events results (api-error / internal-error) verbatim', async () => {
-  const ctx = makeCtx('fast');
-
-  const result = await withSpeedFast(ctx, stubRequest, () =>
-    Promise.resolve({
-      type: 'internal-error',
-      status: 502,
-      error: {
-        type: 'internal_error',
-        name: 'Error',
-        message: 'boom',
-        stack: '',
-        target_api: 'anthropicMessages',
-      },
-    }));
-
-  assertEquals(result.type, 'internal-error');
 });

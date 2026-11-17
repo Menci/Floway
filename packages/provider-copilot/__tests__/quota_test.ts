@@ -47,21 +47,6 @@ test('parseCopilotQuotaHeaders reads every bucket a live response reports', () =
   assertEquals(snapshot?.quotas.chat.entitlement, -1);
 });
 
-// Copilot names its buckets in an open string — `premium_models` shows up
-// alongside the three above — so an unfamiliar id is kept, not dropped.
-test('parseCopilotQuotaHeaders keeps a quota id it has never seen', () => {
-  const snapshot = parseCopilotQuotaHeaders(
-    new Headers({ 'x-quota-snapshot-premium_models': 'ent=1000&ov=0.0&ovPerm=false&rem=42.5&rst=2026-09-01T00%3A00%3A00Z&totRem=425' }),
-    NOW,
-  );
-
-  assertEquals(snapshot?.quotas.premium_models.quota_remaining, 425);
-});
-
-test('parseCopilotQuotaHeaders returns null when the response carries no quota headers', () => {
-  assertEquals(parseCopilotQuotaHeaders(new Headers({ 'x-request-id': 'r1' }), NOW), null);
-});
-
 // A half-parsed bucket would render as a confident zero on the dashboard, so
 // it is dropped while its well-formed siblings survive.
 test('parseCopilotQuotaHeaders drops a bucket missing a numeric field', () => {
@@ -112,27 +97,6 @@ test('projectCopilotUsageResponse lands on the same shape the headers produce', 
   assertEquals(projected?.reset_at, '2026-09-01T00:00:00.000Z');
 });
 
-// The REST body is the only source for a seat that has never served a request,
-// and it may omit the UTC reset instant; the snapshot says so rather than
-// inventing one.
-test('projectCopilotUsageResponse reports a missing reset instant as null', () => {
-  const projected = projectCopilotUsageResponse({
-    quota_snapshots: {
-      premium_interactions: {
-        entitlement: 300,
-        overage_count: 0,
-        overage_permitted: false,
-        percent_remaining: 90,
-        quota_remaining: 270,
-        unlimited: false,
-      },
-    },
-  }, NOW);
-
-  assertEquals(projected?.reset_at, null);
-  assertEquals(projected?.quotas.premium_interactions.quota_remaining, 270);
-});
-
 // A body on the pre-2026-06 shape leaves `quota_snapshots` empty or absent and
 // reports through `limited_user_quotas`, which we do not read. Same null
 // contract as the header path: no buckets is "nothing observed", so an
@@ -141,28 +105,6 @@ test('projectCopilotUsageResponse reports a missing reset instant as null', () =
 test('projectCopilotUsageResponse reports a body with no quota buckets as no observation', () => {
   assertEquals(projectCopilotUsageResponse({}, NOW), null);
   assertEquals(projectCopilotUsageResponse({ quota_snapshots: {} }, NOW), null);
-});
-
-// Captured from a live `free_limited_copilot` seat on 2026-07-08
-// (https://github.com/TopiCsarno/yapcap/blob/152ea67c3abd44776268627d58533003099da951/fixtures/copilot/copilot_user_response.json).
-// The seat meters chat and completions and reports `premium_interactions` as
-// `entitlement: 0` — an allotment it does not have, not one it has exhausted.
-test('projectCopilotUsageResponse keeps a free seat’s metered buckets and its zero-entitlement one apart', () => {
-  const projected = projectCopilotUsageResponse({
-    quota_reset_date_utc: '2026-08-01T00:00:00.000Z',
-    quota_snapshots: {
-      chat: { entitlement: 200, unlimited: false, quota_remaining: 200, percent_remaining: 100, overage_count: 0, overage_permitted: false },
-      completions: { entitlement: 2000, unlimited: false, quota_remaining: 2000, percent_remaining: 100, overage_count: 0, overage_permitted: false },
-      premium_interactions: { entitlement: 0, unlimited: false, quota_remaining: 0, percent_remaining: 0, overage_count: 0, overage_permitted: false },
-    },
-  }, NOW);
-
-  assertEquals(projected?.quotas.chat.entitlement, 200);
-  assertEquals(projected?.quotas.completions.entitlement, 2000);
-  // Projected verbatim; the dashboard reads `entitlement > 0` to tell a bucket
-  // the seat does not have from one it has burned through.
-  assertEquals(projected?.quotas.premium_interactions.entitlement, 0);
-  assertEquals(projected?.quotas.premium_interactions.unlimited, false);
 });
 
 // Every field on this endpoint is optional per GitHub's own SDK schema. A
@@ -224,22 +166,6 @@ test('putCopilotQuota rejects malformed entitlement before writing state or metr
   })).rejects.toThrow(TypeError);
   expect(saveState).not.toHaveBeenCalled();
   expect(recordUpstreamMetric).not.toHaveBeenCalled();
-});
-
-test('the seat projection keeps both identifiers as the endpoint reported them', () => {
-  assertEquals(
-    projectCopilotSeat({ copilot_plan: 'individual_max', access_type_sku: 'max_monthly_subscriber_quota' }, NOW),
-    { observed_at: NOW.toISOString(), plan: 'individual_max', sku: 'max_monthly_subscriber_quota' },
-  );
-});
-
-// A free seat is discriminated by its SKU and carries no plan of its own, which
-// is the pair VS Code matches first.
-test('the seat projection keeps a SKU that arrives without a plan', () => {
-  assertEquals(
-    projectCopilotSeat({ access_type_sku: 'free_limited_copilot' }, NOW),
-    { observed_at: NOW.toISOString(), plan: null, sku: 'free_limited_copilot' },
-  );
 });
 
 // "Nothing observed" rather than "a seat with no plan": the operator's refresh

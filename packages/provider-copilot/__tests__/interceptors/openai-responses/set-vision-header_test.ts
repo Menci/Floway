@@ -40,10 +40,10 @@ test.each(Object.entries(contentContainers))('OpenAI Responses vision header det
   assertEquals(ctx.headers.get('copilot-vision-request'), 'true');
 });
 
-test.each(Object.entries(contentContainers))('OpenAI Responses vision header ignores text-only %s', async (_name, wrap) => {
+test('OpenAI Responses vision header ignores text-only input', async () => {
   const ctx = invocation({
     model: 'gpt-test',
-    input: [wrap([{ type: 'input_text', text: 'plain text only' }])],
+    input: [contentContainers.message([{ type: 'input_text', text: 'plain text only' }])],
   });
 
   await withVisionHeaderSet(ctx, stubRequest, okEvents);

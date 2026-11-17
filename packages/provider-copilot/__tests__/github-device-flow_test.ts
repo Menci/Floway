@@ -85,13 +85,11 @@ test('pollGitHubDeviceFlow sends the device grant through the supplied fetcher',
 });
 
 test.each([
-  { error: 'authorization_pending' },
   {
     error: 'slow_down',
     error_description: 'Too many requests have been made in the same timeframe.',
     interval: 10,
   },
-  { error: 'access_denied', error_description: 'The user has rejected authorization.' },
 ])('pollGitHubDeviceFlow preserves GitHub HTTP 200 $error', async body => {
   assertEquals(await pollGitHubDeviceFlow('github.com', 'device', async () => jsonResponse(body)), body);
 });

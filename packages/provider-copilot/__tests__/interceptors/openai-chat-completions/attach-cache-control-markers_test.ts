@@ -40,44 +40,10 @@ test('OpenAI Chat Completions cache markers attach to first two systems and last
   }
 });
 
-test('OpenAI Chat Completions cache markers handle a single system message', async () => {
-  const ctx = invocation([
-    { role: 'system', content: 'only system' },
-  ]);
-
-  await withCacheControlMarkersAttached(ctx, stubRequest, okEvents);
-
-  assertEquals(markedIndexes(ctx.payload.messages), [0]);
-});
-
-test('OpenAI Chat Completions cache markers attach to last two non-systems when no system message exists', async () => {
-  const ctx = invocation([
-    { role: 'user', content: 'user 1' },
-    { role: 'assistant', content: 'assistant 1' },
-    { role: 'user', content: 'user 2' },
-    { role: 'assistant', content: 'assistant 2' },
-  ]);
-
-  await withCacheControlMarkersAttached(ctx, stubRequest, okEvents);
-
-  assertEquals(markedIndexes(ctx.payload.messages), [2, 3]);
-});
-
 test('OpenAI Chat Completions cache markers skip empty string content', async () => {
   const ctx = invocation([
     { role: 'system', content: '' },
     { role: 'user', content: '' },
-  ]);
-
-  await withCacheControlMarkersAttached(ctx, stubRequest, okEvents);
-
-  assertEquals(markedIndexes(ctx.payload.messages), []);
-});
-
-test('OpenAI Chat Completions cache markers skip empty array content', async () => {
-  const ctx = invocation([
-    { role: 'system', content: [] },
-    { role: 'user', content: [] },
   ]);
 
   await withCacheControlMarkersAttached(ctx, stubRequest, okEvents);

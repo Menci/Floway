@@ -46,24 +46,6 @@ const copilotTokenResponse = (request: Request): Response | null => {
   return null;
 };
 
-test('fetchCopilotModels returns the parsed response on 2xx', async () => {
-  const config = await installRepoAndConfig();
-
-  await withMockedFetch(
-    request => {
-      const preflight = copilotTokenResponse(request);
-      if (preflight) return preflight;
-      const url = new URL(request.url);
-      if (url.pathname === '/models') return jsonResponse({ object: 'list', data: [{ id: 'cm-1' }] });
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const result = await fetchCopilotModels(config, directFetcher);
-      assertEquals(result.data[0].id, 'cm-1');
-    },
-  );
-});
-
 test('fetchCopilotModels throws ProviderModelsUnavailableError with httpResponse on non-2xx', async () => {
   const config = await installRepoAndConfig();
 

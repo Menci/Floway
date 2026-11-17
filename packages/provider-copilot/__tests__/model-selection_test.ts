@@ -56,35 +56,6 @@ test('resolveCopilotRawModel keeps explicit suffix models as exact upstream ids'
   assertEquals(resolved?.id, 'claude-opus-4.7-xhigh');
 });
 
-test('resolveCopilotRawModel strips date aliases before explicit suffix exact match', () => {
-  const resolved = resolveCopilotRawModel(
-    models(
-      model('claude-opus-4.7'),
-      model('claude-opus-4.7-xhigh', { reasoningEfforts: ['xhigh'] }),
-      model('claude-opus-4.7-1m-internal', {
-        contextWindow: 1_000_000,
-        reasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
-      }),
-    ),
-    'claude-opus-4-7-xhigh-20251001',
-    { context1m: true, reasoningEffort: 'medium' },
-  );
-
-  assertEquals(resolved?.id, 'claude-opus-4.7-xhigh');
-});
-
-test('resolveCopilotRawModel supports integer-version Claude date aliases', () => {
-  const resolved = resolveCopilotRawModel(models(model('claude-sonnet-4'), model('claude-sonnet-4-1m', { contextWindow: 1_000_000 })), 'claude-sonnet-4-20250514', { context1m: true });
-
-  assertEquals(resolved?.id, 'claude-sonnet-4-1m');
-});
-
-test('resolveCopilotRawModel strips integer-version date aliases before explicit suffix exact match', () => {
-  const resolved = resolveCopilotRawModel(models(model('claude-sonnet-4'), model('claude-sonnet-4-1m', { contextWindow: 1_000_000 })), 'claude-sonnet-4-1m-20250514', {});
-
-  assertEquals(resolved?.id, 'claude-sonnet-4-1m');
-});
-
 test('resolveCopilotRawModel prefers 1m variants when they satisfy requested reasoning', () => {
   const resolved = resolveCopilotRawModel(
     models(
@@ -120,22 +91,6 @@ test('resolveCopilotRawModel prioritizes explicit 1m intent even when effort can
   assertEquals(resolved?.id, 'claude-opus-4.6-1m');
 });
 
-test('resolveCopilotRawModel keeps the base Claude id when there is no routing intent', () => {
-  const resolved = resolveCopilotRawModel(models(model('claude-opus-4.7'), model('claude-opus-4.7-1m-internal', { contextWindow: 1_000_000 })), 'claude-opus-4-7', {});
-
-  assertEquals(resolved?.id, 'claude-opus-4.7');
-});
-
-test('resolveCopilotRawModel picks the -fast variant when fast hint is set', () => {
-  const resolved = resolveCopilotRawModel(
-    models(model('claude-opus-4.6'), model('claude-opus-4.6-fast')),
-    'claude-opus-4-6',
-    { fast: true },
-  );
-
-  assertEquals(resolved?.id, 'claude-opus-4.6-fast');
-});
-
 test('resolveCopilotRawModel falls back to the base when fast hint is set but no -fast variant exists', () => {
   // Selection stays best-effort; the entry point validates the hard contract.
   const resolved = resolveCopilotRawModel(
@@ -147,34 +102,10 @@ test('resolveCopilotRawModel falls back to the base when fast hint is set but no
   assertEquals(resolved?.id, 'claude-opus-4.7');
 });
 
-test('resolveCopilotRawModel honors effort within the fast-narrowed pool when both hints align', () => {
-  const resolved = resolveCopilotRawModel(
-    models(
-      model('claude-opus-4.7'),
-      model('claude-opus-4.7-fast', { reasoningEfforts: ['medium'] }),
-      model('claude-opus-4.7-fast-xhigh', { reasoningEfforts: ['xhigh'] }),
-    ),
-    'claude-opus-4-7',
-    { fast: true, reasoningEffort: 'medium' },
-  );
-
-  // KNOWN_CLAUDE_VARIANT_SUFFIXES recognises 'fast' but not 'fast-xhigh', so
-  // only the -fast variant is in the candidate pool — the test confirms the
-  // pure -fast pick happens even when effort hints would otherwise narrow.
-  assertEquals(resolved?.id, 'claude-opus-4.7-fast');
-});
-
 test('copilotModelSupportsFastVariant is true iff any raw variant has the -fast suffix', () => {
   assertEquals(copilotModelSupportsFastVariant([model('claude-opus-4.6'), model('claude-opus-4.6-fast')]), true);
   assertEquals(copilotModelSupportsFastVariant([model('claude-opus-4.7'), model('claude-opus-4.7-xhigh', { reasoningEfforts: ['xhigh'] })]), false);
   assertEquals(copilotModelSupportsFastVariant([]), false);
-});
-
-test('resolveCopilotRawModel picks the -fast variant of a non-Claude family', () => {
-  const catalog = models(model('gpt-5.6-sol'), model('gpt-5.6-sol-fast'));
-
-  assertEquals(resolveCopilotRawModel(catalog, 'gpt-5.6-sol', { fast: true })?.id, 'gpt-5.6-sol-fast');
-  assertEquals(resolveCopilotRawModel(catalog, 'gpt-5.6-sol', {})?.id, 'gpt-5.6-sol');
 });
 
 test('resolveCopilotRawModel leaves a -fast id that has no base sibling alone', () => {

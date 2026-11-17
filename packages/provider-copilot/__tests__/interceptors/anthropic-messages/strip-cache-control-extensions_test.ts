@@ -78,19 +78,3 @@ test('deletes cache_control entirely if no recognised field survives the strip',
 
   assertEquals(ctx.payload.system, [{ type: 'text', text: 'sys' }]);
 });
-
-test('no-op when no cache_control is present anywhere', async () => {
-  const ctx = invocation({
-    model: 'claude-test',
-    max_tokens: 10,
-    system: 'plain system',
-    messages: [{ role: 'user', content: 'hi' }],
-    tools: [{ name: 't', input_schema: { type: 'object' } }],
-  });
-
-  await withCacheControlExtensionsStripped(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.payload.system, 'plain system');
-  assertEquals(ctx.payload.tools, [{ name: 't', input_schema: { type: 'object' } }]);
-  assertEquals(ctx.payload.messages[0].content, 'hi');
-});

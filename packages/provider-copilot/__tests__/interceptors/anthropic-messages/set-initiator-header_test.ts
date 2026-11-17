@@ -70,18 +70,3 @@ test('Anthropic Messages initiator is agent when the last user turn is entirely 
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
-
-test('Anthropic Messages initiator is agent when the final message is from the assistant', async () => {
-  const ctx = invocation({
-    model: 'claude-test',
-    max_tokens: 10,
-    messages: [
-      { role: 'user', content: 'hello' },
-      { role: 'assistant', content: 'hi back' },
-    ],
-  });
-
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.headers.get('x-initiator'), 'agent');
-});

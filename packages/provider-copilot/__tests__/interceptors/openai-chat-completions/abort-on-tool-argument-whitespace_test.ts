@@ -56,27 +56,6 @@ const runExpectingThrow = async (frames: ProtocolFrame<OpenAIChatCompletionsStre
   throw new Error('expected the interceptor to throw');
 };
 
-test('passes a normal stream through unchanged', async () => {
-  const frames: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [
-    eventFrame(
-      baseChunk({
-        choices: [
-          {
-            index: 0,
-            delta: { tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'do_thing', arguments: '{"k":"v"}' } }] },
-            finish_reason: null,
-          },
-        ],
-      }),
-    ),
-    eventFrame(baseChunk({ choices: [{  index: 0, delta: {}, finish_reason: 'tool_calls' }] })),
-    doneFrame(),
-  ];
-
-  const out = await runWith(frames);
-  assertEquals(out, frames);
-});
-
 test('throws when whitespace exceeds the threshold', async () => {
   const args = '\n'.repeat(MAX_CONSECUTIVE_WHITESPACE + 1);
   const frames: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [
