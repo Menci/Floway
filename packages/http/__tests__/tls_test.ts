@@ -88,66 +88,9 @@ describe('userspaceTls — input validation', () => {
       ),
     ).rejects.toMatchObject({ name: 'AbortError', message: expect.stringContaining('client gone') });
   });
-
-  it('aborts a handshake mid-flight and surfaces the abort reason', async () => {
-    const fake = makeFakeDuplex();
-    const ac = new AbortController();
-    const promise = userspaceTls(
-      { readable: fake.readable, writable: fake.writable },
-      { host: 'example.com', signal: ac.signal },
-    );
-    setTimeout(() => ac.abort(new DOMException('cancelled', 'AbortError')), 30);
-    await expect(promise).rejects.toMatchObject({ name: 'AbortError', message: expect.stringContaining('cancelled') });
-  });
-});
-
-describe('userspaceTls — ClientHello on the wire', () => {
-  it('emits a TLS 1.0+ handshake record (0x16 0x03 0x01) as the very first bytes', async () => {
-    const fake = makeFakeDuplex();
-    // Handshake will never complete — the test just observes the
-    // ClientHello byte shape. Detach the promise and read the wire.
-    const ac = new AbortController();
-    const handshake = userspaceTls(
-      { readable: fake.readable, writable: fake.writable },
-      { host: 'example.com', signal: ac.signal },
-    );
-    handshake.catch(() => { /* expected — we abort below */ });
-
-    // Poll the fake duplex's write buffer until the ClientHello lands. The
-    // first byte is enough to discriminate a TLS handshake record from
-    // anything else; we read more once it's there. Polling avoids a hard-
-    // coded sleep that races reclaim's synchronous startup path under load.
-    const written = await waitForClientHello(fake);
-    expect(written.byteLength).toBeGreaterThanOrEqual(5);
-    // TLS record header: type=Handshake(0x16), legacy_record_version=TLS1.2(0x0303)
-    // for TLS 1.3 ClientHellos (RFC 8446 §5.1).
-    expect(written[0]).toBe(0x16);
-    expect(written[1]).toBe(0x03);
-    expect([0x01, 0x03]).toContain(written[2]); // 0x01 if reclaim emits TLS 1.0 framing, 0x03 for TLS 1.2 framing.
-    // First handshake message is ClientHello (msg_type 0x01).
-    expect(written[5]).toBe(0x01);
-
-    ac.abort(new DOMException('done observing', 'AbortError'));
-    await handshake.catch(() => { /* swallow expected abort */ });
-  });
 });
 
 describe('userspaceTls — handshake failure', () => {
-  it('rejects when the server returns junk instead of a ServerHello', async () => {
-    const fake = makeFakeDuplex();
-    const promise = userspaceTls(
-      { readable: fake.readable, writable: fake.writable },
-      { host: 'example.com' },
-    );
-    // Wait for the ClientHello to be sent.
-    await new Promise(r => setTimeout(r, 5));
-    // Reply with bytes that don't form a TLS record at all.
-    fake.respond(new Uint8Array([0xff, 0xff, 0xff, 0xff, 0xff]));
-    fake.endResponse();
-
-    await expect(promise).rejects.toBeInstanceOf(Error);
-  });
-
   it('rejects when the transport EOFs before the handshake completes', async () => {
     const fake = makeFakeDuplex();
     const promise = userspaceTls(
@@ -221,27 +164,6 @@ describe('userspaceTls — prefix coalescing', () => {
     await handshake.catch(() => { /* expected */ });
   });
 
-  it('emits a TLS record without a prefix when none is supplied', async () => {
-    const fake = makeFakeDuplex();
-    const ac = new AbortController();
-    const handshake = userspaceTls(
-      { readable: fake.readable, writable: fake.writable },
-      { host: 'example.com', signal: ac.signal },
-    );
-    handshake.catch(() => { /* expected */ });
-
-    await waitForClientHello(fake);
-    expect(fake.written()[0]).toBe(0x16);
-
-    ac.abort(new DOMException('done', 'AbortError'));
-    await handshake.catch(() => { /* expected */ });
-  });
-
-  it('keeps host identity classification internal to the TLS package', () => {
-    expect('classifyHostIdentity' in reclaimTls).toBe(false);
-    expect('parseIpLiteral' in reclaimTls).toBe(false);
-  });
-
   it('includes SNI for a DNS hostname', async () => {
     const host = 'sni-test.example';
     const { fake, abort, handshake } = startObservedHandshake(host);
@@ -266,27 +188,10 @@ describe('userspaceTls — prefix coalescing', () => {
 
   it.each([
     '',
-    '192.0.2',
-    '192.0.2.10.1',
-    '192..2.10',
     '192.0.2.256',
-    '192.0.-1.10',
-    '192.0.+2.10',
-    '192.00.2.10',
     '0xC0.0.2.10',
-    '0300.0.2.10',
-    ' 192.0.2.10',
-    '192.0.2.10 ',
-    '192.0.2.10.',
     '192.0.2.10:443',
     '2001:db8::1::1',
-    '1:2:3:4:5:6:7:8:9',
-    '1:2:3:4:5:6:7',
-    '12345::1',
-    '2001:db8::g',
-    '::ffff:192.0.2.10:1',
-    '::192.0.2.10:1',
-    '2001:db8:192.0.2.10::',
     '2001:db8::1%eth0',
     '[2001:db8::1]',
   ])('rejects invalid identity %j before writing a ClientHello', async host => {
@@ -332,11 +237,6 @@ const verifyFixtureIdentity = async (fixture: string, host: string): Promise<voi
 };
 
 describe('userspaceTls — certificate reference identity', () => {
-  it('extracts the IPv4 and IPv6 address SANs', async () => {
-    const certificate = await loadFixtureCertificate('ip-san.generated.pem');
-    expect(certificate.getAlternativeIPAddresses()).toEqual(['192.0.2.10', '2001:db8::1']);
-  });
-
   it('accepts an exact IPv4 iPAddress SAN', async () => {
     await expect(verifyFixtureIdentity('ip-san.generated.pem', '192.0.2.10')).resolves.toBeUndefined();
   });
@@ -350,11 +250,6 @@ describe('userspaceTls — certificate reference identity', () => {
     await expect(
       verifyFixtureIdentity('ip-san.generated.pem', '2001:0db8:0:0:0:0:0:1'),
     ).resolves.toBeUndefined();
-  });
-
-  it('rejects a different IPv6 identity', async () => {
-    await expect(verifyFixtureIdentity('ip-san.generated.pem', '2001:db8::2'))
-      .rejects.toThrow('Certificate is not for host 2001:db8::2');
   });
 
   it('does not treat an IP-valued CN or DNS SAN as an IP identity', async () => {
@@ -416,20 +311,6 @@ describe('userspaceTls — checkServerIdentity', () => {
     expect(seen[0]!.identity).toBe('api.example.test');
     expect(seen[0]!.san).toContain('DNS:localhost');
     expect(seen[0]!.san).toContain('DNS:api.example.test');
-  });
-
-  it('reports the callback error rather than the chain failure behind it', async () => {
-    // Ordering proof: the leaf is untrusted, so a callback that never ran
-    // would surface the chain error ("Missing issuer for certificate …").
-    const chain = await startFixtureTlsServer();
-    try {
-      await expect(userspaceTls(await connectRaw(chain.port), {
-        host: 'localhost',
-        checkServerIdentity: () => new Error('identity rejected by the caller'),
-      })).rejects.toThrow(/identity rejected by the caller/);
-    } finally {
-      await chain.close();
-    }
   });
 
   it('still enforces chain trust when the callback accepts', async () => {

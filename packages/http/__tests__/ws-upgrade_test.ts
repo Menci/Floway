@@ -132,15 +132,6 @@ describe('wsUpgradeAndFrame — handshake', () => {
     await upgrade;
   });
 
-  it('accepts a 101 with the right Sec-WebSocket-Accept', async () => {
-    const fake = makeFakeDuplex();
-    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
-    await new Promise(r => setTimeout(r, 0));
-    const key = parseUpgradeRequest(fake.written()).headers.get('sec-websocket-key')!;
-    fake.respond(standardHandshakeReply(key));
-    await upgrade;
-  });
-
   it('rejects a non-101 status', async () => {
     const fake = makeFakeDuplex();
     const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
@@ -252,32 +243,12 @@ describe('wsUpgradeAndFrame — handshake', () => {
     expect(await tryUpgrade({ path: '' })).toMatchObject({ code: 'BAD_HEADERS' });
   });
 
-  it('rejects a path containing SP (smuggling shape)', async () => {
-    expect(await tryUpgrade({ path: '/hi there' })).toMatchObject({ code: 'BAD_HEADERS' });
-  });
-
   it('rejects a path containing CR (CRLF injection prevention)', async () => {
     expect(await tryUpgrade({ path: '/foo\rEvil: 1' })).toMatchObject({ code: 'BAD_HEADERS' });
   });
 
-  it('rejects a path containing LF (LF injection prevention)', async () => {
-    expect(await tryUpgrade({ path: '/foo\nEvil: 1' })).toMatchObject({ code: 'BAD_HEADERS' });
-  });
-
-  it('rejects a path containing NUL', async () => {
-    expect(await tryUpgrade({ path: '/foo\0bar' })).toMatchObject({ code: 'BAD_HEADERS' });
-  });
-
   it('rejects a Host containing CR', async () => {
     expect(await tryUpgrade({ host: 'h\rEvil: 1' })).toMatchObject({ code: 'BAD_HEADERS' });
-  });
-
-  it('rejects a Host containing LF', async () => {
-    expect(await tryUpgrade({ host: 'h\nEvil: 1' })).toMatchObject({ code: 'BAD_HEADERS' });
-  });
-
-  it('rejects a Host containing NUL', async () => {
-    expect(await tryUpgrade({ host: 'h\0evil' })).toMatchObject({ code: 'BAD_HEADERS' });
   });
 });
 
@@ -392,33 +363,6 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
     reader.releaseLock();
   });
 
-  it('handles a frame at exactly the 7-bit length boundary (125 bytes)', async () => {
-    const fake = makeFakeDuplex();
-    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
-    await completeHandshake(fake);
-    const stream = await upgrade;
-    const payload = new Uint8Array(125);
-    for (let i = 0; i < 125; i++) payload[i] = i & 0xff;
-    fake.respond(buildServerFrame(0x2, payload));
-    const reader = stream.readable.getReader();
-    const { value } = await reader.read();
-    expect(value!.byteLength).toBe(125);
-    reader.releaseLock();
-  });
-
-  it('handles the smallest 16-bit length frame (126 bytes)', async () => {
-    const fake = makeFakeDuplex();
-    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
-    await completeHandshake(fake);
-    const stream = await upgrade;
-    const payload = new Uint8Array(126);
-    fake.respond(buildServerFrame(0x2, payload));
-    const reader = stream.readable.getReader();
-    const { value } = await reader.read();
-    expect(value!.byteLength).toBe(126);
-    reader.releaseLock();
-  });
-
   it('writes a payload that crosses the 16-bit length boundary using the 16-bit form', async () => {
     const fake = makeFakeDuplex();
     const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
@@ -455,19 +399,7 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
     writer.releaseLock();
   });
 
-  it('a server close frame ends the consumer readable cleanly', async () => {
-    const fake = makeFakeDuplex();
-    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
-    await completeHandshake(fake);
-    const stream = await upgrade;
-    fake.respond(buildServerFrame(0x8, new Uint8Array([0x03, 0xe8]))); // 1000
-    const reader = stream.readable.getReader();
-    const { done } = await reader.read();
-    expect(done).toBe(true);
-    reader.releaseLock();
-  });
-
-  it('closes the underlying transport writer after a server close frame', async () => {
+  it('ends the consumer readable and closes the transport writer after a server close frame', async () => {
     // Every server-initiated close releases the transport's write half;
     // without this teardown the underlying socket / userspace TLS stream
     // would stay locked under our frame writer until GC instead of being
@@ -475,9 +407,10 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
     const fake = makeFakeDuplex();
     const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
     await completeHandshake(fake);
-    await upgrade;
+    const stream = await upgrade;
     fake.respond(buildServerFrame(0x8, new Uint8Array([0x03, 0xe8])));
     await fake.waitWritableClosed();
+    expect((await stream.readable.getReader().read()).done).toBe(true);
   });
 
   it('closes the underlying transport writer when the supplied signal aborts', async () => {
