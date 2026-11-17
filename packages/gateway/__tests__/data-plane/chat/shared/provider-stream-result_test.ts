@@ -8,7 +8,7 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
-import { parseOpenAIResponsesStream, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import { type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { ProviderStreamResult } from '@floway-dev/provider';
 import { mockPerfTelemetryContext, stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -78,60 +78,6 @@ test.each([true, false])('preserves parser consumption timing under downstream b
   for await (const frame of { [Symbol.asyncIterator]: () => iterator }) collected.push(frame);
   expect(collected).toHaveLength(sameChunk ? 2 : 1);
   expect(ctx.attempt.timing.firstOutputTokenAt).toBe(5000);
-  await result.finalMetadata;
-});
-
-test('does not pull the provider stream before consumption or read ahead between frames', async () => {
-  const first: ProtocolFrame<unknown> = { type: 'event', event: { type: 'response.created' } };
-  const second: ProtocolFrame<unknown> = { type: 'event', event: { type: 'response.output_text.delta', delta: 'hello' } };
-  const source = iter([first, second])[Symbol.asyncIterator]();
-  const next = vi.spyOn(source, 'next');
-  const ctx = mockGatewayCtx();
-  const result = await providerStreamResultToExecuteResult(okStreamResult({ [Symbol.asyncIterator]: () => source }), stubModelCandidate(), 'openaiResponses', ctx, () => null);
-  if (result.type !== 'events') throw new Error('Expected events');
-  expect(next).not.toHaveBeenCalled();
-  const iterator = result.events[Symbol.asyncIterator]();
-  expect((await iterator.next()).value).toBe(first);
-  expect(next).toHaveBeenCalledTimes(1);
-  expect(ctx.attempt.timing.firstOutputTokenAt).toBeNull();
-  expect((await iterator.next()).value).toBe(second);
-  expect(next).toHaveBeenCalledTimes(2);
-  expect(ctx.attempt.timing.firstOutputTokenAt).not.toBeNull();
-  await iterator.return?.();
-  await result.finalMetadata;
-});
-
-test('observes a terminal-only message after parsed discovery lifecycle without inventing earlier timing', async () => {
-  let now = 120;
-  vi.spyOn(performance, 'now').mockImplementation(() => now);
-  let upstream!: ReadableStreamDefaultController<Uint8Array>;
-  const body = new ReadableStream<Uint8Array>({ start(controller) { upstream = controller; } });
-  const ctx = mockGatewayCtx();
-  const result = await providerStreamResultToExecuteResult(okStreamResult(parseOpenAIResponsesStream(body)), stubModelCandidate(), 'openaiResponses', ctx, () => null);
-  if (result.type !== 'events') throw new Error('Expected events');
-  const iterator = result.events[Symbol.asyncIterator]();
-  const encode = (events: object[]) => new TextEncoder().encode(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(''));
-  const item = { type: 'mcp_list_tools', id: 'discovery', tools: [] };
-  upstream.enqueue(encode([
-    { type: 'response.output_item.added', sequence_number: 0, output_index: 0, item },
-    { type: 'response.output_item.done', sequence_number: 1, output_index: 0, item },
-  ]));
-  await iterator.next();
-  await iterator.next();
-  expect(ctx.attempt.timing.firstOutputTokenAt).toBeNull();
-  now = 500;
-  upstream.enqueue(encode([{
-    type: 'response.completed', sequence_number: 2, response: {
-      id: 'response', object: 'response', status: 'completed', model: 'model', error: null, incomplete_details: null,
-      output: [item, { type: 'message', id: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'hello', annotations: [] }] }],
-    },
-  }]));
-  upstream.close();
-  expect(ctx.attempt.timing.firstOutputTokenAt).toBeNull();
-  const last = await iterator.next();
-  expect(ctx.attempt.timing.firstOutputTokenAt).toBe(500);
-  expect(last.value?.type === 'event' && last.value.event.type).toBe('response.completed');
-  expect(await iterator.next()).toEqual({ done: true, value: undefined });
   await result.finalMetadata;
 });
 

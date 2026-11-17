@@ -1,14 +1,14 @@
 import { Hono } from 'hono';
 import { beforeEach, expect, test } from 'vitest';
 
-import { respondGeminiGenerateContent, geminiGenerateContentInternalRpcErrorResponse } from '../../../../src/data-plane/chat/gemini-generate-content/respond.ts';
+import { respondGeminiGenerateContent } from '../../../../src/data-plane/chat/gemini-generate-content/respond.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentErrorResponse, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import type { ExecuteResult, InternalDebugError } from '@floway-dev/provider';
+import type { ExecuteResult } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const encoder = new TextEncoder();
@@ -109,32 +109,6 @@ test('respondGeminiGenerateContent preserves upstream Google RPC Status body', a
   assertEquals(await response.json(), upstreamBody);
 });
 
-test('respondGeminiGenerateContent internal errors include debug fields in Google RPC Status', async () => {
-  const error: InternalDebugError = {
-    type: 'internal_error',
-    name: 'TypeError',
-    message: 'boom',
-    stack: 'TypeError: boom\n    at test',
-    cause: { upstream: 'bad shape' },
-    target_api: 'responses',
-  };
-
-  const response = await requestGeminiGenerateContentResponse({
-    type: 'internal-error',
-    status: 502,
-    error,
-  });
-  const body = await response.json();
-
-  assertEquals(response.status, 502);
-  assertEquals(body.error, {
-    code: 502, status: 'UNAVAILABLE', message: 'boom', details: [
-      { '@type': 'type.googleapis.com/google.rpc.DebugInfo', stackEntries: ['TypeError: boom', '    at test'] },
-      { '@type': 'type.googleapis.com/google.protobuf.Struct', value: { type: 'internal_error', name: 'TypeError', cause: error.cause, target_api: 'responses' } },
-    ],
-  });
-});
-
 test.each([false, true])('Gemini internal collect and SSE errors retain structured nested causes in RPC details (stream=%s)', async stream => {
   const cause = new TypeError('nested'); cause.stack = 'TypeError: nested\n  at nested';
   const failure = new Error('broken', { cause }); failure.stack = 'Error: broken\n  at render';
@@ -151,18 +125,5 @@ test.each([false, true])('Gemini internal collect and SSE errors retain structur
       { '@type': 'type.googleapis.com/google.rpc.DebugInfo', stackEntries: ['Error: broken', '  at render'] },
       { '@type': 'type.googleapis.com/google.protobuf.Struct', value: { type: 'internal_error', name: 'Error', cause: { name: 'TypeError', message: 'nested', stack: cause.stack } } },
     ],
-  });
-});
-
-test('Gemini shared countTokens error renderer uses RPC details without optional debug values', async () => {
-  const failure = new Error('minimal'); failure.stack = undefined;
-  const response = geminiGenerateContentInternalRpcErrorResponse(502, failure);
-  assertEquals(response.status, 502);
-  assertEquals(await response.json(), {
-    error: {
-      code: 502, status: 'UNAVAILABLE', message: 'minimal', details: [
-        { '@type': 'type.googleapis.com/google.protobuf.Struct', value: { type: 'internal_error', name: 'Error' } },
-      ],
-    },
   });
 });

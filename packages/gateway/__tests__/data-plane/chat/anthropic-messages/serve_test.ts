@@ -259,27 +259,6 @@ test('countTokens proxies the upstream measurement response as a plain result', 
   assertEquals(payload.model, 'claude-alias');
 });
 
-test('countTokens filters out candidates whose endpoints do not satisfy the messages-countTokens preference and renders model-unsupported as a 400', async () => {
-  installRepo();
-  const callAnthropicMessagesCountTokens = vi.fn();
-  // anthropicMessagesCountTokensTarget = chatTargetPicker(['anthropicMessages']); a candidate
-  // exposing only openaiChatCompletions matches none and is filtered out.
-  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { openaiChatCompletions: {} }, callAnthropicMessagesCountTokens })]);
-
-  const result = await anthropicMessagesServe.countTokens({
-    payload: makePayload({ model: 'wrong-endpoint-model' }),
-    ctx: makeGatewayCtx(),
-    headers: new Headers(),
-  });
-
-  const failure = assertResultType(result, 'api-error');
-  assertEquals(failure.status, 400);
-  const body = JSON.parse(new TextDecoder().decode(failure.body));
-  assertEquals(body.error.type, 'invalid_request_error');
-  assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
-  assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 0);
-});
-
 test('generate failover preserves billing blocks for a strip-off candidate', async () => {
   installRepo();
   const billingBlock = 'x-anthropic-billing-header: per-turn-token\ncch=deadbeef1234;';

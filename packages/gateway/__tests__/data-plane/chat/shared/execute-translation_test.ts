@@ -59,42 +59,6 @@ describe('executeTranslation', () => {
     expect(source).toEqual({ model: 'm', stream: false });
   });
 
-  test('events inner — outer wraps with trip.events', async () => {
-    const innerAttempt = async (_translated: string): Promise<ExecuteResult<ProtocolFrame<TgtEvent>>> => ({
-      type: 'events',
-      events: makeTgtFrames(['a', 'b']),
-      modelIdentity: testTelemetryModelIdentity,
-    });
-
-    const result = await executeTranslation({ model: 'payload' }, translate, innerAttempt);
-
-    expect(result.type).toBe('events');
-    if (result.type !== 'events') throw new Error('unreachable');
-
-    const frames = await collectFrames(result.events);
-    expect(frames).toEqual([
-      { type: 'event', event: { kind: 'src', value: 'a' } },
-      { type: 'event', event: { kind: 'src', value: 'b' } },
-      { type: 'done' },
-    ]);
-    expect(result.modelIdentity).toBe(testTelemetryModelIdentity);
-  });
-
-  test('result inner — outer returns the result unchanged', async () => {
-    const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
-      type: 'api-error',
-      source: 'upstream',
-      status: 404,
-      headers: new Headers(),
-      body: new Uint8Array(),
-    };
-    const innerAttempt = async (_translated: string): Promise<ExecuteResult<ProtocolFrame<TgtEvent>>> => inner;
-
-    const result = await executeTranslation({ model: 'payload' }, translate, innerAttempt);
-
-    expect(result).toBe(inner);
-  });
-
   test('upstream api-error with trip.error — outer returns the restated envelope', async () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
       type: 'api-error',

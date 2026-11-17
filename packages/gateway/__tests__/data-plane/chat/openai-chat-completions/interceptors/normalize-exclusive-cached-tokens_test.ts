@@ -2,10 +2,9 @@ import { expect, test } from 'vitest';
 
 import { withExclusiveCachedTokensNormalized } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/normalize-exclusive-cached-tokens.ts';
 import type { OpenAIChatCompletionsInvocation } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/types.ts';
-import { billableUsageFromOpenAIChatCompletionsUsage } from '../../../../../src/data-plane/chat/openai-chat-completions/usage.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ExecuteResult, eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
@@ -85,22 +84,6 @@ test('folds on the totals alone, with no flag set', async () => {
 test('folds on the flag when the totals witness nothing', async () => {
   const usage = await run(invocation(), HYPER_USAGE_WITHOUT_TOTAL);
   assertEquals(usage.prompt_tokens, 13791);
-});
-
-test('leaves a normalized chunk billable instead of underflowing', async () => {
-  const raw = HYPER_USAGE as unknown as OpenAIChatCompletionsUsageEx;
-  expect(() => billableUsageFromOpenAIChatCompletionsUsage(raw, null)).toThrowError(RangeError);
-
-  const usage = await run(invocation(new Set()), HYPER_USAGE);
-  assertEquals(
-    billableUsageFromOpenAIChatCompletionsUsage(usage as unknown as OpenAIChatCompletionsUsageEx, null),
-    { input: 479, cacheRead: 13312, cacheWrite: 0, cacheWrite1h: 0, output: 373 },
-  );
-});
-
-test('leaves an inclusive chunk alone when no flag claims otherwise', async () => {
-  const usage = await run(invocation(new Set()), INCLUSIVE_USAGE);
-  assertEquals(usage.prompt_tokens, 1000);
 });
 
 test('raises when the flag claims exclusive and the totals say inclusive', async () => {

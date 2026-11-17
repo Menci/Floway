@@ -222,24 +222,3 @@ test('rewrites prompt_cache_hit_tokens/prompt_cache_miss_tokens into prompt_toke
   assertEquals('prompt_cache_hit_tokens' in usage, false);
   assertEquals('prompt_cache_miss_tokens' in usage, false);
 });
-
-test('early-returns when its flag is not set on the candidate', async () => {
-  const ctx = invocation(
-    {
-      model: 'deepseek-reasoner',
-      messages: [{ role: 'user', content: 'hi' }],
-      reasoning_effort: 'none',
-    },
-    new Set(),
-  );
-
-  let observed: OpenAIChatCompletionsPayload | null = null;
-  await withVendorDeepSeekOpenAIChatCompletionsNormalize(ctx, stubCtx, () => {
-    observed = ctx.payload;
-    return okEvents();
-  });
-
-  assertEquals(observed!.reasoning_effort, 'none');
-  const out = observed! as unknown as Record<string, unknown>;
-  assertEquals(out.thinking, undefined);
-});

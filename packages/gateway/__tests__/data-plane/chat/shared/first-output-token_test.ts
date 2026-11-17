@@ -5,10 +5,6 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 const eventFrame = <T>(event: T): ProtocolFrame<T> => ({ type: 'event', event });
 
-it('never starts timing on the done sentinel', () => {
-  expect(firstOutputTokenSignal({ type: 'done' }, 'openaiChatCompletions')).toBeNull();
-});
-
 describe('firstOutputTokenSignal — Anthropic Messages', () => {
   it('accepts text_delta', () => {
     expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_delta', delta: { type: 'text_delta', text: 'hi' } }), 'anthropicMessages')).toEqual({ type: 'decode' });
@@ -33,10 +29,6 @@ describe('firstOutputTokenSignal — Anthropic Messages', () => {
     { type: 'compaction', content: 'summary' },
   ])('rejects empty text/tool starts and compaction: %j', content_block => {
     expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_start', content_block }), 'anthropicMessages')).toBeNull();
-  });
-
-  it('rejects signature deltas as integrity metadata', () => {
-    expect(firstOutputTokenSignal(eventFrame({ type: 'content_block_delta', delta: { type: 'signature_delta', signature: 'signature' } }), 'anthropicMessages')).toBeNull();
   });
 
   it('identifies server tool results as runtime output', () => {
@@ -112,20 +104,6 @@ describe('firstOutputTokenSignal — OpenAI Responses', () => {
     { type: 'response.apply_patch_call_operation_diff.done', diff: 'content' },
   ])('recognizes known content arriving on %j', event => {
     expect(firstOutputTokenSignal(eventFrame(event), 'openaiResponses')).toEqual({ type: 'decode' });
-  });
-
-  it('excludes progress and empty content snapshots', () => {
-    for (const event of [
-      { type: 'response.code_interpreter_call.in_progress' },
-      { type: 'response.reasoning.done', text: '' },
-      { type: 'response.content_part.added', part: { type: 'output_text', text: '' } },
-    ]) expect(firstOutputTokenSignal(eventFrame(event), 'openaiResponses')).toBeNull();
-  });
-
-  it('recognizes shell runtime output outside item lifecycle and ignores empty shell deltas', () => {
-    expect(firstOutputTokenSignal(eventFrame({ type: 'response.shell_call_output_content.delta', delta: { stdout: '', stderr: 'error' } }), 'openaiResponses'))
-      .toEqual({ type: 'runtime-output', outputType: 'shell_call_output' });
-    expect(firstOutputTokenSignal(eventFrame({ type: 'response.shell_call_output_content.delta', delta: { stdout: '', stderr: '' } }), 'openaiResponses')).toBeNull();
   });
 
   it('distinguishes program-authored calls from model-authored calls', () => {

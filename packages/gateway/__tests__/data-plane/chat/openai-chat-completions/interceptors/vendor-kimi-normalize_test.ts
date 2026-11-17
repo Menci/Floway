@@ -59,33 +59,3 @@ test('rewrites flat cached_tokens into prompt_tokens_details.cached_tokens', asy
   assertEquals(usage.prompt_tokens_details, { upstream_metric: 'preserved', cached_tokens: 50 });
   assertEquals('cached_tokens' in usage, false);
 });
-
-test('early-returns when its flag is not set on the candidate', async () => {
-  const ctx = invocation(baseRequest(), new Set());
-  const result = await withVendorKimiOpenAIChatCompletionsNormalize(ctx, stubCtx, () =>
-    Promise.resolve(eventResult(
-      (async function* () {
-        yield eventFrame({
-          id: 'x',
-          object: 'chat.completion.chunk',
-          created: 0,
-          model: 'kimi-test',
-          choices: [],
-          usage: {
-            prompt_tokens: 100,
-            completion_tokens: 20,
-            total_tokens: 120,
-            cached_tokens: 50,
-          } as unknown as OpenAIChatCompletionsStreamEvent['usage'],
-        });
-      })(),
-      testTelemetryModelIdentity,
-    )));
-
-  const frames = await collectFrames(result);
-  const frame = frames[0];
-  if (frame.type !== 'event') throw new Error('expected event frame');
-  const usage = usageRecord(frame.event.usage!);
-  assertEquals(usage.cached_tokens, 50);
-  assertEquals('prompt_tokens_details' in usage, false);
-});

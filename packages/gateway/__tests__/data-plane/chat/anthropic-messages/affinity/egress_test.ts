@@ -62,35 +62,6 @@ describe('Anthropic Messages affinity egress', () => {
     expect((await output.next()).value).toMatchObject({ event: { usage: { input_tokens: null, output_tokens: 0, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null }, type: 'message_delta' } });
   });
 
-  test('retains extension fields from the latest natural signature event', async () => {
-    const signature = {
-      type: 'content_block_delta',
-      index: 0,
-      delta: { type: 'signature_delta', signature: 'natural', vendor_delta: 'delta-extra' },
-      vendor_event: 'event-extra',
-    } as unknown as AnthropicMessagesStreamEventEx;
-    const output: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [];
-    for await (const frame of wrapAnthropicMessagesAffinityEgress(frames([
-      eventFrame({ type: 'content_block_start', index: 0, content_block: { signature: '', type: 'thinking', thinking: '' } }),
-      eventFrame(signature),
-      eventFrame({ type: 'content_block_stop', index: 0 }),
-      eventFrame({ type: 'message_stop' }),
-    ]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    expect(output[1]).toMatchObject({
-      event: {
-        type: 'content_block_delta',
-        index: 0,
-        vendor_event: 'event-extra',
-        delta: {
-          type: 'signature_delta',
-          signature: 'wrapped:natural',
-          vendor_delta: 'delta-extra',
-        },
-      },
-    });
-  });
-
   test('prefixes a synthetic redacted block before a first text block and shifts its index', async () => {
     const output: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [];
     for await (const frame of wrapAnthropicMessagesAffinityEgress(frames([

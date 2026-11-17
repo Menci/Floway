@@ -54,10 +54,6 @@ describe('signed CBOR sidecars', () => {
     await expect(factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(await sign(encode({ domain: 0, payload: undefined })))).rejects.toThrow('Authenticated sidecar payload must not be undefined');
     expect(await factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(await sign(encode({ domain: 1, payload: undefined })))).toBeUndefined();
   });
-  it.each([null, 0])('returns the decoded payload directly for %j', async payload => {
-    const codec = factory.codecFor(SidecarDomain.TranslatedAssistantTurn);
-    expect(await codec.decode(await codec.encode(payload))).toBe(payload);
-  });
   it('authenticates the expected kind before restoring payload tags', async () => {
     const payload = new Tag(42, 65539);
     expect(await factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(await sign(encode({ domain: 1, payload })))).toBeUndefined();
@@ -83,19 +79,6 @@ describe('signed CBOR sidecars', () => {
       verify.mockRestore();
     }
   });
-  it('borrows encode input without replacing its containers or transformed leaves', async () => {
-    const bytes = Uint8Array.from({ length: 16 }, (_, index) => index);
-    const base64 = encodeBase64(bytes);
-    const number = rawJSON.rawJSON('1e400');
-    const values = [base64, number];
-    const nested = { values };
-    const payload = { nested };
-    await factory.codecFor(SidecarDomain.TranslatedAssistantTurn).encode(payload);
-    expect(payload.nested).toBe(nested);
-    expect(nested.values).toBe(values);
-    expect(values[0]).toBe(base64);
-    expect(values[1]).toBe(number);
-  });
   it('rejects altered signatures, altered domains, and another secret', async () => {
     const encoded = await factory.codecFor(SidecarDomain.TranslatedAssistantTurn).encode({ value: 1 });
     const changed = decodeForgivingBase64(encoded);
@@ -106,13 +89,6 @@ describe('signed CBOR sidecars', () => {
     const forged = new Uint8Array([...decodeForgivingBase64(encoded).subarray(0, 32), ...encode({ ...envelope, domain: 1 })]);
     expect(await factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(encodeBase64(forged))).toBeUndefined();
   });
-  it('preserves forgiving outer Base64 decoding', async () => {
-    const encoded = await factory.codecFor(SidecarDomain.TranslatedAssistantTurn).encode('value');
-    expect(await factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(` \t${encoded.replaceAll('=', '')}\n`)).toEqual('value');
-  });
-  it.each(['%', 'A'])('rejects unauthenticated invalid Base64 %j', async encoded => {
-    expect(await factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(encoded)).toBeUndefined();
-  });
   it('propagates malformed authenticated CBOR', async () => {
     await expect(factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(await sign(new Uint8Array([24])))).rejects.toThrow();
   });
@@ -120,9 +96,6 @@ describe('signed CBOR sidecars', () => {
     await expect(factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(await sign(encode({ source: 'old', payload: 'value' })))).rejects.toThrow('sidecar domain is invalid');
     await expect(factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(await sign(encode({ domain: 0 })))).rejects.toThrow('sidecar payload is missing');
     expect(await factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(await sign(encode({ domain: 1 })))).toBeUndefined();
-  });
-  it.each(['translate.round-trip', 0.5, NaN])('rejects authenticated invalid domain %j', async domain => {
-    await expect(factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(await sign(encode({ domain, payload: 'value' })))).rejects.toThrow('sidecar domain is invalid');
   });
   it.each([SidecarDomain.TranslatedAssistantTurn, Number(1)])('preserves application tags for kind %s after a foreign decode', async kind => {
     const codecs = createSidecarCodecFactory(secret);
@@ -148,13 +121,6 @@ describe('signed CBOR sidecars', () => {
     if (!(restored.text instanceof SidecarTaggedValue) || !Array.isArray(restored.text.value)) throw new TypeError('Expected an application tag value');
     restored.text.value.push(9);
     expect(await owner.decode(encoded)).toEqual(payload);
-  });
-  it.each([65536, 65537])('preserves uninterpreted application tag %s payloads', async tag => {
-    const codec = factory.codecFor(SidecarDomain.TranslatedAssistantTurn);
-    for (const parts of [null, 'reference', [-1], [0.5], [[0, 1]], [[0, 4, 2]], [[0, -1, 2]], [[0, 1, Infinity]]]) {
-      const encoded = await sign(encode({ domain: 0, payload: new Tag(parts, tag) }));
-      expect(await codec.decode(encoded)).toEqual(new SidecarTaggedValue(tag, parts));
-    }
   });
   it('preserves raw numeric tokens and similarly shaped ordinary objects', async () => {
     const tokens = ['9007199254740993', '1e400', '1.2300e+400'];

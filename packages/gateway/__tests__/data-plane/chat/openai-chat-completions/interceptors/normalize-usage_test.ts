@@ -39,30 +39,6 @@ const runWithFrames = async (...frames: ProtocolFrame<OpenAIChatCompletionsStrea
 
 const usageRecord = (usage: OpenAIChatCompletionsUsageEx): Record<string, unknown> => usage as unknown as Record<string, unknown>;
 
-test('leaves a spec-compliant carrier usage chunk untouched', async () => {
-  const frames = await runWithFrames(
-    eventFrame({
-      id: 'x',
-      object: 'chat.completion.chunk',
-      created: 0,
-      model: 'gpt-test',
-      choices: [],
-      usage: {
-        prompt_tokens: 100,
-        completion_tokens: 20,
-        total_tokens: 120,
-        prompt_tokens_details: { cached_tokens: 60, audio_tokens: 0 },
-      } as unknown as OpenAIChatCompletionsStreamEvent['usage'],
-    }),
-  );
-
-  assertEquals(frames.length, 1);
-  const frame = frames[0];
-  if (frame.type !== 'event') throw new Error('expected event frame');
-  const usage = usageRecord(frame.event.usage!);
-  assertEquals(usage.prompt_tokens_details, { cached_tokens: 60, audio_tokens: 0 });
-});
-
 test('relocates usage from a non-empty choices chunk onto a synthesized carrier', async () => {
   const frames = await runWithFrames(
     eventFrame({

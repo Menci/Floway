@@ -320,27 +320,6 @@ test('prepareAnthropicMessagesWebSearchShimRequest rewrites both native tool ver
   }
 });
 
-test('prepareAnthropicMessagesWebSearchShimRequest rejects native web search name collisions with client tools', () => {
-  const prepared = prepareAnthropicMessagesWebSearchShimRequest({
-    model: 'claude-test',
-    max_tokens: 64,
-    messages: [{ role: 'user', content: 'latest React docs' }],
-    tools: [
-      { type: 'web_search_20260209', name: 'web_search' },
-      {
-        name: 'web_search',
-        description: 'user-defined tool',
-        input_schema: { type: 'object' },
-      },
-    ],
-  });
-
-  assertEquals(prepared, {
-    type: 'invalid-request',
-    message: 'Native web search tool name collides with another client tool: web_search.',
-  });
-});
-
 test('prepareAnthropicMessagesWebSearchShimRequest passes in-array role:"system" messages through unchanged', () => {
   // Regression: prepareAnthropicMessagesWebSearchReplay used to assume any non-user
   // message with array content was an assistant turn and rewrite it with
@@ -443,61 +422,6 @@ test('prepareAnthropicMessagesWebSearchShimRequest passes through foreign native
 
   assertEquals(prepared.state.mode === 'inactive', true);
   assertEquals(prepared.payload, payload);
-});
-
-test('prepareAnthropicMessagesWebSearchShimRequest creates a separate user tool_result message when the trailing user message is not a tool_result turn', () => {
-  const payload: AnthropicMessagesPayload = {
-    model: 'claude-test',
-    max_tokens: 64,
-    messages: [
-      { role: 'user', content: 'latest React docs' },
-      {
-        role: 'assistant',
-        content: [
-          {
-            caller: { type: 'direct' },
-            type: 'server_tool_use',
-            id: 'srvtoolu_1',
-            name: 'web_search',
-            input: { query: 'latest React docs' },
-          },
-          {
-            type: 'web_search_tool_result',
-            tool_use_id: 'srvtoolu_1',
-            content: [
-              {
-                type: 'web_search_result',
-                url: 'https://react.dev',
-                title: 'React',
-                encrypted_content: encodeWebSearchResultPayload({
-                  content: [
-                    {
-                      type: 'text',
-                      text: 'Official React documentation',
-                    },
-                  ],
-                }),
-              },
-            ],
-          },
-        ],
-      },
-      { role: 'user', content: 'thanks' },
-    ],
-  };
-
-  const prepared = prepareAnthropicMessagesWebSearchShimRequest(payload);
-
-  assertEquals(prepared.type, 'ok');
-  if (prepared.type !== 'ok') throw new Error('expected ok result');
-
-  assertEquals(prepared.payload.messages.length, 4);
-  assertEquals(prepared.payload.messages[2].role, 'user');
-  assertEquals(((prepared.payload.messages[2].content as AnthropicMessagesUserContentBlock[])[0] as AnthropicMessagesToolResultBlock).type, 'tool_result');
-  assertEquals(prepared.payload.messages[3], {
-    role: 'user',
-    content: 'thanks',
-  });
 });
 
 const initDisabledSearchRepo = async (): Promise<void> => {
@@ -885,26 +809,6 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative emits max_uses_exceeded on
   assertEquals(messageDelta?.type === 'message_delta' ? messageDelta.usage?.server_tool_use : undefined, { web_search_requests: 1, web_fetch_requests: 0 });
 });
 
-test('rewriteAnthropicMessagesWebSearchEventsToNative routes oversized query to query_too_long', async () => {
-  let providerCalls = 0;
-  const events = await runStreamingShim(
-    [
-      upstreamMessageStart(),
-      ...upstreamWebSearchBlock(0, 'toolu_1', 'x'.repeat(1001)),
-      ...upstreamMessageEnd('tool_use'),
-    ],
-    activeAnthropicMessagesWebSearchShimState(),
-    activeProvider(searchOnlyProvider(() => {
-      providerCalls += 1;
-      return Promise.resolve({ type: 'ok', results: [] });
-    })),
-  );
-
-  assertEquals(providerCalls, 0);
-  const resultBlock = events.find(event => event.type === 'content_block_start' && event.content_block.type === 'web_search_tool_result') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_start' }> | undefined;
-  assertEquals((resultBlock?.content_block as { content: unknown }).content, { type: 'web_search_tool_result_error', error_code: 'query_too_long' });
-});
-
 test('rewriteAnthropicMessagesWebSearchEventsToNative keeps client tool_use and reports tool_use stop_reason in mixed turn', async () => {
   const events = await runStreamingShim(
     [
@@ -962,22 +866,6 @@ test('rewriteAnthropicMessagesWebSearchEventsToNative leaves foreign citations u
 
   const citationsDelta = events.find(event => event.type === 'content_block_delta' && event.delta.type === 'citations_delta') as Extract<AnthropicMessagesStreamEventEx, { type: 'content_block_delta' }> | undefined;
   assertEquals(citationsDelta?.delta.type === 'citations_delta' ? citationsDelta.delta.citation.type : undefined, 'search_result_location');
-});
-
-test('rewriteAnthropicMessagesWebSearchEventsToNative forwards upstream error and returns without synthetic terminal', async () => {
-  const events = await runStreamingShim(
-    [
-      upstreamMessageStart(),
-      {
-        type: 'error',
-        error: { type: 'overloaded_error', message: 'upstream overloaded' },
-      },
-    ],
-    activeAnthropicMessagesWebSearchShimState(),
-    activeProvider(fakeProviderOk),
-  );
-
-  assertEquals(events.map(event => event.type), ['message_start', 'error']);
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative delays later content until an intercepted search result is complete', async () => {

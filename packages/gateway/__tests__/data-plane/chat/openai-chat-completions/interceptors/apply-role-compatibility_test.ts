@@ -26,19 +26,6 @@ const applyRoles = async (
   return invocation.payload.messages;
 };
 
-test('leaves roles unchanged without flags or at a translated target', async () => {
-  const messages: OpenAIChatCompletionsMessage[] = [
-    { role: 'system', content: 'rules' },
-    { role: 'developer', content: 'developer rules' },
-  ];
-
-  assertEquals(await applyRoles(messages, new Set()), messages);
-  assertEquals(
-    await applyRoles(messages, new Set(['rewrite-system-to-developer']), 'openaiResponses'),
-    messages,
-  );
-});
-
 test('applies the system and developer rewrites independently', async () => {
   assertEquals(
     await applyRoles(

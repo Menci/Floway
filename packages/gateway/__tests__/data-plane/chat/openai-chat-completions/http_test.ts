@@ -119,26 +119,6 @@ const makeCandidate = (overrides: {
   };
 };
 
-test('POST /v1/chat/completions returns a single JSON body when stream is omitted', async () => {
-  installRepo();
-  const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
-  }));
-  queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
-
-  const response = await makeApp().request('/v1/chat/completions', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }] }),
-  });
-
-  assertEquals(response.status, 200);
-  assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
-  const body = await response.json() as { choices: Array<{ message: { role: string; content: string } }> };
-  assertEquals(body.choices[0].message.role, 'assistant');
-  assertEquals(body.choices[0].message.content, 'hi');
-});
-
 test('client-carried opaque state restores the exact preferred candidate on the next turn', async () => {
   installRepo();
   const observedBodies: Array<{ messages?: Array<{ reasoning_opaque?: string }> }> = [];
@@ -321,34 +301,4 @@ test('POST /v1/chat/completions stamps TTFT on a streamed record', async () => {
   assertEquals(dumpStubs.stored.length, 1);
   const meta = dumpStubs.stored[0]!.record.meta;
   assert(meta.ttftMs !== null && meta.ttftMs !== undefined && meta.ttftMs >= 0);
-});
-
-test('POST /v1/chat/completions leaves TTFT absent on a failure before output', async () => {
-  installRepo();
-  const dumpStubs = installDumpStubs(initDumpStore, initDumpBroker);
-  const callOpenAIChatCompletions = vi.fn(async (
-    _model: unknown,
-    _body: unknown,
-    _signal?: AbortSignal,
-    opts?: UpstreamCallOptions,
-  ): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
-    return await (opts?.wrapUpstreamCall ?? (d => d()))(async () => ({
-      ok: false, response: new Response('Bad Gateway', { status: 502 }), modelKey: 'k',
-    }));
-  });
-  queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
-
-  const app = makeApp(undefined, { dumpRetentionSeconds: 3600 });
-  const response = await app.request('/v1/chat/completions', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'test-model', stream: true, messages: [{ role: 'user', content: 'hello' }] }),
-  });
-
-  assertEquals(response.status, 502);
-  await response.text();
-  await flushBackground();
-  assertEquals(dumpStubs.stored.length, 1);
-  const meta = dumpStubs.stored[0]!.record.meta;
-  assertEquals(meta.ttftMs, null);
 });

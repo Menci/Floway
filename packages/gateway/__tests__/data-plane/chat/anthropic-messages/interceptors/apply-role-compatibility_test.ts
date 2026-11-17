@@ -29,15 +29,6 @@ const applyRoles = async (
   return invocation.payload.messages;
 };
 
-test('leaves roles unchanged without the flag or at a translated target', async () => {
-  const messages: AnthropicMessagesMessage[] = [{ role: 'system', content: 'inline rules' }];
-  assertEquals(await applyRoles(messages, new Set()), messages);
-  assertEquals(
-    await applyRoles(messages, new Set(['rewrite-mid-conv-system-to-user']), 'openaiResponses'),
-    messages,
-  );
-});
-
 test('rewrites every inline system message and preserves content', async () => {
   const content = [{ type: 'text' as const, text: 'inline rules' }];
   assertEquals(

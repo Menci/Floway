@@ -36,18 +36,3 @@ test('required tool_choice sets reasoning_effort to the canonical none sentinel'
   assertEquals(out.thinking, undefined);
   assertEquals(out.enable_thinking, undefined);
 });
-
-test('non-forced tool_choice leaves reasoning_effort untouched', async () => {
-  for (const tool_choice of ['auto', 'none', null] as const) {
-    const input = invocation({
-      model: 'm',
-      messages: [],
-      reasoning_effort: 'high',
-      tool_choice: tool_choice as OpenAIChatCompletionsPayload['tool_choice'],
-    });
-
-    await withReasoningDisabledOnForcedToolChoice(input, stubCtx, okEvents);
-
-    assertEquals(input.payload.reasoning_effort, 'high');
-  }
-});

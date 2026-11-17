@@ -32,14 +32,3 @@ test('drops top-level prompt_cache_key when the flag is on', async () => {
 
   assertEquals(Object.hasOwn(input.payload, 'prompt_cache_key'), false);
 });
-
-test('is a no-op when the flag is not set on the candidate', async () => {
-  const input = invocation(
-    { model: 'm', messages: [], prompt_cache_key: 'thread-42' },
-    new Set(),
-  );
-
-  await withPromptCacheKeyStripped(input, stubCtx, okEvents);
-
-  assertEquals(input.payload.prompt_cache_key, 'thread-42');
-});

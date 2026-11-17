@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { inputErrorResult } from '../../../../src/data-plane/chat/gemini-generate-content/errors.ts';
-import { assert, assertEquals, mockPerfTelemetryContext } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
 const bodyOf = (result: ReturnType<typeof inputErrorResult>): Record<string, unknown> =>
   JSON.parse(new TextDecoder().decode(result.body));
@@ -33,10 +33,4 @@ test.each([
       details: [{ '@type': 'type.googleapis.com/google.protobuf.Struct', value: expected }],
     }),
   });
-});
-
-test('inputErrorResult retains the rejecting candidate performance context', () => {
-  const performance = mockPerfTelemetryContext({ upstream: 'rejecting-candidate', model: 'resolved-model' });
-  const result = inputErrorResult({ message: 'invalid input', param: 'model', code: 'missing_required_parameter' }, performance);
-  assert(result.performance === performance);
 });

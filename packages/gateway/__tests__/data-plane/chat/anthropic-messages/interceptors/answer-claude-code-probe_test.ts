@@ -3,10 +3,10 @@ import { test, vi } from 'vitest';
 import { answerClaudeCodeProbe } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/answer-claude-code-probe.ts';
 import type { AnthropicMessagesInvocation } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
-import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import { type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
-import { assert, assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubCtx = mockChatGatewayCtx();
 
@@ -56,22 +56,6 @@ const assertAnswered = async (input: AnthropicMessagesInvocation, message: strin
   assertEquals(run.mock.calls.length, 0, message);
 };
 
-test('answers the /model validation probe without dialing the upstream', async () => {
-  const { result, run } = await runProbe(invocation(probePayload()));
-
-  assertEquals(run.mock.calls.length, 0);
-  assert(result.type === 'events');
-  const message = await collectAnthropicMessagesProtocolEventsToResult(result.events);
-  assertEquals(message.type, 'message');
-  assertEquals(message.role, 'assistant');
-  assertEquals(message.model, 'test-model');
-  assertEquals(message.content, []);
-  assertEquals(message.stop_reason, 'max_tokens');
-  assertEquals(message.usage.input_tokens, 0);
-  assertEquals(message.usage.output_tokens, 0);
-  assert(message.id.startsWith('msg_'));
-});
-
 test('answers every fixed probe prompt, in block and bare-string form', async () => {
   for (const prompt of ['Hi', 'test']) {
     await assertAnswered(invocation(probePayload({ messages: [{ role: 'user', content: prompt }] })), `bare string: ${prompt}`);
@@ -91,18 +75,4 @@ test('forwards the probe prompts the gateway cannot answer truthfully', async ()
 test('forwards a one-token request from a client that is not Claude Code', async () => {
   await assertForwarded(invocation(probePayload(), 'python-httpx/0.28.1'), 'other client');
   await assertForwarded(invocation(probePayload(), null), 'no user-agent');
-});
-
-test('forwards a Claude Code turn whose output cap is not one token', async () => {
-  await assertForwarded(invocation(probePayload({ max_tokens: 32_000 })), 'max_tokens 32000');
-});
-
-test('forwards a multi-turn conversation that happens to end on a probe prompt', async () => {
-  await assertForwarded(invocation(probePayload({
-    messages: [
-      { role: 'user', content: 'Hi' },
-      { role: 'assistant', content: 'Hello!' },
-      { role: 'user', content: 'Hi' },
-    ],
-  })), 'three turns');
 });

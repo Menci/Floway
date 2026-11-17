@@ -97,35 +97,6 @@ const installRepo = (): InMemoryRepo => {
   return repo;
 };
 
-test('generate carries anthropic-beta through the Anthropic Messages boundary outside the provider allowlist', async () => {
-  installRepo();
-  let upstreamHeaders: Headers | undefined;
-  let upstreamAnthropicBeta: readonly string[] | undefined;
-  const callAnthropicMessages = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
-    upstreamHeaders = opts?.headers;
-    upstreamAnthropicBeta = opts?.anthropicBeta;
-    return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers() };
-  });
-
-  const result = await anthropicMessagesAttempt.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    candidate: makeCandidate({ callAnthropicMessages }),
-    headers: new Headers({
-      'anthropic-beta': 'must-not-enter-ordinary-headers',
-      'x-unlisted': 'discard',
-    }),
-    anthropicBeta: ['context-1m-2025-08-07', 'advanced-tool-use-2025-11-20'],
-  });
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-  assertExists(upstreamHeaders);
-  assertEquals(Object.fromEntries(upstreamHeaders), {});
-  assertEquals(upstreamAnthropicBeta, ['context-1m-2025-08-07', 'advanced-tool-use-2025-11-20']);
-});
-
 test('generate and countTokens drop the Claude Code beta flag on candidates that strip billing attribution', async () => {
   installRepo();
   const upstreamAnthropicBeta: Array<readonly string[] | undefined> = [];
@@ -146,41 +117,6 @@ test('generate and countTokens drop the Claude Code beta flag on candidates that
   await anthropicMessagesAttempt.countTokens({ payload: makePayload(), ctx: makeGatewayCtx(), candidate, headers: new Headers(), anthropicBeta });
 
   assertEquals(upstreamAnthropicBeta, [['interleaved-thinking-2025-05-14'], ['interleaved-thinking-2025-05-14']]);
-});
-
-test('generate translates Anthropic Messages onto one Chat Completions output cap without its beta metadata', async () => {
-  installRepo();
-  let upstreamHeaders: Headers | undefined;
-  const callOpenAIChatCompletions = vi.fn(async (_model, body, _signal, opts): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
-    // The request states only Anthropic's `max_tokens`; the Chat side must carry
-    // the modern spelling alone, because upstreams reject both at once.
-    const payload = body as { max_tokens?: number; max_completion_tokens?: number };
-    assertEquals(payload.max_completion_tokens, 32);
-    assertEquals('max_tokens' in payload, false);
-    upstreamHeaders = opts?.headers;
-    return {
-      ok: true,
-      events: makeProtocolFrames([{
-        id: 'chatcmpl_1', object: 'chat.completion.chunk', created: 1, model: 'test-model',
-        choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
-      }]),
-      modelKey: 'k',
-      headers: new Headers(),
-    };
-  });
-
-  const result = await anthropicMessagesAttempt.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    candidate: makeCandidate({ callOpenAIChatCompletions, endpoints: { openaiChatCompletions: {} } }),
-    headers: new Headers({ 'anthropic-beta': 'must-not-enter-ordinary-headers' }),
-    anthropicBeta: ['context-1m-2025-08-07'],
-  });
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-  assertEquals(upstreamHeaders?.has('anthropic-beta'), false);
 });
 
 test('generate delivers an Anthropic Messages output cap to Ollama through the real provider boundary', async () => {

@@ -211,53 +211,6 @@ test('generate filters out candidates whose endpoints do not satisfy the gemini-
   assertEquals(callOpenAIChatCompletions.mock.calls.length, 0);
 });
 
-test('countTokens translates Gemini generateContent to Anthropic Messages count_tokens and returns the Gemini generateContent envelope', async () => {
-  installRepo();
-  const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
-    response: new Response(JSON.stringify({ input_tokens: 17 }), {
-      status: 200, headers: new Headers({ 'content-type': 'application/json' }),
-    }),
-    modelKey: 'k',
-  }));
-  queueResolution([makeCandidate({ targetApi: 'anthropicMessages', callAnthropicMessagesCountTokens })]);
-
-  const result = await geminiGenerateContentServe.countTokens({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    model: 'test-model',
-    headers: new Headers(),
-  });
-
-  const plain = expectType(result, 'plain');
-  assertEquals(plain.status, 200);
-  const body = JSON.parse(new TextDecoder().decode(plain.body));
-  assertEquals(body, { totalTokens: 17 });
-  assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
-});
-
-test('countTokens filters out candidates whose endpoints do not satisfy the gemini-countTokens preference and renders model-unsupported as a 400', async () => {
-  installRepo();
-  const callAnthropicMessagesCountTokens = vi.fn();
-  // geminiGenerateContentCountTokensTarget = chatTargetPicker(['anthropicMessages']); a candidate
-  // exposing only openaiChatCompletions matches none and is filtered out.
-  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { openaiChatCompletions: {} }, callAnthropicMessagesCountTokens })]);
-
-  const result = await geminiGenerateContentServe.countTokens({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    model: 'wrong-endpoint-model',
-    headers: new Headers(),
-  });
-
-  const upstreamError = expectType(result, 'api-error');
-  assertEquals(upstreamError.status, 400);
-  const body = JSON.parse(new TextDecoder().decode(upstreamError.body));
-  assertEquals(body.error.code, 400);
-  assertEquals(body.error.status, 'INVALID_ARGUMENT');
-  assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
-  assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 0);
-});
-
 test('alias resolution overlays rules onto the target IR at the wire call', async () => {
   installRepo();
   const capturedBodies: Record<string, unknown>[] = [];

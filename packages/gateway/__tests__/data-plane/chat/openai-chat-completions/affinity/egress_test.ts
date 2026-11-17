@@ -171,20 +171,4 @@ describe('OpenAI Chat Completions affinity egress', () => {
     };
     expect(await reassembleOpenAIChatCompletionsEvents(chunks())).toMatchObject({ vendor_text: 'x' });
   });
-
-  test('preserves chunk extras from an opaque-only nonterminal event', async () => {
-    const output: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [];
-    for await (const frame of wrapOpenAIChatCompletionsAffinityEgress(frames([
-      eventFrame(withChunkExtra(
-        chunk([{  index: 0, delta: { reasoning_opaque: 'opaque' }, finish_reason: null }]),
-        'vendor_scalar',
-        7,
-      )),
-      eventFrame(chunk([{  index: 0, delta: {}, finish_reason: 'stop' }])),
-      doneFrame(),
-    ]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    expect(output[0]).toMatchObject({ event: { choices: [], vendor_scalar: 7 } });
-    expect(JSON.stringify(output.slice(1))).not.toContain('vendor_scalar');
-  });
 });

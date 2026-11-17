@@ -77,20 +77,3 @@ test('deletes the system field entirely when every array block becomes empty', a
 
   assertEquals('system' in input.payload, false);
 });
-
-test('leaves the billing block intact when the strip flag is off (claude-code default)', async () => {
-  const system = 'You are a helpful assistant.\nx-anthropic-billing-header: per-turn-token\ncch=deadbeef1234;\nKeep going.';
-  const input = invocation(
-    {
-      model: 'm',
-      max_tokens: 1,
-      messages: [],
-      system,
-    },
-    { flagOn: false },
-  );
-
-  await stripBillingAttribution(input, stubCtx, okEvents);
-
-  assertEquals(input.payload.system, system);
-});

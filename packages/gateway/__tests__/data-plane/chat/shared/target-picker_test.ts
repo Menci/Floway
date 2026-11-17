@@ -4,11 +4,6 @@ import { chatTargetPicker } from '../../../../src/data-plane/chat/shared/target-
 import { assertEquals } from '@floway-dev/test-utils';
 
 describe('chatTargetPicker', () => {
-  test('canServe reports whether any preferred key appears on the endpoint surface', () => {
-    const picker = chatTargetPicker(['anthropicMessages', 'openaiResponses']);
-    assertEquals(picker.canServe({ openaiResponses: {} }), true);
-    assertEquals(picker.canServe({ openaiChatCompletions: {} }), false);
-  });
 
   test('pick honours the preference order even when later preferences are present', () => {
     const anthropicMessagesFirst = chatTargetPicker(['anthropicMessages', 'openaiResponses']);

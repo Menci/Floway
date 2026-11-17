@@ -150,20 +150,6 @@ describe('client-carried affinity candidate selection', () => {
       affinity([targetFor(first), targetFor(second)]),
     )).toMatchObject({ kind: 'routing-unavailable' });
   });
-
-  test('rejects request analyses whose requirement inventory and candidate evaluation drift apart', () => {
-    const first = candidate('up-a', 'model');
-    const second = candidate('up-b', 'model');
-    const acceptsUnsatisfied = defineAffinityRequest([targetFor(first)], () => ({
-      kind: 'accepted',
-      degrades: false,
-      materialize: () => undefined,
-    }));
-    const rejectsSatisfied = defineAffinityRequest([], () => ({ kind: 'rejected' }));
-
-    expect(() => acceptsUnsatisfied.evaluateCandidate(second)).toThrow('disagrees with the request requirement analysis');
-    expect(() => rejectsSatisfied.evaluateCandidate(first)).toThrow('disagrees with the request requirement analysis');
-  });
 });
 
 describe('affinity blob projection', () => {

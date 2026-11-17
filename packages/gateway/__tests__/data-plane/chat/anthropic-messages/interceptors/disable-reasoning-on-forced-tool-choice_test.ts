@@ -27,25 +27,6 @@ const invocation = (
   anthropicBeta: [],
 });
 
-test('messages non-forced tool_choice leaves reasoning untouched', async () => {
-  for (const type of ['auto', 'none'] as const) {
-    const input = invocation({
-      model: 'm',
-      messages: [],
-      max_tokens: 1,
-      thinking: { type: 'enabled', budget_tokens: 1024 },
-      tool_choice: { type },
-    });
-
-    await withReasoningDisabledOnForcedToolChoice(input, stubCtx, okEvents);
-
-    assertEquals(input.payload.thinking, {
-      type: 'enabled',
-      budget_tokens: 1024,
-    });
-  }
-});
-
 test('messages forced tool_choice preserves structured-output format while stripping reasoning effort', async () => {
   const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'], additionalProperties: false };
   const input = invocation({

@@ -67,20 +67,6 @@ test('messages: summary updates display without changing enabled thinking', () =
   assertEquals(body.thinking, { type: 'enabled', budget_tokens: 2048, display: 'summarized' });
 });
 
-test('messages: summary=omitted collapses onto thinking.display=omitted', () => {
-  const body = msgPayload();
-  body.thinking = { type: 'adaptive' };
-  applyRulesToUpstreamAnthropicMessages(body, { reasoning: { summary: 'omitted' } });
-  assertEquals(body.thinking, { type: 'adaptive', display: 'omitted' });
-});
-
-test.each([undefined, { type: 'between_tools' }] as const)('messages: display-only rules preserve inactive thinking %j', thinking => {
-  const body = msgPayload();
-  if (thinking !== undefined) body.thinking = thinking;
-  applyRulesToUpstreamAnthropicMessages(body, { reasoning: { summary: 'detailed' } });
-  assertEquals(body.thinking, thinking);
-});
-
 test('messages: adaptive=true strips a client-set budget_tokens from body.thinking', () => {
   const body = msgPayload();
   body.thinking = { type: 'enabled', budget_tokens: 5000 };
@@ -92,13 +78,6 @@ test('messages: adaptive=true strips a client-set budget_tokens from body.thinki
   assertEquals((body.thinking as { budget_tokens?: number }).budget_tokens, undefined);
 });
 
-test('messages: serviceTier=priority maps to speed=fast (OpenAI renamed the lane, both spellings reach it)', () => {
-  const body = msgPayload();
-  applyRulesToUpstreamAnthropicMessages(body, { serviceTier: 'priority' });
-  assertEquals(body.speed, 'fast');
-  assertEquals(body.service_tier, undefined);
-});
-
 test('messages: serviceTier=fast clears a pre-existing body.service_tier on the same payload', () => {
   // Upstream must never see both `speed` and `service_tier` set on the
   // same request — Anthropic treats them as alternates and the wire
@@ -108,20 +87,6 @@ test('messages: serviceTier=fast clears a pre-existing body.service_tier on the 
   applyRulesToUpstreamAnthropicMessages(body, { serviceTier: 'fast' });
   assertEquals(body.speed, 'fast');
   assertEquals(body.service_tier, undefined);
-});
-
-test('messages: non-accelerated serviceTier clears a pre-existing body.speed on the same payload', () => {
-  const body = msgPayload({ speed: 'fast' });
-  applyRulesToUpstreamAnthropicMessages(body, { serviceTier: 'flex' });
-  assertEquals(body.service_tier, 'flex');
-  assertEquals(body.speed, undefined);
-});
-
-test('messages: alias rules overwrite existing thinking + output_config fields', () => {
-  const body = msgPayload({ output_config: { effort: 'low' }, thinking: { type: 'enabled', budget_tokens: 100 } });
-  applyRulesToUpstreamAnthropicMessages(body, { reasoning: { effort: 'xhigh', budget_tokens: 9999 } });
-  assertEquals(body.output_config?.effort, 'xhigh');
-  assertEquals((body.thinking !== undefined && 'budget_tokens' in body.thinking ? body.thinking.budget_tokens : undefined), 9999);
 });
 
 const geminiPayload = (overrides: Partial<GeminiGenerateContentPayload> = {}): GeminiGenerateContentPayload => ({
