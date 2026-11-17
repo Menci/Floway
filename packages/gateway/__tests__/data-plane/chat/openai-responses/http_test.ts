@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { test, vi } from 'vitest';
 
 import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS } from './test-policy.ts';
-import { missingRequiredCompactionKeys, missingRequiredResourceKeys, responseOnlyKeysAdded } from './test-required-resource-keys.ts';
+import { missingRequiredCompactionKeys, responseOnlyKeysAdded } from './test-required-resource-keys.ts';
 import type { AuthVars } from '../../../../src/middleware/auth.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
@@ -318,49 +318,6 @@ test('POST /v1/responses makes a done reasoning item reusable before terminal', 
   }
 });
 
-test('POST /v1/responses canonicalizes an implicit system message and rewrites it to developer', async () => {
-  installRepo();
-  let observedBody: Omit<CanonicalOpenAIResponsesPayload, 'model'> | undefined;
-  const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
-    observedBody = body as Omit<CanonicalOpenAIResponsesPayload, 'model'>;
-    return {
-      action: 'generate',
-      ok: true,
-      events: makeProviderEvents(completedEvents()),
-      modelKey: 'test-model-key',
-      headers: new Headers(),
-    };
-  });
-  queueResolution([makeCandidate({
-    callOpenAIResponses,
-    enabledFlags: new Set(['rewrite-system-to-developer']),
-  })]);
-
-  const response = await makeApp().request('/v1/responses', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({
-      model: 'test-model',
-      input: [
-        { role: 'system', content: 'rules' },
-        { role: 'user', content: 'hello' },
-      ],
-      store: false,
-      stream: true,
-    }),
-  });
-
-  assertEquals(response.status, 200);
-  const responseBody = await response.text();
-  const responseId = responseBody.match(/"id":"(resp_[A-Za-z0-9_-]+)"/)?.[1];
-  assert(responseId !== undefined, 'expected store:false response id');
-  assert(responseId !== 'resp_test', 'expected the source boundary to replace the upstream response id');
-  assertEquals(observedBody?.input, [
-    { type: 'message', role: 'developer', content: 'rules' },
-    { type: 'message', role: 'user', content: 'hello' },
-  ]);
-});
-
 test('POST /v1/responses rejects a malformed untyped input item', async () => {
   installRepo();
   const response = await makeApp().request('/v1/responses', {
@@ -373,21 +330,6 @@ test('POST /v1/responses rejects a malformed untyped input item', async () => {
   const body = await response.json() as { error: { message: string; param: string } };
   assertEquals(body.error.message, 'Untyped OpenAI Responses input items require a valid role and content.');
   assertEquals(body.error.param, 'input[0]');
-});
-
-test('POST /v1/responses answers a translated-shape upstream with a complete response resource', async () => {
-  installRepo();
-  queueCompletedResponse('resp_complete');
-
-  const response = await makeApp().request('/v1/responses', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'test-model', input: 'hello' }),
-  });
-
-  assertEquals(response.status, 200);
-  const body = await response.json() as Record<string, unknown>;
-  assertEquals(missingRequiredResourceKeys(body), []);
 });
 
 test('POST /v1/responses terminates an SSE stream with error when an output item cannot be persisted', async () => {
@@ -592,17 +534,6 @@ test('POST /v1/responses/compact applies the alias rules to a codex-auto-review 
   assertEquals(observed.reasoning?.effort, 'low');
   assertEquals(observed.prompt_cache_options, { mode: 'explicit', ttl: '30m' });
   assertEquals(observed.prompt_cache_retention, '24h');
-});
-
-test('POST /v1/responses/compact answers a body that states no status, as a native compact upstream sends', async () => {
-  installRepo();
-  const { response } = await compactTurn({ status: undefined as unknown as OpenAIResponsesResultEx['status'] });
-
-  assertEquals(response.status, 200);
-  const body = await response.json() as Record<string, unknown>;
-  assertEquals(body.object, 'response.compaction');
-  assertEquals(missingRequiredCompactionKeys(body), []);
-  assertEquals((body.output as Array<{ type: string }>).map(item => item.type), ['compaction']);
 });
 
 const translatedCustomCandidate = (

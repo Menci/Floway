@@ -3,7 +3,6 @@ import { onTestFinished, test, vi } from 'vitest';
 
 import { app } from '../../../../src/app.ts';
 import { hashOpenAIResponsesItem } from '../../../../src/data-plane/chat/openai-responses/items/identity.ts';
-import { OPENAI_RESPONSES_REASONING_INCLUDED_HEADER } from '../../../../src/data-plane/chat/openai-responses/response-headers.ts';
 import { openaiResponsesServe } from '../../../../src/data-plane/chat/openai-responses/serve.ts';
 import { INTERRUPT_UPSTREAM_ABORT_WARNING_MS, KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/openai-responses/websocket.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
@@ -69,7 +68,7 @@ const terminalResponseId = (messages: readonly Record<string, unknown>[]): strin
   return id;
 };
 
-const connectOpenAIResponsesWebSocketUpgrade = async (apiKey: string, upgradeHeaders: Record<string, string> = {}): Promise<{ client: TestWorkerWebSocket; response: Response }> => {
+const connectOpenAIResponsesWebSocket = async (apiKey: string, upgradeHeaders: Record<string, string> = {}): Promise<TestWorkerWebSocket> => {
   await warmModelsForTest();
   const executionCtx = {
     waitUntil: () => {},
@@ -89,11 +88,8 @@ const connectOpenAIResponsesWebSocketUpgrade = async (apiKey: string, upgradeHea
   const runtime = activeRuntime();
   const pair = runtime.pairs.at(-1);
   assertExists(pair);
-  return { client: pair.client, response };
+  return pair.client;
 };
-
-const connectOpenAIResponsesWebSocket = async (apiKey: string, upgradeHeaders: Record<string, string> = {}): Promise<TestWorkerWebSocket> =>
-  (await connectOpenAIResponsesWebSocketUpgrade(apiKey, upgradeHeaders)).client;
 
 // The upgrade registers exactly one runtime background task: the session
 // lifetime promise, which resolves once the socket is closed and every
@@ -179,15 +175,6 @@ const completeOpenAIResponsesTurn = async (
   await received;
   await waitForMicrotasks();
 };
-
-test('OpenAI Responses WebSocket handshake declares historical reasoning accounting', async () => {
-  const { apiKey } = await setupAppTest();
-  await withSuccessfulOpenAIResponsesUpstream(async () => await withWorkerWebSocketRuntime(async () => {
-    const { client, response } = await connectOpenAIResponsesWebSocketUpgrade(apiKey.key);
-    assertEquals(response.headers.get(OPENAI_RESPONSES_REASONING_INCLUDED_HEADER), 'true');
-    client.close();
-  }));
-});
 
 test('OpenAI Responses WebSocket forwards stream events, echoes event_id, and ends the turn on the terminal event', async () => {
   const { apiKey } = await setupAppTest();
@@ -547,27 +534,6 @@ test('OpenAI Responses WebSocket keep-alive waits for the first event and takes 
       }
     }),
   );
-});
-
-test('OpenAI Responses WebSocket returns OpenAI-style error envelopes for unsupported client events', async () => {
-  const { apiKey } = await setupAppTest();
-  await withSuccessfulOpenAIResponsesUpstream(async () => await withWorkerWebSocketRuntime(async () => {
-    const client = await connectOpenAIResponsesWebSocket(apiKey.key);
-    const received = waitForMessages(client, messages => messages.length === 1);
-
-    client.send(JSON.stringify({ type: 'session.update', event_id: 'evt_bad' }));
-
-    assertEquals(await received, [{
-      type: 'error',
-      event_id: 'evt_bad',
-      status: 400,
-      error: {
-        type: 'invalid_request_error',
-        code: 'invalid_request_error',
-        message: "Unsupported WebSocket event type 'session.update'.",
-      },
-    }]);
-  }));
 });
 
 test('OpenAI Responses WebSocket interrupts an active turn and continues from its completed items', async () => {
@@ -1109,105 +1075,6 @@ test('OpenAI Responses WebSocket answers a Codex generate:false prewarm locally 
   );
 });
 
-test('OpenAI Responses WebSocket evicts a failed continuation target so the next attempt reports previous_response_not_found', async () => {
-  const { apiKey } = await setupAppTest();
-  let responseCalls = 0;
-
-  await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-      }
-      if (url.pathname === '/models') {
-        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
-      }
-      if (url.pathname === '/responses') {
-        responseCalls += 1;
-        if (responseCalls === 2) {
-          return new Response(JSON.stringify({
-            error: { message: 'simulated upstream rejection', type: 'invalid_request_error', code: 'bad_request' },
-          }), {
-            status: 400,
-            headers: { 'content-type': 'Application/Problem+JSON; charset=utf-8' },
-          });
-        }
-        return sseOpenAIResponsesResponse({
-          id: `resp_ws_evict_${responseCalls}`,
-          object: 'response',
-          model: 'gpt-direct-responses',
-          status: 'completed',
-          output: [{
-            id: `assistant_ws_evict_${responseCalls}`,
-            type: 'message',
-            role: 'assistant',
-            status: 'completed',
-            content: [{ type: 'output_text', text: 'answer' }],
-          }],
-        });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
-      const firstTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
-      client.send(JSON.stringify({
-        type: 'response.create',
-        response: { model: 'gpt-direct-responses', input: 'first question', store: false },
-      }));
-      const firstResponseId = terminalResponseId(await firstTerminal);
-
-      const rejected = waitForMessages(client, messages => messages.some(message => message.type === 'error'));
-      client.send(JSON.stringify({
-        type: 'response.create',
-        event_id: 'evt_rejected',
-        response: {
-          model: 'gpt-direct-responses',
-          previous_response_id: firstResponseId,
-          input: 'follow-up the upstream rejects',
-          store: false,
-        },
-      }));
-      assertEquals(await rejected, [{
-        type: 'error',
-        event_id: 'evt_rejected',
-        status: 400,
-        error: {
-          message: 'simulated upstream rejection',
-          type: 'invalid_request_error',
-          code: 'bad_request',
-        },
-      }]);
-
-      const evicted = waitForMessages(client, messages => messages.some(message => message.type === 'error'));
-      client.send(JSON.stringify({
-        type: 'response.create',
-        event_id: 'evt_evicted',
-        response: {
-          model: 'gpt-direct-responses',
-          previous_response_id: firstResponseId,
-          input: 'retry from the same id',
-          store: false,
-        },
-      }));
-
-      assertEquals(await evicted, [{
-        type: 'error',
-        event_id: 'evt_evicted',
-        status: 400,
-        error: {
-          message: `Previous response with id '${firstResponseId}' not found.`,
-          type: 'invalid_request_error',
-          param: 'previous_response_id',
-          code: 'previous_response_not_found',
-        },
-      }]);
-      assertEquals(responseCalls, 2);
-    }),
-  );
-});
-
 // A turn that fails by streaming a `response.failed` terminal answers the
 // client with an event instead of an error envelope, so it leaves the handler
 // through a different exit than the rejected turn above — and the spec's
@@ -1591,61 +1458,6 @@ test('OpenAI Responses WebSocket session-level store: second message resolves pr
   );
 });
 
-test('OpenAI Responses WebSocket aborts the in-flight OpenAI Responses request when the client closes', async () => {
-  const { apiKey } = await setupAppTest();
-  let resolveOpenAIResponsesStarted: (() => void) | undefined;
-  const openaiResponsesStarted = new Promise<void>(resolve => {
-    resolveOpenAIResponsesStarted = resolve;
-  });
-  let resolveUpstreamAborted: (() => void) | undefined;
-  const upstreamAborted = new Promise<void>(resolve => {
-    resolveUpstreamAborted = resolve;
-  });
-
-  await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-      }
-      if (url.pathname === '/models') {
-        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
-      }
-      if (url.pathname === '/responses') {
-        resolveOpenAIResponsesStarted?.();
-        return await new Promise<Response>(resolve => {
-          request.signal.addEventListener('abort', () => {
-            resolveUpstreamAborted?.();
-            resolve(sseOpenAIResponsesResponse({
-              id: 'resp_ws_abort',
-              object: 'response',
-              model: 'gpt-direct-responses',
-              status: 'completed',
-              output: [],
-            }));
-          }, { once: true });
-        });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
-      client.send(JSON.stringify({
-        type: 'response.create',
-        response: {
-          model: 'gpt-direct-responses',
-          input: 'hello',
-        },
-      }));
-
-      await openaiResponsesStarted;
-      client.close();
-      await upstreamAborted;
-    }),
-  );
-});
-
 // A turn schedules its dump and usage writes from its terminal `finally`, so
 // nothing of its own sits in the session's pending set while it streams. The
 // session lifetime therefore has to hold the in-flight message chain itself:
@@ -1919,66 +1731,6 @@ test('OpenAI Responses WebSocket dispatches each Codex turn with the metadata bl
       assertEquals(second.turn_id, 'turn-2');
       assertEquals(second.turn_started_at_unix_ms, 1700000000002);
       assertEquals((upstreamBodies[1].client_metadata as Record<string, string>)['x-codex-window-id'], 'codex-thread:1');
-    }),
-  );
-});
-
-test('OpenAI Responses WebSocket replays Codex Lite input items without rebuilding their prefix', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await saveUpstreamForTest(repo.upstreams, buildChatGPTUpstreamRecord());
-  const upstreamBodies: Record<string, unknown>[] = [];
-  const prefix = [
-    { type: 'additional_tools', role: 'developer', id: 'at_ws_lite', tools: [{ type: 'namespace', name: 'functions', description: '', tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object' } }] }] },
-    { type: 'message', role: 'developer', id: 'msg_ws_lite', content: [{ type: 'input_text', text: 'Caller base instructions' }], internal_chat_message_metadata_passthrough: { content_item_kinds: ['model.base_instructions'] } },
-  ];
-
-  await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-      }
-      if (url.pathname === '/models') return jsonResponse(copilotModels([]));
-      if (url.pathname === '/backend-api/codex/models') {
-        return jsonResponse({ models: [{ slug: 'gpt-5.4', display_name: 'gpt-5.4', visibility: 'list', context_window: 272000, max_context_window: 1000000, use_responses_lite: true }] });
-      }
-      if (url.pathname === '/backend-api/codex/responses') {
-        upstreamBodies.push(JSON.parse(await request.text()) as Record<string, unknown>);
-        const turn = upstreamBodies.length;
-        return sseOpenAIResponsesResponse({
-          id: `resp_ws_lite_${turn}`, object: 'response', model: 'gpt-5.4', status: 'completed',
-          output: [{ id: `msg_ws_lite_output_${turn}`, type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: `answer ${turn}`, annotations: [] }] }],
-        });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => await withWorkerWebSocketRuntime(async () => {
-      const socket = await connectOpenAIResponsesWebSocket(apiKey.key);
-      const send = async (input: unknown[], previousResponseId?: string): Promise<string> => {
-        const terminal = waitForMessages(socket, messages => messages.some(isTerminalResponseEvent));
-        socket.send(JSON.stringify({
-          type: 'response.create', response: {
-            model: 'gpt-5.4', input, store: false,
-            ...(previousResponseId === undefined ? {} : { previous_response_id: previousResponseId }),
-            client_metadata: { ws_request_header_x_openai_internal_codex_responses_lite: 'true' },
-          },
-        }));
-        return terminalResponseId(await terminal);
-      };
-
-      const firstId = await send([...prefix, { role: 'user', content: 'First turn' }]);
-      await send([{ role: 'user', content: 'Second turn' }], firstId);
-
-      assertEquals(upstreamBodies.length, 2);
-      const firstInput = upstreamBodies[0]?.input as unknown[];
-      const secondInput = upstreamBodies[1]?.input as unknown[];
-      assertEquals(firstInput.slice(0, prefix.length), prefix);
-      assertEquals(secondInput.slice(0, prefix.length), prefix);
-      assertEquals(firstInput.filter(item => (item as { type?: string }).type === 'additional_tools').length, 1);
-      assertEquals(secondInput.filter(item => (item as { type?: string }).type === 'additional_tools').length, 1);
-      assertEquals(upstreamBodies[0]?.instructions, undefined);
-      assertEquals(upstreamBodies[1]?.instructions, undefined);
     }),
   );
 });

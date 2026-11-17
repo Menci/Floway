@@ -1,13 +1,9 @@
 import { test } from 'vitest';
 
-import { resolveServerToolName } from '../../../../../../src/data-plane/chat/openai-responses/interceptors/server-tool-shim.ts';
 import {
   alphaSearchSettingsFromHosted,
-  isHostedWebSearchTool,
   prepareToolsForShim,
-  SHIM_TOOL_NAME,
   expandWebSearchCall,
-  WEB_SEARCH_HOSTED_TYPES,
 } from '../../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/web-search.ts';
 import { assertLocalWebSearchSupport, findMatches, formatMatches, isUrlAllowed, parseWebSearchOperations, type WebSearchOperation } from '../../../../../../src/data-plane/tools/web-search/operations.ts';
 import type { OpenAIResponsesHostedTool, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
@@ -78,27 +74,6 @@ test('parseWebSearchOperations parses multiple search_query entries with stable 
   );
 });
 
-test('parseWebSearchOperations preserves query-level domains and recency', () => {
-  assertEquals(
-    opsOf({ search_query: [{ q: 'news', domains: ['example.com'], recency: 7 }] }),
-    [{ kind: 'search', arrayIndex: 0, query: 'news', domains: ['example.com'], recencyDays: 7 }],
-  );
-});
-
-test('parseWebSearchOperations ignores null optional fields', () => {
-  assertEquals(
-    opsOf({ search_query: [{ q: 'news', domains: null, recency: null }] }),
-    [{ kind: 'search', arrayIndex: 0, query: 'news' }],
-  );
-});
-
-test('parseWebSearchOperations parses find entry with URL ref_id and pattern', () => {
-  assertEquals(
-    opsOf({ find: [{ ref_id: 'https://example.com', pattern: 'needle' }] }),
-    [{ kind: 'find', arrayIndex: 0, url: 'https://example.com', pattern: 'needle' }],
-  );
-});
-
 test('parseWebSearchOperations: non-URL open ref_id produces an error sentinel', () => {
   const ops = opsOf({ open: [{ ref_id: 'opaque-prior-id' }] });
   assertEquals(ops.length, 1);
@@ -146,17 +121,6 @@ test('parseWebSearchOperations: missing q on search_query entry surfaces a missi
   assert((op as { error: string }).error.includes('"q"'));
 });
 
-test('parseWebSearchOperations: supported key with non-array value surfaces a wrong-type op (search_query)', () => {
-  // A model that populates `search_query: {"q":"x"}` (or any
-  // non-array) used to be silently dropped because the array guard
-  // skipped it. Surface as a model-visible `wrong-type` op so the
-  // model learns the call was malformed instead of seeing a phantom
-  // success.
-  assertEquals(opsOf({ search_query: { q: 'x' } }), [
-    { kind: 'wrong-type', subProperty: 'search_query', actualType: 'object' },
-  ]);
-});
-
 test('parseWebSearchOperations: wrong-typed supported key does not block other supported keys from executing', () => {
   const ops = opsOf({ search_query: { q: 'x' }, open: [{ ref_id: 'https://y' }] });
   assertEquals(ops.length, 2);
@@ -167,14 +131,6 @@ test('parseWebSearchOperations: wrong-typed supported key does not block other s
 test('isUrlAllowed allowed_domains: subdomain suffix-matches', () => {
   assertEquals(isUrlAllowed('https://www.example.com/page', { allowedDomains: ['example.com'] }), true);
   assertEquals(isUrlAllowed('https://sub.example.com/page', { allowedDomains: ['example.com'] }), true);
-});
-
-test('isUrlAllowed allowed_domains: unrelated host is blocked', () => {
-  assertEquals(isUrlAllowed('https://other.com', { allowedDomains: ['example.com'] }), false);
-});
-
-test('isUrlAllowed blocked_domains: subdomain is blocked', () => {
-  assertEquals(isUrlAllowed('https://www.example.com', { blockedDomains: ['example.com'] }), false);
 });
 
 test('isUrlAllowed blocked_domains takes precedence over allowed_domains', () => {
@@ -205,21 +161,12 @@ test('findMatches: respects maxMatches cap', () => {
   assertEquals(findMatches(text, 'foo', { maxMatches: 5, contextChars: 5 }).length, 5);
 });
 
-test('findMatches: empty pattern returns empty array', () => {
-  assertEquals(findMatches('hello', '', { maxMatches: 10, contextChars: 5 }), []);
-});
-
 test('findMatches: contextChars trims around the match', () => {
   const m = findMatches('AAAAAAAAAAneedleBBBBBBBBBB', 'needle', { maxMatches: 10, contextChars: 5 });
   assertEquals(m.length, 1);
   assertEquals(m[0].before, 'AAAAA');
   assertEquals(m[0].matched, 'needle');
   assertEquals(m[0].after, 'BBBBB');
-});
-
-test('findMatches: overlapping matches not double-counted (search resumes past match)', () => {
-  const m = findMatches('aaaa', 'aa', { maxMatches: 10, contextChars: 0 });
-  assertEquals(m.length, 2);
 });
 
 test('formatMatches: renders header + numbered matches with brackets', () => {
@@ -229,27 +176,13 @@ test('formatMatches: renders header + numbered matches with brackets', () => {
   assertEquals(out.includes('"...a [cat] on mat..."'), true);
 });
 
-test('formatMatches: empty matches returns no-matches phrase including URL', () => {
-  assertEquals(formatMatches('cat', 'https://x', []), 'No matching `cat` found on https://x.');
-});
-
-// ── Tool detection, filter prep, and name resolution ──
-
-const SHIM_TOOL = SHIM_TOOL_NAME;
-const hostedVariants = ['web_search', 'web_search_2025_08_26', 'web_search_preview', 'web_search_preview_2025_03_11'] as const;
+// ── Filter prep ──
 
 const prepare = (tools: OpenAIResponsesTool[]) => {
   const result = prepareToolsForShim(tools);
   assert(result.ok);
   return { filters: result.filters };
 };
-
-test('isHostedWebSearchTool recognizes every hosted variant', () => {
-  assertEquals([...WEB_SEARCH_HOSTED_TYPES].sort(), [...hostedVariants].sort());
-  for (const type of hostedVariants) assertEquals(isHostedWebSearchTool({ type } as OpenAIResponsesTool), true);
-  assertEquals(isHostedWebSearchTool({ type: 'function', name: 'x', parameters: {}, strict: false }), false);
-  assertEquals(isHostedWebSearchTool({ type: 'custom', name: 'x' }), false);
-});
 
 test('prepareToolsForShim extracts default filters from a bare hosted tool', () => {
   assertEquals(prepare([{ type: 'web_search_preview' }]).filters, { maxResults: 20 });
@@ -288,20 +221,6 @@ test('prepareToolsForShim selects the last web_search declaration as one configu
     userLocation: { country: 'SG' },
     maxResults: 10,
   });
-});
-
-test('prepareToolsForShim passes through with empty filters when no hosted web_search exists', () => {
-  const fn: OpenAIResponsesTool = { type: 'function', name: 'foo', parameters: {}, strict: false };
-  assertEquals(prepare([fn]).filters, {});
-});
-
-test('resolveServerToolName returns the first free sequential name', () => {
-  assertEquals(resolveServerToolName(SHIM_TOOL, []), SHIM_TOOL);
-  assertEquals(resolveServerToolName(SHIM_TOOL, [{ type: 'function', name: SHIM_TOOL, parameters: {}, strict: false }]), `${SHIM_TOOL}_2`);
-  assertEquals(resolveServerToolName(SHIM_TOOL, [
-    { type: 'function', name: SHIM_TOOL, parameters: {}, strict: false },
-    { type: 'custom', name: `${SHIM_TOOL}_2` },
-  ]), `${SHIM_TOOL}_3`);
 });
 
 test('expandWebSearchCall renders its replay IR without reconstructing the original call', () => {

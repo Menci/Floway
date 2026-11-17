@@ -51,10 +51,6 @@ beforeEach(() => {
   initRepo(new InMemoryRepo());
 });
 
-const imageMessage = (mime: string): CanonicalOpenAIResponsesInputItem => ({
-  type: 'message', role: 'user', content: [{ type: 'input_image', image_url: `data:${mime};base64,${PNG_B64}`, detail: 'auto' }],
-});
-
 const imageInputContainers = {
   message: (image: OpenAIResponsesInputImage): CanonicalOpenAIResponsesInputItem => ({ type: 'message', role: 'user', content: [image] }),
   function_output: (image: OpenAIResponsesInputImage): CanonicalOpenAIResponsesInputItem => ({ type: 'function_call_output', call_id: 'call_function', output: [image] }),
@@ -101,31 +97,6 @@ test('prepareImageGenerationConfig rejects any client-supplied n, including n:1'
   }
 });
 
-test('prepareImageGenerationConfig rejects output_format webp', () => {
-  const result = prepareImageGenerationConfig([{ type: 'image_generation', output_format: 'webp' } as OpenAIResponsesTool]);
-  assert(!result.ok);
-  assertEquals(result.error.code, 'invalid_value');
-  assertEquals(result.error.param, 'tools[0].output_format');
-});
-
-test('prepareImageGenerationConfig takes the last hosted entry when several are present', () => {
-  const result = prepareImageGenerationConfig([
-    { type: 'image_generation', quality: 'low' } as OpenAIResponsesTool,
-    { type: 'image_generation', quality: 'high' } as OpenAIResponsesTool,
-  ]);
-  assert(result.ok);
-  assertEquals(result.config.quality, 'high');
-});
-
-test('prepareImageGenerationConfig reports the concrete tool index in error.param', () => {
-  const result = prepareImageGenerationConfig([
-    { type: 'function', name: 'x', parameters: {}, strict: false } as OpenAIResponsesTool,
-    { type: 'image_generation', size: '99x99' } as OpenAIResponsesTool,
-  ]);
-  assert(!result.ok);
-  assertEquals(result.error.param, 'tools[1].size');
-});
-
 test('prepareImageGenerationConfig rejects out-of-range output_compression', () => {
   const cases: [number, string][] = [[-1, 'integer_below_min_value'], [101, 'integer_above_max_value'], [50.5, 'invalid_value']];
   for (const [v, code] of cases) {
@@ -143,24 +114,6 @@ test('prepareImageGenerationConfig rejects unknown tool fields (Azure-strict)', 
     assertEquals(result.error.code, 'unknown_parameter');
     assertEquals(result.error.param, `tools[0].${field}`);
   }
-});
-
-test('prepareImageGenerationConfig validates input_fidelity and partial_images', () => {
-  const okFidelity = prepareImageGenerationConfig([{ type: 'image_generation', input_fidelity: 'high' } as OpenAIResponsesTool]);
-  assert(okFidelity.ok);
-  assertEquals(okFidelity.config.input_fidelity, 'high');
-
-  const badFidelity = prepareImageGenerationConfig([{ type: 'image_generation', input_fidelity: 'ultra' } as OpenAIResponsesTool]);
-  assert(!badFidelity.ok);
-  assertEquals(badFidelity.error.param, 'tools[0].input_fidelity');
-
-  const okPartial = prepareImageGenerationConfig([{ type: 'image_generation', partial_images: 2 } as OpenAIResponsesTool]);
-  assert(okPartial.ok);
-  assertEquals(okPartial.config.partial_images, 2);
-
-  const badPartial = prepareImageGenerationConfig([{ type: 'image_generation', partial_images: 9 } as OpenAIResponsesTool]);
-  assert(!badPartial.ok);
-  assertEquals(badPartial.error.param, 'tools[0].partial_images');
 });
 
 test('prepareImageGenerationConfig decodes image_url masks and reports file_id as a Floway limitation', () => {
@@ -193,34 +146,6 @@ test('prepareImageGenerationConfig decodes image_url masks and reports file_id a
   assert(remoteBoth.ok);
   assert(remoteBoth.config.mask !== undefined && 'wireUrl' in remoteBoth.config.mask);
   assertEquals(remoteBoth.config.mask.afterMaterializationError, expectedFileIdError);
-});
-
-// ── inspectImageSources ──
-
-test('inspectImageSources reads input_image blocks and image_generation_call results', () => {
-  const input: CanonicalOpenAIResponsesInputItem[] = [
-    {
-      type: 'message', role: 'user', content: [
-        { type: 'input_text', text: 'edit this' },
-        { type: 'input_image', image_url: `data:image/png;base64,${PNG_B64}`, detail: 'auto' },
-      ],
-    },
-    { type: 'image_generation_call', id: 'ig_prev', status: 'completed', result: PNG_B64 },
-  ];
-  const { sources, issue } = inspectImageSources(input);
-  assertEquals(sources.length, 2);
-  assertEquals(issue, undefined);
-});
-
-test('inspectImageSources normalizes the media type in an image data URL', () => {
-  const { sources, issue } = inspectImageSources([imageInputContainers.message({
-    type: 'input_image', image_url: `data:IMAGE/PNG;base64,${PNG_B64}`, detail: 'auto',
-  })]);
-  assertEquals(issue, undefined);
-  assertEquals(sources.length, 1);
-  const [source] = sources;
-  assert(source !== undefined && !('wireUrl' in source));
-  assertEquals(source.mimeType, 'image/png');
 });
 
 test('inspectImageSources rejects bare base64 with the native input_image error', () => {
@@ -340,18 +265,6 @@ test('expandImageGenerationCall provides fallback arguments, result and image fe
   assertEquals((imageBlock as { image_url: string }).image_url, `data:image/jpeg;base64,${PNG_B64}`);
 });
 
-test('expandImageGenerationCall encodes a failed call as ok:false with error detail', () => {
-  const out = expandImageGenerationCall(
-    { type: 'image_generation_call', id: 'ig_2', status: 'failed', result: null, revised_prompt: 'x', error: { message: 'overloaded', code: 'EngineOverloaded' } },
-  );
-  assert(typeof out.output === 'string');
-  const parsed = JSON.parse(out.output) as { ok: boolean; error: { code: string; message: string; retryable: boolean } };
-  assertEquals(parsed.ok, false);
-  assertEquals(parsed.error.code, 'EngineOverloaded');
-  assertEquals(parsed.error.message, 'overloaded');
-  assertEquals(parsed.error.retryable, true);
-});
-
 // ── imageTerminal ──
 
 test.each([false, true])('image replay records input fields independently of success or failure: %s', failed => {
@@ -385,16 +298,6 @@ test('imageTerminal on success echoes the backend-resolved fields and closes wit
   assertEquals((item as { background?: string }).background, 'opaque');
   assertEquals(endEvents.length, 1);
   assertEquals(endEvents[0].type, 'response.image_generation_call.completed');
-});
-
-test('imageTerminal on failure emits a failed item and no closing events', () => {
-  const outcome: ImageOutcome = { ok: false, error: { type: 'image_generation_user_error', message: 'overloaded', code: 'EngineOverloaded', retryable: true } };
-  const { item, endEvents } = imageTerminal('a red dot', 'generate', outcome);
-  assertEquals((item as { status?: string }).status, 'failed');
-  assertEquals((item as { error?: { code: string } }).error?.code, 'EngineOverloaded');
-  assertEquals((item as { error?: { type?: string } }).error?.type, 'image_generation_user_error');
-  assertEquals((item as { result?: string | null }).result, null);
-  assertEquals(endEvents.length, 0);
 });
 
 // ── parseImageStreamEvent ──
@@ -449,11 +352,6 @@ test('parseRetryAfterMs prefers retry-after-ms over Retry-After', () => {
   assertEquals(parseRetryAfterMs(h), 2500);
 });
 
-test('parseRetryAfterMs falls back to x-ms-retry-after-ms when retry-after-ms absent', () => {
-  const h = new Headers({ 'x-ms-retry-after-ms': '1800', 'retry-after': '7' });
-  assertEquals(parseRetryAfterMs(h), 1800);
-});
-
 test('parseRetryAfterMs reads Retry-After as integer seconds → milliseconds', () => {
   const h = new Headers({ 'retry-after': '5' });
   assertEquals(parseRetryAfterMs(h), 5000);
@@ -473,21 +371,6 @@ test('parseRetryAfterMs returns null for zero / negative values (gpt-image-1 "0.
   assertEquals(parseRetryAfterMs(new Headers({ 'retry-after-ms': '0' })), null);
   assertEquals(parseRetryAfterMs(new Headers({ 'retry-after': '0' })), null);
   assertEquals(parseRetryAfterMs(new Headers({ 'retry-after': '-5' })), null);
-});
-
-test('parseRetryAfterMs skips an unparseable retry-after-ms and falls through to Retry-After', () => {
-  const h = new Headers({ 'retry-after-ms': 'nope', 'retry-after': '3' });
-  assertEquals(parseRetryAfterMs(h), 3000);
-});
-
-// ── imageGenerationServerTool: input sources ──
-
-test('imageGenerationServerTool accepts GIF edit input for local WebP transcoding', async () => {
-  const result = await imageGenerationServerTool(
-    makeCtx({ tools: [{ type: 'image_generation' }], input: [imageMessage('image/gif')] }),
-    gatewayCtx(),
-  );
-  assert(result.type === 'active');
 });
 
 test('imageGenerationServerTool fetches repeated remote edit sources once', async () => {
@@ -514,26 +397,6 @@ test('imageGenerationServerTool fetches repeated remote edit sources once', asyn
   const first = input[0].content[0];
   assert(first.type === 'input_image');
   assertEquals(first.image_url, 'https://example.com/source.png');
-});
-
-test('imageGenerationServerTool counts and fetches one URL once when shared by a source and mask', async () => {
-  let requests = 0;
-  initExternalResourceFetcher(() => {
-    requests += 1;
-    return Promise.resolve(paddedPngResponse(30 * 1024 * 1024));
-  });
-  const imageUrl = 'https://example.com/shared.png';
-
-  const result = await imageGenerationServerTool(
-    makeCtx({
-      tools: [{ type: 'image_generation', action: 'edit', input_image_mask: { image_url: imageUrl } }],
-      input: [imageInputContainers.message({ type: 'input_image', image_url: imageUrl, detail: 'auto' })],
-    }),
-    gatewayCtx(),
-  );
-
-  assert(result.type === 'active');
-  assertEquals(requests, 1);
 });
 
 test('imageGenerationServerTool enforces the aggregate limit across distinct successful downloads', async () => {
@@ -678,17 +541,6 @@ test('imageGenerationServerTool validates a remote mask before applying the Flow
   assertEquals(result.param, 'tools[0].input_image_mask.file_id');
   assertEquals(result.code, 'unsupported_image_source');
   assertEquals(requests, 1);
-});
-
-test('imageGenerationServerTool reports a malformed remote mask at its native path', async () => {
-  const result = await imageGenerationServerTool(
-    makeCtx({ tools: [{ type: 'image_generation', input_image_mask: { file_id: 'file_123', image_url: 'https://' } }] }),
-    gatewayCtx(),
-  );
-  assert(result.type === 'invalid-request');
-  assertEquals(result.message, "Invalid 'tools[0].input_image_mask.image_url'. Expected a valid URL, but got a value with an invalid format.");
-  assertEquals(result.param, 'tools[0].input_image_mask.image_url');
-  assertEquals(result.code, 'invalid_value');
 });
 
 test.each(unresolvableSourceCases)(

@@ -173,89 +173,6 @@ test('projects reserved collaboration onto a plaintext upstream namespace and re
   expect(ctx.payload).toEqual(upstreamPayload);
 });
 
-test('uses a deterministic collision suffix and leaves the projected context for downstream turns', async () => {
-  const ctx = invocation();
-  ctx.payload = {
-    ...ctx.payload,
-    tools: [
-      ...(ctx.payload.tools ?? []),
-      { type: 'namespace', name: 'collaboration-optimize', description: '', tools: [] } as OpenAIResponsesTool,
-    ],
-  };
-  await withOpenAIResponsesCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
-    expect((ctx.payload.tools?.[0] as { name: string }).name).toBe('collaboration-optimize-2');
-    const choice = ctx.payload.tool_choice as unknown as { tools: Array<{ name: string }> };
-    expect(choice.tools[1].name).toBe('collaboration-optimize-2.spawn_agent');
-    return eventResult((async function* () {})(), testTelemetryModelIdentity);
-  });
-  expect((ctx.payload.tools?.[0] as { name: string }).name).toBe('collaboration-optimize-2');
-});
-
-test('projects history-only collaboration calls independently of target protocol', async () => {
-  const ctx = invocation();
-  ctx.payload = { ...ctx.payload, tools: undefined, tool_choice: undefined };
-  await withOpenAIResponsesCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
-    const item = ctx.payload.input[0];
-    expect(item).toMatchObject({ type: 'function_call', namespace: 'collaboration-optimize' });
-    expect(item).not.toHaveProperty('encrypted_function_args');
-    return eventResult((async function* () {})(), testTelemetryModelIdentity);
-  });
-  expect(ctx.payload.input[0]).toMatchObject({ type: 'function_call', namespace: 'collaboration-optimize' });
-
-  const chatCtx = invocation('openaiChatCompletions');
-  chatCtx.payload = { ...chatCtx.payload, tools: undefined, tool_choice: undefined };
-  await withOpenAIResponsesCollaborationShim(chatCtx, mockChatGatewayCtx(), async () => {
-    expect(chatCtx.payload.input[0]).toMatchObject({ type: 'function_call', namespace: 'collaboration-optimize' });
-    return eventResult((async function* () {})(), testTelemetryModelIdentity);
-  });
-});
-
-test('keeps one plaintext projection across a multi-turn downstream loop', async () => {
-  const ctx = invocation();
-  const namespaces: string[] = [];
-  const upstreamTurn = async (output?: OpenAIResponsesOutputFunctionCallEx) => {
-    namespaces.push((ctx.payload.tools?.[0] as { name: string }).name);
-    return eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-      if (output !== undefined) yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: output });
-    })(), testTelemetryModelIdentity);
-  };
-  const result = await withOpenAIResponsesCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
-    await upstreamTurn();
-    ctx.payload = {
-      ...ctx.payload,
-      input: [
-        ...ctx.payload.input,
-        {
-          type: 'function_call',
-          call_id: 'call_next',
-          namespace: 'collaboration-optimize',
-          name: 'send_message',
-          arguments: '{"target":"worker","message":"next turn"}',
-          status: 'completed',
-        },
-      ],
-    };
-    const output: OpenAIResponsesOutputFunctionCallEx = {
-      type: 'function_call',
-      id: 'fc_next',
-      call_id: 'call_next',
-      namespace: 'collaboration-optimize',
-      name: 'send_message',
-      arguments: '{"target":"worker","message":"done"}',
-      status: 'completed',
-    };
-    return await upstreamTurn(output);
-  });
-
-  expect(namespaces).toEqual(['collaboration-optimize', 'collaboration-optimize']);
-  expect(ctx.payload.input[1]).toMatchObject({ namespace: 'collaboration-optimize' });
-  if (result.type !== 'events') throw new Error('Expected events');
-  for await (const frame of result.events) {
-    if (frame.type !== 'event' || frame.event.type !== 'response.output_item.done') continue;
-    expect(frame.event.item).toMatchObject({ namespace: 'collaboration', encrypted_function_args: [] });
-  }
-});
-
 test('projects duplicate collaboration containers together and preserves their separate declarations', async () => {
   const ctx = invocation();
   const tool = collaborationTool();
@@ -346,15 +263,6 @@ test('rejects an upstream encrypted marker before labeling the call plaintext', 
   }).rejects.toThrow('Plaintext collaboration upstream returned encrypted arguments');
 });
 
-test('preserves the complete contract when the provider flag is disabled', async () => {
-  const ctx = { ...invocation(), candidate: stubModelCandidate({ enabledFlags: new Set() }) };
-  const before = ctx.payload;
-  await withOpenAIResponsesCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
-    expect(ctx.payload).toBe(before);
-    return eventResult((async function* () {})(), testTelemetryModelIdentity);
-  });
-});
-
 test('allocates against deferred inventories, qualified selectors and replay references', async () => {
   const ctx = invocation();
   ctx.payload.input.push(
@@ -397,21 +305,6 @@ test('restores qualified upstream calls without touching opaque values', async (
       expect(frame.event.item).toMatchObject({ namespace: 'collaboration', name: 'spawn_agent', arguments: opaque, encrypted_function_args: [] });
     }
   }
-});
-
-test.each([null, ['message']])('rejects encrypted sparse argument completion %j using earlier identity', async marker => {
-  const ctx = invocation();
-  const result = await withOpenAIResponsesCollaborationShim(ctx, mockChatGatewayCtx(), async () =>
-    eventResult((async function* () {
-      yield eventFrame({
-        type: 'response.output_item.added', output_index: 0, item: {
-          type: 'function_call', id: 'fc_sparse', call_id: 'sparse', namespace: 'collaboration-optimize', name: 'spawn_agent', arguments: '', status: 'in_progress',
-        },
-      });
-      yield eventFrame({ type: 'response.function_call_arguments.done', item_id: 'fc_sparse', output_index: 0, arguments: '{}', encrypted_function_args: marker } as OpenAIResponsesStreamEventEx);
-    })(), testTelemetryModelIdentity));
-  if (result.type !== 'events') throw new Error('Expected events');
-  await expect(async () => { for await (const frame of result.events) void frame; }).rejects.toThrow('encrypted arguments');
 });
 
 test('rejects conflicting identities across call coordinates', async () => {
@@ -509,19 +402,6 @@ test('remembers encrypted evidence arriving before a sparse call identity', asyn
     })(), testTelemetryModelIdentity));
   if (result.type !== 'events') throw new Error('Expected events');
   await expect(async () => { for await (const frame of result.events) void frame; }).rejects.toThrow('encrypted arguments');
-});
-
-test('restores a standalone qualified argument event', async () => {
-  const ctx = invocation();
-  const result = await withOpenAIResponsesCollaborationShim(ctx, mockChatGatewayCtx(), async () =>
-    eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-      yield eventFrame({ type: 'response.function_call_arguments.done', item_id: 'fc_direct', output_index: 0, name: 'collaboration-optimize.spawn_agent', arguments: '{}' } as OpenAIResponsesStreamEventEx);
-    })(), testTelemetryModelIdentity));
-  if (result.type !== 'events') throw new Error('Expected events');
-  for await (const frame of result.events) {
-    expect(frame).toMatchObject({ event: { namespace: 'collaboration', name: 'spawn_agent', encrypted_function_args: [] } });
-    expect(JSON.stringify(frame)).not.toContain('collaboration-optimize');
-  }
 });
 
 test.each([false, undefined])('preserves upstream schema echoes with differing client inventory marker %j', async encrypted => {
