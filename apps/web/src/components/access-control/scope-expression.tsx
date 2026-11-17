@@ -166,8 +166,10 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
       return;
     }
     const trimmed = query.trim();
-    if (active === 'model' && trimmed) commitModel(`exact:${trimmed}`);
-    else closeInput();
+    if (active === 'model' && trimmed) {
+      const patternKind = value?.kind === 'upstreamModel' ? value.model.kind : 'exact';
+      commitModel(`${patternKind}:${trimmed}`);
+    } else closeInput();
   };
   const onInputBlur: NonNullable<ComponentProps<typeof InlineCombobox>['onBlur']> = event => {
     const next = event.relatedTarget;
