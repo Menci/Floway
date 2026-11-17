@@ -220,7 +220,7 @@ describe('upstream model workspace field-array transitions', () => {
 
     fireEvent.click(screen.getByRole('button', { name: models('add') }));
     fireEvent.change(screen.getByRole('textbox', { name: models('upstreamId') }), { target: { value: 'model-new' } });
-    fireEvent.click(screen.getByRole('checkbox', { name: '/chat/completions' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /OpenAI Chat Completions/ }));
     expect(screen.queryByRole('alert')).toBe(null);
     fireEvent.click(screen.getByRole('button', { name: models('back') }));
 

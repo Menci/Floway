@@ -1,6 +1,6 @@
 import type { InferRequestType } from 'hono/client';
 
-import { PATH_OVERRIDE_PATHS } from './endpoints';
+import { PATH_OVERRIDE_OPTIONS } from './endpoints';
 import { api, callApi } from '../../api/client';
 import type {
   ProviderModelsFailureResponse,
@@ -222,7 +222,7 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
         // Seeding the blanks keeps the saved state and the edited state the
         // same shape; configFromValues drops the map again when all of it is
         // blank, and a stored path the form does not list survives the merge.
-        pathOverrides: { ...Object.fromEntries(PATH_OVERRIDE_PATHS.map(path => [path, ''])), ...record.config.pathOverrides },
+        pathOverrides: { ...Object.fromEntries(PATH_OVERRIDE_OPTIONS.map(({ path }) => [path, ''])), ...record.config.pathOverrides },
         ingressHeadersRules: [
           ...structuredClone(record.config.ingressHeadersRules),
           { key: '', value: null },
