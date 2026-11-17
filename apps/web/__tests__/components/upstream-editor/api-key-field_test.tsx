@@ -66,6 +66,11 @@ describe('the API key field', () => {
     expect(keyInput().type).toBe('password');
   });
 
+  it('marks the custom key optional, since an empty key makes the upstream anonymous', () => {
+    renderInApp(<ProviderConfigHarness record={customRecord('')} />);
+    expect(screen.getByLabelText(`${apiKeyLabel} (${i18n.t('dashboard.upstreamEditor.optional')})`)).toBeTruthy();
+  });
+
   it('opens an upstream whose config stores no key on an empty field', () => {
     renderInApp(<ProviderConfigHarness record={customRecord('')} />);
     expect(keyInput().value).toBe('');
