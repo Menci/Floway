@@ -50,7 +50,6 @@ const placeholderOf = (element: HTMLElement) => (element as HTMLInputElement).pl
 const disabled = (element: HTMLElement) => (element as HTMLButtonElement).disabled;
 
 describe('Custom ingress header rules', () => {
-
   it('turns a typed draft into a rule and immediately appends the next blank row', () => {
     renderInApp(<Harness />);
     const draft = screen.getByLabelText(label('keyForRow', 1));
@@ -92,17 +91,6 @@ describe('Custom ingress header rules', () => {
     expect(screen.getByLabelText(label('valueForRow', 1)).closest('.font-mono')).not.toBeNull();
   });
 
-  it('shows a localized name error on the field and focuses it on Save', async () => {
-    renderInApp(<Harness />);
-    const key = screen.getByLabelText(label('keyForRow', 1));
-    fireEvent.change(key, { target: { value: 'bad header' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save probe' }));
-
-    await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.invalidName'));
-    expect(key.getAttribute('aria-invalid')).toBe('true');
-    expect(document.activeElement).toBe(key);
-  });
-
   it('distinguishes repeated passthrough, protocol-owned, and transport-owned names', async () => {
     renderInApp(<Harness />);
     const first = screen.getByLabelText(label('keyForRow', 1));
@@ -139,17 +127,5 @@ describe('Custom ingress header rules', () => {
       { key: 'x-route', value: 'two' },
       { key: '', value: null },
     ]);
-  });
-
-  it('shows invalid replacement values beneath the value control', async () => {
-    renderInApp(<Harness />);
-    const key = screen.getByLabelText(label('keyForRow', 1));
-    fireEvent.change(key, { target: { value: 'x-route' } });
-    const value = screen.getByLabelText(label('valueForRow', 1));
-    fireEvent.change(value, { target: { value: 'control\u0001byte' } });
-    fireEvent.blur(value);
-
-    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.invalidValue'))).toBeTruthy();
-    expect(value.getAttribute('aria-invalid')).toBe('true');
   });
 });

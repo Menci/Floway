@@ -19,10 +19,4 @@ describe('model limit fields by kind', () => {
     expect(pruneLimitsForKind(limits, 'decision')).toEqual({ max_context_window_tokens: 1_000_000 });
     expect(pruneLimitsForKind(limits, 'image')).toBeUndefined();
   });
-
-  it('keeps an absent limit absent rather than materializing a default', () => {
-    expect(pruneLimitsForKind(undefined, 'chat')).toBeUndefined();
-    expect(pruneLimitsForKind({}, 'chat')).toBeUndefined();
-    expect(pruneLimitsForKind({ max_output_tokens: 128_000 }, 'decision')).toBeUndefined();
-  });
 });

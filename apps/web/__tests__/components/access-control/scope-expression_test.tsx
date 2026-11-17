@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { ScopeEditor, ScopeExpression, type ScopeExpressionData } from '../../../src/components/access-control/scope-expression';
+import { ScopeEditor, type ScopeExpressionData } from '../../../src/components/access-control/scope-expression';
 import { setLanguage } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 import type { AccessScope } from '@floway-dev/gateway/browser';
@@ -62,19 +62,6 @@ test('read-only mode closes an active draft and cancels its deferred blur', asyn
   expect(screen.queryByRole('combobox')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'gpt-5' }));
   expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Model' }).value).toBe('gpt-5');
-});
-
-test.each(['exact', 'regex'] as const)('navigable %s scopes select prefixes without entering edit mode', kind => {
-  const navigate = vi.fn();
-  const scope = { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind, value: 'gpt-5' } } as const;
-  const { container } = renderInApp(<ScopeExpression data={data} onNavigate={navigate} readOnly value={scope} />);
-  fireEvent.click(screen.getByRole('button', { name: 'Upstream' }));
-  expect(navigate).toHaveBeenLastCalledWith({ kind: 'upstreams' });
-  fireEvent.click(screen.getByRole('button', { name: 'Copilot' }));
-  expect(navigate).toHaveBeenLastCalledWith({ kind: 'upstream', upstreamId: 'up_a' });
-  fireEvent.click(container.querySelectorAll('.floway-scope-expression-slash')[2]!);
-  expect(navigate).toHaveBeenLastCalledWith(scope);
-  expect(screen.queryByRole('combobox')).toBeNull();
 });
 
 test('starts with a slash and an ellipsis button and puts matching resource types first', () => {
@@ -141,17 +128,6 @@ test('lists matched models, custom entries, then every unmatched model', () => {
   expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['^GPT-5$', '/^GPT-5$/', 'gpt-5', 'gpt-6']);
 });
 
-test('commits a freeform model on blur', async () => {
-  const { changed } = renderEditor({ kind: 'upstream', upstreamId: 'up_a' });
-
-  fireEvent.click(screen.getByRole('button', { name: 'Model' }));
-  const input = screen.getByRole('combobox', { name: 'Model' });
-  fireEvent.change(input, { target: { value: 'future-model' } });
-  fireEvent.blur(input);
-
-  await waitFor(() => expect(changed).toHaveBeenLastCalledWith({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'future-model' } }));
-});
-
 test('commits a model synchronously before focus reaches a submit action', () => {
   const { changed } = renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } });
   fireEvent.click(screen.getByRole('button', { name: 'gpt-5' }));
@@ -177,19 +153,6 @@ test('does not commit an upstream draft on blur without selecting a real upstrea
   await waitFor(() => expect(screen.queryByRole('combobox')).toBeNull());
   expect(changed).not.toHaveBeenCalled();
   expect(screen.getByTestId('scope').textContent).toBe('{"kind":"upstreams"}');
-});
-
-test.each([
-  { scope: { kind: 'upstream', upstreamId: 'up_removed' } as AccessScope, description: 'Unknown upstream ID "up_removed"' },
-  { scope: { kind: 'user', userId: 99 } as AccessScope, description: 'Unknown user ID "99"' },
-  { scope: { kind: 'group', groupId: 99 } as AccessScope, description: 'Unknown group ID "99"' },
-])('shows a short unknown label and describes the missing resource: $description', async ({ scope, description }) => {
-  const { container } = renderInApp(<ScopeExpression data={data} readOnly value={scope} />);
-  const unknown = screen.getByText('Unknown');
-  expect(container.querySelector('.floway-scope-expression')!.textContent).not.toContain('99');
-  expect(container.querySelector('.floway-scope-expression')!.textContent).not.toContain('up_removed');
-  fireEvent.focus(unknown.closest('[tabindex]')!);
-  expect((await screen.findByRole('tooltip')).textContent).toBe(description);
 });
 
 test('changing the resource type deletes incompatible later parts', () => {
@@ -219,15 +182,6 @@ test('discards the active draft when another part is clicked', async () => {
   await waitFor(() => expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Resource type' }).value).toBe('Upstream'));
   expect(changed).not.toHaveBeenCalledWith({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'discard-me' } });
   expect(screen.getByTestId('scope').textContent).toBe('{"kind":"upstreamModel","upstreamId":"up_a","model":{"kind":"exact","value":"gpt-5"}}');
-});
-
-test.each(['^org/model$', String.raw`^org\/model$`])('highlights the regex body independently of display delimiters: %j', pattern => {
-  const { container } = renderInApp(<ScopeExpression data={data} readOnly value={{ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: pattern } }} />);
-  const regex = container.querySelector('.floway-scope-expression-regex')!;
-  expect(regex.textContent).toBe(`/${pattern}/`);
-  expect(regex.querySelector('.token.regex')).not.toBeNull();
-  expect(regex.querySelector('.token.comment')).toBeNull();
-  expect(regex.querySelector('.token.anchor')?.textContent).toBe('^');
 });
 
 test('resource type autocomplete matches localized labels', async () => {

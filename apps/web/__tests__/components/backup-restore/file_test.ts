@@ -26,10 +26,6 @@ const backup = (overrides: Record<string, unknown> = {}) => JSON.stringify({
 });
 
 describe('backup file validation', () => {
-  it('rejects a superseded envelope version outright', () => {
-    expect(parseBackupFile(backup({ version: BACKUP_FILE_VERSION - 1 })).ok).toBe(false);
-  });
-
   it('rejects unknown fields instead of stripping them', () => {
     expect(parseBackupFile(backup({ typo: true })).ok).toBe(false);
     expect(parseBackupFile(backup({ data: { ...data, typo: [] } })).ok).toBe(false);

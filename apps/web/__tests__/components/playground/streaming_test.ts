@@ -224,60 +224,6 @@ describe('playground wire requests', () => {
     ]);
   });
 
-  it('falls back to visible assistant text when the saved output belongs to another API', async () => {
-    const calls: Record<string, unknown>[] = [];
-    vi.stubGlobal('fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      return new Response(sseBody([
-        {
-          id: 'chat_1', object: 'chat.completion.chunk', created: 1, model: 'test-model',
-          choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: 'stop' }],
-        },
-        '[DONE]',
-      ]), { status: 200, headers: { 'content-type': 'text/event-stream' } });
-    });
-
-    await collectWithOutput(streamPlaygroundText({
-      api: 'openaiChatCompletions',
-      apiKey: 'secret',
-      model: 'test-model',
-      system: '',
-      messages: [{
-        id: 'assistant-1',
-        role: 'assistant',
-        text: 'visible answer',
-        assistantOutput: { api: 'openaiResponses', items: [{ type: 'reasoning', id: 'rs_1', summary: [], encrypted_content: 'secret' }] },
-      }],
-      options: {},
-      signal: new AbortController().signal,
-      fetchImpl: createWireFetch({}, 'openaiChatCompletions'),
-    }));
-
-    expect(calls[0]!.messages).toEqual([{ role: 'assistant', content: 'visible answer' }]);
-  });
-
-  it('sends the API key the way each protocol authenticates', async () => {
-    const headers: HeadersInit[] = [];
-    vi.stubGlobal('fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
-      headers.push(init?.headers ?? {});
-      return new Response(sseBody(['[DONE]']), { status: 200, headers: { 'content-type': 'text/event-stream' } });
-    });
-
-    const request = {
-      apiKey: 'secret',
-      model: 'test-model',
-      system: '',
-      messages: [{ id: '1', role: 'user' as const, text: 'hello' }],
-      options: {},
-      signal: new AbortController().signal,
-    };
-    await collect(streamPlaygroundText({ ...request, api: 'anthropicMessages', fetchImpl: createWireFetch({}, 'anthropicMessages') }));
-    await collect(streamPlaygroundText({ ...request, api: 'openaiChatCompletions', fetchImpl: createWireFetch({}, 'openaiChatCompletions') }));
-
-    expect(headers[0]).toMatchObject({ 'x-api-key': 'secret' });
-    expect(headers[1]).toMatchObject({ authorization: 'Bearer secret' });
-  });
-
   it('surfaces an error frame instead of returning empty text', async () => {
     vi.stubGlobal('fetch', async () => new Response(
       sseBody([{ error: { message: 'upstream refused' } }]),

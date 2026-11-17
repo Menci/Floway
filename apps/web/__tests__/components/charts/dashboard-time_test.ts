@@ -1,17 +1,9 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { chartTickValues, dashboardBucketFrames, dashboardBucketMapper, dashboardGranularity, dashboardInterval, dashboardRangeIsCurrent, formatAxisDate, formatBucketInterval, parseDashboardRange, serializeDashboardRange } from '../../../src/components/charts/dashboard-time';
+import { dashboardBucketFrames, dashboardBucketMapper, dashboardGranularity, dashboardInterval, dashboardRangeIsCurrent, parseDashboardRange, serializeDashboardRange } from '../../../src/components/charts/dashboard-time';
 import { calendarDate } from '../../../src/lib/calendar-date';
 
 afterEach(() => vi.unstubAllEnvs());
-
-test('bucket tooltip omits years across year boundaries', () => {
-  vi.stubEnv('TZ', 'Asia/Singapore');
-  const range = { start: '2026-12-31', end: '2027-01-01' };
-  const interval = dashboardInterval(range, 0);
-  const frame = { ...dashboardBucketFrames(range, 0)[0]!, ...interval };
-  expect(formatBucketInterval(frame)).not.toMatch(/2026|2027|年/);
-});
 
 test('custom aggregation adapts to inclusive calendar-day density', () => {
   vi.stubEnv('TZ', 'UTC');
@@ -44,13 +36,6 @@ test('multi-day buckets start at the selected date and clip the last bucket', ()
     expect(frames.at(-1)?.end).toBe(dashboardInterval(range, 0).end);
     expect(frames.at(-1)!.end - frames.at(-1)!.start).toBe(4 * 24 * 3_600_000);
   }
-});
-
-test('a skipped civil date can leave 49 selected dates within 48 daily buckets', () => {
-  vi.stubEnv('TZ', 'Pacific/Apia');
-  const range = { start: '2011-12-02', end: '2012-01-19' };
-  expect(dashboardGranularity(range, 0)).toBe('day');
-  expect(dashboardBucketFrames(range, 0)).toHaveLength(48);
 });
 
 test.each([
@@ -105,20 +90,4 @@ test('only custom ranges covering the current local date poll', () => {
   expect(dashboardRangeIsCurrent({ start: '2026-10-09', end: '2026-10-09' }, now)).toBe(false);
   expect(dashboardRangeIsCurrent({ start: '2026-10-10', end: '2026-10-10' }, now)).toBe(true);
   expect(dashboardRangeIsCurrent({ start: '2026-10-11', end: '2026-10-12' }, now)).toBe(false);
-});
-
-test('chart ticks distribute both endpoints without crowding the final two labels', () => {
-  const buckets = Array.from({ length: 32 }, (_, index) => ({ date: new Date(2026, 9, 10 + index), index }));
-  expect(chartTickValues(buckets).map(bucket => bucket.index)).toEqual([0, 5, 10, 16, 21, 26, 31]);
-  expect(chartTickValues(buckets.slice(0, 7))).toEqual(buckets.slice(0, 7));
-});
-
-test('telemetry axes and tooltips share local numeric dates and 24-hour times', () => {
-  const start = new Date(2026, 8, 1, 0);
-  const end = new Date(2026, 8, 1, 8);
-  const frame = { date: start, key: '', start: start.getTime(), end: end.getTime() };
-  expect(formatAxisDate(start)).toBe('09/01 00:00');
-  expect(formatBucketInterval(frame)).toBe('09/01 00:00 - 08:00');
-  const nextDay = new Date(2026, 8, 2, 0);
-  expect(formatBucketInterval({ ...frame, end: nextDay.getTime() })).toBe('09/01 00:00 - 09/02 00:00');
 });

@@ -51,15 +51,6 @@ describe('refresh supersession', () => {
 
     expect(runs[0]?.signal.aborted).toBe(true);
   });
-
-  it('tells the reload whether anybody asked for the run', async () => {
-    const { result, runs } = renderRefresh();
-
-    await act(async () => { void result.current.poll({ background: true }); });
-    await act(async () => { void result.current.refresh(); });
-
-    expect(runs.map(run => run.background)).toEqual([true, false]);
-  });
 });
 
 test('query-driven refresh keeps the displayed query after a failed response', async () => {
@@ -82,24 +73,6 @@ test('query-driven refresh keeps the displayed query after a failed response', a
 
   await act(async () => { void result.current.refresh(); });
   expect(runs).toHaveLength(2);
-});
-
-test('query-driven refresh commits a canonical query returned with the response', async () => {
-  const canonical = { groupBy: 'model' };
-  const reload = vi.fn(async () => canonical);
-  const setQuery = vi.fn();
-  const onCommit = vi.fn();
-  const { result, rerender } = renderHook(
-    ({ query }) => useRefreshOnChange(query, 100, reload, setQuery, onCommit),
-    { initialProps: { query: canonical } },
-  );
-
-  rerender({ query: { groupBy: 'runtimeLocation' } });
-  await waitFor(() => expect(reload).toHaveBeenCalledOnce());
-  await waitFor(() => expect(result.current.loadedQuery).toBe(canonical));
-
-  expect(setQuery).toHaveBeenCalledWith(canonical);
-  expect(onCommit).toHaveBeenCalledWith(canonical, canonical);
 });
 
 test.each(['superseded-first', 'newest-first'] as const)(

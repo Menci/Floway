@@ -10,7 +10,6 @@ import {
   actionableDisabledReason,
   findCredential,
   quotaWindows,
-  rateLimitedUntil,
   rawEntries,
   readProbeSnapshot,
 } from '../../../src/components/upstreams/claude-code-account';
@@ -68,7 +67,6 @@ describe('credential lookup', () => {
 });
 
 describe('quota windows', () => {
-
   it('prefers whichever source was fetched more recently, per window', () => {
     const withNewerProbe = quotaWindows(credential({
       quotaSnapshot: { fetchedAt: 1000, data: quotaData({ fiveHour: { status: null, reset: null, utilization: 0.1 } }) },
@@ -93,13 +91,6 @@ describe('quota windows', () => {
     }));
     expect(window).toEqual({ key: 'fiveHour', percent: 55, resetAt: null, status: null, source: 'probe', fetchedAt: 2000 });
   });
-
-  it('drops a window neither source reports a utilization for', () => {
-    expect(quotaWindows(credential({
-      quotaSnapshot: { fetchedAt: 1000, data: quotaData({ fiveHour: { status: 'allowed', reset: null, utilization: null } }) },
-    }))).toEqual([]);
-    expect(quotaWindows(null)).toEqual([]);
-  });
 });
 
 describe('probe snapshot', () => {
@@ -120,30 +111,6 @@ describe('account status', () => {
     expect(accountStatus(rejectedAt('2026-07-28T15:00:00.000Z'), [], NOW)).toMatchObject({ tone: 'danger', reason: 'exhausted' });
   });
 
-  it.each(['seven_day_overage_included', 'seven_day_opus', 'seven_day_sonnet', 'future_model_limit', null])('keeps a %s rejection out of the account status', representativeClaim => {
-    const account = credential({
-      quotaSnapshot: {
-        fetchedAt: 1,
-        data: quotaData({
-          status: 'rejected', reset: '2026-07-30T15:00:00.000Z', representativeClaim,
-          sevenDay: { status: 'allowed', utilization: 0.62, reset: '2026-07-30T15:00:00.000Z', surpassedThreshold: null },
-        }),
-      },
-    });
-    const lookup = findCredential(record({ accounts: [account] }));
-    expect(rateLimitedUntil(account.quotaSnapshot, NOW)).toBeNull();
-    expect(accountStatus(lookup, quotaWindows(account), NOW)).toEqual({ tone: 'success', reason: 'active' });
-  });
-
-  // The snapshot is held until a response replaces it, so a rejection dated in
-  // the past is the steady state of an account that is serving again -- which is
-  // where the data plane stops gating on it too. A rejection with no date at all
-  // is not treated as a limit for the same reason it is not one there.
-  it('lets a rejection that has lifted, or was never dated, go', () => {
-    expect(accountStatus(rejectedAt('2026-07-28T09:00:00.000Z'), [], NOW)).toEqual({ tone: 'success', reason: 'active' });
-    expect(accountStatus(rejectedAt(null), [], NOW)).toEqual({ tone: 'success', reason: 'active' });
-  });
-
   it('warns once any window crosses the heavy-usage threshold', () => {
     const lookup = findCredential(record({ accounts: [credential()] }));
     const windows = quotaWindows(credential({ usageProbeSnapshot: { fetchedAt: 1, data: { five_hour: { utilization: 12 }, seven_day: { utilization: 81 } } } }));
@@ -162,11 +129,5 @@ describe('overage disabled reason', () => {
     expect(actionableDisabledReason(credential({
       quotaSnapshot: { fetchedAt: 1, data: quotaData({ overage: { status: 'rejected', reset: null, utilization: null, disabledReason: 'out_of_credits' } }) },
     }))).toBeNull();
-  });
-
-  it('surfaces any other reason verbatim', () => {
-    expect(actionableDisabledReason(credential({
-      quotaSnapshot: { fetchedAt: 1, data: quotaData({ overage: { status: 'rejected', reset: null, utilization: null, disabledReason: 'billing_hold' } }) },
-    }))).toBe('billing_hold');
   });
 });

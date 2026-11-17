@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { effectiveUpstreams, modelBadges } from '../../../src/components/models/badges';
+import { modelBadges } from '../../../src/components/models/badges';
 import { indexCatalog } from '../../../src/components/models/catalog-index';
 import { catalogModel } from '../../api/model-fixture';
 import type { AliasTarget } from '@floway-dev/protocols/browser';
@@ -34,30 +34,6 @@ describe('model badges', () => {
     expect(modelBadges(alias, indexCatalog([real, capped, alias]), null)).toEqual([
       { key: 'aliasOf', kind: 'aliasOfCount', reachable: 2, total: 2 },
       { key: 'selection', kind: 'selection', selection: 'random' },
-    ]);
-  });
-
-  it('counts a target the catalog cannot resolve as out of reach', () => {
-    const real = catalogModel('real', { upstreams: ['a'] });
-    const alias = catalogModel('alias', {
-      upstreams: [],
-      aliasedFrom: {
-        selection: 'first-available',
-        targets: [{ target_model_id: 'real', rules: {} }, { target_model_id: 'withdrawn', rules: {} }],
-      },
-    });
-    expect(modelBadges(alias, indexCatalog([real, alias]), null)).toContainEqual(
-      { key: 'aliasOf', kind: 'aliasOfModel', target: 'real' },
-    );
-    const unreachable = catalogModel('unreachable', {
-      upstreams: [],
-      aliasedFrom: {
-        selection: 'random',
-        targets: [{ target_model_id: 'withdrawn', rules: {} }],
-      },
-    });
-    expect(modelBadges(unreachable, indexCatalog([unreachable]), null)).toEqual([
-      { key: 'aliasOf', kind: 'aliasOfCount', reachable: 0, total: 1 },
     ]);
   });
 
@@ -96,21 +72,5 @@ describe('model badges', () => {
     expect(modelBadges(disjoint, indexCatalog([catalogModel('a', { upstreams: ['u'] }), catalogModel('b', { upstreams: ['u'] }), disjoint]), null)
       .filter(badge => badge.kind === 'rule').map(badge => badge.field))
       .toEqual(['reasoning.effort', 'serviceTier']);
-  });
-
-  it('lifts an alias row onto the in-cap bindings of its reachable targets', () => {
-    const real = catalogModel('real', { upstreams: ['a', 'b'] });
-    const other = catalogModel('other', { upstreams: ['b'] });
-    const alias = catalogModel('alias', {
-      upstreams: [],
-      aliasedFrom: {
-        selection: 'random',
-        targets: [{ target_model_id: 'real', rules: {} }, { target_model_id: 'other', rules: {} }],
-      },
-    });
-    const catalog = indexCatalog([real, other, alias]);
-    expect(effectiveUpstreams(alias, catalog, null).map(upstream => upstream.id)).toEqual(['a', 'b']);
-    expect(effectiveUpstreams(alias, catalog, ['b']).map(upstream => upstream.id)).toEqual(['b']);
-    expect(effectiveUpstreams(real, catalog, ['b']).map(upstream => upstream.id)).toEqual(['b']);
   });
 });

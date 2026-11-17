@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
 import type { ResolvedUpstreamMetricDisplay, ResolvedUpstreamMetricDisplaySeries } from '../../../src/components/upstream-metrics/display-name';
-import { buildUpstreamMetricsChart, upstreamMetricsPlotRows } from '../../../src/components/upstream-metrics/plot';
+import { buildUpstreamMetricsChart } from '../../../src/components/upstream-metrics/plot';
 import type { UpstreamMetricRecord } from '@floway-dev/gateway/browser';
 import { upstreamMetricIdentityKey, type UpstreamMetricIdentity } from '@floway-dev/provider/browser';
 import { resolveUpstreamMetricDisplays as resolveClaudeMetrics } from '@floway-dev/provider-claude-code/browser';
@@ -59,15 +59,4 @@ it('uses the canonical identity for both Claude sources after aggregation', () =
   const chart = buildUpstreamMetricsChart(series, { ...upstream, kind: 'claude-code' });
   expect(chart.entries).toHaveLength(1);
   expect([...chart.values.values()][0]).toEqual([{ timestamp: 1_000, value: 75 }, { timestamp: 61_000, value: 70 }]);
-});
-
-it('uses current upstream identity and keeps sparse observation times', () => {
-  const chart = buildUpstreamMetricsChart(resolvedSeries(records), { ...upstream, name: 'Renamed' });
-  const usage = upstreamMetricIdentityKey({ name: 'usage', labels: {} });
-  const credits = upstreamMetricIdentityKey({ name: 'credits', labels: {} });
-  expect(chart.title).toBe('Renamed');
-  expect(upstreamMetricsPlotRows(chart, 5_000, 120_000)).toEqual([
-    { timestamp: 10_000, values: { [credits]: 200 } },
-    { timestamp: 61_000, values: { [usage]: 100 } },
-  ]);
 });

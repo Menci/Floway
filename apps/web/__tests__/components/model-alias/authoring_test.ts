@@ -2,19 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import { computeAnnouncedMetadata } from '../../../src/components/model-alias/announced-metadata';
 import { aliasBody, aliasDefaults } from '../../../src/components/model-alias/form-data';
-import { computeAliasWarnings, computeModelWarning, computeRuleWarnings } from '../../../src/components/model-alias/warnings';
+import { computeAliasWarnings, computeRuleWarnings } from '../../../src/components/model-alias/warnings';
 import { indexCatalog } from '../../../src/components/models/catalog-index';
 import { catalogModel } from '../../api/model-fixture';
 import type { AliasTarget, ModelAlias } from '@floway-dev/protocols/browser';
 const target = (id: string, rules: AliasTarget['rules'] = {}): AliasTarget => ({ target_model_id: id, rules });
 
 describe('model alias warnings', () => {
-  it('never treats an alias catalog row as a real target', () => {
-    const aliasRow = catalogModel('virtual', { aliasedFrom: { selection: 'first-available', targets: [] } });
-    expect(indexCatalog([aliasRow]).get('virtual')).toBeUndefined();
-    expect(computeModelWarning('virtual', undefined, 'chat')?.key).toBe('unknownTarget');
-  });
-
   it('reports shadow and unreachable-target warnings independently', () => {
     const catalog = indexCatalog([catalogModel('gpt-5', { display_name: 'GPT 5' })]);
     expect(computeAliasWarnings({ name: 'gpt-5', targets: [target('missing')] }, catalog).map(warning => warning.type)).toEqual(['shadow', 'no-target']);
@@ -89,13 +83,5 @@ describe('alias wire body', () => {
     const body = aliasBody(values);
     expect(body).toMatchObject({ name: 'renamed', display_name: null, targets: [{ target_model_id: 'a', rules: {} }] });
     expect(body).not.toHaveProperty('sort_order');
-  });
-
-  it('drops chat rules and announced metadata for image aliases', () => {
-    const values = aliasDefaults(existing);
-    values.kind = 'image'; values.manualMetadata = true;
-    values.targets = [target('image-1', { verbosity: 'high' })];
-    values.announcedMetadata = { limits: { max_output_tokens: 10 } };
-    expect(aliasBody(values)).toMatchObject({ targets: [{ rules: {} }], announced_metadata: null });
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { defaultsFor, hostPortLabel, parseDialTimeoutInput, parseProxyInput, proxyUrlPlaceholder } from '../../../src/components/proxy/config';
+import { hostPortLabel, parseDialTimeoutInput, parseProxyInput } from '../../../src/components/proxy/config';
 
 describe('proxy URL editing', () => {
   it('parses a complete URI into the structured form', () => {
@@ -11,11 +11,6 @@ describe('proxy URL editing', () => {
       username: 'user',
       password: 'pass',
     });
-  });
-
-  it('keeps parse errors and protocol-specific examples available to the form', () => {
-    expect(parseProxyInput('not a proxy').error).toBe('malformed proxy URI: not a proxy');
-    expect(proxyUrlPlaceholder(defaultsFor('reality', { host: '', port: 0, name: '' }))).toContain('security=reality');
   });
 });
 

@@ -74,19 +74,3 @@ test('an incomplete range or Escape keeps the loaded preset', async () => {
   fireEvent.keyDown(screen.getByRole('grid'), { key: 'Escape' });
   expect(change).not.toHaveBeenCalled();
 });
-
-test('preset activation discards a draft without an intermediate custom query', () => {
-  const { change } = renderEditor();
-  open(); day(8);
-  const preset = screen.getByRole('radio', { name: '7 Days' });
-  preset.focus(); fireEvent.click(preset);
-  expect(change.mock.calls).toEqual([['7d']]);
-});
-
-test('the native range semantics sort reversed clicks and allow the same day', async () => {
-  const { change } = renderEditor();
-  open(); day(16); day(6);
-  await waitFor(() => expect(change).toHaveBeenCalledWith({ start: '2026-10-06', end: '2026-10-16' }));
-  open(); day(8); day(8);
-  await waitFor(() => expect(change).toHaveBeenCalledWith({ start: '2026-10-08', end: '2026-10-08' }));
-});

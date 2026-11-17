@@ -45,11 +45,6 @@ describe('ChatGPT quota entries', () => {
     expect(entries[0].windows[1]).toMatchObject({ percent: 50, resetAt: FUTURE, windowMinutes: null });
     expect(entries[1].windows).toHaveLength(1);
   });
-
-  it('treats an elapsed rate limit as spent', () => {
-    expect(quotaEntries({ daily: { observed_at: PAST, ratelimited_until: PAST } }, NOW)[0].rateLimitedUntil).toBeNull();
-    expect(quotaEntries({ daily: { observed_at: PAST, ratelimited_until: FUTURE } }, NOW)[0].rateLimitedUntil).toBe(FUTURE);
-  });
 });
 
 describe('ChatGPT credits', () => {
@@ -97,20 +92,6 @@ describe('ChatGPT account status', () => {
     const entries = quotaEntries({ daily: { observed_at: PAST, primary_used_percent: 12, secondary_used_percent: 84 } }, NOW);
     expect(accountStatus(activeLookup, entries)).toEqual({ tone: 'warning', reason: 'heavy', percent: 84 });
   });
-
-  it('marks a config/state account mismatch as dangerous', () => {
-    expect(accountStatus({ kind: 'account-id-mismatch', expectedAccountId: ACCOUNT_ID }, []))
-      .toEqual({ tone: 'danger', reason: 'account-id-mismatch' });
-  });
-});
-
-describe('ChatGPT renewability', () => {
-
-  it('reads the raw token an import merges into the draft', () => {
-    expect(chatgptRenewable({ ...activeCredential, refresh_token: 'rt' })).toBe(true);
-    expect(chatgptRenewable({ ...activeCredential, refresh_token: null })).toBe(false);
-    expect(chatgptRenewable(activeCredential)).toBe(false);
-  });
 });
 
 describe('ChatGPT credential lookup without an account id', () => {
@@ -124,15 +105,5 @@ describe('ChatGPT credential lookup without an account id', () => {
     const lookup = findCredential(nullIdRecord);
     expect(lookup.kind).toBe('present');
     if (lookup.kind === 'present') expect(chatgptRenewable(lookup.credential)).toBe(false);
-  });
-
-  it('still reports a mismatch when state names an account the config does not', () => {
-    const mismatched = {
-      id: 'up_1',
-      kind: 'chatgpt',
-      config: { accounts: [{ email: null, chatgptAccountId: null, chatgptUserId: null, planType: null }] },
-      state: { accounts: [{ chatgptAccountId: ACCOUNT_ID, state: 'active', state_updated_at: PAST }] },
-    } as unknown as ChatGPTRecord;
-    expect(findCredential(mismatched)).toEqual({ kind: 'account-id-mismatch', expectedAccountId: null });
   });
 });

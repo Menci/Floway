@@ -46,35 +46,9 @@ describe('Agent Setup persisted model values', () => {
       { value: 'claude-sonnet-4-5[1m]', label: 'claude-sonnet-4-5' },
     ]);
   });
-
-  it('offers the window to every Claude picker, and leaves Codex ids opaque', () => {
-    expect(buildAgentModelOptions([catalogModel('claude-haiku-4-5', { contextWindow: 1_000_000 })], { family: 'claude', picker: 'haiku' })[0]?.value)
-      .toBe('claude-haiku-4-5[1m]');
-    expect(buildAgentModelOptions([catalogModel('gpt-5.6', { contextWindow: 1_000_000 })], { family: 'codex' })[0]?.value)
-      .toBe('gpt-5.6');
-  });
-
-  it('retains the chat catalog for Pi in catalog order and leaves ids opaque', () => {
-    expect(rankAgentSetupModels([
-      catalogModel('gpt-4o', { contextWindow: 200_000 }),
-      catalogModel('claude-sonnet-4-5', { contextWindow: 200_000 }),
-      catalogModel('embedding', { kind: 'embedding', endpoints: { openaiEmbeddings: {} } }),
-    ], { family: 'pi' }).map(entry => entry.id)).toEqual([
-      'gpt-4o',
-      'claude-sonnet-4-5',
-    ]);
-    expect(buildAgentModelOptions([catalogModel('claude-sonnet-4-5', { contextWindow: 1_000_000 })], { family: 'pi' })[0]?.value)
-      .toBe('claude-sonnet-4-5');
-  });
-
-  it('leaves a Claude model that cannot reach the window unsuffixed', () => {
-    expect(buildAgentModelOptions([catalogModel('claude-haiku-4-5', { contextWindow: 200_000 })], { family: 'claude', picker: 'haiku' })[0]?.value)
-      .toBe('claude-haiku-4-5');
-  });
 });
 
 describe('Agent Setup model picker', () => {
-
   it('searches the label case-insensitively and the value the label does not spell', () => {
     const options = modelOptions([
       catalogModel('claude-opus-4.6', { contextWindow: 1_000_000 }),

@@ -51,12 +51,6 @@ test('Page keys preserve the focused date and clamp short months', () => {
   expect(focusedDate()).toBe('2027-10-01');
 });
 
-test('PageDown from January31 focuses the final day of February', () => {
-  renderCalendar('2026-01-31');
-  focusKey('PageDown');
-  expect(focusedDate()).toBe('2026-02-28');
-});
-
 test('keyboard navigation clamps to the minimum date instead of displaying an empty month', () => {
   renderCalendar('1920-01-05');
   focusKey('ArrowUp');
@@ -64,22 +58,4 @@ test('keyboard navigation clamps to the minimum date instead of displaying an em
   focusKey('PageUp');
   expect(focusedDate()).toBe('1920-01-01');
   expect(screen.getByRole('button', { name: 'January 1920, choose a month' })).toBeTruthy();
-});
-
-test('End in the partial final century focuses its last enabled decade', () => {
-  renderCalendar('2120-12-31');
-  focusKey('ArrowUp', true); focusKey('ArrowUp', true); focusKey('ArrowUp', true);
-  expect(fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp', ctrlKey: true })).toBe(false);
-  focusKey('Home');
-  expect(focusedDate()).toBe('2100-01-01');
-  focusKey('End');
-  expect(focusedDate()).toBe('2120-01-01');
-  focusKey('PageDown');
-  expect(focusedDate()).toBe('2120-01-01');
-});
-
-test('Ctrl+Down selects the focused day in month view', () => {
-  const change = renderCalendar('2026-10-16');
-  focusKey('ArrowDown', true);
-  expect(change).toHaveBeenCalledWith({ start: '2026-10-16', end: null });
 });

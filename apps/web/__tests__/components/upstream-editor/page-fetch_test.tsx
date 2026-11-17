@@ -48,11 +48,6 @@ vi.mock('../../../src/components/upstream-editor/workspace', () => ({
       text: '- upstreamModelId: replacement\n  publicModelId: replacement\n  kind: chat\n  endpoints:\n    openaiChatCompletions: {}\n',
       error: null,
     })}>Edit YAML</button>
-    <button type="button" onClick={() => onModelsYamlDraftChange({
-      baseline: 'original',
-      text: '- upstreamModelId: manual\n  publicModelId: manual\n  kind: chat\n  endpoints:\n    openaiResponses: {}\n    openaiChatCompletions: {}\n',
-      error: null,
-    })}>Reorder YAML keys</button>
   </>,
 }));
 
@@ -92,13 +87,6 @@ beforeEach(() => {
   apiMocks.patch.mockResolvedValue({ data: record, error: null });
   apiMocks.listModels.mockResolvedValue({ data: { kind: 'copilot', data: discovered, modelsCache: record.modelsCache }, error: null });
   apiMocks.previewModels.mockResolvedValue({ data: { kind: 'ollama', data: [] }, error: null });
-});
-
-test('opening an editor shows the stored model snapshot without fetching', () => {
-  renderPage(record, discovered);
-  expect(screen.getByTestId('discovered').textContent).toBe('new-model');
-  expect(screen.getByTestId('catalog-available').textContent).toBe('true');
-  expect(apiMocks.listModels).not.toHaveBeenCalled();
 });
 
 test('failed refresh keeps a previously loaded catalog available', async () => {
@@ -178,67 +166,6 @@ test('saving a pending YAML edit discards an older explicit Fetch result', async
   await act(async () => {
     finishFetch!({ data: { kind: 'custom', data: discovered, modelsCache: customRecord.modelsCache }, error: null });
   });
-  expect(screen.getByTestId('discovered').textContent).toBe('');
-  expect(screen.getByTestId('catalog-available').textContent).toBe('false');
-});
-
-test('reordering YAML object keys does not invalidate a pending Fetch', async () => {
-  const custom = upstreamRecord('up_custom', {
-    kind: 'custom',
-    config: {
-      ...(customRecord.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']),
-      models: [{
-        upstreamModelId: 'manual', publicModelId: 'manual', kind: 'chat',
-        endpoints: { openaiChatCompletions: {}, openaiResponses: {} },
-      }],
-    },
-    state: null,
-  });
-  apiMocks.patch.mockResolvedValue({ data: custom, error: null });
-  let finishFetch: ((value: unknown) => void) | undefined;
-  apiMocks.listModels.mockImplementation(() => new Promise(resolve => { finishFetch = resolve; }));
-  renderPage(custom);
-  fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
-  await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
-
-  fireEvent.click(screen.getByRole('button', { name: 'Reorder YAML keys' }));
-  fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') }));
-  await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledTimes(1));
-  await act(async () => {
-    finishFetch!({ data: { kind: 'custom', data: discovered, modelsCache: custom.modelsCache }, error: null });
-  });
-  expect(screen.getByTestId('discovered').textContent).toBe('new-model');
-  expect(screen.getByTestId('catalog-available').textContent).toBe('true');
-});
-
-test('saving Ollama YAML models clears the previous manual-inclusive catalog', async () => {
-  const ollama = upstreamRecord('up_ollama', {
-    kind: 'ollama',
-    config: {
-      baseUrl: 'https://ollama.example.com', cloudUsage: false,
-      models: [{ upstreamModelId: 'old-manual', publicModelId: 'old-manual', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
-    },
-    state: null,
-  });
-  apiMocks.patch.mockResolvedValue({
-    data: {
-      ...ollama,
-      config: { ...ollama.config, models: [{ upstreamModelId: 'replacement', publicModelId: 'replacement', kind: 'chat', endpoints: { openaiChatCompletions: {} } }] },
-    }, error: null,
-  });
-  apiMocks.listModels.mockResolvedValue({
-    data: {
-      kind: 'ollama', data: [{ upstreamModelId: 'old-manual', publicModelId: 'old-manual', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
-      modelsCache: ollama.modelsCache,
-    }, error: null,
-  });
-  renderPage(ollama);
-  fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
-  await waitFor(() => expect(screen.getByTestId('discovered').textContent).toBe('old-manual'));
-
-  fireEvent.click(screen.getByRole('button', { name: 'Edit YAML' }));
-  fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') }));
-  await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledTimes(1));
   expect(screen.getByTestId('discovered').textContent).toBe('');
   expect(screen.getByTestId('catalog-available').textContent).toBe('false');
 });

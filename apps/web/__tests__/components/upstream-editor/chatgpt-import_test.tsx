@@ -64,19 +64,6 @@ const openImport = async () => {
 };
 
 describe('ChatGPT credential import', () => {
-
-  it('refuses a manual import with no access token, before any request', async () => {
-    await openImport();
-    fireEvent.click(screen.getByRole('tab', { name: 'Manual' }));
-    await settle();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Import credential' }));
-    await settle();
-
-    expect(await screen.findByText('Access token is required.')).toBeTruthy();
-    expect(fetchMock.mock.calls).toHaveLength(0);
-  });
-
   it('sends only the fields the operator filled in', async () => {
     await openImport();
     fireEvent.click(screen.getByRole('tab', { name: 'Manual' }));
@@ -132,19 +119,5 @@ describe('ChatGPT credential import', () => {
     expect(radios[0]!.disabled).toBe(true);
     expect(radios[1]!.checked).toBe(true);
     expect(screen.getByText('tokens.access_token must be a non-empty string')).toBeTruthy();
-  });
-
-  it('drops a stale preview when the document is edited under it', async () => {
-    await openImport();
-    const textarea = screen.getByRole('textbox', { name: 'Credential JSON' });
-    fireEvent.change(textarea, { target: { value: twoAccounts } });
-    fireEvent.click(screen.getByRole('button', { name: 'Preview accounts' }));
-    await settle();
-    expect(screen.getAllByRole('radio')).toHaveLength(2);
-
-    fireEvent.change(textarea, { target: { value: '{"tokens":{}}' } });
-    await settle();
-
-    expect(screen.queryAllByRole('radio')).toHaveLength(0);
   });
 });

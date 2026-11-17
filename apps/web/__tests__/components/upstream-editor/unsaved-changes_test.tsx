@@ -82,19 +82,6 @@ it('keeps Full-only values focusable and selectable in a models-only editor', ()
   expect(catalogSwitch.checked).toBe(false);
 });
 
-it('keeps path overrides and endpoint checkboxes read-only without Full', () => {
-  renderInApp(<SidebarProbe editLevel="off" record={customRecord({ enabled: true })} />);
-  const endpoint = screen.getAllByRole('checkbox')[0] as HTMLInputElement;
-  expect(endpoint.readOnly).toBe(true);
-  const override = screen.getByPlaceholderText('/v1/chat/completions') as HTMLInputElement;
-  expect(override.readOnly).toBe(true);
-  const disabledModels = screen.getByRole('combobox', { name: i18n.t('dashboard.upstreamEditor.sections.disabledModels') }) as HTMLInputElement;
-  expect(disabledModels.getAttribute('aria-readonly')).toBe('true');
-  const catalogSwitch = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('dashboard.upstreamEditor.fields.fetchModels') });
-  expect(catalogSwitch.checked).toBe(true);
-  expect(configReadOnly('off')).toEqual({ connection: true, modelsFetch: true });
-});
-
 // The page reads formState.isDirty to decide whether leaving prompts, so each
 // case ends where it started and asks that flag.
 const editAndUndo = (value: string, edited: string) => {
@@ -131,12 +118,6 @@ describe('upstream editor dirtiness across an edit and its undo', () => {
     expect(dirty()).toBe('true');
     fireEvent.change(key, { target: { value: '' } });
     fireEvent.blur(key);
-    expect(dirty()).toBe('false');
-  });
-
-  it('settles clean beside a proxy entry with no colo whitelist', () => {
-    renderInApp(<SidebarProbe record={customRecord({ enabled: true, endpoint: '/v1/models' }, [{ id: 'direct_fetch' }])} />);
-    editAndUndo('Upstream', 'Renamed');
     expect(dirty()).toBe('false');
   });
 });

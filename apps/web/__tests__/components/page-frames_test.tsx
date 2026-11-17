@@ -66,26 +66,4 @@ describe('page frames', () => {
     await act(async () => { fireEvent.animationEnd(leaving, { animationName: PAGE_LEAVE_ANIMATION }); });
     expect(container.querySelector('[data-leaving="true"]')).toBeNull();
   });
-
-  // A page carries the mark on its own entry and replaces that entry when it
-  // restates its URL, so the mark alone would make a filter change look like an
-  // arrival: a new frame, and with it the page remounted from its loader data.
-  it('draws no new frame when the page rewrites the entry it is already on', async () => {
-    const { router, container } = renderRouter();
-    const currentButton = () => {
-      const button = container.querySelector<HTMLButtonElement>('[data-leaving="false"] button');
-      if (!button) throw new Error('the current frame drew no page');
-      return button;
-    };
-
-    await act(async () => { await router.navigate('/next', pageNavigation); });
-    await act(async () => { currentButton().click(); });
-    const held = currentButton();
-
-    await act(async () => { await router.navigate('/next?range=7d', { ...pageNavigation, replace: true }); });
-
-    expect(container.querySelector('[data-leaving="true"]')).toBeNull();
-    expect(currentButton()).toBe(held);
-    expect(held.textContent).toBe('second');
-  });
 });

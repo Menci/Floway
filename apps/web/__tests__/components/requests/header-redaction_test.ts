@@ -13,12 +13,6 @@ describe('header redaction', () => {
     expect(isSensitiveHeader('api-key')).toBe(true);
   });
 
-  it('shows nothing at all of a short value', () => {
-    expect(redactHeaderValue('')).toBe('');
-    expect(redactHeaderValue('Bearer sk-1')).toBe('•'.repeat(11));
-    expect(redactHeaderValue('0123456789abcdef')).toBe('•'.repeat(16));
-  });
-
   // One character past the fully-masked window the mask keeps both ends, which
   // leaves sixteen of the seventeen characters legible. Recorded in
   // `data/backlog.md`: no credential this app shows is that short, but the

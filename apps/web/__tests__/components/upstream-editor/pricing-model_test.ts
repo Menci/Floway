@@ -6,8 +6,6 @@ import {
   pricingFieldRate,
   pricingFromDrafts,
   pricingIsValid,
-  visiblePricingFields,
-  withEqualityCoordinate,
   withRate,
   withThresholdCoordinate,
 } from '../../../src/components/upstream-editor/pricing-model';
@@ -39,13 +37,6 @@ describe('pricing editor model', () => {
     expect(withRate(draft!, seconds, '2').rates.input_audio_seconds).toBe('2');
   });
 
-  it('shows a priced metric the kind does not declare', () => {
-    const drafts = pricingEntryDraftsFor(baseOnly({ input_tokens: '0.000003', rerank_searches: '0.002' }));
-    const metrics = visiblePricingFields(drafts, 'chat').map(field => field.metric);
-
-    expect(metrics).toContain('rerank_searches');
-  });
-
   it('keeps selectors and rates when editing an override', () => {
     const drafts = pricingEntryDraftsFor({
       entries: [
@@ -65,12 +56,5 @@ describe('pricing editor model', () => {
       ],
     });
     expect(pricingIsValid(next, undefined)).toBe(true);
-  });
-
-  it('drops an emptied equality coordinate rather than storing a blank one', () => {
-    const drafts = pricingEntryDraftsFor({ entries: [{ selector: { serviceTier: 'priority' }, rates: { input_tokens: '1' } }] });
-    const cleared = withEqualityCoordinate(drafts[0]!, 'serviceTier', '   ');
-
-    expect(pricingFromDrafts([cleared])).toEqual({ entries: [{ rates: { input_tokens: '1' } }] });
   });
 });

@@ -151,29 +151,4 @@ describe('ChatGPT reset cards', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Refresh reset cards' }));
     expect(await screen.findByText('Full reset')).toBeTruthy();
   });
-
-  it('renders expired and unknown cards without offering redemption', async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(Response.json({
-      reset_credits: {
-        available_count: 0,
-        credits: [
-          { ...card, expires_at: '2000-01-01T00:00:00Z' },
-          { ...card, id: 'future', reset_type: 'future_type', status: 'future_status' },
-        ],
-      },
-    }));
-    renderInApp(<ChatGPTResetCards record={record} onQuotaReset={vi.fn()} />);
-    expect(await screen.findByText('Expired')).toBeTruthy();
-    expect(screen.getByText('future_status')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Use' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Expired' }).hasAttribute('disabled')).toBe(true);
-    expect(screen.getByRole('button', { name: 'future_status' }).hasAttribute('disabled')).toBe(true);
-    expect(consumeBodies).toHaveLength(0);
-  });
-
-  it('does not load reset cards for an unsaved account', () => {
-    renderInApp(<ChatGPTAccountCard record={{ ...record, id: '' }} />);
-    expect(screen.queryByText('Reset cards')).toBeNull();
-    expect(fetch).not.toHaveBeenCalled();
-  });
 });

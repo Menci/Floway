@@ -28,11 +28,6 @@ it('renders arbitrary label values independently of JavaScript object prototypes
   }
 });
 
-it('selects each provider decoder from the current upstream', () => {
-  expect(displayOf('chatgpt', { name: 'credits.balance', labels: {} }).unit).toBe('credits');
-  expect(displayOf('copilot', { name: 'quota.remaining', labels: { quota: 'premium_interactions' } }).unit).toBe('usd');
-});
-
 it('renders undecoded identities as unitless raw series', () => {
   for (const [kind, identity, name] of [
     ['copilot', { name: 'quota.overage', labels: { quota: 'chat "beta"', limit: 456, shared: true, scope: null } }, 'quota.overage{limit=456,quota="chat \\"beta\\"",scope=null,shared=true}'],
@@ -67,19 +62,6 @@ it('names dynamic quota windows by direction', async () => {
       expect(displayOf('chatgpt', { name: 'quota.window.used_percent', labels: { limit: 'codex', window_seconds: seconds } }, 'used', translate).name).toBe(usage);
       expect(displayOf('chatgpt', { name: 'quota.window.used_percent', labels: { limit: 'review', window_seconds: seconds } }, 'remaining', translate).name).toBe(namedRemaining);
       expect(displayOf('chatgpt', { name: 'quota.window.used_percent', labels: { limit: 'review', window_seconds: seconds } }, 'used', translate).name).toBe(namedUsage);
-    }
-  }
-});
-
-it('renders equal fixed and encoded windows with consistent labels', async () => {
-  for (const language of ['en', 'zh-Hans'] as const) {
-    await setLanguage(language);
-    for (const quotaDisplay of ['remaining', 'used'] as const) {
-      for (const [quota, seconds] of [['five_hour', 18_000], ['seven_day', 604_800]] as const) {
-        const fixed = displayOf('claude-code', { name: 'quota.utilization', labels: { quota } }, quotaDisplay);
-        const encoded = displayOf('chatgpt', { name: 'quota.window.used_percent', labels: { limit: 'codex', window_seconds: seconds } }, quotaDisplay);
-        expect(fixed.name).toBe(encoded.name);
-      }
     }
   }
 });

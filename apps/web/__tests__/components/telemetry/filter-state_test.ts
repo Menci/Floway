@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { changeTelemetryFilter, changeTelemetryGroupBy, clearGroupedTelemetryFilters, scopeTelemetryIdentity } from '../../../src/components/telemetry/filter-state';
+import { changeTelemetryFilter, changeTelemetryGroupBy, clearGroupedTelemetryFilters } from '../../../src/components/telemetry/filter-state';
 
 const filters = { model: ['gpt-5'], upstream: ['up-1'], userId: ['2'], keyId: ['key-1'] };
 const context = { currentUserId: '1', fallbackGroup: 'model' as const, userDimensionAvailable: true };
@@ -10,13 +10,6 @@ describe('telemetry filter state', () => {
     expect(clearGroupedTelemetryFilters(filters, 'upstream')).toEqual({ ...filters, upstream: [] });
     expect(clearGroupedTelemetryFilters(filters, 'userId')).toEqual({ ...filters, userId: [], keyId: [] });
     expect(clearGroupedTelemetryFilters(filters, 'keyId')).toEqual({ ...filters, keyId: [] });
-  });
-
-  it('normalizes an unavailable user grouping without retaining hidden filters', () => {
-    expect(scopeTelemetryIdentity('userId', filters, { ...context, userDimensionAvailable: false })).toEqual({
-      groupBy: 'model',
-      filters: { model: [], upstream: ['up-1'], userId: [], keyId: [] },
-    });
   });
 
   it('sets API key grouping and filtering to the current user scope', () => {

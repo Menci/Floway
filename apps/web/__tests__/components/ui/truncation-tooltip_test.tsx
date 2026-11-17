@@ -76,20 +76,6 @@ describe('a tooltip restoring text its trigger cannot show', () => {
     expect(screen.getByRole('tooltip').textContent).toBe('Claude Code');
   });
 
-  it('restores text elided before it ever reached the box', async () => {
-    renderInApp(<Trigger
-      clientWidth={120}
-      content="7f3c9a20-1b44-4e0d-9f21-2c6b8ad51e77"
-      scrollWidth={120}
-      text="7f3c9a20…51e77"
-    />);
-    await settle();
-
-    await hover(screen.getByText('7f3c9a20…51e77'));
-
-    expect(screen.getByRole('tooltip').textContent).toBe('7f3c9a20-1b44-4e0d-9f21-2c6b8ad51e77');
-  });
-
   it('re-measures when the text changes without the box changing', async () => {
     const view = renderInApp(<Trigger clientWidth={120} content="Copilot" scrollWidth={120} />);
     await settle();

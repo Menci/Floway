@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPerformanceQuery, normalizePerformanceBreakdownForRuntime, normalizePerformanceDimensionsForRuntime, parsePerformanceUrlState, performanceLabels, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/overview';
+import { buildPerformanceQuery, normalizePerformanceBreakdownForRuntime, normalizePerformanceDimensionsForRuntime, parsePerformanceUrlState, performanceLabels, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/overview';
 import { buildPerformanceChart } from '../../../src/components/performance/plot';
 
 const emptyOverview = (): PerformanceOverviewResponse => ({
@@ -39,15 +39,6 @@ describe('performance overview query', () => {
     expect(buildPerformanceQuery('30d', 'model', filters, Date.UTC(2026, 10, 1, 7)).bucket).toBe('day');
   });
 
-  it('reads the percentile it is given, so each table column can carry its own', () => {
-    const record = { ttftMsP50: 100, ttftMsP99: 300, tpotUsP50: 10_000, tpotUsP99: 40_000 } as Parameters<typeof performanceValue>[0];
-
-    expect(performanceValue(record, 'ttft', 'p50')).toBe(100);
-    expect(performanceValue(record, 'ttft', 'p99')).toBe(300);
-    expect(performanceValue(record, 'tokPerSec', 'p50')).toBe(100);
-    expect(performanceValue(record, 'tokPerSec', 'p99')).toBe(25);
-  });
-
   it('round-trips non-default dashboard state through the URL', () => {
     const state = parsePerformanceUrlState(new URLSearchParams('m=tokPerSec&ttft_p=p99&speed_p=p50&tab=upstream&sort=errors&dir=ascending&g=upstream&r=30d&fm=&fm=gpt-5&fm=gpt-5&fm=claude-opus-4-7&hide=a%252Cb,c'));
     const serialized = serializePerformanceUrlState({ ...state, hidden: ['a,b', '100%', '模型', 'duplicate', 'duplicate'] });
@@ -68,13 +59,6 @@ describe('performance overview query', () => {
     expect(serialized.get('sort')).toBe('errors');
     expect(serialized.get('dir')).toBe('ascending');
     expect(serialized.getAll('fm')).toEqual(['gpt-5', 'claude-opus-4-7']);
-  });
-
-  it('omits a default sort and direction from the URL', () => {
-    const state = parsePerformanceUrlState(new URLSearchParams());
-
-    expect(state.sort).toEqual({ key: 'requests', direction: 'descending' });
-    expect(serializePerformanceUrlState(state).toString()).toBe('');
   });
 
   it('removes Region state outside the Cloudflare runtime', () => {

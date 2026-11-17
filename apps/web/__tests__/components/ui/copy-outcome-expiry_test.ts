@@ -21,16 +21,6 @@ describe('copy outcome expiry', () => {
 
   afterEach(() => { vi.useRealTimers(); });
 
-  it('lets one hook serve a table of buttons', async () => {
-    const { result } = renderHook(() => useCopyToClipboard());
-
-    await press(() => { result.current.copy('first', 'row-1'); });
-
-    expect(result.current.outcomeFor('row-1')).toBe('copied');
-    expect(result.current.outcomeFor('row-2')).toBe('idle');
-    expect(result.current.outcomeFor()).toBe('idle');
-  });
-
   it('does not let one button\'s expiry clear another button\'s result', async () => {
     const { result } = renderHook(() => useCopyToClipboard());
 

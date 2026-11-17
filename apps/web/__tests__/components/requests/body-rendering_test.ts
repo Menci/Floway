@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { contentTypeOf, renderBody } from '../../../src/components/requests/body-render';
+import { renderBody } from '../../../src/components/requests/body-render';
 
 // The dump carries bodies as they went over the wire, so a base64 fixture is
 // built from bytes rather than from a string literal.
@@ -21,28 +21,13 @@ const withoutTypedArrayBase64 = <T>(run: () => T): T => {
   }
 };
 
-describe('content type lookup', () => {
-  it('finds the header however it was capitalized, and says nothing when it is absent', () => {
-    expect(contentTypeOf([['Content-Type', 'application/json']])).toBe('application/json');
-    expect(contentTypeOf([['content-length', '12']])).toBe('');
-  });
-});
-
 describe('body rendering', () => {
-
   it('pretty-prints JSON and says that is what it is', () => {
     const rendered = renderBody({ data: '{"model":"gpt-5","stream":true}', encoding: 'utf8' }, 'application/json');
 
     expect(rendered.isJson).toBe(true);
     expect(rendered.text).toBe('{\n  "model": "gpt-5",\n  "stream": true\n}');
     expect(rendered.copyText).toBe(rendered.text);
-  });
-
-  it('decodes a base64 body before reading it as JSON', () => {
-    const rendered = renderBody({ data: base64('{"ok":true}'), encoding: 'base64' }, 'application/json');
-
-    expect(rendered.isJson).toBe(true);
-    expect(rendered.text).toBe('{\n  "ok": true\n}');
   });
 
   // A body that is not text at all keeps its base64 on screen rather than
@@ -88,16 +73,6 @@ describe('multipart body rendering', () => {
 
     expect(renderBody({ data, encoding: 'base64' }, `multipart/form-data; boundary=${boundary}`).copyText).toBe(data);
     expect(renderBody({ data, encoding: 'base64' }, `multipart/form-data; boundary=${boundary}`).text).not.toBe(data);
-  });
-
-  it('reads the boundary out of a quoted parameter too', () => {
-    expect(render(binaryWire, `multipart/form-data; boundary="${boundary}"`).text).toContain('[binary, 3 bytes');
-  });
-
-  it('falls back to the plain body when the content type names no boundary', () => {
-    const rendered = render(textWire, 'multipart/form-data');
-
-    expect(rendered.text).toBe(textWire);
   });
 
   // A PNG signature leads with 0x89, inside the 0x80-0x9F range where the

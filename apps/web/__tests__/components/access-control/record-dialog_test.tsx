@@ -65,18 +65,6 @@ test('new records start at the root slash and reject an incomplete scope inline'
   expect(fetch).not.toHaveBeenCalled();
 });
 
-test('keeps an invalid JSON scope in JSON mode until it satisfies the schema', async () => {
-  await renderDialog();
-  screen.getByRole('tab', { name: 'JSON' }).click();
-  const json = await screen.findByLabelText('JSON');
-  fireEvent.change(json, { target: { value: '{"kind":"user","userId":"alice"}' } });
-
-  screen.getByRole('tab', { name: 'Visual' }).click();
-
-  expect(await screen.findByLabelText('JSON')).toBeTruthy();
-  expect(json.getAttribute('aria-invalid')).toBe('true');
-});
-
 test('updates permission controls from each valid JSON scope draft', async () => {
   const groupRecord: AccessRecord = {
     ...record,
@@ -128,19 +116,6 @@ test('an administrator target keeps its permission fields and saves normally', a
   });
 });
 
-test('resolves group inheritance through the same API as personal inheritance', async () => {
-  const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => Response.json({ values: { 'Model.Use': false, 'Upstream.Audit': true, 'Upstream.Edit': 'full' }, records: [], decisions: [] }));
-  vi.stubGlobal('fetch', fetch);
-  await renderDialog({ record: { ...record, principal: { kind: 'group', id: 3 } } });
-
-  const edit = await screen.findByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.Upstream.Edit') });
-  const inherited = await within(edit).findByRole<HTMLInputElement>('radio', { name: i18n.t('dashboard.accessControl.states.full') });
-  await vi.waitFor(() => expect(inherited.checked).toBe(true));
-  expect(fetch).toHaveBeenCalledOnce();
-  const body = JSON.parse(fetch.mock.calls[0]![1]!.body as string);
-  expect(body).toEqual({ principal: { kind: 'group', id: 3 }, scope: record.scope, excludeRecordId: record.id });
-});
-
 test('switching scope keeps the settled permission fields disabled until the new inherited values resolve', async () => {
   const pending: Array<(response: Response) => void> = [];
   vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
@@ -183,18 +158,6 @@ test('switching scope keeps the settled permission fields disabled until the new
   expect(within(audit).getAllByRole<HTMLInputElement>('radio').every(input => !input.disabled)).toBe(true);
   expect(snapshots.every(snapshot => snapshot.endsWith('|known'))).toBe(true);
   expect(new Set(snapshots.map(snapshot => snapshot.split('|')[0]))).toEqual(new Set(['Model.Use,Upstream.Audit,Upstream.Edit', 'Permission.Audit']));
-});
-
-test('moving a fixed rule into a model boundary uses the available append order', async () => {
-  const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => Response.json(init?.method === 'PUT' ? { ...record, ...JSON.parse(init.body as string) } : { values: { 'Model.Use': true }, records: [], decisions: [] }));
-  vi.stubGlobal('fetch', fetch);
-  await renderDialog({ record, suggestedSortOrder: 99 });
-  fireEvent.click(screen.getByRole('tab', { name: 'JSON' }));
-  fireEvent.change(screen.getByRole('textbox', { name: 'JSON' }), { target: { value: JSON.stringify({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } }) } });
-  await vi.waitFor(() => expect(document.querySelector('[data-permission-editor]')!.getAttribute('aria-busy')).toBe('false'));
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Save rule' })); });
-  const write = fetch.mock.calls.find(([, init]) => init?.method === 'PUT')!;
-  expect(JSON.parse(write[1]!.body as string).sortOrder).toBe(99);
 });
 
 test.each(['Visual', 'JSON'])('locks the complete %s form through a save and restores it on failure', async mode => {

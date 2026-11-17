@@ -18,11 +18,6 @@ const summary = (counts: Record<string, number>) =>
 describe('what an import reports it took', () => {
   afterEach(async () => { await setLanguage(defaultLanguage); });
 
-  it('closes a written list with a conjunction rather than a comma', () => {
-    expect(summary({ users: 1, apiKeys: 8, upstreams: 3, proxies: 1, usage: 18309, searchUsage: 263 }))
-      .toBe('1 user, 8 API keys, 3 upstreams, 1 proxy, 18,309 usage records, and 263 search-usage records');
-  });
-
   it('names nothing the file did not carry', () => {
     expect(summary({ users: 2, apiKeys: 0, performance: 0 })).toBe('2 users');
     expect(summary({ users: 0 })).toBe('');

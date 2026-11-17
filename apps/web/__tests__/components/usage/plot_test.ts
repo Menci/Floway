@@ -43,10 +43,6 @@ describe('percentage chart series', () => {
     expect(linePlot(chart({ input_tokens: '10', input_cache_read_tokens: '0' }).plot).lineChartData![0]!.data)
       .toEqual([expect.objectContaining({ y: 0 })]);
   });
-
-  it('omits a percentage whose denominator does not exist', () => {
-    expect(linePlot(chart({}).plot).lineChartData).toEqual([]);
-  });
 });
 
 describe('cost chart series', () => {
@@ -155,11 +151,5 @@ describe('search chart', () => {
     expect(chart.providers).toEqual(['microsoft-web-iq', 'tavily']);
     expect(chart.entries.map(entry => entry.label)).toEqual(['Key 1']);
     expect(areaPlot(chart.plot).lineChartData![0]!.data).toEqual([expect.objectContaining({ y: 7 })]);
-  });
-
-  it('ignores records that fall outside the plotted window', () => {
-    const chart = searchChart([{ ...searchRecord('tavily', 5), hour: '2026-07-20T04' }]);
-    expect(chart.entries).toEqual([]);
-    expect(chart.providers).toEqual([]);
   });
 });

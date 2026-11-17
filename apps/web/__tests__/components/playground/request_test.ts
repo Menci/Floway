@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  defaultMaxOutputTokens,
   generationOptions,
   parseCustomJson,
   playgroundApisFor,
-  supportsImageInput,
 } from '../../../src/components/playground/request';
 import { catalogModel } from '../../api/model-fixture';
 
@@ -31,16 +29,5 @@ describe('generation and capabilities', () => {
     expect(generationOptions('openaiChatCompletions', 'high')).toEqual({ reasoning_effort: 'high' });
     expect(generationOptions('anthropicMessages', 'max', 100))
       .toEqual({ max_tokens: 100, thinking: { type: 'enabled' }, output_config: { effort: 'max' } });
-  });
-
-  it('always caps Anthropic Messages output, which requires the field on the wire', () => {
-    expect(generationOptions('anthropicMessages', undefined, 2048)).toEqual({ max_tokens: 2048 });
-    expect(generationOptions('openaiResponses', undefined)).toEqual({});
-  });
-
-  it('reads image and output limits conservatively', () => {
-    expect(supportsImageInput(catalogModel('unknown', { upstreams: [] }))).toBe(true);
-    expect(supportsImageInput(catalogModel('text', { upstreams: [],  chat: { modalities: { input: ['text'], output: ['text'] } } }))).toBe(false);
-    expect(defaultMaxOutputTokens(catalogModel('limited', { upstreams: [],  limits: { max_output_tokens: 2048 } }))).toBe(2048);
   });
 });

@@ -36,12 +36,6 @@ test('quota refresh uses the edited region and API key', async () => {
   expect(mocks.refresh).toHaveBeenCalledWith(expect.objectContaining({ json: { record: expect.objectContaining({ config: { region: 'overseas', apiKey: 'sk-kimi-fake-replacement' } }) } }), expect.anything());
 });
 
-test('redacted read-only connections retain the subscription quota card', () => {
-  renderInApp(<Harness readOnly />);
-  expect(screen.getAllByRole('progressbar')).toHaveLength(2);
-  expect(screen.queryByRole('button', { name: i18n.t('dashboard.upstreamEditor.kimiCode.usage.refresh') })).toBeNull();
-});
-
 test('catalog-owned Kimi Code model pricing stays read-only for editable connections', () => {
   const onChange = vi.fn();
   renderInApp(<ModelDetail

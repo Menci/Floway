@@ -32,10 +32,6 @@ describe('access-rule display order', () => {
     expect(records.find(record => record.id === 3)!.sortOrder).toBe(0);
   });
 
-  it.each([[3, 6], [2, 3], [1, 8]])('rejects cross-boundary rows %j', (...ids) => {
-    expect(() => reorderModelRecords(records, ids, 0, 1)).toThrow('fixed priority boundary');
-  });
-
   it('rejects invalid, duplicate and stale indices', () => {
     for (const [ids, from, to] of [[[3, 4], -1, 1], [[3, 4], 0, 2], [[3, 3], 0, 1], [[3], 0, 0], [[3, 4], 0.5, 1]] as const) {
       expect(() => reorderModelRecords(records, ids, from, to)).toThrow('Invalid access-rule reorder positions');

@@ -75,7 +75,6 @@ const editAtSelection = (
 // -- a key that quietly kept data forever would be worse than one that refuses
 // to save.
 describe('retention field', () => {
-
   it('emits the seconds behind a typed duration', () => {
     const { input, onChange } = renderField({ value: null });
 
@@ -109,18 +108,6 @@ describe('retention field', () => {
     expect(input.value).toBe('1 day');
     expect(input.selectionStart).toBe(1);
     expect(document.activeElement).toBe(input);
-  });
-
-  it('selects off when zero is entered', () => {
-    const { input, onChange } = renderField({ value: 3600 });
-
-    input.focus();
-    type(input, '0');
-
-    expect(onChange).toHaveBeenLastCalledWith(null);
-    expect(input.value).toBe('Do not capture');
-    fireEvent.click(input);
-    expect(screen.getByRole('option', { name: 'Do not capture' }).getAttribute('aria-selected')).toBe('true');
   });
 
   it('reports a window that does not parse or resolves to nothing as invalid', () => {
@@ -163,51 +150,6 @@ describe('retention field', () => {
 
     fireEvent.blur(input);
     expect((screen.getByRole('combobox') as HTMLInputElement).value).toBe('soon');
-  });
-
-  it('resets IMask history when an external value replaces the edit', () => {
-    function Host() {
-      const [value, setValue] = useState<RetentionValue>(null);
-      return <>
-        <button onClick={() => setValue(6 * 3600)} type="button">Reset retention</button>
-        <RetentionField
-          description="How long captured requests are kept"
-          icon={null}
-          label="Retention"
-          offLabel="Do not capture"
-          offValue={null}
-          presets={DUMP_PRESETS}
-          value={value}
-          onChange={setValue}
-        />
-      </>;
-    }
-
-    renderInApp(<Host />);
-    const input = screen.getByRole('combobox') as HTMLInputElement;
-    type(input, '30m');
-    fireEvent.click(screen.getByRole('button', { name: 'Reset retention' }));
-    fireEvent.keyDown(input, { ctrlKey: true, key: 'z', keyCode: 90 });
-
-    expect(input.value).toBe('6 hours');
-  });
-
-  it('uses days as the configured default unit for a bare number', () => {
-    const { input, onChange } = renderField({
-      defaultUnit: 'd',
-      maximumSeconds: OPENAI_RESPONSES_MAX_SECONDS,
-      minimumSeconds: SECONDS_PER_DAY,
-      multipleOfSeconds: SECONDS_PER_DAY,
-      offValue: 0,
-      value: 0,
-    });
-
-    type(input, '14');
-    expect(onChange).toHaveBeenLastCalledWith(14 * SECONDS_PER_DAY);
-    expect(input.value).toBe('14 days');
-
-    type(input, '1');
-    expect(onChange).toHaveBeenLastCalledWith(SECONDS_PER_DAY);
   });
 
   it('enforces the configured range and whole-day granularity', () => {

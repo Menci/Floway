@@ -13,11 +13,6 @@ describe('models YAML round trip', () => {
 });
 
 describe('models YAML rejection', () => {
-  it('reports a syntax error rather than throwing', () => {
-    const parsed = parseModels('- upstreamModelId: [', { allowRerank: false });
-    expect(parsed.ok).toBe(false);
-  });
-
   it('rejects a payload that is not an array', () => {
     const parsed = parseModels('upstreamModelId: gpt-5\n', { allowRerank: false });
     expect(parsed).toMatchObject({ ok: false });

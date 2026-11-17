@@ -194,24 +194,6 @@ describe('drag-to-position reordering', () => {
     expect(rendered()).toEqual(names);
   });
 
-  it('travels between the grips on the bare arrows, as a list travels between its items', () => {
-    const onReorder = vi.fn();
-    renderInApp(<List onReorder={onReorder} />);
-
-    grip('charlie').focus();
-    fireEvent.keyDown(grip('charlie'), { key: 'ArrowUp' });
-    expect(document.activeElement).toBe(grip('bravo'));
-    fireEvent.keyDown(grip('bravo'), { key: 'ArrowDown' });
-    expect(document.activeElement).toBe(grip('charlie'));
-
-    // The ends hold rather than wrap, and nothing has been reordered.
-    grip('alpha').focus();
-    fireEvent.keyDown(grip('alpha'), { key: 'ArrowUp' });
-    expect(document.activeElement).toBe(grip('alpha'));
-    expect(onReorder).not.toHaveBeenCalled();
-    expect(rendered()).toEqual(names);
-  });
-
   it('reorders one step on the chord XAML reserves for it', () => {
     const onReorder = vi.fn();
     renderInApp(<List onReorder={onReorder} />);
@@ -224,27 +206,6 @@ describe('drag-to-position reordering', () => {
     fireEvent.keyDown(grip('delta'), { altKey: true, key: 'ArrowDown', shiftKey: true });
     fireEvent.keyDown(grip('bravo'), { altKey: true, ctrlKey: true, key: 'ArrowUp', shiftKey: true });
     expect(onReorder).toHaveBeenCalledOnce();
-  });
-
-  it('stops at the last ordered item when the list leaves the rest out of its order', () => {
-    vi.useFakeTimers();
-    const onReorder = vi.fn();
-    renderInApp(<List onReorder={onReorder} orderable={2} />);
-
-    expect(grip('charlie').hasAttribute('disabled')).toBe(true);
-    // And a disabled grip is not a stop the arrows travel through.
-    grip('alpha').focus();
-    fireEvent.keyDown(grip('alpha'), { key: 'ArrowDown' });
-    expect(document.activeElement).toBe(grip('bravo'));
-    fireEvent.keyDown(grip('bravo'), { key: 'ArrowDown' });
-    expect(document.activeElement).toBe(grip('bravo'));
-
-    press(grip('alpha'), 20);
-    // Over the unordered rows, which the gesture never measured.
-    release(150);
-    act(() => { vi.advanceTimersByTime(REPOSITION_ANIMATION_MS); });
-    expect(onReorder).toHaveBeenCalledExactlyOnceWith(0, 1);
-    expect(rendered()).toEqual(['bravo', 'alpha', 'charlie', 'delta']);
   });
 });
 

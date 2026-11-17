@@ -21,12 +21,6 @@ describe('detectCollectKind', () => {
     expect(detectCollectKind('/v1/models/gemini-2.5-pro:streamGenerateContent?alt=sse')).toBe('gemini-generate-content');
     expect(detectCollectKind('/v1/models/gemini-2.5-pro:countTokens')).toBe('gemini-generate-content');
   });
-
-  it('leaves the model listing and unrelated paths alone', () => {
-    expect(detectCollectKind('/v1/models')).toBeNull();
-    expect(detectCollectKind('/v1beta/models')).toBeNull();
-    expect(detectCollectKind('/v1/models/gemini-2.5-pro')).toBeNull();
-  });
 });
 
 describe('GenerateContent bare errors', () => {

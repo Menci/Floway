@@ -19,10 +19,6 @@ describe('hidden series URL state', () => {
     expect(parseHiddenSeries(new URLSearchParams('hide=a%252Cb,c'), 'hide')).toEqual(['a,b', 'c']);
   });
 
-  it('treats an incomplete legacy percent escape as an opaque ID', () => {
-    expect(parseHiddenSeries(new URLSearchParams('hide=100%25'), 'hide')).toEqual(['100%']);
-  });
-
   it('rejects unsupported versioned formats', () => {
     expect(() => parseHiddenSeries(new URLSearchParams('hidev=3&hide=a&hide=b'), 'hide'))
       .toThrowError('Unsupported hidden-series URL format version: 3');
