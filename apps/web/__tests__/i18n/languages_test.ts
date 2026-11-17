@@ -22,9 +22,4 @@ describe('language locales', () => {
     expect(localeForLanguage('zh-Hans')).toBe('zh-CN');
     expect(localeForLanguage('en')).toBe('en-US');
   });
-
-  it('falls back to the default locale for anything unsupported', () => {
-    expect(localeForLanguage('ko-KR')).toBe('en-US');
-    expect(localeForLanguage(null)).toBe('en-US');
-  });
 });

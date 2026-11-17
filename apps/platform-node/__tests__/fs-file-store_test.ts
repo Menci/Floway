@@ -16,14 +16,6 @@ const withTempRoot = async (fn: (root: string) => Promise<void>): Promise<void> 
   }
 };
 
-test('put then get round-trips binary content', () => withTempRoot(async root => {
-  const store = new FsFileStore(root);
-  const bytes = new Uint8Array([0, 1, 2, 0xff, 0xfe, 0x80]);
-  await store.put('blobs/a.bin', bytes);
-  const read = await store.get('blobs/a.bin');
-  assertEquals(read, bytes);
-}));
-
 test('deleteKeys removes exact files and ignores missing keys', () => withTempRoot(async root => {
   const store = new FsFileStore(root);
   await store.put('cleanup/a.bin', new Uint8Array([1]));

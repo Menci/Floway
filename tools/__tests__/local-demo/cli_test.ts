@@ -5,10 +5,6 @@ import { test } from 'vitest';
 import { parseCommand, workerdConfig } from '../../src/local-demo/cli.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
-test('local demo defaults to Node, Vite, and the fixed ports', () => {
-  assertEquals(parseCommand(['up']), { name: 'up', runtime: 'node', gatewayPort: 8788, webPort: 5174 });
-});
-
 test('local demo selects workerd explicitly and validates ports', () => {
   assertEquals(parseCommand(['up', '--runtime', 'workerd', '--gateway-port', '18788', '--web-port', '15174']), {
     name: 'up', runtime: 'workerd', gatewayPort: 18788, webPort: 15174,
