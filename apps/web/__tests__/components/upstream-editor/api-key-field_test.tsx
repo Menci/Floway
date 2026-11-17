@@ -94,9 +94,9 @@ describe('the API key field', () => {
     renderInApp(<ProviderConfigHarness record={customRecord('sk-live-key', true)} />);
     const selector = screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.fields.fetchModelsAuthStyle') });
     fireEvent.click(selector);
-    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent)).toEqual([i18n.t('dashboard.upstreamEditor.auth.bearer'), 'x-api-key']);
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'x-api-key' }));
-    expect(selector.textContent).toBe('x-api-key');
+    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent)).toEqual([i18n.t('dashboard.upstreamEditor.auth.bearer'), 'x-api-key', 'x-goog-api-key']);
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'x-goog-api-key' }));
+    expect(selector.textContent).toBe('x-goog-api-key');
   });
 
   it('keeps the field editable so the stored key can be replaced', () => {

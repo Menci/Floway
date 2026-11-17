@@ -2,9 +2,10 @@
 // more supported generation, embedding, image, or rerank protocols under a
 // single base URL with a static credential. The outbound protocol chooses the
 // credential header: OpenAI-compatible calls use
-// `Authorization: Bearer <key>`, while Anthropic Messages calls use
-// `x-api-key: <key>` plus `anthropic-version`. An empty key sends no credential
-// and lets local or internal upstreams accept anonymous requests.
+// `Authorization: Bearer <key>`, Anthropic Messages calls use
+// `x-api-key: <key>` plus `anthropic-version`, and Gemini generateContent calls
+// use `x-goog-api-key`. An empty key sends no credential and lets local or
+// internal upstreams accept anonymous requests.
 //
 // The base URL is stored without an API prefix and joined to the selected
 // protocol's path. Generation-family path overrides remain upstream-wide;
@@ -36,6 +37,7 @@ const CUSTOM_PATH_OVERRIDE_KEYS = [
   '/chat/completions',
   '/responses',
   '/messages',
+  '/v1beta/models',
   '/embeddings',
   '/alpha/search',
   '/images/generations',
@@ -45,7 +47,7 @@ const CUSTOM_PATH_OVERRIDE_KEYS = [
 
 export type CustomPathOverrideKey = typeof CUSTOM_PATH_OVERRIDE_KEYS[number];
 
-export type CustomAuthStyle = 'bearer' | 'x-api-key';
+export type CustomAuthStyle = 'bearer' | 'x-api-key' | 'x-goog-api-key';
 
 export interface CustomModelsFetch {
   enabled: boolean;
@@ -177,17 +179,18 @@ const pathOverridesField = (value: unknown): CustomUpstreamConfig['pathOverrides
   return pathOverrides;
 };
 
-const CUSTOM_AUTH_STYLES: ReadonlySet<CustomAuthStyle> = new Set<CustomAuthStyle>(['bearer', 'x-api-key']);
+const CUSTOM_AUTH_STYLES: ReadonlySet<CustomAuthStyle> = new Set<CustomAuthStyle>(['bearer', 'x-api-key', 'x-goog-api-key']);
 
 const customAuthStyleField = (value: unknown): CustomAuthStyle => {
   if (typeof value !== 'string' || !CUSTOM_AUTH_STYLES.has(value as CustomAuthStyle)) {
-    throw new Error('Malformed custom upstream config: modelsFetch.authStyle must be "bearer" or "x-api-key"');
+    throw new Error('Malformed custom upstream config: modelsFetch.authStyle must be "bearer", "x-api-key", or "x-goog-api-key"');
   }
   return value as CustomAuthStyle;
 };
 
 // The /models fetch toggle. The catalog endpoint has no request protocol to
-// infer from, so it carries its own authentication scheme. Absent defaults to
+// infer from, so it carries its own authentication scheme: the header name the
+// upstream expects (`bearer` means an Authorization header). Absent defaults to
 // enabled bearer fetches for configs that predate the toggle. `endpoint` is
 // the optional `/models` path override; null/empty parse as "no override".
 const modelsFetchField = (value: unknown): CustomModelsFetch => {

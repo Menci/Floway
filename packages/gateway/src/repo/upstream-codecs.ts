@@ -21,6 +21,7 @@ const endpointsSchema = z.object({
   openaiChatCompletions: endpointSchema.optional(),
   openaiResponses: endpointSchema.optional(),
   anthropicMessages: endpointSchema.optional(),
+  geminiGenerateContent: endpointSchema.optional(),
   openaiEmbeddings: endpointSchema.optional(),
   openaiImagesGenerations: endpointSchema.optional(),
   openaiImagesEdits: endpointSchema.optional(),

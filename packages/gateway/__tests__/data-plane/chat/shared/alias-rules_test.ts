@@ -6,8 +6,9 @@
 
 import { test } from 'vitest';
 
-import { applyRulesToUpstreamOpenAIChatCompletions, applyRulesToUpstreamAnthropicMessages, applyRulesToUpstreamOpenAIResponses } from '../../../../src/data-plane/chat/shared/alias-rules.ts';
+import { applyRulesToUpstreamGeminiGenerateContent, applyRulesToUpstreamOpenAIChatCompletions, applyRulesToUpstreamAnthropicMessages, applyRulesToUpstreamOpenAIResponses } from '../../../../src/data-plane/chat/shared/alias-rules.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -241,4 +242,54 @@ test('messages: alias rules overwrite existing thinking + output_config fields',
   applyRulesToUpstreamAnthropicMessages(body, { reasoning: { effort: 'xhigh', budget_tokens: 9999 } });
   assertEquals(body.output_config?.effort, 'xhigh');
   assertEquals((body.thinking !== undefined && 'budget_tokens' in body.thinking ? body.thinking.budget_tokens : undefined), 9999);
+});
+
+// ── Gemini generateContent target ──
+
+const geminiPayload = (overrides: Partial<GeminiGenerateContentPayload> = {}): GeminiGenerateContentPayload => ({
+  contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+  ...overrides,
+});
+
+test.each([
+  ['minimal', 'MINIMAL'],
+  ['low', 'LOW'],
+  ['medium', 'MEDIUM'],
+  ['high', 'HIGH'],
+  ['xhigh', 'XHIGH'],
+])('gemini: effort %s lands on the uppercase thinkingLevel %s the wire uses', (effort, thinkingLevel) => {
+  const body = geminiPayload();
+  applyRulesToUpstreamGeminiGenerateContent(body, { reasoning: { effort } });
+  assertEquals(body.generationConfig?.thinkingConfig?.thinkingLevel, thinkingLevel);
+});
+
+test('gemini: none disables thinking through a zero budget because there is no level for it', () => {
+  const body = geminiPayload({ generationConfig: { thinkingConfig: { thinkingLevel: 'HIGH' } } });
+  applyRulesToUpstreamGeminiGenerateContent(body, { reasoning: { effort: 'none' } });
+  assertEquals(body.generationConfig?.thinkingConfig, { thinkingBudget: 0 });
+});
+
+test('gemini: a budget replaces a client-stated level rather than joining it', () => {
+  const body = geminiPayload({ generationConfig: { thinkingConfig: { thinkingLevel: 'LOW', includeThoughts: true } } });
+  applyRulesToUpstreamGeminiGenerateContent(body, { reasoning: { budget_tokens: 2048 } });
+  assertEquals(body.generationConfig?.thinkingConfig, { includeThoughts: true, thinkingBudget: 2048 });
+});
+
+test('gemini: a vendor-specific effort travels verbatim, and unrelated rule fields are dropped', () => {
+  const body = geminiPayload();
+  applyRulesToUpstreamGeminiGenerateContent(body, {
+    reasoning: { effort: 'turbo', adaptive: true, summary: 'detailed' },
+    verbosity: 'low',
+  });
+  assertEquals(body.generationConfig?.thinkingConfig, { thinkingLevel: 'turbo' });
+});
+
+test.each([
+  ['priority', 'priority'],
+  ['fast', 'priority'],
+  ['flex', 'flex'],
+])('gemini: serviceTier %s lands on the top-level serviceTier field as %s', (serviceTier, expected) => {
+  const body = geminiPayload();
+  applyRulesToUpstreamGeminiGenerateContent(body, { serviceTier });
+  assertEquals(body.serviceTier, expected);
 });

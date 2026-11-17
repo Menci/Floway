@@ -8,6 +8,7 @@ import type { ProviderScheduledOptions } from './scheduled.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { DecisionTarget, ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
 import type { CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
+import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAICompletionsPayload } from '@floway-dev/protocols/openai-completions';
 import type { OpenAIEmbeddingsPayload } from '@floway-dev/protocols/openai-embeddings';
@@ -153,6 +154,15 @@ export interface ProviderInstance {
   callOpenAIChatCompletions(model: ProviderModel, body: Omit<OpenAIChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
   callOpenAIResponses(model: ProviderModel, body: Omit<CanonicalOpenAIResponsesPayload, 'model'>, action: OpenAIResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderOpenAIResponsesResult>;
   callAnthropicMessages(model: ProviderModel, body: Omit<AnthropicMessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: AnthropicMessagesUpstreamCallOptions): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
+  // Gemini's native REST surface carries the model id and the action in the
+  // URL path (`models/{model}:streamGenerateContent?alt=sse`) rather than in
+  // the body, so the call takes the payload exactly as the client shaped it.
+  // The gateway always asks for the streaming action; a non-streaming client
+  // is collected from those frames. countTokens answers one JSON body and is
+  // relayed verbatim; the provider wraps the payload in the envelope its
+  // upstream expects.
+  callGeminiGenerateContent(model: ProviderModel, body: GeminiGenerateContentPayload, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>>;
+  callGeminiGenerateContentCountTokens(model: ProviderModel, body: GeminiGenerateContentPayload, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   // count_tokens is non-streaming JSON; the gateway relays the upstream
   // Response verbatim.
   callAnthropicMessagesCountTokens(model: ProviderModel, body: Omit<AnthropicMessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: AnthropicMessagesUpstreamCallOptions): Promise<ProviderCallResult>;

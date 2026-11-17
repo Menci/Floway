@@ -7,6 +7,7 @@ import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
@@ -99,6 +100,8 @@ const makeCandidate = (overrides: {
   callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
   callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
   callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
+  callGeminiGenerateContent?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>>;
+  callGeminiGenerateContentCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'openaiChatCompletions';
@@ -116,6 +119,8 @@ const makeCandidate = (overrides: {
     callOpenAIChatCompletions: overrides.callOpenAIChatCompletions,
     callAnthropicMessages: overrides.callAnthropicMessages,
     callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
+    callGeminiGenerateContent: overrides.callGeminiGenerateContent,
+    callGeminiGenerateContentCountTokens: overrides.callGeminiGenerateContentCountTokens,
   });
   return {
     provider: {
@@ -391,4 +396,106 @@ test('POST /v1beta/models/:model:generateContent renders the Gemini-generateCont
   assertEquals(body.error.code, 400);
   assertEquals(body.error.status, 'INVALID_ARGUMENT');
   assert(body.error.message.includes('does not support'));
+});
+
+const makeNativeGeminiEvents = (): readonly GeminiGenerateContentStreamEvent[] => [
+  { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'Hello' }] } }] },
+  {
+    candidates: [{ index: 0, content: { role: 'model', parts: [{ text: ' world' }] }, finishReason: 'STOP' }],
+    usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5 },
+    modelVersion: 'gemini-3-flash',
+  },
+];
+
+test('a native Gemini upstream is reached without translation and streams its own frames', async () => {
+  installRepo();
+  const callGeminiGenerateContent = vi.fn(async (): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeNativeGeminiEvents()), modelKey: 'gemini-3-flash', headers: new Headers({ 'x-goog-request-id': 'r1' }),
+  }));
+  queueCandidates([makeCandidate({ endpoints: { geminiGenerateContent: {} }, callGeminiGenerateContent })]);
+
+  const response = await makeApp().request('/v1beta/models/test-model:streamGenerateContent?alt=sse', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] }),
+  });
+
+  assertEquals(response.status, 200);
+  assertEquals(response.headers.get('content-type')?.split(';')[0], 'text/event-stream');
+  assertEquals(response.headers.get('x-goog-request-id'), 'r1');
+  const text = await response.text();
+  // Each upstream chunk is one `data:` event and the wire has no [DONE].
+  assertEquals(text.includes(`data: ${JSON.stringify(makeNativeGeminiEvents()[0])}`), true);
+  assertEquals(text.includes('"finishReason":"STOP"'), true);
+  assertEquals(text.includes('[DONE]'), false);
+  assertEquals(callGeminiGenerateContent.mock.calls.length, 1);
+});
+
+test('a non-streaming client collects the native Gemini stream into one response', async () => {
+  installRepo();
+  const callGeminiGenerateContent = vi.fn(async (): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeNativeGeminiEvents()), modelKey: 'gemini-3-flash', headers: new Headers(),
+  }));
+  queueCandidates([makeCandidate({ endpoints: { geminiGenerateContent: {} }, callGeminiGenerateContent })]);
+
+  const response = await makeApp().request('/v1beta/models/test-model:generateContent', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] }),
+  });
+
+  assertEquals(response.status, 200);
+  const body = await response.json() as { candidates: { content: { parts: { text: string; thoughtSignature?: string }[] }; finishReason: string }[]; usageMetadata: { totalTokenCount: number } };
+  // Both chunks continue one text element, so the affinity egress folds them
+  // into a single part and stamps it with the wrapped carrier; the response is
+  // collected from the same frames a streaming client would see.
+  // Both chunks continue one text element, so reassembly joins them; the
+  // affinity egress runs on this native turn as on any other and stamps the
+  // closed element with the wrapped carrier.
+  // The affinity egress runs on this native turn as on any other: it keeps the
+  // two chunks as separate parts (only unsigned pure-text parts merge) and
+  // stamps the closed element with the wrapped carrier.
+  assertEquals(body.candidates[0].content.parts.map(part => part.text), ['Hello', ' world']);
+  assert(body.candidates[0].content.parts[1].thoughtSignature !== undefined);
+  assertEquals(body.candidates[0].finishReason, 'STOP');
+  assertEquals(body.usageMetadata.totalTokenCount, 5);
+});
+
+test('countTokens on a native upstream forwards the whole SDK generateContentRequest without translation-time stripping', async () => {
+  installRepo();
+  let observed: unknown;
+  const callGeminiGenerateContentCountTokens = vi.fn(async (_model, body): Promise<ProviderCallResult> => {
+    observed = body;
+    return {
+      response: Response.json({ totalTokens: 9 }),
+      modelKey: 'gemini-3-flash',
+    };
+  });
+  queueCandidates([makeCandidate({
+    endpoints: { geminiGenerateContent: {} },
+    callGeminiGenerateContentCountTokens,
+  })]);
+
+  const response = await makeApp().request('/v1beta/models/test-model:countTokens', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      generateContentRequest: {
+        contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+        systemInstruction: { parts: [{ text: 'be brief' }] },
+        safetySettings: [{ category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }],
+      },
+    }),
+  });
+
+  assertEquals(response.status, 200);
+  assertEquals(await response.json(), { totalTokens: 9 });
+  // The provider re-wraps this payload in the envelope Google requires; what
+  // reaches it keeps every generate field, including those a translated count
+  // would strip.
+  assertEquals(observed, {
+    contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+    systemInstruction: { parts: [{ text: 'be brief' }] },
+    safetySettings: [{ category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }],
+  });
 });

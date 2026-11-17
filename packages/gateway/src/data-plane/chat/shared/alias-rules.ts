@@ -9,7 +9,8 @@
 // each source IR.
 
 import type { AnthropicMessagesPayload, AnthropicMessagesThinkingDisplay } from '@floway-dev/protocols/anthropic-messages';
-import { isFastServiceTier, type AliasRules } from '@floway-dev/protocols/common';
+import { FAST_SERVICE_TIER, isFastServiceTier, type AliasRules } from '@floway-dev/protocols/common';
+import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 
@@ -82,6 +83,55 @@ export const applyRulesToUpstreamAnthropicMessages = (body: AnthropicMessagesPay
       body.service_tier = rules.serviceTier;
       delete body.speed;
     }
+  }
+};
+
+// Gemini names its reasoning levels on `thinkingConfig.thinkingLevel` in the
+// uppercase spelling its wire uses, and the inbound translator reads the same
+// casing. `none` has no level spelling — Gemini disables thinking with a zero
+// budget, which that translator reads back as the same preset. An
+// operator-typed preset outside this list travels verbatim, since the upstream
+// owns the open string.
+// https://ai.google.dev/api/generate-content#ThinkingConfig
+const GEMINI_GENERATE_CONTENT_THINKING_LEVELS = new Map<string, string>([
+  ['minimal', 'MINIMAL'],
+  ['low', 'LOW'],
+  ['medium', 'MEDIUM'],
+  ['high', 'HIGH'],
+  ['xhigh', 'XHIGH'],
+]);
+
+export const applyRulesToUpstreamGeminiGenerateContent = (body: GeminiGenerateContentPayload, rules: AliasRules): void => {
+  if (hasReasoning(rules)) {
+    const { effort, budget_tokens } = rules.reasoning;
+    const thinkingConfig: NonNullable<NonNullable<GeminiGenerateContentPayload['generationConfig']>['thinkingConfig']> = {
+      ...body.generationConfig?.thinkingConfig,
+    };
+    // A level and a budget cannot be stated together, so each one replaces the
+    // other rather than joining it.
+    if (effort !== undefined) {
+      delete thinkingConfig.thinkingBudget;
+      if (effort.toLowerCase() === 'none') {
+        delete thinkingConfig.thinkingLevel;
+        thinkingConfig.thinkingBudget = 0;
+      } else {
+        thinkingConfig.thinkingLevel = GEMINI_GENERATE_CONTENT_THINKING_LEVELS.get(effort.toLowerCase()) ?? effort;
+      }
+    }
+    if (budget_tokens !== undefined) {
+      delete thinkingConfig.thinkingLevel;
+      thinkingConfig.thinkingBudget = budget_tokens;
+    }
+    // `adaptive` and `summary` have no native Gemini generateContent slot;
+    // thought presence is controlled by `includeThoughts` on the client side.
+    body.generationConfig = { ...body.generationConfig, thinkingConfig };
+  }
+  // `verbosity` has no native Gemini generateContent slot; drop silently.
+  if (rules.serviceTier !== undefined) {
+    // Gemini's ServiceTier enum knows `priority` but rejects our `fast` alias
+    // for the same lane with a 400, so the accelerated lane takes its spelling.
+    // https://ai.google.dev/api/generate-content#ServiceTier
+    body.serviceTier = isFastServiceTier(rules.serviceTier) ? FAST_SERVICE_TIER : rules.serviceTier;
   }
 };
 

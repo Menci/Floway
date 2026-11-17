@@ -3,6 +3,25 @@ import { describe, expect, it } from 'vitest';
 import { CHAT_ENDPOINT_KEYS, PATH_OVERRIDE_OPTIONS, endpointOptionsFor } from '../../../src/components/upstream-editor/endpoints';
 
 describe('custom upstream endpoint editor', () => {
+  it('offers Gemini GenerateContent as a chat endpoint', () => {
+    expect(CHAT_ENDPOINT_KEYS).toContain('geminiGenerateContent');
+    expect(endpointOptionsFor(CHAT_ENDPOINT_KEYS)).toContainEqual({
+      key: 'geminiGenerateContent',
+      label: 'Gemini GenerateContent',
+    });
+  });
+
+  it('overrides the Gemini model root that generation paths hang off', () => {
+    // The row moves `{root}/{model}:generateContent` and `:countTokens`. The
+    // catalog listing is a separate field, so the label names the root rather
+    // than one of the actions that use it.
+    expect(PATH_OVERRIDE_OPTIONS).toContainEqual({
+      path: '/v1beta/models',
+      label: 'Gemini Models',
+      defaultPath: '/v1beta/models',
+    });
+  });
+
   it('names chat endpoints after the protocol', () => {
     expect(endpointOptionsFor(CHAT_ENDPOINT_KEYS)).toContainEqual({
       key: 'openaiChatCompletions',

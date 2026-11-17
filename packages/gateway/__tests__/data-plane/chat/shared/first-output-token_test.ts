@@ -334,3 +334,28 @@ describe('audited timing signal representations', () => {
     });
   });
 });
+
+describe('firstOutputTokenSignal — Gemini generateContent', () => {
+  it('starts timing at the first content-bearing part', () => {
+    expect(firstOutputTokenSignal(eventFrame({
+      candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'Hello' }] } }],
+    }), 'geminiGenerateContent')).toEqual({ type: 'decode' });
+  });
+
+  it('ignores signature-only parts and pure envelopes', () => {
+    expect(firstOutputTokenSignal(eventFrame({
+      candidates: [{ index: 0, content: { role: 'model', parts: [{ thoughtSignature: 'sig' }] } }],
+    }), 'geminiGenerateContent')).toBeNull();
+    expect(firstOutputTokenSignal(eventFrame({ usageMetadata: { promptTokenCount: 3 } }), 'geminiGenerateContent')).toBeNull();
+    expect(firstOutputTokenSignal(eventFrame({ candidates: [] }), 'geminiGenerateContent')).toBeNull();
+  });
+
+  it('treats a thought summary as model output and a function call name as generated', () => {
+    expect(firstOutputTokenSignal(eventFrame({
+      candidates: [{ index: 0, content: { role: 'model', parts: [{ thought: true, text: 'pondering' }] } }],
+    }), 'geminiGenerateContent')).toEqual({ type: 'decode' });
+    expect(firstOutputTokenSignal(eventFrame({
+      candidates: [{ index: 0, content: { role: 'model', parts: [{ functionCall: { name: 'lookup' } }] } }],
+    }), 'geminiGenerateContent')).toEqual({ type: 'decode' });
+  });
+});

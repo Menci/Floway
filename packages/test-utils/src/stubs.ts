@@ -85,6 +85,8 @@ export const stubProvider = (overrides: Partial<ProviderInstance> = {}): Provide
   callOpenAIResponses: overrides.callOpenAIResponses ?? (() => Promise.reject(new Error('stubProvider.callOpenAIResponses was called'))),
   callAnthropicMessages: overrides.callAnthropicMessages ?? (() => Promise.reject(new Error('stubProvider.callAnthropicMessages was called'))),
   callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens ?? (() => Promise.reject(new Error('stubProvider.callAnthropicMessagesCountTokens was called'))),
+  callGeminiGenerateContent: overrides.callGeminiGenerateContent ?? (() => Promise.reject(new Error('stubProvider.callGeminiGenerateContent was called'))),
+  callGeminiGenerateContentCountTokens: overrides.callGeminiGenerateContentCountTokens ?? (() => Promise.reject(new Error('stubProvider.callGeminiGenerateContentCountTokens was called'))),
   callOpenAIEmbeddings: overrides.callOpenAIEmbeddings ?? (() => Promise.reject(new Error('stubProvider.callOpenAIEmbeddings was called'))),
   callOpenAIImagesGenerations: overrides.callOpenAIImagesGenerations ?? (() => Promise.reject(new Error('stubProvider.callOpenAIImagesGenerations was called'))),
   callOpenAIImagesEdits: overrides.callOpenAIImagesEdits ?? (() => Promise.reject(new Error('stubProvider.callOpenAIImagesEdits was called'))),

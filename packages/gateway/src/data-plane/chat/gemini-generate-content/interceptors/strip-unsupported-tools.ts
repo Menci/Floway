@@ -1,10 +1,10 @@
-import type { GeminiGenerateContentInterceptor } from './types.ts';
+import type { GeminiGenerateContentShapeCleanup } from './types.ts';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentToolGroup } from '@floway-dev/protocols/gemini-generate-content';
 
 /**
- * Only function declarations are currently translatable from Gemini generateContent tool
- * groups. Strip the rest after target planning so target emitters never see
- * unsupported tool capabilities.
+ * Translated targets can only carry function declarations from Gemini's tool
+ * groups, so strip the rest after target planning and keep those emitters from
+ * seeing unsupported capabilities. A native Gemini upstream keeps every group.
  */
 const stripToolCapabilities = (tool: GeminiGenerateContentToolGroup): void => {
   delete tool.googleSearch;
@@ -32,7 +32,7 @@ export const stripUnsupportedToolsFromPayload = (payload: GeminiGenerateContentP
   }
 };
 
-export const stripUnsupportedTools: GeminiGenerateContentInterceptor = (ctx, _gatewayCtx, run) => {
-  stripUnsupportedToolsFromPayload(ctx.payload);
+export const stripUnsupportedTools: GeminiGenerateContentShapeCleanup = (ctx, _gatewayCtx, run) => {
+  if (ctx.targetApi !== 'geminiGenerateContent') stripUnsupportedToolsFromPayload(ctx.payload);
   return run();
 };
