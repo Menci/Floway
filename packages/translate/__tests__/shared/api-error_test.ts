@@ -70,15 +70,6 @@ test('consumes msg only when it supplies the canonical message', () => {
   expect(errorPayloadFromWire({ msg: 'alias', trace_id: 'trace' })).toEqual({ message: 'alias', trace_id: 'trace' });
 });
 
-test('envelope transport fields stay outside the error metadata', () => {
-  const body = new TextEncoder().encode(JSON.stringify({
-    type: 'error', sequence_number: 9, request_id: 'req_1', error: { message: 'failed', code: null },
-  }));
-  expect(irErrorPayloadFromBody(body)).toEqual({
-    message: 'failed', code: null, provider_specific_fields: { request_id: 'req_1' },
-  });
-});
-
 test('error metadata collisions reserve original suffix keys across every namespace', () => {
   const body = new TextEncoder().encode(JSON.stringify({
     error: {

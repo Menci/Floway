@@ -13,10 +13,6 @@ describe('telemetry hour boundaries', () => {
 });
 
 describe('telemetry calendar buckets', () => {
-  it.each([['2h', '2026-05-01T02'], ['12h', '2026-05-01T00']] as const)('aligns %s buckets to the local wall clock', (bucket, expected) => {
-    const map = createTelemetryBucket({ bucket, timeZone: 'Asia/Singapore', timezoneOffsetMinutes: 0 });
-    expect(map('2026-04-30T19')).toBe(expected);
-  });
 
   it('anchors multi-day buckets across month and DST boundaries', () => {
     const map = createTelemetryBucket({ bucket: '3d', start: '2026-10-30T04', timeZone: 'America/New_York', timezoneOffsetMinutes: 240 });

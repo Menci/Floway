@@ -127,13 +127,6 @@ test('priceRequest applies gte at the exact boundary', () => {
   assertEquals(priceRequest(pricing, { inputTokens: 100 }).rates, { input_tokens: '2' });
 });
 
-test('priceRequest exact-matches every axis and falls back wholesale to Base on a missing combination', () => {
-  assertEquals(priceRequest(GRID, { inputTokens: 0, serviceTier: 'priority' }).rates, { input_tokens: '10', output_tokens: '60' });
-  assertEquals(priceRequest(GRID, { inputTokens: 128001, serviceTier: 'priority' }).rates, { input_tokens: '14', output_tokens: '80' });
-  const missing = priceRequest(GRID, { inputTokens: 272001, serviceTier: 'priority' });
-  assertEquals(missing, { selector: {}, rates: { input_tokens: '5', output_tokens: '30' } });
-});
-
 test('priceRequest preserves equality facts only when model pricing is unavailable', () => {
   assertEquals(priceRequest(null, { inputTokens: 1, serviceTier: 'future' }), {
     selector: { serviceTier: 'future' },

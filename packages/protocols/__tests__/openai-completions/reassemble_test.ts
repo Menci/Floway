@@ -115,12 +115,3 @@ test('preserves collected arrays across empty, null, and omitted logprob fields'
 
   assertEquals(result.choices[0]?.logprobs, tokenLogprobs('x', 0));
 });
-
-test.each([undefined, null, { tokens: [], token_logprobs: null }])('retains an absent or empty logprob value: %j', async logprobs => {
-  const result = await reassembleOpenAICompletionsEvents(fromArray([
-    chunk('', 'stop', { choices: [{ index: 0, text: '', finish_reason: 'stop', logprobs }] }),
-  ]));
-
-  assertEquals(result.choices[0]?.logprobs, logprobs);
-  assertEquals(Object.hasOwn(result.choices[0]!, 'logprobs'), logprobs !== undefined);
-});

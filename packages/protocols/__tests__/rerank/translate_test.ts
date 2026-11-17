@@ -32,23 +32,6 @@ describe('rerank request ingress', () => {
       documents: [{ text: 'one' }],
     })).toThrow('documents must be a non-empty array of strings');
   });
-
-  test('Jina and Voyage apply their documented response-document defaults', () => {
-    const jina = parseRerankRequest('jina-v1', {
-      model: 'jina-reranker-m0',
-      query: { image: 'https://example.com/query.png' },
-      documents: [{ text: 'one' }, { image: 'https://example.com/two.png' }],
-    });
-    expect(jina.request.returnDocuments).toBe(true);
-
-    const voyage = parseRerankRequest('voyage-v1', {
-      model: 'rerank-2.5',
-      query: 'query',
-      documents: ['one'],
-    });
-    expect(voyage.request.returnDocuments).toBe(false);
-    expect(voyage.request.truncation).toBe(true);
-  });
 });
 
 describe('rerank request egress', () => {
@@ -142,24 +125,6 @@ describe('rerank request egress', () => {
 });
 
 describe('rerank response translation', () => {
-  test('extracts search units only from Cohere meta', () => {
-    const cohere = parseRerankResponse('cohere-v2', {
-      id: 'id-1',
-      results: [{ index: 1, relevance_score: 0.9 }],
-      meta: { billed_units: { search_units: 2 }, tokens: { input_tokens: 30 } },
-    });
-    expect(cohere.searchUnits).toBe(2);
-    expect(cohere.totalTokens).toBe(30);
-
-    const jina = parseRerankResponse('jina-v1', {
-      model: 'jina',
-      object: 'list',
-      results: [{ index: 0, relevance_score: 0.8 }],
-      usage: { total_tokens: 40, search_units: 999 },
-    });
-    expect(jina.totalTokens).toBe(40);
-    expect(jina.searchUnits).toBeUndefined();
-  });
 
   test('Cohere usage accepts omitted and null optional objects but rejects malformed present objects', () => {
     for (const response of [

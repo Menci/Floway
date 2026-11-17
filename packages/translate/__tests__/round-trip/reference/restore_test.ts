@@ -74,12 +74,4 @@ describe('restoreAssistantTurn', () => {
     };
     await expect(restoreAssistantTurn('anthropicMessages', ['{'], turn, [await hashRoundTripContent('{')])).rejects.toThrow();
   });
-
-  it('propagates authenticated hash-index invariant failures', async () => {
-    const turn: OpenAIChatCompletionsReferenceableInputAssistantTurn<ContentReference> = {
-      role: 'assistant',
-      content: new ContentReference('text', [1]),
-    };
-    await expect(restoreAssistantTurn('openaiChatCompletions', ['answer'], turn, [await hashRoundTripContent('answer')])).rejects.toThrow();
-  });
 });

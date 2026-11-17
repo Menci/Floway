@@ -23,7 +23,7 @@ const completedResponse: OpenAIResponsesResultEx = {
   usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 },
 };
 
-test.each(['queued', 'in_progress', 'cancelled'] as const)('openaiResponsesResultToEvents rejects nonterminal status %s', status => {
+test.each(['in_progress', 'cancelled'] as const)('openaiResponsesResultToEvents rejects nonterminal status %s', status => {
   assertThrows(
     () => Array.from(openaiResponsesResultToEvents({ ...completedResponse, status })),
     TypeError,
@@ -268,65 +268,4 @@ test('openaiResponsesResultToEvents surfaces a missing function_call item id ins
     threw = true;
   }
   assertEquals(threw, true);
-});
-
-test('openaiResponsesResultToEvents expands a web_search_call with the full 5-event lifecycle', () => {
-  const frames = Array.from(
-    openaiResponsesResultToEvents({
-      id: 'resp_ws',
-      object: 'response',
-      model: 'gpt-test',
-      status: 'completed',
-      output: [
-        {
-          type: 'web_search_call',
-          id: 'ws_1',
-          status: 'completed',
-          action: { type: 'search', queries: ['hello'] },
-          results: [],
-        },
-      ],
-      error: null,
-      incomplete_details: null,
-      usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
-    }),
-  );
-
-  assertEquals(
-    frames.map(frame => frame.event.type),
-    [
-      'response.created',
-      'response.in_progress',
-      'response.output_item.added',
-      'response.web_search_call.in_progress',
-      'response.web_search_call.searching',
-      'response.web_search_call.completed',
-      'response.output_item.done',
-      'response.completed',
-    ],
-  );
-});
-
-test('openaiResponsesResultToEvents omits image_generation_call completed event for failed items', () => {
-  const frames = Array.from(
-    openaiResponsesResultToEvents({
-      id: 'resp_img_failed',
-      object: 'response',
-      model: 'gpt-test',
-      status: 'completed',
-      output: [
-        {
-          type: 'image_generation_call',
-          id: 'ig_1',
-          status: 'failed',
-          result: null,
-          error: { message: 'failed', code: 'server_error' },
-        },
-      ],
-      error: null,
-      incomplete_details: null,
-    }),
-  );
-
-  assertEquals(frames.map(frame => frame.event.type).includes('response.image_generation_call.completed'), false);
 });

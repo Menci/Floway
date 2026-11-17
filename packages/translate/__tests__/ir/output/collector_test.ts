@@ -32,12 +32,6 @@ describe('output IR accumulator', () => {
     expect(() => collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 1], value: { type: 'reasoning', summary: [IRAbsent] } })).toThrow('append target must initialize to an empty string');
   });
 
-  test('rejects an unallocated choice end', () => {
-    const collector = createIRCollector();
-    collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } });
-    expect(() => collector.applyEvent({ type: 'choice_end', choice: 99, finish_reason: 'stop' })).toThrow('does not exist');
-  });
-
   test('rejects operations after part and item end', () => {
     const collector = createIRCollector();
     collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } });

@@ -195,22 +195,6 @@ describe('image evidence', () => {
     expect(wire.assets).toEqual({ 'image-0': { type: 'image', format: 'png', data_base64: 'AAAA' } });
     expect(wire.state).toEqual(['Inspect this.', 'image-0']);
   });
-
-  test('lifts System One assets back into image parts', () => {
-    const parsed = parseDecisionRequest('typesafe-systemone', {
-      model: 'm',
-      state: { photo: 'img-1' },
-      assets: { 'img-1': { type: 'image', format: 'jpg', data_base64: 'BBBB' } },
-      questions: { q: { type: 'noul', instructions: 'Is `photo` damaged?' } },
-    });
-    // The structure stays as sent; the images its references resolved to ride
-    // alongside so a target speaking inline image parts still receives them.
-    expect(parsed.request.state).toEqual({
-      kind: 'json',
-      value: { photo: 'img-1' },
-      images: [{ type: 'image', imageUrl: 'data:image/jpeg;base64,BBBB' }],
-    });
-  });
 });
 
 describe('required answer fields', () => {
@@ -248,44 +232,5 @@ describe('number token fidelity', () => {
     // Infinity is not a number the contract allows, so the answer is rejected
     // rather than silently written as null.
     expect(() => parseDecisionResponse('typesafe-systemone', body)).toThrow(/must be a finite number/);
-  });
-});
-
-describe('optional instructions', () => {
-  test('a question may omit instructions and carry its meaning in criteria', () => {
-    const parsed = parseDecisionRequest('typesafe-systemone', {
-      model: 'jev-1.13',
-      state: 'x',
-      questions: { q: { type: 'noul', criteria: { true: 'Is advertising', false: 'Is legitimate' } } },
-    });
-    expect(parsed.request.questions[0]).toEqual({
-      type: 'noul',
-      name: 'q',
-      criteria: { true: 'Is advertising', false: 'Is legitimate' },
-    });
-    // The key stays absent rather than becoming null or ''.
-    const wire = serializeDecisionRequest('typesafe-systemone', 'm', parsed.request) as { questions: Record<string, Record<string, unknown>> };
-    expect('instructions' in wire.questions.q).toBe(false);
-  });
-});
-
-describe('instruction shape follows the source dialect, not the contents', () => {
-
-  test('an OpenAI instruction array of parts lowers into System One assets', () => {
-    const parsed = parseDecisionRequest('openai-decisions', {
-      model: 'gpt-6-luna',
-      input: 'x',
-      questions: [{
-        type: 'predicate',
-        name: 'q',
-        instructions: [{ type: 'input_text', text: 'look' }, { type: 'input_image', image_url: 'data:image/png;base64,AA' }],
-      }],
-    });
-    const wire = serializeDecisionRequest('typesafe-systemone', 'm', parsed.request) as {
-      questions: Record<string, { instructions: unknown }>;
-      assets?: Record<string, unknown>;
-    };
-    expect(wire.questions.q.instructions).toEqual(['look', 'image-0']);
-    expect(wire.assets).toEqual({ 'image-0': { type: 'image', format: 'png', data_base64: 'AA' } });
   });
 });

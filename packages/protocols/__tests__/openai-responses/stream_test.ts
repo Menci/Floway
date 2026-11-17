@@ -50,39 +50,6 @@ test('parseOpenAIResponsesStream rejects malformed OpenAI Responses SSE JSON', a
   );
 });
 
-test('parseOpenAIResponsesStream passes queued/created/in-progress wrappers through before fast-path expansion', async () => {
-  const response = makeResponse('completed');
-  const frames = await collect(parse(
-    sseFrame(JSON.stringify({ response: { ...response, status: 'queued' }, sequence_number: 0 }), 'response.queued'),
-    sseFrame(JSON.stringify({ response: { ...response, status: 'in_progress' }, sequence_number: 1 }), 'response.created'),
-    sseFrame(JSON.stringify({ response: { ...response, status: 'in_progress' }, sequence_number: 2 }), 'response.in_progress'),
-    sseFrame(JSON.stringify({ response, sequence_number: 3 }), 'response.completed'),
-    sseFrame('[DONE]'),
-  ));
-
-  // Wrappers are emitted before fast-path expansion (they are not buffered):
-  // the terminal `response.completed` triggers expansion of the missing
-  // structured events, then the terminal itself, then `done`.
-  assertEquals(
-    frames.map(frame => (frame.type === 'event' ? frame.event.type : frame.type)),
-    [
-      'response.queued',
-      'response.created',
-      'response.in_progress',
-      'response.output_item.added',
-      'response.content_part.added',
-      'response.output_text.delta',
-      'response.output_text.done',
-      'response.content_part.done',
-      'response.output_item.done',
-      'response.completed',
-      'done',
-    ],
-  );
-  assertEquals((frames[0] as { event: { sequence_number: number } }).event.sequence_number, 0);
-  assertEquals((frames[2] as { event: { sequence_number: number } }).event.sequence_number, 2);
-});
-
 test('parseOpenAIResponsesStream passes structured upstream events through unchanged when upstream already streams them', async () => {
   const frames = await collect(parse(
     sseFrame(

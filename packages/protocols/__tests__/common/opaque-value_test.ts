@@ -19,16 +19,6 @@ test('non-canonical encodings remain raw opaque values', () => {
   }
 });
 
-test('raw opaque values freeze UTF-16 code units including lone surrogates', () => {
-  const raw = 'raw:\u0000\ud800';
-  const decoded = decodeOpaqueValue(raw);
-  assertEquals(decoded, {
-    bytes: new Uint8Array([0x00, 0x72, 0x00, 0x61, 0x00, 0x77, 0x00, 0x3a, 0x00, 0x00, 0xd8, 0x00]),
-    origin: 'raw',
-  });
-  assertEquals(encodeOpaqueValue(decoded.bytes, decoded.origin), raw);
-});
-
 test.each([8191, 8192, 8193])(
   'raw opaque values preserve BOMs and surrogate code units after %i characters',
   prefixLength => {

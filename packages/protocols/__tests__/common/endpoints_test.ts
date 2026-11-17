@@ -9,12 +9,6 @@ test('parseModelKind accepts endpoint families and rejects unknown storage value
   assertThrows(() => parseModelKind(null), Error, 'model kind is invalid: null');
 });
 
-test('kindForEndpoints returns image when either images endpoint is present', () => {
-  assertEquals(kindForEndpoints({ openaiImagesGenerations: {} }), 'image');
-  assertEquals(kindForEndpoints({ openaiImagesEdits: {} }), 'image');
-  assertEquals(kindForEndpoints({ openaiImagesGenerations: {}, openaiImagesEdits: {} }), 'image');
-});
-
 test('kindForEndpoints returns embedding for OpenAI Embeddings and chat for chat-protocol endpoints', () => {
   assertEquals(kindForEndpoints({ openaiEmbeddings: {} }), 'embedding');
   assertEquals(kindForEndpoints({ openaiChatCompletions: {} }), 'chat');

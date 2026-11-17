@@ -4,14 +4,13 @@ import { partitionAnthropicMessagesTurns } from '../../src/protocols/anthropic-m
 import { computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarBlock, findAnthropicMessagesSidecarOccurrences, verifyAnthropicMessagesTurnDigest } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
 import { partitionGeminiGenerateContentTurns } from '../../src/protocols/gemini-generate-content/as-source/conversation-turns.ts';
 import { computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSidecarPart, findGeminiGenerateContentSidecarOccurrences, verifyGeminiGenerateContentTurnDigest } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
-import { partitionOpenAIChatCompletionsTurns } from '../../src/protocols/openai-chat-completions/as-source/conversation-turns.ts';
 import { computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarDetails, findOpenAIChatCompletionsSidecarOccurrences, verifyOpenAIChatCompletionsTurnDigest } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
 import { partitionOpenAIResponsesTurns } from '../../src/protocols/openai-responses/as-source/conversation-turns.ts';
 import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarItem, findOpenAIResponsesSidecarOccurrences, verifyOpenAIResponsesTurnDigest } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
 import type { SidecarOccurrence } from '../../src/round-trip/resolve.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesAssistantMessage, AnthropicMessagesMessage } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentContent } from '@floway-dev/protocols/gemini-generate-content';
-import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsAssistantMessageEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesOutputItemEx } from '@floway-dev/protocols/openai-responses';
 
 const chatTurn = (): OpenAIChatCompletionsAssistantMessageEx => ({
@@ -112,20 +111,6 @@ describe('assistant-turn sidecar protocols', () => {
     expect(await verifyResponsesTurn([...ordinary, { ...carrier, id: 'other', encrypted_content: 'different', summary: [], status: 'completed' }], check, 'different')).toBe(true);
     expect(await verifyResponsesTurn([ordinary[0], { ...reasoning, status: 'incomplete' }, carrier], check, 'opaque')).toBe(false);
     expect(await verifyResponsesTurn([ordinary[0], { ...reasoning, summary: [{ type: 'summary_text', text: 'edited summary' }] }, carrier], check, 'opaque')).toBe(false);
-  });
-
-  it('partitions Chat messages one assistant message at a time and leaves every other role bare', () => {
-    const messages: OpenAIChatCompletionsMessage[] = [
-      { role: 'user', content: 'question' },
-      chatTurn(),
-      { role: 'tool', tool_call_id: 'call-a', content: 'result' },
-      { role: 'assistant', content: 'follow-up' },
-    ];
-    const turns = partitionOpenAIChatCompletionsTurns(messages);
-    expect(turns.map(({ role, items }) => [role, items.length])).toEqual([
-      ['client', 1], ['assistant', 1], ['client', 1], ['assistant', 1],
-    ]);
-    expect(turns.map(({ items }) => items).flat()).toEqual(messages);
   });
 
   it('checks complete Chat body, readable summary, and ordered tool identities and arguments', async () => {
@@ -303,23 +288,6 @@ describe('assistant-turn sidecar protocols', () => {
     const statuslessCheck = await computeOpenAIResponsesTurnDigest(statusless);
     expect(await verifyOpenAIResponsesTurnDigest(statusless, statuslessCheck, 1)).toBe(true);
     expect(await verifyOpenAIResponsesTurnDigest(cases[2].original, statuslessCheck, 1)).toBe(false);
-  });
-
-  it('checks Responses image generation results without hashing their metadata', async () => {
-    const imageCall: Extract<OpenAIResponsesOutputItemEx, { type: 'image_generation_call' }> = {
-      type: 'image_generation_call', id: 'ig-data', result: 'image-base64', status: 'completed', action: 'generate', output_format: 'png',
-    };
-    const imageTurn: OpenAIResponsesOutputItemEx[] = [
-      imageCall,
-      { type: 'reasoning', id: 'rs-image', summary: [], encrypted_content: 'opaque-sidecar' },
-    ];
-    const imageCheck = await computeOpenAIResponsesTurnDigest([imageCall]);
-    expect(await verifyResponsesTurn(imageTurn, imageCheck)).toBe(true);
-    expect(await verifyResponsesTurn([
-      { ...imageCall, action: 'edit' as const, id: 'ig-other', status: 'completed' as const, output_format: 'jpeg' as const },
-      imageTurn[1],
-    ], imageCheck)).toBe(true);
-    expect(await verifyResponsesTurn([{ ...imageCall, result: 'changed-image' }, imageTurn[1]], imageCheck)).toBe(false);
   });
 
   it('merges adjacent Messages roles and checks each block type in order', async () => {

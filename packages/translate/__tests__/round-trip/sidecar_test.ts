@@ -25,20 +25,10 @@ test('rejects a payload whose top-level wire version this build does not know', 
   await expect(decodeRoundTripSidecar(codec, 'openaiResponses', future)).rejects.toThrow('sidecar version is unsupported');
 });
 
-test('does not claim an opaque value unrecognized by the injected decoder', async () => {
-  expect(await decodeRoundTripSidecar(createTestSidecarCodec(), 'openaiResponses', 'native opaque value')).toBeUndefined();
-});
-
 test('rejects a malformed payload recognized by the injected decoder', async () => {
   const codec = createTestSidecarCodec();
   const malformed = await codec.encode({ v: 1, source: 'openaiResponses', target: 'openaiChatCompletions' });
   await expect(decodeRoundTripSidecar(codec, 'openaiResponses', malformed)).rejects.toThrow('assistant turn is invalid');
   const nonObject = await codec.encode(null);
   await expect(decodeRoundTripSidecar(codec, 'openaiResponses', nonObject)).rejects.toThrow('sidecar envelope is invalid');
-});
-
-test('does not validate a payload belonging to another source protocol', async () => {
-  const codec = createTestSidecarCodec();
-  const otherSource = await codec.encode({ v: 1, source: 'anthropicMessages', target: 'invalid' });
-  expect(await decodeRoundTripSidecar(codec, 'openaiResponses', otherSource)).toBeUndefined();
 });

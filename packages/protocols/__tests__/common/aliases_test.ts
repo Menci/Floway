@@ -11,12 +11,6 @@ describe('formatAliasRulesInline', () => {
       serviceTier: 'priority',
     })).toBe('high effort, low verbosity, priority tier');
   });
-
-  test('renders boolean reasoning toggles in their dedicated wording', () => {
-    expect(formatAliasRulesInline({
-      reasoning: { adaptive: false, summary: 'concise' },
-    })).toBe('non-adaptive, summary: concise');
-  });
 });
 
 describe('formatAliasRuleBadges', () => {

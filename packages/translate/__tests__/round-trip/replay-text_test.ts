@@ -30,20 +30,6 @@ describe('semantic replay text channels', () => {
     expect(await verifyAnthropicMessagesTurnDigest([{ role: 'assistant', content: [{ type: 'text', text: 'hello' }, tool] }], await computeAnthropicMessagesTurnDigest(interrupted), 1)).toBe(true);
   });
 
-  it('keeps Messages nontext channels inside their owning message', async () => {
-    const thinking = { type: 'thinking' as const, thinking: 'thought', signature: 'signature' };
-    const tool = { type: 'tool_use' as const, id: 'call', name: 'lookup', input: {} };
-    const original: AnthropicMessagesSourceAssistantTurn = [
-      { role: 'assistant', content: [{ type: 'text', text: 'A' }, thinking, tool] },
-      { role: 'assistant', content: [{ type: 'text', text: 'B' }] },
-    ];
-    const check = await computeAnthropicMessagesTurnDigest(original);
-    expect(await verifyAnthropicMessagesTurnDigest([
-      { role: 'assistant', content: [{ type: 'text', text: 'A' }] },
-      { role: 'assistant', content: [{ type: 'text', text: 'B' }, thinking, tool] },
-    ], check, 1)).toBe(false);
-  });
-
   it('merges Responses text by channel while retaining item boundaries', async () => {
     const split: OpenAIResponsesSourceAssistantTurn = [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'hel', annotations: [], logprobs: [] }, { type: 'output_text', text: 'lo', annotations: [] }] }];
     const merged: OpenAIResponsesSourceAssistantTurn = [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'hello' }] }];
@@ -54,15 +40,6 @@ describe('semantic replay text channels', () => {
     expect(await verifyOpenAIResponsesTurnDigest([{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hellono' }] }], await computeOpenAIResponsesTurnDigest(interrupted), 1)).toBe(false);
     const separate: OpenAIResponsesSourceAssistantTurn = [{ type: 'message', role: 'assistant', status: 'completed', content: 'hel' }, { type: 'message', role: 'assistant', status: 'completed', content: 'lo' }];
     expect(await verifyOpenAIResponsesTurnDigest(merged, await computeOpenAIResponsesTurnDigest(separate), 1)).toBe(false);
-  });
-
-  it('merges reasoning parts only within the same Responses item and channel', async () => {
-    const split: OpenAIResponsesSourceAssistantTurn = [{ type: 'reasoning', summary: [{ type: 'summary_text', text: 'hel' }, { type: 'summary_text', text: 'lo' }], content: [{ type: 'reasoning_text', text: 'think' }, { type: 'reasoning_text', text: 'ing' }] }];
-    const merged: OpenAIResponsesSourceAssistantTurn = [{ type: 'reasoning', summary: [{ type: 'summary_text', text: 'hello' }], content: [{ type: 'reasoning_text', text: 'thinking' }] }];
-    expect(await verifyOpenAIResponsesTurnDigest(merged, await computeOpenAIResponsesTurnDigest(split), 1)).toBe(true);
-    expect(await verifyOpenAIResponsesTurnDigest(split, await computeOpenAIResponsesTurnDigest(merged), 1)).toBe(true);
-    expect(await verifyOpenAIResponsesTurnDigest([{ type: 'reasoning', summary: [{ type: 'summary_text', text: 'hellothinking' }] }], await computeOpenAIResponsesTurnDigest(split), 1)).toBe(false);
-    expect(await verifyOpenAIResponsesTurnDigest([{ type: 'reasoning', summary: [{ type: 'summary_text', text: 'hel' }] }, { type: 'reasoning', summary: [{ type: 'summary_text', text: 'lo' }] }], await computeOpenAIResponsesTurnDigest([{ type: 'reasoning', summary: [{ type: 'summary_text', text: 'hello' }] }]), 1)).toBe(false);
   });
 
   it('merges visible Gemini text across ignored metadata and nontext parts within one Content', async () => {

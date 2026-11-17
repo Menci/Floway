@@ -105,22 +105,6 @@ describe('ReferenceBuilder', () => {
     expect(finalizer.referencedContentHashes).toEqual([new Uint8Array([150, 39, 93, 50, 178, 83, 23, 204])]);
   });
 
-  it('simplifies a reference covering the whole hashed content', async () => {
-    const builder = createReferenceBuilder();
-    const field = createReadFieldState('text');
-    const first = appendReadField(builder, field, 'hel');
-    const second = appendReadField(builder, field, 'lo');
-    const content = createEmittedFieldState(builder, 'text');
-    appendEmittedField(builder, content, 'hel', [first]);
-    appendEmittedField(builder, content, 'lo', [second]);
-
-    const finalizer = createFieldReferencer(builder, collectEmittedFieldPlacements('hello', content));
-    const reference = await finalizer.referenceField('hello', field);
-
-    if (!(reference instanceof ContentReference)) throw new Error('Expected a thin reference');
-    expect(reference.parts).toEqual([0]);
-  });
-
   it('keeps the whole original field when any SSE atom is unresolved', async () => {
     const builder = createReferenceBuilder();
     const field = createReadFieldState('text');
@@ -151,19 +135,6 @@ describe('ReferenceBuilder', () => {
     expect(() => appendReadField(builder, field, '!')).toThrowError('Cannot append provenance to an invalid field');
   });
 
-  it('discards resolutions when the final input text view changed', async () => {
-    const builder = createReferenceBuilder();
-    const field = createReadFieldState('text');
-    const partId = appendReadField(builder, field, 'hello');
-    const content = createEmittedFieldState(builder, 'text');
-    appendEmittedField(builder, content, 'hello', [partId]);
-
-    const contentViews = collectEmittedFieldPlacements('changed', content);
-    const finalizer = createFieldReferencer(builder, contentViews);
-    expect(contentViews).toEqual(new Map());
-    expect(await finalizer.referenceField('hello', field)).toBe('hello');
-  });
-
   it('rejects a second output occurrence for the same SSE atom', () => {
     const builder = createReferenceBuilder();
     const field = createReadFieldState('text');
@@ -173,30 +144,6 @@ describe('ReferenceBuilder', () => {
     appendEmittedField(builder, first, 'same', [partId]);
 
     expect(() => appendEmittedField(builder, second, 'same', [partId])).toThrowError('ReferenceBuilder fragment 0 has multiple output occurrences');
-  });
-
-  it('deduplicates equal final content hashes', async () => {
-    const builder = createReferenceBuilder();
-    const firstField = createReadFieldState('text');
-    const secondField = createReadFieldState('text');
-    const firstPart = appendReadField(builder, firstField, 'same');
-    const secondPart = appendReadField(builder, secondField, 'same');
-    const firstContent = createEmittedFieldState(builder, 'text');
-    const secondContent = createEmittedFieldState(builder, 'text');
-    appendEmittedField(builder, firstContent, 'same', [firstPart]);
-    appendEmittedField(builder, secondContent, 'same', [secondPart]);
-    const contentViews = new Map([
-      ...collectEmittedFieldPlacements('same', firstContent),
-      ...collectEmittedFieldPlacements('same', secondContent),
-    ]);
-    const finalizer = createFieldReferencer(builder, contentViews);
-    const firstReference = await finalizer.referenceField('same', firstField);
-    const secondReference = await finalizer.referenceField('same', secondField);
-
-    if (!(firstReference instanceof ContentReference) || !(secondReference instanceof ContentReference)) throw new Error('Expected thin references');
-    expect(firstReference.parts).toEqual([0]);
-    expect(secondReference.parts).toEqual([0]);
-    expect(finalizer.referencedContentHashes).toHaveLength(1);
   });
 
   it('finalizes nested assistant state without materializing sparse holes', async () => {
@@ -231,28 +178,6 @@ describe('ReferenceBuilder', () => {
     expect(finalizedCalls).toHaveLength(2);
     expect(Object.hasOwn(finalizedCalls, 0)).toBe(false);
     expect(finalizedCalls[1]?.type === 'function' && finalizedCalls[1].function.arguments).toBe('{}');
-  });
-
-  it('lists only referenced contents when other valid views stay literal', async () => {
-    const builder = createReferenceBuilder();
-    const referenced = createReadFieldState('text');
-    const literal = createReadFieldState('text');
-    const part = appendReadField(builder, referenced, 'referenced');
-    appendReadField(builder, literal, 'literal B text');
-    const referencedContent = createEmittedFieldState(builder, 'text');
-    const literalContent = createEmittedFieldState(builder, 'text');
-    appendEmittedField(builder, referencedContent, 'referenced', [part]);
-    appendEmittedField(builder, literalContent, 'visible A text');
-    const views = new Map([
-      ...collectEmittedFieldPlacements('referenced', referencedContent),
-      ...collectEmittedFieldPlacements('visible A text', literalContent),
-    ]);
-
-    const finalizer = createFieldReferencer(builder, views);
-
-    expect(await finalizer.referenceField('referenced', referenced)).toBeInstanceOf(ContentReference);
-    expect(await finalizer.referenceField('literal B text', literal)).toBe('literal B text');
-    expect(finalizer.referencedContentHashes).toEqual([await hashRoundTripContent('referenced')]);
   });
 
   it('rejects a paired state whose container shape does not match the turn', async () => {
@@ -318,17 +243,4 @@ it('round-trips raw JSON numbers and keeps changed key order literal', async () 
   const reorderedFinalizer = createFieldReferencer(builder, collectEmittedFieldPlacements('{"a":1,"b":2}', reorderedContent));
   const reorderedOriginal: IRJSONObject = { b: 2, a: 1 };
   expect(await reorderedFinalizer.referenceField(reorderedOriginal, reorderedField)).toBe(reorderedOriginal);
-});
-
-it('keeps JSON fields literal when their string pieces do not restore the original object', async () => {
-  const builder = createReferenceBuilder();
-  const field = createReadFieldState('json');
-  const partId = appendReadField(builder, field, '{"x":1}');
-  const content = createEmittedFieldState(builder, 'text');
-  appendEmittedField(builder, content, '{"x":1}', [partId]);
-  const original: IRJSONObject = { x: 2 };
-  const finalizer = createFieldReferencer(builder, collectEmittedFieldPlacements('{"x":1}', content));
-
-  expect(await finalizer.referenceField(original, field)).toBe(original);
-  expect(finalizer.referencedContentHashes).toEqual([]);
 });

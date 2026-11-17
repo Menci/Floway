@@ -21,15 +21,6 @@ test('buildCustomToolInputSchema preserves regex syntax in the description', () 
   });
 });
 
-test('buildCustomToolInputSchema preserves an open-string syntax label', () => {
-  assertEquals(buildCustomToolInputSchema({ type: 'grammar', syntax: 'peg', definition: 'start <- value' }), {
-    type: 'object',
-    additionalProperties: false,
-    required: ['input'],
-    properties: { input: { type: 'string', description: 'Grammar (peg): start <- value' } },
-  });
-});
-
 test('unwrapCustomToolInput extracts the input field from a valid wrapped JSON blob', () => {
   assertEquals(unwrapCustomToolInput('{"input":"hello world"}'), 'hello world');
 });

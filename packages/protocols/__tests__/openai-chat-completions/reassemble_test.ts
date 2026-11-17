@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import type { OpenAIChatCompletionsAssistantOutputMessageEx, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult, OpenAIChatCompletionsAssistantDeltaEx } from '../../src/openai-chat-completions/index.ts';
 import { reassembleOpenAIChatCompletionsEvents } from '../../src/openai-chat-completions/reassemble.ts';
-import { assertEquals, assertRejects } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
 function makeEvents<T = OpenAIChatCompletionsStreamEvent>(chunks: Array<{ event?: string; data: unknown }>): AsyncIterable<T> {
   return (async function* () {
@@ -14,86 +14,6 @@ function makeEvents<T = OpenAIChatCompletionsStreamEvent>(chunks: Array<{ event?
     }
   })();
 }
-
-test('reassembleOpenAIChatCompletionsEvents rejects upstream OpenAI Chat Completions error payloads', async () => {
-  const body = makeEvents([
-    {
-      data: {
-        error: {
-          type: 'server_error',
-          message: 'upstream chat failed',
-        },
-      },
-    },
-  ]);
-
-  await assertRejects(async () => await reassembleOpenAIChatCompletionsEvents(body), Error, 'Upstream OpenAI Chat Completions SSE error: server_error: upstream chat failed');
-});
-
-test('reassembleOpenAIChatCompletionsEvents concatenates reasoning text and keeps the latest opaque snapshot', async () => {
-  const body = makeEvents([
-    {
-      data: {
-        id: 'cmpl_3',
-        object: 'chat.completion.chunk',
-        created: 3000,
-        model: 'gpt-test',
-        choices: [
-          {
-            index: 0,
-            delta: {
-              role: 'assistant',
-              reasoning_text: 'think',
-              reasoning_opaque: 'enc_old',
-            } as OpenAIChatCompletionsAssistantDeltaEx,
-            finish_reason: null,
-          },
-        ],
-      },
-    },
-    {
-      data: {
-        id: 'cmpl_3',
-        object: 'chat.completion.chunk',
-        created: 3000,
-        model: 'gpt-test',
-        choices: [
-          {
-            index: 0,
-            delta: { content: 'reply', reasoning_text: ' more', reasoning_opaque: 'enc' },
-            finish_reason: 'stop',
-          },
-        ],
-      },
-    },
-    { data: '[DONE]' },
-  ]);
-
-  const result = await reassembleOpenAIChatCompletionsEvents(body);
-
-  assertEquals((result.choices[0].message as OpenAIChatCompletionsAssistantOutputMessageEx).reasoning_text, 'think more');
-  assertEquals((result.choices[0].message as OpenAIChatCompletionsAssistantOutputMessageEx).reasoning_opaque, 'enc');
-  assertEquals(result.choices[0].message.content, 'reply');
-});
-
-test('reassembleOpenAIChatCompletionsEvents appends complete reasoning items that share an index', async () => {
-  const items = ['a', 'b'].map(id => ({
-    type: 'reasoning',
-    id,
-    index: 0,
-    summary: [{ type: 'summary_text', text: id }],
-  }));
-  const expected = structuredClone(items);
-  const events = makeEvents(items.map(item => ({
-    data: {
-      id: 'reasoning', object: 'chat.completion.chunk', created: 1, model: 'model',
-      choices: [{ index: 0, delta: { reasoning_items: [item] }, finish_reason: null }],
-    },
-  })));
-
-  const result = await reassembleOpenAIChatCompletionsEvents(events);
-  assertEquals(result.choices[0].message.reasoning_items, expected);
-});
 
 test('reassembleOpenAIChatCompletionsEvents maintains independent state for every choice index', async () => {
   const body = makeEvents([

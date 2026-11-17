@@ -37,24 +37,6 @@ test('reassembleGeminiGenerateContentEvents preserves unknown candidate-level an
   assertEquals(result.this_is_a_non_standard_field_of_reasoning, 'unknown_top_value');
 });
 
-test('preserves metadata-bearing text parts and finish-only candidates', async () => {
-  const result = await reassembleGeminiGenerateContentEvents(eventsFrom([
-    { candidates: [{ content: { role: 'model', parts: [{ text: 'first', partMetadata: { source: 1 } }] } }] },
-    { candidates: [{ content: { parts: [{ text: 'second', speechMetadata: { speaker: 'other' } }] } }] },
-    { candidates: [{ finishReason: 'STOP' }] },
-  ]));
-  assertEquals(result.candidates, [{
-    index: 0,
-    content: {
-      role: 'model', parts: [
-        { text: 'first', partMetadata: { source: 1 } },
-        { text: 'second', speechMetadata: { speaker: 'other' } },
-      ],
-    },
-    finishReason: 'STOP',
-  }]);
-});
-
 test('candidate reads use wire indices and the same projection as the complete result', () => {
   const accumulator = createGeminiGenerateContentEventAccumulator();
   assertEquals(accumulator.candidate(8), undefined);

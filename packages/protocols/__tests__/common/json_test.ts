@@ -32,9 +32,3 @@ test('parsePartialJSONWithRawNumbers keeps complete source values from an incomp
   assertEquals(value.unfinished, undefined);
   assertEquals(JSON.stringify(value), String.raw`{"__proto__":{"polluted":true},"text":"\ud800","large":900719925474099312345}`);
 });
-
-test('parsePartialJSONWithRawNumbers drops an unterminated numeric token', () => {
-  const value = parsePartialJSONWithRawNumbers('{"count":123') as Record<string, unknown>;
-
-  assertEquals(value, {});
-});

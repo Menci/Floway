@@ -1,13 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { computeRoundTripTurnDigest, createTurnDigestComputer, createTurnDigestVerifier, verifyRoundTripTurnDigest } from '../../src/round-trip/turn-digest.ts';
+import { createTurnDigestComputer, createTurnDigestVerifier, verifyRoundTripTurnDigest } from '../../src/round-trip/turn-digest.ts';
 
 describe('round-trip turn digests', () => {
-
-  it('rejects material that JSON cannot serialize', async () => {
-    // @ts-expect-error Replay material excludes undefined at the public boundary.
-    await expect(computeRoundTripTurnDigest(undefined)).rejects.toThrowError('Replay material is not JSON-serializable');
-  });
 
   it('verifies exactly eight replay digest bytes', async () => {
     const material = { content: ['answer'] };

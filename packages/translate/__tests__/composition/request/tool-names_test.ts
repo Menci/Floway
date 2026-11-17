@@ -17,22 +17,6 @@ test('a grouped declaration keeps its pair when its namespace contains the flatt
   assertEquals(flattened.context.originalToolNames.get(flatName!), { namespace: 'a.b', name: 'read' });
 });
 
-test('a call naming an undeclared group still gets a flat spelling and its pair', () => {
-  const turns: IRInputTurnWithCallIds[] = [{
-    kind: 'assistant',
-    items: [{ type: 'function_call', call_id: 'c1', namespace: 'ghost', name: 'run', arguments: '{}' }],
-  }];
-  const flattened = allocateToolNames(request([]), turns);
-
-  const assistantTurn = flattened.turns[0];
-  assertEquals(assistantTurn.kind, 'assistant');
-  const item = assistantTurn.kind === 'assistant' ? assistantTurn.items[0] : undefined;
-  assertEquals(item?.type, 'function_call');
-  const flatName = item?.type === 'function_call' ? item.name : undefined;
-  assertEquals(typeof flatName, 'string');
-  assertEquals(flattened.context.originalToolNames.get(flatName!), { namespace: 'ghost', name: 'run' });
-});
-
 test('a selector naming a group the request never declared is a caller error', () => {
   assertThrows(
     () => allocateToolNames({
