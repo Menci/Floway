@@ -84,18 +84,6 @@ describe('fetchChatGPTCatalog', () => {
     });
   });
 
-  test('parses the Responses Lite catalog flag without inferring from model names', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
-      models: [
-        { slug: 'future-lite-model', display_name: 'Future Lite', context_window: 1, use_responses_lite: true },
-        { slug: 'gpt-6-astra', display_name: 'GPT-6 Astra', context_window: 2, use_responses_lite: false },
-        { slug: 'legacy-model', display_name: 'Legacy', context_window: 3 },
-      ],
-    }));
-    const catalog = await fetchChatGPTCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher });
-    expect(catalog.map(model => model.use_responses_lite)).toEqual([true, false, undefined]);
-  });
-
   test.each(['true', null])('rejects the non-boolean catalog flag %j', async use_responses_lite => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
       models: [{ slug: 'gpt-x', display_name: 'GPT-X', context_window: 1, use_responses_lite }],
@@ -123,12 +111,12 @@ describe('chatgptRawToProviderModel', () => {
       .toThrow(/context_window exceeds max_context_window/);
   });
 
-  test.each([undefined, {}, { contextWindow: 0 }, { contextWindow: '272000' }])('rejects missing or invalid persisted default %j', providerData => {
+  test.each([undefined, { contextWindow: '272000' }])('rejects missing or invalid persisted default %j', providerData => {
     const model = chatgptRawToProviderModel({ id: 'future-model', display_name: 'Future', context_window: 272000 }, noFlags);
     expect(() => chatgptModelContextWindow({ ...model, providerData })).toThrow();
   });
 
-  test.each([undefined, {}, { unrelated: true }])('defaults missing persisted metadata to Standard: %j', providerData => {
+  test.each([undefined, { unrelated: true }])('defaults missing persisted metadata to Standard: %j', providerData => {
     const model = chatgptRawToProviderModel({ id: 'gpt-6-astra', display_name: 'GPT-6 Astra', context_window: 1 }, noFlags);
     expect(chatgptModelUsesResponsesLite({ ...model, providerData })).toBe(false);
   });

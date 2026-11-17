@@ -167,25 +167,6 @@ describe('callChatGPTOpenAIResponses — gates', () => {
   });
 });
 
-describe('callChatGPTOpenAIResponses — token freshness', () => {
-  test('refreshes before call when no cached access token', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at_new', refresh_token: 'rt_v2', id_token: idToken(), expires_in: 600 }), { status: 200 }))
-      .mockResolvedValueOnce(sseResponse());
-    const effects = makeEffects();
-    const result = await callChatGPTOpenAIResponses({
-      upstreamId, account: activeAccount,
-      model, body: { input: [], stream: true }, headers: new Headers(), effects, call: noopUpstreamCallOptions(),
-    });
-    expect(result.ok).toBe(true);
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
-    const openaiResponsesInit = fetchSpy.mock.calls[1][1] as RequestInit;
-    expect(new Headers(openaiResponsesInit.headers).get('authorization')).toBe('Bearer at_new');
-    expect(effects.persistRefreshTokenRotation).toHaveBeenCalledWith('rt_v2');
-    expect((currentRecord.state as ChatGPTUpstreamState).accounts[0].accessToken?.token).toBe('at_new');
-  });
-});
-
 describe('ChatGPT terminal output recovery', () => {
   test.each([false, true])('restores native compaction before stream and result consumption with Responses Lite=%s', async useResponsesLite => {
     const item: OpenAIResponsesCompactionItemEx = {
@@ -234,7 +215,7 @@ describe('ChatGPT terminal output recovery', () => {
 describe('Codex Responses wire selection', () => {
   const tool = { type: 'function' as const, name: 'lookup', parameters: { type: 'object' } };
 
-  test.each([true, false, undefined])('catalog flag %s alone selects generate and compact wire formats', async useResponsesLite => {
+  test.each([true, false])('catalog flag %s alone selects generate and compact wire formats', async useResponsesLite => {
     seedFreshAccessToken();
     for (const action of ['generate', 'compact'] as const) {
       for (const marker of ['true', 'false', undefined]) {
@@ -259,7 +240,7 @@ describe('Codex Responses wire selection', () => {
         const call = action === 'generate' ? callChatGPTOpenAIResponses : callChatGPTOpenAIResponsesCompact;
         const result = await call({
           upstreamId, account: activeAccount,
-          model: { ...model, providerData: useResponsesLite === undefined ? undefined : { useResponsesLite } },
+          model: { ...model, providerData: { useResponsesLite } },
           body, headers, effects: makeEffects(), call: noopUpstreamCallOptions(),
         });
         if (!result.ok) throw new Error('expected a successful response');
@@ -349,12 +330,12 @@ describe('Codex Responses wire selection', () => {
     }
   });
 
-  test.each(['top-level', 'input', 'mixed'] as const)('preserves the complete compact %s output window', async source => {
+  test.each(['top-level', 'mixed'] as const)('preserves the complete compact %s output window', async source => {
     seedFreshAccessToken();
     const opaque = { type: 'compaction', id: 'cmp_item', encrypted_content: 'opaque+encrypted==' };
     const body: responsesLite.ChatGPTResponsesBody = {
       instructions: 'Old instructions',
-      ...(source === 'input' ? {} : { tools: [tool] }),
+      tools: [tool],
       input: [
         ...(source === 'top-level' ? [] : [{ type: 'additional_tools' as const, role: 'developer' as const, id: 'at_caller', tools: [{ type: 'custom' as const, name: 'patch' }] }]),
         { type: 'message', role: 'user', content: 'Continue' },

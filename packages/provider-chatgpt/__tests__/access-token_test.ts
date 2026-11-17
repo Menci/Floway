@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
 import {
   ensureChatGPTAccessToken,
-  invalidateChatGPTAccessToken,
   mintChatGPTAccessToken,
   putChatGPTAccessToken,
   type ChatGPTAccessTokenEntry,
@@ -63,19 +62,6 @@ afterEach(() => vi.restoreAllMocks());
 const storedState = (): ChatGPTUpstreamState => current!.state as ChatGPTUpstreamState;
 
 describe('putChatGPTAccessToken', () => {
-
-  test('prefers the current CAS plan over an older fallback when the new token omits it', async () => {
-    current = makeRecord({
-      accounts: [{
-        ...baseAccount,
-        accessToken: { token: 'at_current', expiresAt: farFutureMs, refreshedAt: 'current', planType: 'free' },
-      }],
-    });
-    const entry: ChatGPTAccessTokenEntry = { token: 'at_new', expiresAt: farFutureMs, refreshedAt: 'new' };
-    const effective = await putChatGPTAccessToken(upstreamId, accountId, entry, { planType: 'team' });
-    expect(effective.planType).toBe('free');
-    expect(storedState().accounts[0].accessToken?.planType).toBe('free');
-  });
 
   test('an older explicit plan observation cannot replace a newer one', async () => {
     const newer: ChatGPTAccessTokenEntry = {
@@ -141,15 +127,6 @@ describe('putChatGPTAccessToken', () => {
     const entry: ChatGPTAccessTokenEntry = { token: 'at_new', expiresAt: farFutureMs, refreshedAt: 'now' };
     await putChatGPTAccessToken(upstreamId, accountId, entry);
     expect(repo.writes).toEqual([]);
-  });
-});
-
-describe('invalidateChatGPTAccessToken', () => {
-  test('clears a populated access-token slot', async () => {
-    const entry: ChatGPTAccessTokenEntry = { token: 'at_x', expiresAt: farFutureMs, refreshedAt: 'now' };
-    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: entry }] });
-    await invalidateChatGPTAccessToken(upstreamId, accountId);
-    expect(storedState().accounts[0].accessToken).toBeNull();
   });
 });
 

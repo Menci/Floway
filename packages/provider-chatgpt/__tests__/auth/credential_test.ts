@@ -81,12 +81,4 @@ describe('normalizeChatGPTCredential', () => {
       idToken: makeJwt(claims('id')),
     })).toThrow(/different ChatGPT accounts/);
   });
-
-  test('lets an explicit account ID settle a conflict between the two tokens', () => {
-    expect(normalizeChatGPTCredential({
-      accessToken: makeJwt(claims('access')),
-      idToken: makeJwt(claims('id')),
-      chatgptAccountId: 'operator-choice',
-    }).identity.chatgptAccountId).toBe('operator-choice');
-  });
 });

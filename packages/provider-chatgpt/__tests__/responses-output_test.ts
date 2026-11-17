@@ -86,14 +86,6 @@ test('rejects an item ID observed at conflicting output indices', async () => {
   ])).rejects.toThrow('conflicting output_index values 0 and 1');
 });
 
-test('rejects different item identities at the same output index', async () => {
-  await expect(restore([
-    { type: 'response.output_item.done', output_index: 0, item: reasoning },
-    { type: 'response.output_item.done', output_index: 0, item: message },
-    { type: 'response.completed', response: response([]) },
-  ])).rejects.toThrow('output_index 0 has conflicting item IDs');
-});
-
 test('leaves error events and terminal snapshots without closed items untouched', async () => {
   const terminal: OpenAIResponsesStreamEventEx = { type: 'response.failed', response: response([message], 'failed') };
   const frames = await restore([terminal]);

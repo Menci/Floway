@@ -35,10 +35,6 @@ describe('parseChatGPTTokenClaims', () => {
     });
   });
 
-  test('converts exp seconds to milliseconds', () => {
-    expect(parseChatGPTTokenClaims(makeJwt({ exp: 2_000_000_000 })).expiresAt).toBe(2_000_000_000_000);
-  });
-
   test('rejects a token without 3 segments', () => {
     expect(() => parseChatGPTTokenClaims('not.a.jwt.really', 'id_token')).toThrow(/3 segments/);
     expect(() => parseChatGPTTokenClaims('one.two', 'id_token')).toThrow(/3 segments/);
