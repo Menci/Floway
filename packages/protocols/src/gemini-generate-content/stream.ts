@@ -27,6 +27,8 @@ export const parseGeminiGenerateContentStream = (
 ): AsyncGenerator<ProtocolFrame<GeminiGenerateContentStreamEvent>> => (async function* () {
   for await (const frame of parseTargetStreamFrames<GeminiGenerateContentStreamEvent>(parseSSEStream(body, options), {
     protocol: 'Gemini generateContent',
+    // Gemini is the protocol that can carry a trailing bare JSON body.
+    onRawFrame: true,
   })) {
     if (frame.type === 'done') {
       yield doneFrame();

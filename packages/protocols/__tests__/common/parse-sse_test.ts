@@ -149,3 +149,16 @@ test('parseSSEStream surfaces a bare JSON object line instead of dropping it', a
   }
   assertEquals(frames, [{ data: chunk }, { data: error }]);
 });
+
+test('parseSSEStream reports a bare line as a raw frame, distinct from a data field', async () => {
+  const chunk = '{"candidates":[{"index":0}]}';
+  const frames: { kind: string; data: string; event?: string }[] = [];
+  for await (const frame of parseSSEStream(new Response(`data: ${chunk}\n\n${chunk}\n\n`).body!)) {
+    frames.push(frame.type === 'sse' ? { kind: frame.type, data: frame.data, ...(frame.event === undefined ? {} : { event: frame.event }) } : { kind: frame.type, data: frame.data });
+  }
+  // Same payload, two framings: the reader can now tell them apart.
+  assertEquals(frames, [
+    { kind: 'sse', data: chunk },
+    { kind: 'sse-raw', data: chunk },
+  ]);
+});
