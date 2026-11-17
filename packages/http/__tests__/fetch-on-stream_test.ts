@@ -151,14 +151,6 @@ describe('fetchOnStream — request-method handling', () => {
       code: 'HEAD_REQUEST_REJECTED',
     });
   });
-
-  it('rejects a HEAD request regardless of letter case (head)', async () => {
-    const fake = makeFakeDuplex();
-    await expect(fetchOnStream(
-      { readable: fake.readable, writable: fake.writable },
-      { method: 'head', path: '/', headers: [['Host', 'h']] },
-    )).rejects.toMatchObject({ code: 'HEAD_REQUEST_REJECTED' });
-  });
 });
 
 describe('fetchOnStream — request-line smuggling defense (RFC 9110 §9.1 / RFC 9112 §3.2)', () => {

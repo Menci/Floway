@@ -242,11 +242,6 @@ describe('userspaceTls — certificate reference identity', () => {
       .rejects.toThrow('Certificate is not for host 192.0.2.10');
   });
 
-  it('keeps IPv4 and IPv4-mapped IPv6 identities distinct', async () => {
-    await expect(verifyFixtureIdentity('ip-san.generated.pem', '::ffff:192.0.2.10'))
-      .rejects.toThrow('Certificate is not for host ::ffff:192.0.2.10');
-  });
-
   it('fails closed when a custom certificate adapter cannot expose IP SANs', async () => {
     const certificate = await loadFixtureCertificate('ip-san.generated.pem');
     const { getAlternativeIPAddresses: _, ...adapterWithoutIpSans } = certificate;

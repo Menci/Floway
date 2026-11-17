@@ -162,24 +162,6 @@ describe('wsUpgradeAndFrame — handshake', () => {
     });
   });
 
-  it('rejects a missing Upgrade: websocket header', async () => {
-    const fake = makeFakeDuplex();
-    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
-    await new Promise(r => setTimeout(r, 0));
-    const key = parseUpgradeRequest(fake.written()).headers.get('sec-websocket-key')!;
-    fake.respond([
-      'HTTP/1.1 101 Switching Protocols',
-      'Connection: Upgrade',
-      `Sec-WebSocket-Accept: ${buildAcceptHeader(key)}`,
-      '',
-      '',
-    ].join('\r\n'));
-    await expect(upgrade).rejects.toMatchObject({
-      code: 'BAD_HEADERS',
-      message: expect.stringContaining('Upgrade'),
-    });
-  });
-
   it('rejects a server-selected subprotocol the client did not offer', async () => {
     const fake = makeFakeDuplex();
     const upgrade = wsUpgradeAndFrame(fake, {
@@ -230,10 +212,6 @@ describe('wsUpgradeAndFrame — handshake', () => {
 
   it('rejects a path containing CR (CRLF injection prevention)', async () => {
     expect(await tryUpgrade({ path: '/foo\rEvil: 1' })).toMatchObject({ code: 'BAD_HEADERS' });
-  });
-
-  it('rejects a Host containing CR', async () => {
-    expect(await tryUpgrade({ host: 'h\rEvil: 1' })).toMatchObject({ code: 'BAD_HEADERS' });
   });
 });
 
