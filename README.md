@@ -3,10 +3,10 @@
   Floway
 </h1>
 
-Floway is a self-hosted LLM API gateway for coding agents and API clients, with
-a web dashboard. It connects GitHub Copilot, ChatGPT, Claude.ai, Azure AI,
-custom HTTP providers, and Ollama through OpenAI, Anthropic, and
-Gemini-compatible APIs.
+Floway is a self-hosted LLM API gateway for coding agents and API clients,
+with a web dashboard. It connects GitHub Copilot, ChatGPT, Claude.ai,
+Moonshot AI, Azure AI, custom HTTP providers, and Ollama through OpenAI,
+Anthropic, and Gemini-compatible APIs.
 
 ## Deployment
 

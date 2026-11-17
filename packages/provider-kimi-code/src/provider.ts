@@ -41,11 +41,12 @@ export const createKimiCodeProvider = (record: UpstreamRecord): Provider => {
   const { config } = assertKimiCodeUpstreamRecord(record);
   const enabledFlags = resolveEffectiveFlags([KIMI_CODE_DEFAULT_FLAGS, record.flagOverrides]);
 
-  // Forward thinking and effort unchanged. The documented disabled-thinking
-  // reroute from K3 and K2.7 Code Highspeed to K2.8 Preview is invisible in
-  // observed responses: they echo the requested id, so passthrough cannot tell
-  // callers which model ran. Model-scoped restrictions would misrepresent this
-  // request-dependent routing rule as a gateway capability restriction.
+  // Forward thinking and effort unchanged. Observed responses echo the id that
+  // was requested, so neither this layer nor the caller can tell which model
+  // actually served a request the service routed differently; the documented
+  // disabled-thinking behaviour for K3 and K2.7 Code Highspeed makes that a real
+  // possibility rather than a hypothetical. Model-scoped restrictions would
+  // instead present a request-dependent upstream rule as a gateway limit.
   // https://www.kimi.com/code/docs/en/kimi-code/models.html
   const call = async (path: string, modelId: string, body: Record<string, unknown>, signal: AbortSignal | undefined, headers: HttpHeaderLines, opts: UpstreamCallOptions, probes: boolean) => {
     const response = await kimiCodeFetch(config, path,
