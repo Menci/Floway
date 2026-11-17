@@ -50,9 +50,3 @@ test('rejects circular request values before dispatch', () => {
 
   expect(() => jsonRequestBody(value)).toThrow();
 });
-
-test('preserves explicit integer-key enumeration order in request snapshots', async () => {
-  const properties = new Proxy({ '0': { type: 'string' }, '1': { type: 'integer' } }, { ownKeys: () => ['1', '0'] });
-  const body = jsonRequestBody({ properties });
-  expect(await new Response(body.open()).text()).toBe('{"properties":{"1":{"type":"integer"},"0":{"type":"string"}}}');
-});

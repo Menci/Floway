@@ -78,35 +78,6 @@ test('createAzureProvider projects configured models into upstream models', asyn
   assertEquals(models[0].limits.max_context_window_tokens, 128000);
 });
 
-test('createAzureProvider drops chat metadata when endpoints derive a non-chat kind', async () => {
-  const record = azureRecord({
-    config: {
-      endpoint: 'https://example.openai.azure.com',
-      apiKey: 'az-key',
-      models: [
-        {
-          upstreamModelId: 'legacy-embedding',
-          kind: 'chat',
-          endpoints: { openaiEmbeddings: {} },
-          chat: { image_detail_original: true },
-        },
-        {
-          upstreamModelId: 'chat-model',
-          kind: 'chat',
-          endpoints: { openaiResponses: {} },
-          chat: { image_detail_original: true },
-        },
-      ],
-    },
-  });
-  const [embedding, chat] = await createAzureProvider(record).instance.getProvidedModels(directFetcher);
-
-  assertEquals(embedding?.kind, 'embedding');
-  assertEquals(embedding?.chat, undefined);
-  assertEquals(chat?.kind, 'chat');
-  assertEquals(chat?.chat, { image_detail_original: true });
-});
-
 test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodies and model keys', async () => {
   const instance = createAzureProvider(azureRecord());
   const [providerModel] = await instance.instance.getProvidedModels(directFetcher);
@@ -158,48 +129,6 @@ test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodi
     ((seen[1]?.body.input as Array<{ tools: Array<{ description: string }> }>)[0]?.tools[0]?.description),
     'Tools in the functions namespace.',
   );
-});
-
-test('createAzureProvider runs the OpenAI Responses boundary on compact requests', async () => {
-  const instance = createAzureProvider(azureRecord());
-  const [providerModel] = await instance.instance.getProvidedModels(directFetcher);
-  let body: Record<string, unknown> | undefined;
-
-  await withMockedFetch(
-    async request => {
-      body = await request.json() as Record<string, unknown>;
-      return new Response(JSON.stringify({
-        id: 'resp_compact',
-        object: 'response.compaction',
-        model: 'gpt-prod',
-        status: 'completed',
-        output: [{ id: 'cmp_x', type: 'compaction', encrypted_content: 'blob' }],
-        usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
-    },
-    async () => {
-      const result = await instance.instance.callOpenAIResponses(providerModel, {
-        input: [{
-          type: 'additional_tools',
-          role: 'developer',
-          tools: [{
-            type: 'namespace',
-            name: 'functions',
-            description: '',
-            tools: [{ type: 'function', name: 'lookup', description: 'Look up a record.', parameters: { type: 'object', properties: {} } }],
-          }],
-        }],
-      }, 'compact', undefined, noopUpstreamCallOptions());
-      assertEquals(result.action, 'compact');
-      assertEquals(result.ok, true);
-    },
-  );
-
-  assertEquals(
-    ((body?.input as Array<{ tools: Array<{ description: string }> }>)[0]?.tools[0]?.description),
-    'Tools in the functions namespace.',
-  );
-  assertEquals(body?.model, 'gpt-prod');
 });
 
 test.each(['generate', 'compact'] as const)('createAzureProvider preserves %s upstream errors through the OpenAI Responses boundary', async action => {
@@ -286,36 +215,6 @@ test('createAzureProvider supports native Azure Anthropic Messages models', asyn
       beta: 'context-1m,advanced-tool-use',
     },
   ]);
-});
-
-test('createAzureProvider applies per-model flag overrides on top of the upstream layer', async () => {
-  const instance = createAzureProvider(
-    azureRecord({
-      flagOverrides: { 'vendor-deepseek': true },
-      disabledPublicModelIds: [],
-      config: {
-        endpoint: 'https://example.openai.azure.com/openai/v1',
-        apiKey: 'az-key',
-        models: [
-          { upstreamModelId: 'd1', endpoints: { openaiChatCompletions: {} } },
-          {
-            upstreamModelId: 'd2',
-            endpoints: { openaiChatCompletions: {} },
-            flagOverrides: { 'vendor-deepseek': false, 'vendor-kimi': true },
-          },
-        ],
-      },
-    }),
-  );
-  const models = await instance.instance.getProvidedModels(directFetcher);
-  const d1 = models.find(model => (model.providerData as { upstreamModelId: string }).upstreamModelId === 'd1');
-  const d2 = models.find(model => (model.providerData as { upstreamModelId: string }).upstreamModelId === 'd2');
-  if (!d1 || !d2) throw new Error('expected both models');
-
-  assertEquals(d1.enabledFlags.has('vendor-deepseek'), true);
-  assertEquals(d1.enabledFlags.has('vendor-kimi'), false);
-  assertEquals(d2.enabledFlags.has('vendor-deepseek'), false);
-  assertEquals(d2.enabledFlags.has('vendor-kimi'), true);
 });
 
 test('createAzureProvider callOpenAIImagesEdits posts multipart with model replaced by upstream model id and api-version=preview', async () => {

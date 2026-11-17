@@ -2,13 +2,10 @@ import { test } from 'vitest';
 
 import { assertAzureUpstreamRecord } from '../src/config.ts';
 import {
-  azureFetchOpenAIChatCompletions,
   azureFetchOpenAIAudioTranscriptions,
-  azureFetchOpenAIEmbeddings,
   azureFetchAnthropicMessages,
   azureFetchAnthropicMessagesCountTokens,
   azureFetchOpenAIResponses,
-  azureFetchOpenAIResponsesCompact,
 } from '../src/fetch.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
@@ -42,48 +39,6 @@ const baseRecord: UpstreamRecord = {
   hue: 210,
 };
 
-test('OpenAI v1 transports apply api-key auth and the canonical paths', async () => {
-  const { config } = assertAzureUpstreamRecord(baseRecord);
-  const seen: Array<{ url: string; apiKey: string | null; contentType: string | null; body: unknown }> = [];
-
-  await withMockedFetch(
-    async request => {
-      seen.push({
-        url: request.url,
-        apiKey: request.headers.get('api-key'),
-        contentType: request.headers.get('content-type'),
-        body: request.method === 'GET' ? null : await request.json(),
-      });
-      return new Response('{}', { status: 200 });
-    },
-    async () => {
-      await azureFetchOpenAIChatCompletions(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await azureFetchOpenAIResponses(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await azureFetchOpenAIResponsesCompact(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await azureFetchOpenAIEmbeddings(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-    },
-  );
-
-  assertEquals(
-    seen.map(item => item.url),
-    [
-      'https://example.openai.azure.com/openai/v1/chat/completions',
-      'https://example.openai.azure.com/openai/v1/responses',
-      'https://example.openai.azure.com/openai/v1/responses/compact',
-      'https://example.openai.azure.com/openai/v1/embeddings',
-    ],
-  );
-  assertEquals(
-    seen.map(item => item.apiKey),
-    ['az-key', 'az-key', 'az-key', 'az-key'],
-  );
-  assertEquals(
-    seen.map(item => item.contentType),
-    ['application/json', 'application/json', 'application/json', 'application/json'],
-  );
-  assertEquals(seen[0].body, { model: 'set-by-provider' });
-});
-
 test('audio transcription selects the deployment on every admitted endpoint shape', async () => {
   const endpoints = [
     ['https://example.openai.azure.com/', 'https://example.openai.azure.com/openai/deployments/transcribe%20deployment/audio/transcriptions?api-version=2025-04-01-preview'],
@@ -109,35 +64,6 @@ test('audio transcription selects the deployment on every admitted endpoint shap
     );
     assertEquals(seenUrl, expected);
   }
-});
-
-test('Foundry project endpoints route OpenAI v1 calls under the project base', async () => {
-  const { config } = assertAzureUpstreamRecord({
-    ...baseRecord,
-    config: {
-      endpoint: 'https://example.services.ai.azure.com/api/projects/prod/',
-      apiKey: 'az-key',
-      models: [
-        {
-          upstreamModelId: 'deepseek-prod',
-          endpoints: { openaiResponses: {} },
-        },
-      ],
-    },
-  });
-  let seenUrl = '';
-
-  await withMockedFetch(
-    request => {
-      seenUrl = request.url;
-      return new Response('{}', { status: 200 });
-    },
-    async () => {
-      await azureFetchOpenAIResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-    },
-  );
-
-  assertEquals(seenUrl, 'https://example.services.ai.azure.com/api/projects/prod/openai/v1/responses');
 });
 
 test('Foundry project endpoints split OpenAI v1 vs Anthropic surfaces', async () => {

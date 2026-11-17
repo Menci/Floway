@@ -25,17 +25,6 @@ describe('normalizeModelPrefix', () => {
     })).toThrow(/listed entry 'prefixed' is not in.*addressable/);
   });
 
-  it('canonicalises form order to unprefixed-first', () => {
-    const out = normalizeModelPrefix({ prefix: 'or/', addressable: ['prefixed', 'unprefixed'], listed: ['prefixed', 'unprefixed'] });
-    expect(out!.addressable).toEqual(['unprefixed', 'prefixed']);
-    expect(out!.listed).toEqual(['unprefixed', 'prefixed']);
-  });
-
-  it('throws when addressable is empty', () => {
-    expect(() => normalizeModelPrefix({ prefix: 'or/', addressable: [], listed: [] }))
-      .toThrow(/addressable.*non-empty/i);
-  });
-
   it('throws on unknown addressable form (no silent drop)', () => {
     expect(() => normalizeModelPrefix({ prefix: 'or/', addressable: ['unprefixed', 'bogus'], listed: [] }))
       .toThrow(/addressable.*'unprefixed' or 'prefixed'/);

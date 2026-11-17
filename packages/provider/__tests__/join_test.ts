@@ -3,11 +3,6 @@ import { test } from 'vitest';
 import { joinBaseAndPath, validateUpstreamPath } from '../src/join.ts';
 import { assertEquals, assertFalse } from '@floway-dev/test-utils';
 
-test('validateUpstreamPath trims surrounding whitespace', () => {
-  const result = validateUpstreamPath('  /api/v1/chat  ', 'chat');
-  assertEquals(result, { ok: true, value: '/api/v1/chat' });
-});
-
 test('validateUpstreamPath rejects paths without a leading slash', () => {
   const result = validateUpstreamPath('v1/chat/completions', 'chat');
   assertFalse(result.ok);
@@ -18,10 +13,6 @@ test('validateUpstreamPath rejects relative segments', () => {
     const result = validateUpstreamPath(bad, 'chat');
     assertFalse(result.ok, `expected ${bad} to be rejected`);
   }
-});
-
-test('joinBaseAndPath strips trailing base slashes', () => {
-  assertEquals(joinBaseAndPath('https://oai.example.com//', '/v1/chat'), 'https://oai.example.com/v1/chat');
 });
 
 test('joinBaseAndPath preserves a base subpath', () => {

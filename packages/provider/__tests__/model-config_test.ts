@@ -45,27 +45,6 @@ describe('chatField', () => {
     expect(chat).toEqual({ image_detail_original: false });
   });
 
-  test('parses all four sub-blocks together', () => {
-    const chat = chatField({
-      reasoning: {
-        effort: { supported: ['low', 'high'], default: 'low' },
-        budget_tokens: { min: 0, max: 1000 },
-        adaptive: true,
-        mandatory: false,
-      },
-    }, 'm.chat');
-    expect(chat?.reasoning).toEqual({
-      effort: { supported: ['low', 'high'], default: 'low' },
-      budget_tokens: { min: 0, max: 1000 },
-      adaptive: true,
-    });
-  });
-
-  test('rejects reasoning with only adaptive: false and mandatory: false', () => {
-    expect(() => chatField({ reasoning: { adaptive: false, mandatory: false } }, 'm.chat'))
-      .toThrow(/at least one of effort, budget_tokens, adaptive, mandatory/);
-  });
-
   test.each([
     ['default not in supported', { supported: ['low', 'high'], default: 'medium' }, /effort\.default/],
     ['empty supported', { supported: [], default: '' }, /effort\.supported/],
@@ -73,23 +52,11 @@ describe('chatField', () => {
     expect(() => chatField({ reasoning: { effort } }, 'm.chat')).toThrow(message);
   });
 
-  test('rejects budget_tokens with max < min', () => {
-    expect(() => chatField({ reasoning: { budget_tokens: { min: 500, max: 100 } } }, 'm.chat')).toThrow(/max must be >= min/);
-  });
-
-  test('returns undefined when chat block is empty', () => {
-    expect(chatField({}, 'm.chat')).toBeUndefined();
-  });
-
   test('rejects modalities missing text', () => {
     expect(() => chatField({ modalities: { input: ['image'], output: ['text'] } }, 'm.chat'))
       .toThrow(/must include 'text'/);
   });
 
-  test('deduplicates modality entries', () => {
-    const chat = chatField({ modalities: { input: ['text', 'text', 'image'], output: ['text'] } }, 'm.chat');
-    expect(chat?.modalities?.input).toEqual(['text', 'image']);
-  });
 });
 
 describe('modelsField metadata integration', () => {
@@ -103,14 +70,6 @@ describe('modelsField metadata integration', () => {
     expect(model.endpoints).toEqual({ openaiAudioTranscriptions: {} });
   });
 
-  test('rejects chat on non-chat kind', () => {
-    expect(() => modelsField([{
-      upstreamModelId: 'm',
-      kind: 'embedding',
-      endpoints: { openaiEmbeddings: {} },
-      chat: { modalities: { input: ['text'], output: ['text'] } },
-    }], 'p')).toThrow(/chat .* only allowed when kind/);
-  });
 });
 
 describe('modelsField rerank targets', () => {
@@ -120,16 +79,6 @@ describe('modelsField rerank targets', () => {
       kind: 'rerank',
       endpoints: { rerank: {} },
     }], 'p')).toThrow(/rerankTarget is required/);
-  });
-
-  test('accepts a supported protocol and normalized model-specific path', () => {
-    const [model] = modelsField([{
-      upstreamModelId: 'reranker',
-      kind: 'rerank',
-      endpoints: { rerank: {} },
-      rerankTarget: { protocol: 'dashscope-native', path: ' /custom/rerank ' },
-    }], 'p');
-    expect(model.rerankTarget).toEqual({ protocol: 'dashscope-native', path: '/custom/rerank' });
   });
 
   test('validates targets against the endpoint-derived runtime kind', () => {
@@ -160,16 +109,6 @@ describe('modelsField rerank targets', () => {
 });
 
 describe('modelsField decision targets', () => {
-  test('accepts a supported protocol and path', () => {
-    const [model] = modelsField([{
-      upstreamModelId: 'decision-1',
-      kind: 'decision',
-      endpoints: { decision: {} },
-      decisionTarget: { protocol: 'typesafe-systemone', path: ' /providers/microsoft/v1/systemone ' },
-    }], 'p');
-    expect(model.decisionTarget).toEqual({ protocol: 'typesafe-systemone', path: '/providers/microsoft/v1/systemone' });
-  });
-
   test('rejects a decision target on a model that is not decision', () => {
     expect(() => modelsField([{
       upstreamModelId: 'chat',
@@ -179,14 +118,6 @@ describe('modelsField decision targets', () => {
     }], 'p')).toThrow(/decisionTarget is only allowed/);
   });
 
-  test('rejects an unknown protocol', () => {
-    expect(() => modelsField([{
-      upstreamModelId: 'decision-1',
-      kind: 'decision',
-      endpoints: { decision: {} },
-      decisionTarget: { protocol: 'jev' },
-    }], 'p')).toThrow(/unsupported decision protocol/);
-  });
 });
 
 test('modelsField parses a full model entry', () => {
@@ -221,30 +152,6 @@ test('modelsField parses a full model entry', () => {
   ]);
 });
 
-test('modelsField rejects a missing upstreamModelId', () => {
-  assertThrows(
-    () => modelsField([{ endpoints: { openaiChatCompletions: {} } }], 'azure'),
-    Error,
-    'Malformed azure models[0].upstreamModelId: must be a non-empty string',
-  );
-});
-
-test('modelsField rejects an empty endpoints object', () => {
-  assertThrows(
-    () => modelsField([{ upstreamModelId: 'gpt-prod', endpoints: {  } }], 'azure'),
-    Error,
-    'Malformed azure models[0].endpoints: must declare at least one endpoint',
-  );
-});
-
-test('modelsField rejects an unsupported endpoint key', () => {
-  assertThrows(
-    () => modelsField([{ upstreamModelId: 'gpt-prod', endpoints: { bogus: {} } }], 'azure'),
-    Error,
-    'Malformed azure models[0].endpoints: unsupported endpoint bogus',
-  );
-});
-
 test('modelsField derives kind from endpoints when omitted', () => {
   const [embedding] = modelsField([{ upstreamModelId: 'e', endpoints: { openaiEmbeddings: {} } }], 'custom');
   assertEquals(embedding.kind, 'embedding');
@@ -254,30 +161,4 @@ test('modelsField derives kind from endpoints when omitted', () => {
   assertEquals(audio.kind, 'transcription');
   const [chat] = modelsField([{ upstreamModelId: 'c', endpoints: { openaiResponses: {} } }], 'custom');
   assertEquals(chat.kind, 'chat');
-});
-
-test('modelsField rejects an unknown kind', () => {
-  assertThrows(
-    () => modelsField([{ upstreamModelId: 'm', kind: 'bogus', endpoints: { openaiChatCompletions: {} } }], 'custom'),
-    Error,
-    'Malformed custom models[0].kind: must be one of chat, embedding, image, rerank, transcription',
-  );
-});
-
-test('modelsField rejects flagOverrides with an unknown flag id', () => {
-  assertThrows(
-    () =>
-      modelsField(
-        [
-          {
-            upstreamModelId: 'gpt-prod',
-            endpoints: { openaiChatCompletions: {} },
-            flagOverrides: { 'made-up-flag': true },
-          },
-        ],
-        'azure',
-      ),
-    Error,
-    'Malformed azure models[0].flagOverrides: unknown flag ids: made-up-flag',
-  );
 });

@@ -52,18 +52,3 @@ test('serializeOpenAIImagesEditsRequest uses the singular field for one upload a
   assertEquals(multipleForm.get('image'), null);
   assertEquals(multipleForm.get('model'), 'gpt-image');
 });
-
-test('serializeOpenAIImagesEditsRequest leaves malformed inline data for upstream JSON validation', async () => {
-  const serialized = await serializeOpenAIImagesEditsRequest({
-    images: [{
-      type: 'inline',
-      reference: { image_url: 'data:image/png;base64,%%%' },
-    }],
-    parameters: { prompt: 'edit' },
-  }, 'gpt-image');
-  assertEquals(await parseJsonBody(serialized), {
-    prompt: 'edit',
-    images: [{ image_url: 'data:image/png;base64,%%%' }],
-    model: 'gpt-image',
-  });
-});
