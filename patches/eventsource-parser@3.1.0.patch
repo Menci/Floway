@@ -1,0 +1,195 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index ddd5139..30aa68f 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -14,7 +14,7 @@ function createParser(config) {
+       "`config` must be an object, got a function instead. Did you mean `createParser({onEvent: fn})`?"
+     );
+   const { onEvent = noop, onError = noop, onRetry = noop, onComment, maxBufferSize } = config, pendingFragments = [];
+-  let pendingFragmentsLength = 0, isFirstChunk = !0, id, data = "", dataLines = 0, eventType, terminated = !1;
++  let pendingFragmentsLength = 0, isFirstChunk = !0, id, data = "", dataLines = 0, eventType, bare = !1, terminated = !1;
+   function feed(chunk) {
+     if (terminated)
+       throw new Error(
+@@ -50,7 +50,7 @@ function createParser(config) {
+ `, searchIndex);
+       for (; lfIndex !== -1; ) {
+         if (searchIndex === lfIndex) {
+-          dataLines > 0 && onEvent({ id, event: eventType, data }), id = void 0, data = "", dataLines = 0, eventType = void 0, searchIndex = lfIndex + 1, lfIndex = chunk.indexOf(`
++          dataLines > 0 && onEvent({ id, event: eventType, data, ...bare ? { bare: !0 } : {} }), id = void 0, data = "", dataLines = 0, eventType = void 0, bare = !1, searchIndex = lfIndex + 1, lfIndex = chunk.indexOf(`
+ `, searchIndex);
+           continue;
+         }
+@@ -111,7 +111,14 @@ ${value2}`, dataLines++;
+       }
+       return;
+     }
+-    const line = chunk.slice(start, end), fieldSeparatorIndex = line.indexOf(":");
++    const line = chunk.slice(start, end);
++    if (line.charCodeAt(0) === 123) {
++      data = dataLines === 0 ? line : `${data}\n${line}`,
++      dataLines++,
++      bare = !0;
++      return;
++    }
++    const fieldSeparatorIndex = line.indexOf(":");
+     if (fieldSeparatorIndex === -1) {
+       processField(line, "", line);
+       return;
+@@ -154,15 +161,16 @@ ${value}`, dataLines++;
+     dataLines > 0 && onEvent({
+       id,
+       event: eventType,
+-      data
+-    }), id = void 0, data = "", dataLines = 0, eventType = void 0;
++      data,
++      ...bare ? { bare: !0 } : {}
++    }), id = void 0, data = "", dataLines = 0, eventType = void 0, bare = !1;
+   }
+   function reset(options = {}) {
+     if (options.consume && pendingFragments.length > 0) {
+       const incompleteLine = pendingFragments.join("");
+       parseLine(incompleteLine, 0, incompleteLine.length);
+     }
+-    isFirstChunk = !0, id = void 0, data = "", dataLines = 0, eventType = void 0, pendingFragments.length = 0, pendingFragmentsLength = 0, terminated = !1;
++    isFirstChunk = !0, id = void 0, data = "", dataLines = 0, eventType = void 0, bare = !1, pendingFragments.length = 0, pendingFragmentsLength = 0, terminated = !1;
+   }
+   return { feed, reset };
+ }
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 5d3365a..3019fb7 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -39,6 +39,8 @@ export declare interface EventSourceMessage {
+    * The data received for this message
+    */
+   data: string;
++  /** True when the payload was a bare line, not an SSE field. */
++  bare?: boolean | undefined;
+ }
+ 
+ /**
+diff --git a/dist/index.js b/dist/index.js
+index 97d3b77..b90d96b 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -12,7 +12,7 @@ function createParser(config) {
+       "`config` must be an object, got a function instead. Did you mean `createParser({onEvent: fn})`?"
+     );
+   const { onEvent = noop, onError = noop, onRetry = noop, onComment, maxBufferSize } = config, pendingFragments = [];
+-  let pendingFragmentsLength = 0, isFirstChunk = !0, id, data = "", dataLines = 0, eventType, terminated = !1;
++  let pendingFragmentsLength = 0, isFirstChunk = !0, id, data = "", dataLines = 0, eventType, bare = !1, terminated = !1;
+   function feed(chunk) {
+     if (terminated)
+       throw new Error(
+@@ -48,7 +48,7 @@ function createParser(config) {
+ `, searchIndex);
+       for (; lfIndex !== -1; ) {
+         if (searchIndex === lfIndex) {
+-          dataLines > 0 && onEvent({ id, event: eventType, data }), id = void 0, data = "", dataLines = 0, eventType = void 0, searchIndex = lfIndex + 1, lfIndex = chunk.indexOf(`
++          dataLines > 0 && onEvent({ id, event: eventType, data, ...bare ? { bare: !0 } : {} }), id = void 0, data = "", dataLines = 0, eventType = void 0, bare = !1, searchIndex = lfIndex + 1, lfIndex = chunk.indexOf(`
+ `, searchIndex);
+           continue;
+         }
+@@ -109,7 +109,14 @@ ${value2}`, dataLines++;
+       }
+       return;
+     }
+-    const line = chunk.slice(start, end), fieldSeparatorIndex = line.indexOf(":");
++    const line = chunk.slice(start, end);
++    if (line.charCodeAt(0) === 123) {
++      data = dataLines === 0 ? line : `${data}\n${line}`,
++      dataLines++,
++      bare = !0;
++      return;
++    }
++    const fieldSeparatorIndex = line.indexOf(":");
+     if (fieldSeparatorIndex === -1) {
+       processField(line, "", line);
+       return;
+@@ -152,15 +159,16 @@ ${value}`, dataLines++;
+     dataLines > 0 && onEvent({
+       id,
+       event: eventType,
+-      data
+-    }), id = void 0, data = "", dataLines = 0, eventType = void 0;
++      data,
++      ...bare ? { bare: !0 } : {}
++    }), id = void 0, data = "", dataLines = 0, eventType = void 0, bare = !1;
+   }
+   function reset(options = {}) {
+     if (options.consume && pendingFragments.length > 0) {
+       const incompleteLine = pendingFragments.join("");
+       parseLine(incompleteLine, 0, incompleteLine.length);
+     }
+-    isFirstChunk = !0, id = void 0, data = "", dataLines = 0, eventType = void 0, pendingFragments.length = 0, pendingFragmentsLength = 0, terminated = !1;
++    isFirstChunk = !0, id = void 0, data = "", dataLines = 0, eventType = void 0, bare = !1, pendingFragments.length = 0, pendingFragmentsLength = 0, terminated = !1;
+   }
+   return { feed, reset };
+ }
+diff --git a/src/parse.ts b/src/parse.ts
+index 00e2791..3204c94 100644
+--- a/src/parse.ts
++++ b/src/parse.ts
+@@ -50,6 +50,9 @@ export function createParser(config: ParserConfig): EventSourceParser {
+   let data = ''
+   let dataLines = 0
+   let eventType: string | undefined
++  // Set when the buffered payload came from a line the SSE grammar does not
++  // claim, so the caller can forward the original framing.
++  let bare = false
+ 
+   // Set after a `maxBufferSize` overflow. Once tripped, `feed()` throws until
+   // `reset()` is called — see the comment on `maxBufferSize` in `ParserConfig`.
+@@ -306,6 +309,17 @@ export function createParser(config: ParserConfig): EventSourceParser {
+     }
+ 
+     const line = chunk.slice(start, end)
++    // An object literal is not an SSE field. Gemini writes a bare JSON error
++    // body after the stream has already started, and the SSE grammar would
++    // otherwise split `{"error":…}` into a field named `{"error"` and drop it.
++    // Surfacing it as event data lets a caller that expects that body read it.
++    if (line.charCodeAt(0) === 123) {
++      data = dataLines === 0 ? line : `${data}\n${line}`
++      dataLines++
++      bare = true
++      return
++    }
++
+     const fieldSeparatorIndex = line.indexOf(':')
+     if (fieldSeparatorIndex === -1) {
+       processField(line, '', line)
+@@ -369,6 +383,7 @@ export function createParser(config: ParserConfig): EventSourceParser {
+         id,
+         event: eventType,
+         data,
++        ...(bare ? {bare: true} : {}),
+       })
+     }
+ 
+@@ -376,6 +391,7 @@ export function createParser(config: ParserConfig): EventSourceParser {
+     data = ''
+     dataLines = 0
+     eventType = undefined
++    bare = false
+   }
+ 
+   function reset(options: {consume?: boolean} = {}) {
+diff --git a/src/types.ts b/src/types.ts
+index fd668d0..0859c6d 100644
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -55,6 +55,13 @@ export interface EventSourceMessage {
+    * The data received for this message
+    */
+   data: string
++
++  /**
++   * True when the payload was not an SSE field at all — a bare line that opens
++   * an object literal, as Gemini writes for a late error. Callers that forward
++   * the original framing need to tell this apart from a `data:` field.
++   */
++  bare?: boolean | undefined
+ }
+ 
+ /**
