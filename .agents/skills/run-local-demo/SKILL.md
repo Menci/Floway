@@ -29,19 +29,11 @@ inside that worktree; never reuse another worktree's state or ports.
    fix the instance rather than reporting a guessed URL.
 4. Open the printed dashboard URL before describing the demo as available.
 
-The launcher initially starts with an empty `ADMIN_KEY` on both runtimes. On the
-default Node runtime, login uses a blank username and a blank password. It
-stores state and logs under `.tmp/run-local-demo/`, which is ignored by Git.
-
-### Workerd fallback
-
-The launcher first verifies empty-password login for workerd too. Only if that
-request is rejected does it generate a random admin key, restart the instance
-with that key, verify login, and print the full key. Treat its printed
-`admin_key` value as a credential for the human. When the key is non-empty,
-every task update that mentions the running instance must include both the URL
-and the complete key value in the message. Never replace the value with a path,
-a redacted form, or an instruction to inspect a file.
+Authentication is selected by the gateway runtime before startup: Node uses
+empty `ADMIN_KEY` and therefore a blank username and password; workerd uses the
+fixed `ADMIN_KEY` value `admin`. The launcher verifies the selected credentials
+without probing alternatives. It stores state and logs under
+`.tmp/run-local-demo/`, which is ignored by Git.
 
 ## Report while running
 
@@ -51,11 +43,11 @@ Before each work update, run:
 pnpm --silent --filter @floway-dev/tools run local-demo status
 ```
 
-If the instance is running, include its dashboard URL in that update. Include
-the full admin key whenever `status` reports a non-empty one. Continue doing
-this for every update until the instance stops, including updates about
-unrelated implementation work in the same task. Report the key only in the
-conversation and logs required by this workflow; never commit it.
+If the instance is running, include its dashboard URL in that update. For
+workerd, also include the complete admin key value, `admin`, in text. Continue
+doing this for every update until the instance stops, including updates about
+unrelated implementation work in the same task. Never replace the key with a
+path, a redacted form, or an instruction to inspect a file.
 
 Use the same command to detect an unexpectedly stopped process. Start it again
 only when the task still needs a live instance.
@@ -88,7 +80,6 @@ port or executable name, because those can belong to another checkout.
 - The Node runtime uses a private SQLite database and files directory under
   the run directory. It sets `NODE_ENV=development` so empty `ADMIN_KEY` login
   is permitted. Do not use the demo launcher for production.
-- `workerd` runs through `wrangler dev` with a generated local Wrangler config.
-  It starts with an empty `ADMIN_KEY` and uses the fallback above when the
-  runtime rejects that login. It is a local demo only; Cloudflare deployment
-  belongs to `$deploy-to-cloudflare`.
+- `workerd` runs through `wrangler dev` with a generated local Wrangler config
+  and `ADMIN_KEY=admin`. It is a local demo only; Cloudflare deployment belongs
+  to `$deploy-to-cloudflare`.

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { test } from 'vitest';
 
 import {
+  adminKeyForRuntime,
   authMode,
   parseCommand,
   parseState,
@@ -11,6 +12,7 @@ import {
   processGroupAlive,
   STATE_DIR,
   stopServices,
+  WORKERD_ADMIN_KEY,
   workerdConfig,
 } from '../../.agents/skills/run-local-demo/scripts/demo.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
@@ -59,9 +61,12 @@ test('help is available without reaching argument parsing', () => {
   assertEquals(parseCommand(['-h']), { command: 'help' });
 });
 
-test('empty admin key means blank-password mode and a generated key is reported as a key', () => {
+test('runtime credentials are fixed: Node is passwordless and workerd uses admin', () => {
+  assertEquals(adminKeyForRuntime('node'), '');
+  assertEquals(adminKeyForRuntime('workerd'), 'admin');
+  assertEquals(WORKERD_ADMIN_KEY, 'admin');
   assertEquals(authMode(''), 'blank-password');
-  assertEquals(authMode('0123456789abcdef'), 'admin-key');
+  assertEquals(authMode('admin'), 'admin-key');
 });
 
 test('workerd config declares the platform KV binding and local D1 migrations', () => {

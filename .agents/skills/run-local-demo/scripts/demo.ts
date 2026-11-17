@@ -1,5 +1,4 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
 import { closeSync, openSync } from 'node:fs';
 import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
@@ -14,6 +13,7 @@ const WRANGLER_CONFIG_PATH = join(STATE_DIR, 'wrangler.jsonc');
 const DEV_VARS_PATH = join(STATE_DIR, '.dev.vars');
 const DEFAULT_GATEWAY_PORT = 8788;
 const DEFAULT_WEB_PORT = 5174;
+export const WORKERD_ADMIN_KEY = 'admin';
 const STARTUP_TIMEOUT_MS = 120_000;
 const SHUTDOWN_TIMEOUT_MS = 10_000;
 
@@ -86,6 +86,9 @@ export const parseCommand = (args: readonly string[]): ParsedCommand => {
 
 export const authMode = (adminKey: string): 'blank-password' | 'admin-key' =>
   adminKey === '' ? 'blank-password' : 'admin-key';
+
+export const adminKeyForRuntime = (runtime: Runtime): string =>
+  runtime === 'workerd' ? WORKERD_ADMIN_KEY : '';
 
 const sleep = (ms: number): Promise<void> => new Promise(resolveSleep => setTimeout(resolveSleep, ms));
 
@@ -354,9 +357,9 @@ export const workerdConfig = (root: string): unknown => ({
   migrations: [{ tag: 'v1', new_sqlite_classes: ['ExecutionDO'] }],
 });
 
-const createWorkerdConfig = async (adminKey: string): Promise<void> => {
+const createWorkerdConfig = async (): Promise<void> => {
   await writeFile(WRANGLER_CONFIG_PATH, `${JSON.stringify(workerdConfig(ROOT), null, 2)}\n`, { mode: 0o600 });
-  await writeFile(DEV_VARS_PATH, adminKey === '' ? '' : `ADMIN_KEY=${adminKey}\n`, { mode: 0o600 });
+  await writeFile(DEV_VARS_PATH, `ADMIN_KEY=${WORKERD_ADMIN_KEY}\n`, { mode: 0o600 });
 };
 
 const createState = (
@@ -405,25 +408,14 @@ const start = async (parsed: Extract<ParsedCommand, { command: 'up' }>): Promise
   await rm(join(STATE_DIR, 'web.log'), { force: true });
 
   if (parsed.runtime === 'workerd') {
-    await createWorkerdConfig('');
+    await createWorkerdConfig();
     applyWorkerdMigrations();
   }
-  let state = createState(parsed.runtime, parsed.gatewayPort, parsed.webPort, '', startServices(parsed.runtime, parsed.gatewayPort, parsed.webPort));
+  const state = createState(parsed.runtime, parsed.gatewayPort, parsed.webPort, adminKeyForRuntime(parsed.runtime), startServices(parsed.runtime, parsed.gatewayPort, parsed.webPort));
   await writeState(state);
   try {
     await waitUntilReady(state);
-    if (await loginSucceeds(state.apiUrl, '')) {
-      return `${JSON.stringify({ running: true, runtime: state.runtime, webUrl: state.webUrl, apiUrl: state.apiUrl, adminKey: state.adminKey, auth: authMode(state.adminKey) }, null, 2)}\n`;
-    }
-    if (parsed.runtime !== 'workerd') throw new Error('Blank-password login failed on the Node runtime');
-
-    await stopServices(state);
-    const adminKey = randomBytes(32).toString('hex');
-    await createWorkerdConfig(adminKey);
-    state = createState(parsed.runtime, parsed.gatewayPort, parsed.webPort, adminKey, startServices(parsed.runtime, parsed.gatewayPort, parsed.webPort));
-    await writeState(state);
-    await waitUntilReady(state);
-    await waitFor('the workerd demo to accept its generated admin key', async () => await loginSucceeds(state.apiUrl, adminKey));
+    await waitFor('the local demo to accept its configured credentials', async () => await loginSucceeds(state.apiUrl, state.adminKey));
     return `${JSON.stringify({ running: true, runtime: state.runtime, webUrl: state.webUrl, apiUrl: state.apiUrl, adminKey: state.adminKey, auth: authMode(state.adminKey) }, null, 2)}\n`;
   } catch (error) {
     await stopServices(state).catch(stopError => console.error('Could not clean up after startup failure:', stopError));

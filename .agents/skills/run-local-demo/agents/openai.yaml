@@ -1,4 +1,4 @@
 interface:
   display_name: "Run Local Demo"
   short_description: "Start and manage a local Floway demo"
-  default_prompt: "Use $run-local-demo to start a local demo and keep its URL and admin key reported until cleanup."
+  default_prompt: "Use $run-local-demo to start a local demo and keep its URL and fixed workerd admin key reported until cleanup."
