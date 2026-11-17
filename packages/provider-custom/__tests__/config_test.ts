@@ -33,14 +33,14 @@ test('assertCustomUpstreamRecord parses modelsFetch and models', () => {
     ...baseRecord,
     config: {
       ...(baseRecord.config as Record<string, unknown>),
-      modelsFetch: { enabled: false },
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
       models: [
         { upstreamModelId: 'pinned', endpoints: { openaiChatCompletions: {} }, display_name: 'Pinned' },
       ],
     },
   });
 
-  assertEquals(config.modelsFetch, { enabled: false });
+  assertEquals(config.modelsFetch, { enabled: false, authStyle: 'bearer' });
   assertEquals(config.models.length, 1);
   assertEquals(config.models[0].upstreamModelId, 'pinned');
   assertEquals(config.models[0].display_name, 'Pinned');
@@ -201,7 +201,7 @@ test('assertCustomUpstreamRecord requires ingressHeadersRules on persisted confi
 
 test('assertCustomUpstreamRecord defaults modelsFetch to enabled when absent', () => {
   const { config } = assertCustomUpstreamRecord(baseRecord);
-  assertEquals(config.modelsFetch, { enabled: true });
+  assertEquals(config.modelsFetch, { enabled: true, authStyle: 'bearer' });
   assertEquals(config.models, []);
 });
 
@@ -221,10 +221,10 @@ test('assertCustomUpstreamRecord treats a null modelsFetch.endpoint as no overri
     ...baseRecord,
     config: {
       ...(baseRecord.config as Record<string, unknown>),
-      modelsFetch: { enabled: true, endpoint: null },
+      modelsFetch: { enabled: true, authStyle: 'anthropic', endpoint: null },
     },
   });
-  assertEquals(config.modelsFetch, { enabled: true });
+  assertEquals(config.modelsFetch, { enabled: true, authStyle: 'anthropic' });
 });
 
 test('assertCustomUpstreamRecord rejects malformed opaque config instead of dropping endpoints', () => {

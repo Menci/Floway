@@ -29,7 +29,7 @@ const buildCustomUpstream = (ingressHeadersRules: CustomIngressHeaderRule[], mod
     apiKey: 'sk-test',
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules,
-    modelsFetch: { enabled: false },
+    modelsFetch: { enabled: false, authStyle: 'bearer' },
     models,
   },
 });

@@ -45,8 +45,11 @@ const CUSTOM_PATH_OVERRIDE_KEYS = [
 
 export type CustomPathOverrideKey = typeof CUSTOM_PATH_OVERRIDE_KEYS[number];
 
+export type CustomAuthStyle = 'bearer' | 'anthropic' | 'none';
+
 export interface CustomModelsFetch {
   enabled: boolean;
+  authStyle: CustomAuthStyle;
   endpoint?: string;
 }
 
@@ -174,22 +177,31 @@ const pathOverridesField = (value: unknown): CustomUpstreamConfig['pathOverrides
   return pathOverrides;
 };
 
-// The /models fetch toggle. Absent defaults to enabled: existing upstreams
-// fetched their model list before this toggle existed, and the migration
-// backfills `{ enabled: true }`. `endpoint` is the optional `/models` path
-// override; the migration writes `endpoint: null` where there was no
-// override, so null/empty must parse cleanly as "no override".
+const CUSTOM_AUTH_STYLES: ReadonlySet<CustomAuthStyle> = new Set<CustomAuthStyle>(['bearer', 'anthropic', 'none']);
+
+const customAuthStyleField = (value: unknown): CustomAuthStyle => {
+  if (typeof value !== 'string' || !CUSTOM_AUTH_STYLES.has(value as CustomAuthStyle)) {
+    throw new Error('Malformed custom upstream config: modelsFetch.authStyle must be "bearer", "anthropic", or "none"');
+  }
+  return value as CustomAuthStyle;
+};
+
+// The /models fetch toggle. The catalog endpoint has no request protocol to
+// infer from, so it carries its own authentication scheme. Absent defaults to
+// enabled bearer fetches for configs that predate the toggle. `endpoint` is
+// the optional `/models` path override; null/empty parse as "no override".
 const modelsFetchField = (value: unknown): CustomModelsFetch => {
-  if (value === undefined) return { enabled: true };
+  if (value === undefined) return { enabled: true, authStyle: 'bearer' };
   if (!isRecord(value)) throw new Error('Malformed custom upstream config: modelsFetch must be an object');
   if (typeof value.enabled !== 'boolean') throw new Error('Malformed custom upstream config: modelsFetch.enabled must be a boolean');
+  const authStyle = customAuthStyleField(value.authStyle);
 
   if (value.endpoint === undefined || value.endpoint === null || value.endpoint === '') {
-    return { enabled: value.enabled };
+    return { enabled: value.enabled, authStyle };
   }
   const validPath = validateUpstreamPath(value.endpoint, 'modelsFetch.endpoint');
   if (!validPath.ok) throw new Error(`Malformed custom upstream config: ${validPath.error}`);
-  return { enabled: value.enabled, endpoint: validPath.value };
+  return { enabled: value.enabled, authStyle, endpoint: validPath.value };
 };
 
 export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstreamRecord => {

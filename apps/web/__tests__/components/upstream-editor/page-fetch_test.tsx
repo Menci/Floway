@@ -71,7 +71,7 @@ const customRecord = upstreamRecord('up_custom', {
   kind: 'custom',
   config: {
     baseUrl: 'https://custom.example.com', apiKey: '', ingressHeadersRules: [],
-    endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: true }, models: [],
+    endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: true, authStyle: 'bearer' }, models: [],
   },
   state: null,
 });

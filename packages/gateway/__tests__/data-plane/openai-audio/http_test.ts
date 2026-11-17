@@ -34,7 +34,7 @@ const registerAudioModel = async (
       ingressHeadersRules: [],
       apiKey: 'sk-audio',
       endpoints: {},
-      modelsFetch: { enabled: false },
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
       models: [{
         upstreamModelId: 'gpt-4o-transcribe-upstream',
         publicModelId: 'gpt-4o-transcribe',

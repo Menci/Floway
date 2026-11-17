@@ -39,7 +39,7 @@ const searchUpstream = (modelIds: readonly string[]) => buildCustomUpstreamRecor
     ingressHeadersRules: [],
     apiKey: 'search-secret',
     endpoints: { openaiResponses: {} },
-    modelsFetch: { enabled: false },
+    modelsFetch: { enabled: false, authStyle: 'bearer' },
     models: modelIds.map(upstreamModelId => ({ upstreamModelId, endpoints: { openaiResponses: {} } })),
   },
 });

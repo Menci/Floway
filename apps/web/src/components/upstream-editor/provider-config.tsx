@@ -28,7 +28,7 @@ import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { errorMessage } from '../../lib/error-message';
 import { ChoiceGroup } from '../ui/choice-group';
-import { Input, Textarea } from '../ui/fluent-form-controls';
+import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
 import { CHECKBOX_LIST_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
@@ -44,6 +44,7 @@ const {
   Checkbox,
   Field,
   Link,
+  Option,
   Spinner,
   Switch,
   Tab,
@@ -94,6 +95,13 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
   const { t } = useTranslation();
   const { control } = useFormContext<ValuesForKind<'custom'>>();
   const fetchesCatalog = useWatch({ control, name: 'config.modelsFetch.enabled' });
+  const modelsFetchAuthStyleLabel = (value: Extract<UpstreamRecord, { kind: 'custom' }>['config']['modelsFetch']['authStyle']) => {
+    switch (value) {
+    case 'bearer': return 'Bearer';
+    case 'anthropic': return 'Anthropic';
+    case 'none': return t('dashboard.upstreamEditor.auth.none');
+    }
+  };
   return (
     <div className="grid gap-4">
       <Field label={t('dashboard.upstreamEditor.fields.baseUrl')}>
@@ -127,9 +135,22 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
         />
       )} />
       {fetchesCatalog && (
-        <Field label={t('dashboard.upstreamEditor.fields.catalogPath')}>
-          <Controller control={control} name="config.modelsFetch.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="/v1/models" readOnly={readOnly} ref={field.ref} value={field.value ?? ''} />} />
-        </Field>
+        <>
+          <Controller control={control} name="config.modelsFetch.authStyle" render={({ field }) => (
+            <Field label={t('dashboard.upstreamEditor.fields.fetchModelsAuthStyle')}>
+              <Dropdown readOnly={modelsFetchReadOnly} value={modelsFetchAuthStyleLabel(field.value)} selectedOptions={[field.value]} onOptionSelect={(_, data) => {
+                field.onChange(data.optionValue);
+              }}>
+                <Option value="bearer">Bearer</Option>
+                <Option value="anthropic">Anthropic</Option>
+                <Option value="none">{t('dashboard.upstreamEditor.auth.none')}</Option>
+              </Dropdown>
+            </Field>
+          )} />
+          <Field label={t('dashboard.upstreamEditor.fields.catalogPath')}>
+            <Controller control={control} name="config.modelsFetch.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="/v1/models" readOnly={modelsFetchReadOnly} ref={field.ref} value={field.value ?? ''} />} />
+          </Field>
+        </>
       )}
       <CustomIngressHeaderRules readOnly={readOnly} />
     </div>

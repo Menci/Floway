@@ -94,7 +94,7 @@ test('scheduler registration failures propagate rather than looking like an upst
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    config: { baseUrl: 'https://custom.example.com', apiKey: '', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [], modelsFetch: { enabled: false }, models: [] },
+    config: { baseUrl: 'https://custom.example.com', apiKey: '', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [], modelsFetch: { enabled: false, authStyle: 'bearer' }, models: [] },
   }));
   const providers = await listModelProviders(null);
   await expect(enumerateRealModelCandidates('model', 'chat', providers, {

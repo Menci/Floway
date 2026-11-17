@@ -1,10 +1,8 @@
-import type { CustomPathOverrideKey, CustomUpstreamConfig } from './config.ts';
+import type { CustomAuthStyle, CustomPathOverrideKey, CustomUpstreamConfig } from './config.ts';
 import { type FetchInit, type UpstreamFetchOptions, joinBaseAndPath } from '@floway-dev/provider';
 
 // https://docs.anthropic.com/en/api/versioning
 const ANTHROPIC_VERSION = '2023-06-01';
-
-type CustomAuthScheme = 'bearer' | 'anthropic';
 
 // Endpoint key is the OpenAI-canonical path fragment (`/chat/completions`,
 // `/images/generations`, ...). The default upstream URL is the key prefixed
@@ -30,16 +28,16 @@ const replace = (lines: [string, string][], name: string, value: string): void =
 
 const customFetchInternal = async (
   config: CustomUpstreamConfig,
-  authScheme: CustomAuthScheme,
+  authStyle: CustomAuthStyle,
   path: string,
   init: FetchInit,
   options: UpstreamFetchOptions,
 ): Promise<Response> => {
   const headers: [string, string][] = init.headers ? [...new Headers(init.headers)] : [];
-  if (config.apiKey !== '' && authScheme === 'anthropic') {
+  if (config.apiKey !== '' && authStyle === 'anthropic') {
     replace(headers, 'x-api-key', config.apiKey);
     if (!has(headers, 'anthropic-version')) headers.push(['anthropic-version', ANTHROPIC_VERSION]);
-  } else if (config.apiKey !== '') {
+  } else if (config.apiKey !== '' && authStyle === 'bearer') {
     replace(headers, 'Authorization', `Bearer ${config.apiKey}`);
   }
   if (init.body && !has(headers, 'content-type') && !(init.body instanceof FormData)) {
@@ -84,17 +82,13 @@ export const customFetchOpenAIAudioTranscriptions = (config: CustomUpstreamConfi
   customFetchInternal(config, 'bearer', pathOverrideFor(config, '/audio/transcriptions'), init, options);
 export const customFetchAlphaSearch = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(config, 'bearer', pathOverrideFor(config, '/alpha/search'), init, options);
-// /models lives on its own fetch toggle (see config.modelsFetch.endpoint),
-// not in pathOverrides.
+// /models lives on its own fetch toggle (see config.modelsFetch), not in
+// pathOverrides. It uses the fetch-specific auth style because the endpoint
+// itself carries no protocol identity.
 export const customFetchModels = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(
     config,
-    config.endpoints.openaiCompletions === undefined
-      && config.endpoints.openaiChatCompletions === undefined
-      && config.endpoints.openaiResponses === undefined
-      && config.endpoints.anthropicMessages !== undefined
-      ? 'anthropic'
-      : 'bearer',
+    config.modelsFetch.authStyle,
     config.modelsFetch.endpoint ?? '/v1/models',
     init,
     options,

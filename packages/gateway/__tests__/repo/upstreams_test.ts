@@ -454,7 +454,7 @@ test('SQL upstream repo round-trips a non-null model_prefix', async () => {
     sortOrder: 0,
     createdAt: now,
     updatedAt: now,
-    config: { baseUrl: 'https://example.com', bearerToken: 'sk', endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: true } },
+    config: { baseUrl: 'https://example.com', bearerToken: 'sk', endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: true, authStyle: 'bearer' } },
     state: null,
     flagOverrides: {},
     disabledPublicModelIds: [],
@@ -1262,6 +1262,7 @@ test('model pricing migrations materialize legacy semantics as base-unit metric 
   assertEquals(config, {
     apiKey: '',
     ingressHeadersRules: [],
+    modelsFetch: { enabled: false, authStyle: 'bearer', endpoint: null },
     models: [
       {
         upstreamModelId: 'base-and-overlay',

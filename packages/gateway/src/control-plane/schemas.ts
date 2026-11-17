@@ -196,8 +196,14 @@ const customConfigSchema = z.object({
     key: z.string(),
     value: z.string().nullable(),
   }).strict()),
-  // Live upstream /models fetch. `endpoint` parsing happens in the runtime.
-  modelsFetch: z.object({ enabled: z.boolean(), endpoint: z.string().optional() }).optional(),
+  // Live upstream /models fetch. The catalog endpoint has no request protocol
+  // to infer authentication from, so it carries its own scheme. `endpoint`
+  // parsing happens in the runtime.
+  modelsFetch: z.object({
+    enabled: z.boolean(),
+    authStyle: z.enum(['bearer', 'anthropic', 'none']),
+    endpoint: z.string().optional(),
+  }).optional(),
   // Statically configured per-model overrides merged with the live fetch.
   models: z.array(upstreamModelSchema).optional(),
 });

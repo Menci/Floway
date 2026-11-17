@@ -21,7 +21,7 @@ test('config-version migration preserves cached models and gives existing failur
     (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, models_cache_json, hue)
     VALUES (?, 'custom', 'Before migration', 1, 0, '', '', ?, NULL, '{}', ?, 210)`, [
     'up_legacy_failure',
-    JSON.stringify({ baseUrl: 'https://example.com', apiKey: '', endpoints: {}, ingressHeadersRules: [], modelsFetch: { enabled: false }, models: [] }),
+    JSON.stringify({ baseUrl: 'https://example.com', apiKey: '', endpoints: {}, ingressHeadersRules: [], modelsFetch: { enabled: false, authStyle: 'bearer' }, models: [] }),
     JSON.stringify(cache),
   ]);
   const migration = migrationSqlByFilename.find(([filename]) => filename === '0085_upstream_config_version.sql');

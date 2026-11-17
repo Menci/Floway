@@ -114,7 +114,7 @@ const embeddingsThroughUpstream = async (egress: ProxyFallbackEntry[], origin: s
       apiKey: 'sk-custom',
       endpoints: {},
       ingressHeadersRules: INGRESS_HEADERS_RULES,
-      modelsFetch: { enabled: false },
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
       models: [{ upstreamModelId: 'embedding-model', endpoints: { openaiEmbeddings: {} } }],
     },
   }));

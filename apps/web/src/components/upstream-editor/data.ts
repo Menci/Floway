@@ -227,7 +227,10 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
           ...structuredClone(record.config.ingressHeadersRules),
           { key: '', value: null },
         ],
-        modelsFetch: withRegisteredKey('endpoint', structuredClone(record.config.modelsFetch)),
+        modelsFetch: {
+          ...withRegisteredKey('endpoint', structuredClone(record.config.modelsFetch)),
+          authStyle: record.config.modelsFetch.authStyle,
+        },
       }
     : record.kind === 'azure' || record.kind === 'ollama' || record.kind === 'kimi-code'
       ? withApiKeyField(record.config)

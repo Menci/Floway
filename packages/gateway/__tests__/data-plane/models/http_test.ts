@@ -1069,7 +1069,7 @@ test('/v1/models keeps the configured public endpoint when OMP connects through 
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     config: {
       baseUrl: 'https://upstream.example', apiKey: 'upstream-key', ingressHeadersRules: [],
-      endpoints: {}, modelsFetch: { enabled: false },
+      endpoints: {}, modelsFetch: { enabled: false, authStyle: 'bearer' },
       models: [
         { upstreamModelId: 'response-model', kind: 'chat', endpoints: { openaiResponses: {} }, chat: { reasoning: { effort: { supported: ['low'], default: 'low' } } } },
         { upstreamModelId: 'budget-model', kind: 'chat', endpoints: { anthropicMessages: {} }, chat: { reasoning: { budget_tokens: { min: 1024 } } } },
@@ -1120,7 +1120,7 @@ test('/v1/models serves omp-tailored catalog to omp/* callers and preserves prec
       ingressHeadersRules: [],
       apiKey: 'sk-omp-test',
       endpoints: {},
-      modelsFetch: { enabled: false },
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
       models: [
         {
           upstreamModelId: 'test-chat',
@@ -1214,7 +1214,7 @@ test('the TypeSafe SDK user agent receives the { models } catalog its parsers re
       ingressHeadersRules: [],
       apiKey: 'sk-decision',
       endpoints: {},
-      modelsFetch: { enabled: false },
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
       models: [{
         upstreamModelId: 'jev-1.13',
         publicModelId: 'jev-1.13',

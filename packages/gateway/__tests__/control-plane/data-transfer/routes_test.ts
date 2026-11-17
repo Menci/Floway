@@ -91,7 +91,7 @@ const CUSTOM_UPSTREAM: StoredUpstreamRecord = {
     ],
     apiKey: 'sk-custom',
     endpoints: { openaiChatCompletions: {}, openaiResponses: {} },
-    modelsFetch: { enabled: true, endpoint: '/models' },
+    modelsFetch: { enabled: true, authStyle: 'bearer', endpoint: '/models' },
   },
   state: null,
 };

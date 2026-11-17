@@ -638,10 +638,12 @@ const en = {
           endpoint: 'Endpoint',
           apiKey: 'API key',
           fetchModels: 'Fetch upstream models',
+          fetchModelsAuthStyle: 'Model catalog authentication',
           catalogPath: 'Catalog path',
           defaultEndpoints: 'Default LLM endpoints',
           pathOverrides: 'Path overrides',
         },
+        auth: { none: 'None' },
         headers: {
           title: 'Upstream request headers',
           description: 'Each rule decides what one header carries to this upstream. Passthrough forwards the client’s value and is the only behavior that needs the client to send the header; an empty or typed value is written on every request.',

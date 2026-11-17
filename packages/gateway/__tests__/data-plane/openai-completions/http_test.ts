@@ -23,7 +23,7 @@ const registerOpenAICompletionsUpstream = async (repo: Awaited<ReturnType<typeof
       ingressHeadersRules: [],
       apiKey: 'sk-passthrough',
       endpoints: {},
-      modelsFetch: { enabled: false },
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
       models: [{
         upstreamModelId: 'davinci-002',
         endpoints: { openaiCompletions: {} },
@@ -254,7 +254,7 @@ test('/v1/completions rejects a model without the openaiCompletions endpoint wit
       ingressHeadersRules: [],
       apiKey: 'sk-x',
       endpoints: {},
-      modelsFetch: { enabled: false },
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
       models: [{
         upstreamModelId: 'davinci-002',
         endpoints: { openaiChatCompletions: {} },

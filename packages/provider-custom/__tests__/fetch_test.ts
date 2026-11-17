@@ -119,7 +119,7 @@ test('customFetchModels resolves the path from modelsFetch.endpoint', async () =
     ...baseRecord,
     config: {
       ...(baseRecord.config as Record<string, unknown>),
-      modelsFetch: { enabled: true, endpoint: '/models' },
+      modelsFetch: { enabled: true, authStyle: 'bearer', endpoint: '/models' },
     },
   });
   let seen: string | undefined;
@@ -141,7 +141,7 @@ test('customFetchModels falls back to the default /v1/models path when modelsFet
     ...baseRecord,
     config: {
       ...(baseRecord.config as Record<string, unknown>),
-      modelsFetch: { enabled: true },
+      modelsFetch: { enabled: true, authStyle: 'bearer' },
     },
   });
   let seen: string | undefined;
@@ -156,6 +156,64 @@ test('customFetchModels falls back to the default /v1/models path when modelsFet
   );
 
   assertEquals(seen, 'https://custom.example.com/v1/models');
+});
+
+test('customFetchModels uses modelsFetch.authStyle independently from the inference protocol', async () => {
+  const { config: stored } = assertCustomUpstreamRecord(baseRecord);
+  const { config } = assertCustomUpstreamRecord({
+    ...baseRecord,
+    config: {
+      ...stored,
+      endpoints: { anthropicMessages: {} },
+      modelsFetch: { enabled: true, authStyle: 'bearer' },
+    },
+  });
+  const observed: { hostname: string; authorization: string | null; xApiKey: string | null }[] = [];
+  await withMockedFetch(
+    request => {
+      observed.push({
+        hostname: new URL(request.url).hostname,
+        authorization: request.headers.get('authorization'),
+        xApiKey: request.headers.get('x-api-key'),
+      });
+      return new Response('{}', { status: 200 });
+    },
+    async () => {
+      await customFetchModels(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+    },
+  );
+
+  assertEquals(observed, [
+    { hostname: 'custom.example.com', authorization: 'Bearer sk-test', xApiKey: null },
+    { hostname: 'custom.example.com', authorization: null, xApiKey: 'sk-test' },
+  ]);
+});
+
+test('customFetchModels sends no credential when modelsFetch.authStyle is none', async () => {
+  const { config: stored } = assertCustomUpstreamRecord(baseRecord);
+  const { config } = assertCustomUpstreamRecord({
+    ...baseRecord,
+    config: {
+      ...stored,
+      modelsFetch: { enabled: true, authStyle: 'none' },
+    },
+  });
+  let authorization: string | null = null;
+  let xApiKey: string | null = null;
+  await withMockedFetch(
+    request => {
+      authorization = request.headers.get('authorization');
+      xApiKey = request.headers.get('x-api-key');
+      return new Response('{}', { status: 200 });
+    },
+    async () => {
+      await customFetchModels(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+    },
+  );
+
+  assertEquals(authorization, null);
+  assertEquals(xApiKey, null);
 });
 
 test('OpenAI transport sends the configured token via Authorization', async () => {
@@ -304,7 +362,7 @@ test('Custom provider callOpenAIAudioTranscriptions preserves multipart entries 
       endpoints: {},
       ingressHeadersRules: [],
       pathOverrides: { '/audio/transcriptions': '/speech/to-text' },
-      modelsFetch: { enabled: false },
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
       models: [{ upstreamModelId: 'whisper-upstream', kind: 'transcription', endpoints: { openaiAudioTranscriptions: {} } }],
     },
   };

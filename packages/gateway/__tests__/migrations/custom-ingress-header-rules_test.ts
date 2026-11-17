@@ -23,7 +23,7 @@ test('the Custom ingress header migration backfills only missing Custom rule lis
   const configs = Object.fromEntries(rows.map(row => [row.id, JSON.parse(row.config_json) as unknown]));
   assertEquals(configs, {
     azure_missing: { endpoint: 'https://example.com' },
-    custom_existing: { apiKey: '', ingressHeadersRules: [{ key: 'x-route', value: null }] },
-    custom_missing: { apiKey: '', baseUrl: 'https://example.com', ingressHeadersRules: [] },
+    custom_existing: { apiKey: '', ingressHeadersRules: [{ key: 'x-route', value: null }], modelsFetch: { enabled: false, authStyle: 'bearer', endpoint: null } },
+    custom_missing: { apiKey: '', baseUrl: 'https://example.com', ingressHeadersRules: [], modelsFetch: { enabled: false, authStyle: 'bearer', endpoint: null } },
   });
 });

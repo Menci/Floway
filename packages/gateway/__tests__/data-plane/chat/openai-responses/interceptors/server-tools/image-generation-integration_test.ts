@@ -216,7 +216,7 @@ beforeEach(async () => {
       ingressHeadersRules: [],
       apiKey: 'unused',
       endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
-      modelsFetch: { enabled: false, endpoint: '/models' },
+      modelsFetch: { enabled: false, authStyle: 'bearer', endpoint: '/models' },
       models: [],
     },
     state: null,

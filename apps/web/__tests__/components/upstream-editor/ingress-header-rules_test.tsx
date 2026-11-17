@@ -22,7 +22,7 @@ const record = (ingressHeadersRules: { key: string; value: string | null }[]): C
     apiKey: '',
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules,
-    modelsFetch: { enabled: false },
+    modelsFetch: { enabled: false, authStyle: 'bearer' },
     models: [],
   },
   state: null,

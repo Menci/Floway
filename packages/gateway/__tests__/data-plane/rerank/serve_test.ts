@@ -22,7 +22,7 @@ const saveRerankUpstream = async (
       ingressHeadersRules: [],
       apiKey: 'sk-rerank',
       endpoints: {},
-      modelsFetch: { enabled: false },
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
       models: [{
         upstreamModelId: 'raw-reranker',
         publicModelId: 'public-reranker',

@@ -45,7 +45,7 @@ const record = upstreamRecord('up_test', {
     apiKey: '',
     endpoints: { openaiResponses: {} },
     ingressHeadersRules: [],
-    modelsFetch: { enabled: false },
+    modelsFetch: { enabled: false, authStyle: 'bearer' },
     models: [model('model-a'), model('model-b')],
   },
   state: null,
@@ -172,7 +172,7 @@ describe('upstream model workspace field-array transitions', () => {
           apiKey: '',
           endpoints: row.endpoints,
           ingressHeadersRules: [],
-          modelsFetch: { enabled: false },
+          modelsFetch: { enabled: false, authStyle: 'bearer' },
           models: [{ upstreamModelId: 'm', publicModelId: 'm', display_name: 'm', ...row }],
         },
         state: null,
@@ -269,7 +269,7 @@ describe('upstream model workspace field-array transitions', () => {
   it('shows an auto model opaque blob compatibility scope read-only', () => {
     const source: UpstreamRecord = {
       ...record,
-      config: { ...record.config, modelsFetch: { enabled: true } },
+      config: { ...record.config, modelsFetch: { enabled: true, authStyle: 'bearer' } },
     };
     renderInApp(<Harness
       source={source}

@@ -34,7 +34,7 @@ const buildCustomUpstream = (options: BuildOptions = {}): UpstreamRecord => ({
     apiKey: 'sk-test',
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: options.ingressHeadersRules ?? [],
-    modelsFetch: { enabled: options.modelsFetchEnabled ?? true },
+    modelsFetch: { enabled: options.modelsFetchEnabled ?? true, authStyle: 'bearer' },
     models: options.models ?? [],
   },
 });

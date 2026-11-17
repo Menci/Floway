@@ -1,12 +1,12 @@
--- `custom` upstreams no longer carry an authentication mode. The protocol used
--- by each outbound call decides where the credential goes, and an empty
--- credential marks an anonymous upstream.
+-- Custom inference calls derive authentication from the protocol each call
+-- uses. The `/models` catalog endpoint has no such protocol, so its fetch
+-- configuration carries a separate auth style. An empty apiKey means the
+-- shared credential is unset; a `none` fetch style additionally suppresses it.
 --
--- Before this change `authStyle = 'none'` rows had no apiKey and every other
--- row had a non-empty one. Persist the former as an empty string, give an
--- otherwise missing key the same value, then remove the obsolete selector.
--- `config_version` moves in the same write so any in-flight model refresh
--- cannot overwrite a catalog derived from the old configuration.
+-- Move the old upstream-wide authStyle into modelsFetch before removing the
+-- top-level field. Rows without modelsFetch default to bearer catalog fetches,
+-- matching the pre-toggle behavior. `config_version` moves so any in-flight
+-- model refresh cannot overwrite a catalog derived from the old configuration.
 UPDATE upstreams
 SET
   config_json = json_remove(
@@ -18,7 +18,22 @@ SET
         WHEN json_type(config_json, '$.apiKey') = 'null' THEN ''
         WHEN json_type(config_json, '$.apiKey') IS NULL THEN ''
         ELSE json_extract(config_json, '$.apiKey')
-      END
+      END,
+      '$.modelsFetch',
+      json_object(
+        'enabled',
+        json(CASE
+          WHEN json_type(config_json, '$.modelsFetch.enabled') = 'true' THEN 'true'
+          ELSE 'false'
+        END),
+        'authStyle',
+        json_quote(COALESCE(
+          json_extract(config_json, '$.modelsFetch.authStyle'),
+          CASE WHEN json_extract(config_json, '$.authStyle') = 'none' THEN 'none' ELSE 'bearer' END
+        )),
+        'endpoint',
+        json_extract(config_json, '$.modelsFetch.endpoint')
+      )
     ),
     '$.authStyle'
   ),
@@ -27,4 +42,6 @@ WHERE provider = 'custom'
   AND (
     json_type(config_json, '$.authStyle') IS NOT NULL
     OR json_type(config_json, '$.apiKey') IS NULL
+    OR json_type(config_json, '$.modelsFetch') IS NULL
+    OR json_type(config_json, '$.modelsFetch.authStyle') IS NULL
   );

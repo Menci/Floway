@@ -35,7 +35,7 @@ const custom: UpstreamRecord = {
     ingressHeadersRules: [{ key: 'x-route', value: '' }],
     apiKey: 'sk-secret-token-12345',
     endpoints: { openaiChatCompletions: {}, openaiResponses: {} },
-    modelsFetch: { enabled: true, endpoint: '/models' },
+    modelsFetch: { enabled: true, authStyle: 'bearer', endpoint: '/models' },
     models: [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
   },
   state: null,
@@ -58,7 +58,7 @@ test('upstreamRecordToJson redacts custom bearer token inside config', () => {
   assertEquals(config.apiKeySet, true);
   assertEquals(config.endpoints, { openaiChatCompletions: {}, openaiResponses: {} });
   assertEquals(config.ingressHeadersRules, [{ key: 'x-route', value: '' }]);
-  assertEquals(config.modelsFetch, { enabled: true, endpoint: '/models' });
+  assertEquals(config.modelsFetch, { enabled: true, authStyle: 'bearer', endpoint: '/models' });
   assertEquals(config.models, [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { openaiChatCompletions: {} } }]);
 });
 
