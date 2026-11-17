@@ -12,11 +12,6 @@ export interface EventResult<T> {
   // forward (blocklist in gateway `shared/respond.ts`). Absent on
   // lifted/synthesized streams that have no upstream Response behind them.
   headers?: Headers;
-  // Set when the client's protocol and the upstream's are the same, so the
-  // source respond layer can forward the wire unchanged. Translation-only
-  // response shaping (affinity carrier rewriting, synthetic item anchoring)
-  // must not touch these frames.
-  native?: true;
 }
 
 export interface EventResultMetadata {
@@ -78,7 +73,6 @@ export interface EventResultOptions {
   performance?: PerformanceTelemetryContext;
   finalMetadata?: Promise<EventResultMetadata>;
   headers?: Headers;
-  native?: true;
 }
 
 export const eventResult = <T>(
@@ -90,7 +84,6 @@ export const eventResult = <T>(
   if (options.performance !== undefined) result.performance = options.performance;
   if (options.finalMetadata !== undefined) result.finalMetadata = options.finalMetadata;
   if (options.headers !== undefined) result.headers = options.headers;
-  if (options.native === true) result.native = true;
   return result;
 };
 

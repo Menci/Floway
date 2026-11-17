@@ -13,9 +13,6 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
   // own protocol. This is the only place pricing figures are produced; nothing
   // downstream re-derives them from the translated result the client receives.
   readBillableUsage: (event: TEvent) => BillableUsage | null,
-  // Marks a same-protocol call. The source respond layer uses this to forward
-  // the upstream wire unchanged instead of applying translation-only shaping.
-  native = false,
 ): Promise<ExecuteResult<ProtocolFrame<TEvent>>> => {
   const context = upstreamPerformanceContext(ctx, candidate, 'chat');
   if (!providerResult.ok) {
@@ -72,11 +69,7 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
     }
   })();
   return {
-    ...eventResult(stampedEvents, identity, {
-      performance: context,
-      headers: providerResult.headers,
-      ...(native ? { native: true as const } : {}),
-    }),
+    ...eventResult(stampedEvents, identity, { performance: context, headers: providerResult.headers }),
     finalMetadata,
   };
 };

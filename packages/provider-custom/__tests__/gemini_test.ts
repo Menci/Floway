@@ -61,8 +61,8 @@ test('Gemini generation posts to the model action path with alt=sse and the x-go
   assertEquals(request.headers.get('authorization'), null);
 });
 
-test('a bearer-authenticated Gemini-compatible upstream keeps the Authorization header', async () => {
-  const provider = createCustomProvider(buildUpstream('bearer', 'https://gemini-proxy.example.com'));
+test('a Gemini-compatible upstream behind another host still uses the Google header', async () => {
+  const provider = createCustomProvider(buildUpstream('https://gemini-proxy.example.com'));
   let request: Request | undefined;
 
   await withMockedFetch(
@@ -78,8 +78,10 @@ test('a bearer-authenticated Gemini-compatible upstream keeps the Authorization 
 
   assertExists(request);
   assertEquals(request.url, 'https://gemini-proxy.example.com/v1beta/models/gemini-3-flash:streamGenerateContent?alt=sse');
-  assertEquals(request.headers.get('authorization'), 'Bearer AIza-test');
-  assertEquals(request.headers.get('x-goog-api-key'), null);
+  // The outbound protocol selects the credential header: Gemini is not
+  // OpenAI-compatible, so it never sends a bearer token.
+  assertEquals(request.headers.get('x-goog-api-key'), 'AIza-test');
+  assertEquals(request.headers.get('authorization'), null);
 });
 
 test('a configured /v1beta/models override moves generation, and a stored models/ prefix is stripped', async () => {

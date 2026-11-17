@@ -512,7 +512,7 @@ test('generate prefers a native Gemini candidate over a translated one', async (
   assertEquals(callOpenAIChatCompletions.mock.calls.length, 0);
 });
 
-test('a native candidate receives the client payload verbatim, including its own signatures', async () => {
+test('a native candidate keeps a foreign signature verbatim', async () => {
   installRepo();
   let observed: GeminiGenerateContentPayload | undefined;
   const callGeminiGenerateContent = vi.fn(async (_model, body): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => {
@@ -542,6 +542,9 @@ test('a native candidate receives the client payload verbatim, including its own
   });
   await collectEvents(expectType(result, 'events').events);
 
+  // Affinity selection runs for native candidates too. A signature the gateway
+  // never minted belongs to the client's upstream, so it is carried through
+  // unchanged instead of being stripped or re-wrapped.
   assertEquals(observed, payload);
   assertEquals(observed?.contents[1].parts?.[0].thoughtSignature, 'client-owned-signature');
 });

@@ -47,13 +47,7 @@ export const respondGeminiGenerateContent = async (
 
   const state = new SourceStreamState();
   const observed = observeGeminiGenerateContentFrames(result.events, state, ctx);
-  // A native Gemini turn crosses the gateway in its own protocol, so the
-  // affinity carrier rewrite — a requirement of translating into Gemini from
-  // another wire — does not apply and would otherwise rewrite signatures that
-  // the upstream owns.
-  const frames = result.native === true
-    ? observed
-    : wrapGeminiGenerateContentAffinityEgress(observed, affinityEgressOptions(ctx));
+  const frames = wrapGeminiGenerateContentAffinityEgress(observed, affinityEgressOptions(ctx));
 
   if (!wantsStream) {
     try {

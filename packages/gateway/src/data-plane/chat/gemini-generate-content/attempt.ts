@@ -159,7 +159,7 @@ const dispatchGeminiGenerateContent = async (
       ctx.abortSignal,
       buildUpstreamCallOptions(candidate, ctx, invocation.headers),
     );
-    return await providerStreamResultToExecuteResult(providerResult, candidate, targetApi, ctx, billableUsageFromGeminiGenerateContentEvent, true);
+    return await providerStreamResultToExecuteResult(providerResult, candidate, targetApi, ctx, billableUsageFromGeminiGenerateContentEvent);
   }
   // The model comes from the URL and is folded into the translation request.
   const request = { ...invocation.payload, model: candidate.model.id };
