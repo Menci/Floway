@@ -344,3 +344,44 @@ describe('playground wire requests', () => {
     }))).rejects.toThrow('no such model');
   });
 });
+
+describe('Gemini generateContent playground', () => {
+  it('builds a contents body, puts the model in the path, and reads text deltas', async () => {
+    const chunk = { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'ok' }] } }] };
+    const terminal = { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: '' }] }, finishReason: 'STOP' }] };
+    let seenUrl = '';
+    let seenBody: Record<string, unknown> = {};
+    let seenHeaders: Headers | undefined;
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      seenUrl = String(input);
+      seenHeaders = new Headers(init?.headers);
+      seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(sseBody([chunk, terminal]), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    });
+
+    const api: PlaygroundApi = 'geminiGenerateContent';
+    const { text } = await collectWithOutput(streamPlaygroundText({
+      api,
+      apiKey: 'secret',
+      model: 'gemini-4-argon',
+      system: 'be brief',
+      messages: [{ id: 'u1', role: 'user', text: 'hello' }],
+      options: generationOptions(api, 'high'),
+      signal: new AbortController().signal,
+      fetchImpl: fetch,
+    }));
+
+    expect(text).toBe('ok');
+    // The model and the streaming action ride the path; the body carries the turns.
+    expect(seenUrl).toBe('/v1beta/models/gemini-4-argon:streamGenerateContent?alt=sse');
+    expect(seenBody).toEqual({
+      systemInstruction: { parts: [{ text: 'be brief' }] },
+      contents: [{ role: 'user', parts: [{ text: 'hello' }] }],
+      generationConfig: { thinkingConfig: { thinkingLevel: 'HIGH' } },
+    });
+    expect(seenBody).not.toHaveProperty('model');
+    expect(seenBody).not.toHaveProperty('stream');
+    // GenerateContent authenticates with the Google header.
+    expect(seenHeaders?.get('x-goog-api-key')).toBe('secret');
+  });
+});
