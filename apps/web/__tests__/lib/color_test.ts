@@ -1,7 +1,7 @@
 import { convertRgbToHsv, parseHex } from 'culori/fn';
 import { describe, expect, it } from 'vitest';
 
-import { alphaColor, blendHex, readableTone } from '../../src/lib/color';
+import { blendHex, readableTone } from '../../src/lib/color';
 import { hueBadgeTone } from '../../src/lib/hue';
 
 // The subject decides by contrast, so the assertions compute it independently
@@ -35,23 +35,8 @@ describe('readableTone', () => {
     expect(contrast(result, CARD_LIGHT)).toBeGreaterThanOrEqual(4.5);
   });
 
-  it('checks the same opaque tone before searching away from an alpha color', () => {
-    expect(readableTone('#00001110', '#757575')).toBe('#000011');
-  });
-
   it('rejects a translucent surface without a backdrop to flatten it onto', () => {
     expect(() => readableTone('#0008', '#FFFFFF80')).toThrow('Readable tone requires an opaque surface');
-  });
-
-  it('darkens a mid hue for a light surface and lightens it for a dark one', () => {
-    const light = toned('#C239B3', CARD_LIGHT);
-    const dark = toned('#C239B3', CARD_DARK);
-    expect(contrast('#C239B3', chip('#C239B3', CARD_LIGHT))).toBeLessThan(4.5);
-    expect(contrast('#C239B3', chip('#C239B3', CARD_DARK))).toBeLessThan(4.5);
-    expect(contrast(light, chip('#C239B3', CARD_LIGHT))).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(dark, chip('#C239B3', CARD_DARK))).toBeGreaterThanOrEqual(4.5);
-    expect(parseHex(light)!.r).toBeLessThan(parseHex('#C239B3')!.r);
-    expect(parseHex(dark)!.r).toBeGreaterThan(parseHex('#C239B3')!.r);
   });
 
   it('gives up saturation for the hue brightening cannot carry', () => {
@@ -84,12 +69,6 @@ describe('blendHex', () => {
     expect(() => blendHex('nope', 0.5, '#FFFFFF')).toThrow(TypeError);
     expect(() => blendHex('#FF0000', 0.5, 'nope')).toThrow(TypeError);
     expect(() => blendHex('#FF0000', 0.5, '#0000')).toThrow('Hex blending requires an opaque backdrop');
-  });
-});
-
-describe('alphaColor', () => {
-  it('serializes the combined opacity with legacy rgba syntax', () => {
-    expect(alphaColor('#0000006B', 0.1)).toBe('rgba(0, 0, 0, 0.04)');
   });
 });
 

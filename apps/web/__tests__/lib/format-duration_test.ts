@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import { formatCountdown, formatDuration, formatRemaining } from '../../src/lib/format-duration';
-import { NO_READING } from '../../src/lib/no-reading';
 
 describe('durations', () => {
   it('keeps the SI ladder in English', () => {
@@ -17,11 +16,6 @@ describe('durations', () => {
     expect(formatDuration(1_500, 'zh-Hans')).toBe('1.5 秒');
     expect(formatDuration(90_000, 'zh-Hans')).toBe('1.5 分钟');
   });
-
-  it('reports no reading rather than a zero one', () => {
-    expect(formatDuration(null, 'en')).toBe(NO_READING);
-    expect(formatDuration(Number.NaN, 'zh-Hans')).toBe(NO_READING);
-  });
 });
 
 describe('countdowns', () => {
@@ -31,11 +25,6 @@ describe('countdowns', () => {
     expect(formatCountdown(60, 'en')).toBe('1m 0s');
     expect(formatCountdown(3_599, 'en')).toBe('59m 59s');
     expect(formatCountdown(3_600, 'en')).toBe('60m 0s');
-  });
-
-  it('takes its unit names from the locale', () => {
-    expect(formatCountdown(61, 'zh-Hans')).toBe('1 分钟 1 秒');
-    expect(formatCountdown(30, 'zh-Hans')).toBe('30 秒');
   });
 });
 

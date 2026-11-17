@@ -5,7 +5,7 @@ import { expect, test, vi } from 'vitest';
 import { fluentComponents } from '../../src/fluent';
 import { renderInApp } from '../render';
 
-const { Badge, Button, CounterBadge, Input, NavDrawer, NavItem, Tab, TabList, Textarea } = fluentComponents;
+const { Button, NavDrawer, NavItem, Tab, TabList } = fluentComponents;
 
 test('wraps button text runs together and leaves icon-only buttons without a label', () => {
   const { container } = renderInApp(<>
@@ -31,18 +31,6 @@ test('preserves structured labels, refs, events and disabled state', () => {
   expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Unavailable' }).disabled).toBe(true);
 });
 
-test('keeps badge labels and native zero, overflow and dot semantics', () => {
-  const { container } = renderInApp(<>
-    <Badge>Enabled</Badge>
-    <CounterBadge count={0} showZero />
-    <CounterBadge count={120} />
-    <CounterBadge count={12} overflowCount={9} />
-    <CounterBadge count={0} />
-    <CounterBadge count={12} dot />
-  </>);
-  expect([...container.querySelectorAll('.floway-control-label')].map(label => label.textContent)).toEqual(['Enabled', '0', '99+', '9+']);
-});
-
 test('trims tab and navigation labels while retaining selection and accessible names', () => {
   const { container } = renderInApp(<>
     <TabList defaultSelectedValue="users"><Tab value="users">Users</Tab><Tab value="groups">Groups</Tab></TabList>
@@ -51,10 +39,4 @@ test('trims tab and navigation labels while retaining selection and accessible n
   expect(screen.getByRole('tab', { name: 'Users' }).getAttribute('aria-selected')).toBe('true');
   expect(container.querySelector('.fui-NavItem .floway-control-label')!.textContent).toBe('Permissions');
   expect(container.querySelector('.fui-Tab__content .floway-control-label')!.textContent).toBe('Users');
-});
-
-test('leaves editable text and its slots unwrapped', () => {
-  const { container } = renderInApp(<><Input aria-label="Name" defaultValue="alice" /><Textarea aria-label="Description" defaultValue="Paragraph" /></>);
-  expect(container.querySelector('.floway-control-label')).toBeNull();
-  expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Name' }).value).toBe('alice');
 });

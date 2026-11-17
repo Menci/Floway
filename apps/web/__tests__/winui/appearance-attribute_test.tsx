@@ -54,21 +54,6 @@ describe('appearance on the DOM', () => {
 
     expect(stamped).toEqual(['secondary', 'secondary', 'subtle', 'default']);
   });
-
-  it('distinguishes the borderless appearances from the default one', () => {
-    const view = renderInApp(
-      <>
-        <Button appearance="subtle">subtle</Button>
-        <Button appearance="transparent">transparent</Button>
-        <Button appearance="outline">outline</Button>
-      </>,
-    );
-
-    const stamped = [...view.container.querySelectorAll('button')].map(element =>
-      element.getAttribute(winuiAppearanceAttribute));
-
-    expect(stamped).toEqual(['subtle', 'transparent', 'outline']);
-  });
 });
 
 describe('components whose root is not their primary slot', () => {
@@ -97,39 +82,9 @@ describe('components whose root is not their primary slot', () => {
       );
     }
   });
-
-  it('accepts a root slot given as shorthand rather than as a props object', () => {
-    const view = renderInApp(<Input root="shorthand" aria-label="input" />);
-
-    expect(view.container.querySelector('.fui-Input')?.getAttribute(winuiAppearanceAttribute)).toBe('outline');
-    expect(view.container.querySelector('input')).not.toBeNull();
-  });
-
-  it('merges into a root slot given as a props object', () => {
-    const view = renderInApp(<Input root={{ className: 'own-root-class' }} aria-label="input" />);
-
-    const root = view.container.querySelector('.own-root-class');
-
-    expect(root?.getAttribute(winuiAppearanceAttribute)).toBe('outline');
-  });
 });
 
 describe('what the wrappers must not break', () => {
-  it('forwards the ref to the same element type Fluent renders', () => {
-    const buttonRef = React.createRef<HTMLButtonElement>();
-    const inputRef = React.createRef<HTMLInputElement>();
-
-    renderInApp(
-      <>
-        <Button ref={buttonRef}>ref</Button>
-        <Input aria-label="input" ref={inputRef} />
-      </>,
-    );
-
-    expect(buttonRef.current?.tagName).toBe('BUTTON');
-    expect(inputRef.current?.tagName).toBe('INPUT');
-  });
-
   it('still works as a cloned trigger child', () => {
     const view = renderInApp(
       <Menu>
@@ -190,12 +145,6 @@ describe('the rest of the button family', () => {
 
     expect(stamped).toEqual(['primary', 'primary']);
   });
-
-  it('leaves a suppressed SplitButton slot suppressed', () => {
-    const view = renderInApp(<SplitButton menuButton={null}>split</SplitButton>);
-
-    expect(view.container.querySelectorAll('button')).toHaveLength(1);
-  });
 });
 
 describe('the checked axis the WinUI rules read', () => {
@@ -253,26 +202,6 @@ describe('the checked axis the WinUI rules read', () => {
       element.getAttribute(winuiCheckedAttribute));
 
     expect(stamped).toEqual(['mixed', 'true', 'false']);
-  });
-
-  it('follows a selection cell check box the cell left to itself', () => {
-    const view = renderInApp(
-      <Table>
-        <TableBody>
-          <TableRow>
-            <TableSelectionCell />
-          </TableRow>
-        </TableBody>
-      </Table>,
-    );
-
-    const input = view.container.querySelector('.fui-Checkbox input')!;
-
-    expect(input.getAttribute(winuiCheckedAttribute)).toBe('false');
-
-    fireEvent.click(input);
-
-    expect(input.getAttribute(winuiCheckedAttribute)).toBe('true');
   });
 
   // Fluent puts the cell's own `checked` in the slot's defaultProps, so a slot

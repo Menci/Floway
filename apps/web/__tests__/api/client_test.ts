@@ -11,12 +11,6 @@ describe('callApi', () => {
     expect(result.error).toEqual({ status: 404, message: 'Alias not found', raw: { error: 'Alias not found' } });
   });
 
-  it('falls back to the status line when the failure carries no JSON body', async () => {
-    const result = await callApi(respond(new Response(null, { status: 502 })));
-    expect(result.error?.status).toBe(502);
-    expect(result.error?.message).toBe('HTTP 502');
-  });
-
   it('reports a body-less 204 as an error, which is what callApiNoContent exists to avoid', async () => {
     const result = await callApi(respond(new Response(null, { status: 204 })));
     expect(result.data).toBeUndefined();

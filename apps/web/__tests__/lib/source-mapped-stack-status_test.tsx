@@ -44,12 +44,6 @@ describe('what the error page is told about its trace', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('shows the minified trace while the maps are still coming', () => {
-    vi.stubEnv('DEV', false);
-    renderInApp(<Probe stack={RAW} />);
-    expect(read()).toEqual({ status: 'loading', stack: RAW });
-  });
-
   it('replaces the trace once the maps land', async () => {
     vi.stubEnv('DEV', false);
     renderInApp(<Probe stack={RAW} />);

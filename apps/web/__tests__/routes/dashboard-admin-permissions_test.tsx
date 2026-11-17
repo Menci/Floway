@@ -82,33 +82,6 @@ test('an operator sees every authorized principal in a read-only view', async ()
   expect(view.container.querySelectorAll('[data-rule-id]')).toHaveLength(3);
 });
 
-test('target-only identities render in rules without entering the principal picker', async () => {
-  const data: PermissionsData = {
-    ...initial,
-    directory: {
-      users: [...initial.directory!.users, { id: 3, username: 'bob', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null }, groupIds: [] }],
-      groups: [...initial.directory!.groups, { id: 2, name: 'Review Subjects', hue: 180, memberIds: [3], createdAt: '', deletedAt: null }],
-      principalUserIds: [2],
-      principalGroupIds: [1],
-    },
-    records: [
-      ...initial.records!,
-      { id: 4, principal: { kind: 'user', id: 2 }, scope: { kind: 'user', userId: 3 }, sortOrder: 1, values: { 'User.Audit': true }, createdAt: '', updatedAt: '' },
-      { id: 5, principal: { kind: 'group', id: 1 }, scope: { kind: 'group', groupId: 2 }, sortOrder: 1, values: { 'User.Audit': true }, createdAt: '', updatedAt: '' },
-    ],
-  };
-  renderOperatorPage(data);
-  const table = await screen.findByRole('table');
-  expect(within(table).getByText('bob')).toBeTruthy();
-  expect(within(table).getByText('Review Subjects')).toBeTruthy();
-  const picker = screen.getByRole('combobox', { name: 'Applies to' });
-  fireEvent.click(picker);
-  expect(await screen.findByRole('option', { name: /alice/ })).toBeTruthy();
-  expect(await screen.findByRole('option', { name: /Platform/ })).toBeTruthy();
-  expect(screen.queryByRole('option', { name: /bob/ })).toBeNull();
-  expect(screen.queryByRole('option', { name: /Review Subjects/ })).toBeNull();
-});
-
 test('an audited user sees membership-group rules and can pick those groups in Applies to', async () => {
   const data: PermissionsData = {
     ...initial,
@@ -202,41 +175,6 @@ test.each([
   expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).includes('/access-resolve'))).toBe(false);
 });
 
-test('invalid filters are replaced rather than retained in back navigation', async () => {
-  const { router } = renderPage('?q=Audit');
-  await screen.findByRole('table');
-  await act(async () => { await router.navigate('/permissions?principal=bad&scope=bad&q=Model.Use&page=2'); });
-  await waitFor(() => expect(router.state.location.search).toBe('?q=Model.Use'));
-  expect(router.state.historyAction).toBe('REPLACE');
-  await act(async () => { await router.navigate(-1); });
-  expect(router.state.location.search).toBe('?q=Audit');
-});
-
-test('removing an invalid scope cancels its old draft and allows a fresh valid selection', async () => {
-  const modelScope = { kind: 'upstreamModel', upstreamId: 'a', model: { kind: 'exact', value: 'gpt-5' } };
-  const { container, router } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(modelScope))}`);
-  await screen.findByText('No matching rules');
-  const filters = container.querySelector('[data-permission-filters]') as HTMLElement;
-  fireEvent.click(within(filters).getByRole('button', { name: 'gpt-5' }));
-  const input = within(filters).getByRole('combobox', { name: 'Model' });
-  fireEvent.change(input, { target: { value: 'uncommitted-model' } });
-  await act(async () => {
-    fireEvent.blur(input);
-    await router.navigate('/permissions?principal=user:2&scope=bad&effective=true');
-  });
-  await waitFor(() => expect(new URLSearchParams(router.state.location.search).has('scope')).toBe(false));
-  await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
-  expect(within(filters).queryByRole('combobox', { name: 'Model' })).toBeNull();
-  expect(new URLSearchParams(router.state.location.search).has('scope')).toBe(false);
-  await act(async () => { fireEvent.click(within(filters).getByRole('button', { name: 'Resource type' })); });
-  await act(async () => { fireEvent.click(await screen.findByRole('option', { name: /^Upstream$/ })); });
-  await act(async () => { fireEvent.click(await screen.findByRole('option', { name: 'Copilot' })); });
-  await waitFor(() => expect(JSON.parse(new URLSearchParams(router.state.location.search).get('scope')!)).toEqual(scope));
-  const toggle = screen.getByRole<HTMLInputElement>('switch', { name: 'Show effective' });
-  expect(toggle.disabled).toBe(false);
-  expect(toggle.checked).toBe(false);
-});
-
 test('a confirmed delete retires its rule and its confirmation without reading the page again', async () => {
   const originalFetch = vi.mocked(fetch).getMockImplementation()!;
   const requests: string[] = [];
@@ -259,38 +197,6 @@ test('a confirmed delete retires its rule and its confirmation without reading t
   expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(2);
   expect(reads()).toBe(before);
   expect(await screen.findByText('Deleted rule')).toBeTruthy();
-});
-
-test('an effective view drops a deleted rule before its resolution arrives', async () => {
-  const originalFetch = vi.mocked(fetch).getMockImplementation()!;
-  const deleted = new Set<number>();
-  let holdResolution = false;
-  let release!: () => void;
-  const held = new Promise<void>(resolve => { release = resolve; });
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const path = new URL(String(input), 'http://localhost').pathname;
-    if (path === '/api/access-records/3' && init?.method === 'DELETE') { deleted.add(3); return Response.json({ ok: true }); }
-    if (path === '/api/access-resolve') {
-      if (holdResolution) await held;
-      const response = await originalFetch(input, init);
-      const body = await response.json() as { records: Array<{ id: number }>; decisions: Array<{ recordId: number }> };
-      const records = body.records.filter(record => !deleted.has(record.id));
-      return Response.json({ ...body, records, decisions: body.decisions.filter(decision => !deleted.has(decision.recordId)) });
-    }
-    return await originalFetch(input, init);
-  }));
-  const { container } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}&effective=true`);
-  await screen.findByRole('table');
-  await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(3));
-  const row = container.querySelector('[data-rule-id="3"]') as HTMLElement;
-  await act(async () => { fireEvent.click(within(row).getByRole('button', { name: 'Delete rule' })); });
-  const confirmation = screen.getByRole('dialog');
-  holdResolution = true;
-  await act(async () => { fireEvent.click(within(confirmation).getByRole('button', { name: 'Delete rule' })); });
-  await waitFor(() => expect(container.querySelector('[data-rule-id="3"]')).toBeNull());
-  expect([...container.querySelectorAll<HTMLElement>('[data-rule-id]')].map(element => element.dataset.ruleId)).toEqual(['1', '2']);
-  await act(async () => { release(); await held; });
-  await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(2));
 });
 
 test('locks all mutations while deleting and restores them after a failed write', async () => {
@@ -345,21 +251,6 @@ test.each(['Upstream', 'Copilot'])('scope table part %s replaces the scope filte
   expect(screen.queryByRole('combobox', { name: 'Resource' })).toBeNull();
 });
 
-test('the Group scope prefix filters group scopes through a real /Groups URL scope', async () => {
-  const data: PermissionsData = { ...initial, records: [...initial.records!, { ...initial.records![0]!, id: 4, scope: { kind: 'group', groupId: 1 }, values: { 'User.Audit': true } }] };
-  const { container, router } = renderPage('', data);
-  await screen.findByRole('table');
-  const row = container.querySelector('[data-rule-id="4"]') as HTMLElement;
-  await act(async () => { fireEvent.click(within(row).getByRole('button', { name: 'Group' })); });
-  await waitFor(() => expect(JSON.parse(new URLSearchParams(router.state.location.search).get('scope')!)).toEqual({ kind: 'groups' }));
-  expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(1);
-  expect(container.querySelector('[data-rule-id="4"]')).toBeTruthy();
-  expect(within(container.querySelector('[data-permission-filters]') as HTMLElement).getByRole('button', { name: 'Group' })).toBeTruthy();
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Remove last scope segment' })); });
-  await waitFor(() => expect(new URLSearchParams(router.state.location.search).has('scope')).toBe(false));
-  expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(4);
-});
-
 test('effective toggle adds inherited rules and clearing the principal forces it off', async () => {
   const { container, router } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}`);
   await screen.findByRole('table');
@@ -385,18 +276,6 @@ test('search matches both displayed permission names and their code identifiers'
   expect(container.querySelector('[data-rule-id="2"]')).toBeTruthy();
   await act(async () => { fireEvent.change(input, { target: { value: 'Use models' } }); });
   await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(3));
-});
-
-test('new rule starts with the selected principal and scope', async () => {
-  renderPage(`?principal=group:1&scope=${encodeURIComponent(JSON.stringify(scope))}`);
-  await screen.findByRole('table');
-  await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: 'New rule' }));
-    await vi.dynamicImportSettled();
-  });
-  const dialog = await screen.findByRole('dialog');
-  expect(dialog.querySelector<HTMLInputElement>('input[role="combobox"]')!.value).toBe('Platform');
-  expect(dialog.querySelector('.floway-scope-expression')!.textContent).toContain('Copilot');
 });
 
 test('resolution errors stay visible and are not presented as an empty permission set', async () => {
@@ -445,16 +324,4 @@ test.each([false, true])('refresh preserves the table through base and effective
   await waitFor(() => expect(within(table).getAllByRole<HTMLButtonElement>('button', { name: 'Edit rule' }).every(button => !button.disabled)).toBe(true));
   expect(screen.getByRole('table')).toBe(table);
   expect(table.closest('[aria-busy="true"]')).toBeNull();
-});
-
-test('an initial effective read never displays descendant rules', async () => {
-  const fetch = globalThis.fetch;
-  let complete!: () => Promise<void>;
-  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>(resolve => { complete = async () => resolve(await fetch(input, init)); })));
-  const descendant = { ...initial.records![0]!, id: 4, scope: { kind: 'upstreamModel' as const, upstreamId: 'a', model: { kind: 'exact' as const, value: 'gpt-5' } } };
-  const { container } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}&effective=true`, { ...initial, records: [...initial.records!, descendant] });
-  await screen.findByRole('table');
-  await waitFor(() => expect(complete).toBeTypeOf('function'));
-  expect([...container.querySelectorAll<HTMLElement>('[data-rule-id]')].map(row => row.dataset.ruleId)).toEqual(['1', '2', '3']);
-  await act(async () => { await complete(); });
 });

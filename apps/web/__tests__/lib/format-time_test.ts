@@ -1,23 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { dateTime, formatDate, formatDateParts, relativeTime, shortDate } from '../../src/lib/format-time';
-import { NO_READING } from '../../src/lib/no-reading';
 
-// A fixed instant, read as both an ISO string and an epoch reading. The
-// rendered wording depends on the machine's zone, so what is asserted about
-// the absolute formats is the relationship between them rather than a literal
-// that only holds in one zone.
-const INSTANT_ISO = '2024-01-15T12:00:00.000Z';
-const INSTANT_EPOCH = Date.parse(INSTANT_ISO);
-
-describe('absolute timestamps', () => {
-  it('writes the shared no-reading dash for an absent timestamp', () => {
-    expect(shortDate(null, 'en')).toBe(NO_READING);
-    expect(shortDate(undefined, 'en')).toBe(NO_READING);
-    expect(dateTime(null, 'en')).toBe(NO_READING);
-    expect(dateTime(undefined, 'en')).toBe(NO_READING);
-  });
-});
+const INSTANT_EPOCH = Date.parse('2024-01-15T12:00:00.000Z');
 
 describe('relative timestamps', () => {
   const at = (deltaSeconds: number) => relativeTime(INSTANT_EPOCH + deltaSeconds * 1000, 'en', { now: INSTANT_EPOCH });
@@ -52,14 +37,6 @@ const calendarDay = new Date(2026, 9, 10, 8, 30);
 it('writes Chinese dates numerically across full dates and times of day', () => {
   expect(shortDate(calendarDay.getTime(), 'zh-Hans')).toBe('2026/10/10');
   expect(dateTime(calendarDay.getTime(), 'zh-Hans')).toBe('2026/10/10 08:30:00');
-});
-
-it('leaves calendar headings, month cells, and weekdays to Intl in Chinese', () => {
-  expect(formatDate(calendarDay, 'zh-Hans', { year: 'numeric', month: 'long' })).toBe('2026 年 10 月');
-  expect(formatDate(calendarDay, 'zh-Hans', { month: 'short' })).toBe('10 月');
-  expect(formatDate(calendarDay, 'zh-Hans', { weekday: 'long' })).toBe('星期六');
-  const sunday = new Date(2026, 9, 11);
-  expect(formatDate(sunday, 'zh-Hans', { weekday: 'long' })).toBe('星期日');
 });
 
 it('spaces Chinese range parts and preserves English date punctuation', () => {

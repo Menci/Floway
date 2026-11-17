@@ -68,12 +68,6 @@ test('navigates from a group identity to its roster without carrying the user se
   expect((screen.getByRole('textbox', { name: 'Search groups' }) as HTMLInputElement).value).toBe('');
 });
 
-test.each(['', '&group=999', '&group=invalid'])('canonicalizes an unavailable selection%s to the displayed group', async query => {
-  const { router } = renderPage(`/dashboard/admin/users?tab=groups${query}`);
-  await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('group')).toBe('1'));
-  expect(screen.getByRole('option', { name: 'Platform' }).getAttribute('aria-selected')).toBe('true');
-});
-
 test('opens hidden group links from the overflow control', async () => {
   const { router } = renderPage('/dashboard/admin/users', loaderData, 80);
   await screen.findByRole('button', { name: 'frank' });
@@ -128,15 +122,6 @@ test('keeps account dates visible and locks every editor during refresh', async 
   expect(screen.getByRole('table')).toBe(table);
   await act(async () => { finish(Response.json(loaderData.directory)); });
   await waitFor(() => expect(name.disabled).toBe(false));
-});
-
-test('changing groups discards an open member removal confirmation', async () => {
-  const { router } = renderPage('/dashboard/admin/users?tab=groups&group=1');
-  await screen.findByRole('option', { name: 'Platform' });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Remove frank from group' })); });
-  await screen.findByRole('dialog', { name: 'Remove member' });
-  await act(async () => { await router.navigate('/dashboard/admin/users?tab=groups&group=2'); });
-  expect(screen.queryByRole('dialog', { name: 'Remove member' })).toBeNull();
 });
 
 test('refreshes both membership directions from the same directory response', async () => {

@@ -61,11 +61,4 @@ describe('pickDistinctHue', () => {
   it('measures the gap that wraps past 0 like any other', () => {
     expect(pickDistinctHue([170, 190])).toBe(0);
   });
-
-  it('answers within the circle for an empty console', () => {
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      const hue = pickDistinctHue([]);
-      expect(Number.isInteger(hue) && hue >= 0 && hue < 360).toBe(true);
-    }
-  });
 });

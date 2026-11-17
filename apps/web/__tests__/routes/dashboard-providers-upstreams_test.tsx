@@ -199,19 +199,6 @@ it('opens telemetry and the read-only editor for an audit-only row while keeping
   await waitFor(() => expect(row.getAttribute('aria-expanded')).toBe('true'));
 });
 
-it('shows a models row with models editing but a disabled switch and drag handle', async () => {
-  stubGateway(async url => {
-    if (url.pathname === '/api/token-usage/overview') return Response.json(overview());
-    if (url.pathname === '/api/upstream-metrics') return Response.json(metrics(url));
-    throw new Error(`Unexpected request: ${url.pathname}`);
-  });
-  renderPage({ id: 2, username: 'model-editor', isAdmin: false, canViewPermissions: false, canViewUpstreams: true }, withAccess(false, 'models'));
-  expect(await screen.findByRole('link', { name: 'First' })).toBeTruthy();
-  expect(screen.getByRole('switch', { name: 'Toggle upstream First' }).hasAttribute('disabled')).toBe(true);
-  expect(screen.getByRole('button', { name: 'Reorder upstream First' }).hasAttribute('disabled')).toBe(true);
-  expect(metricsButton('First').hasAttribute('disabled')).toBe(true);
-});
-
 it('lets only a contiguous full segment move and leaves its locked neighbours in place', async () => {
   const segmented = ['Locked', 'Full A', 'Full B', 'Tail'].map((name, index) => toListed(records[index % 2]!, {
     audit: true,

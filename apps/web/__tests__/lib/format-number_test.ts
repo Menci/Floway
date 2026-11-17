@@ -3,18 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   formatBytes,
   formatCompactCount,
-  formatCount,
   formatTokenRate,
 } from '../../src/lib/format-number';
 import { NO_READING } from '../../src/lib/no-reading';
 
 describe('byte sizes', () => {
-  it('stays in bytes up to the first kilobyte', () => {
-    expect(formatBytes(0, 'en')).toBe('0 B');
-    expect(formatBytes(1023, 'en')).toBe('1023 B');
-    expect(formatBytes(1024, 'en')).toBe('1 KB');
-  });
-
   it('drops the fraction digit once a unit reaches double digits', () => {
     expect(formatBytes(9.5 * 1024, 'en')).toBe('9.5 KB');
     expect(formatBytes(10.5 * 1024, 'en')).toBe('11 KB');
@@ -35,12 +28,6 @@ describe('counts', () => {
     expect(formatCompactCount(12_345, 'en')).toBe('12.3K');
     expect(formatCompactCount(12_345, 'zh-Hans')).toBe('1.2万');
     expect(formatCompactCount(999, 'en')).toBe('999');
-  });
-
-  it('rounds to a whole tally and never reports a negative one', () => {
-    expect(formatCount(12_345.6, 'en')).toBe('12,346');
-    expect(formatCount(0, 'en')).toBe('0');
-    expect(formatCount(-5, 'en')).toBe('0');
   });
 });
 

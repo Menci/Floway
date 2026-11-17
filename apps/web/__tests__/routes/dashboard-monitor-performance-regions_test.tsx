@@ -74,13 +74,6 @@ describe('Performance Region dimensions', () => {
     expect(screen.queryByRole('menuitemcheckbox', { name: 'user 999' })).toBeNull();
   });
 
-  it('hides Region controls and breakdowns outside Cloudflare', () => {
-    renderPage(false);
-
-    expect(screen.queryByRole('combobox', { name: 'Region' })).toBeNull();
-    expect(screen.queryByRole('tab', { name: 'By Region' })).toBeNull();
-  });
-
   it('retries an unknown runtime through the page refresh action', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;

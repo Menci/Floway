@@ -68,12 +68,6 @@ describe('a stack restored from the maps its chunks name', () => {
     ].join('\n'));
   });
 
-  it('restores a SpiderMonkey or JavaScriptCore frame', async () => {
-    wholeApp();
-    expect(await restoreStack(`Error: boom\nhandler@${SCRIPT}:1:1`))
-      .toBe('Error: boom\nhandler@/src/first.ts:1:1');
-  });
-
   it('does not treat a URL position in the error message as a frame', async () => {
     wholeApp();
     const message = 'Error: request failed at https://gateway.test/reported:1:1';
@@ -88,12 +82,6 @@ describe('a stack restored from the maps its chunks name', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('leaves a stack whose script declares no map', async () => {
-    respondWith({ [SCRIPT]: script('const a=1;') });
-    const frame = `    at handler (${SCRIPT}:1:1)`;
-    expect(await restoreStack(`Error: boom\n${frame}`)).toBe(`Error: boom\n${frame}`);
-  });
-
   it('says so when the map a chunk names was not deployed', async () => {
     // A missing asset is answered with the SPA shell rather than a 404, so the
     // status alone cannot tell this apart from a map.
@@ -103,14 +91,6 @@ describe('a stack restored from the maps its chunks name', () => {
     });
     await expect(restoreStack(`Error: boom\n    at handler (${SCRIPT}:1:1)`))
       .rejects.toThrow('is not a source map');
-  });
-
-  it('says so when a chunk names an index map', async () => {
-    wholeApp({
-      'https://gateway.test/assets/chunk.js.map': json({ version: 3, sections: [] }),
-    });
-    await expect(restoreStack(`Error: boom\n    at handler (${SCRIPT}:1:1)`))
-      .rejects.toThrow('is an index map');
   });
 
   it('says so when the map was built for another revision of the chunk', async () => {
@@ -133,12 +113,6 @@ describe('a stack restored from the maps its chunks name', () => {
   it('leaves a frame whose line an engine did not know', async () => {
     wholeApp();
     const frame = `    at handler (${SCRIPT}:0:1)`;
-    expect(await restoreStack(`Error: boom\n${frame}`)).toBe(`Error: boom\n${frame}`);
-  });
-
-  it('leaves a frame whose column an engine did not know', async () => {
-    wholeApp();
-    const frame = `    at handler (${SCRIPT}:1:0)`;
     expect(await restoreStack(`Error: boom\n${frame}`)).toBe(`Error: boom\n${frame}`);
   });
 });

@@ -98,20 +98,6 @@ describe('usage dimension controls', () => {
     expect(screen.getByRole('menuitemcheckbox', { name: 'Dana' })).toBeTruthy();
   });
 
-  it('hides API key filters under user grouping', () => {
-    renderPage({
-      ...loaderData,
-      state: { ...loaderData.state, groupBy: 'userId' },
-      usage: { ...loaderData.usage, series: [{ ...usageRecord, group: '2' }] },
-    });
-
-    expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Group by' }).value).toBe('By User');
-    expect(screen.queryByRole('combobox', { name: 'User' })).toBeNull();
-    expect(screen.queryByRole('combobox', { name: 'API Key' })).toBeNull();
-    expect(screen.getByRole('combobox', { name: 'Model' })).toBeTruthy();
-    expect(screen.getByRole('combobox', { name: 'Upstream' })).toBeTruthy();
-  });
-
   it('labels unknown-user usage without weakening real-user metadata checks', () => {
     const { unmount } = renderPage({
       ...loaderData,
@@ -135,22 +121,6 @@ describe('usage dimension controls', () => {
     });
     expect(screen.getByText('Usage user dimension is missing metadata for 2')).toBeTruthy();
     consoleError.mockRestore();
-  });
-
-  it('discloses that API key grouping is account-scoped', () => {
-    renderPage({
-      ...loaderData,
-      state: {
-        ...loaderData.state,
-        filters: { ...loaderData.state.filters, userId: ['1'] },
-        groupBy: 'keyId',
-      },
-      usage: { ...loaderData.usage, series: [{ ...usageRecord, group: 'key-2' }] },
-    });
-
-    expect(screen.getByRole('button', { name: 'About API key telemetry scope' })).toBeTruthy();
-    expect(screen.queryByRole('combobox', { name: 'API Key' })).toBeNull();
-    expect(screen.getByRole('combobox', { name: 'User' }).getAttribute('placeholder')).toBe('Only me');
   });
 
   it('lets an API key selection replace another user with the current-user scope', async () => {

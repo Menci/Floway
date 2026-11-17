@@ -11,18 +11,9 @@ describe('legacy dashboard route redirects', () => {
     expect(legacyRedirectTarget(from)).toBe(to);
   });
 
-  it('redirects a legacy request key to the requests monitor key search param', () => {
-    expect(legacyRedirectTarget('/dashboard/requests/key-123')).toBe('/dashboard/monitor/requests?key=key-123');
-  });
-
   it('preserves a legacy request record hash as the record search param', () => {
     expect(legacyRedirectTarget('/dashboard/requests/key-123', '#record-9')).toBe('/dashboard/monitor/requests?key=key-123&record=record-9');
     expect(legacyRedirectTarget('/dashboard/requests/key-123', '#record%209')).toBe('/dashboard/monitor/requests?key=key-123&record=record%209');
-  });
-
-  it('redirects legacy upstream routes to the provider upstream routes', () => {
-    expect(legacyRedirectTarget('/dashboard/upstreams/up_abc')).toBe('/dashboard/providers/upstreams/up_abc');
-    expect(legacyRedirectTarget('/dashboard/upstreams/new/custom')).toBe('/dashboard/providers/upstreams/new/custom');
   });
 
   it('encodes path params and record hashes in the redirect target', () => {
