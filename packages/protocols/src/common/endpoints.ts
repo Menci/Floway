@@ -36,6 +36,9 @@ export interface ModelEndpoints {
   openaiChatCompletions?: {};
   openaiResponses?: {};
   anthropicMessages?: {};
+  // Gemini's native `models/{model}:generateContent` REST surface, including
+  // the streaming and countTokens actions that share its path shape.
+  geminiGenerateContent?: {};
   openaiEmbeddings?: {};
   openaiImagesGenerations?: {};
   openaiImagesEdits?: {};

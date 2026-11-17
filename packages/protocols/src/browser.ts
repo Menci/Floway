@@ -169,7 +169,9 @@ export {
   collectGeminiGenerateContentProtocolEventsToResult,
 } from './gemini-generate-content/to-result.ts';
 
+export { billableUsageFromGeminiGenerateContentEvent, billableUsageFromGeminiGenerateContentUsage } from './gemini-generate-content/usage.ts';
 export { geminiGenerateContentProtocolFrameToSSEFrame } from './gemini-generate-content/to-sse.ts';
+export { parseGeminiGenerateContentStream } from './gemini-generate-content/stream.ts';
 
 export { isOpenAIAudioTranscriptionDoneEvent } from './openai-audio/index.ts';
 

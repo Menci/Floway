@@ -110,6 +110,8 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
     // Only /v1/messages is supported; reject any other endpoint loudly so a
     // dispatcher routing bug surfaces instead of a silent shape mismatch.
     callAnthropicMessagesCountTokens: rejectUnsupported('callAnthropicMessagesCountTokens'),
+    callGeminiGenerateContent: rejectUnsupported('callGeminiGenerateContent'),
+    callGeminiGenerateContentCountTokens: rejectUnsupported('callGeminiGenerateContentCountTokens'),
     callOpenAICompletions: rejectUnsupported('callOpenAICompletions'),
     callOpenAIChatCompletions: rejectUnsupported('callOpenAIChatCompletions'),
     callOpenAIResponses: rejectUnsupported('callOpenAIResponses'),

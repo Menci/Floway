@@ -2,13 +2,15 @@ import type { DecisionTarget, ModelEndpoints, ModelKind, RerankTarget } from '@f
 import type { UpstreamProviderKind } from '@floway-dev/provider/browser';
 
 // The path each endpoint is addressed by, unversioned: the editor labels its
-// checkboxes and its per-path overrides with the public route rather than with
-// the key the config stores.
+// checkboxes with the public route rather than with the key the config stores.
+// Gemini labels the whole action family, since the model id and the action are
+// part of one path segment.
 export const ENDPOINT_PATHS = {
   openaiCompletions: '/completions',
   openaiChatCompletions: '/chat/completions',
   openaiResponses: '/responses',
   anthropicMessages: '/messages',
+  geminiGenerateContent: '/models/{model}:generateContent',
   openaiEmbeddings: '/embeddings',
   rerank: '/alpha/search',
   openaiImagesGenerations: '/images/generations',
@@ -17,14 +19,33 @@ export const ENDPOINT_PATHS = {
   decision: '/decisions',
 } as const satisfies Record<keyof ModelEndpoints, string>;
 
-export const CHAT_ENDPOINT_KEYS = ['openaiCompletions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages'] as const satisfies readonly (keyof ModelEndpoints)[];
+// The pathOverrides key an endpoint's upstream path is edited under. Every
+// endpoint is its own key except Gemini, whose generation path hangs off the
+// same model-collection root the catalog fetch uses, so one override moves all
+// of its actions together. Kept literal so the editor's form-field paths stay
+// checked against the config shape.
+const PATH_OVERRIDE_KEY_FOR_ENDPOINT = {
+  openaiCompletions: '/completions',
+  openaiChatCompletions: '/chat/completions',
+  openaiResponses: '/responses',
+  anthropicMessages: '/messages',
+  geminiGenerateContent: '/v1beta/models',
+  openaiEmbeddings: '/embeddings',
+  rerank: '/alpha/search',
+  openaiImagesGenerations: '/images/generations',
+  openaiImagesEdits: '/images/edits',
+  openaiAudioTranscriptions: '/audio/transcriptions',
+  decision: '/decisions',
+} as const satisfies Record<keyof ModelEndpoints, string>;
+
+export const CHAT_ENDPOINT_KEYS = ['openaiCompletions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages', 'geminiGenerateContent'] as const satisfies readonly (keyof ModelEndpoints)[];
 export const IMAGE_ENDPOINT_KEYS = ['openaiImagesGenerations', 'openaiImagesEdits'] as const satisfies readonly (keyof ModelEndpoints)[];
 
 // Every path the custom provider accepts an override for, in the order the
 // editor lists them. OpenAI Audio Transcriptions is deliberately absent from
 // the form yet kept in the value, so an override stored for it survives a save.
 export const PATH_OVERRIDE_PATHS = ([...CHAT_ENDPOINT_KEYS, 'openaiEmbeddings', 'rerank', ...IMAGE_ENDPOINT_KEYS] as const)
-  .map(key => ENDPOINT_PATHS[key]);
+  .map(key => PATH_OVERRIDE_KEY_FOR_ENDPOINT[key]);
 
 export const endpointOptionsFor = (
   keys: readonly (keyof ModelEndpoints)[],

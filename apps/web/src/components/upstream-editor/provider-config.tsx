@@ -105,6 +105,7 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
     switch (value) {
     case 'bearer': return t('dashboard.upstreamEditor.auth.bearer');
     case 'x-api-key': return 'x-api-key';
+    case 'x-goog-api-key': return 'x-goog-api-key';
     }
   };
   return (
@@ -167,6 +168,7 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
                     <MenuList>
                       <MenuItemRadio name="authStyle" value="bearer">{t('dashboard.upstreamEditor.auth.bearer')}</MenuItemRadio>
                       <MenuItemRadio name="authStyle" value="x-api-key">x-api-key</MenuItemRadio>
+                      <MenuItemRadio name="authStyle" value="x-goog-api-key">x-goog-api-key</MenuItemRadio>
                     </MenuList>
                   </MenuPopover>
                 </Menu>
