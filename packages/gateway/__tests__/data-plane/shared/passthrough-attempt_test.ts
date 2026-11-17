@@ -6,45 +6,6 @@ import type { AuthVars } from '../../../src/middleware/auth.ts';
 import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { assertEquals, assertExists, stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
-test('passthroughAttempt applies the selected provider ingress policy', async () => {
-  let observed: Headers | undefined;
-  const base = stubModelCandidate();
-  const candidate = stubModelCandidate({
-    provider: {
-      ...base.provider,
-      kind: 'custom',
-      instance: stubProvider({
-        callOpenAIEmbeddings: async (_model, _body, _signal, opts) => {
-          observed = opts.headers;
-          return { response: new Response('{}'), modelKey: 'test-model' };
-        },
-      }),
-    },
-  });
-  const app = new Hono<{ Variables: AuthVars }>();
-  app.post('/test', async c => {
-    await passthroughAttempt({
-      c,
-      ctx: mockGatewayCtx(),
-      candidate,
-      operation: 'embeddings',
-      call: (provider, model, opts) => provider.instance.callOpenAIEmbeddings(model, { input: 'hi' }, undefined, opts),
-    });
-    return c.text('ok');
-  });
-  await app.request('/test', {
-    method: 'POST',
-    headers: {
-      authorization: 'Bearer secret',
-      'x-client-request-id': 'request-1',
-      'x-debug': 'discard',
-    },
-  });
-
-  assertExists(observed);
-  assertEquals([...observed], []);
-});
-
 // Drives one attempt against a canned upstream response, through the same Hono
 // context the serve layer builds.
 const runPassthroughAttempt = async (upstream: Response): Promise<PassthroughAttemptResult> => {

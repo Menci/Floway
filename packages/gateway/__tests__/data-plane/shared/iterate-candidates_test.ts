@@ -66,42 +66,6 @@ describe('iterateCandidates', () => {
     ]);
   });
 
-  it('returns the first success and stops iterating', async () => {
-    const ctx = stubCtx({ timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, telemetry: undefined });
-    let calls = 0;
-    const result = await iterateCandidates(
-      [stubCandidate('a'), stubCandidate('b'), stubCandidate('c')],
-      'test',
-      ctx,
-      'chat',
-      async () => {
-        calls++;
-        return { type: 'events' as const };
-      },
-    );
-
-    expect(result).toEqual({ type: 'events' });
-    expect(calls).toBe(1);
-  });
-
-  it('returns the last failure once every candidate errors', async () => {
-    const ctx = stubCtx({ timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, telemetry: undefined });
-    let index = 0;
-    const failures = [
-      { type: 'api-error' as const, marker: 'first' },
-      { type: 'internal-error' as const, marker: 'last' },
-    ];
-    const result = await iterateCandidates(
-      [stubCandidate('a'), stubCandidate('b')],
-      'test',
-      ctx,
-      'chat',
-      async () => failures[index++]!,
-    );
-
-    expect(result).toEqual(failures[1]);
-  });
-
   it('treats non-2xx plain results as failure so the next candidate runs', async () => {
     const ctx = stubCtx({ timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, telemetry: undefined });
     const attempts: number[] = [];

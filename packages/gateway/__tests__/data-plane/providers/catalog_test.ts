@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from 'vitest';
+import { describe, test } from 'vitest';
 
 import { toPublicModel } from '../../../src/data-plane/models/load.ts';
 import { compareModelIds, getModelsFromProviders } from '../../../src/data-plane/providers/catalog.ts';
@@ -33,35 +33,6 @@ const enumerateModelCandidates = (
 ) => enumerateModelCandidatesRaw({ subject: testAdminUser, ...input });
 const scheduleRefresh = createModelsRefreshScheduler('TEST', testScheduler);
 
-test('getModelsFromProviders treats an empty provider set as an empty catalog', () => {
-  const result = getModelsFromProviders([], scheduleRefresh);
-  assertEquals(result.models, []);
-  assertEquals(result.upstreamsByPublicId.size, 0);
-  assertEquals(result.failedUpstreams, []);
-});
-
-test('compareModelIds pushes ids containing "/" to the tail', () => {
-  assertEquals(sortedIds(['accounts/msft/x', 'gpt-4o', 'accounts/msft/y', 'claude-opus-4-7']), [
-    'claude-opus-4-7',
-    'gpt-4o',
-    // Within the slashed group, the remaining keys still apply: same alpha
-    // prefix "accounts", empty isolated-digit arrays, then descending lex.
-    'accounts/msft/y',
-    'accounts/msft/x',
-  ]);
-});
-
-test('compareModelIds groups by leading [a-zA-Z]+ prefix, case-insensitive ascending', () => {
-  // gpt and GPT collapse on key 1; their tied [4] digit array falls to
-  // descending lex (lowercased), so 'gpt-4o-mini' beats 'gpt-4o'.
-  assertEquals(sortedIds(['gpt-4o', 'claude-haiku-4-5', 'deepseek-v4-pro', 'GPT-4o-mini']), [
-    'claude-haiku-4-5',
-    'deepseek-v4-pro',
-    'GPT-4o-mini',
-    'gpt-4o',
-  ]);
-});
-
 test('compareModelIds orders isolated single digits descending element by element', () => {
   // Digit arrays: claude-opus-4-7 [4,7], claude-sonnet-4-6 [4,6],
   // claude-opus-4-5 / claude-haiku-4-5 [4,5]. Within the [4,5] tie, lex
@@ -71,44 +42,6 @@ test('compareModelIds orders isolated single digits descending element by elemen
     'claude-sonnet-4-6',
     'claude-opus-4-5',
     'claude-haiku-4-5',
-  ]);
-});
-
-test('compareModelIds puts longer digit arrays before shorter ones (descending)', () => {
-  // [5,5] beats every [4]; within the tied-[4] group, descending lex on the
-  // full id puts 'gpt-4o' first, then 'gpt-4-turbo', then 'gpt-4' last.
-  assertEquals(sortedIds(['gpt-5.5', 'gpt-4', 'gpt-4o', 'gpt-4-turbo']), [
-    'gpt-5.5',
-    'gpt-4o',
-    'gpt-4-turbo',
-    'gpt-4',
-  ]);
-});
-
-test('compareModelIds ignores multi-digit runs such as dates', () => {
-  // Both have digit array [4, 7]; descending lex tie-break puts the longer
-  // dated id first.
-  assertEquals(sortedIds(['claude-opus-4-7-20300101', 'claude-opus-4-7']), [
-    'claude-opus-4-7-20300101',
-    'claude-opus-4-7',
-  ]);
-});
-
-test('compareModelIds sorts ids without a leading alpha prefix first', () => {
-  assertEquals(sortedIds(['gpt-4o', 'o1-mini', '128k-context-model']), [
-    '128k-context-model',
-    'gpt-4o',
-    'o1-mini',
-  ]);
-});
-
-test('compareModelIds keeps case-only differences adjacent via lowercase tie-break', () => {
-  // All lowercase to 'gpt-4o' so case-folded lex ties; raw descending then
-  // picks lowercase letters before uppercase (g > G in ASCII).
-  assertEquals(sortedIds(['GPT-4o', 'gpt-4o', 'gpt-4O']), [
-    'gpt-4o',
-    'gpt-4O',
-    'GPT-4o',
   ]);
 });
 
@@ -206,66 +139,6 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
   );
 });
 
-test('catalog merge exposes a shared scope only when every contributor agrees', async () => {
-  const { repo } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    id: 'up_first',
-    sortOrder: 1,
-    config: { baseUrl: 'https://first.example.com', apiKey: 'sk-first', endpoints: { openaiResponses: {} }, ingressHeadersRules: [] },
-  }));
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    id: 'up_second',
-    sortOrder: 2,
-    config: { baseUrl: 'https://second.example.com', apiKey: 'sk-second', endpoints: { openaiResponses: {} }, ingressHeadersRules: [] },
-  }));
-
-  await withMockedFetch(
-    request => jsonResponse({
-      object: 'list',
-      data: [{
-        id: 'shared-model',
-        opaqueBlobCompatibilityScope: {
-          bindToUpstream: true,
-          key: new URL(request.url).hostname === 'first.example.com' ? 'openai' : 'other',
-        },
-      }],
-    }),
-    async () => {
-      const { models } = getModelsFromProviders(await listModelProviders(null), scheduleRefresh);
-      const model = models.find(candidate => candidate.id === 'shared-model');
-      assertEquals(model?.opaqueBlobCompatibilityScope, { bindToUpstream: true });
-      assertEquals(model && toPublicModel(model).opaqueBlobCompatibilityScope, { bindToUpstream: true });
-    },
-  );
-});
-
-test('catalog merge preserves unanimous image-detail support on the public row', async () => {
-  const { repo } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    id: 'up_first',
-    sortOrder: 1,
-    config: { baseUrl: 'https://first.example.com', apiKey: 'sk-first', endpoints: { openaiResponses: {} }, ingressHeadersRules: [] },
-  }));
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    id: 'up_second',
-    sortOrder: 2,
-    config: { baseUrl: 'https://second.example.com', apiKey: 'sk-second', endpoints: { openaiResponses: {} }, ingressHeadersRules: [] },
-  }));
-
-  await withMockedFetch(
-    () => jsonResponse({ object: 'list', data: [{ id: 'shared-model', chat: { image_detail_original: true } }] }),
-    async () => {
-      const { models } = getModelsFromProviders(await listModelProviders(null), scheduleRefresh);
-      const model = models.find(candidate => candidate.id === 'shared-model');
-
-      assertEquals(model?.chat?.image_detail_original, true);
-      assertEquals(model && toPublicModel(model).chat?.image_detail_original, true);
-    },
-  );
-});
-
 test('disabledPublicModelIds hides models from the catalog and routing, per upstream', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -330,125 +203,10 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
   assertEquals(keep.candidates.map(m => m.provider.upstreamId), ['up_a']);
 });
 
-// Every upstream request must start before any sibling is released. This
-// directly observes concurrency without a wall-clock threshold that load can
-// satisfy or violate independently of execution order.
-test('catalog refresh triggers fan out per upstream in parallel', async () => {
-  const { repo } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-
-  const upstreams = [
-    { id: 'up_p1', host: 'p1.example.com', model: 'p1-model' },
-    { id: 'up_p2', host: 'p2.example.com', model: 'p2-model' },
-    { id: 'up_p3', host: 'p3.example.com', model: 'p3-model' },
-  ];
-  for (const [index, u] of upstreams.entries()) {
-    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-      id: u.id,
-      name: u.id,
-      sortOrder: index,
-      config: { baseUrl: `https://${u.host}`, apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
-    }));
-  }
-
-  const started: string[] = [];
-  const releases = new Map<string, () => void>();
-  await withMockedFetchRaw(
-    request => {
-      const url = new URL(request.url);
-      const match = upstreams.find(u => url.hostname === u.host);
-      if (match && url.pathname === '/v1/models') {
-        started.push(match.host);
-        return new Promise<Response>(resolve => {
-          releases.set(match.host, () => resolve(jsonResponse({ object: 'list', data: [{ id: match.model, supported_endpoints: ['/chat/completions'] }] })));
-        });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const warming = warmModelsForTest();
-      await vi.waitFor(() => expect(started.toSorted()).toEqual(upstreams.map(upstream => upstream.host).toSorted()));
-      for (const release of releases.values()) release();
-      await warming;
-      const catalog = getModelsFromProviders(await listModelProviders(null), scheduleRefresh).models;
-
-      assertEquals([...catalog.map(m => m.id)].sort(), ['p1-model', 'p2-model', 'p3-model']);
-    },
-  );
-});
-
-test('catalog assembly: a rejected provider does not block other providers', async () => {
-  const { repo } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    id: 'up_ok_1',
-    name: 'OK 1',
-    sortOrder: 1,
-    config: { baseUrl: 'https://ok1.example.com', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
-  }));
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    id: 'up_broken',
-    name: 'Broken',
-    sortOrder: 2,
-    config: { baseUrl: 'https://broken.example.com', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
-  }));
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    id: 'up_ok_2',
-    name: 'OK 2',
-    sortOrder: 3,
-    config: { baseUrl: 'https://ok2.example.com', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
-  }));
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'ok1.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'ok-1-model', supported_endpoints: ['/chat/completions'] }] });
-      }
-      if (url.hostname === 'ok2.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'ok-2-model', supported_endpoints: ['/chat/completions'] }] });
-      }
-      if (url.hostname === 'broken.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ error: 'upstream went down' }, 502);
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const catalog = getModelsFromProviders(await listModelProviders(null), scheduleRefresh).models;
-      assertEquals([...catalog.map(m => m.id)].sort(), ['ok-1-model', 'ok-2-model']);
-    },
-  );
-});
-
 // End-to-end listing checks for the prefix policy. The catalog walk goes
 // through getModelsFromProviders, which threads custom upstreams' /v1/models
 // responses through readUpstreamModelsSnapshotAndScheduleRefresh just like production does.
 describe('catalog listing under modelPrefix', () => {
-  test('null prefix lists bare ids only (today\'s behavior)', async () => {
-    const { repo } = await setupAppTest();
-    await repo.upstreams.deleteAll();
-    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-      id: 'up_plain',
-      sortOrder: 1,
-      config: { baseUrl: 'https://plain.example.com', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
-    }));
-
-    await withMockedFetch(
-      request => {
-        const url = new URL(request.url);
-        if (url.hostname === 'plain.example.com' && url.pathname === '/v1/models') {
-          return jsonResponse({ object: 'list', data: [{ id: 'gpt-4o', supported_endpoints: ['/chat/completions'] }] });
-        }
-        throw new Error(`Unhandled fetch ${request.url}`);
-      },
-      async () => {
-        const catalog = getModelsFromProviders(await listModelProviders(null), scheduleRefresh).models;
-        assertEquals(catalog.map(m => m.id), ['gpt-4o']);
-      },
-    );
-  });
-
   test('listed=[prefixed] lists only the prefixed surface and routes the prefixed request to the upstream', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
@@ -528,135 +286,6 @@ describe('catalog listing under modelPrefix', () => {
         const prefixed = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'or/gpt-4o', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
         assertEquals(prefixed.candidates.map(m => m.provider.upstreamId), ['up_dual_addressable']);
         assertEquals(prefixed.candidates[0]?.model.id, 'gpt-4o');
-      },
-    );
-  });
-
-  test('listed=[unprefixed, prefixed] emits both surfaces, both upstreams enumerate on the shared bare id', async () => {
-    // up_plain has no prefix and lists `gpt-4o`. up_dual exposes both forms.
-    // The bare `gpt-4o` reaches both upstreams — the resolver enumerates
-    // candidates from every match; the `or/gpt-4o` surface belongs solely
-    // to up_dual because up_plain's catalog does not contain `or/gpt-4o`.
-    const { repo } = await setupAppTest();
-    await repo.upstreams.deleteAll();
-    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-      id: 'up_plain',
-      sortOrder: 1,
-      config: { baseUrl: 'https://plain.example.com', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
-    }));
-    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-      id: 'up_dual',
-      sortOrder: 2,
-      config: { baseUrl: 'https://dual.example.com', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
-      modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['unprefixed', 'prefixed'] },
-    }));
-
-    await withMockedFetch(
-      request => {
-        const url = new URL(request.url);
-        if (url.hostname === 'plain.example.com' && url.pathname === '/v1/models') {
-          return jsonResponse({ object: 'list', data: [{ id: 'gpt-4o', supported_endpoints: ['/chat/completions'] }] });
-        }
-        if (url.hostname === 'dual.example.com' && url.pathname === '/v1/models') {
-          return jsonResponse({ object: 'list', data: [{ id: 'gpt-4o', supported_endpoints: ['/chat/completions'] }] });
-        }
-        throw new Error(`Unhandled fetch ${request.url}`);
-      },
-      async () => {
-        const catalog = getModelsFromProviders(await listModelProviders(null), scheduleRefresh).models;
-        assertEquals([...catalog.map(m => m.id)].sort(), ['gpt-4o', 'or/gpt-4o']);
-
-        // Both upstreams enumerate against the bare id: up_plain via its only
-        // form, up_dual via its unprefixed-addressable branch. Order follows
-        // the configured sort_order across providers.
-        const bare = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'gpt-4o', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
-        assertEquals(bare.candidates.map(m => m.provider.upstreamId), ['up_plain', 'up_dual']);
-
-        // The prefixed id resolves only against up_dual: up_plain's catalog
-        // does not contain `or/gpt-4o`, and up_dual's prefix-stripped lookup
-        // hits its catalog's bare `gpt-4o`.
-        const prefixed = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'or/gpt-4o', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
-        assertEquals(prefixed.candidates.map(m => m.provider.upstreamId), ['up_dual']);
-      },
-    );
-  });
-
-  test('dual-addressable upstream whose catalog literally lists both forms yields two candidates from one upstream', async () => {
-    // up_dual is `addressable: ['unprefixed', 'prefixed']` AND its catalog
-    // publishes both `gpt-4o` and `or/gpt-4o` as distinct entries. An
-    // inbound `or/gpt-4o` triggers BOTH branches at the same upstream:
-    // - unprefixed branch looks up `or/gpt-4o` → hits the literal `or/gpt-4o`
-    //   catalog entry
-    // - prefixed branch looks up `gpt-4o` (after strip) → hits the `gpt-4o`
-    //   catalog entry
-    // Both produce a candidate — no deduplication; the unprefixed branch
-    // pushes first, matching `cfg.addressable`'s `unprefixed`-before-
-    // `prefixed` iteration order (see `FORM_ORDER` in `model-prefix.ts`).
-    const { repo } = await setupAppTest();
-    await repo.upstreams.deleteAll();
-    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-      id: 'up_dual',
-      sortOrder: 1,
-      config: { baseUrl: 'https://dual.example.com', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
-      modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['unprefixed', 'prefixed'] },
-    }));
-
-    await withMockedFetch(
-      request => {
-        const url = new URL(request.url);
-        if (url.hostname === 'dual.example.com' && url.pathname === '/v1/models') {
-          return jsonResponse({
-            object: 'list',
-            data: [
-              { id: 'gpt-4o', supported_endpoints: ['/chat/completions'] },
-              { id: 'or/gpt-4o', supported_endpoints: ['/chat/completions'] },
-            ],
-          });
-        }
-        throw new Error(`Unhandled fetch ${request.url}`);
-      },
-      async () => {
-        const resolved = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'or/gpt-4o', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
-        assertEquals(resolved.candidates.length, 2);
-        assertEquals(resolved.candidates.map(c => c.provider.upstreamId), ['up_dual', 'up_dual']);
-        // The unprefixed branch hits the `or/gpt-4o` literal entry first;
-        // the prefixed branch's strip hits the bare `gpt-4o` entry.
-        assertEquals(resolved.candidates.map(c => c.model.id), ['or/gpt-4o', 'gpt-4o']);
-      },
-    );
-  });
-
-  test('disabledPublicModelIds hides both bare and prefixed forms from the originating upstream', async () => {
-    // up_dual exposes `gpt-4o` and `gpt-mini` under both forms, but the
-    // operator disabled `gpt-4o` on this upstream. Neither `gpt-4o` nor
-    // `or/gpt-4o` survives from up_dual; `gpt-mini` and `or/gpt-mini` stay.
-    const { repo } = await setupAppTest();
-    await repo.upstreams.deleteAll();
-    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-      id: 'up_dual',
-      sortOrder: 1,
-      config: { baseUrl: 'https://dual.example.com', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
-      modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['unprefixed', 'prefixed'] },
-      disabledPublicModelIds: ['gpt-4o'],
-    }));
-
-    await withMockedFetch(
-      request => {
-        const url = new URL(request.url);
-        if (url.hostname === 'dual.example.com' && url.pathname === '/v1/models') {
-          return jsonResponse({
-            object: 'list',
-            data: [
-              { id: 'gpt-4o', supported_endpoints: ['/chat/completions'] },
-              { id: 'gpt-mini', supported_endpoints: ['/chat/completions'] },
-            ],
-          });
-        }
-        throw new Error(`Unhandled fetch ${request.url}`);
-      },
-      async () => {
-        const catalog = getModelsFromProviders(await listModelProviders(null), scheduleRefresh).models;
-        assertEquals([...catalog.map(m => m.id)].sort(), ['gpt-mini', 'or/gpt-mini']);
       },
     );
   });

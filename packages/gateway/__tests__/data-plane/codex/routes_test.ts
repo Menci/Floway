@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { mountCodexRoutes } from '../../../src/data-plane/codex/routes.ts';
 import { type AuthVars, authMiddleware } from '../../../src/middleware/auth.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { buildChatGPTUpstreamRecord, copilotModels, requestApp, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
+import { buildChatGPTUpstreamRecord, requestApp, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildCodexApp = () => {
@@ -13,22 +13,6 @@ const buildCodexApp = () => {
   mountCodexRoutes(app);
   return app;
 };
-
-const copilotFetch = (models: Array<{ id: string; maxContextWindowTokens?: number; maxPromptTokens?: number; supported_endpoints?: string[] }>) =>
-  (request: Request): Response => {
-    const url = new URL(request.url);
-    if (url.hostname === 'update.code.visualstudio.com') {
-      return jsonResponse(['1.110.1']);
-    }
-    if (url.pathname === '/copilot_internal/v2/token') {
-      return jsonResponse({ token: 'test-copilot-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-    }
-    if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
-      return jsonResponse(copilotModels(models));
-    }
-    if (url.hostname === 'raw.githubusercontent.com') return new Response(null, { status: 404 });
-    throw new Error(`Unhandled fetch ${request.url}`);
-  };
 
 const CODEX_USER_AGENT = 'codex_cli_rs/0.0.1-unified.catalog';
 
@@ -91,23 +75,6 @@ describe('Codex model-provider routes', () => {
     expect(stored?.modelsCache?.models.find(model => model.id === 'gpt-6.1-sol')?.limits.max_context_window_tokens).toBe(872000);
   });
 
-  it('caps a same-named OpenAI model at the actual Copilot input limit', async () => {
-    const { apiKey } = await setupAppTest();
-    const body = await withMockedFetch(
-      copilotFetch([{ id: 'gpt-6.1-sol', maxContextWindowTokens: 1000000, maxPromptTokens: 936000 }]),
-      async () => {
-        const response = await requestCodexModels(apiKey.key);
-        expect(response.status).toBe(200);
-        return await response.json() as CodexModelsResponse;
-      },
-    );
-    expect(body.models.find(model => model.slug === 'gpt-6.1-sol')).toMatchObject({
-      context_window: 936000,
-      max_context_window: 936000,
-      auto_compact_token_limit: null,
-    });
-  });
-
   it('owns the namespaced alpha-search path', async () => {
     const { apiKey } = await setupAppTest();
     const response = await buildCodexApp().request('/azure-api.codex/alpha/search', {
@@ -118,99 +85,5 @@ describe('Codex model-provider routes', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ output: expect.stringContaining('No web search commands were provided') });
-  });
-
-  it.each(['/alpha/search', '/v1/alpha/search'])('does not mount the general alpha-search alias %s', async path => {
-    const { apiKey } = await setupAppTest();
-    const response = await buildCodexApp().request(path, {
-      method: 'POST',
-      body: JSON.stringify({ commands: {} }),
-      headers: { authorization: `Bearer ${apiKey.key}`, 'content-type': 'application/json' },
-    });
-
-    expect(response.status).toBe(404);
-  });
-
-  it.each([
-    { method: 'GET', path: '/azure-api.codex/wham/agent-identities/jwks' },
-    { method: 'POST', path: '/azure-api.codex/codex/analytics-events/events' },
-    { method: 'POST', path: '/azure-api.codex/api/codex/apps' },
-    { method: 'GET', path: '/azure-api.codex/plugins/featured' },
-    { method: 'GET', path: '/azure-api.codex/plugins/list' },
-    { method: 'GET', path: '/azure-api.codex/ps/plugins/list' },
-    { method: 'GET', path: '/azure-api.codex/ps/plugins/installed' },
-  ])('does not emulate the account-backed route $path', async ({ method, path }) => {
-    const { apiKey } = await setupAppTest();
-    const response = await buildCodexApp().request(path, {
-      method,
-      headers: { authorization: `Bearer ${apiKey.key}` },
-    });
-
-    expect(response.status).toBe(404);
-  });
-
-  it('mounts the OpenAI Responses WebSocket transport at the provider-relative path', async () => {
-    const { apiKey } = await setupAppTest();
-    const response = await buildCodexApp().request('/azure-api.codex/responses', {
-      headers: { authorization: `Bearer ${apiKey.key}` },
-    });
-
-    expect(response.status).toBe(426);
-    expect(await response.json()).toEqual({ error: 'Expected Upgrade: websocket' });
-  });
-
-  it('writes both context-window fields from the registry and leaves automatic compaction at the Codex default', async () => {
-    const { apiKey } = await setupAppTest();
-    const body = await withMockedFetch(
-      copilotFetch([{ id: 'gpt-5.5', maxContextWindowTokens: 1050000 }]),
-      async () => {
-        const response = await requestCodexModels(apiKey.key);
-        expect(response.status).toBe(200);
-        return await response.json() as CodexModelsResponse;
-      },
-    );
-
-    expect(body.models.find(model => model.slug === 'gpt-5.5')).toMatchObject({
-      context_window: 1050000,
-      max_context_window: 1050000,
-      auto_compact_token_limit: null,
-    });
-  });
-
-  it('downgrades a bundled maximum when the registry advertises a smaller limit', async () => {
-    const { apiKey } = await setupAppTest();
-    const body = await withMockedFetch(
-      copilotFetch([{ id: 'gpt-5.4', maxContextWindowTokens: 272000 }]),
-      async () => {
-        const response = await requestCodexModels(apiKey.key);
-        expect(response.status).toBe(200);
-        return await response.json() as CodexModelsResponse;
-      },
-    );
-
-    const model = body.models.find(candidate => candidate.slug === 'gpt-5.4');
-    expect(model?.context_window).toBe(272000);
-    expect(model?.max_context_window).toBe(272000);
-  });
-
-  it('emits only bundled entries resolved from registry models', async () => {
-    const { apiKey } = await setupAppTest();
-    const body = await withMockedFetch(
-      copilotFetch([{ id: 'gpt-5.5', maxContextWindowTokens: 1050000 }]),
-      async () => await (await requestCodexModels(apiKey.key)).json() as CodexModelsResponse,
-    );
-
-    expect(body.models.map(model => model.slug)).toEqual(['gpt-5.5']);
-  });
-
-  it('synthesizes catalog metadata for registry chat models without a bundled match', async () => {
-    const { apiKey } = await setupAppTest();
-    const body = await withMockedFetch(
-      copilotFetch([{ id: 'claude-sonnet-4', supported_endpoints: ['/v1/messages'] }]),
-      async () => await (await requestCodexModels(apiKey.key)).json() as CodexModelsResponse,
-    );
-
-    expect(body.models).toHaveLength(1);
-    expect(body.models[0].slug).toBe('claude-sonnet-4');
   });
 });

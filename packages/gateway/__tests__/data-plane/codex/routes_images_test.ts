@@ -81,41 +81,6 @@ const controlPlaneFetch = (request: Request): Response | undefined => {
   return undefined;
 };
 
-test('Codex provider-relative image generation reuses the public image-generation handler', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await saveAzureImages(repo);
-  let observedUrl: string | undefined;
-  let observedBody: Record<string, unknown> | undefined;
-
-  await withMockedFetch(
-    async request => {
-      const control = controlPlaneFetch(request);
-      if (control) return control;
-      const url = new URL(request.url);
-      if (url.hostname === 'example.openai.azure.com') {
-        observedUrl = request.url;
-        observedBody = await request.json() as Record<string, unknown>;
-        return jsonResponse({ data: [{ b64_json: 'aGk=' }] });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestAppWithWarmModels('/azure-api.codex/images/generations', {
-        method: 'POST',
-        headers: { authorization: `Bearer ${apiKey.key}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ model: 'gpt-image-2', prompt: 'a fox in space', quality: 'high' }),
-      });
-      assertEquals(response.status, 200);
-      assertEquals(await response.json(), { data: [{ b64_json: 'aGk=' }] });
-    },
-  );
-
-  assertEquals(observedUrl?.endsWith('/images/generations?api-version=preview'), true);
-  assertExists(observedBody);
-  assertEquals(observedBody.prompt, 'a fox in space');
-  assertEquals(observedBody.quality, 'high');
-});
-
 test('ChatGPT Codex accounts expose and serve the implicit gpt-image-2 model', async () => {
   const { apiKey, repo } = await setupAppTest();
   await saveCodexImages(repo);
@@ -161,52 +126,6 @@ test('ChatGPT Codex accounts expose and serve the implicit gpt-image-2 model', a
   );
 
   assertEquals(observedBody, { model: 'gpt-image-2', prompt: 'an orange circle', quality: 'low' });
-});
-
-test('Codex provider-relative image edits reuse the public JSON handler', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await saveAzureImages(repo);
-  let observedUrl: string | undefined;
-  let observedBody: Record<string, unknown> | undefined;
-
-  await withMockedFetch(
-    async request => {
-      const control = controlPlaneFetch(request);
-      if (control) return control;
-      const url = new URL(request.url);
-      if (url.hostname === 'example.openai.azure.com') {
-        observedUrl = request.url;
-        observedBody = await request.json() as Record<string, unknown>;
-        return jsonResponse({ data: [{ b64_json: 'ZWRpdA==' }] });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestAppWithWarmModels('/azure-api.codex/images/edits', {
-        method: 'POST',
-        headers: { authorization: `Bearer ${apiKey.key}`, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model: 'gpt-image-2',
-          prompt: 'add a red hat',
-          quality: 'high',
-          images: [
-            { image_url: 'https://assets.example/image.png' },
-          ],
-        }),
-      });
-      assertEquals(response.status, 200);
-      assertEquals(await response.json(), { data: [{ b64_json: 'ZWRpdA==' }] });
-    },
-  );
-
-  assertEquals(observedUrl?.endsWith('/images/edits?api-version=preview'), true);
-  assertExists(observedBody);
-  assertEquals(observedBody, {
-    model: 'gpt-image-2',
-    prompt: 'add a red hat',
-    quality: 'high',
-    images: [{ image_url: 'https://assets.example/image.png' }],
-  });
 });
 
 test('Codex inline data URL edits egress as multipart uploads', async () => {

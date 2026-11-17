@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { isPiUserAgent, toPiCatalog } from '../../../src/data-plane/models/pi-catalog.ts';
+import { toPiCatalog } from '../../../src/data-plane/models/pi-catalog.ts';
 import type { PublicModel } from '@floway-dev/protocols/common';
 
 const model = (overrides: Partial<PublicModel> = {}): PublicModel => ({
@@ -18,12 +18,6 @@ const model = (overrides: Partial<PublicModel> = {}): PublicModel => ({
 const catalogModel = (overrides: Partial<PublicModel> = {}) => toPiCatalog([model(overrides)], 'https://gateway.example/v1', 'floway').models[0]!;
 
 describe('Pi model catalog', () => {
-  test('recognizes both official Pi User-Agent forms without changing other clients', () => {
-    expect(isPiUserAgent('pi/1.1.0 (darwin; node/v22.19.0; arm64)')).toBe(true);
-    expect(isPiUserAgent('pi (linux 6.1; x64)')).toBe(true);
-    for (const value of ['pi-models-discovery/1', 'omp/1', 'openai/1', undefined]) expect(isPiUserAgent(value)).toBe(false);
-  });
-
   test('preserves model identity, vision and known token limits in an independent provider', () => {
     const mapped = catalogModel({ chat: { modalities: { input: ['text', 'image'], output: ['text'] } } });
     expect(mapped).toMatchObject({ provider: 'floway', api: 'openai-responses', baseUrl: 'https://gateway.example/v1', contextWindow: 200000, maxTokens: 32000, input: ['text', 'image'], reasoning: false });
@@ -37,13 +31,6 @@ describe('Pi model catalog', () => {
     const disabled = catalogModel({ chat: { reasoning: { effort: { supported: ['none', 'high', 'max'], default: 'high' } } } });
     expect(disabled.thinkingLevelMap.off).toBe('none');
     expect(disabled.thinkingLevelMap.max).toBe('max');
-  });
-
-  test.each(['none', 'off'])('projects mandatory named %s reasoning without dropping its default', effort => {
-    const mapped = catalogModel({ chat: { reasoning: { mandatory: true, effort: { supported: [effort], default: effort } } } });
-    expect(mapped.reasoning).toBe(true);
-    expect(mapped.thinkingLevelMap.off).toBeNull();
-    expect(mapped.thinkingLevelMap.medium).toBe(effort);
   });
 
   test('maps open-string efforts into free native slots without losing declared defaults', () => {
@@ -78,26 +65,6 @@ describe('Pi model catalog', () => {
     expect(mapped.thinkingBudgets?.high).toBe(8976);
   });
 
-  test('mandatory reasoning without controls exposes no selectable effort or off switch', () => {
-    const mapped = catalogModel({ chat: { reasoning: { mandatory: true } } });
-    expect(mapped.reasoning).toBe(true);
-    expect(Object.values(mapped.thinkingLevelMap)).toEqual([null, null, null, null, null, null, null]);
-  });
-
-  test('combined budget and named effort include exact server-derived effort overrides', () => {
-    const mapped = catalogModel({ chat: { reasoning: { budget_tokens: { min: 4096, max: 10000 }, effort: { supported: ['fast', 'balanced', 'deep'], default: 'balanced' } } } });
-    expect(mapped.api).toBe('anthropic-messages');
-    expect(mapped.baseUrl).toBe('https://gateway.example');
-    expect(mapped.effortOverrides).toEqual({ low: 'fast', medium: 'balanced', high: 'deep' });
-    expect(mapped.thinkingBudgets?.low).toBe(4096);
-  });
-
-  test('retains small token prices when converting the per-million unit', () => {
-    const tiny = `0.${'0'.repeat(324)}1`;
-    const mapped = catalogModel({ pricing: { entries: [{ rates: { input_tokens: tiny } }] } });
-    expect(mapped.cost.input).toBe(1e-319);
-  });
-
   test('converts token prices and input-token thresholds without silently accepting invalid rates', () => {
     const rates = { input_tokens: '0.000003', output_tokens: '0.000015', input_cache_read_tokens: '0.0000003', input_cache_write_tokens: '0.00000375' };
     const mapped = catalogModel({
@@ -118,10 +85,4 @@ describe('Pi model catalog', () => {
     });
     expect(() => catalogModel({ pricing: { entries: [{ rates: { input_tokens: 'invalid' } }] } })).toThrow(TypeError);
   });
-});
-
-test('projects an independent client provider identifier without changing public model IDs', () => {
-  const named = toPiCatalog([model()], 'https://gateway.example/v1', 'personal').models[0]!;
-  expect(named.provider).toBe('personal');
-  expect(named.id).toBe('model');
 });

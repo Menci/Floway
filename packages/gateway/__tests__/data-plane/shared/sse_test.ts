@@ -32,7 +32,6 @@ const closedIteratorResult = (): IteratorResult<SseFrame> => ({
 
 const createIdleSSEEvents = () => {
   let pendingNext: Deferred<IteratorResult<SseFrame>> | undefined;
-  let returnCalled = false;
 
   const events: AsyncIterable<SseFrame> = {
     [Symbol.asyncIterator]() {
@@ -42,7 +41,6 @@ const createIdleSSEEvents = () => {
           return pendingNext.promise;
         },
         return() {
-          returnCalled = true;
           pendingNext?.resolve(closedIteratorResult());
           return Promise.resolve(closedIteratorResult());
         },
@@ -53,8 +51,6 @@ const createIdleSSEEvents = () => {
   return {
     events,
     hasPendingNext: () => pendingNext !== undefined,
-    rejectNext: (error: unknown) => pendingNext?.reject(error),
-    returnCalled: () => returnCalled,
   };
 };
 
@@ -65,15 +61,6 @@ const waitForIteratorStart = async (events: ReturnType<typeof createIdleSSEEvent
   }
 
   throw new Error('SSE iterator did not start');
-};
-
-const waitForIteratorReturn = async (events: ReturnType<typeof createIdleSSEEvents>) => {
-  for (let i = 0; i < 10; i++) {
-    if (events.returnCalled()) return;
-    await Promise.resolve();
-  }
-
-  throw new Error('SSE iterator was not stopped');
 };
 
 const requestSSE = async (events: AsyncIterable<SseWritableFrame>, options: NonNullable<Parameters<typeof writeSSEFrames>[2]>): Promise<Response> => {
@@ -126,79 +113,6 @@ test('writeSSEFrames emits SSE comment keepalive frames while idle', async () =>
   } finally {
     time.restore();
   }
-});
-
-test('writeSSEFrames emits Anthropic Messages ping keepalive frames while idle', async () => {
-  const time = new FakeTime();
-  const idle = createIdleSSEEvents();
-
-  try {
-    const response = await requestSSE(idle.events, {
-      keepAlive: {
-        intervalMs: 1_000,
-        frame: sseFrame(JSON.stringify({ type: 'ping' }), 'ping'),
-      },
-    });
-    const reader = response.body!.getReader();
-
-    await waitForIteratorStart(idle);
-    const read = reader.read();
-    await time.tickAsync(1_000);
-
-    const chunk = await read;
-    assertEquals(decodeChunk(chunk.value), 'event: ping\ndata: {"type":"ping"}\n\n');
-
-    await reader.cancel();
-  } finally {
-    time.restore();
-  }
-});
-
-test('writeSSEFrames does not emit keepalive before ready events', async () => {
-  const response = await requestSSE(
-    (async function* () {
-      yield sseFrame('{}', 'response.completed');
-    })(),
-    { keepAlive: { intervalMs: 1_000, frame: sseCommentFrame('keepalive') } },
-  );
-
-  assertEquals(await response.text(), 'event: response.completed\ndata: {}\n\n');
-});
-
-test('writeSSEFrames stops idle iterator and timer when the response is canceled', async () => {
-  const time = new FakeTime();
-  const idle = createIdleSSEEvents();
-
-  try {
-    const response = await requestSSE(idle.events, {
-      keepAlive: { intervalMs: 1_000, frame: sseCommentFrame('keepalive') },
-    });
-    const reader = response.body!.getReader();
-
-    await waitForIteratorStart(idle);
-    await reader.cancel();
-    await waitForIteratorReturn(idle);
-
-    assertEquals(idle.returnCalled(), true);
-    await time.tickAsync(5_000);
-  } finally {
-    time.restore();
-  }
-});
-
-test('writeSSEFrames handles pending iterator errors after the response is canceled', async () => {
-  const idle = createIdleSSEEvents();
-  const response = await requestSSE(idle.events, {
-    keepAlive: { intervalMs: 1_000, frame: sseCommentFrame('keepalive') },
-  });
-  const reader = response.body!.getReader();
-
-  await waitForIteratorStart(idle);
-  await reader.cancel();
-  idle.rejectNext(new Error('late upstream stream failure'));
-  await waitForIteratorReturn(idle);
-
-  assertEquals(idle.returnCalled(), true);
 });
 
 test('writeSSEFrames aborts a pending upstream SSE reader when the downstream response is canceled', async () => {

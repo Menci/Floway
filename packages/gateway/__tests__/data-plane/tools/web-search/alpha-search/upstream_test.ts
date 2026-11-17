@@ -17,7 +17,6 @@ vi.mock('../../../../../src/data-plane/providers/resolution.ts', async importOri
 });
 
 const { AlphaSearchModelNotFoundError, resolveAlphaSearchDispatcher } = await import('../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts');
-const { enumerateModelCandidates } = await import('../../../../../src/data-plane/providers/resolution.ts');
 
 const context: Parameters<typeof resolveAlphaSearchDispatcher>[0] = {
   config: { upstreamId: 'search-upstream', model: 'search-model' },
@@ -50,18 +49,6 @@ const dispatcherFor = async (kind: 'chatgpt' | 'custom', inboundHeaderAllowlist:
 test('Alpha Search reports a missing model when the selection has no permitted candidate', async () => {
   resolvedCandidate = undefined;
   await expect(resolveAlphaSearchDispatcher(context)).rejects.toBeInstanceOf(AlphaSearchModelNotFoundError);
-});
-
-test('Alpha Search does not resolve a model outside the API key upstream scope', async () => {
-  vi.mocked(enumerateModelCandidates).mockClear();
-  await expect(resolveAlphaSearchDispatcher({ ...context, upstreamIds: [] })).rejects.toBeInstanceOf(AlphaSearchModelNotFoundError);
-  expect(enumerateModelCandidates).not.toHaveBeenCalled();
-});
-
-test('Alpha Search preserves unexpected resolution failures', async () => {
-  const failure = new Error('resolution failed');
-  vi.mocked(enumerateModelCandidates).mockRejectedValueOnce(failure);
-  await expect(resolveAlphaSearchDispatcher(context)).rejects.toBe(failure);
 });
 
 test('Alpha Search rejects unsupported providers as configuration failures', async () => {

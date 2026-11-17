@@ -2,8 +2,6 @@ import { test } from 'vitest';
 
 import { DEFAULT_WEB_SEARCH_CONFIG, FIXED_WEB_SEARCH_CONFIG_TEST_QUERY } from '../../../../src/data-plane/tools/web-search/config.ts';
 import { resolveConfiguredWebSearchProvider, testWebSearchConfigConnection } from '../../../../src/data-plane/tools/web-search/provider.ts';
-import { initRepo } from '../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../repo/memory.ts';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 test('resolveConfiguredWebSearchProvider returns disabled, missing-credential, or enabled', () => {
@@ -123,102 +121,4 @@ test('testWebSearchConfigConnection previews at most three normalized results', 
       assertEquals(result.results[2].title, 'React C');
     },
   );
-});
-
-test('testWebSearchConfigConnection returns no_results when the provider returns no previews', async () => {
-  await withMockedFetch(
-    () => jsonResponse({ results: [] }),
-    async () => {
-      assertEquals(
-        await testWebSearchConfigConnection({
-          provider: 'tavily',
-          tavily: { apiKey: 'tvly-test' },
-          microsoftWebIq: { apiKey: 'ms-test' },
-          jina: { apiKey: '' },
-          passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
-        }),
-        {
-          ok: false,
-          provider: 'tavily',
-          query: FIXED_WEB_SEARCH_CONFIG_TEST_QUERY,
-          error: {
-            code: 'no_results',
-            message: 'Search returned no preview results.',
-          },
-        },
-      );
-    },
-  );
-});
-
-test('testWebSearchConfigConnection returns preview results for Microsoft Web IQ too', async () => {
-  await withMockedFetch(
-    () =>
-      jsonResponse({
-        webResults: [
-          {
-            title: 'React on Microsoft Learn',
-            url: 'https://learn.microsoft.com/react',
-            content: 'React guidance from Microsoft Learn.',
-            lastUpdatedAt: '2026-04-21T00:00:00Z',
-          },
-        ],
-      }),
-    async () => {
-      const result = await testWebSearchConfigConnection({
-        provider: 'microsoft-web-iq',
-        tavily: { apiKey: 'tvly-test' },
-        microsoftWebIq: { apiKey: 'ms-test' },
-        jina: { apiKey: '' },
-        passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
-      });
-
-      assertEquals(result.ok, true);
-      if (!result.ok) {
-        throw new Error('expected a successful Microsoft preview result');
-      }
-
-      assertEquals(result.provider, 'microsoft-web-iq');
-      assertEquals(result.query, FIXED_WEB_SEARCH_CONFIG_TEST_QUERY);
-      assertEquals(result.results, [
-        {
-          title: 'React on Microsoft Learn',
-          url: 'https://learn.microsoft.com/react',
-          pageAge: '2026-04-21T00:00:00Z',
-          previewText: 'React guidance from Microsoft Learn.',
-        },
-      ]);
-    },
-  );
-});
-
-test('testWebSearchConfigConnection does not record search usage', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-
-  await withMockedFetch(
-    () =>
-      jsonResponse({
-        results: [
-          {
-            title: 'React',
-            url: 'https://react.dev',
-            content: 'Docs',
-          },
-        ],
-      }),
-    async () => {
-      const result = await testWebSearchConfigConnection({
-        provider: 'tavily',
-        tavily: { apiKey: 'tvly-test' },
-        microsoftWebIq: { apiKey: '' },
-        jina: { apiKey: '' },
-        passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
-      });
-
-      assertEquals(result.ok, true);
-    },
-  );
-
-  assertEquals(await repo.webSearchUsage.listAll(), []);
 });

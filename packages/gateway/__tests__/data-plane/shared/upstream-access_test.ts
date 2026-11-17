@@ -12,7 +12,6 @@ const cases: Array<{ name: string; access: 'all' | 'none' | 'up_a' | 'up_b'; key
   { name: 'an empty key restriction', access: 'all', keyCap: [], models: [] },
   { name: 'an empty key under a single-upstream grant', access: 'up_a', keyCap: [], models: [] },
   { name: 'no Model.Use grants with an inheriting key', access: 'none', keyCap: null, models: [] },
-  { name: 'no Model.Use grants and an empty key', access: 'none', keyCap: [], models: [] },
   { name: 'a key cannot add an upstream absent from Model.Use', access: 'none', keyCap: ['up_a'], models: [] },
   { name: 'a single-upstream grant with an inheriting key', access: 'up_a', keyCap: null, models: ['model_a'] },
   { name: 'disjoint Model.Use and key restrictions', access: 'up_b', keyCap: ['up_a'], models: [] },

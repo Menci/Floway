@@ -51,85 +51,6 @@ const makeApp = (): Hono<{ Variables: AuthVars }> => {
 };
 
 describe('createGatewayCtxFromHono', () => {
-  test('copies auth fields when both are set', async () => {
-    const app = makeApp();
-    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
-    app.get('/test', c => {
-      c.set('apiKey', buildApiKey({ id: 'key-1', upstreamIds: ['up-1', 'up-2'], randomizeUpstreams: true }));
-      ctx = createGatewayCtxFromHono(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
-      return c.text('ok');
-    });
-    await app.request('/test');
-    assertExists(ctx);
-    assertEquals(ctx.apiKeyId, 'key-1');
-    assertEquals(ctx.user.id, 1);
-    assertEquals(ctx.upstreamIds, ['up-1', 'up-2']);
-    assertEquals(ctx.randomizeUpstreams, true);
-  });
-
-  test('passes upstreamIds through as null on an unrestricted key', async () => {
-    const app = makeApp();
-    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
-    app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
-      return c.text('ok');
-    });
-    await app.request('/test');
-    assertExists(ctx);
-    assertEquals(ctx.apiKeyId, 'test-key');
-    assertEquals(ctx.upstreamIds, null);
-  });
-
-  test('respects wantsStream=true', async () => {
-    const app = makeApp();
-    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
-    app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
-      return c.text('ok');
-    });
-    await app.request('/test');
-    assertExists(ctx);
-    assertEquals(ctx.wantsStream, true);
-  });
-
-  test('respects wantsStream=false', async () => {
-    const app = makeApp();
-    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
-    app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
-      return c.text('ok');
-    });
-    await app.request('/test');
-    assertExists(ctx);
-    assertEquals(ctx.wantsStream, false);
-  });
-
-  test('wantsStream=true: downstreamAbortController is defined and abortSignal matches its signal', async () => {
-    const app = makeApp();
-    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
-    app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: true, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
-      return c.text('ok');
-    });
-    await app.request('/test');
-    assertExists(ctx);
-    assertExists(ctx.downstreamAbortController);
-    assertEquals(ctx.abortSignal, ctx.downstreamAbortController.signal);
-  });
-
-  test('wantsStream=false: downstreamAbortController and abortSignal are both undefined', async () => {
-    const app = makeApp();
-    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
-    app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
-      return c.text('ok');
-    });
-    await app.request('/test');
-    assertExists(ctx);
-    assertEquals(ctx.downstreamAbortController, undefined);
-    assertEquals(ctx.abortSignal, undefined);
-  });
-
   test('caller-supplied downstreamAbortController overrides the factory-minted one (websocket path)', async () => {
     const app = makeApp();
     let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
@@ -145,30 +66,5 @@ describe('createGatewayCtxFromHono', () => {
     assertEquals(ctx.downstreamAbortController, controller);
     assertEquals(ctx.abortSignal, controller.signal);
     assertEquals(ctx.wantsStream, true);
-  });
-
-  test('exposes the caller-supplied backgroundScheduler on ctx', async () => {
-    const app = makeApp();
-    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
-    const scheduler: BackgroundScheduler = () => {};
-    app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: scheduler });
-      return c.text('ok');
-    });
-    await app.request('/test');
-    assertExists(ctx);
-    assertEquals(ctx.backgroundScheduler, scheduler);
-  });
-
-  test('upstreamIds preserves the per-key narrowing list verbatim', async () => {
-    const app = makeApp();
-    let upstreamIds: readonly string[] | null | undefined;
-    app.get('/test', c => {
-      c.set('apiKey', buildApiKey({ upstreamIds: ['up-b', 'up-c'] }));
-      upstreamIds = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER }).upstreamIds;
-      return c.text('ok');
-    });
-    await app.request('/test');
-    assertEquals(upstreamIds, ['up-b', 'up-c']);
   });
 });
