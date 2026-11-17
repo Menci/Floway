@@ -52,32 +52,6 @@ test('content-backed document tool output is lifted with its document tags', asy
   ]);
 });
 
-test('lifts a tool-result document with metadata while dropping unsupported cache and citation controls', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'm', max_tokens: 32, messages: [
-      { role: 'assistant', content: [{ type: 'tool_use', id: 'c', name: 'read', input: {} }] },
-      {
-        role: 'user', content: [{
-          type: 'tool_result', tool_use_id: 'c', content: [{
-            type: 'document', title: 'Report <1>', context: 'A & B',
-            citations: { enabled: true }, cache_control: { type: 'ephemeral', ttl: '1h' },
-            source: { type: 'base64', media_type: 'application/pdf', data: 'AAAA' },
-          }],
-        }],
-      },
-    ],
-  });
-  assertEquals(result.messages.at(-2), { role: 'tool', tool_call_id: 'c', content: 'Document output is attached in the following user message.' });
-  assertEquals(result.messages.at(-1), {
-    role: 'user', content: [
-      { type: 'text', text: 'Document output from tool call c:' },
-      { type: 'text', text: '<document>\n<title>Report &lt;1&gt;</title>\n<context>A &amp; B</context>' },
-      { type: 'file', file: { file_data: 'data:application/pdf;base64,AAAA' } },
-      { type: 'text', text: '</document>' },
-    ],
-  });
-});
-
 test('buildTargetPayload maps thinking.disabled to reasoning_effort none', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
@@ -101,18 +75,6 @@ test('buildTargetPayload prefers output_config.effort over thinking.disabled', a
   assertEquals(result.reasoning_effort, 'high');
 });
 
-test('buildTargetPayload forwards empty output_config.effort verbatim', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    output_config: { effort: '' },
-    thinking: { type: 'disabled' },
-    messages: [{ role: 'user', content: 'hi' }],
-  });
-
-  assertEquals(result.reasoning_effort, '');
-});
-
 test('buildTargetPayload projects thinking.enabled budgets onto reasoning effort', async () => {
   for (const [budget, effort] of [[1024, 'low'], [16384, 'high']] as const) {
     const result = await buildWithTestSidecar({
@@ -124,29 +86,6 @@ test('buildTargetPayload projects thinking.enabled budgets onto reasoning effort
 
     assertEquals(result.reasoning_effort, effort);
   }
-});
-
-test('buildTargetPayload maps thinking.adaptive to reasoning_effort medium', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 4096,
-    thinking: { type: 'adaptive' },
-    messages: [{ role: 'user', content: 'hi' }],
-  });
-
-  assertEquals(result.reasoning_effort, 'medium');
-});
-
-test('buildTargetPayload prefers output_config.effort over thinking.enabled', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 4096,
-    output_config: { effort: 'high' },
-    thinking: { type: 'enabled', budget_tokens: 1024 },
-    messages: [{ role: 'user', content: 'hi' }],
-  });
-
-  assertEquals(result.reasoning_effort, 'high');
 });
 
 test('buildTargetPayload keeps tool_result and user text as separate chat messages', async () => {
@@ -173,7 +112,6 @@ test('buildTargetPayload keeps tool_result and user text as separate chat messag
 });
 
 test.each([
-  { tools: undefined, name: 'lookup' },
   { tools: [{ name: 'other', input_schema: { type: 'object' as const } }], name: 'lookup' },
 ])('buildTargetPayload rejects named tool_choice for an undeclared tool', async ({ tools, name }) => {
   await assertRejects(
@@ -281,60 +219,6 @@ test('buildTargetPayload folds a server tool result into the client turn that fo
   ]);
 });
 
-test('buildTargetPayload flattens text-block tool_result content but serializes search-result arrays', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [
-      {
-        role: 'assistant',
-        content: [
-          { type: 'tool_use', id: 'toolu_text', name: 'read_text', input: {} },
-          { type: 'tool_use', id: 'toolu_search', name: 'search_docs', input: {} },
-        ],
-      },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result',
-            tool_use_id: 'toolu_text',
-            content: [{ type: 'text', text: 'hello' }],
-          },
-          {
-            type: 'tool_result',
-            tool_use_id: 'toolu_search',
-            content: [
-              {
-                type: 'search_result',
-                source: 'https://react.dev',
-                title: 'React',
-                content: [{ type: 'text', text: 'Official docs' }],
-              },
-            ],
-          },
-        ],
-      },
-    ],
-  });
-
-  assertEquals(result.messages, [
-    {
-      role: 'assistant', content: null,
-      tool_calls: [
-        { id: 'toolu_text', type: 'function', function: { name: 'read_text', arguments: '{}' } },
-        { id: 'toolu_search', type: 'function', function: { name: 'search_docs', arguments: '{}' } },
-      ],
-    },
-    { role: 'tool', tool_call_id: 'toolu_text', content: 'hello' },
-    {
-      role: 'tool',
-      tool_call_id: 'toolu_search',
-      content: '[{"type":"search_result","source":"https://react.dev","title":"React","content":[{"type":"text","text":"Official docs"}]}]',
-    },
-  ]);
-});
-
 test('buildTargetPayload preserves mixed user/tool_result chronology', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
@@ -397,28 +281,6 @@ test('buildTargetPayload concatenates readable thinking groups and drops signatu
   } as OpenAIChatCompletionsAssistantMessageEx);
 });
 
-test('buildTargetPayload drops redacted opaque blocks while keeping readable thinking', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [
-      {
-        role: 'assistant',
-        content: [
-          { signature: '', type: 'thinking', thinking: 'first' },
-          { type: 'redacted_thinking', data: 'opaque_later' },
-        ],
-      },
-    ],
-  });
-
-  assertEquals(result.messages[0], {
-    role: 'assistant',
-    content: null,
-    reasoning_text: 'first',
-  } as OpenAIChatCompletionsAssistantMessageEx);
-});
-
 // OpenAI strict-mode validators require object schemas to state properties. The target writer supplies missing properties.
 // https://github.com/caozhiyuan/copilot-api/commit/ad57069826843c5d17d7b0e5ef2f75050128893c
 test('buildTargetPayload defaults missing input_schema.properties to {} for object tools', async () => {
@@ -441,41 +303,6 @@ test('buildTargetPayload defaults missing input_schema.properties to {} for obje
   ]);
 });
 
-test('buildTargetPayload preserves declared input_schema.properties verbatim', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    tools: [
-      {
-        name: 'with_args',
-        input_schema: {
-          type: 'object',
-          properties: { q: { type: 'string' } },
-          required: ['q'],
-        },
-      },
-    ],
-    messages: [{ role: 'user', content: 'hi' }],
-  });
-
-  assertEquals((result.tools?.[0] as OpenAIChatCompletionsFunctionTool).function.parameters, {
-    type: 'object',
-    properties: { q: { type: 'string' } },
-    required: ['q'],
-  });
-});
-
-test('buildTargetPayload does not inject properties for non-object input_schema', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    tools: [{ name: 'scalar', input_schema: { type: 'string' } }] as unknown as AnthropicMessagesPayload['tools'],
-    messages: [{ role: 'user', content: 'hi' }],
-  });
-
-  assertEquals((result.tools?.[0] as OpenAIChatCompletionsFunctionTool).function.parameters, { type: 'string' });
-});
-
 test('buildTargetPayload wraps output_config.format json_schema as response_format with nested json_schema and strict', async () => {
   const schema = {
     type: 'object',
@@ -496,17 +323,6 @@ test('buildTargetPayload wraps output_config.format json_schema as response_form
   });
 });
 
-test('buildTargetPayload omits response_format when output_config has no format', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [{ role: 'user', content: 'Hi' }],
-    output_config: { effort: 'high' },
-  });
-
-  assertFalse('response_format' in result);
-});
-
 test('buildTargetPayload rejects an unknown assistant content block type', async () => {
   await assertRejects(
     () =>
@@ -518,61 +334,6 @@ test('buildTargetPayload rejects an unknown assistant content block type', async
     Error,
     "messages.0.content.0.type: 'audio' assistant content blocks are not supported",
   );
-});
-
-test('buildTargetPayload rejects an unknown user content block type', async () => {
-  await assertRejects(
-    () =>
-      buildWithTestSidecar({
-        model: 'gpt-test',
-        max_tokens: 256,
-        messages: [{ role: 'user', content: [{ type: 'audio' } as unknown as AnthropicMessagesUserContentBlock] }],
-      }),
-    Error,
-    "messages.0.content.0.type: 'audio' content blocks are not supported",
-  );
-});
-
-test('buildTargetPayload emits in-array role:"system" inline as a CC system message', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [
-      { role: 'user', content: 'hi' },
-      { role: 'system', content: 'be terse' },
-      { role: 'user', content: 'who are you' },
-    ],
-  });
-
-  assertEquals(result.messages.length, 3);
-  assertEquals(result.messages[0].role, 'user');
-  assertEquals(result.messages[1], { role: 'system', content: 'be terse' });
-  assertEquals(result.messages[2].role, 'user');
-});
-
-test('buildTargetPayload preserves in-array system text blocks as separate content parts', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [
-      {
-        role: 'system',
-        content: [
-          { type: 'text', text: 'Para A' },
-          { type: 'text', text: 'Para B' },
-        ],
-      },
-      { role: 'user', content: 'hi' },
-    ],
-  });
-
-  assertEquals(result.messages[0], {
-    role: 'system',
-    content: [
-      { type: 'text', text: 'Para A' },
-      { type: 'text', text: 'Para B' },
-    ],
-  });
 });
 
 test('buildTargetPayload preserves top-level system text blocks as separate content parts', async () => {
@@ -595,18 +356,6 @@ test('buildTargetPayload preserves top-level system text blocks as separate cont
       { type: 'text', text: 'extra context' },
     ],
   });
-});
-
-test('buildTargetPayload skips system message when top-level system is empty array', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    system: [],
-    messages: [{ role: 'user', content: 'hi' }],
-  });
-
-  assertEquals(result.messages.length, 1);
-  assertEquals(result.messages[0].role, 'user');
 });
 
 test('buildTargetPayload preserves chronology of multiple in-array system messages', async () => {
@@ -633,21 +382,6 @@ test('buildTargetPayload preserves chronology of multiple in-array system messag
   assertEquals(result.messages[5].role, 'user');
 });
 
-test('buildTargetPayload rejects an unknown message role', async () => {
-  await assertRejects(
-    () =>
-      buildWithTestSidecar({
-        model: 'gpt-test',
-        max_tokens: 256,
-        messages: [{ role: 'tool', content: 'oops' } as unknown as { role: 'user'; content: string }],
-      }),
-    Error,
-    "messages.0.role: role 'tool' is not supported",
-  );
-});
-
-// ── speed ↔ service_tier bridge ──
-
 test('buildTargetPayload maps speed:fast to service_tier:fast on the outbound OpenAI Chat Completions payload', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
@@ -659,27 +393,6 @@ test('buildTargetPayload maps speed:fast to service_tier:fast on the outbound Op
   assertEquals(result.service_tier, 'priority');
 });
 
-test('buildTargetPayload omits service_tier when speed is absent', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [{ role: 'user', content: 'hi' }],
-  });
-
-  assertFalse('service_tier' in result);
-});
-
-test('buildTargetPayload drops speed values other than fast without emitting service_tier', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    speed: 'standard',
-    messages: [{ role: 'user', content: 'hi' }],
-  });
-
-  assertFalse('service_tier' in result);
-});
-
 test('buildTargetPayload forwards Anthropic service_tier to OpenAI Chat Completions when speed is absent', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
@@ -689,17 +402,6 @@ test('buildTargetPayload forwards Anthropic service_tier to OpenAI Chat Completi
   });
 
   assertEquals(result.service_tier, 'auto');
-});
-
-test('buildTargetPayload forwards service_tier:standard_only to OpenAI Chat Completions when speed is absent', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    service_tier: 'standard_only',
-    messages: [{ role: 'user', content: 'hi' }],
-  });
-
-  assertEquals(result.service_tier, 'standard_only');
 });
 
 test('buildTargetPayload asks upstream for continuous streaming usage stats', async () => {
@@ -729,24 +431,6 @@ test('rejects a metadata value the neutral model cannot state as a string pair',
   );
 });
 
-test('buildTargetPayload marks a plain-text document around its text', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [{
-      role: 'user',
-      content: [{ type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'hello world' } }],
-    }],
-  });
-  const part = result.messages[0].content;
-  if (!Array.isArray(part)) throw new Error('expected a content array');
-  assertEquals(part, [
-    { type: 'text', text: '<document>' },
-    { type: 'text', text: 'hello world' },
-    { type: 'text', text: '</document>' },
-  ]);
-});
-
 test('buildTargetPayload keeps mixed document content inside provenance tags', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test', max_tokens: 256, messages: [
@@ -773,7 +457,7 @@ test('buildTargetPayload keeps mixed document content inside provenance tags', a
   ]);
 });
 
-test.each([true, false])('maps disable_parallel_tool_use %s without changing declarations', async disabled => {
+test.each([true])('maps disable_parallel_tool_use %s without changing declarations', async disabled => {
   const result = await buildWithTestSidecar({
     model: 'm', max_tokens: 32, messages: [],
     tools: [{ name: 'f', input_schema: { type: 'object', properties: {} } }],

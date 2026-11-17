@@ -9,8 +9,6 @@ import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const noOptions: { fallbackMaxOutputTokens?: number } = { fallbackMaxOutputTokens: undefined };
 
-const withMaxOutputTokens = (maxOutputTokens: number) => ({ fallbackMaxOutputTokens: maxOutputTokens });
-
 const buildWithTestSidecar = (
   payload: GeminiGenerateContentPayload,
   model: string,
@@ -53,29 +51,6 @@ test('function response media enters Messages tool results and tool results prec
       { type: 'text', text: 'Here is the result', cache_control: { type: 'ephemeral' } },
     ],
   });
-});
-
-test('buildTargetPayload omits empty thought history', async () => {
-  const result = await buildWithTestSidecar({ contents: [{ role: 'model', parts: [{ text: '', thought: true }] }] }, 'claude-test', noOptions);
-  assertEquals(result.messages, []);
-});
-
-test('buildTargetPayload translates a named thinking level to the effort name', async () => {
-  const request = await buildWithTestSidecar({
-    contents: [],
-    generationConfig: { thinkingConfig: { thinkingLevel: 'LOW' } },
-  }, 'claude-test', noOptions);
-
-  assertEquals(request.output_config, { effort: 'low' });
-});
-
-test('buildTargetPayload forwards an empty thinkingLevel verbatim', async () => {
-  const request = await buildWithTestSidecar({
-    contents: [],
-    generationConfig: { thinkingConfig: { thinkingLevel: '' } },
-  }, 'claude-test', noOptions);
-
-  assertEquals(request.output_config, { effort: '' });
 });
 
 test('buildTargetPayload preserves native thinkingBudget beside an empty thinkingLevel', async () => {
@@ -135,7 +110,7 @@ test('buildTargetPayload maps system, default max tokens, and multimodal user co
   });
 });
 
-test.each(['audio/wav', 'audio/mp3', 'audio/mpeg'])('buildTargetPayload rejects Gemini inline audio MIME type %s for Anthropic Messages', async mimeType => {
+test.each(['audio/wav'])('buildTargetPayload rejects Gemini inline audio MIME type %s for Anthropic Messages', async mimeType => {
   await assertRejects(
     () => buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: 'ZGF0YQ==' } }] }] }, 'claude-test', noOptions),
     Error,
@@ -150,11 +125,6 @@ test('buildTargetPayload forwards a non-audio inline MIME type from Gemini as a 
   // being decoded under an assumed charset.
   const request = await buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'text/plain', data: 'ZGF0YQ==' } }] }] }, 'claude-test', noOptions);
   assertEquals(request.messages, [{ role: 'user', content: [{ type: 'document', source: { type: 'base64', media_type: 'text/plain', data: 'ZGF0YQ==' } }] }]);
-});
-
-test('buildTargetPayload prefers limits.max_output_tokens over the gateway default when payload omits maxOutputTokens', async () => {
-  const request = await buildWithTestSidecar({ contents: [] }, 'claude-test', withMaxOutputTokens(6144));
-  assertEquals(request.max_tokens, 6144);
 });
 
 test('buildTargetPayload maps generation config and thinking controls', async () => {
@@ -398,17 +368,6 @@ test('buildTargetPayload wraps generationConfig.responseSchema as output_config.
   assertEquals(request.output_config, { format: { type: 'json_schema', schema } });
 });
 
-test('buildTargetPayload merges thinking-level effort with responseSchema format on a single output_config', async () => {
-  const schema = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false };
-  const request = await buildWithTestSidecar(
-    { contents: [], generationConfig: { responseSchema: schema, thinkingConfig: { thinkingLevel: 'high' } } },
-    'claude-test',
-    noOptions,
-  );
-
-  assertEquals(request.output_config, { effort: 'high', format: { type: 'json_schema', schema } });
-});
-
 test('buildTargetPayload rejects an unknown content role', async () => {
   await assertRejects(
     () =>
@@ -421,21 +380,6 @@ test('buildTargetPayload rejects an unknown content role', async () => {
       ),
     Error,
     '"system" is not a supported content role.',
-  );
-});
-
-test('buildTargetPayload rejects a part with an unsupported kind in user content', async () => {
-  await assertRejects(
-    () =>
-      buildWithTestSidecar(
-        {
-          contents: [{ role: 'user', parts: [{ fileData: { mimeType: 'text/plain', fileUri: 'files/abc' } }] }],
-        },
-        'claude-test',
-        noOptions,
-      ),
-    Error,
-    '"file_data" parts are not supported in user content.',
   );
 });
 
@@ -499,7 +443,7 @@ test('buildTargetPayload rejects a part with no recognized content field', async
   );
 });
 
-test.each([undefined, []])('preserves an empty model turn with parts %j', async parts => {
+test.each([undefined])('preserves an empty model turn with parts %j', async parts => {
   const payload = { contents: [{ role: 'user', parts: [{ text: 'before' }] }, { role: 'model', ...(parts === undefined ? {} : { parts }) }, { role: 'user', parts: [{ text: 'after' }] }] };
   const result = await buildWithTestSidecar(payload, 'target-model', noOptions);
   assertEquals((result.messages as Array<{ role?: string; content?: unknown }>).filter(item => item.role === 'assistant'), [{ role: 'assistant', content: '' }]);

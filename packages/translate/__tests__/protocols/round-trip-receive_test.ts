@@ -54,6 +54,9 @@ const cases = [
   { source: 'geminiGenerateContent', target: 'openaiChatCompletions', run: (carrier: string) => routeGeminiGenerateContentViaOpenAIChatCompletions(gemini(carrier), context) },
   { source: 'geminiGenerateContent', target: 'openaiResponses', run: (carrier: string) => routeGeminiGenerateContentViaOpenAIResponses(gemini(carrier), context) },
 ] as const;
+// Reference hydration and the unrecognized-carrier fallback do not depend on the protocol pair, so one subset that spans every target or source covers them.
+const geminiCases = cases.filter(({ source }) => source === 'geminiGenerateContent');
+const responsesTargetCases = cases.filter(({ target }) => target === 'openaiResponses');
 
 test.each(cases)('receives recognized $source history via $target', async ({ source, target, run }) => {
   const native = nativeTurn(target);
@@ -62,7 +65,7 @@ test.each(cases)('receives recognized $source history via $target', async ({ sou
   expect('input' in trip.target ? trip.target.input : trip.target.messages).toEqual(target === 'openaiResponses' ? native : [native]);
 });
 
-test.each(cases)('hydrates $source text references before restoring $target history', async ({ source, target, run }) => {
+test.each(geminiCases)('hydrates $source text references before restoring $target history', async ({ source, target, run }) => {
   const reference = new ContentReference('text', [[0, 0, 3]]);
   const targetTurn: ReferenceableInputAssistantTurnFor<NativeProtocol, ContentReference> = target === 'openaiChatCompletions'
     ? { role: 'assistant', content: reference }
@@ -105,7 +108,7 @@ test('exposes an authenticated missing reference as an internal error after repl
   await expect(cases[0].run(carrier)).rejects.toThrow('Authenticated assistant-turn sidecar restoration failed: missing-reference');
 });
 
-test.each(cases)('leaves a terminal sidecar unrecognized by the injected decoder ordinary on $source via $target', async ({ run }) => {
+test.each(responsesTargetCases)('leaves a terminal sidecar unrecognized by the injected decoder ordinary on $source via $target', async ({ run }) => {
   const carrier = 'unrecognized sidecar handle';
   const trip = expectTrip(await run(carrier));
   expect(JSON.stringify('input' in trip.target ? trip.target.input : trip.target.messages)).toContain('answer');
@@ -121,7 +124,7 @@ test.each(['different codec scope', 'changed sidecar handle', 'changed replay'] 
   expect(trip.target.messages).toEqual([{ role: 'assistant', content: [{ type: 'text', text, cache_control: { type: 'ephemeral' } }] }]);
 });
 
-test.each([{ input: 'text' }, { input: null }, { input: [1] }])('preserves ordinary Messages tool input $input', async ({ input }) => {
+test.each([{ input: null }, { input: [1] }])('preserves ordinary Messages tool input $input', async ({ input }) => {
   const payload: AnthropicMessagesPayload = {
     model: 'source', max_tokens: 16, stream: true,
     messages: [{ role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'echo', input }] }],

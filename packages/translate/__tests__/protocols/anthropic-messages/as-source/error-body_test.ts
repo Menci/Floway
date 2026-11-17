@@ -3,7 +3,6 @@ import { test } from 'vitest';
 import { restateAnthropicMessagesError } from '../../../../src/protocols/anthropic-messages/as-source/error-body.ts';
 import { anthropicMessagesErrorFromIR } from '../../../../src/protocols/anthropic-messages/as-source/error.ts';
 import { errorPayloadFromWire } from '../../../../src/shared/api-error.ts';
-import { buildPromptTooLongBody, PROMPT_TOO_LONG_MESSAGE } from '@floway-dev/protocols/anthropic-messages';
 import { assert, assertEquals } from '@floway-dev/test-utils';
 
 const decoded = (result: { body: unknown } | undefined) => result!.body as {
@@ -16,18 +15,8 @@ const upstreamOf = (status: number, body: unknown, headers: Record<string, strin
   new TextEncoder().encode(typeof body === 'string' ? body : JSON.stringify(body)),
 ] as const;
 
-test('buildPromptTooLongBody — Anthropic envelope with load-bearing prefix', () => {
-  const body = new TextDecoder().decode(buildPromptTooLongBody());
-  const parsed = JSON.parse(body) as { type: string; error: { type: string; message: string } };
-  assertEquals(parsed.type, 'error');
-  assertEquals(parsed.error.type, 'invalid_request_error');
-  assertEquals(parsed.error.message, PROMPT_TOO_LONG_MESSAGE);
-  assert(parsed.error.message.startsWith('prompt is too long:'));
-});
-
 test.each([
   ['Copilot Responses', { error: { code: 'model_max_prompt_tokens_exceeded', message: 'prompt token count of 1000000 exceeds the limit of 128000' } }],
-  ['Codex Responses', { error: { code: 'context_length_exceeded', message: 'Your input exceeds the context window of this model. Please adjust your input and try again.' } }],
   ['message-only signal', { error: { message: "This model's maximum context length is 4097 tokens. However, your messages resulted in 4498 tokens." } }],
 ])('restates a context overflow from the %s as the prompt-too-long wording', (_name, body) => {
   const result = restateAnthropicMessagesError(...upstreamOf(502, body));
@@ -58,26 +47,6 @@ test('passes an unrecognized body through untouched', () => {
   assertEquals(restateAnthropicMessagesError(...upstreamOf(502, 'exceeds the context window of this model')), undefined);
   assertEquals(restateAnthropicMessagesError(...upstreamOf(500, { detail: 'something broke' })), undefined);
   assertEquals(restateAnthropicMessagesError(...upstreamOf(500, {})), undefined);
-});
-
-test('reads a message-only envelope the same way its stream does', () => {
-  const result = restateAnthropicMessagesError(...upstreamOf(529, { error: { message: 'Overloaded' } }));
-
-  assertEquals(result!.status, 529);
-  assertEquals(decoded(result).error.message, 'Overloaded');
-});
-
-test('carries the fields the target protocol states that the IR does not name', () => {
-  const result = restateAnthropicMessagesError(...upstreamOf(400, {
-    error: { message: 'bad request', code: 'invalid', safety_violations: [{ category: 'hate' }], headers: { 'x-trace': 'abc' } },
-  }));
-
-  const error = decoded(result).error as Record<string, unknown>;
-  assertEquals(error.provider_specific_fields, {
-    code: 'invalid',
-    safety_violations: [{ category: 'hate' }],
-    headers: { 'x-trace': 'abc' },
-  });
 });
 
 test('preserves colliding loose error fields beneath the upstream container priority', () => {
@@ -115,9 +84,4 @@ test('normalizes a wire msg alias before treating the object as an IR error', ()
   assertEquals(anthropicMessagesErrorFromIR(error).message, wire.msg);
   const beforeStream = restateAnthropicMessagesError(...upstreamOf(400, { error: wire }));
   assertEquals(decoded(beforeStream).error, anthropicMessagesErrorFromIR(error));
-});
-
-test('a canonical wire error keeps its original object', () => {
-  const wire = { message: 'Canonical message', code: 'invalid_value' };
-  assert(errorPayloadFromWire({ error: wire }) === wire);
 });

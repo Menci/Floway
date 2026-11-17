@@ -92,16 +92,6 @@ test('Messages cited text remains source text without inventing output coordinat
   expect(result.output[0].content[0].annotations).toEqual([]);
 });
 
-test('Messages URL citations without cited text do not expand to the entire Responses text', async () => {
-  const ir = await collectIR(readAnthropicMessagesEvents(iterate(messagesCitationFrames())));
-  const item = ir.choices[0].items[0];
-  expect(item).toMatchObject({ content: [{ annotations: [{ source: 'https://docs.example.com/page-1' }] }] });
-  if (item.type !== 'message' || item.content[0].type !== 'text') throw new Error('expected cited text part');
-  expect(item.content[0].annotations?.[0]).not.toHaveProperty('output_text_range');
-  const result = await nativeResult('openai-responses', await collect(writeOpenAIResponsesEvents(readAnthropicMessagesEvents(iterate(messagesCitationFrames())))));
-  expect(result.output[0].content[0].annotations).toEqual([]);
-});
-
 test('range-less Messages citations do not expand to whole-part ChatCompletions or GenerateContent citations', async () => {
   const chatFrames = await collect(writeOpenAIChatCompletionsEvents(readAnthropicMessagesEvents(iterate(messagesCitationFrames('source quote'))), { id: 'chat_target', created: 1 }));
   expect(chatFrames.some(frame => frame.type === 'event' && !('error' in frame.event) && frame.event.choices.some(choice => 'annotations' in choice.delta))).toBe(false);

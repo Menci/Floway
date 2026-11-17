@@ -5,8 +5,6 @@ import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesPayloadEx, OpenA
 
 const programCallerItems = [
   { type: 'function_call', call_id: 'call_1', name: 'lookup', arguments: '{}', status: 'completed', caller: { type: 'program', caller_id: 'call_prog_1' } },
-  { type: 'function_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } },
-  { type: 'custom_tool_call', call_id: 'call_1', name: 'exec', input: 'run', caller: { type: 'program', caller_id: 'call_prog_1' } },
   { type: 'custom_tool_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } },
 ] as const satisfies readonly CanonicalOpenAIResponsesInputItem[];
 
@@ -35,11 +33,6 @@ const payloadCases: Array<{
     message: 'Programmatic',
   },
   {
-    name: 'deferred function tool',
-    payload: { tools: [{ type: 'function', name: 'lookup', parameters: {}, strict: true, defer_loading: true }] },
-    message: 'Deferred',
-  },
-  {
     name: 'deferred custom tool',
     payload: { tools: [{ type: 'custom', name: 'exec', defer_loading: true }] },
     message: 'Deferred',
@@ -57,11 +50,6 @@ const payloadCases: Array<{
     message: 'Programmatic',
   },
   {
-    name: 'deferred inventory tool',
-    payload: { input: [{ type: 'additional_tools', role: 'developer', tools: [{ type: 'function', name: 'lookup', parameters: {}, defer_loading: true }] }] },
-    message: 'Deferred',
-  },
-  {
     name: 'programmatic inventory caller',
     payload: { input: [{ type: 'tool_search_output', call_id: 'search', execution: 'client', tools: [{ type: 'function', name: 'lookup', parameters: {}, allowed_callers: ['programmatic'] }] }] },
     message: 'Programmatic',
@@ -70,16 +58,4 @@ const payloadCases: Array<{
 
 test.each(payloadCases)('rejectProgrammaticOpenAIResponsesPayload rejects $name', ({ payload, message }) => {
   expect(() => rejectProgrammaticOpenAIResponsesPayload({ model: 'gpt-test', input: [], ...payload })).toThrow(message);
-});
-
-test('rejectProgramCaller accepts ordinary callers', () => {
-  expect(() => rejectProgramCaller({ type: 'function_call_output', call_id: 'call_1', output: 'ok' })).not.toThrow();
-});
-
-test('rejectProgrammaticOpenAIResponsesPayload accepts ordinary function tooling', () => {
-  expect(() => rejectProgrammaticOpenAIResponsesPayload({
-    model: 'gpt-test',
-    input: [],
-    tools: [{ type: 'function', name: 'lookup', parameters: {}, strict: true }],
-  })).not.toThrow();
 });

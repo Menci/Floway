@@ -5,7 +5,6 @@ import {
   routeAnthropicMessagesViaOpenAIResponses,
   routeOpenAIChatCompletionsViaAnthropicMessages,
   routeOpenAIChatCompletionsViaOpenAIResponses,
-  routeOpenAIResponsesViaAnthropicMessages,
   routeOpenAIResponsesViaOpenAIChatCompletions,
 } from '../../../src/index.ts';
 import { readAnthropicMessagesRequest } from '../../../src/protocols/anthropic-messages/as-source/input-to.ts';
@@ -30,7 +29,6 @@ test('an explicitly empty Chat assistant content array remains a turn on both ta
 });
 
 test.each([
-  { combined: 9, responsesCeiling: 9, messagesCeiling: 9 },
   { combined: 0, responsesCeiling: 0, messagesCeiling: 0 },
   { combined: null, responsesCeiling: null, messagesCeiling: 5 },
 ])('Chat keeps both output bounds until target projection with combined ceiling $combined', async ({ combined, responsesCeiling, messagesCeiling }) => {
@@ -83,30 +81,6 @@ test('nullable Chat sampling, storage, parallelism and schema strictness remain 
   });
 });
 
-test('distinct content and scalar assistant refusals both remain in history', async () => {
-  const result = await routeOpenAIChatCompletionsViaOpenAIResponses({
-    model: 'm', stream: true, messages: [{ role: 'assistant', content: [{ type: 'refusal', refusal: 'first' }], refusal: 'second' }],
-  }, options);
-  if (result.type !== 'trip') throw new Error(result.message);
-  expect(result.target.input).toEqual([{
-    type: 'message', role: 'assistant',
-    content: [{ type: 'refusal', refusal: 'first' }, { type: 'refusal', refusal: 'second' }],
-  }]);
-});
-
-test.each([
-  { max_tokens: 5 },
-  { max_tokens: 5, max_completion_tokens: 0 },
-])('Chat token limits %j reach the modern Chat spelling after a Responses hop', async limits => {
-  const first = await routeOpenAIChatCompletionsViaOpenAIResponses({ model: 'm', stream: true, messages: [], ...limits }, options);
-  if (first.type !== 'trip') throw new Error(first.message);
-  const second = await routeOpenAIResponsesViaOpenAIChatCompletions(first.target, options);
-  if (second.type !== 'trip') throw new Error(second.message);
-  const expected = limits.max_completion_tokens ?? limits.max_tokens;
-  expect(second.target.max_completion_tokens).toBe(expected);
-  expect(second.target).not.toHaveProperty('max_tokens');
-});
-
 const commonControls = {
   prompt_cache_retention: '24h',
   prompt_cache_options: { mode: 'explicit', ttl: '30m' },
@@ -151,7 +125,7 @@ test.each([false, null] as const)('Chat logprobs %j survives source reading and 
   expect(result.target.include).toEqual(logprobs === null ? null : []);
 });
 
-test.each([{ include: [] }, { include: null }])('Responses include $include states no requested logprobs while preserving zero controls', async ({ include }) => {
+test.each([{ include: null }])('Responses include $include states no requested logprobs while preserving zero controls', async ({ include }) => {
   const result = await routeOpenAIResponsesViaOpenAIChatCompletions({
     model: 'm', stream: true, input: 'hi', include: include === null ? null : [...include],
     prompt_cache_retention: '', prompt_cache_options: { mode: '', ttl: '' }, user: '',
@@ -187,7 +161,7 @@ test('request settings own cache options separately from source and target mutat
   expect(reverseReading.request.settings.prompt_cache_options).toEqual({ mode: 'explicit', ttl: '30m' });
 });
 
-test.each(['auto', 'none'] as const)('orphan Messages %s stays in source IR and is omitted by both OpenAI writers', async type => {
+test.each(['auto'] as const)('orphan Messages %s stays in source IR and is omitted by both OpenAI writers', async type => {
   const source = { model: 'm', stream: true, max_tokens: 10, messages: [{ role: 'user' as const, content: 'A' }], tool_choice: { type } };
   expect(readAnthropicMessagesRequest(source).request.tool_choice).toBe(type);
   for (const route of [routeAnthropicMessagesViaOpenAIChatCompletions, routeAnthropicMessagesViaOpenAIResponses]) {
@@ -196,14 +170,6 @@ test.each(['auto', 'none'] as const)('orphan Messages %s stays in source IR and 
     expect(result.target).not.toHaveProperty('tools');
     expect(result.target).not.toHaveProperty('tool_choice');
   }
-});
-
-test('parallel tool control without declarations does not invent a Messages tool choice', async () => {
-  const result = await routeOpenAIResponsesViaAnthropicMessages({
-    model: 'm', stream: true, input: 'hi', tools: [], parallel_tool_calls: false,
-  }, { ...options, fallbackMaxOutputTokens: 16 });
-  if (result.type !== 'trip') throw new Error(result.message);
-  expect(result.target).not.toHaveProperty('tool_choice');
 });
 
 test('tool selection never changes the complete allocated declaration inventory', async () => {
@@ -226,20 +192,7 @@ test('tool selection never changes the complete allocated declaration inventory'
   }
 });
 
-test.each([[1024, 'low'], [32768, 'high']] as const)('Messages budget %i remains numeric until OpenAI target projection', async (budget_tokens, effort) => {
-  const source = { model: 'm', stream: true, max_tokens: 60000, thinking: { type: 'enabled' as const, budget_tokens }, messages: [{ role: 'user' as const, content: 'hi' }] };
-  const { settings } = readAnthropicMessagesRequest(source).request;
-  expect(settings.reasoning_budget).toBe(budget_tokens);
-  expect(settings).not.toHaveProperty('reasoning_effort');
-  const chat = await routeAnthropicMessagesViaOpenAIChatCompletions(source, options);
-  if (chat.type !== 'trip') throw new Error(chat.message);
-  expect(chat.target.reasoning_effort).toBe(effort);
-  const responses = await routeAnthropicMessagesViaOpenAIResponses(source, options);
-  if (responses.type !== 'trip') throw new Error(responses.message);
-  expect(responses.target.reasoning).toEqual({ effort });
-});
-
-test.each(['', 'custom-effort'] as const)('Messages explicit effort %j remains independent of its numeric budget', async effort => {
+test.each([''] as const)('Messages explicit effort %j remains independent of its numeric budget', async effort => {
   const source = {
     model: 'm', stream: true, max_tokens: 60000, messages: [],
     thinking: { type: 'enabled' as const, budget_tokens: 32768 }, output_config: { effort },

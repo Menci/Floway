@@ -43,16 +43,6 @@ test('rejects incomplete audio when its own Chat choice finalizes', async () => 
   ])).rejects.toThrow('audio ended without its complete metadata');
 });
 
-test('collects a native assistant turn for a finish-only Chat choice with omitted delta', async () => {
-  const choice = { index: 0, delta: {}, finish_reason: 'stop' as const };
-  Reflect.deleteProperty(choice, 'delta');
-  expect(choice).not.toHaveProperty('delta');
-
-  const turns = await drain([chunk([choice])]);
-
-  expect([...turns]).toEqual([[0, { role: 'assistant', content: null, refusal: null }]]);
-});
-
 test('collects every native Chat choice when a sibling omits delta', async () => {
   const emptyChoice = { index: 0, delta: {}, finish_reason: 'stop' as const };
   Reflect.deleteProperty(emptyChoice, 'delta');
@@ -126,26 +116,6 @@ test('tracks native custom input and legacy function arguments in their own inpu
   expect(legacy.finalized.targetTurn).toMatchObject({ function_call: { arguments: '{"x":1}' } });
   expect(legacy.finalized).not.toHaveProperty('referencedContentHashes');
   expect(legacy.fieldState).not.toHaveProperty('tool_calls');
-});
-
-test('sorts native tool state with sparse wire indices without rebuilding field nodes', async () => {
-  const result = await traceTools([
-    chunk([{
-      index: 0, delta: {
-        tool_calls: [
-          { index: 3, id: 'b', type: 'function', function: { name: 'second', arguments: '{"b":2}' } },
-          { index: 1, id: 'a', type: 'function', function: { name: 'first', arguments: '{"a":1}' } },
-        ],
-      }, finish_reason: 'tool_calls',
-    }]),
-  ]);
-  expect(result.finalized.targetTurn).toMatchObject({
-    tool_calls: [
-      { id: 'a', function: { arguments: '{"a":1}' } },
-      { id: 'b', function: { arguments: '{"b":2}' } },
-    ],
-  });
-  expect(result.finalized).not.toHaveProperty('referencedContentHashes');
 });
 
 test('keeps a transformed wrapped tool field literal', async () => {

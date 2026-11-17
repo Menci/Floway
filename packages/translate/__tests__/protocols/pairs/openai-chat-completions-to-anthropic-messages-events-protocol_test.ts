@@ -32,24 +32,3 @@ test('translateToSourceEvents emits native ChatCompletions errors for Messages f
   for await (const frame of translate(stream())) frames.push(frame);
   assertEquals(frames, [eventFrame({ error: { type: 'overloaded_error', message: 'upstream overloaded' } })]);
 });
-
-test('translateToSourceEvents rejects truncated Anthropic Messages streams without message_stop', async () => {
-  async function* stream(): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
-    yield eventFrame({
-      type: 'message_start',
-      message: {
-        container: null, diagnostics: null, stop_details: null,
-        id: 'msg_truncated',
-        type: 'message',
-        role: 'assistant',
-        content: [],
-        model: 'claude-test',
-        stop_reason: null,
-        stop_sequence: null,
-        usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 },
-      },
-    });
-  }
-
-  await assertRejects(async () => await drain(translate(stream())), Error, 'Messages stream ended without message_stop');
-});

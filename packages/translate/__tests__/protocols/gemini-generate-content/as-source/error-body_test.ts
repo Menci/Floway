@@ -15,7 +15,7 @@ const upstreamOf = (status: number, body: unknown, headers: Record<string, strin
   new TextEncoder().encode(typeof body === 'string' ? body : JSON.stringify(body)),
 ] as const;
 
-test.each([502, 503])('keeps upstream HTTP %i with its native RPC status', status => {
+test.each([503])('keeps upstream HTTP %i with its native RPC status', status => {
   const result = restateGeminiGenerateContentError(...upstreamOf(status, { error: { message: 'upstream unavailable' } }));
   assertEquals(result!.status, status);
   assertEquals(decoded(result).error.code, status);

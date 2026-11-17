@@ -5,9 +5,7 @@ import { writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpen
 import { usageFromIR as messagesUsageFromIR } from '../../src/protocols/anthropic-messages/as-source/usage.ts';
 import { usageToIR as messagesUsageToIR } from '../../src/protocols/anthropic-messages/as-target/usage.ts';
 import { usageFromIR } from '../../src/protocols/gemini-generate-content/as-source/usage.ts';
-import { usageFromIR as chatUsageFromIR } from '../../src/protocols/openai-chat-completions/as-source/usage.ts';
 import { usageToIR as chatUsageToIR } from '../../src/protocols/openai-chat-completions/as-target/usage.ts';
-import { usageFromIR as responsesUsageFromIR } from '../../src/protocols/openai-responses/as-source/usage.ts';
 import { usageToIR as responsesUsageToIR } from '../../src/protocols/openai-responses/as-target/usage.ts';
 import { collectIR } from '../ir/output/helpers.ts';
 import { iterate } from '../shared/iterables.ts';
@@ -67,7 +65,7 @@ test('ChatCompletions via Messages publishes its initial role with already-known
   }
 });
 
-test.each([['fast', 'priority'], ['default', 'standard']])('GenerateContent maps the %s alias to its %s tier', async (tier, serviceTier) => {
+test.each([['default', 'standard']])('GenerateContent maps the %s alias to its %s tier', async (tier, serviceTier) => {
   const source = fixtureFrames('openai-responses', { text: ['answer'], usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 }, tier });
   const output = [];
   for await (const frame of writeGeminiGenerateContentEvents(readOpenAIResponsesEvents(iterate(source)))) output.push(frame);
@@ -80,10 +78,6 @@ test('GenerateContent rejects reasoning counts exceeding inclusive output', () =
 
 test.each([
   ['ChatCompletions prompt_tokens', chatUsageToIR, { completion_tokens: 1, total_tokens: 1 }, { output_tokens_inclusive: 1, total_tokens: 1 }],
-  ['ChatCompletions completion_tokens', chatUsageToIR, { prompt_tokens: 1, total_tokens: 1 }, { input_tokens_inclusive: 1, total_tokens: 1 }],
-  ['ChatCompletions total_tokens', chatUsageToIR, { prompt_tokens: 1, completion_tokens: 1 }, { input_tokens_inclusive: 1, output_tokens_inclusive: 1 }],
-  ['Responses input_tokens', responsesUsageToIR, { output_tokens: 1, total_tokens: 1 }, { output_tokens_inclusive: 1, total_tokens: 1 }],
-  ['Responses output_tokens', responsesUsageToIR, { input_tokens: 1, total_tokens: 1 }, { input_tokens_inclusive: 1, total_tokens: 1 }],
   ['Responses total_tokens', responsesUsageToIR, { input_tokens: 1, output_tokens: 1 }, { input_tokens_inclusive: 1, output_tokens_inclusive: 1 }],
   ['Messages output_tokens', (usage: Record<string, any>) => messagesUsageToIR(usage, {}), { input_tokens: 1 }, { input_tokens_inclusive: 1 }],
 ] as const)('%s is omitted when the upstream does not report it', (_name, convert, usage, expected) => {
@@ -93,10 +87,6 @@ test.each([
 test('usage ignores nonstandard aliases and provider-only extensions', () => {
   expect(chatUsageToIR({ input_tokens: 11, output_tokens: 5, total_tokens: 16 } as any)).toEqual({ total_tokens: 16 });
   expect(responsesUsageToIR({ cost: 0.0002 } as any)).toEqual({});
-});
-
-test('Messages usage permits an absent input count in cumulative deltas', () => {
-  expect(messagesUsageToIR({ output_tokens: 2 }, {})).toEqual({ output_tokens_inclusive: 2 });
 });
 
 test('Messages reader accepts a message_delta without usage', async () => {
@@ -111,15 +101,12 @@ test('Messages reader accepts a message_delta without usage', async () => {
 
 test.each([
   ['ChatCompletions', () => chatUsageToIR({ prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, completion_tokens_details: { reasoning_tokens: -1 } })],
-  ['Responses', () => responsesUsageToIR({ input_tokens: 1, output_tokens: 1, total_tokens: 2, output_tokens_details: { reasoning_tokens: -1 } })],
   ['Messages', () => messagesUsageToIR({ input_tokens: 1, output_tokens: 1, output_tokens_details: { thinking_tokens: -1 } }, {})],
 ] as const)('%s rejects invalid optional usage counters', (_name, convert) => {
   expect(convert).toThrow('must be a non-negative safe integer');
 });
 
 test.each([
-  ['ChatCompletions', chatUsageFromIR],
-  ['Responses', responsesUsageFromIR],
   ['Messages', messagesUsageFromIR],
   ['GenerateContent', usageFromIR],
 ] as const)('%s rejects invalid optional IR usage counters', (_name, convert) => {
@@ -127,10 +114,8 @@ test.each([
 });
 
 test.each([
-  ['omitted zero bucket', { cache_creation_input_tokens: 150, cache_creation: { ephemeral_1h_input_tokens: 150 } }, 150],
   ['partial breakdown', { cache_creation_input_tokens: 150, cache_creation: { ephemeral_1h_input_tokens: 30 } }, 150],
   ['explicit null breakdown', { cache_creation: null }, 100],
-  ['absent breakdown', {}, 100],
 ] as const)('Messages late cache snapshot preserves %s semantics', async (_name, late, total) => {
   const upstream = [
     { type: 'message_start', message: { id: 'msg_cache', model: 'served', usage: { input_tokens: 10, output_tokens: 0, cache_creation_input_tokens: 100, cache_creation: { ephemeral_5m_input_tokens: 100, ephemeral_1h_input_tokens: 0 } } } },

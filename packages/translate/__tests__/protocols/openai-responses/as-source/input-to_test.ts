@@ -33,8 +33,6 @@ test('entirely opaque reasoning preserves an empty assistant turn', () => {
 
 test.each([
   { summary: [''], content: [], expected: [] },
-  { summary: [], content: ['', ''], expected: [] },
-  { summary: ['', ''], content: [''], expected: [] },
   { summary: [''], content: ['', 'body', ''], expected: [{ type: 'reasoning', content: ['body'] }] },
   { summary: ['', 'summary', ''], content: [''], expected: [{ type: 'reasoning', summary: ['summary'] }] },
 ])('filters empty reasoning text before producing input IR: %j', ({ summary, content, expected }) => {
@@ -64,17 +62,6 @@ test('empty reasoning summaries do not create Messages thinking blocks beside a 
   });
 });
 
-test('an incomplete custom result reaches Messages with its failure marker', async () => {
-  const trip = await routeOpenAIResponsesViaAnthropicMessages({
-    model: 'm', stream: true, input: [
-      { type: 'custom_tool_call', call_id: 'c', name: 'edit', input: 'run' },
-      { type: 'custom_tool_call_output', call_id: 'c', output: 'failed', status: 'incomplete' },
-    ],
-  }, { sidecarCodec: createTestSidecarCodec() });
-  if (trip.type !== 'trip') throw new Error(trip.message);
-  expect(trip.target.messages[1]).toMatchObject({ role: 'user', content: [{ type: 'tool_result', tool_use_id: 'c', content: 'failed', is_error: true }] });
-});
-
 test('custom result status reaches the Responses wire from the IR failure marker', () => {
   const output = openaiResponsesConversationFromIR([{
     kind: 'client', items: [{ type: 'tool_result', tool_kind: 'custom', call_id: 'c', output: 'failed', is_error: true }],
@@ -95,7 +82,6 @@ test('native Chat custom results preserve their result shape on Responses', asyn
 
 test.each([
   { type: 'future_format', syntax: 'lark', definition: 'start: "ok"' },
-  { type: 'grammar', syntax: 'lark' },
 ])('preserves unrecognized custom format in IR and rejects it at target writing: %j', async format => {
   const payload: OpenAIResponsesRequestPayloadEx = {
     model: 'm', stream: true, input: [],

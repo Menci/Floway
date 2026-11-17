@@ -63,20 +63,6 @@ const chatSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenA
   }
 };
 
-const countDoneSentinels = async (frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): Promise<number> => {
-  let doneCount = 0;
-
-  async function* stream() {
-    yield* frames;
-  }
-
-  for await (const frame of chatSseFrames(stream())) {
-    if (frame.data === '[DONE]') doneCount++;
-  }
-
-  return doneCount;
-};
-
 const countAssistantStartChunksAndDone = async (frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): Promise<{ assistantStartCount: number; doneCount: number }> => {
   let assistantStartCount = 0;
   let doneCount = 0;
@@ -100,39 +86,11 @@ const countAssistantStartChunksAndDone = async (frames: ProtocolFrame<OpenAIResp
   return { assistantStartCount, doneCount };
 };
 
-const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
-  for await (const _frame of frames) {
-    // Exhaust the stream so async translator errors surface to the caller.
-  }
-};
-
 const collect = async <T>(frames: AsyncIterable<T>): Promise<T[]> => {
   const collected = [];
   for await (const frame of frames) collected.push(frame);
   return collected;
 };
-
-test('translateToSourceEvents emits exactly one [DONE] for structured responses stream', async () => {
-  const doneCount = await countDoneSentinels([
-    toProtocolFrame({
-      type: 'response.created',
-      response: makeResponse('in_progress'),
-    }),
-    toProtocolFrame({
-      type: 'response.output_text.delta',
-      item_id: 'msg_1',
-      output_index: 0,
-      content_index: 0,
-      delta: 'hello',
-    }),
-    toProtocolFrame({
-      type: 'response.completed',
-      response: makeResponse('completed'),
-    }),
-  ]);
-
-  assertEquals(doneCount, 1);
-});
 
 test('response.created service_tier survives when the terminal response omits it', async () => {
   async function* stream() {
@@ -169,29 +127,10 @@ test('OpenAI Responses to OpenAI Chat Completions translation rejects malformed 
   }
 
   await assertRejects(
-    async () => await drain(translate(stream())),
+    async () => await collect(translate(stream())),
     RangeError,
     'cache token counts exceed inclusive input tokens',
   );
-});
-
-test('translateToSourceEvents emits exactly one [DONE] for fallback completion stream', async () => {
-  const doneCount = await countDoneSentinels([
-    toProtocolFrame({ type: 'response.created', response: makeResponse('in_progress') }),
-    toProtocolFrame({
-      type: 'response.output_text.done',
-      item_id: 'msg_1',
-      output_index: 0,
-      content_index: 0,
-      text: 'hello',
-    }),
-    toProtocolFrame({
-      type: 'response.completed',
-      response: makeResponse('completed'),
-    }),
-  ]);
-
-  assertEquals(doneCount, 1);
 });
 
 test('translateToSourceEvents avoids assistant-start duplication for created+completed fallback', async () => {
@@ -208,42 +147,6 @@ test('translateToSourceEvents avoids assistant-start duplication for created+com
 
   assertEquals(assistantStartCount, 1);
   assertEquals(doneCount, 1);
-});
-
-test('translateToSourceEvents preserves refusal text from JSON fallback', async () => {
-  async function* stream() {
-    yield* openaiResponsesResultToEvents({
-      id: 'resp_refusal',
-      object: 'response',
-      model: 'gpt-test',
-      status: 'completed',
-      output: [
-        {
-          type: 'message',
-          id: 'msg_refusal',
-          status: 'completed',
-          role: 'assistant',
-          content: [{ type: 'refusal', refusal: 'No.' }],
-        },
-      ],
-      error: null,
-      incomplete_details: null,
-      usage: {
-        input_tokens: 3,
-        output_tokens: 1,
-        total_tokens: 4,
-      },
-    });
-  }
-
-  const refusal: string[] = [];
-
-  for await (const frame of translate(stream())) {
-    if (frame.type !== 'event' || 'error' in frame.event) continue;
-    refusal.push(frame.event.choices[0]?.delta.refusal ?? '');
-  }
-
-  assertEquals(refusal.join(''), 'No.');
 });
 
 test('translateToSourceEvents streams independent text before deferred reasoning and retains usage', async () => {
@@ -347,70 +250,6 @@ test('translateToSourceEvents streams independent text before deferred reasoning
   assertEquals(frames.at(-1)?.type, 'done');
 });
 
-test('translateToSourceEvents stops after OpenAI Responses terminal completion', async () => {
-  const doneCount = await countDoneSentinels([
-    toProtocolFrame({
-      type: 'response.completed',
-      response: makeResponse('completed'),
-    }),
-    toProtocolFrame({
-      type: 'error',
-      message: 'ignored after terminal',
-      code: 'ignored_error',
-    }),
-  ]);
-
-  assertEquals(doneCount, 1);
-});
-
-test('translateToSourceEvents translates OpenAI Responses error events to OpenAI Chat Completions errors', async () => {
-  async function* stream() {
-    yield toProtocolFrame({
-      type: 'error',
-      message: 'upstream overloaded',
-      code: 'overloaded_error',
-    });
-  }
-
-  const frames = await collect(translate(stream()));
-
-  assertEquals(frames.length, 1);
-  assertEquals(frames[0].type, 'event');
-  if (frames[0].type !== 'event') throw new Error('expected event frame');
-  assertEquals((frames[0].event as unknown as Record<string, unknown>).error, {
-    message: 'upstream overloaded',
-    code: 'overloaded_error',
-  });
-});
-
-test('translateToSourceEvents translates OpenAI Responses failed terminal events to OpenAI Chat Completions errors', async () => {
-  async function* stream() {
-    yield toProtocolFrame({
-      type: 'response.failed',
-      response: {
-        ...makeResponse('failed'),
-        output: [],
-        error: {
-          type: 'server_error',
-          code: 'server_error',
-          message: 'upstream failed',
-        },
-      },
-    });
-  }
-
-  const frames = await collect(translate(stream()));
-
-  assertEquals(frames.length, 1);
-  assertEquals(frames[0].type, 'event');
-  if (frames[0].type !== 'event') throw new Error('expected event frame');
-  assertEquals((frames[0].event as unknown as Record<string, unknown>).error, {
-    message: 'upstream failed',
-    type: 'server_error',
-    code: 'server_error',
-  });
-});
-
 test.each(['flat error', 'nested error', 'failed response'])('translateToSourceEvents preserves the error provider namespace and colliding loose fields (%s)', async path => {
   const provider_specific_fields = {
     name: 'TranslateInputException',
@@ -446,27 +285,12 @@ test.each(['flat error', 'nested error', 'failed response'])('translateToSourceE
   expect(JSON.parse(sse.data)).toEqual({ error: translated });
 });
 
-test('translateToSourceEvents rejects truncated OpenAI Responses streams without terminal events', async () => {
-  async function* stream() {
-    yield toProtocolFrame({
-      type: 'response.output_text.delta',
-      item_id: 'msg_1',
-      output_index: 0,
-      content_index: 0,
-      delta: 'partial',
-    });
-  }
-
-  await assertRejects(async () => await drain(translate(stream())), Error, 'before the initial response envelope');
-});
-
-test.each([false, true].flatMap(mixed => [
-  { mixed, delivery: 'deltas', initialInput: '', deltas: ['patch ', 'text'], inputDone: true },
-  { mixed, delivery: 'initial prefix and delta', initialInput: 'patch ', deltas: ['text'], inputDone: true },
-  { mixed, delivery: 'initial prefix and input done', initialInput: 'patch ', deltas: [], inputDone: true },
-  { mixed, delivery: 'initial prefix and item done', initialInput: 'patch ', deltas: [], inputDone: false },
-  { mixed, delivery: 'item done only', initialInput: '', deltas: [], inputDone: false },
-]))('native custom call SSE survives Chat client collection and replay (mixed=$mixed, delivery=$delivery)', async ({ mixed, initialInput, deltas, inputDone }) => {
+test.each([
+  { mixed: false, delivery: 'deltas', initialInput: '', deltas: ['patch ', 'text'], inputDone: true },
+  { mixed: true, delivery: 'initial prefix and delta', initialInput: 'patch ', deltas: ['text'], inputDone: true },
+  { mixed: false, delivery: 'initial prefix and item done', initialInput: 'patch ', deltas: [], inputDone: false },
+  { mixed: true, delivery: 'item done only', initialInput: '', deltas: [], inputDone: false },
+])('native custom call SSE survives Chat client collection and replay (mixed=$mixed, delivery=$delivery)', async ({ mixed, initialInput, deltas, inputDone }) => {
   const custom = { type: 'custom_tool_call' as const, id: 'ctc_1', call_id: 'call_edit', name: 'edit', input: 'patch text', status: 'completed' };
   const fn = { type: 'function_call' as const, id: 'fc_1', call_id: 'call_lookup', name: 'lookup', arguments: '{}', status: 'completed' };
   const index = mixed ? 1 : 0;

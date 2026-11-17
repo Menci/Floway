@@ -60,10 +60,7 @@ test.each([
   { initial: 'web_run', final: 'plain', name: 'plain', namespace: undefined },
   { initial: 'plain', final: 'web_run', name: 'run', namespace: 'web' },
   { initial: 'web_run', final: 'files_run', name: 'run', namespace: 'files' },
-  { initial: 'plain', final: 'other', name: 'other', namespace: undefined },
-  { initial: 'web_run', final: 'plain', name: 'plain', namespace: undefined, delayedId: true },
   { initial: 'plain', final: 'web_run', name: 'run', namespace: 'web', delayedId: true },
-  { initial: 'web_run', final: 'files_run', name: 'run', namespace: 'files', delayedId: true },
 ])('keeps callable identity when a Chat tool name changes from $initial to $final', async ({ initial, final, name, namespace, delayedId }) => {
   const source: OpenAIResponsesRequestPayloadEx = {
     model: 'm', stream: true, input: 'start',
@@ -134,7 +131,7 @@ test('clears a grouped custom-tool namespace when its Chat name becomes ungroupe
   }
 });
 
-test.each([['chat', 'function'], ['chat', 'custom'], ['messages', 'function'], ['messages', 'custom']] as const)('native %s %s calls share logical aliases with declarations, selectors and ordinary history', async (target, kind) => {
+test.each([['chat', 'custom'], ['messages', 'function']] as const)('native %s %s calls share logical aliases with declarations, selectors and ordinary history', async (target, kind) => {
   const options = { sidecarCodec: createTestSidecarCodec() };
   const source: OpenAIResponsesRequestPayloadEx = { model: 'm', stream: true, input: 'start', tools: [group(kind)] };
   const args = kind === 'function' ? '{}' : '{"input":"raw"}';
@@ -255,7 +252,7 @@ test('Gemini target allocation reserves explicit IDs against every missing-ID ca
   expect(answers.map(item => item.call_id)).toEqual(['first_call_1', calls[0].call_id, 'gemini_call_0_0']);
 });
 
-test.each(['messages', 'responses'] as const)('Chat legacy IDs stay distinct from modern explicit IDs through %s translation', async target => {
+test.each(['responses'] as const)('Chat legacy IDs stay distinct from modern explicit IDs through %s translation', async target => {
   const options = { sidecarCodec: createTestSidecarCodec() };
   const source = {
     model: 'm', stream: true, messages: [

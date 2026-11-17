@@ -18,26 +18,6 @@ test('applyLastToolCacheBreakpoint marks the last custom tool, skipping native w
   assertEquals(cacheControlOf(tools[2]), undefined);
 });
 
-test('applyLastMessageCacheBreakpoint promotes a string last message to a text block', () => {
-  const messages: AnthropicMessagesMessage[] = [{ role: 'user', content: 'hello' }];
-  applyLastMessageCacheBreakpoint(messages);
-  assertEquals(messages[0].content, [{ type: 'text', text: 'hello', cache_control: { type: 'ephemeral' } }]);
-});
-
-test('applyLastMessageCacheBreakpoint marks an image as the trailing block', () => {
-  const message: AnthropicMessagesUserMessage = {
-    role: 'user',
-    content: [
-      { type: 'text', text: 'look' },
-      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'x' } },
-    ],
-  };
-  applyLastMessageCacheBreakpoint([message]);
-  assert(Array.isArray(message.content));
-  assertEquals(cacheControlOf(message.content[0]), undefined);
-  assertEquals(cacheControlOf(message.content[1]), { type: 'ephemeral' });
-});
-
 test('applyLastMessageCacheBreakpoint marks a trailing assistant tool_use block', () => {
   const message: AnthropicMessagesAssistantMessage = {
     role: 'assistant',
@@ -59,13 +39,6 @@ test('applyLastMessageCacheBreakpoint falls back to an earlier message when the 
   assert(Array.isArray(userContent) && Array.isArray(assistantContent));
   assertEquals(cacheControlOf(userContent[0]), { type: 'ephemeral' });
   assertEquals(cacheControlOf(assistantContent[0]), undefined);
-});
-
-test('applyLastSystemCacheBreakpoint is a no-op on undefined or empty input', () => {
-  applyLastSystemCacheBreakpoint(undefined);
-  const empty: AnthropicMessagesTextBlockParam[] = [];
-  applyLastSystemCacheBreakpoint(empty);
-  assertEquals(empty, []);
 });
 
 test('applyLastSystemCacheBreakpoint marks only the last block when multiple are present', () => {

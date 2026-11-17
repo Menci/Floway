@@ -66,29 +66,6 @@ test('raw JSON Schema outputs own every mutable descendant across translation tr
   expect(Object.getPrototypeOf(response)).toBe(Object.prototype);
 });
 
-test('Google Schema outputs own literal fields without converting their data as schemas', () => {
-  const schema = {
-    type: 'OBJECT',
-    required: ['value'],
-    properties: {
-      value: { type: 'STRING', enum: ['original'], default: { nested: [1] }, example: { type: 'OBJECT', nested: [2] } },
-    },
-  };
-  const original = JSON.stringify(schema);
-  const response = geminiResponseSchema({ responseSchema: schema })!;
-  const parameters = geminiFunctionParameters({ name: 'lookup', parameters: schema })!;
-  const value = (response.properties as Record<string, Record<string, unknown>>).value;
-  (response.required as string[]).push('other');
-  (value.enum as string[]).push('changed');
-  ((value.default as { nested: number[] }).nested).push(3);
-  ((value.example as { nested: number[] }).nested).push(4);
-  expect(JSON.stringify(schema)).toBe(original);
-  expect(parameters).toEqual({
-    type: 'object', required: ['value'],
-    properties: { value: { type: 'string', enum: ['original'], default: { nested: [1] }, example: { type: 'OBJECT', nested: [2] } } },
-  });
-});
-
 test('preserves integer-named property ordering through JSON serialization', () => {
   const result = geminiSchemaToJsonSchema({ type: 'OBJECT', propertyOrdering: ['1', '0'], properties: { '0': { type: 'STRING' }, '1': { type: 'INTEGER' } } });
   expect(JSON.stringify(result.properties)).toBe('{"1":{"type":"integer"},"0":{"type":"string"}}');

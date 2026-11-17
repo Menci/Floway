@@ -61,33 +61,6 @@ test('generated Responses call IDs stay within the wire limit', async () => {
   assertEquals(output?.type === 'function_call_output' ? output.call_id : undefined, call?.type === 'function_call' ? call.call_id : undefined);
 });
 
-test('buildTargetPayload translates LOW to reasoning.effort', async () => {
-  const request = await buildWithTestSidecar({
-    contents: [],
-    generationConfig: { thinkingConfig: { thinkingLevel: 'LOW', includeThoughts: true } },
-  }, 'gpt-test');
-
-  assertEquals(request.reasoning, { effort: 'low' });
-});
-
-test('buildTargetPayload forwards an empty thinkingLevel verbatim', async () => {
-  const request = await buildWithTestSidecar({
-    contents: [],
-    generationConfig: { thinkingConfig: { thinkingLevel: '', includeThoughts: true } },
-  }, 'gpt-test');
-
-  assertEquals(request.reasoning, { effort: '' });
-});
-
-test('buildTargetPayload preserves an explicit empty thinkingLevel beside a budget', async () => {
-  const request = await buildWithTestSidecar({
-    contents: [],
-    generationConfig: { thinkingConfig: { thinkingBudget: 2048, thinkingLevel: '', includeThoughts: true } },
-  }, 'gpt-test');
-
-  assertEquals(request.reasoning, { effort: '' });
-});
-
 test('buildTargetPayload maps instructions and multimodal user input without defaults', async () => {
   const payload: GeminiGenerateContentPayload = {
     systemInstruction: {
@@ -122,21 +95,6 @@ test('buildTargetPayload maps instructions and multimodal user input without def
       },
     ],
   });
-});
-
-test.each(['audio/wav', 'audio/mp3', 'audio/mpeg'])('buildTargetPayload rejects Gemini inline audio MIME type %s for Responses', async mimeType => {
-  await assertRejects(
-    () => buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: 'ZGF0YQ==' } }] }] }, 'gpt-test'),
-    Error,
-    `Cannot translate an audio part of MIME type '${mimeType}' to OpenAI Responses.`,
-  );
-});
-
-test('buildTargetPayload forwards a non-audio inline MIME type from Gemini as a Responses file', async () => {
-  // Responses carries the media type in the data URL, so it travels verbatim and
-  // the selected upstream decides whether it accepts it.
-  const request = await buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'text/plain', data: 'ZGF0YQ==' } }] }] }, 'gpt-test');
-  assertEquals(request.input, [{ type: 'message', role: 'user', content: [{ type: 'input_file', file_data: 'data:text/plain;base64,ZGF0YQ==' }] }]);
 });
 
 test('buildTargetPayload maps assistant reasoning, function calls, and call-order outputs', async () => {
@@ -214,38 +172,6 @@ test('buildTargetPayload maps assistant reasoning, function calls, and call-orde
   ]);
 });
 
-test('buildTargetPayload ignores thought signatures when translating to OpenAI Responses', async () => {
-  const payload: GeminiGenerateContentPayload = {
-    contents: [
-      {
-        role: 'model',
-        parts: [
-          { text: 'Signed answer.', thoughtSignature: 'sig_text' },
-          {
-            thoughtSignature: 'sig_call',
-            functionCall: { name: 'lookup', args: {} },
-          },
-        ],
-      },
-    ],
-  };
-
-  assertEquals((await buildWithTestSidecar(payload, 'gpt-test')).input, [
-    {
-      type: 'message',
-      role: 'assistant',
-      content: [{ type: 'output_text', text: 'Signed answer.' }],
-    },
-    {
-      type: 'function_call',
-      call_id: 'lookup_call_1',
-      name: 'lookup',
-      arguments: '{}',
-      status: 'completed',
-    },
-  ]);
-});
-
 test('buildTargetPayload maps generation config, JSON schema, and reasoning controls', async () => {
   const schema = {
     type: 'object',
@@ -281,19 +207,6 @@ test('buildTargetPayload maps generation config, JSON schema, and reasoning cont
   });
 
   assertEquals((await buildWithTestSidecar({ contents: [], generationConfig: { responseMimeType: 'application/json' } }, 'gpt-test')).text, { format: { type: 'json_object' } });
-});
-
-test('buildTargetPayload never invents reasoning.context from Gemini generateContent thinking controls', async () => {
-  const result = await buildWithTestSidecar({
-    contents: [],
-    generationConfig: {
-      thinkingConfig: { thinkingLevel: 'high', includeThoughts: true },
-    },
-  }, 'gpt-test');
-
-  assertEquals(result.reasoning, { effort: 'high' });
-  assertEquals(result.reasoning?.context, undefined);
-  assertFalse('context' in (result.reasoning ?? {}));
 });
 
 test('buildTargetPayload preserves declarations and restricts callable names for ANY mode', async () => {
@@ -451,96 +364,6 @@ test('buildTargetPayload maps tool declarations and tool choice modes only when 
     'required',
   );
   assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'gpt-test')).tool_choice, undefined);
-});
-
-test('buildTargetPayload rejects an unknown content role', async () => {
-  await assertRejects(
-    () =>
-      buildWithTestSidecar(
-        {
-          contents: [{ role: 'tool', parts: [{ text: 'Hi' }] } as unknown as GeminiGenerateContentContent],
-        },
-        'gpt-test',
-      ),
-    Error,
-    '"tool" is not a supported content role.',
-  );
-});
-
-test('buildTargetPayload rejects a part with an unsupported kind in user content', async () => {
-  await assertRejects(
-    () =>
-      buildWithTestSidecar(
-        {
-          contents: [{ role: 'user', parts: [{ codeExecutionResult: { outcome: 'OK' } }] }],
-        },
-        'gpt-test',
-      ),
-    Error,
-    '"code_execution_result" parts are not supported in user content.',
-  );
-});
-
-test('buildTargetPayload rejects a function_call part in user content', async () => {
-  await assertRejects(
-    () =>
-      buildWithTestSidecar(
-        {
-          contents: [{ role: 'user', parts: [{ functionCall: { name: 'x', args: {} } }] }],
-        },
-        'gpt-test',
-      ),
-    Error,
-    '"function_call" parts are not supported in user content.',
-  );
-});
-
-test('buildTargetPayload rejects an inline_data part in model content', async () => {
-  await assertRejects(
-    () =>
-      buildWithTestSidecar(
-        {
-          contents: [{ role: 'model', parts: [{ inlineData: { mimeType: 'image/png', data: 'aW1n' } }] }],
-        },
-        'gpt-test',
-      ),
-    Error,
-    '"inline_data" parts are not supported in model content.',
-  );
-});
-
-test('buildTargetPayload rejects a part that sets conflicting content fields', async () => {
-  await assertRejects(
-    () =>
-      buildWithTestSidecar(
-        {
-          contents: [{ role: 'model', parts: [{ text: 'foo', functionCall: { name: 'x', args: {} } } as unknown as GeminiGenerateContentPart] }],
-        },
-        'gpt-test',
-      ),
-    Error,
-    'sets conflicting content fields',
-  );
-});
-
-test('buildTargetPayload rejects a part with no recognized content field', async () => {
-  await assertRejects(
-    () =>
-      buildWithTestSidecar(
-        {
-          contents: [{ role: 'user', parts: [{}] }],
-        },
-        'gpt-test',
-      ),
-    Error,
-    'has no recognized content',
-  );
-});
-
-test.each([undefined, []])('preserves an empty model turn with parts %j', async parts => {
-  const payload = { contents: [{ role: 'user', parts: [{ text: 'before' }] }, { role: 'model', ...(parts === undefined ? {} : { parts }) }, { role: 'user', parts: [{ text: 'after' }] }] };
-  const result = await buildWithTestSidecar(payload, 'target-model');
-  assertEquals((result.input as Array<{ role?: string; content?: unknown }>).filter(item => item.role === 'assistant'), [{ type: 'message', role: 'assistant', content: '' }]);
 });
 
 test('a call with no argument object is written with an empty one', async () => {

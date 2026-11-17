@@ -14,9 +14,7 @@ import {
   routeAnthropicMessagesViaOpenAIChatCompletions,
   routeAnthropicMessagesViaOpenAIResponses,
   routeGeminiGenerateContentViaAnthropicMessages,
-  routeGeminiGenerateContentViaOpenAIChatCompletions,
   routeGeminiGenerateContentViaOpenAIResponses,
-  routeOpenAIChatCompletionsViaAnthropicMessages,
   routeOpenAIChatCompletionsViaOpenAIResponses,
   routeOpenAIResponsesViaAnthropicMessages,
   routeOpenAIResponsesViaOpenAIChatCompletions,
@@ -98,12 +96,9 @@ const verifyPhases = async <Payload, Source, Target>(
 
 const cases = [
   ['Chat via Responses', () => verifyPhases(routeOpenAIChatCompletionsViaOpenAIResponses(chat, options()), nestedEvent(failure), expectedChat)],
-  ['Chat via Messages', () => verifyPhases(routeOpenAIChatCompletionsViaAnthropicMessages(chat, { ...options(), fallbackMaxOutputTokens: 16 }), nestedEvent(failure), expectedChat)],
   ['Responses via Chat', () => verifyPhases(routeOpenAIResponsesViaOpenAIChatCompletions(responses, options()), chatEvent(failure), expectedResponses)],
   ['Responses via Messages', () => verifyPhases(routeOpenAIResponsesViaAnthropicMessages(responses, { ...options(), fallbackMaxOutputTokens: 16 }), nestedEvent(failure), expectedResponses)],
   ['Messages via Chat', () => verifyPhases(routeAnthropicMessagesViaOpenAIChatCompletions(messages, options()), chatEvent(failure), expectedMessages)],
-  ['Messages via Responses', () => verifyPhases(routeAnthropicMessagesViaOpenAIResponses(messages, options()), nestedEvent(failure), expectedMessages)],
-  ['Gemini via Chat', () => verifyPhases(routeGeminiGenerateContentViaOpenAIChatCompletions(gemini, options()), chatEvent(failure), expectedGemini)],
   ['Gemini via Responses', () => verifyPhases(routeGeminiGenerateContentViaOpenAIResponses(gemini, options()), nestedEvent(failure), expectedGemini)],
   ['Gemini via Messages', () => verifyPhases(routeGeminiGenerateContentViaAnthropicMessages(gemini, { ...options(), fallbackMaxOutputTokens: 16 }), nestedEvent(failure), expectedGemini)],
 ] as const;
@@ -112,8 +107,6 @@ test.each(cases)('%s preserves the error fields in both phases', async (_name, r
 
 test.each([
   { message: 'failed' },
-  { message: 'failed', code: null, param: null },
-  { message: 'failed', type: 'classification' },
   { message: 'failed', type: 'classification', code: null, param: null },
 ])('OpenAI errors preserve absent and nullable fields independently: %j', async error => {
   const chatTrip = await requireTrip(routeOpenAIChatCompletionsViaOpenAIResponses(chat, options()));

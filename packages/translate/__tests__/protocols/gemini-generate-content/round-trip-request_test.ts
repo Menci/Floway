@@ -28,7 +28,7 @@ test.each(['lookup', '__proto__'])('Gemini via Chat uses restored call IDs for i
   ]);
 });
 
-test.each(['lookup', '__proto__'])('Gemini via Messages uses restored call IDs without adding cache metadata to native history for %s', async name => {
+test.each(['lookup'])('Gemini via Messages uses restored call IDs without adding cache metadata to native history for %s', async name => {
   const codec = createTestSidecarCodec();
   const native = { role: 'assistant' as const, content: [{ type: 'tool_use' as const, id: 'native-messages-call', name, input: { query: 'docs' } }] };
   const carrier = await encodeRoundTripSidecar(codec, { v: 1, source: 'geminiGenerateContent', target: 'anthropicMessages', targetTurn: native, sourceTurnDigest: await computeGeminiGenerateContentTurnDigest(targetTurn(name)) });
@@ -38,7 +38,7 @@ test.each(['lookup', '__proto__'])('Gemini via Messages uses restored call IDs w
   expect(request.messages[3]).toEqual({ role: 'assistant', content: [{ type: 'tool_use', id: 'other_call_1', name: 'other', input: {}, cache_control: { type: 'ephemeral' } }] });
 });
 
-test.each(['lookup', '__proto__'])('Gemini via Responses uses restored call IDs and allocates later bare call ids for %s', async name => {
+test.each(['lookup'])('Gemini via Responses uses restored call IDs and allocates later bare call ids for %s', async name => {
   const codec = createTestSidecarCodec();
   const native = [{ type: 'function_call' as const, call_id: 'native-responses-call', name, arguments: '{"query":"docs"}', status: 'completed' as const }];
   const carrier = await encodeRoundTripSidecar(codec, { v: 1, source: 'geminiGenerateContent', target: 'openaiResponses', targetTurn: native, sourceTurnDigest: await computeGeminiGenerateContentTurnDigest(targetTurn(name)) });

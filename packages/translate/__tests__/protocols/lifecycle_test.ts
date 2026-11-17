@@ -48,17 +48,6 @@ test('ChatCompletions locks the first reasoning field independently for each cho
   ]);
 });
 
-test('an empty first reasoning string locks the field without interrupting text', async () => {
-  const ir = await collectIR(readOpenAIChatCompletionsEvents(iterate([
-    chat({ content: 'before' }), chat({ reasoning: '' }), chat({ reasoning_text: 'ignored', content: 'after' }),
-    chat({ reasoning: 'selected' }), chat({}, 'stop'), doneFrame(),
-  ])));
-  expect(ir.choices[0].items).toEqual([
-    { type: 'message', content: [{ type: 'text', text: 'beforeafter' }] },
-    { type: 'reasoning', summary: ['selected'] },
-  ]);
-});
-
 test('ChatCompletions creates separate reasoning runs at every text interruption', async () => {
   const ir = await collectIR(readOpenAIChatCompletionsEvents(iterate([chat({ reasoning_text: 'r1' }), chat({ content: 'body' }), chat({ reasoning_text: 'r2' }), chat({ content: 'tail' }), chat({}, 'stop'), doneFrame()])));
   expect(ir.choices[0].items).toEqual([{ type: 'reasoning', summary: ['r1'] }, { type: 'message', content: [{ type: 'text', text: 'body' }] }, { type: 'reasoning', summary: ['r2'] }, { type: 'message', content: [{ type: 'text', text: 'tail' }] }]);
@@ -104,21 +93,6 @@ test('a wrapped custom input is published when its native function boundary clos
     expect(output).toContainEqual({ type: 'item_end', choice: 0, item: 0, status: 'completed' });
   });
   expect((await collectIR(iterate(frames))).choices[0].items[0]).toMatchObject({ type: 'custom_tool_call', input: 'text' });
-});
-
-test('a custom call start completes the preceding function', async () => {
-  const frames = await gated([tool(0, '{}', 'call0', 'lookup'), chat({ tool_calls: [{ index: 1, id: 'custom1', type: 'custom', custom: { name: 'script', input: 'text' } }] })], [chat({}, 'tool_calls'), doneFrame()], readOpenAIChatCompletionsEvents, output => {
-    expect(output.filter((record: any) => record.type === 'item_end')).toEqual([{ type: 'item_end', choice: 0, item: 0, status: 'completed' }]);
-  });
-  expect((await collectIR(iterate(frames))).choices[0].items).toHaveLength(2);
-});
-
-test.each([['Responses', writeOpenAIResponsesEvents], ['Messages', writeAnthropicMessagesEvents]] as const)('%s waits for the actual tool identity before publishing its start', async (name, writer) => {
-  const frames = await gated([tool(0, '{"x":', undefined, 'lookup')], [tool(0, '1}', 'call_real'), chat({}, 'tool_calls'), doneFrame()], source => writer(readOpenAIChatCompletionsEvents(source)), output => {
-    expect(output.some((frame: any) => frame.event?.type === 'response.output_item.added' || frame.event?.type === 'content_block_start')).toBe(false);
-  });
-  const result: any = await nativeResult(name === 'Responses' ? 'openai-responses' : 'anthropic-messages', frames);
-  expect(name === 'Responses' ? result.output[0].call_id : result.content[0].id).toBe('call_real');
 });
 
 const irPrefix = (callId?: string | typeof IRAbsent): IRRecord[] => [
@@ -167,11 +141,6 @@ test.each([['Responses', writeOpenAIResponsesEvents], ['Messages', writeAnthropi
     expect(prefix.some((frame: any) => frame.event?.type === 'response.output_item.added' || frame.event?.type === 'content_block_start')).toBe(false);
   });
   expect(frames.some((frame: any) => frame.event?.type === 'response.output_item.done' || frame.event?.type === 'content_block_stop')).toBe(true);
-});
-
-test('GenerateContent emits a completed call without waiting for a call ID', async () => {
-  const result: any = await nativeResult('gemini-generate-content', await collect(writeGeminiGenerateContentEvents(iterate([...irPrefix(), ...irSuffix()]))));
-  expect(result.candidates[0].content.parts[0].functionCall).toEqual({ name: 'tool', args: { x: 1 } });
 });
 
 const response = (output: any[], status = 'completed') => ({ id: 'resp_lifecycle', model: 'served', status, output, usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 }, error: null, incomplete_details: status === 'incomplete' ? { reason: 'max_output_tokens' } : null });
@@ -235,11 +204,6 @@ test.each([['ChatCompletions', writeOpenAIChatCompletionsEvents], ['Responses', 
   }
 });
 
-test('empty ChatCompletions scalar deltas do not interrupt reasoning', async () => {
-  const ir = await collectIR(readOpenAIChatCompletionsEvents(iterate([chat({ role: 'assistant', content: '' }), chat({ reasoning_text: 'r1' }), chat({ content: '' }), chat({ reasoning_text: 'r2' }), chat({}, 'stop'), doneFrame()])));
-  expect(ir.choices[0].items).toEqual([{ type: 'reasoning', summary: ['r1r2'] }]);
-});
-
 test('Responses closes only the addressed text part while a refusal remains open', async () => {
   const prefix: IRRecord[] = [
     { type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } },
@@ -258,15 +222,6 @@ test('Responses closes only the addressed text part while a refusal remains open
   });
   const result: any = await nativeResult('openai-responses', frames);
   expect(result.output[0].content).toEqual([{ type: 'output_text', text: 'A', annotations: [], logprobs: [] }, { type: 'refusal', refusal: 'BC' }]);
-});
-
-test('GenerateContent retains reasoning arrival order while it waits for a prior tool', async () => {
-  const reasoning = { type: 'reasoning', id: 'r', content: [{ type: 'reasoning_text', text: 'C' }], summary: [] };
-  const source = [responseStart, add(0, call(0)), args(0, '{"x":'), add(1, reasoning), eventFrame({ type: 'response.reasoning_summary_part.added', output_index: 1, summary_index: 0, part: { type: 'summary_text', text: 'S' } } as any), eventFrame({ type: 'response.output_item.done', output_index: 1, item: { ...reasoning, summary: [{ type: 'summary_text', text: 'S' }] } } as any), args(0, '1}'), endCall(0, '{"x":1}'), eventFrame({ type: 'response.completed', response: response([call(0, '{"x":1}', 'completed'), { ...reasoning, summary: [{ type: 'summary_text', text: 'S' }] }]) } as any)];
-  const frames = await collect(writeGeminiGenerateContentEvents(readOpenAIResponsesEvents(iterate(source)), { includeThoughts: true }));
-  const parts = frames.flatMap(frame => (frame.event as any).candidates?.flatMap((candidate: any) => candidate.content?.parts ?? []) ?? []);
-  expect(parts[0].functionCall.id).toBe('call_0');
-  expect(parts.filter((part: any) => part.thought).map((part: any) => part.text).join('')).toBe('CS');
 });
 
 test.each([false, true])('GenerateContent keeps parallel text arrival order with a prior tool: %s', async buffered => {

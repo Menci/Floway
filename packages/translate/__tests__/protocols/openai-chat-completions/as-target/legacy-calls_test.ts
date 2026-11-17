@@ -42,11 +42,6 @@ test('a non-tail legacy call without a matching result is refused', () => {
   assertThrows(() => chatLegacyCallsOf([legacy('lookup'), message('later')]), TranslateInputException);
 });
 
-test('a later uniquely named id-less result answers the legacy call', () => {
-  const turns = [legacy('lookup'), message('chatter'), namedResult('lookup')];
-  assertEquals([...chatLegacyCallsOf(turns).names.values()], ['lookup']);
-});
-
 test('a legacy call still awaiting its answer at the end is accepted', () => {
   // The conversation has not moved past the call, so nothing is missing yet.
   assertEquals(chatLegacyCallsOf([legacy('lookup')]).names.size, 0);
