@@ -71,7 +71,7 @@ describe('resolveCodexCatalog', () => {
     const first = await resolve(ua);
     const second = await resolve(ua);
     expect(first.catalog).toEqual(fake);
-    expect(first.capabilities).toEqual({});
+    expect(first.capabilities).toEqual({ audioInput: true });
     expect(second).toEqual(first);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]?.[0]).toBe('https://raw.githubusercontent.com/openai/codex/rust-v0.999.0/codex-rs/models-manager/models.json');
@@ -97,7 +97,7 @@ describe('resolveCodexCatalog', () => {
     const first = await resolve(ua);
     await resolve(ua);
     expect(first.catalog.models.map(m => m.slug)).toEqual(bundled.models.map(m => m.slug));
-    expect(first.capabilities).toEqual({});
+    expect(first.capabilities).toEqual({ audioInput: true });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -108,7 +108,7 @@ describe('resolveCodexCatalog', () => {
     const { resolveCodexCatalog: resolve } = await import('../../../src/data-plane/codex/catalog.ts');
     const { catalog, capabilities } = await resolve('codex_exec/0.997.0 (test)');
     expect(catalog.models.map(m => m.slug)).toEqual(bundled.models.map(m => m.slug));
-    expect(capabilities).toEqual({});
+    expect(capabilities).toEqual({ audioInput: true });
   });
 
   it('derives Ultra synthesis capability only from a v2 entry in the exact client catalog', async () => {
@@ -136,6 +136,7 @@ describe('resolveCodexCatalog', () => {
     const { resolveCodexCatalog: resolve } = await import('../../../src/data-plane/codex/catalog.ts');
     const resolution = await resolve('codex_cli_rs/0.999.1 (Mac OS; arm64)');
     expect(resolution.capabilities).toEqual({
+      audioInput: true,
       ultraReasoningLevel: { effort: 'ultra', description: 'Maximum reasoning with automatic task delegation' },
     });
   });

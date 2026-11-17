@@ -124,6 +124,24 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.default_reasoning_level).toBeUndefined();
   });
 
+  test('a matching client snapshot alone cannot grant audio input', () => {
+    const entry = synthesizeCatalogEntry(base, { ...bundledBase, input_modalities: ['text', 'audio'] }, { audioInput: true });
+    expect(entry.input_modalities).toEqual(['text']);
+  });
+
+  test('does not advertise Codex audio on a translated route', () => {
+    const entry = synthesizeCatalogEntry({ ...base, endpoints: { anthropicMessages: {} }, chat: { modalities: { input: ['text', 'audio'], output: ['text'] } } }, undefined, { audioInput: true });
+    expect(entry.input_modalities).toEqual(['text']);
+  });
+
+  test('audio requires native Responses and audio input on every chat fallback', () => {
+    const primary = stubProviderModel({ endpoints: { openaiResponses: {} }, chat: { modalities: { input: ['text', 'audio'], output: ['text'] } } });
+    const listed = (fallback: ProviderModel) => synthesizeCatalogEntry({ ...base, endpoints: primary.endpoints, chat: primary.chat, providerModels: { primary, fallback } }, undefined, { audioInput: true }).input_modalities;
+    expect(listed(primary)).toEqual(['text', 'audio']);
+    expect(listed({ ...primary, endpoints: { anthropicMessages: {} } })).toEqual(['text']);
+    expect(listed({ ...primary, chat: { modalities: { input: ['text'], output: ['text'] } } })).toEqual(['text']);
+  });
+
   // The two facts are independent: taking images says nothing about accepting
   // detail 'original'. `gpt-5.2` in the vendored catalog is exactly this shape
   // — images accepted, detail 'original' rejected — so the modality list cannot
@@ -339,7 +357,7 @@ describe('synthesizeCatalogEntry', () => {
       expect(entry.default_reasoning_level).toBe('high');
     });
 
-    test.each(['v1', 'v2'])('maps an existing Ultra preset to Max while preserving multi-agent %s', multiAgentVersion => {
+    test.each(['v1', 'v2'])('preserves the explicit Ultra mapping for multi-agent %s', multiAgentVersion => {
       const entry = synthesizeCatalogEntry(base, {
         ...bundledBase,
         supported_reasoning_levels: [
@@ -356,7 +374,7 @@ describe('synthesizeCatalogEntry', () => {
         { effort: 'ultra', description: 'Existing Ultra' },
       ]);
       expect(entry.multi_agent_version).toBe(multiAgentVersion);
-      expect(entry.multi_agent_reasoning_effort).toBe('max');
+      expect(entry.multi_agent_reasoning_effort).toBe('xhigh');
     });
 
     test.each([

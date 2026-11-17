@@ -1,13 +1,11 @@
 // Matched client-catalog entries retain their model-specific instructions and
-// opaque fields. Registry metadata controls the public identity, priced tiers,
-// modalities, reasoning and limits. ChatGPT providers additionally supply their
-// private default window; other providers expose a single input budget.
+// opaque fields. Registry metadata controls identity, modalities and limits;
+// ChatGPT catalogs additionally supply private Codex settings and tier availability.
 
 import type { CatalogModel, CodexCatalogCapabilities, CodexReasoningLevel, CodexServiceTier } from './catalog.ts';
 import { synthesizedBaseInstructions } from './synthesized-base-instructions.ts';
-import type { Modality } from '@floway-dev/protocols/common';
 import type { InternalModel } from '@floway-dev/provider';
-import type { ChatGPTContextWindow } from '@floway-dev/provider-chatgpt';
+import type { ChatGPTCodexModelMetadata } from '@floway-dev/provider-chatgpt';
 
 // Keep the established 128K compaction policy for synthesized models whose
 // provider has no published limit. Operators can replace it with a model limit.
@@ -79,17 +77,18 @@ export const synthesizeCatalogEntry = (
   base?: CatalogModel,
   capabilities: CodexCatalogCapabilities = {},
   catalogServiceTiers: readonly CodexServiceTier[] = [],
-  codexContextWindow?: ChatGPTContextWindow,
+  { metadata: codexMetadata, serviceTiers }: { metadata?: ChatGPTCodexModelMetadata; serviceTiers?: CodexServiceTier[] } = {},
 ): CatalogModel => {
-  const source: CatalogModel = base ?? BASELINE;
+  const source: CatalogModel = { ...(base ?? BASELINE), ...codexMetadata };
 
-  const inputModalities = (model.chat?.modalities?.input
-    ?? source.input_modalities
-    ?? BASELINE.input_modalities) as readonly Modality[];
-  const hasImage = inputModalities.includes('image');
   const chatProviderModels = model.providerModels === undefined
     ? undefined
     : Object.values(model.providerModels).filter(providerModel => providerModel.kind === 'chat');
+  const supportsAudio = capabilities.audioInput && model.endpoints.openaiResponses !== undefined && model.chat?.modalities?.input.includes('audio')
+    && (chatProviderModels?.every(providerModel => providerModel.endpoints.openaiResponses !== undefined && providerModel.chat?.modalities?.input.includes('audio')) ?? true);
+  const inputModalities = (model.chat?.modalities?.input ?? source.input_modalities ?? BASELINE.input_modalities)
+    .filter(m => m !== 'audio' || supportsAudio);
+  const hasImage = inputModalities.includes('image');
   const imageDetailOriginal = chatProviderModels?.length
     ? chatProviderModels.every(providerModel => providerModel.chat?.image_detail_original === true)
     : model.chat?.image_detail_original === true;
@@ -123,10 +122,10 @@ export const synthesizeCatalogEntry = (
   const providerWindow = providerLimits.length > 0
     ? Math.min(...providerLimits)
     : source.context_window ?? BASELINE.context_window;
-  const contextWindow = codexContextWindow?.context_window ?? providerWindow;
-  const maxContextWindow = codexContextWindow === undefined
+  const contextWindow = codexMetadata?.context_window ?? providerWindow;
+  const maxContextWindow = codexMetadata === undefined
     ? providerWindow
-    : codexContextWindow.max_context_window;
+    : codexMetadata.max_context_window;
 
   const entry: CatalogModel = {
     ...source,
@@ -136,20 +135,21 @@ export const synthesizeCatalogEntry = (
     supports_image_detail_original: imageDetailOriginal,
     web_search_tool_type: hasImage ? 'text_and_image' : 'text',
     supported_reasoning_levels: advertisedReasoning,
-    service_tiers: deriveServiceTiers(model, source.service_tiers ?? [], catalogServiceTiers),
+    service_tiers: serviceTiers ?? deriveServiceTiers(model, source.service_tiers ?? [], catalogServiceTiers),
+    ...(serviceTiers === undefined ? {} : { additional_speed_tiers: serviceTiers.some(tier => tier.id === 'priority') ? ['fast'] : [] }),
     context_window: contextWindow,
     max_context_window: maxContextWindow,
   };
 
   // The caller supplies Ultra capability only from an exact Codex catalog;
   // a model advertising Max alone does not establish v2 orchestration support.
-  if (shouldEnableUltra) entry.multi_agent_version = 'v2';
+  if (shouldEnableUltra && entry.multi_agent_version === undefined) entry.multi_agent_version = 'v2';
 
   // Codex resolves Ultra through this field before sending the wire effort.
-  // Treat the last non-Ultra preset as the highest supported effort.
-  // Preserve the catalog mapping when no such preset is advertised.
+  // Keep a valid model-owned mapping, falling back to the last non-Ultra preset.
   // https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/protocol/src/openai_models/reasoning_effort.rs#L10-L40
-  if (advertisedReasoning.some(level => level.effort === 'ultra')) {
+  if (advertisedReasoning.some(level => level.effort === 'ultra') && entry.multi_agent_reasoning_effort !== null
+    && !advertisedReasoning.some(level => level.effort !== 'ultra' && level.effort === entry.multi_agent_reasoning_effort)) {
     const highestEffort = advertisedReasoning.findLast(level => level.effort !== 'ultra')?.effort;
     if (highestEffort !== undefined) entry.multi_agent_reasoning_effort = highestEffort;
   }

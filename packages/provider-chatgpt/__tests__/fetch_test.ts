@@ -348,7 +348,8 @@ describe('Codex Responses wire selection', () => {
         const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => action === 'generate' ? sseEventsResponse([]) : compactJsonResponse());
         const body = {
           input: [
-            { type: 'message' as const, role: 'user' as const, content: 'hello' },
+            { type: 'message' as const, role: 'user' as const, content: [{ type: 'input_audio' as const, audio_url: 'data:audio/wav;base64,YQ==' }] },
+            { type: 'function_call_output' as const, call_id: 'audio', output: [{ type: 'input_audio' as const, file_id: 'file-audio' }] },
             // The CLI emits this only with its opt-in reasoning_effort_override feature.
             // https://github.com/openai/codex/blob/6b9826e3aa83b1a5947db50f4332cb9c65f1b340/codex-rs/core/src/session/reasoning_effort.rs#L16-L85
             { type: 'configuration_update', reasoning: { effort: 'disabled' } } as unknown as CanonicalOpenAIResponsesInputItem,
@@ -357,7 +358,7 @@ describe('Codex Responses wire selection', () => {
           reasoning: { effort: 'future_effort', context: 'current_turn' },
           tool_choice: 'auto' as const,
           text: { verbosity: 'high' as const },
-          service_tier: 'future_tier',
+          service_tier: 'ultrafast',
           client_metadata: { [CHATGPT_RESPONSES_LITE_CLIENT_METADATA_KEY]: marker, retained: { future: true } },
           temperature: 0.5,
         };
@@ -375,12 +376,12 @@ describe('Codex Responses wire selection', () => {
         const wire = await readJsonRequest(init as RequestInit) as Record<string, unknown>;
         const wireHeaders = new Headers(init?.headers);
         expect(wireHeaders.get(CHATGPT_RESPONSES_LITE_HEADER)).toBe(useResponsesLite ? 'true' : null);
-        expect(wireHeaders.get('user-agent')).toBe('codex_cli_rs/0.159.3 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10');
-        expect(wireHeaders.get('version')).toBe('0.159.3');
+        expect(wireHeaders.get('user-agent')).toBe('codex_cli_rs/0.169.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10');
+        expect(wireHeaders.get('version')).toBe('0.169.0');
         expect(headers.get(CHATGPT_RESPONSES_LITE_HEADER)).toBe(marker ?? null);
         expect(body).toEqual(original);
         expect(wire.text).toEqual(body.text);
-        expect(wire.service_tier).toBe('future_tier');
+        expect(wire.service_tier).toBe('ultrafast');
         if (useResponsesLite) {
           expect(wire).not.toHaveProperty('tools');
           expect(wire).not.toHaveProperty('instructions');
