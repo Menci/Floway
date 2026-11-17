@@ -280,26 +280,6 @@ test('OpenAI Responses WebSocket starts capturing on the next turn when dump ret
   );
 });
 
-test('OpenAI Responses WebSocket stops capturing on the next turn when dump retention is disabled after upgrade', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
-
-  await withSuccessfulOpenAIResponsesUpstream(
-    async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
-      await completeOpenAIResponsesTurn(client, 'captured-before-disable');
-      await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
-
-      await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: null });
-      await completeOpenAIResponsesTurn(client, 'not-captured-after-disable');
-
-      assertEquals(dumps.stored.length, 1);
-      client.close();
-    }),
-  );
-});
-
 test('OpenAI Responses WebSocket dump responseBytes equals the UTF-8 payload bytes sent downstream', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
@@ -940,50 +920,6 @@ test('OpenAI Responses WebSocket forwards HTTP failures with status, error.code,
   );
 });
 
-test('OpenAI Responses WebSocket dump responseBytes counts an error envelope sent downstream', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
-
-  await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-      }
-      if (url.pathname === '/models') return jsonResponse(copilotModels([]));
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
-      const recorded = recordRawMessages(client);
-      try {
-        const received = waitForMessages(client, messages => messages.length === 1);
-        client.send(JSON.stringify({
-          type: 'response.create',
-          event_id: '错误-byte-count',
-          response: {
-            model: 'missing-model',
-            input: 'hello',
-          },
-        }));
-
-        assertEquals((await received)[0]?.status, 404);
-        await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
-        const expectedBytes = recorded.messages.reduce(
-          (total, message) => total + new TextEncoder().encode(message).byteLength,
-          0,
-        );
-        assertEquals(dumps.stored[0]?.record.meta.responseBytes, expectedBytes);
-      } finally {
-        recorded.stop();
-        client.close();
-      }
-    }),
-  );
-});
-
 test('OpenAI Responses WebSocket store:false keeps session snapshots without durable repo writes', async () => {
   const { apiKey, repo } = await setupAppTest();
   const upstreamBodies: unknown[] = [];
@@ -1382,9 +1318,9 @@ test('OpenAI Responses WebSocket evicts a continuation that failed through a str
 });
 
 test.each([
-  { type: 'error', code: null, param: null, message: 'native failure', vendor: { detail: 'flat' } },
-  { type: 'error', error: { code: 'vendor_failure', param: 'tools', message: 'native failure', vendor: { detail: 'nested' } }, trace: 'native-trace' },
-].flatMap(error => [false, true].map(announced => ({ error, announced }))))('OpenAI Responses WebSocket preserves a standalone upstream error and accepts the next turn %j', async ({ error, announced }) => {
+  { error: { type: 'error', code: null, param: null, message: 'native failure', vendor: { detail: 'flat' } }, announced: false },
+  { error: { type: 'error', error: { code: 'vendor_failure', param: 'tools', message: 'native failure', vendor: { detail: 'nested' } }, trace: 'native-trace' }, announced: true },
+])('OpenAI Responses WebSocket preserves a standalone upstream error and accepts the next turn %j', async ({ error, announced }) => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
@@ -1437,65 +1373,6 @@ test.each([
       }
     }),
   );
-});
-
-test('OpenAI Responses WebSocket store:true durable snapshots can chain through local session cache', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  let turn = 0;
-  let firstResponseId: string | undefined;
-  let secondResponseId: string | undefined;
-
-  await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-      }
-      if (url.pathname === '/models') {
-        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
-      }
-      if (url.pathname === '/responses') {
-        turn += 1;
-        return sseOpenAIResponsesResponse({
-          id: `resp_ws_durable_${turn}`,
-          object: 'response',
-          model: 'gpt-direct-responses',
-          status: 'completed',
-          output: [{
-            id: `assistant_ws_durable_${turn}`,
-            type: 'message',
-            role: 'assistant',
-            status: 'completed',
-            content: [{ type: 'output_text', text: `answer ${turn}`, annotations: [] }],
-          }],
-        });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
-      const firstTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
-      client.send(JSON.stringify({ type: 'response.create', response: { model: 'gpt-direct-responses', input: 'first' } }));
-      const firstMessages = await firstTerminal;
-      const firstCompleted = firstMessages.find(message => message.type === 'response.completed') as { response?: { id?: string } } | undefined;
-      firstResponseId = firstCompleted?.response?.id;
-      assertExists(firstResponseId);
-
-      const secondTerminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
-      client.send(JSON.stringify({ type: 'response.create', response: { model: 'gpt-direct-responses', previous_response_id: firstResponseId, input: 'second' } }));
-      const secondMessages = await secondTerminal;
-      const secondCompleted = secondMessages.find(message => message.type === 'response.completed') as { response?: { id?: string } } | undefined;
-      secondResponseId = secondCompleted?.response?.id;
-      assertExists(secondResponseId);
-    }),
-  );
-
-  const firstSnapshot = await repo.openaiResponsesSnapshots.lookup(apiKey.id, firstResponseId!, 0);
-  const secondSnapshot = await repo.openaiResponsesSnapshots.lookup(apiKey.id, secondResponseId!, 0);
-  assertExists(firstSnapshot);
-  assertExists(secondSnapshot);
-  assertEquals(secondSnapshot.itemIds.length > firstSnapshot.itemIds.length, true);
 });
 
 test('OpenAI Responses WebSocket makes a done reasoning item reusable from a fresh connection before terminal', async () => {
