@@ -445,8 +445,13 @@ test('a non-streaming client collects the native Gemini stream into one response
   });
 
   assertEquals(response.status, 200);
-  const body = await response.json() as { candidates: { content: { parts: { text: string }[] }; finishReason: string }[]; usageMetadata: { totalTokenCount: number } };
-  assertEquals(body.candidates[0].content.parts, [{ text: 'Hello world' }]);
+  const body = await response.json() as { candidates: { content: { parts: { text: string; thoughtSignature?: string }[] }; finishReason: string }[]; usageMetadata: { totalTokenCount: number } };
+  // The affinity egress runs on every Gemini turn, native included: it keeps
+  // client-carried state bound to the upstream that produced it. Its streaming
+  // signature anchoring leaves the two text parts separate and stamps the
+  // element with a wrapped signature rather than concatenating them.
+  assertEquals(body.candidates[0].content.parts.map(part => part.text), ['Hello', ' world']);
+  assert(body.candidates[0].content.parts[1].thoughtSignature !== undefined);
   assertEquals(body.candidates[0].finishReason, 'STOP');
   assertEquals(body.usageMetadata.totalTokenCount, 5);
 });
