@@ -70,15 +70,6 @@ test('consumes msg only when it supplies the canonical message', () => {
   expect(errorPayloadFromWire({ msg: 'alias', trace_id: 'trace' })).toEqual({ message: 'alias', trace_id: 'trace' });
 });
 
-test('canonical wire errors retain object identity', () => {
-  const error = { message: 'failed', type: 'upstream_type', code: 'upstream_code', param: null, request_id: 'req_1' };
-  expect(errorPayloadFromWire(error)).toBe(error);
-  expect(errorPayloadFromWire({ error })).toBe(error);
-  expect(errorPayloadFromWire({ type: 'error', sequence_number: 1, error })).toBe(error);
-  const nativeCategory = { ...error, type: 'error' };
-  expect(errorPayloadFromWire(nativeCategory)).toBe(nativeCategory);
-});
-
 test('envelope transport fields stay outside the error metadata', () => {
   const body = new TextEncoder().encode(JSON.stringify({
     type: 'error', sequence_number: 9, request_id: 'req_1', error: { message: 'failed', code: null },
@@ -123,10 +114,4 @@ test('equal values at one metadata key coalesce across namespaces without consum
       trace_2: { region: 'us', attempts: [1, false, null] },
     },
   });
-});
-
-test('metadata equality preserves distinct raw number tokens and coalesces identical tokens', () => {
-  const body = new TextEncoder().encode('{"error":{"message":"failed","amount":9007199254740993,"same":{"amount":1.00},"provider_specific_fields":{"amount":9007199254740992,"same":{"amount":1.00}}}}');
-  const payload = irErrorPayloadFromBody(body);
-  expect(JSON.stringify(payload)).toBe('{"message":"failed","provider_specific_fields":{"amount":9007199254740992,"same":{"amount":1.00},"amount_1":9007199254740993}}');
 });

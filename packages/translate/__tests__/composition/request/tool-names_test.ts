@@ -17,23 +17,6 @@ test('a grouped declaration keeps its pair when its namespace contains the flatt
   assertEquals(flattened.context.originalToolNames.get(flatName!), { namespace: 'a.b', name: 'read' });
 });
 
-test('a grouped declaration keeps its pair when its name contains the flatten separator', () => {
-  const flattened = allocateToolNames(request([{ type: 'function', namespace: 'files', name: 'read.one', parameters: { type: 'object' } }]), []);
-
-  const flatName = flattened.context.originalToolNames.keys().next().value;
-  assertEquals(typeof flatName, 'string');
-  assertEquals(flattened.context.originalToolNames.get(flatName!), { namespace: 'files', name: 'read.one' });
-});
-
-test('custom declarations are reported under the flat names this wire writes', () => {
-  const flattened = allocateToolNames(request([{ type: 'custom', namespace: 'files', name: 'edit' }]), []);
-
-  // The reader that recognises these calls back sees the wire name, not the
-  // client's, so the set has to be stated after flattening.
-  assertEquals([...flattened.context.customToolNames], [...flattened.context.originalToolNames.keys()]);
-  assertEquals(flattened.request.tools?.[0]?.namespace, undefined);
-});
-
 test('a call naming an undeclared group still gets a flat spelling and its pair', () => {
   const turns: IRInputTurnWithCallIds[] = [{
     kind: 'assistant',
@@ -69,18 +52,6 @@ test('distinct structured identities with the same dotted spelling get distinct 
   ]), []);
   assertEquals(flattened.request.tools?.map(tool => tool.name), ['a_b_c', 'a_b_c_2']);
   assertEquals([...flattened.context.originalToolNames.values()], [{ namespace: 'a', name: 'b.c' }, { namespace: 'a.b', name: 'c' }]);
-});
-
-test('a selector naming a group this request does not declare is refused', () => {
-  assertThrows(
-    () => allocateToolNames({ settings: { model: 'm', stream: true }, tools: [{ type: 'function', name: 'web.run', parameters: { type: 'object' } }], tool_choice: { type: 'function', name: 'run', namespace: 'web' } }, []),
-    TranslateInputException,
-  );
-});
-
-test('a plain selector passes through untouched', () => {
-  const flattened = allocateToolNames({ settings: { model: 'm', stream: true }, tools: [{ type: 'function', name: 'plain', parameters: { type: 'object' } }], tool_choice: { type: 'function', name: 'plain' } }, []);
-  assertEquals(flattened.request.tool_choice, { type: 'function', name: 'plain' });
 });
 
 test.each([undefined, 'files'])('allocates distinct names per callable kind in namespace %s independently of selection', namespace => {

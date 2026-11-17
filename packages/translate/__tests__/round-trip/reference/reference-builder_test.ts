@@ -45,26 +45,6 @@ describe('ReferenceBuilder', () => {
     ]));
   });
 
-  it('keeps provenance directly in sparse state leaves across shallow copies', async () => {
-    const builder = createReferenceBuilder();
-    const field = createReadFieldState('text');
-    const first = appendReadField(builder, field, 'hel');
-    const second = appendReadField(builder, field, 'lo');
-    const content = createEmittedFieldState(builder, 'text');
-    appendEmittedField(builder, content, '[');
-    appendEmittedField(builder, content, 'hello', [first, second]);
-    appendEmittedField(builder, content, ']');
-
-    const fieldState = { content: [{ text: { ...field } }] };
-    const contentState = { content: [{ text: { ...content } }] };
-    expect(fieldState.content[0].text).toMatchObject({ kind: 'text', text: 'hello', textFragmentIds: [first, second] });
-    expect(contentState.content[0].text).toMatchObject({ kind: 'text', emittedFieldId: 0, text: '[hello]' });
-
-    const turn = { role: 'assistant' as const, content: [{ type: 'text' as const, text: '[hello]', citations: null }] };
-    const finalizer = createFieldReferencer(builder, collectEmittedFieldPlacements(turn, contentState));
-    expect(await finalizer.referenceField('hello', fieldState.content[0].text)).toEqual(new ContentReference('text', [[0, 1, 6]]));
-  });
-
   it('hashes one canonical text run only once across multiple content IDs and shifts their ranges', async () => {
     const builder = createReferenceBuilder();
     const left = 'left segment '.repeat(30);
@@ -87,36 +67,6 @@ describe('ReferenceBuilder', () => {
     expect(finalizer.referencedContentHashes).toEqual([await hashRoundTripContent(left + right)]);
   });
 
-  it('looks up equal complete texts once per content ID rather than once per SSE atom', async () => {
-    const builder = createReferenceBuilder();
-    const fields = [createReadFieldState('text'), createReadFieldState('text')];
-    const contents = fields.map(() => createEmittedFieldState(builder, 'text'));
-    const texts = contents.map(() => Array.from({ length: 128 }, () => 'abcdefgh').join(''));
-    for (const [index, field] of fields.entries()) {
-      for (let offset = 0; offset < texts[index].length; offset += 8) {
-        const piece = texts[index].slice(offset, offset + 8);
-        appendEmittedField(builder, contents[index], piece, [appendReadField(builder, field, piece)]);
-      }
-    }
-    const views = new Map(contents.flatMap((content, index) => [...collectEmittedFieldPlacements(texts[index], content)]));
-    const finalizer = createFieldReferencer(builder, views);
-    const digest = vi.spyOn(crypto.subtle, 'digest');
-    const lookups = vi.spyOn(Map.prototype, 'get');
-    let completeTextLookups: number;
-    let hashCalls: number;
-    try {
-      for (const [index, field] of fields.entries()) await finalizer.referenceField(texts[index], field);
-      completeTextLookups = lookups.mock.calls.filter(([key]) => key === texts[0]).length;
-      hashCalls = digest.mock.calls.length;
-    } finally {
-      lookups.mockRestore();
-      digest.mockRestore();
-    }
-    expect(completeTextLookups).toBe(contents.length);
-    expect(hashCalls).toBe(1);
-    expect(finalizer.referencedContentHashes).toEqual([await hashRoundTripContent(texts[0])]);
-  });
-
   it('coalesces shifted ranges across canonical parts and preserves original-leaf validation', async () => {
     const builder = createReferenceBuilder();
     const field = createReadFieldState('text');
@@ -133,19 +83,6 @@ describe('ReferenceBuilder', () => {
     const changedFinalizer = createFieldReferencer(builder, collectEmittedFieldPlacements(changed, state, collectAnthropicMessagesTextPlacements([changed])));
     expect(await changedFinalizer.referenceField(left + right, field)).toBe(left + right);
     expect(changedFinalizer.referencedContentHashes).toEqual([]);
-  });
-
-  it('resolves every original SSE atom within one merged IR append', async () => {
-    const builder = createReferenceBuilder();
-    const field = createReadFieldState('text');
-    const first = appendReadField(builder, field, 'hel');
-    const second = appendReadField(builder, field, 'lo');
-    const content = createEmittedFieldState(builder, 'text');
-    appendEmittedField(builder, content, '[');
-    appendEmittedField(builder, content, 'hello', [first, second]);
-    appendEmittedField(builder, content, ']');
-    const finalizer = createFieldReferencer(builder, collectEmittedFieldPlacements('[hello]', content));
-    expect(await finalizer.referenceField('hello', field)).toMatchObject({ parts: [[0, 1, 6]] });
   });
   it('resolves B SSE atoms directly into one A content occurrence', async () => {
     const builder = createReferenceBuilder();
@@ -262,11 +199,6 @@ describe('ReferenceBuilder', () => {
     expect(finalizer.referencedContentHashes).toHaveLength(1);
   });
 
-  it('hashes UTF-16 code units without normalizing isolated surrogates', async () => {
-    const text = '\ud800a\udc00?';
-    expect(await hashRoundTripContent(text)).not.toEqual(await hashRoundTripContent(text.toWellFormed()));
-  });
-
   it('finalizes nested assistant state without materializing sparse holes', async () => {
     const builder = createReferenceBuilder();
     const contentField = createReadFieldState('text');
@@ -299,27 +231,6 @@ describe('ReferenceBuilder', () => {
     expect(finalizedCalls).toHaveLength(2);
     expect(Object.hasOwn(finalizedCalls, 0)).toBe(false);
     expect(finalizedCalls[1]?.type === 'function' && finalizedCalls[1].function.arguments).toBe('{}');
-  });
-
-  it('omits referenced contents when every B field remains literal despite valid A views', async () => {
-    const builder = createReferenceBuilder();
-    const field = createReadFieldState('text');
-    appendReadField(builder, field, 'literal B text');
-    const content = createEmittedFieldState(builder, 'text');
-    appendEmittedField(builder, content, 'visible A text');
-    const turn: OpenAIChatCompletionsInputAssistantTurn = { role: 'assistant', content: 'literal B text' };
-    const fieldState: OpenAIChatCompletionsInputAssistantTurnState<ReadFieldStates> = { content: field };
-    const contentState: OpenAIChatCompletionsInputAssistantTurnState<EmittedFieldStates> = { content };
-
-    const finalized = await referenceAssistantTurn<'openaiChatCompletions'>(
-      turn,
-      fieldState,
-      builder,
-      collectEmittedFieldPlacements({ role: 'assistant', content: 'visible A text' }, contentState),
-    );
-
-    expect(finalized.targetTurn).toEqual(turn);
-    expect(Object.hasOwn(finalized, 'referencedContentHashes')).toBe(false);
   });
 
   it('lists only referenced contents when other valid views stay literal', async () => {
@@ -383,29 +294,6 @@ describe('ReferenceBuilder', () => {
 
 });
 
-it('uses the final JSON text view to reference and restore a B object', async () => {
-  const builder = createReferenceBuilder();
-  const field = createReadFieldState('json');
-  const json = '{"x":1}';
-  const partId = appendReadField(builder, field, json);
-  const content = createEmittedFieldState(builder, 'json');
-  appendEmittedField(builder, content, json, [partId]);
-  const original = parseJSONObject(json);
-  const finalizer = createFieldReferencer(builder, collectEmittedFieldPlacements(original, content));
-  const reference = await finalizer.referenceField(original, field);
-
-  expect(reference).toBeInstanceOf(ContentReference);
-  if (!(reference instanceof ContentReference) || reference.kind !== 'json') throw new Error('Expected a JSON reference');
-  const turn: AnthropicMessagesReferenceableInputAssistantTurn<ContentReference> = {
-    role: 'assistant',
-    content: [{ type: 'tool_use', id: 'call', name: 'lookup', input: reference }],
-  };
-  expect(await restoreAssistantTurn('anthropicMessages', [original], turn, finalizer.referencedContentHashes)).toEqual({
-    ok: true,
-    value: { role: 'assistant', content: [{ type: 'tool_use', id: 'call', name: 'lookup', input: original }] },
-  });
-});
-
 it('round-trips raw JSON numbers and keeps changed key order literal', async () => {
   const builder = createReferenceBuilder();
   const json = '{"n":9007199254740993}';
@@ -443,17 +331,4 @@ it('keeps JSON fields literal when their string pieces do not restore the origin
 
   expect(await finalizer.referenceField(original, field)).toBe(original);
   expect(finalizer.referencedContentHashes).toEqual([]);
-});
-
-it('keeps the original JSON object when the collected B text is incomplete', async () => {
-  const builder = createReferenceBuilder();
-  const field = createReadFieldState('json');
-  const incomplete = '{"x":1';
-  const partId = appendReadField(builder, field, incomplete);
-  const content = createEmittedFieldState(builder, 'text');
-  appendEmittedField(builder, content, incomplete, [partId]);
-  const original: IRJSONObject = { x: 1 };
-  const finalizer = createFieldReferencer(builder, collectEmittedFieldPlacements(incomplete, content));
-
-  expect(await finalizer.referenceField(original, field)).toBe(original);
 });

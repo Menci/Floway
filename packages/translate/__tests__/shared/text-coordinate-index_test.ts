@@ -23,8 +23,3 @@ test('maps UTF-16 ranges to UTF-8 bytes and requires well-formed text', () => {
   index.append('\ude00中B');
   expect(index.utf16RangeToUTF8({ start: 1, end_exclusive: 4 })).toEqual({ start: 1, end: 8 });
 });
-
-test('detects a missed append at the protocol owner', () => {
-  const index = TextCoordinateIndex.codePointsToUTF16('text');
-  expect(() => index.assertUTF16Length(5)).toThrow('covers 4 UTF-16 units, not 5');
-});

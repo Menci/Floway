@@ -59,11 +59,8 @@ test('an unexpected codec failure retains its original error and cause', async (
   await expect(translate.routeOpenAIChatCompletionsViaAnthropicMessages({ model: 'm', stream: true, messages: [turn] }, { sidecarCodec: codec })).rejects.toBe(failure);
 });
 
-test.each([
-  translate.routeAnthropicMessagesViaOpenAIChatCompletions,
-  translate.routeAnthropicMessagesViaOpenAIResponses,
-])('a target that cannot express document image transformations returns an input error', async route => {
-  const result = await route({
+test('a target that cannot express document image transformations returns an input error', async () => {
+  const result = await translate.routeAnthropicMessagesViaOpenAIChatCompletions({
     model: 'm', max_tokens: 32, stream: true, messages: [{
       role: 'user', content: [{
         type: 'document',

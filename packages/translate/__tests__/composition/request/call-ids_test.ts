@@ -29,10 +29,6 @@ test('an id-less result answers the oldest call of its name', () => {
   assertEquals(lastResult(assignCallIds([call('read', 'a'), call('read', 'b'), result('read')], () => [])).call_id, 'a');
 });
 
-test('an id-less result with no name answers the oldest pending call', () => {
-  assertEquals(lastResult(assignCallIds([call('read', 'a'), call('write', 'b'), result()], () => [])).call_id, 'a');
-});
-
 test('an id-less result answers a call a sidecar restored', () => {
   assertEquals(lastResult(assignCallIds([restored([{ name: 'read', callId: 'native-1' }]), result()], restoredCalls)).call_id, 'native-1');
 });

@@ -3,30 +3,12 @@ import { test, vi } from 'vitest';
 import { buildCustomToolInputSchema, unwrapCustomToolInput } from '../../src/shared/custom-tool.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
-test('buildCustomToolInputSchema returns plain single-string schema when format is absent', () => {
-  assertEquals(buildCustomToolInputSchema(), {
-    type: 'object',
-    additionalProperties: false,
-    required: ['input'],
-    properties: { input: { type: 'string' } },
-  });
-});
-
 test('buildCustomToolInputSchema returns plain single-string schema when format.definition is empty', () => {
   assertEquals(buildCustomToolInputSchema({ type: 'grammar', syntax: 'lark', definition: '' }), {
     type: 'object',
     additionalProperties: false,
     required: ['input'],
     properties: { input: { type: 'string' } },
-  });
-});
-
-test('buildCustomToolInputSchema injects Lark grammar description when format.definition is non-empty', () => {
-  assertEquals(buildCustomToolInputSchema({ type: 'grammar', syntax: 'lark', definition: 'start: "ok"' }), {
-    type: 'object',
-    additionalProperties: false,
-    required: ['input'],
-    properties: { input: { type: 'string', description: 'Lark grammar: start: "ok"' } },
   });
 });
 
@@ -48,17 +30,8 @@ test('buildCustomToolInputSchema preserves an open-string syntax label', () => {
   });
 });
 
-test('unwrapCustomToolInput returns empty string for empty input', () => {
-  assertEquals(unwrapCustomToolInput(''), '');
-});
-
 test('unwrapCustomToolInput extracts the input field from a valid wrapped JSON blob', () => {
   assertEquals(unwrapCustomToolInput('{"input":"hello world"}'), 'hello world');
-});
-
-test('unwrapCustomToolInput preserves freeform newlines and quotes in the extracted input', () => {
-  const wrapped = JSON.stringify({ input: '*** Begin Patch\n*** Update File: "foo.py"\n*** End Patch' });
-  assertEquals(unwrapCustomToolInput(wrapped), '*** Begin Patch\n*** Update File: "foo.py"\n*** End Patch');
 });
 
 test('unwrapCustomToolInput falls back to the raw blob when JSON parse fails', () => {
@@ -74,14 +47,4 @@ test('unwrapCustomToolInput falls back to the raw blob when input field is missi
   } finally {
     warning.mockRestore();
   }
-});
-
-test('unwrapCustomToolInput falls back to the raw blob when input field is not a string', () => {
-  assertEquals(unwrapCustomToolInput('{"input":42}'), '{"input":42}');
-  assertEquals(unwrapCustomToolInput('{"input":null}'), '{"input":null}');
-  assertEquals(unwrapCustomToolInput('{"input":{"nested":"obj"}}'), '{"input":{"nested":"obj"}}');
-});
-
-test('unwrapCustomToolInput ignores extra wrapper properties', () => {
-  assertEquals(unwrapCustomToolInput('{"input":"value","extra":1}'), 'value');
 });

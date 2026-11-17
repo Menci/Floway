@@ -79,6 +79,11 @@ const cases = [
 
 const scenarios = ['middle', 'foreign', 'wrong-direction', 'duplicate', 'different-targets', 'malformed'] as const;
 
-test.each(cases.flatMap(source => scenarios.map(scenario => ({ ...source, scenario }))))('$source selects by ownership: $scenario', async ({ run, scenario }) => {
+// Selection by ownership is protocol-agnostic; every other protocol still runs
+// the scenario that exercises its own carrier inspection and digest material.
+test.each([
+  ...scenarios.map(scenario => ({ ...cases[0], scenario })),
+  ...cases.slice(1).map(source => ({ ...source, scenario: 'middle' as const })),
+])('$source selects by ownership: $scenario', async ({ run, scenario }) => {
   await run(scenario);
 });

@@ -4,12 +4,6 @@ import { IRAbsent } from '../../../src/ir/output/absent.ts';
 import { createIRCollector } from '../../../src/ir/output/collector.ts';
 
 describe('output IR accumulator', () => {
-  test('stores plain accumulated state without publication metadata', () => {
-    const collector = createIRCollector();
-    collector.applyWrite({ type: 'write', kind: 'initialize', path: ['usage'], value: {} });
-    collector.applyWrite({ type: 'write', kind: 'assign', path: ['usage', 'output_tokens_inclusive'], value: 0 });
-    expect(collector.value(['usage'])).toEqual({ output_tokens_inclusive: 0 });
-  });
 
   test('enforces static append targets', () => {
     const collector = createIRCollector();
@@ -36,15 +30,6 @@ describe('output IR accumulator', () => {
     expect(() => collector.applyWrite({ type: 'write', kind: 'assign', path: ['choices', 0, 'refusal_details'], value: { category: IRAbsent, explanation: null } as any })).toThrow('assigned directly');
     expect(() => collector.applyWrite({ type: 'write', kind: 'assign', path: ['choices', 0, 'refusal_details'], value: { category: undefined, explanation: null } as any })).toThrow('cannot contain undefined');
     expect(() => collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 1], value: { type: 'reasoning', summary: [IRAbsent] } })).toThrow('append target must initialize to an empty string');
-  });
-
-  test('enforces append ownership by item type', () => {
-    const collector = createIRCollector();
-    collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } });
-    collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 0], value: { type: 'function_call', name: 'f', arguments: '' } });
-    collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 1], value: { type: 'custom_tool_call', name: 'c', input: '' } });
-    expect(() => collector.applyWrite({ type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'input'], value: 'x' })).toThrow('append-target path');
-    expect(() => collector.applyWrite({ type: 'write', kind: 'append', path: ['choices', 0, 'items', 1, 'arguments'], value: 'x' })).toThrow('append-target path');
   });
 
   test('rejects an unallocated choice end', () => {

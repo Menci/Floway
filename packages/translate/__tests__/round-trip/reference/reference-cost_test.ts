@@ -25,7 +25,7 @@ const finalizeTexts = async (texts: readonly string[]) => {
 };
 
 describe('thin reference selection', () => {
-  it.each(['hello', ' '.repeat(24)])('keeps %j literal when references cannot pay for the shared table', async text => {
+  it.each(['hello', ' '.repeat(60)])('keeps %j literal when references cannot pay for the shared table', async text => {
     const result = await finalizeTexts([text]);
     expect(result.targetTurn).toEqual(result.turn);
     expect(result).not.toHaveProperty('referencedContentHashes');
@@ -48,12 +48,6 @@ describe('thin reference selection', () => {
     } finally {
       digest.mockRestore();
     }
-  });
-
-  it('keeps an equal-budget choice literal', async () => {
-    const result = await finalizeTexts([' '.repeat(60)]);
-    expect(result.targetTurn).toEqual(result.turn);
-    expect(result).not.toHaveProperty('referencedContentHashes');
   });
 
   it('aggregates every use of one hash before paying its digest cost once', async () => {

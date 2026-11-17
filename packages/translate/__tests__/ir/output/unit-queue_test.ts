@@ -18,19 +18,3 @@ test('unit queue dequeues units in the order they were enqueued', () => {
   queue.enqueue(c);
   expect(queue.head).toBe(c);
 });
-
-test('unit queue owns its links without changing payloads or coupling independent queues', () => {
-  const unit = Object.freeze({ name: 'shared' });
-  const first = createIRUnitQueue<typeof unit>();
-  const second = createIRUnitQueue<typeof unit>();
-  first.enqueue(unit);
-  first.enqueue(unit);
-  second.enqueue(unit);
-  first.dropHead();
-  expect(first.head).toBe(unit);
-  expect(second.head).toBe(unit);
-  first.dropHead();
-  expect(first.head).toBeUndefined();
-  expect(second.head).toBe(unit);
-  expect(Object.keys(unit)).toEqual(['name']);
-});

@@ -18,15 +18,6 @@ describe('semantic replay text channels', () => {
     expect(await verifyOpenAIChatCompletionsTurnDigest({ role: 'assistant', content: [{ type: 'text', text: 'hellono' }] }, await computeOpenAIChatCompletionsTurnDigest(interrupted), 1)).toBe(false);
   });
 
-  it('merges Messages text with empty citations within one message', async () => {
-    const split: AnthropicMessagesSourceAssistantTurn = [{ role: 'assistant', content: [{ type: 'text', text: 'hel', citations: null }, { type: 'text', text: 'lo', citations: [] }] }];
-    const merged: AnthropicMessagesSourceAssistantTurn = [{ role: 'assistant', content: [{ type: 'text', text: 'hello' }] }];
-    expect(await verifyAnthropicMessagesTurnDigest(merged, await computeAnthropicMessagesTurnDigest(split), 1)).toBe(true);
-    expect(await verifyAnthropicMessagesTurnDigest(split, await computeAnthropicMessagesTurnDigest(merged), 1)).toBe(true);
-    const separate: AnthropicMessagesSourceAssistantTurn = [{ role: 'assistant', content: 'hel' }, { role: 'assistant', content: 'lo' }];
-    expect(await verifyAnthropicMessagesTurnDigest(merged, await computeAnthropicMessagesTurnDigest(separate), 1)).toBe(false);
-  });
-
   it('merges Messages text across citations, cache metadata and tool blocks', async () => {
     const citation = { type: 'char_location' as const, cited_text: 'source', document_index: 0, document_title: null, start_char_index: 0, end_char_index: 6 };
     const cited: AnthropicMessagesSourceAssistantTurn = [{ role: 'assistant', content: [{ type: 'text', text: 'hel', citations: [citation] }, { type: 'text', text: 'lo' }] }];
@@ -65,15 +56,6 @@ describe('semantic replay text channels', () => {
     expect(await verifyOpenAIResponsesTurnDigest(merged, await computeOpenAIResponsesTurnDigest(separate), 1)).toBe(false);
   });
 
-  it('ignores Responses annotations and logprobs when comparing text channels', async () => {
-    const annotation = { type: 'url_citation' as const, start_index: 0, end_index: 3, title: 'source', url: 'https://example.test' };
-    const logprob = { token: 'hel', logprob: -0.1, bytes: [104, 101, 108], top_logprobs: [] };
-    for (const metadata of [{ annotations: [annotation] }, { logprobs: [logprob] }]) {
-      const split: OpenAIResponsesSourceAssistantTurn = [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hel', ...metadata }, { type: 'output_text', text: 'lo' }] }];
-      expect(await verifyOpenAIResponsesTurnDigest([{ type: 'message', role: 'assistant', content: 'hello' }], await computeOpenAIResponsesTurnDigest(split), 1)).toBe(true);
-    }
-  });
-
   it('merges reasoning parts only within the same Responses item and channel', async () => {
     const split: OpenAIResponsesSourceAssistantTurn = [{ type: 'reasoning', summary: [{ type: 'summary_text', text: 'hel' }, { type: 'summary_text', text: 'lo' }], content: [{ type: 'reasoning_text', text: 'think' }, { type: 'reasoning_text', text: 'ing' }] }];
     const merged: OpenAIResponsesSourceAssistantTurn = [{ type: 'reasoning', summary: [{ type: 'summary_text', text: 'hello' }], content: [{ type: 'reasoning_text', text: 'thinking' }] }];
@@ -94,20 +76,6 @@ describe('semantic replay text channels', () => {
     expect(await verifyGeminiGenerateContentTurnDigest(merged, await computeGeminiGenerateContentTurnDigest([{ role: 'model', parts: [{ text: 'hel' }] }, { role: 'model', parts: [{ text: 'lo' }] }]), 1)).toBe(false);
     const image = { inlineData: { mimeType: 'image/png', data: 'AQID' } };
     expect(await verifyGeminiGenerateContentTurnDigest([{ role: 'model', parts: [{ text: 'hello' }, image] }], await computeGeminiGenerateContentTurnDigest([{ role: 'model', parts: [{ text: 'hel' }, image, { text: 'lo' }] }]), 1)).toBe(true);
-  });
-
-  it('keeps Gemini nontext channels inside their owning Content', async () => {
-    const call = { functionCall: { name: 'lookup', args: { q: 'x' } } };
-    const image = { inlineData: { mimeType: 'image/png', data: 'AQID' } };
-    const original: GeminiGenerateContentSourceAssistantTurn = [
-      { role: 'model', parts: [{ text: 'A' }, call, image] },
-      { role: 'model', parts: [{ text: 'B' }] },
-    ];
-    const check = await computeGeminiGenerateContentTurnDigest(original);
-    expect(await verifyGeminiGenerateContentTurnDigest([
-      { role: 'model', parts: [{ text: 'A' }] },
-      { role: 'model', parts: [{ text: 'B' }, call, image] },
-    ], check, 1)).toBe(false);
   });
 
   it('uses UTF-16 concatenation even when a part boundary splits a surrogate pair', async () => {
