@@ -158,6 +158,34 @@ test('Copilot GPT-6 Astra prices the standard short and long bands its catalog s
   );
 });
 
+test('Copilot GPT-6.2 Astra and Sol price API Standard and the anticipated Fast lanes only', () => {
+  const cases = {
+    'gpt-6.2-astra': {
+      standardShort: { input_tokens: '8', input_cache_read_tokens: '0.4', input_cache_write_tokens: '10', output_tokens: '40' },
+      standardLong: { input_tokens: '16', input_cache_read_tokens: '0.8', input_cache_write_tokens: '20', output_tokens: '60' },
+      priorityShort: { input_tokens: '16', input_cache_read_tokens: '0.8', input_cache_write_tokens: '20', output_tokens: '80' },
+      priorityLong: { input_tokens: '32', input_cache_read_tokens: '1.6', input_cache_write_tokens: '40', output_tokens: '120' },
+    },
+    'gpt-6.2-sol': {
+      standardShort: { input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '10' },
+      standardLong: { input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '15' },
+      priorityShort: { input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' },
+      priorityLong: { input_tokens: '8', input_cache_read_tokens: '0.4', input_cache_write_tokens: '10', output_tokens: '30' },
+    },
+  } satisfies Record<string, Record<string, PriceVector>>;
+
+  for (const [id, rates] of Object.entries(cases)) {
+    const pricing = pricingForCopilotPublicModelId(id);
+    assertEquals(priceRequest(pricing, { inputTokens: 272000 }).rates, published(rates.standardShort));
+    assertEquals(priceRequest(pricing, { inputTokens: 272001 }).rates, published(rates.standardLong));
+    assertEquals(priceRequest(pricing, { serviceTier: 'priority', inputTokens: 272000 }).rates, published(rates.priorityShort));
+    assertEquals(priceRequest(pricing, { serviceTier: 'priority', inputTokens: 272001 }).rates, published(rates.priorityLong));
+    // Copilot has no channel that selects Ultrafast, so the tier stays on Base.
+    assertEquals(priceRequest(pricing, { serviceTier: 'ultrafast', inputTokens: 0 }).rates, published(rates.standardShort));
+  }
+  assertEquals(pricingForCopilotPublicModelId('gpt-6.2-sol-fast'), null);
+});
+
 test('Copilot GPT-6.1 Sol prices its API-equivalent Standard and conditional Fast bands', () => {
   const pricing = pricingForCopilotPublicModelId('gpt-6.1-sol');
   const cases = [

@@ -62,6 +62,30 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
   // https://platform.claude.com/docs/en/models/fable-5-1/overview
   ['claude-fable-5-1', tokenBasePricing({ input_tokens: '10', input_cache_read_tokens: '0.25', input_cache_write_tokens: '12.5', output_tokens: '50' })],
+  // GPT-6.2 Astra and Sol launched on 2026-11-17, and neither GitHub's
+  // changelog nor its pricing reference listed them yet when these entries
+  // were written; no Copilot catalog was probed. They therefore carry OpenAI's
+  // API rates, the basis GitHub has billed every GPT-6 model at, in both
+  // context bands. The Fast pair becomes reachable only once Copilot publishes
+  // the conventional `-fast` raw siblings. Ultrafast is left out: Copilot
+  // carries per-request lanes in raw-id suffixes and rejects `service_tier` on
+  // `/responses`, so no Copilot request can select it.
+  // https://developers.openai.com/api/docs/models/gpt-6.2-astra
+  // https://developers.openai.com/api/docs/models/gpt-6.2-sol
+  // https://developers.openai.com/api/docs/pricing
+  // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
+  ['gpt-6.2-astra', modelPricing(
+    tokenPricingEntry({ input_tokens: '8', input_cache_read_tokens: '0.4', input_cache_write_tokens: '10', output_tokens: '40' }),
+    tokenPricingEntry({ input_tokens: '16', input_cache_read_tokens: '0.8', input_cache_write_tokens: '20', output_tokens: '60' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '16', input_cache_read_tokens: '0.8', input_cache_write_tokens: '20', output_tokens: '80' }, { serviceTier: 'priority' }),
+    tokenPricingEntry({ input_tokens: '32', input_cache_read_tokens: '1.6', input_cache_write_tokens: '40', output_tokens: '120' }, { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
+  ['gpt-6.2-sol', modelPricing(
+    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '10' }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '15' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' }, { serviceTier: 'priority' }),
+    tokenPricingEntry({ input_tokens: '8', input_cache_read_tokens: '0.4', input_cache_write_tokens: '10', output_tokens: '30' }, { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
   // Keep the API-equivalent rates ready for Copilot's eventual catalog entry.
   // A Fast lane becomes selectable only if Copilot publishes a `-fast` sibling;
   // until then these priority selectors cannot be reached through the catalog.
