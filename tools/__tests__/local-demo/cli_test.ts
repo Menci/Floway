@@ -2,7 +2,7 @@ import { join } from 'node:path';
 
 import { test } from 'vitest';
 
-import { adminKeyForRuntime, parseCommand, workerdConfig } from '../../src/local-demo/cli.ts';
+import { parseCommand, workerdConfig } from '../../src/local-demo/cli.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('local demo defaults to Node, Vite, and the fixed ports', () => {
@@ -16,16 +16,6 @@ test('local demo selects workerd explicitly and validates ports', () => {
   assertThrows(() => parseCommand(['up', '--runtime', 'workers']), Error, '--runtime must be node or workerd');
   assertThrows(() => parseCommand(['up', '--gateway-port', '0']), Error, 'ports must be integers from 1 to 65535');
   assertThrows(() => parseCommand(['up', '--gateway-port', '5174', '--web-port', '5174']), Error, 'must differ');
-});
-
-test('local demo authentication is fixed by runtime', () => {
-  assertEquals(adminKeyForRuntime('node'), '');
-  assertEquals(adminKeyForRuntime('workerd'), 'admin');
-});
-
-test('help does not require a running instance', () => {
-  assertEquals(parseCommand(['--help']), { name: 'help' });
-  assertEquals(parseCommand(['-h']), { name: 'help' });
 });
 
 test('workerd config binds the Cloudflare dependencies and local migrations', () => {

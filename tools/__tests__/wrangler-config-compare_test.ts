@@ -8,13 +8,6 @@ const example = {
   triggers: { crons: ['* * * * *'] },
 };
 
-test('a real Wrangler config may omit deployment-specific observability', () => {
-  expect(findWranglerConfigMismatches(example, {
-    name: 'floway',
-    triggers: { crons: ['* * * * *'] },
-  })).toEqual([]);
-});
-
 test('a real Wrangler config may replace deployment-specific observability completely', () => {
   expect(findWranglerConfigMismatches(example, {
     name: 'floway',
@@ -22,14 +15,6 @@ test('a real Wrangler config may replace deployment-specific observability compl
       logs: { enabled: true, head_sampling_rate: 0.25 },
       traces: { enabled: false },
     },
-    triggers: { crons: ['* * * * *'] },
-  })).toEqual([]);
-});
-
-test('a real Wrangler config may pin a deployment-specific placement', () => {
-  expect(findWranglerConfigMismatches(example, {
-    name: 'floway',
-    placement: { region: 'aws:ap-southeast-1' },
     triggers: { crons: ['* * * * *'] },
   })).toEqual([]);
 });

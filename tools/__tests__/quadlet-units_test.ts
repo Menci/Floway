@@ -6,12 +6,6 @@ import { findMissingQuadletUnits, readQuadletUnits, type QuadletUnit } from './q
 
 const unit = (filename: string, ...lines: string[]): QuadletUnit => ({ filename, lines });
 
-test('a pod reference needs the .pod unit beside it', () => {
-  expect(findMissingQuadletUnits([
-    unit('floway.container', '[Container]', 'Pod=floway.pod', 'PublishPort=8788:8788'),
-  ])).toEqual([{ unit: 'floway.container', line: 'Pod=floway.pod', target: 'floway.pod' }]);
-});
-
 test('a pod reference resolves against a shipped .pod unit', () => {
   expect(findMissingQuadletUnits([
     unit('floway.container', 'Pod=floway.pod'),

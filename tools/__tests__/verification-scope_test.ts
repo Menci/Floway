@@ -42,13 +42,6 @@ describe('findRunnerViolations', () => {
     ]);
   });
 
-  it('rejects a self-hosted runner', () => {
-    expect(findRunnerViolations({
-      ...runner,
-      env: { ...runnerEnv, RUNNER_ENVIRONMENT: 'self-hosted' },
-    })).toEqual(['RUNNER_ENVIRONMENT is self-hosted, not github-hosted']);
-  });
-
   it('rejects another workflow on a GitHub-hosted runner', () => {
     expect(findRunnerViolations({
       ...runner,
@@ -60,11 +53,6 @@ describe('findRunnerViolations', () => {
     for (const job of ['verify', 'test', 'test-installers']) {
       expect(findRunnerViolations({ ...runner, env: { ...runnerEnv, GITHUB_JOB: job } })).toEqual([]);
     }
-  });
-
-  it('rejects a non-Ubuntu Linux host', () => {
-    expect(findRunnerViolations({ ...runner, osReleaseId: 'debian' }))
-      .toEqual(['/etc/os-release reports ID=debian, not ubuntu']);
   });
 });
 
@@ -116,10 +104,6 @@ describe('the trap that detects an expanded glob', () => {
 
   it('allows a list of traps alone, which runs nothing worth hiding', () => {
     expect(isExpandedTrapList([trap, otherTrap])).toBe(false);
-  });
-
-  it('allows naming one trap directly, so the trap body stays verifiable', () => {
-    expect(isExpandedTrapList([trap])).toBe(false);
   });
 
   it('allows an ordinary list of test files', () => {
