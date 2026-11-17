@@ -34,7 +34,7 @@ const customFetchInternal = async (
   options: UpstreamFetchOptions,
 ): Promise<Response> => {
   const headers: [string, string][] = init.headers ? [...new Headers(init.headers)] : [];
-  if (config.apiKey !== '' && authStyle === 'anthropic') {
+  if (config.apiKey !== '' && authStyle === 'x-api-key') {
     replace(headers, 'x-api-key', config.apiKey);
     if (!has(headers, 'anthropic-version')) headers.push(['anthropic-version', ANTHROPIC_VERSION]);
   } else if (config.apiKey !== '' && authStyle === 'bearer') {
@@ -67,9 +67,9 @@ export const customFetchOpenAIResponses = (config: CustomUpstreamConfig, init: F
 export const customFetchOpenAIResponsesCompact = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(config, 'bearer', `${pathOverrideFor(config, '/responses')}/compact`, init, options);
 export const customFetchAnthropicMessages = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, 'anthropic', pathOverrideFor(config, '/messages'), init, options);
+  customFetchInternal(config, 'x-api-key', pathOverrideFor(config, '/messages'), init, options);
 export const customFetchAnthropicMessagesCountTokens = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, 'anthropic', `${pathOverrideFor(config, '/messages')}/count_tokens`, init, options);
+  customFetchInternal(config, 'x-api-key', `${pathOverrideFor(config, '/messages')}/count_tokens`, init, options);
 export const customFetchOpenAIEmbeddings = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(config, 'bearer', pathOverrideFor(config, '/embeddings'), init, options);
 export const customFetchOpenAICompletions = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>

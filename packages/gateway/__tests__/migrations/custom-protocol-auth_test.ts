@@ -33,7 +33,7 @@ const migratedConfigs = (runMigration: boolean): Record<string, unknown> => {
 
 test('migration 0100 moves authStyle into modelsFetch and stores anonymous custom upstreams as an empty API key', () => {
   const rows = migratedConfigs(true) as Record<string, { config: unknown; version: number }>;
-  for (const [id, expectedApiKey, expectedAuthStyle, expectedVersion] of [['up_none', '', 'none', 5], ['up_bearer', 'sk-bearer', 'bearer', 6], ['up_models_fetch_override', 'sk-override', 'anthropic', 7], ['up_missing', '', 'bearer', 8]] as const) {
+  for (const [id, expectedApiKey, expectedAuthStyle, expectedVersion] of [['up_none', '', 'bearer', 5], ['up_bearer', 'sk-bearer', 'bearer', 6], ['up_models_fetch_override', 'sk-override', 'x-api-key', 7], ['up_missing', '', 'bearer', 8]] as const) {
     const parsed = assertCustomUpstreamRecord({ id, kind: 'custom', config: rows[id]!.config } as unknown as UpstreamRecord);
     expect(parsed.config.apiKey).toBe(expectedApiKey);
     expect(parsed.config.modelsFetch.authStyle).toBe(expectedAuthStyle);

@@ -27,10 +27,12 @@ SET
           ELSE 'false'
         END),
         'authStyle',
-        json_quote(COALESCE(
-          json_extract(config_json, '$.modelsFetch.authStyle'),
-          CASE WHEN json_extract(config_json, '$.authStyle') = 'none' THEN 'none' ELSE 'bearer' END
-        )),
+        json_quote(CASE
+          WHEN json_extract(config_json, '$.modelsFetch.authStyle') = 'x-api-key' THEN 'x-api-key'
+          WHEN json_extract(config_json, '$.modelsFetch.authStyle') = 'anthropic' THEN 'x-api-key'
+          WHEN json_extract(config_json, '$.authStyle') = 'anthropic' THEN 'x-api-key'
+          ELSE 'bearer'
+        END),
         'endpoint',
         json_extract(config_json, '$.modelsFetch.endpoint')
       )

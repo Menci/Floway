@@ -221,10 +221,10 @@ test('assertCustomUpstreamRecord treats a null modelsFetch.endpoint as no overri
     ...baseRecord,
     config: {
       ...(baseRecord.config as Record<string, unknown>),
-      modelsFetch: { enabled: true, authStyle: 'anthropic', endpoint: null },
+      modelsFetch: { enabled: true, authStyle: 'x-api-key', endpoint: null },
     },
   });
-  assertEquals(config.modelsFetch, { enabled: true, authStyle: 'anthropic' });
+  assertEquals(config.modelsFetch, { enabled: true, authStyle: 'x-api-key' });
 });
 
 test('assertCustomUpstreamRecord rejects malformed opaque config instead of dropping endpoints', () => {

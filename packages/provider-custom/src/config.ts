@@ -45,7 +45,7 @@ const CUSTOM_PATH_OVERRIDE_KEYS = [
 
 export type CustomPathOverrideKey = typeof CUSTOM_PATH_OVERRIDE_KEYS[number];
 
-export type CustomAuthStyle = 'bearer' | 'anthropic' | 'none';
+export type CustomAuthStyle = 'bearer' | 'x-api-key';
 
 export interface CustomModelsFetch {
   enabled: boolean;
@@ -177,11 +177,11 @@ const pathOverridesField = (value: unknown): CustomUpstreamConfig['pathOverrides
   return pathOverrides;
 };
 
-const CUSTOM_AUTH_STYLES: ReadonlySet<CustomAuthStyle> = new Set<CustomAuthStyle>(['bearer', 'anthropic', 'none']);
+const CUSTOM_AUTH_STYLES: ReadonlySet<CustomAuthStyle> = new Set<CustomAuthStyle>(['bearer', 'x-api-key']);
 
 const customAuthStyleField = (value: unknown): CustomAuthStyle => {
   if (typeof value !== 'string' || !CUSTOM_AUTH_STYLES.has(value as CustomAuthStyle)) {
-    throw new Error('Malformed custom upstream config: modelsFetch.authStyle must be "bearer", "anthropic", or "none"');
+    throw new Error('Malformed custom upstream config: modelsFetch.authStyle must be "bearer" or "x-api-key"');
   }
   return value as CustomAuthStyle;
 };

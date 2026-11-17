@@ -354,21 +354,21 @@ test('PATCH /api/upstreams clears a custom API key when the full config sends an
   assertEquals(response.config.apiKey, '');
 });
 
-test('PATCH /api/upstreams persists the model catalog auth style independently from the API key', async () => {
+test('PATCH /api/upstreams persists the x-api-key model catalog auth style independently from the API key', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
   const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
   const created = (await create.json()) as JsonObject;
   const patch = await requestApp(`/api/upstreams/${created.id}`, {
-    ...authed(adminSession, { config: { ...customConfig, modelsFetch: { enabled: true, authStyle: 'none' } } }),
+    ...authed(adminSession, { config: { ...customConfig, modelsFetch: { enabled: true, authStyle: 'x-api-key' } } }),
     method: 'PATCH',
   });
   assertEquals(patch.status, 200);
 
   const updated = await repo.upstreams.getById(created.id);
   assertEquals((updated?.config as Record<string, unknown>).apiKey, 'sk-test');
-  assertEquals((updated?.config as { modelsFetch: unknown }).modelsFetch, { enabled: true, authStyle: 'none' });
+  assertEquals((updated?.config as { modelsFetch: unknown }).modelsFetch, { enabled: true, authStyle: 'x-api-key' });
 });
 
 test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () => {

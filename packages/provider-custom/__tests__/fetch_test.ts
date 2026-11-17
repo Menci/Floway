@@ -190,13 +190,14 @@ test('customFetchModels uses modelsFetch.authStyle independently from the infere
   ]);
 });
 
-test('customFetchModels sends no credential when modelsFetch.authStyle is none', async () => {
+test('customFetchModels sends no credential when apiKey is empty', async () => {
   const { config: stored } = assertCustomUpstreamRecord(baseRecord);
   const { config } = assertCustomUpstreamRecord({
     ...baseRecord,
     config: {
       ...stored,
-      modelsFetch: { enabled: true, authStyle: 'none' },
+      apiKey: '',
+      modelsFetch: { enabled: true, authStyle: 'bearer' },
     },
   });
   let authorization: string | null = null;

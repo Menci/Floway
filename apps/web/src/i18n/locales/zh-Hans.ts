@@ -613,7 +613,7 @@ const zhHansCN = {
           defaultEndpoints: '默认 LLM API',
           pathOverrides: '路径覆盖',
         },
-        auth: { none: '无认证' },
+        auth: { bearer: 'Bearer Auth' },
         headers: {
           title: '上游请求标头',
           description: '每条规则决定一个标头发往此上游时的取值。透传会转发客户端的值，也只有透传需要客户端发送该标头；空值或自定义值会写入每一个请求。',

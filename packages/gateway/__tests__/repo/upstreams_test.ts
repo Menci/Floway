@@ -624,7 +624,7 @@ test('migration 0042 renames bearerToken to apiKey and backfills authStyle on le
 
     // Seed two custom rows mirroring real legacy shapes:
     //   - up_legacy:     post-0010 row with bearerToken and no authStyle
-    //   - up_anthropic:  later row with bearerToken AND authStyle: 'anthropic'
+    //   - up_anthropic:  later row with bearerToken AND authStyle: 'x-api-key'
     // and a non-custom (azure) row that the migration must leave untouched.
     db.run(`INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json)
             VALUES
