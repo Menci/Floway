@@ -19,11 +19,10 @@ const saveDecisionUpstream = async (
     name: 'Decision Provider',
     config: {
       baseUrl: 'https://decision.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-decision',
       endpoints: {},
-      modelsFetch: { enabled: false },
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
       models: [{
         upstreamModelId: 'raw-decision',
         publicModelId: 'public-decision',

@@ -27,11 +27,10 @@ test.each(cases)('$name controls model visibility and upstream dispatch', async 
       name: `Upstream ${suffix}`,
       config: {
         baseUrl: `https://${suffix}.example.com`,
-        authStyle: 'bearer',
         ingressHeadersRules: [],
         apiKey: 'upstream-key',
         endpoints: { openaiChatCompletions: {} },
-        modelsFetch: { enabled: false },
+        modelsFetch: { enabled: false, authStyle: 'bearer' },
         models: [{ upstreamModelId: `model_${suffix}`, kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
       },
     });

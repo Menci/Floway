@@ -24,7 +24,6 @@ const blueprintEnvelope = (kind: UpstreamProviderKind, overrides: Record<string,
 
 const customConfig = {
   baseUrl: 'https://custom.example.com',
-  authStyle: 'bearer',
   ingressHeadersRules: [],
   apiKey: 'sk-test',
   endpoints: { openaiChatCompletions: {} },
@@ -119,10 +118,10 @@ test('POST /api/upstreams accepts a custom model whose only endpoint is /complet
   const resp = await requestApp('/api/upstreams', authed(adminSession, createBody({
     config: {
       baseUrl: 'https://custom.example.com',
-      authStyle: 'none',
+      apiKey: '',
       ingressHeadersRules: [],
       endpoints: {},
-      modelsFetch: { enabled: false },
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
       models: [{ upstreamModelId: 'davinci-002', endpoints: { openaiCompletions: {} } }],
     },
   })));
@@ -335,6 +334,43 @@ test('PATCH /api/upstreams preserves omitted secrets and invalidates the old cat
   assertEquals(updated?.modelsCache, null);
 });
 
+test('PATCH /api/upstreams clears a custom API key when the full config sends an empty string', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
+  const created = (await create.json()) as JsonObject;
+
+  const patch = await requestApp(`/api/upstreams/${created.id}`, {
+    ...authed(adminSession, { config: { ...customConfig, apiKey: '' } }),
+    method: 'PATCH',
+  });
+  assertEquals(patch.status, 200);
+
+  const updated = await repo.upstreams.getById(created.id);
+  assertEquals((updated?.config as Record<string, unknown>).apiKey, '');
+  const redacted = await requestApp(`/api/upstreams/${created.id}`, { headers: { 'x-floway-session': adminSession } });
+  const response = (await redacted.json()) as JsonObject;
+  assertEquals(response.config.apiKey, '');
+});
+
+test('PATCH /api/upstreams persists the x-api-key model catalog auth style independently from the API key', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
+  const created = (await create.json()) as JsonObject;
+  const patch = await requestApp(`/api/upstreams/${created.id}`, {
+    ...authed(adminSession, { config: { ...customConfig, modelsFetch: { enabled: true, authStyle: 'x-api-key' } } }),
+    method: 'PATCH',
+  });
+  assertEquals(patch.status, 200);
+
+  const updated = await repo.upstreams.getById(created.id);
+  assertEquals((updated?.config as Record<string, unknown>).apiKey, 'sk-test');
+  assertEquals((updated?.config as { modelsFetch: unknown }).modelsFetch, { enabled: true, authStyle: 'x-api-key' });
+});
+
 test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -447,7 +483,7 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
     modelPrefix: null,
     modelsCache: null,
     hue: 210,
-    config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://a.example.com', apiKey: 'x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
     state: null,
   };
   const freshRecord = { ...baseRow, id: 'up_fresh', name: 'Fresh', sortOrder: 0 };
@@ -540,7 +576,7 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
     modelPrefix: null,
     modelsCache: null,
     hue: 210,
-    config: { baseUrl: 'https://custom.example.com', authStyle: 'bearer', apiKey: 'sk-secret', endpoints: { openaiChatCompletions: {} } },
+    config: { baseUrl: 'https://custom.example.com', apiKey: 'sk-secret', endpoints: { openaiChatCompletions: {} } },
     state: null,
   });
   // A disabled upstream is absent from the live catalog, so the picker's count
@@ -722,17 +758,24 @@ test('POST /api/upstreams/preview-models surfaces an ollama /api/tags failure as
   );
 });
 
-test('POST /api/upstreams/preview-models rejects a malformed draft config with 400', async () => {
+test('POST /api/upstreams/preview-models fetches an anonymous draft without an auth header', async () => {
   const { adminSession } = await setupAppTest();
 
-  // Blank token with no id and no stored secret to substitute: the runtime
-  // assert rejects the empty apiKey, surfaced as a 400 validation error.
-  const resp = await requestApp('/api/upstreams/preview-models', authed(adminSession, {
-    record: blueprintEnvelope('custom', { config: { ...customConfig, apiKey: '' } }),
-  }));
-  assertEquals(resp.status, 400);
-  const body = (await resp.json()) as { error: string };
-  assertEquals(body.error.includes('apiKey'), true);
+  await withMockedFetch(
+    request => {
+      assertEquals(request.headers.has('authorization'), false);
+      assertEquals(request.headers.has('x-api-key'), false);
+      return jsonResponse({ object: 'list', data: [{ id: 'local-model' }] });
+    },
+    async () => {
+      const resp = await requestApp('/api/upstreams/preview-models', authed(adminSession, {
+        record: blueprintEnvelope('custom', { config: { ...customConfig, apiKey: '' } }),
+      }));
+      assertEquals(resp.status, 200);
+      const body = (await resp.json()) as { data: Array<Record<string, unknown>> };
+      assertEquals(body.data.map(model => model.upstreamModelId), ['local-model']);
+    },
+  );
 });
 
 test('POST /api/upstreams/:id/list-models reads the saved config and publishes a fresh snapshot', async () => {
@@ -796,7 +839,7 @@ test('Custom cache retains discovered rows excluded from its routable catalog', 
   const response = await requestApp('/api/upstreams', authed(adminSession, createBody({
     config: {
       ...customConfig,
-      modelsFetch: { enabled: true },
+      modelsFetch: { enabled: true, authStyle: 'bearer' },
       models: [{ upstreamModelId: 'overridden', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
     },
   })));
@@ -2754,11 +2797,10 @@ test('GET /api/upstreams/blueprint serves the record a new upstream starts as wi
   // a static registry lookup so no provider asserter runs against it.
   // Credentials are editable empty strings, not redacted `*Set` projections.
   const custom = (await (await requestApp('/api/upstreams/blueprint?kind=custom', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
-  assertEquals(custom.config.authStyle, 'bearer');
   assertEquals(custom.config.apiKey, '');
   assertEquals(custom.config.endpoints, { openaiChatCompletions: {} });
   assertEquals(custom.config.ingressHeadersRules, []);
-  assertEquals(custom.config.modelsFetch, { enabled: true });
+  assertEquals(custom.config.modelsFetch, { enabled: true, authStyle: 'bearer' });
   const azure = (await (await requestApp('/api/upstreams/blueprint?kind=azure', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
   assertEquals(azure.config.models, []);
   const ollama = (await (await requestApp('/api/upstreams/blueprint?kind=ollama', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;

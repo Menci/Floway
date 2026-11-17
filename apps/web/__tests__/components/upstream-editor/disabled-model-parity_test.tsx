@@ -38,11 +38,10 @@ const customRecord = upstreamRecord('up_custom', {
   kind: 'custom',
   config: {
     baseUrl: 'https://example.com',
-    authStyle: 'bearer',
     apiKey: '',
     endpoints: { openaiResponses: {} },
     ingressHeadersRules: [],
-    modelsFetch: { enabled: false },
+    modelsFetch: { enabled: false, authStyle: 'bearer' },
     models: [listed('model-a')],
   },
   state: null,

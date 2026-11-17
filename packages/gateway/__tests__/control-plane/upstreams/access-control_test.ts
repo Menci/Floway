@@ -13,12 +13,11 @@ const customRecord = () => buildCustomUpstreamRecord({
   proxyFallbackList: [{ id: 'proxy_a' }],
   config: {
     baseUrl: 'https://secret.example.com',
-    authStyle: 'bearer',
     apiKey: 'sk-secret',
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [{ key: 'x-secret', value: 'value' }],
     pathOverrides: { '/chat/completions': '/private/chat' },
-    modelsFetch: { enabled: true, endpoint: '/private/models' },
+    modelsFetch: { enabled: true, authStyle: 'bearer', endpoint: '/private/models' },
     models: [{ upstreamModelId: 'gpt-5', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
   },
 });
@@ -267,7 +266,7 @@ test('Upstream.Edit.Models returns a redacted record and only accepts model fiel
   assertEquals(body.config.baseUrl, 'https://secret.example.com');
   assertEquals(body.config.apiKey, undefined);
   assertEquals(body.config.apiKeySet, true);
-  assertEquals(body.config.modelsFetch, { enabled: true, endpoint: '/private/models' });
+  assertEquals(body.config.modelsFetch, { enabled: true, authStyle: 'bearer', endpoint: '/private/models' });
   assertEquals(body.config.pathOverrides, { '/chat/completions': '/private/chat' });
   assertEquals(body.config.ingressHeadersRules, [{ key: 'x-secret', value: 'value' }]);
   assertEquals(body.proxy_fallback_list, [{ id: 'proxy_a' }]);
@@ -290,7 +289,7 @@ test('Upstream.Edit.Models returns a redacted record and only accepts model fiel
       baseUrl: 'https://secret.example.com',
       apiKey: 'sk-secret',
       pathOverrides: { '/chat/completions': '/private/chat' },
-      modelsFetch: { enabled: false, endpoint: '/private/models' },
+      modelsFetch: { enabled: false, authStyle: 'bearer', endpoint: '/private/models' },
     },
   });
 
@@ -302,7 +301,7 @@ test('Upstream.Edit.Models returns a redacted record and only accepts model fiel
   const blockedEndpoint = await requestApp('/api/upstreams/up_restricted', {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-    body: JSON.stringify({ config: { modelsFetch: { enabled: true, endpoint: '/stolen' } } }),
+    body: JSON.stringify({ config: { modelsFetch: { enabled: true, authStyle: 'bearer', endpoint: '/stolen' } } }),
   });
   const blockedPrefix = await requestApp('/api/upstreams/up_restricted', {
     method: 'PATCH',

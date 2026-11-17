@@ -184,13 +184,11 @@ const upstreamModelSchema = z.object({
 
 const customConfigSchema = z.object({
   baseUrl: z.string().min(1),
-  authStyle: z.enum(['bearer', 'anthropic', 'none']),
   // Structured capability map — the runtime parser permits an empty map for
   // an upstream serving only kind-derived models.
   endpoints: modelEndpointsSchema,
-  // Optional because edit-mode PATCH omits it to keep the stored secret;
-  // the runtime parser enforces presence vs. authStyle invariants.
-  apiKey: z.string().optional(),
+  // Empty means anonymous upstream access.
+  apiKey: z.string(),
   // PATCH passes `null` to explicitly clear pathOverrides; nullable() keeps
   // that escape hatch.
   pathOverrides: z.record(z.string(), z.string()).nullable().optional(),
@@ -198,8 +196,14 @@ const customConfigSchema = z.object({
     key: z.string(),
     value: z.string().nullable(),
   }).strict()),
-  // Live upstream /models fetch. `endpoint` parsing happens in the runtime.
-  modelsFetch: z.object({ enabled: z.boolean(), endpoint: z.string().optional() }).optional(),
+  // Live upstream /models fetch. The catalog endpoint has no request protocol
+  // to infer authentication from, so it carries its own scheme. `endpoint`
+  // parsing happens in the runtime.
+  modelsFetch: z.object({
+    enabled: z.boolean(),
+    authStyle: z.enum(['bearer', 'x-api-key']),
+    endpoint: z.string().optional(),
+  }).optional(),
   // Statically configured per-model overrides merged with the live fetch.
   models: z.array(upstreamModelSchema).optional(),
 });

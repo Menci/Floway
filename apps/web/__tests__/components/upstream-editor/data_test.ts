@@ -10,7 +10,6 @@ const record = upstreamRecord('up_custom', {
   kind: 'custom',
   config: {
     baseUrl: 'https://api.example.com',
-    authStyle: 'bearer',
     apiKey: '',
     endpoints: { openaiResponses: {} },
     ingressHeadersRules: [
@@ -18,7 +17,7 @@ const record = upstreamRecord('up_custom', {
       { key: 'x-empty', value: '' },
       { key: 'x-route', value: 'fast' },
     ],
-    modelsFetch: { enabled: false },
+    modelsFetch: { enabled: false, authStyle: 'bearer' },
     models: [],
   },
   state: null,
@@ -73,11 +72,10 @@ const withKey = (apiKey: string) => upstreamRecord('up_custom', {
   kind: 'custom',
   config: {
     baseUrl: 'https://api.example.com',
-    authStyle: 'bearer',
     apiKey,
     endpoints: { openaiResponses: {} },
     ingressHeadersRules: [],
-    modelsFetch: { enabled: false },
+    modelsFetch: { enabled: false, authStyle: 'bearer' },
     models: [],
   },
   state: null,

@@ -12,17 +12,17 @@ import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
 
 const customRecord = (
-  modelsFetch: { enabled: boolean; endpoint?: string },
+  modelsFetch: Omit<Extract<UpstreamRecord, { kind: 'custom' }>['config']['modelsFetch'], 'authStyle'>
+    & Partial<Pick<Extract<UpstreamRecord, { kind: 'custom' }>['config']['modelsFetch'], 'authStyle'>>,
   proxyFallbackList: UpstreamRecord['proxy_fallback_list'] = [],
 ): UpstreamRecord => upstreamRecord('up_custom', {
   kind: 'custom',
   config: {
     baseUrl: 'https://api.example.com',
-    authStyle: 'bearer',
     apiKey: '',
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [],
-    modelsFetch,
+    modelsFetch: { authStyle: 'bearer', ...modelsFetch },
     models: [],
   },
   state: null,

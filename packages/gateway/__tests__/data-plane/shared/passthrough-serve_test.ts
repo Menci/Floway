@@ -34,7 +34,6 @@ const registerOpenAIEmbeddingsUpstream = async (
     sortOrder: 100,
     config: {
       baseUrl: 'https://passthrough.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules,
       apiKey: 'sk-passthrough',
       endpoints: {},
@@ -299,11 +298,11 @@ const registerTwoOpenAIEmbeddingsUpstreams = async (repo: Awaited<ReturnType<typ
   clearInProcessCopilotTokenCache();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_a', name: 'Upstream A', sortOrder: 100,
-    config: { baseUrl: 'https://up-a.example.com', authStyle: 'bearer', apiKey: 'sk-a', endpoints: {}, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://up-a.example.com', apiKey: 'sk-a', endpoints: {}, ingressHeadersRules: [] },
   }));
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_b', name: 'Upstream B', sortOrder: 200,
-    config: { baseUrl: 'https://up-b.example.com', authStyle: 'bearer', apiKey: 'sk-b', endpoints: {}, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://up-b.example.com', apiKey: 'sk-b', endpoints: {}, ingressHeadersRules: [] },
   }));
 };
 

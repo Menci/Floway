@@ -25,7 +25,6 @@ const LEGACY_OVERRIDES = {
 
 const LEGACY_CONFIG = {
   baseUrl: 'https://upstream.example/v1',
-  authStyle: 'bearer',
   apiKey: 'sk-legacy',
   ingressHeadersRules: [],
   endpoints: { openaiResponses: {} },

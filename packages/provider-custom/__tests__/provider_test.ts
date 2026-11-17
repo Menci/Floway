@@ -31,11 +31,10 @@ const buildCustomUpstream = (options: BuildOptions = {}): UpstreamRecord => ({
   hue: 210,
   config: {
     baseUrl: 'https://custom.example.com',
-    authStyle: 'bearer',
     apiKey: 'sk-test',
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: options.ingressHeadersRules ?? [],
-    modelsFetch: { enabled: options.modelsFetchEnabled ?? true },
+    modelsFetch: { enabled: options.modelsFetchEnabled ?? true, authStyle: 'bearer' },
     models: options.models ?? [],
   },
 });

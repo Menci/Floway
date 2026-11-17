@@ -101,7 +101,6 @@ test('/v1/images/generations rejects model on custom upstream without /images/ge
     sortOrder: 100,
     config: {
       baseUrl: 'https://chat.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-chat',
       endpoints: { openaiChatCompletions: {} },
@@ -138,7 +137,6 @@ test('/v1/images/generations forwards a JSON request through a custom upstream a
     sortOrder: 100,
     config: {
       baseUrl: 'https://images.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-images',
       endpoints: {},
@@ -263,7 +261,6 @@ test('/v1/images/edits forwards JSON image references through a custom provider'
     sortOrder: 100,
     config: {
       baseUrl: 'https://images.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-images',
       endpoints: {},

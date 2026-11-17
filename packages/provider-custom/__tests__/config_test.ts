@@ -15,7 +15,6 @@ const baseRecord: UpstreamRecord = {
   updatedAt: '2026-04-29T00:00:00.000Z',
   config: {
     baseUrl: 'https://custom.example.com',
-    authStyle: 'bearer',
     apiKey: 'sk-test',
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [],
@@ -34,14 +33,14 @@ test('assertCustomUpstreamRecord parses modelsFetch and models', () => {
     ...baseRecord,
     config: {
       ...(baseRecord.config as Record<string, unknown>),
-      modelsFetch: { enabled: false },
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
       models: [
         { upstreamModelId: 'pinned', endpoints: { openaiChatCompletions: {} }, display_name: 'Pinned' },
       ],
     },
   });
 
-  assertEquals(config.modelsFetch, { enabled: false });
+  assertEquals(config.modelsFetch, { enabled: false, authStyle: 'bearer' });
   assertEquals(config.models.length, 1);
   assertEquals(config.models[0].upstreamModelId, 'pinned');
   assertEquals(config.models[0].display_name, 'Pinned');
@@ -202,7 +201,7 @@ test('assertCustomUpstreamRecord requires ingressHeadersRules on persisted confi
 
 test('assertCustomUpstreamRecord defaults modelsFetch to enabled when absent', () => {
   const { config } = assertCustomUpstreamRecord(baseRecord);
-  assertEquals(config.modelsFetch, { enabled: true });
+  assertEquals(config.modelsFetch, { enabled: true, authStyle: 'bearer' });
   assertEquals(config.models, []);
 });
 
@@ -222,10 +221,10 @@ test('assertCustomUpstreamRecord treats a null modelsFetch.endpoint as no overri
     ...baseRecord,
     config: {
       ...(baseRecord.config as Record<string, unknown>),
-      modelsFetch: { enabled: true, endpoint: null },
+      modelsFetch: { enabled: true, authStyle: 'x-api-key', endpoint: null },
     },
   });
-  assertEquals(config.modelsFetch, { enabled: true });
+  assertEquals(config.modelsFetch, { enabled: true, authStyle: 'x-api-key' });
 });
 
 test('assertCustomUpstreamRecord rejects malformed opaque config instead of dropping endpoints', () => {
@@ -268,65 +267,31 @@ test('assertCustomUpstreamRecord rejects malformed opaque config instead of drop
     'baseUrl must be an http(s) URL',
   );
 
-  assertThrows(
-    () =>
-      assertCustomUpstreamRecord({
-        ...baseRecord,
-        config: {
-          ...(baseRecord.config as Record<string, unknown>),
-          authStyle: 'oauth',
-        },
-      }),
-    Error,
-    'authStyle must be "bearer", "anthropic", or "none"',
-  );
 });
 
-test('assertCustomUpstreamRecord accepts authStyle "none" with no apiKey', () => {
+test('assertCustomUpstreamRecord accepts an empty apiKey for anonymous upstreams', () => {
   const { config } = assertCustomUpstreamRecord({
     ...baseRecord,
     config: {
       baseUrl: 'https://internal.example.com',
-      authStyle: 'none',
+      apiKey: '',
       endpoints: { openaiChatCompletions: {} },
       ingressHeadersRules: [],
     },
   });
-  assertEquals(config.authStyle, 'none');
-  // The discriminated union narrows: apiKey is statically absent on the
-  // 'none' branch, so reading it requires the cast.
-  assertEquals((config as unknown as Record<string, unknown>).apiKey, undefined);
+  assertEquals(config.apiKey, '');
 });
 
-test('assertCustomUpstreamRecord rejects authStyle "none" with a stale apiKey', () => {
+test('assertCustomUpstreamRecord requires the apiKey key', () => {
+  const config = { ...(baseRecord.config as Record<string, unknown>) };
+  delete config.apiKey;
   assertThrows(
     () =>
       assertCustomUpstreamRecord({
         ...baseRecord,
-        config: {
-          ...(baseRecord.config as Record<string, unknown>),
-          authStyle: 'none',
-          apiKey: 'sk-leftover',
-        },
+        config,
       }),
     Error,
-    'apiKey must not be present when authStyle is "none"',
-  );
-});
-
-test('assertCustomUpstreamRecord rejects authStyle "bearer" with no apiKey', () => {
-  assertThrows(
-    () =>
-      assertCustomUpstreamRecord({
-        ...baseRecord,
-        config: {
-          baseUrl: 'https://custom.example.com',
-          authStyle: 'bearer',
-          endpoints: { openaiChatCompletions: {} },
-          ingressHeadersRules: [],
-        },
-      }),
-    Error,
-    'apiKey must be a non-empty string',
+    'apiKey must be a string',
   );
 });

@@ -94,7 +94,7 @@ test('scheduler registration failures propagate rather than looking like an upst
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    config: { baseUrl: 'https://custom.example.com', authStyle: 'none', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [], modelsFetch: { enabled: false }, models: [] },
+    config: { baseUrl: 'https://custom.example.com', apiKey: '', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [], modelsFetch: { enabled: false, authStyle: 'bearer' }, models: [] },
   }));
   const providers = await listModelProviders(null);
   await expect(enumerateRealModelCandidates('model', 'chat', providers, {
@@ -111,13 +111,13 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
     id: 'up_first',
     name: 'First',
     sortOrder: 0,
-    config: { baseUrl: 'https://first.example.com', authStyle: 'bearer', apiKey: 'sk-first', endpoints: { openaiResponses: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://first.example.com', apiKey: 'sk-first', endpoints: { openaiResponses: {} }, ingressHeadersRules: [] },
   }));
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_second',
     name: 'Second',
     sortOrder: 100,
-    config: { baseUrl: 'https://second.example.com', authStyle: 'bearer', apiKey: 'sk-second', endpoints: { openaiResponses: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://second.example.com', apiKey: 'sk-second', endpoints: { openaiResponses: {} }, ingressHeadersRules: [] },
   }));
 
   const providers = await listModelProviders(null);
@@ -200,7 +200,7 @@ test('randomizes upstream candidate groups without splitting or reordering a gro
       id,
       name,
       sortOrder,
-      config: { baseUrl: `https://${name.toLowerCase()}.example.com`, authStyle: 'bearer', apiKey: `sk-${name.toLowerCase()}`, endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
+      config: { baseUrl: `https://${name.toLowerCase()}.example.com`, apiKey: `sk-${name.toLowerCase()}`, endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
       modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['unprefixed', 'prefixed'] },
     }));
   }
@@ -243,7 +243,7 @@ test('a recorded refresh failure is irrelevant when the prefix policy cannot add
     id: 'up_prefixed_failure',
     name: 'Prefixed failure',
     modelPrefix: { prefix: 'tenant/', addressable: ['prefixed'], listed: ['prefixed'] },
-    config: { baseUrl: 'https://prefixed-failure.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://prefixed-failure.example.com', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
 
   await withMockedFetch(
@@ -276,13 +276,13 @@ test('enumerateModelCandidates: healthy upstream still resolves alongside a reje
     id: 'up_broken',
     name: 'Broken upstream',
     sortOrder: 1,
-    config: { baseUrl: 'https://broken.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://broken.example.com', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_ok',
     name: 'Healthy upstream',
     sortOrder: 2,
-    config: { baseUrl: 'https://ok.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://ok.example.com', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
 
   await withMockedFetch(
@@ -323,7 +323,7 @@ test('enumerateModelCandidates does not strip a -YYYYMMDD suffix the catalog doe
     id: 'up_dated',
     name: 'Dated',
     sortOrder: 1,
-    config: { baseUrl: 'https://dated.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { anthropicMessages: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://dated.example.com', apiKey: 'sk-x', endpoints: { anthropicMessages: {} }, ingressHeadersRules: [] },
   }));
 
   await withMockedFetch(
@@ -359,7 +359,7 @@ test('enumerateModelCandidates reports sawModel for a wrong-kind catalog match',
     id: 'up_chat_only',
     name: 'ChatOnly',
     sortOrder: 1,
-    config: { baseUrl: 'https://chatonly.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://chatonly.example.com', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
 
   await withMockedFetch(
@@ -394,7 +394,7 @@ test('an AbortError from background catalog refresh does not abort model resolut
     id: 'up_aborting',
     name: 'Aborting',
     sortOrder: 1,
-    config: { baseUrl: 'https://aborting.example.com', authStyle: 'bearer', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://aborting.example.com', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
 
   const abortError = Object.assign(new Error('aborted'), { name: 'AbortError' });
@@ -475,11 +475,11 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
     await repo.upstreams.deleteAll();
     await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
       id: 'up_a', name: 'A', sortOrder: 1,
-      config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'sk-a', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
+      config: { baseUrl: 'https://a.example.com', apiKey: 'sk-a', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
     }));
     await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
       id: 'up_b', name: 'B', sortOrder: 2,
-      config: { baseUrl: 'https://b.example.com', authStyle: 'bearer', apiKey: 'sk-b', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
+      config: { baseUrl: 'https://b.example.com', apiKey: 'sk-b', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
     }));
   };
 

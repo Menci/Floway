@@ -212,7 +212,7 @@ const exerciseSqlUpstreamRepo = async (repo: UpstreamRepo) => {
     sortOrder: 2,
     createdAt: '2026-05-21T10:00:02.000Z',
     updatedAt: '2026-05-21T10:00:02.000Z',
-    config: { baseUrl: 'https://custom.example/v1', authStyle: 'bearer', apiKey: 'sk-custom', endpoints: { openaiChatCompletions: {} } },
+    config: { baseUrl: 'https://custom.example/v1', apiKey: 'sk-custom', endpoints: { openaiChatCompletions: {} } },
     flagOverrides: { 'vendor-deepseek': true, 'rewrite-developer-to-system': true },
     disabledPublicModelIds: [],
   });
@@ -254,7 +254,7 @@ const exerciseSqlUpstreamRepo = async (repo: UpstreamRepo) => {
     sortOrder: 0,
     createdAt: '2099-01-01T00:00:00.000Z',
     updatedAt: '2026-05-21T10:00:04.000Z',
-    config: { baseUrl: 'https://updated.example/v1', authStyle: 'bearer', apiKey: 'sk-updated', endpoints: { openaiResponses: {} } },
+    config: { baseUrl: 'https://updated.example/v1', apiKey: 'sk-updated', endpoints: { openaiResponses: {} } },
     flagOverrides: { 'anthropic-messages-web-search-shim': true, 'rewrite-developer-to-system': true },
     disabledPublicModelIds: [],
   });
@@ -454,7 +454,7 @@ test('SQL upstream repo round-trips a non-null model_prefix', async () => {
     sortOrder: 0,
     createdAt: now,
     updatedAt: now,
-    config: { baseUrl: 'https://example.com', bearerToken: 'sk', authStyle: 'bearer', endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: true } },
+    config: { baseUrl: 'https://example.com', bearerToken: 'sk', endpoints: { openaiChatCompletions: {} }, modelsFetch: { enabled: true, authStyle: 'bearer' } },
     state: null,
     flagOverrides: {},
     disabledPublicModelIds: [],
@@ -624,7 +624,7 @@ test('migration 0042 renames bearerToken to apiKey and backfills authStyle on le
 
     // Seed two custom rows mirroring real legacy shapes:
     //   - up_legacy:     post-0010 row with bearerToken and no authStyle
-    //   - up_anthropic:  later row with bearerToken AND authStyle: 'anthropic'
+    //   - up_anthropic:  later row with bearerToken AND authStyle: 'x-api-key'
     // and a non-custom (azure) row that the migration must leave untouched.
     db.run(`INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json)
             VALUES
@@ -1260,7 +1260,9 @@ test('model pricing migrations materialize legacy semantics as base-unit metric 
     models: { upstreamModelId: string; display_name?: string; pricing?: ModelPricing }[];
   };
   assertEquals(config, {
+    apiKey: '',
     ingressHeadersRules: [],
+    modelsFetch: { enabled: false, authStyle: 'bearer', endpoint: null },
     models: [
       {
         upstreamModelId: 'base-and-overlay',

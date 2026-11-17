@@ -1,6 +1,7 @@
 import {
   ArrowClockwiseRegular,
   CheckmarkCircleRegular,
+  ChevronDown12Regular,
   EyeOffRegular,
   EyeRegular,
   PlugConnectedRegular,
@@ -28,7 +29,7 @@ import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { errorMessage } from '../../lib/error-message';
 import { ChoiceGroup } from '../ui/choice-group';
-import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
+import { Input, Textarea } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
 import { CHECKBOX_LIST_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
@@ -44,7 +45,11 @@ const {
   Checkbox,
   Field,
   Link,
-  Option,
+  Menu,
+  MenuItemRadio,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
   Spinner,
   Switch,
   Tab,
@@ -93,14 +98,13 @@ export function ApiPathsSection({ readOnly, record }: { readOnly: boolean; recor
 
 function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { modelsFetchReadOnly: boolean; onRefreshModels: () => void; readOnly: boolean }) {
   const { t } = useTranslation();
-  const { control, setValue } = useFormContext<ValuesForKind<'custom'>>();
-  const authStyle = useWatch({ control, name: 'config.authStyle' });
+  const { control } = useFormContext<ValuesForKind<'custom'>>();
   const fetchesCatalog = useWatch({ control, name: 'config.modelsFetch.enabled' });
-  const authStyleLabel = (value: typeof authStyle) => {
+  const apiKey = useWatch({ control, name: 'config.apiKey' }) ?? '';
+  const modelsFetchAuthStyleLabel = (value: Extract<UpstreamRecord, { kind: 'custom' }>['config']['modelsFetch']['authStyle']) => {
     switch (value) {
-    case 'bearer': return 'Bearer';
-    case 'anthropic': return 'Anthropic';
-    case 'none': return t('dashboard.upstreamEditor.auth.none');
+    case 'bearer': return t('dashboard.upstreamEditor.auth.bearer');
+    case 'x-api-key': return 'x-api-key';
     }
   };
   return (
@@ -123,19 +127,7 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
           )}
         />
       </Field>
-      <Controller control={control} name="config.authStyle" render={({ field }) => (
-        <Field label={t('dashboard.upstreamEditor.fields.authStyle')}>
-          <Dropdown readOnly={readOnly} value={authStyleLabel(field.value)} selectedOptions={[field.value]} onOptionSelect={(_, data) => {
-            field.onChange(data.optionValue);
-            if (data.optionValue === 'none') setValue('config.apiKey', '', { shouldDirty: true });
-          }}>
-            <Option value="bearer">Bearer</Option>
-            <Option value="anthropic">Anthropic</Option>
-            <Option value="none">{t('dashboard.upstreamEditor.auth.none')}</Option>
-          </Dropdown>
-        </Field>
-      )} />
-      {authStyle !== 'none' && <SecretField readOnly={readOnly} />}
+      <SecretField optional readOnly={readOnly} />
       <Controller control={control} name="config.modelsFetch.enabled" render={({ field }) => (
         <Switch
           checked={field.value}
@@ -148,8 +140,41 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
         />
       )} />
       {fetchesCatalog && (
-        <Field label={t('dashboard.upstreamEditor.fields.catalogPath')}>
-          <Controller control={control} name="config.modelsFetch.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="/v1/models" readOnly={readOnly} ref={field.ref} value={field.value ?? ''} />} />
+        <Field label={{
+          className: '!w-full !max-w-full',
+          children: <span className="flex w-full min-w-0 items-center justify-between gap-3">
+            <span className="floway-control-label truncate">{t('dashboard.upstreamEditor.fields.catalogPath')}</span>
+            {apiKey.trim() !== '' && (
+              <Controller control={control} name="config.modelsFetch.authStyle" render={({ field }) => (
+                <Menu
+                  checkedValues={{ authStyle: [field.value] }}
+                  onCheckedValueChange={(_, data) => {
+                    if (!modelsFetchReadOnly && data.checkedItems[0] !== undefined) field.onChange(data.checkedItems[0]);
+                  }}
+                >
+                  <MenuTrigger disableButtonEnhancement>
+                    <button
+                      aria-label={t('dashboard.upstreamEditor.fields.fetchModelsAuthStyle')}
+                      className="winui-focus-rect floway-control-label inline-flex flex-none items-center gap-1 border-0 bg-transparent p-0 text-fui-fg1"
+                      disabled={modelsFetchReadOnly}
+                      type="button"
+                    >
+                      <span>{modelsFetchAuthStyleLabel(field.value)}</span>
+                      <ChevronDown12Regular aria-hidden className="block flex-none" />
+                    </button>
+                  </MenuTrigger>
+                  <MenuPopover>
+                    <MenuList>
+                      <MenuItemRadio name="authStyle" value="bearer">{t('dashboard.upstreamEditor.auth.bearer')}</MenuItemRadio>
+                      <MenuItemRadio name="authStyle" value="x-api-key">x-api-key</MenuItemRadio>
+                    </MenuList>
+                  </MenuPopover>
+                </Menu>
+              )} />
+            )}
+          </span>,
+        }}>
+          <Controller control={control} name="config.modelsFetch.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="/v1/models" readOnly={modelsFetchReadOnly} ref={field.ref} value={field.value ?? ''} />} />
         </Field>
       )}
       <CustomIngressHeaderRules readOnly={readOnly} />

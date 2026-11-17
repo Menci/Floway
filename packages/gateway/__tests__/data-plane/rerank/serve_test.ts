@@ -19,11 +19,10 @@ const saveRerankUpstream = async (
     name: 'Rerank Provider',
     config: {
       baseUrl: 'https://rerank.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-rerank',
       endpoints: {},
-      modelsFetch: { enabled: false },
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
       models: [{
         upstreamModelId: 'raw-reranker',
         publicModelId: 'public-reranker',

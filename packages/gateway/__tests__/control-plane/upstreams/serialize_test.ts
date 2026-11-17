@@ -32,11 +32,10 @@ const custom: UpstreamRecord = {
   hue: 210,
   config: {
     baseUrl: 'https://api.example.com',
-    authStyle: 'bearer',
     ingressHeadersRules: [{ key: 'x-route', value: '' }],
     apiKey: 'sk-secret-token-12345',
     endpoints: { openaiChatCompletions: {}, openaiResponses: {} },
-    modelsFetch: { enabled: true, endpoint: '/models' },
+    modelsFetch: { enabled: true, authStyle: 'bearer', endpoint: '/models' },
     models: [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
   },
   state: null,
@@ -59,7 +58,7 @@ test('upstreamRecordToJson redacts custom bearer token inside config', () => {
   assertEquals(config.apiKeySet, true);
   assertEquals(config.endpoints, { openaiChatCompletions: {}, openaiResponses: {} });
   assertEquals(config.ingressHeadersRules, [{ key: 'x-route', value: '' }]);
-  assertEquals(config.modelsFetch, { enabled: true, endpoint: '/models' });
+  assertEquals(config.modelsFetch, { enabled: true, authStyle: 'bearer', endpoint: '/models' });
   assertEquals(config.models, [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { openaiChatCompletions: {} } }]);
 });
 
@@ -158,7 +157,6 @@ test('upstreamRecordToFullJson includes provider config secrets for export', () 
   const result = upstreamRecordToFullJson(custom);
   if (result.kind !== 'custom') throw new Error('Expected a Custom response');
   const { config } = result;
-  if (config.authStyle === 'none') throw new Error('Expected an authenticated Custom response');
   assertEquals(result.id, 'up_custom_test');
   assertEquals(config.apiKey, 'sk-secret-token-12345');
   assertEquals('apiKeySet' in config, false);

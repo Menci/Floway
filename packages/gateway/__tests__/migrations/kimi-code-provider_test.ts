@@ -14,7 +14,7 @@ test('the Kimi Code migration preserves upstream records and indexes while admit
     db.exec(sql);
   }
   expect(db.prepare('SELECT id, provider, state_json, hue, config_version, usage_refresh_interval_minutes FROM upstreams').all()).toEqual([
-    { id: 'existing', provider: 'custom', state_json: '{"probe":"kept"}', hue: 42, config_version: 3, usage_refresh_interval_minutes: 5 },
+    { id: 'existing', provider: 'custom', state_json: '{"probe":"kept"}', hue: 42, config_version: 4, usage_refresh_interval_minutes: 5 },
   ]);
   db.prepare("INSERT INTO upstreams (id, provider, name, created_at, updated_at, config_json, hue) VALUES ('kimi', 'kimi-code', 'Kimi Code', 'created', 'updated', ?, 210)").run('{"region":"china","apiKey":"sk-kimi-fake-test-key"}');
   expect(db.prepare("SELECT provider FROM upstreams WHERE id = 'kimi'").get()).toEqual({ provider: 'kimi-code' });

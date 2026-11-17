@@ -22,11 +22,10 @@ const registerUpstream = async (repo: Awaited<ReturnType<typeof setupAppTest>>['
     id: 'up_rules',
     config: {
       baseUrl: 'https://custom.example.com',
-      authStyle: 'bearer',
       apiKey: 'sk-custom',
       endpoints: {},
       ingressHeadersRules: INGRESS_HEADERS_RULES,
-      modelsFetch: { enabled: false },
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
       models: [
         { upstreamModelId: 'chat-model', endpoints: { openaiChatCompletions: {} } },
         { upstreamModelId: 'messages-model', endpoints: { anthropicMessages: {} } },

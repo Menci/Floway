@@ -85,14 +85,13 @@ const CUSTOM_UPSTREAM: StoredUpstreamRecord = {
   hue: 210,
   config: {
     baseUrl: 'https://custom.example.com',
-    authStyle: 'bearer',
     ingressHeadersRules: [
       { key: 'x-request-id', value: null },
       { key: 'x-route', value: 'backup' },
     ],
     apiKey: 'sk-custom',
     endpoints: { openaiChatCompletions: {}, openaiResponses: {} },
-    modelsFetch: { enabled: true, endpoint: '/models' },
+    modelsFetch: { enabled: true, authStyle: 'bearer', endpoint: '/models' },
   },
   state: null,
 };
@@ -1000,7 +999,7 @@ test('import rejects invalid records before clearing existing data', async () =>
     ...EMPTY_ACCESS_TRANSFER,
     users: [SEED_ADMIN],
     apiKeys: [],
-    upstreams: [{ ...upstreamRecordToFullJson(CUSTOM_UPSTREAM), config: { baseUrl: 'https://custom.example.com', authStyle: 'bearer', apiKey: 'sk', endpoints: { bogus: {} } } }],
+    upstreams: [{ ...upstreamRecordToFullJson(CUSTOM_UPSTREAM), config: { baseUrl: 'https://custom.example.com', apiKey: 'sk', endpoints: { bogus: {} } } }],
     usage: [],
     searchUsage: [],
     upstreamMetrics: [],

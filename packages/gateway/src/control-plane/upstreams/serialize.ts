@@ -53,13 +53,12 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
       kind: 'custom',
       config: {
         baseUrl: config.baseUrl,
-        authStyle: config.authStyle,
         endpoints: clone(config.endpoints),
         ...(config.pathOverrides !== undefined ? { pathOverrides: clone(config.pathOverrides) } : {}),
         ingressHeadersRules: clone(config.ingressHeadersRules),
         modelsFetch: clone(config.modelsFetch),
         models: clone(config.models),
-        apiKeySet: config.authStyle !== 'none' && hasSecret(config.apiKey),
+        apiKeySet: hasSecret(config.apiKey),
       },
       state: stateless(upstream),
     };
@@ -215,7 +214,7 @@ export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): BlueprintSe
     // OpenAI-compatible chat endpoint whose model catalog the upstream itself
     // publishes. The blueprint is the create form's opening record, so this is
     // the only place a new upstream's starting values are decided.
-    return { ...base, kind, config: { baseUrl: '', authStyle: 'bearer', apiKey: '', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [], modelsFetch: { enabled: true }, models: [] }, state: null };
+    return { ...base, kind, config: { baseUrl: '', apiKey: '', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [], modelsFetch: { enabled: true, authStyle: 'bearer' }, models: [] }, state: null };
   case 'azure':
     return { ...base, kind, config: { endpoint: '', apiKey: '', models: [] }, state: null };
   case 'chatgpt':

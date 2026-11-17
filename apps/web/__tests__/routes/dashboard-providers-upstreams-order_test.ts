@@ -10,7 +10,7 @@ const record = (
   editLevel: ListedUpstreamRecord['editLevel'] = 'full',
   reorderGroup: string | null = editLevel === 'full' ? 'full-segment' : null,
 ): ListedUpstreamRecord => ({
-  ...upstreamRecord(id, { kind: 'custom', config: { baseUrl: id, authStyle: 'none', endpoints: {}, ingressHeadersRules: [], modelsFetch: { enabled: false }, models: [] }, state: null }),
+  ...upstreamRecord(id, { kind: 'custom', config: { baseUrl: id, apiKey: '', endpoints: {}, ingressHeadersRules: [], modelsFetch: { enabled: false, authStyle: 'bearer' }, models: [] }, state: null }),
   sort_order: sortOrder,
   audit: true,
   editLevel,

@@ -227,7 +227,10 @@ export const valuesFromRecord = (record: UpstreamRecord): UpstreamEditorValues =
           ...structuredClone(record.config.ingressHeadersRules),
           { key: '', value: null },
         ],
-        modelsFetch: withRegisteredKey('endpoint', structuredClone(record.config.modelsFetch)),
+        modelsFetch: {
+          ...withRegisteredKey('endpoint', structuredClone(record.config.modelsFetch)),
+          authStyle: record.config.modelsFetch.authStyle,
+        },
       }
     : record.kind === 'azure' || record.kind === 'ollama' || record.kind === 'kimi-code'
       ? withApiKeyField(record.config)
@@ -258,7 +261,6 @@ const configFromValues = (record: UpstreamRecord, values: UpstreamEditorValues):
   if (manualModelsSupported(record)) config.models = structuredClone(values.manualModels);
   if (record.kind === 'custom') {
     const custom = config as Record<string, unknown>;
-    if (custom.authStyle === 'none') delete custom.apiKey;
     const ingressHeadersRules = custom.ingressHeadersRules as { key: string; value: string | null }[];
     custom.ingressHeadersRules = ingressHeadersRules.flatMap(rule => {
       const key = rule.key.trim().toLowerCase();
