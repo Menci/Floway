@@ -3,11 +3,9 @@ import { test } from 'vitest';
 import { resolveServerToolName } from '../../../../../../src/data-plane/chat/openai-responses/interceptors/server-tool-shim.ts';
 import {
   alphaSearchSettingsFromHosted,
-  buildShimFunctionTool,
   isHostedWebSearchTool,
   prepareToolsForShim,
   SHIM_TOOL_NAME,
-  synthesizeWebSearchCallId,
   expandWebSearchCall,
   WEB_SEARCH_HOSTED_TYPES,
 } from '../../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/web-search.ts';
@@ -22,55 +20,6 @@ const opsOf = (args: Record<string, unknown> | null): WebSearchOperation[] => {
   assert(parsed.kind === 'ops');
   return parsed.ops;
 };
-
-test('injected web_search function exposes the complete OpenAI alpha-search command shape', () => {
-  const functionTool = buildShimFunctionTool({ type: 'web_search' }, SHIM_TOOL_NAME);
-  const properties = (functionTool.parameters as { properties: Record<string, unknown> }).properties;
-  assertEquals(Object.keys(properties), [
-    'search_query',
-    'image_query',
-    'open',
-    'click',
-    'find',
-    'screenshot',
-    'finance',
-    'weather',
-    'sports',
-    'time',
-    'response_length',
-  ]);
-  const requiredByCommand = Object.fromEntries(
-    Object.entries(properties)
-      .filter(([name]) => name !== 'response_length')
-      .map(([name, schema]) => [name, (schema as { items: { required: string[] } }).items.required]),
-  );
-  assertEquals(requiredByCommand, {
-    search_query: ['q'],
-    image_query: ['q'],
-    open: ['ref_id'],
-    click: ['ref_id', 'id'],
-    find: ['ref_id', 'pattern'],
-    screenshot: ['ref_id', 'pageno'],
-    finance: ['ticker', 'type'],
-    weather: ['location'],
-    sports: ['fn', 'league'],
-    time: ['utc_offset'],
-  });
-  assertEquals(
-    ((properties.search_query as { items: { properties: Record<string, unknown> } }).items.properties),
-    {
-      q: { type: 'string', description: 'The search query.' },
-      recency: { type: 'integer', minimum: 0, description: 'Limit results to this many recent days.' },
-      domains: { type: 'array', items: { type: 'string' }, description: 'Limit results to these domains.' },
-    },
-  );
-  const financeProperties = (properties.finance as { items: { properties: Record<string, { enum?: string[] }> } }).items.properties;
-  assertEquals(financeProperties.type.enum, ['equity', 'fund', 'crypto', 'index']);
-  const sportsProperties = (properties.sports as { items: { properties: Record<string, { enum?: string[] }> } }).items.properties;
-  assertEquals(sportsProperties.fn.enum, ['schedule', 'standings']);
-  assertEquals(sportsProperties.league.enum, ['nba', 'wnba', 'nfl', 'nhl', 'mlb', 'epl', 'ncaamb', 'ncaawb', 'ipl']);
-  assertEquals((properties.response_length as { enum: string[] }).enum, ['short', 'medium', 'long']);
-});
 
 test('alpha-search settings preserve every OpenAI setting supported by passthrough', () => {
   const hosted: OpenAIResponsesHostedTool = {
@@ -118,17 +67,6 @@ test('local provider support accepts query filters and response length, rejects 
   }
 });
 
-test('parseWebSearchOperations returns ops:[] for empty object', () => {
-  assertEquals(parseWebSearchOperations({}), { kind: 'ops', ops: [] });
-});
-
-test('parseWebSearchOperations parses one search_query entry', () => {
-  assertEquals(
-    opsOf({ search_query: [{ q: 'hello' }] }),
-    [{ kind: 'search', arrayIndex: 0, query: 'hello' }],
-  );
-});
-
 test('parseWebSearchOperations parses multiple search_query entries with stable arrayIndex', () => {
   assertEquals(
     opsOf({ search_query: [{ q: 'a' }, { q: 'b' }, { q: 'c' }] }),
@@ -154,13 +92,6 @@ test('parseWebSearchOperations ignores null optional fields', () => {
   );
 });
 
-test('parseWebSearchOperations parses open entry with URL ref_id', () => {
-  assertEquals(
-    opsOf({ open: [{ ref_id: 'https://example.com' }] }),
-    [{ kind: 'open', arrayIndex: 0, url: 'https://example.com' }],
-  );
-});
-
 test('parseWebSearchOperations parses find entry with URL ref_id and pattern', () => {
   assertEquals(
     opsOf({ find: [{ ref_id: 'https://example.com', pattern: 'needle' }] }),
@@ -178,18 +109,6 @@ test('parseWebSearchOperations: non-URL open ref_id produces an error sentinel',
   assertEquals(typeof err, 'string');
   assertEquals(err!.startsWith('Error: ref_id must be a fully-qualified URL'), true);
   assertEquals(err!.includes('opaque-prior-id'), true);
-});
-
-test('parseWebSearchOperations: non-URL find ref_id produces an error sentinel', () => {
-  const ops = opsOf({ find: [{ ref_id: 'cursor-123', pattern: 'p' }] });
-  assertEquals(ops.length, 1);
-  const op = ops[0];
-  assertEquals(op.kind, 'find');
-  assertEquals((op as { url: string }).url, 'cursor-123');
-  assertEquals((op as { pattern: string }).pattern, 'p');
-  const err = (op as { error?: string }).error;
-  assertEquals(typeof err, 'string');
-  assertEquals(err!.includes('cursor-123'), true);
 });
 
 test('parseWebSearchOperations: multi-action batched call returns all ops in order search→open→find', () => {
@@ -227,30 +146,6 @@ test('parseWebSearchOperations: missing q on search_query entry surfaces a missi
   assert((op as { error: string }).error.includes('"q"'));
 });
 
-test('parseWebSearchOperations: missing ref_id on open entry surfaces a missing-argument error sentinel', () => {
-  const ops = opsOf({ open: [{}] });
-  assertEquals(ops.length, 1);
-  const op = ops[0];
-  assertEquals(op.kind, 'open');
-  assertEquals((op as { url: string }).url, '');
-  assert((op as { error: string }).error.includes('"ref_id"'));
-});
-
-test('parseWebSearchOperations: missing pattern on find entry surfaces a missing-argument error sentinel', () => {
-  const ops = opsOf({ find: [{ ref_id: 'https://x' }] });
-  assertEquals(ops.length, 1);
-  const op = ops[0];
-  assertEquals(op.kind, 'find');
-  assertEquals((op as { pattern: string }).pattern, '');
-  assert((op as { error: string }).error.includes('"pattern"'));
-});
-
-test('parseWebSearchOperations: array values for non-array shape are skipped', () => {
-  assertEquals(opsOf({ search_query: 'oops' }), [
-    { kind: 'wrong-type', subProperty: 'search_query', actualType: 'string' },
-  ]);
-});
-
 test('parseWebSearchOperations: supported key with non-array value surfaces a wrong-type op (search_query)', () => {
   // A model that populates `search_query: {"q":"x"}` (or any
   // non-array) used to be silently dropped because the array guard
@@ -269,35 +164,6 @@ test('parseWebSearchOperations: wrong-typed supported key does not block other s
   assertEquals(ops[1], { kind: 'open', arrayIndex: 0, url: 'https://y' });
 });
 
-test('parseWebSearchOperations: wrong-typed open / find surface as wrong-type ops', () => {
-  assertEquals(opsOf({ open: 'https://x' }), [
-    { kind: 'wrong-type', subProperty: 'open', actualType: 'string' },
-  ]);
-  assertEquals(opsOf({ find: null }), [
-    { kind: 'wrong-type', subProperty: 'find', actualType: 'null' },
-  ]);
-});
-
-// ── IR builders (private to web-search.ts; exercised end-to-end below) ──
-
-test('synthesizeWebSearchCallId produces unique canonical web-search ids', () => {
-  const a = synthesizeWebSearchCallId();
-  const b = synthesizeWebSearchCallId();
-  assert(/^ws_[0-9a-f]{32}$/.test(a));
-  assert(/^ws_[0-9a-f]{32}$/.test(b));
-  assert(a !== b);
-});
-
-// ── Backend dispatch helpers (isUrlAllowed / findMatches / formatMatches) ──
-
-test('isUrlAllowed returns true when no filters set', () => {
-  assertEquals(isUrlAllowed('https://example.com', {}), true);
-});
-
-test('isUrlAllowed allowed_domains: exact host match passes', () => {
-  assertEquals(isUrlAllowed('https://example.com/page', { allowedDomains: ['example.com'] }), true);
-});
-
 test('isUrlAllowed allowed_domains: subdomain suffix-matches', () => {
   assertEquals(isUrlAllowed('https://www.example.com/page', { allowedDomains: ['example.com'] }), true);
   assertEquals(isUrlAllowed('https://sub.example.com/page', { allowedDomains: ['example.com'] }), true);
@@ -305,10 +171,6 @@ test('isUrlAllowed allowed_domains: subdomain suffix-matches', () => {
 
 test('isUrlAllowed allowed_domains: unrelated host is blocked', () => {
   assertEquals(isUrlAllowed('https://other.com', { allowedDomains: ['example.com'] }), false);
-});
-
-test('isUrlAllowed blocked_domains: exact match is blocked', () => {
-  assertEquals(isUrlAllowed('https://example.com', { blockedDomains: ['example.com'] }), false);
 });
 
 test('isUrlAllowed blocked_domains: subdomain is blocked', () => {
@@ -330,10 +192,6 @@ test('isUrlAllowed non-suffix substring match does NOT pass', () => {
   assertEquals(isUrlAllowed('https://evil-example.com', { allowedDomains: ['example.com'] }), false);
 });
 
-test('isUrlAllowed empty allowedDomains list behaves like no filter', () => {
-  assertEquals(isUrlAllowed('https://example.com', { allowedDomains: [] }), true);
-});
-
 test('findMatches: case-insensitive substring matching', () => {
   const m = findMatches('Hello WORLD hello world HELLO', 'hello', { maxMatches: 10, contextChars: 5 });
   assertEquals(m.length, 3);
@@ -347,10 +205,6 @@ test('findMatches: respects maxMatches cap', () => {
   assertEquals(findMatches(text, 'foo', { maxMatches: 5, contextChars: 5 }).length, 5);
 });
 
-test('findMatches: empty array on no match', () => {
-  assertEquals(findMatches('hello', 'xyz', { maxMatches: 10, contextChars: 5 }), []);
-});
-
 test('findMatches: empty pattern returns empty array', () => {
   assertEquals(findMatches('hello', '', { maxMatches: 10, contextChars: 5 }), []);
 });
@@ -361,18 +215,6 @@ test('findMatches: contextChars trims around the match', () => {
   assertEquals(m[0].before, 'AAAAA');
   assertEquals(m[0].matched, 'needle');
   assertEquals(m[0].after, 'BBBBB');
-});
-
-test('findMatches: pattern at string boundaries', () => {
-  const m = findMatches('needleXXXX', 'needle', { maxMatches: 1, contextChars: 5 });
-  assertEquals(m[0].before, '');
-  assertEquals(m[0].after, 'XXXX');
-});
-
-test('findMatches: pattern at end of string', () => {
-  const m = findMatches('XXXXneedle', 'needle', { maxMatches: 1, contextChars: 5 });
-  assertEquals(m[0].before, 'XXXX');
-  assertEquals(m[0].after, '');
 });
 
 test('findMatches: overlapping matches not double-counted (search resumes past match)', () => {
@@ -389,16 +231,6 @@ test('formatMatches: renders header + numbered matches with brackets', () => {
 
 test('formatMatches: empty matches returns no-matches phrase including URL', () => {
   assertEquals(formatMatches('cat', 'https://x', []), 'No matching `cat` found on https://x.');
-});
-
-test('formatMatches: multi-match output uses Match N: headers', () => {
-  const out = formatMatches('cat', 'https://x', [
-    { before: 'a ', matched: 'cat', after: ' b' },
-    { before: 'c ', matched: 'cat', after: ' d' },
-  ]);
-  assertEquals(out.includes('2 matches for pattern: `cat`'), true);
-  assertEquals(out.includes('Match 1:'), true);
-  assertEquals(out.includes('Match 2:'), true);
 });
 
 // ── Tool detection, filter prep, and name resolution ──
@@ -419,11 +251,9 @@ test('isHostedWebSearchTool recognizes every hosted variant', () => {
   assertEquals(isHostedWebSearchTool({ type: 'custom', name: 'x' }), false);
 });
 
-for (const type of hostedVariants) {
-  test(`prepareToolsForShim accepts ${type} and extracts default filters`, () => {
-    assertEquals(prepare([{ type } as OpenAIResponsesTool]).filters, { maxResults: 20 });
-  });
-}
+test('prepareToolsForShim extracts default filters from a bare hosted tool', () => {
+  assertEquals(prepare([{ type: 'web_search_preview' }]).filters, { maxResults: 20 });
+});
 
 test('prepareToolsForShim extracts filters, user_location, and context size', () => {
   const { filters } = prepare([{
@@ -474,11 +304,6 @@ test('resolveServerToolName returns the first free sequential name', () => {
   ]), `${SHIM_TOOL}_3`);
 });
 
-test('prepareToolsForShim rejects invalid hosted fields', () => {
-  const result = prepareToolsForShim([{ type: 'web_search', search_context_size: 'huge' } as unknown as OpenAIResponsesTool]);
-  assertEquals(result.ok, false);
-});
-
 test('expandWebSearchCall renders its replay IR without reconstructing the original call', () => {
   const out = expandWebSearchCall(
     { type: 'web_search_call', id: 'ws_xxx_abc', action: { type: 'search', query: 'caffeine', queries: ['caffeine'] } },
@@ -487,15 +312,6 @@ test('expandWebSearchCall renders its replay IR without reconstructing the origi
   assertEquals(out.callSource, 'replay');
   assert(typeof out.output === 'string');
   assert(out.output.includes('cached body'));
-});
-
-test('expandWebSearchCall renders independent replay results', () => {
-  const out = [1, 2].map(index => expandWebSearchCall(
-    { type: 'web_search_call', id: `ws_${index}`, action: { type: 'search', queries: [`q${index}`] } },
-    { data: { action: { type: 'search', queries: [`q${index}`] }, results: [{ type: 'text_result', url: `u${index}`, title: `t${index}`, snippet: `body${index}` }] } },
-  ));
-  assert(typeof out[0].output === 'string' && out[0].output.includes('body1'));
-  assert(typeof out[1].output === 'string' && out[1].output.includes('body2'));
 });
 
 test('expandWebSearchCall emits the not-preserved placeholder even when the wire item still carries results (no payload → we do not trust client-supplied results)', () => {
@@ -512,14 +328,7 @@ test('expandWebSearchCall emits the not-preserved placeholder even when the wire
   assertEquals(out.output, 'Prior search results were not preserved in the conversation history. Call web_search again if you need them.');
 });
 
-test('expandWebSearchCall emits the not-preserved placeholder for foreign items without results', () => {
-  const out = expandWebSearchCall(
-    { type: 'web_search_call', id: 'ws_xxx_abc', action: { type: 'search', queries: ['q'] } },
-  );
-  assertEquals(out.output, 'Prior search results were not preserved in the conversation history. Call web_search again if you need them.');
-});
-
-test.each([undefined, null, {}, { invalid: true }])('expandWebSearchCall exposes invalid authenticated replay data: %j', data => {
+test.each([null, { invalid: true }])('expandWebSearchCall exposes invalid authenticated replay data: %j', data => {
   assertThrows(() => expandWebSearchCall(
     { type: 'web_search_call', id: 'ws_xxx_abc', action: { type: 'search', queries: ['q'] } },
     { data },

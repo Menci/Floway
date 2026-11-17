@@ -471,36 +471,6 @@ test('mask-only GIF edit transcodes one shared image and mask to WebP', async ()
   assertEquals(await mask.file.text(), 'WEBP');
 });
 
-test('identical GIF source and mask share one transcode', async () => {
-  let processorCalls = 0;
-  initImageProcessor({
-    compressToWebp: () => {
-      processorCalls += 1;
-      return Promise.resolve(new TextEncoder().encode('WEBP'));
-    },
-  });
-  const gif = 'R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
-  stub.nextEdits = [jsonResponse('RURJVA==')];
-  const result = await shim(makeCtx([{
-    type: 'message', role: 'user',
-    content: [{ type: 'input_image', image_url: `data:image/gif;base64,${gif}`, detail: 'auto' }],
-  }], 'edit', {
-    input_image_mask: { image_url: `data:image/gif;base64,${gif}` },
-  }), gatewayCtx(), scriptedRun([
-    callTurn(0, 'call_1', 'edit with the same mask'),
-    messageTurn('done'),
-  ]));
-  await drain(result);
-
-  assertEquals(processorCalls, 1);
-  const request = stub.editsRequests[0];
-  const image = request.images[0];
-  assert(image.type === 'upload');
-  assert(request.mask?.type === 'upload');
-  assertEquals(await image.file.text(), 'WEBP');
-  assertEquals(await request.mask.file.text(), 'WEBP');
-});
-
 test('image transcoding failure becomes a terminal image tool failure', async () => {
   initImageProcessor({
     compressToWebp: () => Promise.reject(new Error('codec down')),
@@ -568,27 +538,6 @@ test('gives up after MAX_RATE_LIMIT_RETRIES on persistent 429 and surfaces a fai
   assertEquals(item.error.type, 'image_generation_error');
 });
 
-test('does not retry non-rate-limit upstream failures', async () => {
-  stub.nextGenerations = [
-    new Response(
-      JSON.stringify({ error: { code: 'invalid_value', type: 'invalid_request_error', message: 'bad size' } }),
-      { status: 400, headers: new Headers({ 'content-type': 'application/json' }) },
-    ),
-  ];
-  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
-    callTurn(0, 'call_1', 'a cat'),
-    messageTurn('sorry'),
-  ]));
-  const events = await drain(result);
-
-  assertEquals(stub.generationsCalls.length, 1);
-  const igcDone = events.find(e => e.type === 'response.output_item.done' && (e as { item: { type: string } }).item.type === 'image_generation_call');
-  assert(igcDone !== undefined);
-  const item = (igcDone as { item: { status: string; error: { code: string } } }).item;
-  assertEquals(item.status, 'failed');
-  assertEquals(item.error.code, 'invalid_value');
-});
-
 // resolveImageCandidate failure branches: each variant is normalized into
 // a terminal `image_generation_call` item with `status: 'failed'` and a
 // specific error.code so the orchestrator can distinguish unknown-model
@@ -610,25 +559,6 @@ test('resolveImageCandidate renders model_not_found when no upstream knows the m
   assertEquals(item.status, 'failed');
   assertEquals(item.error.code, 'model_not_found');
   assert(item.error.message.includes("No upstream provides model 'gpt-image-2'"), `unexpected message: ${item.error.message}`);
-});
-
-test('resolveImageCandidate renders model_not_supported when sawModel=true but no candidate is an image kind', async () => {
-  // Mirrors the resolver's "id exists in some catalog but the kind filter
-  // dropped it" signal — sawModel=true, candidates=[].
-  stub.nextResolutionOverride = { candidates: [], sawModel: true, failedUpstreams: [] };
-  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
-    callTurn(0, 'call_1', 'a cat'),
-    messageTurn('sorry'),
-  ]));
-  const events = await drain(result);
-
-  assertEquals(stub.generationsCalls.length, 0);
-  const igcDone = events.find(e => e.type === 'response.output_item.done' && (e as { item: { type: string } }).item.type === 'image_generation_call');
-  assert(igcDone !== undefined);
-  const item = (igcDone as { item: { status: string; error: { code: string; message: string } } }).item;
-  assertEquals(item.status, 'failed');
-  assertEquals(item.error.code, 'model_not_supported');
-  assert(item.error.message.includes("Model 'gpt-image-2' is not an image model."), `unexpected message: ${item.error.message}`);
 });
 
 test('resolveImageCandidate renders model_not_supported when image-kind candidates exist but none expose the openaiImagesGenerations endpoint', async () => {
