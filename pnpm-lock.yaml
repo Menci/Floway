@@ -25,7 +25,7 @@ patchedDependencies:
     hash: fe60080adce8d75e0431840c40fc8086df2ac5625589179e5ddab432216c33a7
     path: patches/cbor-x@1.6.6.patch
   eventsource-parser@3.1.0:
-    hash: 9d14a2b6ae64f79ed0ec31974489d7d25c42c3233c062cb062636761b8db3735
+    hash: 86168a3936fdfb1a4487d8d4d76c438e545ed6c2b45bd72410df3e5cc0baed78
     path: patches/eventsource-parser@3.1.0.patch
   klona@2.0.6:
     hash: 86c99277c7bbba3650a877ecb839518955a3fdb068579ba6ec957d107e310dd2
@@ -506,7 +506,7 @@ importers:
         version: 2.0.0
       eventsource-parser:
         specifier: ^3.1.0
-        version: 3.1.0(patch_hash=9d14a2b6ae64f79ed0ec31974489d7d25c42c3233c062cb062636761b8db3735)
+        version: 3.1.0(patch_hash=86168a3936fdfb1a4487d8d4d76c438e545ed6c2b45bd72410df3e5cc0baed78)
     devDependencies:
       '@floway-dev/test-utils':
         specifier: workspace:*
@@ -9590,7 +9590,7 @@ snapshots:
 
   eventemitter3@5.0.4: {}
 
-  eventsource-parser@3.1.0(patch_hash=9d14a2b6ae64f79ed0ec31974489d7d25c42c3233c062cb062636761b8db3735): {}
+  eventsource-parser@3.1.0(patch_hash=86168a3936fdfb1a4487d8d4d76c438e545ed6c2b45bd72410df3e5cc0baed78): {}
 
   exit-hook@5.1.0: {}
 
