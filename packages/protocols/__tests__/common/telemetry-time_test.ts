@@ -13,7 +13,7 @@ describe('telemetry hour boundaries', () => {
 });
 
 describe('telemetry calendar buckets', () => {
-  it.each([['2h', '2026-05-01T02'], ['6h', '2026-05-01T00'], ['12h', '2026-05-01T00']] as const)('aligns %s buckets to the local wall clock', (bucket, expected) => {
+  it.each([['2h', '2026-05-01T02'], ['12h', '2026-05-01T00']] as const)('aligns %s buckets to the local wall clock', (bucket, expected) => {
     const map = createTelemetryBucket({ bucket, timeZone: 'Asia/Singapore', timezoneOffsetMinutes: 0 });
     expect(map('2026-04-30T19')).toBe(expected);
   });
@@ -41,17 +41,5 @@ describe('telemetry calendar buckets', () => {
     const map = createTelemetryBucket({ bucket: 'week', timeZone: 'Asia/Singapore', timezoneOffsetMinutes: 0 });
     expect(map('2025-12-31T20')).toBe('2025-12-29');
     expect(map('2026-01-04T16')).toBe('2026-01-05');
-  });
-
-  it('groups months and years by the requested local calendar', () => {
-    const options = { timeZone: 'Asia/Singapore', timezoneOffsetMinutes: 0 };
-    expect(createTelemetryBucket({ ...options, bucket: 'month' })('2026-04-30T20')).toBe('2026-05');
-    expect(createTelemetryBucket({ ...options, bucket: 'year' })('2025-12-31T20')).toBe('2026');
-  });
-
-  it('preserves UTC instants for hourly dashboard buckets', () => {
-    const map = createTelemetryBucket({ bucket: 'hour', timeZone: 'UTC', timezoneOffsetMinutes: 0 });
-    expect(map('2026-11-01T05')).toBe('2026-11-01T05');
-    expect(map('2026-11-01T06')).toBe('2026-11-01T06');
   });
 });

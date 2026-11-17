@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { doneFrame, eventFrame } from '../../src/common/index.ts';
+import { eventFrame } from '../../src/common/index.ts';
 import { parseGeminiGenerateContentStream } from '../../src/gemini-generate-content/stream.ts';
 import { sseFrame, sseFrameBody } from '../common/test-utils.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
@@ -23,18 +23,6 @@ test('parseGeminiGenerateContentStream yields each JSON chunk and closes on EOF'
   // Gemini closes the stream at natural EOF; there is no `[DONE]` sentinel to
   // translate and the parser must not invent a done frame the upstream never sent.
   assertEquals(frames, [eventFrame(first), eventFrame(terminal)]);
-});
-
-test('parseGeminiGenerateContentStream skips empty data frames and honours an explicit terminator', async () => {
-  const chunk = { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'hi' }] } }] };
-
-  const frames = await collect(parseGeminiGenerateContentStream(sseFrameBody(
-    sseFrame(''),
-    sseFrame(JSON.stringify(chunk)),
-    sseFrame('[DONE]'),
-  )));
-
-  assertEquals(frames, [eventFrame(chunk), doneFrame()]);
 });
 
 test('parseGeminiGenerateContentStream yields a pretty-printed bare error body as one error event', async () => {

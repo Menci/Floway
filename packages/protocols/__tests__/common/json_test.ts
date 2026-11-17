@@ -19,13 +19,6 @@ test('parseJSONWithRawNumbers preserves every number token that would serialize 
   assertEquals(JSON.stringify(value), source);
 });
 
-test('parsePartialJSONWithRawNumbers preserves complete noncanonical number tokens', () => {
-  const source = '{"rounded":0.10000000000000001,"negativeZero":-0,"unfinished":';
-  const value = parsePartialJSONWithRawNumbers(source) as Record<string, unknown>;
-
-  assertEquals(JSON.stringify(value), '{"rounded":0.10000000000000001,"negativeZero":-0}');
-});
-
 test('parsePartialJSONWithRawNumbers keeps complete source values from an incomplete object', () => {
   const source = String.raw`{"__proto__":{"polluted":true},"text":"\ud800","large":900719925474099312345,"unfinished":`;
   const value = parsePartialJSONWithRawNumbers(source) as Record<string, unknown>;

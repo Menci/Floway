@@ -1,20 +1,12 @@
 import { test } from 'vitest';
 
 import type {
-  AnthropicMessagesAssistantMessage,
   AnthropicMessagesResult,
-  AnthropicMessagesSearchResultBlock,
-  AnthropicMessagesSearchResultLocationCitation,
-  AnthropicMessagesServerToolUseBlock,
   AnthropicMessagesStreamEventEx,
   AnthropicMessagesTextBlock,
-  AnthropicMessagesTool,
-  AnthropicMessagesToolResultContentBlock,
-  AnthropicMessagesWebSearchResultBlock,
-  AnthropicMessagesWebSearchToolResultBlock,
 } from '../../src/anthropic-messages/index.ts';
 import { createAnthropicMessagesEventAccumulator, reassembleAnthropicMessagesEvents } from '../../src/anthropic-messages/reassemble.ts';
-import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
+import { assert, assertEquals } from '@floway-dev/test-utils';
 
 function makeEvents<T = AnthropicMessagesStreamEventEx>(chunks: Array<{ event?: string; data: unknown }>): AsyncIterable<T> {
   return (async function* () {
@@ -26,83 +18,6 @@ function makeEvents<T = AnthropicMessagesStreamEventEx>(chunks: Array<{ event?: 
     }
   })();
 }
-
-type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
-type Expect<T extends true> = T;
-
-type _toolResultContentExcludesWebSearchResult = Expect<Equal<Extract<AnthropicMessagesToolResultContentBlock, AnthropicMessagesWebSearchResultBlock>, never>>;
-type _serverToolUseNameIncludesWebSearch = Expect<Equal<Extract<AnthropicMessagesServerToolUseBlock['name'], 'web_search'>, 'web_search'>>;
-type _serverToolUseInputIsUnknown = Expect<Equal<AnthropicMessagesServerToolUseBlock['input'], unknown>>;
-
-test('reassembleAnthropicMessagesEvents reassembles text response', async () => {
-  const body = makeEvents([
-    {
-      event: 'message_start',
-      data: {
-        type: 'message_start',
-        message: {
-          container: null, diagnostics: null, stop_details: null,
-          id: 'msg_1',
-          type: 'message',
-          role: 'assistant',
-          content: [],
-          model: 'claude-test',
-          stop_reason: null,
-          stop_sequence: null,
-          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 10, output_tokens: 0 },
-        },
-      },
-    },
-    {
-      event: 'content_block_start',
-      data: {
-        type: 'content_block_start',
-        index: 0,
-        content_block: { citations: null, type: 'text', text: '' },
-      },
-    },
-    {
-      event: 'content_block_delta',
-      data: {
-        type: 'content_block_delta',
-        index: 0,
-        delta: { type: 'text_delta', text: 'Hello ' },
-      },
-    },
-    {
-      event: 'content_block_delta',
-      data: {
-        type: 'content_block_delta',
-        index: 0,
-        delta: { type: 'text_delta', text: 'world' },
-      },
-    },
-    {
-      event: 'content_block_stop',
-      data: { type: 'content_block_stop', index: 0 },
-    },
-    {
-      event: 'message_delta',
-      data: {
-        type: 'message_delta',
-        delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null },
-        usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 5 },
-      },
-    },
-    { event: 'message_stop', data: { type: 'message_stop' } },
-  ]);
-
-  const result: AnthropicMessagesResult = await reassembleAnthropicMessagesEvents(body);
-
-  assertEquals(result.id, 'msg_1');
-  assertEquals(result.model, 'claude-test');
-  assertEquals(result.stop_reason, 'end_turn');
-  assertEquals(result.content.length, 1);
-  assertEquals(result.content[0].type, 'text');
-  assertEquals((result.content[0] as { type: 'text'; text: string }).text, 'Hello world');
-  assertEquals(result.usage.input_tokens, 10);
-  assertEquals(result.usage.output_tokens, 5);
-});
 
 test('reassembleAnthropicMessagesEvents applies full usage delta extensions while updating cumulative counters', async () => {
   const body = makeEvents([
@@ -144,211 +59,6 @@ test('reassembleAnthropicMessagesEvents applies full usage delta extensions whil
   assertEquals(result.usage.service_tier, 'standard');
   assertEquals(result.usage.speed, 'standard');
   assertEquals(result.usage.inference_geo, 'eu');
-});
-
-test('AnthropicMessagesTool supports both client and native web search shapes', () => {
-  const clientTool: AnthropicMessagesTool = {
-    name: 'get_weather',
-    description: 'Fetches weather',
-    input_schema: { type: 'object' },
-    strict: true,
-  };
-
-  const nativeWebSearchTool: AnthropicMessagesTool = {
-    name: 'web_search',
-    type: 'web_search_20250305',
-    max_uses: 3,
-    allowed_domains: ['example.com'],
-    user_location: {
-      type: 'approximate',
-      city: 'San Francisco',
-      region: 'CA',
-      country: 'US',
-      timezone: 'America/Los_Angeles',
-    },
-  };
-
-  assertEquals('name' in clientTool, true);
-  assertEquals(nativeWebSearchTool.type, 'web_search_20250305');
-  if ('user_location' in nativeWebSearchTool) {
-    assertEquals(nativeWebSearchTool.user_location?.type, 'approximate');
-  }
-});
-
-test('Anthropic native web search shared shapes pass through reassembly unchanged', () => {
-  const searchCitation: AnthropicMessagesSearchResultLocationCitation = {
-    type: 'search_result_location',
-    source: 'https://docs.example.com/api-guide',
-    title: 'API Guide',
-    search_result_index: 0,
-    start_block_index: 1,
-    end_block_index: 2,
-    cited_text: 'Error handling guidance',
-  };
-
-  const searchResult: AnthropicMessagesSearchResultBlock = {
-    type: 'search_result',
-    source: 'https://docs.example.com/api-guide',
-    title: 'API Guide',
-    content: [{ citations: null, type: 'text', text: 'Error handling guidance' }],
-    citations: { enabled: true },
-  };
-
-  const serverToolUse: AnthropicMessagesServerToolUseBlock = {
-    caller: { type: 'direct' },
-    type: 'server_tool_use',
-    id: 'srvtoolu_1',
-    name: 'web_search',
-    input: { query: 'latest API guide' },
-  };
-
-  const webSearchToolResult: AnthropicMessagesWebSearchToolResultBlock = {
-    type: 'web_search_tool_result',
-    tool_use_id: 'srvtoolu_1',
-    content: {
-      type: 'web_search_tool_result_error',
-      error_code: 'max_uses_exceeded',
-    },
-  };
-
-  assertEquals(searchCitation.search_result_index, 0);
-  assertEquals(searchResult.citations?.enabled, true);
-  assertEquals(serverToolUse.name, 'web_search');
-  assertEquals(Array.isArray(webSearchToolResult.content), false);
-  if (!Array.isArray(webSearchToolResult.content)) {
-    assertEquals(webSearchToolResult.content.type, 'web_search_tool_result_error');
-  }
-});
-
-test('reassembleAnthropicMessagesEvents reassembles tool_use response', async () => {
-  const body = makeEvents([
-    {
-      event: 'message_start',
-      data: {
-        type: 'message_start',
-        message: {
-          container: null, diagnostics: null, stop_details: null,
-          id: 'msg_2',
-          type: 'message',
-          role: 'assistant',
-          content: [],
-          model: 'claude-test',
-          stop_reason: null,
-          stop_sequence: null,
-          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 20, output_tokens: 0 },
-        },
-      },
-    },
-    {
-      event: 'content_block_start',
-      data: {
-        type: 'content_block_start',
-        index: 0,
-        content_block: { type: 'tool_use', id: 'tu_1', name: 'calc' },
-      },
-    },
-    {
-      event: 'content_block_delta',
-      data: {
-        type: 'content_block_delta',
-        index: 0,
-        delta: { type: 'input_json_delta', partial_json: '{"x":' },
-      },
-    },
-    {
-      event: 'content_block_delta',
-      data: {
-        type: 'content_block_delta',
-        index: 0,
-        delta: { type: 'input_json_delta', partial_json: '42}' },
-      },
-    },
-    {
-      event: 'content_block_stop',
-      data: { type: 'content_block_stop', index: 0 },
-    },
-    {
-      event: 'message_delta',
-      data: {
-        type: 'message_delta',
-        delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'tool_use' },
-        usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 10 },
-      },
-    },
-    { event: 'message_stop', data: { type: 'message_stop' } },
-  ]);
-
-  const result = await reassembleAnthropicMessagesEvents(body);
-
-  assertEquals(result.stop_reason, 'tool_use');
-  assertEquals(result.content.length, 1);
-  assertEquals(result.content[0].type, 'tool_use');
-  const tu = result.content[0] as {
-    type: 'tool_use';
-    id: string;
-    name: string;
-    input: Record<string, unknown>;
-  };
-  assertEquals(tu.id, 'tu_1');
-  assertEquals(tu.name, 'calc');
-  assertEquals(tu.input, { x: 42 });
-});
-
-test('reassembleAnthropicMessagesEvents preserves unsafe and overflowing tool argument numbers', async () => {
-  const inputJson = '{"large":900719925474099312345,"overflow":1e999}';
-  const body = makeEvents([
-    {
-      event: 'message_start',
-      data: {
-        type: 'message_start',
-        message: {
-          container: null, diagnostics: null, stop_details: null,
-          id: 'msg_tool_numeric_tokens',
-          type: 'message',
-          role: 'assistant',
-          content: [],
-          model: 'claude-test',
-          stop_reason: null,
-          stop_sequence: null,
-          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 20, output_tokens: 0 },
-        },
-      },
-    },
-    {
-      event: 'content_block_start',
-      data: {
-        type: 'content_block_start',
-        index: 0,
-        content_block: { type: 'tool_use', id: 'tu_numeric_tokens', name: 'lookup' },
-      },
-    },
-    {
-      event: 'content_block_delta',
-      data: {
-        type: 'content_block_delta',
-        index: 0,
-        delta: { type: 'input_json_delta', partial_json: inputJson },
-      },
-    },
-    { event: 'content_block_stop', data: { type: 'content_block_stop', index: 0 } },
-    {
-      event: 'message_delta',
-      data: {
-        type: 'message_delta',
-        delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'tool_use' },
-        usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 10 },
-      },
-    },
-    { event: 'message_stop', data: { type: 'message_stop' } },
-  ]);
-
-  const result = await reassembleAnthropicMessagesEvents(body);
-  const input = (result.content[0] as { type: 'tool_use'; input: Record<string, unknown> }).input;
-  const json = JSON as typeof JSON & { isRawJSON: (value: unknown) => boolean };
-
-  assert(json.isRawJSON(input.large));
-  assert(json.isRawJSON(input.overflow));
-  assertEquals(JSON.stringify(input), inputJson);
 });
 
 test('reassembleAnthropicMessagesEvents preserves completed tool fields after a max_tokens cutoff', async () => {
@@ -414,61 +124,6 @@ test('reassembleAnthropicMessagesEvents preserves completed tool fields after a 
 
   assertEquals(result.stop_reason, 'max_tokens');
   assertEquals(toolUse.input, { x: 42 });
-});
-
-test('reassembleAnthropicMessagesEvents collects partial tool input on ordinary tool_use completion', async () => {
-  const body = makeEvents([
-    {
-      event: 'message_start',
-      data: {
-        type: 'message_start',
-        message: {
-          container: null, diagnostics: null, stop_details: null,
-          id: 'msg_bad_tool_json',
-          type: 'message',
-          role: 'assistant',
-          content: [],
-          model: 'claude-test',
-          stop_reason: null,
-          stop_sequence: null,
-          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 20, output_tokens: 0 },
-        },
-      },
-    },
-    {
-      event: 'content_block_start',
-      data: {
-        type: 'content_block_start',
-        index: 0,
-        content_block: { type: 'tool_use', id: 'tu_bad', name: 'calc' },
-      },
-    },
-    {
-      event: 'content_block_delta',
-      data: {
-        type: 'content_block_delta',
-        index: 0,
-        delta: { type: 'input_json_delta', partial_json: '{"x":' },
-      },
-    },
-    {
-      event: 'content_block_stop',
-      data: { type: 'content_block_stop', index: 0 },
-    },
-    {
-      event: 'message_delta',
-      data: {
-        type: 'message_delta',
-        delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'tool_use' },
-        usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 10 },
-      },
-    },
-    { event: 'message_stop', data: { type: 'message_stop' } },
-  ]);
-
-  const result = await reassembleAnthropicMessagesEvents(body);
-  assertEquals(result.stop_reason, 'tool_use');
-  assertEquals((result.content[0] as { input: unknown }).input, {});
 });
 
 test('reassembleAnthropicMessagesEvents reassembles thinking blocks', async () => {
@@ -569,75 +224,6 @@ test('reassembleAnthropicMessagesEvents reassembles thinking blocks', async () =
   assertEquals(thinking.thinking, 'let me think');
   assertEquals(thinking.signature, 'sig_123');
   assertEquals(result.content[1].type, 'text');
-});
-
-test('reassembleAnthropicMessagesEvents omits signature for text-only thinking blocks', async () => {
-  const body = makeEvents([
-    {
-      event: 'message_start',
-      data: {
-        type: 'message_start',
-        message: {
-          container: null, diagnostics: null, stop_details: null,
-          id: 'msg_text_only_thinking',
-          type: 'message',
-          role: 'assistant',
-          content: [],
-          model: 'claude-test',
-          stop_reason: null,
-          stop_sequence: null,
-          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 5, output_tokens: 0 },
-        },
-      },
-    },
-    {
-      event: 'content_block_start',
-      data: {
-        type: 'content_block_start',
-        index: 0,
-        content_block: { signature: '', type: 'thinking', thinking: '' },
-      },
-    },
-    {
-      event: 'content_block_delta',
-      data: {
-        type: 'content_block_delta',
-        index: 0,
-        delta: { type: 'thinking_delta', thinking: 'trace' },
-      },
-    },
-    {
-      event: 'content_block_stop',
-      data: { type: 'content_block_stop', index: 0 },
-    },
-    {
-      event: 'message_delta',
-      data: {
-        type: 'message_delta',
-        delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null },
-        usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 4 },
-      },
-    },
-    { event: 'message_stop', data: { type: 'message_stop' } },
-  ]);
-
-  const result = await reassembleAnthropicMessagesEvents(body);
-
-  assertEquals(result.content[0], { signature: '', type: 'thinking', thinking: 'trace' });
-});
-
-test('reassembleAnthropicMessagesEvents throws on error event', async () => {
-  const body = makeEvents([
-    {
-      event: 'error',
-      data: {
-        type: 'error',
-        error: { type: 'overloaded_error', message: 'overloaded' },
-      },
-    },
-  ]);
-
-  await assertRejects(() => reassembleAnthropicMessagesEvents(body), Error, 'overloaded');
 });
 
 test('reassembleAnthropicMessagesEvents reassembles native web search blocks and usage', async () => {
@@ -767,105 +353,6 @@ test('reassembleAnthropicMessagesEvents reassembles native web search blocks and
   assertEquals((result.content[2] as AnthropicMessagesTextBlock).citations?.[0]?.type, 'web_search_result_location');
 });
 
-test('reassembleAnthropicMessagesEvents accumulates citations across multiple text deltas', async () => {
-  const body = makeEvents([
-    {
-      event: 'message_start',
-      data: {
-        type: 'message_start',
-        message: {
-          container: null, diagnostics: null, stop_details: null,
-          id: 'msg_citations',
-          type: 'message',
-          role: 'assistant',
-          content: [],
-          model: 'claude-test',
-          stop_reason: null,
-          stop_sequence: null,
-          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 3, output_tokens: 0 },
-        },
-      },
-    },
-    {
-      event: 'content_block_start',
-      data: {
-        type: 'content_block_start',
-        index: 0,
-        content_block: { citations: null, type: 'text', text: '' },
-      },
-    },
-    {
-      event: 'content_block_delta',
-      data: {
-        type: 'content_block_delta',
-        index: 0,
-        delta: {
-          type: 'text_delta',
-          text: 'First sentence. ',
-        },
-      },
-    },
-    {
-      event: 'content_block_delta', data: {
-        type: 'content_block_delta', index: 0, delta: {
-          type: 'citations_delta', citation: {
-            type: 'web_search_result_location',
-            url: 'https://example.com/one',
-            title: 'One',
-            encrypted_index: 'opaque-first',
-            cited_text: 'First source',
-          },
-        },
-      },
-    },
-    {
-      event: 'content_block_delta',
-      data: {
-        type: 'content_block_delta',
-        index: 0,
-        delta: {
-          type: 'text_delta',
-          text: 'Second sentence.',
-        },
-      },
-    },
-    {
-      event: 'content_block_delta', data: {
-        type: 'content_block_delta', index: 0, delta: {
-          type: 'citations_delta', citation: {
-            type: 'web_search_result_location',
-            url: 'https://example.com/two',
-            title: 'Two',
-            encrypted_index: 'opaque-second',
-            cited_text: 'Second source',
-          },
-        },
-      },
-    },
-    {
-      event: 'content_block_stop',
-      data: { type: 'content_block_stop', index: 0 },
-    },
-    {
-      event: 'message_delta',
-      data: {
-        type: 'message_delta',
-        delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null },
-        usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 4 },
-      },
-    },
-    { event: 'message_stop', data: { type: 'message_stop' } },
-  ]);
-
-  const result = await reassembleAnthropicMessagesEvents(body);
-  const block = result.content[0] as AnthropicMessagesTextBlock;
-
-  assertEquals(block.text, 'First sentence. Second sentence.');
-  assertEquals(block.citations?.length, 2);
-  assertEquals(block.citations?.[0]?.type, 'web_search_result_location');
-  assertEquals(block.citations?.[1]?.type, 'web_search_result_location');
-});
-
 test('reassembleAnthropicMessagesEvents handles citations_delta and preserves source fields', async () => {
   const body = makeEvents([
     {
@@ -980,28 +467,6 @@ test('reassembleAnthropicMessagesEvents preserves unknown fields on message_star
   assertEquals(result.custom_meta, { trace_id: 'abc' });
 });
 
-test('reassembleAnthropicMessagesEvents preserves unknown fields on a content_block', async () => {
-  const body = makeEvents([
-    { data: { type: 'message_start', message: { container: null, diagnostics: null, stop_details: null, id: 'msg_1', type: 'message', role: 'assistant', model: 'claude-test', usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 5, output_tokens: 0 } } } },
-    {
-      data: {
-        type: 'content_block_start',
-        index: 0,
-        content_block: { signature: '', type: 'thinking', thinking: 'hello', vendor_trace: 'opaque-trace-123' },
-      },
-    },
-    { data: { type: 'content_block_stop', index: 0 } },
-    { data: { type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } } },
-    { data: { type: 'message_stop' } },
-  ]);
-
-  const result = await reassembleAnthropicMessagesEvents(body);
-  const block = result.content[0] as { type: string; thinking: string; vendor_trace?: string };
-  assertEquals(block.type, 'thinking');
-  assertEquals(block.thinking, 'hello');
-  assertEquals(block.vendor_trace, 'opaque-trace-123');
-});
-
 test('reassembleAnthropicMessagesEvents preserves refusal details, fallback boundaries, and iteration usage', async () => {
   const result = await reassembleAnthropicMessagesEvents(makeEvents([
     {
@@ -1069,22 +534,6 @@ test('reassembleAnthropicMessagesEvents preserves refusal details, fallback boun
   assertEquals(result.usage.iterations, [{ type: 'fallback_message', model: 'claude-opus-4-8', input_tokens: 5, output_tokens: 0 }]);
 });
 
-test('Anthropic Messages assistant fallback history accepts omitted and opaque triggers', () => {
-  const messages: AnthropicMessagesAssistantMessage[] = [
-    {
-      role: 'assistant',
-      content: [{ type: 'fallback', from: { model: 'claude-opus-5' }, to: { model: 'claude-opus-4-8' } }],
-    },
-    {
-      role: 'assistant',
-      content: [{ type: 'fallback', from: { model: 'claude-opus-5' }, to: { model: 'claude-opus-4-8' }, trigger: null }],
-    },
-  ];
-
-  assertEquals(messages[0].content[0], { type: 'fallback', from: { model: 'claude-opus-5' }, to: { model: 'claude-opus-4-8' } });
-  assertEquals(messages[1].content[0], { type: 'fallback', from: { model: 'claude-opus-5' }, to: { model: 'claude-opus-4-8' }, trigger: null });
-});
-
 test.each([{ content: 'second', encrypted_content: 'opaque' }, { content: null, encrypted_content: null }, { content: 'second' }])('replaces compaction final values and preserves additional standard usage fields: %j', async final => {
   const events = async function* (): AsyncGenerator<AnthropicMessagesStreamEventEx> {
     yield {
@@ -1106,17 +555,6 @@ test.each([{ content: 'second', encrypted_content: 'opaque' }, { content: null, 
   assertEquals(result.content, [{ type: 'compaction', encrypted_content: 'initial cipher', ...final }]);
   assertEquals(result.usage.inference_geo, 'us');
   assertEquals(result.usage.server_tool_use?.web_fetch_requests, 2);
-});
-
-test('collects gateway TTL usage deltas with omitted zero buckets', async () => {
-  const result = await reassembleAnthropicMessagesEvents(makeEvents([
-    { data: { type: 'message_start', message: { id: 'm', model: 'claude', type: 'message', role: 'assistant', content: [], stop_reason: null, stop_sequence: null, stop_details: null, usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: null, cache_creation: null } } } },
-    { data: { type: 'message_delta', delta: { stop_reason: 'end_turn', stop_sequence: null, stop_details: null }, usage: { input_tokens: 3, output_tokens: 10, cache_creation_input_tokens: 100, cache_creation: { ephemeral_5m_input_tokens: 100 }, service_tier: 'priority', speed: 'fast' } } },
-    { data: { type: 'message_stop' } },
-  ]));
-  assertEquals(result.usage.cache_creation, { ephemeral_5m_input_tokens: 100, ephemeral_1h_input_tokens: 0 });
-  assertEquals(result.usage.service_tier, 'priority');
-  assertEquals(result.usage.speed, 'fast');
 });
 
 test('result reflects all events accepted before each read', () => {

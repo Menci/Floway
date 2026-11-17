@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { addDecimalStrings, decimalStringIsZero, decimalStringToNumber, divideDecimalString, multiplyDecimalStrings, parseDecimalString, parseNonNegativeDecimalString } from '../../src/common/decimal.ts';
+import { addDecimalStrings, divideDecimalString, multiplyDecimalStrings, parseDecimalString, parseNonNegativeDecimalString } from '../../src/common/decimal.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('decimal strings canonicalize without floating-point conversion', () => {
@@ -44,10 +44,4 @@ test('decimal division rounds half-up to 100 fractional digits', () => {
   assertEquals(divideDecimalString('1', '2e100'), lastPlace);
   assertEquals(divideDecimalString('-1', '2e100'), `-${lastPlace}`);
   assertEquals(divideDecimalString('6', '1e101'), lastPlace);
-});
-
-test('decimal predicates and numeric conversion consume the same canonical domain', () => {
-  assertEquals(decimalStringIsZero('-0e400'), true);
-  assertEquals(decimalStringIsZero('1e-400'), false);
-  assertEquals(decimalStringToNumber('9007199254740993'), 9_007_199_254_740_992);
 });

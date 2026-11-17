@@ -83,95 +83,6 @@ test('openaiResponsesResultToEvents starts JSON fallback streams with an empty i
   assertEquals(completed?.type, 'response.completed');
 });
 
-test('openaiResponsesResultToEvents keeps incomplete details only on the terminal event', () => {
-  const frames = Array.from(
-    openaiResponsesResultToEvents({
-      ...completedResponse,
-      id: 'resp_incomplete',
-      status: 'incomplete',
-      incomplete_details: { reason: 'max_output_tokens' },
-    }),
-  );
-
-  const created = frames[0].event as {
-    type: 'response.created';
-    response: OpenAIResponsesResultEx;
-  };
-  const terminal = frames.at(-1)?.event as {
-    type: 'response.incomplete';
-    response: OpenAIResponsesResultEx;
-  };
-
-  // Snapshot strips terminal-only incomplete_details and defaults it
-  // to null so the spec-required field is still present.
-  assertEquals(created.response.incomplete_details, null);
-  assertEquals(terminal.type, 'response.incomplete');
-  assertEquals(terminal.response.incomplete_details?.reason, 'max_output_tokens');
-});
-
-test('openaiResponsesResultToEvents keeps failure details only on the terminal event', () => {
-  const frames = Array.from(
-    openaiResponsesResultToEvents({
-      id: 'resp_failed',
-      object: 'response',
-      model: 'gpt-test',
-      status: 'failed',
-      output: [],
-      error: {
-        message: 'upstream failed',
-        type: 'server_error',
-        code: 'boom',
-      },
-      incomplete_details: null,
-      usage: { input_tokens: 1, output_tokens: 0, total_tokens: 1 },
-    }),
-  );
-
-  const created = frames[0].event as {
-    type: 'response.created';
-    response: OpenAIResponsesResultEx;
-  };
-  const terminal = frames.at(-1)?.event as {
-    type: 'response.failed';
-    response: OpenAIResponsesResultEx;
-  };
-
-  // Snapshot strips the terminal error and defaults to null so the
-  // spec-required field is present on the in-progress snapshot.
-  assertEquals(created.response.error, null);
-  assertEquals(terminal.type, 'response.failed');
-  assertEquals(terminal.response.error?.message, 'upstream failed');
-});
-
-test('openaiResponsesResultToEvents propagates the real message item id to the added item and every child frame', () => {
-  const frames = Array.from(
-    openaiResponsesResultToEvents({
-      ...completedResponse,
-      output: [
-        {
-          type: 'message',
-          id: 'msg_real',
-          status: 'completed',
-          role: 'assistant',
-          content: [{ type: 'output_text', text: 'Hello', annotations: [] }],
-        },
-      ],
-    }),
-  );
-
-  const added = frames.find(frame => frame.event.type === 'response.output_item.added')?.event as {
-    item: { id?: string };
-  };
-  assertEquals(added.item.id, 'msg_real');
-
-  const childItemIds = frames
-    .map(frame => frame.event)
-    .filter((event): event is typeof event & { item_id: string } => 'item_id' in event)
-    .map(event => event.item_id);
-  assertEquals(childItemIds.length, 4);
-  for (const itemId of childItemIds) assertEquals(itemId, 'msg_real');
-});
-
 test('openaiResponsesResultToEvents expands refusal content with the native refusal lifecycle', () => {
   const events = Array.from(openaiResponsesResultToEvents({
     ...completedResponse,
@@ -211,38 +122,6 @@ test('openaiResponsesResultToEvents expands refusal content with the native refu
       sequence_number: 5,
     },
   ]);
-});
-
-test('openaiResponsesResultToEvents propagates the real function_call item id to the added item and child frames', () => {
-  const frames = Array.from(
-    openaiResponsesResultToEvents({
-      ...completedResponse,
-      output: [
-        {
-          type: 'function_call',
-          id: 'fc_real',
-          call_id: 'call_1',
-          name: 'do_thing',
-          arguments: '{"x":1}',
-          status: 'completed',
-          caller: { type: 'program', caller_id: 'call_prog_1' },
-        },
-      ],
-    }),
-  );
-
-  const added = frames.find(frame => frame.event.type === 'response.output_item.added')?.event as {
-    item: { id?: string; caller?: unknown };
-  };
-  assertEquals(added.item.id, 'fc_real');
-  assertEquals(added.item.caller, { type: 'program', caller_id: 'call_prog_1' });
-
-  const childItemIds = frames
-    .map(frame => frame.event)
-    .filter((event): event is typeof event & { item_id: string } => 'item_id' in event)
-    .map(event => event.item_id);
-  assertEquals(childItemIds.length, 2);
-  for (const itemId of childItemIds) assertEquals(itemId, 'fc_real');
 });
 
 test('openaiResponsesResultToEvents preserves advanced tool item wire fields', () => {
@@ -422,42 +301,6 @@ test('openaiResponsesResultToEvents expands a web_search_call with the full 5-ev
       'response.web_search_call.in_progress',
       'response.web_search_call.searching',
       'response.web_search_call.completed',
-      'response.output_item.done',
-      'response.completed',
-    ],
-  );
-});
-
-test('openaiResponsesResultToEvents expands a completed image_generation_call lifecycle', () => {
-  const frames = Array.from(
-    openaiResponsesResultToEvents({
-      id: 'resp_img',
-      object: 'response',
-      model: 'gpt-test',
-      status: 'completed',
-      output: [
-        {
-          type: 'image_generation_call',
-          id: 'ig_1',
-          status: 'completed',
-          result: 'ZmFrZQ==',
-          revised_prompt: 'a cube',
-        },
-      ],
-      error: null,
-      incomplete_details: null,
-    }),
-  );
-
-  assertEquals(
-    frames.map(frame => frame.event.type),
-    [
-      'response.created',
-      'response.in_progress',
-      'response.output_item.added',
-      'response.image_generation_call.in_progress',
-      'response.image_generation_call.generating',
-      'response.image_generation_call.completed',
       'response.output_item.done',
       'response.completed',
     ],

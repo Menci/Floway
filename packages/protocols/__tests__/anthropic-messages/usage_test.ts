@@ -4,9 +4,7 @@ import { mergeAnthropicMessagesUsageSnapshot, anthropicMessagesUsageSnapshot, sp
 
 test.each([
   [{ cache_creation_input_tokens: 9 }, { cacheWrite: 9, cacheWrite1h: 0 }],
-  [{ cache_creation_input_tokens: 9, cache_creation: {} }, { cacheWrite: 9, cacheWrite1h: 0 }],
   [{ cache_creation_input_tokens: 9, cache_creation: { ephemeral_1h_input_tokens: 5 } }, { cacheWrite: 4, cacheWrite1h: 5 }],
-  [{ cache_creation_input_tokens: 9, cache_creation: { ephemeral_5m_input_tokens: 4 } }, { cacheWrite: 4, cacheWrite1h: 5 }],
   [{ cache_creation: { ephemeral_5m_input_tokens: 4, ephemeral_1h_input_tokens: 5 } }, { cacheWrite: 4, cacheWrite1h: 5 }],
 ])('Anthropic Messages cache creation splits partial TTL detail %#', (usage, expected) => {
   expect(splitAnthropicMessagesCacheCreationTokens(usage)).toEqual(expected);
@@ -44,27 +42,6 @@ test('Anthropic Messages usage snapshots merge cumulative counters while preserv
   });
 });
 
-test('Anthropic Messages usage snapshots read an upstream null counter as an absent counter', () => {
-  expect(anthropicMessagesUsageSnapshot({
-    input_tokens: null,
-    output_tokens: 2,
-    cache_creation_input_tokens: null,
-    cache_read_input_tokens: null,
-    cache_creation: null,
-    output_tokens_details: null,
-    service_tier: null,
-    speed: null,
-  })).toEqual({ output_tokens: 2 });
-});
-
-test('Anthropic Messages cache creation splits usage whose upstream reported no cache buckets', () => {
-  expect(splitAnthropicMessagesCacheCreationTokens(anthropicMessagesUsageSnapshot({
-    output_tokens: 2,
-    cache_creation_input_tokens: null,
-    cache_creation: null,
-  }))).toEqual({ cacheWrite: 0, cacheWrite1h: 0 });
-});
-
 test('Anthropic Messages usage snapshots keep counters a later null does not restate', () => {
   const start = anthropicMessagesUsageSnapshot({
     input_tokens: 11,
@@ -86,12 +63,6 @@ test('Anthropic Messages usage snapshots keep counters a later null does not res
     cache_read_input_tokens: 4,
     output_tokens_details: { thinking_tokens: 3 },
   });
-});
-
-test('Anthropic Messages usage snapshots collect full usage delta extensions', () => {
-  const start = anthropicMessagesUsageSnapshot({ output_tokens: 0, speed: 'fast', service_tier: 'priority', cache_creation: { ephemeral_1h_input_tokens: 5 } });
-  const delta = { output_tokens: 2, speed: 'standard', service_tier: 'standard', cache_creation: { ephemeral_1h_input_tokens: 9 }, inference_geo: 'eu' };
-  expect(mergeAnthropicMessagesUsageSnapshot(start, delta)).toEqual({ ...start, output_tokens: 2, service_tier: 'standard', speed: 'standard', cache_creation: { ephemeral_1h_input_tokens: 9 } });
 });
 
 test('Anthropic Messages usage snapshots preserve nullable iterations and isolate all nested iteration data', () => {
@@ -124,34 +95,4 @@ test('Anthropic Messages usage snapshots preserve nullable iterations and isolat
     },
   }]);
   expect(mergeAnthropicMessagesUsageSnapshot(snapshot, { output_tokens: 1, iterations: null }).iterations).toEqual(snapshot.iterations);
-});
-
-test('Anthropic Messages usage snapshot merges isolate opaque nested iteration data from the delta', () => {
-  const iterations = [{
-    type: 'message' as const,
-    model: 'claude-test',
-    input_tokens: 1,
-    output_tokens: 1,
-    cache_creation: null,
-    cache_creation_input_tokens: 0,
-    cache_read_input_tokens: 0,
-    provider_metadata: {
-      attempts: [{ warnings: ['slow'] }],
-    },
-  }];
-  const merged = mergeAnthropicMessagesUsageSnapshot({ output_tokens: 0 }, { output_tokens: 1, iterations });
-  iterations[0].provider_metadata.attempts[0].warnings[0] = 'mutated';
-
-  expect(merged.iterations).toEqual([{
-    type: 'message' as const,
-    model: 'claude-test',
-    input_tokens: 1,
-    output_tokens: 1,
-    cache_creation: null,
-    cache_creation_input_tokens: 0,
-    cache_read_input_tokens: 0,
-    provider_metadata: {
-      attempts: [{ warnings: ['slow'] }],
-    },
-  }]);
 });

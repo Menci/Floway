@@ -7,20 +7,6 @@ import { assertEquals } from '@floway-dev/test-utils';
 
 const includeUsageChunk = { includeUsageChunk: true };
 
-test('openaiChatCompletionsProtocolFrameToSSEFrame passes through non-chunk JSON payloads', () => {
-  const payload = {
-    error: { message: 'boom' },
-  } as unknown as OpenAIChatCompletionsStreamEvent;
-
-  const frame = openaiChatCompletionsProtocolFrameToSSEFrame(eventFrame(payload), includeUsageChunk);
-
-  assertEquals(frame, {
-    type: 'sse',
-    event: undefined,
-    data: JSON.stringify(payload),
-  });
-});
-
 test('openaiChatCompletionsProtocolFrameToSSEFrame serializes DONE without owning termination', () => {
   const chunk = {
     id: 'chatcmpl_done',

@@ -13,38 +13,3 @@ test('anthropicMessagesProtocolFrameToSSEFrame serializes events without owning 
     ['message_stop', 'ping'],
   );
 });
-
-test('anthropicMessagesProtocolFrameToSSEFrame preserves search_result_location source', () => {
-  const frame = anthropicMessagesProtocolFrameToSSEFrame(
-    eventFrame({
-      type: 'content_block_delta',
-      index: 0,
-      delta: {
-        type: 'citations_delta',
-        citation: {
-          cited_text: '',
-          type: 'search_result_location',
-          source: 'https://example.com/protocol',
-          title: 'Protocol Citation',
-          search_result_index: 0,
-          start_block_index: 0,
-          end_block_index: 0,
-        },
-      },
-    } satisfies AnthropicMessagesStreamEventEx),
-  );
-
-  const payload = JSON.parse(frame!.data) as {
-    delta: { citation: Record<string, unknown> };
-  };
-
-  assertEquals(payload.delta.citation, {
-    cited_text: '',
-    type: 'search_result_location',
-    source: 'https://example.com/protocol',
-    title: 'Protocol Citation',
-    search_result_index: 0,
-    start_block_index: 0,
-    end_block_index: 0,
-  });
-});

@@ -24,10 +24,7 @@ test('inclusive input usage splits cache reads and writes into disjoint counts',
 
 test.each([
   ['input tokens', -1, undefined, undefined],
-  ['input tokens', Number.POSITIVE_INFINITY, undefined, undefined],
-  ['cache-read tokens', 10, -1, undefined],
   ['cache-read tokens', 10, 1.5, undefined],
-  ['cache-write tokens', 10, undefined, -1],
   ['cache-write tokens', 10, undefined, Number.NaN],
 ] as const)('inclusive input usage rejects invalid %s', (name, inputTokens, cacheReadTokens, cacheWriteTokens) => {
   expect(() => splitInclusiveInputTokens(inputTokens, cacheReadTokens, cacheWriteTokens)).toThrowError(

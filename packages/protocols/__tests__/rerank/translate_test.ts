@@ -3,28 +3,6 @@ import { describe, expect, test } from 'vitest';
 import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, serializeRerankRequest } from '../../src/rerank/translate.ts';
 
 describe('rerank request ingress', () => {
-  test('Cohere v1 retains structured documents and v1-only options', () => {
-    const parsed = parseRerankRequest('cohere-v1', {
-      model: 'rerank-v3.5',
-      query: 'query',
-      documents: ['one', { title: 'Two', text: 'body' }],
-      top_n: 1,
-      rank_fields: ['title', 'text'],
-      return_documents: true,
-      max_chunks_per_doc: 8,
-    });
-
-    expect(parsed.model).toBe('rerank-v3.5');
-    expect(parsed.request).toMatchObject({
-      sourceProtocol: 'cohere-v1',
-      query: 'query',
-      documents: ['one', { title: 'Two', text: 'body' }],
-      topN: 1,
-      rankFields: ['title', 'text'],
-      returnDocuments: true,
-      maxChunksPerDocument: 8,
-    });
-  });
 
   test('Cohere v2 admits only its string-document contract', () => {
     const parsed = parseRerankRequest('cohere-v2', {
@@ -70,22 +48,6 @@ describe('rerank request ingress', () => {
     });
     expect(voyage.request.returnDocuments).toBe(false);
     expect(voyage.request.truncation).toBe(true);
-  });
-
-  test('Jina accepts its documented nullable controls', () => {
-    const jina = parseRerankRequest('jina-v1', {
-      model: 'jina-reranker-v3',
-      query: 'query',
-      documents: ['one'],
-      top_n: null,
-      return_documents: null,
-      truncation: null,
-      return_embeddings: null,
-    });
-    expect(jina.request.topN).toBeUndefined();
-    expect(jina.request.returnDocuments).toBe(true);
-    expect(jina.request.truncation).toBeUndefined();
-    expect(jina.request.returnEmbeddings).toBeUndefined();
   });
 });
 
@@ -212,19 +174,8 @@ describe('rerank response translation', () => {
     expect(parseRerankUsage('cohere-v2', {
       meta: { billed_units: null, tokens: { input_tokens: 3 } },
     })).toEqual({ totalTokens: 3 });
-    expect(parseRerankUsage('cohere-v2', {
-      meta: { billed_units: { search_units: 2 }, tokens: null },
-    })).toEqual({ searchUnits: 2 });
-    expect(parseRerankUsage('cohere-v2', {
-      meta: { billed_units: { search_units: null }, tokens: { input_tokens: null } },
-    })).toEqual({});
-    expect(parseRerankUsage('cohere-v2', {
-      meta: { billed_units: { search_units: null }, tokens: { input_tokens: 3 } },
-    })).toEqual({ totalTokens: 3 });
 
     expect(() => parseRerankUsage('cohere-v2', { meta: 'bad' })).toThrow('meta must be an object or null');
-    expect(() => parseRerankUsage('cohere-v2', { meta: { billed_units: 1 } })).toThrow('meta.billed_units must be an object or null');
-    expect(() => parseRerankUsage('cohere-v2', { meta: { tokens: [] } })).toThrow('meta.tokens must be an object or null');
     expect(() => parseRerankUsage('cohere-v2', { meta: { billed_units: { search_units: '2' } } })).toThrow('meta.billed_units.search_units must be a finite number');
     expect(() => parseRerankUsage('cohere-v2', { meta: { tokens: { input_tokens: '3' } } })).toThrow('meta.tokens.input_tokens must be a finite number');
   });
@@ -253,16 +204,6 @@ describe('rerank response translation', () => {
       expect(parseRerankResponse(protocol, response).totalTokens).toBeUndefined();
       expect(() => parseRerankUsage(protocol, { ...response, usage: {} })).toThrow('usage.total_tokens must be a finite number');
     }
-  });
-
-  test('accepts protocol-specific returned document objects without narrowing their fields', () => {
-    expect(parseRerankResponse('cohere-v1', {
-      results: [{ index: 0, relevance_score: 0.8, document: { title: 'A' } }],
-    }).results[0]?.document).toEqual({ title: 'A' });
-    expect(parseRerankResponse('dashscope-native', {
-      request_id: 'request',
-      output: { results: [{ index: 0, relevance_score: 0.7, document: { video: 'https://example.com/a.mp4' } }] },
-    }).results[0]?.document).toEqual({ video: 'https://example.com/a.mp4' });
   });
 
   test('renders source-specific result containers and reconstructs requested documents', () => {

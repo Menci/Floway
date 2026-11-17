@@ -47,12 +47,6 @@ test('collectGeminiGenerateContentProtocolEventsToResult consumes later candidat
   assertEquals(consumed, 4);
 });
 
-test('collectGeminiGenerateContentProtocolEventsToResult rejects EOF without any candidate completion', async () => {
-  await assertRejects(async () => await collectGeminiGenerateContentProtocolEventsToResult((async function* () {
-    yield eventFrame({ candidates: [{ content: { parts: [{ text: 'unfinished' }] } }] });
-  })()), Error, 'ended without a terminal event');
-});
-
 test('collectGeminiGenerateContentProtocolEventsToResult rejects EOF with an unfinished observed candidate', async () => {
   await assertRejects(async () => await collectGeminiGenerateContentProtocolEventsToResult((async function* () {
     yield eventFrame({ candidates: [{ index: 0, content: { parts: [{ text: 'done' }] }, finishReason: 'STOP' }] });

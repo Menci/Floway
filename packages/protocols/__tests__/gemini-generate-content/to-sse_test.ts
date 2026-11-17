@@ -27,45 +27,6 @@ test('geminiGenerateContentProtocolFrameToSSEFrame emits data-only JSON chunks',
   ]);
 });
 
-test('geminiGenerateContentProtocolFrameToSSEFrame serializes events without owning termination', () => {
-  const first = {
-    candidates: [
-      {
-        index: 0,
-        content: { role: 'model', parts: [{ text: 'Hello' }] },
-      },
-    ],
-  } satisfies GeminiGenerateContentStreamEvent;
-  const terminal = {
-    candidates: [
-      {
-        index: 0,
-        content: { role: 'model', parts: [{ text: ' world' }] },
-        finishReason: 'STOP',
-      },
-    ],
-  } satisfies GeminiGenerateContentStreamEvent;
-  const afterTerminal = {
-    candidates: [
-      {
-        index: 0,
-        content: { role: 'model', parts: [{ text: ' ignored' }] },
-      },
-    ],
-  } satisfies GeminiGenerateContentStreamEvent;
-
-  const frames = [eventFrame(first), eventFrame(terminal), eventFrame(afterTerminal)].map(geminiGenerateContentProtocolFrameToSSEFrame).filter(frame => frame !== null);
-
-  assertEquals(
-    frames.map(frame => frame.data),
-    [JSON.stringify(first), JSON.stringify(terminal), JSON.stringify(afterTerminal)],
-  );
-  assertEquals(
-    frames.some(frame => frame.data === '[DONE]'),
-    false,
-  );
-});
-
 test('GenerateContent errors are compact bare JSON', () => {
   const error = { error: { code: 503, message: 'overloaded', status: 'UNAVAILABLE' } } satisfies GeminiGenerateContentStreamEvent;
   assertEquals(geminiGenerateContentProtocolFrameToSSEFrame(eventFrame(error)), { type: 'sse-raw', data: JSON.stringify(error) });

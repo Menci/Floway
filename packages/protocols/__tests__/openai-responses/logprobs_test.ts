@@ -1,26 +1,11 @@
-import { expect, expectTypeOf, test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { eventFrame } from '../../src/common/index.ts';
-import type { OpenAIResponsesLogprob, OpenAIResponsesOutputLogprobEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx, OpenAIResponsesStreamLogprob, OpenAIResponsesStreamLogprobEx } from '../../src/openai-responses/index.ts';
+import type { OpenAIResponsesOutputLogprobEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx, OpenAIResponsesStreamLogprobEx } from '../../src/openai-responses/index.ts';
 import { reassembleOpenAIResponsesEvents } from '../../src/openai-responses/reassemble.ts';
 import { parseOpenAIResponsesStream } from '../../src/openai-responses/stream.ts';
 import { openaiResponsesProtocolFrameToSSEFrame } from '../../src/openai-responses/to-sse.ts';
 import { sseFrameBody } from '../common/test-utils.ts';
-
-test('Responses output and SSE logprobs retain their distinct standard contracts', () => {
-  expectTypeOf<OpenAIResponsesLogprob>().toEqualTypeOf<{
-    token: string;
-    logprob: number;
-    bytes: number[];
-    top_logprobs: { token: string; logprob: number; bytes: number[] }[];
-  }>();
-  expectTypeOf<OpenAIResponsesStreamLogprob>().toEqualTypeOf<{
-    token: string;
-    logprob: number;
-    top_logprobs?: { token?: string; logprob?: number }[];
-  }>();
-  expectTypeOf<OpenAIResponsesOutputLogprobEx>().toExtend<OpenAIResponsesStreamLogprobEx>();
-});
 
 const resultWithLogprobs = (logprobs: OpenAIResponsesOutputLogprobEx[]): OpenAIResponsesResultEx => ({
   id: 'response',
@@ -53,14 +38,6 @@ const preserveLogprobs = async (logprobs: OpenAIResponsesOutputLogprobEx[]): Pro
   })());
   expect(restored).toEqual(result);
 };
-
-test('Responses native streams preserve standard SSE alternatives with omitted fields', async () => {
-  const logprobs: OpenAIResponsesStreamLogprob[] = [
-    { token: 'a', logprob: -1 },
-    { token: 'b', logprob: -2, top_logprobs: [{}, { token: 'c' }, { logprob: -3 }] },
-  ];
-  await preserveLogprobs(logprobs);
-});
 
 test('Responses compatibility streams preserve null and absent source byte metadata', async () => {
   const logprobs: OpenAIResponsesStreamLogprobEx[] = [

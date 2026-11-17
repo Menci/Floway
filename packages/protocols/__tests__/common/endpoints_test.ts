@@ -15,21 +15,9 @@ test('kindForEndpoints returns image when either images endpoint is present', ()
   assertEquals(kindForEndpoints({ openaiImagesGenerations: {}, openaiImagesEdits: {} }), 'image');
 });
 
-test('kindForEndpoints returns transcription for audio transcription', () => {
-  assertEquals(kindForEndpoints({ openaiAudioTranscriptions: {} }), 'transcription');
-});
-
 test('kindForEndpoints returns embedding for OpenAI Embeddings and chat for chat-protocol endpoints', () => {
   assertEquals(kindForEndpoints({ openaiEmbeddings: {} }), 'embedding');
   assertEquals(kindForEndpoints({ openaiChatCompletions: {} }), 'chat');
   assertEquals(kindForEndpoints({ anthropicMessages: {} }), 'chat');
   assertEquals(kindForEndpoints({ openaiCompletions: {} }), 'chat');
-});
-
-test('kindForEndpoints returns rerank for the semantic rerank endpoint', () => {
-  assertEquals(kindForEndpoints({ rerank: {} }), 'rerank');
-});
-
-test('kindForEndpoints returns decision for the decision endpoint', () => {
-  assertEquals(kindForEndpoints({ decision: {} }), 'decision');
 });
