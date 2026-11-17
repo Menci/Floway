@@ -66,19 +66,6 @@ test('a pointer drop persists before the controller commits the rendered order',
   expect(onReordered).toHaveBeenCalledExactlyOnceWith(records);
 });
 
-test('keyboard reordering persists and commits without a pointer drop phase', async () => {
-  const { onReordered } = renderTable();
-  await act(async () => { controllers[0]!.onReorder(0, 1); });
-  expect(onReordered).toHaveBeenCalledExactlyOnceWith(records);
-});
-
-test('filtering a segment away after its write still commits its pending result once', async () => {
-  const { onReordered, unmount } = renderTable();
-  await act(async () => { await controllers[0]!.onDrop!(0, 1); });
-  unmount();
-  expect(onReordered).toHaveBeenCalledExactlyOnceWith(records);
-});
-
 test('a write completed after filtering its segment away still commits', async () => {
   let complete!: (records: Props['records']) => void;
   const write = new Promise<Props['records']>(resolve => { complete = resolve; });

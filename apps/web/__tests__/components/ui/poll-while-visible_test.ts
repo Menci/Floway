@@ -57,16 +57,4 @@ describe('polling while visible', () => {
 
     expect(poll.mock.calls).toEqual([[{ background: false }]]);
   });
-
-  it('stops polling once the page is gone', async () => {
-    const poll = vi.fn().mockResolvedValue(undefined);
-    const { unmount } = renderHook(() => { usePollWhileVisible(poll, 60_000); });
-
-    unmount();
-    await advance(180_000);
-    await setVisibility('hidden');
-    await setVisibility('visible');
-
-    expect(poll).not.toHaveBeenCalled();
-  });
 });

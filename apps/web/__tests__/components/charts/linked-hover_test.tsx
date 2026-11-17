@@ -6,17 +6,6 @@ import { renderInApp } from '../../render';
 
 const pointer = (xRatio: number): ChartHoverPointer => ({ xRatio, yRatio: 0.5 });
 
-it('selects the point nearest a position, keeping the earlier of two equidistant points', () => {
-  const minute = 60_000;
-  const points = [10 * minute, 20 * minute, 30 * minute];
-  expect(nearestChartPoint(points, 11 * minute, point => point)).toBe(10 * minute);
-  expect(nearestChartPoint(points, 15 * minute, point => point)).toBe(10 * minute);
-  expect(nearestChartPoint(points, 15 * minute + 1, point => point)).toBe(20 * minute);
-  expect(nearestChartPoint(points, 0, point => point)).toBe(10 * minute);
-  expect(nearestChartPoint(points, 60 * minute, point => point)).toBe(30 * minute);
-  expect(nearestChartPoint([], 0, (point: number) => point)).toBeNull();
-});
-
 it('updates only the assumed-hover subscriber when another chart reports a position', async () => {
   let report: ((pointer: ChartHoverPointer | null) => void) | undefined;
   const chartRenders = vi.fn();

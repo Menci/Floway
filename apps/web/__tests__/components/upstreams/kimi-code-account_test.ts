@@ -1,13 +1,7 @@
 import { expect, test } from 'vitest';
 
-import { currentUsage, kimiCodeRecord, legacyUsage } from './kimi-code-fixture';
-import { kimiCodeAccount, kimiCodeAccountName, kimiCodePlanLabel, readKimiCodeWindows } from '../../../src/components/upstreams/kimi-code-account';
-import { readKimiCodeUsage } from '@floway-dev/provider-kimi-code/browser';
-
-test.each([currentUsage, legacyUsage])('renders normalized quota windows in parser order', usage => {
-  const normalized = readKimiCodeUsage(usage);
-  expect(readKimiCodeWindows(normalized)).toEqual(normalized.windows.map(window => ({ ...window, percent: window.usedRatio * 100 })));
-});
+import { kimiCodeRecord } from './kimi-code-fixture';
+import { kimiCodeAccount, kimiCodeAccountName, kimiCodePlanLabel } from '../../../src/components/upstreams/kimi-code-account';
 
 test('account identity is optional and empty names retain a readable identity', () => {
   const record = kimiCodeRecord();

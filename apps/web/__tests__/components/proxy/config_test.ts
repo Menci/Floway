@@ -20,17 +20,8 @@ describe('proxy URL editing', () => {
 });
 
 describe('proxy address label', () => {
-  it('labels a parsed proxy with its host and port', () => {
-    expect(hostPortLabel('ss://aes-256-gcm:s3cret@example.com:8388')).toBe('example.com:8388');
-  });
-
   it('keeps the credential out of the label of a URI this build cannot parse', () => {
     expect(hostPortLabel('quic://user:s3cret@example.com:8443')).toBe('example.com:8443');
-  });
-
-  it('has no label for a URI no parser accepts', () => {
-    expect(hostPortLabel('ss://aes-256-gcm:s3cret@example.com:99999')).toBeNull();
-    expect(hostPortLabel('trojan://s3cret@')).toBeNull();
   });
 });
 

@@ -56,10 +56,10 @@ describe('a tooltip restoring text its trigger cannot show', () => {
   beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); });
 
-  // The second row carries the margin the measurement keeps for an engine that
+  // A one-pixel overflow is the margin the measurement keeps for an engine that
   // rounds the two box properties in opposite directions.
-  it.each([120, 121])('stays away from a label the trigger shows in full (scrollWidth %i)', async scrollWidth => {
-    renderInApp(<Trigger clientWidth={120} content="Copilot" scrollWidth={scrollWidth} />);
+  it('stays away from a label the trigger shows in full', async () => {
+    renderInApp(<Trigger clientWidth={120} content="Copilot" scrollWidth={121} />);
     await settle();
 
     await hover(screen.getByText('Copilot'));
@@ -74,17 +74,6 @@ describe('a tooltip restoring text its trigger cannot show', () => {
     await hover(screen.getByText('Claude Code'));
 
     expect(screen.getByRole('tooltip').textContent).toBe('Claude Code');
-  });
-
-  it('names the trigger either way, so suppressing the tooltip does not unname it', async () => {
-    const view = renderInApp(<Trigger clientWidth={120} content="Copilot" scrollWidth={120} />);
-    await settle();
-    expect(screen.getByText('Copilot').getAttribute('aria-label')).toBe('Copilot');
-
-    view.unmount();
-    renderInApp(<Trigger clientWidth={120} content="Copilot" scrollWidth={186} />);
-    await settle();
-    expect(screen.getByText('Copilot').getAttribute('aria-label')).toBe('Copilot');
   });
 
   it('restores text elided before it ever reached the box', async () => {

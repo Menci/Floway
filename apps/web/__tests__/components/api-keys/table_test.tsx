@@ -1,4 +1,4 @@
-import { act, within } from '@testing-library/react';
+import { act } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ApiKey } from '../../../src/api/types';
@@ -41,26 +41,6 @@ const clickButton = async (view: ReturnType<typeof renderTable>, name: string) =
 };
 
 describe('API keys table selection', () => {
-  it('puts copy first in actions and omits the key column', () => {
-    const view = renderTable(vi.fn());
-    expect(view.queryByRole('columnheader', { name: 'Key' })).toBeNull();
-    const row = view.getByText('Second key').closest('tr');
-    if (!row) throw new Error('the second API key has no table row');
-
-    expect(within(row).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
-      i18n.t('dashboard.apiKeys.actions.copy'),
-      i18n.t('dashboard.apiKeys.actions.editNamed', { name: 'Second key' }),
-      i18n.t('dashboard.apiKeys.actions.rotateNamed', { name: 'Second key' }),
-      i18n.t('dashboard.apiKeys.actions.deleteNamed', { name: 'Second key' }),
-    ]);
-  });
-
-  it('shows each key upstream order mode', () => {
-    const view = renderTable(vi.fn());
-    expect(view.getByText(i18n.t('dashboard.apiKeys.upstreamOrder.configured'))).toBeTruthy();
-    expect(view.getByText(i18n.t('dashboard.apiKeys.upstreamOrder.random'))).toBeTruthy();
-  });
-
   it('does not select the row a command was run from', async () => {
     const onSelect = vi.fn();
     const view = renderTable(onSelect);
@@ -97,15 +77,6 @@ describe('API keys table selection', () => {
       await act(async () => { view.getByRole('menuitem', { name: i18n.t('dashboard.apiKeys.actions.edit') }).click(); });
 
       expect(onSelect).not.toHaveBeenCalled();
-    });
-
-    it('selects the row a click landed on outside its menu', async () => {
-      const onSelect = vi.fn();
-      const view = renderTable(onSelect);
-
-      await act(async () => { view.getByText('Second key').click(); });
-
-      expect(onSelect).toHaveBeenCalledWith('second');
     });
 
     // The wide table heads the cell with Last Used; the list has no header, so

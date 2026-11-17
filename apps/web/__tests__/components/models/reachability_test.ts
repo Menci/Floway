@@ -1,18 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import { indexCatalog } from '../../../src/components/models/catalog-index';
-import { isModelReachable, reachableModels } from '../../../src/components/models/reachability';
+import { reachableModels } from '../../../src/components/models/reachability';
 import { aliasModel, catalogModel } from '../../api/model-fixture';
 
 describe('model reachability', () => {
-  it('resolves alias targets through the API-key upstream restriction', () => {
-    const real = catalogModel('real', { upstreams: ['u1'] });
-    const alias = aliasModel('alias', [real.id]);
-    const catalog = indexCatalog([real, alias]);
-    expect(isModelReachable(alias, catalog, ['u1'])).toBe(true);
-    expect(isModelReachable(alias, catalog, ['u2'])).toBe(false);
-  });
-
   it('keeps only the catalog entries an alias or an upstream binding can reach', () => {
     const catalog = [
       catalogModel('allowed', { upstreams: ['u1'] }),

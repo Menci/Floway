@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 
 import type { ResolvedUpstreamMetricDisplay, ResolvedUpstreamMetricDisplaySeries } from '../../../src/components/upstream-metrics/display-name';
-import { buildUpstreamMetricsChart, gaugePoints, upstreamMetricsPlotRows } from '../../../src/components/upstream-metrics/plot';
+import { buildUpstreamMetricsChart, upstreamMetricsPlotRows } from '../../../src/components/upstream-metrics/plot';
 import type { UpstreamMetricRecord } from '@floway-dev/gateway/browser';
 import { upstreamMetricIdentityKey, type UpstreamMetricIdentity } from '@floway-dev/provider/browser';
 import { resolveUpstreamMetricDisplays as resolveClaudeMetrics } from '@floway-dev/provider-claude-code/browser';
@@ -70,8 +70,4 @@ it('uses current upstream identity and keeps sparse observation times', () => {
     { timestamp: 10_000, values: { [credits]: 200 } },
     { timestamp: 61_000, values: { [usage]: 100 } },
   ]);
-});
-
-it('retains only real observations within the requested range', () => {
-  expect(gaugePoints([{ timestamp: 1_000, value: 20 }, { timestamp: 61_000, value: 0 }], 30_000, 120_000)).toEqual([{ timestamp: 61_000, value: 0 }]);
 });

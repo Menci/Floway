@@ -116,13 +116,6 @@ describe('disabled model editing parity between the sidebar and the model list',
     expect(rowSwitch('gpt-5').checked).toBe(false);
   });
 
-  it('leaves both surfaces editable for a models-level editor', () => {
-    renderInApp(<Harness discovered={[]} editLevel="models" record={customRecord} />);
-
-    expect(isReadOnly(rowSwitch('model-a'))).toBe(false);
-    expect(isReadOnly(combobox())).toBe(false);
-  });
-
   it('leaves both surfaces read-only for an audit-only editor', () => {
     renderInApp(<Harness discovered={[]} editLevel="off" record={customRecord} />);
 

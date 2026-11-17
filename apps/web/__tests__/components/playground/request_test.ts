@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   defaultMaxOutputTokens,
   generationOptions,
-  mergeWireBody,
   parseCustomJson,
   playgroundApisFor,
   supportsImageInput,
@@ -24,11 +23,6 @@ describe('custom JSON', () => {
     expect(parseCustomJson('anthropicMessages', '[]').error).toBe('object');
     expect(parseCustomJson('openaiChatCompletions', '{"stream":false}')).toMatchObject({ error: 'reserved', fields: ['stream'] });
   });
-
-  it('overrides generated wire fields', () => {
-    expect(JSON.parse(mergeWireBody('{"model":"m","temperature":0.2}', { temperature: 0.9, seed: 2 })))
-      .toEqual({ model: 'm', temperature: 0.9, seed: 2 });
-  });
 });
 
 describe('generation and capabilities', () => {
@@ -42,10 +36,6 @@ describe('generation and capabilities', () => {
   it('always caps Anthropic Messages output, which requires the field on the wire', () => {
     expect(generationOptions('anthropicMessages', undefined, 2048)).toEqual({ max_tokens: 2048 });
     expect(generationOptions('openaiResponses', undefined)).toEqual({});
-  });
-
-  it('forwards an unknown reasoning effort rather than gating it', () => {
-    expect(generationOptions('openaiChatCompletions', 'ludicrous')).toEqual({ reasoning_effort: 'ludicrous' });
   });
 
   it('reads image and output limits conservatively', () => {

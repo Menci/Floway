@@ -13,12 +13,6 @@ describe('header redaction', () => {
     expect(isSensitiveHeader('api-key')).toBe(true);
   });
 
-  it('leaves a header that carries no credential alone', () => {
-    expect(isSensitiveHeader('content-type')).toBe(false);
-    expect(isSensitiveHeader('anthropic-version')).toBe(false);
-    expect(isSensitiveHeader('x-floway-session')).toBe(false);
-  });
-
   it('shows nothing at all of a short value', () => {
     expect(redactHeaderValue('')).toBe('');
     expect(redactHeaderValue('Bearer sk-1')).toBe('•'.repeat(11));

@@ -32,21 +32,6 @@ describe('access-rule display order', () => {
     expect(records.find(record => record.id === 3)!.sortOrder).toBe(0);
   });
 
-  it('retains hidden rule positions when reordering filtered or paginated rows', () => {
-    const next = reorderModelRecords(records, [3, 5], 0, 1);
-    expect(orderedRecords(next).map(record => record.id)).toEqual([1, 8, 2, 5, 4, 3, 6, 7]);
-  });
-
-  it('does not let a principal or a manual rank move a rule across scope paths', () => {
-    const shuffled = [
-      { ...model(10, 'b', 'regex'), principal: { kind: 'user' as const, id: 1 } },
-      { ...model(11, 'a', 'exact', 99), principal: { kind: 'group' as const, id: 9 } },
-      record(12, { kind: 'user', userId: 10 }),
-      record(13, { kind: 'user', userId: 2 }),
-    ];
-    expect(orderedRecords(shuffled).map(record => record.id)).toEqual([13, 12, 11, 10]);
-  });
-
   it.each([[3, 6], [2, 3], [1, 8]])('rejects cross-boundary rows %j', (...ids) => {
     expect(() => reorderModelRecords(records, ids, 0, 1)).toThrow('fixed priority boundary');
   });

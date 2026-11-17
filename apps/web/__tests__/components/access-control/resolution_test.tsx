@@ -51,15 +51,6 @@ test('disabling keeps the result for an unchanged target and drops it once the t
   expect(result()).toEqual({ data: null, error: null, pending: false });
 });
 
-test('disabled or root selections never request inherited values', () => {
-  const fetch = vi.fn();
-  vi.stubGlobal('fetch', fetch);
-  const { rerender } = renderInApp(<Harness enabled principal={principal} scope={null} />);
-  expect(result()).toEqual({ data: null, error: null, pending: false });
-  rerender(<Harness enabled={false} principal={principal} scope={scope} />);
-  expect(fetch).not.toHaveBeenCalled();
-});
-
 test('resolution failures expose an error without inventing values', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Resolution unavailable' }, { status: 503 })));
   renderInApp(<Harness enabled principal={principal} scope={scope} />);

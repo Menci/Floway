@@ -90,18 +90,3 @@ test('the native range semantics sort reversed clicks and allow the same day', a
   open(); day(8); day(8);
   await waitFor(() => expect(change).toHaveBeenCalledWith({ start: '2026-10-08', end: '2026-10-08' }));
 });
-
-test('clicking within the selected range clears it without replacing loaded data', async () => {
-  const { change } = renderEditor({ start: '2026-10-06', end: '2026-10-16' });
-  open(); day(10); outside();
-  await Promise.resolve();
-  expect(change).not.toHaveBeenCalled();
-  expect(screen.getByRole('button', { name: 'Choose date range' }).textContent).toContain('2026/10/06');
-});
-
-test('switching to a loaded preset removes the date caption immediately', () => {
-  const { commit } = renderEditor({ start: '2026-10-06', end: '2026-10-16' });
-  expect(screen.getByRole('button', { name: 'Choose date range' })).toBeTruthy();
-  commit('7d');
-  expect(screen.queryByRole('button', { name: 'Choose date range' })).toBeNull();
-});

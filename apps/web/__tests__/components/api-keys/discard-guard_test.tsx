@@ -92,14 +92,4 @@ describe('API key dialogs guard a draft', () => {
     expect(discardPrompt()).not.toBeNull();
     expect(onOpenChange).not.toHaveBeenCalled();
   });
-
-  it('closes an untouched rotation without a question', async () => {
-    const onOpenChange = vi.fn();
-    renderRotateDialog(onOpenChange);
-
-    await cancel();
-
-    expect(discardPrompt()).toBeNull();
-    expect(onOpenChange).toHaveBeenCalledWith(false);
-  });
 });

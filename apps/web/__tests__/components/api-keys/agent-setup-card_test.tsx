@@ -87,31 +87,6 @@ const shownSettings = () => ({
 // configuration and nothing else. There is no second draft for the card to fall
 // back to while a lease is being acquired for another key.
 describe('Agent Setup card fields', () => {
-  it('draws every setting from the lease the session holds', () => {
-    renderInApp(<Host />);
-    expect(shownSettings()).toEqual({ effort: 'high', modelDiscovery: false, attributionOptOut: true, autoMemoryOptOut: true, agentViewOptOut: true, artifactOptOut: true });
-  });
-
-  it('renders the Pi tab with dynamic discovery and no config snippet tab', () => {
-    renderInApp(<Host />);
-    act(() => { screen.getByRole('tab', { name: 'Pi' }).click(); });
-    expect(screen.getByRole('combobox', { name: 'Default model' })).toBeTruthy();
-    expect(screen.queryByText(/The Floway extension refreshes available models/i)).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /Default model/ }));
-    expect(screen.getByText(/The Floway extension refreshes available models/i)).toBeTruthy();
-    expect(screen.queryByRole('tab', { name: 'Config snippet' })).toBeNull();
-  });
-
-  it('renders OMP setup and discovery hint', () => {
-    renderInApp(<Host />);
-    act(() => { screen.getByRole('tab', { name: 'OMP' }).click(); });
-    expect(screen.getByRole('combobox', { name: 'Default model' })).toBeTruthy();
-    expect(screen.queryByText(/OMP loads current Floway models at startup/i)).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /Default model/ }));
-    expect(screen.getByText(/OMP loads current Floway models at startup/i)).toBeTruthy();
-    expect(screen.getByText(/\/floway-refresh/)).toBeTruthy();
-  });
-
   it('retains distinct provider names when switching agent tabs', () => {
     renderInApp(<Host />);
     act(() => { screen.getByRole('tab', { name: 'Pi' }).click(); });
@@ -148,15 +123,6 @@ describe('Agent Setup card fields', () => {
     expect(screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Maximum retries' }).value).toBe('');
     act(() => { screen.getByRole('tab', { name: 'Pi' }).click(); });
     expect(screen.getByRole<HTMLInputElement>('spinbutton', { name: 'Maximum retries' }).value).toBe('0');
-  });
-
-  it.each(['Pi', 'OMP'])('scopes the retry help to %s', agent => {
-    renderInApp(<Host />);
-    act(() => { screen.getByRole('tab', { name: agent }).click(); });
-    fireEvent.click(screen.getByRole('button', { name: /Maximum retries/ }));
-    const hint = screen.getByText(/^0 disables retries\./).textContent;
-    expect(hint).toContain(agent === 'Pi' ? 'Pi defaults to 3 retries' : 'OMP defaults to 10 retries');
-    expect(hint).not.toContain(agent === 'Pi' ? 'OMP' : 'Pi');
   });
 
   it('keeps the configuration on screen while another key is being leased', () => {

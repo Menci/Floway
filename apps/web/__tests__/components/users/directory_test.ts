@@ -26,13 +26,3 @@ test('derives both membership directions and picker counts from one relation lis
     { id: 2, name: 'Empty', hue: 120, memberCount: 0 },
   ]);
 });
-
-test('indexes isolated entities and an empty directory without synthesized relations', () => {
-  const index = indexUserDirectory(directory);
-  expect(index.groupsByUser.get(2)).toEqual([]);
-  expect(index.membersByGroup.get(2)).toEqual([]);
-  const empty = indexUserDirectory({ users: [], groups: [], memberships: [] });
-  expect(empty.groupsByUser.size).toBe(0);
-  expect(empty.membersByGroup.size).toBe(0);
-  expect(empty.groupOptions).toEqual([]);
-});

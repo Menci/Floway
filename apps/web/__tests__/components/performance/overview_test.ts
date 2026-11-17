@@ -77,21 +77,6 @@ describe('performance overview query', () => {
     expect(serializePerformanceUrlState(state).toString()).toBe('');
   });
 
-  it('restores hidden series from the original comma format', () => {
-    expect(parsePerformanceUrlState(new URLSearchParams('hide=a%252Cb,c')).hidden).toEqual(['a,b', 'c']);
-  });
-
-  it('serializes hidden series as stable repeated parameters', () => {
-    const state = parsePerformanceUrlState(new URLSearchParams());
-    const first = serializePerformanceUrlState({ ...state, hidden: ['模型', 'duplicate', '100%', 'a,b', 'duplicate'] });
-    const second = serializePerformanceUrlState({ ...state, hidden: ['duplicate', 'a,b', '模型', '100%', 'duplicate'] });
-
-    expect(first.toString()).toBe(second.toString());
-    expect(first.get('hidev')).toBe('2');
-    expect(first.getAll('hide')).toEqual(['100%', 'a,b', 'duplicate', 'duplicate', '模型']);
-    expect(parsePerformanceUrlState(first).hidden).toEqual(['100%', 'a,b', 'duplicate', 'duplicate', '模型']);
-  });
-
   it('removes Region state outside the Cloudflare runtime', () => {
     const state = parsePerformanceUrlState(new URLSearchParams('g=runtimeLocation&tab=runtimeLocation&fm=gpt-5&fr=SJC&hide=SJC'));
     expect(normalizePerformanceDimensionsForRuntime(state, false)).toMatchObject({

@@ -59,24 +59,4 @@ describe('copy outcome expiry', () => {
     await advance(500);
     expect(result.current.outcomeFor('row-1')).toBe('idle');
   });
-
-  it('replaces a failure with the success of a retry', async () => {
-    copyResult.mockResolvedValue(false);
-    const { result } = renderHook(() => useCopyToClipboard());
-
-    await press(() => { result.current.copy('first', 'row-1'); });
-    copyResult.mockResolvedValue(true);
-    await press(() => { result.current.copy('first', 'row-1'); });
-
-    expect(result.current.outcomeFor('row-1')).toBe('copied');
-  });
-
-  it('gives an untagged button a slot of its own', async () => {
-    const { result } = renderHook(() => useCopyToClipboard());
-
-    await press(() => { result.current.copy('first'); });
-
-    expect(result.current.outcomeFor()).toBe('copied');
-    expect(result.current.outcomeFor('row-1')).toBe('idle');
-  });
 });

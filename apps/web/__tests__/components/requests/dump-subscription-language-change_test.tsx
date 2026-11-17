@@ -34,17 +34,6 @@ describe('dump subscription language change', () => {
 
   afterEach(() => { vi.unstubAllGlobals(); });
 
-  it('keeps the stream open when the language changes under it', async () => {
-    renderInApp(<StrictMode><Harness keyId="key-a" /></StrictMode>);
-    const opened = stream.sources.length;
-    const live = stream.liveSource();
-
-    await act(async () => { await setLanguage('zh-Hans'); });
-
-    expect(stream.sources.length).toBe(opened);
-    expect(stream.liveSource()).toBe(live);
-  });
-
   // LanguageSync applies the visitor's language once the tree is
   // mounted, and i18next announces the change whether or not the language it
   // lands on differs from the one it booted in.

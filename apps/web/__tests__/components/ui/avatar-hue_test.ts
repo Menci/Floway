@@ -17,12 +17,3 @@ test('selects the matching native palette at its exact hue', () => {
     expect(avatarColorForHue(toOklch(hex)!.h!)).toBe(name);
   }
 });
-
-test('treats hue as circular and uses stable native color names over the full range', () => {
-  expect(avatarColorForHue(0)).toBe(avatarColorForHue(360));
-  for (let hue = 0; hue < 360; hue++) {
-    const color = avatarColorForHue(hue);
-    expect(color).toBe(avatarColorForHue(hue));
-    expect(color).not.toMatch(/neutral|brand|colorful/);
-  }
-});

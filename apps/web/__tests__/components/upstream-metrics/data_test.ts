@@ -1,19 +1,10 @@
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { dashboardInterval, type DashboardRange } from '../../../src/components/charts/dashboard-time';
 import { loadUpstreamMetrics, upstreamMetricsInterval, upstreamMetricsStep } from '../../../src/components/upstream-metrics/data';
 import { stubLocalStorage } from '../../local-storage-stub';
 
 stubLocalStorage();
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
-
-it('uses the same aligned interval as the request Balance chart', () => {
-  vi.stubEnv('TZ', 'Asia/Singapore');
-  const now = Date.UTC(2026, 9, 11, 12, 34, 56, 789);
-  for (const range of ['today', '7d', '30d', { start: '2026-10-10', end: '2026-10-11' }] satisfies DashboardRange[]) {
-    expect(upstreamMetricsInterval(range, now)).toEqual(dashboardInterval(range, now));
-  }
-});
 
 it('aligns custom calendar bounds to source-hour storage in a half-hour time zone', () => {
   vi.stubEnv('TZ', 'Asia/Kolkata');

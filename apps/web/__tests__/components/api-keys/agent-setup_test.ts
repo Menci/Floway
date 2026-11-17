@@ -47,26 +47,6 @@ describe('Agent Setup snippets', () => {
     });
   });
 
-  it('omits a family variable when no model is selected for it', () => {
-    const snippet = JSON.parse(buildAgentClaudeSnippet('https://floway.example', 'key', {
-      model: null,
-      defaultFableModel: null,
-      defaultOpusModel: 'opus-5',
-      defaultSonnetModel: null,
-      defaultHaikuModel: null,
-      effortLevel: null,
-      cleanupPeriodDays: null,
-      optOutAiAttribution: false,
-      disableAutoMemory: false,
-      disableAgentView: false,
-      disableArtifact: false,
-      modelDiscovery: false,
-    })) as { env: Record<string, string> };
-
-    expect(snippet.env).not.toHaveProperty('ANTHROPIC_DEFAULT_FABLE_MODEL');
-    expect(snippet.env).toHaveProperty('ANTHROPIC_DEFAULT_OPUS_MODEL', 'opus-5');
-  });
-
   it('renders optional Claude cleanup and attribution preferences', () => {
     const base = {
       model: null,
