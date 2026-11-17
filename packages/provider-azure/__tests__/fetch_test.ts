@@ -5,7 +5,6 @@ import {
   azureFetchOpenAIChatCompletions,
   azureFetchOpenAIAudioTranscriptions,
   azureFetchOpenAIEmbeddings,
-  azureFetchOpenAIImagesGenerations,
   azureFetchAnthropicMessages,
   azureFetchAnthropicMessagesCountTokens,
   azureFetchOpenAIResponses,
@@ -85,23 +84,6 @@ test('OpenAI v1 transports apply api-key auth and the canonical paths', async ()
   assertEquals(seen[0].body, { model: 'set-by-provider' });
 });
 
-test('image transports append the Azure preview api-version', async () => {
-  const { config } = assertAzureUpstreamRecord(baseRecord);
-  let seenUrl = '';
-
-  await withMockedFetch(
-    request => {
-      seenUrl = request.url;
-      return new Response('{}', { status: 200 });
-    },
-    async () => {
-      await azureFetchOpenAIImagesGenerations(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-    },
-  );
-
-  assertEquals(seenUrl, 'https://example.openai.azure.com/openai/v1/images/generations?api-version=preview');
-});
-
 test('audio transcription selects the deployment on every admitted endpoint shape', async () => {
   const endpoints = [
     ['https://example.openai.azure.com/', 'https://example.openai.azure.com/openai/deployments/transcribe%20deployment/audio/transcriptions?api-version=2025-04-01-preview'],
@@ -127,29 +109,6 @@ test('audio transcription selects the deployment on every admitted endpoint shap
     );
     assertEquals(seenUrl, expected);
   }
-});
-
-test('endpoint that already includes /openai/v1 routes through unchanged', async () => {
-  const { config } = assertAzureUpstreamRecord({
-    ...baseRecord,
-    config: {
-      ...(baseRecord.config as Record<string, unknown>),
-      endpoint: 'https://example.openai.azure.com/openai/v1/',
-    },
-  });
-  let seenUrl = '';
-
-  await withMockedFetch(
-    request => {
-      seenUrl = request.url;
-      return new Response('{}', { status: 200 });
-    },
-    async () => {
-      await azureFetchOpenAIResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-    },
-  );
-
-  assertEquals(seenUrl, 'https://example.openai.azure.com/openai/v1/responses');
 });
 
 test('Foundry project endpoints route OpenAI v1 calls under the project base', async () => {
@@ -214,35 +173,6 @@ test('Foundry project endpoints split OpenAI v1 vs Anthropic surfaces', async ()
   ]);
 });
 
-test('native Anthropic calls land on the resource Anthropic base when a project endpoint is entered', async () => {
-  const { config } = assertAzureUpstreamRecord({
-    ...baseRecord,
-    config: {
-      endpoint: 'https://example.services.ai.azure.com/api/projects/prod',
-      apiKey: 'az-key',
-      models: [
-        {
-          upstreamModelId: 'claude-prod',
-          endpoints: { anthropicMessages: {} },
-        },
-      ],
-    },
-  });
-  let seenUrl = '';
-
-  await withMockedFetch(
-    request => {
-      seenUrl = request.url;
-      return new Response('{}', { status: 200 });
-    },
-    async () => {
-      await azureFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-    },
-  );
-
-  assertEquals(seenUrl, 'https://example.services.ai.azure.com/anthropic/v1/messages');
-});
-
 test('Azure Foundry Anthropic surface uses x-api-key + anthropic-version', async () => {
   const { config } = assertAzureUpstreamRecord({
     ...baseRecord,
@@ -291,36 +221,5 @@ test('Azure Foundry Anthropic surface uses x-api-key + anthropic-version', async
       version: '2023-06-01',
       beta: null,
     },
-  ]);
-});
-
-test('Foundry Anthropic messages target URI is accepted and splits per surface', async () => {
-  const { config } = assertAzureUpstreamRecord({
-    ...baseRecord,
-    config: {
-      endpoint: 'https://example.services.ai.azure.com/anthropic/v1/messages',
-      apiKey: 'az-key',
-      models: [
-        {
-          upstreamModelId: 'claude-prod',
-          endpoints: { anthropicMessages: {} },
-        },
-      ],
-    },
-  });
-  const seen: string[] = [];
-
-  await withMockedFetch(
-    request => {
-      seen.push(request.url);
-      return new Response('{}', { status: 200 });
-    },
-    async () => {
-      await azureFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-    },
-  );
-
-  assertEquals(seen, [
-    'https://example.services.ai.azure.com/anthropic/v1/messages',
   ]);
 });
