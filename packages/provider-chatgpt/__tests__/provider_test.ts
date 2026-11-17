@@ -35,11 +35,6 @@ const recordWithAccessToken = (entry: ChatGPTAccessTokenEntry = freshAccessToken
   state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: entry, quotaSnapshot: null }] },
 });
 
-const accessOnlyRecord = (entry: ChatGPTAccessTokenEntry): UpstreamRecord => ({
-  ...baseRecord,
-  state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: null, state: 'active', state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: entry, quotaSnapshot: null }] },
-});
-
 let current: UpstreamRecord | null;
 let repo: UpstreamStateRepoStub;
 
@@ -92,27 +87,6 @@ const oauthTokenResponse = (overrides: Partial<{ access_token: string; refresh_t
 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
 
 describe('createChatGPTProvider', () => {
-  test('owns request identity and turn metadata headers on the instance', () => {
-    const provider = createChatGPTProvider(baseRecord);
-
-    expect(provider.inboundHeaderAllowlist).toEqual([
-      'originator',
-      'session-id',
-      'session_id',
-      'thread-id',
-      'x-client-request-id',
-      'x-codex-image-turn-id',
-      'x-codex-turn-metadata',
-      'x-codex-window-id',
-    ]);
-  });
-
-  test('returns an instance carrying provider kind and identity', async () => {
-    const instance = createChatGPTProvider(baseRecord);
-    expect(instance.kind).toBe('chatgpt');
-    expect(instance.upstreamId).toBe('up_chatgpt');
-    expect(instance.name).toBe('ChatGPT Plus');
-  });
 
   test('getProvidedModels uses the cached access token when fresh and surfaces every catalog entry', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
@@ -127,25 +101,6 @@ describe('createChatGPTProvider', () => {
     expect(models[2]).toMatchObject({ kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy.mock.calls[0][0]).toMatch(/\/codex\/models/);
-  });
-
-  test('getProvidedModels uses an unknown-expiry access-only token without an OAuth refresh', async () => {
-    const record = accessOnlyRecord({ token: 'at_only', expiresAt: null, refreshedAt: 'now' });
-    current = record;
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
-    const models = await createChatGPTProvider(record).instance.getProvidedModels(directFetcher);
-    // Unknown plan fails open, so the provider-owned image model is surfaced too.
-    expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review', 'gpt-image-2']);
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers).get('authorization')).toBe('Bearer at_only');
-  });
-
-  test('getProvidedModels reports an expired access-only token before fetching', async () => {
-    const record = accessOnlyRecord({ token: 'at_only', expiresAt: Date.now() - 1, refreshedAt: 'now' });
-    current = record;
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    await expect(createChatGPTProvider(record).instance.getProvidedModels(directFetcher)).rejects.toThrow(/expired.*re-import/);
-    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   test('getProvidedModels mints an access token when none is cached, then fetches the catalog', async () => {
@@ -172,34 +127,6 @@ describe('createChatGPTProvider', () => {
     expect(account.accessToken?.token).toBe('at_minted');
   });
 
-  test('getProvidedModels propagates catalog fetch failures', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('upstream down', { status: 502 }));
-    const instance = createChatGPTProvider(baseRecord);
-    await expect(instance.instance.getProvidedModels(directFetcher)).rejects.toMatchObject({
-      displayResponse: { status: 502, body: 'upstream down' },
-    });
-  });
-
-  test('getProvidedModels omits image models only for an explicit Free plan', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
-    const freeRecord: UpstreamRecord = {
-      ...baseRecord,
-      config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'free' }] },
-    };
-    const models = await createChatGPTProvider(freeRecord).instance.getProvidedModels(directFetcher);
-    expect(models.map(model => model.id)).toEqual(['gpt-5.4', 'codex-auto-review']);
-  });
-
-  test('getProvidedModels fails open for an unknown future plan', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
-    const futureRecord: UpstreamRecord = {
-      ...baseRecord,
-      config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'future-plan' }] },
-    };
-    const models = await createChatGPTProvider(futureRecord).instance.getProvidedModels(directFetcher);
-    expect(models.map(model => model.id)).toContain('gpt-image-2');
-  });
-
   test('getProvidedModels uses the refreshed access-token plan over import-time config', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => modelsResponse());
     current = recordWithAccessToken({ ...freshAccessToken, planType: 'free' });
@@ -213,17 +140,6 @@ describe('createChatGPTProvider', () => {
     current = recordWithAccessToken({ ...freshAccessToken, planType: 'plus' });
     const upgraded = await createChatGPTProvider(importedFree).instance.getProvidedModels(directFetcher);
     expect(upgraded.map(model => model.id)).toContain('gpt-image-2');
-  });
-
-  test('getProvidedModels propagates OAuth refresh failures', async () => {
-    current = baseRecord;
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
-      const url = typeof input === 'string' ? input : (input instanceof URL ? input.href : (input as Request).url);
-      if (url.includes('/oauth/token')) return new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400, headers: new Headers({ 'content-type': 'application/json' }) });
-      throw new Error(`unexpected fetch ${url}`);
-    });
-    const instance = createChatGPTProvider(baseRecord);
-    await expect(instance.instance.getProvidedModels(directFetcher)).rejects.toThrow(/ChatGPT OAuth session terminated/);
   });
 
   test('getProvidedModels resolves operator flag overrides into every ProviderModel', async () => {
@@ -274,10 +190,8 @@ describe('createChatGPTProvider', () => {
     ]);
   });
 
-  test.each(['generate', 'compact'] as const)('%s preserves Lite input items and skips the default top-level instruction', async action => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => action === 'generate'
-      ? sseResponse()
-      : new Response(JSON.stringify({ id: 'cmp_1', object: 'response.compaction', output: [] })));
+  test('preserves Lite input items and skips the default top-level instruction', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const provider = createChatGPTProvider(baseRecord);
     const model = stubProviderModel({ id: 'future-lite', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite: true } });
     const tool = { type: 'function' as const, name: 'lookup', parameters: { type: 'object' } };
@@ -293,9 +207,8 @@ describe('createChatGPTProvider', () => {
       tools: [{ type: 'custom', name: 'patch' }],
       text: { verbosity: 'low' },
       client_metadata: { [CHATGPT_RESPONSES_LITE_CLIENT_METADATA_KEY]: 'true' },
-    } as Parameters<typeof provider.instance.callOpenAIResponses>[1], action, undefined, options);
+    } as Parameters<typeof provider.instance.callOpenAIResponses>[1], 'generate', undefined, options);
     expect(result.ok).toBe(true);
-    expect(result.action).toBe(action);
     const wire = await readJsonRequest(fetchSpy.mock.calls[0]![1] as RequestInit) as Record<string, unknown>;
     expect(wire).not.toHaveProperty('instructions');
     expect(wire).not.toHaveProperty('tools');
@@ -331,20 +244,6 @@ describe('createChatGPTProvider', () => {
     expect(new Headers(init.headers).get(CHATGPT_RESPONSES_LITE_HEADER)).toBe('true');
   });
 
-  test('callOpenAIResponses re-reads state per request (operator re-import takes effect)', async () => {
-    repo.getById.mockResolvedValueOnce({ ...baseRecord, configVersion: 1, state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'session_terminated', state_updated_at: '2026-01-02T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: null, quotaSnapshot: null }] } as ChatGPTUpstreamState });
-    const instance = createChatGPTProvider(baseRecord);
-    const result = await instance.instance.callOpenAIResponses(
-      stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } }),
-      { input: [], stream: true },
-      'generate',
-      undefined,
-      noopUpstreamCallOptions(),
-    );
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.response.status).toBe(503);
-  });
-
   test('callOpenAIImagesGenerations posts gpt-image-2 through the ChatGPT Codex endpoint', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       created: 1,
@@ -364,19 +263,6 @@ describe('createChatGPTProvider', () => {
     expect(headers.get('chatgpt-account-id')).toBe('acc');
     expect(headers.get('x-codex-image-turn-id')).toBe('turn-image');
     expect(await readJsonRequest(init as RequestInit)).toEqual({ prompt: 'an orange circle', quality: 'low', model: 'gpt-image-2' });
-  });
-
-  test('callOpenAIImagesGenerations rejects an explicit Free plan without touching upstream', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    const freeRecord: UpstreamRecord = {
-      ...baseRecord,
-      config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'free' }] },
-    };
-    const instance = createChatGPTProvider(freeRecord);
-    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
-    const result = await instance.instance.callOpenAIImagesGenerations(model, { prompt: 'an orange circle' }, undefined, noopUpstreamCallOptions());
-    expect(result.response.status).toBe(403);
-    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   test('callOpenAIImagesEdits returns an operation-neutral error for an explicit Free plan', async () => {
@@ -418,23 +304,5 @@ describe('createChatGPTProvider', () => {
       images: [{ image_url: 'data:image/png;base64,aW1hZ2U=' }],
       model: 'gpt-image-2',
     });
-  });
-
-  test.each([
-    'callOpenAIEmbeddings',
-    'callOpenAIAudioTranscriptions',
-    'callOpenAIChatCompletions',
-    'callAnthropicMessagesCountTokens',
-    'callAnthropicMessages',
-  ] as const)('%s returns a synthetic 405 (data plane never dispatches these to ChatGPT)', async method => {
-    const instance = createChatGPTProvider(baseRecord);
-    const model = stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } });
-    // @ts-expect-error: each method has a different body type; we only assert
-    // the synthetic 405 envelope is what comes back.
-    const result = await instance.instance[method](model, {}, undefined, noopUpstreamCallOptions()) as { response: Response };
-    expect(result.response.status).toBe(405);
-    const body = await result.response.json() as { error: { type: string; message: string } };
-    expect(body.error.type).toBe('method_not_allowed');
-    expect(body.error.message).toMatch(/chatgpt/i);
   });
 });

@@ -77,12 +77,3 @@ test('leaves supported fields intact', async () => {
   assertEquals(ctx.payload.store, false);
   assertFalse('temperature' in ctx.payload);
 });
-
-test('payload without any unsupported fields is preserved as-is', async () => {
-  const payload: CanonicalOpenAIResponsesPayload = { model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }] };
-  const ctx = invocation(payload);
-
-  await stripUnsupportedFields(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.payload, { model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }] });
-});

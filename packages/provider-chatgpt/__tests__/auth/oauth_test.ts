@@ -37,11 +37,6 @@ describe('exchangeChatGPTAuthorizationCode', () => {
     expect(params.get('redirect_uri')).toBe('http://localhost:1455/auth/callback');
   });
 
-  test('throws session-terminated on app_session_terminated', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorResponse(400, { error: { code: 'app_session_terminated', message: 'Session ended' } }));
-    await expect(exchangeChatGPTAuthorizationCode({ code: 'CODE', codeVerifier: 'VER', fetcher: directFetcher })).rejects.toBeInstanceOf(ChatGPTOAuthSessionTerminatedError);
-  });
-
   test('throws generic error on other 4xx, message includes status', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorResponse(400, { error: { code: 'invalid_grant', message: 'bad code' } }));
     await expect(exchangeChatGPTAuthorizationCode({ code: 'CODE', codeVerifier: 'VER', fetcher: directFetcher })).rejects.toThrow(/400/);

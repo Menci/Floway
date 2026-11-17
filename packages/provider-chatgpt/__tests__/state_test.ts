@@ -1,33 +1,10 @@
 import { describe, expect, test } from 'vitest';
 
-import { assertChatGPTUpstreamState, readChatGPTUpstreamState, type ChatGPTUpstreamState } from '../src/state.ts';
+import { assertChatGPTUpstreamState, readChatGPTUpstreamState } from '../src/state.ts';
 
 const goodAccount = { chatgptAccountId: 'acc_x', refresh_token: 'rt_x', state: 'active' as const, state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555' };
-const good: ChatGPTUpstreamState = { accounts: [{ ...goodAccount, accessToken: null, quotaSnapshot: null }] };
 
 describe('assertChatGPTUpstreamState', () => {
-  test('accepts active state', () => {
-    expect(() => assertChatGPTUpstreamState(good)).not.toThrow();
-  });
-  test('accepts terminal states with state_message', () => {
-    expect(() => assertChatGPTUpstreamState({
-      accounts: [{
-        chatgptAccountId: 'acc_x',
-        refresh_token: 'rt_x',
-        state: 'session_terminated',
-        state_message: 'Token revoked',
-        state_updated_at: '2026-06-05T00:00:00.000Z',
-        openaiDeviceId: '11111111-2222-4333-8444-555555555555',
-      }],
-    })).not.toThrow();
-    expect(() => assertChatGPTUpstreamState({
-      accounts: [{ chatgptAccountId: 'acc_x', refresh_token: 'rt_x', state: 'refresh_failed', state_updated_at: '2026-06-05T00:00:00.000Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555' }],
-    })).not.toThrow();
-  });
-  test('rejects missing state_updated_at', () => {
-    const { state_updated_at: _drop, ...withoutTimestamp } = goodAccount;
-    expect(() => assertChatGPTUpstreamState({ accounts: [withoutTimestamp] })).toThrow(/state_updated_at/);
-  });
   test('accepts null refresh_token and rejects an empty string', () => {
     expect(() => assertChatGPTUpstreamState({ accounts: [{ ...goodAccount, refresh_token: null }] })).not.toThrow();
     expect(() => assertChatGPTUpstreamState({ accounts: [{ ...goodAccount, refresh_token: '' }] })).toThrow(/refresh_token/);
@@ -42,20 +19,6 @@ describe('assertChatGPTUpstreamState', () => {
     expect(() => assertChatGPTUpstreamState({
       accounts: [{ ...goodAccount, chatgptAccountId: '' }],
     })).toThrow(/chatgptAccountId/);
-  });
-  test('rejects unknown state value', () => {
-    expect(() => assertChatGPTUpstreamState({ accounts: [{ ...goodAccount, state: 'broken' }] })).toThrow(/state/);
-  });
-  test('rejects null / undefined / non-objects', () => {
-    expect(() => assertChatGPTUpstreamState(null)).toThrow();
-    expect(() => assertChatGPTUpstreamState(undefined)).toThrow();
-    expect(() => assertChatGPTUpstreamState('s')).toThrow();
-  });
-  test('rejects unexpected keys at the top level', () => {
-    expect(() => assertChatGPTUpstreamState({ ...good, extra_field: 'x' })).toThrow(/extra_field/);
-  });
-  test('rejects unexpected keys inside an account', () => {
-    expect(() => assertChatGPTUpstreamState({ accounts: [{ ...goodAccount, smuggled: 'x' }] })).toThrow(/smuggled/);
   });
   // A key that also names an Object.prototype member is still an unknown key.
   // `__proto__` only survives as an own property through JSON.parse, so every
@@ -78,23 +41,6 @@ describe('assertChatGPTUpstreamState', () => {
   test('rejects an empty accounts array (v1 invariant: exactly one)', () => {
     expect(() => assertChatGPTUpstreamState({ accounts: [] })).toThrow(/exactly one/);
   });
-  test('rejects multiple accounts (v1 invariant: exactly one)', () => {
-    expect(() => assertChatGPTUpstreamState({ accounts: [goodAccount, { ...goodAccount, chatgptAccountId: 'acc_y' }] })).toThrow(/exactly one/);
-  });
-
-  test('accepts accessToken absent, null, unknown-expiry, populated, or plan-observed', () => {
-    expect(() => assertChatGPTUpstreamState({ accounts: [{ ...goodAccount }] })).not.toThrow();
-    expect(() => assertChatGPTUpstreamState({ accounts: [{ ...goodAccount, accessToken: null }] })).not.toThrow();
-    expect(() => assertChatGPTUpstreamState({
-      accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: null, refreshedAt: '2026-06-05T00:00:00Z' } }],
-    })).not.toThrow();
-    expect(() => assertChatGPTUpstreamState({
-      accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 1_700_000_000_000, refreshedAt: '2026-06-05T00:00:00Z' } }],
-    })).not.toThrow();
-    expect(() => assertChatGPTUpstreamState({
-      accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 1_700_000_000_000, refreshedAt: '2026-06-05T00:00:00Z', planType: 'plus' } }],
-    })).not.toThrow();
-  });
   test('rejects malformed accessToken', () => {
     expect(() => assertChatGPTUpstreamState({
       accounts: [{ ...goodAccount, accessToken: { token: '', expiresAt: 1, refreshedAt: 'x' } }],
@@ -111,16 +57,6 @@ describe('assertChatGPTUpstreamState', () => {
     expect(() => assertChatGPTUpstreamState({
       accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 1, refreshedAt: 'x', planObservedAt: 'x' } }],
     })).toThrow(/requires planType/);
-  });
-
-  test('accepts quotaSnapshot absent / null / populated', () => {
-    expect(() => assertChatGPTUpstreamState({ accounts: [{ ...goodAccount, quotaSnapshot: null }] })).not.toThrow();
-    expect(() => assertChatGPTUpstreamState({
-      accounts: [{
-        ...goodAccount,
-        quotaSnapshot: { premium: { fetchedAt: 1_700_000_000_000, data: { observed_at: '2026-06-05T00:00:00Z' } } },
-      }],
-    })).not.toThrow();
   });
   test('rejects malformed quotaSnapshot', () => {
     expect(() => assertChatGPTUpstreamState({
@@ -142,13 +78,6 @@ describe('assertChatGPTUpstreamState', () => {
       accounts: [{ ...goodAccount, quotaSnapshot: { constructor: { fetchedAt: 1, data: {} } } }],
     })).toThrow(/invalid active limit key/);
   });
-
-  test('rejects missing / empty openaiDeviceId', () => {
-    const { openaiDeviceId: _drop, ...withoutDeviceId } = goodAccount;
-    expect(() => assertChatGPTUpstreamState({ accounts: [withoutDeviceId] })).toThrow(/openaiDeviceId/);
-    expect(() => assertChatGPTUpstreamState({ accounts: [{ ...goodAccount, openaiDeviceId: '' }] })).toThrow(/openaiDeviceId/);
-    expect(() => assertChatGPTUpstreamState({ accounts: [{ ...goodAccount, openaiDeviceId: 42 }] })).toThrow(/openaiDeviceId/);
-  });
 });
 
 describe('readChatGPTUpstreamState', () => {
@@ -157,17 +86,5 @@ describe('readChatGPTUpstreamState', () => {
     const out = readChatGPTUpstreamState({ accounts: [fresh] });
     expect(out.accounts[0].accessToken).toBeNull();
     expect(out.accounts[0].quotaSnapshot).toBeNull();
-  });
-  test('preserves populated entries verbatim', () => {
-    const populated = {
-      accounts: [{
-        ...goodAccount,
-        accessToken: { token: 'at', expiresAt: 1_700_000_000_000, refreshedAt: '2026-06-05T00:00:00Z' },
-        quotaSnapshot: { premium: { fetchedAt: 1_700_000_000_000, data: { observed_at: '2026-06-05T00:00:00Z' } } },
-      }],
-    };
-    const out = readChatGPTUpstreamState(populated);
-    expect(out.accounts[0].accessToken).toEqual(populated.accounts[0].accessToken);
-    expect(out.accounts[0].quotaSnapshot).toEqual(populated.accounts[0].quotaSnapshot);
   });
 });

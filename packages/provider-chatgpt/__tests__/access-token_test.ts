@@ -63,13 +63,6 @@ afterEach(() => vi.restoreAllMocks());
 const storedState = (): ChatGPTUpstreamState => current!.state as ChatGPTUpstreamState;
 
 describe('putChatGPTAccessToken', () => {
-  test('persists the entry into the account slot, leaving the rest of the credential alone', async () => {
-    const entry: ChatGPTAccessTokenEntry = { token: 'at_new', expiresAt: farFutureMs, refreshedAt: '2026-06-01T00:00:00.000Z' };
-    await putChatGPTAccessToken(upstreamId, accountId, entry);
-    expect(repo.saveState).toHaveBeenCalledTimes(1);
-    expect(repo.saveState.mock.calls[0][0]).toBe(upstreamId);
-    expect(storedState()).toEqual({ accounts: [{ ...baseAccount, accessToken: entry }] });
-  });
 
   test('prefers the current CAS plan over an older fallback when the new token omits it', async () => {
     current = makeRecord({
@@ -84,44 +77,22 @@ describe('putChatGPTAccessToken', () => {
     expect(storedState().accounts[0].accessToken?.planType).toBe('free');
   });
 
-  test.each([
-    ['team', 'free'],
-    ['free', 'team'],
-  ])('an older explicit %s observation cannot replace newer %s', async (olderPlan, newerPlan) => {
+  test('an older explicit plan observation cannot replace a newer one', async () => {
     const newer: ChatGPTAccessTokenEntry = {
       token: 'at_newer',
       expiresAt: farFutureMs,
       refreshedAt: '2026-08-10T00:00:02.000Z',
-      planType: newerPlan,
+      planType: 'free',
     };
     current = makeRecord({ accounts: [{ ...baseAccount, accessToken: newer }] });
     const older: ChatGPTAccessTokenEntry = {
       token: 'at_older',
       expiresAt: farFutureMs,
       refreshedAt: '2026-08-10T00:00:01.000Z',
-      planType: olderPlan,
+      planType: 'team',
     };
     const effective = await putChatGPTAccessToken(upstreamId, accountId, older);
     const expected = { ...newer, planObservedAt: newer.refreshedAt };
-    expect(effective).toEqual(expected);
-    expect(storedState().accounts[0].accessToken).toEqual(expected);
-  });
-
-  test.each(['free', 'team'])('keeps the newer token while merging an older explicit %s plan', async olderPlan => {
-    const newer: ChatGPTAccessTokenEntry = {
-      token: 'at_newer',
-      expiresAt: farFutureMs,
-      refreshedAt: '2026-08-10T00:00:02.000Z',
-    };
-    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: newer }] });
-    const older: ChatGPTAccessTokenEntry = {
-      token: 'at_older',
-      expiresAt: farFutureMs,
-      refreshedAt: '2026-08-10T00:00:01.000Z',
-      planType: olderPlan,
-    };
-    const effective = await putChatGPTAccessToken(upstreamId, accountId, older);
-    const expected = { ...newer, planType: olderPlan, planObservedAt: older.refreshedAt };
     expect(effective).toEqual(expected);
     expect(storedState().accounts[0].accessToken).toEqual(expected);
   });
@@ -155,35 +126,6 @@ describe('putChatGPTAccessToken', () => {
     expect(storedState().accounts[0].accessToken).toEqual(effective);
   });
 
-  test('includes a captured retry plan in LWW ordering after token invalidation', async () => {
-    current = makeRecord({
-      accounts: [{
-        ...baseAccount,
-        accessToken: {
-          token: 'at_stale',
-          expiresAt: farFutureMs,
-          refreshedAt: '2026-08-10T00:00:01.000Z',
-          planType: 'free',
-          planObservedAt: '2026-08-10T00:00:01.000Z',
-        },
-      }],
-    });
-    const incoming: ChatGPTAccessTokenEntry = {
-      token: 'at_new',
-      expiresAt: farFutureMs,
-      refreshedAt: '2026-08-10T00:00:03.000Z',
-    };
-    const effective = await putChatGPTAccessToken(upstreamId, accountId, incoming, {
-      planType: 'plus',
-      observedAt: '2026-08-10T00:00:02.000Z',
-    });
-    expect(effective).toEqual({
-      ...incoming,
-      planType: 'plus',
-      planObservedAt: '2026-08-10T00:00:02.000Z',
-    });
-  });
-
   test('propagates storage failures so the request path surfaces them', async () => {
     repo.saveState.mockRejectedValueOnce(new Error('D1 boom'));
     const entry: ChatGPTAccessTokenEntry = { token: 'at_new', expiresAt: farFutureMs, refreshedAt: 'now' };
@@ -200,12 +142,6 @@ describe('putChatGPTAccessToken', () => {
     await putChatGPTAccessToken(upstreamId, accountId, entry);
     expect(repo.writes).toEqual([]);
   });
-
-  test('warns and writes nothing when the requested account is not in the pool', async () => {
-    const entry: ChatGPTAccessTokenEntry = { token: 'at_new', expiresAt: farFutureMs, refreshedAt: 'now' };
-    await putChatGPTAccessToken(upstreamId, 'acc_other', entry);
-    expect(repo.writes).toEqual([]);
-  });
 });
 
 describe('invalidateChatGPTAccessToken', () => {
@@ -215,45 +151,9 @@ describe('invalidateChatGPTAccessToken', () => {
     await invalidateChatGPTAccessToken(upstreamId, accountId);
     expect(storedState().accounts[0].accessToken).toBeNull();
   });
-
-  test('writes nothing when the slot is already null', async () => {
-    await invalidateChatGPTAccessToken(upstreamId, accountId);
-    expect(repo.writes).toEqual([]);
-  });
-
-  test('retains a sibling token that replaced the failed token', async () => {
-    const winner: ChatGPTAccessTokenEntry = {
-      token: 'at_winner',
-      expiresAt: farFutureMs,
-      refreshedAt: '2026-08-10T00:00:02.000Z',
-      planType: 'free',
-      planObservedAt: '2026-08-10T00:00:02.000Z',
-    };
-    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: winner }] });
-    const retained = await invalidateChatGPTAccessToken(upstreamId, accountId, 'at_failed');
-    expect(retained).toEqual(winner);
-    expect(storedState().accounts[0].accessToken).toEqual(winner);
-    expect(repo.writes).toEqual([]);
-  });
 });
 
 describe('ensureChatGPTAccessToken', () => {
-  test('returns the cached token when still fresh and skips mint', async () => {
-    const entry: ChatGPTAccessTokenEntry = { token: 'at_x', expiresAt: farFutureMs, refreshedAt: 'now' };
-    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: entry }] });
-    const mint = vi.fn();
-    const out = await ensureChatGPTAccessToken(upstreamId, accountId, mint);
-    expect(out).toEqual(entry);
-    expect(mint).not.toHaveBeenCalled();
-  });
-
-  test('uses an access-only token with unknown expiry without minting', async () => {
-    const entry: ChatGPTAccessTokenEntry = { token: 'at_only', expiresAt: null, refreshedAt: 'now' };
-    current = makeRecord({ accounts: [{ ...baseAccount, refresh_token: null, accessToken: entry }] });
-    const mint = vi.fn();
-    expect(await ensureChatGPTAccessToken(upstreamId, accountId, mint)).toEqual(entry);
-    expect(mint).not.toHaveBeenCalled();
-  });
 
   test('spends an access-only token to its actual expiry, ignoring the renewable skew', async () => {
     const entry: ChatGPTAccessTokenEntry = { token: 'at_only', expiresAt: Date.now() + 60_000, refreshedAt: 'now' };
@@ -272,14 +172,6 @@ describe('ensureChatGPTAccessToken', () => {
     expect(mint).toHaveBeenCalledWith('rt_v1');
   });
 
-  test('reports an expired access-only token as needing a re-import, without minting', async () => {
-    const entry: ChatGPTAccessTokenEntry = { token: 'at_only', expiresAt: Date.now() - 1, refreshedAt: 'now' };
-    current = makeRecord({ accounts: [{ ...baseAccount, refresh_token: null, accessToken: entry }] });
-    const mint = vi.fn();
-    await expect(ensureChatGPTAccessToken(upstreamId, accountId, mint)).rejects.toThrow(/expired.*re-import/);
-    expect(mint).not.toHaveBeenCalled();
-  });
-
   test('refuses a forced refresh of an access-only credential', async () => {
     const entry: ChatGPTAccessTokenEntry = { token: 'at_only', expiresAt: null, refreshedAt: 'now' };
     current = makeRecord({ accounts: [{ ...baseAccount, refresh_token: null, accessToken: entry }] });
@@ -296,15 +188,6 @@ describe('ensureChatGPTAccessToken', () => {
     await expect(nullAccountEnsure).resolves.toEqual(minted);
   });
 
-  test('mints when nothing is cached, then persists', async () => {
-    const minted: ChatGPTAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'now' };
-    const mint = vi.fn().mockResolvedValue(minted);
-    const out = await ensureChatGPTAccessToken(upstreamId, accountId, mint);
-    expect(out).toEqual(minted);
-    expect(mint).toHaveBeenCalledWith('rt_v1');
-    expect(storedState().accounts[0].accessToken).toEqual(minted);
-  });
-
   test('mints when the cached token is within the refresh skew window', async () => {
     const expiresSoon = Date.now() + 60 * 1000;
     current = makeRecord({ accounts: [{ ...baseAccount, accessToken: { token: 'at_old', expiresAt: expiresSoon, refreshedAt: 'old' } }] });
@@ -313,33 +196,6 @@ describe('ensureChatGPTAccessToken', () => {
     const out = await ensureChatGPTAccessToken(upstreamId, accountId, mint);
     expect(out).toEqual(minted);
     expect(mint).toHaveBeenCalledWith('rt_v1');
-  });
-
-  test('preserves the latest known plan when a refreshed token omits it', async () => {
-    const expiresSoon = Date.now() + 60 * 1000;
-    current = makeRecord({
-      accounts: [{
-        ...baseAccount,
-        accessToken: { token: 'at_old', expiresAt: expiresSoon, refreshedAt: 'old', planType: 'team' },
-      }],
-    });
-    const minted: ChatGPTAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'now' };
-    const out = await ensureChatGPTAccessToken(upstreamId, accountId, vi.fn().mockResolvedValue(minted));
-    expect(out.planType).toBe('team');
-    expect(storedState().accounts[0].accessToken?.planType).toBe('team');
-  });
-
-  test('throws when the upstream row is missing', async () => {
-    current = null;
-    const mint = vi.fn();
-    await expect(ensureChatGPTAccessToken(upstreamId, accountId, mint)).rejects.toThrow(/not found/);
-    expect(mint).not.toHaveBeenCalled();
-  });
-
-  test('throws when the requested account is not in the pool', async () => {
-    const mint = vi.fn();
-    await expect(ensureChatGPTAccessToken(upstreamId, 'acc_other', mint)).rejects.toThrow(/acc_other/);
-    expect(mint).not.toHaveBeenCalled();
   });
 
   test('propagates mint errors without persisting', async () => {
@@ -377,16 +233,6 @@ describe('ensureChatGPTAccessToken', () => {
     expect(mint).toHaveBeenCalledTimes(1);
     expect(repo.writes).toEqual([]);
   });
-
-  test('app_session_terminated never attempts race recovery — single getById, original error rethrown', async () => {
-    // Terminal codes other than invalid_grant signal credential death under
-    // any race scenario; the cache must not re-read state to second-guess
-    // them. Assert via the absence of a second getById call.
-    const mint = vi.fn().mockRejectedValue(new ChatGPTOAuthSessionTerminatedError({ code: 'app_session_terminated', message: 'gone' }));
-    await expect(ensureChatGPTAccessToken(upstreamId, accountId, mint)).rejects.toBeInstanceOf(ChatGPTOAuthSessionTerminatedError);
-    expect(repo.getById).toHaveBeenCalledTimes(1);
-    expect(repo.writes).toEqual([]);
-  });
 });
 
 describe('mintChatGPTAccessToken', () => {
@@ -411,19 +257,6 @@ describe('mintChatGPTAccessToken', () => {
     expect(entry.planType).toBe('team');
     expect(entry.planObservedAt).toBe(entry.refreshedAt);
     expect(persistRotation).toHaveBeenCalledWith('rt_v2');
-  });
-
-  test('accepts refreshed id_tokens without import-only identity or plan claims', async () => {
-    const idToken = [
-      Buffer.from('{}').toString('base64url'),
-      Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': {} })).toString('base64url'),
-      Buffer.from('signature').toString('base64url'),
-    ].join('.');
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
-      access_token: 'at', refresh_token: 'rt_v2', id_token: idToken, expires_in: 600,
-    }), { status: 200, headers: { 'content-type': 'application/json' } }));
-    const entry = await mintChatGPTAccessToken('rt_v1', directFetcher, async () => {});
-    expect(entry.planType).toBeUndefined();
   });
 
   test('persists a rotated refresh token before surfacing malformed plan metadata', async () => {

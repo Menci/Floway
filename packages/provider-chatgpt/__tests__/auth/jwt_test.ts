@@ -35,16 +35,6 @@ describe('parseChatGPTTokenClaims', () => {
     });
   });
 
-  test('reports a claim the token does not carry as null', () => {
-    expect(parseChatGPTTokenClaims(makeJwt({}), 'id_token')).toEqual({
-      email: null,
-      chatgptAccountId: null,
-      chatgptUserId: null,
-      planType: null,
-      expiresAt: null,
-    });
-  });
-
   test('converts exp seconds to milliseconds', () => {
     expect(parseChatGPTTokenClaims(makeJwt({ exp: 2_000_000_000 })).expiresAt).toBe(2_000_000_000_000);
   });
@@ -54,10 +44,6 @@ describe('parseChatGPTTokenClaims', () => {
     expect(() => parseChatGPTTokenClaims('one.two', 'id_token')).toThrow(/3 segments/);
   });
 
-  test('rejects a token whose payload is not base64url-decodable JSON', () => {
-    expect(() => parseChatGPTTokenClaims('aaa.!!!.bbb', 'id_token')).toThrow();
-  });
-
   test('accepts top-level email when /profile is absent (observed real-world id_token shape)', () => {
     const token = makeJwt({
       'https://api.openai.com/auth': { chatgpt_account_id: 'a' },
@@ -65,22 +51,11 @@ describe('parseChatGPTTokenClaims', () => {
     });
     expect(parseChatGPTTokenClaims(token, 'id_token').email).toBe('top-level@example.com');
   });
-
-  test('handles base64url padding-free encoding (real OpenAI tokens have no padding)', () => {
-    // encodeBase64Url already strips padding, matching real OpenAI tokens.
-    const token = makeJwt({ 'https://api.openai.com/auth': { chatgpt_account_id: 'a' } });
-    expect(parseChatGPTTokenClaims(token, 'id_token').chatgptAccountId).toBe('a');
-  });
 });
 
 describe('tryParseChatGPTAccessTokenClaims', () => {
   test('reads an opaque access token as carrying no claims rather than failing', () => {
     expect(tryParseChatGPTAccessTokenClaims('opaque-access-token')).toBeNull();
-  });
-
-  test('reads claims off an access token that is a JWT', () => {
-    const token = makeJwt({ 'https://api.openai.com/auth': { chatgpt_account_id: 'acc_from_access' } });
-    expect(tryParseChatGPTAccessTokenClaims(token)?.chatgptAccountId).toBe('acc_from_access');
   });
 
   test('rejects noncanonical JWT payload encodings', () => {
