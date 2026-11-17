@@ -174,7 +174,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const selectedKey = loaderData.keys?.find(key => key.id === keyId) ?? null;
   const cap = selectedKey?.upstream_ids ?? null;
   const catalog = useMemo(() => indexCatalog(loaderData.models), [loaderData.models]);
-  const models = reachableModels(loaderData.models ?? [], cap, model => model.kind === 'chat' && playgroundApisFor(model).length > 0);
+  const models = reachableModels(loaderData.models ?? [], cap, model => playgroundApisFor(model).length > 0);
   const selectedModel = models.find(model => model.id === publicModelId) ?? models[0] ?? null;
   const imageEnabled = supportsImageInput(selectedModel);
   const effortOptions = selectedModel?.chat?.reasoning?.effort?.supported ?? [];

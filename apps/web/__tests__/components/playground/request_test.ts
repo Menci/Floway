@@ -11,10 +11,12 @@ import {
 import { catalogModel } from '../../api/model-fixture';
 
 describe('custom JSON', () => {
-  it('offers only the Playground protocols the model declares', () => {
-    expect(playgroundApisFor(catalogModel('chat', { endpoints: { openaiChatCompletions: {} } }))).toEqual(['openaiChatCompletions']);
-    expect(playgroundApisFor(catalogModel('responses', { endpoints: { openaiResponses: {} } }))).toEqual(['openaiResponses']);
-    expect(playgroundApisFor(catalogModel('legacy', { endpoints: { openaiCompletions: {} } }))).toEqual([]);
+  it('offers every Playground protocol to any chat model', () => {
+    // The playground calls the gateway, which translates. A model's own
+    // endpoints describe what its upstream speaks, not what the caller may ask.
+    expect(playgroundApisFor(catalogModel('chat', { endpoints: { openaiChatCompletions: {} } })))
+      .toEqual(['openaiResponses', 'openaiChatCompletions', 'anthropicMessages', 'geminiGenerateContent']);
+    expect(playgroundApisFor(catalogModel('embed', { kind: 'embedding', endpoints: { openaiEmbeddings: {} } }))).toEqual([]);
   });
 
   it('rejects invalid, non-object and reserved fields', () => {

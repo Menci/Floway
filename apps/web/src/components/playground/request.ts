@@ -2,17 +2,21 @@ import type { ControlPlaneModel } from '../../api/types';
 import {
   ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS,
   type AnthropicMessagesResult,
+  type GeminiGenerateContentPart,
   isEventStreamMediaType,
   type OpenAIChatCompletionsResultEx,
   type OpenAIResponsesOutputItemEx,
 } from '@floway-dev/protocols/browser';
 
-export type PlaygroundApi = 'openaiResponses' | 'openaiChatCompletions' | 'anthropicMessages';
+export type PlaygroundApi = 'openaiResponses' | 'openaiChatCompletions' | 'anthropicMessages' | 'geminiGenerateContent';
 
 export type PlaygroundAssistantOutput =
   | { api: 'openaiResponses'; items: OpenAIResponsesOutputItemEx[] }
   | { api: 'openaiChatCompletions'; message: OpenAIChatCompletionsResultEx['choices'][number]['message'] }
-  | { api: 'anthropicMessages'; content: AnthropicMessagesResult['content'] };
+  | { api: 'anthropicMessages'; content: AnthropicMessagesResult['content'] }
+  // The collected GenerateContent result. Kept whole so a follow-up turn can
+  // replay the model turn, signature included, exactly as the client saw it.
+  | { api: 'geminiGenerateContent'; parts: GeminiGenerateContentPart[] };
 
 export interface PlaygroundMessage {
   id: string;
@@ -22,10 +26,13 @@ export interface PlaygroundMessage {
   assistantOutput?: PlaygroundAssistantOutput;
 }
 
-export const playgroundApis: PlaygroundApi[] = ['openaiResponses', 'openaiChatCompletions', 'anthropicMessages'];
+export const playgroundApis: PlaygroundApi[] = ['openaiResponses', 'openaiChatCompletions', 'anthropicMessages', 'geminiGenerateContent'];
 
+// Every chat model is reachable over every chat protocol: the gateway
+// translates, so the caller's choice of protocol never depends on what the
+// upstream speaks.
 export const playgroundApisFor = (model: ControlPlaneModel): PlaygroundApi[] =>
-  playgroundApis.filter(api => model.endpoints[api]);
+  model.kind === 'chat' ? playgroundApis : [];
 
 export const supportsImageInput = (model: ControlPlaneModel | null): boolean => {
   const modalities = model?.chat?.modalities?.input;
@@ -43,6 +50,9 @@ const reservedFields: Record<PlaygroundApi, readonly string[]> = {
   openaiChatCompletions: ['model', 'messages', 'stream'],
   openaiResponses: ['model', 'input', 'instructions', 'stream'],
   anthropicMessages: ['model', 'messages', 'system', 'stream'],
+  // The model travels in the URL for GenerateContent, so only the body remains
+  // the client's to supply.
+  geminiGenerateContent: ['contents', 'systemInstruction', 'generationConfig'],
 };
 
 export type CustomJsonResult =
@@ -160,6 +170,14 @@ export const generationOptions = (
 
   if (api === 'openaiResponses') {
     return { ...(reasoningEffort && { reasoning: { effort: reasoningEffort } }) };
+  }
+
+  if (api === 'geminiGenerateContent') {
+    // Gemini names the level on generationConfig, in the uppercase spelling its
+    // wire uses; the translator reads the same casing.
+    return reasoningEffort
+      ? { generationConfig: { thinkingConfig: { thinkingLevel: reasoningEffort.toUpperCase() } } }
+      : {};
   }
 
   return { ...(reasoningEffort && { reasoning_effort: reasoningEffort }) };
