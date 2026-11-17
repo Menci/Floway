@@ -9,18 +9,11 @@ const ANTHROPIC_VERSION = '2023-06-01';
 // The messages count-tokens and responses compact endpoints append a suffix to
 // their parent's resolved path so an override of the parent ripples down to
 // both.
-//
-// `/v1beta/models` is the one path whose default is not `/v1<key>`: Gemini's
-// per-model actions hang off the model-collection root, and `v1beta` is the
-// version every current SDK defaults to. It governs generation only; the
-// catalog listing keeps its own fetch toggle, because a Gemini-compatible
-// upstream commonly answers `/v1/models` in the OpenAI shape.
 const DEFAULT_CUSTOM_PATHS: Readonly<Record<CustomPathOverrideKey, string>> = {
   '/completions': '/v1/completions',
   '/chat/completions': '/v1/chat/completions',
   '/responses': '/v1/responses',
   '/messages': '/v1/messages',
-  '/v1beta/models': '/v1beta/models',
   '/embeddings': '/v1/embeddings',
   '/alpha/search': '/v1/alpha/search',
   '/images/generations': '/v1/images/generations',
@@ -108,10 +101,17 @@ export const customFetchAlphaSearch = (config: CustomUpstreamConfig, init: Fetch
 // Gemini's native surface puts the model id and the action in the path and
 // selects SSE with a query parameter; the body carries neither. `modelId`
 // arrives already stripped of any `models/` prefix.
+//
+// The root is fixed rather than overridable: it hangs off the model-collection
+// path, which `baseUrl` already places for a deployment that serves the API
+// under a prefix. The catalog listing above is a separate toggle because a
+// Gemini-compatible upstream commonly answers `/v1/models` in the OpenAI shape.
 // https://ai.google.dev/api/generate-content#method:-models.streamgeneratecontent
-const geminiGenerateContentPath = (config: CustomUpstreamConfig, modelId: string, action: 'streamGenerateContent' | 'countTokens'): string => {
+const GEMINI_GENERATE_CONTENT_ROOT = '/v1beta/models';
+
+const geminiGenerateContentPath = (modelId: string, action: 'streamGenerateContent' | 'countTokens'): string => {
   const query = action === 'streamGenerateContent' ? '?alt=sse' : '';
-  return `${pathOverrideFor(config, '/v1beta/models')}/${encodeURIComponent(modelId)}:${action}${query}`;
+  return `${GEMINI_GENERATE_CONTENT_ROOT}/${encodeURIComponent(modelId)}:${action}${query}`;
 };
 
 // The protocol chooses the credential header, exactly as for the other
@@ -119,10 +119,10 @@ const geminiGenerateContentPath = (config: CustomUpstreamConfig, modelId: string
 // token.
 // https://ai.google.dev/gemini-api/docs/api-key
 export const customFetchGeminiGenerateContent = (config: CustomUpstreamConfig, modelId: string, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, 'x-goog-api-key', geminiGenerateContentPath(config, modelId, 'streamGenerateContent'), init, options);
+  customFetchInternal(config, 'x-goog-api-key', geminiGenerateContentPath(modelId, 'streamGenerateContent'), init, options);
 
 export const customFetchGeminiGenerateContentCountTokens = (config: CustomUpstreamConfig, modelId: string, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, 'x-goog-api-key', geminiGenerateContentPath(config, modelId, 'countTokens'), init, options);
+  customFetchInternal(config, 'x-goog-api-key', geminiGenerateContentPath(modelId, 'countTokens'), init, options);
 
 export const customFetchModels = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(

@@ -19,37 +19,68 @@ export const ENDPOINT_PATHS = {
   decision: '/decisions',
 } as const satisfies Record<keyof ModelEndpoints, string>;
 
-// The pathOverrides key an endpoint's upstream path is edited under. Every
-// endpoint is its own key except Gemini, whose generation path hangs off the
-// same model-collection root the catalog fetch uses, so one override moves all
-// of its actions together. Kept literal so the editor's form-field paths stay
-// checked against the config shape.
+// The pathOverrides key an endpoint's upstream path is edited under. Gemini has
+// none: its generation root is fixed under the model-collection path and the
+// catalog listing is a separate field, so `baseUrl` places both.
 const PATH_OVERRIDE_KEY_FOR_ENDPOINT = {
   openaiCompletions: '/completions',
   openaiChatCompletions: '/chat/completions',
   openaiResponses: '/responses',
   anthropicMessages: '/messages',
-  geminiGenerateContent: '/v1beta/models',
   openaiEmbeddings: '/embeddings',
   rerank: '/alpha/search',
   openaiImagesGenerations: '/images/generations',
   openaiImagesEdits: '/images/edits',
   openaiAudioTranscriptions: '/audio/transcriptions',
   decision: '/decisions',
-} as const satisfies Record<keyof ModelEndpoints, string>;
+} as const satisfies Record<Exclude<keyof ModelEndpoints, 'geminiGenerateContent'>, string>;
 
 export const CHAT_ENDPOINT_KEYS = ['openaiCompletions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages', 'geminiGenerateContent'] as const satisfies readonly (keyof ModelEndpoints)[];
 export const IMAGE_ENDPOINT_KEYS = ['openaiImagesGenerations', 'openaiImagesEdits'] as const satisfies readonly (keyof ModelEndpoints)[];
 
-// Every path the custom provider accepts an override for, in the order the
-// editor lists them. OpenAI Audio Transcriptions is deliberately absent from
-// the form yet kept in the value, so an override stored for it survives a save.
-export const PATH_OVERRIDE_PATHS = ([...CHAT_ENDPOINT_KEYS, 'openaiEmbeddings', 'rerank', ...IMAGE_ENDPOINT_KEYS] as const)
-  .map(key => PATH_OVERRIDE_KEY_FOR_ENDPOINT[key]);
+// How the editor names an endpoint. The path is the wire detail, shown as the
+// label's info; the name is what the protocol is called.
+export const ENDPOINT_LABELS = {
+  openaiCompletions: 'OpenAI Completions',
+  openaiChatCompletions: 'OpenAI Chat Completions',
+  openaiResponses: 'OpenAI Responses',
+  anthropicMessages: 'Anthropic Messages',
+  geminiGenerateContent: 'Gemini GenerateContent',
+  openaiEmbeddings: 'OpenAI Embeddings',
+  rerank: 'Rerank',
+  openaiImagesGenerations: 'OpenAI Images Generations',
+  openaiImagesEdits: 'OpenAI Images Edits',
+  openaiAudioTranscriptions: 'OpenAI Audio Transcriptions',
+  decision: 'Decision',
+} as const satisfies Record<keyof ModelEndpoints, string>;
+
+// Every endpoint the custom provider accepts an override for, in the order the
+// editor lists them: the field path it is stored under, the protocol name shown
+// beside it, and the default that seeds the placeholder. OpenAI Audio
+// Transcriptions is deliberately absent from the form yet kept in the value, so
+// an override stored for it survives a save. The literal `path` values keep the
+// editor's form-field paths checked against the config shape.
+export const PATH_OVERRIDE_OPTIONS = ([
+  'openaiCompletions',
+  'openaiChatCompletions',
+  'openaiResponses',
+  'anthropicMessages',
+  'openaiEmbeddings',
+  'rerank',
+  'openaiImagesGenerations',
+  'openaiImagesEdits',
+] as const satisfies readonly Exclude<keyof ModelEndpoints, 'geminiGenerateContent'>[])
+  .map(key => ({ key, label: ENDPOINT_LABELS[key], path: PATH_OVERRIDE_KEY_FOR_ENDPOINT[key] }));
+
+export interface EndpointOption {
+  readonly key: keyof ModelEndpoints;
+  readonly label: string;
+  readonly path: string;
+}
 
 export const endpointOptionsFor = (
   keys: readonly (keyof ModelEndpoints)[],
-): [keyof ModelEndpoints, string][] => keys.map(key => [key, ENDPOINT_PATHS[key]]);
+): EndpointOption[] => keys.map(key => ({ key, label: ENDPOINT_LABELS[key], path: ENDPOINT_PATHS[key] }));
 
 // The rerank dialect a row starts on. `/alpha/search` speaks six mutually
 // incompatible dialects and no upstream catalog names the one it implements,

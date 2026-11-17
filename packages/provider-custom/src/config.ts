@@ -37,7 +37,6 @@ const CUSTOM_PATH_OVERRIDE_KEYS = [
   '/chat/completions',
   '/responses',
   '/messages',
-  '/v1beta/models',
   '/embeddings',
   '/alpha/search',
   '/images/generations',

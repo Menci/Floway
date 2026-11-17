@@ -7,7 +7,6 @@ import { DecisionTargetEditor } from './decision-target-editor';
 import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, IMAGE_ENDPOINT_KEYS, shapeForKind } from './endpoints';
 import { FeatureFlagsEditor } from './feature-flags';
 import { type ModelValidationField, modelValidationIssues } from './model-validation';
-import { useMonoLabelClass } from './mono-label';
 import { PricingEditor } from './pricing-editor';
 import { RerankTargetEditor } from './rerank-target-editor';
 import { EditorSection } from './section';
@@ -18,6 +17,7 @@ import { pruneLimitsForKind } from '../models/limits';
 import { ModelLimitsFields } from '../models/limits-editor';
 import { ChoiceGroup } from '../ui/choice-group';
 import { Checkbox, Dropdown, Input, Switch } from '../ui/fluent-form-controls';
+import { InfoLabelText } from '../ui/info-label';
 import { CHECKBOX_LIST_CLASS, PANE_GAP_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { MultiselectCombobox, valuesAsOptions } from '../ui/multiselect-combobox';
 import { SectionHeader } from '../ui/section-header';
@@ -58,7 +58,6 @@ export function ModelDetail({
   upstreamFlags: UpstreamRecord['flag_overrides'];
 }) {
   const { t } = useTranslation();
-  const monoLabel = useMonoLabelClass();
   const imageInputLabelId = useId();
   const reasoningLabelId = useId();
   const upstreamIdRef = useRef<HTMLInputElement>(null);
@@ -205,11 +204,11 @@ export function ModelDetail({
 
         {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <EditorSection error={validationMessage('endpoints')} level={3} title={t('dashboard.upstreamEditor.models.endpoints')}>
           <div className={`${TWO_COLUMN_FORM_CLASS} ${CHECKBOX_LIST_CLASS}`}>
-            {modelEndpointOptions(row.config.kind).map(([key, label]) => <Checkbox
+            {modelEndpointOptions(row.config.kind).map(({ key, label, path }) => <Checkbox
               checked={key in row.config.endpoints}
               readOnly={fieldsReadOnly}
               key={key}
-              label={{ children: label, className: monoLabel }}
+              label={<InfoLabelText info={<code className="font-mono">{path}</code>}>{label}</InfoLabelText>}
               onChange={(_, data) => {
                 const endpoints = { ...row.config.endpoints };
                 if (data.checked) endpoints[key] = {}; else delete endpoints[key];

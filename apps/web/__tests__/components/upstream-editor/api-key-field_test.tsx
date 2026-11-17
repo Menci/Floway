@@ -77,12 +77,12 @@ describe('the API key field', () => {
     expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.fields.authStyle'))).toBeNull();
   });
 
-  it('hides catalog authentication when the API key is empty', () => {
+  it('keeps catalog authentication visible when the API key is empty', () => {
+    // An anonymous upstream still has to say which header it expects; an empty
+    // key simply sends none.
     renderInApp(<ProviderConfigHarness record={customRecord('', true)} />);
     expect(screen.getByText(i18n.t('dashboard.upstreamEditor.fields.catalogPath'))).toBeTruthy();
-    expect(screen.queryByRole('button', { name: i18n.t('dashboard.upstreamEditor.fields.fetchModelsAuthStyle') })).toBeNull();
-    const catalogLabel = screen.getByText(i18n.t('dashboard.upstreamEditor.fields.catalogPath')).closest('label');
-    expect(catalogLabel?.textContent).toBe(i18n.t('dashboard.upstreamEditor.fields.catalogPath'));
+    expect(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.fields.fetchModelsAuthStyle') })).toBeTruthy();
   });
 
   it('selects a catalog authentication mode from the inline menu', () => {

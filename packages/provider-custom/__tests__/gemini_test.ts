@@ -84,13 +84,14 @@ test('a Gemini-compatible upstream behind another host still uses the Google hea
   assertEquals(request.headers.get('authorization'), null);
 });
 
-test('a configured /v1beta/models override moves generation, and a stored models/ prefix is stripped', async () => {
-  const record = buildUpstream();
+test('baseUrl places the generation root, and a stored models/ prefix is stripped', async () => {
+  // The root itself is fixed; a deployment that serves the API under a prefix
+  // states it once in baseUrl, which the catalog fetch shares.
+  const record = buildUpstream('https://gemini-proxy.example.com/api/gemini');
   const provider = createCustomProvider({
     ...record,
     config: {
       ...(record.config as Record<string, unknown>),
-      pathOverrides: { '/v1beta/models': '/api/gemini/v1beta/models' },
       models: [{ upstreamModelId: 'models/gemini-3-flash', kind: 'chat', endpoints: { geminiGenerateContent: {} } }],
     },
   });
@@ -108,7 +109,7 @@ test('a configured /v1beta/models override moves generation, and a stored models
   );
 
   assertExists(request);
-  assertEquals(request.url, 'https://generativelanguage.googleapis.com/api/gemini/v1beta/models/gemini-3-flash:streamGenerateContent?alt=sse');
+  assertEquals(request.url, 'https://gemini-proxy.example.com/api/gemini/v1beta/models/gemini-3-flash:streamGenerateContent?alt=sse');
 });
 
 test('countTokens posts to the same model path with the countTokens action', async () => {
