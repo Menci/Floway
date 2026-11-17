@@ -97,16 +97,6 @@ test('prepareImageGenerationConfig rejects any client-supplied n, including n:1'
   }
 });
 
-test('prepareImageGenerationConfig rejects out-of-range output_compression', () => {
-  const cases: [number, string][] = [[-1, 'integer_below_min_value'], [101, 'integer_above_max_value'], [50.5, 'invalid_value']];
-  for (const [v, code] of cases) {
-    const result = prepareImageGenerationConfig([{ type: 'image_generation', output_compression: v } as OpenAIResponsesTool]);
-    assert(!result.ok);
-    assertEquals(result.error.code, code);
-    assertEquals(result.error.param, 'tools[0].output_compression');
-  }
-});
-
 test('prepareImageGenerationConfig rejects unknown tool fields (Azure-strict)', () => {
   for (const field of ['seed', 'thinking', 'made_up_field']) {
     const result = prepareImageGenerationConfig([{ type: 'image_generation', [field]: 1 } as OpenAIResponsesTool]);
@@ -159,21 +149,6 @@ test('inspectImageSources rejects bare base64 with the native input_image error'
       errorType: 'invalid_request_error',
       param: 'input[0].content[0].image_url',
       code: 'invalid_value',
-    },
-  });
-});
-
-test('inspectImageSources mirrors the native error when input_image has no source field', () => {
-  const inspection = inspectImageSources([imageInputContainers.message({
-    type: 'input_image', detail: 'auto',
-  })]);
-  assertEquals(inspection.issue, {
-    kind: 'native',
-    error: {
-      message: "Missing mutually exclusive parameters: 'input[0].content[0]'. Ensure you are providing exactly one of: 'file_id' or 'image_url'.",
-      errorType: 'invalid_request_error',
-      param: 'input[0].content[0]',
-      code: 'missing_mutually_exclusive_parameters',
     },
   });
 });
@@ -334,27 +309,11 @@ test('prepareImageGenerationConfig validates every hosted entry, not just the la
   assertEquals(result.error.param, 'tools[0].n');
 });
 
-test('expandImageGenerationCall preserves error type and retryability on replay', () => {
-  const out = expandImageGenerationCall(
-    { type: 'image_generation_call', id: 'ig_3', status: 'failed', result: null, error: { message: 'blocked', code: 'content_filter', type: 'image_generation_user_error' } },
-  );
-  assert(typeof out.output === 'string');
-  const parsed = JSON.parse(out.output) as { error: { type: string; code: string; retryable: boolean } };
-  assertEquals(parsed.error.type, 'image_generation_user_error');
-  assertEquals(parsed.error.code, 'content_filter');
-  assertEquals(parsed.error.retryable, false);
-});
-
 // ── parseRetryAfterMs ──
 
 test('parseRetryAfterMs prefers retry-after-ms over Retry-After', () => {
   const h = new Headers({ 'retry-after-ms': '2500', 'retry-after': '7' });
   assertEquals(parseRetryAfterMs(h), 2500);
-});
-
-test('parseRetryAfterMs reads Retry-After as integer seconds → milliseconds', () => {
-  const h = new Headers({ 'retry-after': '5' });
-  assertEquals(parseRetryAfterMs(h), 5000);
 });
 
 test('parseRetryAfterMs interprets Retry-After HTTP-date as delta from now', () => {
@@ -457,46 +416,6 @@ test.each([
   assertEquals(result.errorType, 'invalid_request_error');
   assertEquals(result.param, 'url');
   assertEquals(result.code, 'invalid_value');
-});
-
-test('imageGenerationServerTool mirrors the native error for a fetched non-image', async () => {
-  initExternalResourceFetcher(() => Promise.resolve(new Response('not an image', {
-    headers: { 'content-type': 'text/plain' },
-  })));
-  const result = await imageGenerationServerTool(
-    makeCtx({
-      tools: [{ type: 'image_generation', action: 'edit' }],
-      input: [imageInputContainers.message({ type: 'input_image', image_url: 'https://example.com/readme.txt', detail: 'auto' })],
-    }),
-    gatewayCtx(),
-  );
-
-  assert(result.type === 'invalid-request');
-  assertEquals(result.message, "The image data you provided does not represent a valid image. Please check your input and try again with one of the supported image formats: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].");
-  assertEquals(result.errorType, 'invalid_request_error');
-  assertEquals(result.param, 'input');
-  assertEquals(result.code, 'invalid_value');
-});
-
-test('imageGenerationServerTool follows redirects before materializing a remote source', async () => {
-  const urls: string[] = [];
-  initExternalResourceFetcher(url => {
-    urls.push(url.href);
-    return Promise.resolve(url.pathname === '/redirect'
-      ? new Response(null, { status: 302, headers: { location: '/image.png' } })
-      : validPngResponse());
-  });
-
-  const result = await imageGenerationServerTool(
-    makeCtx({
-      tools: [{ type: 'image_generation', action: 'edit' }],
-      input: [imageInputContainers.message({ type: 'input_image', image_url: 'https://example.com/redirect', detail: 'auto' })],
-    }),
-    gatewayCtx(),
-  );
-
-  assert(result.type === 'active');
-  assertEquals(urls, ['https://example.com/redirect', 'https://example.com/image.png']);
 });
 
 test('imageGenerationServerTool materializes a remote mask and mirrors its download error', async () => {

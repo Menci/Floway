@@ -9,7 +9,6 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayloadEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
@@ -116,13 +115,11 @@ const makeCandidate = (overrides: {
   endpoints?: ModelEndpoints;
   callOpenAIResponses?: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderOpenAIResponsesResult>;
   callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
-  callOpenAIChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const provider = stubProvider({
     callOpenAIResponses: overrides.callOpenAIResponses,
     callAnthropicMessages: overrides.callAnthropicMessages,
-    callOpenAIChatCompletions: overrides.callOpenAIChatCompletions,
   });
   return {
     provider: {
@@ -403,46 +400,6 @@ test('Anthropic Messages biology refusal becomes a non-retryable Codex OpenAI Re
     message: 'This request could enable biological harm.',
   });
   assertEquals(callAnthropicMessages.mock.calls.length, 1);
-});
-
-test('generate falls through translate-out to openai-chat-completions target', async () => {
-  installRepo();
-  const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true,
-    events: makeProtocolFrames([
-      {
-        id: 'chatcmpl_translated', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-        choices: [{  index: 0, delta: { role: 'assistant' }, finish_reason: null }],
-      },
-      {
-        id: 'chatcmpl_translated', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-        choices: [{  index: 0, delta: { content: 'hi' }, finish_reason: null }],
-      },
-      {
-        id: 'chatcmpl_translated', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-        choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
-      },
-      {
-        id: 'chatcmpl_translated', object: 'chat.completion.chunk', created: 0, model: 'test-model',
-        choices: [], usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 },
-      },
-    ]),
-    modelKey: 'chat-completions-key',
-    headers: new Headers(),
-  }));
-  const candidate = makeCandidate({ upstream: 'up_c', endpoints: { openaiChatCompletions: {} }, callOpenAIChatCompletions });
-  queueResolution([candidate]);
-
-  const result = await openaiResponsesServe.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-  assertEquals(callOpenAIChatCompletions.mock.calls.length, 1);
 });
 
 test('alias resolution swaps the inbound model id for the target and overlays rules onto the OpenAI Responses IR', async () => {

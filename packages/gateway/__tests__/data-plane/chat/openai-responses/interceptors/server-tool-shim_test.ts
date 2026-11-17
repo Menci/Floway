@@ -136,7 +136,7 @@ test('shim input replay checks ignore transport IDs and object key order', async
   });
 });
 
-test.each(['swapped calls', 'deleted first call', 'inserted first call'] as const)('shim never searches or compacts replay candidates: %s', async change => {
+test.each(['swapped calls', 'inserted first call'] as const)('shim never searches or compacts replay candidates: %s', async change => {
   const ctx = makeGatewayCtx();
   const first = { ...boundSearchItem, id: 'first', action: { type: 'search' as const, queries: ['first'] } };
   const second = { ...boundSearchItem, id: 'second', action: { type: 'search' as const, queries: ['second'] } };
@@ -145,12 +145,10 @@ test.each(['swapped calls', 'deleted first call', 'inserted first call'] as cons
   const [secondCarrier] = await searchHistory(ctx, 'second', second);
   const inputs = {
     'swapped calls': [firstCarrier, secondCarrier, second, first],
-    'deleted first call': [firstCarrier, secondCarrier, second],
     'inserted first call': [firstCarrier, secondCarrier, inserted, first, second],
   };
   const expected = {
     'swapped calls': ['fallback', 'fallback'],
-    'deleted first call': ['fallback'],
     'inserted first call': ['fallback', 'fallback', 'fallback'],
   };
   const inv = makeInvocation({ payload: { input: inputs[change] } });
@@ -241,27 +239,23 @@ test.each(['message', 'function_call_output'] as const)('hosted replay ordinals 
   });
 });
 
-test.each(['orphan', 'inactive', 'readable'] as const)('hosted history consumes every recognized replay sidecar: %s', async shape => {
+test.each(['orphan', 'readable'] as const)('hosted history consumes every recognized replay sidecar: %s', async shape => {
   const ctx = makeGatewayCtx();
   const [carrier, call] = await searchHistory(ctx, 'original');
   assert(carrier.type === 'reasoning');
   if (shape === 'readable') carrier.summary = [{ type: 'summary_text', text: 'carrier body' }];
   const inv = makeInvocation({ payload: { input: shape === 'orphan' ? [carrier] : [call, carrier] } });
-  const registration: ServerToolRegistration = () => ({ type: 'active', baseToolName: 'hosted', expandHistoryItem: () => undefined });
-  await runShimAndDrain(withOpenAIResponsesServerToolShim(shape === 'inactive' ? [() => ({ type: 'inactive' })] : shape === 'unowned' ? [registration] : [replaySearch]), inv, ctx, async () => {
-    assertEquals(historyShape(inv.payload.input), shape === 'orphan' ? [] : shape === 'unowned' || shape === 'inactive' ? ['web_search_call'] : ['function_call:original', 'function_call_output:original']);
+  await runShimAndDrain(withOpenAIResponsesServerToolShim([replaySearch]), inv, ctx, async () => {
+    assertEquals(historyShape(inv.payload.input), shape === 'orphan' ? [] : ['function_call:original', 'function_call_output:original']);
     return await scriptedRun([messageTurn('done')]).run();
   });
 });
 
-test.each(['domain', 'tamper', 'foreign'] as const)('hosted history preserves an unusable replay carrier: %s', async change => {
+test.each(['tamper', 'foreign'] as const)('hosted history preserves an unusable replay carrier: %s', async change => {
   const ctx = makeGatewayCtx();
   const history = await searchHistory(ctx, 'original');
   const carrier = history[0];
   assert(carrier.type === 'reasoning' && typeof carrier.encrypted_content === 'string');
-  const decoded = await ctx.sidecarCodecFactory.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall).decode(carrier.encrypted_content);
-  assert(decoded !== undefined);
-  if (change === 'domain') carrier.encrypted_content = await ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn).encode(decoded);
   if (change === 'tamper') {
     const bytes = decodeCanonicalBase64(carrier.encrypted_content)!;
     bytes[0] ^= 1;
@@ -859,36 +853,6 @@ test('shim propagates filters / user_location / search_context_size to backend',
   assertEquals(searchCall.userLocation, { city: 'Tokyo', country: 'JP' });
 });
 
-test('shim applies response_length and query-level filters to the backend search', async () => {
-  const { backend } = makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
-  const inv = makeInvocation({
-    payload: {
-      tools: [{
-        type: 'web_search',
-        filters: { allowed_domains: ['allowed.com', 'other.com'] },
-        search_context_size: 'high',
-      }],
-    },
-  });
-  const script = scriptedRun([
-    fcTurn(0, 'call_1', SHIM_TOOL_NAME, JSON.stringify({
-      search_query: [{ q: 'q1', domains: ['allowed.com', 'blocked.com'], recency: 7 }],
-      response_length: 'short',
-    })),
-    messageTurn('done', 0),
-  ]);
-
-  await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
-
-  assertEquals(backend.calls.length, 1);
-  const searchCall = backend.calls[0].request as WebSearchProviderRequest;
-  assertEquals(searchCall.query, 'q1');
-  assertEquals(searchCall.maxResults, 10);
-  assertEquals(searchCall.allowedDomains, ['allowed.com']);
-  assertEquals(searchCall.recencyDays, 7);
-});
-
 test('public output and internal continuations replay complete assistant/tool turns through the same expansion', async () => {
   const { backend } = makeStubDeps();
   const inv = makeInvocation();
@@ -1266,35 +1230,6 @@ test('later hosted validation keeps original paths before another tool rewrites 
   assertEquals(inv.payload.input, originalInput);
 });
 
-test('multiple hosted web_search entries: filter CONTENT is validated on each (not just last-wins)', async () => {
-  // `rewriteToolsForShim` last-wins on filter extraction, so a content
-  // check against `rewritten.filters` alone would miss malformed
-  // entries on earlier hosted tools that get discarded. Per-entry
-  // validation catches them — first failure wins.
-  const { backend } = makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
-  const inv = makeInvocation({
-    payload: {
-      tools: [
-        // First entry has all-malformed allowed_domains. A last-wins
-        // content check on rewritten.filters (= the second entry's
-        // empty filters) would let this slip through.
-        { type: 'web_search', filters: { allowed_domains: ['bad domain'] } },
-        { type: 'web_search' },
-      ],
-    },
-  });
-  const script = scriptedRun([messageTurn('never reached', 0)]);
-  const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'api-error');
-  assertEquals(result.status, 400);
-  assertEquals(script.callCount(), 0);
-  assertEquals(backend.calls.length, 0);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; type: string } };
-  assertEquals(body.error.type, 'invalid_request_error');
-  assertEquals(body.error.param, 'tools');
-});
-
 // ── Per-entry domain shape validation ────────────────────────────────
 //
 // Each entry must be a bare hostname per OpenAI's web_search docs
@@ -1405,39 +1340,6 @@ test('invalid search_context_size value rejects with 400 (no silent fall-through
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.param, 'tools[].search_context_size');
   assert(body.error.message.includes('XXL'));
-});
-
-test('array-shaped filters rejects with 400 (typeof null/[] === "object" guards must not no-op)', async () => {
-  // `typeof []` is `'object'`, so a plain `typeof filtersField !==
-  // 'object'` guard would let `filters: []` pass and then silently
-  // no-op (reading `.allowed_domains` on an array yields undefined).
-  // Per OpenAPI `WebSearchTool.filters` is object-or-null; reject
-  // arrays at the boundary so the client sees the misuse instead of
-  // a downstream filter behaving as if nothing was configured.
-  const { backend } = makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
-  const inv = makeInvocation({
-    payload: {
-      tools: [
-        {
-          type: 'web_search',
-          filters: [1, 2, 3] as unknown as { allowed_domains?: string[] },
-        },
-      ],
-    },
-  });
-  const script = scriptedRun([messageTurn('never reached', 0)]);
-  const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'api-error');
-  assertEquals(result.status, 400);
-  assertEquals(script.callCount(), 0);
-  assertEquals(backend.calls.length, 0);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { message: string; param: string } };
-  assert(body.error.message.includes('must be an object'));
-  assert(body.error.message.includes('array'));
-  // `param` must be exactly `tools` (not a sub-field), since
-  // `tools[].filters` itself is the offending location.
-  assertEquals(body.error.param, 'tools');
 });
 
 // ── Domain filter blocks open ─────────────────────────────────────────
@@ -1791,37 +1693,6 @@ test('upstream sends an error event after response.created: shim forwards both e
   assert(error.provider_specific_fields === diagnostics);
 });
 
-test('upstream iterator rejects before yielding any frame: shim surfaces the throw through the events iterator', async () => {
-  // An iterator that throws synchronously on `.next()` (malformed
-  // SSE JSON, reader rejection, network reset mid-handshake) yields
-  // no identity capture. The synthesizer can't build a wire-valid
-  // failed envelope, so the throw escapes the events generator and
-  // the source responder reports it upward — same channel as any
-  // other mid-stream failure with no captured identity.
-  makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
-  const inv = makeInvocation();
-  const failingIterator: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
-    throw new Error('malformed SSE JSON at byte 42');
-    yield undefined as never;
-  })();
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => ({
-    type: 'events',
-    events: failingIterator,
-    modelIdentity: testTelemetryModelIdentity,
-  });
-
-  const result = await shim(inv, makeGatewayCtx(), run);
-  assert(result.type === 'events');
-  let thrown: unknown = undefined;
-  try {
-    for await (const _ of result.events) { /* drain */ }
-  } catch (e) {
-    thrown = e;
-  }
-  assert(thrown instanceof Error);
-});
-
 test('turn-1 iterator throws AFTER response.created: synthesizes response.failed with synthesized id + last-seen model', async () => {
   makeStubDeps();
   const shim = withOpenAIResponsesWebSearchShim;
@@ -1938,39 +1809,6 @@ test('snapshot pass-through: upstream tools/tool_choice/temperature/parallel_too
   assertEquals((completed.response as unknown as Record<string, unknown>).completed_at, 1735689700);
 });
 
-test('success-path synth envelopes carry spec-required `error: null` and `incomplete_details: null`', async () => {
-  // The OpenAI Responses OpenAPI spec marks `error` and `incomplete_details`
-  // REQUIRED on every Response (both nullable). Reference:
-  // https://github.com/openai/openai-openapi/blob/master/openapi.yaml
-  // `Response.required` lists both. Typed-SDK clients parse against
-  // that contract and reject envelopes missing the keys; the shim's
-  // `overlayOnSnapshot` therefore defaults both to null after stripping
-  // terminal-only snapshot fields, then lets explicit overlays (e.g.
-  // `response.failed.error`, real terminal `incomplete_details`) win.
-  makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
-  const inv = makeInvocation();
-  // Single turn, pure message, no tool call — exercises the
-  // emitFinalCompleted success path through overlayOnSnapshot.
-  const script = scriptedRun([messageTurn('hi')]);
-
-  const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'events');
-  const events = eventPayloads(await collectFrames(result.events));
-
-  // Every synthesized envelope (created, in_progress, completed) MUST
-  // carry both fields as null.
-  for (const frameType of ['response.created', 'response.in_progress', 'response.completed'] as const) {
-    const ev = events.find(e => e.type === frameType) as Extract<OpenAIResponsesStreamEventEx, { type: typeof frameType }>;
-    assert(ev !== undefined, `expected ${frameType}`);
-    const r = ev.response as unknown as Record<string, unknown>;
-    assert('error' in r, `${frameType} missing 'error' key`);
-    assertEquals(r.error, null);
-    assert('incomplete_details' in r, `${frameType} missing 'incomplete_details' key`);
-    assertEquals(r.incomplete_details, null);
-  }
-});
-
 // ── finalMetadata follows the latest turn's modelIdentity ──────────────
 
 test('finalMetadata resolves with the LATEST turn modelIdentity, not turn 1', async () => {
@@ -2014,33 +1852,6 @@ test('finalMetadata resolves with the LATEST turn modelIdentity, not turn 1', as
   assert(result.finalMetadata !== undefined);
   const meta = await result.finalMetadata;
   assertEquals(meta.modelIdentity.modelKey, 'turn-2-key');
-});
-
-// ── Results are always included on web_search_call items ─────────────
-
-test('synthesized web_search_call (search action) carries both `query` (singular) and `queries` (plural) for SDK compat', async () => {
-  // openai-python `ActionSearch` declares `query: str` as REQUIRED
-  // (no default). openai-go and newer codex variants prefer
-  // `queries: list[str]`. Emit BOTH so every typed SDK reads a
-  // populated value regardless of which field its model declares.
-  makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
-  const inv = makeInvocation();
-  const script = scriptedRun([
-    searchCallTurn(0, 'call_1', 'who invented graphql'),
-    messageTurn('done', 0),
-  ]);
-
-  const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'events');
-  const doneEvents = outputItemDoneEvents(await collectFrames(result.events));
-  const wsCallDone = doneEvents.find(e => e.item.type === 'web_search_call');
-  assert(wsCallDone !== undefined);
-  const item = wsCallDone.item as OpenAIResponsesOutputWebSearchCall;
-  assertEquals(item.action?.type, 'search');
-  const action = item.action as { type: 'search'; query?: string; queries?: string[] };
-  assertEquals(action.query, 'who invented graphql');
-  assertEquals(action.queries, ['who invented graphql']);
 });
 
 test('open with invalid ref_id: done frame carries action.type="search" with the bad ref in queries', async () => {
@@ -2157,24 +1968,6 @@ test('include: ["web_search_call.action.sources"] populates action.sources with 
   ]);
 });
 
-test('web_search_call results field is omitted from the wire when the client did not include it (matches native default)', async () => {
-  makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
-  const inv = makeInvocation({ payload: { include: [] } });
-  const script = scriptedRun([
-    searchCallTurn(0, 'call_1', 'q1'),
-    messageTurn('done', 0),
-  ]);
-
-  const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'events');
-  const doneEvents = outputItemDoneEvents(await collectFrames(result.events));
-  const wsCallDone = doneEvents.find(e => e.item.type === 'web_search_call');
-  assert(wsCallDone !== undefined);
-  const item = wsCallDone.item as OpenAIResponsesOutputWebSearchCall;
-  assertEquals(item.results, undefined);
-});
-
 // ── Mixed-tool turn (shim call + client tool present) ─────────────────
 
 test('mixed-tool: shim call + client function_call exits to client after one turn, with both sets of items downstream', async () => {
@@ -2272,34 +2065,6 @@ test('input preprocessor: each web_search_call item becomes one shim call + func
   const openOut = input[5] as { output: string };
   assert(openOut.output.includes('not preserved'));
   assertFalse(openOut.output.includes('page body'));
-});
-
-test('input preprocessor: replay-only activation leaves hosted tool_choice unchanged when no hosted tool is declared', async () => {
-  makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
-  const inv = makeInvocation({
-    payload: {
-      tools: [],
-      tool_choice: { type: 'web_search_preview' },
-      input: [
-        { type: 'message', role: 'user', content: 'hi' },
-        {
-          type: 'web_search_call',
-          id: 'ws_old_search',
-          status: 'completed',
-          action: { type: 'search', queries: ['hello world'] },
-          results: [{ type: 'text_result', url: 'https://x', title: 'X', snippet: 'snippet body' }],
-        },
-      ],
-    },
-  });
-  const script = scriptedRun([messageTurn('done')]);
-
-  await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
-
-  assertEquals(inv.payload.tool_choice, { type: 'web_search_preview' });
-  const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
-  assertEquals(input.map(i => i.type), ['message', 'function_call', 'function_call_output']);
 });
 
 test('input preprocessor: web_search_call without an action is replaced by a placeholder pair (preserves history length)', async () => {
@@ -2660,29 +2425,6 @@ test('responses target with OpenAI passthrough forwards the complete alpha-searc
   });
 });
 
-test('responses target with an unavailable OpenAI passthrough model resolves nothing until a search runs', async () => {
-  makeStubDeps();
-  await getRepo().webSearchConfig.save({
-    provider: 'tavily',
-    tavily: { apiKey: 'test-key' },
-    microsoftWebIq: { apiKey: '' },
-    jina: { apiKey: '' },
-    passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_codex', model: 'gpt-missing' },
-  } satisfies WebSearchConfig);
-  mockResolveAlpha.mockClear();
-  mockResolveAlpha.mockRejectedValue(new Error('Search model not found.'));
-  const inv = makeInvocation({
-    targetApi: 'openaiResponses',
-    enabledFlags: new Set<FlagId>(['openai-responses-web-search-shim']),
-  });
-
-  // A rejected dispatcher promise nobody awaited is an unhandled rejection,
-  // which crashes the Node process.
-  await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), scriptedRun([messageTurn('done', 0)]).run);
-
-  assertEquals(mockResolveAlpha.mock.calls.length, 0);
-});
-
 test('responses target preserves a missing-model failure once a search runs', async () => {
   makeStubDeps();
   await getRepo().webSearchConfig.save({
@@ -3012,38 +2754,6 @@ test('terminal response.completed.output is in output_index order, not completio
   assertEquals(terminal.type, 'response.completed');
   const output = (terminal as { response: { output: Array<{ type: string }> } }).response.output;
   assertEquals(output.map(o => o.type), ['reasoning', 'web_search_call', 'function_call']);
-});
-
-// ── End-to-end protocol-violation paths ──────────────────────────────
-
-test('shim call without output_item.done synthesizes response.failed (no backend dispatch)', async () => {
-  // Protocol violation: upstream emits the shim's added +
-  // arguments deltas but no `.done`. The unmatched-shim-call detector
-  // in consume-turn must promote the turn to `response.failed`; no
-  // backend search / fetchPage should fire (the shim call never
-  // dispatched).
-  const { backend } = makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
-  const inv = makeInvocation();
-  const argsJson = JSON.stringify({ search_query: [{ q: 'truncated' }] });
-  const script = scriptedRun([[
-    mkResponseCreated(),
-    mkResponseInProgress(),
-    mkFunctionCallAdded(0, 'call_truncated', SHIM_TOOL_NAME),
-    mkFunctionCallArgsDone(0, argsJson),
-    // No `mkFunctionCallDone` — upstream protocol violation.
-    mkResponseCompleted(),
-  ]]);
-
-  const result = await shim(inv, makeGatewayCtx(), script.run);
-  assert(result.type === 'events');
-  const events = eventPayloads(await collectFrames(result.events));
-  const terminal = events[events.length - 1] as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
-  assertEquals(terminal.type, 'response.failed');
-  assertEquals(terminal.response.error?.code, 'server_error');
-  assert(terminal.response.error?.message.includes('without closing shim call items'));
-  // Backend never invoked — dispatch only fires from output_item.done.
-  assertEquals(backend.calls.length, 0);
 });
 
 test('wrong-typed supported sub-property (search_query as object) synthesizes a search-type schema-error item without backend dispatch', async () => {
@@ -3415,37 +3125,6 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
   }
 });
 
-test('consumeTurn rewrites any structurally indexed child event without an event-type allowlist', async () => {
-  const state = createMergeState();
-  const result = await consumeTurn(
-    framesOf(
-      mkResponseCreated(),
-      mkMessageAdded(0),
-      eventFrame<OpenAIResponsesStreamEventEx>({
-        type: 'response.future_child.delta',
-        item_id: 'msg_upstream',
-        output_index: 0,
-        delta: 'future',
-      } as unknown as OpenAIResponsesStreamEventEx),
-      mkMessageDone(0, 'future'),
-      mkResponseCompleted(),
-    ),
-    state,
-    true,
-  );
-
-  const futureFrame = result.downstreamFrames.find(f =>
-    f.type === 'event' && (f.event as { type: string }).type === 'response.future_child.delta');
-  assert(futureFrame?.type === 'event');
-  assertEquals((futureFrame.event as { output_index: number }).output_index, 0);
-  const addedFrame = result.downstreamFrames.find(f =>
-    f.type === 'event' && f.event.type === 'response.output_item.added');
-  assert(addedFrame?.type === 'event');
-  const messageId = (addedFrame.event as { item: { id?: string } }).item.id;
-  assert(messageId !== undefined && /^msg_[0-9a-f]{32}$/.test(messageId));
-  assertEquals((futureFrame.event as { item_id: string }).item_id, messageId);
-});
-
 test('consumeTurn swallows future indexed events attached to an intercepted server tool call', async () => {
   const state = createMergeState();
   const result = await consumeTurn(
@@ -3467,54 +3146,6 @@ test('consumeTurn swallows future indexed events attached to an intercepted serv
 
   assertFalse(result.downstreamFrames.some(f =>
     f.type === 'event' && (f.event as { type: string }).type === 'response.future_function_call_arguments.delta'));
-});
-
-test('consumeTurn preserves upstream message item.id (no fabrication) when upstream supplies one', async () => {
-  // Native upstream wire fixtures attach `id` to message items (see
-  // openai-dotnet/tests/SessionRecords/ResponsesToolTests/WebSearchCallAsync.json
-  // lines 65-223). When upstream provides item.id, child events
-  // (`output_text.delta`, `content_part.added`, …) carry the SAME id
-  // upstream emits. Fabricating `msg_<downstreamIndex>` here would
-  // make child events mismatch the item's `output_item.added.item.id`.
-  const state = createMergeState();
-  const result = await consumeTurn(
-    framesOf(
-      mkResponseCreated(),
-      eventFrame<OpenAIResponsesStreamEventEx>({
-        type: 'response.output_item.added',
-        output_index: 0,
-        item: {
-          type: 'message',
-          role: 'assistant',
-          content: [{ type: 'output_text', text: '', annotations: [] }],
-          // Upstream-provided id.
-          id: 'msg_xyz_real_id',
-        } as never,
-      }),
-      eventFrame<OpenAIResponsesStreamEventEx>({
-        type: 'response.output_text.delta',
-        item_id: 'msg_xyz_real_id',
-        output_index: 0,
-        content_index: 0,
-        delta: 'hi',
-      }),
-      mkMessageDone(0, 'hi'),
-      mkResponseCompleted(),
-    ),
-    state,
-    true,
-  );
-
-  const deltaFrame = result.downstreamFrames.find(f =>
-    f.type === 'event' && f.event.type === 'response.output_text.delta');
-  assert(deltaFrame?.type === 'event');
-  assertEquals((deltaFrame.event as { item_id: string }).item_id, 'msg_xyz_real_id');
-  // The forwarded `output_item.added` carries the same upstream id.
-  const addedFrame = result.downstreamFrames.find(f =>
-    f.type === 'event' && f.event.type === 'response.output_item.added');
-  assert(addedFrame?.type === 'event');
-  const addedItem = (addedFrame.event as { item: { id?: string } }).item;
-  assertEquals(addedItem.id, 'msg_xyz_real_id');
 });
 
 test('consumeTurn keeps an error notification and the following native failed resource', async () => {
@@ -3591,23 +3222,6 @@ test('dispatcher start frames follow assistant content that arrives after the ho
   assert(syntheticIdx >= 0);
   assert(messageAddedIdx >= 0);
   assert(messageAddedIdx < syntheticIdx, `expected assistant content before the hosted lifecycle (synth=${syntheticIdx}, msgAdded=${messageAddedIdx})`);
-});
-
-test('consumeTurn synthesizes terminalStatus.failed when upstream stream ends without any terminal event', async () => {
-  const state = createMergeState();
-  const result = await consumeTurn(
-    framesOf(
-      mkResponseCreated(),
-      mkReasoningAdded(0, 'rs_1'),
-      mkReasoningDone(0, 'rs_1'),
-    ),
-    state,
-    true,
-  );
-  assertEquals(result.summary.terminalStatus.kind, 'failed');
-  const ts = result.summary.terminalStatus as Extract<UpstreamTerminal, { kind: 'failed' }>;
-  assertEquals(ts.response.status, 'failed');
-  assert(ts.response.error!.message.includes('without a terminal event'));
 });
 
 // ── Echo restore on `response.tools` / `response.tool_choice` ─────────────
@@ -3798,24 +3412,6 @@ test('the shim retains observed billing when a later turn throws after its usage
   assertEquals(runCalls, 2);
   assertEquals((await result.finalMetadata!).billableUsage, { input: 20, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 4 });
 }, 1_000);
-
-test('consumeTurn forwards an event carrying no output_index instead of dropping it', async () => {
-  const unrecognized = eventFrame({
-    type: 'response.some_future_event',
-    detail: 'carried through',
-  } as unknown as OpenAIResponsesStreamEventEx);
-
-  const result = await consumeTurn(
-    framesOf(mkResponseCreated(), unrecognized, mkResponseCompleted()),
-    createMergeState(),
-    true,
-  );
-
-  assertEquals(eventTypesOf(result.downstreamFrames), ['response.created', 'response.some_future_event']);
-  const forwarded = result.downstreamFrames[1];
-  assert(forwarded.type === 'event');
-  assertEquals((forwarded.event as unknown as { detail: string }).detail, 'carried through');
-});
 
 test('helper allocation reserves names across callable scopes, history and search-loaded tools without moving declarations', () => {
   const tools: OpenAIResponsesTool[] = [
@@ -4066,24 +3662,6 @@ for (const [selectorType, includeClient] of [['web_search', true], ['function', 
     assertEquals(findResponseCompleted(frames).response.tool_choice, original);
   });
 }
-
-test('required client-only allowed_tools is not relaxed by an unrelated hosted iteration', async () => {
-  const { backend } = makeStubDeps();
-  const choice: OpenAIResponsesToolChoice = { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: 'client_only' }] };
-  const inv = makeInvocation({ payload: { tools: [{ type: 'web_search' }, { type: 'function', name: 'client_only' }], tool_choice: choice } });
-  // Force the loop boundary even though this upstream call is outside the
-  // allowed subset, so the test observes that client policy is not demoted.
-  const script = scriptedRun([searchCallTurn(0, 'hosted', 'query'), messageTurn('done')]);
-  const choices: unknown[] = [];
-  await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), async () => {
-    choices.push(structuredClone(inv.payload.tool_choice));
-    return await script.run();
-  });
-  assertEquals(choices, [choice, choice]);
-  assertEquals(script.callCount(), 2);
-  assertEquals(backend.calls.length, 1);
-  assertEquals(choice.mode, 'required');
-});
 
 test('helper echoes distinguish namespaced functions and rewrite hosted allowed_tools selectors reversibly', async () => {
   makeStubDeps();

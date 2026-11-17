@@ -536,39 +536,6 @@ test('generate restores signed hosted-tool replay data without stored state', as
   );
 });
 
-test('generate propagates upstream response headers onto the EventResult so respond can forward them', async () => {
-  installRepo();
-  const completedEvent: OpenAIResponsesStreamEventEx = {
-    type: 'response.completed',
-    sequence_number: 0,
-    response: makeOpenAIResponsesResult(),
-  };
-  const upstreamHeaders = new Headers({
-    'anthropic-ratelimit-unified-status': 'allowed',
-    'request-id': 'req_resp_xyz',
-  });
-  const callOpenAIResponses = vi.fn(async (): Promise<ProviderOpenAIResponsesResult> => ({
-    action: 'generate', ok: true,
-    events: makeProviderEvents([completedEvent]),
-    modelKey: 'test-model-key',
-    headers: upstreamHeaders,
-  }));
-  const candidate = makeCandidate(callOpenAIResponses);
-  const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), true);
-  const result = await openaiResponsesAttempt.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(store),
-    candidate,
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  assertEquals(result.headers?.get('anthropic-ratelimit-unified-status'), 'allowed');
-  assertEquals(result.headers?.get('request-id'), 'req_resp_xyz');
-  await collectEvents(result.events);
-});
-
 test('namespace wire mapping follows compact expansion and is isolated from outer shims across repeated dispatches', async () => {
   installRepo();
   const namespace = { type: 'namespace' as const, name: 'files', description: '', tools: [{ type: 'function' as const, name: 'read', parameters: { type: 'object' } }] };

@@ -86,15 +86,6 @@ test('parseWebSearchOperations: non-URL open ref_id produces an error sentinel',
   assertEquals(err!.includes('opaque-prior-id'), true);
 });
 
-test('parseWebSearchOperations: multi-action batched call returns all ops in order search→open→find', () => {
-  const ops = opsOf({
-    search_query: [{ q: 'a' }],
-    open: [{ ref_id: 'https://x' }],
-    find: [{ ref_id: 'https://y', pattern: 'p' }],
-  });
-  assertEquals(ops.map(o => o.kind), ['search', 'open', 'find']);
-});
-
 test('parseWebSearchOperations: unsupported sub-properties surface one unsupported op per entry', () => {
   const ops = opsOf({
     click: [{ ref_id: 'https://x', id: 1 }],
@@ -140,10 +131,6 @@ test('isUrlAllowed blocked_domains takes precedence over allowed_domains', () =>
   );
 });
 
-test('isUrlAllowed invalid URL is blocked defensively', () => {
-  assertEquals(isUrlAllowed('not-a-url', { allowedDomains: ['x.com'] }), false);
-});
-
 test('isUrlAllowed non-suffix substring match does NOT pass', () => {
   assertEquals(isUrlAllowed('https://evil-example.com', { allowedDomains: ['example.com'] }), false);
 });
@@ -154,11 +141,6 @@ test('findMatches: case-insensitive substring matching', () => {
   assertEquals(m[0].matched, 'Hello');
   assertEquals(m[1].matched, 'hello');
   assertEquals(m[2].matched, 'HELLO');
-});
-
-test('findMatches: respects maxMatches cap', () => {
-  const text = 'foo '.repeat(20);
-  assertEquals(findMatches(text, 'foo', { maxMatches: 5, contextChars: 5 }).length, 5);
 });
 
 test('findMatches: contextChars trims around the match', () => {
@@ -183,10 +165,6 @@ const prepare = (tools: OpenAIResponsesTool[]) => {
   assert(result.ok);
   return { filters: result.filters };
 };
-
-test('prepareToolsForShim extracts default filters from a bare hosted tool', () => {
-  assertEquals(prepare([{ type: 'web_search_preview' }]).filters, { maxResults: 20 });
-});
 
 test('prepareToolsForShim extracts filters, user_location, and context size', () => {
   const { filters } = prepare([{

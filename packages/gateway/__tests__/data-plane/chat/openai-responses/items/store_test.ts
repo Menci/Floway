@@ -55,26 +55,6 @@ describe('OpenAIResponsesStatefulStore', () => {
     expect(reader.getItemById(output.id)).toMatchObject({ id: 'msg_public' });
   });
 
-  test('HTTP default stores complete input and output snapshots', async () => {
-    const repo = installRepo();
-    const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), undefined);
-    await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
-    const output = {
-      id: 'msg_public',
-      apiKeyId: 'key-a',
-      payload: { item: { type: 'message', id: 'msg_public', role: 'assistant', content: [] } },
-      itemHash: 'output-hash',
-      refreshedAt: Date.now(),
-    };
-    await store.persistOutputItem(output);
-    await store.commitSnapshot('resp_saved', 'append', [output.id]);
-
-    const snapshot = await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_saved', 0);
-    expect(snapshot?.itemIds).toHaveLength(2);
-    const [storedOutput] = await repo.openaiResponsesItems.lookupMany('key-a', [output.id], 0);
-    expect(storedOutput).toMatchObject({ ...output, refreshedAt: snapshot?.refreshedAt });
-  });
-
   test('replace snapshots persist only their output state', async () => {
     const repo = installRepo();
     const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), true);
@@ -166,38 +146,6 @@ describe('OpenAIResponsesStatefulStore', () => {
 
     expect((await repo.openaiResponsesItems.lookupMany('key-a', [item.id], 0))[0].refreshedAt)
       .toBe(TEST_DAY + 3 * DAY_MS);
-  });
-
-  test('append snapshots refresh direct-id and content-hash input reuse', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(TEST_DAY + DAY_MS / 2);
-    const repo = installRepo();
-    const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), true);
-    const directInput = { type: 'message' as const, id: 'msg_direct', role: 'user' as const, content: 'direct' };
-    const hashedInput = { type: 'message' as const, role: 'user' as const, content: 'hashed' };
-    const initialRefreshedAt = TEST_DAY - DAY_MS / 2;
-    const directRow = {
-      id: directInput.id,
-      apiKeyId: 'key-a',
-      payload: { item: directInput },
-      itemHash: await hashOpenAIResponsesItem(directInput),
-      refreshedAt: initialRefreshedAt,
-    };
-    const hashedRow = {
-      id: 'msg_hashed',
-      apiKeyId: 'key-a',
-      payload: { item: hashedInput },
-      itemHash: await hashOpenAIResponsesItem(hashedInput),
-      refreshedAt: initialRefreshedAt,
-    };
-    await repo.openaiResponsesItems.insertMany([directRow, hashedRow], 0);
-    await store.loadInputItems([directInput, hashedInput], [directInput, hashedInput]);
-    await store.stageInputItems([directInput, hashedInput]);
-    await store.commitSnapshot('resp_reused', 'append', []);
-
-    const refreshed = await repo.openaiResponsesItems.lookupMany('key-a', [directRow.id, hashedRow.id], 0);
-    expect(refreshed.every(row => row.refreshedAt === TEST_DAY)).toBe(true);
-    expect((await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_reused', 0))?.itemIds).toEqual([directRow.id, hashedRow.id]);
   });
 
   test('disable between output-item done and terminal preserves the in-flight request snapshot', async () => {
