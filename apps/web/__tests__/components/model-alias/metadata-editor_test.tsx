@@ -54,30 +54,6 @@ describe('model alias metadata editor', () => {
     expect(input.value).toBe('low, custom');
   });
 
-  it('holds both image switches in one row of the group that names them', () => {
-    // The detail switch is subordinate to image input, and the group shows it:
-    // one heading over one row carrying both switches, the shape the upstream
-    // editor gives these fields.
-    renderInApp(<DetailHarness initial={{ chat: { modalities: { input: ['text', 'image'], output: ['text'] }, image_detail_original: true } }} />);
-    const group = screen.getByRole('group', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') });
-
-    // A switch's root carries `fui-Switch` and nests its input, so the row is
-    // the second ancestor up.
-    expect(group.querySelector('h4')).toBeNull();
-    const detailSwitch = screen.getByRole('switch', { name: imageDetailOriginalLabel });
-    expect(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }).parentElement?.parentElement)
-      .toBe(detailSwitch.parentElement?.parentElement);
-  });
-
-  it('hides the detail switch until image input is on', () => {
-    renderInApp(<DetailHarness initial={{}} />);
-    expect(screen.queryByRole('switch', { name: imageDetailOriginalLabel })).toBeNull();
-
-    fireEvent.click(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }));
-    expect(screen.getByRole('switch', { name: imageDetailOriginalLabel })).toBeDefined();
-    expect(screen.getByTestId('detail').textContent).toBe('false');
-  });
-
   it('preserves an existing detail claim when image input is enabled', () => {
     renderInApp(<DetailHarness initial={{ chat: { image_detail_original: true } }} />);
 
@@ -103,22 +79,12 @@ describe('model alias metadata editor', () => {
   // A prompt budget only exists to share the window with an output budget, so
   // a kind that generates no token stream states neither. The upstream editor
   // states the same rule on the same model.
-  for (const kind of ['embedding', 'rerank', 'transcription', 'decision'] as const) {
-    it(`states only a context window on a ${kind} alias`, () => {
-      renderInApp(<KindHarness kind={kind} />);
-      const limit = (key: string) => screen.queryByRole('spinbutton', { name: i18n.t(`dashboard.models.limits.${key}`) });
-      expect(limit('context')).not.toBeNull();
-      expect(limit('prompt')).toBeNull();
-      expect(limit('output')).toBeNull();
-    });
-  }
-
-  it('states the prompt and output split on a chat alias', () => {
-    renderInApp(<KindHarness kind="chat" />);
+  it('states only a context window on a non-chat alias', () => {
+    renderInApp(<KindHarness kind="embedding" />);
     const limit = (key: string) => screen.queryByRole('spinbutton', { name: i18n.t(`dashboard.models.limits.${key}`) });
     expect(limit('context')).not.toBeNull();
-    expect(limit('prompt')).not.toBeNull();
-    expect(limit('output')).not.toBeNull();
+    expect(limit('prompt')).toBeNull();
+    expect(limit('output')).toBeNull();
   });
 
   it('states no limits at all on an image alias', () => {

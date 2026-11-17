@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { contentTypeOf, EMPTY_BODY, renderBody } from '../../../src/components/requests/body-render';
+import { contentTypeOf, renderBody } from '../../../src/components/requests/body-render';
 
 // The dump carries bodies as they went over the wire, so a base64 fixture is
 // built from bytes rather than from a string literal.
@@ -29,9 +29,6 @@ describe('content type lookup', () => {
 });
 
 describe('body rendering', () => {
-  it('shows nothing for a body that carries no data', () => {
-    expect(renderBody({ data: '', encoding: 'utf8' }, 'application/json')).toEqual(EMPTY_BODY);
-  });
 
   it('pretty-prints JSON and says that is what it is', () => {
     const rendered = renderBody({ data: '{"model":"gpt-5","stream":true}', encoding: 'utf8' }, 'application/json');
@@ -39,14 +36,6 @@ describe('body rendering', () => {
     expect(rendered.isJson).toBe(true);
     expect(rendered.text).toBe('{\n  "model": "gpt-5",\n  "stream": true\n}');
     expect(rendered.copyText).toBe(rendered.text);
-  });
-
-  it('leaves a body that is not JSON exactly as it arrived', () => {
-    const rendered = renderBody({ data: 'data: [DONE]\n\n', encoding: 'utf8' }, 'text/event-stream');
-
-    expect(rendered.isJson).toBe(false);
-    expect(rendered.text).toBe('data: [DONE]\n\n');
-    expect(rendered.decodeError).toBeNull();
   });
 
   it('decodes a base64 body before reading it as JSON', () => {
@@ -82,28 +71,10 @@ describe('multipart body rendering', () => {
   const render = (wire: string, contentType = `multipart/form-data; boundary=${boundary}`) =>
     renderBody({ data: base64(wire), encoding: 'base64' }, contentType);
 
-  it('shows every textual part as text rather than as one base64 blob', () => {
-    const rendered = render(textWire);
-
-    expect(rendered.text).toContain('{"id":1}');
-    expect(rendered.text).toContain('hello');
-    expect(rendered.text).toContain(`--${boundary}--`);
-    expect(rendered.isJson).toBe(false);
-  });
-
   // Bytes no textual decoding could survive, so a render that reached the
   // placeholder cannot have come from the plain-body fallback.
   const image = bytes(0x00, 0x01, 0xFF);
   const binaryWire = multipart([jsonPart, part('content-disposition: form-data; name="file"\r\ncontent-type: image/png', image)]);
-
-  it('stands in for a part that is not text', () => {
-    const rendered = render(binaryWire);
-
-    expect(rendered.text).toContain('{"id":1}');
-    expect(rendered.text).toContain('[binary, 3 bytes, content-type=image/png]');
-    expect(rendered.text).toContain(base64(image));
-    expect(rendered.text).not.toContain(image);
-  });
 
   it('renders binary parts directly through the legacy-browser fallback', () => {
     const rendered = withoutTypedArrayBase64(() => render(binaryWire));

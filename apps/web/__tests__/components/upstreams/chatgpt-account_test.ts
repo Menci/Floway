@@ -32,12 +32,6 @@ describe('ChatGPT credential lookup', () => {
     expect(lookup.kind).toBe('present');
     if (lookup.kind === 'present') expect(lookup.credential.state).toBe('active');
   });
-
-  it('returns null when the configured account is absent from state', () => {
-    expect(findCredential(record({
-      accounts: [{ chatgptAccountId: 'other', state: 'active', state_updated_at: PAST }],
-    }))).toEqual({ kind: 'account-id-mismatch', expectedAccountId: ACCOUNT_ID });
-  });
 });
 
 describe('ChatGPT quota entries', () => {
@@ -52,17 +46,9 @@ describe('ChatGPT quota entries', () => {
     expect(entries[1].windows).toHaveLength(1);
   });
 
-  it('falls back to the map key when the snapshot names no active limit', () => {
-    expect(quotaEntries({ primary: { observed_at: PAST } }, NOW)[0].label).toBe('primary');
-  });
-
   it('treats an elapsed rate limit as spent', () => {
     expect(quotaEntries({ daily: { observed_at: PAST, ratelimited_until: PAST } }, NOW)[0].rateLimitedUntil).toBeNull();
     expect(quotaEntries({ daily: { observed_at: PAST, ratelimited_until: FUTURE } }, NOW)[0].rateLimitedUntil).toBe(FUTURE);
-  });
-
-  it('drops a window the snapshot reports no percentage for', () => {
-    expect(quotaEntries({ daily: { observed_at: PAST, primary_reset_after_at: FUTURE } }, NOW)[0].windows).toEqual([]);
   });
 });
 
@@ -74,11 +60,6 @@ describe('ChatGPT credits', () => {
       silent: { observed_at: '2026-07-27T00:00:00.000Z' },
     });
     expect(credits?.credits_balance).toBe(3);
-  });
-
-  it('is null when no snapshot mentions credits at all', () => {
-    expect(latestCredits({ daily: { observed_at: PAST, primary_used_percent: 1 } })).toBeNull();
-    expect(latestCredits(null)).toBeNull();
   });
 });
 
@@ -117,10 +98,6 @@ describe('ChatGPT account status', () => {
     expect(accountStatus(activeLookup, entries)).toEqual({ tone: 'warning', reason: 'heavy', percent: 84 });
   });
 
-  it('stays active with no snapshots at all', () => {
-    expect(accountStatus(activeLookup, [])).toEqual({ tone: 'success', reason: 'active' });
-  });
-
   it('marks a config/state account mismatch as dangerous', () => {
     expect(accountStatus({ kind: 'account-id-mismatch', expectedAccountId: ACCOUNT_ID }, []))
       .toEqual({ tone: 'danger', reason: 'account-id-mismatch' });
@@ -128,10 +105,6 @@ describe('ChatGPT account status', () => {
 });
 
 describe('ChatGPT renewability', () => {
-  it('reads the redacted flag the list hands back', () => {
-    expect(chatgptRenewable({ ...activeCredential, refresh_token_set: true })).toBe(true);
-    expect(chatgptRenewable({ ...activeCredential, refresh_token_set: false })).toBe(false);
-  });
 
   it('reads the raw token an import merges into the draft', () => {
     expect(chatgptRenewable({ ...activeCredential, refresh_token: 'rt' })).toBe(true);

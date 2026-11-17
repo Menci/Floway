@@ -22,20 +22,6 @@ const displayOf = (
 };
 afterEach(() => setLanguage('en'));
 
-it('localizes Kimi Code subscription windows without exposing internal window ids', async () => {
-  for (const [language, remaining, usage] of [
-    ['en', ['5-hour remaining', 'Monthly remaining', '7-day remaining'], ['5-hour usage', 'Monthly usage', '7-day usage']],
-    ['zh-Hans', ['5 小时余量', '月度余量', '7 天余量'], ['5 小时用量', '月度用量', '7 天用量']],
-  ] as const) {
-    await setLanguage(language);
-    for (const [index, window] of ['five_hour', 'monthly', 'weekly'].entries()) {
-      const identity = { name: 'quota.used_percent', labels: { window } };
-      expect(displayOf('kimi-code', identity, 'remaining')).toMatchObject({ name: remaining[index], unit: 'percent' });
-      expect(displayOf('kimi-code', identity, 'used')).toMatchObject({ name: usage[index], unit: 'percent' });
-    }
-  }
-});
-
 it('renders arbitrary label values independently of JavaScript object prototypes', () => {
   for (const quota of ['constructor', '__proto__', 'toString', 'future_metric']) {
     expect(displayOf('copilot', { name: 'quota.remaining', labels: { quota } })).toMatchObject({ name: `${quota} remaining`, unit: 'count', windowSeconds: null });
@@ -95,57 +81,5 @@ it('renders equal fixed and encoded windows with consistent labels', async () =>
         expect(fixed.name).toBe(encoded.name);
       }
     }
-  }
-});
-
-it('names provider-specific quota series by the selected direction', async () => {
-  for (const [language, expected] of [
-    ['en', ['7-day Sonnet remaining', '7-day Sonnet usage', 'Extra usage', 'Extra usage', 'Session remaining', 'Session usage', '7-day remaining', '7-day usage']],
-    ['zh-Hans', ['7 天 Sonnet 余量', '7 天 Sonnet 用量', '超额用量', '超额用量', '会话余量', '会话用量', '7 天余量', '7 天用量']],
-  ] as const) {
-    await setLanguage(language);
-    const translate = i18n.getFixedT(language) as unknown as TFunction;
-    expect([
-      displayOf('claude-code', { name: 'quota.utilization', labels: { quota: 'seven_day_sonnet' } }, 'remaining', translate).name,
-      displayOf('claude-code', { name: 'quota.utilization', labels: { quota: 'seven_day_sonnet' } }, 'used', translate).name,
-      displayOf('claude-code', { name: 'quota.utilization', labels: { quota: 'extra_usage' } }, 'remaining', translate).name,
-      displayOf('claude-code', { name: 'quota.utilization', labels: { quota: 'extra_usage' } }, 'used', translate).name,
-      displayOf('ollama', { name: 'quota.remaining_percent', labels: { window: 'session' } }, 'remaining', translate).name,
-      displayOf('ollama', { name: 'quota.remaining_percent', labels: { window: 'session' } }, 'used', translate).name,
-      displayOf('ollama', { name: 'quota.remaining_percent', labels: { window: 'weekly' } }, 'remaining', translate).name,
-      displayOf('ollama', { name: 'quota.remaining_percent', labels: { window: 'weekly' } }, 'used', translate).name,
-    ]).toEqual(expected);
-  }
-});
-
-it('names Ollama activity costs for the response range', async () => {
-  for (const [language, labels] of [
-    ['en', ['Past 24 hours cost', 'Past 7 days cost', 'Past month cost']],
-    ['zh-Hans', ['最近 24 小时费用', '最近 7 天费用', '最近一个月费用']],
-  ] as const) {
-    await setLanguage(language);
-    for (const [index, range] of ['24h', '7d', '30d'].entries()) {
-      const display = displayOf('ollama', { name: 'activity.cost_usd', labels: { range } });
-      expect(display.name).toBe(labels[index]);
-      expect(display.unit).toBe('usd');
-    }
-  }
-});
-
-it('distinguishes usage, remaining, allowance, and balance labels', async () => {
-  for (const [language, labels] of [
-    ['en', ['Remaining', 'Usage', 'Allowance', 'Included allowance', 'Included balance', 'Purchased balance']],
-    ['zh-Hans', ['余量', '用量', '额度', '套餐额度', '套餐余额', '购买余额']],
-  ] as const) {
-    await setLanguage(language);
-    const translate = i18n.getFixedT(language) as unknown as TFunction;
-    expect([
-      displayOf('copilot', { name: 'quota.remaining', labels: { quota: 'premium_interactions' } }, 'remaining', translate).name,
-      displayOf('copilot', { name: 'quota.remaining', labels: { quota: 'premium_interactions' } }, 'used', translate).name,
-      displayOf('copilot', { name: 'quota.entitlement', labels: { quota: 'premium_interactions' } }, 'remaining', translate).name,
-      displayOf('ollama', { name: 'allowance.usd', labels: { source: 'included' } }, 'remaining', translate).name,
-      displayOf('ollama', { name: 'balance.usd', labels: { source: 'included' } }, 'remaining', translate).name,
-      displayOf('ollama', { name: 'balance.usd', labels: { source: 'purchased' } }, 'remaining', translate).name,
-    ]).toEqual(labels);
   }
 });

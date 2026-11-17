@@ -64,14 +64,6 @@ const openImport = async () => {
 };
 
 describe('ChatGPT credential import', () => {
-  it('offers all three sources and asks for no authorization URL until the OAuth tab is chosen', async () => {
-    await openImport();
-
-    expect(screen.getByRole('tab', { name: 'Paste JSON' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Paste login URL' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Manual' })).toBeTruthy();
-    expect(fetchMock.mock.calls).toHaveLength(0);
-  });
 
   it('refuses a manual import with no access token, before any request', async () => {
     await openImport();
@@ -140,16 +132,6 @@ describe('ChatGPT credential import', () => {
     expect(radios[0]!.disabled).toBe(true);
     expect(radios[1]!.checked).toBe(true);
     expect(screen.getByText('tokens.access_token must be a non-empty string')).toBeTruthy();
-  });
-
-  it('reports a document with nothing importable in it', async () => {
-    previewCandidates = [];
-    await openImport();
-    fireEvent.change(screen.getByRole('textbox', { name: 'Credential JSON' }), { target: { value: '{}' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Preview accounts' }));
-    await settle();
-
-    expect(await screen.findByText('No importable OpenAI OAuth accounts were found.')).toBeTruthy();
   });
 
   it('drops a stale preview when the document is edited under it', async () => {

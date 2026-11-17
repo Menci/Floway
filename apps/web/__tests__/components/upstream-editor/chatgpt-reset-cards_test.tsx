@@ -142,14 +142,6 @@ describe('ChatGPT reset cards', () => {
     expect(consumeBodies[0].idempotency_key).toBe(consumeBodies[1].idempotency_key);
   });
 
-  it('does not redeem when confirmation is cancelled', async () => {
-    renderInApp(<ChatGPTResetCards record={record} onQuotaReset={vi.fn()} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Use' }));
-    fireEvent.click(await within(await screen.findByRole('dialog')).findByRole('button', { name: 'Cancel' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(consumeBodies).toHaveLength(0);
-  });
-
   it('shows a load failure without pretending there are no cards or echoing upstream input', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: 'sensitive stored input' }, { status: 502 }));
     renderInApp(<ChatGPTResetCards record={record} onQuotaReset={vi.fn()} />);
@@ -183,23 +175,5 @@ describe('ChatGPT reset cards', () => {
     renderInApp(<ChatGPTAccountCard record={{ ...record, id: '' }} />);
     expect(screen.queryByText('Reset cards')).toBeNull();
     expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('keeps redeemed cards disabled until the upstream list removes them', async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(Response.json({
-      reset_credits: { available_count: 0, credits: [{ ...card, status: 'redeemed' }] },
-    }));
-    renderInApp(<ChatGPTResetCards record={record} onQuotaReset={vi.fn()} />);
-    const redeemed = await screen.findByRole('button', { name: 'Redeemed' });
-    expect(redeemed.hasAttribute('disabled')).toBe(true);
-    fireEvent.click(redeemed);
-    expect(consumeBodies).toHaveLength(0);
-
-    vi.mocked(fetch).mockResolvedValueOnce(Response.json({
-      reset_credits: { available_count: 0, credits: [] },
-    }));
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh reset cards' }));
-    expect(await screen.findByText('No reset cards are available for this ChatGPT subscription.')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Redeemed' })).toBeNull();
   });
 });

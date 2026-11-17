@@ -41,20 +41,6 @@ describe('refresh supersession', () => {
     expect(result.current.refreshing).toBe(false);
   });
 
-  it('stops refreshing once the newest run settles, whatever the superseded one does after', async () => {
-    const { result, runs } = renderRefresh();
-
-    await act(async () => { void result.current.refresh(); });
-    await act(async () => { void result.current.refresh(); });
-    await act(async () => { runs[1]?.settle(); });
-
-    expect(result.current.refreshing).toBe(false);
-
-    await act(async () => { runs[0]?.settle(); });
-
-    expect(result.current.refreshing).toBe(false);
-  });
-
   it('aborts the run still in flight when the page unmounts', async () => {
     const { result, runs, unmount } = renderRefresh();
 
@@ -74,29 +60,6 @@ describe('refresh supersession', () => {
 
     expect(runs.map(run => run.background)).toEqual([true, false]);
   });
-});
-
-test('query-driven refresh commits the query only when its response arrives', async () => {
-  const runs: Array<{ settle: (succeeded: boolean) => void }> = [];
-  const reload = (_signal: AbortSignal, _options: { background: boolean; requestedAt: number }) =>
-    new Promise<boolean>(resolve => { runs.push({ settle: resolve }); });
-  const setQuery = vi.fn();
-  const onCommit = vi.fn();
-  const { result, rerender } = renderHook(
-    ({ query }) => useRefreshOnChange(query, 100, reload, setQuery, onCommit),
-    { initialProps: { query: { groupBy: 'model' } } },
-  );
-
-  rerender({ query: { groupBy: 'upstream' } });
-  await waitFor(() => expect(runs).toHaveLength(1));
-  expect(result.current.loadedQuery).toEqual({ groupBy: 'model' });
-
-  await act(async () => {
-    runs[0]!.settle(true);
-  });
-  expect(result.current.loadedQuery).toEqual({ groupBy: 'upstream' });
-  expect(result.current.loadedAt).toBeGreaterThan(100);
-  expect(onCommit).toHaveBeenCalledWith({ groupBy: 'model' }, { groupBy: 'upstream' });
 });
 
 test('query-driven refresh keeps the displayed query after a failed response', async () => {

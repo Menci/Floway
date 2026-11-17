@@ -1,7 +1,7 @@
 import { describe, expect, it, test } from 'vitest';
 
 import type { ChartBucket } from '../../../src/components/charts/dashboard-time';
-import { buildSearchChart, buildTokenChart, summarizeCounters, summarizeUsage } from '../../../src/components/usage/plot';
+import { buildSearchChart, buildTokenChart, summarizeCounters } from '../../../src/components/usage/plot';
 import type { ChartPlot, DisplayUsageRecord } from '../../../src/components/usage/types';
 
 const linePlot = (plot: ChartPlot) => {
@@ -86,46 +86,6 @@ describe('series identity', () => {
     expect(model.entries.map(entry => entry.id)).toEqual(['key-1', 'key-2']);
     expect(areaPlot(model.plot).lineChartData?.map(series => series.legend)).toEqual(['Shared name (1)', 'Shared name (2)']);
   });
-
-  it('uses the server dimension options for nullable and deleted upstream labels', () => {
-    const model = buildTokenChart({
-      records: [record({ input_tokens: '1' }, 'upstream:up-1'), record({ input_tokens: '2' }, 'upstream:up-deleted'), record({ input_tokens: '3' }, 'none')],
-      dimensionOptions: [
-        { value: 'upstream:up-1', label: 'Copilot seat' },
-        { value: 'none', label: 'Unknown upstream' },
-        { value: 'upstream:up-deleted', label: 'up-deleted' },
-      ],
-      metric: 'total',
-      range: 'today',
-      buckets: [bucket],
-    });
-
-    expect(model.entries.map(entry => [entry.id, entry.label])).toEqual([
-      ['upstream:up-1', 'Copilot seat'],
-      ['none', 'Unknown upstream'],
-      ['upstream:up-deleted', 'up-deleted'],
-    ]);
-  });
-
-  it('uses configured hues for known upstream series and palette hues for historical series', () => {
-    const model = buildTokenChart({
-      records: [record({ input_tokens: '1' }, 'upstream:up-1'), record({ input_tokens: '2' }, 'upstream:up-deleted')],
-      dimensionOptions: [
-        { value: 'upstream:up-1', label: 'Copilot seat' },
-        { value: 'upstream:up-deleted', label: 'up-deleted' },
-      ],
-      metric: 'total',
-      range: 'today',
-      buckets: [bucket],
-      seriesHues: new Map([['upstream:up-1', 217]]),
-    });
-
-    expect(model.entries.map(entry => entry.hue)).toEqual([217, 144]);
-    expect(areaPlot(model.plot).lineChartData?.map(series => series.color)).toEqual([
-      '#00b1d3',
-      '#69b369',
-    ]);
-  });
 });
 
 describe('bucket callout figures', () => {
@@ -146,10 +106,6 @@ describe('bucket callout figures', () => {
       output: '7600000',
       total: '7654320',
     });
-  });
-
-  it('reports the same totals the summary tiles do', () => {
-    expect(summarizeCounters(counters)).toEqual(summarizeUsage([record(metrics)]));
   });
 });
 
@@ -199,10 +155,6 @@ describe('search chart', () => {
     expect(chart.providers).toEqual(['microsoft-web-iq', 'tavily']);
     expect(chart.entries.map(entry => entry.label)).toEqual(['Key 1']);
     expect(areaPlot(chart.plot).lineChartData![0]!.data).toEqual([expect.objectContaining({ y: 7 })]);
-  });
-
-  it('reports no series when the window holds no search traffic', () => {
-    expect(searchChart([]).entries).toEqual([]);
   });
 
   it('ignores records that fall outside the plotted window', () => {

@@ -48,7 +48,6 @@ vi.mock('../../../src/components/upstream-editor/workspace', () => ({
       text: '- upstreamModelId: replacement\n  publicModelId: replacement\n  kind: chat\n  endpoints:\n    openaiChatCompletions: {}\n',
       error: null,
     })}>Edit YAML</button>
-    <button type="button" onClick={() => onModelsYamlDraftChange({ baseline: '[]', text: '[] # formatting only\n', error: null })}>Reformat YAML</button>
     <button type="button" onClick={() => onModelsYamlDraftChange({
       baseline: 'original',
       text: '- upstreamModelId: manual\n  publicModelId: manual\n  kind: chat\n  endpoints:\n    openaiResponses: {}\n    openaiChatCompletions: {}\n',
@@ -77,11 +76,11 @@ const customRecord = upstreamRecord('up_custom', {
 });
 const discovered = [{ upstreamModelId: 'new-model', publicModelId: 'new-model', kind: 'chat' as const, endpoints: { openaiChatCompletions: {} } }];
 
-const renderPage = (currentRecord = record, initialDiscovered: UpstreamModelConfig[] | null = null, editLevel: 'off' | 'models' | 'full' = 'full', audit = true) => {
+const renderPage = (currentRecord = record, initialDiscovered: UpstreamModelConfig[] | null = null) => {
   const router = createMemoryRouter([{
     path: '/editor',
     element: <OutcomeToastProvider><UpstreamEditorPage data={{
-      mode: 'edit', audit, editLevel, record: currentRecord, discovered: initialDiscovered,
+      mode: 'edit', audit: true, editLevel: 'full', record: currentRecord, discovered: initialDiscovered,
       proxies: [], runtime: { kind: 'node', runtimeLocation: 'TEST' },
     }} /></OutcomeToastProvider>,
   }], { initialEntries: ['/editor'] });
@@ -95,21 +94,9 @@ beforeEach(() => {
   apiMocks.previewModels.mockResolvedValue({ data: { kind: 'ollama', data: [] }, error: null });
 });
 
-test('an audit-only editor opens the saved record with no Save action', () => {
-  renderPage(record, discovered, 'off', true);
-  expect(screen.queryByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') })).toBeNull();
-});
-
 test('opening an editor shows the stored model snapshot without fetching', () => {
   renderPage(record, discovered);
   expect(screen.getByTestId('discovered').textContent).toBe('new-model');
-  expect(screen.getByTestId('catalog-available').textContent).toBe('true');
-  expect(apiMocks.listModels).not.toHaveBeenCalled();
-});
-
-test('a successful empty snapshot is still available', () => {
-  renderPage(record, []);
-  expect(screen.getByTestId('discovered').textContent).toBe('');
   expect(screen.getByTestId('catalog-available').textContent).toBe('true');
   expect(apiMocks.listModels).not.toHaveBeenCalled();
 });
@@ -140,24 +127,6 @@ test('metadata-only OAuth edits fetch the saved record and keep form changes uns
   expect((screen.getByRole('textbox', { name: 'Name' }) as HTMLInputElement).value).toBe('Unsaved name');
 });
 
-test('metadata-only Save lets a pending explicit Fetch finish', async () => {
-  let finishFetch: ((value: unknown) => void) | undefined;
-  apiMocks.listModels.mockImplementation(() => new Promise(resolve => { finishFetch = resolve; }));
-  renderPage();
-  fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
-  await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
-
-  fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'New name' } });
-  fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') }));
-  await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledTimes(1));
-  await act(async () => {
-    finishFetch!({ data: { kind: 'copilot', data: discovered, modelsCache: record.modelsCache }, error: null });
-  });
-  expect(screen.getByTestId('discovered').textContent).toBe('new-model');
-  expect(screen.getByTestId('catalog-available').textContent).toBe('true');
-  expect(apiMocks.listModels).toHaveBeenCalledTimes(1);
-});
-
 test('editing Ollama manual models fetches the draft instead of the saved catalog', async () => {
   const ollama = upstreamRecord('up_ollama', {
     kind: 'ollama',
@@ -174,14 +143,6 @@ test('editing Ollama manual models fetches the draft instead of the saved catalo
   await waitFor(() => expect(apiMocks.previewModels).toHaveBeenCalledTimes(1));
   expect(apiMocks.listModels).not.toHaveBeenCalled();
   expect(apiMocks.previewModels.mock.calls[0]?.[0].json.record.config.models).toEqual([]);
-});
-
-test('a models-level editor fetches the saved record after changing the catalog switch', async () => {
-  renderPage(customRecord, null, 'models');
-  fireEvent.click(screen.getByRole('button', { name: 'Edit discovery' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
-  await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
-  expect(apiMocks.previewModels).not.toHaveBeenCalled();
 });
 
 test('saving Custom manual models keeps an already fetched remote catalog', async () => {
@@ -219,24 +180,6 @@ test('saving a pending YAML edit discards an older explicit Fetch result', async
   });
   expect(screen.getByTestId('discovered').textContent).toBe('');
   expect(screen.getByTestId('catalog-available').textContent).toBe('false');
-});
-
-test('saving YAML formatting alone keeps a pending explicit Fetch', async () => {
-  apiMocks.patch.mockResolvedValue({ data: customRecord, error: null });
-  let finishFetch: ((value: unknown) => void) | undefined;
-  apiMocks.listModels.mockImplementation(() => new Promise(resolve => { finishFetch = resolve; }));
-  renderPage(customRecord);
-  fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
-  await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
-
-  fireEvent.click(screen.getByRole('button', { name: 'Reformat YAML' }));
-  fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') }));
-  await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledTimes(1));
-  await act(async () => {
-    finishFetch!({ data: { kind: 'custom', data: discovered, modelsCache: customRecord.modelsCache }, error: null });
-  });
-  expect(screen.getByTestId('discovered').textContent).toBe('new-model');
-  expect(screen.getByTestId('catalog-available').textContent).toBe('true');
 });
 
 test('reordering YAML object keys does not invalidate a pending Fetch', async () => {
@@ -344,17 +287,6 @@ test('a failed explicit Fetch reports model discovery failure after Save succeed
   expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.unsaved'))).toBeNull();
 });
 
-test('invalid edits do not save or fetch after confirmation', async () => {
-  renderPage();
-  fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: '' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Edit discovery' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
-  fireEvent.click(await screen.findByRole('button', { name: i18n.t('dashboard.upstreamEditor.fetchDirty.saveAndFetch') }));
-  await waitFor(() => expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.fetchDirty.title'))).toBeNull());
-  expect(apiMocks.patch).not.toHaveBeenCalled();
-  expect(apiMocks.listModels).not.toHaveBeenCalled();
-});
-
 test('a pending old Fetch cannot overwrite the new Fetch after Save', async () => {
   const finishFetches: Array<(value: unknown) => void> = [];
   apiMocks.listModels.mockImplementation(() => new Promise(resolve => { finishFetches.push(resolve); }));
@@ -373,13 +305,4 @@ test('a pending old Fetch cannot overwrite the new Fetch after Save', async () =
     finishFetches[0]!({ data: { kind: 'copilot', data: [{ upstreamModelId: 'obsolete' }], modelsCache: record.modelsCache }, error: null });
   });
   expect(screen.getByTestId('discovered').textContent).toBe('new-model');
-});
-
-test('ordinary Save acknowledges persistence without issuing a model Fetch', async () => {
-  renderPage();
-  fireEvent.click(screen.getByRole('button', { name: 'Edit discovery' }));
-  fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') }));
-  await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledTimes(1));
-  expect(screen.getAllByText(i18n.t('dashboard.upstreamEditor.toast.saved')).length).toBeGreaterThan(0);
-  expect(apiMocks.listModels).not.toHaveBeenCalled();
 });

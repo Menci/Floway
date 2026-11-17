@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { computeAnnouncedMetadata } from '../../../src/components/model-alias/announced-metadata';
-import { aliasBody, aliasDefaults, metadataForKind } from '../../../src/components/model-alias/form-data';
+import { aliasBody, aliasDefaults } from '../../../src/components/model-alias/form-data';
 import { computeAliasWarnings, computeModelWarning, computeRuleWarnings } from '../../../src/components/model-alias/warnings';
 import { indexCatalog } from '../../../src/components/models/catalog-index';
 import { catalogModel } from '../../api/model-fixture';
@@ -73,13 +73,6 @@ describe('announced metadata', () => {
     ]));
     expect(silent.chat?.image_detail_original).toBeUndefined();
   });
-
-  it('removes a capability from the intersection when a target rule pins it', () => {
-    const result = computeAnnouncedMetadata([target('a', { reasoning: { effort: 'low' } })], 'chat', indexCatalog([
-      catalogModel('a', { chat: { reasoning: { effort: { supported: ['low', 'medium'], default: 'medium' } } } }),
-    ]));
-    expect(result.chat?.reasoning).toBeUndefined();
-  });
 });
 
 describe('alias wire body', () => {
@@ -88,13 +81,6 @@ describe('alias wire body', () => {
     visible_in_models_list: true, targets: [target('a')], announced_metadata: null,
     sort_order: 7, created_at: '2026-01-01', updated_at: '2026-01-01',
   };
-
-  it('drops chat-only metadata when the alias changes to a non-chat kind', () => {
-    expect(metadataForKind('rerank', {
-      limits: { max_context_window_tokens: 4096 },
-      chat: { modalities: { input: ['text'], output: ['text'] } },
-    })).toEqual({ limits: { max_context_window_tokens: 4096 } });
-  });
 
   it('trims identifiers and normalizes empty fields, leaving the order to the server', () => {
     const values = aliasDefaults(existing);

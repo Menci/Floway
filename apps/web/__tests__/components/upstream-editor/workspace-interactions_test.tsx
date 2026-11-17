@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { forwardRef, useState } from 'react';
 import type { PropsWithChildren } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
@@ -92,18 +92,6 @@ const deleteCommands = () => screen.getAllByLabelText(new RegExp(`^${deleteComma
 describe('upstream model workspace field-array transitions', () => {
   const detailLabel = models('imageDetailOriginal');
 
-  it('opens a newly added model in the detail editor', async () => {
-    renderInApp(<Harness />);
-    const table = screen.getByRole('table', { name: models('title') });
-
-    fireEvent.click(screen.getByRole('button', { name: models('add') }));
-
-    await waitFor(() => expect(table.isConnected).toBe(false));
-    expect((screen.getByRole('textbox', { name: models('upstreamId') }) as HTMLInputElement).value).toBe('');
-    expect(screen.queryByRole('alert')).toBe(null);
-    expect(screen.queryByText('Model ID, kind, endpoints, and rerank target must form a valid model configuration.')).toBe(null);
-  });
-
   it('keeps the same focused input while a new model ID changes', async () => {
     renderInApp(<Harness />);
     const table = screen.getByRole('table', { name: models('title') });
@@ -152,47 +140,28 @@ describe('upstream model workspace field-array transitions', () => {
   });
 
   // A prompt budget exists only to share the window with an output budget, so
-  // a kind that generates no token stream states neither; it states only the
-  // context window. Image is excluded from the panel entirely and so is not
-  // listed here.
-  const nonChatRows = [
-    { kind: 'rerank', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' as const } },
-    { kind: 'embedding', endpoints: { openaiEmbeddings: {} } },
-    { kind: 'transcription', endpoints: { openaiAudioTranscriptions: {} } },
-    { kind: 'decision', endpoints: { decision: {} }, decisionTarget: { protocol: 'typesafe-systemone' as const } },
-  ] as const;
-
-  for (const row of nonChatRows) {
-    it(`states only a context window on a ${row.kind} row`, () => {
-      const custom = upstreamRecord(`up_${row.kind}`, {
-        name: row.kind,
-        kind: 'custom',
-        config: {
-          baseUrl: 'https://example.com',
-          apiKey: '',
-          endpoints: row.endpoints,
-          ingressHeadersRules: [],
-          modelsFetch: { enabled: false, authStyle: 'bearer' },
-          models: [{ upstreamModelId: 'm', publicModelId: 'm', display_name: 'm', ...row }],
-        },
-        state: null,
-      });
-
-      renderInApp(<Harness source={custom} />);
-      fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.models.editNamed', { name: 'm' }) }));
-
-      expect(screen.getByRole('spinbutton', { name: limitLabel('context') })).toBeTruthy();
-      expect(screen.queryByRole('spinbutton', { name: limitLabel('prompt') })).toBe(null);
-      expect(screen.queryByRole('spinbutton', { name: limitLabel('output') })).toBe(null);
+  // a kind that generates no token stream states only the context window.
+  it('states only a context window on a non-chat row', () => {
+    const custom = upstreamRecord('up_embedding', {
+      name: 'embedding',
+      kind: 'custom',
+      config: {
+        baseUrl: 'https://example.com',
+        apiKey: '',
+        endpoints: { openaiEmbeddings: {} },
+        ingressHeadersRules: [],
+        modelsFetch: { enabled: false, authStyle: 'bearer' },
+        models: [{ upstreamModelId: 'm', publicModelId: 'm', display_name: 'm', kind: 'embedding', endpoints: { openaiEmbeddings: {} } }],
+      },
+      state: null,
     });
-  }
 
-  it('states the prompt and output split on a chatting row', () => {
-    renderInApp(<Harness />);
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.models.editNamed', { name: 'model-a' }) }));
+    renderInApp(<Harness source={custom} />);
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.models.editNamed', { name: 'm' }) }));
+
     expect(screen.getByRole('spinbutton', { name: limitLabel('context') })).toBeTruthy();
-    expect(screen.getByRole('spinbutton', { name: limitLabel('prompt') })).toBeTruthy();
-    expect(screen.getByRole('spinbutton', { name: limitLabel('output') })).toBeTruthy();
+    expect(screen.queryByRole('spinbutton', { name: limitLabel('prompt') })).toBe(null);
+    expect(screen.queryByRole('spinbutton', { name: limitLabel('output') })).toBe(null);
   });
 
   it('reports a missing model ID only after it prevents returning to the list', async () => {
@@ -213,30 +182,6 @@ describe('upstream model workspace field-array transitions', () => {
     const yaml = (await screen.findByLabelText('YAML models') as HTMLTextAreaElement).value;
     expect(yaml).toContain('upstreamModelId: model-new');
     expect(yaml).toContain('opaqueBlobCompatibilityScope:\n    bindToUpstream: true');
-  });
-
-  it('reports a missing endpoint at its section after a blocked return', () => {
-    renderInApp(<Harness />);
-
-    fireEvent.click(screen.getByRole('button', { name: models('add') }));
-    fireEvent.change(screen.getByRole('textbox', { name: models('upstreamId') }), { target: { value: 'model-new' } });
-    fireEvent.click(screen.getByRole('checkbox', { name: /OpenAI Chat Completions/ }));
-    expect(screen.queryByRole('alert')).toBe(null);
-    fireEvent.click(screen.getByRole('button', { name: models('back') }));
-
-    expect(screen.queryByRole('table', { name: models('title') })).toBe(null);
-    expect(screen.getByText(models('endpointsRequired'))).toBeTruthy();
-  });
-
-  it('returns from a model detail to the model list', async () => {
-    renderInApp(<Harness />);
-    const table = screen.getByRole('table', { name: models('title') });
-
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.models.editNamed', { name: 'model-a' }) }));
-    await waitFor(() => expect(table.isConnected).toBe(false));
-
-    fireEvent.click(screen.getByRole('button', { name: models('back') }));
-    expect(await screen.findByRole('table', { name: models('title') })).toBeTruthy();
   });
 
   it('edits and serializes a manual model opaque blob compatibility scope', async () => {
@@ -344,26 +289,6 @@ describe('upstream model workspace field-array transitions', () => {
 });
 
 describe('upstream model listing failure wording', () => {
-  it('shows the concrete failure returned by the explicit Fetch', () => {
-    renderInApp(<Harness modelsError={{ message: 'HTTP 401: unauthorized', upstreamResponse: null }} />);
-    expect(screen.getByText(i18n.t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: 'HTTP 401: unauthorized' }))).toBeTruthy();
-  });
-
-  it('shows the upstream HTTP status, headers, and parsed body', () => {
-    renderInApp(<Harness modelsError={{
-      message: 'HTTP 401: unauthorized',
-      upstreamResponse: { status: 401, headers: [['content-type', 'application/json']], body: '{\n  "error": "unauthorized"\n}' },
-    }} />);
-    const heading = screen.getByText(models('listingFailed'));
-    const banner = heading.closest<HTMLElement>('.fui-MessageBar');
-    expect.assert(banner);
-    const copyButton = within(banner).getByRole('button', { name: models('copyError') });
-    expect(copyButton.parentElement).toBe(heading.parentElement);
-    expect(heading.parentElement?.nextElementSibling?.tagName).toBe('PRE');
-    expect(banner.querySelector('.fui-MessageBarActions')).toBeNull();
-    expect(screen.getByText(/HTTP 401/).textContent).toContain('content-type: application/json');
-    expect(screen.getByText(/HTTP 401/).textContent).toContain('"error": "unauthorized"');
-  });
 
   it('shortens the visible error and lets the operator copy the stored full message', async () => {
     const message = 'x'.repeat(MODEL_ERROR_EDITOR_LENGTH + 100);

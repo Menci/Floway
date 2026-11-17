@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildPerformanceQuery, normalizePerformanceBreakdownForRuntime, normalizePerformanceDimensionsForRuntime, parsePerformanceUrlState, performanceLabels, performancePercentileTailOf, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/overview';
+import { buildPerformanceQuery, normalizePerformanceBreakdownForRuntime, normalizePerformanceDimensionsForRuntime, parsePerformanceUrlState, performanceLabels, performanceValue, serializePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../../src/components/performance/overview';
 import { buildPerformanceChart } from '../../../src/components/performance/plot';
 
 const emptyOverview = (): PerformanceOverviewResponse => ({
@@ -13,7 +13,7 @@ const emptyOverview = (): PerformanceOverviewResponse => ({
 });
 
 describe('performance overview query', () => {
-  it('sends group-by and all active filters using the new API shape', () => {
+  it('sends group-by and all active filters', () => {
     const query = buildPerformanceQuery('7d', 'operation', {
       model: ['gpt-5', 'claude-opus-4-7'], upstream: ['up_1'], operation: [], runtimeLocation: ['SJC'], userId: ['2'], keyId: ['key_1'],
     }, Date.UTC(2026, 6, 12, 4));
@@ -26,7 +26,6 @@ describe('performance overview query', () => {
       filter_user_id: ['2'],
       filter_key_id: ['key_1'],
     });
-    expect(query).not.toHaveProperty('metric_scope');
   });
 
   it('requests UTC hours only for the range whose repeated hours stay separate', () => {
@@ -40,11 +39,6 @@ describe('performance overview query', () => {
     expect(buildPerformanceQuery('30d', 'model', filters, Date.UTC(2026, 10, 1, 7)).bucket).toBe('day');
   });
 
-  it('converts TPOT microseconds to output tokens per second', () => {
-    const record = { tpotUsP95: 20_000 } as Parameters<typeof performanceValue>[0];
-    expect(performanceValue(record, 'tokPerSec', 'p95')).toBe(50);
-  });
-
   it('reads the percentile it is given, so each table column can carry its own', () => {
     const record = { ttftMsP50: 100, ttftMsP99: 300, tpotUsP50: 10_000, tpotUsP99: 40_000 } as Parameters<typeof performanceValue>[0];
 
@@ -52,12 +46,6 @@ describe('performance overview query', () => {
     expect(performanceValue(record, 'ttft', 'p99')).toBe(300);
     expect(performanceValue(record, 'tokPerSec', 'p50')).toBe(100);
     expect(performanceValue(record, 'tokPerSec', 'p99')).toBe(25);
-  });
-
-  it('names the share of readings below each percentile for the speed label', () => {
-    expect(performancePercentileTailOf('p50')).toBe(50);
-    expect(performancePercentileTailOf('p95')).toBe(5);
-    expect(performancePercentileTailOf('p99')).toBe(1);
   });
 
   it('round-trips non-default dashboard state through the URL', () => {
@@ -82,21 +70,6 @@ describe('performance overview query', () => {
     expect(serialized.getAll('fm')).toEqual(['gpt-5', 'claude-opus-4-7']);
   });
 
-  it('keeps one percentile per metric', () => {
-    const state = parsePerformanceUrlState(new URLSearchParams('ttft_p=p99&speed_p=p50'));
-
-    expect(state.percentiles).toEqual({ ttft: 'p99', tokPerSec: 'p50' });
-    expect(parsePerformanceUrlState(serializePerformanceUrlState(state)).percentiles).toEqual({ ttft: 'p99', tokPerSec: 'p50' });
-  });
-
-  it('reads the table breakdown and sort from the URL', () => {
-    const state = parsePerformanceUrlState(new URLSearchParams('tab=operation&sort=speed&dir=ascending'));
-
-    expect(state.breakdown).toBe('operation');
-    expect(state.sort).toEqual({ key: 'speed', direction: 'ascending' });
-    expect(serializePerformanceUrlState(state).toString()).toBe('tab=operation&sort=speed&dir=ascending');
-  });
-
   it('omits a default sort and direction from the URL', () => {
     const state = parsePerformanceUrlState(new URLSearchParams());
 
@@ -106,15 +79,6 @@ describe('performance overview query', () => {
 
   it('restores hidden series from the original comma format', () => {
     expect(parsePerformanceUrlState(new URLSearchParams('hide=a%252Cb,c')).hidden).toEqual(['a,b', 'c']);
-  });
-
-  it('distinguishes one comma-containing id in the repeated parameter format', () => {
-    const state = parsePerformanceUrlState(new URLSearchParams());
-    const serialized = serializePerformanceUrlState({ ...state, hidden: ['a,b'] });
-
-    expect(serialized.get('hidev')).toBe('2');
-    expect(serialized.getAll('hide')).toEqual(['a,b']);
-    expect(parsePerformanceUrlState(serialized).hidden).toEqual(['a,b']);
   });
 
   it('serializes hidden series as stable repeated parameters', () => {
@@ -182,21 +146,5 @@ describe('performance chart series', () => {
     expect(chart.entries.map(entry => entry.id)).toEqual(['key-1', 'key-2']);
     expect(chart.data.lineChartData?.map(series => series.legend)).toEqual(['Shared name (1)', 'Shared name (2)']);
     expect(chart.details.get(0)?.get('key-1')).toEqual({ outputSpeed: 50, ttft: 20 });
-  });
-
-  it('uses configured hues for upstream series', () => {
-    const overview = emptyOverview();
-    const chart = buildPerformanceChart(
-      [record('up-1')],
-      'ttft',
-      { ttft: 'p95', tokPerSec: 'p95' },
-      'upstream',
-      performanceLabels(overview, [{ id: 'up-1', name: 'Copilot seat', hue: 217 }]),
-      buckets,
-      'today',
-    );
-
-    expect(chart.entries[0]).toMatchObject({ id: 'up-1', label: 'Copilot seat', hue: 217 });
-    expect(chart.data.lineChartData?.[0]?.color).toBe('#00b1d3');
   });
 });

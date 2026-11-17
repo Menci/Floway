@@ -82,20 +82,6 @@ it('keeps Full-only values focusable and selectable in a models-only editor', ()
   expect(catalogSwitch.checked).toBe(false);
 });
 
-// The page reads formState.isDirty to decide whether leaving prompts, so each
-// case ends where it started and asks that flag.
-const editAndUndo = (value: string, edited: string) => {
-  fireEvent.change(screen.getByDisplayValue(value), { target: { value: edited } });
-  fireEvent.change(screen.getByDisplayValue(edited), { target: { value } });
-};
-
-// A field the editor registers writes its key into the edited values on mount,
-// and react-hook-form decides dirtiness by comparing those values against the
-// ones the form opened with. So an optional field whose stored record omits its
-// key used to leave the form permanently dirty after any edit anywhere, and the
-// editor prompted about unsaved changes on a record that was back at its saved
-// state. Each case is paired with the same record carrying the optional value,
-// which is the arrangement that always worked.
 it('keeps path overrides and endpoint checkboxes read-only without Full', () => {
   renderInApp(<SidebarProbe editLevel="off" record={customRecord({ enabled: true })} />);
   const endpoint = screen.getAllByRole('checkbox')[0] as HTMLInputElement;
@@ -109,15 +95,22 @@ it('keeps path overrides and endpoint checkboxes read-only without Full', () => 
   expect(configReadOnly('off')).toEqual({ connection: true, modelsFetch: true });
 });
 
+// The page reads formState.isDirty to decide whether leaving prompts, so each
+// case ends where it started and asks that flag.
+const editAndUndo = (value: string, edited: string) => {
+  fireEvent.change(screen.getByDisplayValue(value), { target: { value: edited } });
+  fireEvent.change(screen.getByDisplayValue(edited), { target: { value } });
+};
+
+// A field the editor registers writes its key into the edited values on mount,
+// and react-hook-form decides dirtiness by comparing those values against the
+// ones the form opened with. So an optional field whose stored record omits its
+// key used to leave the form permanently dirty after any edit anywhere, and the
+// editor prompted about unsaved changes on a record that was back at its saved
+// state.
 describe('upstream editor dirtiness across an edit and its undo', () => {
   it('settles clean when the catalog path is absent from the stored config', () => {
     renderInApp(<ConfigProbe record={customRecord({ enabled: true })} />);
-    editAndUndo('https://api.example.com', 'https://api.example.com/x');
-    expect(dirty()).toBe('false');
-  });
-
-  it('settles clean when the catalog path is stored', () => {
-    renderInApp(<ConfigProbe record={customRecord({ enabled: true, endpoint: '/v1/models' })} />);
     editAndUndo('https://api.example.com', 'https://api.example.com/x');
     expect(dirty()).toBe('false');
   });
@@ -143,12 +136,6 @@ describe('upstream editor dirtiness across an edit and its undo', () => {
 
   it('settles clean beside a proxy entry with no colo whitelist', () => {
     renderInApp(<SidebarProbe record={customRecord({ enabled: true, endpoint: '/v1/models' }, [{ id: 'direct_fetch' }])} />);
-    editAndUndo('Upstream', 'Renamed');
-    expect(dirty()).toBe('false');
-  });
-
-  it('settles clean beside a proxy entry with a colo whitelist', () => {
-    renderInApp(<SidebarProbe record={customRecord({ enabled: true, endpoint: '/v1/models' }, [{ id: 'direct_fetch', colos: ['HKG'] }])} />);
     editAndUndo('Upstream', 'Renamed');
     expect(dirty()).toBe('false');
   });

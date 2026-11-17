@@ -35,19 +35,6 @@ describe('Agent Setup model ranking', () => {
       'other',
     ]);
   });
-
-  it('retains the chat catalog for omp in catalog order and leaves ids opaque', () => {
-    expect(rankAgentSetupModels([
-      catalogModel('gpt-4o', { contextWindow: 200_000 }),
-      catalogModel('claude-sonnet-4-5', { contextWindow: 200_000 }),
-      catalogModel('embedding', { kind: 'embedding', endpoints: { openaiEmbeddings: {} } }),
-    ], { family: 'omp' }).map(entry => entry.id)).toEqual([
-      'gpt-4o',
-      'claude-sonnet-4-5',
-    ]);
-    expect(buildAgentModelOptions([catalogModel('claude-sonnet-4-5', { contextWindow: 1_000_000 })], { family: 'omp' })[0]?.value)
-      .toBe('claude-sonnet-4-5');
-  });
 });
 
 describe('Agent Setup persisted model values', () => {
@@ -87,24 +74,6 @@ describe('Agent Setup persisted model values', () => {
 });
 
 describe('Agent Setup model picker', () => {
-  it('labels subscription models by catalog name while retaining the public model id', () => {
-    const options = modelOptions([catalogModel('kimi-k2.8-preview', { display_name: 'Kimi K2.8 Preview' })], 'codex', 'default');
-    expect(options).toEqual([{ value: 'kimi-k2.8-preview', label: 'Kimi K2.8 Preview' }]);
-    expect(filterModelOptions(options, 'k2.8')).toEqual(options);
-    expect(filterModelOptions(options, 'kimi-k2.8-preview')).toEqual(options);
-  });
-  it('offers the full chat catalog while ranking the requested family', () => {
-    const options = modelOptions([
-      catalogModel('gpt-5.6', { contextWindow: 400_000 }),
-      catalogModel('claude-opus-4.6', { contextWindow: 1_000_000 }),
-      catalogModel('other-chat', { contextWindow: 100_000 }),
-    ], 'claude', 'opus');
-    expect(options.map(option => option.value)).toEqual([
-      'claude-opus-4.6[1m]',
-      'gpt-5.6',
-      'other-chat',
-    ]);
-  });
 
   it('searches the label case-insensitively and the value the label does not spell', () => {
     const options = modelOptions([

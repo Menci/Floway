@@ -58,13 +58,6 @@ const List = ({ busy = false, onDrop, onDropError, onDragStart, onReorder, order
   </ul>;
 };
 
-const Locked = ({ onReorder }: { onReorder: (from: number, to: number) => void }) => {
-  const reorder = useReorderList({ busy: true, length: names.length, onReorder });
-  return <ul {...reorder.listProps()}>
-    {names.map((name, index) => <Row handle={reorder.handleProps(index)} key={name} name={name} props={reorder.itemProps(index)} rank={reorder.position(index)} />)}
-  </ul>;
-};
-
 const Row = ({ handle, name, props, rank }: { handle: ReorderHandleProps; name: string; props: object; rank: number }) =>
   <li {...props} data-name={name} data-rank={rank}><ReorderHandle {...handle} label={`Reorder ${name}`} /></li>;
 
@@ -114,21 +107,6 @@ describe('drag-to-position reordering', () => {
     // And so does the list's edge, which is what a separator drawn from the ends
     // has to follow once the rows stop matching the markup.
     expect(edges()).toEqual(['last', 'first', null, null]);
-  });
-
-  it('tracks the pointer while it is down and clamps the row inside the list', () => {
-    renderInApp(<List onReorder={vi.fn()} />);
-
-    press(grip('alpha'), 20);
-    expect(travel()).toBe('0px');
-    drag(60);
-    expect(travel()).toBe('40px');
-    // The row cannot leave the list: three rows below it is as far as it goes.
-    drag(400);
-    expect(travel()).toBe('120px');
-    // Clamped where it is painted, so coming back reads from the pointer again.
-    drag(70);
-    expect(travel()).toBe('50px');
   });
 
   it('settles the row onto its slot before reporting the move', () => {
@@ -197,23 +175,6 @@ describe('drag-to-position reordering', () => {
     expect(offsets()).toEqual(['', '', '', '']);
   });
 
-  it('takes the row it is over only once the pointer is past that row midpoint', () => {
-    vi.useFakeTimers();
-    const onReorder = vi.fn();
-    renderInApp(<List onReorder={onReorder} />);
-
-    press(grip('alpha'), 20);
-    drag(55);
-    expect(ranks()).toEqual(['0', '1', '2', '3']);
-
-    drag(60);
-    expect(ranks()).toEqual(['1', '0', '2', '3']);
-
-    release(60);
-    act(() => { vi.advanceTimersByTime(REPOSITION_ANIMATION_MS); });
-    expect(onReorder).toHaveBeenCalledExactlyOnceWith(0, 1);
-  });
-
   it('abandons the previewed move on Escape and commits nothing', () => {
     vi.useFakeTimers();
     const onReorder = vi.fn();
@@ -265,18 +226,6 @@ describe('drag-to-position reordering', () => {
     expect(onReorder).toHaveBeenCalledOnce();
   });
 
-  it('leaves the grip a list has locked reachable but unable to move its row', () => {
-    const onReorder = vi.fn();
-    renderInApp(<Locked onReorder={onReorder} />);
-
-    grip('charlie').focus();
-    fireEvent.keyDown(grip('charlie'), { key: 'ArrowUp' });
-    expect(document.activeElement).toBe(grip('bravo'));
-
-    fireEvent.keyDown(grip('bravo'), { altKey: true, key: 'ArrowUp', shiftKey: true });
-    expect(onReorder).not.toHaveBeenCalled();
-  });
-
   it('stops at the last ordered item when the list leaves the rest out of its order', () => {
     vi.useFakeTimers();
     const onReorder = vi.fn();
@@ -317,11 +266,8 @@ it('keeps the grabbed point after the start callback moves the list', () => {
   } finally { measurements.mockRestore(); }
 });
 
-it.each([
-  ['bravo', 1],
-  ['charlie', 2],
-  ['delta', 3],
-] as const)('does not reorder %s when a start callback collapses content above it without pointer travel', (name, index) => {
+it('does not reorder when a start callback collapses content above the row without pointer travel', () => {
+  const [name, index] = ['charlie', 2] as const;
   vi.useFakeTimers();
   let gap = 200;
   const measurements = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {

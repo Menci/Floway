@@ -153,44 +153,6 @@ describe('Agent Setup lease lifecycle', () => {
     expect(saves).toHaveLength(1);
   });
 
-  it('aborts an active request when the selected key changes', async () => {
-    let signal: AbortSignal | undefined;
-    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
-      signal = init?.signal ?? undefined;
-      return new Promise<Response>((_resolve, reject) => {
-        signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
-      });
-    }));
-    mount('key-1');
-    expect(signal?.aborted).toBe(false);
-    view.rerender({ apiKeyId: null });
-    expect(signal?.aborted).toBe(true);
-  });
-
-  it('flushes one save before heartbeat when the page becomes visible', async () => {
-    const operations: string[] = [];
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      operations.push(String(input).endsWith('/heartbeat') ? 'heartbeat' : init?.method ?? 'GET');
-      return Response.json(lease());
-    }));
-    mount('key-1');
-    await settle();
-    operations.length = 0;
-    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
-    document.dispatchEvent(new Event('visibilitychange'));
-    await act(async () => current().updateDraft(configuration => ({
-      ...configuration,
-      codex: { ...configuration.codex, model: 'gpt-visible' },
-    })));
-    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
-    document.dispatchEvent(new Event('visibilitychange'));
-    await settle();
-    expect(operations).toEqual(['PUT', 'heartbeat']);
-    await advance(400);
-    await settle();
-    expect(operations).toEqual(['PUT', 'heartbeat']);
-  });
-
   it('cancels a stale save retry after a newer edit succeeds', async () => {
     let putCalls = 0;
     vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {

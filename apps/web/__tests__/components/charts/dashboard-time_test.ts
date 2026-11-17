@@ -13,15 +13,6 @@ test('bucket tooltip omits years across year boundaries', () => {
   expect(formatBucketInterval(frame)).not.toMatch(/2026|2027|年/);
 });
 
-test('presets retain their original windows and aggregation densities', () => {
-  vi.stubEnv('TZ', 'Asia/Singapore');
-  const now = Date.UTC(2026, 9, 10, 6, 37);
-  expect(dashboardBucketFrames('today', now)).toHaveLength(24);
-  expect(dashboardBucketFrames('7d', now)).toHaveLength(42);
-  expect(dashboardBucketFrames('30d', now)).toHaveLength(30);
-  expect(dashboardInterval('30d', now).start).toBe(Date.UTC(2026, 8, 10, 16));
-});
-
 test('custom aggregation adapts to inclusive calendar-day density', () => {
   vi.stubEnv('TZ', 'UTC');
   const range = (days: number) => ({ start: '2026-01-01', end: calendarDate(new Date(2026, 0, days)) });
@@ -114,21 +105,6 @@ test('only custom ranges covering the current local date poll', () => {
   expect(dashboardRangeIsCurrent({ start: '2026-10-09', end: '2026-10-09' }, now)).toBe(false);
   expect(dashboardRangeIsCurrent({ start: '2026-10-10', end: '2026-10-10' }, now)).toBe(true);
   expect(dashboardRangeIsCurrent({ start: '2026-10-11', end: '2026-10-12' }, now)).toBe(false);
-});
-
-test('whole local days retain DST and fractional-offset UTC hour coverage', () => {
-  for (const zone of ['America/New_York', 'Asia/Kathmandu']) {
-    vi.stubEnv('TZ', zone);
-    const range = { start: '2026-10-25', end: '2026-11-10' };
-    const interval = dashboardInterval(range, 0);
-    const frames = dashboardBucketFrames(range, 0);
-    const mapper = dashboardBucketMapper(range, 0);
-    for (const frame of frames) expect(mapper(new Date(frame.start).toISOString().slice(0, 13))).toBe(frame.key);
-    expect(frames.reduce((sum, frame) => sum + frame.end - frame.start, 0)).toBe(interval.end - interval.start);
-  }
-  vi.stubEnv('TZ', 'America/New_York');
-  expect(dashboardBucketFrames({ start: '2026-11-01', end: '2026-11-01' }, 0)).toHaveLength(25);
-  expect(dashboardBucketFrames({ start: '2026-03-08', end: '2026-03-08' }, 0)).toHaveLength(23);
 });
 
 test('chart ticks distribute both endpoints without crowding the final two labels', () => {

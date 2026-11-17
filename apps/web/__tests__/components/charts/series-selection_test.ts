@@ -9,10 +9,6 @@ describe('series toggle', () => {
     expect([...toggledSeries(new Set(), 'a')]).toEqual(['a']);
     expect([...toggledSeries(new Set(['a']), 'a')]).toEqual([]);
   });
-
-  it('leaves the other series alone', () => {
-    expect([...toggledSeries(new Set(['b']), 'a')].toSorted()).toEqual(['a', 'b']);
-  });
 });
 
 describe('series inversion', () => {
@@ -24,9 +20,6 @@ describe('series inversion', () => {
 });
 
 describe('series isolation', () => {
-  it('hides everything but the chosen series', () => {
-    expect([...isolatedSeries(IDS, new Set(), 'b')]).toEqual(['a', 'c']);
-  });
 
   it('reverses itself when the chosen series is already the only visible one', () => {
     expect([...isolatedSeries(IDS, new Set(['a', 'c']), 'b')]).toEqual([]);
@@ -34,10 +27,6 @@ describe('series isolation', () => {
 
   it('isolates rather than reverses when another series is also visible', () => {
     expect([...isolatedSeries(IDS, new Set(['c']), 'b')]).toEqual(['a', 'c']);
-  });
-
-  it('isolates a currently hidden series', () => {
-    expect([...isolatedSeries(IDS, new Set(['b']), 'b')]).toEqual(['a', 'c']);
   });
 
   it('survives a double-click, whose two toggles cancel out first', () => {

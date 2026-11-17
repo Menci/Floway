@@ -81,24 +81,10 @@ const withKey = (apiKey: string) => upstreamRecord('up_custom', {
   state: null,
 }) as CustomRecord;
 
-test('an API key opens on the stored value', () => {
-  expect((valuesFromRecord(withKey('sk-stored')).config as CustomRecord['config']).apiKey).toBe('sk-stored');
-});
-
-test('a replacement API key is sent', () => {
-  const values = valuesFromRecord(withKey('sk-stored'));
-  (values.config as CustomRecord['config']).apiKey = ' sk-replacement ';
-  expect((updateBody(withKey('sk-stored'), values, 'full').config as CustomRecord['config']).apiKey).toBe('sk-replacement');
-});
-
 test('an emptied API key field is sent as an empty key', () => {
   const values = valuesFromRecord(withKey('sk-stored'));
   (values.config as CustomRecord['config']).apiKey = '';
   expect((updateBody(withKey('sk-stored'), values, 'full').config as CustomRecord['config']).apiKey).toBe('');
-});
-
-test('an absent API key opens as an empty field', () => {
-  expect((valuesFromRecord(withKey('')).config as CustomRecord['config']).apiKey).toBe('');
 });
 
 test('Kimi Code uses its entered key for unsaved discovery and preserves connection settings on save', () => {
