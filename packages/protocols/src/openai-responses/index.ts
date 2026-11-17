@@ -181,7 +181,7 @@ export type CanonicalOpenAIResponsesPayload = Omit<OpenAIResponsesPayloadEx, 'in
   input: CanonicalOpenAIResponsesInputItem[];
 };
 
-export type OpenAIResponsesInputContent = CanonicalOpenAIResponsesText | OpenAIResponsesInputImage | OpenAIResponsesInputFile;
+export type OpenAIResponsesInputContent = CanonicalOpenAIResponsesText | OpenAIResponsesInputImage | OpenAIResponsesInputFile | OpenAIResponsesInputAudio;
 
 export type OpenAIResponsesAssistantInputContent = OpenAIResponsesInputContent | OpenAIResponsesOutputRefusal;
 
@@ -222,7 +222,12 @@ export interface OpenAIResponsesInputImage {
   prompt_cache_breakpoint?: OpenAIResponsesPromptCacheBreakpoint | null;
 }
 
-export type OpenAIResponsesToolOutputContent = CanonicalOpenAIResponsesText | OpenAIResponsesInputImage | OpenAIResponsesInputFile;
+// https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/protocol/src/models.rs#L922-L985
+export type OpenAIResponsesInputAudio = { type: 'input_audio'; prompt_cache_breakpoint?: OpenAIResponsesPromptCacheBreakpoint | null } & (
+  { audio_url: string; file_id?: never } | { file_id: string; audio_url?: never }
+);
+
+export type OpenAIResponsesToolOutputContent = OpenAIResponsesInputContent;
 
 export interface OpenAIResponsesInputFile {
   type: 'input_file';
@@ -451,9 +456,7 @@ export interface OpenAIResponsesProgramOutputItem {
 // OpenAI beta OpenAI Responses multi-agent item shapes.
 // https://github.com/openai/openai-node/blob/228c224393ef4bf3bda2a9d7eb40f387499299b5/src/resources/beta/responses/responses.ts#L6549-L6805
 export type OpenAIResponsesAgentMessageContent =
-  | CanonicalOpenAIResponsesText
-  | OpenAIResponsesInputImage
-  | OpenAIResponsesInputFile
+  | OpenAIResponsesInputContent
   | { type: 'text' | 'summary_text' | 'reasoning_text'; text: string }
   | { type: 'refusal'; refusal: string }
   | { type: 'computer_screenshot'; image_url: string | null; file_id: string | null; detail?: 'auto' | 'low' | 'high' | 'original' | (string & {}) | null }
@@ -1449,5 +1452,5 @@ export { createRandomOpenAIResponsesItemId, type GeneratedOpenAIResponsesItemTyp
 export { reassembleOpenAIResponsesEvents } from './reassemble.ts';
 export { openaiResponsesProtocolFrameToSSEFrame } from './to-sse.ts';
 
-export { canonicalizeOpenAIResponsesPayload } from './canonicalize-payload.ts';
+export { canonicalizeOpenAIResponsesPayload, isCodexAudioReference } from './canonicalize-payload.ts';
 export { toOpenAIResponsesInputItem, toOpenAIResponsesInputItems } from './history.ts';

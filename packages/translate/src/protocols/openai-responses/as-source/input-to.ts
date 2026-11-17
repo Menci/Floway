@@ -59,6 +59,8 @@ const userContentPart = (part: OpenAIResponsesInputContent): IRInputUserContentP
   }
   case 'input_file':
     return { type: 'file', file: fileMedia(part), ...(typeof part.filename === 'string' ? { filename: part.filename } : {}) };
+  case 'input_audio':
+    throw new TranslateInputException('Codex input_audio references require a native OpenAI Responses upstream.');
   }
 };
 
@@ -90,6 +92,7 @@ const assistantContent = (message: Extract<OpenAIResponsesInputMessageEx, { role
 const toolResultContent = (output: string | readonly OpenAIResponsesInputContent[]): string | readonly IRInputToolResultContentPart[] => typeof output === 'string'
   ? output
   : output.map(part => {
+      if (part.type === 'input_audio') throw new TranslateInputException('Codex input_audio tool outputs require a native OpenAI Responses upstream.');
       if (part.type === 'input_image') return { type: 'image' as const, image: imageMedia(part), ...(part.detail == null ? {} : { detail: part.detail }) };
       if (part.type === 'input_file') return { type: 'file' as const, file: fileMedia(part), ...(typeof part.filename === 'string' ? { filename: part.filename } : {}) };
       return { type: 'text' as const, text: part.text };
