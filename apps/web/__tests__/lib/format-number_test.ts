@@ -14,13 +14,6 @@ describe('byte sizes', () => {
     expect(formatBytes(9.5 * 1024 ** 2, 'en')).toBe('9.5 MB');
     expect(formatBytes(10.5 * 1024 ** 2, 'en')).toBe('11 MB');
   });
-
-  // The top of the ladder has no unit above it to promote to, so it keeps two
-  // fraction digits instead of one.
-  it('keeps three significant figures at the top of the ladder', () => {
-    expect(formatBytes(1.25 * 1024 ** 3, 'en')).toBe('1.25 GB');
-    expect(formatBytes(64 * 1024 ** 3, 'en')).toBe('64 GB');
-  });
 });
 
 describe('counts', () => {

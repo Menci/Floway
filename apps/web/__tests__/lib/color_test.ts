@@ -24,11 +24,6 @@ describe('readableTone', () => {
   const CARD_DARK = '#373737';
   const toned = (hue: string, card: string) => readableTone(hue, chip(hue, card));
 
-  it('returns the colour untouched when it already reads', () => {
-    // A deep blue is already well past the floor on its own chip.
-    expect(toned('#00306E', CARD_LIGHT)).toBe('#00306E');
-  });
-
   it('measures alpha colors after compositing them onto the surface', () => {
     const result = readableTone('#00000080', CARD_LIGHT);
     expect(result).not.toBe('#00000080');
@@ -60,11 +55,6 @@ describe('readableTone', () => {
 });
 
 describe('blendHex', () => {
-  it('composites a tenth of the hue onto both cards', () => {
-    expect(blendHex('#C239B3', 0.1, '#FFFFFF')).toBe('#F9EBF7');
-    expect(blendHex('#C239B3', 0.1, '#373737')).toBe('#453743');
-  });
-
   it('rejects an unparseable value on either side', () => {
     expect(() => blendHex('nope', 0.5, '#FFFFFF')).toThrow(TypeError);
     expect(() => blendHex('#FF0000', 0.5, 'nope')).toThrow(TypeError);

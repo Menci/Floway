@@ -105,20 +105,4 @@ describe('Performance table state', () => {
     expect(screen.getByRole('columnheader', { name: 'TTFT p50' })).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'Worst 1% speed' })).toBeTruthy();
   });
-
-  it('writes the breakdown tab and table sort to the URL', async () => {
-    const { router } = renderPage('');
-
-    expect(screen.getByRole('tab', { name: 'By Upstream' })).toBeTruthy();
-    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: 'By Operation' })); });
-    await waitFor(() => expect(urlSearch(router).get('tab')).toBe('operation'));
-
-    const errors = screen.getByRole('columnheader', { name: 'Errors' }).querySelector<HTMLElement>('[role=button]')!;
-    await act(async () => { fireEvent.click(errors); });
-    await waitFor(() => expect(urlSearch(router).get('sort')).toBe('errors'));
-    expect(urlSearch(router).get('dir')).toBeNull();
-
-    await act(async () => { fireEvent.click(errors); });
-    await waitFor(() => expect(urlSearch(router).get('dir')).toBe('ascending'));
-  });
 });

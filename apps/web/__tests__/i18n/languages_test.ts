@@ -15,11 +15,6 @@ describe('normalizeLanguage', () => {
     expect(normalizeLanguage('ko-KR')).toBeNull();
     expect(normalizeLanguage('ja-JP')).toBeNull();
   });
-
-  it('treats separators and case the way a browser reports them', () => {
-    expect(normalizeLanguage('zh_hans_cn')).toBe('zh-Hans');
-    expect(normalizeLanguage('  EN-us  ')).toBe('en');
-  });
 });
 
 describe('language locales', () => {

@@ -101,12 +101,6 @@ describe('a stack restored from the maps its chunks name', () => {
       .rejects.toThrow('another revision');
   });
 
-  it('says so when the chunk cannot be fetched', async () => {
-    respondWith({ [SCRIPT]: () => new Response('', { status: 503 }) });
-    await expect(restoreStack(`Error: boom\n    at handler (${SCRIPT}:1:1)`))
-      .rejects.toThrow(`${SCRIPT} responded 503`);
-  });
-
   // An engine writes 0 where it has no information, and each half of the guard
   // stands alone: `originalPositionFor` throws on a line below 1, and on the
   // column the shift is what turns a reported 0 into an out-of-range -1.

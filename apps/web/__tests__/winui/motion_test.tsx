@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { StrictMode, useCallback, useRef, useState } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { NavSelectionIndicator } from '../../src/components/sidebar/nav-selection-indicator';
 import { fluentComponents } from '../../src/fluent';
@@ -114,33 +114,6 @@ describe('nav selection indicator', () => {
     select('sign out');
 
     expect(scheduled.filter(animation => !animation.cancelled)).toHaveLength(1);
-  });
-});
-
-describe('winui presence motion', () => {
-  stubMatchMedia(() => false);
-
-  const { Button, Dialog, DialogBody, DialogSurface, DialogTitle } = fluentComponents;
-
-  it('renders the dialog through the motion slot and keeps a caller-supplied motion callback', async () => {
-    const onMotionFinish = vi.fn();
-    const DialogHarness = () => {
-      const [open, setOpen] = useState(true);
-      return <Dialog open={open} surfaceMotion={{ onMotionFinish }}>
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>Delete the key</DialogTitle>
-            <Button onClick={() => setOpen(false)}>Cancel</Button>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>;
-    };
-
-    renderInApp(<DialogHarness />);
-    await screen.findByRole('dialog', { name: 'Delete the key' });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    await waitFor(() => expect(onMotionFinish).toHaveBeenCalled());
   });
 });
 

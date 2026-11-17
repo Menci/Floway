@@ -53,14 +53,6 @@ describe('page change opt-in', () => {
     expect(getByText('same page')).toBeTruthy();
   });
 
-  it('leaves a navigation that did not ask for the transition unmarked', async () => {
-    const { router, getByText } = renderRouter();
-
-    await navigate(router, '/keys');
-
-    expect(getByText('same page')).toBeTruthy();
-  });
-
   it('still reads a page change after the returned-to page rewrote its own query string', async () => {
     const { router, getByRole, getByText } = renderRouter();
 

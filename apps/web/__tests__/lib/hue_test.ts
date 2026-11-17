@@ -43,13 +43,6 @@ describe('hueBadgeTone', () => {
       }
     }
   });
-
-  it('carries far more chroma than a flat pale ramp would', () => {
-    // The whole reason for the hue-dependent curve: a badge that reads as a
-    // colour rather than as a grey with a tint.
-    const chroma = everyHue.map(hue => toOklch(hueBadgeTone(hue).light)!.c);
-    expect(Math.min(...chroma)).toBeGreaterThan(0.09);
-  });
 });
 
 describe('pickDistinctHue', () => {

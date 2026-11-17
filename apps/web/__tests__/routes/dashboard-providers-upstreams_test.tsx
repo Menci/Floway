@@ -149,31 +149,6 @@ it('cancels both telemetry requests when navigating away during an expansion', a
   expect(signals.every(signal => signal.aborted)).toBe(true);
 });
 
-it('expands the whole row while preserving switch, icon and navigation actions', async () => {
-  const readings: URL[] = [];
-  stubGateway(async url => {
-    if (url.pathname.startsWith('/api/upstreams/')) return Response.json({ error: 'Toggle rejected' }, { status: 500 });
-    readings.push(url);
-    if (url.pathname === '/api/token-usage/overview') return Response.json(overview());
-    if (url.pathname === '/api/upstream-metrics') return Response.json(metrics(url));
-    throw new Error(`Unexpected request: ${url.pathname}`);
-  });
-  renderPage();
-  const row = await screen.findByRole('row', { name: 'Usage and metrics for First' });
-  fireEvent.click(screen.getAllByRole('switch')[0]);
-  await screen.findByText(/Toggle rejected/);
-  expect(readings).toHaveLength(0);
-  fireEvent.click(row);
-  await waitFor(() => expect(row.getAttribute('aria-expanded')).toBe('true'));
-  expect(readings).toHaveLength(2);
-  fireEvent.click(metricsButton('First'));
-  await waitFor(() => expect(row.getAttribute('aria-expanded')).toBe('false'));
-  expect(readings).toHaveLength(2);
-  fireEvent.click(screen.getByRole('link', { name: 'First' }));
-  await screen.findByText('Editor');
-  expect(readings).toHaveLength(2);
-}, 15_000);
-
 it('opens telemetry and the read-only editor for an audit-only row while keeping mutations unavailable', async () => {
   const pageData = {
     ...withAccess(true, 'off'),

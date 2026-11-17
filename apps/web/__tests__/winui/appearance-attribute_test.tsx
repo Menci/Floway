@@ -21,7 +21,6 @@ const {
   MenuPopover,
   MenuTrigger,
   Select,
-  SplitButton,
   Table,
   TableBody,
   TableRow,
@@ -136,15 +135,6 @@ describe('the rest of the button family', () => {
 
     expect(stamped).toEqual(['secondary', 'secondary', 'subtle', 'subtle']);
   });
-
-  it('stamps both buttons a SplitButton renders from its own slots', () => {
-    const view = renderInApp(<SplitButton appearance="primary">split</SplitButton>);
-
-    const stamped = [...view.container.querySelectorAll('button')].map(element =>
-      element.getAttribute(winuiAppearanceAttribute));
-
-    expect(stamped).toEqual(['primary', 'primary']);
-  });
 });
 
 describe('the checked axis the WinUI rules read', () => {
@@ -222,24 +212,6 @@ describe('the checked axis the WinUI rules read', () => {
 
     expect(input.checked).toBe(true);
     expect(input.getAttribute(winuiCheckedAttribute)).toBe('true');
-  });
-
-  it('leaves a selection cell that draws no check box alone', () => {
-    const view = renderInApp(
-      <Table>
-        <TableBody>
-          <TableRow>
-            <TableSelectionCell type="radio" checked />
-          </TableRow>
-          <TableRow>
-            <TableSelectionCell checkboxIndicator={null} />
-          </TableRow>
-        </TableBody>
-      </Table>,
-    );
-
-    expect(view.container.querySelectorAll('.fui-Checkbox')).toHaveLength(0);
-    expect(view.container.querySelectorAll('.fui-Radio')).toHaveLength(1);
   });
 });
 

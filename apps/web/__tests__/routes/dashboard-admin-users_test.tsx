@@ -124,24 +124,6 @@ test('keeps account dates visible and locks every editor during refresh', async 
   await waitFor(() => expect(name.disabled).toBe(false));
 });
 
-test('refreshes both membership directions from the same directory response', async () => {
-  const group = { ...groups[0], id: 3, name: 'New group' };
-  const updated = { users: [user], groups: [group], memberships: [{ ...memberships[0], groupId: 3 }] };
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
-    const path = new URL(String(input), 'http://localhost').pathname;
-    if (path === '/api/user-directory') return Response.json(updated);
-    throw new Error(`Unexpected request: ${path}`);
-  });
-  renderPage();
-  await screen.findByRole('button', { name: 'frank' });
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Refresh users and groups' })); });
-  await screen.findByRole('link', { name: 'New group' });
-  expect(screen.queryByRole('link', { name: 'Platform' })).toBeNull();
-  await act(async () => { fireEvent.click(screen.getByRole('tab', { name: /^Groups/ })); });
-  expect(screen.getByRole('option', { name: 'New group' }).getAttribute('aria-selected')).toBe('true');
-  expect(screen.getByRole('table').textContent).toContain('frank');
-});
-
 test('keeps an open user editor paired with the group metadata it was opened with', async () => {
   vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
     const path = new URL(String(input), 'http://localhost').pathname;

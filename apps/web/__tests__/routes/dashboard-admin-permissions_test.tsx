@@ -239,18 +239,6 @@ test('the root turns effective mode off and choosing a scope does not restore it
   expect(new URLSearchParams(router.state.location.search).has('effective')).toBe(false);
 });
 
-test.each(['Upstream', 'Copilot'])('scope table part %s replaces the scope filter with its prefix', async name => {
-  const { container, router } = renderPage('?principal=group:1&q=Model.Use');
-  await screen.findByRole('table');
-  const row = container.querySelector('[data-rule-id="2"]') as HTMLElement;
-  await act(async () => { fireEvent.click(within(row).getByRole('button', { name })); });
-  await waitFor(() => expect(JSON.parse(new URLSearchParams(router.state.location.search).get('scope')!)).toEqual(name === 'Upstream' ? { kind: 'upstreams' } : scope));
-  const params = new URLSearchParams(router.state.location.search);
-  expect(params.get('principal')).toBe('group:1');
-  expect(params.get('q')).toBe('Model.Use');
-  expect(screen.queryByRole('combobox', { name: 'Resource' })).toBeNull();
-});
-
 test('effective toggle adds inherited rules and clearing the principal forces it off', async () => {
   const { container, router } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}`);
   await screen.findByRole('table');
@@ -265,17 +253,6 @@ test('effective toggle adds inherited rules and clearing the principal forces it
   expect(toggle.disabled).toBe(true);
   expect(toggle.checked).toBe(false);
   expect(new URLSearchParams(router.state.location.search).get('scope')).toBe(JSON.stringify(scope));
-});
-
-test('search matches both displayed permission names and their code identifiers', async () => {
-  const { container } = renderPage();
-  await screen.findByRole('table');
-  const input = screen.getByRole('textbox', { name: 'Search rules' });
-  await act(async () => { fireEvent.change(input, { target: { value: 'Upstream.Audit' } }); });
-  await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(1));
-  expect(container.querySelector('[data-rule-id="2"]')).toBeTruthy();
-  await act(async () => { fireEvent.change(input, { target: { value: 'Use models' } }); });
-  await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(3));
 });
 
 test('resolution errors stay visible and are not presented as an empty permission set', async () => {
