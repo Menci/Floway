@@ -150,6 +150,24 @@ test('parseSSEStream surfaces a bare JSON object line instead of dropping it', a
   assertEquals(frames, [{ data: chunk }, { data: error }]);
 });
 
+test('parseSSEStream keeps a pretty-printed bare JSON body as one raw frame', async () => {
+  // Google's error bodies are indented across lines, and continuation lines
+  // such as `  "code": 503,` would otherwise parse as unknown fields.
+  const chunk = '{"candidates":[{"index":0}]}';
+  const error = '{\n  "error": {\n    "code": 503,\n    "message": "overloaded",\n    "status": "UNAVAILABLE"\n  }\n}';
+  for (const newline of ['\n', '\r\n']) {
+    const frames: { kind: string; data: string }[] = [];
+    const body = `data: ${chunk}${newline}${newline}${error.replaceAll('\n', newline)}${newline}`;
+    for await (const frame of parseSSEStream(new Response(body).body!)) {
+      frames.push({ kind: frame.type, data: frame.data });
+    }
+    assertEquals(frames, [
+      { kind: 'sse', data: chunk },
+      { kind: 'sse-raw', data: error },
+    ]);
+  }
+});
+
 test('parseSSEStream reports a bare line as a raw frame, distinct from a data field', async () => {
   const chunk = '{"candidates":[{"index":0}]}';
   const frames: { kind: string; data: string; event?: string }[] = [];

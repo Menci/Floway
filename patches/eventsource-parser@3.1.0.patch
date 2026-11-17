@@ -1,5 +1,5 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index ddd5139..30aa68f 100644
+index ddd513904da414e2dc05ae718f5acc721b89741e..0551d05ee59c9943c3598ac9777584fe0781b836 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
 @@ -14,7 +14,7 @@ function createParser(config) {
@@ -11,7 +11,7 @@ index ddd5139..30aa68f 100644
    function feed(chunk) {
      if (terminated)
        throw new Error(
-@@ -50,7 +50,7 @@ function createParser(config) {
+@@ -50,12 +50,13 @@ function createParser(config) {
  `, searchIndex);
        for (; lfIndex !== -1; ) {
          if (searchIndex === lfIndex) {
@@ -20,7 +20,26 @@ index ddd5139..30aa68f 100644
  `, searchIndex);
            continue;
          }
-@@ -111,7 +111,14 @@ ${value2}`, dataLines++;
+         const firstCharCode = chunk.charCodeAt(searchIndex);
+-        if (isDataPrefix(chunk, searchIndex, firstCharCode)) {
++        if (bare) parseLine(chunk, searchIndex, lfIndex);
++        else if (isDataPrefix(chunk, searchIndex, firstCharCode)) {
+           const valueStart = chunk.charCodeAt(searchIndex + 5) === SPACE ? searchIndex + 6 : searchIndex + 5, value = chunk.slice(valueStart, lfIndex);
+           if (dataLines === 0 && chunk.charCodeAt(lfIndex + 1) === LF) {
+             onEvent({ id, event: eventType, data: value }), id = void 0, data = "", eventType = void 0, searchIndex = lfIndex + 2, lfIndex = chunk.indexOf(`
+@@ -88,6 +89,11 @@ ${value}`, dataLines++;
+       dispatchEvent();
+       return;
+     }
++    if (bare) {
++      data = `${data}
++${chunk.slice(start, end)}`, dataLines++;
++      return;
++    }
+     const firstCharCode = chunk.charCodeAt(start);
+     if (isDataPrefix(chunk, start, firstCharCode)) {
+       const valueStart = chunk.charCodeAt(start + 5) === SPACE ? start + 6 : start + 5, value2 = chunk.slice(valueStart, end);
+@@ -111,7 +117,14 @@ ${value2}`, dataLines++;
        }
        return;
      }
@@ -36,7 +55,7 @@ index ddd5139..30aa68f 100644
      if (fieldSeparatorIndex === -1) {
        processField(line, "", line);
        return;
-@@ -154,15 +161,16 @@ ${value}`, dataLines++;
+@@ -154,15 +167,16 @@ ${value}`, dataLines++;
      dataLines > 0 && onEvent({
        id,
        event: eventType,
@@ -57,7 +76,7 @@ index ddd5139..30aa68f 100644
    return { feed, reset };
  }
 diff --git a/dist/index.d.ts b/dist/index.d.ts
-index 5d3365a..3019fb7 100644
+index 5d3365aca924396b32b322cc7e46bf3b4196e4d0..3019fb77cbe30354a884709c00a8ea5def5f5662 100644
 --- a/dist/index.d.ts
 +++ b/dist/index.d.ts
 @@ -39,6 +39,8 @@ export declare interface EventSourceMessage {
@@ -70,7 +89,7 @@ index 5d3365a..3019fb7 100644
  
  /**
 diff --git a/dist/index.js b/dist/index.js
-index 97d3b77..b90d96b 100644
+index 97d3b778eca6014e1b144f6b0685d07210e36b1c..365c5c221f478057211823ae8706a4f9326a1dd3 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -12,7 +12,7 @@ function createParser(config) {
@@ -82,7 +101,7 @@ index 97d3b77..b90d96b 100644
    function feed(chunk) {
      if (terminated)
        throw new Error(
-@@ -48,7 +48,7 @@ function createParser(config) {
+@@ -48,12 +48,13 @@ function createParser(config) {
  `, searchIndex);
        for (; lfIndex !== -1; ) {
          if (searchIndex === lfIndex) {
@@ -91,7 +110,26 @@ index 97d3b77..b90d96b 100644
  `, searchIndex);
            continue;
          }
-@@ -109,7 +109,14 @@ ${value2}`, dataLines++;
+         const firstCharCode = chunk.charCodeAt(searchIndex);
+-        if (isDataPrefix(chunk, searchIndex, firstCharCode)) {
++        if (bare) parseLine(chunk, searchIndex, lfIndex);
++        else if (isDataPrefix(chunk, searchIndex, firstCharCode)) {
+           const valueStart = chunk.charCodeAt(searchIndex + 5) === SPACE ? searchIndex + 6 : searchIndex + 5, value = chunk.slice(valueStart, lfIndex);
+           if (dataLines === 0 && chunk.charCodeAt(lfIndex + 1) === LF) {
+             onEvent({ id, event: eventType, data: value }), id = void 0, data = "", eventType = void 0, searchIndex = lfIndex + 2, lfIndex = chunk.indexOf(`
+@@ -86,6 +87,11 @@ ${value}`, dataLines++;
+       dispatchEvent();
+       return;
+     }
++    if (bare) {
++      data = `${data}
++${chunk.slice(start, end)}`, dataLines++;
++      return;
++    }
+     const firstCharCode = chunk.charCodeAt(start);
+     if (isDataPrefix(chunk, start, firstCharCode)) {
+       const valueStart = chunk.charCodeAt(start + 5) === SPACE ? start + 6 : start + 5, value2 = chunk.slice(valueStart, end);
+@@ -109,7 +115,14 @@ ${value2}`, dataLines++;
        }
        return;
      }
@@ -107,7 +145,7 @@ index 97d3b77..b90d96b 100644
      if (fieldSeparatorIndex === -1) {
        processField(line, "", line);
        return;
-@@ -152,15 +159,16 @@ ${value}`, dataLines++;
+@@ -152,15 +165,16 @@ ${value}`, dataLines++;
      dataLines > 0 && onEvent({
        id,
        event: eventType,
@@ -128,7 +166,7 @@ index 97d3b77..b90d96b 100644
    return { feed, reset };
  }
 diff --git a/src/parse.ts b/src/parse.ts
-index 00e2791..3204c94 100644
+index 00e2791871e31a10033ea3644879688e8518612f..f6c5932615ee0c4a7dbc82882a4013afcce097cc 100644
 --- a/src/parse.ts
 +++ b/src/parse.ts
 @@ -50,6 +50,9 @@ export function createParser(config: ParserConfig): EventSourceParser {
@@ -141,14 +179,55 @@ index 00e2791..3204c94 100644
  
    // Set after a `maxBufferSize` overflow. Once tripped, `feed()` throws until
    // `reset()` is called — see the comment on `maxBufferSize` in `ParserConfig`.
-@@ -306,6 +309,17 @@ export function createParser(config: ParserConfig): EventSourceParser {
+@@ -165,18 +168,21 @@ export function createParser(config: ParserConfig): EventSourceParser {
+         // it's the single most common line shape after `data:` lines.
+         if (searchIndex === lfIndex) {
+           if (dataLines > 0) {
+-            onEvent({id, event: eventType, data})
++            onEvent({id, event: eventType, data, ...(bare ? {bare: true} : {})})
+           }
+           id = undefined
+           data = ''
+           dataLines = 0
+           eventType = undefined
++          bare = false
+           searchIndex = lfIndex + 1
+           lfIndex = chunk.indexOf('\n', searchIndex)
+           continue
+         }
+         const firstCharCode = chunk.charCodeAt(searchIndex)
+-        if (isDataPrefix(chunk, searchIndex, firstCharCode)) {
++        if (bare) {
++          parseLine(chunk, searchIndex, lfIndex)
++        } else if (isDataPrefix(chunk, searchIndex, firstCharCode)) {
+           // `data:` line — append the value to the event's data buffer.
+           // 'data:'.length === 5, 'data: '.length === 6
+           const valueStart =
+@@ -265,6 +271,15 @@ export function createParser(config: ParserConfig): EventSourceParser {
+       return
+     }
+ 
++    // A bare payload runs until the blank line or EOF that ends the event, so a
++    // pretty-printed body keeps its continuation lines, including the ones that
++    // would otherwise parse as fields (`  "code": 500,`).
++    if (bare) {
++      data = `${data}\n${chunk.slice(start, end)}`
++      dataLines++
++      return
++    }
++
+     const firstCharCode = chunk.charCodeAt(start)
+ 
+     if (isDataPrefix(chunk, start, firstCharCode)) {
+@@ -306,6 +321,18 @@ export function createParser(config: ParserConfig): EventSourceParser {
      }
  
      const line = chunk.slice(start, end)
 +    // An object literal is not an SSE field. Gemini writes a bare JSON error
-+    // body after the stream has already started, and the SSE grammar would
-+    // otherwise split `{"error":…}` into a field named `{"error"` and drop it.
-+    // Surfacing it as event data lets a caller that expects that body read it.
++    // body after the stream has already started, compact or pretty-printed,
++    // and the SSE grammar would otherwise split `{"error":…}` into a field
++    // named `{"error"` and drop it. Surfacing it as event data lets a caller
++    // that expects that body read it.
 +    if (line.charCodeAt(0) === 123) {
 +      data = dataLines === 0 ? line : `${data}\n${line}`
 +      dataLines++
@@ -159,7 +238,7 @@ index 00e2791..3204c94 100644
      const fieldSeparatorIndex = line.indexOf(':')
      if (fieldSeparatorIndex === -1) {
        processField(line, '', line)
-@@ -369,6 +383,7 @@ export function createParser(config: ParserConfig): EventSourceParser {
+@@ -369,6 +396,7 @@ export function createParser(config: ParserConfig): EventSourceParser {
          id,
          event: eventType,
          data,
@@ -167,7 +246,7 @@ index 00e2791..3204c94 100644
        })
      }
  
-@@ -376,6 +391,7 @@ export function createParser(config: ParserConfig): EventSourceParser {
+@@ -376,6 +404,7 @@ export function createParser(config: ParserConfig): EventSourceParser {
      data = ''
      dataLines = 0
      eventType = undefined
@@ -176,7 +255,7 @@ index 00e2791..3204c94 100644
  
    function reset(options: {consume?: boolean} = {}) {
 diff --git a/src/types.ts b/src/types.ts
-index fd668d0..0859c6d 100644
+index fd668d04ca248d39933d0740b9a693ac07d947a3..0859c6d30f9c3d8175dccb9ed44047ade3bf514d 100644
 --- a/src/types.ts
 +++ b/src/types.ts
 @@ -55,6 +55,13 @@ export interface EventSourceMessage {
