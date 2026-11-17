@@ -135,3 +135,17 @@ test('parseSSEStream cancels a pending reader when its signal aborts', async () 
     await iterator.return(undefined).catch(() => {});
   }
 });
+
+test('parseSSEStream surfaces a bare JSON object line instead of dropping it', async () => {
+  // `patches/eventsource-parser@3.1.0.patch`: a line that opens an object
+  // literal is not an SSE field. Gemini writes a late error as raw JSON after
+  // the stream has started, and the upstream parser used to discard it as an
+  // unknown field, which hid the failure behind an apparently clean EOF.
+  const chunk = '{"candidates":[{"index":0}]}';
+  const error = '{"error":{"code":503,"message":"overloaded","status":"UNAVAILABLE"}}';
+  const frames: { data: string }[] = [];
+  for await (const frame of parseSSEStream(new Response(`data: ${chunk}\n\n${error}\n\n`).body!)) {
+    frames.push({ data: frame.data });
+  }
+  assertEquals(frames, [{ data: chunk }, { data: error }]);
+});

@@ -1,0 +1,59 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index ddd513904da414e2dc05ae718f5acc721b89741e..9b595fe02ba42b1687fd02bda2c8f810aacd2281 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -111,7 +111,13 @@ ${value2}`, dataLines++;
+       }
+       return;
+     }
+-    const line = chunk.slice(start, end), fieldSeparatorIndex = line.indexOf(":");
++    const line = chunk.slice(start, end);
++    if (line.charCodeAt(0) === 123) {
++      data = dataLines === 0 ? line : `${data}\n${line}`,
++      dataLines++;
++      return;
++    }
++    const fieldSeparatorIndex = line.indexOf(":");
+     if (fieldSeparatorIndex === -1) {
+       processField(line, "", line);
+       return;
+diff --git a/dist/index.js b/dist/index.js
+index 97d3b778eca6014e1b144f6b0685d07210e36b1c..c8c1a7f096f87ac7c4a9a67b2d3d4fc3d7e3f501 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -109,7 +109,13 @@ ${value2}`, dataLines++;
+       }
+       return;
+     }
+-    const line = chunk.slice(start, end), fieldSeparatorIndex = line.indexOf(":");
++    const line = chunk.slice(start, end);
++    if (line.charCodeAt(0) === 123) {
++      data = dataLines === 0 ? line : `${data}\n${line}`,
++      dataLines++;
++      return;
++    }
++    const fieldSeparatorIndex = line.indexOf(":");
+     if (fieldSeparatorIndex === -1) {
+       processField(line, "", line);
+       return;
+diff --git a/src/parse.ts b/src/parse.ts
+index 00e2791871e31a10033ea3644879688e8518612f..0ed9ffb39c338fd27f049669ccd50575ba8f3199 100644
+--- a/src/parse.ts
++++ b/src/parse.ts
+@@ -306,6 +306,16 @@ export function createParser(config: ParserConfig): EventSourceParser {
+     }
+ 
+     const line = chunk.slice(start, end)
++    // An object literal is not an SSE field. Gemini writes a bare JSON error
++    // body after the stream has already started, and the SSE grammar would
++    // otherwise split `{"error":…}` into a field named `{"error"` and drop it.
++    // Surfacing it as event data lets a caller that expects that body read it.
++    if (line.charCodeAt(0) === 123) {
++      data = dataLines === 0 ? line : `${data}\n${line}`
++      dataLines++
++      return
++    }
++
+     const fieldSeparatorIndex = line.indexOf(':')
+     if (fieldSeparatorIndex === -1) {
+       processField(line, '', line)

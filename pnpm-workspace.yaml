@@ -69,7 +69,17 @@ patchedDependencies:
   '@fluentui/react-charts@9.3.22': patches/@fluentui__react-charts@9.3.22.patch
   '@reclaimprotocol/tls@0.1.5': patches/@reclaimprotocol__tls@0.1.5.patch
   'overlayscrollbars@2.13.0': patches/overlayscrollbars@2.13.0.patch
+  'eventsource-parser@3.1.0': patches/eventsource-parser@3.1.0.patch
 
+# eventsource-parser drops a line it cannot read as an SSE field. Gemini can end
+# a stream that already produced events with a bare JSON error body — no
+# `data:` field, no framing — and both official clients treat that body as a
+# protocol error, so dropping it turns a truncated answer into an apparent
+# success. A line that opens an object literal is not a field name under the SSE
+# grammar, so the parser reads it as event data; every other consumer of
+# `parseSSEStream` only loses lines it previously dropped as unknown fields.
+# https://github.com/googleapis/js-genai/blob/2cdb3b219eefced7fba83fa76474eea58d836d70/test/unit/api_client_test.ts#L136-L183
+# https://github.com/googleapis/go-genai/blob/1f7179b48142fffa8bc0fa6aa1a632633688b16a/api_client_test.go#L431-L439
 # Charts imports these runtime packages but omits them from its manifest.
 # Keep resolution independent of whichever dependency happened to be hoisted.
 # https://github.com/microsoft/fluentui/blob/cbee28ba42d268404e9b9663a6a3a33e205c66d1/packages/charts/react-charts/library/src/components/DeclarativeChart/DeclarativeChart.tsx#L17
