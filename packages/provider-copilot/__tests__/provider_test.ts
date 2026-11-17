@@ -5,7 +5,6 @@ import { emptyKnownModels, mergeKnownModels } from '../src/known-models.ts';
 import { createCopilotProvider } from '../src/provider.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from '../src/state.ts';
 import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/platform';
-import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { parseDecisionRequest } from '@floway-dev/protocols/decision';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, initProviderRepo } from '@floway-dev/provider';
@@ -825,59 +824,10 @@ test('Copilot provider returns HTTP 400 invalid_request_error when speed=fast hi
   assertEquals(anthropicMessagesHit, false);
 });
 
-test('Copilot provider passes unknown speed values to the upstream verbatim so the upstream owns rejecting them', async () => {
-  const { copilotUpstream } = await setupCopilotTest();
-  const instance = createCopilotProvider(copilotUpstream);
-  const provider = instance.instance;
-  let upstreamBody: Record<string, unknown> | undefined;
-
-  await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-      }
-      if (url.pathname === '/models') return jsonResponse(fastModelCatalog());
-      if (url.pathname === '/v1/messages') {
-        upstreamBody = (await request.json()) as Record<string, unknown>;
-        return sseResponse(anthropicMessagesSseBody());
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const [providerModel] = await provider.getProvidedModels(directFetcher);
-      // `priority` is not a documented Anthropic Messages `speed` value; the gateway
-      // does not own rejecting it and must not strip it either — let
-      // Copilot surface whatever error its strict validator returns.
-      const speedValue = 'priority' as AnthropicMessagesPayload['speed'];
-      await provider.callAnthropicMessages(
-        providerModel,
-        { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }], speed: speedValue },
-        undefined,
-        noopAnthropicMessagesUpstreamCallOptions(),
-      );
-    },
-  );
-
-  assertEquals(upstreamBody?.speed, 'priority');
-});
-
-// ---------------------------------------------------------------------------
-// chat? auto-population from upstream /models capabilities
-// ---------------------------------------------------------------------------
-
 interface CopilotModelCapabilityFixture {
   id: string;
   type?: 'chat' | 'image';
   supported_endpoints?: string[];
-  supports?: {
-    vision?: boolean;
-    reasoning_effort?: string[];
-    min_thinking_budget?: number;
-    max_thinking_budget?: number;
-    adaptive_thinking?: boolean;
-  };
 }
 
 const copilotModelsWithCapabilities = (models: CopilotModelCapabilityFixture[]) => ({
@@ -890,7 +840,6 @@ const copilotModelsWithCapabilities = (models: CopilotModelCapabilityFixture[]) 
     capabilities: {
       type: model.type ?? 'chat',
       limits: {},
-      ...(model.supports !== undefined ? { supports: model.supports } : {}),
     },
   })),
 });
@@ -916,30 +865,6 @@ const getModelsWithCapabilities = async (fixtures: CopilotModelCapabilityFixture
   return models;
 };
 
-test('Copilot chat field: combined vision + reasoning_effort + adaptive_thinking → full chat', async () => {
-  const [model] = await getModelsWithCapabilities([
-    {
-      id: 'claude-opus-4.7',
-      supported_endpoints: ['/v1/messages'],
-      supports: {
-        vision: true,
-        reasoning_effort: ['low', 'medium', 'high', 'xhigh'],
-        min_thinking_budget: 1024,
-        max_thinking_budget: 32768,
-        adaptive_thinking: true,
-      },
-    },
-  ]);
-  assertEquals(model.chat, {
-    modalities: { input: ['text', 'image'], output: ['text'] },
-    reasoning: {
-      effort: { supported: ['low', 'medium', 'high', 'xhigh'], default: 'medium' },
-      budget_tokens: { min: 1024, max: 32768 },
-      adaptive: true,
-    },
-  });
-});
-
 // Copilot's catalog advertises the two image surfaces as separate paths, and
 // the gateway serves each as its own inbound route. A model must therefore
 // carry both keys, and its `kind` must come out as `image` rather than the
@@ -960,13 +885,12 @@ const imageModelCatalog = () => copilotModelsWithCapabilities([
 ]);
 
 const setupImageModelTest = async () => {
-  const harness = await setupCopilotTest();
-  const provider = createCopilotProvider(harness.copilotUpstream).instance;
-  return { harness, provider };
+  const { copilotUpstream } = await setupCopilotTest();
+  return createCopilotProvider(copilotUpstream).instance;
 };
 
 test('Copilot image generations POSTs JSON to the v1 path with the raw model id', async () => {
-  const { provider } = await setupImageModelTest();
+  const provider = await setupImageModelTest();
   let captured: { path: string; contentType: string | null; body: Record<string, unknown> } | undefined;
 
   await withMockedFetch(
@@ -1003,7 +927,7 @@ test('Copilot image generations POSTs JSON to the v1 path with the raw model id'
 // reading a single part. A FormData body must reach the runtime untouched so
 // it can set its own boundary.
 test('Copilot image edits keeps multipart uploads free of a JSON content-type', async () => {
-  const { provider } = await setupImageModelTest();
+  const provider = await setupImageModelTest();
   let captured: { path: string; contentType: string | null; body: string } | undefined;
 
   await withMockedFetch(

@@ -15,15 +15,21 @@ test('chatFromCopilotRaw returns undefined when capabilities.supports is absent'
   assertEquals(chatFromCopilotRaw({ id: 'test-model', capabilities: { type: 'chat' } }), undefined);
 });
 
-test('chatFromCopilotRaw vision-only → modalities with image input', () => {
-  const chat = chatFromCopilotRaw(rawModel({ vision: true }));
-  assertEquals(chat, { modalities: { input: ['text', 'image'], output: ['text'] } });
-});
-
-test('chatFromCopilotRaw reasoning_effort with medium → default is medium', () => {
-  const chat = chatFromCopilotRaw(rawModel({ reasoning_effort: ['low', 'medium', 'high'] }));
+test('chatFromCopilotRaw combines vision, reasoning effort, budget, and adaptive thinking', () => {
+  const chat = chatFromCopilotRaw(rawModel({
+    vision: true,
+    reasoning_effort: ['low', 'medium', 'high'],
+    min_thinking_budget: 1024,
+    max_thinking_budget: 32768,
+    adaptive_thinking: true,
+  }));
   assertEquals(chat, {
-    reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } },
+    modalities: { input: ['text', 'image'], output: ['text'] },
+    reasoning: {
+      effort: { supported: ['low', 'medium', 'high'], default: 'medium' },
+      budget_tokens: { min: 1024, max: 32768 },
+      adaptive: true,
+    },
   });
 });
 
@@ -32,15 +38,4 @@ test('chatFromCopilotRaw reasoning_effort without medium → default is first', 
   assertEquals(chat, {
     reasoning: { effort: { supported: ['minimal', 'xhigh'], default: 'minimal' } },
   });
-});
-
-test('chatFromCopilotRaw min+max_thinking_budget → budget_tokens', () => {
-  const chat = chatFromCopilotRaw(rawModel({ min_thinking_budget: 1024, max_thinking_budget: 16384 }));
-  assertEquals(chat, {
-    reasoning: { budget_tokens: { min: 1024, max: 16384 } },
-  });
-});
-
-test('chatFromCopilotRaw adaptive_thinking: false → no chat', () => {
-  assertEquals(chatFromCopilotRaw(rawModel({ adaptive_thinking: false })), undefined);
 });

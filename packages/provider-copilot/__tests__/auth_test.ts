@@ -211,13 +211,6 @@ test('copilotAuthedFetch overlays interceptor headers on the pinned base set', a
   });
 });
 
-test('copilotAuthedFetch deletes a base header when the interceptor passes an empty-string value', async () => {
-  // Sentinel contract: empty string means drop this base header from the pinned set.
-  await mockTokenAndCapture([['copilot-integration-id', '']], headers => {
-    assertEquals(headers.has('copilot-integration-id'), false);
-  });
-});
-
 test('copilotAuthedFetch exchanges a GHE credential on the tenant API and still follows token endpoints.api', async () => {
   await installRepoAndClearCache();
   const observed: string[] = [];

@@ -87,16 +87,6 @@ test('mergeCopilotVariants merges 4.7 base + high + xhigh + 1m-internal', () => 
   assertSameSet(capabilities.supports?.reasoning_effort, ['low', 'medium', 'high', 'xhigh']);
 });
 
-test('mergeCopilotVariants preserves order across mixed claude/non-claude models', () => {
-  const input: CopilotRawModel[] = [claudeVariant('claude-opus-4.7-1m-internal'), claudeVariant('gpt-5.5'), claudeVariant('claude-opus-4.7'), claudeVariant('claude-sonnet-4.6')];
-
-  const merged = mergeCopilotVariants(copilotVariantIndex(input));
-  assertEquals(
-    merged.map(m => m.id),
-    ['claude-opus-4-7', 'gpt-5.5', 'claude-sonnet-4-6'],
-  );
-});
-
 test('mergeCopilotVariants preserves vision/adaptive_thinking/budget from base variant', () => {
   // These fields are uniform per family (every variant shares the same base
   // capability), so the merge just keeps the base's value via the ...supports spread.

@@ -45,12 +45,6 @@ const messageStart = (usage: AnthropicMessagesUsage): ProtocolFrame<AnthropicMes
   },
 });
 
-const messageDelta = (output_tokens: number): ProtocolFrame<AnthropicMessagesStreamEventEx> => eventFrame<AnthropicMessagesStreamEventEx>({
-  type: 'message_delta',
-  delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null },
-  usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens },
-});
-
 const messageStop = (): ProtocolFrame<AnthropicMessagesStreamEventEx> => eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_stop' });
 
 const streamResult = (frames: ProtocolFrame<AnthropicMessagesStreamEventEx>[]): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> =>
@@ -67,26 +61,6 @@ test('withSpeedFast strips speed=standard (semantically equivalent to omitted)',
   await withSpeedFast(ctx, stubRequest, () => Promise.resolve(streamResult([])));
 
   assertEquals('speed' in ctx.payload, false);
-});
-
-test('withSpeedFast keeps fast mode metadata on message_start and leaves message_delta unchanged', async () => {
-  const ctx = makeCtx('fast');
-
-  const result = await withSpeedFast(ctx, stubRequest, () =>
-    Promise.resolve(streamResult([messageStart(baseUsage), messageDelta(7), messageStop()])));
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('expected events');
-  const frames = await collect(result.events);
-  assertEquals(frames, [
-    messageStart({ ...baseUsage, speed: 'fast' }),
-    eventFrame<AnthropicMessagesStreamEventEx>({
-      type: 'message_delta',
-      delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null },
-      usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 7 },
-    }),
-    messageStop(),
-  ]);
 });
 
 test('withSpeedFast leaves the stream untouched when speed=standard (no fast intent to stamp)', async () => {

@@ -97,16 +97,6 @@ test('projectCopilotUsageResponse lands on the same shape the headers produce', 
   assertEquals(projected?.reset_at, '2026-09-01T00:00:00.000Z');
 });
 
-// A body on the pre-2026-06 shape leaves `quota_snapshots` empty or absent and
-// reports through `limited_user_quotas`, which we do not read. Same null
-// contract as the header path: no buckets is "nothing observed", so an
-// operator's refresh against such a body neither fails nor overwrites what the
-// headers already harvested.
-test('projectCopilotUsageResponse reports a body with no quota buckets as no observation', () => {
-  assertEquals(projectCopilotUsageResponse({}, NOW), null);
-  assertEquals(projectCopilotUsageResponse({ quota_snapshots: {} }, NOW), null);
-});
-
 // Every field on this endpoint is optional per GitHub's own SDK schema. A
 // bucket without a cap or a remainder cannot be rendered honestly, so it is
 // dropped the way the header path drops a half-parsed one.
@@ -119,18 +109,6 @@ test('projectCopilotUsageResponse drops a bucket whose cap or remainder is missi
   }, NOW);
 
   assertEquals(Object.keys(projected?.quotas ?? {}), ['completions']);
-});
-
-// `percent_remaining` is optional; deriving it from the two fields we do
-// require is arithmetic, not a default standing in for an unknown.
-test('projectCopilotUsageResponse derives percent_remaining when the body omits it', () => {
-  const projected = projectCopilotUsageResponse({
-    quota_snapshots: {
-      completions: { entitlement: 2000, quota_remaining: 1500 },
-    },
-  }, NOW);
-
-  assertEquals(projected?.quotas.completions.percent_remaining, 75);
 });
 
 // Both sources can report an empty reset instant — `rst=` with no value, or

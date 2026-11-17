@@ -84,13 +84,12 @@ test('pollGitHubDeviceFlow sends the device grant through the supplied fetcher',
   assertEquals(called, true);
 });
 
-test.each([
-  {
+test('pollGitHubDeviceFlow preserves a GitHub HTTP 200 OAuth error', async () => {
+  const body = {
     error: 'slow_down',
     error_description: 'Too many requests have been made in the same timeframe.',
     interval: 10,
-  },
-])('pollGitHubDeviceFlow preserves GitHub HTTP 200 $error', async body => {
+  };
   assertEquals(await pollGitHubDeviceFlow('github.com', 'device', async () => jsonResponse(body)), body);
 });
 

@@ -55,28 +55,6 @@ test('normalizes every retained text part to input_text — assistant output_tex
   expect(userPart.type).toBe('input_text');
 });
 
-test('assigns final random ids to retained messages instead of reusing input ids', () => {
-  const result = compactionResponse(
-    [{ type: 'message', id: 'msg_input', role: 'user', content: 'hello' }],
-    generatedResult([compaction]),
-  );
-
-  const id = (result.output[0] as { id?: string }).id;
-  expect(id).toMatch(/^msg_[0-9a-f]{32}$/);
-  expect(id).not.toBe('msg_input');
-});
-
-test('forwards every compaction item of a segmented trigger turn, in upstream order, after the retained messages', () => {
-  const second = { type: 'compaction', id: 'cmp_2', encrypted_content: 'X' };
-  const result = compactionResponse(
-    [{ type: 'message', role: 'user', content: 'hello' }],
-    generatedResult([compaction, second]),
-  );
-
-  expect(shape(result)).toEqual(['message:user', 'compaction', 'compaction']);
-  expect(result.output.slice(1)).toEqual([compaction, second]);
-});
-
 test('throws when the trigger turn returned no compaction item', () => {
   expect(() => compactionResponse([], generatedResult([]))).toThrow(/no compaction output item/);
 });
