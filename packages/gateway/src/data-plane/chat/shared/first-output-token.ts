@@ -95,9 +95,9 @@ const ANTHROPIC_DELTA_OUTPUT_FIELDS = {
   compaction_delta: null,
 } satisfies Record<AnthropicMessagesContentBlockDeltaEvent['delta']['type'], string | null>;
 
-// Gemini streams content as Parts. A Part's text is model output whether it is
-// ordinary answer text or a thought summary, while function calls and the
-// signature-only trailer carry generated metadata rather than decoded text.
+// Gemini streams content as Parts. Answer text, thought summaries, function
+// calls, inline data, and generated code all follow decoding; the
+// signature-only trailer carries no output of its own.
 // https://ai.google.dev/api/generate-content#Part
 const hasGeminiGenerateContentPartOutput = (part: GeminiGenerateContentPart): boolean =>
   nonEmptyString(part.text)

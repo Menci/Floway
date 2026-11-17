@@ -251,10 +251,16 @@ const geminiPayload = (overrides: Partial<GeminiGenerateContentPayload> = {}): G
   ...overrides,
 });
 
-test('gemini: effort lands on the uppercase thinkingLevel convention the wire uses', () => {
+test.each([
+  ['minimal', 'MINIMAL'],
+  ['low', 'LOW'],
+  ['medium', 'MEDIUM'],
+  ['high', 'HIGH'],
+  ['xhigh', 'XHIGH'],
+])('gemini: effort %s lands on the uppercase thinkingLevel %s the wire uses', (effort, thinkingLevel) => {
   const body = geminiPayload();
-  applyRulesToUpstreamGeminiGenerateContent(body, { reasoning: { effort: 'high' } });
-  assertEquals(body.generationConfig?.thinkingConfig?.thinkingLevel, 'HIGH');
+  applyRulesToUpstreamGeminiGenerateContent(body, { reasoning: { effort } });
+  assertEquals(body.generationConfig?.thinkingConfig?.thinkingLevel, thinkingLevel);
 });
 
 test('gemini: none disables thinking through a zero budget because there is no level for it', () => {
@@ -278,8 +284,12 @@ test('gemini: a vendor-specific effort travels verbatim, and unrelated rule fiel
   assertEquals(body.generationConfig?.thinkingConfig, { thinkingLevel: 'turbo' });
 });
 
-test('gemini: serviceTier lands on the top-level serviceTier field', () => {
+test.each([
+  ['priority', 'priority'],
+  ['fast', 'priority'],
+  ['flex', 'flex'],
+])('gemini: serviceTier %s lands on the top-level serviceTier field as %s', (serviceTier, expected) => {
   const body = geminiPayload();
-  applyRulesToUpstreamGeminiGenerateContent(body, { serviceTier: 'priority' });
-  assertEquals(body.serviceTier, 'priority');
+  applyRulesToUpstreamGeminiGenerateContent(body, { serviceTier });
+  assertEquals(body.serviceTier, expected);
 });

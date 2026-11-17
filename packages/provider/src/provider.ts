@@ -159,7 +159,8 @@ export interface ProviderInstance {
   // the body, so the call takes the payload exactly as the client shaped it.
   // The gateway always asks for the streaming action; a non-streaming client
   // is collected from those frames. countTokens answers one JSON body and is
-  // relayed verbatim.
+  // relayed verbatim; the provider wraps the payload in the envelope its
+  // upstream expects.
   callGeminiGenerateContent(model: ProviderModel, body: GeminiGenerateContentPayload, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>>;
   callGeminiGenerateContentCountTokens(model: ProviderModel, body: GeminiGenerateContentPayload, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   // count_tokens is non-streaming JSON; the gateway relays the upstream

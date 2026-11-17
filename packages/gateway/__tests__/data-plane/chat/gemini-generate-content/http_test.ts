@@ -461,7 +461,7 @@ test('a non-streaming client collects the native Gemini stream into one response
   assertEquals(body.usageMetadata.totalTokenCount, 5);
 });
 
-test('countTokens on a native upstream forwards the SDK generateContentRequest envelope unchanged', async () => {
+test('countTokens on a native upstream forwards the whole SDK generateContentRequest without translation-time stripping', async () => {
   installRepo();
   let observed: unknown;
   const callGeminiGenerateContentCountTokens = vi.fn(async (_model, body): Promise<ProviderCallResult> => {
@@ -479,12 +479,23 @@ test('countTokens on a native upstream forwards the SDK generateContentRequest e
   const response = await makeApp().request('/v1beta/models/test-model:countTokens', {
     method: 'POST',
     headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ generateContentRequest: { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] } }),
+    body: JSON.stringify({
+      generateContentRequest: {
+        contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+        systemInstruction: { parts: [{ text: 'be brief' }] },
+        safetySettings: [{ category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }],
+      },
+    }),
   });
 
   assertEquals(response.status, 200);
   assertEquals(await response.json(), { totalTokens: 9 });
-  // Native counting accepts either envelope; the normalized payload reaches the
-  // upstream without translation-time stripping.
-  assertEquals(observed, { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] });
+  // The provider re-wraps this payload in the envelope Google requires; what
+  // reaches it keeps every generate field, including those a translated count
+  // would strip.
+  assertEquals(observed, {
+    contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+    systemInstruction: { parts: [{ text: 'be brief' }] },
+    safetySettings: [{ category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' }],
+  });
 });

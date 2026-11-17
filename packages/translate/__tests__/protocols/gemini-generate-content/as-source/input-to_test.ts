@@ -7,6 +7,7 @@ test.each([
   ['LOW', 'low'],
   ['MEDIUM', 'medium'],
   ['HIGH', 'high'],
+  ['XHIGH', 'xhigh'],
   ['MINIMAL', 'minimal'],
   ['THINKING_LEVEL_UNSPECIFIED', undefined],
   ['', ''],

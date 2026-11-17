@@ -101,9 +101,6 @@ export const customFetchOpenAIAudioTranscriptions = (config: CustomUpstreamConfi
   customFetchInternal(config, 'bearer', pathOverrideFor(config, '/audio/transcriptions'), init, options);
 export const customFetchAlphaSearch = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(config, 'bearer', pathOverrideFor(config, '/alpha/search'), init, options);
-// /models lives on its own fetch toggle (see config.modelsFetch), not in
-// pathOverrides. It uses the fetch-specific auth style because the endpoint
-// itself carries no protocol identity.
 // Gemini's native surface puts the model id and the action in the path and
 // selects SSE with a query parameter; the body carries neither. `modelId`
 // arrives already stripped of any `models/` prefix.
@@ -123,11 +120,17 @@ export const customFetchGeminiGenerateContent = (config: CustomUpstreamConfig, m
 export const customFetchGeminiGenerateContentCountTokens = (config: CustomUpstreamConfig, modelId: string, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(config, 'x-goog-api-key', geminiGenerateContentPath(config, modelId, 'countTokens'), init, options);
 
-export const customFetchModels = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(
+// /models lives on its own fetch toggle (see config.modelsFetch), not in
+// pathOverrides. It uses the fetch-specific auth style because the endpoint
+// itself carries no protocol identity.
+// `pageToken` continues a paginated catalog; only Gemini's listing pages.
+export const customFetchModels = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions, pageToken?: string): Promise<Response> => {
+  const path = config.modelsFetch.endpoint ?? '/v1/models';
+  return customFetchInternal(
     config,
     config.modelsFetch.authStyle,
-    config.modelsFetch.endpoint ?? '/v1/models',
+    pageToken === undefined ? path : `${path}${path.includes('?') ? '&' : '?'}pageToken=${encodeURIComponent(pageToken)}`,
     init,
     options,
   );
+};

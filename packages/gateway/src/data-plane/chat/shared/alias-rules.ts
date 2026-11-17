@@ -9,7 +9,7 @@
 // each source IR.
 
 import type { AnthropicMessagesPayload, AnthropicMessagesThinkingDisplay } from '@floway-dev/protocols/anthropic-messages';
-import { isFastServiceTier, type AliasRules } from '@floway-dev/protocols/common';
+import { FAST_SERVICE_TIER, isFastServiceTier, type AliasRules } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
@@ -98,6 +98,7 @@ const GEMINI_GENERATE_CONTENT_THINKING_LEVELS = new Map<string, string>([
   ['low', 'LOW'],
   ['medium', 'MEDIUM'],
   ['high', 'HIGH'],
+  ['xhigh', 'XHIGH'],
 ]);
 
 export const applyRulesToUpstreamGeminiGenerateContent = (body: GeminiGenerateContentPayload, rules: AliasRules): void => {
@@ -127,7 +128,10 @@ export const applyRulesToUpstreamGeminiGenerateContent = (body: GeminiGenerateCo
   }
   // `verbosity` has no native Gemini generateContent slot; drop silently.
   if (rules.serviceTier !== undefined) {
-    body.serviceTier = rules.serviceTier;
+    // Gemini's ServiceTier enum knows `priority` but rejects our `fast` alias
+    // for the same lane with a 400, so the accelerated lane takes its spelling.
+    // https://ai.google.dev/api/generate-content#ServiceTier
+    body.serviceTier = isFastServiceTier(rules.serviceTier) ? FAST_SERVICE_TIER : rules.serviceTier;
   }
 };
 

@@ -112,7 +112,7 @@ test('baseUrl places the generation root, and a stored models/ prefix is strippe
   assertEquals(request.url, 'https://gemini-proxy.example.com/api/gemini/v1beta/models/gemini-3-flash:streamGenerateContent?alt=sse');
 });
 
-test('countTokens posts to the same model path with the countTokens action', async () => {
+test('countTokens posts the generate payload inside the generateContentRequest envelope', async () => {
   const provider = createCustomProvider(buildUpstream());
   let request: Request | undefined;
 
@@ -125,7 +125,7 @@ test('countTokens posts to the same model path with the countTokens action', asy
       const [model] = await provider.instance.getProvidedModels(directFetcher);
       const { response } = await provider.instance.callGeminiGenerateContentCountTokens(
         model,
-        { contents: [{ role: 'user', parts: [{ text: 'hello' }] }] },
+        { contents: [{ role: 'user', parts: [{ text: 'hello' }] }], systemInstruction: { parts: [{ text: 'be brief' }] } },
         undefined,
         noopUpstreamCallOptions(),
       );
@@ -136,6 +136,15 @@ test('countTokens posts to the same model path with the countTokens action', asy
 
   assertExists(request);
   assertEquals(request.url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:countTokens');
+  // The countTokens body has no top-level slot for generate fields; Google
+  // rejects `systemInstruction` there as an unknown name.
+  assertEquals(await request.json(), {
+    generateContentRequest: {
+      contents: [{ role: 'user', parts: [{ text: 'hello' }] }],
+      systemInstruction: { parts: [{ text: 'be brief' }] },
+      model: 'models/gemini-3-flash',
+    },
+  });
 });
 
 test('the catalog fetch accepts x-goog-api-key alongside the other header schemes', () => {
@@ -196,6 +205,33 @@ test('the catalog parser reads Gemini models and keeps only generateContent-capa
       assertEquals(models[0].endpoints, { geminiGenerateContent: {} });
     },
   );
+});
+
+test('the catalog fetch follows nextPageToken until the Gemini listing is complete', async () => {
+  const record = buildUpstream();
+  const provider = createCustomProvider({
+    ...record,
+    config: { ...(record.config as Record<string, unknown>), modelsFetch: { enabled: true, authStyle: 'x-goog-api-key', endpoint: '/v1beta/models' }, models: [] },
+  });
+  const urls: string[] = [];
+
+  await withMockedFetch(
+    observed => {
+      urls.push(observed.url);
+      return new URL(observed.url).searchParams.get('pageToken') === null
+        ? jsonResponse({ models: [{ name: 'models/gemini-3-flash' }], nextPageToken: 'page-2' })
+        : jsonResponse({ models: [{ name: 'models/gemini-3-pro' }] });
+    },
+    async () => {
+      const models = await provider.instance.getProvidedModels(directFetcher);
+      assertEquals(models.map(model => model.id), ['gemini-3-flash', 'gemini-3-pro']);
+    },
+  );
+
+  assertEquals(urls, [
+    'https://generativelanguage.googleapis.com/v1beta/models',
+    'https://generativelanguage.googleapis.com/v1beta/models?pageToken=page-2',
+  ]);
 });
 
 test('a real Gemini SSE body parses into protocol frames through the provider call', async () => {

@@ -169,9 +169,9 @@ const dispatchOpenAIResponses = async (
     );
   case 'geminiGenerateContent':
     // The picker above never selects Gemini, because no translate pair emits
-    // its wire yet. Refuse rather than translating into a protocol the trip
-    // has no route for.
-    throw new Error('openaiResponsesAttempt: Gemini generateContent is not a translation target yet');
+    // its wire. Refuse rather than translating into a protocol the trip has no
+    // route for.
+    throw new Error('openaiResponsesAttempt: Gemini generateContent is not a translation target');
   default: {
     const exhaustive: never = targetApi;
     throw new Error(`unexpected targetApi '${exhaustive as string}'`);
