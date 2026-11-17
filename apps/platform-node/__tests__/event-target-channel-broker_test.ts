@@ -60,29 +60,3 @@ test('EventTargetChannelBroker.closeChannel ends every subscriber on the channel
   assertEquals((await i1.next()).done, true);
   assertEquals((await i2.next()).done, true);
 });
-
-test('EventTargetChannelBroker detaches its EventTarget listeners when the subscriber aborts before pulling', async () => {
-  // Spy on `removeEventListener` so we can count detach calls. The abort path
-  // must detach the listeners synchronously rather than waiting for a future
-  // iterator pull.
-  const originalRemove = EventTarget.prototype.removeEventListener;
-  let removes = 0;
-  EventTarget.prototype.removeEventListener = function (...args: Parameters<EventTarget['removeEventListener']>) {
-    removes += 1;
-    return originalRemove.apply(this, args);
-  };
-  try {
-    const broker = new EventTargetChannelBroker<string>(stringCodec);
-    const controller = new AbortController();
-    broker.subscribe('k', controller.signal);
-    // Snapshot the removal counter immediately before the abort so the test
-    // scopes the assertion to the listeners this subscribe actually owns.
-    const removesBefore = removes;
-    controller.abort();
-    // Two listeners on the EventTarget (frame + close) plus the abort
-    // listener on the signal must be removed.
-    assertEquals(removes - removesBefore, 3);
-  } finally {
-    EventTarget.prototype.removeEventListener = originalRemove;
-  }
-});

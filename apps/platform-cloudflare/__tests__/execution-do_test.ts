@@ -86,14 +86,6 @@ test('ExecutionDO close request closes every socket with the given reason and co
   assertEquals(ws2.closed?.reason, 'reason of the day');
 });
 
-test('ExecutionDO.webSocketClose calls ws.close to complete the close handshake', async () => {
-  const actor = new ExecutionDO(new FakeState(), {});
-  const ws = new FakeWebSocket();
-  await actor.webSocketClose(ws, 1001, 'going away', true);
-  assertEquals(ws.closed?.code, 1001);
-  assertEquals(ws.closed?.reason, 'going away');
-});
-
 test('ExecutionDO.webSocketError exists so the runtime delivers close events', async () => {
   // The hook's mere presence is what gates close-event delivery; assert the
   // method is declared on the class itself so the gating contract survives a

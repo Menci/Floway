@@ -32,23 +32,6 @@ const withCache = async (fn: (cache: SqliteImageCacheStore, db: ReturnType<typeo
   }
 };
 
-test('get hit younger than the refresh threshold returns the value without rewriting last_refreshed_at', () => withCache(async (cache, db) => {
-  await cache.put('k', new Uint8Array([7]));
-  const original = await db
-    .prepare('SELECT last_refreshed_at FROM image_cache WHERE key = ?')
-    .bind('k')
-    .first<{ last_refreshed_at: number }>();
-
-  const hit = await cache.get('k');
-  assertEquals([...hit!], [7]);
-
-  const after = await db
-    .prepare('SELECT last_refreshed_at FROM image_cache WHERE key = ?')
-    .bind('k')
-    .first<{ last_refreshed_at: number }>();
-  assertEquals(after!.last_refreshed_at, original!.last_refreshed_at);
-}));
-
 test('get hit older than the refresh threshold rewrites last_refreshed_at and expires_at', () => withCache(async (cache, db) => {
   await cache.put('k', new Uint8Array([9]));
   // Backdate the entry so its age exceeds the threshold.

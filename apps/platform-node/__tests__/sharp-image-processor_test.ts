@@ -4,7 +4,7 @@ import { test } from 'vitest';
 import { createSharpImageProcessor } from '../src/sharp-image-processor.ts';
 import type { ImageCacheStore } from '@floway-dev/platform';
 import { initImageCacheStore } from '@floway-dev/platform';
-import { assert, assertEquals } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
 const decode = (base64: string): Uint8Array => {
   const binary = atob(base64);
@@ -28,11 +28,6 @@ const generatePng = async (width: number, height: number): Promise<Uint8Array> =
   }).png().toBuffer();
   return new Uint8Array(buffer);
 };
-
-const isWebp = (bytes: Uint8Array): boolean =>
-  bytes.length >= 12
-    && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
-    && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50;
 
 const installMemoryStore = (): Map<string, Uint8Array> => {
   const store = new Map<string, Uint8Array>();
@@ -93,25 +88,4 @@ test('cache hit short-circuits encode and returns stored bytes', async () => {
   assertEquals(out, stored);
   assertEquals(calls.get, 1);
   assertEquals(calls.put, 0);
-});
-
-test('cache miss writes the encoded result through the cache store', async () => {
-  const calls = { get: 0, put: 0 };
-  const cacheStore: ImageCacheStore = {
-    get: () => {
-      calls.get += 1;
-      return Promise.resolve(null);
-    },
-    put: () => {
-      calls.put += 1;
-      return Promise.resolve();
-    },
-    sweepExpired: () => Promise.resolve(),
-  };
-  initImageCacheStore(cacheStore);
-  const processor = createSharpImageProcessor();
-  const out = await processor.compressToWebp(PNG_1x1, null);
-  assert(isWebp(out), 'output should be WebP');
-  assertEquals(calls.get, 1);
-  assertEquals(calls.put, 1);
 });

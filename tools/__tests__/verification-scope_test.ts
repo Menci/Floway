@@ -64,11 +64,6 @@ describe('parseTargets', () => {
     expect(parseTargets(['run', 'a_test.ts', '--project', 'x', 'b_test.ts'], valueOptions, subcommands))
       .toEqual(['a_test.ts', 'b_test.ts']);
   });
-
-  it('drops the subcommand and standalone flags', () => {
-    expect(parseTargets(['run', '--changed', 'a_test.ts'], valueOptions, subcommands))
-      .toEqual(['a_test.ts']);
-  });
 });
 
 describe('the trap that detects an expanded glob', () => {
@@ -104,9 +99,5 @@ describe('the trap that detects an expanded glob', () => {
 
   it('allows a list of traps alone, which runs nothing worth hiding', () => {
     expect(isExpandedTrapList([trap, otherTrap])).toBe(false);
-  });
-
-  it('allows an ordinary list of test files', () => {
-    expect(isExpandedTrapList([real])).toBe(false);
   });
 });

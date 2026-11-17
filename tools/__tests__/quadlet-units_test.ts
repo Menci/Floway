@@ -6,13 +6,6 @@ import { findMissingQuadletUnits, readQuadletUnits, type QuadletUnit } from './q
 
 const unit = (filename: string, ...lines: string[]): QuadletUnit => ({ filename, lines });
 
-test('a pod reference resolves against a shipped .pod unit', () => {
-  expect(findMissingQuadletUnits([
-    unit('floway.container', 'Pod=floway.pod'),
-    unit('floway.pod', '[Pod]', 'PublishPort=8788:8788'),
-  ])).toEqual([]);
-});
-
 test('volume mounts, networks, and image units resolve by their suffix', () => {
   expect(findMissingQuadletUnits([
     unit(

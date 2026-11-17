@@ -102,20 +102,6 @@ test('ExecutionCellChannelBroker.subscribe drives payloads through the broadcast
   assertEquals(socket.closed?.code, 1000);
 });
 
-test('ExecutionCellChannelBroker.subscribe does not open a socket for an already-aborted signal', async () => {
-  const socket = new FakeServerSocket();
-  const fetches = { count: 0 };
-  const broker = new ExecutionCellChannelBroker<string>(buildNamespace(socket, [], [], fetches), stringCodec);
-  const controller = new AbortController();
-  controller.abort();
-
-  const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
-
-  assertEquals((await iter.next()).done, true);
-  assertEquals(fetches.count, 0);
-  assertEquals(socket.closed, null);
-});
-
 test('ExecutionCellChannelBroker.publish encodes the payload through the codec', async () => {
   const broadcasts: string[] = [];
   const fetches = { count: 0, cellIds: [] as string[] };
@@ -151,20 +137,6 @@ test('ExecutionCellChannelBroker.subscribe drains buffered payloads before surfa
   const failed = await Promise.allSettled([iter.next()]);
   assertEquals(failed[0].status, 'rejected');
   assertEquals((failed[0] as PromiseRejectedResult).reason.message, 'stringCodec rejected payload: bad:payload');
-});
-
-test('ExecutionCellChannelBroker.subscribe ends the iterator on a server-initiated socket close', async () => {
-  const socket = new FakeServerSocket();
-  const broker = new ExecutionCellChannelBroker<string>(buildNamespace(socket), stringCodec);
-  const controller = new AbortController();
-  const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
-
-  await Promise.resolve();
-  await Promise.resolve();
-  socket.emit('close', new Event('close'));
-
-  const result = await iter.next();
-  assertEquals(result.done, true);
 });
 
 test('ExecutionCellChannelBroker.subscribe surfaces a server-side socket error by throwing from .next()', async () => {

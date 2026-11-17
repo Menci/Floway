@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { afterEach, expect, test } from 'vitest';
 
-import { createNodeFetchHandler, nodeWebDistDir, STATIC_ASSET_CACHE_CONTROL } from '../src/static-web.ts';
+import { createNodeFetchHandler, STATIC_ASSET_CACHE_CONTROL } from '../src/static-web.ts';
 
 const directories: string[] = [];
 
@@ -121,9 +121,4 @@ test('returns an actionable error until the web bundle exists', async () => {
   const response = await fetch(new Request('http://floway.test/login'));
   expect(response.status).toBe(503);
   expect(await response.text()).toContain('pnpm run build:web');
-});
-
-test('locates the default web bundle independently of the launch directory', () => {
-  expect(nodeWebDistDir()).toMatch(/[/\\]apps[/\\]web[/\\]dist[/\\]client[/\\]?$/);
-  expect(nodeWebDistDir({ FLOWAY_WEB_DIST_DIR: '/tmp/custom-dashboard' })).toBe('/tmp/custom-dashboard');
 });

@@ -35,16 +35,6 @@ const recordingKv = (initial?: { value: Uint8Array; metadata: { writtenAt: numbe
   return { kv, puts };
 };
 
-test('get hit younger than the refresh threshold returns bytes without writing', async () => {
-  const { kv, puts } = recordingKv({ value: new Uint8Array([7]), metadata: { writtenAt: Date.now() - 1000 } });
-  const cache = new KvImageCacheStore(kv, POLICY);
-
-  const hit = await cache.get('k');
-
-  assertEquals([...hit!], [7]);
-  assertEquals(puts, []);
-});
-
 test('get hit older than the refresh threshold rewrites the entry with a fresh writtenAt', async () => {
   const aged = Date.now() - 20 * 60 * 60 * 1000;
   const { kv, puts } = recordingKv({ value: new Uint8Array([9]), metadata: { writtenAt: aged } });

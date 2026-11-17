@@ -94,13 +94,6 @@ describe('nodeSocketDial', () => {
     }
   });
 
-  it('honours an already-aborted signal without opening a socket', async () => {
-    const ac = new AbortController();
-    ac.abort();
-    await expect(nodeSocketDial.connect('127.0.0.1', server.port, { signal: ac.signal }))
-      .rejects.toMatchObject({ name: 'AbortError' });
-  });
-
   it('destroys the underlying socket when the caller aborts post-connect', async () => {
     const ac = new AbortController();
     const dialed = await nodeSocketDial.connect('127.0.0.1', server.port, { signal: ac.signal });

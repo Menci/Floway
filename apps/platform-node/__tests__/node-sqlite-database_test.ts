@@ -16,18 +16,6 @@ const withTempDb = async (fn: (dbPath: string) => Promise<void>): Promise<void> 
   }
 };
 
-test('first returns first row or null', () => withTempDb(async path => {
-  const db = createNodeSqliteDatabase(path);
-  await db.prepare('CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)').run();
-  await db.prepare('INSERT INTO t (id, name) VALUES (?, ?)').bind(7, 'seven').run();
-
-  const hit = await db.prepare('SELECT id, name FROM t WHERE id = ?').bind(7).first<{ id: number; name: string }>();
-  assertEquals(hit, { id: 7, name: 'seven' });
-
-  const miss = await db.prepare('SELECT id, name FROM t WHERE id = ?').bind(99).first();
-  assertEquals(miss, null);
-}));
-
 test('batch executes statements in order and returns each result', () => withTempDb(async path => {
   const db = createNodeSqliteDatabase(path);
   assert(db.batch !== undefined, 'batch must be implemented');

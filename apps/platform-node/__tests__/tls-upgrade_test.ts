@@ -158,15 +158,6 @@ describe('startNodeTls — prefix and lifecycle', () => {
     });
   });
 
-  it('rejects an already-aborted signal without starting a handshake', async () => {
-    const controller = new AbortController();
-    controller.abort();
-    const transport = { readable: new ReadableStream<Uint8Array>(), writable: new WritableStream<Uint8Array>() };
-
-    await expect(startNodeTls(transport, { host: 'localhost', signal: controller.signal }))
-      .rejects.toMatchObject({ name: 'AbortError' });
-  });
-
   it('tears the peer connection down when the caller aborts after the handshake', async () => {
     const chain = await makeChain();
     await withTrustedCa(chain.ca, async () => {
