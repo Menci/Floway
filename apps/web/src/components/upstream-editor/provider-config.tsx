@@ -127,7 +127,7 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
           )}
         />
       </Field>
-      <SecretField optional readOnly={readOnly} />
+      <SecretField readOnly={readOnly} />
       <Controller control={control} name="config.modelsFetch.enabled" render={({ field }) => (
         <Switch
           checked={field.value}
@@ -263,7 +263,7 @@ function OllamaConfig({ readOnly, record }: { readOnly: boolean; record: Extract
     <Field label={t('dashboard.upstreamEditor.fields.baseUrl')}>
       <Controller control={control} name="config.baseUrl" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://ollama.com" readOnly={readOnly} ref={field.ref} value={field.value} />} />
     </Field>
-    <SecretField optional readOnly={readOnly} />
+    <SecretField readOnly={readOnly} />
     <Controller control={control} name="config.cloudUsage" render={({ field }) => (
       <SwitchSetting
         checked={field.value === true}
@@ -312,13 +312,11 @@ function KimiCodeConfig({ readOnly, record }: { readOnly: boolean; record: Extra
   </div>;
 }
 
-function SecretField({ optional, readOnly }: { optional?: boolean; readOnly: boolean }) {
+function SecretField({ readOnly }: { readOnly: boolean }) {
   const { t } = useTranslation();
   const { control } = useFormContext<ValuesForKind<'custom' | 'azure' | 'ollama' | 'kimi-code'>>();
   const [visible, setVisible] = useState(false);
-  return <Field
-    label={`${t('dashboard.upstreamEditor.fields.apiKey')}${optional ? ` (${t('dashboard.upstreamEditor.optional')})` : ''}`}
-  >
+  return <Field label={t('dashboard.upstreamEditor.fields.apiKey')}>
     <Controller
       control={control}
       name="config.apiKey"
