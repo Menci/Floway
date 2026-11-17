@@ -107,6 +107,35 @@ test('ChatGPT GPT-6 Astra resolves the announced standard, priority and flex rat
   }
 });
 
+test('ChatGPT GPT-6.2 Astra and Sol resolve Standard, Fast and promotional Ultrafast in both context bands', () => {
+  const cases = {
+    'gpt-6.2-astra': [
+      [{ inputTokens: 272000 }, { input_tokens: '8', input_cache_read_tokens: '0.4', input_cache_write_tokens: '10', output_tokens: '40' }],
+      [{ inputTokens: 272001 }, { input_tokens: '16', input_cache_read_tokens: '0.8', input_cache_write_tokens: '20', output_tokens: '60' }],
+      [{ serviceTier: 'priority', inputTokens: 272000 }, { input_tokens: '16', input_cache_read_tokens: '0.8', input_cache_write_tokens: '20', output_tokens: '80' }],
+      [{ serviceTier: 'priority', inputTokens: 272001 }, { input_tokens: '32', input_cache_read_tokens: '1.6', input_cache_write_tokens: '40', output_tokens: '120' }],
+      [{ serviceTier: 'ultrafast', inputTokens: 272000 }, { input_tokens: '24', input_cache_read_tokens: '1.2', input_cache_write_tokens: '30', output_tokens: '120' }],
+      [{ serviceTier: 'ultrafast', inputTokens: 272001 }, { input_tokens: '48', input_cache_read_tokens: '2.4', input_cache_write_tokens: '60', output_tokens: '180' }],
+      // OpenAI publishes no Flex rate for GPT-6.2, so the lane falls back to Base.
+      [{ serviceTier: 'flex', inputTokens: 0 }, { input_tokens: '8', input_cache_read_tokens: '0.4', input_cache_write_tokens: '10', output_tokens: '40' }],
+    ],
+    'gpt-6.2-sol': [
+      [{ inputTokens: 272000 }, { input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '10' }],
+      [{ inputTokens: 272001 }, { input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '15' }],
+      [{ serviceTier: 'priority', inputTokens: 272000 }, { input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' }],
+      [{ serviceTier: 'priority', inputTokens: 272001 }, { input_tokens: '8', input_cache_read_tokens: '0.4', input_cache_write_tokens: '10', output_tokens: '30' }],
+      [{ serviceTier: 'ultrafast', inputTokens: 272000 }, { input_tokens: '6', input_cache_read_tokens: '0.3', input_cache_write_tokens: '7.5', output_tokens: '30' }],
+      [{ serviceTier: 'ultrafast', inputTokens: 272001 }, { input_tokens: '12', input_cache_read_tokens: '0.6', input_cache_write_tokens: '15', output_tokens: '45' }],
+      [{ serviceTier: 'flex', inputTokens: 0 }, { input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '10' }],
+    ],
+  } as const;
+
+  for (const [id, grid] of Object.entries(cases)) {
+    const pricing = pricingForChatGPTModelKey(id);
+    for (const [facts, rates] of grid) assertEquals(priceRequest(pricing, facts).rates, published(rates));
+  }
+});
+
 test('ChatGPT GPT-6.1 Sol resolves its lower cache rate across every published tier and context band', () => {
   const pricing = pricingForChatGPTModelKey('gpt-6.1-sol');
   const cases = [

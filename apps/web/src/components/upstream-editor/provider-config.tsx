@@ -127,7 +127,7 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
           )}
         />
       </Field>
-      <SecretField readOnly={readOnly} />
+      <SecretField optional readOnly={readOnly} />
       <Controller control={control} name="config.modelsFetch.enabled" render={({ field }) => (
         <Switch
           checked={field.value}

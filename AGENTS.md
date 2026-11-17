@@ -54,6 +54,7 @@
 | Skill | `$deploy-to-cloudflare` | Deploys Floway to Cloudflare. |
 | Skill | `$fetching-models-pricing` | Researches provider model pricing. |
 | Skill | `$probing-prod-upstream` | Probes production upstreams only when explicitly requested. |
+| Skill | `$run-local-demo` | Starts, reports, and cleans up local demo instances. |
 | Package | `apps/platform-cloudflare` | Hosts Floway on Cloudflare. |
 | Package | `apps/platform-node` | Hosts Floway on Node. |
 | Package | `apps/web` | Provides the operator dashboard. |
