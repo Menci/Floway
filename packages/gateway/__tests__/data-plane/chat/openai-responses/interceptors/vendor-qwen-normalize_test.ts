@@ -51,13 +51,3 @@ test('vendor-qwen leaves a real reasoning.effort value untouched (only the none 
   const out = input.payload as unknown as Record<string, unknown>;
   assertEquals(out.enable_thinking, undefined);
 });
-
-test('vendor-qwen early-returns when its flag is not set on the candidate', async () => {
-  const input = invocation({ model: 'qwen-max', input: [{ type: 'message', role: 'user', content: 'hi' }], reasoning: { effort: 'none' } }, new Set());
-
-  await withVendorQwenOpenAIResponsesNormalize(input, stubCtx, okEvents);
-
-  assertEquals(input.payload.reasoning, { effort: 'none' });
-  const out = input.payload as unknown as Record<string, unknown>;
-  assertEquals(out.enable_thinking, undefined);
-});

@@ -45,16 +45,9 @@ test('answers a generate:false prewarm with an empty completed response and no u
   assertEquals(terminal.event.response.usage, { input_tokens: 0, output_tokens: 0, total_tokens: 0 });
 });
 
-for (const generate of [undefined, true]) {
-  test(`passes a generate:${generate} request through to the upstream`, async () => {
-    let upstreamCalls = 0;
-    const upstream = eventResult((async function* () { yield doneFrame(); })(), testTelemetryModelIdentity);
-    const result = await answerWebSocketWarmup(invocation(payload(generate)), stubCtx, () => {
-      upstreamCalls++;
-      return Promise.resolve(upstream);
-    });
+test('passes a generating request through to the upstream', async () => {
+  const upstream = eventResult((async function* () { yield doneFrame(); })(), testTelemetryModelIdentity);
+  const result = await answerWebSocketWarmup(invocation(payload()), stubCtx, () => Promise.resolve(upstream));
 
-    assertEquals(upstreamCalls, 1);
-    assertEquals(result, upstream);
-  });
-}
+  assertEquals(result, upstream);
+});

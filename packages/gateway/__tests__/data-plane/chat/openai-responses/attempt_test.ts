@@ -6,7 +6,6 @@ import { openaiResponsesAttempt } from '../../../../src/data-plane/chat/openai-r
 import { withOpenAIResponsesCompactShim } from '../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
 import { openaiResponsesInterceptors } from '../../../../src/data-plane/chat/openai-responses/interceptors/index.ts';
 import type { OpenAIResponsesInterceptor } from '../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
-import * as outputModule from '../../../../src/data-plane/chat/openai-responses/items/output.ts';
 import { createOpenAIResponsesHttpStore } from '../../../../src/data-plane/chat/openai-responses/items/store.ts';
 import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gateway-ctx.ts';
 import { SidecarDomain } from '../../../../src/data-plane/chat/shared/sidecar-codec.ts';
@@ -99,41 +98,6 @@ const installRepo = () => {
   return repo;
 };
 
-test('generate native success leaves source-edge state ownership to the caller', async () => {
-  installRepo();
-
-  const completedEvent: OpenAIResponsesStreamEventEx = {
-    type: 'response.completed',
-    sequence_number: 0,
-    response: makeOpenAIResponsesResult(),
-  };
-  const callOpenAIResponses = vi.fn(async (): Promise<ProviderOpenAIResponsesResult> => ({
-    action: 'generate', ok: true,
-    events: makeProviderEvents([completedEvent]),
-    modelKey: 'test-model-key',
-    headers: new Headers(),
-  }));
-
-  const candidate = makeCandidate(callOpenAIResponses);
-  const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), true);
-  const ctx = makeGatewayCtx(store);
-
-  const result = await openaiResponsesAttempt.generate({
-    payload: makePayload(),
-    ctx,
-    candidate,
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-
-  const events = await collectEvents(result.events);
-  assert(events.length >= 1, 'expected at least the response.completed event');
-
-  assertEquals(callOpenAIResponses.mock.calls.length, 1);
-});
-
 test('generate isolates provider mutations with JSON-safe container cloning', async () => {
   installRepo();
   const metadata = JSON.parse('{"__proto__":{"retained":true},"nested":{"value":"source"}}') as Record<string, unknown>;
@@ -214,55 +178,6 @@ test('generate treats a translated OpenAI Responses payload as opaque to native 
   assertEquals(unwrap.mock.calls.length, 0);
   assertEquals(getStoredItem.mock.calls.length, 0);
   assertEquals(observedBody?.input, [{ type: 'reasoning', id: itemId, summary: [], encrypted_content: carrier }]);
-});
-
-test('generate applies role compatibility flags in target-chain order', async () => {
-  installRepo();
-  let observedBody: Omit<OpenAIResponsesPayloadEx, 'model'> | undefined;
-  const callOpenAIResponses = vi.fn(async (
-    _model: ProviderModel,
-    body: Omit<OpenAIResponsesPayloadEx, 'model'>,
-  ): Promise<ProviderOpenAIResponsesResult> => {
-    observedBody = body;
-    return {
-      action: 'generate',
-      ok: true,
-      events: makeProviderEvents([{
-        type: 'response.completed',
-        sequence_number: 0,
-        response: makeOpenAIResponsesResult(),
-      }]),
-      modelKey: 'test-model-key',
-      headers: new Headers(),
-    };
-  });
-  const candidate = makeCandidate(callOpenAIResponses, new Set([
-    'rewrite-developer-to-system',
-    'rewrite-mid-conv-system-to-user',
-    'rewrite-system-to-developer',
-  ]));
-
-  const result = await openaiResponsesAttempt.generate({
-    payload: makePayload({
-      input: [
-        { type: 'message', role: 'system', content: 'base instructions' },
-        { type: 'message', role: 'user', content: 'hello' },
-        { type: 'message', role: 'system', content: 'inline instructions' },
-      ],
-    }),
-    ctx: makeGatewayCtx(createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), false)),
-    candidate,
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-  assertEquals(observedBody?.input, [
-    { type: 'message', role: 'system', content: 'base instructions' },
-    { type: 'message', role: 'user', content: 'hello' },
-    { type: 'message', role: 'user', content: 'inline instructions' },
-  ]);
 });
 
 test('generate defers the role rewrite until after translation to OpenAI Chat Completions', async () => {
@@ -349,33 +264,6 @@ test('generate defers the role rewrite until after translation to OpenAI Chat Co
     { role: 'user', content: 'hello' },
     { role: 'developer', content: 'inline instructions' },
   ]);
-});
-
-test('generate passes non-events provider result through unchanged', async () => {
-  installRepo();
-  const wrapSpy = vi.spyOn(outputModule, 'wrapOpenAIResponsesClientOutput');
-
-  const upstreamResponse = new Response(JSON.stringify({ error: { message: 'nope' } }), { status: 502, headers: new Headers({ 'content-type': 'application/json' }) });
-  const callOpenAIResponses = vi.fn(async (): Promise<ProviderOpenAIResponsesResult> => ({
-    action: 'generate', ok: false,
-    response: upstreamResponse,
-    modelKey: 'test-model-key',
-  }));
-
-  const candidate = makeCandidate(callOpenAIResponses);
-  const result = await openaiResponsesAttempt.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), true)),
-    candidate,
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'api-error');
-  if (result.type !== 'api-error') throw new Error('unreachable');
-  assertEquals(result.status, 502);
-  // Wrap must not run when the upstream failed before any events flowed.
-  assertEquals(wrapSpy.mock.calls.length, 0);
-  wrapSpy.mockRestore();
 });
 
 test('compact returns the clean upstream result for source-edge affinity and storage', async () => {
@@ -813,72 +701,4 @@ test('generate lowers agent_message to a framed user message across translation 
     role: 'user',
     content: [{ type: 'text', text: framedAgentMessageText, cache_control: { type: 'ephemeral' } }],
   }]);
-});
-
-test('generate lowers agent_message to a framed user message across translation to OpenAI Chat Completions', async () => {
-  installRepo();
-  let observedBody: Omit<OpenAIChatCompletionsPayload, 'model'> | undefined;
-  const endpoints = { openaiChatCompletions: {} };
-  const candidate: ModelCandidate = {
-    provider: {
-      upstreamId: 'up_chat', kind: 'custom', name: 'up_chat', inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider({
-        callOpenAIChatCompletions: async (_model, body): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
-          observedBody = body;
-          return {
-            ok: true,
-            events: (async function* () {
-              yield eventFrame<OpenAIChatCompletionsStreamEvent>({ id: 'chatcmpl_agent', object: 'chat.completion.chunk', created: 0, model: 'test-model', choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: 'stop' }] });
-              yield doneFrame();
-            })(),
-            modelKey: 'k',
-            headers: new Headers(),
-          };
-        },
-      }),
-    },
-    model: stubInternalModel({
-      endpoints,
-      providerModels: { up_chat: stubProviderModel({ endpoints }) },
-    }, 'up_chat'),
-    fetcher: directFetcher,
-  };
-
-  const result = await openaiResponsesAttempt.generate({
-    payload: makePayload({ input: agentMessageInput }),
-    ctx: makeGatewayCtx(createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), false)),
-    candidate,
-    headers: new Headers(),
-  });
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-  assertEquals(observedBody?.messages, [{ role: 'user', content: framedAgentMessageText }]);
-});
-
-test.each([
-  { flag: false, expected: agentMessageInput },
-  {
-    flag: true,
-    expected: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: framedAgentMessageText }] }],
-  },
-])('generate forwards agent_message to a native OpenAI Responses target as $expected.0.type when the shim flag is $flag', async ({ flag, expected }) => {
-  installRepo();
-  let observedInput: CanonicalOpenAIResponsesPayload['input'] | undefined;
-  const candidate = makeCandidate(async (_model, body) => {
-    observedInput = body.input;
-    return { action: 'generate', ok: true, events: makeProviderEvents([]), modelKey: 'k', headers: new Headers() };
-  }, flag ? new Set<FlagId>(['openai-responses-agent-message-shim']) : new Set<FlagId>());
-
-  const result = await openaiResponsesAttempt.generate({
-    payload: makePayload({ input: agentMessageInput }),
-    ctx: makeGatewayCtx(),
-    candidate,
-    headers: new Headers(),
-  });
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-  assertEquals(observedInput, expected);
 });

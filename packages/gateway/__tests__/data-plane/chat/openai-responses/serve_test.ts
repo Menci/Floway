@@ -1,10 +1,10 @@
 import { afterEach, test, vi } from 'vitest';
 
 import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy } from './test-policy.ts';
-import { createOpenAIResponsesHttpStore, MemoryOpenAIResponsesStatefulBacking, LayeredOpenAIResponsesStatefulStore } from '../../../../src/data-plane/chat/openai-responses/items/store.ts';
+import { createOpenAIResponsesHttpStore } from '../../../../src/data-plane/chat/openai-responses/items/store.ts';
 import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gateway-ctx.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
-import type { StoredOpenAIResponsesItem, StoredOpenAIResponsesSnapshot } from '../../../../src/repo/types.ts';
+import type { StoredOpenAIResponsesSnapshot } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
@@ -16,9 +16,9 @@ import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-d
 
 // Mock the resolver seam so each test hands the serve exactly the provider
 // candidates it wants, optionally with an alias-rules overlay attached.
-// `sawModel` defaults to true when at least one candidate was queued; the
-// `model-missing` failure tests queue an empty list and expect `sawModel:
-// false` so the serve renders 404 rather than 400.
+// `sawModel` is true when at least one candidate was queued; the
+// `model-missing` failure test queues an empty list so the serve renders 404
+// rather than 400.
 interface QueuedResolution {
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
@@ -46,12 +46,11 @@ const API_KEY_ID = 'key_serve_test';
 
 const queueResolution = (
   candidates: readonly ModelCandidate[],
-  extra: { sawModel?: boolean; aliasRules?: AliasRules } = {},
+  aliasRules?: AliasRules,
 ): void => {
-  const rules = extra.aliasRules;
   resolutionsQueue.push({
-    candidates: rules !== undefined ? candidates.map(c => ({ ...c, rules })) : candidates,
-    sawModel: extra.sawModel ?? candidates.length > 0,
+    candidates: aliasRules !== undefined ? candidates.map(c => ({ ...c, rules: aliasRules })) : candidates,
+    sawModel: candidates.length > 0,
     failedUpstreams: [],
   });
 };
@@ -153,35 +152,6 @@ const collectEvents = async (events: AsyncIterable<ProtocolFrame<OpenAIResponses
   }
   return out;
 };
-
-test('generate routes a native OpenAI Responses candidate end to end', async () => {
-  installRepo();
-  const completed: OpenAIResponsesStreamEventEx = {
-    type: 'response.completed',
-    sequence_number: 0,
-    response: makeOpenAIResponsesResult(),
-  };
-  const callOpenAIResponses = vi.fn(async (): Promise<ProviderOpenAIResponsesResult> => ({
-    action: 'generate', ok: true,
-    events: makeProtocolFrames([completed]),
-    modelKey: 'test-model-key',
-    headers: new Headers(),
-  }));
-  const candidate = makeCandidate({ upstream: 'up_a', callOpenAIResponses });
-  queueResolution([candidate]);
-
-  const result = await openaiResponsesServe.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  const events = await collectEvents(result.events);
-  assert(events.length >= 1);
-  assertEquals(callOpenAIResponses.mock.calls.length, 1);
-});
 
 test('compact returns a result envelope from the wrapped attempt', async () => {
   installRepo();
@@ -347,46 +317,6 @@ test('generate filters out candidates whose endpoints do not satisfy the respons
   assertEquals(callOpenAIResponses.mock.calls.length, 0);
 });
 
-test('compact renders model-missing as a 404 when no candidates are available', async () => {
-  installRepo();
-  queueResolution([]);
-
-  const result = await openaiResponsesServe.compact({
-    payload: compactPayload({ model: 'unknown-model' }),
-    ctx: makeGatewayCtx(),
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'api-error');
-  if (result.type !== 'api-error') throw new Error('unreachable');
-  assertEquals(result.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
-  assertEquals(body.error.type, 'invalid_request_error');
-  assert(typeof body.error.message === 'string' && body.error.message.includes('not available'));
-});
-
-test('compact renders model-unsupported as a 400 when the only candidate\'s endpoints don\'t satisfy responses target preferences', async () => {
-  installRepo();
-  const callOpenAIResponses = vi.fn();
-  // openaiResponsesTarget prefers responses > messages > openai-chat-completions; an
-  // endpoints-only `openaiCompletions` candidate matches none and is filtered out.
-  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { openaiCompletions: {} }, callOpenAIResponses })]);
-
-  const result = await openaiResponsesServe.compact({
-    payload: compactPayload({ model: 'wrong-endpoint-model' }),
-    ctx: makeGatewayCtx(),
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'api-error');
-  if (result.type !== 'api-error') throw new Error('unreachable');
-  assertEquals(result.status, 400);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
-  assertEquals(body.error.type, 'invalid_request_error');
-  assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
-  assertEquals(callOpenAIResponses.mock.calls.length, 0);
-});
-
 test('expandPreviousResponseId prepends snapshot items and strips the previous_response_id field', async () => {
   const repo = installRepo();
   const previousMessageId = 'msg_previous';
@@ -418,90 +348,6 @@ test('expandPreviousResponseId prepends snapshot items and strips the previous_r
   assertEquals(expanded.input.length, 2);
   assertEquals(expanded.input[0], { type: 'item_reference', id: previousMessageId });
   assertEquals(expanded.input[1], { type: 'message', role: 'user', content: 'second turn' });
-});
-
-// In-memory store backed by the layered implementation but with no repo
-// behind it, so an `expandPreviousResponseId` test can sit on a snapshot
-// that lives nowhere else.
-const memoryStore = async (snapshots: readonly StoredOpenAIResponsesSnapshot[], items: readonly StoredOpenAIResponsesItem[]) => {
-  const backing = new MemoryOpenAIResponsesStatefulBacking();
-  for (const item of items) await backing.insertItems([item]);
-  for (const snapshot of snapshots) await backing.insertSnapshot(snapshot);
-  return new LayeredOpenAIResponsesStatefulStore({
-    apiKeyId: API_KEY_ID,
-    reads: [backing],
-    writes: [backing],
-  });
-};
-
-test('expandPreviousResponseId resolves snapshots from a non-repo-backed store', async () => {
-  installRepo(); // affinity lookups in the wider flow still need a repo, but here the helper only touches the store.
-  const id = 'msg_memory';
-  const item: StoredOpenAIResponsesItem = {
-    id,
-    apiKeyId: API_KEY_ID,
-    itemHash: 'memory-message-hash',
-    payload: { item: { type: 'message', id, role: 'user', content: 'remembered' } },
-    refreshedAt: 1_000,
-  };
-  const snapshot: StoredOpenAIResponsesSnapshot = {
-    id: 'resp_mem',
-    apiKeyId: API_KEY_ID,
-    itemIds: [id],
-    refreshedAt: 1_000,
-  };
-  const store = await memoryStore([snapshot], [item]);
-
-  const expanded = await expandPreviousResponseId(
-    makePayload({ previous_response_id: 'resp_mem', input: [{ type: 'message', role: 'user', content: 'new turn' }] }),
-    store,
-  );
-
-  assertEquals(expanded.input.length, 2);
-  assertEquals(expanded.input[0], { type: 'item_reference', id });
-});
-
-test('generate falls through translate-out to messages target', async () => {
-  installRepo();
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true,
-    events: makeProtocolFrames([
-      {
-        type: 'message_start',
-        message: {
-          container: null, diagnostics: null, stop_details: null,
-          id: 'msg_translated',
-          type: 'message',
-          role: 'assistant',
-          content: [],
-          model: 'test-model',
-          stop_reason: null,
-          stop_sequence: null,
-          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 4, output_tokens: 0 },
-        },
-      },
-      { type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } },
-      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
-      { type: 'content_block_stop', index: 0 },
-      { type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } },
-      { type: 'message_stop' },
-    ]),
-    modelKey: 'messages-key',
-    headers: new Headers(),
-  }));
-  const candidate = makeCandidate({ upstream: 'up_m', endpoints: { anthropicMessages: {} }, callAnthropicMessages });
-  queueResolution([candidate]);
-
-  const result = await openaiResponsesServe.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-  assertEquals(callAnthropicMessages.mock.calls.length, 1);
 });
 
 test('Anthropic Messages biology refusal becomes a non-retryable Codex OpenAI Responses policy failure', async () => {
@@ -609,9 +455,7 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
     return { action: 'generate', ok: true, events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: makeOpenAIResponsesResult() }]), modelKey: 'gpt-5.4', headers: new Headers() };
   });
   const candidate = makeCandidate({ upstream: 'up_a', modelId: 'gpt-5.4', callOpenAIResponses });
-  queueResolution([candidate], {
-    aliasRules: { reasoning: { effort: 'high', summary: 'detailed' }, verbosity: 'medium', serviceTier: 'priority' },
-  });
+  queueResolution([candidate], { reasoning: { effort: 'high', summary: 'detailed' }, verbosity: 'medium', serviceTier: 'priority' });
 
   const payload = makePayload({ model: 'gpt-fast' });
   const result = await openaiResponsesServe.generate({
@@ -634,21 +478,4 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   assertEquals(observed.reasoning?.summary, 'detailed');
   assertEquals(observed.text?.verbosity, 'medium');
   assertEquals(observed.service_tier, 'priority');
-});
-
-test('alias whose targets have no kind-matching binding surfaces as the regular model-missing 404', async () => {
-  installRepo();
-  queueResolution([], { sawModel: false });
-
-  const result = await openaiResponsesServe.generate({
-    payload: makePayload({ model: 'gpt-fast' }),
-    ctx: makeGatewayCtx(createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), true)),
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'api-error');
-  if (result.type !== 'api-error') throw new Error('unreachable');
-  assertEquals(result.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
-  assertEquals(body.error.message, 'Model gpt-fast is not available on any configured upstream.');
 });

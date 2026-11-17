@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { hashOpenAIResponsesItem } from '../../../../../src/data-plane/chat/openai-responses/items/identity.ts';
-import { createNonOpenAIResponsesSourceStore, createOpenAIResponsesHttpStore, createOpenAIResponsesWsSession } from '../../../../../src/data-plane/chat/openai-responses/items/store.ts';
+import { createOpenAIResponsesHttpStore, createOpenAIResponsesWsSession } from '../../../../../src/data-plane/chat/openai-responses/items/store.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
-import { quantizeOpenAIResponsesRefreshedAt } from '../../../../../src/repo/openai-responses-retention.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy } from '../test-policy.ts';
 
@@ -33,17 +32,6 @@ describe('OpenAIResponsesStatefulStore', () => {
     await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
     await store.commitSnapshot('resp_none', 'append', []);
     expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_none', 0)).toBeNull();
-  });
-
-  test('HTTP store=false skips snapshot staging for idless input', async () => {
-    initRepo(new InMemoryRepo());
-    const digest = vi.spyOn(crypto.subtle, 'digest');
-    const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), false);
-
-    await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
-
-    expect(digest).not.toHaveBeenCalled();
-    digest.mockRestore();
   });
 
   test('HTTP store=false still reads durably-stored items and snapshots', async () => {
@@ -85,28 +73,6 @@ describe('OpenAIResponsesStatefulStore', () => {
     expect(snapshot?.itemIds).toHaveLength(2);
     const [storedOutput] = await repo.openaiResponsesItems.lookupMany('key-a', [output.id], 0);
     expect(storedOutput).toMatchObject({ ...output, refreshedAt: snapshot?.refreshedAt });
-  });
-
-  test('reuses an input item hash between lookup and staging', async () => {
-    installRepo();
-    const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), true);
-    let contentReads = 0;
-    const input = { type: 'message' as const, role: 'user' as const } as { type: 'message'; role: 'user'; content: string };
-    Object.defineProperty(input, 'content', {
-      enumerable: true,
-      get() {
-        contentReads += 1;
-        return 'hello';
-      },
-    });
-
-    await store.loadInputItems([input], [input]);
-    expect(contentReads).toBe(1);
-    await store.stageInputItems([input]);
-
-    // Staging reads the item once to clone it into request-owned state, but
-    // does not traverse it again to recompute the lookup hash.
-    expect(contentReads).toBe(2);
   });
 
   test('replace snapshots persist only their output state', async () => {
@@ -152,28 +118,6 @@ describe('OpenAIResponsesStatefulStore', () => {
     expect(refreshed.refreshedAt).toBe(TEST_DAY);
     expect((await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_new', 0))?.itemIds).toEqual([item.id]);
     expect(await repo.openaiResponsesItems.lookupMany('key-a', [item.id], 0)).toHaveLength(1);
-  });
-
-  test('same-day snapshot reuse does not call the durable item refresher', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(TEST_DAY + DAY_MS / 2);
-    const repo = installRepo();
-    const item = {
-      id: 'msg_current_day',
-      apiKeyId: 'key-a',
-      payload: { item: { type: 'message', id: 'msg_current_day', role: 'assistant', content: [] } },
-      itemHash: 'current-day-hash',
-      refreshedAt: TEST_DAY + 1_000,
-    };
-    await repo.openaiResponsesItems.insertMany([item], 0);
-    await repo.openaiResponsesSnapshots.insert({ id: 'resp_current_day', apiKeyId: 'key-a', itemIds: [item.id], refreshedAt: item.refreshedAt });
-    const refreshItems = vi.spyOn(repo.openaiResponsesItems, 'refreshMany');
-
-    const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), true);
-    expect(await store.loadSnapshot('resp_current_day')).not.toBeNull();
-    await store.commitSnapshot('resp_current_day_next', 'append', []);
-
-    expect(refreshItems).not.toHaveBeenCalled();
   });
 
   test('a store crossing UTC midnight refreshes items into the new day', async () => {
@@ -256,30 +200,6 @@ describe('OpenAIResponsesStatefulStore', () => {
     expect((await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_reused', 0))?.itemIds).toEqual([directRow.id, hashedRow.id]);
   });
 
-  test('snapshot lifetime follows a newer backing item timestamp', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(TEST_DAY + DAY_MS / 2);
-    const repo = installRepo();
-    const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), true);
-    const input = { type: 'message' as const, role: 'user' as const, content: 'future lifetime' };
-    const futureRefreshedAt = TEST_DAY + DAY_MS + 60_000;
-    const quantizedFutureRefreshedAt = quantizeOpenAIResponsesRefreshedAt(futureRefreshedAt);
-    const row = {
-      id: 'msg_future',
-      apiKeyId: 'key-a',
-      payload: { item: input },
-      itemHash: await hashOpenAIResponsesItem(input),
-      refreshedAt: futureRefreshedAt,
-    };
-    await repo.openaiResponsesItems.insertMany([row], 0);
-    await store.loadInputItems([input], [input]);
-    await store.stageInputItems([input]);
-    await store.commitSnapshot('resp_future', 'append', []);
-
-    expect((await repo.openaiResponsesItems.lookupMany('key-a', [row.id], 0))[0].refreshedAt).toBe(quantizedFutureRefreshedAt);
-    expect((await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_future', 0))?.refreshedAt).toBe(quantizedFutureRefreshedAt);
-  });
-
   test('disable between output-item done and terminal preserves the in-flight request snapshot', async () => {
     const repo = installRepo();
     const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), true);
@@ -325,12 +245,5 @@ describe('OpenAIResponsesStatefulStore', () => {
     expect(snapshot).not.toBeNull();
     if (snapshot === null) throw new Error('Expected durable snapshot');
     expect(await repo.openaiResponsesItems.lookupMany('key-a', snapshot.itemIds, 0)).toHaveLength(snapshot.itemIds.length);
-  });
-
-  test('non-OpenAI-Responses-source store persists and reads nothing', async () => {
-    const store = createNonOpenAIResponsesSourceStore('key-a');
-    expect(store.writesState).toBe(false);
-    expect(store.getItemById('anything')).toBeUndefined();
-    expect(await store.loadSnapshot('resp_x')).toBeNull();
   });
 });

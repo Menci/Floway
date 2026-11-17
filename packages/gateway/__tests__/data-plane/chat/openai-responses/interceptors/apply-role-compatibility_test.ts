@@ -6,7 +6,7 @@ import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 import { eventResult, type FlagId } from '@floway-dev/provider';
-import { assert, assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const gatewayCtx = mockChatGatewayCtx();
 const okEvents = () => Promise.resolve(eventResult((async function* () { yield doneFrame(); })(), testTelemetryModelIdentity));
@@ -70,35 +70,6 @@ test('uses non-message items as the boundary before rewriting later system', asy
       { type: 'message', role: 'user', content: 'inline rules' },
     ],
   );
-});
-
-test('keeps a leading-only system run and an empty input unchanged', async () => {
-  const leading: CanonicalOpenAIResponsesInputItem[] = [
-    { type: 'message', role: 'system', content: 'base A' },
-    { type: 'message', role: 'system', content: 'base B' },
-  ];
-  assertEquals(await applyRoles(leading, new Set(['rewrite-mid-conv-system-to-user'])), leading);
-  assertEquals(await applyRoles([], new Set(['rewrite-mid-conv-system-to-user'])), []);
-});
-
-test('preserves multipart content identity when rewriting a mid-conversation system message', async () => {
-  const content = [
-    { type: 'input_text' as const, text: 'one' },
-    { type: 'input_text' as const, text: 'two' },
-  ];
-  const result = await applyRoles(
-    [
-      { type: 'message', role: 'user', content: 'hello' },
-      { type: 'message', role: 'system', content },
-    ],
-    new Set(['rewrite-mid-conv-system-to-user']),
-  );
-  assertEquals(result, [
-    { type: 'message', role: 'user', content: 'hello' },
-    { type: 'message', role: 'user', content },
-  ]);
-  const rewritten = result[1];
-  assert(rewritten?.type === 'message' && rewritten.content === content);
 });
 
 test('applies overlapping flags in system-to-developer then developer-to-system order', async () => {

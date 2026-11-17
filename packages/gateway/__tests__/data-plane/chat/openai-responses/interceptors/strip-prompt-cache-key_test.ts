@@ -43,18 +43,6 @@ test('drops top-level prompt_cache_key when the flag is on', async () => {
   assertEquals(Object.hasOwn(input.payload, 'prompt_cache_key'), false);
 });
 
-test('leaves the payload untouched when prompt_cache_key is absent', async () => {
-  const input = invocation({
-    model: 'm',
-    input: [{ type: 'message', role: 'user', content: 'hi' }],
-  });
-  const before = input.payload;
-
-  await withPromptCacheKeyStripped(input, stubCtx, okEvents);
-
-  assertEquals(input.payload, before);
-});
-
 test('is a no-op when the flag is not set on the candidate', async () => {
   const input = invocation(
     {

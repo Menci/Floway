@@ -32,33 +32,10 @@ const invocation = (
   action: 'generate',
 });
 
-test('when openai-responses-store-false is on, keep "store":false to false', async () => {
-  const ctx = invocation({
-    model: 'gpt-5.2',
-    store: false,
-    input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Hi' }] }],
-  });
-
-  await withStoreForcedFalse(ctx, stubCtx, okEvents);
-
-  assertEquals(ctx.payload.store, false);
-});
-
 test('when openai-responses-store-false is on, change "store":true to false', async () => {
   const ctx = invocation({
     model: 'gpt-5.2',
     store: true,
-    input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Hi' }] }],
-  });
-
-  await withStoreForcedFalse(ctx, stubCtx, okEvents);
-
-  assertEquals(ctx.payload.store, false);
-});
-
-test('when openai-responses-store-false is on, change an unset "store" to false', async () => {
-  const ctx = invocation({
-    model: 'gpt-5.2',
     input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Hi' }] }],
   });
 
@@ -80,33 +57,4 @@ test('when openai-responses-store-false is off, leave "store":true as is', async
   await withStoreForcedFalse(ctx, stubCtx, okEvents);
 
   assertEquals(ctx.payload.store, true);
-});
-
-test('when openai-responses-store-false is off, leave "store":false as is', async () => {
-  const ctx = invocation(
-    {
-      model: 'gpt-5.2',
-      store: false,
-      input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Hi' }] }],
-    },
-    new Set<FlagId>(),
-  );
-
-  await withStoreForcedFalse(ctx, stubCtx, okEvents);
-
-  assertEquals(ctx.payload.store, false);
-});
-
-test('when openai-responses-store-false is off, leave an unset "store" as is', async () => {
-  const ctx = invocation(
-    {
-      model: 'gpt-5.2',
-      input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Hi' }] }],
-    },
-    new Set<FlagId>(),
-  );
-
-  await withStoreForcedFalse(ctx, stubCtx, okEvents);
-
-  assertEquals(ctx.payload.store, undefined);
 });

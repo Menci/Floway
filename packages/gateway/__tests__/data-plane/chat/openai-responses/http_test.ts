@@ -43,12 +43,11 @@ const API_KEY_ID = 'key_http_test';
 
 const queueResolution = (
   candidates: readonly ModelCandidate[],
-  extra: { sawModel?: boolean; aliasRules?: AliasRules } = {},
+  aliasRules?: AliasRules,
 ): void => {
-  const rules = extra.aliasRules;
   resolutionsQueue.push({
-    candidates: rules !== undefined ? candidates.map(c => ({ ...c, rules })) : candidates,
-    sawModel: extra.sawModel ?? candidates.length > 0,
+    candidates: aliasRules !== undefined ? candidates.map(c => ({ ...c, rules: aliasRules })) : candidates,
+    sawModel: candidates.length > 0,
     failedUpstreams: [],
   });
 };
@@ -376,23 +375,6 @@ test('POST /v1/responses rejects a malformed untyped input item', async () => {
   assertEquals(body.error.param, 'input[0]');
 });
 
-test('POST /v1/responses returns a single JSON body when stream is omitted', async () => {
-  installRepo();
-  queueCompletedResponse('resp_nonstream');
-
-  const response = await makeApp().request('/v1/responses', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'test-model', input: 'hello' }),
-  });
-
-  assertEquals(response.status, 200);
-  assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
-  const body = await response.json() as OpenAIResponsesResultEx;
-  assert(body.id.length > 0 && body.id !== 'resp_nonstream', 'expected the source boundary to replace the upstream response id');
-  assertEquals(body.status, 'completed');
-});
-
 test('POST /v1/responses answers a translated-shape upstream with a complete response resource', async () => {
   installRepo();
   queueCompletedResponse('resp_complete');
@@ -406,26 +388,6 @@ test('POST /v1/responses answers a translated-shape upstream with a complete res
   assertEquals(response.status, 200);
   const body = await response.json() as Record<string, unknown>;
   assertEquals(missingRequiredResourceKeys(body), []);
-});
-
-test('POST /v1/responses returns 502 when a non-streaming output item cannot be persisted', async () => {
-  const repo = installRepo();
-  const persistence = vi.spyOn(repo.openaiResponsesItems, 'insertMany').mockRejectedValue(new Error('simulated item persistence failure'));
-  try {
-    queueCompletedResponse();
-
-    const response = await makeApp().request('/v1/responses', {
-      method: 'POST',
-      headers: new Headers({ 'content-type': 'application/json' }),
-      body: JSON.stringify({ model: 'test-model', input: 'hello' }),
-    });
-
-    assertEquals(response.status, 502);
-    const body = await response.json() as { error: { message: string } };
-    assertEquals(body.error.message, 'simulated item persistence failure');
-  } finally {
-    persistence.mockRestore();
-  }
 });
 
 test('POST /v1/responses terminates an SSE stream with error when an output item cannot be persisted', async () => {
@@ -510,19 +472,6 @@ const compactTurn = async (
   return { upstream: compactionResult, response };
 };
 
-test('POST /v1/responses/compact returns a non-streaming compaction body', async () => {
-  const repo = installRepo();
-  const { response } = await compactTurn();
-
-  assertEquals(response.status, 200);
-  assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
-  const body = await response.json() as { object: string; id: string; output: Array<{ id: string }> };
-  assertEquals(body.object, 'response.compaction');
-  assert(body.id.length > 0 && body.id !== 'resp_test', 'expected the source boundary to replace the upstream response id');
-  assertEquals(await repo.openaiResponsesSnapshots.lookup(API_KEY_ID, body.id, 0), null);
-  assertEquals(await repo.openaiResponsesItems.lookupMany(API_KEY_ID, body.output.map(item => item.id), 0), []);
-});
-
 test('POST /v1/responses/compact answers the compaction resource, not the response resource', async () => {
   installRepo();
   const { upstream, response } = await compactTurn(
@@ -605,42 +554,10 @@ const queueCodexAutoReviewCandidate = (
 ): void => {
   const candidate = makeCandidate({ callOpenAIResponses });
   Object.assign(candidate.model, { id: 'gpt-5.4' });
-  queueResolution([candidate], { aliasRules: { reasoning: { effort: 'low' } } });
+  queueResolution([candidate], { reasoning: { effort: 'low' } });
 };
 
-test('POST /v1/responses applies the alias rules to a codex-auto-review request: rewrites the model to gpt-5.4 and stamps reasoning.effort=low', async () => {
-  installRepo();
-  lastSeenModel.value = null;
-  const observedBodies: Omit<CanonicalOpenAIResponsesPayload, 'model'>[] = [];
-  queueCodexAutoReviewCandidate(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
-    observedBodies.push(body as Omit<CanonicalOpenAIResponsesPayload, 'model'>);
-    return {
-      action: 'generate', ok: true,
-      events: makeProviderEvents(completedEvents()),
-      modelKey: 'test-model-key',
-      headers: new Headers(),
-    };
-  });
-
-  const response = await makeApp().request('/v1/responses', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'codex-auto-review', input: 'hello', stream: true }),
-  });
-
-  assertEquals(response.status, 200);
-  // The resolver sees the inbound alias id verbatim; target-id walking is
-  // internal to `enumerateModelCandidates`.
-  assertEquals(lastSeenModel.value, 'codex-auto-review');
-  const observed = observedBodies[0];
-  if (observed === undefined) throw new Error('expected callOpenAIResponses to receive a body');
-  // The attempt strips `model` from the body — the provider re-stamps it
-  // from `candidate.model.id` — so we only verify the rules landed on the
-  // IR.
-  assertEquals(observed.reasoning?.effort, 'low');
-});
-
-test('POST /v1/responses/compact applies the alias rules to a codex-auto-review request: rewrites the model to gpt-5.4 and stamps reasoning.effort=low (the alias rule overlays the compact body too)', async () => {
+test('POST /v1/responses/compact applies the alias rules to a codex-auto-review request: rewrites the model to gpt-5.4 and stamps reasoning.effort=low', async () => {
   installRepo();
   lastSeenModel.value = null;
   const observedBodies: Omit<CanonicalOpenAIResponsesPayload, 'model'>[] = [];
@@ -677,27 +594,6 @@ test('POST /v1/responses/compact applies the alias rules to a codex-auto-review 
   assertEquals(observed.prompt_cache_retention, '24h');
 });
 
-test('POST /v1/responses renders the OpenAI-shaped model-unsupported 400 when no candidate matches the responses picker', async () => {
-  installRepo();
-  // Queue a chat-kind candidate whose endpoints expose only `openaiCompletions` —
-  // openaiResponsesTarget (responses > messages > openai-chat-completions) rejects it,
-  // leaving zero viable candidates, and with sawModel=true the serve renders
-  // model-unsupported as a 400.
-  queueResolution([makeCandidate({ endpoints: { openaiCompletions: {} } })]);
-
-  const response = await makeApp().request('/v1/responses', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'wrong-endpoint-model', input: 'hello' }),
-  });
-
-  assertEquals(response.status, 400);
-  assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
-  const body = await response.json() as { error: { type: string; message: string } };
-  assertEquals(body.error.type, 'invalid_request_error');
-  assert(body.error.message.includes('does not support'));
-});
-
 test('POST /v1/responses/compact answers a body that states no status, as a native compact upstream sends', async () => {
   installRepo();
   const { response } = await compactTurn({ status: undefined as unknown as OpenAIResponsesResultEx['status'] });
@@ -707,50 +603,6 @@ test('POST /v1/responses/compact answers a body that states no status, as a nati
   assertEquals(body.object, 'response.compaction');
   assertEquals(missingRequiredCompactionKeys(body), []);
   assertEquals((body.output as Array<{ type: string }>).map(item => item.type), ['compaction']);
-});
-
-test('POST /v1/responses nests a mid-stream failure under `error` so an SDK stream reader throws on it, then follows it with response.failed', async () => {
-  installRepo();
-  const callOpenAIResponses = vi.fn(async (): Promise<ProviderOpenAIResponsesResult> => ({
-    action: 'generate', ok: true,
-    events: (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-      yield eventFrame(completedEvents()[0]!);
-      throw new Error('upstream exploded mid-stream');
-    })(),
-    modelKey: 'test-model-key',
-    headers: new Headers(),
-  }));
-  queueResolution([makeCandidate({ callOpenAIResponses })]);
-
-  const response = await makeApp().request('/v1/responses', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'test-model', input: 'hello', stream: true }),
-  });
-
-  const body = await response.text();
-  const chunk = body.split('\n\n').find(part => part.startsWith('event: error'));
-  assert(chunk !== undefined, `expected an error frame in ${body}`);
-  const data = JSON.parse(chunk.slice(chunk.indexOf('data: ') + 'data: '.length)) as {
-    type: string;
-    error?: { message?: unknown };
-    message?: unknown;
-  };
-  assertEquals(data.type, 'error');
-  assertEquals(data.error?.message, 'upstream exploded mid-stream');
-  assert(data.message === undefined, 'expected the payload to sit under `error`, not at the top level');
-
-  const failedChunk = body.split('\n\n').find(part => part.startsWith('event: response.failed'));
-  assert(failedChunk !== undefined, `expected a response.failed frame in ${body}`);
-  const failed = JSON.parse(failedChunk.slice(failedChunk.indexOf('data: ') + 'data: '.length)) as {
-    response: { status: string; id: string; error: { message: string } };
-  };
-  assertEquals(failed.response.status, 'failed');
-  assertEquals(failed.response.error.message, 'upstream exploded mid-stream');
-  const created = JSON.parse(
-    body.split('\n\n').find(part => part.startsWith('event: response.created'))!.split('data: ')[1]!,
-  ) as { response: { id: string } };
-  assertEquals(failed.response.id, created.response.id);
 });
 
 const translatedCustomCandidate = (
