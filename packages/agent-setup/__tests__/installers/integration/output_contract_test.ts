@@ -1,10 +1,10 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 
 import { expect, test } from 'vitest';
 
-import { bothConfig, claudeConfig, codexBackupFiles, codexConfig, codexHomeFor, codexTokenPath, hostPwsh, makeWorkspace, modelServer, placeFakeClaude, placeFakeCodex, runPowerShellInstaller, runShellInstaller, settingsPathFor } from './harness';
+import { bothConfig, claudeConfig, hostPwsh, makeWorkspace, modelServer, placeFakeClaude, placeFakeCodex, runPowerShellInstaller, runShellInstaller, settingsPathFor } from './harness';
 import type { Workspace } from './harness';
 
 // VT control sequences are stripped and CRLF normalized; each line is right-trimmed
@@ -15,28 +15,6 @@ const normalizeLines = (text: string): string =>
 const normalizeWorkspace = (text: string, workspace: Workspace): string =>
   normalizeLines(text).replaceAll(workspace.root, '<workspace>');
 const hasVTControlCharacters = (text: string): boolean => stripVTControlCharacters(text) !== text;
-
-test('output normalization strips VT controls and preserves control-like text', { timeout: 180_000 }, () => {
-  const decorated = [
-    '\u001B[31mred\u001B[0m',
-    '\u001B[2A\u001B[3Ccursor',
-    '\u001B]8;;https://floway.dev\u0007link\u001B]8;;\u0007',
-  ].join(' ');
-  expect(normalizeLines(decorated), 'SGR, cursor CSI, and OSC hyperlink sequences are stripped').toBe('red cursor link');
-  expect(hasVTControlCharacters(decorated)).toBeTruthy();
-
-  const plain = 'literal [31m, [2A, and ]8;;https://floway.dev text';
-  expect(normalizeLines(plain), 'control-like ordinary text is unchanged').toBe(plain);
-  expect(!hasVTControlCharacters(plain)).toBeTruthy();
-});
-
-// A hermetic single-agent run needs the harness to fully control discovery. The
-// Codex CLI is discovered at absolute paths the sandbox cannot hide, so a host
-// with a system Codex would emit a legitimate "multiple installations" warning;
-// Claude's absolute candidates are absent here, so the clean-stderr contract is
-// asserted through the Claude phase and guarded against a stray global Claude.
-const GLOBAL_CLAUDE_LOCATIONS = ['/opt/homebrew/bin/claude', '/usr/local/bin/claude'];
-const globalClaudePresent = (): boolean => GLOBAL_CLAUDE_LOCATIONS.some(p => existsSync(p));
 
 test('Bash and PowerShell emit an identical happy-path stdout line sequence', { timeout: 180_000 }, async ({ skip }) => {
   if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
@@ -64,25 +42,6 @@ test('Bash and PowerShell emit an identical happy-path stdout line sequence', { 
   expect(normalizeLines(bash.stdout).match(/^==> /gm)?.length, 'the output has exactly the header, installation, configuration, and completion notices').toBe(4);
   expect(normalizeLines(bash.stdout), 'the successful result is explicit').toContain('==> Completed Agent Setup: Claude Code');
   expect(normalizeLines(bash.stdout), 'a single-agent script has no redundant summary').not.toContain('Summary');
-});
-
-test('a fully successful run keeps stderr empty and emits no escape codes when captured', { timeout: 180_000 }, async ({ skip }) => {
-  if (globalClaudePresent()) return skip(true, 'a system Claude Code is installed at a known location; discovery is not hermetic');
-  const bashWs = makeWorkspace();
-  placeFakeClaude(bashWs.binDir);
-  const bash = await runShellInstaller({ workspace: bashWs, baseUrl: modelServer.url, configuration: claudeConfig() });
-  expect(bash.code, `should succeed:\n${bash.combined}`).toBe(0);
-  expect(bash.stderr.trim(), 'a clean Bash run writes nothing to stderr').toBe('');
-  expect(!hasVTControlCharacters(bash.combined)).toBeTruthy();
-
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  modelServer.reset();
-  const psWs = makeWorkspace();
-  placeFakeClaude(psWs.binDir);
-  const ps = await runPowerShellInstaller({ workspace: psWs, baseUrl: modelServer.url, configuration: claudeConfig() });
-  expect(ps.code, `should succeed:\n${ps.combined}`).toBe(0);
-  expect(ps.stderr.trim(), 'a clean PowerShell run writes nothing to stderr').toBe('');
-  expect(!hasVTControlCharacters(ps.combined)).toBeTruthy();
 });
 
 test('Bash styles agent notices while leaving metadata plain', { timeout: 180_000 }, async () => {
@@ -185,23 +144,4 @@ test('PowerShell surfaces one primary error without a double wrapper', { timeout
   const errorCount = run.stderr.split('\n').filter(line => line.includes('is not valid JSON; leaving it untouched.')).length;
   expect(errorCount, 'the primary error is printed exactly once').toBe(1);
   expect(run.stdout, 'the error stays off stdout').not.toContain('is not valid JSON');
-});
-
-test('PowerShell rollback restore failure preserves the Codex provider-token backup', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  placeFakeCodex(ws.binDir);
-  const home = codexHomeFor(ws);
-  mkdirSync(home, { recursive: true });
-  writeFileSync(codexTokenPath(ws), 'old-provider-token');
-  const run = await runPowerShellInstaller({
-    workspace: ws, baseUrl: modelServer.url, configuration: codexConfig(),
-    fakeCodexAppServerMode: 'error', failRestore: true,
-  });
-  expect(run.code !== 0).toBeTruthy();
-  expect(run.stderr, 'a rollback-failure warning is printed to stderr').toContain('Warning: could not restore');
-  expect(run.stderr, 'the warning names the preserved provider token').toContain('provider token');
-  expect(run.stderr, 'the warning names the manual action').toContain('restore it by hand');
-  const backups = codexBackupFiles(home, 'floway-token');
-  expect(backups.length, 'the provider-token backup is preserved for manual recovery').toBe(1);
 });

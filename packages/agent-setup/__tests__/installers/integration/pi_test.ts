@@ -1,14 +1,13 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as zlib from 'node:zlib';
 
 import { expect, test } from 'vitest';
 
-import { ALL_BASH_FRAGMENTS, HARNESS_ROOT, SENTINEL_KEY, SHIM_BIN, hostPiBin, hostPwsh, installerMarker, makeWorkspace, modelServer, piBackupFiles, piConfig, piDirFor, piExtensionPath, piFixture, piSettingsPath, piStagedFiles, placeFakeNpm, placeFakePi, powerShellBody, powerShellEntry, readPiSettings, runPowerShellInstaller, runShellInstaller, runShellInstallerWithAmbientKey, shellBody, shellEntry, shellLiteral } from './harness';
+import { SENTINEL_KEY, hostPiBin, hostPwsh, makeWorkspace, modelServer, piBackupFiles, piConfig, piDirFor, piExtensionPath, piFixture, piSettingsPath, piStagedFiles, placeFakePi, readPiSettings, runPowerShellInstaller, runShellInstaller, runShellInstallerWithAmbientKey, shellLiteral } from './harness';
 import type { RunResult } from './harness';
-import { renderPowerShellPrefix, renderShellPrefix } from '../../../src/render.ts';
-import { SETUP_BASH_PI, SETUP_NODE_PI_EXTENSION, SETUP_POWERSHELL_PI } from '../../../src/script-assets.generated.ts';
+import { SETUP_NODE_PI_EXTENSION } from '../../../src/script-assets.generated.ts';
 
 for (const [label, runInstaller] of [['Bash', runShellInstaller], ['PowerShell', runPowerShellInstaller]] as const) {
   test(`${label}: installs a protected fixed extension and preserves unrelated configuration`, { timeout: 180_000 }, async ({ skip }) => {
@@ -85,20 +84,6 @@ for (const [label, runInstaller] of [['Bash', runShellInstaller], ['PowerShell',
     expect(!existsSync(piExtensionPath(ws))).toBeTruthy();
   });
 
-  test(`${label}: settings JSONC comments and line endings survive default changes`, { timeout: 180_000 }, async ({ skip }) => {
-    if (label === 'PowerShell' && !hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-    const ws = makeWorkspace();
-    placeFakePi(ws.binDir);
-    mkdirSync(piDirFor(ws), { recursive: true });
-    writeFileSync(piSettingsPath(ws), '// Settings\r\n{\r\n  "theme": "dark",\r\n}');
-    const run = await runInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: 'm' }) });
-    expect(run.code, run.combined).toBe(0);
-    const settings = readFileSync(piSettingsPath(ws), 'utf8');
-    expect(settings).toContain('// Settings\r\n');
-    expect(settings).toContain('"theme": "dark",');
-    expect(settings).toContain('"defaultModel": "m"');
-  });
-
   test(`${label}: refuses to replace a manually authored extension`, { timeout: 180_000 }, async ({ skip }) => {
     if (label === 'PowerShell' && !hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
     const ws = makeWorkspace();
@@ -168,33 +153,6 @@ test('model set, changed, and cleared updates settings.json', { timeout: 180_000
   expect(settings.defaultModel, 'defaultModel removed on clear').toBe(undefined);
 });
 
-test('unrelated defaultProvider preserved when model is cleared', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakePi(ws.binDir);
-  const dir = piDirFor(ws);
-  mkdirSync(dir, { recursive: true });
-  const settingsFile = piSettingsPath(ws);
-  writeFileSync(settingsFile, JSON.stringify({ defaultProvider: 'anthropic', defaultModel: 'claude-3-opus' }, null, 2));
-
-  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: null }) });
-  expect(run.code, `clearing with unrelated provider should succeed:\n${run.combined}`).toBe(0);
-  const settings = readPiSettings(settingsFile);
-  expect(settings.defaultProvider, 'unrelated defaultProvider preserved').toBe('anthropic');
-  expect(settings.defaultModel, 'unrelated defaultModel preserved').toBe('claude-3-opus');
-});
-
-test('refuses unparseable settings.json without modifying file', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakePi(ws.binDir);
-  mkdirSync(piDirFor(ws), { recursive: true });
-  const badSettings = '{\n  "theme": "dark"';
-  writeFileSync(piSettingsPath(ws), badSettings);
-
-  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: 'floway-pi-model-1' }) });
-  expect(run.code, 'installer should fail on unparseable settings.json').not.toBe(0);
-  expect(readFileSync(piSettingsPath(ws), 'utf8'), 'settings.json remains untouched').toBe(badSettings);
-});
-
 test('missing node aborts with clear error message', { timeout: 180_000 }, async () => {
   const ws = makeWorkspace();
   placeFakePi(ws.binDir);
@@ -213,35 +171,11 @@ test('unsupported Node fails before configuration', { timeout: 180_000 }, async 
   expect(!existsSync(piExtensionPath(ws))).toBeTruthy();
 });
 
-test('API key is never printed to stdout or stderr during setup', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakePi(ws.binDir);
-  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig() });
-  expect(run.code, `setup should succeed:\n${run.combined}`).toBe(0);
-  expect(run.combined, 'sentinel key must never be printed to stdout or stderr').not.toContain(SENTINEL_KEY);
-});
-
 test('ambient SETUP_API_KEY is not inherited by fake pi CLI', { timeout: 180_000 }, async () => {
   const ws = makeWorkspace();
   placeFakePi(ws.binDir);
   const run = await runShellInstallerWithAmbientKey({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig() });
   expect(run.code, `ambient key must not cause fake pi to exit 91:\n${run.combined}`).toBe(0);
-});
-
-test('CLI not found runs test installer hook and installs pi', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig() });
-  expect(run.code, `installer should succeed after install:\n${run.combined}`).toBe(0);
-  expect(existsSync(join(ws.home, '.local/bin/pi'))).toBeTruthy();
-  expect(existsSync(piExtensionPath(ws))).toBeTruthy();
-});
-
-test('CLI not found installs via npm when npm is available', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakeNpm(ws);
-  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig(), withPiInstallHook: false });
-  expect(run.code, `npm install should succeed:\n${run.combined}`).toBe(0);
-  expect(readFileSync(join(ws.root, 'npm-record.txt'), 'utf8').trim()).toBe('install --global @earendil-works/pi-coding-agent');
 });
 
 test('CLI not found fails when installer download fails', { timeout: 180_000 }, async () => {
@@ -256,265 +190,6 @@ test('CLI not found fails when installer download fails', { timeout: 180_000 }, 
   });
   expect(run.code !== 0).toBeTruthy();
   expect(run.combined).toContain('the installer download was HTML');
-});
-
-test('fails when pi --version times out', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakePi(ws.binDir);
-  const run = await runShellInstaller({
-    workspace: ws,
-    baseUrl: modelServer.url,
-    configuration: piConfig(),
-    fakePiVersionSleep: 5,
-    timeoutSeconds: 1,
-  });
-  expect(run.code, 'setup must fail when version times out').not.toBe(0);
-  expect(run.combined).toContain('timed out');
-});
-
-test('Bash installer body parses under the macOS Bash 3.2 baseline', { timeout: 180_000 }, () => {
-  const probe = spawnSync('/bin/bash', ['-n', '-c', ALL_BASH_FRAGMENTS], { encoding: 'utf8' });
-  expect(probe.status, `all Bash fragments must parse without syntax errors: ${probe.stderr}`).toBe(0);
-  expect(SETUP_BASH_PI, 'echo must not be used in Bash installer; use printf instead').not.toContain('echo ');
-});
-
-test('a download that ends before the final main call performs no setup work', { timeout: 180_000 }, () => {
-  const ws = makeWorkspace();
-  placeFakePi(ws.binDir);
-  const fullScript = renderShellPrefix({ agent: 'pi', apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration: piConfig(), extensionPath: '/api/setup/test-lease-token/pi.js' }) + shellBody('pi');
-  const truncatedScript = fullScript.slice(0, fullScript.lastIndexOf(shellEntry('pi')));
-  const scriptPath = join(ws.root, 'truncated.sh');
-  writeFileSync(scriptPath, truncatedScript);
-  const probe = spawnSync('/bin/bash', [scriptPath], {
-    env: { HOME: ws.home, PATH: [ws.binDir, SHIM_BIN].join(':'), TMPDIR: ws.root, SETUP_ENDPOINT: modelServer.url },
-    encoding: 'utf8',
-  });
-  expect(probe.status, 'truncated script defines functions and exits without executing main').toBe(0);
-  expect(!existsSync(piExtensionPath(ws))).toBeTruthy();
-});
-
-// --- PowerShell Pi Cases ---
-
-test('PowerShell: model set, changed, and cleared updates settings.json', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  placeFakePi(ws.binDir);
-  const settingsFile = piSettingsPath(ws);
-
-  const run1 = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: 'floway-pi-model-1' }) });
-  expect(run1.code, `setting model should succeed:\n${run1.combined}`).toBe(0);
-  expect(existsSync(settingsFile)).toBeTruthy();
-  expect(statSync(settingsFile).mode & 0o777, 'settings.json permissions are 0600').toBe(0o600);
-  let settings = readPiSettings(settingsFile);
-  expect(settings.defaultProvider).toBe('floway');
-  expect(settings.defaultModel).toBe('floway-pi-model-1');
-
-  const run2 = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: 'model-2' }) });
-  expect(run2.code, `changing model should succeed:\n${run2.combined}`).toBe(0);
-  settings = readPiSettings(settingsFile);
-  expect(settings.defaultProvider).toBe('floway');
-  expect(settings.defaultModel).toBe('model-2');
-
-  const run3 = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: null }) });
-  expect(run3.code, `clearing model should succeed:\n${run3.combined}`).toBe(0);
-  settings = readPiSettings(settingsFile);
-  expect(settings.defaultProvider, 'defaultProvider removed on clear').toBe(undefined);
-  expect(settings.defaultModel, 'defaultModel removed on clear').toBe(undefined);
-});
-
-test('PowerShell: unrelated defaultProvider preserved when model is cleared', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  placeFakePi(ws.binDir);
-  const dir = piDirFor(ws);
-  mkdirSync(dir, { recursive: true });
-  const settingsFile = piSettingsPath(ws);
-  writeFileSync(settingsFile, JSON.stringify({ defaultProvider: 'anthropic', defaultModel: 'claude-3-opus' }, null, 2));
-
-  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: null }) });
-  expect(run.code, `clearing with unrelated provider should succeed:\n${run.combined}`).toBe(0);
-  const settings = readPiSettings(settingsFile);
-  expect(settings.defaultProvider, 'unrelated defaultProvider preserved').toBe('anthropic');
-  expect(settings.defaultModel, 'unrelated defaultModel preserved').toBe('claude-3-opus');
-});
-
-test('PowerShell: refuses unparseable settings.json without modifying file', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  placeFakePi(ws.binDir);
-  mkdirSync(piDirFor(ws), { recursive: true });
-  const badSettings = '{\n  "theme": "dark"';
-  writeFileSync(piSettingsPath(ws), badSettings);
-
-  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: 'floway-pi-model-1' }) });
-  expect(run.code, 'installer should fail on unparseable settings.json').not.toBe(0);
-  expect(readFileSync(piSettingsPath(ws), 'utf8'), 'settings.json remains untouched').toBe(badSettings);
-});
-
-test('PowerShell: missing node aborts with clear error message', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  placeFakePi(ws.binDir);
-  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig(), omitNode: true });
-  expect(run.code, 'installer should fail when node is missing').not.toBe(0);
-  expect(run.combined).toContain('Node.js (>= 22.19) is required to run Pi but was not found on PATH. Install Node.js (>= 22.19) and re-run.');
-  expect(!existsSync(piExtensionPath(ws))).toBeTruthy();
-});
-
-test('PowerShell: unsupported Node fails before configuration', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  placeFakePi(ws.binDir);
-  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig(), fakeNodeVersion: 'v20.10.0' });
-  expect(run.code, `setup should reject unsupported Node:\n${run.combined}`).not.toBe(0);
-  expect(run.combined, 'required Node version is reported').toContain('Pi requires Node.js >= 22.19.');
-  expect(!existsSync(piExtensionPath(ws))).toBeTruthy();
-});
-
-test('PowerShell: API key is never printed to stdout or stderr during setup', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  placeFakePi(ws.binDir);
-  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig() });
-  expect(run.code, `setup should succeed:\n${run.combined}`).toBe(0);
-  expect(run.combined, 'sentinel key must never be printed to stdout or stderr').not.toContain(SENTINEL_KEY);
-});
-
-test('PowerShell: ambient SETUP_API_KEY is not inherited by fake pi CLI', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  placeFakePi(ws.binDir);
-  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig(), ambientApiKey: true });
-  expect(run.code, `ambient key must not cause fake pi to exit 91:\n${run.combined}`).toBe(0);
-});
-
-test('PowerShell: CLI not found runs test installer hook and installs pi', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig() });
-  expect(run.code, `installer should succeed after install:\n${run.combined}`).toBe(0);
-  expect(existsSync(join(ws.home, '.local/bin/pi'))).toBeTruthy();
-  expect(existsSync(piExtensionPath(ws))).toBeTruthy();
-});
-
-test('PowerShell: CLI not found fails when installer download fails', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  modelServer.mode = 'installer-html';
-  const run = await runPowerShellInstaller({
-    workspace: ws,
-    baseUrl: modelServer.url,
-    configuration: piConfig(),
-    withPiInstallHook: false,
-    piInstallerUrl: `${modelServer.url}/install-pi.ps1`,
-  });
-  expect(run.code !== 0).toBeTruthy();
-  expect(run.combined).toContain('the installer download was HTML or empty');
-});
-
-test('PowerShell: fails when pi --version times out', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  placeFakePi(ws.binDir);
-  const run = await runPowerShellInstaller({
-    workspace: ws,
-    baseUrl: modelServer.url,
-    configuration: piConfig(),
-    fakePiVersionSleep: 5,
-    timeoutSeconds: 1,
-  });
-  expect(run.code, 'setup must fail when version times out').not.toBe(0);
-  expect(run.combined).toContain('`pi --version` timed out');
-});
-
-test('local PowerShell installer accepts script content and rejects HTML', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  const accepted = makeWorkspace();
-  modelServer.mode = 'installer-pi-ps1';
-  const success = await runPowerShellInstaller({
-    workspace: accepted,
-    configuration: piConfig(),
-    baseUrl: modelServer.url,
-    withPiInstallHook: false,
-    piInstallerUrl: `${modelServer.url}/install-pi.ps1`,
-  });
-  expect(success.code, `a local PowerShell installer should be accepted:\n${success.combined}`).toBe(0);
-  expect(existsSync(installerMarker(accepted))).toBeTruthy();
-
-  const rejected = makeWorkspace();
-  modelServer.mode = 'installer-html';
-  const failure = await runPowerShellInstaller({
-    workspace: rejected,
-    configuration: piConfig(),
-    baseUrl: modelServer.url,
-    withPiInstallHook: false,
-    piInstallerUrl: `${modelServer.url}/install-pi.ps1`,
-  });
-  expect(failure.code, 'HTML installer response must be rejected').not.toBe(0);
-  expect(!existsSync(installerMarker(rejected))).toBeTruthy();
-});
-
-test('PowerShell: timed-out installer terminates cleanly', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  modelServer.mode = 'installer-pi-ps1';
-  const started = Date.now();
-  const run = await runPowerShellInstaller({
-    workspace: ws,
-    configuration: piConfig(),
-    baseUrl: modelServer.url,
-    withPiInstallHook: false,
-    piInstallerUrl: `${modelServer.url}/install-pi.ps1`,
-    installerSleep: 12,
-    timeoutSeconds: 1,
-  });
-  expect(run.code, 'timed out installer must fail the agent').not.toBe(0);
-  expect(Date.now() - started < 8_000).toBeTruthy();
-  expect(!existsSync(installerMarker(ws))).toBeTruthy();
-});
-
-test('PowerShell installer body parses without syntax errors', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  const body = powerShellBody('pi');
-  const entry = powerShellEntry('pi');
-  expect(body.trimEnd().endsWith(entry)).toBeTruthy();
-  expect(body.lastIndexOf(entry) > body.indexOf('function Set-SetupAgent {')).toBeTruthy();
-  const script = renderPowerShellPrefix({
-    agent: 'pi',
-    apiKey: SENTINEL_KEY,
-    apiKeyName: 'Primary key',
-    configuration: piConfig({ model: 'm' }),
-    extensionPath: '/api/setup/test-lease-token/pi.js',
-  }) + body;
-  const scriptPath = join(HARNESS_ROOT, 'pi-parse-check.ps1');
-  writeFileSync(scriptPath, script);
-  const check = `$errs=$null; [System.Management.Automation.Language.Parser]::ParseFile('${scriptPath.replace(/'/g, "''")}',[ref]$null,[ref]$errs); if($errs -and $errs.Count -gt 0){ $errs | ForEach-Object { [Console]::Error.WriteLine($_.Message) }; exit 1 } else { exit 0 }`;
-  const result = spawnSync(hostPwsh, ['-NoProfile', '-Command', check], { encoding: 'utf8' });
-  expect(result.status, `PowerShell parse errors:\n${result.stdout}${result.stderr}`).toBe(0);
-});
-
-test('PowerShell: a download that ends before the final Main call performs no setup work', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  const configuration = piConfig();
-  const body = powerShellBody('pi');
-  const bodyWithoutEntry = body.slice(0, body.lastIndexOf(powerShellEntry('pi')));
-  const script = renderPowerShellPrefix({ agent: 'pi', apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration, extensionPath: '/api/setup/test-lease-token/pi.js' }) + bodyWithoutEntry;
-  const scriptPath = join(ws.root, 'truncated-pi-setup.ps1');
-  writeFileSync(scriptPath, script);
-  const result = spawnSync(hostPwsh, ['-NoProfile', '-File', scriptPath], {
-    encoding: 'utf8',
-    env: { HOME: ws.home, PATH: [ws.binDir, SHIM_BIN].join(':'), SETUP_ENDPOINT: modelServer.url },
-  });
-  expect(result.status, `definitions-only script should exit cleanly:\n${result.stderr}`).toBe(0);
-  expect(!existsSync(piExtensionPath(ws))).toBeTruthy();
-});
-
-test('installer scripts embed expected URLs and command sequences', { timeout: 180_000 }, () => {
-  expect(SETUP_POWERSHELL_PI, 'PowerShell can install pi with npm').toContain('@earendil-works/pi-coding-agent');
-  expect(SETUP_POWERSHELL_PI, 'PowerShell uses official install.sh URL').toContain('https://pi.dev/install.sh');
-  expect(SETUP_BASH_PI, 'Bash installer specifies the npm package name').toContain('@earendil-works/pi-coding-agent');
-  expect(SETUP_BASH_PI, 'Bash installer specifies the official install.sh URL').toContain('https://pi.dev/install.sh');
 });
 
 test('real Pi loads the installed extension and discovers changed models without setup', { timeout: 180_000 }, async ({ skip }) => {

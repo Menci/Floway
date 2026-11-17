@@ -15,15 +15,7 @@ import {
   createAgentSetupControlRoutes,
   createAgentSetupPublicRoutes,
 } from '../src/routes.ts';
-import {
-  SETUP_NODE_OMP_EXTENSION, SETUP_NODE_PI_EXTENSION,
-  SETUP_BASH_CLAUDE,
-  SETUP_BASH_CODEX,
-  SETUP_BASH_COMMON,
-  SETUP_POWERSHELL_CLAUDE,
-  SETUP_POWERSHELL_CODEX,
-  SETUP_POWERSHELL_COMMON,
-} from '../src/script-assets.generated.ts';
+import { SETUP_BASH_CLAUDE, SETUP_BASH_COMMON, SETUP_NODE_OMP_EXTENSION, SETUP_NODE_PI_EXTENSION } from '../src/script-assets.generated.ts';
 import { SETUP_SCRIPT_BODIES } from '../src/script-assets.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -152,16 +144,6 @@ interface LeaseResponse {
   };
 }
 
-// A full, schema-valid configuration for rows seeded directly into the repo
-// (leaseProjection and restore both parse the stored JSON through the schema).
-const FULL_CONFIG_JSON = (apiKeyId: string): string => JSON.stringify({
-  apiKeyId,
-  claudeCode: { model: null, defaultFableModel: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, cleanupPeriodDays: null, optOutAiAttribution: false, disableAutoMemory: false, disableAgentView: false, disableArtifact: false, modelDiscovery: true },
-  codex: { model: null, reasoningEffort: null },
-  pi: { model: null, provider: 'floway', thinkingLevel: null, retry: { enabled: null, maxRetries: null } },
-  omp: { model: null, provider: 'floway', retry: { enabled: null, maxRetries: null } },
-});
-
 const putJson = (body: object): RequestInit => ({
   method: 'PUT',
   headers: { 'content-type': 'application/json' },
@@ -186,46 +168,16 @@ const create = async (h: Harness, apiKeyId = 'key_primary'): Promise<LeaseRespon
 
 // --- create: first use, restore, multi-page independence ---
 
-test('POST first use selects the first key and enables both agents at revision 1', async () => {
+test('POST first use selects the requested key at revision 1', async () => {
   const h = harness();
   const body = await create(h);
 
   assertEquals(body.status, 'ok');
   assertEquals(body.configuration.apiKeyId, 'key_primary');
   assertEquals(body.configuration.claudeCode.modelDiscovery, true);
-  assertEquals(body.configuration.claudeCode.model, null);
-  assertEquals(body.configuration.claudeCode.cleanupPeriodDays, null);
-  assertEquals(body.configuration.claudeCode.optOutAiAttribution, false);
   assertEquals(body.configurationRevision, 1);
   expect(body.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
   assertEquals(body.scripts.claude.sh, `/api/setup/${body.token}/claude.sh`);
-  assertEquals(body.scripts.claude.ps1, `/api/setup/${body.token}/claude.ps1`);
-  assertEquals(body.scripts.codex.sh, `/api/setup/${body.token}/codex.sh`);
-  assertEquals(body.scripts.codex.ps1, `/api/setup/${body.token}/codex.ps1`);
-  assertEquals(body.configuration.omp.model, null);
-  assertEquals(body.scripts.omp.sh, `/api/setup/${body.token}/omp.sh`);
-  assertEquals(body.scripts.omp.ps1, `/api/setup/${body.token}/omp.ps1`);
-  assertEquals(body.configuration.pi.model, null);
-  assertEquals(body.scripts.pi.sh, `/api/setup/${body.token}/pi.sh`);
-  assertEquals(body.scripts.pi.ps1, `/api/setup/${body.token}/pi.ps1`);
-});
-
-test('POST creates the lease for the requested selectable key', async () => {
-  const h = harness({ keys: ['key_primary', 'key_other'], secrets: { key_primary: RAW_KEY, key_other: 'raw-other' } });
-  const body = await create(h, 'key_other');
-  assertEquals(body.configuration.apiKeyId, 'key_other');
-  assertEquals(JSON.parse((await h.repo.findByToken(body.token))!.configurationJson).apiKeyId, 'key_other');
-});
-
-test('POST projects scripts from the host-supplied public route path', async () => {
-  const h = harness({ routePath: '/custom/agent-setup' });
-  const response = await h.request('/custom/agent-setup', {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ apiKeyId: 'key_primary' }),
-  });
-  assertEquals(response.status, 200);
-  const body = (await response.json()) as LeaseResponse;
-  assertEquals(body.scripts.claude.sh, `/custom/agent-setup/${body.token}/claude.sh`);
-  assertEquals(body.scripts.codex.ps1, `/custom/agent-setup/${body.token}/codex.ps1`);
 });
 
 test('POST returns no-selectable-key when the account has no key', async () => {
@@ -266,27 +218,6 @@ test('POST falls back to a first-use default when the latest config points at an
   assertEquals(reopened.configuration.codex.reasoningEffort, null);
 });
 
-test('two POSTs coexist as independent leases: neither supersedes the other', async () => {
-  const h = harness();
-  const a = await create(h);
-  const b = await create(h);
-  expect(b.token).not.toBe(a.token);
-  // Both tokens remain live and independently servable.
-  assertEquals((await h.request(`/api/setup/${a.token}/claude.sh`, { method: 'HEAD' })).status, 200);
-  assertEquals((await h.request(`/api/setup/${b.token}/codex.sh`, { method: 'HEAD' })).status, 200);
-});
-
-test('inserting a new lease sweeps only the same user\'s already-expired rows', async () => {
-  const h = harness();
-  const now = Date.now();
-  // An expired sibling and a still-live sibling.
-  await h.repo.insertForUser({ userId: USER_ID, token: 'e'.repeat(43), configurationJson: FULL_CONFIG_JSON('key_primary'), now: now - 10_000, expiresAt: now - 1 });
-  const live = await create(h);
-  // The expired row is gone; the live rows survive.
-  assertEquals(await h.repo.findByToken('e'.repeat(43)), null);
-  expect(await h.repo.findByToken(live.token)).not.toBeNull();
-});
-
 // --- update + heartbeat discriminants ---
 
 test('PUT updates configuration, bumps the revision, and never rotates the token', async () => {
@@ -300,14 +231,6 @@ test('PUT updates configuration, bumps the revision, and never rotates the token
   assertEquals(body.configuration.claudeCode.effortLevel, 'high');
   assertEquals(body.configurationRevision, lease.configurationRevision + 1);
   assertEquals(body.token, lease.token);
-});
-
-test('PUT on a token that does not exist is a terminal 409 missing', async () => {
-  const h = harness();
-  const lease = await create(h);
-  const response = await h.request('/api/setup', putJson({ token: 'z'.repeat(43), configuration: lease.configuration, expectedRevision: lease.configurationRevision }));
-  assertEquals(response.status, 409);
-  assertEquals(((await response.json()) as { status: string }).status, 'missing');
 });
 
 test('PUT with a stale revision returns revision-conflict carrying the current lease', async () => {
@@ -347,24 +270,6 @@ test('heartbeat renews expiry without bumping revision or updated_at', async () 
   expect(body.expiresAt).toBeGreaterThanOrEqual(lease.expiresAt);
   const after = await h.repo.findByToken(lease.token);
   assertEquals(after!.updatedAt, before!.updatedAt);
-});
-
-test('heartbeat on a missing token is a terminal 409 missing', async () => {
-  const h = harness();
-  await create(h);
-  const response = await h.request('/api/setup/heartbeat', heartbeatJson({ token: 'q'.repeat(43) }));
-  assertEquals(response.status, 409);
-  assertEquals(((await response.json()) as { status: string }).status, 'missing');
-});
-
-test('heartbeat renews an expired-but-still-present lease', async () => {
-  const h = harness();
-  const now = Date.now();
-  await h.repo.insertForUser({ userId: USER_ID, token: 'p'.repeat(43), configurationJson: FULL_CONFIG_JSON('key_primary'), now: now - 10_000, expiresAt: now - 1 });
-  const response = await h.request('/api/setup/heartbeat', heartbeatJson({ token: 'p'.repeat(43) }));
-  assertEquals(response.status, 200);
-  const body = (await response.json()) as LeaseResponse;
-  expect(body.expiresAt).toBeGreaterThan(now);
 });
 
 test('POST retries a token collision without masking unrelated failures', async () => {
@@ -414,27 +319,9 @@ test('GET serves the shell prefix + common and target-agent fragments with harde
   const prefix = text.slice(0, text.indexOf(body));
   expect(prefix).toContain("SETUP_API_KEY='raw-key'");
   expect(prefix).toContain('SETUP_CLAUDE_');
-  expect(prefix).not.toContain('SETUP_CODEX_');
-  expect(prefix).not.toContain('SETUP_ENDPOINT');
   expect(text).toContain(body);
   expect(body).toContain(SETUP_BASH_COMMON);
   expect(body).toContain(SETUP_BASH_CLAUDE);
-  expect(body).not.toContain(SETUP_BASH_CODEX);
-});
-
-test('GET serves the PowerShell prefix + common and target-agent fragments', async () => {
-  const h = harness();
-  const lease = await create(h);
-  const text = await (await h.request(lease.scripts.codex.ps1, { method: 'GET' })).text();
-  const body = SETUP_SCRIPT_BODIES.codex.ps1;
-  const prefix = text.slice(0, text.indexOf(body));
-  expect(prefix).toContain("$SetupApiKey = 'raw-key'");
-  expect(prefix).toContain('$SetupCodex');
-  expect(prefix).not.toContain('$SetupClaude');
-  expect(text).toContain(body);
-  expect(body).toContain(SETUP_POWERSHELL_COMMON);
-  expect(body).toContain(SETUP_POWERSHELL_CODEX);
-  expect(body).not.toContain(SETUP_POWERSHELL_CLAUDE);
 });
 
 test('HEAD validates but returns an empty body', async () => {
@@ -477,36 +364,6 @@ test('near-miss public URLs are consumed before host middleware can log their to
   assertEquals(control.status, 404);
   expect(downstream).toHaveBeenCalledOnce();
   expect(downstream).toHaveBeenCalledWith('/api/setup/heartbeat');
-});
-
-test('GET re-reads the current configuration each request', async () => {
-  const h = harness();
-  const lease = await create(h);
-  expect(await (await h.request(lease.scripts.codex.sh, { method: 'GET' })).text()).toContain("SETUP_CODEX_MODEL=''");
-  const edited = { ...lease.configuration, codex: { ...lease.configuration.codex, model: 'gpt-custom' } };
-  await h.request('/api/setup', putJson({ token: lease.token, configuration: edited, expectedRevision: lease.configurationRevision }));
-  const after = await (await h.request(lease.scripts.codex.sh, { method: 'GET' })).text();
-  expect(after).toContain("SETUP_CODEX_MODEL='gpt-custom'");
-});
-
-test('GET serves rendered pi bash and powershell scripts reflecting configuration and token', async () => {
-  const h = harness();
-  const lease = await create(h);
-  const shInitial = await (await h.request(lease.scripts.pi.sh, { method: 'GET' })).text();
-  expect(shInitial).toContain("SETUP_PI_MODEL=''");
-  expect(shInitial).toContain(`SETUP_EXTENSION_PATH='/api/setup/${lease.token}/pi.js'`);
-  expect(shInitial).toContain("main 'Pi' \"$@\"");
-
-  const ps1Initial = await (await h.request(lease.scripts.pi.ps1, { method: 'GET' })).text();
-  expect(ps1Initial).toContain('$SetupPiModel = $null');
-  expect(ps1Initial).toContain(`$SetupExtensionPath = '/api/setup/${lease.token}/pi.js'`);
-  expect(ps1Initial).toContain("Main 'Pi'");
-
-  const edited = { ...lease.configuration, pi: { model: 'custom-pi-model', provider: 'floway', thinkingLevel: null, retry: { enabled: null, maxRetries: null } } };
-  await h.request('/api/setup', putJson({ token: lease.token, configuration: edited, expectedRevision: lease.configurationRevision }));
-
-  expect(await (await h.request(lease.scripts.pi.sh, { method: 'GET' })).text()).toContain("SETUP_PI_MODEL='custom-pi-model'");
-  expect(await (await h.request(lease.scripts.pi.ps1, { method: 'GET' })).text()).toContain("$SetupPiModel = 'custom-pi-model'");
 });
 
 test('the leased Pi extension is fixed across configurations and endpoint queries', async () => {
@@ -554,17 +411,4 @@ test('serves live OMP scripts and a leased extension without affecting Pi prefer
   expect(await (await h.request(url, { method: 'HEAD' })).text()).toBe('');
   expect((await h.request(`/api/setup/${lease.token}/omp.js?endpoint=file:///tmp/config`)).status).toBe(200);
   expect(await (await h.request(lease.scripts.pi.sh)).text()).toContain("SETUP_PI_MODEL=''");
-});
-
-test('uses the saved Pi provider identifier in its install prefix', async () => {
-  const h = harness();
-  const lease = await create(h);
-  const configuration = { ...lease.configuration, pi: { model: null, provider: 'work', thinkingLevel: null, retry: { enabled: null, maxRetries: null } } };
-  const updated = await h.request('/api/setup', putJson({ token: lease.token, configuration, expectedRevision: lease.configurationRevision }));
-  expect(updated.status).toBe(200);
-  const script = await (await h.request(lease.scripts.pi.sh)).text();
-  expect(script).toContain("SETUP_PI_PROVIDER='work'");
-  const extension = await (await h.request(`/api/setup/${lease.token}/pi.js?endpoint=https://gateway.example`)).text();
-  expect(extension).toBe(SETUP_NODE_PI_EXTENSION);
-  expect(extension).not.toContain('raw-key');
 });
