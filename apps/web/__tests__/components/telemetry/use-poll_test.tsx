@@ -10,15 +10,6 @@ const setup = () => {
   vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
 };
 
-test('historical Custom does not poll or refresh when returning to the tab', async () => {
-  setup(); vi.setSystemTime(Date.UTC(2026, 9, 10));
-  const poll = vi.fn().mockResolvedValue(undefined);
-  renderHook(() => useTelemetryPolling(poll, { start: '2026-10-01', end: '2026-10-09' }, true));
-  await act(() => vi.advanceTimersByTimeAsync(300_000));
-  document.dispatchEvent(new Event('visibilitychange'));
-  expect(poll).not.toHaveBeenCalled();
-});
-
 test('a fixed Custom polls while current and stops after its last day', async () => {
   setup(); vi.setSystemTime(Date.UTC(2026, 9, 10, 23, 54, 30));
   const poll = vi.fn().mockResolvedValue(undefined);

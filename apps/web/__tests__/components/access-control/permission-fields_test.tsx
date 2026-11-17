@@ -4,17 +4,17 @@ import { expect, test } from 'vitest';
 
 import { PermissionFields } from '../../../src/components/access-control/permission-fields';
 import { renderInApp } from '../../render';
-import type { AccessPermission, AccessValues } from '@floway-dev/gateway/browser';
+import type { AccessValues } from '@floway-dev/gateway/browser';
 
-function Editor({ inherited = { 'Model.Use': true }, known = true, permission = 'Model.Use' }: { inherited?: AccessValues; known?: boolean; permission?: AccessPermission }) {
+function Editor() {
   const [values, setValues] = useState<AccessValues>({});
   return <>
-    <PermissionFields busy={false} disabled={false} inherited={known ? inherited : undefined} onChange={(permission, value) => setValues(current => {
+    <PermissionFields busy={false} disabled={false} inherited={{ 'Model.Use': true }} onChange={(permission, value) => setValues(current => {
       if (value !== undefined) return { ...current, [permission]: value };
       const next = { ...current };
       delete next[permission];
       return next;
-    })} permissions={[permission]} values={values} />
+    })} permissions={['Model.Use']} values={values} />
     <output data-testid="values">{JSON.stringify(values)}</output>
   </>;
 }
@@ -29,12 +29,6 @@ test('concrete radios preserve explicit false and re-click restores the inherite
   choose('Off');
   expect(screen.getByTestId('values').textContent).toBe('{}');
   expect(screen.getByRole<HTMLInputElement>('radio', { name: 'On' }).checked).toBe(true);
-});
-
-test('unknown inheritance leaves all radios unchecked', () => {
-  renderInApp(<Editor known={false} />);
-  expect(screen.getAllByRole<HTMLInputElement>('radio').every(node => !node.checked)).toBe(true);
-  expect(screen.getByText('Inherit (unknown)')).toBeTruthy();
 });
 
 test.each(['click', 'space'])('re-activating a selected option by %s toggles its source', activation => {

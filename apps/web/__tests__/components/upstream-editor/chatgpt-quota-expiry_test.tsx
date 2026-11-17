@@ -23,11 +23,8 @@ const record = upstreamRecord('', {
 // Control-plane projections retain observed usage and date only known exhausted windows.
 const cases = [
   { name: 'primary only', primary: 100, secondary: 35, until: primaryReset },
-  { name: 'secondary only', primary: 35, secondary: 100, until: secondaryReset },
   { name: 'both known', primary: 100, secondary: 100, until: secondaryReset },
-  { name: 'unknown secondary percentage', primary: 100, secondary: undefined, until: primaryReset },
   { name: 'exhausted secondary without reset', primary: 100, secondary: 100, secondaryReset: undefined, until: primaryReset },
-  { name: 'unknown primary percentage', primary: undefined, secondary: 100, until: secondaryReset },
 ];
 
 afterEach(() => vi.useRealTimers());

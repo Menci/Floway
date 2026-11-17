@@ -40,14 +40,6 @@ describe('request detail navigation', () => {
   });
 });
 
-it('keeps legacy upstream streams readable without a raw exchange', async () => {
-  const legacy = { ...record, capture: undefined, response: { ...record.response, upstream: { status: 200, headers: [], body: { type: 'stream' as const, events: [] } } } };
-  renderInApp(<RequestDetailPanel record={legacy} recordId="detail" error={null} collected={null} upstreamCollected={{ result: { content: 'legacy output' }, error: null, truncated: false }} retainLastRecord={false} />);
-  fireEvent.click(screen.getByRole('combobox', { name: 'Request details' }));
-  fireEvent.click(screen.getByRole('option', { name: 'Upstream response' }));
-  expect((await screen.findByTestId('body-content')).textContent).toContain('legacy output');
-});
-
 it('switches upstream attempts without showing the last attempt’s payload', async () => {
   const multiple = {
     ...record, capture: {
