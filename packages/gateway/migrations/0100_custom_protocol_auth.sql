@@ -1,7 +1,7 @@
 -- Custom inference calls derive authentication from the protocol each call
 -- uses. The `/models` catalog endpoint has no such protocol, so its fetch
 -- configuration carries a separate auth style. An empty apiKey means the
--- shared credential is unset; a `none` fetch style additionally suppresses it.
+-- shared credential is unset, replacing the removed upstream-wide `none` mode.
 --
 -- Move the old upstream-wide authStyle into modelsFetch before removing the
 -- top-level field. Rows without modelsFetch default to bearer catalog fetches,
