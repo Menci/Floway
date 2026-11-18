@@ -2,17 +2,14 @@ import type { ANTHROPIC_MESSAGES_WEB_SEARCH_ERROR_CODES } from './constants.ts';
 import type * as Beta from './sdk-beta.ts';
 import type * as Native from './sdk-stable.ts';
 import type { AnthropicMessagesUsage, AnthropicMessagesUsageDelta, AnthropicMessagesUsageDeltaEx } from './usage.ts';
+import type { OpenWire } from '../common/open-wire.ts';
 
 export { ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS, ANTHROPIC_MESSAGES_WEB_SEARCH_ERROR_CODES } from './constants.ts';
 
-export type AnthropicMessagesThinkingDisplay = 'omitted' | 'summarized' | 'updates' | (string & {});
 // Additional caller metadata can be forwarded to protocols with string metadata maps.
 export interface AnthropicMessagesMetadataEx extends Native.Metadata { [field: string]: unknown }
-export type AnthropicMessagesThinkingConfig =
-  | (Omit<Beta.BetaThinkingConfigEnabled, 'display'> & { display?: AnthropicMessagesThinkingDisplay | null })
-  | (Omit<Beta.BetaThinkingConfigAdaptive, 'display'> & { display?: AnthropicMessagesThinkingDisplay | null })
-  | Beta.BetaThinkingConfigDisabled
-  | Beta.BetaThinkingConfigBetweenTools;
+export type AnthropicMessagesThinkingConfig = OpenWire<Beta.BetaThinkingConfigParam>;
+export type AnthropicMessagesThinkingDisplay = NonNullable<OpenWire<Beta.BetaThinkingConfigEnabled['display']>>;
 
 export interface AnthropicMessagesPayload extends Omit<Native.MessageCreateParamsBase & Beta.MessageCreateParamsBase, 'model' | 'messages' | 'max_tokens' | 'system' | 'metadata' | 'stop_sequences' | 'stream' | 'temperature' | 'top_p' | 'top_k' | 'tools' | 'tool_choice' | 'thinking' | 'output_config' | 'service_tier' | 'speed'> {
   model: string;
@@ -26,52 +23,34 @@ export interface AnthropicMessagesPayload extends Omit<Native.MessageCreateParam
   top_p?: number;
   top_k?: number;
   tools?: AnthropicMessagesTool[];
-  tool_choice?: Native.ToolChoice | Beta.BetaToolChoice;
+  tool_choice?: OpenWire<Native.ToolChoice | Beta.BetaToolChoice>;
   thinking?: AnthropicMessagesThinkingConfig;
-  output_config?: Omit<Beta.BetaOutputConfig, 'effort'> & { effort?: string | null };
-  service_tier?: 'auto' | 'standard_only' | (string & {});
+  output_config?: OpenWire<Beta.BetaOutputConfig>;
+  service_tier?: OpenWire<NonNullable<Native.MessageCreateParamsBase['service_tier']>>;
   // https://docs.claude.com/en/build-with-claude/fast-mode — Fast Mode is
   // opt-in per request. Beta-only on the upstream wire (gated by
   // `anthropic-beta: fast-mode-2026-02-01`), but we expose the field at the
   // protocol layer because the gateway treats `speed: 'fast'` as the canonical
   // client signal regardless of which upstream serves it.
-  speed?: 'standard' | 'fast' | (string & {}) | null;
+  speed?: OpenWire<Beta.MessageCreateParamsBase['speed']>;
 }
 
 // Request citation parameters and output citations differ in nullable file metadata.
-// https://github.com/anthropics/anthropic-sdk-typescript/blob/d49bdab458000bcdffe77bd84b03293f31824fb3/src/resources/messages/messages.ts#L1286-L1543
-export interface AnthropicMessagesSearchResultLocationCitation { type: 'search_result_location'; source: string; title: string | null; search_result_index: number; start_block_index: number; end_block_index: number; cited_text: string }
-export interface AnthropicMessagesWebSearchResultLocation { type: 'web_search_result_location'; url: string; title: string | null; encrypted_index: string; cited_text: string }
-interface AnthropicMessagesDocumentCitation { document_index: number; document_title: string | null; file_id: string | null; cited_text: string }
-export type AnthropicMessagesTextCitation =
-  | AnthropicMessagesSearchResultLocationCitation | AnthropicMessagesWebSearchResultLocation
-  | (AnthropicMessagesDocumentCitation & { type: 'char_location'; start_char_index: number; end_char_index: number })
-  | (AnthropicMessagesDocumentCitation & { type: 'page_location'; start_page_number: number; end_page_number: number })
-  | (AnthropicMessagesDocumentCitation & { type: 'content_block_location'; start_block_index: number; end_block_index: number });
-export type AnthropicMessagesTextCitationParam = AnthropicMessagesSearchResultLocationCitation | AnthropicMessagesWebSearchResultLocation
-  | (Omit<AnthropicMessagesDocumentCitation, 'file_id'> & (
-    { type: 'char_location'; start_char_index: number; end_char_index: number }
-    | { type: 'page_location'; start_page_number: number; end_page_number: number }
-    | { type: 'content_block_location'; start_block_index: number; end_block_index: number }
-  ));
+export type AnthropicMessagesSearchResultLocationCitation = OpenWire<Native.CitationsSearchResultLocation>;
+export type AnthropicMessagesWebSearchResultLocation = OpenWire<Native.CitationsWebSearchResultLocation>;
+export type AnthropicMessagesTextCitation = OpenWire<Native.TextCitation>;
+export type AnthropicMessagesTextCitationParam = OpenWire<Native.TextCitationParam>;
 
-// `cache_control` shape carried on every cache-anchored block. The default
-// upstream cache TTL is 5 minutes; an explicit `ttl` switches between the
-// two TTL tiers Anthropic supports under the
+// The default upstream cache TTL is 5 minutes; an explicit `ttl` switches
+// between the two TTL tiers Anthropic supports under the
 // `extended-cache-ttl-2025-04-11` beta. Senders that don't carry that beta
 // should omit the field and accept the default.
-export interface AnthropicMessagesCacheControl {
-  type: 'ephemeral';
-  ttl?: '5m' | '1h';
-}
+export type AnthropicMessagesCacheControl = OpenWire<Native.CacheControlEphemeral>;
 
-export interface AnthropicMessagesTextBlock { type: 'text'; text: string; citations: AnthropicMessagesTextCitation[] | null }
-export interface AnthropicMessagesTextBlockParam { type: 'text'; text: string; citations?: AnthropicMessagesTextCitationParam[] | null; cache_control?: AnthropicMessagesCacheControl | null }
-export type AnthropicMessagesImageSource =
-  | { type: 'base64'; media_type: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'; data: string }
-  | { type: 'url'; url: string }
-  | { type: 'file'; file_id: string };
-export interface AnthropicMessagesImageBlock { type: 'image'; source: AnthropicMessagesImageSource; cache_control?: AnthropicMessagesCacheControl | null; transformations?: { oversized_image?: 'downsize' | 'error' } | null }
+export type AnthropicMessagesTextBlock = OpenWire<Native.TextBlock>;
+export type AnthropicMessagesTextBlockParam = OpenWire<Native.TextBlockParam>;
+export type AnthropicMessagesImageBlock = OpenWire<Native.ImageBlockParam>;
+export type AnthropicMessagesImageSource = AnthropicMessagesImageBlock['source'];
 
 // The official snapshot pins a binary document's `media_type` to
 // `'application/pdf'`. Floway keeps this extension open so translation can
@@ -86,73 +65,49 @@ export type AnthropicMessagesDocumentBlockEx = {
   title?: string | null;
 };
 
-export type AnthropicMessagesSearchResultBlock = Native.SearchResultBlockParam | Beta.BetaSearchResultBlockParam;
+export type AnthropicMessagesSearchResultBlock = OpenWire<Native.SearchResultBlockParam | Beta.BetaSearchResultBlockParam>;
 
-export type AnthropicMessagesWebSearchResultBlock = Native.WebSearchResultBlock | Beta.BetaWebSearchResultBlock;
+export type AnthropicMessagesWebSearchResultBlock = OpenWire<Native.WebSearchResultBlock | Beta.BetaWebSearchResultBlock>;
 
-type AnthropicMessagesNativeToolResultContentBlock =
+type AnthropicMessagesNativeToolResultContentBlock = OpenWire<
   | Exclude<NonNullable<Native.ToolResultBlockParam['content']>, string>[number]
-  | Exclude<NonNullable<Beta.BetaToolResultBlockParam['content']>, string>[number];
+  | Exclude<NonNullable<Beta.BetaToolResultBlockParam['content']>, string>[number]
+>;
 
 export type AnthropicMessagesToolResultContentBlock = AnthropicMessagesNativeToolResultContentBlock | AnthropicMessagesDocumentBlockEx;
 
-export type AnthropicMessagesToolResultBlockEx = Omit<Native.ToolResultBlockParam, 'content'> & {
+export type AnthropicMessagesToolResultBlockEx = Omit<OpenWire<Native.ToolResultBlockParam>, 'content'> & {
   content?: string | AnthropicMessagesToolResultContentBlock[];
 };
 
-export type AnthropicMessagesToolResultBlock = Native.ToolResultBlockParam | Beta.BetaToolResultBlockParam | AnthropicMessagesToolResultBlockEx;
+export type AnthropicMessagesToolResultBlock = OpenWire<Native.ToolResultBlockParam | Beta.BetaToolResultBlockParam> | AnthropicMessagesToolResultBlockEx;
 
-export type AnthropicMessagesToolUseBlock = Native.ToolUseBlock;
-export type AnthropicMessagesToolUseBlockParam = Native.ToolUseBlockParam | Beta.BetaToolUseBlockParam;
-export type AnthropicMessagesServerToolUseBlock = Native.ServerToolUseBlock;
-export type AnthropicMessagesServerToolUseBlockParam = Native.ServerToolUseBlockParam | Beta.BetaServerToolUseBlockParam;
+export type AnthropicMessagesToolUseBlock = OpenWire<Native.ToolUseBlock>;
+export type AnthropicMessagesToolUseBlockParam = OpenWire<Native.ToolUseBlockParam | Beta.BetaToolUseBlockParam>;
+export type AnthropicMessagesServerToolUseBlock = OpenWire<Native.ServerToolUseBlock>;
+export type AnthropicMessagesServerToolUseBlockParam = OpenWire<Native.ServerToolUseBlockParam | Beta.BetaServerToolUseBlockParam>;
 
 export type AnthropicMessagesWebSearchErrorCode = (typeof ANTHROPIC_MESSAGES_WEB_SEARCH_ERROR_CODES)[number];
 
-export interface AnthropicMessagesWebSearchToolResultError {
-  type: 'web_search_tool_result_error';
+export type AnthropicMessagesWebSearchToolResultError = Omit<OpenWire<Native.WebSearchToolResultError>, 'error_code'> & {
   error_code: AnthropicMessagesWebSearchErrorCode;
-}
+};
 
-export type AnthropicMessagesWebSearchToolResultBlock = Native.WebSearchToolResultBlock | Beta.BetaWebSearchToolResultBlock;
-export type AnthropicMessagesWebSearchToolResultBlockParam = Native.WebSearchToolResultBlockParam | Beta.BetaWebSearchToolResultBlockParam;
+export type AnthropicMessagesWebSearchToolResultBlock = OpenWire<Native.WebSearchToolResultBlock | Beta.BetaWebSearchToolResultBlock>;
+export type AnthropicMessagesWebSearchToolResultBlockParam = OpenWire<Native.WebSearchToolResultBlockParam | Beta.BetaWebSearchToolResultBlockParam>;
 
-export interface AnthropicMessagesThinkingBlock {
-  type: 'thinking';
-  thinking: string;
-  signature: string;
-}
+export type AnthropicMessagesThinkingBlock = OpenWire<Native.ThinkingBlock>;
+export type AnthropicMessagesRedactedThinkingBlock = OpenWire<Native.RedactedThinkingBlock>;
 
-export interface AnthropicMessagesRedactedThinkingBlock {
-  type: 'redacted_thinking';
-  data: string;
-}
+// The beta stop details add fallback guidance the stable details omit.
+export type AnthropicMessagesRefusalStopDetails = OpenWire<Native.RefusalStopDetails> & Partial<OpenWire<Omit<Beta.BetaRefusalStopDetails, keyof Native.RefusalStopDetails>>>;
 
-// Anthropic classifier refusal categories. The wire is versioned additively,
-// so retain the open-string arm for categories introduced after this snapshot.
-// https://github.com/anthropics/anthropic-sdk-typescript/blob/3b45cd3b69c956ac63384fdb09ce1d8109f3fa80/src/resources/messages/messages.ts#L1458-L1491
-export type AnthropicMessagesRefusalCategory =
-  | 'cyber'
-  | 'bio'
-  | 'frontier_llm'
-  | 'reasoning_extraction'
-  | 'general_harms'
-  | (string & {})
-  | null;
-
-export interface AnthropicMessagesRefusalStopDetails {
-  type: 'refusal';
-  category: AnthropicMessagesRefusalCategory;
-  explanation: string | null;
-  fallback_credit_token?: string | null;
-  fallback_has_prefill_claim?: boolean | null;
-  recommended_model?: string | null;
-}
+export type AnthropicMessagesRefusalCategory = AnthropicMessagesRefusalStopDetails['category'];
 
 export type AnthropicMessagesUserContentBlock = AnthropicMessagesInputContentBlock;
 
-export type AnthropicMessagesAssistantContentBlock = Native.ContentBlock | Beta.BetaContentBlock;
-export type AnthropicMessagesAssistantInputContentBlock = Native.ContentBlockParam | Beta.BetaContentBlockParam;
+export type AnthropicMessagesAssistantContentBlock = OpenWire<Native.ContentBlock | Beta.BetaContentBlock>;
+export type AnthropicMessagesAssistantInputContentBlock = OpenWire<Native.ContentBlockParam | Beta.BetaContentBlockParam>;
 export type AnthropicMessagesInputContentBlock = AnthropicMessagesAssistantInputContentBlock | AnthropicMessagesDocumentBlockEx | AnthropicMessagesToolResultBlockEx;
 
 export interface AnthropicMessagesUserMessage extends Omit<Beta.BetaMessageParam, 'role' | 'content'> {

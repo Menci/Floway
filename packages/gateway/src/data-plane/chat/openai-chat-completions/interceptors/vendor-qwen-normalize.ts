@@ -15,7 +15,7 @@
 // - https://www.alibabacloud.com/help/en/model-studio/deep-thinking
 
 import type { OpenAIChatCompletionsInterceptor } from './types.ts';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import { providerModelOf } from '@floway-dev/provider';
 
 export const withVendorQwenOpenAIChatCompletionsNormalize: OpenAIChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
@@ -23,7 +23,7 @@ export const withVendorQwenOpenAIChatCompletionsNormalize: OpenAIChatCompletions
 
   if (ctx.payload.reasoning_effort === 'none') {
     const { reasoning_effort: _stripped, ...rest } = ctx.payload;
-    ctx.payload = { ...rest, enable_thinking: false } as OpenAIChatCompletionsPayload;
+    ctx.payload = { ...rest, enable_thinking: false } as OpenAIChatCompletionsPayloadEx;
   }
 
   return await run();

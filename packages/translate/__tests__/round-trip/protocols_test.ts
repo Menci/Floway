@@ -233,8 +233,8 @@ describe('assistant-turn sidecar protocols', () => {
       changed: Parameters<typeof verifyOpenAIResponsesTurnDigest>[0];
     }> = [
       {
-        original: [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'answer', annotations: [] }] }],
-        changed: [{ type: 'message', role: 'assistant', status: 'incomplete', content: [{ type: 'output_text', text: 'answer', annotations: [] }] }],
+        original: [{ type: 'message', id: 'message-original', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'answer', annotations: [] }] }],
+        changed: [{ type: 'message', id: 'message-changed', role: 'assistant', status: 'incomplete', content: [{ type: 'output_text', text: 'answer', annotations: [] }] }],
       },
       {
         original: [{ type: 'reasoning', id: 'reasoning', status: 'completed', summary: [] }],

@@ -13,7 +13,7 @@ import { SidecarDomain } from '../shared/sidecar-codec.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ModelCandidate, type ExecuteResult, providerModelOf } from '@floway-dev/provider';
 import { routeOpenAIChatCompletionsViaAnthropicMessages, routeOpenAIChatCompletionsViaOpenAIResponses, type TranslateInputError } from '@floway-dev/translate';
 
@@ -22,7 +22,7 @@ import { routeOpenAIChatCompletionsViaAnthropicMessages, routeOpenAIChatCompleti
 export const openaiChatCompletionsTarget = chatTargetPicker(['openaiChatCompletions', 'anthropicMessages', 'openaiResponses']);
 
 export interface OpenAIChatCompletionsAttemptArgs {
-  readonly payload: OpenAIChatCompletionsPayload;
+  readonly payload: OpenAIChatCompletionsPayloadEx;
   readonly ctx: ChatGatewayCtx;
   readonly candidate: ModelCandidate;
   readonly headers: Headers;

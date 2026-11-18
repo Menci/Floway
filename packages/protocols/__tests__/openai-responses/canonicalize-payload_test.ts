@@ -58,14 +58,30 @@ test('rejects a payload without a usable model at the canonical boundary', () =>
   }
 });
 
-test('recognizes both native Codex audio references in shorthand messages', () => {
-  for (const reference of [{ audio_url: 'data:audio/wav;base64,YQ==' }, { file_id: 'file-1' }]) {
-    const content = [{ type: 'input_audio', ...reference }];
-    expect(canonicalizeOpenAIResponsesPayload({ model: 'm', input: [{ role: 'user', content }] })).toEqual({ model: 'm', input: [{ type: 'message', role: 'user', content }] });
+test('rejects a separate namespace on callable tool selectors', () => {
+  for (const tool_choice of [
+    { type: 'function', namespace: 'files', name: 'read' },
+    { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', namespace: 'files', name: 'edit' }] },
+  ]) {
+    expect(canonicalizeOpenAIResponsesPayload({ model: 'm', input: 'hi', tool_choice })).toEqual({
+      error: {
+        message: 'OpenAI Responses callable tool selectors, including allowed_tools entries, must use a qualified name, not a separate namespace field.',
+        param: 'tool_choice',
+      },
+    });
   }
-  for (const fields of [{}, { file_id: 1 }, { audio_url: 'a', file_id: 'f' }]) {
-    expect(canonicalizeOpenAIResponsesPayload({ model: 'm', input: [{ role: 'user', content: [{ type: 'input_audio', ...fields }] }] })).toHaveProperty('error.param', 'input[0]');
-  }
+});
+
+test('rejects output-only results on an input web_search_call', () => {
+  expect(canonicalizeOpenAIResponsesPayload({
+    model: 'm',
+    input: [{ type: 'web_search_call', id: 'ws_1', status: 'completed', results: [] }],
+  })).toEqual({
+    error: {
+      message: 'OpenAI Responses input web_search_call items must not include results.',
+      param: 'input[0].results',
+    },
+  });
 });
 
 test('rejects malformed untyped input items at the canonical boundary', () => {

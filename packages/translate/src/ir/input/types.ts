@@ -25,9 +25,9 @@ export interface IRInputSettings {
   readonly verbosity?: string; // ChatCompletions, Responses
   readonly prompt_cache_key?: string | null; // ChatCompletions, Responses
   readonly prompt_cache_retention?: string | null; // ChatCompletions, Responses
-  readonly prompt_cache_options?: IRInputPromptCacheOptions | null; // ChatCompletions, Responses
+  readonly prompt_cache_options?: IRInputPromptCacheOptions; // ChatCompletions, Responses
   readonly safety_identifier?: string | null; // ChatCompletions, Responses
-  readonly user?: string | null; // ChatCompletions, Responses
+  readonly user?: string; // ChatCompletions, Responses
   readonly logprobs?: boolean | null; // ChatCompletions, Responses
   readonly top_logprobs?: number | null; // ChatCompletions, Responses
   readonly choice_count?: number; // ChatCompletions, GenerateContent
@@ -218,7 +218,7 @@ export interface IRInputDocument {
 // Messages
 export interface IRInputCacheControl {
   readonly type: 'ephemeral'; // Messages
-  readonly ttl?: '5m' | '1h'; // Messages
+  readonly ttl?: '5m' | '1h' | (string & {}); // Messages
 }
 
 // Messages
@@ -229,7 +229,7 @@ export type IRInputDocumentSource =
   }
   | {
     readonly source_kind: 'text'; // Messages
-    readonly media_type: 'text/plain'; // Messages
+    readonly media_type: 'text/plain' | (string & {}); // Messages
     readonly text: string; // Messages
   }
   | {
@@ -243,7 +243,7 @@ export type IRInputDocumentContentPart = (
     readonly citations?: readonly object[] | null; // Messages
   })
   | (IRInputImagePart & {
-    readonly transformations?: { readonly oversized_image?: 'downsize' | 'error' } | null; // Messages
+    readonly transformations?: { readonly oversized_image?: 'downsize' | 'error' | (string & {}) } | null; // Messages
   })
 ) & {
   readonly cache_control?: IRInputCacheControl | null; // Messages

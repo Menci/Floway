@@ -115,7 +115,7 @@ test.each<readonly ['chat' | 'messages', 'function' | 'custom']>([['chat', 'cust
   const request: OpenAIResponsesRequestPayloadEx = {
     model: 'm', stream: true,
     tools: [group(kind), { type: 'function', name: 'web_run', parameters: { type: 'object', properties: {} } }],
-    tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: kind, name: 'run', namespace: 'web' }] },
+    tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: kind, name: 'web.run' }] },
     input: [
       ...toOpenAIResponsesInputItems(result.output),
       kind === 'function' ? { type: 'function_call_output', call_id: call.call_id, output: 'ok' } : { type: 'custom_tool_call_output', call_id: call.call_id, output: 'ok' },

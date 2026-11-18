@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { withRoleCompatibilityApplied } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/apply-role-compatibility.ts';
 import type { OpenAIChatCompletionsInvocation } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
-import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
@@ -15,7 +15,7 @@ const applyRoles = async (
   enabledFlags: ReadonlySet<FlagId>,
   targetApi: OpenAIChatCompletionsInvocation['targetApi'] = 'openaiChatCompletions',
 ): Promise<OpenAIChatCompletionsMessage[]> => {
-  const payload: OpenAIChatCompletionsPayload = { model: 'test-model', messages };
+  const payload: OpenAIChatCompletionsPayloadEx = { model: 'test-model', messages };
   const invocation: OpenAIChatCompletionsInvocation = {
     payload,
     candidate: stubModelCandidate({ enabledFlags }),

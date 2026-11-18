@@ -4,7 +4,7 @@ import type { OpenAIChatCompletionsInvocation } from '../../../../../src/data-pl
 import { withVendorDeepSeekOpenAIChatCompletionsNormalize } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/vendor-deepseek-normalize.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ExecuteResult, eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
@@ -14,14 +14,14 @@ type DeepSeekReasoningDelta = OpenAIChatCompletionsAssistantDeltaEx & {
 
 const stubCtx = mockChatGatewayCtx();
 
-const invocation = (payload: OpenAIChatCompletionsPayload, enabledFlags: ReadonlySet<FlagId> = new Set(['vendor-deepseek'])): OpenAIChatCompletionsInvocation => ({
+const invocation = (payload: OpenAIChatCompletionsPayloadEx, enabledFlags: ReadonlySet<FlagId> = new Set(['vendor-deepseek'])): OpenAIChatCompletionsInvocation => ({
   payload,
   candidate: stubModelCandidate({ enabledFlags }),
   targetApi: 'openaiChatCompletions',
   headers: new Headers(),
 });
 
-const baseRequest = (): OpenAIChatCompletionsPayload => ({
+const baseRequest = (): OpenAIChatCompletionsPayloadEx => ({
   model: 'deepseek-reasoner',
   messages: [
     { role: 'user', content: 'first turn' },
@@ -56,7 +56,7 @@ const okEvents = () => Promise.resolve(eventResult((async function* () {})(), te
 test('renames outbound reasoning_text to reasoning_content on assistant messages', async () => {
   const ctx = invocation(baseRequest());
 
-  let observed: OpenAIChatCompletionsPayload | null = null;
+  let observed: OpenAIChatCompletionsPayloadEx | null = null;
   await withVendorDeepSeekOpenAIChatCompletionsNormalize(ctx, stubCtx, () => {
     observed = ctx.payload;
     return okEvents();
@@ -91,7 +91,7 @@ test('synthesizes reasoning_content from reasoning_items when reasoning_text is 
     ],
   });
 
-  let observed: OpenAIChatCompletionsPayload | null = null;
+  let observed: OpenAIChatCompletionsPayloadEx | null = null;
   await withVendorDeepSeekOpenAIChatCompletionsNormalize(ctx, stubCtx, () => {
     observed = ctx.payload;
     return okEvents();
@@ -118,7 +118,7 @@ test("rewrites reasoning_effort: 'none' to thinking:{type:'disabled'} and downgr
     },
   });
 
-  let observed: OpenAIChatCompletionsPayload | null = null;
+  let observed: OpenAIChatCompletionsPayloadEx | null = null;
   await withVendorDeepSeekOpenAIChatCompletionsNormalize(ctx, stubCtx, () => {
     observed = ctx.payload;
     return okEvents();

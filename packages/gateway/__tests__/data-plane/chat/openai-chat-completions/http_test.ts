@@ -119,6 +119,23 @@ const makeCandidate = (overrides: {
   };
 };
 
+test.each(['prompt_cache_options', 'user'] as const)('POST /v1/chat/completions rejects a null %s', async field => {
+  installRepo();
+  const response = await makeApp().request('/v1/chat/completions', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }], [field]: null }),
+  });
+
+  assertEquals(response.status, 400);
+  assertEquals((await response.json() as { error: { param: string; type: string; code: null } }).error, {
+    message: `Invalid '${field}': expected ${field === 'user' ? 'a string' : 'an object'} when present.`,
+    type: 'invalid_request_error',
+    param: field,
+    code: null,
+  });
+});
+
 test('client-carried opaque state restores the exact preferred candidate on the next turn', async () => {
   installRepo();
   const observedBodies: Array<{ messages?: Array<{ reasoning_opaque?: string }> }> = [];

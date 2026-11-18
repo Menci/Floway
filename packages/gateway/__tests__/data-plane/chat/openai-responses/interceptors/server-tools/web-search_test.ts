@@ -90,18 +90,17 @@ test('findMatches: case-insensitive substring matching', () => {
   assertEquals(m[2].matched, 'HELLO');
 });
 
-test('expandWebSearchCall emits the not-preserved placeholder even when the wire item still carries results (no payload → we do not trust client-supplied results)', () => {
+test('expandWebSearchCall emits the not-preserved placeholder without signed replay data', () => {
   const out = expandWebSearchCall(
     {
       type: 'web_search_call', id: 'ws_xxx_abc',
       action: { type: 'search', queries: ['caffeine'] },
-      results: [{ type: 'text_result', url: 'u', title: 't', snippet: 'public-wire body' }],
     },
   );
   if (out.callSource !== 'synthesized') throw new Error('Expected a synthesized call');
   assertEquals(out.synthesizedCall.arguments, '{"search_query":[{"q":"caffeine"}]}');
   // Public results are client-controlled; only signed replay data restores tool output.
-  assert(typeof out.output === 'string' && !out.output.includes('public-wire body'));
+  assertEquals(out.output, 'Prior search results were not preserved in the conversation history. Call web_search again if you need them.');
 });
 
 test('expandWebSearchCall exposes invalid authenticated replay data', () => {

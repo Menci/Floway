@@ -1,5 +1,5 @@
 import type { OpenAIChatCompletionsInterceptor } from './types.ts';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import { providerModelOf } from '@floway-dev/provider';
 
 // Opt-in workaround for upstreams where forced `tool_choice` and enabled
@@ -8,7 +8,7 @@ import { providerModelOf } from '@floway-dev/provider';
 // value). Any active Vendor: * flag's last-running normalizer then
 // translates that into the vendor's wire form (DeepSeek
 // `thinking: {type:'disabled'}`, Qwen `enable_thinking: false`, etc.).
-const hasForcedToolChoice = (payload: OpenAIChatCompletionsPayload): boolean => {
+const hasForcedToolChoice = (payload: OpenAIChatCompletionsPayloadEx): boolean => {
   const toolChoice = payload.tool_choice;
   if (toolChoice === undefined || toolChoice === null) return false;
   if (typeof toolChoice === 'string') return toolChoice === 'required';

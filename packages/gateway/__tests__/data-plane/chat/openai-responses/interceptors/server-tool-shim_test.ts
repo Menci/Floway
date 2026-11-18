@@ -311,24 +311,26 @@ const mkFunctionCallDone = (outputIndex: number, callId: string, name: string, a
     },
   });
 
-const mkMessageAdded = (outputIndex: number): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+const mkMessageAdded = (outputIndex: number, itemId = `msg_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.added',
     output_index: outputIndex,
     item: {
       type: 'message',
+      id: itemId,
       status: 'in_progress',
       role: 'assistant',
       content: [{ type: 'output_text', text: '', annotations: [] }],
     },
   });
 
-const mkMessageDone = (outputIndex: number, text: string): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+const mkMessageDone = (outputIndex: number, text: string, itemId = `msg_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.done',
     output_index: outputIndex,
     item: {
       type: 'message',
+      id: itemId,
       status: 'completed',
       role: 'assistant',
       content: [{ type: 'output_text', text, annotations: [] }],
@@ -873,8 +875,10 @@ const assertAmbiguousShimRejection = async (args: string, backend: { calls: unkn
   const item = wsCallDone[0].item as OpenAIResponsesOutputWebSearchCall;
   assertEquals(item.action?.type, 'search');
   assert(Array.isArray(item.results));
-  assert(item.results![0].snippet.includes('ambiguous'));
-  assert(item.results![0].snippet.includes('one web_search_call'));
+  const webResult = item.results[0];
+  assert(webResult.type === 'text_result');
+  assert(webResult.snippet.includes('ambiguous'));
+  assert(webResult.snippet.includes('one web_search_call'));
 };
 
 test('multi-kind shim call (search_query + open) is rejected as ambiguous before any backend dispatch', async () => {
@@ -1532,7 +1536,9 @@ test('disabled search provider: dispatched op surfaces explanation snippet (no 5
     .map(e => e.item)
     .filter((i): i is OpenAIResponsesOutputWebSearchCall => i.type === 'web_search_call');
   assertEquals(done.length, 1);
-  const snippet = done[0].results![0].snippet;
+  const webResult = done[0].results?.[0];
+  assert(webResult?.type === 'text_result');
+  const snippet = webResult.snippet;
   assert(snippet.includes('not configured'));
 });
 
@@ -1810,7 +1816,7 @@ test('tool_choice "required" demotes to "auto" after first intercepted turn', as
 
 test('a forced namespaced client tool choice is not mistaken for the hosted shim function', async () => {
   const { backend } = makeStubDeps();
-  const choice = { type: 'function' as const, namespace: 'client', name: SHIM_TOOL_NAME };
+  const choice = { type: 'function' as const, name: `client.${SHIM_TOOL_NAME}` };
   const inv = makeInvocation({
     payload: {
       tool_choice: choice,
@@ -2163,7 +2169,7 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
     framesOf(
       mkResponseCreated(),
       mkResponseInProgress(),
-      mkMessageAdded(0),
+      mkMessageAdded(0, 'msg_upstream'),
       eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.content_part.added',
         item_id: 'msg_upstream',
@@ -2206,7 +2212,7 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
         content_index: 0,
         part: { type: 'output_text', text: 'hello world', annotations: [] },
       }),
-      mkMessageDone(0, 'hello world'),
+      mkMessageDone(0, 'hello world', 'msg_upstream'),
       mkResponseCompleted(),
     ),
     state,
@@ -2230,7 +2236,7 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
     frame.type === 'event' && frame.event.type === 'response.output_item.added');
   assert(addedFrame?.type === 'event');
   const messageId = (addedFrame.event as { item: { id?: string } }).item.id;
-  assert(messageId !== undefined && /^msg_[0-9a-f]{32}$/.test(messageId));
+  assertEquals(messageId, 'msg_upstream');
 
   for (const f of result.downstreamFrames) {
     if (f.type !== 'event') continue;
@@ -2405,7 +2411,7 @@ test('helper allocation reserves names across callable scopes, history and searc
     { type: 'namespace', name: 'functions', description: '', tools: [{ type: 'function', name: 'web_search' }] },
     { type: 'namespace', name: 'client', description: '', tools: [{ type: 'custom', name: 'web_search_2' }] },
     { type: 'function', name: 'web_search_3' },
-    { type: 'web_search', name: 'web_search_8' },
+    { type: 'web_search' },
   ];
   const input: CanonicalOpenAIResponsesInputItem[] = [
     { type: 'function_call', namespace: 'history', name: 'web_search_4', call_id: 'old', arguments: '{}', status: 'completed' },
@@ -2413,7 +2419,7 @@ test('helper allocation reserves names across callable scopes, history and searc
     { type: 'additional_tools', role: 'developer', tools: [{ type: 'custom', name: 'web_search_6' }] },
   ];
   const original = structuredClone({ tools, input });
-  assertEquals(resolveServerToolName('web_search', tools, input, { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: 'web_search_7', namespace: 'client' }] }), 'web_search_8');
+  assertEquals(resolveServerToolName('web_search', tools, input, { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: 'client.web_search_7' }] }), 'web_search_7');
   assertEquals(resolveServerToolName('web_search', [], [], { type: 'custom', name: 'web_search' }), 'web_search_2');
   assertEquals({ tools, input }, original);
 });

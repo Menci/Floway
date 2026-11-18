@@ -9,7 +9,7 @@ import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy } from '../test-policy.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIResponsesOutputReasoning, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesOutputItemEx, OpenAIResponsesOutputReasoning, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 const frames = async function* (response: OpenAIResponsesResultEx): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   const item = response.output[0];
@@ -148,7 +148,7 @@ test('client output refuses to persist an id-less upstream item', async () => {
     role: 'assistant' as const,
     status: 'completed' as const,
     content: [{ type: 'output_text' as const, text: 'answer', annotations: [] }],
-  };
+  } as unknown as OpenAIResponsesOutputItemEx;
   const result: OpenAIResponsesResultEx = {
     id: 'resp_upstream',
     object: 'response',

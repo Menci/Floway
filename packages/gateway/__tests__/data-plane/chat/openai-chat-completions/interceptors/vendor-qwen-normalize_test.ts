@@ -3,13 +3,13 @@ import { test } from 'vitest';
 import type { OpenAIChatCompletionsInvocation } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/types.ts';
 import { withVendorQwenOpenAIChatCompletionsNormalize } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/vendor-qwen-normalize.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubCtx = mockChatGatewayCtx();
 
-const invocation = (payload: OpenAIChatCompletionsPayload, enabledFlags: ReadonlySet<FlagId> = new Set(['vendor-qwen'])): OpenAIChatCompletionsInvocation => ({
+const invocation = (payload: OpenAIChatCompletionsPayloadEx, enabledFlags: ReadonlySet<FlagId> = new Set(['vendor-qwen'])): OpenAIChatCompletionsInvocation => ({
   payload,
   candidate: stubModelCandidate({ enabledFlags }),
   targetApi: 'openaiChatCompletions',
@@ -25,7 +25,7 @@ test("translates canonical reasoning_effort: 'none' into top-level enable_thinki
     reasoning_effort: 'none',
   });
 
-  let observed: OpenAIChatCompletionsPayload | null = null;
+  let observed: OpenAIChatCompletionsPayloadEx | null = null;
   await withVendorQwenOpenAIChatCompletionsNormalize(ctx, stubCtx, () => {
     observed = ctx.payload;
     return okEvents();

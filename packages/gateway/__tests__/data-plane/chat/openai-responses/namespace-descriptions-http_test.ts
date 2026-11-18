@@ -61,7 +61,7 @@ const wireOutcomes = [
 test.each(wireOutcomes)('HTTP $representation preserves namespace allowed_tools and descriptions on final $target wire ($mode, $selection selector)', async ({ target, representation, mode, selection }) => {
   const { apiKey } = await setup(target);
   const selector = selection === 'namespace' ? { type: 'namespace', name: 'payments' }
-    : { type: 'function', namespace: 'payments', name: 'read' };
+    : { type: 'function', name: 'payments.read' };
   const choice = { type: 'allowed_tools', mode, tools: [selector] };
   const input = [{ type: 'message', role: 'user', content: 'Read my account.' }];
   const payload = { model: 'model', stream: false, store: false, tool_choice: choice, ...(representation !== 'Standard' ? { input: [{ type: 'additional_tools', role: 'developer', tools: [namespace] }, ...input] } : { input, tools: [namespace] }) };

@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { withEmptyToolsToolChoiceNormalized } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/normalize-empty-tools-tool-choice.ts';
 import type { OpenAIChatCompletionsInvocation } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
@@ -11,7 +11,7 @@ const stubCtx = mockChatGatewayCtx();
 const okEvents = () => Promise.resolve(eventResult((async function* () {})(), testTelemetryModelIdentity));
 
 const invocation = (
-  payload: OpenAIChatCompletionsPayload,
+  payload: OpenAIChatCompletionsPayloadEx,
   enabledFlags: ReadonlySet<FlagId> = new Set(['empty-tools-tool-choice-none']),
 ): OpenAIChatCompletionsInvocation => ({
   payload,

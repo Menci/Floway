@@ -4,13 +4,13 @@ import { withUsageNormalized } from '../../../../../src/data-plane/chat/openai-c
 import type { OpenAIChatCompletionsInvocation } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubCtx = mockChatGatewayCtx();
 
-const invocation = (payload: OpenAIChatCompletionsPayload = { model: 'test-model', messages: [] }): OpenAIChatCompletionsInvocation => ({
+const invocation = (payload: OpenAIChatCompletionsPayloadEx = { model: 'test-model', messages: [] }): OpenAIChatCompletionsInvocation => ({
   payload,
   candidate: stubModelCandidate(),
   targetApi: 'openaiChatCompletions',

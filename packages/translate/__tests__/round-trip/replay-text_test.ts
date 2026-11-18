@@ -31,14 +31,14 @@ describe('semantic replay text channels', () => {
   });
 
   it('merges Responses text by channel while retaining item boundaries', async () => {
-    const split: OpenAIResponsesSourceAssistantTurn = [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'hel', annotations: [], logprobs: [] }, { type: 'output_text', text: 'lo', annotations: [] }] }];
-    const merged: OpenAIResponsesSourceAssistantTurn = [{ type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'hello' }] }];
+    const split: OpenAIResponsesSourceAssistantTurn = [{ type: 'message', id: 'message-split', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'hel', annotations: [], logprobs: [] }, { type: 'output_text', text: 'lo', annotations: [] }] }];
+    const merged: OpenAIResponsesSourceAssistantTurn = [{ type: 'message', id: 'message-merged', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'hello' }] }];
     expect(await verifyOpenAIResponsesTurnDigest(merged, await computeOpenAIResponsesTurnDigest(split), 1)).toBe(true);
     expect(await verifyOpenAIResponsesTurnDigest(split, await computeOpenAIResponsesTurnDigest(merged), 1)).toBe(true);
     const interrupted: OpenAIResponsesSourceAssistantTurn = [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hel' }, { type: 'refusal', refusal: 'no' }, { type: 'output_text', text: 'lo' }] }];
     expect(await verifyOpenAIResponsesTurnDigest([{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hello' }, { type: 'refusal', refusal: 'no' }] }], await computeOpenAIResponsesTurnDigest(interrupted), 1)).toBe(true);
     expect(await verifyOpenAIResponsesTurnDigest([{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'hellono' }] }], await computeOpenAIResponsesTurnDigest(interrupted), 1)).toBe(false);
-    const separate: OpenAIResponsesSourceAssistantTurn = [{ type: 'message', role: 'assistant', status: 'completed', content: 'hel' }, { type: 'message', role: 'assistant', status: 'completed', content: 'lo' }];
+    const separate: OpenAIResponsesSourceAssistantTurn = [{ type: 'message', id: 'message-hel', role: 'assistant', status: 'completed', content: 'hel' }, { type: 'message', id: 'message-lo', role: 'assistant', status: 'completed', content: 'lo' }];
     expect(await verifyOpenAIResponsesTurnDigest(merged, await computeOpenAIResponsesTurnDigest(separate), 1)).toBe(false);
   });
 

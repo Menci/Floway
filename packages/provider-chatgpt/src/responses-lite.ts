@@ -5,7 +5,7 @@ import type {
   CanonicalOpenAIResponsesPayload,
   OpenAIResponsesInputAdditionalToolsItem,
   CanonicalOpenAIResponsesInputItem,
-  OpenAIResponsesInputMessageEx,
+  OpenAIResponsesInputMessage,
   OpenAIResponsesStreamEventEx,
   OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
@@ -105,7 +105,7 @@ const makeAdditionalToolsItem = (
 const makeBaseInstructionsMessage = (
   instructions: string,
   threadNamespace: string,
-): OpenAIResponsesInputMessageEx => ({
+): OpenAIResponsesInputMessage => ({
   type: 'message',
   role: 'developer',
   content: [{ type: 'input_text', text: instructions }],

@@ -7,14 +7,14 @@ import type {
   AnthropicMessagesPayload,
   AnthropicMessagesToolUseBlock,
 } from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
 function mkPayload(
-  overrides: Partial<OpenAIChatCompletionsPayload> & {
-    messages: OpenAIChatCompletionsPayload['messages'];
+  overrides: Partial<OpenAIChatCompletionsPayloadEx> & {
+    messages: OpenAIChatCompletionsPayloadEx['messages'];
   },
-): OpenAIChatCompletionsPayload {
+): OpenAIChatCompletionsPayloadEx {
   return { model: 'claude-sonnet-4', stream: true, ...overrides };
 }
 
