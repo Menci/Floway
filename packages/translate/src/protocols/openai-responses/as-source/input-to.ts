@@ -142,8 +142,9 @@ const clientItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInp
     default: throw new TranslateInputException(`Invalid role '${item.role}' in input message.`);
     }
   case 'function_call_output': {
-    // A standalone output answers no call, so no target tool result can carry
-    // it; callers lower it to a message before translation.
+    // A standalone output answers no call, and no other protocol can carry a
+    // tool result without one. Rejecting it here keeps the input IR free of
+    // call-less tool results.
     if (item.call_id == null) throw new TranslateInputException('Cannot translate a function call output without a call_id.');
     const result: IRInputToolResultItem = {
       type: 'tool_result',
