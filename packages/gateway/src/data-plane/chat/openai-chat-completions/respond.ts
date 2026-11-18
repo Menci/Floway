@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 import { wrapOpenAIChatCompletionsAffinityEgress } from './affinity/egress.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { openaiInternalErrorPayload, openaiSseFailure } from '../../shared/openai-errors.ts';
-import { serveSse } from '../../shared/sse.ts';
+import { serializeSseFrame, serveSse } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
@@ -67,12 +67,13 @@ export const respondOpenAIChatCompletions = async (
     protocol: {
       encode: frame => {
         const output = openaiChatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk });
-        if (frame.type === 'done') return { frame: output, end: { type: 'completed' } };
-        if (openaiChatCompletionsErrorPayloadMessage(frame.event) !== null) return { frame: output, end: { type: 'protocol-error' } };
+        const wire = output === null ? null : serializeSseFrame(output);
+        if (frame.type === 'done') return { wire, end: { type: 'completed' } };
+        if (openaiChatCompletionsErrorPayloadMessage(frame.event) !== null) return { wire, end: { type: 'protocol-error' } };
         for (const { index, finish_reason: reason } of frame.event.choices) {
           if (reason != null && Number.isInteger(index) && index >= 0 && index < expectedChoices) finishedChoices.add(index);
         }
-        return { frame: output };
+        return { wire };
       },
       eof: () => finishedChoices.size === expectedChoices
         ? { type: 'completed' }

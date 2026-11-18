@@ -1,7 +1,7 @@
 import type { TokenUsage } from '../../repo/types.ts';
 import { isOpenAIErrorPayload, openaiSseFailure } from '../shared/openai-errors.ts';
 import { passthroughApiError, type PassthroughResponseStrategyContext } from '../shared/passthrough-serve.ts';
-import { serveSse } from '../shared/sse.ts';
+import { serializeSseFrame, serveSse } from '../shared/sse.ts';
 import { recordFailedRequest } from '../shared/telemetry/performance.ts';
 import { recordSseOutcome, settle } from '../shared/telemetry/settle.ts';
 import { forwardUpstreamHeaders, forwardUpstreamResponse } from '../shared/upstream-response.ts';
@@ -36,10 +36,10 @@ export const respondOpenAICompletionsSse = (
       encode: parsed => {
         const input = parsed.type === 'done' ? doneFrame() : eventFrame(parsed.data);
         ctx.dump?.frame(input);
-        if (input.type === 'done') return { frame: sseFrame('[DONE]'), end: { type: 'completed' } };
-        if (isOpenAIErrorPayload(input.event)) return { frame: sseFrame(JSON.stringify(input.event)), end: { type: 'protocol-error' } };
+        if (input.type === 'done') return { wire: serializeSseFrame(sseFrame('[DONE]')), end: { type: 'completed' } };
+        if (isOpenAIErrorPayload(input.event)) return { wire: serializeSseFrame(sseFrame(JSON.stringify(input.event))), end: { type: 'protocol-error' } };
         const output = transformFrame(input);
-        return { frame: output?.type === 'event' ? sseFrame(JSON.stringify(output.event)) : null };
+        return { wire: output?.type === 'event' ? serializeSseFrame(sseFrame(JSON.stringify(output.event))) : null };
       },
       eof: () => ({ type: 'premature-eof', error: new Error('OpenAI Completions stream ended without a [DONE] sentinel.') }),
       failure: error => openaiSseFailure(ctx, error),

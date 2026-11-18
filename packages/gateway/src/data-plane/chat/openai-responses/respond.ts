@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 import { wrapOpenAIResponsesClientEgress } from './client-output.ts';
 import { OPENAI_RESPONSES_REASONING_INCLUDED_HEADER, OPENAI_RESPONSES_REASONING_INCLUDED_VALUE } from './response-headers.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
-import { serveSse, type SseProtocol } from '../../shared/sse.ts';
+import { serializeSseFrame, serveSse, type SseProtocol } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
@@ -151,11 +151,12 @@ const openaiResponsesSseProtocol = (ctx: GatewayCtx): SseProtocol<ProtocolFrame<
   let nextSequence = 0;
   const completedItems = new Map<number, ClientResponseResource['output'][number]>();
   // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L82-L86
-  const done = sseFrame('[DONE]');
+  const done = serializeSseFrame(sseFrame('[DONE]'));
   const emit = (event: ClientOpenAIResponsesStreamEvent) => {
     const frame = eventFrame(event);
+    const wire = serializeSseFrame(openaiResponsesProtocolFrameToSSEFrame(frame));
     ctx.dump?.frame(frame);
-    return openaiResponsesProtocolFrameToSSEFrame(frame);
+    return wire;
   };
   const failedTrailer = (failure: OpenAIResponsesErrorEx) => {
     if (announced === undefined) return [done] as const;
@@ -173,9 +174,9 @@ const openaiResponsesSseProtocol = (ctx: GatewayCtx): SseProtocol<ProtocolFrame<
 
   return {
     encode: frame => {
-      if (frame.type === 'done') return { frame: null, end: eof() };
+      if (frame.type === 'done') return { wire: null, end: eof() };
       const event = { ...frame.event, sequence_number: frame.event.sequence_number ?? nextSequence };
-      const output = openaiResponsesProtocolFrameToSSEFrame(eventFrame(event));
+      const wire = serializeSseFrame(openaiResponsesProtocolFrameToSSEFrame(eventFrame(event)));
       nextSequence = Math.max(nextSequence, event.sequence_number + 1);
       if ('response' in event) announced = event.response;
       if (event.type === 'response.output_item.done') completedItems.set(event.output_index, event.item);
@@ -187,8 +188,8 @@ const openaiResponsesSseProtocol = (ctx: GatewayCtx): SseProtocol<ProtocolFrame<
         upstreamFailure = { ...error, code: error.code ?? 'server_error' };
       }
       return isOpenAIResponsesTerminalEvent(event)
-        ? { frame: output, end: { type: event.type === 'response.failed' || upstreamFailure ? 'protocol-error' : 'completed', trailer: [done] } }
-        : { frame: output };
+        ? { wire, end: { type: event.type === 'response.failed' || upstreamFailure ? 'protocol-error' : 'completed', trailer: [done] } }
+        : { wire };
     },
     eof,
     failure: error => {

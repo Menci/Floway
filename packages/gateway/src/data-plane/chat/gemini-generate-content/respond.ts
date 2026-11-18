@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 import { wrapGeminiGenerateContentAffinityEgress } from './affinity/egress.ts';
 import { geminiGenerateContentInternalErrorPayload, geminiGenerateContentRpcErrorPayload, googleRpcHttpStatusCode, isGeminiGenerateContentErrorResponse } from './errors.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
-import { serveSse } from '../../shared/sse.ts';
+import { serializeSseFrame, serveSse } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
@@ -68,12 +68,12 @@ export const respondGeminiGenerateContent = async (
     downstreamAbortController: ctx.downstreamAbortController,
     protocol: {
       encode: frame => {
-        if (frame.type === 'done') return { frame: null, end: { type: 'completed' } };
-        const output = geminiGenerateContentProtocolFrameToSSEFrame(frame);
-        if (isGeminiGenerateContentErrorEvent(frame.event)) return { frame: output, end: { type: 'protocol-error' } };
-        if (isGeminiGenerateContentTerminalEvent(frame.event)) return { frame: output, end: { type: 'completed' } };
+        if (frame.type === 'done') return { wire: null, end: { type: 'completed' } };
+        const wire = serializeSseFrame(geminiGenerateContentProtocolFrameToSSEFrame(frame)!);
+        if (isGeminiGenerateContentErrorEvent(frame.event)) return { wire, end: { type: 'protocol-error' } };
+        if (isGeminiGenerateContentTerminalEvent(frame.event)) return { wire, end: { type: 'completed' } };
         completion.observe(frame.event);
-        return { frame: output };
+        return { wire };
       },
       eof: () => completion.isComplete()
         ? { type: 'completed' }
@@ -81,7 +81,7 @@ export const respondGeminiGenerateContent = async (
       failure: error => {
         const frame = eventFrame(caughtGeminiGenerateContentErrorEvent(error) ?? geminiGenerateContentInternalRpcErrorPayload(500, error));
         ctx.dump?.frame(frame);
-        return [geminiGenerateContentProtocolFrameToSSEFrame(frame)!];
+        return [serializeSseFrame(geminiGenerateContentProtocolFrameToSSEFrame(frame)!)];
       },
     },
     settle: outcome => settleChatSse(ctx, result, outcome),

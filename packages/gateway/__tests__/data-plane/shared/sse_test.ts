@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { expect, test, vi } from 'vitest';
 
-import { serveSse, type SseOutcome } from '../../../src/data-plane/shared/sse.ts';
+import { serializeSseFrame, serveSse, type SseOutcome } from '../../../src/data-plane/shared/sse.ts';
 import { FakeTime } from '../../test-time.ts';
 import { parseSSEStream } from '@floway-dev/protocols/common';
 import { sseCommentFrame, type SseFrame, type SseWritableFrame, sseFrame, sseRawFrame } from '@floway-dev/protocols/common';
@@ -84,9 +84,9 @@ const requestSSE = async (events: AsyncIterable<SseWritableFrame>, options: Part
       events,
       downstreamAbortController: undefined,
       protocol: {
-        encode: frame => ({ frame }),
+        encode: frame => ({ wire: serializeSseFrame(frame) }),
         eof: () => ({ type: 'completed' }),
-        failure: () => [sseFrame('failure')],
+        failure: () => [serializeSseFrame(sseFrame('failure'))],
       },
       settle: () => {},
       ...options,
@@ -198,9 +198,9 @@ test('SSE egress stops idle iterator and timer when the response is canceled', a
 test('SSE egress settles cancellation once without rendering a racing iterator error', async () => {
   const idle = createIdleSSEEvents();
   const settle = vi.fn<(outcome: SseOutcome) => void>();
-  const failure = vi.fn<TestOptions['protocol']['failure']>(() => [sseFrame('unexpected failure')]);
+  const failure = vi.fn<TestOptions['protocol']['failure']>(() => [serializeSseFrame(sseFrame('unexpected failure'))]);
   const response = await requestSSE(idle.events, {
-    protocol: { encode: frame => ({ frame }), eof: () => ({ type: 'completed' }), failure },
+    protocol: { encode: frame => ({ wire: serializeSseFrame(frame) }), eof: () => ({ type: 'completed' }), failure },
     settle,
   });
   const reader = response.body!.getReader();
@@ -268,10 +268,15 @@ test('SSE egress writes a raw frame without SSE field framing', async () => {
   assertEquals(await response.text(), `data: {"candidates":[]}\n\n${data}`);
 });
 
+test('SSE serialization emits a data field for every line of a named event', () => {
+  const wire = serializeSseFrame(sseFrame('first\r\nsecond\r\n\nlast', 'message'));
+  expect(wire).toBe('event: message\ndata: first\ndata: second\ndata: \ndata: last\n\n');
+});
+
 test.each(['read', 'encode', 'eof'] as const)('SSE egress renders and settles a %s failure after earlier output', async failureAt => {
   const error = new Error(`failed at ${failureAt}`);
   const settle = vi.fn<(outcome: SseOutcome) => void>();
-  const failure = vi.fn<TestOptions['protocol']['failure']>(() => [sseFrame('protocol failure')]);
+  const failure = vi.fn<TestOptions['protocol']['failure']>(() => [serializeSseFrame(sseFrame('protocol failure'))]);
   const frames = async function* () {
     yield sseFrame('partial');
     if (failureAt === 'read') throw error;
@@ -281,7 +286,7 @@ test.each(['read', 'encode', 'eof'] as const)('SSE egress renders and settles a 
     protocol: {
       encode: frame => {
         if (frame.type === 'sse' && frame.data === 'unencodable') throw error;
-        return { frame };
+        return { wire: serializeSseFrame(frame) };
       },
       eof: () => ({ type: 'premature-eof', error }),
       failure,
@@ -306,9 +311,12 @@ test('SSE egress closes the iterator at a protocol terminal without pulling anot
   };
   const response = await requestSSE(frames(), {
     protocol: {
-      encode: frame => ({ frame, end: { type: 'protocol-error', trailer: [sseFrame('trailer')] } }),
+      encode: frame => ({
+        wire: serializeSseFrame(frame),
+        end: { type: 'protocol-error', trailer: [serializeSseFrame(sseFrame('trailer'))] },
+      }),
       eof: () => { throw new Error('unexpected EOF'); },
-      failure: () => [sseFrame('unexpected failure')],
+      failure: () => [serializeSseFrame(sseFrame('unexpected failure'))],
     },
     settle,
   });

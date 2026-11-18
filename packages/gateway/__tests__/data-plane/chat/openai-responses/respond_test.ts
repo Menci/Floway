@@ -96,6 +96,30 @@ test('Responses SSE failures keep the announced resource, completed items, wire 
   await expect(collectOpenAIResponsesProtocolEventsToResult(parseOpenAIResponsesStream(new Response(wire).body!))).rejects.toMatchObject({ message: 'broken', cause: error });
 });
 
+test('Responses sends a failed terminal when the next event cannot be serialized as SSE', async () => {
+  const upstream = new Response([
+    { type: 'response.created', sequence_number: 4, response: { id: 'upstream', object: 'response', model: 'm', status: 'in_progress', output: [], error: null, incomplete_details: null } },
+    { type: 'vendor:event\nbad', sequence_number: 5 },
+  ].map(event => `data: ${JSON.stringify(event)}\n\n`).join(''));
+  const source = parseOpenAIResponsesStream(upstream.body!);
+  const app = new Hono().get('/', c => respondOpenAIResponses(c, eventResult(source, testTelemetryModelIdentity), true, mockChatGatewayCtx(), { model: 'm', input: [] }));
+  const response = await app.request('/');
+  expect(response.status).toBe(200);
+  const events = [];
+  for await (const frame of parseSSEStream(response.body!)) {
+    if (frame.type === 'sse') events.push(frame);
+  }
+  expect(events.map(frame => frame.event)).toEqual(['response.created', 'error', 'response.failed', undefined]);
+  const [created, error, failed, done] = events;
+  expect(JSON.parse(error.data)).toMatchObject({
+    sequence_number: 5, error: { message: 'SSE event name cannot contain CR or LF' },
+  });
+  expect(JSON.parse(failed.data)).toMatchObject({
+    sequence_number: 6, response: { id: JSON.parse(created.data).response.id, status: 'failed' },
+  });
+  expect(done.data).toBe('[DONE]');
+});
+
 test('Responses finishes an announced resource when a native error is followed by EOF', async () => {
   const error = { type: 'error' as const, sequence_number: 4, code: 'rate_limit_exceeded', message: 'slow down', param: null, vendor: { retryable: true } };
   const frames = async function* () {

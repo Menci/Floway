@@ -14,15 +14,15 @@ interface SseKeepAliveOptions {
 
 interface SseFinished {
   type: 'completed' | 'protocol-error';
-  trailer?: readonly SseWritableFrame[];
+  trailer?: readonly string[];
 }
 
 type SseEnd = SseFinished | { type: 'premature-eof'; error: Error };
 
 export interface SseProtocol<T> {
-  encode: (input: T) => { frame: SseWritableFrame | null; end?: SseEnd };
+  encode: (input: T) => { wire: string | null; end?: SseEnd };
   eof: () => SseEnd;
-  failure: (error: unknown) => readonly [SseWritableFrame, ...SseWritableFrame[]];
+  failure: (error: unknown) => readonly [string, ...string[]];
 }
 
 export type SseOutcome =
@@ -40,40 +40,31 @@ interface SseStreamOptions<T> {
 
 type NextFrame<T> = { type: 'frame'; result: IteratorResult<T> } | { type: 'source-error'; error: unknown };
 
-const serializeSSECommentFrame = (comment: string): string =>
-  `${comment
-    .split(/\r\n|\r|\n/)
-    .map(line => `: ${line}`)
-    .join('\n')}\n\n`;
-
-const writeSSEFrame = async (stream: SSEStreamingApi, frame: SseWritableFrame): Promise<void> => {
-  if (stream.aborted || stream.closed) return;
-
-  if (frame.type === 'sse-raw') {
-    await stream.write(frame.data);
-    return;
-  }
-
+export const serializeSseFrame = (frame: SseWritableFrame): string => {
+  if (frame.type === 'sse-raw') return frame.data;
   if (frame.type === 'sse-comment') {
-    await stream.write(serializeSSECommentFrame(frame.comment));
-    return;
+    return `${frame.comment.split(/\r\n|\r|\n/).map(line => `: ${line}`).join('\n')}\n\n`;
   }
-
-  await stream.writeSSE({
-    event: frame.event,
-    data: frame.data,
-  });
+  if (frame.event !== undefined && /[\r\n]/.test(frame.event)) {
+    throw new Error('SSE event name cannot contain CR or LF');
+  }
+  const event = frame.event ? `event: ${frame.event}\n` : '';
+  const data = frame.data.split(/\r\n|\r|\n/).map(line => `data: ${line}`).join('\n');
+  return `${event}${data}\n\n`;
 };
 
 const drainSse = async <T>(
   stream: SSEStreamingApi,
   { events, protocol, downstreamAbortController }: SseStreamOptions<T>,
-  keepAlive: Required<SseKeepAliveOptions>,
+  keepAlive: { intervalMs: number; wire: string },
 ): Promise<SseOutcome> => {
   let iterator: AsyncIterator<T> | undefined;
   let wake: (() => void) | undefined;
   let egressFailed = false;
   const disconnected = () => stream.aborted || stream.closed;
+  const write = async (wire: string): Promise<void> => {
+    if (!disconnected()) await stream.write(wire);
+  };
   stream.onAbort(() => {
     downstreamAbortController?.abort();
     wake?.();
@@ -99,7 +90,7 @@ const drainSse = async <T>(
         };
       });
       wake = undefined;
-      if (!next && !disconnected()) await writeSSEFrame(stream, keepAlive.frame);
+      if (!next) await write(keepAlive.wire);
     }
     return disconnected() ? undefined : next;
   };
@@ -107,7 +98,7 @@ const drainSse = async <T>(
   const fail = async (error: unknown, type: 'source-error' | 'premature-eof' = 'source-error'): Promise<SseOutcome> => {
     if (disconnected()) return { type: 'cancelled' };
     try {
-      for (const frame of protocol.failure(error)) await writeSSEFrame(stream, frame);
+      for (const wire of protocol.failure(error)) await write(wire);
     } catch (egressError) {
       throw new AggregateError([error, egressError], 'Failed to send the SSE failure', { cause: error });
     }
@@ -116,7 +107,7 @@ const drainSse = async <T>(
 
   const finish = async (end: SseEnd): Promise<SseOutcome> => {
     if (end.type === 'premature-eof') return await fail(end.error, end.type);
-    for (const frame of end.trailer ?? []) await writeSSEFrame(stream, frame);
+    for (const wire of end.trailer ?? []) await write(wire);
     return { type: end.type };
   };
 
@@ -157,7 +148,7 @@ const drainSse = async <T>(
       } catch (error) {
         return await fail(error);
       }
-      if (output.frame) await writeSSEFrame(stream, output.frame);
+      if (output.wire !== null) await write(output.wire);
       if (output.end) return await finish(output.end);
     }
   } catch (error) {
@@ -177,7 +168,7 @@ const drainSse = async <T>(
 export const serveSse = <T>(c: Context, options: SseStreamOptions<T>): Response => {
   const keepAlive = {
     intervalMs: options.keepAlive?.intervalMs ?? DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS,
-    frame: options.keepAlive?.frame ?? sseCommentFrame('keepalive'),
+    wire: serializeSseFrame(options.keepAlive?.frame ?? sseCommentFrame('keepalive')),
   };
   if (!Number.isFinite(keepAlive.intervalMs) || keepAlive.intervalMs <= 0) {
     throw new Error('SSE keepalive interval must be a positive number');

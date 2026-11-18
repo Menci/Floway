@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 
 import { wrapAnthropicMessagesAffinityEgress } from './affinity/egress.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
-import { serveSse } from '../../shared/sse.ts';
+import { serializeSseFrame, serveSse } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
@@ -68,11 +68,12 @@ export const respondAnthropicMessages = async (
     protocol: {
       encode: frame => {
         const output = anthropicMessagesProtocolFrameToSSEFrame(frame);
+        const wire = output === null ? null : serializeSseFrame(output);
         if (frame.type === 'event') {
-          if (frame.event.type === 'message_stop') return { frame: output, end: { type: 'completed' } };
-          if (frame.event.type === 'error') return { frame: output, end: { type: 'protocol-error' } };
+          if (frame.event.type === 'message_stop') return { wire, end: { type: 'completed' } };
+          if (frame.event.type === 'error') return { wire, end: { type: 'protocol-error' } };
         }
-        return { frame: output };
+        return { wire };
       },
       eof: () => ({ type: 'premature-eof', error: new Error(ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE) }),
       failure: error => {
@@ -81,7 +82,7 @@ export const respondAnthropicMessages = async (
         const payload = internalAnthropicMessagesErrorPayload(toInternalDebugError(error));
         const event = { ...payload, error: { ...payload.error, type: 'api_error' } };
         ctx.dump?.frame(eventFrame(event));
-        return [sseFrame(JSON.stringify(event), 'error')];
+        return [serializeSseFrame(sseFrame(JSON.stringify(event), 'error'))];
       },
     },
     settle: outcome => settleChatSse(ctx, result, outcome),

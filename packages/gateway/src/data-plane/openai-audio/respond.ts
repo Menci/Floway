@@ -2,7 +2,7 @@ import { measureOpenAIAudioTranscriptionUsage } from './usage.ts';
 import { isOpenAIErrorPayload, openaiSseFailure } from '../shared/openai-errors.ts';
 import { passthroughApiError } from '../shared/passthrough-serve.ts';
 import type { PassthroughResponseStrategyContext } from '../shared/passthrough-serve.ts';
-import { serveSse } from '../shared/sse.ts';
+import { serializeSseFrame, serveSse } from '../shared/sse.ts';
 import { recordSseOutcome, settleUsageMeasurement } from '../shared/telemetry/settle.ts';
 import { requestOnlyUsageMeasurement } from '../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, forwardUpstreamResponse } from '../shared/upstream-response.ts';
@@ -51,11 +51,12 @@ const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }
         } catch (error) {
           throw new Error(`Malformed upstream ${sourceApi} SSE JSON: ${frame.data}`, { cause: error });
         }
+        const wire = serializeSseFrame(frame);
         ctx.dump?.frame(eventFrame(event));
-        if (isOpenAIErrorPayload(event)) return { frame, end: { type: 'protocol-error' } };
-        if (!isOpenAIAudioTranscriptionDoneEvent(event)) return { frame };
+        if (isOpenAIErrorPayload(event)) return { wire, end: { type: 'protocol-error' } };
+        if (!isOpenAIAudioTranscriptionDoneEvent(event)) return { wire };
         measurement = measureOpenAIAudioTranscriptionUsage(event, sourceApi);
-        return { frame, end: { type: 'completed' } };
+        return { wire, end: { type: 'completed' } };
       },
       eof: () => ({ type: 'premature-eof', error: new Error('OpenAI Transcriptions stream ended without a transcript.text.done event.') }),
       failure: error => openaiSseFailure(ctx, error),
