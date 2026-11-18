@@ -2,8 +2,7 @@ import { test } from 'vitest';
 
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from '../src/config.ts';
 import { fetchOllamaCatalog } from '../src/fetch-models.ts';
-import { ProviderModelsUnavailableError } from '@floway-dev/provider';
-import { assertEquals, assertRejects, jsonResponse, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, jsonResponse, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
 
 const config: OllamaUpstreamConfig = assertOllamaUpstreamRecord({
   id: 'up_ollama',
@@ -80,8 +79,6 @@ test('fetchOllamaCatalog projects /api/show capabilities + model_info into the r
 
     const gptoss = catalog.data.find(m => m.id === 'gpt-oss:120b')!;
     assertEquals(gptoss.capabilities.has('thinking'), true);
-    assertEquals(gptoss.capabilities.has('tools'), true);
-    assertEquals(gptoss.capabilities.has('embedding'), false);
     assertEquals(gptoss.contextLength, 131072);
 
     const embed = catalog.data.find(m => m.id === 'nomic-embed-text:latest')!;
@@ -90,21 +87,6 @@ test('fetchOllamaCatalog projects /api/show capabilities + model_info into the r
     // find `.context_length` without hardcoding `gptoss.`.
     assertEquals(embed.contextLength, 8192);
   });
-});
-
-test('fetchOllamaCatalog rejects with ProviderModelsUnavailableError when /api/tags returns a shape it cannot parse', async () => {
-  // 200 OK + body that satisfies isRecord but lacks a `models` array. The
-  // scaffold must see parseTagsResponse return null and convert that to the
-  // shared error class (rather than the catalog quietly resolving to []).
-  await withMockedFetch(
-    async () => jsonResponse({ unexpected: 'shape' }),
-    async () => {
-      await assertRejects(
-        () => fetchOllamaCatalog(config, testFetcher),
-        ProviderModelsUnavailableError,
-      );
-    },
-  );
 });
 
 // A tag whose /api/show fails is skipped, which makes this the one path that

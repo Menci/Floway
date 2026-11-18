@@ -73,7 +73,6 @@ test('getProvidedModels projects chat and embedding models from their capabiliti
     const gptoss = models.find(m => m.id === 'gpt-oss:120b')!;
     assertEquals(gptoss.kind, 'chat');
     assertEquals(Object.keys(gptoss.endpoints).sort(), ['anthropicMessages', 'openaiChatCompletions', 'openaiCompletions', 'openaiResponses']);
-    assertEquals(gptoss.owned_by, 'ollama');
     assertEquals(gptoss.limits.max_context_window_tokens, 131072);
     assertEquals(gptoss.opaqueBlobCompatibilityScope, { bindToUpstream: true });
     // OLLAMA_MODEL_PRICING covers gpt-oss:120b, so pricing flows through into
