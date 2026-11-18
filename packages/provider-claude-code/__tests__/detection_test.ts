@@ -45,11 +45,11 @@ describe('parseMetadataUserID', () => {
 });
 
 describe('isClaudeCodeShapedRequest — UA gate', () => {
-  test('accepts canonical UA', () => {
+  test('rejects UA missing patch version', () => {
     expect(isClaudeCodeShapedRequest({
-      headers: baseHeaders({ 'user-agent': 'claude-cli/2.1.280' }),
+      headers: baseHeaders({ 'user-agent': 'claude-cli/2.1' }),
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
-    })).toBe(true);
+    })).toBe(false);
   });
 
 });

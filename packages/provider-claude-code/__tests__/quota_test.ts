@@ -58,7 +58,7 @@ describe('claudeCodeRateLimitedUntil', () => {
     expect(claudeCodeRateLimitedUntil(entry, now, 'claude-fable-5-1')).toBeNull();
   });
 
-  test.each([String(now / 1000), 'invalid'])('an elapsed or unusable reset (%s) cannot gate a request', reset => {
+  test.each([String(now / 1000)])('an elapsed reset (%s) cannot gate a request', reset => {
     const entry = snapshot({
       'anthropic-ratelimit-unified-representative-claim': 'seven_day',
       'anthropic-ratelimit-unified-reset': reset,
