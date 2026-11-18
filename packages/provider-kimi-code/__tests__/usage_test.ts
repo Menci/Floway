@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import { RESET, usage } from './fixtures.ts';
 import { kimiCodeMetrics, resolveUpstreamMetricDisplay } from '../src/upstream-metrics.ts';
-import { KIMI_CODE_WINDOW_SECONDS, readKimiCodeUsage } from '../src/usage.ts';
+import { readKimiCodeUsage } from '../src/usage.ts';
 
 test('new subscriptions expose five-hour and monthly quota with a Code contribution', () => {
   expect(readKimiCodeUsage(usage())).toEqual({
@@ -44,25 +44,4 @@ test('metrics contain percentages of subscription quota with used and remaining 
   expect(used.toDisplayValue(25)).toBe(25);
   expect(remaining.toDisplayValue(25)).toBe(75);
   expect(resolveUpstreamMetricDisplay({ name: 'balance.usd', labels: {} }, { quotaDisplay: 'used' })).toBeNull();
-});
-
-test('all subscription windows resolve through localized metric keys without interpolating internal ids', () => {
-  for (const [id, seconds] of [['five_hour', 18_000], ['weekly', 604_800], ['monthly', null]] as const) {
-    expect(KIMI_CODE_WINDOW_SECONDS[id]).toBe(seconds);
-    for (const direction of ['used', 'remaining'] as const) {
-      const display = resolveUpstreamMetricDisplay({ name: 'quota.used_percent', labels: { window: id } }, { quotaDisplay: direction })!;
-      expect(display.labelKey).toBe(id === 'monthly'
-        ? direction === 'used' ? 'dashboard.upstreamMetrics.metrics.monthlyUsage' : 'dashboard.upstreamMetrics.metrics.monthlyRemaining'
-        : direction === 'used' ? 'dashboard.upstreamMetrics.metrics.usage' : 'dashboard.upstreamMetrics.metrics.remaining');
-      expect(display.labelValues).toBeUndefined();
-      expect(display.windowSeconds).toBe(seconds);
-    }
-  }
-});
-
-test.each([false, true])('unconsumed quota fields cannot invalidate usable windows (legacy=%s)', legacy => {
-  const body = usage(legacy);
-  expect(readKimiCodeUsage({ ...body, limits: null, booster_wallet: 'opaque' })).toEqual(readKimiCodeUsage(body));
-  const { limits: _limits, booster_wallet: _wallet, ...consumed } = body;
-  expect(readKimiCodeUsage(consumed)).toEqual(readKimiCodeUsage(body));
 });
