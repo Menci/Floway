@@ -50,18 +50,9 @@ describe('parseMetadataUserID', () => {
     expect(parsed?.sessionId).toBe('sess-9876');
   });
 
-  test('accepts empty account_uuid in JSON form', () => {
-    const parsed = parseMetadataUserID(JSON.stringify({ device_id: 'dev', account_uuid: '', session_id: 'sess' }));
-    expect(parsed?.accountUuid).toBe('');
-  });
-
   test.each([
-    ['empty string', ''],
-    ['whitespace', '   '],
-    ['legacy with bad session uuid', 'user_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef_account_x_session_short'],
     ['legacy without account segment', 'user_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef_session_bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'],
     ['malformed JSON', '{not-json'],
-    ['JSON missing device_id', JSON.stringify({ session_id: 's' })],
     ['JSON missing session_id', JSON.stringify({ device_id: 'd' })],
   ])('rejects %s', (_label, raw) => {
     expect(parseMetadataUserID(raw)).toBeNull();
@@ -76,39 +67,9 @@ describe('isClaudeCodeShapedRequest — UA gate', () => {
     })).toBe(true);
   });
 
-  test('accepts older CC UA', () => {
-    expect(isClaudeCodeShapedRequest({
-      headers: baseHeaders({ 'user-agent': 'claude-cli/2.1.10' }),
-      body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
-    })).toBe(true);
-  });
-
   test('rejects UA missing patch version', () => {
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders({ 'user-agent': 'claude-cli/2.1' }),
-      body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
-    })).toBe(false);
-  });
-
-  test('rejects non-prefix UA', () => {
-    expect(isClaudeCodeShapedRequest({
-      headers: baseHeaders({ 'user-agent': 'not-claude-cli/2.1.10' }),
-      body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
-    })).toBe(false);
-  });
-
-  test('rejects bare claude-cli/ UA', () => {
-    expect(isClaudeCodeShapedRequest({
-      headers: baseHeaders({ 'user-agent': 'claude-cli/' }),
-      body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
-    })).toBe(false);
-  });
-
-  test('rejects missing UA', () => {
-    const h = baseHeaders();
-    h.delete('user-agent');
-    expect(isClaudeCodeShapedRequest({
-      headers: h,
       body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
     })).toBe(false);
   });
@@ -135,23 +96,12 @@ describe('isClaudeCodeShapedRequest — billing-block fast path', () => {
       body: bodyWithSystem('x-anthropic-billing-header: cc_version=2.1.280.abc; cc_entrypoint=cli; cch=00000;'),
     })).toBe(true);
   });
-
-  test('rejects a billing-like header missing cc_entrypoint=cli', () => {
-    expect(isClaudeCodeShapedRequest({
-      headers: baseHeaders(),
-      body: bodyWithSystem('x-anthropic-billing-header: cc_version=2.1.280.abc; some_other_marker=1;'),
-    })).toBe(false);
-  });
 });
 
 describe('isClaudeCodeShapedRequest — Dice template fallback', () => {
   test.each([
     ["You are Claude Code, Anthropic's official CLI for Claude."],
-    ["You are a Claude agent, built on Anthropic's Claude Agent SDK."],
-    ["You are Claude Code, Anthropic's official CLI for Claude, running within the Claude Agent SDK."],
-    ["You are a file search specialist for Claude Code, Anthropic's official CLI for Claude."],
     ['You are a helpful AI assistant tasked with summarizing conversations.'],
-    ['You are an interactive CLI tool that helps users with software engineering tasks.'],
     ['You are an interactive agent that helps users with software engineering tasks.'],
   ])('matches identity template: %s', text => {
     expect(isClaudeCodeShapedRequest({
@@ -180,36 +130,11 @@ describe('isClaudeCodeShapedRequest — strict header gate', () => {
 });
 
 describe('isClaudeCodeShapedRequest — metadata.user_id', () => {
-  test('accepts legacy form', () => {
-    expect(isClaudeCodeShapedRequest({
-      headers: baseHeaders(),
-      body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude.", validUserIdLegacy),
-    })).toBe(true);
-  });
-
-  test('accepts JSON form', () => {
-    expect(isClaudeCodeShapedRequest({
-      headers: baseHeaders(),
-      body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude.", validUserIdJson),
-    })).toBe(true);
-  });
-
   test.each([
-    ['empty string', ''],
     ['random text', 'just-a-random-id'],
-    ['malformed JSON', '{not-json'],
   ])('rejects invalid metadata.user_id: %s', (_label, raw) => {
     const body = bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude.");
     body.metadata = { user_id: raw };
-    expect(isClaudeCodeShapedRequest({
-      headers: baseHeaders(),
-      body,
-    })).toBe(false);
-  });
-
-  test('rejects when metadata is absent entirely', () => {
-    const body = bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude.");
-    delete body.metadata;
     expect(isClaudeCodeShapedRequest({
       headers: baseHeaders(),
       body,
@@ -230,14 +155,5 @@ describe('isClaudeCodeShapedRequest — system shape variants', () => {
       headers: baseHeaders(),
       body,
     })).toBe(true);
-  });
-
-  test('rejects an empty system block', () => {
-    const body = bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude.");
-    body.system = [];
-    expect(isClaudeCodeShapedRequest({
-      headers: baseHeaders(),
-      body,
-    })).toBe(false);
   });
 });

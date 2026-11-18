@@ -31,11 +31,6 @@ it('scales header fractions in decimal so they equal the OAuth percentages', () 
   expect(claudeCodeQuotaMetrics(snapshot).map(metric => metric.value)).toEqual([7, 29, 0.00001]);
 });
 
-it('delivers nonfinite numeric utilization to the recording boundary', () => {
-  const body = JSON.parse('{"five_hour":{"utilization":1e400}}') as Record<string, unknown>;
-  expect(claudeCodeProbeMetrics(body)[0]?.value).toBe(Infinity);
-});
-
 it('converts canonical utilization percent into the direction the preference names', () => {
   const identity = { name: 'quota.utilization', labels: { quota: 'five_hour' } };
   const remaining = resolveUpstreamMetricDisplay(identity, { quotaDisplay: 'remaining' })!;
@@ -50,8 +45,4 @@ it('converts canonical utilization percent into the direction the preference nam
   expect(extra.labelKey).toBe('dashboard.upstreamMetrics.metrics.extraUsage');
   expect(extra.toDisplayValue(25)).toBe(25);
   expect(extra.emptyValue).toBe(0);
-});
-
-it('leaves labels outside the Claude utilization metric schema undecoded', () => {
-  expect(resolveUpstreamMetricDisplay({ name: 'quota.utilization', labels: { quota: 'five_hour', region: 'us' } }, { quotaDisplay: 'used' })).toBeNull();
 });

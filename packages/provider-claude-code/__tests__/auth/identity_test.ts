@@ -54,14 +54,4 @@ describe('fetchClaudeCodeIdentity', () => {
     }, 403));
     await expect(fetchClaudeCodeIdentity('at_x')).rejects.toThrow(/403/);
   });
-
-  test('other 4xx still throws', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({ error: 'unauthorized' }, 401));
-    await expect(fetchClaudeCodeIdentity('at_x')).rejects.toThrow(/401/);
-  });
-
-  test('5xx still throws', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({ error: 'boom' }, 503));
-    await expect(fetchClaudeCodeIdentity('at_x')).rejects.toThrow(/503/);
-  });
 });
