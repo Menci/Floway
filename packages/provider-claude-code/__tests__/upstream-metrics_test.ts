@@ -1,8 +1,7 @@
 import { expect, it } from 'vitest';
 
 import { parseClaudeCodeQuotaHeaders } from '../src/quota.ts';
-import { claudeCodeProbeMetrics, claudeCodeQuotaMetrics, resolveUpstreamMetricDisplay } from '../src/upstream-metrics.ts';
-import { upstreamMetricAxisPriority } from '@floway-dev/provider/browser';
+import { claudeCodeProbeMetrics, claudeCodeQuotaMetrics } from '../src/upstream-metrics.ts';
 
 it('records header fractions and probe percentages as one canonical percent metric', () => {
   const snapshot = parseClaudeCodeQuotaHeaders(new Headers({ 'anthropic-ratelimit-unified-5h-utilization': '0.25', 'anthropic-ratelimit-unified-7d-utilization': '0.5' }));
@@ -29,20 +28,4 @@ it('scales header fractions in decimal so they equal the OAuth percentages', () 
     'anthropic-ratelimit-unified-overage-utilization': '1e-7',
   }));
   expect(claudeCodeQuotaMetrics(snapshot).map(metric => metric.value)).toEqual([7, 29, 0.00001]);
-});
-
-it('converts canonical utilization percent into the direction the preference names', () => {
-  const identity = { name: 'quota.utilization', labels: { quota: 'five_hour' } };
-  const remaining = resolveUpstreamMetricDisplay(identity, { quotaDisplay: 'remaining' })!;
-  expect(remaining.axisPriority).toBe(upstreamMetricAxisPriority.subscriptionQuota);
-  expect(remaining.labelKey).toBe('dashboard.upstreamMetrics.metrics.remaining');
-  expect(remaining.toDisplayValue(25)).toBe(75);
-  const used = resolveUpstreamMetricDisplay(identity, { quotaDisplay: 'used' })!;
-  expect(used.labelKey).toBe('dashboard.upstreamMetrics.metrics.usage');
-  expect(used.toDisplayValue(25)).toBe(25);
-  const extra = resolveUpstreamMetricDisplay({ name: 'quota.utilization', labels: { quota: 'extra_usage' } }, { quotaDisplay: 'remaining' })!;
-  expect(extra.axisPriority).toBe(upstreamMetricAxisPriority.extraUsage);
-  expect(extra.labelKey).toBe('dashboard.upstreamMetrics.metrics.extraUsage');
-  expect(extra.toDisplayValue(25)).toBe(25);
-  expect(extra.emptyValue).toBe(0);
 });

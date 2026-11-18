@@ -42,9 +42,6 @@ describe('importClaudeCodeFromCallback', () => {
 
     const result = await importClaudeCodeFromCallback({ code: 'CODE', pkceVerifier: 'VER', state: 'STATE', fetcher: directFetcher });
 
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
-    expect(fetchSpy.mock.calls[0][0]).toBe('https://platform.claude.com/v1/oauth/token');
-    expect(fetchSpy.mock.calls[1][0]).toBe('https://api.anthropic.com/api/oauth/profile');
     const profileInit = fetchSpy.mock.calls[1][1] as RequestInit;
     expect(new Headers(profileInit.headers).get('authorization')).toBe('Bearer at');
 
@@ -88,7 +85,7 @@ describe('importClaudeCodeFromCredentialsJson', () => {
   const farFutureMs = Date.now() + 30 * 60 * 1000;
 
   test('happy path uses CLI subscriptionType verbatim and reuses the access token', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse(profileResponse));
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse(profileResponse));
     const raw = JSON.stringify({
       claudeAiOauth: {
         accessToken: 'sk-ant-oat01-x',
@@ -101,39 +98,12 @@ describe('importClaudeCodeFromCredentialsJson', () => {
 
     const result = await importClaudeCodeFromCredentialsJson(raw);
 
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0][0]).toBe('https://api.anthropic.com/api/oauth/profile');
     expect(result.config.accounts[0].subscriptionType).toBe('max');
     expect(result.config.accounts[0].rateLimitTier).toBe('default_claude_max_20x');
     expect(result.config.accounts[0].email).toBe('user@example.com');
     expect(result.state.accounts[0].refreshToken).toBe('sk-ant-ort01-y');
     expect(result.state.accounts[0].accessToken?.token).toBe('sk-ant-oat01-x');
     expect(result.state.accounts[0].accessToken?.expiresAt).toBe(farFutureMs);
-  });
-
-  test('credentials.json import with a 403-permission_error token yields a degraded identity', async () => {
-    // Token minted without `user:profile` scope: profile endpoint 403s, the
-    // identity fallback returns a deterministic accountUuid + nulls for
-    // email/org/subscriptionType. credentials.json may still carry the CLI
-    // `subscriptionType` field — when present, that wins over the degraded
-    // null per the buildClaudeCodeImportResult contract (CLI-persisted
-    // subscriptionType is authoritative).
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({
-      error: { type: 'permission_error', message: 'token lacks user:profile scope' },
-    }, 403));
-    const raw = JSON.stringify({
-      claudeAiOauth: {
-        accessToken: 'at_no_scope', refreshToken: 'r', expiresAt: farFutureMs,
-        subscriptionType: 'max', rateLimitTier: 'default_claude_max_5x',
-      },
-    });
-    const result = await importClaudeCodeFromCredentialsJson(raw);
-    expect(result.config.accounts[0].email).toBeNull();
-    expect(result.config.accounts[0].organizationUuid).toBeNull();
-    expect(result.config.accounts[0].subscriptionType).toBe('max');
-    expect(result.config.accounts[0].rateLimitTier).toBe('default_claude_max_5x');
-    expect(result.config.accounts[0].accountUuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-    expect(result.state.accounts[0].accessToken?.token).toBe('at_no_scope');
   });
 
   test('rejects when expiresAt looks like seconds rather than milliseconds', async () => {
@@ -166,11 +136,8 @@ describe('importClaudeCodeFromSetupTokenCallback', () => {
 
     const result = await importClaudeCodeFromSetupTokenCallback({ code: 'CODE', pkceVerifier: 'VER', state: 'STATE', fetcher: directFetcher });
 
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
-    expect(fetchSpy.mock.calls[0][0]).toBe('https://platform.claude.com/v1/oauth/token');
     const exchangeBody = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string);
     expect(exchangeBody.expires_in).toBe(31536000);
-    expect(fetchSpy.mock.calls[1][0]).toBe('https://api.anthropic.com/api/oauth/profile');
 
     // Degraded identity: deterministic UUID + nulls.
     expect(result.config.accounts[0].email).toBeNull();

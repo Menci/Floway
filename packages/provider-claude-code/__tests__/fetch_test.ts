@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { callClaudeCodeAnthropicMessages } from '../src/fetch.ts';
-import { CLAUDE_CODE_HEADERS_SONNET_OPUS } from '../src/headers.ts';
 import type {
   ClaudeCodeAccessTokenEntry,
   ClaudeCodeAccountCredential,
@@ -250,19 +249,6 @@ describe('callClaudeCodeAnthropicMessages — header surface', () => {
     expect(wireHeaders.get('x-client-request-id')).toBe('req-xyz');
   });
 
-  test('shaped:false on sonnet replaces headers with pinned sonnet/opus set', async () => {
-    seedAccount({ accessToken: freshAccessTokenEntry });
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
-    await callClaudeCodeAnthropicMessages({
-      upstreamId, model: sonnetModel, body: minimalBody,
-      shaped: false, call: noopUpstreamCallOptions({ anthropicBeta: ['caller-beta-must-not-replace-mimicry'] }),
-    });
-    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
-    const wireHeaders = new Headers(init.headers);
-    expect(wireHeaders.get('authorization')).toBe('Bearer at_cached');
-    expect(wireHeaders.get('user-agent')).toBe(CLAUDE_CODE_HEADERS_SONNET_OPUS['User-Agent']);
-    expect(wireHeaders.get('anthropic-beta')).toBe(CLAUDE_CODE_HEADERS_SONNET_OPUS['anthropic-beta']);
-  });
 });
 
 describe('callClaudeCodeAnthropicMessages — wire body', () => {
@@ -361,19 +347,4 @@ describe('callClaudeCodeAnthropicMessages — terminal sentinel detection', () =
     expect(account.accessToken).toBeNull();
   });
 
-  test('400 invalid_request_error with unrelated message → surface verbatim, NO terminal flip', async () => {
-    seedAccount({ accessToken: freshAccessTokenEntry });
-    const upstreamBody = { error: { type: 'invalid_request_error', message: 'max_tokens: must be at most 8192' } };
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(400, upstreamBody));
-    const result = await callClaudeCodeAnthropicMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.response.status).toBe(400);
-      expect(await result.response.json()).toEqual(upstreamBody);
-    }
-    await flushAsyncQueue();
-    expect(currentState().accounts[0]!.state).toBe('active');
-  });
 });

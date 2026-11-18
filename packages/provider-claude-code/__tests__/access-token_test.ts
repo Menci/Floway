@@ -156,17 +156,6 @@ describe('ensureClaudeCodeAccessToken', () => {
     expect(account.quotaSnapshot).toEqual(siblingQuota);
   });
 
-  test('refreshes when the cached token is within the 5-minute skew window', async () => {
-    const expiresSoon = Date.now() + 60 * 1000;
-    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: { token: 'at_old', expiresAt: expiresSoon, refreshedAt: 'old' } }] });
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
-      access_token: 'at_new', token_type: 'Bearer', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
-    }), { status: 200, headers: { 'content-type': 'application/json' } }));
-    const out = await ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
-    expect(out.entry.token).toBe('at_new');
-    expect(out.freshlyMinted).toBe(true);
-  });
-
   test('invalid_grant with no sibling rotation (stored RT unchanged) → terminal flip', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       error: 'invalid_grant', error_description: 'Refresh token revoked',

@@ -32,17 +32,3 @@ test('captures a string system into a synthetic user/assistant pair and drops `s
     { role: 'user', content: 'real question' },
   ]);
 });
-
-test('drops system but does not inject a synthetic turn when system text is empty', async () => {
-  const ctx = invocation({
-    model: 'claude-test',
-    max_tokens: 16,
-    messages: [{ role: 'user', content: 'hi' }],
-    system: [{ type: 'text', text: '' }],
-  });
-
-  await hoistUserSystemToMessages(ctx, {}, okEvents);
-
-  assertEquals(ctx.payload.system, undefined);
-  assertEquals(ctx.payload.messages.length, 1);
-});

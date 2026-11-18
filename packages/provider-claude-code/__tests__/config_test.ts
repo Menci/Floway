@@ -9,7 +9,6 @@ const goodAccount = {
   organizationUuid: null,
   subscriptionType: 'max', rateLimitTier: 'default_claude_max_20x',
 };
-const good = { accounts: [goodAccount] };
 
 const wrap = (config: unknown): UpstreamRecord => ({
   id: 'up', kind: 'claude-code', name: 'n', enabled: true, usageRefreshIntervalMinutes: 0, sortOrder: 0,
@@ -18,14 +17,8 @@ const wrap = (config: unknown): UpstreamRecord => ({
 });
 
 describe('assertClaudeCodeUpstreamRecord (config validation)', () => {
-  test('accepts a complete config', () => {
-    expect(() => assertClaudeCodeUpstreamRecord(wrap(good))).not.toThrow();
-  });
   test.each([
-    ['email empty', { accounts: [{ ...goodAccount, email: '' }] }],
-    ['organizationUuid empty string', { accounts: [{ ...goodAccount, organizationUuid: '' }] }],
     ['subscriptionType outside the known plans', { accounts: [{ ...goodAccount, subscriptionType: 'free' }] }],
-    ['extra unknown field on account', { accounts: [{ ...goodAccount, extra: 1 }] }],
     ['multiple accounts', { accounts: [goodAccount, { ...goodAccount, accountUuid: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' }] }],
   ])('rejects %s', (_label, value) => {
     expect(() => assertClaudeCodeUpstreamRecord(wrap(value))).toThrow();

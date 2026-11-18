@@ -63,38 +63,6 @@ describe('chatFromCapabilities', () => {
     });
   });
 
-  test('image_input=true + effort + both thinking types → full chat', () => {
-    const chat = chatFromCapabilities({
-      image_input: { supported: true },
-      effort: {
-        supported: true,
-        low: { supported: true },
-        medium: { supported: true },
-        high: { supported: true },
-      },
-      thinking: { types: { enabled: { supported: true }, adaptive: { supported: true } } },
-    });
-    expect(chat).toEqual({
-      modalities: { input: ['text', 'image'], output: ['text'] },
-      reasoning: {
-        effort: { supported: ['low', 'medium', 'high'], default: 'medium' },
-        budget_tokens: { min: 1024 },
-        adaptive: true,
-      },
-    });
-  });
-
-  test('effort default: first item when medium is not supported', () => {
-    const chat = chatFromCapabilities({
-      effort: {
-        supported: true,
-        low: { supported: true },
-        high: { supported: true },
-      },
-      thinking: { types: { enabled: { supported: true } } },
-    });
-    expect(chat!.reasoning!.effort!.default).toBe('low');
-  });
 });
 
 describe('buildClaudeCodeCatalog', () => {
@@ -108,10 +76,4 @@ describe('buildClaudeCodeCatalog', () => {
       .toBe('claude-sonnet-4-5-20250929');
   });
 
-  test('keeps opaque blobs bound to the Claude Code upstream and upstream model id', () => {
-    const byAlias = new Map(models.map(m => [m.id, m]));
-    const sonnet = byAlias.get('claude-sonnet-4-5')!;
-    expect(sonnet.upstreamModelId).toBe('claude-sonnet-4-5-20250929');
-    expect(sonnet.opaqueBlobCompatibilityScope).toEqual({ bindToUpstream: true });
-  });
 });

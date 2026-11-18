@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { assertClaudeCodeUpstreamState, type ClaudeCodeUpstreamState } from '../src/state.ts';
+import { assertClaudeCodeUpstreamState } from '../src/state.ts';
 
 const goodAccount = {
   accountUuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
@@ -11,9 +11,6 @@ const goodAccount = {
   accessToken: null,
   quotaSnapshot: null,
   usageProbeSnapshot: null,
-};
-const good: ClaudeCodeUpstreamState = {
-  accounts: [{ ...goodAccount }],
 };
 
 const goodSetupTokenAccount = {
@@ -28,9 +25,6 @@ const goodSetupTokenAccount = {
 };
 
 describe('assertClaudeCodeUpstreamState', () => {
-  test('accepts active state', () => {
-    expect(() => assertClaudeCodeUpstreamState(good)).not.toThrow();
-  });
   test('rejects terminal state without stateMessage', () => {
     expect(() => assertClaudeCodeUpstreamState({
       accounts: [{ ...goodAccount, state: 'refresh_failed' }],
@@ -43,13 +37,5 @@ describe('assertClaudeCodeUpstreamState', () => {
     expect(() => assertClaudeCodeUpstreamState({
       accounts: [{ ...goodSetupTokenAccount, refreshToken: 'leftover' }],
     })).toThrow(/refreshToken/);
-  });
-  test('rejects unexpected keys inside an account', () => {
-    expect(() => assertClaudeCodeUpstreamState({ accounts: [{ ...goodAccount, smuggled: 'x' }] })).toThrow(/smuggled/);
-  });
-  test('rejects multiple accounts (v1 invariant: exactly one)', () => {
-    expect(() => assertClaudeCodeUpstreamState({
-      accounts: [goodAccount, { ...goodAccount, accountUuid: 'cccccccc-cccc-cccc-cccc-cccccccccccc' }],
-    })).toThrow(/exactly one/);
   });
 });

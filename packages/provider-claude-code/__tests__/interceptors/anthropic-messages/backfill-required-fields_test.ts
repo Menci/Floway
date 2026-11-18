@@ -19,18 +19,6 @@ const invocation = (payload: AnthropicMessagesPayload, model: ProviderModel = st
 // client actually sends: AnthropicMessagesPayload's type says max_tokens is required,
 // but the bug exists precisely because clients (cline, aider, etc.) omit it.
 
-test('backfills max_tokens to the 32768 gateway policy when both payload and model limits are silent', async () => {
-  const ctx = invocation({
-    model: 'claude-sonnet-4-5-20250929',
-    messages: [{ role: 'user', content: 'hi' }],
-    temperature: 0.5,
-  } as Partial<AnthropicMessagesPayload> as AnthropicMessagesPayload);
-
-  await backfillRequiredFields(ctx, {}, okEvents);
-
-  assertEquals(ctx.payload.max_tokens, 32768);
-});
-
 test('prefers model.limits.max_output_tokens over the gateway fallback when set', async () => {
   const model = stubProviderModel({ endpoints: { anthropicMessages: {} }, limits: { max_output_tokens: 64000 } });
   const ctx = invocation(

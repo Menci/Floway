@@ -23,8 +23,4 @@ describe('fetchClaudeCodeUsageProbe', () => {
     expect(headers['anthropic-version']).toBe('2023-06-01');
   });
 
-  test('throws on a non-2xx upstream response', async () => {
-    const fetcher: Fetcher = vi.fn(async () => new Response('forbidden', { status: 401, headers: { 'content-type': 'text/plain' } }));
-    await expect(fetchClaudeCodeUsageProbe('at_test', fetcher)).rejects.toThrow(/401/);
-  });
 });

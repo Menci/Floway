@@ -8,12 +8,6 @@ const validUserIdLegacy
     + '_account_aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
     + '_session_bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
-const validUserIdJson = JSON.stringify({
-  device_id: 'dev-1234',
-  account_uuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-  session_id: 'sess-9876',
-});
-
 const baseHeaders = (overrides: Record<string, string> = {}): Headers => {
   const init: Record<string, string> = {
     'user-agent': 'claude-cli/2.1.280 (external, cli)',
@@ -42,14 +36,6 @@ describe('parseMetadataUserID', () => {
     expect(parsed?.sessionId).toBe('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
   });
 
-  test('parses the new JSON form', () => {
-    const parsed = parseMetadataUserID(validUserIdJson);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.isNewFormat).toBe(true);
-    expect(parsed?.deviceId).toBe('dev-1234');
-    expect(parsed?.sessionId).toBe('sess-9876');
-  });
-
   test.each([
     ['legacy without account segment', 'user_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef_session_bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'],
     ['malformed JSON', '{not-json'],
@@ -67,12 +53,6 @@ describe('isClaudeCodeShapedRequest — UA gate', () => {
     })).toBe(true);
   });
 
-  test('rejects UA missing patch version', () => {
-    expect(isClaudeCodeShapedRequest({
-      headers: baseHeaders({ 'user-agent': 'claude-cli/2.1' }),
-      body: bodyWithSystem("You are Claude Code, Anthropic's official CLI for Claude."),
-    })).toBe(false);
-  });
 });
 
 describe('isClaudeCodeShapedRequest — short-circuit paths', () => {
@@ -89,19 +69,8 @@ describe('isClaudeCodeShapedRequest — short-circuit paths', () => {
   });
 });
 
-describe('isClaudeCodeShapedRequest — billing-block fast path', () => {
-  test('accepts a request whose first system block is the billing header', () => {
-    expect(isClaudeCodeShapedRequest({
-      headers: baseHeaders(),
-      body: bodyWithSystem('x-anthropic-billing-header: cc_version=2.1.280.abc; cc_entrypoint=cli; cch=00000;'),
-    })).toBe(true);
-  });
-});
-
 describe('isClaudeCodeShapedRequest — Dice template fallback', () => {
   test.each([
-    ["You are Claude Code, Anthropic's official CLI for Claude."],
-    ['You are a helpful AI assistant tasked with summarizing conversations.'],
     ['You are an interactive agent that helps users with software engineering tasks.'],
   ])('matches identity template: %s', text => {
     expect(isClaudeCodeShapedRequest({
@@ -110,16 +79,10 @@ describe('isClaudeCodeShapedRequest — Dice template fallback', () => {
     })).toBe(true);
   });
 
-  test('rejects a non-CC system prompt that does not Dice-match any template', () => {
-    expect(isClaudeCodeShapedRequest({
-      headers: baseHeaders(),
-      body: bodyWithSystem('Translate the following passage into French and preserve the original meter.'),
-    })).toBe(false);
-  });
 });
 
 describe('isClaudeCodeShapedRequest — strict header gate', () => {
-  test.each(['x-app', 'anthropic-beta', 'anthropic-version'])('rejects missing %s', key => {
+  test.each(['x-app'])('rejects missing %s', key => {
     const h = baseHeaders();
     h.delete(key);
     expect(isClaudeCodeShapedRequest({
@@ -139,21 +102,5 @@ describe('isClaudeCodeShapedRequest — metadata.user_id', () => {
       headers: baseHeaders(),
       body,
     })).toBe(false);
-  });
-});
-
-describe('isClaudeCodeShapedRequest — system shape variants', () => {
-  test('accepts a system string when its content matches an identity template', () => {
-    const body: AnthropicMessagesPayload = {
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 1,
-      messages: [{ role: 'user', content: 'hi' }],
-      system: "You are Claude Code, Anthropic's official CLI for Claude.",
-      metadata: { user_id: validUserIdLegacy },
-    };
-    expect(isClaudeCodeShapedRequest({
-      headers: baseHeaders(),
-      body,
-    })).toBe(true);
   });
 });

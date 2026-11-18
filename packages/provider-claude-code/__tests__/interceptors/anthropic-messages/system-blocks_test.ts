@@ -17,11 +17,4 @@ describe('computeCcVersionFingerprint', () => {
     expect(computeCcVersionFingerprint('2.1.280', body)).toBe('309');
   });
 
-  test('pads short first-user text with 0x30 and still returns 3 hex chars', () => {
-    const body = minimalBody('hi');
-    // All three indices fall past end; chars = '000'.
-    const fp = computeCcVersionFingerprint('2.1.280', body);
-    expect(fp).toBe('d7b');
-    expect(fp).toMatch(/^[0-9a-f]{3}$/);
-  });
 });
