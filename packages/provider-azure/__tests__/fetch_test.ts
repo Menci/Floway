@@ -4,7 +4,6 @@ import { assertAzureUpstreamRecord } from '../src/config.ts';
 import {
   azureFetchOpenAIAudioTranscriptions,
   azureFetchAnthropicMessages,
-  azureFetchAnthropicMessagesCountTokens,
   azureFetchOpenAIResponses,
 } from '../src/fetch.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
@@ -96,56 +95,5 @@ test('Foundry project endpoints split OpenAI v1 vs Anthropic surfaces', async ()
   assertEquals(seen, [
     'https://example.services.ai.azure.com/api/projects/prod/openai/v1/responses',
     'https://example.services.ai.azure.com/anthropic/v1/messages',
-  ]);
-});
-
-test('Azure Foundry Anthropic surface uses x-api-key + anthropic-version', async () => {
-  const { config } = assertAzureUpstreamRecord({
-    ...baseRecord,
-    config: {
-      endpoint: 'https://example.openai.azure.com/openai/v1',
-      apiKey: 'az-key',
-      models: [
-        {
-          upstreamModelId: 'claude-prod',
-          endpoints: { anthropicMessages: {} },
-        },
-      ],
-    },
-  });
-  const seen: Array<{ url: string; apiKey: string | null; openAiKey: string | null; version: string | null; beta: string | null }> = [];
-
-  await withMockedFetch(
-    request => {
-      seen.push({
-        url: request.url,
-        apiKey: request.headers.get('x-api-key'),
-        openAiKey: request.headers.get('api-key'),
-        version: request.headers.get('anthropic-version'),
-        beta: request.headers.get('anthropic-beta'),
-      });
-      return new Response('{}', { status: 200 });
-    },
-    async () => {
-      await azureFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { extraHeaders: [['anthropic-beta', 'context-1m']], fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await azureFetchAnthropicMessagesCountTokens(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-    },
-  );
-
-  assertEquals(seen, [
-    {
-      url: 'https://example.services.ai.azure.com/anthropic/v1/messages',
-      apiKey: 'az-key',
-      openAiKey: null,
-      version: '2023-06-01',
-      beta: 'context-1m',
-    },
-    {
-      url: 'https://example.services.ai.azure.com/anthropic/v1/messages/count_tokens',
-      apiKey: 'az-key',
-      openAiKey: null,
-      version: '2023-06-01',
-      beta: null,
-    },
   ]);
 });

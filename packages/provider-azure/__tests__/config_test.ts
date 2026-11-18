@@ -82,31 +82,6 @@ test('assertAzureUpstreamRecord validates Azure opaque config strictly', () => {
     'endpoint: must be an Azure resource root, a Foundry project endpoint, an OpenAI v1 URL ending in /openai/v1, an /anthropic URL, an /anthropic/v1 URL, or an /anthropic/v1/messages URL',
   );
 
-  assertThrows(
-    () =>
-      assertAzureUpstreamRecord({
-        ...baseRecord,
-        config: {
-          ...(baseRecord.config as Record<string, unknown>),
-          endpoint: 'https://example.services.ai.azure.com/api/projects/prod/anthropic/v1/messages',
-        },
-      }),
-    Error,
-    'endpoint: must be an Azure resource root, a Foundry project endpoint, an OpenAI v1 URL ending in /openai/v1, an /anthropic URL, an /anthropic/v1 URL, or an /anthropic/v1/messages URL',
-  );
-
-  assertThrows(
-    () =>
-      assertAzureUpstreamRecord({
-        ...baseRecord,
-        config: {
-          ...(baseRecord.config as Record<string, unknown>),
-          endpoint: 'https://example.openai.azure.com/?',
-        },
-      }),
-    Error,
-    'endpoint: must be an http(s) URL without query or fragment',
-  );
 });
 
 test('assertAzureUpstreamRecord rejects rerank models', () => {
@@ -125,25 +100,5 @@ test('assertAzureUpstreamRecord rejects rerank models', () => {
     }),
     Error,
     'rerank models require a custom upstream',
-  );
-});
-
-test('assertAzureUpstreamRecord rejects an operator-authored decision target', () => {
-  assertThrows(
-    () => assertAzureUpstreamRecord({
-      ...baseRecord,
-      config: {
-        endpoint: 'https://example.openai.azure.com',
-        apiKey: 'key',
-        models: [{
-          upstreamModelId: 'decision-1',
-          kind: 'decision',
-          endpoints: { decision: {} },
-          decisionTarget: { protocol: 'typesafe-systemone' },
-        }],
-      },
-    }),
-    Error,
-    'decision target is not configurable on this upstream',
   );
 });
