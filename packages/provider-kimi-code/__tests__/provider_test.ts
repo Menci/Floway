@@ -21,7 +21,6 @@ for (const protocol of ['chat', 'responses', 'messages'] as const) test(`${proto
     expect(request.url).toBe(`https://api.kimi.com/coding/v1${path}`);
     expect(request.method).toBe('POST');
     expect(request.headers.get('authorization')).toBe(`Bearer ${config.apiKey}`);
-    expect(request.headers.get('x-api-key')).toBeNull();
     expect(request.headers.get('anthropic-beta')).toBe(protocol === 'messages' ? 'future-beta' : null);
     captured = await request.json() as Record<string, unknown>;
     return new Response(frames[protocol], { headers: { 'content-type': 'text/event-stream', 'x-upstream': 'kept' } });

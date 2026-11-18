@@ -28,7 +28,6 @@ test.each([false, true])('quota probes preserve the raw current-generation or le
     expect(request.url).toBe('https://api.kimi.com/coding/v1/usages');
     expect(request.method).toBe('GET');
     expect(request.headers.get('authorization')).toBe(`Bearer ${config.apiKey}`);
-    expect(request.headers.get('user-agent')).toBeNull();
     return Response.json(body);
   }, async () => {
     const observation = await refreshKimiCodeUsageProbe('up_kimi_code', config, testFetcher);

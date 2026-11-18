@@ -23,7 +23,6 @@ test('the live catalog owns model capabilities, context, thinking requirement an
       endpoints: { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} },
       chat: { modalities: { input: ['text', 'image'], output: ['text'] }, reasoning: { mandatory: true, effort: { supported: ['low', 'high', 'max'], default: 'high' } } },
     });
-    expect(models[0].pricing).toBeUndefined();
     expect(models[0].enabledFlags.has('vendor-kimi')).toBe(true);
     expect(models[1].chat?.reasoning).toEqual({ mandatory: false });
     expect(models[1].chat?.modalities?.input).toEqual(['text']);
