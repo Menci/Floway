@@ -64,6 +64,16 @@ test('empty reasoning summaries do not create Messages thinking blocks beside a 
   });
 });
 
+test('a standalone function call output is rejected as untranslatable', async () => {
+  const trip = await routeOpenAIResponsesViaAnthropicMessages({
+    model: 'm', stream: true, input: [
+      { type: 'message', role: 'user', content: 'hi' },
+      { type: 'function_call_output', name: 'goal_objective', namespace: 'agent', output: 'objective' },
+    ],
+  }, { sidecarCodec: createTestSidecarCodec() });
+  expect(trip).toMatchObject({ type: 'input-error', message: 'Cannot translate a function call output without a call_id.' });
+});
+
 test('an incomplete custom result reaches Messages with its failure marker', async () => {
   const trip = await routeOpenAIResponsesViaAnthropicMessages({
     model: 'm', stream: true, input: [

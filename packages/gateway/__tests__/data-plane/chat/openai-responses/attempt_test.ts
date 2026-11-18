@@ -882,3 +882,57 @@ test.each([
   await collectEvents(result.events);
   assertEquals(observedInput, expected);
 });
+
+const goalObjectiveInput: OpenAIResponsesPayloadEx['input'] = [
+  { type: 'message', role: 'user', content: 'Write unit tests' },
+  { type: 'function_call', call_id: 'call_goal', name: 'create_goal', arguments: '{"objective":"Write unit tests"}' },
+  { type: 'function_call_output', call_id: 'call_goal', output: '{"goal":{"status":"active"}}' },
+  { type: 'function_call_output', id: 'fco_goal', name: 'goal_objective', namespace: 'agent', output: 'Write unit tests' },
+];
+
+test('generate lowers a standalone function_call_output to external context across translation to OpenAI Chat Completions', async () => {
+  installRepo();
+  let observedBody: Omit<OpenAIChatCompletionsPayload, 'model'> | undefined;
+  const endpoints = { openaiChatCompletions: {} };
+  const candidate: ModelCandidate = {
+    provider: {
+      upstreamId: 'up_chat', kind: 'custom', name: 'up_chat', inboundHeaderAllowlist: [],
+      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
+      instance: stubProvider({
+        callOpenAIChatCompletions: async (_model, body): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+          observedBody = body;
+          return {
+            ok: true,
+            events: (async function* () {
+              yield eventFrame<OpenAIChatCompletionsStreamEvent>({ id: 'chatcmpl_goal', object: 'chat.completion.chunk', created: 0, model: 'test-model', choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: 'stop' }] });
+              yield doneFrame();
+            })(),
+            modelKey: 'k',
+            headers: new Headers(),
+          };
+        },
+      }),
+    },
+    model: stubInternalModel({
+      endpoints,
+      providerModels: { up_chat: stubProviderModel({ endpoints }) },
+    }, 'up_chat'),
+    fetcher: directFetcher,
+  };
+
+  const result = await openaiResponsesAttempt.generate({
+    payload: makePayload({ input: goalObjectiveInput, tools: [{ type: 'function', name: 'create_goal', parameters: { type: 'object' } }] }),
+    ctx: makeGatewayCtx(createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), false)),
+    candidate,
+    headers: new Headers(),
+  });
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  assertEquals(observedBody?.messages, [
+    { role: 'user', content: 'Write unit tests' },
+    { role: 'assistant', content: null, tool_calls: [{ id: 'call_goal', type: 'function', function: { name: 'create_goal', arguments: '{"objective":"Write unit tests"}' } }] },
+    { role: 'tool', tool_call_id: 'call_goal', content: '{"goal":{"status":"active"}}' },
+    { role: 'user', content: '<external_goal_objective>Write unit tests</external_goal_objective>' },
+  ]);
+});

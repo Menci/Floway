@@ -278,7 +278,12 @@ export interface OpenAIResponsesFunctionToolCallItemEx {
 export interface OpenAIResponsesFunctionCallOutputItem {
   type: 'function_call_output';
   id?: string;
-  call_id: string;
+  // An output without `call_id` is standalone: it answers no function call and
+  // instead names the tool that produced it.
+  // https://github.com/openai/openai-node/blob/7423ac3e9351c46300cd094479cded5551a72eb4/src/resources/responses/responses.ts
+  call_id?: string | null;
+  name?: string | null;
+  namespace?: string | null;
   // Multimodal tool outputs carry an array of content parts (e.g. a screenshot
   // tool returning `input_image` parts) in addition to the plain-string form.
   output: string | OpenAIResponsesToolOutputContent[];
