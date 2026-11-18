@@ -15,8 +15,6 @@ export interface PerformanceTableSort {
   key: PerformanceTableSortKey;
 }
 
-export type PerformancePercentiles = Record<PerformanceMetric, PerformancePercentile>;
-
 export const performancePercentiles: readonly PerformancePercentile[] = ['p50', 'p95', 'p99'];
 export const performanceGroupByValues: readonly PerformanceGroupBy[] = ['model', 'upstream', 'operation', 'runtimeLocation', 'userId', 'keyId'];
 export const performanceTableSortKeys: readonly PerformanceTableSortKey[] = ['group', 'requests', 'errors', 'ttft', 'speed'];
@@ -54,10 +52,7 @@ export interface PerformanceFilters {
 
 export interface PerformanceUrlState {
   metric: PerformanceMetric;
-  // Keyed by metric: switching the chart from TTFT to output speed must not
-  // reinterpret the reading the operator already chose for the metric they
-  // left.
-  percentiles: PerformancePercentiles;
+  percentile: PerformancePercentile;
   breakdown: PerformanceGroupBy;
   sort: PerformanceTableSort;
   groupBy: PerformanceGroupBy;
@@ -150,17 +145,16 @@ export const resolvePerformanceGroup = (
 };
 
 export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUrlState => {
+  const metric = oneOf(search.get('m'), ['ttft', 'tokPerSec'], 'ttft');
   const groupBy = oneOf(search.get('g'), performanceGroupByValues, 'model');
   const filters = clearGroupedTelemetryFilters({
     model: repeatedValues(search, 'fm'), upstream: repeatedValues(search, 'fu'), operation: repeatedValues(search, 'fo'),
     runtimeLocation: repeatedValues(search, 'fr'), userId: repeatedValues(search, 'fusr'), keyId: repeatedValues(search, 'fk'),
   }, groupBy);
   return {
-    metric: oneOf(search.get('m'), ['ttft', 'tokPerSec'], 'ttft'),
-    percentiles: {
-      ttft: oneOf(search.get('ttft_p'), performancePercentiles, 'p95'),
-      tokPerSec: oneOf(search.get('speed_p'), performancePercentiles, 'p95'),
-    },
+    metric,
+    // Older links keep the active chart's reading when adopting a shared percentile.
+    percentile: oneOf(search.get('p') ?? search.get(metric === 'ttft' ? 'ttft_p' : 'speed_p'), performancePercentiles, 'p95'),
     breakdown: oneOf(search.get('tab'), performanceGroupByValues, 'model'),
     sort: (() => {
       const key = oneOf(search.get('sort'), performanceTableSortKeys, defaultPerformanceTableSort.key);
@@ -176,8 +170,7 @@ export const parsePerformanceUrlState = (search: URLSearchParams): PerformanceUr
 export const serializePerformanceUrlState = (state: PerformanceUrlState): URLSearchParams => {
   const search = new URLSearchParams();
   if (state.metric !== 'ttft') search.set('m', state.metric);
-  if (state.percentiles.ttft !== 'p95') search.set('ttft_p', state.percentiles.ttft);
-  if (state.percentiles.tokPerSec !== 'p95') search.set('speed_p', state.percentiles.tokPerSec);
+  if (state.percentile !== 'p95') search.set('p', state.percentile);
   if (state.breakdown !== 'model') search.set('tab', state.breakdown);
   if (state.sort.key !== defaultPerformanceTableSort.key) search.set('sort', state.sort.key);
   if (state.sort.direction !== performanceSortDirectionForKey(state.sort.key)) search.set('dir', state.sort.direction);
