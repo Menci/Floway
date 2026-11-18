@@ -1,17 +1,16 @@
 import type { Context } from 'hono';
-import { streamSSE } from 'hono/streaming';
 
 import { wrapGeminiGenerateContentAffinityEgress } from './affinity/egress.ts';
 import { geminiGenerateContentInternalErrorPayload, geminiGenerateContentRpcErrorPayload, googleRpcHttpStatusCode, isGeminiGenerateContentErrorResponse } from './errors.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
-import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
+import { serveSse } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
-import { forwardBufferedUpstreamResponse, prepareSseResponse } from '../../shared/upstream-response.ts';
+import { forwardBufferedUpstreamResponse } from '../../shared/upstream-response.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
-import { SourceStreamState, eventResultMetadata, jsonResponseInit } from '../shared/respond.ts';
-import { eventFrame, type ProtocolFrame, sseCommentFrame } from '@floway-dev/protocols/common';
+import { eventResultMetadata, jsonResponseInit, observeChatFrames, settleChatSse } from '../shared/respond.ts';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { geminiGenerateContentProtocolFrameToSSEFrame, GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE, createGeminiGenerateContentCandidateCompletion, isGeminiGenerateContentErrorEvent, isGeminiGenerateContentTerminalEvent, collectGeminiGenerateContentProtocolEventsToResult } from '@floway-dev/protocols/gemini-generate-content';
 import type { GeminiGenerateContentErrorResponse, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { type ExecuteResult, type PlainResult, toInternalDebugError } from '@floway-dev/provider';
@@ -45,9 +44,7 @@ export const respondGeminiGenerateContent = async (
     return forwardBufferedUpstreamResponse(result);
   }
 
-  const state = new SourceStreamState();
-  const observed = observeGeminiGenerateContentFrames(result.events, state, ctx);
-  const frames = wrapGeminiGenerateContentAffinityEgress(observed, affinityEgressOptions(ctx));
+  const frames = wrapGeminiGenerateContentAffinityEgress(observeChatFrames(result.events, ctx), affinityEgressOptions(ctx));
 
   if (!wantsStream) {
     try {
@@ -55,7 +52,7 @@ export const respondGeminiGenerateContent = async (
       const metadata = await eventResultMetadata(result);
       const usage = tokenUsageFromBillableUsage(metadata.billableUsage);
       ctx.dump?.success(metadata.modelIdentity, usage);
-      settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed);
+      settle(ctx, metadata.performance, metadata.modelIdentity, usage, false);
       return Response.json(response, jsonResponseInit(result.http));
     } catch (error) {
       recordFailedRequest(ctx, result.performance);
@@ -64,24 +61,30 @@ export const respondGeminiGenerateContent = async (
     }
   }
 
-  prepareSseResponse(c, result.http);
-  return streamSSE(c, async stream => {
-    let completion: StreamCompletion = 'error';
-    try {
-      completion = await writeSSEFrames(stream, geminiGenerateContentSseFrames(frames, state, ctx), {
-        keepAlive: { frame: sseCommentFrame('keepalive') },
-        ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
-      });
-    } finally {
-      const metadata = await eventResultMetadata(result);
-      const failed = state.failedAfter(completion);
-      if (failed) {
-        ctx.dump?.failed(`gemini stream failed (completion=${completion}, source-failed=${state.failed})`);
-      } else {
-        ctx.dump?.success(metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage));
-      }
-      settle(ctx, metadata.performance, metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage), failed);
-    }
+  const completion = createGeminiGenerateContentCandidateCompletion();
+  return serveSse(c, {
+    http: result.http,
+    events: frames,
+    downstreamAbortController: ctx.downstreamAbortController,
+    protocol: {
+      encode: frame => {
+        if (frame.type === 'done') return { frame: null, end: { type: 'completed' } };
+        const output = geminiGenerateContentProtocolFrameToSSEFrame(frame);
+        if (isGeminiGenerateContentErrorEvent(frame.event)) return { frame: output, end: { type: 'protocol-error' } };
+        if (isGeminiGenerateContentTerminalEvent(frame.event)) return { frame: output, end: { type: 'completed' } };
+        completion.observe(frame.event);
+        return { frame: output };
+      },
+      eof: () => completion.isComplete()
+        ? { type: 'completed' }
+        : { type: 'premature-eof', error: new Error(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE) },
+      failure: error => {
+        const frame = eventFrame(caughtGeminiGenerateContentErrorEvent(error) ?? geminiGenerateContentInternalRpcErrorPayload(500, error));
+        ctx.dump?.frame(frame);
+        return [geminiGenerateContentProtocolFrameToSSEFrame(frame)!];
+      },
+    },
+    settle: outcome => settleChatSse(ctx, result, outcome),
   });
 };
 
@@ -112,39 +115,4 @@ const geminiGenerateContentCollectErrorResponse = (error: unknown): Response => 
 const caughtGeminiGenerateContentErrorEvent = (error: unknown): GeminiGenerateContentErrorResponse | null => {
   if (!(error instanceof Error)) return null;
   return isGeminiGenerateContentErrorResponse(error.cause) ? error.cause : null;
-};
-
-const geminiGenerateContentStreamErrorEvent = (error: unknown): GeminiGenerateContentStreamEvent =>
-  (caughtGeminiGenerateContentErrorEvent(error) ?? geminiGenerateContentInternalRpcErrorPayload(500, error)) as unknown as GeminiGenerateContentStreamEvent;
-
-// --- frame observation ---
-
-const isGeminiGenerateContentTerminalFrame = (frame: ProtocolFrame<GeminiGenerateContentStreamEvent>): boolean => frame.type === 'done' || (frame.type === 'event' && isGeminiGenerateContentTerminalEvent(frame.event));
-
-const observeGeminiGenerateContentFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
-  const completion = createGeminiGenerateContentCandidateCompletion();
-  for await (const frame of frames) {
-    ctx.dump?.frame(frame);
-    const failed = frame.type === 'event' && isGeminiGenerateContentErrorEvent(frame.event);
-    if (failed) state.failed = true;
-    if (frame.type === 'event') completion.observe(frame.event);
-    if (!failed) state.completed = isGeminiGenerateContentTerminalFrame(frame) || completion.isComplete();
-    yield frame;
-    if (isGeminiGenerateContentTerminalFrame(frame)) return;
-  }
-  if (!state.completed) throw new Error(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE);
-};
-
-const geminiGenerateContentSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
-  try {
-    for await (const frame of frames) {
-      const sse = geminiGenerateContentProtocolFrameToSSEFrame(frame);
-      if (sse) yield sse;
-    }
-  } catch (error) {
-    state.failed = true;
-    const event = geminiGenerateContentStreamErrorEvent(error);
-    ctx.dump?.frame(eventFrame(event));
-    yield geminiGenerateContentProtocolFrameToSSEFrame(eventFrame(event))!;
-  }
 };

@@ -1,6 +1,9 @@
-import type { SSEStreamingApi } from 'hono/streaming';
+import type { Context } from 'hono';
+import { type SSEStreamingApi, streamSSE } from 'hono/streaming';
 
-import type { SseWritableFrame } from '@floway-dev/protocols/common';
+import { prepareSseResponse } from './upstream-response.ts';
+import { type SseWritableFrame, sseCommentFrame } from '@floway-dev/protocols/common';
+import type { HttpHead } from '@floway-dev/provider';
 
 export const DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS = 15_000;
 
@@ -9,27 +12,33 @@ interface SseKeepAliveOptions {
   frame: SseWritableFrame;
 }
 
-interface SseStreamOptions {
-  keepAlive?: SseKeepAliveOptions;
-  downstreamAbortController?: AbortController;
+interface SseFinished {
+  type: 'completed' | 'protocol-error';
+  trailer?: readonly SseWritableFrame[];
 }
 
-type ResolvedSseKeepAliveOptions = Required<SseKeepAliveOptions>;
+type SseEnd = SseFinished | { type: 'premature-eof'; error: Error };
 
-type NextFrameResult = { type: 'frame'; result: IteratorResult<SseWritableFrame> } | { type: 'next-error'; error: unknown } | { type: 'keep-alive' } | { type: 'abort' };
+export interface SseProtocol<T> {
+  encode: (input: T) => { frame: SseWritableFrame | null; end?: SseEnd };
+  eof: () => SseEnd;
+  failure: (error: unknown) => readonly [SseWritableFrame, ...SseWritableFrame[]];
+}
 
-export type StreamCompletion = 'eof' | 'error' | 'cancel';
+export type SseOutcome =
+  | { type: 'completed' | 'protocol-error' | 'cancelled' }
+  | { type: 'source-error' | 'premature-eof' | 'egress-error'; error: unknown };
 
-const resolveKeepAliveOptions = (keepAlive: SseKeepAliveOptions | undefined): ResolvedSseKeepAliveOptions | undefined => {
-  if (!keepAlive) return undefined;
+interface SseStreamOptions<T> {
+  http?: HttpHead | undefined;
+  events: AsyncIterable<T>;
+  protocol: SseProtocol<T>;
+  keepAlive?: SseKeepAliveOptions;
+  downstreamAbortController: AbortController | undefined;
+  settle: (outcome: SseOutcome) => void | Promise<void>;
+}
 
-  const intervalMs = keepAlive.intervalMs ?? DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS;
-  if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
-    throw new Error('SSE keepalive interval must be a positive number');
-  }
-
-  return { intervalMs, frame: keepAlive.frame };
-};
+type NextFrame<T> = { type: 'frame'; result: IteratorResult<T> } | { type: 'source-error'; error: unknown };
 
 const serializeSSECommentFrame = (comment: string): string =>
   `${comment
@@ -56,114 +65,126 @@ const writeSSEFrame = async (stream: SSEStreamingApi, frame: SseWritableFrame): 
   });
 };
 
-const streamAbortPromise = (stream: SSEStreamingApi): Promise<void> => {
-  if (stream.aborted || stream.closed) return Promise.resolve();
-
-  return new Promise(resolve => {
-    stream.onAbort(resolve);
-  });
-};
-
-const pendingFrameResult = (pendingNext: Promise<IteratorResult<SseWritableFrame>>): Promise<NextFrameResult> =>
-  pendingNext.then(
-    (result): NextFrameResult => ({ type: 'frame', result }),
-    (error): NextFrameResult => ({ type: 'next-error', error }),
-  );
-
-const nextFrameOrKeepAlive = async (
-  pendingFrame: Promise<NextFrameResult>,
-  pendingAbort: Promise<NextFrameResult>,
-  keepAlive: ResolvedSseKeepAliveOptions | undefined,
-): Promise<NextFrameResult> => {
-  if (!keepAlive) return await Promise.race([pendingFrame, pendingAbort]);
-
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const pendingKeepAlive = new Promise<{ type: 'keep-alive' }>(resolve => {
-    timeoutId = setTimeout(() => {
-      timeoutId = undefined;
-      resolve({ type: 'keep-alive' });
-    }, keepAlive.intervalMs);
-  });
-
-  try {
-    return await Promise.race([pendingFrame, pendingAbort, pendingKeepAlive]);
-  } finally {
-    if (timeoutId !== undefined) clearTimeout(timeoutId);
-  }
-};
-
-const drainSSEFrames = async (
+const drainSse = async <T>(
   stream: SSEStreamingApi,
-  events: AsyncIterable<SseWritableFrame>,
-  keepAlive: ResolvedSseKeepAliveOptions | undefined,
-  downstreamAbortController: AbortController | undefined,
-): Promise<StreamCompletion> => {
-  const iterator = events[Symbol.asyncIterator]();
-  const abortDownstream = () => {
-    if (!downstreamAbortController?.signal.aborted) {
-      downstreamAbortController?.abort();
-    }
-  };
-  const abortResult = streamAbortPromise(stream).then((): NextFrameResult => {
-    abortDownstream();
-    return { type: 'abort' };
+  { events, protocol, downstreamAbortController }: SseStreamOptions<T>,
+  keepAlive: Required<SseKeepAliveOptions>,
+): Promise<SseOutcome> => {
+  let iterator: AsyncIterator<T> | undefined;
+  let wake: (() => void) | undefined;
+  let egressFailed = false;
+  const disconnected = () => stream.aborted || stream.closed;
+  stream.onAbort(() => {
+    downstreamAbortController?.abort();
+    wake?.();
   });
-  let pendingNext = pendingFrameResult(iterator.next());
-  let completed = false;
-  let stoppedByDownstream = false;
 
-  const stopForDownstream = () => {
-    stoppedByDownstream = true;
-    abortDownstream();
+  // Keep one listener on the pending read even when several heartbeats elapse.
+  const read = async (source: AsyncIterator<T>): Promise<NextFrame<T> | undefined> => {
+    let next: NextFrame<T> | undefined;
+    const ready = (value: NextFrame<T>) => {
+      next = value;
+      wake?.();
+    };
+    void Promise.resolve().then(() => source.next()).then(
+      result => ready({ type: 'frame', result }),
+      error => ready({ type: 'source-error', error }),
+    );
+    while (!next && !disconnected()) {
+      await new Promise<void>(resolve => {
+        const timer = setTimeout(resolve, keepAlive.intervalMs);
+        wake = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+      });
+      wake = undefined;
+      if (!next && !disconnected()) await writeSSEFrame(stream, keepAlive.frame);
+    }
+    return disconnected() ? undefined : next;
+  };
+
+  const fail = async (error: unknown, type: 'source-error' | 'premature-eof' = 'source-error'): Promise<SseOutcome> => {
+    if (disconnected()) return { type: 'cancelled' };
+    try {
+      for (const frame of protocol.failure(error)) await writeSSEFrame(stream, frame);
+    } catch (egressError) {
+      throw new AggregateError([error, egressError], 'Failed to send the SSE failure', { cause: error });
+    }
+    return { type, error };
+  };
+
+  const finish = async (end: SseEnd): Promise<SseOutcome> => {
+    if (end.type === 'premature-eof') return await fail(end.error, end.type);
+    for (const frame of end.trailer ?? []) await writeSSEFrame(stream, frame);
+    return { type: end.type };
+  };
+
+  const closeIterator = async (source: AsyncIterator<T>) => {
+    try {
+      await source.return?.();
+    } catch (error) {
+      console.error('Failed to close the SSE source iterator:', error);
+    }
   };
 
   try {
-    while (true) {
-      if (stream.aborted || stream.closed) {
-        stopForDownstream();
-        return 'cancel';
-      }
-
-      const next = await nextFrameOrKeepAlive(pendingNext, abortResult, keepAlive);
-
-      if (next.type === 'abort') {
-        stopForDownstream();
-        return 'cancel';
-      }
-      if (next.type === 'keep-alive') {
-        if (!keepAlive) continue;
-        await writeSSEFrame(stream, keepAlive.frame);
-        continue;
-      }
-      if (next.type === 'next-error') {
-        if (stream.aborted || stream.closed) {
-          stopForDownstream();
-          return 'cancel';
-        }
-        throw next.error;
-      }
-
-      if (next.result.done) {
-        completed = true;
-        return 'eof';
-      }
-
-      await writeSSEFrame(stream, next.result.value);
-      pendingNext = pendingFrameResult(iterator.next());
+    if (disconnected()) return { type: 'cancelled' };
+    try {
+      iterator = events[Symbol.asyncIterator]();
+    } catch (error) {
+      return await fail(error);
     }
+    while (true) {
+      if (disconnected()) return { type: 'cancelled' };
+      const next = await read(iterator);
+      if (!next || disconnected()) return { type: 'cancelled' };
+      if (next.type === 'source-error') return await fail(next.error);
+      if (next.result.done) {
+        iterator = undefined;
+        let end: SseEnd;
+        try {
+          end = protocol.eof();
+        } catch (error) {
+          return await fail(error);
+        }
+        return await finish(end);
+      }
+
+      let output: ReturnType<SseProtocol<T>['encode']>;
+      try {
+        output = protocol.encode(next.result.value);
+      } catch (error) {
+        return await fail(error);
+      }
+      if (output.frame) await writeSSEFrame(stream, output.frame);
+      if (output.end) return await finish(output.end);
+    }
+  } catch (error) {
+    egressFailed = true;
+    downstreamAbortController?.abort(error);
+    console.error('SSE egress failed:', error);
+    return { type: 'egress-error', error };
   } finally {
-    if (!completed) {
-      const stopped = iterator.return?.();
-      // Downstream already cancelled; cleanup errors from the upstream
-      // iterator have nowhere to surface to. Awaiting the rejection would
-      // leak it as an unhandled rejection.
-      if (stoppedByDownstream) stopped?.catch(() => {});
+    if (iterator) {
+      const stopped = closeIterator(iterator);
+      if (disconnected() || egressFailed) void stopped;
       else await stopped;
     }
   }
 };
 
-export const writeSSEFrames = async (stream: SSEStreamingApi, events: AsyncIterable<SseWritableFrame>, options: SseStreamOptions = {}): Promise<StreamCompletion> => {
-  const keepAlive = resolveKeepAliveOptions(options.keepAlive);
-  return await drainSSEFrames(stream, events, keepAlive, options.downstreamAbortController);
+export const serveSse = <T>(c: Context, options: SseStreamOptions<T>): Response => {
+  const keepAlive = {
+    intervalMs: options.keepAlive?.intervalMs ?? DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS,
+    frame: options.keepAlive?.frame ?? sseCommentFrame('keepalive'),
+  };
+  if (!Number.isFinite(keepAlive.intervalMs) || keepAlive.intervalMs <= 0) {
+    throw new Error('SSE keepalive interval must be a positive number');
+  }
+  prepareSseResponse(c, options.http);
+  return streamSSE(c, async stream => {
+    const outcome = await drainSse(stream, options, keepAlive);
+    await options.settle(outcome);
+  });
 };

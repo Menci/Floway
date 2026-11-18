@@ -229,6 +229,45 @@ test('/v1/completions streaming forwards usage chunk when the client opted in', 
   );
 });
 
+test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/completions sends a data-only failure after partial output on %s', async mode => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerOpenAICompletionsUpstream(repo);
+  const partial = 'data: {"choices":[{"index":0,"text":"partial"}]}\n\n';
+  let upstream!: ReadableStreamDefaultController<Uint8Array>;
+  await withMockedFetch(
+    () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        upstream = controller;
+        controller.enqueue(new TextEncoder().encode(partial));
+      },
+    }), { headers: { 'content-type': 'text/event-stream' } }),
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
+      });
+      assertEquals(response.status, 200);
+      const reader = response.body!.getReader();
+      const decode = new TextDecoder();
+      assertEquals(decode.decode((await reader.read()).value), partial);
+      const message = mode === 'premature EOF' ? 'OpenAI Completions stream ended without a [DONE] sentinel.' : 'upstream completion read failed';
+      const native = `data: ${JSON.stringify({ error: { code: 'vendor_failure', message } })}\n\n`;
+      if (mode === 'read error') upstream.error(new Error(message));
+      else if (mode === 'premature EOF') upstream.close();
+      else upstream.enqueue(new TextEncoder().encode(native));
+      const failure = decode.decode((await reader.read()).value);
+      assertEquals(failure.startsWith('data: {"error":'), true);
+      assertEquals(JSON.parse(failure.slice('data: '.length)).error.message, message);
+      if (mode === 'native error') assertEquals(failure, native);
+      assertEquals((await reader.read()).done, true);
+    },
+  );
+  await flushAsyncWork();
+  const [performance] = await repo.performance.listAll();
+  assertEquals(performance.errorsNoOutput, 1);
+});
+
 test('/v1/completions rejects malformed body with the standard 400', async () => {
   const { apiKey } = await setupAppTest();
   const response = await requestAppWithWarmModels('/v1/completions', {

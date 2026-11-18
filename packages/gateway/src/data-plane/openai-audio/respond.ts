@@ -1,13 +1,12 @@
-import { streamSSE } from 'hono/streaming';
-
 import { measureOpenAIAudioTranscriptionUsage } from './usage.ts';
+import { isOpenAIErrorPayload, openaiSseFailure } from '../shared/openai-errors.ts';
 import { passthroughApiError } from '../shared/passthrough-serve.ts';
 import type { PassthroughResponseStrategyContext } from '../shared/passthrough-serve.ts';
-import { type StreamCompletion, writeSSEFrames } from '../shared/sse.ts';
-import { settleUsageMeasurement } from '../shared/telemetry/settle.ts';
+import { serveSse } from '../shared/sse.ts';
+import { recordSseOutcome, settleUsageMeasurement } from '../shared/telemetry/settle.ts';
 import { requestOnlyUsageMeasurement } from '../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, forwardUpstreamResponse } from '../shared/upstream-response.ts';
-import { eventFrame, isEventStreamMediaType, isJsonMediaType, parseSSEStream, sseCommentFrame } from '@floway-dev/protocols/common';
+import { eventFrame, isEventStreamMediaType, isJsonMediaType, parseSSEStream } from '@floway-dev/protocols/common';
 import { isOpenAIAudioTranscriptionDoneEvent } from '@floway-dev/protocols/openai-audio';
 
 const respondNonStreaming = async ({ ctx, sourceApi, response, performance, identity }: PassthroughResponseStrategyContext): Promise<Response> => {
@@ -39,43 +38,32 @@ const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }
     forwardUpstreamHeaders(c, response.headers);
     return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
   }
-  forwardUpstreamHeaders(c, response.headers);
-  return streamSSE(c, async stream => {
-    let completion: StreamCompletion = 'error';
-    let streamError: unknown;
-    let terminalEventSeen = false;
-    let measurement = requestOnlyUsageMeasurement();
-    try {
-      const frames = (async function* () {
-        for await (const frame of parseSSEStream(upstreamBody, { signal: ctx.abortSignal })) {
-          let event: unknown;
-          try {
-            event = JSON.parse(frame.data) as unknown;
-          } catch (error) {
-            throw new Error(`Malformed upstream ${sourceApi} SSE JSON: ${frame.data}`, { cause: error });
-          }
-          ctx.dump?.frame(eventFrame(event));
-          if (isOpenAIAudioTranscriptionDoneEvent(event)) {
-            terminalEventSeen = true;
-            measurement = measureOpenAIAudioTranscriptionUsage(event, sourceApi);
-            yield frame;
-            return;
-          }
-          yield frame;
+  let measurement = requestOnlyUsageMeasurement();
+  return serveSse(c, {
+    http: response,
+    events: parseSSEStream(upstreamBody, { signal: ctx.abortSignal }),
+    downstreamAbortController: ctx.downstreamAbortController,
+    protocol: {
+      encode: frame => {
+        let event: unknown;
+        try {
+          event = JSON.parse(frame.data);
+        } catch (error) {
+          throw new Error(`Malformed upstream ${sourceApi} SSE JSON: ${frame.data}`, { cause: error });
         }
-      })();
-      completion = await writeSSEFrames(stream, frames, {
-        keepAlive: { frame: sseCommentFrame('keepalive') },
-        downstreamAbortController: ctx.downstreamAbortController,
-      });
-    } catch (error) {
-      streamError = error;
-    } finally {
-      const failed = streamError !== undefined || completion === 'error' || !terminalEventSeen;
-      if (failed) ctx.dump?.failed(streamError ?? `${sourceApi} stream ended with completion=${completion}`);
-      else ctx.dump?.success(identity, measurement.dumpTokenUsage);
+        ctx.dump?.frame(eventFrame(event));
+        if (isOpenAIErrorPayload(event)) return { frame, end: { type: 'protocol-error' } };
+        if (!isOpenAIAudioTranscriptionDoneEvent(event)) return { frame };
+        measurement = measureOpenAIAudioTranscriptionUsage(event, sourceApi);
+        return { frame, end: { type: 'completed' } };
+      },
+      eof: () => ({ type: 'premature-eof', error: new Error('OpenAI Transcriptions stream ended without a transcript.text.done event.') }),
+      failure: error => openaiSseFailure(ctx, error),
+    },
+    settle: outcome => {
+      const failed = recordSseOutcome(ctx, outcome, identity, measurement.dumpTokenUsage);
       settleUsageMeasurement(ctx, performance, identity, measurement, failed);
-    }
+    },
   });
 };
 
