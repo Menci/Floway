@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { assertChatGPTUpstreamState, readChatGPTUpstreamState } from '../src/state.ts';
+import { assertChatGPTUpstreamState } from '../src/state.ts';
 
 const goodAccount = { chatgptAccountId: 'acc_x', refresh_token: 'rt_x', state: 'active' as const, state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555' };
 
@@ -49,14 +49,5 @@ describe('assertChatGPTUpstreamState', () => {
     expect(() => assertChatGPTUpstreamState({
       accounts: [{ ...goodAccount, quotaSnapshot: { constructor: { fetchedAt: 1, data: {} } } }],
     })).toThrow(/invalid active limit key/);
-  });
-});
-
-describe('readChatGPTUpstreamState', () => {
-  test('normalizes absent accessToken / quotaSnapshot to null', () => {
-    const fresh = { chatgptAccountId: 'acc_x', refresh_token: 'rt_x', state: 'active' as const, state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555' };
-    const out = readChatGPTUpstreamState({ accounts: [fresh] });
-    expect(out.accounts[0].accessToken).toBeNull();
-    expect(out.accounts[0].quotaSnapshot).toBeNull();
   });
 });

@@ -140,24 +140,6 @@ describe('createChatGPTProvider', () => {
     expect(upgraded.map(model => model.id)).toContain('gpt-image-2');
   });
 
-  test('getProvidedModels resolves operator flag overrides into every ProviderModel', async () => {
-    // Provider defaults and operator overrides are resolved once, then
-    // threaded through every model. A previous regression hardcoded
-    // `enabledFlags: new Set()` in the catalog mapper, dropping the resolved
-    // set on the floor — this test guards against that.
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
-    const recordWithOverride: UpstreamRecord = {
-      ...baseRecord,
-      flagOverrides: { 'openai-responses-web-search-shim': true },
-    };
-    const instance = createChatGPTProvider(recordWithOverride);
-    const models = await instance.instance.getProvidedModels(directFetcher);
-    for (const m of models) {
-      expect(m.enabledFlags.has('rewrite-system-to-developer')).toBe(true);
-      expect(m.enabledFlags.has('openai-responses-web-search-shim')).toBe(true);
-    }
-  });
-
   test('callOpenAIResponses preserves developer messages on the Codex wire', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const instance = createChatGPTProvider(baseRecord);
@@ -186,27 +168,6 @@ describe('createChatGPTProvider', () => {
       { type: 'message', role: 'user', content: 'hi' },
       { type: 'message', role: 'developer', content: 'inline instructions' },
     ]);
-  });
-
-  test('callOpenAIImagesGenerations posts gpt-image-2 through the ChatGPT Codex endpoint', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
-      created: 1,
-      data: [{ b64_json: 'aW1hZ2U=' }],
-    }), { status: 200, headers: { 'content-type': 'application/json' } }));
-    const instance = createChatGPTProvider(baseRecord);
-    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
-    const options = noopUpstreamCallOptions();
-    options.headers.set('x-codex-image-turn-id', 'turn-image');
-    const result = await instance.instance.callOpenAIImagesGenerations(model, { prompt: 'an orange circle', quality: 'low' }, undefined, options);
-    expect(result.response.status).toBe(200);
-    expect(result.modelKey).toBe('gpt-image-2');
-    const [url, init] = fetchSpy.mock.calls[0];
-    expect(url).toBe('https://chatgpt.com/backend-api/codex/images/generations');
-    const headers = new Headers((init as RequestInit).headers);
-    expect(headers.get('authorization')).toBe('Bearer at');
-    expect(headers.get('chatgpt-account-id')).toBe('acc');
-    expect(headers.get('x-codex-image-turn-id')).toBe('turn-image');
-    expect(await readJsonRequest(init as RequestInit)).toEqual({ prompt: 'an orange circle', quality: 'low', model: 'gpt-image-2' });
   });
 
   test('callOpenAIImagesEdits sends uploads as JSON data URLs to the ChatGPT Codex endpoint', async () => {

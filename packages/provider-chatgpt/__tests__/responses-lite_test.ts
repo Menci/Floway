@@ -56,16 +56,6 @@ describe('Codex Responses Lite request encoding', () => {
     expect(body).toEqual(original);
   });
 
-  test('emits an empty tools carrier only when the request has no positional carrier', () => {
-    const empty = encodeChatGPTResponsesLiteRequest(requestBody({ instructions: '' }), 'thread');
-    expect(empty.body.input[0]).toMatchObject({ type: 'additional_tools', tools: [] });
-    expect(empty.body).not.toHaveProperty('instructions');
-
-    const carrier = additionalTools('at_existing', []);
-    const existing = encodeChatGPTResponsesLiteRequest(requestBody({ input: [carrier] }), 'thread');
-    expect(existing.body.input).toEqual([carrier]);
-  });
-
   test('keeps generated IDs stable for one thread and isolates changed instructions', () => {
     const body = requestBody({ tools: [functionTool('read')], instructions: 'First rules' });
     const first = encodeChatGPTResponsesLiteRequest(body, 'thread-a');

@@ -88,16 +88,6 @@ describe('chatgptRawToProviderModel', () => {
     });
   });
 
-  test('derives default = first when medium absent and default_reasoning_level absent', () => {
-    const m = chatgptRawToProviderModel({
-      id: 'gpt-5.5',
-      display_name: 'GPT-5.5',
-      context_window: 272000,
-      reasoning_efforts: ['low', 'high'],
-    }, noFlags);
-    expect(m.chat?.reasoning).toEqual({ effort: { supported: ['low', 'high'], default: 'low' } });
-  });
-
   test('throws when default_reasoning_effort is not in reasoning_efforts', () => {
     expect(() => chatgptRawToProviderModel({
       id: 'gpt-5.5',

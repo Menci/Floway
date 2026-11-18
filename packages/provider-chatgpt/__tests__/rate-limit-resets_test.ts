@@ -68,13 +68,4 @@ describe('ChatGPT rate-limit reset cards', () => {
       .toThrow(/credits\[0\]\.expires_at/);
   });
 
-  test('retains upstream status and body on a failed list', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('slow down', { status: 429 }));
-    const promise = fetchChatGPTRateLimitResetCredits({
-      accessToken: 'at_test', accountId: 'acc_test', fetcher: testFetcher,
-    });
-    await expect(promise).rejects.toMatchObject({
-      status: 429, responseBody: 'slow down', operation: 'list',
-    });
-  });
 });

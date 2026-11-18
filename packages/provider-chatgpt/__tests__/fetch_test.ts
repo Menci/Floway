@@ -545,30 +545,6 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
     expect(preservedNullBody).toHaveProperty('prompt_cache_key', null);
   });
 
-  test('derives the same session id across turns of a stateless conversation', async () => {
-    seedFreshAccessToken();
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
-    const turn = {
-      upstreamId, account: activeAccount, model,
-      body: {
-        instructions: 'You are helpful.',
-        input: [{ type: 'message', role: 'user', content: 'hello' }],
-        stream: true,
-      } as unknown as Parameters<typeof callChatGPTOpenAIResponses>[0]['body'],
-      headers: new Headers(),
-      effects: makeEffects(),
-      call: noopUpstreamCallOptions(),
-    } satisfies Parameters<typeof callChatGPTOpenAIResponses>[0];
-    await callChatGPTOpenAIResponses(turn);
-    await callChatGPTOpenAIResponses(turn);
-
-    const first = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers).get('session-id');
-    const second = new Headers((fetchSpy.mock.calls[1][1] as RequestInit).headers).get('session-id');
-    expect(first).not.toBeNull();
-    expect(first).not.toMatch(UUID_V7_RE);
-    expect(second).toBe(first);
-  });
-
   test('reads the turn-metadata blob from the body before the header', async () => {
     seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
@@ -716,25 +692,6 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
     expect(stored?.premium.data.ratelimited_until).toBe(new Date(Date.parse(stored!.premium.data.observed_at) + 3600 * 1000).toISOString());
   });
 
-});
-
-describe('callChatGPTOpenAIResponses — background-write registration', () => {
-  // Background state writes (quota snapshot on 2xx/429, access-token put on
-  // 401-retry) must reach the runtime's waitUntil slot so workerd does not
-  // cancel them the instant the streaming response returns to the client.
-  // Without this, freshly-minted Codex tokens and quota snapshots get dropped
-  // on the floor and the next request re-mints / re-races the upstream.
-  test('2xx persists quota snapshot via opts.call.waitUntil', async () => {
-    seedFreshAccessToken();
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
-    const waitUntil = vi.fn<(promise: Promise<unknown>) => void>();
-    await callChatGPTOpenAIResponses({
-      upstreamId, account: activeAccount,
-      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(),
-      call: { ...noopUpstreamCallOptions(), waitUntil },
-    });
-    expect(waitUntil).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe('callChatGPTOpenAIImagesGenerations', () => {

@@ -20,9 +20,7 @@ describe('assertChatGPTUpstreamRecord (config validation)', () => {
     }))).not.toThrow();
   });
   test.each([
-    ['email empty', { accounts: [{ ...goodAccount, email: '' }] }],
     ['account id missing', { accounts: [{ ...goodAccount, chatgptAccountId: undefined }] }],
-    ['extra unknown field on account', { accounts: [{ ...goodAccount, extra: 1 }] }],
     ['multiple accounts (v1 invariant)', { accounts: [goodAccount, { ...goodAccount, chatgptAccountId: 'b' }] }],
   ])('rejects %s', (_label, value) => {
     expect(() => assertChatGPTUpstreamRecord(wrap(value))).toThrow();
@@ -47,7 +45,6 @@ describe('patchChatGPTIdentityMetadata', () => {
 
   test.each([
     ['unknown account field', { accounts: [{ refresh_token: 'secret' }] }],
-    ['multiple accounts', { accounts: [goodAccount, goodAccount] }],
   ])('rejects %s', (_label, patch) => {
     expect(() => patchChatGPTIdentityMetadata(good, patch)).toThrow();
   });

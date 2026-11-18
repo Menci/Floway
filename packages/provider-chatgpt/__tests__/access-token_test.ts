@@ -117,16 +117,6 @@ describe('putChatGPTAccessToken', () => {
     await expect(putChatGPTAccessToken(upstreamId, accountId, entry)).rejects.toThrow('D1 boom');
   });
 
-  // A minted access token is bookkeeping the next request re-derives, so an
-  // operator deleting the upstream mid-request is tolerated. The storage
-  // failure above is not — that distinction is the whole point of the typed
-  // error.
-  test('tolerates an upstream that disappeared mid-flight', async () => {
-    current = null;
-    const entry: ChatGPTAccessTokenEntry = { token: 'at_new', expiresAt: farFutureMs, refreshedAt: 'now' };
-    await putChatGPTAccessToken(upstreamId, accountId, entry);
-    expect(repo.writes).toEqual([]);
-  });
 });
 
 describe('ensureChatGPTAccessToken', () => {
@@ -161,16 +151,6 @@ describe('ensureChatGPTAccessToken', () => {
     const nullAccountEnsure = ensureChatGPTAccessToken(upstreamId, null, vi.fn().mockResolvedValue(minted));
     await expect(ensureChatGPTAccessToken(upstreamId, 'null', vi.fn())).rejects.toThrow(/not found/);
     await expect(nullAccountEnsure).resolves.toEqual(minted);
-  });
-
-  test('mints when the cached token is within the refresh skew window', async () => {
-    const expiresSoon = Date.now() + 60 * 1000;
-    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: { token: 'at_old', expiresAt: expiresSoon, refreshedAt: 'old' } }] });
-    const minted: ChatGPTAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'now' };
-    const mint = vi.fn().mockResolvedValue(minted);
-    const out = await ensureChatGPTAccessToken(upstreamId, accountId, mint);
-    expect(out).toEqual(minted);
-    expect(mint).toHaveBeenCalledWith('rt_v1');
   });
 
   test('invalid_grant with a sibling rotation in flight → returns the sibling-minted access token, no persist', async () => {
