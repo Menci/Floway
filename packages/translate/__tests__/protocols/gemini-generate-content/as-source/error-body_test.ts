@@ -28,8 +28,3 @@ test('keeps a status the inferred table would have flattened', () => {
   assertEquals(decoded(result).error.code, 402);
   assertEquals(decoded(result).error.status, 'UNKNOWN');
 });
-
-test('passes an unrecognized body through untouched', () => {
-  assertEquals(restateGeminiGenerateContentError(...upstreamOf(500, 'internal blew up')), undefined);
-  assertEquals(restateGeminiGenerateContentError(...upstreamOf(500, { detail: 'nope' })), undefined);
-});

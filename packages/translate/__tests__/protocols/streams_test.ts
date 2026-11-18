@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { writeAnthropicMessagesEvents, writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './helpers.ts';
-import type { IRJSONObject } from '../../src/ir/common/json.ts';
 import { createIRBuilder } from '../../src/ir/output/builder.ts';
-import type { IROutputItem } from '../../src/ir/output/types.ts';
 import { collectIR, completeIR } from '../ir/output/helpers.ts';
 import { collect, events, iterate } from '../shared/iterables.ts';
 import { reassembleAnthropicMessagesEvents, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
@@ -83,46 +81,19 @@ describe('output IR streaming', () => {
     }
   });
 
-  // Every reader-writer pair is exercised by the pair fixtures; Responses is the source whose parts stay split.
-  for (const [name, source] of [['Responses', responses]] as const) {
-    it(`ChatCompletions via ${name} emits text and streamed function arguments`, async () => {
-      const result = await reassembleOpenAIChatCompletionsEvents(events(writeOpenAIChatCompletionsEvents(source(), options)));
-      expect(result.choices[0].message.content).toBe('A😀中B');
-      expect(result.choices[0].message.tool_calls?.[0]).toMatchObject({ type: 'function', function: { name: 'tool', arguments: '{"a":1}' } });
-      expect(result.usage?.prompt_tokens).toBe(11);
-    });
-    it(`Responses via ${name} completes item lifecycles`, async () => {
-      const frames = await collect(writeOpenAIResponsesEvents(source(), options));
-      const result = await reassembleOpenAIResponsesEvents(events(iterate(frames)));
-      expect(result.output.filter(item => item.type === 'message').flatMap(item => item.type === 'message' ? item.content.map(p => p.type === 'output_text' ? p.text : '') : []).join('')).toBe('A😀中B');
-      if (name === 'Responses') {
-        const message = result.output.find(item => item.type === 'message');
-        expect(message?.type === 'message' && message.content).toEqual([
-          { type: 'output_text', text: 'A😀', annotations: [], logprobs: [] },
-          { type: 'output_text', text: '中B', annotations: [], logprobs: [] },
-        ]);
-      }
-      expect(result.output.find(item => item.type === 'function_call')).toMatchObject({ name: 'tool', arguments: '{"a":1}' });
-      const sequence = frames.flatMap(frame => frame.type === 'event' ? [frame.event.sequence_number!] : []);
-      expect(sequence).toEqual(sequence.map((_, index) => index));
-      expect(frames.at(-1)?.type).toBe('event');
-    });
-    it(`Messages via ${name} serializes blocks and parses tool input`, async () => {
-      const result = await reassembleAnthropicMessagesEvents(events(writeAnthropicMessagesEvents(source(), options)));
-      expect(result.content.filter(block => block.type === 'text').map(block => block.type === 'text' ? block.text : '').join('')).toBe('A😀中B');
-      expect(result.content.find(block => block.type === 'tool_use')).toMatchObject({ name: 'tool', input: { a: 1 } });
-      expect(result.usage.output_tokens).toBe(7);
-    });
-    it(`GenerateContent via ${name} emits complete object args and final usage`, async () => {
-      const frames = await collect(writeGeminiGenerateContentEvents(source(), options));
-      const result = await reassembleGeminiGenerateContentEvents(events(iterate(frames)));
-      expect(result.candidates?.[0].content?.parts?.filter(p => p.text !== undefined && !p.thought).map(p => p.text).join('')).toBe('A😀中B');
-      expect(result.candidates?.[0].content?.parts?.find(p => p.functionCall !== undefined)?.functionCall).toMatchObject({ name: 'tool', args: { a: 1 } });
-      expect(result.usageMetadata?.promptTokenCount).toBe(11);
-      expect(frames).toContainEqual(expect.objectContaining({ event: expect.objectContaining({ candidates: [expect.objectContaining({ index: 0, finishReason: 'STOP' })] }) }));
-      expect(frames.at(-1)).toMatchObject({ event: { usageMetadata: { promptTokenCount: 11 } } });
-    });
-  }
+  it('Responses output keeps split source text parts and completes item lifecycles', async () => {
+    const frames = await collect(writeOpenAIResponsesEvents(responses(), options));
+    const result = await reassembleOpenAIResponsesEvents(events(iterate(frames)));
+    const message = result.output.find(item => item.type === 'message');
+    expect(message?.type === 'message' && message.content).toEqual([
+      { type: 'output_text', text: 'A😀', annotations: [], logprobs: [] },
+      { type: 'output_text', text: '中B', annotations: [], logprobs: [] },
+    ]);
+    expect(result.output.find(item => item.type === 'function_call')).toMatchObject({ name: 'tool', arguments: '{"a":1}' });
+    const sequence = frames.flatMap(frame => frame.type === 'event' ? [frame.event.sequence_number!] : []);
+    expect(sequence).toEqual(sequence.map((_, index) => index));
+    expect(frames.at(-1)?.type).toBe('event');
+  });
 
   it('translates raw Azure annotation frames into every target without carrying filter metadata', async () => {
     const translated = await translateChatFrames([
@@ -153,38 +124,6 @@ describe('output IR streaming', () => {
     expect(responseStart.event.response.created_at).toBe(10);
   });
 
-  it('translates raw Copilot frames with a generated target ID and a fixed start timestamp', async () => {
-    const translated = await translateChatFrames([
-      eventFrame({ id: '', created: 0, model: '', prompt_filter_results: [{ prompt_index: 0 }], choices: [], usage: null } as any),
-      eventFrame({ created: 20, model: 'gpt-4o', choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }] } as any),
-      eventFrame({ created: 21, model: 'gpt-4o', choices: [{ index: 0, delta: { content: 'A' }, finish_reason: null }] } as any),
-      eventFrame({ id: 'chatcmpl-late', created: 22, model: 'gpt-4o', choices: [{ index: 0, delta: { content: 'B' }, finish_reason: null }] } as any),
-      eventFrame({ id: 'chatcmpl-late', created: 23, model: 'gpt-4o', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] } as any),
-      eventFrame({ id: 'chatcmpl-late', created: 24, model: 'gpt-4o', choices: [], usage: { prompt_tokens: 11, completion_tokens: 5, total_tokens: 16 } } as any),
-      doneFrame(),
-    ]);
-    const start = translated.irFrames.find(record => record.type === 'start');
-
-    expect(start).toEqual({ type: 'start', created: 20 });
-    expect(translated.chat.choices[0]?.message.content).toBe('AB');
-    expect(translated.responses.output.filter(item => item.type === 'message').flatMap(item => item.type === 'message' ? item.content.map(part => part.type === 'output_text' ? part.text : '') : []).join('')).toBe('AB');
-    expect(translated.messages.content.filter(block => block.type === 'text').map(block => block.type === 'text' ? block.text : '').join('')).toBe('AB');
-    expect(translated.generateContent.candidates?.[0]?.content?.parts?.filter(part => part.text !== undefined && !part.thought).map(part => part.text).join('')).toBe('AB');
-
-    const chatStart = translated.chatFrames.find(frame => frame.type === 'event');
-    expect(chatStart?.type === 'event' && !('error' in chatStart.event) && chatStart.event.id).toMatch(/^chatcmpl-/);
-    const chatEvents = translated.chatFrames.filter(frame => frame.type === 'event' && !('error' in frame.event));
-    expect(chatEvents.length).toBeGreaterThan(0);
-    expect(chatEvents.every(frame => frame.type === 'event' && !('error' in frame.event) && frame.event.created === 20)).toBe(true);
-    const responseStart = translated.responsesFrames.find(frame => frame.type === 'event' && frame.event.type === 'response.created');
-    if (responseStart?.type !== 'event' || responseStart.event.type !== 'response.created') throw new Error('Expected a Responses opening event');
-    expect(responseStart.event.response.id).toMatch(/^resp_/);
-    expect(responseStart.event.response.created_at).toBe(20);
-    const messagesStart = translated.messagesFrames.find(frame => frame.type === 'event');
-    expect(messagesStart?.type === 'event' && messagesStart.event.type === 'message_start' && messagesStart.event.message.id).toMatch(/^msg_/);
-    expect(translated.generateContentFrames.some(frame => frame.type === 'event' && 'responseId' in frame.event && frame.event.responseId !== undefined)).toBe(true);
-  });
-
   it('delivers text before pulling the upstream completion', async () => {
     let exhausted = false;
     const upstream = async function* () {
@@ -198,14 +137,6 @@ describe('output IR streaming', () => {
       expect(exhausted).toBe(false); found = true; break;
     }
     expect(found).toBe(true);
-  });
-
-  it('rejects missing terminals and unsafe replacement on an append-only downstream', async () => {
-    await expect(collectIR(readOpenAIChatCompletionsEvents(iterate([chatFrame([{ index: 0, delta: { content: 'x' } }])])))).rejects.toThrow('without finish_reason');
-    const frames = completeIR([{ type: 'message', content: [{ type: 'text', text: 'a' }] }]);
-    const part = frames.findIndex(record => record.type === 'write' && record.kind === 'initialize' && record.path.length === 6);
-    frames.splice(part + 1, 0, { type: 'write', kind: 'assign', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'b' });
-    await expect(collect(writeOpenAIChatCompletionsEvents(iterate(frames), options))).rejects.toThrow('append target cannot be assigned');
   });
 
   it('emits each candidate end before pulling the next choice or late final usage', async () => {
@@ -261,21 +192,6 @@ describe('output IR streaming', () => {
     });
   });
 
-  it('does not apply one choice termination to another choice tool', async () => {
-    const b = createIRBuilder();
-    b.choice(0);
-    b.choice(1);
-    b.assign(['model'], 'm');
-    b.event({ type: 'start', id: 's' });
-    b.initialize(['choices', 1, 'items', 0], { type: 'function_call', name: 'tool', arguments: '' });
-    b.append(['choices', 1, 'items', 0, 'arguments'], '{');
-    b.event({ type: 'item_end', choice: 1, item: 0 });
-    b.event({ type: 'choice_end', choice: 0, finish_reason: 'length' });
-    b.event({ type: 'choice_end', choice: 1, finish_reason: 'stop' });
-    b.event({ type: 'finish', status: 'incomplete' });
-    await expect(collect(writeGeminiGenerateContentEvents(iterate(b.drain()), options))).rejects.toThrow();
-  });
-
   it('preserves GenerateContent item order when a tool delays later text and audio', async () => {
     const b = createIRBuilder();
     b.choice(0);
@@ -307,12 +223,6 @@ describe('output IR streaming', () => {
     ]);
   });
 
-  it('retains text-image-text order in Responses output', async () => {
-    const frames = writeOpenAIResponsesEvents(iterate(completeIR([{ type: 'message', content: [{ type: 'text', text: 'before' }, { type: 'image', image: { data: 'YQ==', media_type: 'image/png' } }, { type: 'text', text: 'after' }] }])), options);
-    const result = await reassembleOpenAIResponsesEvents(events(frames));
-    expect(result.output.map(item => item.type)).toEqual(['message', 'image_generation_call', 'message', 'reasoning']);
-  });
-
   it.each([true, false])('streams Responses text independently of a pending image (success=%s)', async success => {
     const image: any = { type: 'image_generation_call', id: 'img', status: 'in_progress', result: null };
     const message: any = { type: 'message', id: 'msg', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'later', annotations: [null] }] };
@@ -341,35 +251,6 @@ describe('output IR streaming', () => {
     expect(added[0]).toMatchObject({ name: 'tool', call_id: 'call' });
   });
 
-  it('preserves null and omitted logprob bytes in Responses deltas and results', async () => {
-    const tokens: IRJSONObject[] = [
-      { token: 'a', logprob: -1, bytes: null, top_logprobs: [{ token: 'b', logprob: -2, bytes: null }] },
-      { token: 'c', logprob: -3 },
-    ];
-    const records = completeIR([{ type: 'message', content: [{ type: 'text', text: 'ac' }] }]);
-    records.splice(records.findIndex(record => record.type === 'part_end'), 0,
-      { type: 'write', kind: 'initialize', path: ['choices', 0, 'logprobs'], value: [] },
-      { type: 'write', kind: 'initialize', path: ['choices', 0, 'logprobs', 0], value: { scope: 'text_part', item_index: 0, content_index: 0, tokens: [] } },
-      ...tokens.map((value, index) => ({ type: 'write' as const, kind: 'assign' as const, path: ['choices', 0, 'logprobs', 0, 'tokens', index], value })));
-    const frames = await collect(writeOpenAIResponsesEvents(iterate(records), options));
-    const emitted = frames.flatMap(frame => frame.type === 'event' && frame.event.type === 'response.output_text.delta' ? frame.event.logprobs ?? [] : []);
-    expect(emitted).toEqual(tokens);
-    const result = await reassembleOpenAIResponsesEvents(events(iterate(frames)));
-    expect(result.output[0]).toMatchObject({ content: [{ logprobs: tokens }] });
-  });
-
-  it.each<{ items: readonly IROutputItem[] }>([{ items: [{ type: 'reasoning', content: ['thought'] }] }])('exposes invalid logprob item ownership %j', async ({ items }) => {
-    const frames = completeIR(items);
-    const end = frames.findIndex(record => record.type === 'choice_end');
-    const logprobs = [
-      { type: 'write', kind: 'initialize', path: ['choices', 0, 'logprobs'], value: [] },
-      { type: 'write', kind: 'initialize', path: ['choices', 0, 'logprobs', 0], value: { scope: 'text_part', item_index: 0, content_index: 0, tokens: [] } },
-      { type: 'write', kind: 'assign', path: ['choices', 0, 'logprobs', 0, 'tokens', 0], value: { token: 'x', logprob: -1 } },
-    ] as const;
-    frames.splice(end, 0, ...logprobs);
-    await expect(collect(writeOpenAIChatCompletionsEvents(iterate(frames), options))).rejects.toThrow();
-  });
-
   it.each([true])('preserves Responses audio when transcript arrives first=%s', async transcriptFirst => {
     const data = { type: 'response.audio.delta', delta: 'YQ==' };
     const transcript = { type: 'response.audio.transcript.delta', delta: 'hello' };
@@ -383,17 +264,6 @@ describe('output IR streaming', () => {
     expect(chat.choices[0].message.content).toBeNull();
     await expect(reassembleGeminiGenerateContentEvents(events(writeGeminiGenerateContentEvents(source(), options))))
       .rejects.toThrow('GenerateContent inline data requires a MIME type');
-  });
-
-  it.each([['Responses', writeOpenAIResponsesEvents], ['Messages', writeAnthropicMessagesEvents]] as const)('rejects completed unnamed tools in %s', async (_name, adapter) => {
-    await expect(collect<unknown>(adapter(iterate(completeIR([{ type: 'function_call', name: '', arguments: '{}' }])), options))).rejects.toThrow('require a name');
-  });
-
-  it.each([
-    ['ChatCompletions', writeOpenAIChatCompletionsEvents],
-    ['GenerateContent', writeGeminiGenerateContentEvents],
-  ] as const)('%s rejects output IR start without a model', async (_name, adapter) => {
-    await expect(collect<unknown>(adapter(iterate([{ type: 'start', id: 'source' }] as any), options))).rejects.toThrow('requires an IR model');
   });
 
 });

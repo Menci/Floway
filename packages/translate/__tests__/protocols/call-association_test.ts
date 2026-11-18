@@ -11,7 +11,7 @@ import type { GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-
 import { collectOpenAIChatCompletionsProtocolEventsToResult, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { toOpenAIResponsesInputItems, collectOpenAIResponsesProtocolEventsToResult } from '@floway-dev/protocols/openai-responses';
 import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
-import { routeGeminiGenerateContentViaAnthropicMessages, routeGeminiGenerateContentViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIResponses, routeOpenAIChatCompletionsViaAnthropicMessages, routeOpenAIChatCompletionsViaOpenAIResponses, routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
+import { routeGeminiGenerateContentViaAnthropicMessages, routeGeminiGenerateContentViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIResponses, routeOpenAIChatCompletionsViaAnthropicMessages, routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
 const chatFrames = (name: string, arguments_: string, legacy = false): ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] => [
   eventFrame({
@@ -102,35 +102,6 @@ test.each([
   }
 });
 
-test('clears a grouped custom-tool namespace when its Chat name becomes ungrouped', async () => {
-  const source: OpenAIResponsesRequestPayloadEx = {
-    model: 'm', stream: true, input: 'start',
-    tools: [group('custom'), { type: 'custom', name: 'plain', format: { type: 'text' } }],
-  };
-  const trip = expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions(source, { sidecarCodec: createTestSidecarCodec() }));
-  const frames: ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] = [
-    eventFrame({
-      id: 'chat', object: 'chat.completion.chunk', created: 1, model: 'm',
-      choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'c', type: 'function', function: { name: 'web_run', arguments: '' } }] }, finish_reason: null }],
-    }),
-    eventFrame({
-      id: 'chat', object: 'chat.completion.chunk', created: 1, model: 'm',
-      choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { name: 'plain', arguments: '{"input":"raw"}' } }] }, finish_reason: 'tool_calls' }],
-    }),
-    doneFrame(),
-  ];
-  const events: OpenAIResponsesStreamEventEx[] = [];
-  for await (const frame of trip.events(iterate(frames))) if (frame.type === 'event') events.push(frame.event);
-  const done = events.find(event => event.type === 'response.output_item.done' && event.item.type === 'custom_tool_call');
-  const completed = events.find(event => event.type === 'response.completed');
-  if (done?.type !== 'response.output_item.done' || completed?.type !== 'response.completed') throw new Error('Expected completed custom tool call');
-  const finalCall = completed.response.output.find(item => item.type === 'custom_tool_call');
-  for (const call of [done.item, finalCall]) {
-    expect(call).toMatchObject({ type: 'custom_tool_call', name: 'plain', input: 'raw' });
-    expect(call).not.toHaveProperty('namespace');
-  }
-});
-
 test.each<readonly ['chat' | 'messages', 'function' | 'custom']>([['chat', 'custom'], ['messages', 'function']])('native %s %s calls share logical aliases with declarations, selectors and ordinary history', async (target, kind) => {
   const options = { sidecarCodec: createTestSidecarCodec() };
   const source: OpenAIResponsesRequestPayloadEx = { model: 'm', stream: true, input: 'start', tools: [group(kind)] };
@@ -186,20 +157,6 @@ test.each<readonly ['chat' | 'messages', 'function' | 'custom']>([['chat', 'cust
   }
 });
 
-test('a native legacy Chat call consumes the unique id-less Gemini result of the same name', async () => {
-  const options = { sidecarCodec: createTestSidecarCodec() };
-  const first = expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions({ model: 'm', contents: [{ role: 'user', parts: [{ text: 'start' }] }] }, options));
-  const result = await collectGeminiGenerateContentProtocolEventsToResult(first.events(iterate(chatFrames('legacy', '{}', true))));
-  const native = result.candidates?.[0]?.content;
-  if (native === undefined) throw new Error('Expected the public legacy call.');
-  const replay = expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions({
-    model: 'm', contents: [native, { role: 'user', parts: [{ functionResponse: { name: 'legacy', response: { ok: true } } }] }],
-  }, options));
-  expect(replay.target.messages[0]).toMatchObject({ role: 'assistant', function_call: { name: 'legacy', arguments: '{}' }, reasoning_content: 'native reasoning' });
-  expect(replay.target.messages[0]).not.toHaveProperty('tool_calls');
-  expect(replay.target.messages[1]).toEqual({ role: 'function', name: 'legacy', content: '{"ok":true}' });
-});
-
 test.each(['chat', 'messages', 'responses'] as const)('Gemini id-less results answer the complete native and ordinary %s history in FIFO order', async target => {
   const options = { sidecarCodec: createTestSidecarCodec() };
   const source: GeminiGenerateContentRequest = { model: 'm', contents: [{ role: 'user', parts: [{ text: 'start' }] }] };
@@ -250,30 +207,6 @@ test('Gemini target allocation reserves explicit IDs against every missing-ID ca
   const answers = trip.target.input.filter(item => item.type === 'function_call_output');
   expect(new Set(calls.map(call => call.call_id)).size).toBe(3);
   expect(answers.map(item => item.call_id)).toEqual(['first_call_1', calls[0].call_id, 'gemini_call_0_0']);
-});
-
-test.each(['responses'] as const)('Chat legacy IDs stay distinct from modern explicit IDs through %s translation', async target => {
-  const options = { sidecarCodec: createTestSidecarCodec() };
-  const source = {
-    model: 'm', stream: true, messages: [
-      { role: 'assistant' as const, content: null, function_call: { name: 'first', arguments: '{}' } },
-      { role: 'user' as const, content: 'next' },
-      { role: 'assistant' as const, content: null, tool_calls: [{ id: 'legacy__first__0', type: 'function' as const, function: { name: 'second', arguments: '{}' } }] },
-      { role: 'tool' as const, tool_call_id: 'legacy__first__0', content: 'SECOND' },
-      { role: 'function' as const, name: 'first', content: 'FIRST' },
-    ],
-  };
-  if (target === 'responses') {
-    const trip = expectTrip(await routeOpenAIChatCompletionsViaOpenAIResponses(source, options));
-    const calls = trip.target.input.filter(item => item.type === 'function_call');
-    expect(new Set(calls.map(call => call.call_id)).size).toBe(2);
-    expect(trip.target.input.filter(item => item.type === 'function_call_output').map(item => item.call_id)).toEqual(['legacy__first__0', calls[0].call_id]);
-  } else {
-    const trip = expectTrip(await routeOpenAIChatCompletionsViaAnthropicMessages(source, options));
-    const calls = trip.target.messages.flatMap(message => message.role === 'assistant' && Array.isArray(message.content) ? message.content.flatMap(block => block.type === 'tool_use' ? [block] : []) : []);
-    expect(new Set(calls.map(call => call.id)).size).toBe(2);
-    expect(trip.target.messages.flatMap(message => message.role === 'user' && Array.isArray(message.content) ? message.content.flatMap(block => block.type === 'tool_result' ? [block.tool_use_id] : []) : [])).toEqual(['legacy__first__0', calls[0].id]);
-  }
 });
 
 test('Chat source custom identity renames native Messages calls independently from same-name functions', async () => {

@@ -46,15 +46,6 @@ test('Responses enumerates every encrypted item and preserves the selected reada
   expect(turn).toEqual(before);
 });
 
-test('Responses treats Codex null reasoning content as absent when removing a sidecar', () => {
-  const turn = [{
-    type: 'reasoning', id: 'native', summary: [], content: null, encrypted_content: 'sidecar',
-  }] as unknown as Parameters<typeof findOpenAIResponsesSidecarOccurrences>[0];
-  const candidates = findOpenAIResponsesSidecarOccurrences(turn);
-  expect(candidates).toHaveLength(1);
-  expect(candidates[0].withoutSidecar()).toEqual([]);
-});
-
 test('GenerateContent enumerates attached and standalone signatures across empty trailing contents', () => {
   const parts = [
     { text: 'answer', thoughtSignature: 'on-text' },

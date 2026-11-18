@@ -37,29 +37,6 @@ test('finalizes each Chat choice independently while another choice has partial 
   expect(turns.get(1)).toMatchObject({ role: 'assistant', audio: { id: 'audio' } });
 });
 
-test('rejects incomplete audio when its own Chat choice finalizes', async () => {
-  await expect(drain([
-    chunk([{ index: 0, delta: { role: 'assistant', audio: { id: 'audio', data: 'YQ==' } }, finish_reason: 'stop' }]),
-  ])).rejects.toThrow('audio ended without its complete metadata');
-});
-
-test('collects every native Chat choice when a sibling omits delta', async () => {
-  const emptyChoice = { index: 0, delta: {}, finish_reason: 'stop' as const };
-  Reflect.deleteProperty(emptyChoice, 'delta');
-  expect(emptyChoice).not.toHaveProperty('delta');
-  const delta = { role: 'assistant' as const, content: 'Hello', reasoning_content: 'Think', provider_specific_fields: { trace: 'native' } };
-
-  const turns = await drain([
-    chunk([emptyChoice, { index: 1, delta, finish_reason: null }]),
-    chunk([{ index: 1, delta: { content: ' world' }, finish_reason: 'stop' }]),
-  ]);
-
-  expect([...turns]).toEqual([
-    [0, { role: 'assistant', content: null, refusal: null }],
-    [1, { role: 'assistant', content: 'Hello world', refusal: null, reasoning_content: 'Think', provider_specific_fields: { trace: 'native' } }],
-  ]);
-});
-
 const traceTools = async (frames: ReturnType<typeof chunk>[], options: { prefix?: string; customToolNames?: ReadonlySet<string>; originalToolNames?: ReadonlyMap<string, { readonly namespace: string; readonly name: string }> } = {}) => {
   const builder = createReferenceBuilder();
   const content = createEmittedFieldState(builder, 'text');

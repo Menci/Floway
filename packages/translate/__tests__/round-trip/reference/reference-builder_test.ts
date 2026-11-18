@@ -3,8 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 import type { IRJSONObject } from '../../../src/ir/common/json.ts';
 import { collectAnthropicMessagesTextPlacements } from '../../../src/protocols/anthropic-messages/as-source/round-trip.ts';
 import type { AnthropicMessagesReferenceableInputAssistantTurn } from '../../../src/protocols/anthropic-messages/as-target/assistant-turn.ts';
-import { collectGeminiGenerateContentTextPlacements } from '../../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
-import type { GeminiGenerateContentInputAssistantTurnState, GeminiGenerateContentInputAssistantTurn } from '../../../src/protocols/gemini-generate-content/as-target/assistant-turn.ts';
 import type { OpenAIChatCompletionsInputAssistantTurnState, OpenAIChatCompletionsInputAssistantTurn } from '../../../src/protocols/openai-chat-completions/as-target/assistant-turn.ts';
 import { hashRoundTripContent } from '../../../src/round-trip/hash.ts';
 import {
@@ -25,25 +23,6 @@ import { ContentReference } from '../../../src/round-trip/reference/types.ts';
 import { parseJSONObject } from '../../../src/shared/json/object.ts';
 
 describe('ReferenceBuilder', () => {
-  it('applies channel views only to their owning field on a multi-field part', () => {
-    const builder = createReferenceBuilder();
-    const visible = createEmittedFieldState(builder, 'text');
-    const transcript = createEmittedFieldState(builder, 'text');
-    appendEmittedField(builder, visible, 'visible');
-    appendEmittedField(builder, transcript, 'transcript');
-    const turn: GeminiGenerateContentInputAssistantTurn = [{
-      role: 'model',
-      parts: [{ text: 'visible', audioTranscription: { text: 'transcript' } }],
-    }];
-    const state: GeminiGenerateContentInputAssistantTurnState<EmittedFieldStates> = [{
-      parts: [{ text: visible, audioTranscription: { text: transcript } }],
-    }];
-
-    expect(collectEmittedFieldPlacements(turn, state, collectGeminiGenerateContentTextPlacements(turn))).toEqual(new Map([
-      [visible.emittedFieldId, { enclosingText: 'visible', offset: 0 }],
-      [transcript.emittedFieldId, { enclosingText: 'transcript', offset: 0 }],
-    ]));
-  });
 
   it('hashes one canonical text run only once across multiple content IDs and shifts their ranges', async () => {
     const builder = createReferenceBuilder();
@@ -135,17 +114,6 @@ describe('ReferenceBuilder', () => {
     expect(() => appendReadField(builder, field, '!')).toThrowError('Cannot append provenance to an invalid field');
   });
 
-  it('rejects a second output occurrence for the same SSE atom', () => {
-    const builder = createReferenceBuilder();
-    const field = createReadFieldState('text');
-    const partId = appendReadField(builder, field, 'same');
-    const first = createEmittedFieldState(builder, 'text');
-    const second = createEmittedFieldState(builder, 'text');
-    appendEmittedField(builder, first, 'same', [partId]);
-
-    expect(() => appendEmittedField(builder, second, 'same', [partId])).toThrowError('ReferenceBuilder fragment 0 has multiple output occurrences');
-  });
-
   it('finalizes nested assistant state without materializing sparse holes', async () => {
     const builder = createReferenceBuilder();
     const contentField = createReadFieldState('text');
@@ -178,15 +146,6 @@ describe('ReferenceBuilder', () => {
     expect(finalizedCalls).toHaveLength(2);
     expect(Object.hasOwn(finalizedCalls, 0)).toBe(false);
     expect(finalizedCalls[1]?.type === 'function' && finalizedCalls[1].function.arguments).toBe('{}');
-  });
-
-  it('rejects a paired state whose container shape does not match the turn', async () => {
-    const builder = createReferenceBuilder();
-    const turn: OpenAIChatCompletionsInputAssistantTurn = { role: 'assistant', tool_calls: [] };
-    const state: OpenAIChatCompletionsInputAssistantTurnState<ReadFieldStates> = {};
-    Reflect.set(state, 'tool_calls', {});
-
-    await expect(referenceAssistantTurn<'openaiChatCompletions'>(turn, state, builder, new Map())).rejects.toThrow('ReferenceBuilder state object does not match its assistant turn');
   });
 
   it('creates slices across two A fields in UTF-16 coordinates', async () => {

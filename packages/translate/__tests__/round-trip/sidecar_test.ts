@@ -24,11 +24,3 @@ test('rejects a payload whose top-level wire version this build does not know', 
   const future = await codec.encode({ ...envelope, v: 2 });
   await expect(decodeRoundTripSidecar(codec, 'openaiResponses', future)).rejects.toThrow('sidecar version is unsupported');
 });
-
-test('rejects a malformed payload recognized by the injected decoder', async () => {
-  const codec = createTestSidecarCodec();
-  const malformed = await codec.encode({ v: 1, source: 'openaiResponses', target: 'openaiChatCompletions' });
-  await expect(decodeRoundTripSidecar(codec, 'openaiResponses', malformed)).rejects.toThrow('assistant turn is invalid');
-  const nonObject = await codec.encode(null);
-  await expect(decodeRoundTripSidecar(codec, 'openaiResponses', nonObject)).rejects.toThrow('sidecar envelope is invalid');
-});

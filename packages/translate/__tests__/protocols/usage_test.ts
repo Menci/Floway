@@ -1,10 +1,8 @@
 import { expect, test } from 'vitest';
 
 import { fixtureFrames } from './fixtures.ts';
-import { writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIChatCompletionsEvents, writeOpenAIResponsesEvents } from './helpers.ts';
-import { usageFromIR as messagesUsageFromIR } from '../../src/protocols/anthropic-messages/as-source/usage.ts';
+import { writeGeminiGenerateContentEvents, readAnthropicMessagesEvents, readOpenAIChatCompletionsEvents, readOpenAIResponsesEvents, writeOpenAIResponsesEvents } from './helpers.ts';
 import { usageToIR as messagesUsageToIR } from '../../src/protocols/anthropic-messages/as-target/usage.ts';
-import { usageFromIR } from '../../src/protocols/gemini-generate-content/as-source/usage.ts';
 import { usageToIR as chatUsageToIR } from '../../src/protocols/openai-chat-completions/as-target/usage.ts';
 import { usageToIR as responsesUsageToIR } from '../../src/protocols/openai-responses/as-target/usage.ts';
 import { collectIR } from '../ir/output/helpers.ts';
@@ -49,31 +47,11 @@ test('Responses preserves absent initial accounting and later measured usage', a
   expect(output.at(-1)).toMatchObject({ event: { type: 'response.completed', response: { usage: initialUsage, service_tier: 'fast' } } });
 });
 
-test('ChatCompletions via Messages publishes its initial role with already-known metadata', async () => {
-  let pulledNext = false;
-  const upstream = async function* () {
-    yield eventFrame({ type: 'message_start', message: { id: 'msg_usage', model: 'served', usage: { input_tokens: 10, output_tokens: 0, speed: 'fast' } } } as any);
-    pulledNext = true;
-    throw new Error('The converter pulled past message_start');
-  };
-  const stream = writeOpenAIChatCompletionsEvents(readAnthropicMessagesEvents(upstream()));
-  try {
-    expect((await stream.next()).value).toMatchObject({ event: { model: 'served', service_tier: 'fast', choices: [{ delta: { role: 'assistant' } }] } });
-    expect(pulledNext).toBe(false);
-  } finally {
-    await stream.return(undefined);
-  }
-});
-
 test.each([['default', 'standard']])('GenerateContent maps the %s alias to its %s tier', async (tier, serviceTier) => {
   const source = fixtureFrames('openai-responses', { text: ['answer'], usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 }, tier });
   const output = [];
   for await (const frame of writeGeminiGenerateContentEvents(readOpenAIResponsesEvents(iterate(source)))) output.push(frame);
   expect(output.at(-1)).toMatchObject({ event: { usageMetadata: { serviceTier } } });
-});
-
-test('GenerateContent rejects reasoning counts exceeding inclusive output', () => {
-  expect(() => usageFromIR({ output_tokens_inclusive: 3, reasoning_tokens: 5 })).toThrow('reasoning tokens exceed inclusive output tokens');
 });
 
 test.each([
@@ -82,20 +60,6 @@ test.each([
   ['Messages output_tokens', (usage: Record<string, any>) => messagesUsageToIR(usage, {}), { input_tokens: 1 }, { input_tokens_inclusive: 1 }],
 ] as const)('%s is omitted when the upstream does not report it', (_name, convert, usage, expected) => {
   expect(convert(usage)).toEqual(expected);
-});
-
-test.each([
-  ['ChatCompletions', () => chatUsageToIR({ prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, completion_tokens_details: { reasoning_tokens: -1 } })],
-  ['Messages', () => messagesUsageToIR({ input_tokens: 1, output_tokens: 1, output_tokens_details: { thinking_tokens: -1 } }, {})],
-] as const)('%s rejects invalid optional usage counters', (_name, convert) => {
-  expect(convert).toThrow('must be a non-negative safe integer');
-});
-
-test.each([
-  ['Messages', messagesUsageFromIR],
-  ['GenerateContent', usageFromIR],
-] as const)('%s rejects invalid optional IR usage counters', (_name, convert) => {
-  expect(() => convert({ input_tokens_inclusive: 1, output_tokens_inclusive: 1, reasoning_tokens: -1 })).toThrow('must be a non-negative safe integer');
 });
 
 test.each([

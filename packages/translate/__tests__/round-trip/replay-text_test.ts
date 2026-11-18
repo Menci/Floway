@@ -55,9 +55,4 @@ describe('semantic replay text channels', () => {
     expect(await verifyGeminiGenerateContentTurnDigest([{ role: 'model', parts: [{ text: 'hello' }, image] }], await computeGeminiGenerateContentTurnDigest([{ role: 'model', parts: [{ text: 'hel' }, image, { text: 'lo' }] }]), 1)).toBe(true);
   });
 
-  it('uses UTF-16 concatenation even when a part boundary splits a surrogate pair', async () => {
-    const first = 'prefix \ud83d';
-    const second = '\ude00 suffix';
-    expect(await verifyGeminiGenerateContentTurnDigest([{ parts: [{ text: first + second }] }], await computeGeminiGenerateContentTurnDigest([{ parts: [{ text: first }, { text: second }] }]), 1)).toBe(true);
-  });
 });

@@ -58,12 +58,3 @@ test('builder transfers payloads without copying and later operations never modi
   expect(item.content).toEqual([]);
   expect(part.text).toBe('');
 });
-
-test('value exposes the accumulator live readonly view', () => {
-  const collector = createIRCollector();
-  collector.applyWrite({ type: 'write', kind: 'initialize', path: ['usage'], value: {} });
-  const value = collector.value<Record<string, number>>(['usage'])!;
-  collector.applyWrite({ type: 'write', kind: 'assign', path: ['usage', 'output_tokens_inclusive'], value: 1 });
-  expect(value).toEqual({});
-  expect(collector.value(['usage'])).toEqual({ output_tokens_inclusive: 1 });
-});

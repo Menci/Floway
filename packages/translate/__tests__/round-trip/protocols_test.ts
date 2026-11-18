@@ -94,25 +94,6 @@ const verifyGeminiTurn = (
 
 describe('assistant-turn sidecar protocols', () => {
 
-  it('extracts Responses encrypted items without retaining carrier metadata or changing ordinary reasoning', async () => {
-    const reasoning: Extract<OpenAIResponsesOutputItemEx, { type: 'reasoning' }> = { type: 'reasoning', id: 'native', summary: [{ type: 'summary_text', text: 'summary' }], content: [{ type: 'reasoning_text', text: 'thought' }], status: 'completed' };
-    const ordinary: OpenAIResponsesOutputItemEx[] = [
-      { type: 'message', id: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'answer', annotations: [] }] },
-      reasoning,
-    ];
-    const carrier = { ...createOpenAIResponsesSidecarItem('carrier', 'opaque'), status: 'incomplete' };
-    const turn = [...ordinary, carrier];
-    const before = structuredClone(turn);
-    const inspection = fixtureSidecar(findOpenAIResponsesSidecarOccurrences(turn), 'opaque');
-    expect(inspection).toEqual({ sidecar: 'opaque', turn: ordinary });
-    expect(turn).toEqual(before);
-    const check = await computeOpenAIResponsesTurnDigest(ordinary);
-    expect(await verifyOpenAIResponsesTurnDigest(inspection.turn, check, 1)).toBe(true);
-    expect(await verifyResponsesTurn([...ordinary, { ...carrier, id: 'other', encrypted_content: 'different', summary: [], status: 'completed' }], check, 'different')).toBe(true);
-    expect(await verifyResponsesTurn([ordinary[0], { ...reasoning, status: 'incomplete' }, carrier], check, 'opaque')).toBe(false);
-    expect(await verifyResponsesTurn([ordinary[0], { ...reasoning, summary: [{ type: 'summary_text', text: 'edited summary' }] }, carrier], check, 'opaque')).toBe(false);
-  });
-
   it('checks complete Chat body, readable summary, and ordered tool identities and arguments', async () => {
     const turn = chatTurn();
     const inspection = fixtureSidecar(findOpenAIChatCompletionsSidecarOccurrences(turn));

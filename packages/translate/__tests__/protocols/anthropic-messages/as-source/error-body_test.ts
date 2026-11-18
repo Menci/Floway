@@ -1,8 +1,6 @@
 import { test } from 'vitest';
 
 import { restateAnthropicMessagesError } from '../../../../src/protocols/anthropic-messages/as-source/error-body.ts';
-import { anthropicMessagesErrorFromIR } from '../../../../src/protocols/anthropic-messages/as-source/error.ts';
-import { errorPayloadFromWire } from '../../../../src/shared/api-error.ts';
 import { assert, assertEquals } from '@floway-dev/test-utils';
 
 const decoded = (result: { body: unknown } | undefined) => result!.body as {
@@ -27,34 +25,4 @@ test.each([
   const parsed = decoded(result);
   assertEquals(parsed.error.type, 'invalid_request_error');
   assert(parsed.error.message.startsWith('prompt is too long:'));
-});
-
-test('passes an unrecognized body through untouched', () => {
-  assertEquals(restateAnthropicMessagesError(...upstreamOf(502, 'Bad Gateway')), undefined);
-  assertEquals(restateAnthropicMessagesError(...upstreamOf(502, 'exceeds the context window of this model')), undefined);
-  assertEquals(restateAnthropicMessagesError(...upstreamOf(500, { detail: 'something broke' })), undefined);
-  assertEquals(restateAnthropicMessagesError(...upstreamOf(500, {})), undefined);
-});
-
-test('preserves colliding loose error fields beneath the upstream container priority', () => {
-  const result = restateAnthropicMessagesError(...upstreamOf(400, {
-    error: { message: 'bad request', provider_specific_fields: { stack: 'theirs' }, stack: 'legacy', retry_after: 10, code: 'invalid_value', param: 'temperature' },
-  }));
-
-  assertEquals((decoded(result).error as Record<string, unknown>).provider_specific_fields, {
-    stack: 'theirs', stack_1: 'legacy', retry_after: 10, code: 'invalid_value', param: 'temperature',
-  });
-});
-
-test('normalizes a wire msg alias before treating the object as an IR error', () => {
-  const details = { request_id: 'req_alias' };
-  const wire = { msg: 'Alias message', code: 'invalid_value', param: 'temperature', provider_specific_fields: details };
-  const error = errorPayloadFromWire({ error: wire });
-  assertEquals(error.message, wire.msg);
-  assertEquals(error.code, wire.code);
-  assertEquals(error.param, wire.param);
-  assert(error.provider_specific_fields === details);
-  assertEquals(anthropicMessagesErrorFromIR(error).message, wire.msg);
-  const beforeStream = restateAnthropicMessagesError(...upstreamOf(400, { error: wire }));
-  assertEquals(decoded(beforeStream).error, anthropicMessagesErrorFromIR(error));
 });

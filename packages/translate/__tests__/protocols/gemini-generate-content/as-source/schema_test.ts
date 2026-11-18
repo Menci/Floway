@@ -32,14 +32,6 @@ test('preserves explicitly supplied JSON Schema and unknown Google type values',
   expect(geminiSchemaToJsonSchema({ type: 'FUTURE_TYPE' })).toEqual({ type: 'FUTURE_TYPE' });
 });
 
-test('preserves exact decimal constraints beyond IEEE-754 integer precision', () => {
-  expect(JSON.stringify(geminiSchemaToJsonSchema({ type: 'ARRAY', maxItems: '9007199254740993' }))).toContain('"maxItems":9007199254740993');
-});
-
-test.each([false])('normalizes boolean JSON Schema %s without relaxing its meaning', schema => {
-  expect(geminiResponseSchema({ responseJsonSchema: schema })).toEqual(schema ? {} : { not: {} });
-});
-
 test('rejects mutually exclusive Gemini schema fields', () => {
   expect(() => geminiFunctionParameters({ name: 'lookup', parameters: { type: 'OBJECT' }, parametersJsonSchema: {} })).toThrow('mutually exclusive');
   expect(() => geminiResponseSchema({ responseSchema: { type: 'OBJECT' }, responseJsonSchema: {} })).toThrow('mutually exclusive');

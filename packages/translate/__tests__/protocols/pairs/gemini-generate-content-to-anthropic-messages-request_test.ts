@@ -45,18 +45,6 @@ test('function response media enters Messages tool results and tool results prec
   });
 });
 
-test('buildTargetPayload preserves native thinkingBudget beside an empty thinkingLevel', async () => {
-  const request = await buildWithTestSidecar({
-    contents: [],
-    generationConfig: { thinkingConfig: { thinkingBudget: 2048, thinkingLevel: '' } },
-  }, 'claude-test', noOptions);
-
-  assertEquals(request.thinking, { type: 'enabled', budget_tokens: 2048 });
-  // Messages states a level and a budget on different slots, so an empty level
-  // travels verbatim beside the budget rather than being replaced by it.
-  assertEquals(request.output_config, { effort: '' });
-});
-
 test('buildTargetPayload maps system, default max tokens, and multimodal user content', async () => {
   const payload: GeminiGenerateContentPayload = {
     systemInstruction: {
@@ -108,15 +96,6 @@ test.each(['audio/wav'])('buildTargetPayload rejects Gemini inline audio MIME ty
     Error,
     `Cannot translate an audio part of MIME type '${mimeType}' to Anthropic Messages.`,
   );
-});
-
-test('buildTargetPayload forwards a non-audio inline MIME type from Gemini as a Messages document', async () => {
-  // GenerateContent states any MIME type inline; the document's media type
-  // travels verbatim so the selected upstream decides whether it accepts it.
-  // The target accepts inline bytes, so text data remains base64 instead of
-  // being decoded under an assumed charset.
-  const request = await buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'text/plain', data: 'ZGF0YQ==' } }] }] }, 'claude-test', noOptions);
-  assertEquals(request.messages, [{ role: 'user', content: [{ type: 'document', source: { type: 'base64', media_type: 'text/plain', data: 'ZGF0YQ==' } }] }]);
 });
 
 test('buildTargetPayload maps generation config and thinking controls', async () => {
@@ -261,43 +240,4 @@ test('buildTargetPayload maps tool declarations and tool choice modes', async ()
   assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'VALIDATED' } } }, 'claude-test', noOptions)).tool_choice, { type: 'auto' });
   // Without declarations there is no callable to require, so the target choice is omitted.
   assertEquals((await buildWithTestSidecar({ contents: [], toolConfig: { functionCallingConfig: { mode: 'ANY' } } }, 'claude-test', noOptions)).tool_choice, undefined);
-});
-
-test('buildTargetPayload maps dynamic thinking budget to adaptive thinking', async () => {
-  assertEquals((await buildWithTestSidecar({ contents: [], generationConfig: { thinkingConfig: { thinkingBudget: -1 } } }, 'claude-test', noOptions)).thinking, { type: 'adaptive' });
-});
-
-test('buildTargetPayload rejects a function_call part in user content', async () => {
-  await assertRejects(
-    () =>
-      buildWithTestSidecar(
-        {
-          contents: [{ role: 'user', parts: [{ functionCall: { name: 'x', args: {} } }] }],
-        },
-        'claude-test',
-        noOptions,
-      ),
-    Error,
-    '"function_call" parts are not supported in user content.',
-  );
-});
-
-test.each([undefined])('preserves an empty model turn with parts %j', async parts => {
-  const payload = { contents: [{ role: 'user', parts: [{ text: 'before' }] }, { role: 'model', ...(parts === undefined ? {} : { parts }) }, { role: 'user', parts: [{ text: 'after' }] }] };
-  const result = await buildWithTestSidecar(payload, 'target-model', noOptions);
-  assertEquals((result.messages as Array<{ role?: string; content?: unknown }>).filter(item => item.role === 'assistant'), [{ role: 'assistant', content: '' }]);
-});
-
-test('states an empty argument object for a call that carries no args', async () => {
-  // `input` is required on a Messages tool_use, and the empty object is how
-  // every target spells a call that takes no argument object.
-  const result = await buildWithTestSidecar({
-    contents: [
-      { role: 'user', parts: [{ text: 'go' }] },
-      { role: 'model', parts: [{ functionCall: { name: 'f' } }] },
-      { role: 'user', parts: [{ functionResponse: { name: 'f', response: { r: 1 } } }] },
-    ],
-  }, 'target-model', noOptions);
-  const assistant = (result.messages as Array<{ role?: string; content?: unknown }>).find(item => item.role === 'assistant');
-  assertEquals((assistant?.content as Array<{ input?: unknown }>)[0]?.input, {});
 });

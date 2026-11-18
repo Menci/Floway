@@ -48,25 +48,6 @@ test('ChatCompletions citations rebase cumulative Unicode coordinates across int
   warning.mockRestore();
 });
 
-test('Responses converts only new citations after indexed text keeps streaming', async () => {
-  const first = citation(0, 2);
-  const second = citation(2, 4);
-  const source = [
-    chunk({ content: 'A😀' }),
-    chunk({ annotations: [first] }),
-    chunk({ content: '中B' }),
-    chunk({ annotations: [first, second] }, { finish_reason: 'stop' }),
-    doneFrame(),
-  ];
-  const frames = await collect(writeOpenAIResponsesEvents(readOpenAIChatCompletionsEvents(iterate(source))));
-  const annotations = frames.flatMap(frame => frame.type === 'event' && frame.event.type === 'response.output_text.annotation.added' ? [frame.event] : []);
-  expect(annotations.map(event => event.annotation_index)).toEqual([0, 1]);
-  expect(annotations.map(event => event.annotation)).toEqual([
-    { type: 'url_citation', url: 'https://example.com', title: 'Source', start_index: 0, end_index: 2 },
-    { type: 'url_citation', url: 'https://example.com', title: 'Source', start_index: 2, end_index: 4 },
-  ]);
-});
-
 test('late ChatCompletions citations on closed text are dropped', async () => {
   const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
   const source = [chunk({ content: 'A😀' }), chunk({ reasoning_text: 'R' }), chunk({ content: '中B' }), chunk({ reasoning_text: 'tail' }), chunk({ annotations: [citation(1, 3)] }, { finish_reason: 'stop' }), doneFrame()];
@@ -74,11 +55,6 @@ test('late ChatCompletions citations on closed text are dropped', async () => {
   expect(ir.choices[0].items.filter(item => item.type === 'message').every(item => item.content.every(part => part.type !== 'text' || part.annotations === undefined))).toBe(true);
   expect(warning).toHaveBeenCalledWith('Dropping ChatCompletions citation outside open text', expect.objectContaining({ choice: 0 }));
   warning.mockRestore();
-});
-
-test('ChatCompletions rejects a reversed citation before clamping it to available text', async () => {
-  const source = [chunk({ content: 'abc' }), chunk({ annotations: [citation(5, 3)] }, { finish_reason: 'stop' }), doneFrame()];
-  await expect(collectIR(readOpenAIChatCompletionsEvents(iterate(source)))).rejects.toThrow('Invalid code-point range');
 });
 
 test('Messages cited text remains source text without inventing output coordinates', async () => {

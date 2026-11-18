@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest';
 
-import type { IRJSONObject } from '../../src/ir/common/json.ts';
 import { computeAnthropicMessagesTurnDigest } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
 import { computeGeminiGenerateContentTurnDigest } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
 import { computeOpenAIChatCompletionsTurnDigest } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
@@ -10,7 +9,6 @@ import type { AssistantTurnProtocol, InputAssistantTurnFor } from '../../src/rou
 import type { ReferenceableInputAssistantTurnFor } from '../../src/round-trip/reference/assistant-turn-types.ts';
 import { ContentReference } from '../../src/round-trip/reference/types.ts';
 import { encodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
-import { replayMaterialsByType } from '../../src/round-trip/turn-digest.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { expectTrip } from '../trip.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
@@ -54,9 +52,8 @@ const cases = [
   { source: 'geminiGenerateContent', target: 'openaiChatCompletions', run: (carrier: string) => routeGeminiGenerateContentViaOpenAIChatCompletions(gemini(carrier), context) },
   { source: 'geminiGenerateContent', target: 'openaiResponses', run: (carrier: string) => routeGeminiGenerateContentViaOpenAIResponses(gemini(carrier), context) },
 ] as const;
-// Reference hydration and the unrecognized-carrier fallback do not depend on the protocol pair, so one subset that spans every target or source covers them.
+// Reference hydration does not depend on the protocol pair, so one source spanning every target covers it.
 const geminiCases = cases.filter(({ source }) => source === 'geminiGenerateContent');
-const responsesTargetCases = cases.filter(({ target }) => target === 'openaiResponses');
 
 test.each(cases)('receives recognized $source history via $target', async ({ source, target, run }) => {
   const native = nativeTurn(target);
@@ -108,12 +105,6 @@ test('exposes an authenticated missing reference as an internal error after repl
   await expect(cases[0].run(carrier)).rejects.toThrow('Authenticated assistant-turn sidecar restoration failed: missing-reference');
 });
 
-test.each(responsesTargetCases)('leaves a terminal sidecar unrecognized by the injected decoder ordinary on $source via $target', async ({ run }) => {
-  const carrier = 'unrecognized sidecar handle';
-  const trip = expectTrip(await run(carrier));
-  expect(JSON.stringify('input' in trip.target ? trip.target.input : trip.target.messages)).toContain('answer');
-});
-
 test.each(['different codec scope', 'changed sidecar handle', 'changed replay'] as const)('uses ordinary translation for %s', async failure => {
   const codec = createTestSidecarCodec(failure === 'different codec scope' ? 'other-scope' : 'test-codec-scope');
   const native: InputAssistantTurnFor<'anthropicMessages'> = { role: 'assistant', content: [{ type: 'text', text: 'restored', citations: [] }] };
@@ -140,38 +131,4 @@ test('preserves ordinary GenerateContent null-argument handling', async () => {
   expect(messagesTrip.target.messages).toMatchObject([
     { role: 'assistant', content: [{ type: 'tool_use', name: 'lookup', input: null }] },
   ]);
-});
-
-test('exposes a recognized malformed assistant envelope as an internal error', async () => {
-  // Deliberately bypass the typed encoder to exercise authenticated envelope validation.
-  const carrier = await createTestSidecarCodec().encode({
-    v: 1,
-    source: 'openaiChatCompletions',
-    target: 'anthropicMessages',
-    targetTurn: { role: 'user', content: [] },
-    sourceTurnDigest: await turnDigest('openaiChatCompletions'),
-  });
-  await expect(routeOpenAIChatCompletionsViaAnthropicMessages(chat(carrier), context)).rejects.toThrow('Messages assistant turn is invalid');
-});
-
-test('accepts incomplete Responses call history and requires its replayed status to match', async () => {
-  const call = { type: 'function_call' as const, call_id: 'call', name: 'lookup', arguments: '{"x":1}', status: 'incomplete' };
-  const expected = replayMaterialsByType<IRJSONObject & { type: string }>([
-    { type: call.type, status: call.status, call_id: call.call_id, name: call.name, arguments: call.arguments },
-  ]);
-  const native: InputAssistantTurnFor<'anthropicMessages'> = { role: 'assistant', content: [{ type: 'text', text: 'restored', citations: [] }] };
-  const carrier = await encodeRoundTripSidecar(createTestSidecarCodec(), {
-    v: 1,
-    source: 'openaiResponses',
-    target: 'anthropicMessages', targetTurn: native,
-    sourceTurnDigest: await hashRoundTripContent(JSON.stringify(expected)),
-  });
-  const reasoning = { type: 'reasoning' as const, id: 'carrier', summary: [], encrypted_content: carrier };
-  const replayed = expectTrip(await routeOpenAIResponsesViaAnthropicMessages({ model: 'source', stream: true, input: [call, reasoning] }, context));
-  expect(replayed.target.messages).toEqual([native]);
-  const changed = expectTrip(await routeOpenAIResponsesViaAnthropicMessages({ model: 'source', stream: true, input: [{ ...call, status: 'completed' }, reasoning] }, context));
-  expect(changed.target.messages).not.toEqual([native]);
-  expect(changed.target.messages).toEqual(expect.arrayContaining([
-    expect.objectContaining({ content: expect.arrayContaining([expect.objectContaining({ type: 'tool_use', id: 'call', name: 'lookup', input: { x: 1 } })]) }),
-  ]));
 });

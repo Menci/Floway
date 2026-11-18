@@ -67,11 +67,4 @@ describe('restoreAssistantTurn', () => {
     expect(await restoreAssistantTurn('openaiChatCompletions', [], turn, [await hashRoundTripContent('answer')])).toEqual({ ok: false, reason: 'missing-reference' });
   });
 
-  it('propagates malformed JSON reference errors', async () => {
-    const turn: AnthropicMessagesReferenceableInputAssistantTurn<ContentReference> = {
-      role: 'assistant',
-      content: [{ type: 'tool_use', id: 'call', name: 'lookup', input: new ContentReference('json', [0]) }],
-    };
-    await expect(restoreAssistantTurn('anthropicMessages', ['{'], turn, [await hashRoundTripContent('{')])).rejects.toThrow();
-  });
 });

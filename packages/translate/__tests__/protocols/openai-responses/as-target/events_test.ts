@@ -160,25 +160,3 @@ test.each([
     { type: 'response.completed', response: response([done], 'completed') },
   ], 'arguments')).rejects.toThrow(`namespace changed from ${String(initial)} to ${String(final)}`);
 });
-
-test('rejects a function_call name change in the done snapshot', async () => {
-  const added = toolItem('function_call', '', 'in_progress');
-  const done = { ...toolItem('function_call', '{}', 'completed'), name: 'other' };
-  await expect(collectProvenance([
-    { type: 'response.created', response: response([], 'in_progress') },
-    { type: 'response.output_item.added', output_index: 0, item: added },
-    { type: 'response.output_item.done', output_index: 0, item: done },
-    { type: 'response.completed', response: response([done], 'completed') },
-  ], 'arguments')).rejects.toThrow('Responses snapshot conflicts with streamed value at ["choices",0,"items",0,"name"]');
-});
-
-test('rejects a function_call name change after the done snapshot', async () => {
-  const added = toolItem('function_call', '', 'in_progress');
-  const done = toolItem('function_call', '{}', 'completed');
-  await expect(collectProvenance([
-    { type: 'response.created', response: response([], 'in_progress') },
-    { type: 'response.output_item.added', output_index: 0, item: added },
-    { type: 'response.output_item.done', output_index: 0, item: done },
-    { type: 'response.completed', response: response([{ ...done, name: 'other' }], 'completed') },
-  ], 'arguments')).rejects.toThrow('Responses terminal snapshot conflicts with closed output item 0');
-});

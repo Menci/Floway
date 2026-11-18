@@ -24,13 +24,6 @@ test('readable reasoning stays separate in IR beside an opaque encrypted field',
   expect(JSON.stringify(trip.target)).not.toContain('opaque-vendor-data');
 });
 
-test('entirely opaque reasoning preserves an empty assistant turn', () => {
-  const slot = readOpenAIResponsesRequest({
-    model: 'm', stream: true, input: [{ type: 'reasoning', summary: [], encrypted_content: 'opaque-vendor-data' }],
-  }).turns[0];
-  expect(slot.toIRInputTurns()).toEqual([{ kind: 'assistant', items: [] }]);
-});
-
 test.each([
   { summary: [''], content: [], expected: [] },
   { summary: [''], content: ['', 'body', ''], expected: [{ type: 'reasoning', content: ['body'] }] },

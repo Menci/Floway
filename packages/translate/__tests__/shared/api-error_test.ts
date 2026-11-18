@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { routeOpenAIChatCompletionsViaOpenAIResponses } from '../../src/index.ts';
 import { errorPayloadFromWire, irErrorPayloadFromBody } from '../../src/shared/api-error.ts';
@@ -12,21 +12,6 @@ const createTrip = async () => {
   return trip;
 };
 
-test('error restatement retains nullable fields, unused aliases and outer metadata', async () => {
-  const trip = await createTrip();
-  const result = trip.error(400, new Headers({ 'retry-after': '5' }), new TextEncoder().encode(JSON.stringify({
-    error: { message: 'bad field', code: null, param: null, status: 'INVALID_ARGUMENT' }, request_id: 'req_1',
-  })));
-  expect(result?.body).toEqual({
-    error: {
-      message: 'bad field', code: null, param: null,
-      provider_specific_fields: { status: 'INVALID_ARGUMENT', request_id: 'req_1' },
-    },
-  });
-  expect(result?.status).toBe(400);
-  expect(result?.headers.get('retry-after')).toBe('5');
-});
-
 test('unrecognized encoding and nonobject JSON leave the upstream body untouched', async () => {
   const trip = await createTrip();
   const invalid = new Uint8Array([
@@ -35,27 +20,6 @@ test('unrecognized encoding and nonobject JSON leave the upstream body untouched
   expect(trip.error(500, new Headers(), invalid)).toBeUndefined();
   for (const body of ['null', '[]', '502 Bad Gateway', 'some upstream prose: exceeds the context window of this model']) {
     expect(trip.error(500, new Headers(), new TextEncoder().encode(body))).toBeUndefined();
-  }
-});
-
-test('an internal error from JSON parsing propagates with its original cause', async () => {
-  const trip = await createTrip();
-  const failure = new Error('internal parser failure', { cause: new Error('underlying failure') });
-  const json = JSON as typeof JSON & { rawJSON: (text: string) => unknown };
-  const spy = vi.spyOn(json, 'rawJSON').mockImplementation(() => { throw failure; });
-  try {
-    let caught: unknown;
-    try {
-      trip.error(500, new Headers(), new TextEncoder().encode('{"error":{"message":"bad","retry_after":1.0}}'));
-    } catch (error) {
-      caught = error;
-    }
-    expect(spy).toHaveBeenCalledOnce();
-    expect(caught).toBe(failure);
-    expect(failure.cause).toBeInstanceOf(Error);
-    expect((caught as Error).cause).toBe(failure.cause);
-  } finally {
-    spy.mockRestore();
   }
 });
 

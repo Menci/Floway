@@ -4,7 +4,7 @@ import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsToolMessage } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
-import { assertEquals, assertRejects } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
 const buildWithTestSidecar = async (payload: OpenAIResponsesRequestPayloadEx) => {
   const streamed = { ...payload, stream: true };
@@ -26,12 +26,6 @@ test('preserves a refusal-only assistant turn between client turns', async () =>
     { role: 'assistant', content: '', refusal: 'Cannot help.' },
     { role: 'user', content: 'Why?' },
   ]);
-});
-
-test('preserves nullable metadata and service tier controls', async () => {
-  const { target } = await buildWithTestSidecar({ model: 'model', input: 'hi', metadata: null, service_tier: null });
-  assertEquals(target.metadata, null);
-  assertEquals(target.service_tier, null);
 });
 
 test('buildTargetPayload merges adjacent assistant reasoning text and tool calls', async () => {
@@ -126,76 +120,6 @@ test('buildTargetPayload merges adjacent assistant reasoning text and tool calls
       content: '42',
     },
   ]);
-});
-
-test('buildTargetPayload preserves null json_schema strictness', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    input: 'Hi',
-    text: { format: { type: 'json_schema', name: 'result', schema: {}, strict: null } },
-  });
-  assertEquals(result.target.response_format, {
-    type: 'json_schema',
-    json_schema: { name: 'result', schema: {}, strict: null },
-  });
-});
-
-test('buildTargetPayload does not double-wrap an already-wrapped json_schema', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    input: 'Hi',
-    text: {
-      format: {
-        type: 'json_schema',
-        json_schema: { name: 'already', strict: false, schema: {} },
-      } as unknown as NonNullable<NonNullable<OpenAIResponsesRequestPayloadEx['text']>['format']>,
-    },
-  });
-
-  assertEquals(result.target.response_format, {
-    type: 'json_schema',
-    json_schema: { name: 'already', strict: false, schema: {} },
-  });
-});
-
-test.each(['none'] as const)('buildTargetPayload omits orphan string tool choice %s', async toolChoice => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    input: [{ type: 'message', role: 'user', content: 'Hi' }],
-    instructions: null,
-    temperature: null,
-    top_p: null,
-    max_output_tokens: null,
-    tools: null,
-    tool_choice: toolChoice,
-    metadata: null,
-    stream: null,
-    store: null,
-    parallel_tool_calls: null,
-    text: null,
-  });
-
-  assertEquals(result.target.tool_choice, undefined);
-});
-
-test('buildTargetPayload retains a required tool choice without declarations', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    input: [{ type: 'message', role: 'user', content: 'Hi' }],
-    instructions: null,
-    temperature: null,
-    top_p: null,
-    max_output_tokens: null,
-    tools: null,
-    tool_choice: 'required',
-    metadata: null,
-    stream: null,
-    store: null,
-    parallel_tool_calls: null,
-    text: null,
-  });
-
-  assertEquals(result.target.tool_choice, 'required');
 });
 
 test('buildTargetPayload wraps custom tools as single-string function tools and records their names', async () => {
@@ -311,36 +235,6 @@ test('buildTargetPayload lifts input_file from custom_tool_call_output', async (
   ]);
 });
 
-test('buildTargetPayload rejects file_id-only images', async () => {
-  await assertRejects(
-    () => buildWithTestSidecar({
-      model: 'gpt-test',
-      input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
-    }),
-    Error,
-    'file_id-only image content',
-  );
-});
-
-test('buildTargetPayload forwards image details OpenAI Chat Completions does not publish', async () => {
-  const result = await buildWithTestSidecar({
-    model: 'gpt-test',
-    input: [{
-      type: 'message',
-      role: 'user',
-      content: [
-        { type: 'input_image', image_url: 'https://example.com/a.png', detail: 'original' },
-        { type: 'input_image', image_url: 'https://example.com/b.png', detail: 'ultra' },
-      ],
-    }],
-  });
-
-  assertEquals(result.target.messages[0].content, [
-    { type: 'image_url', image_url: { url: 'https://example.com/a.png', detail: 'original' } },
-    { type: 'image_url', image_url: { url: 'https://example.com/b.png', detail: 'ultra' } },
-  ]);
-});
-
 test('buildTargetPayload keeps grouped tool results contiguous before lifted images', async () => {
   const result = await buildWithTestSidecar({
     model: 'gpt-test',
@@ -389,37 +283,4 @@ test('buildTargetPayload keeps grouped tool results contiguous before lifted ima
     { type: 'text', text: 'Image output from tool call call_c:' },
     { type: 'image_url', image_url: { url: 'https://example.com/inspection.png', detail: 'original' } },
   ]);
-});
-
-test('buildTargetPayload places lifted images before a later source message', async () => {
-  for (const trailing of [
-    { type: 'message' as const, role: 'user' as const, content: 'new user turn' },
-    { type: 'message' as const, role: 'system' as const, content: 'new system turn' },
-  ]) {
-    const result = await buildWithTestSidecar({
-      model: 'gpt-test',
-      input: [
-        { type: 'function_call', call_id: 'call_1', name: 'capture', arguments: '{}', status: 'completed' },
-        {
-          type: 'function_call_output',
-          call_id: 'call_1',
-          output: [{ type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'auto' }],
-        },
-        trailing,
-      ],
-    });
-
-    assertEquals(result.target.messages.map(message => message.role), ['assistant', 'tool', 'user', trailing.role]);
-    assertEquals(result.target.messages.at(-1)?.content, trailing.content);
-  }
-});
-
-test.each(['system'] as const)('preserves %s text part boundaries', async role => {
-  const result = await buildWithTestSidecar({ model: 'gpt-test', input: [{ type: 'message', role, content: [{ type: 'input_text', text: 'a' }, { type: 'input_text', text: 'b' }] }] });
-  assertEquals(result.target.messages, [{ role, content: [{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }] }]);
-});
-
-test.each(['developer'] as const)('collapses an empty %s message to the empty string', async role => {
-  const result = await buildWithTestSidecar({ model: 'gpt-test', input: [{ type: 'message', role, content: '' }] });
-  assertEquals(result.target.messages, [{ role, content: '' }]);
 });

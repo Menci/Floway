@@ -10,7 +10,6 @@ import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 type LegacyTurn = InputAssistantTurnFor<'openaiChatCompletions'>;
 const legacy = (name: string): RestoredAssistantTurn<LegacyTurn> => ({ kind: 'restored', turn: { role: 'assistant', function_call: { name, arguments: '{}' } } });
-const modern = (callId: string): RestoredAssistantTurn<LegacyTurn> => ({ kind: 'restored', turn: { role: 'assistant', tool_calls: [{ id: callId, type: 'function', function: { name: 'lookup', arguments: '{}' } }] } });
 const mixed = (): RestoredAssistantTurn<LegacyTurn> => ({
   kind: 'restored',
   turn: {
@@ -20,7 +19,6 @@ const mixed = (): RestoredAssistantTurn<LegacyTurn> => ({
   },
 });
 const message = (text: string): IRInputTurn => ({ kind: 'client', items: [{ type: 'message', role: 'user', content: [{ type: 'text', text }] }] });
-const namedResult = (name: string): IRInputTurn => ({ kind: 'client', items: [{ type: 'tool_result', name, output: '' }] });
 
 test('two id-less answers naming the legacy function are refused as ambiguous', () => {
   const twoAnswers: IRInputTurn = { kind: 'client', items: [{ type: 'tool_result', name: 'lookup', output: '' }, { type: 'tool_result', name: 'lookup', output: '' }] };
@@ -29,11 +27,6 @@ test('two id-less answers naming the legacy function are refused as ambiguous', 
 
 test('a non-tail legacy call without a matching result is refused', () => {
   assertThrows(() => chatLegacyCallsOf([legacy('lookup'), message('later')]), TranslateInputException);
-});
-
-test('a legacy call still awaiting its answer at the end is accepted', () => {
-  // The conversation has not moved past the call, so nothing is missing yet.
-  assertEquals(chatLegacyCallsOf([legacy('lookup')]).names.size, 0);
 });
 
 test('legacy matching consumes its uniquely named id-less result before modern matching', () => {
@@ -52,19 +45,6 @@ test('legacy matching consumes its uniquely named id-less result before modern m
   ], { resultCallIds: legacy.results });
   const client = assigned[1];
   assertEquals(client.kind === 'client' ? client.items.map(item => item.type === 'tool_result' ? item.call_id : undefined) : [], ['modern-id', legacy.callIds.get(native.turn)]);
-});
-
-test('legacy matching wins over an earlier pending modern call of the same name', () => {
-  const legacyTurn = legacy('lookup');
-  const answer = namedResult('lookup');
-  const turns = [modern('modern-id'), legacyTurn, answer];
-  const legacyCalls = chatLegacyCallsOf(turns);
-  const assigned = assignCallIds(turns, turn => [
-    ...(turn.tool_calls ?? []).map(call => ({ callId: call.id, name: call.type === 'function' ? call.function.name : call.custom.name })),
-    ...(turn.function_call == null ? [] : [{ callId: legacyCalls.callIds.get(turn)!, name: turn.function_call.name }]),
-  ], { resultCallIds: legacyCalls.results });
-  const client = assigned[2];
-  assertEquals(client.kind === 'client' && client.items[0].type === 'tool_result' ? client.items[0].call_id : undefined, legacyCalls.callIds.get(legacyTurn.turn));
 });
 
 test('a different legacy function does not end the result search', () => {

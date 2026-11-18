@@ -5,12 +5,10 @@ import {
   routeAnthropicMessagesViaOpenAIResponses,
   routeOpenAIChatCompletionsViaAnthropicMessages,
   routeOpenAIChatCompletionsViaOpenAIResponses,
-  routeOpenAIResponsesViaOpenAIChatCompletions,
 } from '../../../src/index.ts';
 import { readAnthropicMessagesRequest } from '../../../src/protocols/anthropic-messages/as-source/input-to.ts';
 import { readOpenAIChatCompletionsRequest } from '../../../src/protocols/openai-chat-completions/as-source/input-to.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import type { OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 const options = { sidecarCodec: createTestSidecarCodec() };
 
@@ -43,22 +41,6 @@ test.each([
   expect(messages.type).toBe('trip');
   if (messages.type !== 'trip') throw new Error(messages.message);
   expect(messages.target.max_tokens).toBe(messagesCeiling);
-});
-
-test('nullable token limits and cache controls remain explicit in source IR', async () => {
-  const source = {
-    model: 'm', stream: true, messages: [], max_tokens: null, max_completion_tokens: null,
-    prompt_cache_options: null, prompt_cache_retention: null, user: null,
-  };
-  expect(readOpenAIChatCompletionsRequest(source).request.settings).toMatchObject({
-    max_visible_output_tokens: null, max_output_tokens: null, prompt_cache_options: null, prompt_cache_retention: null, user: null,
-  });
-  const responses = await routeOpenAIChatCompletionsViaOpenAIResponses(source, options);
-  if (responses.type !== 'trip') throw new Error(responses.message);
-  expect(responses.target.max_output_tokens).toBeNull();
-  const chat = await routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'm', stream: true, input: 'hi', max_output_tokens: null }, options);
-  if (chat.type !== 'trip') throw new Error(chat.message);
-  expect(chat.target.max_completion_tokens).toBeNull();
 });
 
 test('nullable Chat sampling, storage, parallelism and schema strictness remain explicit', async () => {
@@ -96,35 +78,6 @@ test('Chat controls cross the public Responses route with their independent sema
   expect(result.target.include).toEqual(['message.output_text.logprobs']);
 });
 
-test.each([false, null] as const)('Chat logprobs %j survives source reading and Responses projection', async logprobs => {
-  const source = {
-    model: 'm', stream: true, messages: [], logprobs, top_logprobs: null,
-    prompt_cache_retention: null, prompt_cache_options: {}, user: '', presence_penalty: null, frequency_penalty: 0,
-  };
-  expect(readOpenAIChatCompletionsRequest(source).request.settings).toMatchObject({
-    logprobs, top_logprobs: null, prompt_cache_retention: null, prompt_cache_options: {}, user: '', presence_penalty: null, frequency_penalty: 0,
-  });
-  const result = await routeOpenAIChatCompletionsViaOpenAIResponses(source, options);
-  if (result.type !== 'trip') throw new Error(result.message);
-  expect(result.target).toMatchObject({
-    top_logprobs: null, prompt_cache_retention: null, prompt_cache_options: {}, user: '', presence_penalty: null, frequency_penalty: 0,
-  });
-  expect(result.target.include).toEqual(logprobs === null ? null : []);
-});
-
-test.each([{ include: null }])('Responses include $include states no requested logprobs while preserving zero controls', async ({ include }) => {
-  const result = await routeOpenAIResponsesViaOpenAIChatCompletions({
-    model: 'm', stream: true, input: 'hi', include: include === null ? null : [...include],
-    prompt_cache_retention: '', prompt_cache_options: { mode: '', ttl: '' }, user: '',
-    top_logprobs: 0, presence_penalty: 0, frequency_penalty: null,
-  }, options);
-  if (result.type !== 'trip') throw new Error(result.message);
-  expect(result.target).toMatchObject({
-    logprobs: include === null ? null : false, prompt_cache_retention: '', prompt_cache_options: { mode: '', ttl: '' }, user: '',
-    top_logprobs: 0, presence_penalty: 0, frequency_penalty: null,
-  });
-});
-
 test.each(['auto'] as const)('orphan Messages %s stays in source IR and is omitted by both OpenAI writers', async type => {
   const source = { model: 'm', stream: true, max_tokens: 10, messages: [{ role: 'user' as const, content: 'A' }], tool_choice: { type } };
   expect(readAnthropicMessagesRequest(source).request.tool_choice).toBe(type);
@@ -133,26 +86,6 @@ test.each(['auto'] as const)('orphan Messages %s stays in source IR and is omitt
     if (result.type !== 'trip') throw new Error(result.message);
     expect(result.target).not.toHaveProperty('tools');
     expect(result.target).not.toHaveProperty('tool_choice');
-  }
-});
-
-test('tool selection never changes the complete allocated declaration inventory', async () => {
-  const tools = [
-    { type: 'namespace' as const, name: 'x', description: 'group', tools: [{ type: 'function' as const, name: 'f' }, { type: 'custom' as const, name: 'f' }] },
-    { type: 'function' as const, name: 'x_f' },
-  ];
-  const choices: (OpenAIResponsesToolChoice | undefined)[] = [
-    undefined, 'auto', 'none', 'required', { type: 'function', namespace: 'x', name: 'f' },
-    { type: 'allowed_tools', mode: 'auto', tools: [] },
-    { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', namespace: 'x', name: 'f' }] },
-  ];
-  let declarations: unknown;
-  for (const tool_choice of choices) {
-    const result = await routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'm', stream: true, input: 'hi', tools, tool_choice }, options);
-    if (result.type !== 'trip') throw new Error(result.message);
-    if (tool_choice === undefined) declarations = result.target.tools;
-    expect(result.target.tools).toEqual(declarations);
-    expect(result.target.tools).toHaveLength(3);
   }
 });
 

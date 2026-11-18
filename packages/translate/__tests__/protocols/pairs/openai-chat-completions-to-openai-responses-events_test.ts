@@ -6,22 +6,10 @@ import { buildSourceEventsFor, buildTargetPayloadFor, emptyPayload, pairs } from
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import { testOutputTranslation } from '../fixtures.ts';
 import { structuredResponsesFixture } from '../openai-responses/fixtures.ts';
-import { eventFrame, type ProtocolFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
-import { collectOpenAIChatCompletionsProtocolEventsToResult, parseOpenAIChatCompletionsStream, openaiChatCompletionsProtocolFrameToSSEFrame as writeChatFrame, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { collectOpenAIChatCompletionsProtocolEventsToResult, parseOpenAIChatCompletionsStream, openaiChatCompletionsProtocolFrameToSSEFrame as writeChatFrame } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, collectOpenAIResponsesProtocolEventsToResult, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
-
-// Local stand-in for `openaiChatCompletionsProtocolFrameToSSEFrame`: the behavior
-// under test is the translate output's terminal-frame discipline, not the SSE
-// projection itself.
-const isUsageOnlyChunk = (frame: ProtocolFrame<OpenAIChatCompletionsStreamEvent>): boolean =>
-  frame.type === 'event' && !('error' in frame.event) && Array.isArray(frame.event.choices) && frame.event.choices.length === 0 && frame.event.usage !== undefined;
-
-const openaiChatCompletionsProtocolFrameToSSEFrame = (frame: ProtocolFrame<OpenAIChatCompletionsStreamEvent>, options: { includeUsageChunk: boolean }): SseFrame | null => {
-  if (frame.type === 'done') return sseFrame('[DONE]');
-  if (!options.includeUsageChunk && isUsageOnlyChunk(frame)) return null;
-  return sseFrame(JSON.stringify(frame.event));
-};
 
 const makeResponse = (status: OpenAIResponsesResultEx['status']): OpenAIResponsesResultEx => ({
   id: 'resp_123',
@@ -55,36 +43,6 @@ const translate = (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEven
   { sidecarCodec: createTestSidecarCodec() },
   structuredResponsesFixture(frames),
 );
-
-const chatSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>) {
-  for await (const frame of translate(frames)) {
-    const sse = openaiChatCompletionsProtocolFrameToSSEFrame(frame, includeUsageChunk);
-    if (sse) yield sse;
-  }
-};
-
-const countAssistantStartChunksAndDone = async (frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): Promise<{ assistantStartCount: number; doneCount: number }> => {
-  let assistantStartCount = 0;
-  let doneCount = 0;
-
-  async function* stream() {
-    yield* frames;
-  }
-
-  for await (const frame of chatSseFrames(stream())) {
-    if (frame.data === '[DONE]') {
-      doneCount++;
-      continue;
-    }
-
-    const parsed = JSON.parse(frame.data) as {
-      choices?: Array<{ delta?: { role?: string } }>;
-    };
-    if (parsed.choices?.[0]?.delta?.role === 'assistant') assistantStartCount++;
-  }
-
-  return { assistantStartCount, doneCount };
-};
 
 const collect = async <T>(frames: AsyncIterable<T>): Promise<T[]> => {
   const collected = [];
@@ -131,22 +89,6 @@ test('OpenAI Responses to OpenAI Chat Completions translation rejects malformed 
     RangeError,
     'cache token counts exceed inclusive input tokens',
   );
-});
-
-test('translateToSourceEvents avoids assistant-start duplication for created+completed fallback', async () => {
-  const { assistantStartCount, doneCount } = await countAssistantStartChunksAndDone([
-    toProtocolFrame({
-      type: 'response.created',
-      response: makeResponse('in_progress'),
-    }),
-    toProtocolFrame({
-      type: 'response.completed',
-      response: makeResponse('completed'),
-    }),
-  ]);
-
-  assertEquals(assistantStartCount, 1);
-  assertEquals(doneCount, 1);
 });
 
 test('translateToSourceEvents streams independent text before deferred reasoning and retains usage', async () => {

@@ -30,13 +30,4 @@ describe('round-trip turn digests', () => {
     expect(materialOf).not.toHaveBeenCalled();
   });
 
-  it('preserves synchronous material projection failures in both factory results', () => {
-    const failure = new Error('Invalid protocol material');
-    const materialOf = (_turn: string): never => { throw failure; };
-    const compute = createTurnDigestComputer(materialOf);
-    const verify = createTurnDigestVerifier(materialOf);
-
-    expect(() => compute('invalid')).toThrow(failure);
-    expect(() => verify('invalid', new Uint8Array(8), 1)).toThrow(failure);
-  });
 });

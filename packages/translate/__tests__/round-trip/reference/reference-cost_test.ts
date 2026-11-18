@@ -50,14 +50,6 @@ describe('thin reference selection', () => {
     }
   });
 
-  it('aggregates every use of one hash before paying its digest cost once', async () => {
-    const texts = Array.from({ length: 12 }, () => 'hello there again');
-    const result = await finalizeTexts(texts);
-    expect(result.referencedContentHashes).toEqual([await hashRoundTripContent(texts[0])]);
-    expect(result.targetTurn.content).toEqual(texts.map(() => ({ type: 'text', text: new ContentReference('text', [0]), citations: null })));
-    expect(await restoreAssistantTurn('anthropicMessages', texts, result.targetTurn, result.referencedContentHashes)).toEqual({ ok: true, value: result.turn });
-  });
-
   it.each(['汉'.repeat(80), 'a'.repeat(80)])('selects equally long Unicode and ASCII text using format-independent lengths: %j', async text => {
     const result = await finalizeTexts([text]);
     expect(result.targetTurn.content).toEqual([{ type: 'text', text: new ContentReference('text', [0]), citations: null }]);

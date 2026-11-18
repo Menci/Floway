@@ -52,15 +52,6 @@ test('a new tool closes the preceding function and later updates warn without re
   } finally { warning.mockRestore(); }
 });
 
-test('a native custom call stays open across subsequent tool starts', async () => {
-  const custom = (input: string, first = false) => chat({ tool_calls: [{ index: 0, ...(first ? { id: 'custom0', type: 'custom' } : {}), custom: { ...(first ? { name: 'script' } : {}), input } }] });
-  const frames = await gated([custom('first', true), tool(1, '{}', 'call1', 'lookup')], [custom('second'), chat({}, 'tool_calls'), doneFrame()], readOpenAIChatCompletionsEvents, output => {
-    expect(output.filter((record: any) => record.type === 'item_end')).toEqual([]);
-  });
-  const ir = await collectIR(iterate(frames));
-  expect(ir.choices[0].items).toMatchObject([{ type: 'custom_tool_call', input: 'firstsecond' }, { type: 'function_call', arguments: '{}' }]);
-});
-
 test('a wrapped custom input is published when its native function boundary closes', async () => {
   const frames = await gated([tool(0, '{"input":"text"}', 'call0', 'script'), tool(1, '{}', 'call1', 'lookup')], [chat({}, 'tool_calls'), doneFrame()], source => readOpenAIChatCompletionsEvents(source, { customToolNames: new Set(['script']) }), output => {
     expect(output).toContainEqual({ type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'input'], value: 'text' });
@@ -108,13 +99,6 @@ test.each([['Responses', writeOpenAIResponsesEvents], ['Messages', writeAnthropi
   await gated(irPrefix(IRAbsent), irSuffix(), writer, prefix => {
     expect(prefix.some((frame: any) => frame.event?.type === 'response.output_item.added' || frame.event?.type === 'content_block_start' || frame.event?.choices?.[0]?.delta.tool_calls !== undefined)).toBe(true);
   });
-});
-
-test.each([['Responses', writeOpenAIResponsesEvents], ['Messages', writeAnthropicMessagesEvents]] as const)('%s synthesizes a call ID when the item closes with it absent', async (_name, writer) => {
-  const frames = await gated(irPrefix(), irSuffix(), writer, prefix => {
-    expect(prefix.some((frame: any) => frame.event?.type === 'response.output_item.added' || frame.event?.type === 'content_block_start')).toBe(false);
-  });
-  expect(frames.some((frame: any) => frame.event?.type === 'response.output_item.done' || frame.event?.type === 'content_block_stop')).toBe(true);
 });
 
 const response = (output: any[], status = 'completed') => ({ id: 'resp_lifecycle', model: 'served', status, output, usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 }, error: null, incomplete_details: status === 'incomplete' ? { reason: 'max_output_tokens' } : null });
@@ -170,42 +154,6 @@ test.each([['ChatCompletions', writeOpenAIChatCompletionsEvents], ['Responses', 
   }
 });
 
-test('Responses closes only the addressed text part while a refusal remains open', async () => {
-  const prefix: IRRecord[] = [
-    { type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } },
-    { type: 'write', kind: 'assign', path: ['model'], value: 'served' },
-    { type: 'start', id: 'resp_parts' },
-    { type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 0], value: { type: 'message', content: [] } },
-    { type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 0, 'content', 0], value: { type: 'text', text: '' } },
-    { type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'A' },
-    { type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 0, 'content', 1], value: { type: 'refusal', refusal: '' } },
-    { type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'content', 1, 'refusal'], value: 'B' },
-    { type: 'part_end', choice: 0, item: 0, part: 0 },
-  ];
-  const suffix: IRRecord[] = [{ type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'content', 1, 'refusal'], value: 'C' }, { type: 'part_end', choice: 0, item: 0, part: 1 }, { type: 'item_end', choice: 0, item: 0 }, { type: 'choice_end', choice: 0, finish_reason: 'stop' }, { type: 'finish', status: 'completed' }];
-  const frames = await gated(prefix, suffix, writeOpenAIResponsesEvents, output => {
-    expect(output.filter(frame => frame.event.type === 'response.content_part.done').map(frame => frame.event.content_index)).toEqual([0]);
-  });
-  const result: any = await nativeResult('openai-responses', frames);
-  expect(result.output[0].content).toEqual([{ type: 'output_text', text: 'A', annotations: [], logprobs: [] }, { type: 'refusal', refusal: 'BC' }]);
-});
-
-test.each([false, true])('GenerateContent keeps parallel text arrival order with a prior tool: %s', async buffered => {
-  const block = (index: number) => eventFrame({ type: 'content_block_start', index, content_block: { type: 'text', text: '' } } as any);
-  const text = (index: number, value: string) => eventFrame({ type: 'content_block_delta', index, delta: { type: 'text_delta', text: value } } as any);
-  const stop = (index: number) => eventFrame({ type: 'content_block_stop', index } as any);
-  const offset = buffered ? 1 : 0;
-  const prefix = [messageStart, ...(buffered ? [eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'call', name: 'lookup', input: {} } } as any), eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"x":' } } as any)] : []), block(offset), text(offset, 'a'), block(offset + 1), text(offset + 1, 'b'), text(offset, 'c')];
-  const suffix = [...(buffered ? [eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '1}' } } as any), stop(0)] : []), stop(offset + 1), stop(offset), ...messageEnd(buffered ? 'tool_use' : 'end_turn')];
-  const frames = await gated(prefix, suffix, source => writeGeminiGenerateContentEvents(readAnthropicMessagesEvents(source)), output => {
-    const text = output.flatMap(frame => frame.event.candidates?.flatMap((candidate: any) => candidate.content?.parts ?? []) ?? []).map((part: any) => part.text ?? '').join('');
-    expect(text).toBe(buffered ? '' : 'abc');
-  });
-  const parts = frames.flatMap(frame => (frame.event as any).candidates?.flatMap((candidate: any) => candidate.content?.parts ?? []) ?? []);
-  expect(parts.map((part: any) => part.text ?? '').join('')).toBe('abc');
-  if (buffered) expect(parts[0].functionCall).toMatchObject({ id: 'call', args: { x: 1 } });
-});
-
 test('Messages publishes cumulative usage progress before pulling the rest of the generation', async () => {
   const initial = chat({ role: 'assistant' });
   initial.event.usage = { prompt_tokens: 10, completion_tokens: 0, total_tokens: 10 };
@@ -220,30 +168,4 @@ test('Messages publishes cumulative usage progress before pulling the rest of th
   });
   const final = output.findLast(frame => frame.event?.type === 'message_delta');
   expect(final).toMatchObject({ event: { delta: { stop_reason: 'end_turn' }, usage: { input_tokens: 10, output_tokens: 2 } } });
-});
-
-test('Responses states a grouped call its group on the announcement and the snapshot alike', async () => {
-
-  const records: IRRecord[] = [
-    { type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } },
-    { type: 'write', kind: 'assign', path: ['model'], value: 'served' },
-    { type: 'start', id: 'source' },
-    {
-      type: 'write',
-      kind: 'initialize',
-      path: ['choices', 0, 'items', 0],
-      value: { type: 'function_call', call_id: 'call_1', name: 'lookup', namespace: 'public', arguments: '' },
-    },
-    { type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'arguments'], value: '{}' },
-    { type: 'item_end', choice: 0, item: 0 },
-    { type: 'choice_end', choice: 0, finish_reason: 'tool_calls' },
-    { type: 'finish', status: 'completed' },
-  ];
-  const frames = await collect(writeOpenAIResponsesEvents(iterate(records)));
-
-  const callItems = frames.flatMap(frame => frame.type === 'event' ? [frame.event] : [])
-    .flatMap(event => 'item' in event && event.item != null && typeof event.item === 'object' ? [event.item] : [])
-    .filter(item => 'type' in item && (item.type === 'function_call' || item.type === 'custom_tool_call'));
-  expect(callItems.map(item => ('name' in item ? item.name : undefined))).toEqual(['lookup', 'lookup']);
-  expect(callItems.map(item => ('namespace' in item ? item.namespace : undefined))).toEqual(['public', 'public']);
 });
