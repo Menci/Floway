@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { executeTranslation } from '../../../../src/data-plane/chat/shared/execute-translation.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { toInternalDebugError, type ExecuteResult } from '@floway-dev/provider';
+import { decodeResponseBody, toInternalDebugError, type ExecuteResult } from '@floway-dev/provider';
 import { testTelemetryModelIdentity } from '@floway-dev/test-utils';
 import type { TranslateTrip } from '@floway-dev/translate';
 
@@ -84,8 +84,7 @@ describe('executeTranslation', () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
       type: 'api-error',
       source: 'upstream',
-      status: 404,
-      headers: new Headers(),
+      http: { status: 404, headers: new Headers() },
       body: new Uint8Array(),
     };
     const innerAttempt = async (_translated: string): Promise<ExecuteResult<ProtocolFrame<TgtEvent>>> => inner;
@@ -98,7 +97,7 @@ describe('executeTranslation', () => {
   test('failure inner — outer returns the failure unchanged', async () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
       type: 'internal-error',
-      status: 500,
+      http: { status: 500, headers: new Headers() },
       error: toInternalDebugError(new Error('boom')),
     };
     const innerAttempt = async (_translated: string): Promise<ExecuteResult<ProtocolFrame<TgtEvent>>> => inner;
@@ -112,8 +111,7 @@ describe('executeTranslation', () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
       type: 'api-error',
       source: 'upstream',
-      status: 400,
-      headers: new Headers({ 'x-upstream-request-id': 'abc' }),
+      http: { status: 400, headers: new Headers({ 'x-upstream-request-id': 'abc' }) },
       body: new TextEncoder().encode('raw upstream'),
     };
     const translateWithRewrite = async (payload: SrcPayload): Promise<TranslateTrip<string, SrcEvent, TgtEvent>> => ({
@@ -124,9 +122,9 @@ describe('executeTranslation', () => {
     const result = await executeTranslation({ model: 'payload' }, translateWithRewrite, async () => inner);
     expect(result.type).toBe('api-error');
     if (result.type !== 'api-error') throw new Error('unreachable');
-    expect(JSON.parse(new TextDecoder().decode(result.body))).toEqual({ error: { message: 'rewritten' } });
-    expect(result.headers.get('content-type')).toBe('application/json');
-    expect(result.headers.get('x-upstream-request-id')).toBeNull();
+    expect(JSON.parse(decodeResponseBody(result.body))).toEqual({ error: { message: 'rewritten' } });
+    expect(result.http.headers.get('content-type')).toBe('application/json');
+    expect(result.http.headers.get('x-upstream-request-id')).toBeNull();
     // Fields not touched by the rewriter (source, performance, upstream) survive.
     expect(result.source).toBe('upstream');
   });
@@ -135,8 +133,7 @@ describe('executeTranslation', () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
       type: 'api-error',
       source: 'upstream',
-      status: 502,
-      headers: new Headers(),
+      http: { status: 502, headers: new Headers() },
       body: new TextEncoder().encode('bad gateway'),
     };
     const translateWithRewrite = async (payload: SrcPayload): Promise<TranslateTrip<string, SrcEvent, TgtEvent>> => ({ ...(await translate(payload)), error: () => undefined });
@@ -149,8 +146,7 @@ describe('executeTranslation', () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
       type: 'api-error',
       source: 'gateway',
-      status: 400,
-      headers: new Headers(),
+      http: { status: 400, headers: new Headers() },
       body: new TextEncoder().encode('synthesized'),
     };
     let called = false;
@@ -220,14 +216,13 @@ describe('executeTranslation upstream capture', () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
       type: 'api-error',
       source: 'upstream',
-      status: 413,
-      headers: new Headers({ 'x-upstream': 'yes' }),
+      http: { status: 413, headers: new Headers({ 'x-upstream': 'yes' }) },
       body: new TextEncoder().encode('raw upstream body'),
     };
-    const captured: { status: number; headers: Headers; body: Uint8Array }[] = [];
+    const captured: { status: number; headers: Headers; body: Uint8Array | null }[] = [];
     const capture = {
       upstreamFrame: () => { throw new Error('should not be called on api-error path'); },
-      upstreamApiError: (error: { status: number; headers: Headers; body: Uint8Array }) => captured.push(error),
+      upstreamApiError: (error: { status: number; headers: Headers; body: Uint8Array | null }) => captured.push(error),
     };
     const translateWithRewrite = async (payload: SrcPayload): Promise<TranslateTrip<string, SrcEvent, TgtEvent>> => ({
       ...(await translate(payload)),
@@ -241,23 +236,22 @@ describe('executeTranslation upstream capture', () => {
     expect(captured).toHaveLength(1);
     expect(captured[0].status).toBe(413);
     expect(captured[0].headers.get('x-upstream')).toBe('yes');
-    expect(new TextDecoder().decode(captured[0].body)).toBe('raw upstream body');
+    expect(decodeResponseBody(captured[0].body)).toBe('raw upstream body');
     // Downstream got the rewrite.
-    expect(JSON.parse(new TextDecoder().decode(result.body))).toEqual({ error: { message: 'rewritten' } });
+    expect(JSON.parse(decodeResponseBody(result.body))).toEqual({ error: { message: 'rewritten' } });
   });
 
   test('api-error path — capture fires even when trip.error is undefined (no restatement)', async () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
       type: 'api-error',
       source: 'upstream',
-      status: 502,
-      headers: new Headers(),
+      http: { status: 502, headers: new Headers() },
       body: new TextEncoder().encode('bad gateway'),
     };
     const captured: { status: number }[] = [];
     const capture = {
       upstreamFrame: () => {},
-      upstreamApiError: (error: { status: number; headers: Headers; body: Uint8Array }) => captured.push({ status: error.status }),
+      upstreamApiError: (error: { status: number; headers: Headers; body: Uint8Array | null }) => captured.push({ status: error.status }),
     };
 
     await executeTranslation({ model: 'payload' }, translate, async () => inner, capture);
@@ -267,7 +261,7 @@ describe('executeTranslation upstream capture', () => {
   test('internal-error path — capture is NOT invoked', async () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
       type: 'internal-error',
-      status: 500,
+      http: { status: 500, headers: new Headers() },
       error: toInternalDebugError(new Error('boom')),
     };
     let called = false;
@@ -285,8 +279,7 @@ describe('executeTranslation upstream capture', () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
       type: 'api-error',
       source: 'gateway',
-      status: 400,
-      headers: new Headers(),
+      http: { status: 400, headers: new Headers() },
       body: new TextEncoder().encode('synthesized'),
     };
     let called = false;

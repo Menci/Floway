@@ -342,7 +342,7 @@ describe('createChatGPTProvider', () => {
       noopUpstreamCallOptions(),
     );
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.response.status).toBe(503);
+    if (!result.ok) expect(result.http.status).toBe(503);
   });
 
   test('callOpenAIImagesGenerations posts gpt-image-2 through the ChatGPT Codex endpoint', async () => {
@@ -355,7 +355,7 @@ describe('createChatGPTProvider', () => {
     const options = noopUpstreamCallOptions();
     options.headers.set('x-codex-image-turn-id', 'turn-image');
     const result = await instance.instance.callOpenAIImagesGenerations(model, { prompt: 'an orange circle', quality: 'low' }, undefined, options);
-    expect(result.response.status).toBe(200);
+    expect(result.http.status).toBe(200);
     expect(result.modelKey).toBe('gpt-image-2');
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe('https://chatgpt.com/backend-api/codex/images/generations');
@@ -375,7 +375,7 @@ describe('createChatGPTProvider', () => {
     const instance = createChatGPTProvider(freeRecord);
     const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
     const result = await instance.instance.callOpenAIImagesGenerations(model, { prompt: 'an orange circle' }, undefined, noopUpstreamCallOptions());
-    expect(result.response.status).toBe(403);
+    expect(result.http.status).toBe(403);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -390,8 +390,8 @@ describe('createChatGPTProvider', () => {
       images: [{ type: 'reference', reference: { image_url: 'https://example.test/image.png' } }],
       parameters: { prompt: 'edit' },
     }, undefined, noopUpstreamCallOptions());
-    expect(result.response.status).toBe(403);
-    expect(await result.response.json()).toEqual({
+    expect(result.http.status).toBe(403);
+    expect(await result.http.json()).toEqual({
       error: { type: 'image_tools_unavailable', message: 'ChatGPT Free accounts do not provide Codex image tools.' },
     });
   });
@@ -409,7 +409,7 @@ describe('createChatGPTProvider', () => {
       images: [{ type: 'upload', file: new File(['image'], 'image.png', { type: 'image/png' }) }],
       parameters: { prompt: 'make it blue' },
     }, undefined, options);
-    expect(result.response.status).toBe(200);
+    expect(result.http.status).toBe(200);
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe('https://chatgpt.com/backend-api/codex/images/edits');
     expect(new Headers((init as RequestInit).headers).get('originator')).toBe('chatgpt_cca');
@@ -431,9 +431,9 @@ describe('createChatGPTProvider', () => {
     const model = stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } });
     // @ts-expect-error: each method has a different body type; we only assert
     // the synthetic 405 envelope is what comes back.
-    const result = await instance.instance[method](model, {}, undefined, noopUpstreamCallOptions()) as { response: Response };
-    expect(result.response.status).toBe(405);
-    const body = await result.response.json() as { error: { type: string; message: string } };
+    const result = await instance.instance[method](model, {}, undefined, noopUpstreamCallOptions()) as { http: Response };
+    expect(result.http.status).toBe(405);
+    const body = await result.http.json() as { error: { type: string; message: string } };
     expect(body.error.type).toBe('method_not_allowed');
     expect(body.error.message).toMatch(/chatgpt/i);
   });

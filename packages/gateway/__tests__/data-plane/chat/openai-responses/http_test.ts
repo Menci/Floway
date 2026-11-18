@@ -163,7 +163,7 @@ const queueCompletedResponse = (id = 'resp_test') => {
     action: 'generate', ok: true,
     events: makeProviderEvents(completedEvents(id)),
     modelKey: 'test-model-key',
-    headers: new Headers(),
+    http: { status: 200, headers: new Headers() },
   }));
   queueResolution([makeCandidate({ callOpenAIResponses })]);
   return callOpenAIResponses;
@@ -260,7 +260,7 @@ test('POST /v1/responses makes a done reasoning item reusable before terminal', 
           await firstReleased;
         })(),
         modelKey: 'test-model-key',
-        headers: new Headers(),
+        http: { status: 200, headers: new Headers() },
       };
     }
     return {
@@ -268,7 +268,7 @@ test('POST /v1/responses makes a done reasoning item reusable before terminal', 
       ok: true,
       events: makeProviderEvents(completedEvents('resp_second')),
       modelKey: 'test-model-key',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
   const candidate = makeCandidate({ callOpenAIResponses });
@@ -329,7 +329,7 @@ test('POST /v1/responses canonicalizes an implicit system message and rewrites i
       ok: true,
       events: makeProviderEvents(completedEvents()),
       modelKey: 'test-model-key',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
   queueResolution([makeCandidate({
@@ -482,6 +482,7 @@ test('POST /v1/responses returns 502 when the response snapshot cannot be persis
 const compactTurn = async (
   upstream: Partial<OpenAIResponsesResultEx> = {},
   requestFields: Record<string, unknown> = {},
+  http = { status: 200, headers: new Headers() },
 ): Promise<{ upstream: OpenAIResponsesResultEx; response: Response }> => {
   const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
   const compactionResult: OpenAIResponsesResultEx = {
@@ -493,7 +494,7 @@ const compactTurn = async (
   };
   const callOpenAIResponses = vi.fn(async (_model: unknown, _body: unknown, action: OpenAIResponsesAction): Promise<ProviderOpenAIResponsesResult> => {
     if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
-    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
+    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key', http };
   });
   queueResolution([makeCandidate({ callOpenAIResponses })]);
 
@@ -512,9 +513,14 @@ const compactTurn = async (
 
 test('POST /v1/responses/compact returns a non-streaming compaction body', async () => {
   const repo = installRepo();
-  const { response } = await compactTurn();
+  const { response } = await compactTurn({}, {}, {
+    status: 202,
+    headers: new Headers({ 'request-id': 'req_compact', 'content-type': 'application/vnd.upstream+json', 'set-cookie': 'private=1' }),
+  });
 
-  assertEquals(response.status, 200);
+  assertEquals(response.status, 202);
+  assertEquals(response.headers.get('request-id'), 'req_compact');
+  assertEquals(response.headers.get('set-cookie'), null);
   assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
   const body = await response.json() as { object: string; id: string; output: Array<{ id: string }> };
   assertEquals(body.object, 'response.compaction');
@@ -618,7 +624,7 @@ test('POST /v1/responses applies the alias rules to a codex-auto-review request:
       action: 'generate', ok: true,
       events: makeProviderEvents(completedEvents()),
       modelKey: 'test-model-key',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
 
@@ -654,7 +660,7 @@ test('POST /v1/responses/compact applies the alias rules to a codex-auto-review 
   queueCodexAutoReviewCandidate(async (_model, body, action): Promise<ProviderOpenAIResponsesResult> => {
     if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
     observedBodies.push(body as Omit<CanonicalOpenAIResponsesPayload, 'model'>);
-    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
+    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key', http: { status: 200, headers: new Headers() } };
   });
 
   const response = await makeApp().request('/v1/responses/compact', {
@@ -718,7 +724,7 @@ test('POST /v1/responses nests a mid-stream failure under `error` so an SDK stre
       throw new Error('upstream exploded mid-stream');
     })(),
     modelKey: 'test-model-key',
-    headers: new Headers(),
+    http: { status: 200, headers: new Headers() },
   }));
   queueResolution([makeCandidate({ callOpenAIResponses })]);
 

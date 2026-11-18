@@ -495,7 +495,7 @@ test('Custom provider callOpenAIImagesGenerations posts JSON with model re-injec
       const [model] = await provider.instance.getProvidedModels(directFetcher);
       const result = await provider.instance.callOpenAIImagesGenerations(model, { prompt: 'hi' }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
-      assertEquals(result.response.status, 200);
+      assertEquals(result.http.status, 200);
     },
   );
   assertExists(forwarded);
@@ -524,7 +524,7 @@ test('Custom provider callAlphaSearch posts JSON to /v1/alpha/search with the up
         undefined,
         noopUpstreamCallOptions(),
       );
-      assertEquals(result.response.status, 200);
+      assertEquals(result.http.status, 200);
       assertEquals(result.modelKey, 'gpt-search');
     },
   );

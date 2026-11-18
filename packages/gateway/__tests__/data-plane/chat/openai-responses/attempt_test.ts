@@ -111,7 +111,7 @@ test('generate native success leaves source-edge state ownership to the caller',
     action: 'generate', ok: true,
     events: makeProviderEvents([completedEvent]),
     modelKey: 'test-model-key',
-    headers: new Headers(),
+    http: { status: 200, headers: new Headers() },
   }));
 
   const candidate = makeCandidate(callOpenAIResponses);
@@ -180,7 +180,7 @@ test('generate treats a translated OpenAI Responses payload as opaque to native 
         response: makeOpenAIResponsesResult(),
       }]),
       modelKey: 'test-model-key',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
   const candidate = makeCandidate(callOpenAIResponses);
@@ -233,7 +233,7 @@ test('generate applies role compatibility flags in target-chain order', async ()
         response: makeOpenAIResponsesResult(),
       }]),
       modelKey: 'test-model-key',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
   const candidate = makeCandidate(callOpenAIResponses, new Set([
@@ -300,7 +300,7 @@ test('generate defers the role rewrite until after translation to OpenAI Chat Co
         yield doneFrame();
       })(),
       modelKey: 'test-model-key',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
   const upstream = 'up_chat';
@@ -358,7 +358,7 @@ test('generate passes non-events provider result through unchanged', async () =>
   const upstreamResponse = new Response(JSON.stringify({ error: { message: 'nope' } }), { status: 502, headers: new Headers({ 'content-type': 'application/json' }) });
   const callOpenAIResponses = vi.fn(async (): Promise<ProviderOpenAIResponsesResult> => ({
     action: 'generate', ok: false,
-    response: upstreamResponse,
+    http: upstreamResponse,
     modelKey: 'test-model-key',
   }));
 
@@ -372,7 +372,7 @@ test('generate passes non-events provider result through unchanged', async () =>
 
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
-  assertEquals(result.status, 502);
+  assertEquals(result.http.status, 502);
   // Wrap must not run when the upstream failed before any events flowed.
   assertEquals(wrapSpy.mock.calls.length, 0);
   wrapSpy.mockRestore();
@@ -402,7 +402,7 @@ test('compact returns the clean upstream result for source-edge affinity and sto
 
   const callOpenAIResponses = vi.fn(async (_model: ProviderModel, _body: Omit<CanonicalOpenAIResponsesPayload, 'model'>, action: OpenAIResponsesAction): Promise<ProviderOpenAIResponsesResult> => {
     if (action !== 'compact') throw new Error(`compact candidate received action='${action}'`);
-    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
+    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key', http: { status: 200, headers: new Headers() } };
   });
 
   const candidate = makeCandidate(callOpenAIResponses);
@@ -457,7 +457,7 @@ test('generate strips disallowed headers and states a remote image URL to Anthro
           yield doneFrame();
         })(),
         modelKey: 'k',
-        headers: new Headers(),
+        http: { status: 200, headers: new Headers() },
       };
     },
   });
@@ -522,7 +522,7 @@ test('generate preserves order and downgrades a disallowed system turn across tr
               yield doneFrame();
             })(),
             modelKey: 'k',
-            headers: new Headers(),
+            http: { status: 200, headers: new Headers() },
           };
         },
       }),
@@ -599,7 +599,7 @@ test('generate restores signed hosted-tool replay data without stored state', as
   ];
   const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
     capturedBody = body as { input?: unknown[] };
-    return { action: 'generate', ok: true, events: makeProviderEvents(upstreamEvents), modelKey: 'test-model-key', headers: new Headers() };
+    return { action: 'generate', ok: true, events: makeProviderEvents(upstreamEvents), modelKey: 'test-model-key', http: { status: 200, headers: new Headers() } };
   });
   const candidate = makeCandidate(callOpenAIResponses, new Set(['openai-responses-web-search-shim']));
 
@@ -663,7 +663,7 @@ test('generate propagates upstream response headers onto the EventResult so resp
     action: 'generate', ok: true,
     events: makeProviderEvents([completedEvent]),
     modelKey: 'test-model-key',
-    headers: upstreamHeaders,
+    http: { status: 200, headers: upstreamHeaders },
   }));
   const candidate = makeCandidate(callOpenAIResponses);
   const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), true);
@@ -676,8 +676,8 @@ test('generate propagates upstream response headers onto the EventResult so resp
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
-  assertEquals(result.headers?.get('anthropic-ratelimit-unified-status'), 'allowed');
-  assertEquals(result.headers?.get('request-id'), 'req_resp_xyz');
+  assertEquals(result.http?.headers.get('anthropic-ratelimit-unified-status'), 'allowed');
+  assertEquals(result.http?.headers.get('request-id'), 'req_resp_xyz');
   await collectEvents(result.events);
 });
 
@@ -791,7 +791,7 @@ test('generate lowers agent_message to a framed user message across translation 
               yield doneFrame();
             })(),
             modelKey: 'k',
-            headers: new Headers(),
+            http: { status: 200, headers: new Headers() },
           };
         },
       }),
@@ -833,7 +833,7 @@ test('generate lowers agent_message to a framed user message across translation 
               yield doneFrame();
             })(),
             modelKey: 'k',
-            headers: new Headers(),
+            http: { status: 200, headers: new Headers() },
           };
         },
       }),
@@ -868,7 +868,7 @@ test.each([
   let observedInput: CanonicalOpenAIResponsesPayload['input'] | undefined;
   const candidate = makeCandidate(async (_model, body) => {
     observedInput = body.input;
-    return { action: 'generate', ok: true, events: makeProviderEvents([]), modelKey: 'k', headers: new Headers() };
+    return { action: 'generate', ok: true, events: makeProviderEvents([]), modelKey: 'k', http: { status: 200, headers: new Headers() } };
   }, flag ? new Set<FlagId>(['openai-responses-agent-message-shim']) : new Set<FlagId>());
 
   const result = await openaiResponsesAttempt.generate({
@@ -908,7 +908,7 @@ test('generate lowers a standalone function_call_output to external context acro
               yield doneFrame();
             })(),
             modelKey: 'k',
-            headers: new Headers(),
+            http: { status: 200, headers: new Headers() },
           };
         },
       }),

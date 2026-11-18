@@ -9,7 +9,7 @@ import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { decodeResponseBody, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_gemini_attempt_test';
@@ -111,7 +111,7 @@ const collectEvents = async <TEvent>(events: AsyncIterable<ProtocolFrame<TEvent>
 test('generate translates through OpenAI Chat Completions when targetApi is openai-chat-completions', async () => {
   installRepo();
   const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   const result = await geminiGenerateContentAttempt.generate({
     payload: makePayload(),
@@ -131,7 +131,7 @@ test('generate translates through Anthropic Messages when targetApi is messages'
   let callOptions: AnthropicMessagesUpstreamCallOptions | undefined;
   const callAnthropicMessages = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
     callOptions = opts;
-    return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers() };
+    return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() } };
   });
   const result = await geminiGenerateContentAttempt.generate({
     payload: makePayload(),
@@ -151,7 +151,7 @@ test('generate translates through Anthropic Messages when targetApi is messages'
 test('generate translates through OpenAI Responses when targetApi is responses', async () => {
   installRepo();
   const callOpenAIResponses = vi.fn(async (): Promise<ProviderOpenAIResponsesResult> => ({
-    action: 'generate', ok: true, events: makeProtocolFrames([makeOpenAIResponsesResultEvent()]), modelKey: 'k', headers: new Headers(),
+    action: 'generate', ok: true, events: makeProtocolFrames([makeOpenAIResponsesResultEvent()]), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   const result = await geminiGenerateContentAttempt.generate({
     payload: makePayload(),
@@ -174,7 +174,7 @@ test('countTokens translates Gemini generateContent to Anthropic Messages count_
     upstreamBody = body as Record<string, unknown>;
     callOptions = opts;
     return {
-      response: new Response(JSON.stringify({ input_tokens: 42 }), {
+      http: new Response(JSON.stringify({ input_tokens: 42 }), {
         status: 200,
         headers: new Headers({ 'content-type': 'application/json' }),
       }),
@@ -190,8 +190,8 @@ test('countTokens translates Gemini generateContent to Anthropic Messages count_
 
   assertEquals(result.type, 'plain');
   if (result.type !== 'plain') throw new Error('unreachable');
-  assertEquals(result.status, 200);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
+  assertEquals(result.http.status, 200);
+  const body = JSON.parse(decodeResponseBody(result.body));
   assertEquals(body, { totalTokens: 42 });
   assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
   assertEquals(callOptions?.anthropicBeta, []);
@@ -209,7 +209,7 @@ test('countTokens accepts the upstream total_tokens dialect and refuses unknown 
     ctx: makeGatewayCtx(),
     candidate: makeCandidate({
       callAnthropicMessagesCountTokens: async () => ({
-        response: new Response(JSON.stringify({ total_tokens: 19 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
+        http: new Response(JSON.stringify({ total_tokens: 19 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
         modelKey: 'k',
       }),
     }),
@@ -217,14 +217,14 @@ test('countTokens accepts the upstream total_tokens dialect and refuses unknown 
   });
   assertEquals(totalTokensResp.type, 'plain');
   if (totalTokensResp.type !== 'plain') throw new Error('unreachable');
-  assertEquals(JSON.parse(new TextDecoder().decode(totalTokensResp.body)), { totalTokens: 19 });
+  assertEquals(JSON.parse(decodeResponseBody(totalTokensResp.body)), { totalTokens: 19 });
 
   const unexpectedResp = await geminiGenerateContentAttempt.countTokens({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     candidate: makeCandidate({
       callAnthropicMessagesCountTokens: async () => ({
-        response: new Response(JSON.stringify({ unexpected: true }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
+        http: new Response(JSON.stringify({ unexpected: true }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
         modelKey: 'k',
       }),
     }),
@@ -232,8 +232,8 @@ test('countTokens accepts the upstream total_tokens dialect and refuses unknown 
   });
   assertEquals(unexpectedResp.type, 'plain');
   if (unexpectedResp.type !== 'plain') throw new Error('unreachable');
-  assertEquals(unexpectedResp.status, 502);
-  const body = JSON.parse(new TextDecoder().decode(unexpectedResp.body));
+  assertEquals(unexpectedResp.http.status, 502);
+  const body = JSON.parse(decodeResponseBody(unexpectedResp.body));
   assertEquals(body.error.code, 502);
   assertEquals(body.error.status, 'UNAVAILABLE');
   assertEquals(Object.keys(body.error).sort(), ['code', 'details', 'message', 'status']);
@@ -267,7 +267,7 @@ test('generate propagates upstream response headers through the openai-chat-comp
     'x-request-id': 'req_gemini_xyz',
   });
   const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: upstreamHeaders,
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: upstreamHeaders },
   }));
   const result = await geminiGenerateContentAttempt.generate({
     payload: makePayload(),
@@ -277,8 +277,8 @@ test('generate propagates upstream response headers through the openai-chat-comp
   });
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
-  assertEquals(result.headers?.get('anthropic-ratelimit-unified-status'), 'allowed');
-  assertEquals(result.headers?.get('x-request-id'), 'req_gemini_xyz');
+  assertEquals(result.http?.headers.get('anthropic-ratelimit-unified-status'), 'allowed');
+  assertEquals(result.http?.headers.get('x-request-id'), 'req_gemini_xyz');
   await collectEvents(result.events);
 });
 
@@ -292,7 +292,7 @@ test('generate dispatches natively when the candidate speaks Gemini generateCont
   let upstreamBody: unknown;
   const callGeminiGenerateContent = vi.fn(async (_model, body): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => {
     upstreamBody = body;
-    return { ok: true, events: makeProtocolFrames(makeGeminiEvents()), modelKey: 'k', headers: new Headers({ 'x-goog-request-id': 'req_1' }) };
+    return { ok: true, events: makeProtocolFrames(makeGeminiEvents()), modelKey: 'k', http: { status: 200, headers: new Headers({ 'x-goog-request-id': 'req_1' }) } };
   });
   const payload = makePayload({
     tools: [{ googleSearch: {} }, { functionDeclarations: [{ name: 'lookup' }] }],
@@ -309,7 +309,7 @@ test('generate dispatches natively when the candidate speaks Gemini generateCont
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
-  assertEquals(result.headers?.get('x-goog-request-id'), 'req_1');
+  assertEquals(result.http?.headers.get('x-goog-request-id'), 'req_1');
   // The native path must hand the upstream the client's payload unchanged: a
   // translated target strips file parts, non-function tool groups and safety
   // settings, none of which applies here.
@@ -322,7 +322,7 @@ test('generate dispatches natively when the candidate speaks Gemini generateCont
 test('countTokens relays a native Gemini count verbatim', async () => {
   installRepo();
   const callGeminiGenerateContentCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
-    response: new Response(JSON.stringify({ totalTokens: 77 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
+    http: new Response(JSON.stringify({ totalTokens: 77 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
     modelKey: 'k',
   }));
 
@@ -335,8 +335,8 @@ test('countTokens relays a native Gemini count verbatim', async () => {
 
   assertEquals(result.type, 'plain');
   if (result.type !== 'plain') throw new Error('unreachable');
-  assertEquals(result.status, 200);
-  assertEquals(JSON.parse(new TextDecoder().decode(result.body)), { totalTokens: 77 });
+  assertEquals(result.http.status, 200);
+  assertEquals(JSON.parse(decodeResponseBody(result.body)), { totalTokens: 77 });
   assertEquals(callGeminiGenerateContentCountTokens.mock.calls.length, 1);
 });
 
@@ -357,7 +357,7 @@ test('countTokens runs the same shape cleanup chain generate does, and skips it 
     candidate: makeCandidate({
       callAnthropicMessagesCountTokens: async (_model, body) => {
         translatedBody = body as Record<string, unknown>;
-        return { response: Response.json({ input_tokens: 1 }), modelKey: 'k' };
+        return { http: Response.json({ input_tokens: 1 }), modelKey: 'k' };
       },
     }),
     headers: new Headers(),
@@ -370,7 +370,7 @@ test('countTokens runs the same shape cleanup chain generate does, and skips it 
       endpoints: { geminiGenerateContent: {} },
       callGeminiGenerateContentCountTokens: async (_model, body) => {
         nativeBody = body as Record<string, unknown>;
-        return { response: Response.json({ totalTokens: 1 }), modelKey: 'k' };
+        return { http: Response.json({ totalTokens: 1 }), modelKey: 'k' };
       },
     }),
     headers: new Headers(),

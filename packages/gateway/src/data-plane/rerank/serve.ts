@@ -11,10 +11,10 @@ import { iterateCandidates } from '../shared/iterate-candidates.ts';
 import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { recordFailedRequest, recordPerformance, type PerformanceTelemetryContext } from '../shared/telemetry/performance.ts';
 import { recordUsage } from '../shared/telemetry/usage.ts';
-import { forwardUpstreamResponse } from '../shared/upstream-response.ts';
+import { forwardUpstreamResponse, providerModelsUnavailableResponse } from '../shared/upstream-response.ts';
 import { parseDecimalString, type RerankSourceProtocol } from '@floway-dev/protocols/common';
 import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, rerankRequestIncompatibility, type CanonicalRerankResponse, type ParsedRerankRequest } from '@floway-dev/protocols/rerank';
-import { httpResponseToResponse, ProviderModelsUnavailableError, providerModelOf, toInternalDebugError } from '@floway-dev/provider';
+import { providerModelOf, toInternalDebugError } from '@floway-dev/provider';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 const apiError = (c: Context, message: string, status: ContentfulStatusCode): Response =>
@@ -119,17 +119,17 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
       candidate => rerankAttempt(c, ctx, candidate, request),
     );
 
-    if (!terminal.response.ok) {
+    if (!terminal.http.ok) {
       ctx.dump?.error('upstream', terminal.identity.upstream);
       settleRerank(ctx, terminal.performance, terminal.identity, undefined, true);
       usageSettled = true;
-      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
+      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.http));
     }
 
     const sameProtocol = sourceProtocol === terminal.target.protocol;
     let upstreamBody: unknown;
     try {
-      upstreamBody = await terminal.response.clone().json() as unknown;
+      upstreamBody = await terminal.http.clone().json() as unknown;
     } catch (error) {
       if (!sameProtocol) throw error;
       console.warn(
@@ -139,7 +139,7 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
       ctx.dump?.success(terminal.identity, null);
       settleRerank(ctx, terminal.performance, terminal.identity, undefined, false);
       usageSettled = true;
-      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
+      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.http));
     }
     try {
       measuredUsage = parseRerankUsage(terminal.target.protocol, upstreamBody);
@@ -152,32 +152,30 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
       ctx.dump?.success(terminal.identity, null);
       settleRerank(ctx, terminal.performance, terminal.identity, undefined, false);
       usageSettled = true;
-      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
+      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.http));
     }
     if (sameProtocol) {
       ctx.dump?.success(terminal.identity, null);
       settleRerank(ctx, terminal.performance, terminal.identity, measuredUsage, false);
       usageSettled = true;
-      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
+      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.http));
     }
     const canonical = parseRerankResponse(terminal.target.protocol, upstreamBody);
     const rendered = renderRerankResponse(sourceProtocol, terminal.target.protocol, canonical, request);
     ctx.dump?.success(terminal.identity, null);
     settleRerank(ctx, terminal.performance, terminal.identity, measuredUsage, false);
     usageSettled = true;
-    return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response, { body: JSON.stringify(rendered) }));
+    return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.http, { body: JSON.stringify(rendered) }));
   } catch (error) {
     if (terminal !== undefined && !usageSettled) {
       settleRerank(ctx, terminal.performance, terminal.identity, measuredUsage, true);
     } else if (terminal === undefined) {
       recordFailedRequest(ctx, ctx.attempt.telemetry);
     }
-    if (error instanceof ProviderModelsUnavailableError) {
-      const forwarded = httpResponseToResponse(error.httpResponse);
-      if (forwarded) {
-        ctx.dump?.error('upstream');
-        return finalizeGatewayResponse(ctx, forwarded);
-      }
+    const forwarded = providerModelsUnavailableResponse(error);
+    if (forwarded) {
+      ctx.dump?.error('upstream');
+      return finalizeGatewayResponse(ctx, forwarded);
     }
     ctx.dump?.failed(error);
     return finalizeGatewayResponse(ctx, c.json({ error: toInternalDebugError(error) }, 502));

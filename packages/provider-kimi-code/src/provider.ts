@@ -13,7 +13,7 @@ import { headersForAnthropicMessagesCall, jsonRequestBody, resolveEffectiveFlags
 
 const fastModeRequired = (model: ProviderModel, field: 'service_tier' | 'speed') => ({
   ok: false as const,
-  response: Response.json({
+  http: Response.json({
     ...(field === 'speed' ? { type: 'error' } : {}),
     error: { type: 'invalid_request_error', message: `'${model.id}' is only available with fast mode selected; set \`${field}: "${field === 'speed' ? 'fast' : FAST_SERVICE_TIER}"\`.` },
   }, { status: 400 }),
@@ -30,7 +30,7 @@ const selectMessagesModel = (model: ProviderModel, speed: unknown) => {
   if (speed === 'fast' && selection?.lane !== 'fast') {
     return {
       ok: false as const,
-      response: Response.json({ type: 'error', error: { type: 'invalid_request_error', message: `'${model.id}' does not support fast mode; omit \`speed\` or set \`speed: "standard"\`.` } }, { status: 400 }),
+      http: Response.json({ type: 'error', error: { type: 'invalid_request_error', message: `'${model.id}' does not support fast mode; omit \`speed\` or set \`speed: "standard"\`.` } }, { status: 400 }),
       modelKey: model.upstreamModelId,
     };
   }
@@ -89,15 +89,15 @@ export const createKimiCodeProvider = (record: UpstreamRecord): Provider => {
     },
     callAnthropicMessages: async (model, body, signal, opts) => {
       const selection = selectMessagesModel(model, body.speed);
-      if ('response' in selection) return selection;
+      if ('http' in selection) return selection;
       const { modelId } = selection;
       return await streaming('/messages', modelId, kimiCodeMessagesWireBody(body), signal, headersForAnthropicMessagesCall([...opts.headers], opts.anthropicBeta), body.speed === 'fast' || body.speed === 'standard' ? kimiCodeMessagesSpeedParser(body.speed === 'fast' ? 'fast' : 'standard') : parseAnthropicMessagesStream, opts);
     },
     callAnthropicMessagesCountTokens: async (model, body, signal, opts) => {
       const selection = selectMessagesModel(model, body.speed);
-      if ('response' in selection) return selection;
+      if ('http' in selection) return selection;
       return {
-        response: await call('/messages/count_tokens', selection.modelId, kimiCodeMessagesWireBody(body), signal, headersForAnthropicMessagesCall([...opts.headers], opts.anthropicBeta), opts, false),
+        http: await call('/messages/count_tokens', selection.modelId, kimiCodeMessagesWireBody(body), signal, headersForAnthropicMessagesCall([...opts.headers], opts.anthropicBeta), opts, false),
         modelKey: selection.modelId,
       };
     },

@@ -33,7 +33,7 @@ test('streamingProviderCall returns ok:false when upstream is non-2xx', async ()
   const result = await streamingProviderCall(Promise.resolve(response), stubParser, 'm-1', undefined);
   assertEquals(result.ok, false);
   if (result.ok) throw new Error('expected ok:false');
-  assertEquals(result.response.status, 429);
+  assertEquals(result.http.status, 429);
   assertEquals(result.modelKey, 'm-1');
 });
 
@@ -113,12 +113,14 @@ test('streamingProviderCall truncates oversized bodies in the error message', as
 
 test('streamingProviderCall returns ok:true with parsed frames on 2xx SSE', async () => {
   const response = new Response('alpha\nbeta\n', {
-    status: 200,
+    status: 202,
     headers: { 'content-type': 'Text/Event-Stream; charset=utf-8' },
   });
   const result = await streamingProviderCall(Promise.resolve(response), stubParser, 'm-1', undefined);
   assertEquals(result.ok, true);
   if (!result.ok) throw new Error('expected ok:true');
+  assertEquals(result.http.status, 202);
+  assertEquals(result.http.headers.get('content-type'), 'Text/Event-Stream; charset=utf-8');
   const frames: ProtocolFrame<StubEvent>[] = [];
   for await (const frame of result.events) frames.push(frame);
   assertEquals(frames, [eventFrame({ type: 'alpha' }), eventFrame({ type: 'beta' }), doneFrame()]);

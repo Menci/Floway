@@ -1,39 +1,26 @@
 import type { GatewayCtx } from './gateway-ctx.ts';
+import type { RawAttemptResult } from './raw-attempt-result.ts';
 import { upstreamPerformanceContext } from './telemetry/attribution.ts';
-import type { ModelCandidate, PerformanceOperation } from '@floway-dev/provider';
+import { discardUpstreamResponse, type HttpHead, type ModelCandidate, type PerformanceOperation } from '@floway-dev/provider';
 
-// A serve-layer attempt result counts as success when:
-//   - The SSE event stream actually opened (`type: 'events'`). Mid-stream
-//     failure is the upstream's responsibility from there on; a fresh
-//     attempt on a different upstream does not start once the client has
-//     begun consuming events.
-//   - The non-streaming envelope landed: `PlainResult` with a 2xx status,
-//     or the OpenAI-Responses-compact `{type:'result'}` envelope.
-// `api-error` and `internal-error` are failures: the serve loop falls
-// through to the next candidate. 4xx is on the failure side — 429
-// (rate-limit) is the responsibility of the upstream that issued it, and
-// the gateway's candidate ordering exists to absorb that kind of
-// transient. Passthrough serves feed in an enlarged `plain` shape that
-// carries the raw upstream Response plus per-attempt telemetry alongside
-// the status; the success discriminant is unchanged.
+// HTTP in-flight streams are represented by a 2xx response head. Later
+// protocol errors in their body do not reopen candidate selection.
 type IterableAttemptResult =
-  | { readonly type: 'events' }
-  | { readonly type: 'result' }
-  | { readonly type: 'plain'; readonly status: number }
-  | { readonly type: 'api-error' }
-  | { readonly type: 'internal-error' };
+  | { readonly type: 'events' | 'result'; readonly http?: HttpHead }
+  | { readonly type: 'plain' | 'api-error' | 'internal-error'; readonly http: HttpHead }
+  | Pick<RawAttemptResult, 'type' | 'http'>;
 
 const isAttemptSuccess = (result: IterableAttemptResult): boolean => {
-  switch (result.type) {
-  case 'events':
-  case 'result':
-    return true;
-  case 'plain':
-    return result.status >= 200 && result.status < 300;
-  case 'api-error':
-  case 'internal-error':
-    return false;
-  }
+  if (result.type === 'api-error' || result.type === 'internal-error') return false;
+  const status = result.http?.status;
+  return status === undefined || (status >= 200 && status < 300);
+};
+
+const discardFailure = (ctx: GatewayCtx, result: IterableAttemptResult | undefined): void => {
+  if (result?.type !== 'response' || result.http.body === null) return;
+  ctx.backgroundScheduler(discardUpstreamResponse(result.http).catch(error => {
+    console.warn('Floway: failed to cancel a discarded upstream response', error);
+  }));
 };
 
 // Tries each narrowed candidate in order and returns the first success. A
@@ -63,16 +50,23 @@ export const iterateCandidates = async <T extends IterableAttemptResult>(
   run: (candidate: ModelCandidate) => Promise<T>,
 ): Promise<T> => {
   let lastFailure: T | undefined;
-  for (const candidate of candidates) {
-    ctx.attempt.timing.upstreamCallStartedAt = null;
-    ctx.attempt.timing.firstOutputTokenAt = null;
-    ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, operation);
-    const result = await run(candidate);
-    if (isAttemptSuccess(result)) return result;
-    lastFailure = result;
+  try {
+    for (const candidate of candidates) {
+      ctx.attempt.timing.upstreamCallStartedAt = null;
+      ctx.attempt.timing.firstOutputTokenAt = null;
+      ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, operation);
+      const result = await run(candidate);
+      if (isAttemptSuccess(result)) return result;
+      discardFailure(ctx, lastFailure);
+      lastFailure = result;
+    }
+    if (lastFailure === undefined) {
+      throw new Error(`invariant broken: ${invocationLabel} exhausted candidates with neither success nor failure`);
+    }
+    const selected = lastFailure;
+    lastFailure = undefined;
+    return selected;
+  } finally {
+    discardFailure(ctx, lastFailure);
   }
-  if (lastFailure === undefined) {
-    throw new Error(`invariant broken: ${invocationLabel} exhausted candidates with neither success nor failure`);
-  }
-  return lastFailure;
 };
