@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { fixtureFrames, type nativeResult } from './fixtures.ts';
 import { partitionAnthropicMessagesTurns } from '../../src/protocols/anthropic-messages/as-source/conversation-turns.ts';
@@ -14,7 +14,8 @@ import type { TranslateInputError } from '../../src/types.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { collect, iterate } from '../shared/iterables.ts';
 import { expectTrip } from '../trip.ts';
-import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import { eventFrame } from '@floway-dev/protocols/common';
 import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentContent, type GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 import { toOpenAIChatCompletionsInputAssistantMessage } from '@floway-dev/protocols/openai-chat-completions';
 import { collectOpenAIChatCompletionsProtocolEventsToResult, type OpenAIChatCompletionsAssistantMessageEx, type OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
@@ -105,6 +106,31 @@ test.each(translations)('$name owns its target payload without retaining source 
     assertEquals(sourceObjects.has(object), false);
     assertEquals(firstObjects.has(object), false);
   }
+});
+
+test.each([
+  { name: 'empty delta', input: {}, deltas: [''], args: '{}' },
+  { name: 'no deltas', input: {}, deltas: [], args: '{}' },
+  { name: 'initial input only', input: { x: 'initial' }, deltas: [], args: '{"x":"initial"}' },
+  { name: 'chunked input', input: {}, deltas: ['{"x": ', '', '"streamed"}'], args: '{"x": "streamed"}' },
+])('Responses via Anthropic Messages emits complete function arguments with $name', async ({ input, deltas, args }) => {
+  const trip = expectTrip(await routeOpenAIResponsesViaAnthropicMessages(responses, { sidecarCodec: createTestSidecarCodec() }));
+  const [start, ...end] = fixtureFrames('anthropic-messages', { stop: 'tool_calls', usage: { output_tokens: 1 } });
+  assert(start !== undefined);
+  const frames = [
+    start,
+    eventFrame<AnthropicMessagesStreamEventEx>({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_f', name: 'f', input } }),
+    ...deltas.map(partial_json => eventFrame<AnthropicMessagesStreamEventEx>({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json } })),
+    eventFrame<AnthropicMessagesStreamEventEx>({ type: 'content_block_stop', index: 0 }),
+    ...end,
+  ];
+
+  const output = await collect(trip.events(iterate(frames)));
+  const events = output.flatMap(frame => frame.type === 'event' ? [frame.event] : []);
+  expect(events).toContainEqual(expect.objectContaining({ type: 'response.function_call_arguments.done', arguments: args }));
+  const response = await collectOpenAIResponsesProtocolEventsToResult(iterate(output));
+  expect(response.status).toBe('completed');
+  expect(response.output).toContainEqual(expect.objectContaining({ type: 'function_call', name: 'f', arguments: args, status: 'completed' }));
 });
 
 type Protocol = 'openai-chat-completions' | 'openai-responses' | 'anthropic-messages' | 'gemini-generate-content';
