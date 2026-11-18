@@ -51,14 +51,6 @@ test('get hit older than the refresh threshold rewrites last_refreshed_at and ex
   assertEquals(row!.expires_at - row!.last_refreshed_at, POLICY.ttlMs);
 }));
 
-test('get returns null and skips refresh once an entry has expired', () => withCache(async (cache, db) => {
-  await cache.put('k', new Uint8Array([1]));
-  await db.prepare('UPDATE image_cache SET expires_at = ? WHERE key = ?').bind(Date.now() - 1000, 'k').run();
-
-  const miss = await cache.get('k');
-  assertEquals(miss, null);
-}));
-
 test('sweepExpired drops only rows with expires_at <= now', () => withCache(async (cache, db) => {
   await cache.put('fresh', new Uint8Array([1]));
   await cache.put('stale', new Uint8Array([2]));

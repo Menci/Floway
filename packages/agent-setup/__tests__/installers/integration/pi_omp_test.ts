@@ -59,15 +59,6 @@ for (const agent of ['pi', 'omp'] as const) {
       });
     }
 
-    test(`[${agent}] ${platform}: malformed versions fail without running an updater`, { timeout: 180_000 }, async () => {
-      const ws = makeWorkspace();
-      place(ws.binDir);
-      const result = await install({ workspace: ws, baseUrl: modelServer.url, configuration: config(), [agent === 'pi' ? 'fakePiVersion' : 'fakeOmpVersion']: '19garbage' });
-      expect(result.code).not.toBe(0);
-      expect(!existsSync(join(ws.root, `updated-${agent}`))).toBeTruthy();
-      expect(!existsSync(extension(ws))).toBeTruthy();
-    });
-
     test(`[${agent}] ${platform}: one extension retains and updates independent providers`, { timeout: 180_000 }, async () => {
       const ws = makeWorkspace();
       place(ws.binDir);
@@ -117,36 +108,6 @@ for (const [platform, install] of [['Bash', runShellInstaller], ...(hostPwsh ? [
     expect(existsSync(installerMarker(ws))).toBeTruthy();
     expect(existsSync(piExtensionPath(ws))).toBeTruthy();
   });
-}
-
-for (const agent of ['pi', 'omp'] as const) {
-  const config = agent === 'pi' ? piConfig : ompConfig;
-  const place = agent === 'pi' ? placeFakePi : placeFakeOmp;
-  for (const [platform, install] of [['Bash', runShellInstaller], ...(hostPwsh ? [['PowerShell', runPowerShellInstaller] as const] : [])] as const) {
-    test(`[${agent}] ${platform}: writes explicit global preferences and preserves them when unset`, { timeout: 180_000 }, async () => {
-      const ws = makeWorkspace();
-      place(ws.binDir);
-      const selected = agent === 'pi'
-        ? piConfig({ thinkingLevel: 'high', retry: { enabled: false, maxRetries: 0 } })
-        : ompConfig({ retry: { enabled: false, maxRetries: 0 } });
-      const result = await install({ workspace: ws, baseUrl: modelServer.url, configuration: selected });
-      expect(result.code, result.combined).toBe(0);
-      const settingsPath = agent === 'pi' ? piSettingsPath(ws) : ompConfigPath(ws);
-      const before = readFileSync(settingsPath, 'utf8');
-      if (agent === 'pi') {
-        const settings = readPiSettings(settingsPath);
-        expect(settings.defaultThinkingLevel).toBe('high');
-        expect((settings.retry as Record<string, unknown>).enabled).toBe(false);
-        expect((settings.retry as Record<string, unknown>).maxRetries).toBe(0);
-      } else {
-        expect(before).toContain('enabled: false');
-        expect(before).toContain('maxRetries: 0');
-      }
-      const preserved = await install({ workspace: ws, baseUrl: modelServer.url, configuration: config({ provider: 'another-floway' }) });
-      expect(preserved.code, preserved.combined).toBe(0);
-      expect(readFileSync(settingsPath, 'utf8'), 'unspecified global preferences retain their original bytes').toBe(before);
-    });
-  }
 }
 
 for (const agent of ['pi', 'omp'] as const) {

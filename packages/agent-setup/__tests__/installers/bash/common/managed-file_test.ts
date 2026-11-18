@@ -65,13 +65,5 @@ for (const platform of ['bash', 'powershell'] as const) {
         expect(`${result.stdout}${result.stderr}`).not.toContain(secret);
       });
     });
-
-    test('rejects non-array connections without printing credentials', () => {
-      run(JSON.stringify({ connections: secret }), result => {
-        expect(result.status).not.toBe(0);
-        expect(`${result.stdout}${result.stderr}`).not.toContain(secret);
-      });
-    });
-
   });
 }

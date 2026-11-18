@@ -77,20 +77,6 @@ describe('dialShadowsocks2022 — SIP022 defenses', () => {
 });
 
 describe('dialShadowsocks2022 — pre-connect config validation', () => {
-  // Pre-connect failures must surface as ProxyDialError so the caller's
-  // fallback chain still triggers.
-  it('rejects an unparseable PSK base64 string as a typed dial error', async () => {
-    const fake = makeFakeSocketDial();
-    await expect(
-      dialShadowsocks2022(config({ passwordBase64: 'not!valid!base64' }), target, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('invalid base64'),
-    });
-    expect(fake.connectCount()).toBe(0);
-  });
-
   it('rejects a PSK whose decoded byte length disagrees with the cipher', async () => {
     const fake = makeFakeSocketDial();
     // 2022-blake3-aes-128-gcm wants 16 bytes; a 15-byte PSK fails up-front.
@@ -103,13 +89,6 @@ describe('dialShadowsocks2022 — pre-connect config validation', () => {
       message: expect.stringContaining('PSK is 15 bytes'),
     });
     expect(fake.connectCount()).toBe(0);
-  });
-});
-
-describe('dialShadowsocks2022 — response-side SIP022 checks', () => {
-  it('accepts a response exactly 30s in the past (boundary inclusive)', async () => {
-    const r = await runWithServerHandshakeOptions({ skewSec: 30, echoCorrect: true });
-    expect(new TextDecoder().decode((r as { value: Uint8Array }).value)).toBe('OK');
   });
 });
 

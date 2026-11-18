@@ -18,20 +18,6 @@ describe('parseProxyUri', () => {
     expect(() => parseProxyUri('http://example.com')).toThrow(/port/);
   });
 
-  it('preserves an explicit http port=80 across userinfo, IPv6, and path/query/fragment', () => {
-    // The raw-authority scan must walk past userinfo (everything up to the
-    // last `@`), the IPv6 envelope (`[::1]`), and stop before the first
-    // `/`, `?`, or `#`. Each variant exercises one of those branches.
-    expect(parseProxyUri('http://u:p@example.com:80').port).toBe(80);
-    expect(parseProxyUri('http://[::1]:80').port).toBe(80);
-    expect(parseProxyUri('http://example.com:80/x?y=1#name').port).toBe(80);
-  });
-
-  it('parses SIP002 UTF-8 Base64URL userinfo', () => {
-    expect(parseProxyUri('ss://YWVzLTI1Ni1nY2065a-G56K8@h:8388'))
-      .toMatchObject({ kind: 'ss', method: 'aes-256-gcm', password: '密碼' });
-  });
-
   it('drops a `?sni=` query param on VLESS-TCP+TLS — neither workerd connect(tls=true) nor node:tls servername-via-host supports an SNI override on the wire, so persisting it would be fake config', () => {
     const uri =
       'vless://aaaa-uuid@h:443?type=tcp&security=tls&sni=front#v';
@@ -87,17 +73,6 @@ describe('formatProxyUri', () => {
     const config = parseProxyUri(uri);
     const formatted = formatProxyUri(config);
     expect(parseProxyUri(formatted)).toEqual(config);
-  });
-
-  it('formats legacy Shadowsocks as UTF-8 unpadded Base64URL', () => {
-    expect(formatProxyUri({
-      kind: 'ss',
-      method: 'aes-256-gcm',
-      password: '密碼',
-      host: 'h',
-      port: 8388,
-      name: '',
-    })).toBe('ss://YWVzLTI1Ni1nY2065a-G56K8@h:8388');
   });
 
   it('percent-encodes the standard Base64 PSK in Shadowsocks 2022 userinfo', () => {

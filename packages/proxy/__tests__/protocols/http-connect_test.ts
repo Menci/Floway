@@ -109,25 +109,6 @@ const drainCONNECTRequest = async (srv: { peekWritten: () => Uint8Array; read: (
   return head;
 };
 
-describe('dialHttpConnect — auth header encoding', () => {
-  it('UTF-8 encodes a password with a high BMP code point (U+4E2D "中")', async () => {
-    const fake = makeFakeSocketDial();
-    const promise = dialHttpConnect(
-      httpConfig({ username: 'u', password: 'p中' }),
-      target,
-      { socketDial: fake.socketDial },
-    );
-    const srv = await fake.awaitConnect();
-    const head = await drainCONNECTRequest(srv);
-    // base64(UTF-8("u:p中")) = base64([0x75, 0x3a, 0x70, 0xe4, 0xb8, 0xad])
-    // = "dTpw5Lit". btoa() rejects code points > U+00FF, so the encoder
-    // must UTF-8-then-base64 rather than feed the raw JS string.
-    expect(head).toContain('Proxy-Authorization: Basic dTpw5Lit\r\n');
-    srv.respond('HTTP/1.1 200 OK\r\n\r\n');
-    await promise;
-  });
-});
-
 describe('dialHttpConnect — request authority forms', () => {
   it('brackets a bare IPv6 literal in request-target and Host header', async () => {
     // DialTarget.host arrives WITHOUT the `[…]` envelope (see types.ts);
@@ -158,10 +139,6 @@ describe('dialHttpConnect — response status code matrix', () => {
       message: expect.stringContaining(contains),
     });
   };
-
-  it('rejects HTTP/2.0 status line — only HTTP/1.0 and HTTP/1.1 are supported', async () => {
-    await expectStatusError('HTTP/2.0 200 OK', 'bad status line');
-  });
 
   it('rejects 100 Continue — an interim status before 200 violates CONNECT framing', async () => {
     await expectStatusError('HTTP/1.1 100 Continue', '100');

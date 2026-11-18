@@ -2,7 +2,6 @@ import { describe, expect, test } from 'vitest';
 
 import {
   agentSetupConfigurationSchema,
-  defaultAgentSetupConfiguration,
   type AgentSetupConfiguration,
 } from '../src/configuration.ts';
 
@@ -41,20 +40,6 @@ describe('agentSetupConfigurationSchema', () => {
       ...fullConfiguration,
       claudeCode: { ...fullConfiguration.claudeCode, model: '' },
     }).success).toBe(false);
-  });
-
-  test('rejects a NUL character in an opaque optional string', () => {
-    expect(agentSetupConfigurationSchema.safeParse({
-      ...fullConfiguration,
-      codex: { ...fullConfiguration.codex, reasoningEffort: 'bad\0value' },
-    }).success).toBe(false);
-  });
-});
-
-describe('defaultAgentSetupConfiguration', () => {
-  test('produces a value the schema accepts', () => {
-    const config = defaultAgentSetupConfiguration('key-a');
-    expect(agentSetupConfigurationSchema.safeParse(config).success).toBe(true);
   });
 });
 

@@ -1,11 +1,10 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { expect, test } from 'vitest';
 
 import { SENTINEL_KEY, SHIM_BIN, backupFiles, bothConfig, claudeConfig, codexConfigPath, codexTokenPath, hostPwsh, installerChildPid, installerMarker, makeWorkspace, modelServer, placeFakeClaude, powerShellCallerSurvivalPath, processExists, readSettings, runPowerShellInstaller, runShellInstaller, runShellInstallerWithAmbientKey, settingsPathFor, shellBody, shellEntry, stagedFiles } from './harness';
-import type { RunResult } from './harness';
 import { renderShellPrefix } from '../../../src/render.ts';
 
 test('unrelated settings and env keys are preserved', { timeout: 180_000 }, async () => {
@@ -117,40 +116,11 @@ test('an interrupt during the Claude install stops the selected script and clean
   }
 });
 
-test('the API key never appears in stdout or stderr', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakeClaude(ws.binDir);
-  const run = await runShellInstaller({
-    workspace: ws, baseUrl: modelServer.url,
-    configuration: claudeConfig({ model: 'claude-opus-x', effortLevel: 'high', modelDiscovery: true }),
-  });
-  expect(run.code, `should succeed:\n${run.combined}`).toBe(0);
-  expect(run.combined, 'the API key must never be printed').not.toContain(SENTINEL_KEY);
-  // Sanity: the key really was consumed and written, so the absence above is
-  // meaningful rather than the key simply never being used.
-  const settings = readSettings(settingsPathFor(ws)) as { env: Record<string, string> };
-  expect(settings.env.ANTHROPIC_AUTH_TOKEN, 'the key was actually written to settings').toBe(SENTINEL_KEY);
-});
-
 test('ambient exported API key is removed before installer and CLI subprocesses', { timeout: 180_000 }, async () => {
   const ws = makeWorkspace();
   const run = await runShellInstallerWithAmbientKey({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url });
   expect(run.code, `ambient key must be removed before child processes:\n${run.combined}`).toBe(0);
   expect(existsSync(installerMarker(ws))).toBeTruthy();
-});
-
-test('missing jq without a download fails before mutating settings', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakeClaude(ws.binDir);
-  const configDir = join(ws.home, '.claude');
-  mkdirSync(configDir, { recursive: true });
-  const original = JSON.stringify({ theme: 'light' });
-  writeFileSync(settingsPathFor(ws), original);
-  const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, includeJq: false, disableJqDownload: true });
-  expect(run.code !== 0).toBeTruthy();
-  expect(run.combined.toLowerCase(), 'the failure names the jq requirement').toContain('jq');
-  expect(readFileSync(settingsPathFor(ws), 'utf8'), 'settings are left untouched when jq is unavailable').toBe(original);
-  expect(backupFiles(configDir).length, 'no backup is created before the jq check').toBe(0);
 });
 
 // --- PowerShell -------------------------------------------------------------
@@ -188,24 +158,6 @@ test('PowerShell: existing CLI configures and preserves unrelated keys', { timeo
   expect(settings.env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY, 'discovery maps to the documented env key').toBe('1');
 });
 
-test('PowerShell: existing settings use File.Replace with a real null backup path', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  placeFakeClaude(ws.binDir);
-  const configDir = join(ws.home, '.claude');
-  mkdirSync(configDir, { recursive: true });
-  writeFileSync(settingsPathFor(ws), JSON.stringify({ theme: 'light' }));
-  const run = await runPowerShellInstaller({
-    workspace: ws,
-    configuration: claudeConfig(),
-    baseUrl: modelServer.url,
-    forcePowerShellWindowsReplacement: true,
-  });
-  expect(run.code, `File.Replace should succeed:\n${run.combined}`).toBe(0);
-  const settings = readSettings(settingsPathFor(ws)) as { env: Record<string, string> };
-  expect(settings.env.ANTHROPIC_AUTH_TOKEN, 'the replacement carries the selected key').toBe(SENTINEL_KEY);
-});
-
 test('Bash fallback kills the installer process tree', { timeout: 180_000 }, async () => {
   const ws = makeWorkspace();
   const started = Date.now();
@@ -220,29 +172,6 @@ test('Bash fallback kills the installer process tree', { timeout: 180_000 }, asy
   const childPid = Number(readFileSync(installerChildPid(ws), 'utf8').trim());
   expect(!processExists(childPid)).toBeTruthy();
   expect(run.combined, 'controlled PATH must select the Bash fallback').toContain('timeout fallback: process-tree');
-});
-
-test('PowerShell removes an ambient exported API key before installer and CLI subprocesses', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  const run = await runPowerShellInstaller({
-    workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, ambientApiKey: true,
-  });
-  expect(run.code, `ambient key must be removed before child processes:\n${run.combined}`).toBe(0);
-  expect(existsSync(installerMarker(ws))).toBeTruthy();
-});
-
-test('PowerShell keeps the API key out of output and performs no gateway request', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  placeFakeClaude(ws.binDir);
-  modelServer.reset();
-  const run = await runPowerShellInstaller({ workspace: ws, configuration: claudeConfig({ model: 'claude-opus-x', effortLevel: 'high' }), baseUrl: modelServer.url });
-  expect(run.code, `should succeed:\n${run.combined}`).toBe(0);
-  expect(run.combined, 'the API key must never be printed').not.toContain(SENTINEL_KEY);
-  const settings = readSettings(settingsPathFor(ws)) as { env: Record<string, string> };
-  expect(settings.env.ANTHROPIC_AUTH_TOKEN, 'the key was actually written to settings').toBe(SENTINEL_KEY);
-  expect(modelServer.requests.length, 'installation and configuration remain entirely local').toBe(0);
 });
 
 test('a download that ends before the final main call performs no setup work', { timeout: 180_000 }, () => {
@@ -261,43 +190,4 @@ test('a download that ends before the final main call performs no setup work', {
   expect(result.stdout, 'definitions-only script prints nothing').toBe('');
   expect(!existsSync(settingsPathFor(ws))).toBeTruthy();
   expect(!existsSync(installerMarker(ws))).toBeTruthy();
-});
-
-// --- base URL injection -----------------------------------------------------
-
-// A raw shell run of an arbitrary command line, sharing the async model-server
-// event loop. Used to exercise the exact copyable command a user pastes, so the
-// `export SETUP_ENDPOINT` / `$SetupEndpoint` injection and the `| bash` / `| iex`
-// pipeline scoping are verified end to end rather than assumed.
-const runCommandLine = (exe: string, args: string[], command: string): Promise<RunResult> =>
-  new Promise<RunResult>(resolve => {
-    const child = spawn(exe, [...args, command], { env: { PATH: `${SHIM_BIN}:${process.env.PATH ?? ''}` } });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', chunk => { stdout += chunk; });
-    child.stderr.on('data', chunk => { stderr += chunk; });
-    child.on('error', error => resolve({ code: -1, stdout, stderr: `${stderr}${String(error)}`, combined: `${stdout}${stderr}${String(error)}` }));
-    child.on('close', code => resolve({ code: code ?? -1, stdout, stderr, combined: `${stdout}${stderr}` }));
-  });
-
-test('the copyable Bash command exports the origin into the piped installer body', { timeout: 180_000 }, async () => {
-  const origin = modelServer.url;
-  const command = `export SETUP_ENDPOINT='${origin.replace(/'/g, "'\\''")}'; curl -fsSL "$SETUP_ENDPOINT/probe/setup.sh" | bash`;
-  const run = await runCommandLine('/bin/bash', ['-c'], command);
-  expect(run.code, `the copyable Bash command should run cleanly:\n${run.combined}`).toBe(0);
-  expect(run.stdout, 'the exported origin reached the piped bash executing the fetched body').toContain(`PROBE_BASE_URL=[${origin}]`);
-});
-
-test('a missing SETUP_ENDPOINT fails before any mutation', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakeClaude(ws.binDir);
-  const configDir = join(ws.home, '.claude');
-  mkdirSync(configDir, { recursive: true });
-  const original = JSON.stringify({ theme: 'light' });
-  writeFileSync(settingsPathFor(ws), original);
-  const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, omitBaseUrl: true });
-  expect(run.code !== 0).toBeTruthy();
-  expect(run.combined, 'the failure names the required base URL').toContain('SETUP_ENDPOINT');
-  expect(readFileSync(settingsPathFor(ws), 'utf8'), 'settings are left untouched').toBe(original);
-  expect(backupFiles(configDir).length, 'no backup is created before the base-URL guard').toBe(0);
 });

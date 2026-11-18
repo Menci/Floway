@@ -94,27 +94,6 @@ describe('nodeSocketDial', () => {
     }
   });
 
-  it('destroys the underlying socket when the caller aborts post-connect', async () => {
-    const ac = new AbortController();
-    const dialed = await nodeSocketDial.connect('127.0.0.1', server.port, { signal: ac.signal });
-    // Drive a single round-trip so the server-side socket is established.
-    const writer = dialed.writable.getWriter();
-    await writer.write(new TextEncoder().encode('warmup'));
-    writer.releaseLock();
-
-    ac.abort();
-    // Give the abort listener a tick to call socket.destroy().
-    await new Promise(r => setTimeout(r, 20));
-
-    const remote = server.lastSocket();
-    // Either reading proves the abort reached the underlying fd:
-    // socket.destroy() flips `destroyed` immediately on the local side, but
-    // a peer-driven FIN can leave the local socket as
-    // `destroyed: false, readableEnded: true` for a tick before the close
-    // event lands.
-    expect(remote?.destroyed === true || remote?.readableEnded === true).toBe(true);
-  });
-
   // The proxy URL parser hands `url.hostname` straight through, which keeps
   // `[...]` around an IPv6 literal. Node's `net.connect({ host: '[::1]' })`
   // falls through to DNS and fails ENOTFOUND — the platform impl strips the

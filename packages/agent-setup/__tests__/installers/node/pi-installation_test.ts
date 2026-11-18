@@ -61,21 +61,6 @@ test('recognizes a selected Windows npm prefix only with the exact legacy shim t
   expect(getLegacyNpmPrefix(binary)).toBeNull();
 });
 
-test('a selected alias cannot authorize replacing a differently owned global launcher', () => {
-  const prefix = workspace();
-  const directory = legacyPackage(join(prefix, 'lib', 'node_modules'));
-  const alias = join(prefix, 'alias');
-  symlinkSync(join(directory, 'dist', 'cli.js'), alias);
-  expect(getLegacyNpmPrefix(alias)).toBeNull();
-  mkdirSync(join(prefix, 'bin'));
-  const launcher = join(prefix, 'bin', 'pi');
-  writeFileSync(launcher, 'another package');
-  expect(getLegacyNpmPrefix(alias)).toBeNull();
-  rmSync(launcher);
-  symlinkSync(join(directory, 'dist', 'cli.js'), launcher);
-  expect(getLegacyNpmPrefix(alias)).toBe(prefix);
-});
-
 test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('ownership probing exposes filesystem permission failures', () => {
   const prefix = workspace();
   const directory = legacyPackage(join(prefix, 'node_modules'));

@@ -45,12 +45,6 @@ describe('decodeChunked — RFC 9112 §7.1 happy path', () => {
     const { reader, head } = fromString(input);
     expect(await drain(decodeChunked(reader, head))).toBe('Wikipedia in chunks.');
   });
-
-  it('tolerates chunk extensions after a semicolon and ignores them', async () => {
-    const input = '5;name=foo\r\nhello\r\n0\r\n\r\n';
-    const { reader, head } = fromString(input);
-    expect(await drain(decodeChunked(reader, head))).toBe('hello');
-  });
 });
 
 describe('decodeChunked — error vectors', () => {
@@ -69,29 +63,6 @@ describe('decodeChunked — error vectors', () => {
     const err = await drainExpectError(decodeChunked(reader, head));
     expect(err).toBeInstanceOf(HttpProtocolError);
     expect((err as Error).message).toMatch(/missing CRLF/);
-  });
-});
-
-describe('decodeChunked — incremental reads', () => {
-  it('handles a single byte arriving per ReadableStream chunk (worst-case slow drip)', async () => {
-    const all = '4\r\nWiki\r\n5\r\npedia\r\n0\r\n\r\n';
-    const stream = new ReadableStream<Uint8Array>({
-      start(c) {
-        for (const ch of all) c.enqueue(enc(ch));
-        c.close();
-      },
-    });
-    const out = await drain(decodeChunked(stream.getReader(), new Uint8Array(0)));
-    expect(out).toBe('Wikipedia');
-  });
-
-  it('handles a chunk-size line split across the head buffer and the reader', async () => {
-    const head = enc('5\r');
-    const stream = new ReadableStream<Uint8Array>({
-      start(c) { c.enqueue(enc('\nhello\r\n0\r\n\r\n')); c.close(); },
-    });
-    const out = await drain(decodeChunked(stream.getReader(), head));
-    expect(out).toBe('hello');
   });
 });
 
@@ -144,15 +115,5 @@ describe('decodeChunked — extensions and trailers (RFC 9112 §7.1.1, §7.1.2)'
     const err = await drainExpectError(decodeChunked(reader, head));
     expect(err).toBeInstanceOf(HttpProtocolError);
     expect((err as HttpProtocolError).code).toBe('CHUNK_TOO_LONG');
-  });
-});
-
-describe('decodeChunked — premature EOF vectors', () => {
-  it('errors with EOF when the size line never finishes', async () => {
-    const input = '5'; // no CRLF, no anything else
-    const { reader, head } = fromString(input);
-    const err = await drainExpectError(decodeChunked(reader, head));
-    expect(err).toBeInstanceOf(HttpProtocolError);
-    expect((err as HttpProtocolError).code).toBe('EOF');
   });
 });

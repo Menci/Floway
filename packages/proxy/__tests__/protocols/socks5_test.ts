@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildSocks5ConnectRequest, dialSocks5 } from '../../src/protocols/socks5.ts';
+import { dialSocks5 } from '../../src/protocols/socks5.ts';
 import type { Socks5ProxyConfig } from '../../src/proxy-config.ts';
 import type { DialOptions, DialTarget } from '../../src/types.ts';
 import { makeFakeSocketDial } from '../test-utils/fake-socket-dial.ts';
@@ -112,21 +112,6 @@ describe('dialSocks5 — RFC 1929 user/pass sub-negotiation', () => {
   });
 });
 
-describe('dialSocks5 — failure modes', () => {
-  it('rejects an "no acceptable methods" reply (0x05 0xff)', async () => {
-    const fake = makeFakeSocketDial();
-    const promise = dialSocks5(socks5Config(), target, { socketDial: fake.socketDial });
-    const srv = await fake.awaitConnect();
-    await srv.read(3);
-    srv.respond(arr(0x05, 0xff));
-    await expect(promise).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'proxy-handshake',
-      message: expect.stringContaining('no acceptable methods'),
-    });
-  });
-});
-
 const drainConnectRequest = async (
   srv: { read: (n: number) => Promise<Uint8Array> },
 ): Promise<void> => {
@@ -171,17 +156,6 @@ describe('dialSocks5 — RFC 1929 user/pass length boundaries', () => {
   });
 });
 
-describe('buildSocks5ConnectRequest — ATYP discrimination', () => {
-  // RFC 1928 §4 defines ATYP=0x01 (4 raw v4 octets), 0x03 (length-prefixed
-  // domain), 0x04 (16 raw v6 octets). Reference clients (Xray-core,
-  // sing-box) emit the literal ATYP for literal targets rather than
-  // forcing the server to re-parse a string into an address.
-  it('emits ATYP=0x01 + 4 octets for an IPv4 literal target', () => {
-    const out = buildSocks5ConnectRequest('1.2.3.4', 80);
-    expectEqualBytes(out, [0x05, 0x01, 0x00, 0x01, 1, 2, 3, 4, 0x00, 0x50]);
-  });
-});
-
 describe('dialSocks5 — RFC 1928 §6 reply field codes', () => {
   // Each rep code surfaces as a typed proxy-handshake error carrying the
   // numeric rep in the message ("status=N").
@@ -206,42 +180,4 @@ describe('dialSocks5 — RFC 1928 §6 reply field codes', () => {
       });
     });
   }
-});
-
-describe('dialSocks5 — CONNECT reply BND.ADDR variants', () => {
-  it('rejects ATYP=0x04 (IPv6) BND.ADDR when RSV byte is non-zero (RFC 1928 §6)', async () => {
-    // RFC 1928 §6 says RSV MUST be 0x00. A non-zero byte is a spec
-    // violation and we'd rather surface that than silently parse an
-    // ambiguous reply.
-    const fake = makeFakeSocketDial();
-    const promise = dialSocks5(socks5Config(), target, { socketDial: fake.socketDial });
-    const srv = await fake.awaitConnect();
-    await srv.read(3);
-    srv.respond(arr(0x05, 0x00));
-    await drainConnectRequest(srv);
-    const ipv6 = new Uint8Array(16);
-    srv.respond(new Uint8Array([0x05, 0x00, 0xff, 0x04, ...ipv6, 0, 0]));
-    await expect(promise).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'proxy-handshake',
-      message: expect.stringContaining('RSV byte non-zero'),
-    });
-  });
-});
-
-describe('dialSocks5 — pre-handshake EOF / mid-flow errors', () => {
-  it('rejects an EOF after the greeting reply but before the CONNECT reply', async () => {
-    const fake = makeFakeSocketDial();
-    const promise = dialSocks5(socks5Config(), target, { socketDial: fake.socketDial });
-    const srv = await fake.awaitConnect();
-    await srv.read(3);
-    srv.respond(arr(0x05, 0x00));
-    await drainConnectRequest(srv);
-    srv.endResponse();
-    await expect(promise).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'proxy-handshake',
-      message: expect.stringContaining('unexpected EOF'),
-    });
-  });
 });

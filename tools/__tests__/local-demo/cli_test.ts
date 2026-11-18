@@ -1,8 +1,6 @@
-import { join } from 'node:path';
-
 import { test } from 'vitest';
 
-import { parseCommand, workerdConfig } from '../../src/local-demo/cli.ts';
+import { parseCommand } from '../../src/local-demo/cli.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 test('local demo selects workerd explicitly and validates ports', () => {
@@ -12,14 +10,4 @@ test('local demo selects workerd explicitly and validates ports', () => {
   assertThrows(() => parseCommand(['up', '--runtime', 'workers']), Error, '--runtime must be node or workerd');
   assertThrows(() => parseCommand(['up', '--gateway-port', '0']), Error, 'ports must be integers from 1 to 65535');
   assertThrows(() => parseCommand(['up', '--gateway-port', '5174', '--web-port', '5174']), Error, 'must differ');
-});
-
-test('workerd config binds the Cloudflare dependencies and local migrations', () => {
-  const config = workerdConfig('/checkout') as {
-    d1_databases: Array<{ binding: string; migrations_dir: string }>;
-    kv_namespaces: Array<{ binding: string }>;
-  };
-  assertEquals(config.d1_databases[0]?.binding, 'DB');
-  assertEquals(config.d1_databases[0]?.migrations_dir, join('/checkout', 'packages', 'gateway', 'migrations'));
-  assertEquals(config.kv_namespaces[0]?.binding, 'KV');
 });

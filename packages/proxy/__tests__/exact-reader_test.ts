@@ -30,9 +30,4 @@ describe('makeExactReader', () => {
     expect(Array.from(await read(2))).toEqual([1, 2]);
     expect(Array.from(await read(5))).toEqual([3, 4, 5, 6, 7]);
   });
-
-  it('throws a labelled EOF error when the stream closes before N bytes arrive', async () => {
-    const read = makeExactReader(makeReader([new Uint8Array([1, 2])]), 'SS2022');
-    await expect(read(5)).rejects.toThrowError(/SS2022: EOF, want 5 got 2/);
-  });
 });

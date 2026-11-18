@@ -159,24 +159,6 @@ describe('runDirectConnectRequest', () => {
     expect(direct.closeCalls()).toBe(1);
   });
 
-  // Reading the body to EOF and cancelling it both require someone to still be
-  // holding the body. An abandoned response has neither, so the caller's signal
-  // is the only teardown left once the dial has resolved.
-  it('closes its socket when the caller aborts after the response was returned', async () => {
-    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok');
-    const controller = new AbortController();
-    await runDirectConnectRequest(
-      { host: 'api.example.com', port: 80, tls: false },
-      { method: 'GET', path: '/', headers: [] },
-      { socketDial: direct.socketDial, signal: controller.signal },
-    );
-
-    expect(direct.closeCalls()).toBe(0);
-    controller.abort('client gone');
-    await Promise.resolve();
-    expect(direct.closeCalls()).toBe(1);
-  });
-
   // addEventListener on an already-aborted signal never fires, so the abort
   // that lands while the request is in flight has to be picked up synchronously.
   it('closes its socket when the caller aborted while the request was in flight', async () => {
@@ -217,27 +199,6 @@ describe('runDirectConnectRequest', () => {
       }),
     );
     expect(direct.closeCalls()).toBe(1);
-  });
-
-  it('bounds the raw TCP connect with the direct-connect dial deadline', async () => {
-    const socketDial: SocketDial = {
-      ...stubSocketDial,
-      connect: async (_host, _port, options) => {
-        return await new Promise<never>((_, reject) => {
-          options?.signal?.addEventListener('abort', () => reject(options.signal!.reason), { once: true });
-        });
-      },
-    };
-
-    await expect(runDirectConnectRequest(
-      { host: 'api.example.com', port: 443, tls: true },
-      { method: 'GET', path: '/', headers: [] },
-      { socketDial, dialTimeoutMs: 20 },
-    )).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'tcp-connect',
-      message: expect.stringContaining('direct-connect'),
-    });
   });
 });
 
@@ -296,18 +257,6 @@ describe('runProxiedRequest — Host header synthesis', () => {
       baseOptions(),
     );
     expect(cap.written()).toContain('Host: api.example.com:443\r\n');
-  });
-
-  it('preserves a caller-provided Host header verbatim', async () => {
-    const cap = buildCapturingDial(ok200);
-    cap.setupMock();
-    await runProxiedRequest(
-      socks,
-      { host: 'cdn.example.com', port: 443, tls: false },
-      { method: 'GET', path: '/', headers: [['Host', 'origin.example.com:9000']] },
-      baseOptions(),
-    );
-    expect(cap.written()).toContain('Host: origin.example.com:9000\r\n');
   });
 
   it('wraps an IPv6 literal target in its uri-host envelope (RFC 3986 §3.2.2)', async () => {

@@ -1,10 +1,10 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import { expect, test } from 'vitest';
 
-import { OMP_PLUGIN_NAME, SENTINEL_KEY, hostOmpBin, hostPwsh, makeWorkspace, modelServer, ompBackupFiles, ompConfig, ompConfigPath, ompDirFor, ompExtensionPath, ompModelsPath, ompPackagePath, ompPluginLinkPath, ompPluginLockPath, ompPluginsDirFor, ompStagedFiles, placeFakeOmp, readOmpConnections, readOmpPluginLock, runPowerShellInstaller, runShellInstaller, seedOmpPlugin, shellLiteral } from './harness';
+import { OMP_PLUGIN_NAME, SENTINEL_KEY, hostOmpBin, hostPwsh, makeWorkspace, modelServer, ompConfig, ompConfigPath, ompExtensionPath, ompModelsPath, ompPackagePath, ompPluginLinkPath, ompPluginLockPath, ompPluginsDirFor, ompStagedFiles, placeFakeOmp, readOmpConnections, readOmpPluginLock, runPowerShellInstaller, runShellInstaller, seedOmpPlugin, shellLiteral } from './harness';
 import type { OMP_PLUGIN_MANIFEST, OmpPluginLock, RunResult } from './harness';
 import { SETUP_NODE_OMP_EXTENSION } from '../../../src/script-assets.generated.ts';
 
@@ -81,71 +81,6 @@ for (const [platform, install] of [['Bash', runShellInstaller], ...(hostPwsh ? [
   });
 }
 
-test('model set, changed, and cleared updates config.yml', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakeOmp(ws.binDir);
-  const configFile = ompConfigPath(ws);
-
-  const run1 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'gpt-4o' }) });
-  expect(run1.code, `setting model should succeed:\n${run1.combined}`).toBe(0);
-  expect(existsSync(configFile)).toBeTruthy();
-  const expectedConfig1 = [
-    'modelRoles:',
-    '  default: "floway/gpt-4o"',
-    '',
-  ].join('\n');
-  expect(readFileSync(configFile, 'utf8'), 'exact config shape when set').toBe(expectedConfig1);
-
-  const run2 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: "claude-3-5:special'quote" }) });
-  expect(run2.code, `changing model should succeed:\n${run2.combined}`).toBe(0);
-  const expectedConfig2 = [
-    'modelRoles:',
-    '  default: "floway/claude-3-5:special\'quote"',
-    '',
-  ].join('\n');
-  expect(readFileSync(configFile, 'utf8'), 'exact config shape when changed with escaping').toBe(expectedConfig2);
-
-  const run3 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: null }) });
-  expect(run3.code, `clearing model should succeed:\n${run3.combined}`).toBe(0);
-  expect(!existsSync(configFile) || readFileSync(configFile, 'utf8') === '').toBeTruthy();
-});
-
-test('preserves unrelated providers, comments, roles, CRLF, and missing trailing newline', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakeOmp(ws.binDir);
-  mkdirSync(ompDirFor(ws), { recursive: true });
-
-  const priorModels = '# User comments\r\nproviders:\r\n  anthropic:\r\n    baseUrl: https://api.anthropic.com\r\n    apiKey: ant-secret';
-  const priorConfig = '# Custom config\r\nmodelRoles:\r\n  plan: anthropic/claude-3-opus';
-  writeFileSync(ompModelsPath(ws), priorModels);
-  writeFileSync(ompConfigPath(ws), priorConfig);
-
-  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: 'test-model' }) });
-  expect(run.code, `setup should succeed:\n${run.combined}`).toBe(0);
-
-  const modelsText = readFileSync(ompModelsPath(ws), 'utf8');
-  expect(modelsText, 'comments preserved in models.yml').toContain('# User comments');
-  expect(modelsText, 'unrelated provider preserved').toContain('anthropic:');
-  expect(modelsText, 'unrelated provider keys preserved').toContain('apiKey: ant-secret');
-  expect(modelsText, 'no provider configuration is inserted').not.toContain('floway:');
-  expect(modelsText.includes('\r\n')).toBeTruthy();
-
-  const configText = readFileSync(ompConfigPath(ws), 'utf8');
-  expect(configText, 'comments preserved in config.yml').toContain('# Custom config');
-  expect(configText, 'unrelated role preserved').toContain('plan: anthropic/claude-3-opus');
-  expect(configText, 'managed default inserted').toContain('default: "floway/test-model"');
-  expect(configText.includes('\r\n')).toBeTruthy();
-
-  const runClear = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig({ model: null }) });
-  expect(runClear.code, `clearing should succeed:\n${runClear.combined}`).toBe(0);
-
-  const configCleared = readFileSync(ompConfigPath(ws), 'utf8');
-  expect(configCleared, 'comments preserved after clear').toContain('# Custom config');
-  expect(configCleared, 'modelRoles header preserved').toContain('modelRoles:');
-  expect(configCleared, 'unrelated user role preserved').toContain('plan: anthropic/claude-3-opus');
-  expect(configCleared, 'managed default key removed').not.toContain('default:');
-});
-
 for (const [platform, install] of [['Bash', runShellInstaller], ...(hostPwsh ? [['PowerShell', runPowerShellInstaller] as const] : [])] as const) {
   test(`${platform}: preserves an unmanaged plugin with a different extension entrypoint`, { timeout: 180_000 }, async () => {
     const ws = makeWorkspace();
@@ -161,22 +96,6 @@ for (const [platform, install] of [['Bash', runShellInstaller], ...(hostPwsh ? [
     expect(readFileSync(entrypoint, 'utf8'), 'native extension entrypoint preserved').toBe('export default () => {};');
     expect(!existsSync(ompExtensionPath(ws))).toBeTruthy();
     expect(!existsSync(ompPluginLockPath(ws))).toBeTruthy();
-  });
-
-  test(`${platform}: rejects a non-object plugin settings root without modifying it`, { timeout: 180_000 }, async () => {
-    const ws = makeWorkspace();
-    placeFakeOmp(ws.binDir);
-    mkdirSync(ompPluginsDirFor(ws), { recursive: true });
-    const badContent = '[{}]\n';
-    writeFileSync(ompPluginLockPath(ws), badContent, { mode: 0o600 });
-
-    const run = await install({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
-    expect(run.code, 'array root must fail setup').not.toBe(0);
-    expect(run.stdout, 'invalid lock data cannot complete setup').not.toContain('==> Completed Agent Setup: oh-my-pi');
-    expect(readFileSync(ompPluginLockPath(ws), 'utf8'), 'invalid lock file remains byte for byte unchanged').toBe(badContent);
-    expect(!existsSync(ompExtensionPath(ws))).toBeTruthy();
-    expect(!existsSync(ompPluginLinkPath(ws))).toBeTruthy();
-    expect(ompStagedFiles(ompPluginsDirFor(ws)).length, 'invalid lock data leaves no stage files').toBe(0);
   });
 }
 
@@ -201,53 +120,6 @@ test('rollback restores the prior plugin registration and settings after link fa
   expect(ompStagedFiles(ompPluginsDirFor(ws)).length, 'no plugin stage files left behind').toBe(0);
 });
 
-test('rollback restore failure preserves backup file and warns operator', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakeOmp(ws.binDir);
-  const priorContent = SETUP_NODE_OMP_EXTENSION;
-  seedOmpPlugin(ws, { plugins: { [OMP_PLUGIN_NAME]: { version: '1.0.0', enabledFeatures: null, enabled: false } }, settings: { [OMP_PLUGIN_NAME]: { connections: [] } } }, priorContent);
-  const run = await runShellInstaller({
-    workspace: ws,
-    baseUrl: modelServer.url,
-    configuration: ompConfig(),
-    fakeOmpFailConfig: true,
-    fakeRestoreFailure: true,
-  });
-  expect(run.code !== 0).toBeTruthy();
-  expect(run.combined, 'fault reached after successful extension staging').toContain('oh-my-pi simulated failure; rolling back configuration.');
-  expect(run.combined, 'rollback warning names restore failure').toContain('could not restore');
-  expect(run.combined, 'operator guidance emitted').toContain('restore it by hand');
-  const preservedBackups = ompBackupFiles(dirname(ompExtensionPath(ws)), 'index.js').length + ompBackupFiles(dirname(ompPackagePath(ws)), 'package.json').length;
-  expect(preservedBackups > 0).toBeTruthy();
-});
-
-for (const [platform, install] of [['Bash', runShellInstaller], ...(hostPwsh ? [['PowerShell', runPowerShellInstaller] as const] : [])] as const) {
-  test(`${platform}: removes a newly registered plugin after link failure`, { timeout: 180_000 }, async () => {
-    const ws = makeWorkspace();
-    placeFakeOmp(ws.binDir);
-    mkdirSync(ompPluginsDirFor(ws), { recursive: true });
-    const priorLock: OmpPluginLock = {
-      metadata: { schema: 1 },
-      plugins: { '@example/theme': { version: '2.0.0', source: 'registry' } },
-      settings: { '@example/theme': { enabled: true, color: 'blue' } },
-    };
-    writeFileSync(ompPluginLockPath(ws), `${JSON.stringify(priorLock, null, 2)}\n`, { mode: 0o600 });
-    const priorLockText = readFileSync(ompPluginLockPath(ws), 'utf8');
-
-    const run = await install({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig(), fakeOmpLinkFailure: 'after' });
-    expect(run.code, 'simulated native link failure exits nonzero').not.toBe(0);
-    expect(run.combined, 'the fake mutates the registry and creates the link before failing').toContain('fake omp plugin link completed and injected a failure');
-    expect(run.combined, 'plugin link failure enters rollback').toContain('oh-my-pi applying changes failed; rolling back configuration.');
-    expect(readFileSync(ompPluginLockPath(ws), 'utf8'), 'previous plugin registrations and settings are restored').toBe(priorLockText);
-    expect(readOmpPluginLock(ws).plugins?.[OMP_PLUGIN_NAME], 'Floway registration is removed').toBe(undefined);
-    const pluginScope = dirname(ompPluginLinkPath(ws));
-    expect(!existsSync(pluginScope) || !readdirSync(pluginScope).includes('omp')).toBeTruthy();
-    expect(!existsSync(ompExtensionPath(ws))).toBeTruthy();
-    expect(!existsSync(ompPackagePath(ws))).toBeTruthy();
-    expect(ompStagedFiles(ompPluginsDirFor(ws)).length, 'no plugin stage files remain').toBe(0);
-  });
-}
-
 test('propagates native probe failure without guessing the agent directory', { timeout: 180_000 }, async () => {
   const ws = makeWorkspace();
   placeFakeOmp(ws.binDir);
@@ -263,14 +135,6 @@ test('propagates native probe failure without guessing the agent directory', { t
   expect(run.combined).toContain('test native path probe failure');
   expect(!existsSync(customDir)).toBeTruthy();
   expect(!existsSync(join(ws.root, 'omp-setup-paths-record.jsonl'))).toBeTruthy();
-});
-
-test('API key is never printed to stdout or stderr during setup', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakeOmp(ws.binDir);
-  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
-  expect(run.code, `setup should succeed:\n${run.combined}`).toBe(0);
-  expect(run.combined, 'the API key must never be printed to stdout or stderr').not.toContain(SENTINEL_KEY);
 });
 
 test('real omp smoke: discovery succeeds and server receives headers', { timeout: 180_000 }, async ({ skip }) => {

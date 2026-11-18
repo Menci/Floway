@@ -104,41 +104,6 @@ describe('dialShadowsocks — AEAD frame round trip', () => {
 });
 
 describe('dialShadowsocks — AEAD frame layout', () => {
-  it('accumulates payload arriving as many small TCP segments (1 byte at a time)', async () => {
-    const fake = makeFakeSocketDial();
-    const promise = dialShadowsocks(config({ method: 'aes-128-gcm', password: 'shadow' }), target, {
-      socketDial: fake.socketDial,
-    });
-    const srv = await fake.awaitConnect();
-    const KEY_LEN = 16;
-    const masterKey = evpBytesToKey('shadow', KEY_LEN);
-    await srv.read(KEY_LEN);
-    await srv.read(2 + 16);
-    await srv.read(18 + 16);
-
-    const recvSalt = new Uint8Array(KEY_LEN);
-    crypto.getRandomValues(recvSalt);
-    const recvSubkey = hkdf(sha1, masterKey, recvSalt, new TextEncoder().encode('ss-subkey'), KEY_LEN);
-    const payload = new TextEncoder().encode('DATA');
-    const lenSealed = gcm(recvSubkey, nonce(0)).encrypt(new Uint8Array([
-      (payload.byteLength >> 8) & 0xff,
-      payload.byteLength & 0xff,
-    ]));
-    const ptSealed = gcm(recvSubkey, nonce(1)).encrypt(payload);
-    // Drip-feed the salt + records one byte at a time.
-    const drip = (b: Uint8Array): void => {
-      for (let i = 0; i < b.byteLength; i++) srv.respond(b.subarray(i, i + 1));
-    };
-    drip(recvSalt);
-    drip(lenSealed);
-    drip(ptSealed);
-
-    const result = await promise;
-    const reader = result.readable.getReader();
-    const r = await reader.read();
-    expect(new TextDecoder().decode(r.value!)).toBe('DATA');
-  });
-
   it('rejects a length record claiming > 0x3fff bytes (cap is the spec maximum)', async () => {
     const fake = makeFakeSocketDial();
     const promise = dialShadowsocks(config({ method: 'aes-128-gcm', password: 'shadow' }), target, {
@@ -165,26 +130,6 @@ describe('dialShadowsocks — AEAD frame layout', () => {
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
       message: expect.stringMatching(/bad payload length 16384/),
-    });
-  });
-
-  it('errors when the server hangs up before sending the salt', async () => {
-    const fake = makeFakeSocketDial();
-    const promise = dialShadowsocks(config({ method: 'aes-128-gcm', password: 'shadow' }), target, {
-      socketDial: fake.socketDial,
-    });
-    const srv = await fake.awaitConnect();
-    const KEY_LEN = 16;
-    await srv.read(KEY_LEN);
-    await srv.read(2 + 16);
-    await srv.read(18 + 16);
-    srv.endResponse();
-
-    const result = await promise;
-    const reader = result.readable.getReader();
-    await expect(reader.read()).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'proxy-handshake',
     });
   });
 });

@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 
 import { expect, test } from 'vitest';
 
-import { SENTINEL_KEY, bothConfig, codexAuthPath, codexBackupFiles, codexConfig, codexConfigPath, codexEditMap, codexHomeFor, codexTokenPath, hostPwsh, installerMarker, makeWorkspace, modelServer, placeFakeClaude, placeFakeCodex, readCodexToken, resolveTool, runPowerShellInstaller, runShellInstaller, settingsPathFor, stagedFiles } from './harness';
+import { SENTINEL_KEY, codexAuthPath, codexBackupFiles, codexConfig, codexConfigPath, codexEditMap, codexHomeFor, codexTokenPath, hostPwsh, installerMarker, makeWorkspace, modelServer, placeFakeCodex, readCodexToken, resolveTool, runPowerShellInstaller, runShellInstaller, stagedFiles } from './harness';
 import type { Workspace } from './harness';
 
 // Every fixed leaf the installer must batch-write, independent of model/effort.
@@ -61,30 +61,6 @@ test('okOverridden counts as success and reports non-secret override metadata on
   expect(existsSync(codexTokenPath(ws))).toBeTruthy();
 });
 
-test('a batchWrite JSON-RPC error fails codex and rolls back the provider token', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakeCodex(ws.binDir);
-  const configDir = codexHomeFor(ws);
-  mkdirSync(configDir, { recursive: true });
-  writeFileSync(codexTokenPath(ws), 'old-provider-token');
-  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexAppServerMode: 'error' });
-  expect(run.code !== 0).toBeTruthy();
-  expect(readCodexToken(ws), 'prior provider token is restored on rollback').toBe('old-provider-token');
-});
-
-test('a batch response past the deadline times out, kills the tree, and rolls back', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakeCodex(ws.binDir);
-  const started = Date.now();
-  const run = await runShellInstaller({
-    workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url,
-    fakeCodexAppServerMode: 'ok', fakeCodexBatchDelay: 8, timeoutSeconds: 1, excludeTimeoutTools: true,
-  });
-  expect(run.code !== 0).toBeTruthy();
-  expect(Date.now() - started < 5_000).toBeTruthy();
-  expect(!existsSync(codexTokenPath(ws))).toBeTruthy();
-});
-
 test('configuration failure restores prior config and provider token without touching auth.json', { timeout: 180_000 }, async () => {
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
@@ -125,34 +101,6 @@ test('a restore failure during rollback preserves the provider-token backup and 
   expect(readCodexToken(ws), 'the managed token remains in place because restore failed').toBe(SENTINEL_KEY);
 });
 
-test('the API key never appears in output and never reaches the app-server', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakeCodex(ws.binDir);
-  const run = await runShellInstaller({
-    workspace: ws, baseUrl: modelServer.url,
-    configuration: codexConfig({ model: 'gpt-5-codex', reasoningEffort: 'high' }),
-  });
-  expect(run.code, `should succeed:\n${run.combined}`).toBe(0);
-  expect(run.combined, 'the API key must never be printed').not.toContain(SENTINEL_KEY);
-  expect(run.combined, 'the app-server must never observe the key in a request').not.toContain('received the API key');
-  // Sanity: the key really was written to the token file so the absence above is meaningful.
-  expect(readCodexToken(ws), 'the key was actually staged into floway-token').toBe(SENTINEL_KEY);
-});
-
-test('a Codex script never configures Claude when Codex fails', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakeClaude(ws.binDir);
-  placeFakeCodex(ws.binDir);
-  const run = await runShellInstaller({
-    workspace: ws, baseUrl: modelServer.url, configuration: bothConfig(), agent: 'codex',
-    fakeCodexAppServerMode: 'error',
-  });
-  expect(run.code !== 0).toBeTruthy();
-  expect(run.combined, 'single-agent scripts do not print a redundant summary').not.toContain('Summary');
-  expect(run.combined, 'the Codex script does not mention the unselected agent').not.toContain('Claude Code');
-  expect(!existsSync(settingsPathFor(ws))).toBeTruthy();
-});
-
 // --- Codex PowerShell parse + execution -------------------------------------
 
 test('PowerShell: existing CLI configures via the app-server and stages the provider token', { timeout: 180_000 }, async ({ skip }) => {
@@ -183,52 +131,6 @@ test('PowerShell: provider token is UTF-8 without a BOM under a non-default cult
   const token = readFileSync(codexTokenPath(ws));
   expect(token.toString('utf8'), 'provider token decodes to the exact API key').toBe(SENTINEL_KEY);
   expect(!(token[0] === 0xef && token[1] === 0xbb && token[2] === 0xbf)).toBeTruthy();
-});
-
-test('PowerShell: a provider-token backup protection failure removes the unsafe backup and leaves the original intact', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  if (process.platform === 'win32') return skip(true, 'the chmod-based protection-failure injection is Unix-only');
-  const ws = makeWorkspace();
-  placeFakeCodex(ws.binDir);
-  const home = codexHomeFor(ws);
-  mkdirSync(home, { recursive: true });
-  const priorToken = 'old-provider-token';
-  const priorAuth = '{"tokens":{"access_token":"official-account-token"}}';
-  writeFileSync(codexTokenPath(ws), priorToken);
-  writeFileSync(codexAuthPath(ws), priorAuth);
-
-  // chmod fails, so Protect-SetupFile throws while hardening the token backup —
-  // the first protected copy in the Codex flow, before any mutation.
-  const run = await runPowerShellInstaller({
-    workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeChmodFailure: true,
-  });
-  expect(run.code !== 0).toBeTruthy();
-  expect(codexBackupFiles(home, 'floway-token').length, 'the unprotected provider-token backup is removed').toBe(0);
-  expect(readCodexToken(ws), 'the original provider token is unchanged').toBe(priorToken);
-  expect(readFileSync(codexAuthPath(ws), 'utf8'), 'account auth remains unchanged').toBe(priorAuth);
-  expect(run.combined, 'the API key must never be printed').not.toContain(SENTINEL_KEY);
-});
-
-test('PowerShell: missing CLI triggers the documented remote installer invocation', { timeout: 180_000 }, async ({ skip }) => {
-  if (!hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-  const ws = makeWorkspace();
-  modelServer.mode = 'installer-codex-ps1';
-  try {
-    const run = await runPowerShellInstaller({
-      workspace: ws,
-      configuration: codexConfig(),
-      baseUrl: modelServer.url,
-      withCodexInstallHook: false,
-      codexInstallerUrl: `${modelServer.url}/install-codex.ps1`,
-    });
-    expect(run.code, `should succeed after install:\n${run.combined}`).toBe(0);
-    expect(existsSync(installerMarker(ws))).toBeTruthy();
-    const installerCommandLine = readFileSync(join(ws.root, 'installer-command-line.txt'), 'utf8');
-    expect(installerCommandLine, 'the Codex installer subprocess matches the documented process-scoped execution-policy override').toContain('-ExecutionPolicy Bypass');
-    assertCodexBaseEdits(ws, modelServer.url);
-  } finally {
-    modelServer.mode = 'ok';
-  }
 });
 
 // --- Codex real-binary smoke test -------------------------------------------

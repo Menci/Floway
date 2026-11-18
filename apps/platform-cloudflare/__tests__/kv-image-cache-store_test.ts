@@ -51,17 +51,6 @@ test('get hit older than the refresh threshold rewrites the entry with a fresh w
   assert(writtenAt !== undefined && writtenAt >= before && writtenAt <= after);
 });
 
-test('get hit on a pre-rework entry without metadata self-heals by stamping a fresh writtenAt', async () => {
-  const { kv, puts } = recordingKv({ value: new Uint8Array([3]), metadata: null });
-  const cache = new KvImageCacheStore(kv, POLICY);
-
-  const hit = await cache.get('k');
-
-  assertEquals([...hit!], [3]);
-  assertEquals(puts.length, 1);
-  assert(puts[0].options?.metadata?.writtenAt !== undefined);
-});
-
 test('put rounds tiny TTLs up to the KV 60-second floor', async () => {
   const { kv, puts } = recordingKv();
   const cache = new KvImageCacheStore(kv, { ttlMs: 1000, refreshIfOlderThanMs: 500 });

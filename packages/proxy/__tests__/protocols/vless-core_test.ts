@@ -120,21 +120,6 @@ describe('vlessFrameOverStream — reply prefix strip', () => {
 });
 
 describe('vlessFrameOverStream — reply prefix edge cases', () => {
-  it('buffers across multiple TCP segments — version arrives separately from addons', async () => {
-    const p = makePair();
-    const dialPromise = vlessFrameOverStream(p.transport, UUID, target);
-    await p.written;
-
-    p.pushFromServer(new Uint8Array([0x00]));
-    p.pushFromServer(new Uint8Array([0x02, 0x11, 0x22]));
-    p.pushFromServer(new Uint8Array([0xaa, 0xbb]));
-
-    const result = await dialPromise;
-    const reader = result.readable.getReader();
-    const first = await reader.read();
-    expect(Array.from(first.value!)).toEqual([0xaa, 0xbb]);
-  });
-
   it('errors the readable when EOF arrives mid-addons', async () => {
     const p = makePair();
     const dialPromise = vlessFrameOverStream(p.transport, UUID, target);

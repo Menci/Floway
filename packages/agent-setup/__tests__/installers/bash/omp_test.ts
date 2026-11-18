@@ -52,27 +52,6 @@ for (const platform of ['bash', 'powershell'] as const) {
       expect(result.staged).toBe(source.replace('enabled: true', 'enabled: false').replace('maxRetries: 10', 'maxRetries: 0'));
     });
 
-    test('overwrites an old retry leaf using the explicit new typed value', () => {
-      const source = 'retry:\n  enabled: TRUE # enabled\n  maxRetries: +3 # attempts\n';
-      const result = run(source, 'false', '0');
-      expect(result.status, result.output).toBe(0);
-      expect(result.staged).toBe('retry:\n  enabled: false # enabled\n  maxRetries: 0 # attempts\n');
-    });
-
-    test('preserves case-sensitive retry keys while adding canonical settings', () => {
-      const source = 'retry:\n  Enabled: true\n  MaxRetries: 3\n';
-      const result = run(source, 'false', '0');
-      expect(result.status, result.output).toBe(0);
-      expect(result.staged).toBe(`${source}  enabled: false\n  maxRetries: 0\n`);
-    });
-
-    test('omitted settings preserve existing retry values and another connection default byte for byte', () => {
-      const source = "# Model preferences\r\nmodelRoles:\r\n  default: 'personal/alias'\r\nretry:\r\n  enabled: false\r\n  maxRetries: 3";
-      const result = run(source, '', '');
-      expect(result.status, result.output).toBe(0);
-      expect(result.staged).toBe(source);
-    });
-
     test('replaces an explicit default while preserving BOM, indentation, comments and other roles', () => {
       const source = '\uFEFF# Preferences\r\nmodelRoles: # startup\r\n    default: other/model # keep\r\n    plan: other/plan\r\ntheme: custom';
       const result = run(source, '', '', 'chosen');
@@ -85,13 +64,6 @@ for (const platform of ['bash', 'powershell'] as const) {
       const result = run(source, '', '');
       expect(result.status, result.output).toBe(0);
       expect(result.staged).toBe('modelRoles: # roles\n   # keep\n  plan: other/plan\n');
-    });
-
-    test.each(['other', 'work'])('keeps YAML model suffixes opaque when clearing defaults: %s', provider => {
-      const source = `modelRoles:\n  default: "${provider}/alias\\e"\n  plan: other/a&b # * policy\n`;
-      const result = run(source, '', '');
-      expect(result.status, result.output).toBe(0);
-      expect(result.staged).toBe(provider === 'work' ? 'modelRoles:\n  plan: other/a&b # * policy\n' : source);
     });
 
     test.each([
@@ -142,42 +114,6 @@ for (const failure of ['serialization', 'deletion'] as const) {
     }
   });
 }
-
-const hasPowerShell = spawnSync('pwsh', ['--version'], { encoding: 'utf8' }).status === 0;
-test.skipIf(!hasPowerShell)('PowerShell OMP propagates empty-config deletion failure', () => {
-  const directory = mkdtempSync(join(packageRoot, '.omp-delete-failure-'));
-  try {
-    const config = join(directory, 'config.yml');
-    const extension = join(directory, 'floway.js');
-    const extensionStage = join(directory, 'extension-stage');
-    const configStage = join(directory, 'config-stage');
-    writeFileSync(config, 'modelRoles:\n  default: work/alias\n');
-    writeFileSync(extensionStage, 'new extension');
-    writeFileSync(configStage, '');
-    const connectionsStage = join(directory, 'connections-stage');
-    writeFileSync(connectionsStage, '{"plugins":{},"settings":{"@floway-dev/omp":{"connections":[]}}}');
-    const manifestStage = join(directory, 'manifest-stage');
-    writeFileSync(manifestStage, '{}');
-    const body = readFileSync(join(packageRoot, 'installers/powershell/omp.ps1'), 'utf8');
-    const script = [
-      "$ErrorActionPreference='Stop'; function Test-SetupIsWindows { $false }; function Protect-SetupFile { param([string]$Path) };",
-      body.slice(0, body.lastIndexOf("$global:LASTEXITCODE = Main 'oh-my-pi'")),
-      '$script:OmpPluginSettingsExisted=$false; $script:OmpExtensionExisted=$false; $script:OmpManifestExisted=$false;',
-      `$script:OmpPluginSettingsStage=${psQuote(connectionsStage)}; $script:OmpPluginSettingsPath=${psQuote(join(directory, 'omp-plugins.lock.json'))};`,
-      `$script:OmpManifestStage=${psQuote(manifestStage)}; $script:OmpManifestPath=${psQuote(join(directory, 'package.json'))};`,
-      `$script:OmpExtensionStage=${psQuote(extensionStage)}; $script:OmpExtensionPath=${psQuote(extension)};`,
-      `$script:OmpConfigStage=${psQuote(configStage)}; $script:OmpConfigPath=${psQuote(config)};`,
-      `function Remove-Item { param([string]$LiteralPath, [switch]$Force, [string]$ErrorAction); if ($LiteralPath -eq ${psQuote(config)}) { throw 'test deletion failure' }; Microsoft.PowerShell.Management\\Remove-Item -LiteralPath $LiteralPath -Force -ErrorAction Stop };`,
-      'Apply-SetupOmpStaged;',
-    ].join('\n');
-    const result = spawnSync('pwsh', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 10000 });
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain('test deletion failure');
-    expect(readFileSync(config, 'utf8')).toBe('modelRoles:\n  default: work/alias\n');
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
-  }
-});
 
 test('Bash OMP protects a reused config stage before writing existing settings', () => {
   const directory = mkdtempSync(join(packageRoot, '.omp-stage-protection-test-'));

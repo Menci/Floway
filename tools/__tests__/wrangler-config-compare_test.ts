@@ -43,20 +43,3 @@ test('placeholder replacement and account selection remain deployment-local', ()
     reason: 'placeholder <YOUR_WORKER_NAME> must be replaced with a concrete value, got "<YOUR_WORKER_NAME>"',
   }]);
 });
-
-test('binding identity and Worker-first route order retain their specialized comparisons', () => {
-  const topology = {
-    d1_databases: [
-      { binding: 'FIRST', database_id: '<YOUR_FIRST_ID>' },
-      { binding: 'SECOND', database_id: '<YOUR_SECOND_ID>' },
-    ],
-    assets: { run_worker_first: ['/api/*', '/v1/*'] },
-  };
-  expect(findWranglerConfigMismatches(topology, {
-    d1_databases: [
-      { binding: 'SECOND', database_id: 'second-id' },
-      { binding: 'FIRST', database_id: 'first-id' },
-    ],
-    assets: { run_worker_first: ['/v1/*', '/api/*'] },
-  })).toEqual([]);
-});

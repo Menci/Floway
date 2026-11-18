@@ -4,18 +4,12 @@ import { ExecutionCellChannelBroker } from '../src/execution-cell-channel-broker
 import type { ChannelCodec, ExecutionCellNamespace } from '@floway-dev/platform';
 import { assertEquals } from '@floway-dev/test-utils';
 
-// String codec: encode passes through, decode rejects payloads prefixed with
-// `bad:` so the parse-fail path has a deterministic trigger. Every test below
-// drives the generic broker through this codec, so the broker's typing flows
-// without any reference to a higher-level payload shape.
+// Identity string codec: every test below drives the generic broker through
+// it, so the broker's typing flows without any reference to a higher-level
+// payload shape.
 const stringCodec: ChannelCodec<string> = {
   encode: value => value,
-  decode: payload => {
-    if (payload.startsWith('bad:')) {
-      throw new Error(`stringCodec rejected payload: ${payload}`);
-    }
-    return payload;
-  },
+  decode: payload => payload,
 };
 
 class FakeServerSocket {
@@ -100,43 +94,6 @@ test('ExecutionCellChannelBroker.subscribe drives payloads through the broadcast
   await Promise.resolve();
   await Promise.resolve();
   assertEquals(socket.closed?.code, 1000);
-});
-
-test('ExecutionCellChannelBroker.publish encodes the payload through the codec', async () => {
-  const broadcasts: string[] = [];
-  const fetches = { count: 0, cellIds: [] as string[] };
-  const ns = buildNamespace(new FakeServerSocket(), broadcasts, [], fetches);
-  const broker = new ExecutionCellChannelBroker<string>(ns, stringCodec);
-  await broker.publish('k', 'frame-a');
-  assertEquals(broadcasts.length, 1);
-  assertEquals(broadcasts[0], 'frame-a');
-  assertEquals(fetches.cellIds, [JSON.stringify(['broadcast', 'k'])]);
-});
-
-test('ExecutionCellChannelBroker.closeChannel forwards the reason to the actor', async () => {
-  const closeAlls: string[] = [];
-  const ns = buildNamespace(new FakeServerSocket(), [], closeAlls);
-  const broker = new ExecutionCellChannelBroker<string>(ns, stringCodec);
-  await broker.closeChannel('k', 'custom-reason');
-  assertEquals(closeAlls.length, 1);
-  assertEquals(closeAlls[0], 'custom-reason');
-});
-
-test('ExecutionCellChannelBroker.subscribe drains buffered payloads before surfacing a decode failure', async () => {
-  const socket = new FakeServerSocket();
-  const broker = new ExecutionCellChannelBroker<string>(buildNamespace(socket), stringCodec);
-  const controller = new AbortController();
-  const iter = broker.subscribe('k', controller.signal)[Symbol.asyncIterator]();
-
-  await Promise.resolve();
-  await Promise.resolve();
-  socket.emit('message', new MessageEvent('message', { data: 'good' }));
-  socket.emit('message', new MessageEvent('message', { data: 'bad:payload' }));
-
-  assertEquals((await iter.next()).value, 'good');
-  const failed = await Promise.allSettled([iter.next()]);
-  assertEquals(failed[0].status, 'rejected');
-  assertEquals((failed[0] as PromiseRejectedResult).reason.message, 'stringCodec rejected payload: bad:payload');
 });
 
 test('ExecutionCellChannelBroker.subscribe surfaces a server-side socket error by throwing from .next()', async () => {

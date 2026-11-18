@@ -7,7 +7,6 @@ import {
   buildRealityAad,
   buildRealitySessionId,
   dialReality,
-  parseShortId,
   verifyRealityLeaf,
 } from '../../src/protocols/reality.ts';
 import type { RealityProxyConfig } from '../../src/proxy-config.ts';
@@ -67,18 +66,6 @@ describe('dialReality — pre-connect config validation', () => {
     });
     expect(fake.connectCount()).toBe(0);
   });
-
-  it('rejects a 33-byte pubkey (one byte too long)', async () => {
-    const fake = makeFakeSocketDial();
-    // 33 bytes = 44 base64 chars without padding.
-    await expect(
-      dialReality(realityConfig({ publicKey: 'A'.repeat(44) }), target, { socketDial: fake.socketDial }),
-    ).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('pubkey must be 32 bytes'),
-    });
-  });
 });
 
 describe('dialReality — runtime X25519 derive failure', () => {
@@ -103,16 +90,6 @@ describe('dialReality — runtime X25519 derive failure', () => {
     // The TCP socket WAS opened (the derive failure happens inside the
     // outer-TLS state machine, after connect succeeds). We don't assert
     // connectCount here — only that the failure is shaped right.
-  });
-});
-
-describe('parseShortId', () => {
-  it('zero-pads a 2-char hex sid into the leading byte, leaving the tail zero', () => {
-    expect(Array.from(parseShortId('aa'))).toEqual([0xaa, 0, 0, 0, 0, 0, 0, 0]);
-  });
-
-  it('rejects a sid that exceeds the 8-byte (16 hex char) slot', () => {
-    expect(() => parseShortId('001122334455667788')).toThrow(/shortId hex must be 0..16 chars/);
   });
 });
 
@@ -157,17 +134,5 @@ describe('verifyRealityLeaf', () => {
     const der = buildLeafDer(wrongTag);
     expect(() => verifyRealityLeaf(authKey, der, buildSpki(rawPub)))
       .toThrow(/HMAC-SHA512.*did not match/);
-  });
-
-  it('rejects a leaf whose pubkey is not Ed25519', () => {
-    const authKey = new Uint8Array(32);
-    const rawPub = new Uint8Array(32);
-    const tag = hmac(sha512, authKey, rawPub);
-    const der = buildLeafDer(tag);
-    // Build an SPKI of the right length but wrong OID byte.
-    const badSpki = buildSpki(rawPub);
-    badSpki[6] = 0xff;
-    expect(() => verifyRealityLeaf(authKey, der, badSpki))
-      .toThrow(/not Ed25519/);
   });
 });

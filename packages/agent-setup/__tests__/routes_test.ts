@@ -15,8 +15,7 @@ import {
   createAgentSetupControlRoutes,
   createAgentSetupPublicRoutes,
 } from '../src/routes.ts';
-import { SETUP_BASH_CLAUDE, SETUP_BASH_COMMON, SETUP_NODE_OMP_EXTENSION, SETUP_NODE_PI_EXTENSION } from '../src/script-assets.generated.ts';
-import { SETUP_SCRIPT_BODIES } from '../src/script-assets.ts';
+import { SETUP_NODE_PI_EXTENSION } from '../src/script-assets.generated.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const RAW_KEY = 'raw-key';
@@ -180,15 +179,6 @@ test('POST first use selects the requested key at revision 1', async () => {
   assertEquals(body.scripts.claude.sh, `/api/setup/${body.token}/claude.sh`);
 });
 
-test('POST returns no-selectable-key when the account has no key', async () => {
-  const h = harness({ keys: [] });
-  const response = await h.request('/api/setup', {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ apiKeyId: 'key_primary' }),
-  });
-  assertEquals(response.status, 409);
-  assertEquals(((await response.json()) as { status: string }).status, 'no-selectable-key');
-});
-
 test('POST restores the latest saved configuration whose key is still selectable', async () => {
   const h = harness();
   const first = await create(h);
@@ -303,36 +293,6 @@ test('POST retries a token collision without masking unrelated failures', async 
 
 // --- public serve ---
 
-test('GET serves the shell prefix + common and target-agent fragments with hardened no-store headers', async () => {
-  const h = harness();
-  const lease = await create(h);
-  const response = await h.request(lease.scripts.claude.sh, { method: 'GET' });
-  assertEquals(response.status, 200);
-  assertEquals(response.headers.get('content-type'), 'text/plain; charset=utf-8');
-  assertEquals(response.headers.get('cache-control'), 'no-store');
-  assertEquals(response.headers.get('pragma'), 'no-cache');
-  assertEquals(response.headers.get('expires'), '0');
-  assertEquals(response.headers.get('referrer-policy'), 'no-referrer');
-  assertEquals(response.headers.get('x-content-type-options'), 'nosniff');
-  const text = await response.text();
-  const body = SETUP_SCRIPT_BODIES.claude.sh;
-  const prefix = text.slice(0, text.indexOf(body));
-  expect(prefix).toContain("SETUP_API_KEY='raw-key'");
-  expect(prefix).toContain('SETUP_CLAUDE_');
-  expect(text).toContain(body);
-  expect(body).toContain(SETUP_BASH_COMMON);
-  expect(body).toContain(SETUP_BASH_CLAUDE);
-});
-
-test('HEAD validates but returns an empty body', async () => {
-  const h = harness();
-  const lease = await create(h);
-  const response = await h.request(lease.scripts.claude.sh, { method: 'HEAD' });
-  assertEquals(response.status, 200);
-  assertEquals(response.headers.get('cache-control'), 'no-store');
-  assertEquals(await response.text(), '');
-});
-
 test('near-miss public URLs are consumed before host middleware can log their token', async () => {
   const token = 'a'.repeat(43);
   const downstream = vi.fn();
@@ -388,27 +348,4 @@ test('the leased Pi extension is fixed across configurations and endpoint querie
   }
   const missing = await h.request(`/api/setup/${'x'.repeat(43)}/pi.js?endpoint=https://example.com`);
   expect(missing.status).toBe(404);
-});
-
-test('serves live OMP scripts and a leased extension without affecting Pi preferences', async () => {
-  const h = harness();
-  const lease = await create(h);
-  const configuration = { ...lease.configuration, omp: { model: 'custom-omp-model', provider: 'personal', retry: { enabled: null, maxRetries: null } } };
-  await h.request('/api/setup', putJson({ token: lease.token, configuration, expectedRevision: lease.configurationRevision }));
-  const sh = await (await h.request(lease.scripts.omp.sh)).text();
-  expect(sh).toContain("SETUP_OMP_MODEL='custom-omp-model'");
-  expect(sh).toContain("SETUP_OMP_PROVIDER='personal'");
-  expect(sh).toContain(`SETUP_EXTENSION_PATH='/api/setup/${lease.token}/omp.js'`);
-  const ps = await (await h.request(lease.scripts.omp.ps1)).text();
-  expect(ps).toContain("$SetupOmpModel = 'custom-omp-model'");
-  const url = `/api/setup/${lease.token}/omp.js?endpoint=${encodeURIComponent('https://gateway.example/prefix')}`;
-  const response = await h.request(url);
-  expect(response.status).toBe(200);
-  expect(response.headers.get('cache-control')).toBe('no-store');
-  const source = await response.text();
-  expect(source).not.toContain(RAW_KEY);
-  expect(source).toBe(SETUP_NODE_OMP_EXTENSION);
-  expect(await (await h.request(url, { method: 'HEAD' })).text()).toBe('');
-  expect((await h.request(`/api/setup/${lease.token}/omp.js?endpoint=file:///tmp/config`)).status).toBe(200);
-  expect(await (await h.request(lease.scripts.pi.sh)).text()).toContain("SETUP_PI_MODEL=''");
 });

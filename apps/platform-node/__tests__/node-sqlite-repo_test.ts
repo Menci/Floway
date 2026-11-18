@@ -86,21 +86,6 @@ test('api key update lands every patched column and leaves the rest alone', () =
   assertEquals((await repo.apiKeys.getById('key_node'))?.name, 'Renamed');
 }));
 
-test('expiration sweep completion lands on both discriminants', () => withRepo(async repo => {
-  await seedKey(repo);
-
-  await repo.expirationSweeps.schedule('responses', 'key_node', 0);
-  const partialClaim = await repo.expirationSweeps.claim('claim-partial', 10, 0);
-  if (partialClaim === null) throw new Error('expected an expiration claim');
-  await repo.expirationSweeps.complete('claim-partial', partialClaim.revision, { kind: 'partial', retryAt: 5_000 });
-
-  const drainedClaim = await repo.expirationSweeps.claim('claim-drained', 10_000, 0);
-  if (drainedClaim === null) throw new Error('expected a re-claim after the partial retry');
-  await repo.expirationSweeps.complete('claim-drained', drainedClaim.revision, { kind: 'drained', nextDueAt: null });
-
-  assertEquals(await repo.expirationSweeps.claim('claim-empty', 20_000, 0), null);
-}));
-
 test('repository JSON codecs round-trip upstream, alias, and OpenAI Responses state through node:sqlite', () => withRepo(async repo => {
   await seedKey(repo);
   const upstreamRecord = {

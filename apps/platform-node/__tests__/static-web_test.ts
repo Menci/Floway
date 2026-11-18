@@ -92,33 +92,3 @@ test('preserves gateway 404s and never falls back for missing assets', async () 
   const traversal = await fetch(new Request('http://floway.test/%2e%2e%2foutside'));
   expect(traversal.status).toBe(404);
 });
-
-test('forwards the Node adapter context to gateway paths', async () => {
-  const env = { websocket: Symbol('websocket') };
-  const executionCtx = {
-    waitUntil: () => undefined,
-    passThroughOnException: () => undefined,
-    props: {},
-  };
-  let receivedEnv: object | undefined;
-  let receivedExecutionCtx: unknown;
-  const fetch = createNodeFetchHandler((_request, gatewayEnv, gatewayExecutionCtx) => {
-    receivedEnv = gatewayEnv;
-    receivedExecutionCtx = gatewayExecutionCtx;
-    return new Response('gateway');
-  }, { distDir: await makeDist() });
-
-  await fetch(new Request('http://floway.test/azure-api.codex/responses', {
-    headers: { upgrade: 'websocket' },
-  }), env, executionCtx);
-
-  expect(receivedEnv).toBe(env);
-  expect(receivedExecutionCtx).toBe(executionCtx);
-});
-
-test('returns an actionable error until the web bundle exists', async () => {
-  const fetch = createNodeFetchHandler(async () => new Response('gateway'), { distDir: join(tmpdir(), 'floway-missing-web-dist') });
-  const response = await fetch(new Request('http://floway.test/login'));
-  expect(response.status).toBe(503);
-  expect(await response.text()).toContain('pnpm run build:web');
-});

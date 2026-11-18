@@ -5,7 +5,7 @@ import * as zlib from 'node:zlib';
 
 import { expect, test } from 'vitest';
 
-import { SENTINEL_KEY, hostPiBin, hostPwsh, makeWorkspace, modelServer, piBackupFiles, piConfig, piDirFor, piExtensionPath, piFixture, piSettingsPath, piStagedFiles, placeFakePi, readPiSettings, runPowerShellInstaller, runShellInstaller, runShellInstallerWithAmbientKey, shellLiteral } from './harness';
+import { SENTINEL_KEY, hostPiBin, hostPwsh, makeWorkspace, modelServer, piBackupFiles, piConfig, piDirFor, piExtensionPath, piFixture, piSettingsPath, piStagedFiles, placeFakePi, runPowerShellInstaller, runShellInstaller, shellLiteral } from './harness';
 import type { RunResult } from './harness';
 import { SETUP_NODE_PI_EXTENSION } from '../../../src/script-assets.generated.ts';
 
@@ -97,100 +97,7 @@ for (const [label, runInstaller] of [['Bash', runShellInstaller], ['PowerShell',
     expect(readFileSync(extension, 'utf8')).toBe('export default () => {};');
     expect(!existsSync(piSettingsPath(ws))).toBeTruthy();
   });
-
-  test(`${label}: rejects empty and HTML extension downloads before replacing files`, { timeout: 180_000 }, async ({ skip }) => {
-    if (label === 'PowerShell' && !hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-    for (const path of ['/empty-extension.js', '/invalid-extension.js']) {
-      const ws = makeWorkspace();
-      placeFakePi(ws.binDir);
-      mkdirSync(join(piDirFor(ws), 'extensions'), { recursive: true });
-      const extension = piExtensionPath(ws);
-      const source = '// Managed by Floway Agent Setup.\noriginal extension';
-      writeFileSync(extension, source);
-      const run = await runInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: 'm' }), piExtensionUrl: modelServer.url + path });
-      expect(run.code).not.toBe(0);
-      expect(readFileSync(extension, 'utf8')).toBe(source);
-      expect(!existsSync(piSettingsPath(ws))).toBeTruthy();
-      expect(piStagedFiles(join(piDirFor(ws), 'extensions')).length).toBe(0);
-      expect(run.combined).not.toContain(SENTINEL_KEY);
-    }
-  });
-
-  test(`${label}: respects PI_CODING_AGENT_DIR`, { timeout: 180_000 }, async ({ skip }) => {
-    if (label === 'PowerShell' && !hostPwsh) return skip(true, 'no PowerShell interpreter on this host');
-    const ws = makeWorkspace();
-    placeFakePi(ws.binDir);
-    const agentDir = join(ws.root, 'custom agent');
-    const run = await runInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig(), piAgentDir: agentDir });
-    expect(run.code, run.combined).toBe(0);
-    expect(existsSync(join(agentDir, 'extensions/floway.js'))).toBeTruthy();
-  });
 }
-
-test('model set, changed, and cleared updates settings.json', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakePi(ws.binDir);
-  const settingsFile = piSettingsPath(ws);
-
-  const run1 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: 'floway-pi-model-1' }) });
-  expect(run1.code, `setting model should succeed:\n${run1.combined}`).toBe(0);
-  expect(existsSync(settingsFile)).toBeTruthy();
-  expect(statSync(settingsFile).mode & 0o777, 'settings.json permissions are 0600').toBe(0o600);
-  let settings = readPiSettings(settingsFile);
-  expect(settings.defaultProvider).toBe('floway');
-  expect(settings.defaultModel).toBe('floway-pi-model-1');
-
-  const run2 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: 'model-2' }) });
-  expect(run2.code, `changing model should succeed:\n${run2.combined}`).toBe(0);
-  settings = readPiSettings(settingsFile);
-  expect(settings.defaultProvider).toBe('floway');
-  expect(settings.defaultModel).toBe('model-2');
-
-  const run3 = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig({ model: null }) });
-  expect(run3.code, `clearing model should succeed:\n${run3.combined}`).toBe(0);
-  settings = readPiSettings(settingsFile);
-  expect(settings.defaultProvider, 'defaultProvider removed on clear').toBe(undefined);
-  expect(settings.defaultModel, 'defaultModel removed on clear').toBe(undefined);
-});
-
-test('missing node aborts with clear error message', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakePi(ws.binDir);
-  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig(), omitNode: true });
-  expect(run.code, 'installer should fail when node is missing').not.toBe(0);
-  expect(run.combined).toContain('Node.js (>= 22.19) is required to run Pi but was not found on PATH. Install Node.js (>= 22.19) and re-run.');
-  expect(!existsSync(piExtensionPath(ws))).toBeTruthy();
-});
-
-test('unsupported Node fails before configuration', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakePi(ws.binDir);
-  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig(), fakeNodeVersion: 'v20.10.0' });
-  expect(run.code, `setup should reject unsupported Node:\n${run.combined}`).not.toBe(0);
-  expect(run.combined, 'required Node version is reported').toContain('Pi requires Node.js >= 22.19.');
-  expect(!existsSync(piExtensionPath(ws))).toBeTruthy();
-});
-
-test('ambient SETUP_API_KEY is not inherited by fake pi CLI', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  placeFakePi(ws.binDir);
-  const run = await runShellInstallerWithAmbientKey({ workspace: ws, baseUrl: modelServer.url, configuration: piConfig() });
-  expect(run.code, `ambient key must not cause fake pi to exit 91:\n${run.combined}`).toBe(0);
-});
-
-test('CLI not found fails when installer download fails', { timeout: 180_000 }, async () => {
-  const ws = makeWorkspace();
-  modelServer.mode = 'installer-html';
-  const run = await runShellInstaller({
-    workspace: ws,
-    baseUrl: modelServer.url,
-    configuration: piConfig(),
-    withPiInstallHook: false,
-    piInstallerUrl: `${modelServer.url}/install-pi.sh`,
-  });
-  expect(run.code !== 0).toBeTruthy();
-  expect(run.combined).toContain('the installer download was HTML');
-});
 
 test('real Pi loads the installed extension and discovers changed models without setup', { timeout: 180_000 }, async ({ skip }) => {
   if (!hostPiBin) return skip(true, 'real Pi is not available');

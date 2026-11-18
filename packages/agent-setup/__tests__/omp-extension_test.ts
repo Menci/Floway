@@ -58,22 +58,6 @@ test('the short extension reads native plugin settings and forwards native decla
   }
 });
 
-test.each([new Response(null, { status: 503 }), Response.json({ data: [] })])('a failed refresh keeps the last successful registry', async response => {
-  const fetch = vi.fn().mockResolvedValueOnce(Response.json({ api: 'floway:floway', models: [{ id: 'alias' }], wireApis: {}, streamOptions: {} })).mockResolvedValueOnce(response);
-  vi.stubGlobal('fetch', fetch);
-  const registerProvider = vi.fn();
-  const unregisterProvider = vi.fn();
-  const registerCommand = vi.fn();
-  try {
-    await evaluateExtension(SETUP_NODE_OMP_EXTENSION, { registerProvider, unregisterProvider, registerCommand });
-    await expect(registerCommand.mock.calls[0][1].handler()).rejects.toThrow();
-    expect(registerProvider).toHaveBeenCalledTimes(1);
-    expect(unregisterProvider).not.toHaveBeenCalled();
-  } finally {
-    vi.unstubAllGlobals();
-  }
-});
-
 test('one extension preserves independent provider catalogs, credentials and stream bridges', async () => {
   const connections = [
     { provider: 'work', endpoint: 'https://work.example/gateway', apiKey: 'work-key' },

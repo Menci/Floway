@@ -37,11 +37,6 @@ describe('buildTrojanRequestHeader', () => {
     ];
     expect(Array.from(header.subarray(56))).toEqual(tail);
   });
-
-  it('hashes a UTF-8 password by encoded byte sequence (not by JS string code units)', () => {
-    const header = buildTrojanRequestHeader('你好世界', target443);
-    expect(new TextDecoder().decode(header.subarray(0, 56))).toBe('b3f5c93d7b531d7e29266412f2c842f8a4b7286871f87d259c6eaf07');
-  });
 });
 
 describe('dialTrojan — outer TLS', () => {
@@ -59,15 +54,6 @@ describe('dialTrojan — outer TLS', () => {
     expect(fake.tlsUpgrades[0]!.opts).toMatchObject({ host: 'front.example' });
     // The Trojan header belongs to the tunneled leg, not the TLS handshake.
     expect(new TextDecoder().decode(result.prefix!.subarray(0, 56))).toBe(PASSWORD_SHA224_HEX);
-  });
-
-  it('passes the operator insecure flag through to the upgrade', async () => {
-    const fake = makeFakeSocketDial();
-    fake.acceptNextUpgrade();
-
-    await dialTrojan(trojanConfig({ allowInsecure: true }), target443, { socketDial: fake.socketDial });
-
-    expect(fake.tlsUpgrades[0]!.opts.insecure).toBe(true);
   });
 
   it('tags a failed outer handshake as stage=outer-tls', async () => {

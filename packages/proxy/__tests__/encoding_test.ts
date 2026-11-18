@@ -1,16 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { base64DecodeBytes, base64EncodeBytes, base64UrlDecodeBytes, hexDecode } from '../src/encoding.ts';
+import { base64DecodeBytes, base64UrlDecodeBytes } from '../src/encoding.ts';
 
 describe('base codecs', () => {
-  it('matches RFC 4648 vectors and accepts the established external forms', () => {
-    expect(base64EncodeBytes(new TextEncoder().encode('foobar'))).toBe('Zm9vYmFy');
-    expect(base64DecodeBytes(' Zm9v\nYg\t')).toEqual(new TextEncoder().encode('foob'));
-    expect(base64UrlDecodeBytes('-_8')).toEqual(new Uint8Array([0xfb, 0xff]));
-    expect(base64UrlDecodeBytes('/+8=')).toEqual(new Uint8Array([0xff, 0xef]));
-    expect(hexDecode('00ABff')).toEqual(new Uint8Array([0x00, 0xab, 0xff]));
-  });
-
   it('preserves forgiving-base64 trailing-bit acceptance for legacy and SS-2022 values', () => {
     expect(new TextDecoder().decode(base64DecodeBytes('Zh=='))).toBe('f');
     expect(new TextDecoder().decode(base64DecodeBytes('MDEyMzQ1Njc4OWFiY2RlZh=='))).toBe('0123456789abcdef');

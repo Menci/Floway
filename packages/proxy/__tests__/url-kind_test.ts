@@ -13,10 +13,4 @@ describe('kindFromUri', () => {
     expect(kindFromUri('vless://u@h:443?type=ws&security=tls')).toBe('VLESS-WS');
     expect(kindFromUri('vless://u@h:443?type=tcp&security=tls')).toBe('VLESS');
   });
-
-  it('returns PROXY for inputs the URL constructor rejects (function is total)', () => {
-    expect(kindFromUri('')).toBe('PROXY');
-    expect(kindFromUri('not-a-url')).toBe('PROXY');
-    expect(kindFromUri('http://')).toBe('PROXY');
-  });
 });

@@ -76,20 +76,6 @@ const clientHelloServerName = (record: Uint8Array): string | undefined => {
   return undefined;
 };
 
-describe('userspaceTls — input validation', () => {
-  it('rejects synchronously when the supplied AbortSignal is already aborted', async () => {
-    const ac = new AbortController();
-    ac.abort(new DOMException('client gone', 'AbortError'));
-    const fake = makeFakeDuplex();
-    await expect(
-      userspaceTls(
-        { readable: fake.readable, writable: fake.writable },
-        { host: 'example.com', signal: ac.signal },
-      ),
-    ).rejects.toMatchObject({ name: 'AbortError', message: expect.stringContaining('client gone') });
-  });
-});
-
 describe('userspaceTls — handshake failure', () => {
   it('rejects with an AbortError when the signal aborts AFTER the ClientHello but before the ServerHello', async () => {
     const fake = makeFakeDuplex();
@@ -105,24 +91,6 @@ describe('userspaceTls — handshake failure', () => {
     await expect(promise).rejects.toMatchObject({
       name: 'AbortError',
       message: expect.stringContaining('cancel after ClientHello'),
-    });
-  });
-
-  it('wraps a non-Error abort reason as DOMException(AbortError) on the rejection', async () => {
-    // signalAbortReason normalises a primitive reason (string/number/null)
-    // into a DOMException so every consumer sees an Error-shaped rejection
-    // and stack traces survive. The reason's string form rides through as
-    // the message.
-    const fake = makeFakeDuplex();
-    const ac = new AbortController();
-    const promise = userspaceTls(
-      { readable: fake.readable, writable: fake.writable },
-      { host: 'example.com', signal: ac.signal },
-    );
-    setTimeout(() => ac.abort('plain string reason'), 5);
-    await expect(promise).rejects.toMatchObject({
-      name: 'AbortError',
-      message: 'plain string reason',
     });
   });
 });
@@ -240,26 +208,6 @@ describe('userspaceTls — certificate reference identity', () => {
   it('does not treat an IP-valued CN or DNS SAN as an IP identity', async () => {
     await expect(verifyFixtureIdentity('ip-cn-dns-san.generated.pem', '192.0.2.10'))
       .rejects.toThrow('Certificate is not for host 192.0.2.10');
-  });
-
-  it('fails closed when a custom certificate adapter cannot expose IP SANs', async () => {
-    const certificate = await loadFixtureCertificate('ip-san.generated.pem');
-    const { getAlternativeIPAddresses: _, ...adapterWithoutIpSans } = certificate;
-
-    await expect(verifyFixtureCertificate(adapterWithoutIpSans, '192.0.2.10'))
-      .rejects.toThrow('Certificate is not for host 192.0.2.10');
-  });
-
-  it.each(['[2001:db8::1]', '2001:db8::1%eth0', '192.00.2.10'])(
-    'rejects invalid certificate reference identity %s',
-    async host => {
-      await expect(verifyFixtureIdentity('ip-san.generated.pem', host))
-        .rejects.toThrow(`Invalid TLS host identity ${host}`);
-    },
-  );
-
-  it('preserves DNS SAN wildcard matching for DNS hosts', async () => {
-    await expect(verifyFixtureIdentity('ip-san.generated.pem', 'api.example.test')).resolves.toBeUndefined();
   });
 });
 

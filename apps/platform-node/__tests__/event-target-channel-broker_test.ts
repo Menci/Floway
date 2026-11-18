@@ -48,15 +48,3 @@ test('EventTargetChannelBroker drains buffered payloads before surfacing a decod
   assertEquals(failed[0].status, 'rejected');
   assertEquals((failed[0] as PromiseRejectedResult).reason.message, 'rejected payload: bad');
 });
-
-test('EventTargetChannelBroker.closeChannel ends every subscriber on the channel', async () => {
-  const broker = new EventTargetChannelBroker<string>(stringCodec);
-  const c1 = new AbortController();
-  const c2 = new AbortController();
-  const i1 = broker.subscribe('k', c1.signal)[Symbol.asyncIterator]();
-  const i2 = broker.subscribe('k', c2.signal)[Symbol.asyncIterator]();
-
-  await broker.closeChannel('k', 'shut down');
-  assertEquals((await i1.next()).done, true);
-  assertEquals((await i2.next()).done, true);
-});

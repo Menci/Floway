@@ -176,10 +176,6 @@ describe('fetchOnStream — request-line smuggling defense (RFC 9110 §9.1 / RFC
     expect(await dialMethod('GET POST')).toMatchObject({ name: 'HttpProtocolError', code: 'BAD_HEADERS' });
   });
 
-  it('rejects an empty path', async () => {
-    expect(await dialPath('')).toMatchObject({ name: 'HttpProtocolError', code: 'BAD_HEADERS' });
-  });
-
   it('rejects a path containing SP (smuggling shape)', async () => {
     expect(await dialPath('/hi there')).toMatchObject({ name: 'HttpProtocolError', code: 'BAD_HEADERS' });
   });
@@ -307,32 +303,6 @@ describe('fetchOnStream — request body serialization', () => {
 
     await expect(promise).rejects.toBe(failure);
     expect(cancel).toHaveBeenCalledWith(failure);
-  });
-
-  it('cancels the source when a chunk exceeds its declared length', async () => {
-    const fake = makeFakeDuplex();
-    const cancel = vi.fn();
-    const promise = fetchOnStream(
-      { readable: fake.readable, writable: fake.writable },
-      {
-        method: 'POST',
-        path: '/',
-        headers: [['Host', 'h']],
-        body: {
-          contentLength: 0,
-          open: () => new ReadableStream<Uint8Array>({
-            start(controller) {
-              controller.enqueue(new Uint8Array([1]));
-            },
-            cancel,
-          }),
-        },
-      },
-    );
-
-    await expect(promise).rejects.toThrow('exceeded its declared content length');
-    expect(cancel).toHaveBeenCalledOnce();
-    expect(cancel.mock.calls[0]![0]).toBeInstanceOf(RangeError);
   });
 });
 

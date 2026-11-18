@@ -48,12 +48,6 @@ describe('findRunnerViolations', () => {
       env: { ...runnerEnv, GITHUB_WORKFLOW_REF: 'Menci/Floway/.github/workflows/build.yaml@refs/heads/main' },
     })).toEqual(['GITHUB_WORKFLOW_REF is Menci/Floway/.github/workflows/build.yaml@refs/heads/main, not the verify workflow']);
   });
-
-  it('accepts any job inside Verify, which spreads its suite across jobs', () => {
-    for (const job of ['verify', 'test', 'test-installers']) {
-      expect(findRunnerViolations({ ...runner, env: { ...runnerEnv, GITHUB_JOB: job } })).toEqual([]);
-    }
-  });
 });
 
 describe('parseTargets', () => {

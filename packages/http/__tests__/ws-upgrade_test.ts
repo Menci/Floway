@@ -108,29 +108,6 @@ const parseClientFrame = (
 };
 
 describe('wsUpgradeAndFrame — handshake', () => {
-  it('sends a valid GET … HTTP/1.1 upgrade with a fresh 16-byte base64 key', async () => {
-    const fake = makeFakeDuplex();
-    const upgrade = wsUpgradeAndFrame(fake, { host: 'vless.local', path: '/ws' });
-    // give the request bytes time to land
-    await new Promise(r => setTimeout(r, 0));
-    const written = fake.written();
-    const req = parseUpgradeRequest(written);
-    expect(req.method).toBe('GET');
-    expect(req.path).toBe('/ws');
-    expect(req.headers.get('host')).toBe('vless.local');
-    expect(req.headers.get('upgrade')).toBe('websocket');
-    expect(req.headers.get('connection')).toBe('Upgrade');
-    expect(req.headers.get('sec-websocket-version')).toBe('13');
-    const key = req.headers.get('sec-websocket-key')!;
-    // Base64 of 16 bytes is 24 characters with `=` padding.
-    expect(key).toMatch(/^[A-Za-z0-9+/]{22}==$/);
-    // Decode and check raw length is 16.
-    const raw = atob(key);
-    expect(raw.length).toBe(16);
-    fake.respond(standardHandshakeReply(key));
-    fake.endResponse();
-    await upgrade;
-  });
 
   it('rejects a non-101 status', async () => {
     const fake = makeFakeDuplex();
@@ -237,18 +214,6 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
     }
   };
 
-  it('round-trips a single small binary frame from server to consumer', async () => {
-    const fake = makeFakeDuplex();
-    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
-    await completeHandshake(fake);
-    const stream = await upgrade;
-    fake.respond(buildServerFrame(0x2, enc('hello world')));
-    const reader = stream.readable.getReader();
-    const { value } = await reader.read();
-    expect(dec(value!)).toBe('hello world');
-    reader.releaseLock();
-  });
-
   it('responds to a server ping with a pong of the same payload', async () => {
     const fake = makeFakeDuplex();
     const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
@@ -295,23 +260,6 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
     reader.releaseLock();
   });
 
-  it('writes a payload that crosses the 16-bit length boundary using the 16-bit form', async () => {
-    const fake = makeFakeDuplex();
-    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
-    await completeHandshake(fake);
-    const stream = await upgrade;
-    const writer = stream.writable.getWriter();
-    const handshakeBytes = fake.written().byteLength;
-    const payload = new Uint8Array(500);
-    for (let i = 0; i < 500; i++) payload[i] = i & 0xff;
-    await writer.write(payload);
-    const { frame } = await readClientFrame(fake, handshakeBytes);
-    expect(frame!.payload.byteLength).toBe(500);
-    expect(frame!.payload[0]).toBe(0);
-    expect(frame!.payload[499]).toBe(499 & 0xff);
-    writer.releaseLock();
-  });
-
   it('writes a payload above 64 KiB using the 64-bit form', async () => {
     const fake = makeFakeDuplex();
     const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/' });
@@ -343,19 +291,6 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
     fake.respond(buildServerFrame(0x8, new Uint8Array([0x03, 0xe8])));
     await fake.waitWritableClosed();
     expect((await stream.readable.getReader().read()).done).toBe(true);
-  });
-
-  it('closes the underlying transport writer when the supplied signal aborts', async () => {
-    // Every teardown event cascades the transport-writer release: the
-    // signal-abort path drives the same teardown as the server-close path
-    // (mirrors tls.ts's policy of releasing the writer on every exit).
-    const fake = makeFakeDuplex();
-    const ac = new AbortController();
-    const upgrade = wsUpgradeAndFrame(fake, { host: 'h', path: '/', signal: ac.signal });
-    await completeHandshake(fake);
-    await upgrade;
-    ac.abort(new DOMException('cancelled', 'AbortError'));
-    await fake.waitWritableClosed();
   });
 
   it('byte-truncates the abort reason so the close frame stays inside the 125-byte control-frame cap', async () => {

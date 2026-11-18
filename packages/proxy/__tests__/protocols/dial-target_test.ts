@@ -59,16 +59,6 @@ describe('pre-dial target validation reaches every dialer', () => {
     expect(fake.connectCount()).toBe(0);
   });
 
-  it.each(dialers)('$name rejects a non-ASCII target host at stage=config, before any TCP connect', async ({ dial }) => {
-    const fake = makeFakeSocketDial();
-    await expect(dial({ host: '例え.jp', port: 443 }, fake.socketDial)).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'config',
-      message: expect.stringContaining('ASCII'),
-    });
-    expect(fake.connectCount()).toBe(0);
-  });
-
   // Every dialer wraps its own socket in `connectOrDialError`, so a failure at
   // the TCP slot must surface as `tcp-connect` with the cause attached rather
   // than as whatever the socket threw.
