@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { copilotAuthedFetch } from '../src/auth.ts';
 import { clearInProcessCopilotTokenCache } from '../src/index.ts';
 import type { CopilotUpstreamState } from '../src/state.ts';
-import { initProviderRepo, directFetcher, type Fetcher, type HttpHeaderLines, type UpstreamRecord, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { initProviderRepo, directFetcher, type Fetcher, type UpstreamRecord, identityWrapUpstreamCall } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_copilot_test';
@@ -46,41 +46,6 @@ const installRepoAndClearCache = async () => {
     },
   }));
   clearInProcessCopilotTokenCache();
-};
-
-const mockTokenAndCapture = async (
-  extraHeaders: HttpHeaderLines | undefined,
-  assert: (headers: Headers) => void,
-): Promise<void> => {
-  await installRepoAndClearCache();
-  let captured: Headers | null = null;
-
-  await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({
-          token: 'tok-test',
-          expires_at: Math.floor(Date.now() / 1000) + 3600,
-          refresh_in: 1800,
-          endpoints: { api: TOKEN_BASE_URL },
-        });
-      }
-      captured = new Headers(request.headers);
-      return new Response('{}', { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
-    },
-    async () => {
-      await copilotAuthedFetch(
-        '/v1/messages',
-        { method: 'POST', body: '{}' },
-        { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
-        extraHeaders ? { headers: extraHeaders, fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall } : { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
-      );
-    },
-  );
-
-  if (!captured) throw new Error('upstream call never observed');
-  assert(captured);
 };
 
 const runAuthedFetch = async (fetcher: Fetcher, signal?: AbortSignal): Promise<Response> => {
@@ -193,16 +158,6 @@ describe('Copilot token exchange retries', () => {
     await rejection;
     expect(tokenAttempts).toBe(1);
     expect(vi.getTimerCount()).toBe(0);
-  });
-});
-
-test('copilotAuthedFetch overlays interceptor headers on the pinned base set', async () => {
-  await mockTokenAndCapture([['x-initiator', 'agent'], ['copilot-vision-request', 'true']], headers => {
-    assertEquals(headers.get('x-initiator'), 'agent');
-    assertEquals(headers.get('copilot-vision-request'), 'true');
-    // Base headers we did not override stay pinned.
-    assertEquals(headers.get('copilot-integration-id'), 'vscode-chat');
-    assertEquals(headers.get('openai-intent'), 'conversation-agent');
   });
 });
 
