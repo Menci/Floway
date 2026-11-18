@@ -108,8 +108,11 @@ test('compact + flag on: appends one cache-sharing user prompt and returns a com
 
   const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
   assertEquals(collected.object, 'response.compaction');
-  const compactionItem = collected.output[0] as { type: string; encrypted_content: string };
+  const compactionItem = collected.output[0] as OpenAIResponsesCompactionItemEx;
   assertEquals(compactionItem.type, 'compaction');
+  // The next turn echoes the item back; expansion recovers the summary behind the handoff prefix.
+  const expanded = expandShimCompactionItems({ model: 'test-model', input: [compactionItem as unknown as CanonicalOpenAIResponsesInputItem] });
+  assertEquals(expanded.input, [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: `${SUMMARY_PREFIX}\nCONDENSED SUMMARY` }] }]);
 });
 
 test('compact + flag on: upstream incomplete status propagates onto the synthesized envelope', async () => {
@@ -515,64 +518,4 @@ test('generate + compaction_trigger + flag off + messages target: shim simulates
   if (result.type !== 'events') throw new Error(`expected events branch, got ${result.type}`);
   const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
   assertEquals(collected.object, 'response.compaction');
-});
-
-test('generate + compaction_trigger + flag off + responses target: shim passes through (flag opt-in not taken)', async () => {
-  const inv = makeInvocation(
-    {
-      input: [
-        { type: 'message', role: 'user', content: 'real history' },
-        { type: 'compaction_trigger' } as unknown as never,
-      ],
-    },
-    { action: 'generate', flagOn: false, targetApi: 'openaiResponses' },
-  );
-
-  let runCalled = false;
-  let seenAction: 'generate' | 'compact' | undefined;
-  let seenPayload: OpenAIResponsesPayloadEx | undefined;
-  await withOpenAIResponsesCompactShim(inv, stubCtx, () => {
-    runCalled = true;
-    seenAction = inv.action;
-    seenPayload = inv.payload;
-    return fakeUpstreamRun('unused')();
-  });
-
-  // Shim did not engage — request flowed through untouched.
-  assertEquals(runCalled, true);
-  assertEquals(seenAction, 'generate');
-  // Payload still carries the trigger (no expansion, no strip, no pivot).
-  const items = seenPayload?.input as Array<{ type: string }>;
-  assertEquals(items.some(i => i.type === 'compaction_trigger'), true);
-});
-
-// ── Round-trip ────────────────────────────────────────────────────────────────
-
-test('round-trip: outbound synthesis then inbound expansion recovers the summary message prefixed with the handoff prompt', async () => {
-  // Step 1: simulate compaction — returns the synthesized envelope with
-  // shim-encoded `encrypted_content`.
-  const inv = makeInvocation(
-    { input: [{ type: 'message', role: 'user', content: 'long convo' }] },
-    { action: 'compact' },
-  );
-  const result = await withOpenAIResponsesCompactShim(inv, stubCtx, fakeUpstreamRun('SUMMARY TEXT'));
-  if (result.type !== 'events') throw new Error('expected events');
-  const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
-  const compactionItem = collected.output[0] as { type: string; id?: string; encrypted_content: string };
-
-  // Step 2: next turn echoes the compaction item back as an input item;
-  // inbound expansion replaces it with the summary message — carrying the
-  // handoff prefix that was baked into the blob at encode time.
-  const nextTurn: CanonicalOpenAIResponsesPayload = {
-    model: 'test-model',
-    input: [
-      { type: 'compaction', id: compactionItem.id ?? 'cmp_rt', encrypted_content: compactionItem.encrypted_content } as unknown as never,
-    ],
-  };
-  const expanded = expandShimCompactionItems(nextTurn);
-  const items = expanded.input as Array<{ type: string; role: string; content: Array<{ type: string; text: string }> }>;
-  assertEquals(items.length, 1);
-  assertEquals(items[0].type, 'message');
-  assertEquals(items[0].role, 'user');
-  assertEquals(items[0].content[0].text, `${SUMMARY_PREFIX}\nSUMMARY TEXT`);
 });

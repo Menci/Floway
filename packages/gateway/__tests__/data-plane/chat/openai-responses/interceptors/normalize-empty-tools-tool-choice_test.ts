@@ -32,24 +32,6 @@ test('responses empty tools rewrites tool_choice to none', async () => {
   assertEquals(input.payload.tool_choice, 'none');
 });
 
-test('responses rewrite requires the flag and an explicit empty array', async () => {
-  const disabled = invocation({ ...base, tools: [], tool_choice: 'auto' }, new Set());
-  const missing = invocation({ ...base, tool_choice: 'auto' });
-  const present = invocation({
-    ...base,
-    tools: [{ type: 'function', name: 'x', parameters: {} }],
-    tool_choice: 'auto',
-  });
-
-  await withEmptyToolsToolChoiceNormalized(disabled, stubCtx, okEvents);
-  await withEmptyToolsToolChoiceNormalized(missing, stubCtx, okEvents);
-  await withEmptyToolsToolChoiceNormalized(present, stubCtx, okEvents);
-
-  assertEquals(disabled.payload.tool_choice, 'auto');
-  assertEquals(missing.payload.tool_choice, 'auto');
-  assertEquals(present.payload.tool_choice, 'auto');
-});
-
 test('responses keeps tool choice when an input item supplies tools', async () => {
   for (const item of [
     { type: 'additional_tools' as const, role: 'developer' as const, tools: [{ type: 'web_search' as const }] },

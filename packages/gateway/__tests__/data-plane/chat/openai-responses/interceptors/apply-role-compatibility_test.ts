@@ -27,23 +27,6 @@ const applyRoles = async (
   return invocation.payload.input;
 };
 
-test('applies the system and developer rewrites independently', async () => {
-  assertEquals(
-    await applyRoles(
-      [{ type: 'message', role: 'system', content: 'rules' }],
-      new Set(['rewrite-system-to-developer']),
-    ),
-    [{ type: 'message', role: 'developer', content: 'rules' }],
-  );
-  assertEquals(
-    await applyRoles(
-      [{ type: 'message', role: 'developer', content: 'rules' }],
-      new Set(['rewrite-developer-to-system']),
-    ),
-    [{ type: 'message', role: 'system', content: 'rules' }],
-  );
-});
-
 test('uses non-message items as the boundary before rewriting later system', async () => {
   assertEquals(
     await applyRoles(

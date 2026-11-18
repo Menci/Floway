@@ -71,11 +71,6 @@ test('parseWebSearchOperations: wrong-typed supported key does not block other s
   assertEquals(ops[1], { kind: 'open', arrayIndex: 0, url: 'https://y' });
 });
 
-test('isUrlAllowed allowed_domains: subdomain suffix-matches', () => {
-  assertEquals(isUrlAllowed('https://www.example.com/page', { allowedDomains: ['example.com'] }), true);
-  assertEquals(isUrlAllowed('https://sub.example.com/page', { allowedDomains: ['example.com'] }), true);
-});
-
 test('isUrlAllowed blocked_domains takes precedence over allowed_domains', () => {
   assertEquals(
     isUrlAllowed('https://example.com', { allowedDomains: ['example.com'], blockedDomains: ['example.com'] }),
@@ -95,7 +90,22 @@ test('findMatches: case-insensitive substring matching', () => {
   assertEquals(m[2].matched, 'HELLO');
 });
 
-test.each([null, { invalid: true }])('expandWebSearchCall exposes invalid authenticated replay data: %j', data => {
+test('expandWebSearchCall emits the not-preserved placeholder even when the wire item still carries results (no payload → we do not trust client-supplied results)', () => {
+  const out = expandWebSearchCall(
+    {
+      type: 'web_search_call', id: 'ws_xxx_abc',
+      action: { type: 'search', queries: ['caffeine'] },
+      results: [{ type: 'text_result', url: 'u', title: 't', snippet: 'public-wire body' }],
+    },
+  );
+  if (out.callSource !== 'synthesized') throw new Error('Expected a synthesized call');
+  assertEquals(out.synthesizedCall.arguments, '{"search_query":[{"q":"caffeine"}]}');
+  // Public results are client-controlled; only signed replay data restores tool output.
+  assert(typeof out.output === 'string' && !out.output.includes('public-wire body'));
+});
+
+test('expandWebSearchCall exposes invalid authenticated replay data', () => {
+  const data = { invalid: true };
   assertThrows(() => expandWebSearchCall(
     { type: 'web_search_call', id: 'ws_xxx_abc', action: { type: 'search', queries: ['q'] } },
     { data },

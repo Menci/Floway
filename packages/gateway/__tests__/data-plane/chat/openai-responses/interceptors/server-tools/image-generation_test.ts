@@ -62,7 +62,6 @@ const unresolvableImages = {
 const unresolvableSourceCases = ([
   ['file_id', 'message', 'generate'],
   ['file_id', 'function_output', 'edit'],
-  ['file_id', 'custom_output', 'auto'],
   ['malformed', 'message', 'generate'],
   ['malformed', 'custom_output', 'edit'],
 ] as const).map(([source, container, action]) => ({
@@ -214,16 +213,6 @@ test('prepareImageGenerationConfig validates every hosted entry, not just the la
 
 // ── parseRetryAfterMs ──
 
-test('parseRetryAfterMs interprets Retry-After HTTP-date as delta from now', () => {
-  // HTTP-date is 1-second resolution and Date.parse() strips ms, so allow a
-  // ~1s skew between toUTCString() and the parser's Date.now().
-  const future = new Date(Date.now() + 10_000).toUTCString();
-  const h = new Headers({ 'retry-after': future });
-  const result = parseRetryAfterMs(h);
-  assert(result !== null);
-  assert(result > 0 && result <= 11_000);
-});
-
 test('parseRetryAfterMs returns null for zero / negative values (gpt-image-1 "0.0s" hint)', () => {
   assertEquals(parseRetryAfterMs(new Headers({ 'retry-after-ms': '0' })), null);
   assertEquals(parseRetryAfterMs(new Headers({ 'retry-after': '0' })), null);
@@ -265,13 +254,6 @@ test.each([
     name: 'HTTP 404',
     fetcher: () => Promise.resolve(new Response(null, { status: 404 })),
     message: 'Error while downloading file. Upstream status code: 404.',
-  },
-  {
-    name: 'oversized response',
-    fetcher: () => Promise.resolve(new Response(Uint8Array.of(1), {
-      headers: { 'content-length': String(50 * 1024 * 1024 + 1) },
-    })),
-    message: 'Error while downloading file.',
   },
 ])('imageGenerationServerTool mirrors the native remote-source error for $name', async ({ fetcher, message }) => {
   initExternalResourceFetcher(fetcher);

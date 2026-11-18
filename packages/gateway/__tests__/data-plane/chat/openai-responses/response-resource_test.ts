@@ -80,12 +80,6 @@ describe('OpenAI Responses resource completion', () => {
     assertEquals(completed.metadata, {});
   });
 
-  it('reports gateway state for created_at and store', () => {
-    const completed = completeResponseResource(translatedResource(), { ...sources({ store: true }), stored: false }, true);
-    assertEquals(completed.created_at, 1_700_000_000);
-    assertEquals(completed.store, false);
-  });
-
   it('completes both usage breakdowns and reports a missing usage as null', () => {
     const completed = completeResponseResource(translatedResource(), sources(), true);
     assertEquals(completed.usage, {

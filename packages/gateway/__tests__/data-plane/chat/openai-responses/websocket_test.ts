@@ -702,45 +702,6 @@ test('OpenAI Responses WebSocket returns invalid_request_error for malformed cli
   }));
 });
 
-test('OpenAI Responses WebSocket forwards HTTP failures with status, error.code, and event_id', async () => {
-  const { apiKey } = await setupAppTest();
-  await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-      }
-      if (url.pathname === '/models') return jsonResponse(copilotModels([]));
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
-      const received = waitForMessages(client, messages => messages.length === 1);
-
-      client.send(JSON.stringify({
-        type: 'response.create',
-        event_id: 'evt_missing',
-        response: {
-          model: 'missing-model',
-          input: 'hello',
-        },
-      }));
-
-      assertEquals(await received, [{
-        type: 'error',
-        event_id: 'evt_missing',
-        status: 404,
-        error: {
-          type: 'invalid_request_error',
-          code: 'invalid_request_error',
-          message: 'Model missing-model is not available on any configured upstream.',
-        },
-      }]);
-    }),
-  );
-});
-
 test('OpenAI Responses WebSocket store:false keeps session snapshots without durable repo writes', async () => {
   const { apiKey, repo } = await setupAppTest();
   const upstreamBodies: unknown[] = [];

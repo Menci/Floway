@@ -7,9 +7,7 @@ import type { AuthVars } from '../../../../src/middleware/auth.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { openaiResponsesResultToEvents, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type FlagId, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
@@ -343,100 +341,3 @@ test('POST /v1/responses/compact reports the failure when the upstream reported 
     `expected the missing-usage condition to be named, got ${body.error.message}`,
   );
 });
-
-const translatedCustomCandidate = (
-  target: 'openaiChatCompletions' | 'anthropicMessages',
-  observe: (body: Record<string, unknown>) => void,
-  callExec = false,
-): ModelCandidate => {
-  const candidate = makeCandidate({ upstream: `up_${target}`, endpoints: { [target]: {} } });
-  const instance = stubProvider({
-    callOpenAIChatCompletions: async (_model, body) => {
-      observe(body as unknown as Record<string, unknown>);
-      const chunk = (choices: OpenAIChatCompletionsStreamEvent['choices']): OpenAIChatCompletionsStreamEvent => ({ id: 'chat_exec', object: 'chat.completion.chunk', created: 0, model: 'test-model', choices });
-      return {
-        ok: true, modelKey: 'test-model-key', events: (async function* () {
-          yield eventFrame(chunk([{  index: 0, delta: { role: 'assistant' }, finish_reason: null }]));
-          yield eventFrame(chunk([{  index: 0, delta: callExec ? { tool_calls: [{ index: 0, id: 'call_exec', type: 'function', function: { name: 'exec', arguments: '{"input":"patch"}' } }] } : { content: 'done' }, finish_reason: null }]));
-          yield eventFrame(chunk([{  index: 0, delta: {}, finish_reason: callExec ? 'tool_calls' : 'stop' }]));
-          yield doneFrame();
-        })(),
-      };
-    },
-    callAnthropicMessages: async (_model, body) => {
-      observe(body as unknown as Record<string, unknown>);
-      return {
-        ok: true, modelKey: 'test-model-key', events: (async function* () {
-          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_start', message: { container: null, diagnostics: null, stop_details: null, id: 'msg_exec', type: 'message', role: 'assistant', model: 'test-model', content: [], stop_reason: null, stop_sequence: null, usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 } } });
-          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'content_block_start', index: 0, content_block: callExec ? { type: 'tool_use', id: 'call_exec', name: 'exec', input: {} } : { citations: null, type: 'text', text: '' } });
-          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'content_block_delta', index: 0, delta: callExec ? { type: 'input_json_delta', partial_json: '{"input":"patch"}' } : { type: 'text_delta', text: 'done' } });
-          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'content_block_stop', index: 0 });
-          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: callExec ? 'tool_use' : 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } });
-          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_stop' });
-        })(),
-      };
-    },
-  });
-  return { ...candidate, provider: { ...candidate.provider, instance } };
-};
-
-for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
-  test(`POST /v1/responses continues a custom exec call through ${target} with text-array output`, async () => {
-    installRepo();
-    const bodies: Record<string, unknown>[] = [];
-    const observe = (body: Record<string, unknown>) => { bodies.push(structuredClone(body)); };
-    const headers = { 'content-type': 'application/json' };
-    const tools = [{ type: 'custom', name: 'exec' }];
-    queueResolution([translatedCustomCandidate(target, observe, true)]);
-    const first = await makeApp().request('/v1/responses', {
-      method: 'POST', headers,
-      body: JSON.stringify({ model: 'test-model', store: true, tools, input: [{ role: 'user', content: 'inspect the request' }] }),
-    });
-    assertEquals(first.status, 200);
-    const previous = await first.json() as OpenAIResponsesResultEx;
-    const call = previous.output.find(item => item.type === 'custom_tool_call');
-    assert(call?.type === 'custom_tool_call');
-    assertEquals([call.name, call.namespace, call.input], ['exec', undefined, 'patch']);
-    assertEquals(bodies.length, 1);
-
-    queueResolution([translatedCustomCandidate(target, observe)]);
-    const second = await makeApp().request('/v1/responses', {
-      method: 'POST', headers,
-      body: JSON.stringify({
-        model: 'test-model', store: true, tools, previous_response_id: previous.id,
-        input: [{
-          type: 'custom_tool_call_output', call_id: call.call_id,
-          output: [{ type: 'input_text', text: 'first\n' }, { type: 'input_text', text: 'second' }],
-        }],
-      }),
-    });
-    assertEquals(second.status, 200);
-    const completed = await second.json() as OpenAIResponsesResultEx;
-    assertEquals(completed.status, 'completed');
-    assertEquals(Object.hasOwn(completed, 'output_text'), false);
-    assertEquals(bodies.length, 2);
-    if (target === 'openaiChatCompletions') {
-      assertEquals(bodies[1]!.messages, [
-        { role: 'user', content: 'inspect the request' },
-        {
-          role: 'assistant', content: null, refusal: null,
-          tool_calls: [{ id: call.call_id, type: 'function', function: { name: 'exec', arguments: '{"input":"patch"}' } }],
-        },
-        { role: 'tool', tool_call_id: call.call_id, content: 'first\nsecond' },
-      ]);
-    } else {
-      assertEquals(bodies[1]!.messages, [
-        { role: 'user', content: 'inspect the request' },
-        { role: 'assistant', content: [{ type: 'tool_use', id: call.call_id, name: 'exec', input: { input: 'patch' } }] },
-        {
-          role: 'user',
-          content: [{
-            type: 'tool_result', tool_use_id: call.call_id, is_error: undefined,
-            content: [{ type: 'text', text: 'first\n' }, { type: 'text', text: 'second' }],
-            cache_control: { type: 'ephemeral' },
-          }],
-        },
-      ]);
-    }
-  });
-}

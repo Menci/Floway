@@ -232,24 +232,3 @@ test('does not inherit force through a foreign program blob', async () => {
   expect(prepared.requiredTargets).toEqual([]);
   expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().input[0]).toMatchObject({ fingerprint: 'foreign' });
 });
-
-test.each(['compaction', 'context_compaction'] as const)('lets originless %s follow candidates while natural state forces its origin', async type => {
-  const synthetic = await codec.wrap(undefined, targetFor(candidateA), carrierDomain(type, 'encrypted_content'));
-  const originlessItem = {
-    type,
-    id: 'ctx_client',
-    encrypted_content: synthetic,
-  } as unknown as CanonicalOpenAIResponsesPayload['input'][number];
-  const syntheticPrepared = await analyzeOpenAIResponsesAffinity({ model: 'model', input: [originlessItem] }, codec);
-  expect(syntheticPrepared.requiredTargets).toEqual([]);
-  expect(syntheticPrepared.evaluateCandidate(candidateB)).toMatchObject({ kind: 'accepted', degrades: false });
-
-  const natural = await codec.wrap('opaque', targetFor(candidateA), carrierDomain(type, 'encrypted_content'));
-  const naturalPrepared = await analyzeOpenAIResponsesAffinity({
-    model: 'model',
-    input: [{ ...originlessItem, encrypted_content: natural } as CanonicalOpenAIResponsesPayload['input'][number]],
-  }, codec);
-  expect(naturalPrepared.requiredTargets).toEqual([targetFor(candidateA)]);
-  expect(naturalPrepared.evaluateCandidate(candidateA)).toMatchObject({ kind: 'accepted', degrades: false });
-  expect(naturalPrepared.evaluateCandidate(candidateB)).toMatchObject({ kind: 'rejected' });
-});

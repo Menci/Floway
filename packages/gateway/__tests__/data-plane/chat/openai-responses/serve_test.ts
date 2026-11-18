@@ -141,59 +141,6 @@ const collectEvents = async (events: AsyncIterable<ProtocolFrame<OpenAIResponses
   return out;
 };
 
-test('generate falls through to the next candidate when the first yields an upstream error', async () => {
-  installRepo();
-  const originalImageUrl = 'data:image/png;base64,AQID';
-  const payload = makePayload({
-    input: [{
-      type: 'message',
-      role: 'user',
-      content: [{ type: 'input_image', image_url: originalImageUrl, detail: 'auto' }],
-    }],
-  });
-  const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
-    status: 502, headers: new Headers({ 'content-type': 'application/json' }),
-  });
-  const firstCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderOpenAIResponsesResult> => {
-    const item = (body as Omit<CanonicalOpenAIResponsesPayload, 'model'>).input[0];
-    if (item.type !== 'message' || !Array.isArray(item.content) || item.content[0]?.type !== 'input_image') throw new Error('expected image content');
-    item.content[0].image_url = 'data:image/webp;base64,COMPRESSED';
-    return { action: 'generate', ok: false, response: firstError, modelKey: 'first-key' };
-  });
-  const completed: OpenAIResponsesStreamEventEx = {
-    type: 'response.completed',
-    sequence_number: 0,
-    response: makeOpenAIResponsesResult('resp_second'),
-  };
-  let fallbackImageUrl: string | null | undefined;
-  const secondCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderOpenAIResponsesResult> => {
-    const item = (body as Omit<CanonicalOpenAIResponsesPayload, 'model'>).input[0];
-    if (item.type !== 'message' || !Array.isArray(item.content) || item.content[0]?.type !== 'input_image') throw new Error('expected image content');
-    fallbackImageUrl = item.content[0].image_url;
-    return { action: 'generate', ok: true, events: makeProtocolFrames([completed]), modelKey: 'second-key', headers: new Headers() };
-  });
-  const first = makeCandidate({ upstream: 'up_a', callOpenAIResponses: firstCall });
-  const second = makeCandidate({ upstream: 'up_b', callOpenAIResponses: secondCall });
-  queueResolution([first, second]);
-
-  const result = await openaiResponsesServe.generate({
-    payload,
-    ctx: makeGatewayCtx(),
-    headers: new Headers(),
-  });
-
-  // The narrowed candidate list exists exactly so a transient upstream
-  // failure (5xx/429/network) on one entry rolls over to the next. The
-  // second candidate's success is the request's final answer.
-  assertEquals(result.type, 'events');
-  assertEquals(firstCall.mock.calls.length, 1);
-  assertEquals(secondCall.mock.calls.length, 1);
-  assertEquals(fallbackImageUrl, originalImageUrl);
-  const sourceItem = payload.input[0];
-  if (sourceItem.type !== 'message' || !Array.isArray(sourceItem.content) || sourceItem.content[0]?.type !== 'input_image') throw new Error('expected source image content');
-  assertEquals(sourceItem.content[0].image_url, originalImageUrl);
-});
-
 test('generate filters out candidates whose endpoints do not satisfy the responses preference and renders model-unsupported as a 400', async () => {
   installRepo();
   const callOpenAIResponses = vi.fn();

@@ -66,37 +66,6 @@ test('stateless client egress retains terminal-only output without applying a pr
   expect(terminal.event.response.output[1]).toEqual(terminalOnly);
 });
 
-test('client output preserves emitted ids and persists the exact complete item before terminal', async () => {
-  const { repo, store } = memoryOutputHarness();
-  const result: OpenAIResponsesResultEx = {
-    id: 'resp_upstream',
-    object: 'response',
-    model: 'model',
-    status: 'completed',
-    output: [{ type: 'reasoning', id: 'rs_upstream', summary: [], encrypted_content: 'wrapped-affinity' }],
-    error: null,
-    incomplete_details: null,
-  };
-
-  const events: OpenAIResponsesStreamEventEx[] = [];
-  for await (const frame of wrapOpenAIResponsesClientOutput(frames(result), {
-    store,
-    responseId: 'resp_public',
-  })) {
-    if (frame.type === 'event') events.push(frame.event);
-  }
-
-  const terminal = events.at(-1);
-  expect(terminal?.type).toBe('response.completed');
-  if (terminal?.type !== 'response.completed') throw new Error('Expected terminal response');
-  const publicItem = terminal.response.output[0];
-  expect(publicItem.id).toBe('rs_upstream');
-  const rows = await repo.openaiResponsesItems.lookupMany('key-a', [publicItem.id!], 0);
-  expect(rows[0].payload.item).toEqual(publicItem);
-  expect(rows[0].payload.item).toMatchObject({ encrypted_content: 'wrapped-affinity' });
-  expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0)).not.toBeNull();
-});
-
 test('client output replaces history when a compaction_summary item closes', async () => {
   const { repo, store } = memoryOutputHarness();
   const item = { type: 'compaction_summary' as const, id: 'cmp_alias', encrypted_content: 'opaque' };

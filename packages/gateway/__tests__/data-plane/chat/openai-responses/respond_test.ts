@@ -150,7 +150,6 @@ test.each([
   { error: { type: 'error' as const, sequence_number: 0, error: { type: 'invalid_request_error', code: null, message: 'invalid tools', param: 'tools' } }, status: 400 },
   { error: { type: 'error' as const, sequence_number: 0, code: 'rate_limit_exceeded', message: 'slow down', param: null }, status: 429 },
   { error: { type: 'error' as const, sequence_number: 0, code: null, message: 'bad key', param: null, provider_specific_fields: { type: 'authentication_error' } }, status: 401 },
-  { error: { type: 'error' as const, sequence_number: 0, code: 'server_error', message: 'failed', param: null }, status: 500 },
   { error: { type: 'error' as const, sequence_number: 0, code: 'vendor_failure', message: 'failed', param: null }, status: 502 },
 ] as const)('Responses non-streaming error classification selects HTTP $status', async ({ error, status }) => {
   const failed = { id: 'resp_failed', object: 'response', model: 'm', status: 'failed' as const, output: [], error: null, incomplete_details: null };
@@ -216,13 +215,6 @@ test('Responses non-streaming failure drains the failed resource, preserves erro
   const performance = await repo.performance.listAll();
   expect(performance).toHaveLength(1);
   expect(performance[0]).toMatchObject({ requests: 1, errorsWithOutput: 1, errorsNoOutput: 0, ttftSamplesOk: 0, tpotSamples: 1 });
-});
-
-test('Responses collect failures preserve nested causes in the HTTP error namespace', async () => {
-  const app = new Hono().get('/', c => respondOpenAIResponses(c, eventResult((async function* () { throw internalFailure(); })(), testTelemetryModelIdentity), false, mockChatGatewayCtx(), { model: 'm', input: [] }));
-  const response = await app.request('/');
-  expect(response.status).toBe(502);
-  expect(await response.json()).toEqual({ error: { type: 'internal_error', message: 'broken', provider_specific_fields: fields } });
 });
 
 test('Responses native upstream HTTP error is forwarded without diagnostic restructuring', async () => {

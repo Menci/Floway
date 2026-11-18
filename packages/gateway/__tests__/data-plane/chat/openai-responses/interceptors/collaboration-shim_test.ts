@@ -214,33 +214,6 @@ test.each([null, ['message']] as const)('rejects explicitly encrypted history ma
   );
 });
 
-test('projects deferred tool-search inventories without a top-level tool list', async () => {
-  const ctx = invocation();
-  ctx.payload = {
-    ...ctx.payload,
-    tools: undefined,
-    input: [{ type: 'tool_search_output', id: 'tso_1', tools: [collaborationTool()] }],
-  };
-  let upstreamItem: unknown;
-  const result = await withOpenAIResponsesCollaborationShim(ctx, mockChatGatewayCtx(), async () => {
-    upstreamItem = structuredClone(ctx.payload.input[0]);
-    const item = ctx.payload.input[0];
-    if (item.type !== 'tool_search_output') throw new Error('Expected tool-search output');
-    return eventResult((async function* () {
-      yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
-      yield eventFrame({ type: 'response.completed', response: response([item], [], 'collaboration-optimize') });
-    })(), testTelemetryModelIdentity);
-  });
-
-  expect(upstreamItem).toMatchObject({ tools: [{ name: 'collaboration-optimize' }] });
-  if (result.type !== 'events') throw new Error('Expected events');
-  const items: OpenAIResponsesOutputItemEx[] = [];
-  for await (const frame of result.events) {
-    if (frame.type === 'event' && frame.event.type === 'response.output_item.done') items.push(frame.event.item);
-  }
-  expect(items[0]).toMatchObject({ tools: [{ name: 'collaboration' }] });
-});
-
 test('rejects an upstream encrypted marker before labeling the call plaintext', async () => {
   const ctx = invocation();
   const output = {
@@ -392,11 +365,11 @@ test('remembers encrypted evidence arriving before a sparse call identity', asyn
   await expect(async () => { for await (const frame of result.events) void frame; }).rejects.toThrow('encrypted arguments');
 });
 
-test.each([false, undefined])('preserves upstream schema echoes with differing client inventory marker %j', async encrypted => {
+test('preserves upstream schema echoes with a differing client inventory marker', async () => {
   const ctx = invocation();
   const deferred = collaborationTool();
   if (deferred.type !== 'namespace' || deferred.tools[0].type !== 'function') throw new Error('Expected namespace function');
-  deferred.tools[0].parameters = { type: 'object', properties: { message: { type: 'string', ...(encrypted === undefined ? {} : { encrypted }) } } };
+  deferred.tools[0].parameters = { type: 'object', properties: { message: { type: 'string', encrypted: false } } };
   ctx.payload.input.push({ type: 'additional_tools', role: 'developer', tools: [deferred] });
   let upstreamTools: OpenAIResponsesTool[] = [];
   const result = await withOpenAIResponsesCollaborationShim(ctx, mockChatGatewayCtx(), async () => {

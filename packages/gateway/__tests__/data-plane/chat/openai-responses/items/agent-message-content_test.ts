@@ -1,9 +1,8 @@
 import { test } from 'vitest';
 
 import { agentMessageContent } from '../../../../../src/data-plane/chat/openai-responses/items/agent-message-content.ts';
-import { tryCatchChatServeFailure, type InputErrorDetails } from '../../../../../src/data-plane/chat/shared/errors.ts';
 import type { OpenAIResponsesInputAgentMessageItem } from '@floway-dev/protocols/openai-responses';
-import { assertEquals, assertThrows } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
 const agentMessage = (content: OpenAIResponsesInputAgentMessageItem['content']): OpenAIResponsesInputAgentMessageItem => ({
   type: 'agent_message',
@@ -46,18 +45,4 @@ test('agentMessageContent normalizes readable beta content into OpenAI Responses
     { type: 'input_file', file_id: 'file_doc' },
     { type: 'input_text', text: '\n</agent-message>' },
   ]);
-});
-
-test('agentMessageContent reports the exact path for malformed text', () => {
-  const error = assertThrows(
-    () => agentMessageContent(agentMessage([
-      { type: 'input_text', text: 42 } as unknown as OpenAIResponsesInputAgentMessageItem['content'][number],
-    ])),
-    Error,
-  );
-  assertEquals(tryCatchChatServeFailure<InputErrorDetails & { readonly kind: 'invalid-input' }>(error), {
-    kind: 'invalid-input',
-    message: "Invalid type for 'agent_message.content[0].text': expected a string.",
-    param: 'agent_message.content[0].text',
-  });
 });

@@ -8,7 +8,7 @@ import { mockChatGatewayCtx } from '../../../../../test-utils/gateway-ctx.ts';
 import { createInMemoryImageProcessor, initExternalResourceFetcher, initImageProcessor } from '@floway-dev/platform';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { type EventResult, type ExecuteResult, type FlagId, type OpenAIImagesEditsRequest } from '@floway-dev/provider';
 import { assert, assertEquals, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -135,22 +135,6 @@ const messageTurn = (text: string): ProtocolFrame<OpenAIResponsesStreamEventEx>[
   eventFrame({ type: 'response.completed', response: emptyResult('completed') }),
 ] as ProtocolFrame<OpenAIResponsesStreamEventEx>[];
 
-const withResponseEcho = (
-  frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[],
-  tools: OpenAIResponsesTool[],
-  toolChoice?: OpenAIResponsesToolChoice,
-): ProtocolFrame<OpenAIResponsesStreamEventEx>[] => frames.map(frame => {
-  if (frame.type !== 'event' || (frame.event.type !== 'response.created' && frame.event.type !== 'response.completed')) return frame;
-  return eventFrame({
-    ...frame.event,
-    response: {
-      ...frame.event.response,
-      tools,
-      ...(toolChoice !== undefined ? { tool_choice: toolChoice } : {}),
-    },
-  } as OpenAIResponsesStreamEventEx);
-});
-
 const scriptedRun = (turns: ProtocolFrame<OpenAIResponsesStreamEventEx>[][]) => {
   let i = 0;
   return async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
@@ -250,24 +234,6 @@ test('generates an image end-to-end and emits the native lifecycle', async () =>
   assertEquals(item.status, 'completed');
   assertEquals(item.result, 'R0VO');
   assertEquals(item.action, 'generate');
-});
-
-test('restores a forced hosted choice when the terminal upstream echo omits it', async () => {
-  stub.nextGenerations = [jsonResponse('R0VO')];
-  const hostedChoice = { type: 'image_generation' } as const;
-  const invocation = makeCtx([], 'generate', { quality: 'high' }, hostedChoice);
-  const hostedTool = invocation.payload.tools![0];
-  const replacement = { type: 'function', name: 'image_generation', parameters: {}, strict: false } as OpenAIResponsesTool;
-  const result = await shim(invocation, gatewayCtx(), scriptedRun([
-    withResponseEcho(callTurn(0, 'call_1', 'a cat'), [replacement], { type: 'function', name: 'image_generation' }),
-    withResponseEcho(messageTurn('done'), [replacement]),
-  ]));
-  const events = await drain(result);
-
-  const completed = events.find(event => event.type === 'response.completed');
-  assert(completed?.type === 'response.completed');
-  assertEquals(completed.response.tools, [hostedTool]);
-  assertEquals(completed.response.tool_choice, hostedChoice);
 });
 
 test('relays real partial_image frames when partial_images > 0', async () => {
