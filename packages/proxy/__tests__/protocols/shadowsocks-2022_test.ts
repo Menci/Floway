@@ -1,6 +1,6 @@
 import { gcm } from '@noble/ciphers/aes.js';
 import { blake3 } from '@noble/hashes/blake3.js';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { concat } from '../../src/bytes.ts';
 import { buildSs2022RequestHeader, dialShadowsocks2022 } from '../../src/protocols/shadowsocks-2022.ts';
@@ -25,6 +25,8 @@ const config = (overrides: Partial<Shadowsocks2022ProxyConfig> = {}): Shadowsock
 });
 
 const SUBKEY_CONTEXT = new TextEncoder().encode('shadowsocks 2022 session subkey');
+
+afterEach(() => vi.useRealTimers());
 
 describe('buildSs2022RequestHeader', () => {
   it('encodes ATYP=0x03 | dom_len | dom | port BE | padlen=16 | 16-byte pad', () => {
@@ -311,6 +313,11 @@ describe('dialShadowsocks2022 — response-side SIP022 checks', () => {
 const runWithServerHandshakeOptions = async (
   serverOpts: { skewSec: number; echoCorrect: boolean },
 ): Promise<unknown> => {
+  // The server stamps its response and the dialer checks it against two reads
+  // of the wall clock. A second boundary between them moves the skew by one,
+  // which turned the 31 s rejection into an accepted 30 s, so the clock stands
+  // still for the exchange.
+  vi.useFakeTimers({ toFake: ['Date'], now: Date.now() });
   const fake = makeFakeSocketDial();
   const dialPromise = dialShadowsocks2022(config(), target, { socketDial: fake.socketDial });
   const srv = await fake.awaitConnect();
