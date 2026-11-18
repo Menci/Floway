@@ -13,7 +13,7 @@ import { readOpenAIChatCompletionsRequest } from '../../../src/protocols/openai-
 import { readOpenAIResponsesRequest } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 const options = { sidecarCodec: createTestSidecarCodec() };
@@ -50,14 +50,16 @@ test.each([
   expect(messages.target.max_tokens).toBe(messagesCeiling);
 });
 
-test('nullable token limits and cache controls remain explicit in source IR', async () => {
+test('nullable token limits remain explicit while non-nullable Chat identity and cache options are rejected', async () => {
   const source = {
     model: 'm', stream: true, messages: [], max_tokens: null, max_completion_tokens: null,
-    prompt_cache_options: null, prompt_cache_retention: null, user: null,
+    prompt_cache_retention: null,
   };
   expect(readOpenAIChatCompletionsRequest(source).request.settings).toMatchObject({
-    max_visible_output_tokens: null, max_output_tokens: null, prompt_cache_options: null, prompt_cache_retention: null, user: null,
+    max_visible_output_tokens: null, max_output_tokens: null, prompt_cache_retention: null,
   });
+  expect(() => readOpenAIChatCompletionsRequest({ ...source, prompt_cache_options: null })).toThrow("Invalid 'prompt_cache_options': expected an object when present.");
+  expect(() => readOpenAIChatCompletionsRequest({ ...source, user: null })).toThrow("Invalid 'user': expected a string when present.");
   const responses = await routeOpenAIChatCompletionsViaOpenAIResponses(source, options);
   if (responses.type !== 'trip') throw new Error(responses.message);
   expect(responses.target.max_output_tokens).toBeNull();
@@ -165,9 +167,10 @@ test.each([{ include: [] }, { include: null }])('Responses include $include stat
 });
 
 test('request settings own cache options separately from source and target mutations', async () => {
+  const promptCacheOptions: { mode: string; ttl: string } = { mode: 'explicit', ttl: '30m' };
   const source = {
-    model: 'm', stream: true, messages: [], prompt_cache_options: { mode: 'explicit', ttl: '30m' },
-  } satisfies OpenAIChatCompletionsPayload;
+    model: 'm', stream: true, messages: [], prompt_cache_options: promptCacheOptions,
+  } satisfies OpenAIChatCompletionsPayloadEx;
   const reading = readOpenAIChatCompletionsRequest(source);
   source.prompt_cache_options.mode = 'source-mutated';
   expect(reading.request.settings.prompt_cache_options).toEqual({ mode: 'explicit', ttl: '30m' });
@@ -212,9 +215,9 @@ test('tool selection never changes the complete allocated declaration inventory'
     { type: 'function' as const, name: 'x_f' },
   ];
   const choices: (OpenAIResponsesToolChoice | undefined)[] = [
-    undefined, 'auto', 'none', 'required', { type: 'function', namespace: 'x', name: 'f' },
+    undefined, 'auto', 'none', 'required', { type: 'function', name: 'x.f' },
     { type: 'allowed_tools', mode: 'auto', tools: [] },
-    { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', namespace: 'x', name: 'f' }] },
+    { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', name: 'x.f' }] },
   ];
   let declarations: unknown;
   for (const tool_choice of choices) {

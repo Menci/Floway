@@ -8,7 +8,7 @@ import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared
 import { providerModelsUnavailableResponse } from '../../shared/upstream-response.ts';
 import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/store.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 
 // Surfaces a pre-stream throw (malformed JSON body, an interceptor crash,
@@ -35,8 +35,23 @@ export const openaiChatCompletionsHttp = {
     const requestBody = await readRequestBody(c);
     let ctx: ChatGatewayCtx | undefined;
     try {
-      const payload = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as OpenAIChatCompletionsPayload;
+      const payload = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as OpenAIChatCompletionsPayloadEx;
       const wantsStream = payload.stream === true;
+      const nullableField = payload.prompt_cache_options === null
+        ? 'prompt_cache_options'
+        : payload.user === null
+          ? 'user'
+          : undefined;
+      if (nullableField !== undefined) {
+        return c.json({
+          error: {
+            message: `Invalid '${nullableField}': expected ${nullableField === 'user' ? 'a string' : 'an object'} when present.`,
+            type: 'invalid_request_error',
+            param: nullableField,
+            code: null,
+          },
+        }, 400);
+      }
       // Read the caller's intent BEFORE any interceptor mutates
       // `payload.stream_options.include_usage`. Capturing it here means the
       // downstream renderer never needs to consult per-request Hono context

@@ -115,10 +115,13 @@ export type ServerToolDispatcher = (args: {
 
 // Keep hosted matching, function injection, and dispatch atomic so a
 // registration cannot silently omit part of a server-tool family.
+// The builder receives the declaration its own family recognized, so each
+// family states its declaration type; method members keep that per-family
+// parameter assignable to the shared registration.
 export interface ServerToolHostedDispatch {
   hostedTypes: readonly string[];
-  recognizeHostedTool: (raw: OpenAIResponsesTool) => OpenAIResponsesHostedTool | undefined;
-  buildFunctionTool: (canonical: OpenAIResponsesHostedTool, toolName: string) => OpenAIResponsesFunctionTool;
+  recognizeHostedTool(raw: OpenAIResponsesTool): OpenAIResponsesHostedTool | undefined;
+  buildFunctionTool(canonical: OpenAIResponsesHostedTool, toolName: string): OpenAIResponsesFunctionTool;
   dispatcher: ServerToolDispatcher;
 }
 
@@ -283,7 +286,7 @@ const isForcedServerToolChoice = (
 ): boolean => {
   if (choice === 'required') return true;
   if (typeof choice !== 'object' || choice === null) return false;
-  if (choice.type === 'function') return choice.namespace === undefined && dispatchers.has(choice.name);
+  if (choice.type === 'function') return dispatchers.has(choice.name);
   if (choice.type !== 'allowed_tools' || choice.mode !== 'required' || !Array.isArray(choice.tools)) return false;
   return choice.tools.some(selector => selector?.type === 'function' && selector.namespace === undefined
     && typeof selector.name === 'string' && dispatchers.has(selector.name));

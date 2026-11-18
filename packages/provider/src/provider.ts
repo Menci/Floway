@@ -10,7 +10,7 @@ import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@
 import type { DecisionTarget, ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
 import type { CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAICompletionsPayload } from '@floway-dev/protocols/openai-completions';
 import type { OpenAIEmbeddingsPayload } from '@floway-dev/protocols/openai-embeddings';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
@@ -148,7 +148,7 @@ export interface ProviderInstance {
   // those upstreams; the rejecting stubs in those providers are pure
   // defense-in-depth.
   callOpenAICompletions(model: ProviderModel, body: Omit<OpenAICompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
-  callOpenAIChatCompletions(model: ProviderModel, body: Omit<OpenAIChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
+  callOpenAIChatCompletions(model: ProviderModel, body: Omit<OpenAIChatCompletionsPayloadEx, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
   callOpenAIResponses(model: ProviderModel, body: Omit<CanonicalOpenAIResponsesPayload, 'model'>, action: OpenAIResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderOpenAIResponsesResult>;
   callAnthropicMessages(model: ProviderModel, body: Omit<AnthropicMessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: AnthropicMessagesUpstreamCallOptions): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
   // Gemini's native REST surface carries the model id and the action in the

@@ -1,105 +1,62 @@
 import type * as Official from './sdk.ts';
+import type { OpenWire } from '../common/open-wire.ts';
 
 // Request, response and chunk shapes follow the official Chat Completions wire contracts.
 // https://github.com/openai/openai-node/blob/7423ac3e9351c46300cd094479cded5551a72eb4/src/resources/chat/completions/completions.ts
 
-export interface OpenAIChatCompletionsPayload extends Omit<Official.ChatCompletionCreateParamsBase, 'model' | 'messages' | 'audio' | 'frequency_penalty' | 'function_call' | 'functions' | 'logit_bias' | 'logprobs' | 'max_completion_tokens' | 'max_tokens' | 'metadata' | 'modalities' | 'n' | 'parallel_tool_calls' | 'prediction' | 'presence_penalty' | 'prompt_cache_key' | 'prompt_cache_options' | 'prompt_cache_retention' | 'reasoning_effort' | 'response_format' | 'safety_identifier' | 'seed' | 'service_tier' | 'stop' | 'store' | 'stream' | 'stream_options' | 'temperature' | 'tool_choice' | 'tools' | 'top_logprobs' | 'top_p' | 'user' | 'verbosity' | 'web_search_options'> {
+export type OpenAIChatCompletionsPayload = Omit<OpenWire<Official.ChatCompletionCreateParamsBase>, 'model' | 'messages' | 'tools' | 'tool_choice' | 'functions' | 'prediction'> & {
   model: string;
   messages: OpenAIChatCompletionsMessage[];
-  audio?: { format: 'wav' | 'aac' | 'mp3' | 'flac' | 'opus' | 'pcm16' | (string & {}); voice: string } | null;
-  frequency_penalty?: number | null;
-  function_call?: 'none' | 'auto' | { name: string };
-  functions?: OpenAIChatCompletionsFunctionDefinition[];
-  logit_bias?: Record<string, number> | null;
-  logprobs?: boolean | null;
-  max_completion_tokens?: number | null;
-  max_tokens?: number | null;
-  metadata?: Record<string, string> | null;
-  modalities?: Array<'text' | 'audio' | (string & {})> | null;
-  n?: number | null;
-  parallel_tool_calls?: boolean;
-  prediction?: { type: 'content'; content: string | OpenAIChatCompletionsTextPart[] } | null;
-  presence_penalty?: number | null;
-  prompt_cache_key?: string | null;
-  prompt_cache_options?: { mode?: string; ttl?: string } | null;
-  prompt_cache_retention?: 'in_memory' | '24h' | (string & {}) | null;
-  reasoning_effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | (string & {}) | null;
-  response_format?: OpenAIChatCompletionsResponseFormat;
-  safety_identifier?: string | null;
-  seed?: number | null;
-  service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
-  stop?: string | string[] | null;
-  store?: boolean | null;
-  stream?: boolean | null;
-  stream_options?: OpenAIChatCompletionsStreamOptions | null;
-  temperature?: number | null;
-  tool_choice?: OpenAIChatCompletionsToolChoice;
   tools?: OpenAIChatCompletionsTool[];
-  top_logprobs?: number | null;
-  top_p?: number | null;
-  user?: string | null;
-  verbosity?: 'low' | 'medium' | 'high' | (string & {}) | null;
-  web_search_options?: { search_context_size?: 'low' | 'medium' | 'high' | (string & {}); user_location?: { type: 'approximate'; approximate: { city?: string; country?: string; region?: string; timezone?: string } } | null };
-}
+  tool_choice?: OpenAIChatCompletionsToolChoice;
+  functions?: OpenAIChatCompletionsFunctionDefinition[];
+  prediction?: { type: 'content'; content: string | OpenAIChatCompletionsTextPart[] } | null;
+};
 
-export interface OpenAIChatCompletionsStreamOptions { include_obfuscation?: boolean; include_usage?: boolean }
+export type OpenAIChatCompletionsStreamOptions = OpenWire<Official.ChatCompletionStreamOptions>;
 export interface OpenAIChatCompletionsStreamOptionsEx extends OpenAIChatCompletionsStreamOptions {
   // vLLM/SGLang cumulative streaming usage extension.
   // https://github.com/vllm-project/vllm/blob/d5f0a6e829faa69d1db289bf62b14dae136c02b2/vllm/entrypoints/generate/base/protocol.py#L241-L243
   continuous_usage_stats?: boolean;
 }
 
-export interface OpenAIChatCompletionsPayloadEx extends OpenAIChatCompletionsPayload {
+// OpenAI-compatible clients send an explicit `null` for every absent control,
+// including the two the request contract declares non-nullable.
+export type OpenAIChatCompletionsPayloadEx = Omit<OpenAIChatCompletionsPayload, 'stream_options' | 'prompt_cache_options' | 'user'> & {
   stream_options?: OpenAIChatCompletionsStreamOptionsEx | null;
-}
-
-export interface OpenAIChatCompletionsFunctionDefinition { name: string; description?: string; parameters?: Record<string, unknown>; strict?: boolean | null }
-export interface OpenAIChatCompletionsFunctionTool { type: 'function'; function: OpenAIChatCompletionsFunctionDefinition }
-export interface OpenAIChatCompletionsCustomTool { type: 'custom'; custom: { name: string; description?: string; format?: { type: 'text' } | { type: 'grammar'; grammar: { definition: string; syntax: 'lark' | 'regex' | (string & {}) } } } }
-export type OpenAIChatCompletionsTool = OpenAIChatCompletionsFunctionTool | OpenAIChatCompletionsCustomTool;
-export type OpenAIChatCompletionsNamedToolChoice = { type: 'function'; function: { name: string } } | { type: 'custom'; custom: { name: string } };
-export type OpenAIChatCompletionsToolChoice = 'none' | 'auto' | 'required' | OpenAIChatCompletionsNamedToolChoice | {
-  type: 'allowed_tools'; allowed_tools: { mode: 'auto' | 'required'; tools: OpenAIChatCompletionsNamedToolChoice[] };
+  prompt_cache_options?: OpenAIChatCompletionsPayload['prompt_cache_options'] | null;
+  user?: string | null;
 };
-export type OpenAIChatCompletionsResponseFormat = { type: 'text' } | { type: 'json_object' } | { type: 'json_schema'; json_schema: { name: string; schema?: Record<string, unknown>; description?: string; strict?: boolean | null } };
 
-export interface OpenAIChatCompletionsSystemMessage { role: 'system'; content: string | OpenAIChatCompletionsTextPart[]; name?: string }
-export interface OpenAIChatCompletionsDeveloperMessage { role: 'developer'; content: string | OpenAIChatCompletionsTextPart[]; name?: string }
-export interface OpenAIChatCompletionsUserMessage { role: 'user'; content: string | OpenAIChatCompletionsUserContentPart[]; name?: string }
-export interface OpenAIChatCompletionsToolMessage { role: 'tool'; content: string | OpenAIChatCompletionsTextPart[]; tool_call_id: string }
-export interface OpenAIChatCompletionsFunctionMessage { role: 'function'; content: string | null; name: string }
-export interface OpenAIChatCompletionsAssistantMessage {
-  role: 'assistant';
-  content?: string | OpenAIChatCompletionsAssistantContentPart[] | null;
-  name?: string;
-  refusal?: string | null;
-  audio?: { id: string } | null;
-  function_call?: { name: string; arguments: string } | null;
-  tool_calls?: OpenAIChatCompletionsToolCall[];
-}
+export type OpenAIChatCompletionsFunctionDefinition = OpenWire<Official.ChatCompletionFunctionTool['function']>;
+export type OpenAIChatCompletionsFunctionTool = OpenWire<Official.ChatCompletionFunctionTool>;
+export type OpenAIChatCompletionsCustomTool = OpenWire<Official.ChatCompletionCustomTool>;
+export type OpenAIChatCompletionsTool = OpenAIChatCompletionsFunctionTool | OpenAIChatCompletionsCustomTool;
+export type OpenAIChatCompletionsNamedToolChoice = OpenWire<Official.ChatCompletionNamedToolChoice | Official.ChatCompletionNamedToolChoiceCustom>;
+export type OpenAIChatCompletionsToolChoice = OpenWire<Official.ChatCompletionToolChoiceOption>;
+export type OpenAIChatCompletionsResponseFormat = OpenWire<NonNullable<Official.ChatCompletionCreateParamsBase['response_format']>>;
+
+export type OpenAIChatCompletionsSystemMessage = OpenWire<Official.ChatCompletionSystemMessageParam>;
+export type OpenAIChatCompletionsDeveloperMessage = OpenWire<Official.ChatCompletionDeveloperMessageParam>;
+export type OpenAIChatCompletionsUserMessage = OpenWire<Official.ChatCompletionUserMessageParam>;
+export type OpenAIChatCompletionsToolMessage = OpenWire<Official.ChatCompletionToolMessageParam>;
+export type OpenAIChatCompletionsFunctionMessage = OpenWire<Official.ChatCompletionFunctionMessageParam>;
+export type OpenAIChatCompletionsAssistantMessage = OpenWire<Official.ChatCompletionAssistantMessageParam>;
 export type OpenAIChatCompletionsMessage = OpenAIChatCompletionsSystemMessage | OpenAIChatCompletionsDeveloperMessage | OpenAIChatCompletionsUserMessage | OpenAIChatCompletionsAssistantMessage | OpenAIChatCompletionsToolMessage | OpenAIChatCompletionsFunctionMessage;
 
-export interface OpenAIChatCompletionsAssistantOutputMessage extends Omit<OpenAIChatCompletionsAssistantMessage, 'content' | 'audio' | 'name'> {
-  role: 'assistant';
-  content: string | null;
-  refusal: string | null;
-  annotations?: OpenAIChatCompletionsAnnotation[];
-  audio?: OpenAIChatCompletionsAudio | null;
-  function_call?: { name: string; arguments: string } | null;
-  tool_calls?: OpenAIChatCompletionsToolCall[];
-}
-export interface OpenAIChatCompletionsAnnotation { type: 'url_citation'; url_citation: { start_index: number; end_index: number; title: string; url: string } }
-export interface OpenAIChatCompletionsAudio { id: string; data: string; expires_at: number; transcript: string }
+export type OpenAIChatCompletionsAssistantOutputMessage = OpenWire<Official.ChatCompletionMessage>;
+export type OpenAIChatCompletionsAnnotation = OpenWire<Official.ChatCompletionMessage.Annotation>;
+export type OpenAIChatCompletionsAudio = OpenWire<Official.ChatCompletionAudio>;
 
-export interface OpenAIChatCompletionsFunctionToolCall { id: string; type: 'function'; function: { name: string; arguments: string } }
-export interface OpenAIChatCompletionsCustomToolCall { id: string; type: 'custom'; custom: { name: string; input: string } }
+export type OpenAIChatCompletionsFunctionToolCall = OpenWire<Official.ChatCompletionMessageFunctionToolCall>;
+export type OpenAIChatCompletionsCustomToolCall = OpenWire<Official.ChatCompletionMessageCustomToolCall>;
 export type OpenAIChatCompletionsToolCall = OpenAIChatCompletionsFunctionToolCall | OpenAIChatCompletionsCustomToolCall;
 
-export interface OpenAIChatCompletionsTextPart { type: 'text'; text: string }
-export interface OpenAIChatCompletionsImagePart { type: 'image_url'; image_url: { url: string; detail?: 'low' | 'high' | 'auto' | (string & {}) } }
-export interface OpenAIChatCompletionsInputAudioPart { type: 'input_audio'; input_audio: { data: string; format: 'wav' | 'mp3' | (string & {}) } }
-export interface OpenAIChatCompletionsFilePart { type: 'file'; file: { file_data?: string; file_id?: string; filename?: string } }
-export interface OpenAIChatCompletionsRefusalPart { type: 'refusal'; refusal: string }
+export type OpenAIChatCompletionsTextPart = OpenWire<Official.ChatCompletionContentPartText>;
+export type OpenAIChatCompletionsImagePart = OpenWire<Official.ChatCompletionContentPartImage>;
+export type OpenAIChatCompletionsInputAudioPart = OpenWire<Official.ChatCompletionContentPartInputAudio>;
+export type OpenAIChatCompletionsFilePart = OpenWire<Official.ChatCompletionContentPart.File>;
+export type OpenAIChatCompletionsRefusalPart = OpenWire<Official.ChatCompletionContentPartRefusal>;
 export type OpenAIChatCompletionsUserContentPart = OpenAIChatCompletionsTextPart | OpenAIChatCompletionsImagePart | OpenAIChatCompletionsInputAudioPart | OpenAIChatCompletionsFilePart;
 export type OpenAIChatCompletionsAssistantContentPart = OpenAIChatCompletionsTextPart | OpenAIChatCompletionsRefusalPart;
 
@@ -127,7 +84,9 @@ export type OpenAIChatCompletionsToolCallEx = OpenAIChatCompletionsToolCall & {
   // LiteLLM tool metadata: https://github.com/BerriAI/litellm/blob/cad87a900fbe8b99eba258e6ebb23f58225a8002/litellm/litellm_core_utils/streaming_chunk_builder_utils.py#L572-L600
   provider_specific_fields?: unknown;
 };
-export interface OpenAIChatCompletionsReasoningItem { type: 'reasoning'; id?: string; summary?: { type: 'summary_text'; text: string }[] }
+// LiteLLM `reasoning_items` entries.
+// https://github.com/BerriAI/litellm/blob/cad87a900fbe8b99eba258e6ebb23f58225a8002/litellm/types/llms/openai.py#L646-L651
+export interface OpenAIChatCompletionsReasoningItemEx { type: 'reasoning'; id?: string; summary?: { type: 'summary_text'; text: string }[] }
 
 export type OpenAIChatCompletionsUsage = NonNullable<Official.ChatCompletion['usage']>;
 
@@ -136,44 +95,38 @@ export interface OpenAIChatCompletionsUsageEx extends Omit<OpenAIChatCompletions
   // https://github.com/caozhiyuan/copilot-api/commit/a99c23551b0f3198d78dd51142dd0096cc6da049
   prompt_tokens_details?: OpenAIChatCompletionsUsage['prompt_tokens_details'] & { cache_creation_input_tokens?: number };
 }
-export interface OpenAIChatCompletionsLogprobs { content: OpenAIChatCompletionsTokenLogprob[] | null; refusal: OpenAIChatCompletionsTokenLogprob[] | null }
-export interface OpenAIChatCompletionsTokenLogprob { token: string; logprob: number; bytes: number[] | null; top_logprobs: { token: string; logprob: number; bytes: number[] | null }[] }
-export type OpenAIChatCompletionsFinishReason = 'stop' | 'length' | 'tool_calls' | 'content_filter' | 'function_call';
-export interface OpenAIChatCompletionsChoiceNonStreaming { index: number; message: OpenAIChatCompletionsAssistantOutputMessage; finish_reason: OpenAIChatCompletionsFinishReason; logprobs: OpenAIChatCompletionsLogprobs | null }
+export type OpenAIChatCompletionsLogprobs = OpenWire<Official.ChatCompletion.Choice.Logprobs>;
+export type OpenAIChatCompletionsTokenLogprob = OpenWire<Official.ChatCompletionTokenLogprob>;
+export type OpenAIChatCompletionsFinishReason = OpenWire<Official.ChatCompletion.Choice['finish_reason']>;
+export type OpenAIChatCompletionsChoiceNonStreaming = OpenWire<Official.ChatCompletion.Choice>;
 export interface OpenAIChatCompletionsChoiceNonStreamingEx extends Omit<OpenAIChatCompletionsChoiceNonStreaming, 'message'> {
   [field: string]: unknown;
   message: OpenAIChatCompletionsAssistantOutputMessageEx;
 }
-export interface OpenAIChatCompletionsResult {
-  id: string; object: 'chat.completion'; created: number; model: string;
-  metadata?: Official.ChatCompletion['metadata'];
-  moderation?: Official.ChatCompletion['moderation'];
-  choices: OpenAIChatCompletionsChoiceNonStreaming[];
-  service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
+// Compatible upstreams send an explicit `null` system fingerprint.
+// https://github.com/openai/openai-openapi/blob/db14b6e1712aaf5265cf5a6871adff7a9c61d31c/openapi.yaml
+export type OpenAIChatCompletionsResult = Omit<OpenWire<Official.ChatCompletion>, 'system_fingerprint'> & {
   system_fingerprint?: string | null;
-  usage?: OpenAIChatCompletionsUsage;
-}
+};
 export interface OpenAIChatCompletionsResultEx extends Omit<OpenAIChatCompletionsResult, 'choices'> {
   [field: string]: unknown;
   choices: OpenAIChatCompletionsChoiceNonStreamingEx[];
 }
-export interface OpenAIChatCompletionsToolCallDelta { index: number; id?: string; type?: 'function' | 'custom'; function?: { name?: string; arguments?: string }; custom?: { name?: string; input?: string } }
+export type OpenAIChatCompletionsToolCallDelta = OpenWire<Official.ChatCompletionChunk.Choice.Delta.ToolCall>;
 export interface OpenAIChatCompletionsToolCallDeltaEx extends OpenAIChatCompletionsToolCallDelta { [field: string]: unknown; extra_content?: unknown; provider_specific_fields?: unknown }
-interface OpenAIChatCompletionsDeltaFields { audio?: Partial<OpenAIChatCompletionsAudio> | null; content?: string | null; refusal?: string | null; function_call?: { name?: string; arguments?: string }; tool_calls?: OpenAIChatCompletionsToolCallDelta[] }
+type OpenAIChatCompletionsDeltaFields = Omit<OpenWire<Official.ChatCompletionChunk.Choice.Delta>, 'role'> & { audio?: Partial<OpenAIChatCompletionsAudio> | null };
 export interface OpenAIChatCompletionsAssistantDelta extends OpenAIChatCompletionsDeltaFields { role?: 'assistant' }
 export type OpenAIChatCompletionsDelta = OpenAIChatCompletionsAssistantDelta | {
   [Role in 'developer' | 'system' | 'user' | 'tool']: OpenAIChatCompletionsDeltaFields & { role: Role };
 }['developer' | 'system' | 'user' | 'tool'];
 export interface OpenAIChatCompletionsAssistantDeltaEx extends OpenAIChatCompletionsAssistantDelta, OpenAIChatCompletionsAssistantExtensions { annotations?: OpenAIChatCompletionsAnnotation[]; tool_calls?: OpenAIChatCompletionsToolCallDeltaEx[] }
-export interface OpenAIChatCompletionsStreamEvent {
-  id: string; object: 'chat.completion.chunk'; created: number; model: string;
-  moderation?: Official.ChatCompletionChunk['moderation'];
-  obfuscation?: Official.ChatCompletionChunk['obfuscation'];
-  choices: { index: number; delta: OpenAIChatCompletionsDelta; finish_reason?: OpenAIChatCompletionsFinishReason | null; logprobs?: OpenAIChatCompletionsLogprobs | null }[];
-  service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
+export type OpenAIChatCompletionsStreamEvent = Omit<OpenWire<Official.ChatCompletionChunk>, 'choices' | 'system_fingerprint'> & {
+  choices: (Omit<OpenWire<Official.ChatCompletionChunk.Choice>, 'delta' | 'finish_reason'> & {
+    delta: OpenAIChatCompletionsDelta;
+    finish_reason?: OpenWire<Official.ChatCompletionChunk.Choice['finish_reason']>;
+  })[];
   system_fingerprint?: string | null;
-  usage?: OpenAIChatCompletionsUsage | null;
-}
+};
 
 export * from './errors.ts';
 export { parseOpenAIChatCompletionsStream, type ParseOpenAIChatCompletionsStreamOptions } from './stream.ts';

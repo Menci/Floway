@@ -51,7 +51,7 @@ for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
       test.each(['callable', 'namespace'] as const)(`HTTP ${representation} preserves namespace allowed_tools and descriptions on final ${target} wire (${mode}, %s selector)`, async selection => {
         const { apiKey } = await setup(target);
         const selector = selection === 'namespace' ? { type: 'namespace', name: 'payments' }
-          : { type: 'function', namespace: 'payments', name: 'read' };
+          : { type: 'function', name: 'payments.read' };
         const choice = { type: 'allowed_tools', mode, tools: [selector] };
         const input = [{ type: 'message', role: 'user', content: 'Read my account.' }];
         const payload = { model: 'model', stream: false, store: false, tool_choice: choice, ...(representation !== 'Standard' ? { input: [{ type: 'additional_tools', role: 'developer', tools: [namespace] }, ...input] } : { input, tools: [namespace] }) };

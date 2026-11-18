@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { withUsageStreamOptionsIncluded } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/include-usage-stream-options.ts';
 import type { OpenAIChatCompletionsInvocation } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
@@ -11,7 +11,7 @@ const stubCtx = mockChatGatewayCtx();
 
 const okEvents = () => Promise.resolve(eventResult((async function* () {})(), testTelemetryModelIdentity));
 
-const invocation = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsInvocation => ({
+const invocation = (payload: OpenAIChatCompletionsPayloadEx): OpenAIChatCompletionsInvocation => ({
   payload,
   candidate: stubModelCandidate(),
   targetApi: 'openaiChatCompletions',
@@ -45,7 +45,7 @@ test('preserves sibling stream_options keys while forcing include_usage on', asy
   const input = invocation({
     model: 'm',
     messages: [],
-    stream_options: { extra: 'keep-me', include_usage: false } as unknown as OpenAIChatCompletionsPayload['stream_options'],
+    stream_options: { extra: 'keep-me', include_usage: false } as unknown as OpenAIChatCompletionsPayloadEx['stream_options'],
   });
 
   await withUsageStreamOptionsIncluded(input, stubCtx, okEvents);

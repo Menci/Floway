@@ -4,7 +4,7 @@ import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { decodeResponseBody, type ModelCandidate, directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
@@ -56,7 +56,7 @@ const installRepo = (): InMemoryRepo => {
 
 const makeGatewayCtx = () => mockChatGatewayCtx({ apiKeyId: API_KEY_ID, wantsStream: true });
 
-const makePayload = (overrides: Partial<OpenAIChatCompletionsPayload> = {}): OpenAIChatCompletionsPayload => ({
+const makePayload = (overrides: Partial<OpenAIChatCompletionsPayloadEx> = {}): OpenAIChatCompletionsPayloadEx => ({
   model: 'test-model',
   messages: [{ role: 'user', content: 'hello' }],
   ...overrides,
@@ -171,14 +171,14 @@ test('generate falls through to the next candidate when the first yields an upst
     status: 502, headers: new Headers({ 'content-type': 'application/json' }),
   });
   const firstCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
-    const message = (body as Omit<OpenAIChatCompletionsPayload, 'model'>).messages[0];
+    const message = (body as Omit<OpenAIChatCompletionsPayloadEx, 'model'>).messages[0];
     if (!Array.isArray(message.content) || message.content[0]?.type !== 'image_url') throw new Error('expected image content');
     message.content[0].image_url.url = 'data:image/webp;base64,COMPRESSED';
     return { ok: false, http: firstError, modelKey: 'first-key' };
   });
   let fallbackImageUrl: string | undefined;
   const secondCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
-    const message = (body as Omit<OpenAIChatCompletionsPayload, 'model'>).messages[0];
+    const message = (body as Omit<OpenAIChatCompletionsPayloadEx, 'model'>).messages[0];
     if (!Array.isArray(message.content) || message.content[0]?.type !== 'image_url') throw new Error('expected image content');
     fallbackImageUrl = message.content[0].image_url.url;
     return { ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'second-key', http: { status: 200, headers: new Headers() } };
@@ -309,11 +309,11 @@ test('generate renders model-missing when no candidates are available', async ()
 
 test('alias resolution swaps the inbound model id for the target and overlays rules onto the IR', async () => {
   installRepo();
-  const capturedBodies: OpenAIChatCompletionsPayload[] = [];
+  const capturedBodies: OpenAIChatCompletionsPayloadEx[] = [];
   const observedModelIds: string[] = [];
   const callOpenAIChatCompletions = vi.fn(async (model: unknown, body: unknown): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
     observedModelIds.push((model as { id: string }).id);
-    capturedBodies.push(body as OpenAIChatCompletionsPayload);
+    capturedBodies.push(body as OpenAIChatCompletionsPayloadEx);
     return { ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'gpt-5.4', http: { status: 200, headers: new Headers() } };
   });
   // Alias flow shape: the resolver returns candidates carrying the target's

@@ -498,12 +498,11 @@ test('expandWebSearchCall renders independent replay results', () => {
   assert(typeof out[1].output === 'string' && out[1].output.includes('body2'));
 });
 
-test('expandWebSearchCall emits the not-preserved placeholder even when the wire item still carries results (no payload → we do not trust client-supplied results)', () => {
+test('expandWebSearchCall emits the not-preserved placeholder without signed replay data', () => {
   const out = expandWebSearchCall(
     {
       type: 'web_search_call', id: 'ws_xxx_abc',
       action: { type: 'search', queries: ['caffeine'] },
-      results: [{ type: 'text_result', url: 'u', title: 't', snippet: 'public-wire body' }],
     },
   );
   if (out.callSource !== 'synthesized') throw new Error('Expected a synthesized call');
