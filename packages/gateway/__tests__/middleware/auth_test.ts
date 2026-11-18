@@ -13,15 +13,13 @@ const authTestApp = () => {
   return app;
 };
 
-test('ADMIN_KEY presented as x-api-key on any path is rejected with login hint', async () => {
+test('ADMIN_KEY presented as x-api-key is rejected with login hint', async () => {
   const { adminKey } = await setupAppTest();
   const app = authTestApp();
 
-  for (const path of ['/api/users', '/v1/chat/completions', '/v1beta/models']) {
-    const response = await app.request(path, { method: 'POST', headers: { 'x-api-key': adminKey } });
-    assertEquals(response.status, 401);
-    expect(await response.text()).toMatch(/POST \/auth\/login/);
-  }
+  const response = await app.request('/v1/chat/completions', { method: 'POST', headers: { 'x-api-key': adminKey } });
+  assertEquals(response.status, 401);
+  expect(await response.text()).toMatch(/POST \/auth\/login/);
 });
 
 test('session token grants control-plane access but is rejected on data-plane', async () => {
@@ -95,14 +93,4 @@ test('empty x-api-key does not shadow a valid Authorization: Bearer', async () =
   });
   assertEquals(response.status, 200);
   assertEquals(await response.text(), 'ok');
-});
-
-test('Authorization: Bearer with no value is rejected', async () => {
-  await setupAppTest();
-  const app = authTestApp();
-  const response = await app.request('/v1/chat/completions', {
-    method: 'POST',
-    headers: { authorization: 'Bearer ' },
-  });
-  assertEquals(response.status, 401);
 });

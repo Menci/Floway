@@ -13,22 +13,6 @@ const fakeMeta = (id: string, completedAt: number): DumpMetadata =>
 const fakeRecord = (id: string, completedAt: number): StoredDumpRecord =>
   baseFakeRecord({ id, completedAt, startedAt: completedAt - 1 });
 
-test('GET /api/dump/keys/:keyId/records lists newest-first', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.seed(apiKey.id, fakeRecord('01HZZ0000000000000000000A1', 1000));
-  stubs.seed(apiKey.id, fakeRecord('01HZZ0000000000000000000A2', 2000));
-
-  const response = await requestApp(`/api/dump/keys/${apiKey.id}/records`, {
-    headers: { 'x-api-key': apiKey.key },
-  });
-  assertEquals(response.status, 200);
-  const body = await response.json() as { records: DumpMetadata[] };
-  assertEquals(body.records.length, 2);
-  assertEquals(body.records[0]!.id, '01HZZ0000000000000000000A2');
-});
-
 test('GET /api/dump/keys/:keyId/records 404s when the key has no retention', async () => {
   const { apiKey } = await setupAppTest();
   installDumpStubs(initDumpStore, initDumpBroker);

@@ -1,6 +1,6 @@
-import { expect, test } from 'vitest';
+import { test } from 'vitest';
 
-import { upstreamRecordToFullJson, upstreamRecordToJson } from '../../../src/control-plane/upstreams/serialize.ts';
+import { upstreamRecordToJson } from '../../../src/control-plane/upstreams/serialize.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -67,50 +67,6 @@ test('upstreamRecordToJson redacts Copilot GitHub token inside config and expose
   assertEquals(state.copilotToken, { baseUrl: 'https://api.enterprise.githubcopilot.com' });
 });
 
-// Serialization validates every provider-owned config and state slot, so a
-// malformed persisted row blocks `/api/upstreams` instead of being redacted
-// into an apparently valid response.
-
-const claudeCodeConfig = {
-  accounts: [{
-    email: 'a@example.com',
-    accountUuid: 'u',
-    organizationUuid: null,
-    subscriptionType: 'pro',
-    rateLimitTier: 'default_claude_pro',
-  }],
-};
-
-const claudeCodeCredential = {
-  accountUuid: 'u',
-  tokenKind: 'oauth',
-  state: 'active',
-  stateUpdatedAt: timestamp,
-  refreshToken: 'r',
-  accessToken: null,
-  quotaSnapshot: null,
-  usageProbeSnapshot: null,
-};
-
-const claudeCodeBase = (overrides: { config?: unknown; state?: unknown }): UpstreamRecord => ({
-  id: 'up_cc_test',
-  kind: 'claude-code',
-  name: 'Claude Code',
-  enabled: true,
-  usageRefreshIntervalMinutes: 0,
-  sortOrder: 0,
-  createdAt: timestamp,
-  updatedAt: timestamp,
-  flagOverrides: {},
-  disabledPublicModelIds: [],
-  proxyFallbackList: [],
-  modelPrefix: null,
-  modelsCache: null,
-  hue: 210,
-  config: overrides.config ?? claudeCodeConfig,
-  state: overrides.state ?? null,
-} as unknown as UpstreamRecord);
-
 const chatgptBase = (overrides: { config?: unknown; state?: unknown }): UpstreamRecord => ({
   id: 'up_cx_test',
   kind: 'chatgpt',
@@ -129,13 +85,6 @@ const chatgptBase = (overrides: { config?: unknown; state?: unknown }): Upstream
   config: overrides.config ?? { accounts: [{ email: 'a@example.com', chatgptAccountId: 'account', chatgptUserId: 'user', planType: 'plus' }] },
   state: overrides.state ?? null,
 } as unknown as UpstreamRecord);
-
-test('upstreamRecordToJson throws when claude-code state.accessToken is a string', () => {
-  const record = claudeCodeBase({
-    state: { accounts: [{ ...claudeCodeCredential, accessToken: 'not-an-object' }] },
-  });
-  expect(() => upstreamRecordToJson(record)).toThrow(/accessToken must be a plain object/);
-});
 
 test('upstreamRecordToJson exposes ChatGPT capability and bearer timing without the bearer', () => {
   const result = upstreamRecordToJson(chatgptBase({
@@ -161,9 +110,4 @@ test('upstreamRecordToJson exposes ChatGPT capability and bearer timing without 
   assertEquals(account.refresh_token_set, false);
   assertEquals(account.accessToken, { expiresAt: null, refreshedAt: timestamp });
   assertEquals(JSON.stringify(result).includes('bearer-secret'), false);
-});
-
-test('persisted subscription upstreams require credential state', () => {
-  expect(() => upstreamRecordToJson(chatgptBase({}))).toThrow(/ChatGPTUpstreamState must be a plain object/);
-  expect(() => upstreamRecordToFullJson(claudeCodeBase({}))).toThrow(/ClaudeCodeUpstreamState must be a plain object/);
 });

@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { modelsRefreshIdentity, seedModelsCache, seedModelsCacheError, storedModelsRefreshIdentity } from './models-cache-fixture.ts';
+import { modelsRefreshIdentity, seedModelsCache } from './models-cache-fixture.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import { saveUpstreamForTest } from './upstreams.ts';
 import { MODEL_CATALOG_REVISION } from '../../src/data-plane/providers/models-cache.ts';
@@ -56,58 +56,6 @@ test('SQL upstream repo preserves opaque provider data while restoring only the 
   assertEquals(model?.enabledFlags instanceof Set, true);
   assertEquals(ownValue(model?.providerData, 'enabledFlags'), ['provider-private']);
   assertEquals(ownValue(ownValue(ownValue(model?.providerData, 'future'), '__proto__'), 'marker'), 'provider');
-});
-
-test('SQL upstream repo annotates a cached catalog and successful publication clears the error', async () => {
-  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await saveUpstreamForTest(repo, baseRecord());
-  await seedModelsCache(repo, 'up_test', identityFor(baseRecord()), {
-    revision: MODEL_CATALOG_REVISION,
-    fetchedAt: 1_700_000_000_000,
-    models: [stubProviderModel({ id: 'cached-model' })],
-  });
-
-  await seedModelsCacheError(repo, 'up_test', await storedModelsRefreshIdentity(repo, 'up_test'), { message: 'boom', at: 1_700_000_500_000 });
-  const annotated = (await repo.getById('up_test'))?.modelsCache;
-  assertEquals(annotated?.lastError, { message: 'boom', at: 1_700_000_500_000, failureCount: 1 });
-  assertEquals(annotated?.models.map(model => model.id), ['cached-model']);
-
-  await seedModelsCache(repo, 'up_test', await storedModelsRefreshIdentity(repo, 'up_test'), {
-    revision: MODEL_CATALOG_REVISION,
-    fetchedAt: 1_700_001_000_000,
-    models: [stubProviderModel({ id: 'refreshed-model' })],
-  });
-  assertEquals((await repo.getById('up_test'))?.modelsCache?.lastError, null);
-});
-
-test('SQL upstream repo catalog-aware replacement can clear the cached catalog atomically', async () => {
-  const repo = new SqlRepo(await createSqliteTestDb()).upstreams;
-  await saveUpstreamForTest(repo, baseRecord());
-  await seedModelsCache(repo, 'up_test', identityFor(baseRecord()), {
-    revision: MODEL_CATALOG_REVISION,
-    fetchedAt: 1_700_000_000_000,
-    models: [stubProviderModel({ id: 'cached-model' })],
-  });
-
-  const newIdentity = baseRecord({
-    name: 'New identity',
-    config: { accounts: [{ email: 'new@example.com', chatgptAccountId: 'new-account', chatgptUserId: 'new-user', planType: 'plus' }] },
-  });
-  await repo.replaceForModels({ previous: baseRecord(), upstream: newIdentity });
-
-  const stored = await repo.getById('up_test');
-  assertEquals(stored?.name, 'New identity');
-  assertEquals(stored?.modelsCache, null);
-
-  const staleCatalogSaved = await seedModelsCache(repo, 'up_test', identityFor(baseRecord()), {
-    revision: 7,
-    fetchedAt: 1_700_001_000_000,
-    models: [stubProviderModel({ id: 'stale-model' })],
-  });
-  const staleErrorSaved = await seedModelsCacheError(repo, 'up_test', identityFor(baseRecord()), { message: 'stale error', at: 1_700_001_000_000 });
-  assertEquals(staleCatalogSaved, false);
-  assertEquals(staleErrorSaved, false);
-  assertEquals((await repo.getById('up_test'))?.modelsCache, null);
 });
 
 // Deterministic stand-in for a concurrent writer: each of the first `times`

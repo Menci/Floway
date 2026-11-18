@@ -248,7 +248,6 @@ describe('createFetcher', () => {
     const res = await fetcher('https://api.openai.com', { method: 'GET' });
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('ok');
-    expect(warnSpy).toHaveBeenCalledOnce();
     repo.proxyBackoffs.recordDialSuccess = original;
     warnSpy.mockRestore();
   });

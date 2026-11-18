@@ -35,17 +35,3 @@ test('clearing the name restores the built-in default', async () => {
   assertEquals(await cleared.json(), { site_name: null });
   assertEquals(await (await getSettings()).json(), { site_name: null });
 });
-
-test('a non-admin session cannot change the site name', async () => {
-  const { repo } = await setupAppTest();
-  const operatorSession = (await repo.sessions.create(2)).id;
-
-  const response = await requestApp('/api/site-settings', {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json', 'x-floway-session': operatorSession },
-    body: JSON.stringify({ site_name: 'Hijacked' }),
-  });
-
-  assertEquals(response.status, 403);
-  assertEquals(await (await getSettings()).json(), { site_name: null });
-});

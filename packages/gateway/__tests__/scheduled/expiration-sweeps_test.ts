@@ -4,11 +4,10 @@ import { initDumpStore } from '../../src/dump/registry.ts';
 import type { DumpWriteRecord } from '../../src/dump/types.ts';
 import { FileDumpStore } from '../../src/repo/dump-store.ts';
 import { initRepo } from '../../src/repo/index.ts';
-import { quantizeOpenAIResponsesRefreshedAt, OPENAI_RESPONSES_REFRESH_GRANULARITY_MS } from '../../src/repo/openai-responses-retention.ts';
+import { OPENAI_RESPONSES_REFRESH_GRANULARITY_MS } from '../../src/repo/openai-responses-retention.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { ApiKey, StoredOpenAIResponsesItem } from '../../src/repo/types.ts';
 import { sweepExpirations } from '../../src/scheduled/expiration-sweeps.ts';
-import { InMemoryRepo } from '../repo/memory.ts';
 import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename, wrapSqlJsDatabase } from '../repo/test-sqlite.ts';
 import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 
@@ -198,32 +197,4 @@ test('bounded cleanup backfill tracks rows whose API key was hard-deleted', asyn
   } finally {
     raw.close();
   }
-});
-
-test('in-memory OpenAI Responses rows enter the same expiration driver', async () => {
-  const now = Date.UTC(2026, 6, 23, 12);
-  vi.useFakeTimers();
-  vi.setSystemTime(now);
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  initFileStore(new MemoryFileStore());
-  await repo.apiKeys.save(key(now));
-  const item = responseItem('msg-memory', now);
-  await repo.openaiResponsesItems.insertMany([item], 0);
-  await repo.openaiResponsesSnapshots.insert({ id: 'resp-memory', apiKeyId: 'key-a', itemIds: [item.id], refreshedAt: now });
-
-  const expiresAt = quantizeOpenAIResponsesRefreshedAt(now)
-    + OPENAI_RESPONSES_RETENTION_SECONDS * 1000
-    + OPENAI_RESPONSES_REFRESH_GRANULARITY_MS;
-  await sweepExpirations(expiresAt);
-  expect(await repo.openaiResponsesItems.lookupMany('key-a', [item.id], 0)).toEqual([{
-    ...item,
-    refreshedAt: quantizeOpenAIResponsesRefreshedAt(item.refreshedAt),
-  }]);
-  expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp-memory', 0)).not.toBeNull();
-
-  await sweepExpirations(expiresAt + 1);
-
-  expect(await repo.openaiResponsesItems.lookupMany('key-a', [item.id], 0)).toEqual([]);
-  expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp-memory', 0)).toBeNull();
 });

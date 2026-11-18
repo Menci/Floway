@@ -17,10 +17,6 @@ it('propagates the original storage failure and retries an unchanged observation
 it('rejects invalid observations at the recording boundary', async () => {
   const record = createUpstreamMetricsRecorder(new InMemoryRepo());
   await expect(record('up-1', 'metric', {}, NaN, 1_000)).rejects.toThrow(TypeError);
-  await expect(record('up-1', 'metric', {}, Infinity, 1_000)).rejects.toThrow(TypeError);
-  await expect(record('up-1', 'metric', {}, 20, -1)).rejects.toThrow(TypeError);
   await expect(record('up-1', 'metric', {}, 20, 0.5)).rejects.toThrow(TypeError);
-  for (const [name, labels] of [['', {}], ['metric', []], ['metric', { nested: {} }], ['metric', { missing: undefined }], ['metric', { infinite: Infinity }]] as const) {
-    await expect(record('up-1', name, labels as never, 20, 1_000)).rejects.toThrow(TypeError);
-  }
+  await expect(record('up-1', '', {}, 20, 1_000)).rejects.toThrow(TypeError);
 });

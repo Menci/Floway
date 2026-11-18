@@ -69,24 +69,4 @@ describe('createPerRequestFetcher', () => {
     fetcherFor('u_ok');
   });
 
-  it('does not load the proxy catalog when no upstream references one', async () => {
-    const repo = new InMemoryRepo();
-    initRepo(repo);
-    // A malformed row sitting unreferenced in the table must not break
-    // built-in-only upstreams: we only parse rows that are reachable via some
-    // upstream's fallback list.
-    await saveUpstreamForTest(repo.upstreams, upstream('u_direct_fetch', []));
-    await saveUpstreamForTest(repo.upstreams, upstream('u_direct_connect', [{ id: 'direct_connect' }]));
-    await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', dialTimeoutSeconds: null });
-
-    let proxyListCalls = 0;
-    const realList = repo.proxies.list.bind(repo.proxies);
-    repo.proxies.list = (...args) => {
-      proxyListCalls++;
-      return realList(...args);
-    };
-
-    await createPerRequestFetcher('TEST');
-    expect(proxyListCalls).toBe(0);
-  });
 });

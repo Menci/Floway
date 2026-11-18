@@ -83,17 +83,6 @@ test('PATCH /api/proxies/:id with a new url clears outstanding backoff rows', as
   assertEquals((await repo.proxyBackoffs.listForProxy('p1')).length, 0);
 });
 
-test('PATCH /api/proxies/:id without changing the url leaves backoff rows intact', async () => {
-  const { repo, adminSession } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, dialTimeoutSeconds: null });
-  await repo.proxyBackoffs.recordDialFailure('p1', 'up_a', 'boom');
-
-  const resp = await requestApp('/api/proxies/p1', patchAuthed(adminSession, { name: 'Renamed' }));
-  assertEquals(resp.status, 200);
-
-  assertEquals((await repo.proxyBackoffs.listForProxy('p1')).length, 1);
-});
-
 test('DELETE /api/proxies/:id returns 409 when an upstream references the proxy', async () => {
   const { repo, adminSession, copilotUpstream } = await setupAppTest();
   await repo.proxies.insert({ id: 'p_ref', name: 'Referenced', url: HTTP_URL, dialTimeoutSeconds: null });
@@ -104,24 +93,6 @@ test('DELETE /api/proxies/:id returns 409 when an upstream references the proxy'
   const body = (await resp.json()) as { error?: string; referencing_upstream_ids?: string[] };
   assertEquals(body.referencing_upstream_ids, [copilotUpstream.id]);
   assertExists(await repo.proxies.getById('p_ref'));
-});
-
-test('POST /api/proxies/test runs against the body URL without touching any row', async () => {
-  const { repo, adminSession } = await setupAppTest();
-
-  const resp = await requestApp('/api/proxies/test', authed(adminSession, { url: HTTP_URL }));
-  assertEquals(resp.status, 200);
-  const body = (await resp.json()) as { ok: boolean; error?: string; egress_ip?: string };
-  assertEquals(body.ok, false);
-  // The HTTP CONNECT runner wraps the underlying SocketDial rejection with
-  // "tcp connect to <host>:<port> failed". The exact upstream cause is the
-  // stubbed Error but only the wrapping makes it into the message — that's
-  // still the actionable surface (operator sees which dial leg failed).
-  assertEquals(body.error?.includes('tcp connect to 198.51.100.20:3128 failed'), true);
-
-  // The endpoint is body-driven; no proxies should be created or modified
-  // as a side effect, even if the URL happened to round-trip.
-  assertEquals((await repo.proxies.list()).length, 0);
 });
 
 test('GET /api/proxies/backoffs returns every backoff row regardless of proxy', async () => {

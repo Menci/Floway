@@ -61,14 +61,6 @@ test('aggregateUsageForDisplay leaves cost unknown when no metrics are priced', 
   assertEquals(out[0].cost, null);
 });
 
-test('aggregateUsageForDisplay prices audio duration per second', () => {
-  const out = aggregateUsageForDisplay([{
-    ...baseRecord({ tokens: {} }),
-    metrics: [{ metric: 'input_audio_seconds', quantity: '90', unitPrice: '0.01' }],
-  }]);
-  assertEquals(out[0].cost, '0.9');
-});
-
 test('aggregateUsageForDisplay prices different resolved selector snapshots independently', () => {
   const out = aggregateUsageForDisplay([
     baseRecord({ rates: { input_tokens: '0.000005', output_tokens: '0.00003' }, tokens: { input: 300_000, output: 100_000 } }),

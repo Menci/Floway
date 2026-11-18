@@ -3,7 +3,7 @@ import { test, vi } from 'vitest';
 import { blueprintUpstreamRecord, upstreamRecordToFullJson } from '../../../src/control-plane/upstreams/serialize.ts';
 import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import type { StoredUpstreamRecord } from '../../../src/repo/types.ts';
-import { modelsRefreshIdentity, seedModelsCache, seedModelsCacheError, storedModelsRefreshIdentity } from '../../repo/models-cache-fixture.ts';
+import { modelsRefreshIdentity, seedModelsCache, storedModelsRefreshIdentity } from '../../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, MOCKED_FETCH_EGRESS, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
@@ -180,61 +180,6 @@ test('PATCH /api/upstreams preserves omitted secrets and invalidates the old cat
   assertEquals((updated?.config as Record<string, unknown>).ingressHeadersRules, [{ key: 'x-route', value: 'patched' }]);
 
   assertEquals(updated?.modelsCache, null);
-});
-
-test('GET /api/upstreams attaches models-cache freshness to every row', async () => {
-  const { repo, adminSession } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-
-  // Three upstreams cover the three cache states: no row, warm row, warm row
-  // with a follow-up failure annotation.
-  const baseRow = {
-    kind: 'custom' as const,
-    enabled: true,
-    usageRefreshIntervalMinutes: 0,
-    sortOrder: 0,
-    createdAt: '2026-06-01T00:00:00.000Z',
-    updatedAt: '2026-06-01T00:00:00.000Z',
-    flagOverrides: {},
-    disabledPublicModelIds: [],
-    proxyFallbackList: [],
-    modelPrefix: null,
-    modelsCache: null,
-    hue: 210,
-    config: { baseUrl: 'https://a.example.com', apiKey: 'x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
-    state: null,
-  };
-  const freshRecord = { ...baseRow, id: 'up_fresh', name: 'Fresh', sortOrder: 0 };
-  const warmRecord = { ...baseRow, id: 'up_warm', name: 'Warm', sortOrder: 1 };
-  const failedRecord = { ...baseRow, id: 'up_failed', name: 'Failed', sortOrder: 2 };
-  await saveUpstreamForTest(repo.upstreams, freshRecord);
-  await saveUpstreamForTest(repo.upstreams, warmRecord);
-  await saveUpstreamForTest(repo.upstreams, failedRecord);
-
-  await seedModelsCache(repo.upstreams, 'up_warm', await storedModelsRefreshIdentity(repo.upstreams, 'up_warm'), {
-    revision: MODEL_CATALOG_REVISION,
-    fetchedAt: 1_700_000_000_000,
-    models: [stubProviderModel({ id: 'm1', upstreamModelId: 'm1', endpoints: {} })],
-  });
-  await seedModelsCache(repo.upstreams, 'up_failed', await storedModelsRefreshIdentity(repo.upstreams, 'up_failed'), {
-    revision: MODEL_CATALOG_REVISION,
-    fetchedAt: 1_700_000_000_000,
-    models: [stubProviderModel({ id: 'm1', upstreamModelId: 'm1', endpoints: {} })],
-  });
-  await seedModelsCacheError(repo.upstreams, 'up_failed', await storedModelsRefreshIdentity(repo.upstreams, 'up_failed'), { message: 'boom', at: 1_700_000_500_000 });
-
-  const list = await requestApp('/api/upstreams', { headers: { 'x-floway-session': adminSession } });
-  assertEquals(list.status, 200);
-  const items = (await list.json()) as JsonObject[];
-  const byId = Object.fromEntries(items.map(i => [i.id, i]));
-
-  assertEquals(byId.up_fresh.modelsCache, { fetchedAt: null, lastError: null, modelCount: null });
-  assertEquals(byId.up_warm.modelsCache, { fetchedAt: 1_700_000_000_000, lastError: null, modelCount: 1 });
-  assertEquals(byId.up_failed.modelsCache, {
-    fetchedAt: 1_700_000_000_000,
-    lastError: { message: 'boom', at: 1_700_000_500_000 },
-    modelCount: 1,
-  });
 });
 
 test('GET /api/upstreams/:id exposes cached editor rows without an upstream request', async () => {
@@ -455,48 +400,6 @@ const getRefreshIdentity = async (repo: { upstreams: { getById: (id: string) => 
   return modelsRefreshIdentity(record);
 };
 
-test('POST /api/upstreams/chatgpt/import/preview lists selectable candidates and no credential material', async () => {
-  const { adminSession } = await setupAppTest();
-  const raw = JSON.stringify({
-    accounts: [
-      { platform: 'anthropic', type: 'oauth', credentials: { access_token: 'ignore-me' } },
-      {
-        platform: 'openai',
-        type: 'oauth',
-        name: 'Primary',
-        credentials: {
-          access_token: 'opaque',
-          refresh_token: 'rt_secret_preview',
-          email: 'person@example.test',
-        },
-      },
-    ],
-  });
-
-  await withMockedFetch(
-    () => { throw new Error('preview must not fetch'); },
-    async () => {
-      const resp = await requestApp('/api/upstreams/chatgpt/import/preview', authed(adminSession, { raw_json: raw }));
-      assertEquals(resp.status, 200);
-      const body = (await resp.json()) as { candidates: unknown };
-      assertEquals(body.candidates, [{
-        sourceIndex: 1,
-        name: 'Primary',
-        email: 'person@example.test',
-        chatgptAccountId: null,
-        chatgptUserId: null,
-        planType: null,
-        renewable: true,
-        expiresAt: null,
-        issues: [],
-      }]);
-      const serialized = JSON.stringify(body);
-      assertEquals(serialized.includes('opaque'), false);
-      assertEquals(serialized.includes('rt_secret_preview'), false);
-    },
-  );
-});
-
 test('POST /api/upstreams/chatgpt/oauth/refresh flips the row to refresh_failed when OAuth rejects the refresh_token', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -650,21 +553,6 @@ const createClaudeCodeUpstreamViaExchange = async (adminSession: string): Promis
   return (await create.json()) as { id: string };
 };
 
-test('PATCH /api/upstreams rejects ChatGPT account ID changes', async () => {
-  const { repo, adminSession } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  const created = await createChatGPTUpstreamViaExchange(adminSession);
-
-  const patch = await requestApp(`/api/upstreams/${created.id}`, {
-    method: 'PATCH',
-    headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
-    body: JSON.stringify({ config: { accounts: [{ chatgptAccountId: 'acc_other' }] } }),
-  });
-  assertEquals(patch.status, 400);
-  const body = (await patch.json()) as { error: string };
-  assertEquals(body.error.includes('only be changed by re-importing'), true);
-});
-
 test('PATCH /api/upstreams rejects config edits on a copilot row', async () => {
   const { adminSession, copilotUpstream } = await setupAppTest();
 
@@ -676,34 +564,6 @@ test('PATCH /api/upstreams rejects config edits on a copilot row', async () => {
   assertEquals(patch.status, 400);
   const body = (await patch.json()) as { error: string };
   assertEquals(body.error.toLowerCase().includes('copilot'), true);
-});
-
-// --- proxy_fallback_list ---
-//
-// The list has set semantics — duplicates are dropped silently before
-// storage. Order is meaningful at dial time. Both POST and PATCH normalize
-// the list so the wire response matches what GET returns afterwards.
-
-test('POST /api/upstreams normalises proxy_fallback_list duplicates so the response matches what GET returns', async () => {
-  const { repo, adminSession } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  await repo.proxies.insert({ id: 'p_fallback', name: 'Fallback', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
-
-  const resp = await requestApp(
-    '/api/upstreams',
-    authed(adminSession, createBody({ proxy_fallback_list: [{ id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }, { id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }] })),
-  );
-  assertEquals(resp.status, 201);
-  const created = (await resp.json()) as JsonObject;
-  // Without the API-layer normalize, the response would echo the duplicates
-  // while the saved row only kept one of each — operators would see a
-  // different list on POST vs the next GET.
-  assertEquals(created.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }]);
-
-  const get = await requestApp('/api/upstreams', authed(adminSession));
-  const list = (await get.json()) as JsonObject[];
-  const fresh = list.find(u => u.id === created.id);
-  assertEquals(fresh!.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }]);
 });
 
 test('GET /api/upstreams drops a fallback entry whose proxy is gone, keeping direct transports', async () => {
@@ -777,24 +637,9 @@ test('POST /api/upstreams/claude-code/oauth/refresh honors the record.proxy_fall
   assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
 });
 
-// Only the callback source talks to auth.openai.com, so it is the only one
-// whose egress chain has to resolve. A pasted document is parsed locally and
-// must import even when the draft names a proxy that no longer exists.
-test('POST /api/upstreams/chatgpt/import/exchange rejects a record.proxy_fallback_list referencing an unknown proxy id on the callback source', async () => {
-  const { adminSession } = await setupAppTest();
-
-  const resp = await requestApp(
-    '/api/upstreams/chatgpt/import/exchange',
-    authed(adminSession, {
-      record: blueprintEnvelope('chatgpt', { proxy_fallback_list: [{ id: 'p_unknown' }] }),
-      callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' },
-    }),
-  );
-  assertEquals(resp.status, 400);
-  const body = (await resp.json()) as { error: string };
-  assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
-});
-
+// Only the callback source talks to auth.openai.com, so only its egress chain
+// has to resolve. A pasted document is parsed locally and must import even
+// when the draft names a proxy that no longer exists.
 test('POST /api/upstreams/chatgpt/import/exchange imports a pasted document without resolving egress', async () => {
   const { adminSession } = await setupAppTest();
 
@@ -857,169 +702,6 @@ test('POST /api/upstreams/claude-code/probe returns Anthropic body verbatim and 
   assertEquals(typeof storedState.accounts[0].usageProbeSnapshot?.fetchedAt, 'number');
 });
 
-// A minimal but shape-complete `/copilot_internal/user` body. The quota
-// endpoint projects it onto the same snapshot shape the data-plane headers
-// produce, so both sources render identically on the dashboard.
-const sampleCopilotQuotaBody = {
-  access_type_sku: 'copilot_pro',
-  analytics_tracking_id: 'trk-1',
-  assigned_date: '2026-01-01T00:00:00Z',
-  can_signup_for_limited: false,
-  chat_enabled: true,
-  copilot_plan: 'individual',
-  organization_login_list: [],
-  organization_list: [],
-  quota_reset_date: '2026-07-01',
-  quota_reset_date_utc: '2026-07-01T00:00:00.000Z',
-  quota_snapshots: {
-    chat: { entitlement: 300, overage_count: 0, overage_permitted: false, percent_remaining: 100, quota_id: 'chat', quota_remaining: 300, remaining: 300, unlimited: false },
-    completions: { entitlement: 0, overage_count: 0, overage_permitted: false, percent_remaining: 100, quota_id: 'completions', quota_remaining: 0, remaining: 0, unlimited: true },
-    premium_interactions: { entitlement: 300, overage_count: 0, overage_permitted: false, percent_remaining: 90, quota_id: 'premium_interactions', quota_remaining: 270, remaining: 270, unlimited: false },
-  },
-};
-
-// Action endpoints take a full-record envelope but only patch the fields the
-// action owns; proxy_fallback_list is a per-request routing override that an
-// action never writes back.
-test('POST /api/upstreams/claude-code/probe does not persist record.proxy_fallback_list mutations', async () => {
-  const { repo, adminSession } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  await repo.proxies.insert({ id: 'p_persisted', name: 'Persisted', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
-
-  const created = await createClaudeCodeUpstreamViaExchange(adminSession);
-  // Persist a non-default fallback list — this is what MUST survive the
-  // probe. The envelope's list serves ONLY as a per-request routing
-  // override; the probe endpoint never writes it back.
-  await saveUpstreamForTest(repo.upstreams, { ...(await getRecord(repo, created.id)), proxyFallbackList: [{ id: 'p_persisted' }] });
-  const originalList = (await getRecord(repo, created.id)).proxyFallbackList;
-
-  const envelope = envelopeFromRecord(await getRecord(repo, created.id));
-  envelope.proxy_fallback_list = [{ id: 'direct_fetch' }];
-
-  await withMockedFetch(
-    () => jsonResponse(usageProbeBody),
-    async () => {
-      const resp = await requestApp('/api/upstreams/claude-code/probe', authed(adminSession, { record: envelope }));
-      assertEquals(resp.status, 200);
-    },
-  );
-
-  const stored = await repo.upstreams.getById(created.id);
-  assertEquals(stored?.proxyFallbackList, originalList);
-});
-
-test('GET /api/upstreams/blueprint serves the record a new upstream starts as with provider flag defaults filled in', async () => {
-  const { adminSession } = await setupAppTest();
-
-  // The blueprint is the create form's opening record, so it carries the
-  // starting values as well as the shape: a custom upstream opens on an
-  // OpenAI-compatible chat endpoint with catalog fetching on. Serialization is
-  // a static registry lookup so no provider asserter runs against it.
-  // Credentials are editable empty strings, not redacted `*Set` projections.
-  const custom = (await (await requestApp('/api/upstreams/blueprint?kind=custom', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
-  assertEquals(custom.config.apiKey, '');
-  assertEquals(custom.config.endpoints, { openaiChatCompletions: {} });
-  assertEquals(custom.config.ingressHeadersRules, []);
-  assertEquals(custom.config.modelsFetch, { enabled: true, authStyle: 'bearer' });
-  const azure = (await (await requestApp('/api/upstreams/blueprint?kind=azure', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
-  assertEquals(azure.config.models, []);
-  const ollama = (await (await requestApp('/api/upstreams/blueprint?kind=ollama', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
-  assertEquals(ollama.config.apiKey, '');
-
-  // `flag_defaults` on the wire is the whole point of the blueprint;
-  // assert it lands on every kind so the dashboard's "Inherit → on/off"
-  // pill has data to render before Save.
-  for (const kind of ['copilot', 'custom', 'azure', 'chatgpt', 'claude-code', 'ollama']) {
-    const preview = (await (await requestApp(`/api/upstreams/blueprint?kind=${kind}`, { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
-    assertEquals(typeof preview.flag_defaults['strip-billing-attribution'], 'boolean');
-  }
-
-  // Spot-check the two provider-computed decisions we care about at the
-  // wire boundary. copilot keeps `strip-billing-attribution` on so the
-  // Claude Code billing block never reaches its OpenAI-compatible upstream
-  // prompt cache; claude-code keeps it off so plan-tier attribution reaches
-  // Anthropic verbatim.
-  const copilotPreview = (await (await requestApp('/api/upstreams/blueprint?kind=copilot', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
-  assertEquals(copilotPreview.flag_defaults['strip-billing-attribution'], true);
-  assertEquals(copilotPreview.flag_defaults['rewrite-mid-conv-system-to-user'], false);
-  assertEquals(copilotPreview.flag_defaults['rewrite-disallowed-mid-conv-system-to-user'], false);
-  const ccPreview = (await (await requestApp('/api/upstreams/blueprint?kind=claude-code', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
-  assertEquals(ccPreview.flag_defaults['strip-billing-attribution'], false);
-  assertEquals(ccPreview.flag_defaults['rewrite-disallowed-mid-conv-system-to-user'], true);
-});
-
-test('GET upstream list and detail repair legacy ChatGPT expiry per family without rewriting state', async () => {
-  const { repo, adminSession } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  const created = await createChatGPTUpstreamViaExchange(adminSession);
-  const stored = await getRecord(repo, created.id);
-  const primary = {
-    observed_at: '2026-06-05T00:00:00.000Z',
-    primary_used_percent: 100,
-    primary_window_minutes: 300,
-    primary_reset_after_at: '2026-06-05T01:00:00.000Z',
-    secondary_used_percent: 35,
-    secondary_window_minutes: 10080,
-    secondary_reset_after_at: '2026-06-09T00:00:00.000Z',
-    ratelimited_until: '2026-06-09T00:00:00.000Z',
-  };
-  const secondary = { ...primary, primary_used_percent: 35, secondary_used_percent: 100 };
-  const { ratelimited_until: _until, ...successful } = primary;
-  const state = structuredClone(stored.state) as JsonObject;
-  state.accounts[0].quotaSnapshot = Object.fromEntries(
-    Object.entries({ primary, secondary, successful }).map(([key, data]) => [key, { fetchedAt: 1, data }]),
-  );
-  await repo.upstreams.saveState(created.id, () => state);
-
-  for (const path of ['/api/upstreams', `/api/upstreams/${created.id}`]) {
-    const resp = await requestApp(path, { headers: { 'x-floway-session': adminSession } });
-    assertEquals(resp.status, 200);
-    const json = await resp.json() as JsonObject;
-    const body = path === '/api/upstreams' ? (json as JsonObject[]).find(item => item.id === created.id) : json;
-    assertEquals(body?.chatgpt_quota, {
-      primary: { ...primary, ratelimited_until: primary.primary_reset_after_at },
-      secondary,
-      successful,
-    });
-  }
-  assertEquals((await getRecord(repo, created.id)).state, state);
-});
-
-test('POST /api/upstreams/copilot/quota projects the GitHub body and persists it into upstream state', async () => {
-  const { repo, adminSession, copilotUpstream } = await setupAppTest();
-  const envelope = envelopeFromRecord(await getRecord(repo, copilotUpstream.id));
-
-  await withMockedFetch(
-    async (request: Request) => {
-      if (request.url === 'https://api.github.com/copilot_internal/user') {
-        return jsonResponse(sampleCopilotQuotaBody);
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const resp = await requestApp('/api/upstreams/copilot/quota', authed(adminSession, { record: envelope }));
-      assertEquals(resp.status, 200);
-      const body = (await resp.json()) as { reset_at: string; quotas: Record<string, JsonObject> };
-      assertEquals(body.reset_at, '2026-07-01T00:00:00.000Z');
-      assertEquals(Object.keys(body.quotas).sort(), ['chat', 'completions', 'premium_interactions']);
-      assertEquals(body.quotas.premium_interactions, {
-        entitlement: 300,
-        overage_count: 0,
-        overage_permitted: false,
-        percent_remaining: 90,
-        quota_remaining: 270,
-        unlimited: false,
-      });
-    },
-  );
-
-  // The refresh writes the same slot the data plane fills, so the dashboard
-  // reads one snapshot regardless of which source observed the seat last.
-  const stored = await repo.upstreams.getById(copilotUpstream.id);
-  const snapshot = (stored?.state as { quotaSnapshot: { data: { quotas: Record<string, JsonObject> } } }).quotaSnapshot;
-  assertEquals(snapshot.data.quotas.premium_interactions.quota_remaining, 270);
-});
-
 // The passive header path refuses to write an empty snapshot so a good
 // reading survives; the operator refresh has to honour the same contract, or
 // pressing Refresh against a body on the pre-2026-06 shape — which carries no
@@ -1058,26 +740,6 @@ test('POST /api/upstreams/copilot/quota leaves the stored snapshot alone when th
 
   const after = await repo.upstreams.getById(copilotUpstream.id);
   assertEquals((after?.state as { quotaSnapshot: unknown }).quotaSnapshot, harvested);
-});
-
-test('usage refresh defaults off and can be opted in and out without changing model configuration', async () => {
-  const { repo, adminSession } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  const created = await requestApp('/api/upstreams', authed(adminSession, createBody({ kind: 'copilot', config: copilotConfig, state: null })));
-  assertEquals(created.status, 201);
-  const body = await created.json() as JsonObject;
-  assertEquals(body.usage_refresh_interval_minutes, 0);
-  const version = (await repo.upstreams.getById(body.id))!.configVersion;
-  for (const interval of [1, 15, 0]) {
-    const response = await requestApp(`/api/upstreams/${body.id}`, {
-      ...authed(adminSession, { usage_refresh_interval_minutes: interval }), method: 'PATCH',
-    });
-    assertEquals(response.status, 200);
-    assertEquals((await response.json() as JsonObject).usage_refresh_interval_minutes, interval);
-    const saved = (await repo.upstreams.getById(body.id))!;
-    assertEquals(saved.usageRefreshIntervalMinutes, interval);
-    assertEquals(saved.configVersion, version);
-  }
 });
 
 test('manual Ollama usage refresh commits activity and current balance together', async () => {

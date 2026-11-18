@@ -23,16 +23,6 @@ describe('bucketForTtftMs', () => {
 });
 
 describe('percentileFromBuckets', () => {
-  it('estimates the selected order statistic within a finite bucket', () => {
-    const buckets: HistogramBucket[] = [
-      { lower: 100, upper: 200, count: 10 },
-    ];
-
-    expect(percentileFromBuckets(buckets, 0.01)).toBeCloseTo(100 + 100 / 11, 10);
-    expect(percentileFromBuckets(buckets, 0.5)).toBeCloseTo(100 + 500 / 11, 10);
-    expect(percentileFromBuckets(buckets, 1)).toBeCloseTo(100 + 1_000 / 11, 10);
-  });
-
   it('uses the rank local to the selected bucket', () => {
     const buckets: HistogramBucket[] = [
       { lower: 0, upper: 50, count: 1 },

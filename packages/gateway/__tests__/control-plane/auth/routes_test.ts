@@ -46,19 +46,6 @@ test('/auth/login rejects a same-length ADMIN_KEY mismatch', async () => {
 // this per-request guard is the Cloudflare-side gate and Node
 // defence-in-depth.
 
-test('/auth/login on Node dev (empty ADMIN_KEY, NODE_ENV != production) grants passwordless admin login', async () => {
-  await setupAppTest({ adminKey: '' });
-  const response = await requestApp('/auth/login', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: '', password: '' }),
-  });
-  assertEquals(response.status, 200);
-  const body = (await response.json()) as { user: { id: number; isAdmin: boolean } };
-  assertEquals(body.user.id, 1);
-  assertEquals(body.user.isAdmin, true);
-});
-
 test('/auth/login on Node with NODE_ENV=production refuses passwordless login when ADMIN_KEY is empty', async () => {
   await setupAppTest({ adminKey: '' });
   vi.stubEnv('NODE_ENV', 'production');

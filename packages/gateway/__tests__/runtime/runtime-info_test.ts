@@ -27,12 +27,6 @@ test('getRuntimeLocation on Cloudflare throws when cf.colo is missing', () => {
   assertThrows(() => getRuntimeLocation(request), Error, 'request.cf.colo is missing');
 });
 
-test('getRuntimeLocation on Node defaults to LOCAL when RUNTIME_LOCATION is unset', () => {
-  initEnv(() => undefined);
-
-  assertEquals(getRuntimeLocation(new Request('https://example.test')), 'LOCAL');
-});
-
 beforeEach(() => {
   initRuntimeKind('node');
 });

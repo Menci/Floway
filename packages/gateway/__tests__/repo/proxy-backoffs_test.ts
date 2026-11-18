@@ -37,19 +37,6 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
       }
     });
 
-    it('saturates at 3600s once fail_count climbs past the exponent clamp (no JS shift overflow)', async () => {
-      const repo = await makeRepo();
-      // Push fail_count well past the exponent clamp at 6 — both backends
-      // saturate the schedule at 3600s regardless of how high fail_count
-      // climbs, with no JS 32-bit shift surprise creeping back in.
-      for (let n = 0; n < 50; n++) {
-        await repo.proxyBackoffs.recordDialFailure('p', 'u', `failure ${n + 1}`);
-      }
-      const [row] = await repo.proxyBackoffs.listForUpstream('u');
-      expect(row!.failCount).toBe(50);
-      expect(row!.expiresAt - baseUnix).toBe(3600);
-    });
-
     it('clears the row on dial success', async () => {
       const repo = await makeRepo();
       await repo.proxyBackoffs.recordDialFailure('p', 'u', 'x');

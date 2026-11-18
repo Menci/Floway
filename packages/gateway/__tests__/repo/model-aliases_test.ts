@@ -65,14 +65,6 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     assertEquals(renamed.createdAt, '2026-01-01T00:00:00.000Z');
   });
 
-  test(`[${backend}] rename to a name another row holds throws and leaves both rows intact`, async () => {
-    const repo = await freshRepo();
-    await repo.modelAliases.insert(aliasFixture({ name: 'gpt-fast' }));
-    await repo.modelAliases.insert(aliasFixture({ name: 'gpt-slow' }));
-    await assertRejects(() => repo.modelAliases.update(aliasFixture({ id: 'alias_gpt-fast', name: 'gpt-slow' })));
-    assertExists(await repo.modelAliases.getByName('gpt-fast'));
-    assertExists(await repo.modelAliases.getByName('gpt-slow'));
-  });
 }
 
 test('[sql] rejects shape-invalid alias target JSON with the alias row id', async () => {

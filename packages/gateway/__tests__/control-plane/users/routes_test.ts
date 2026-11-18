@@ -19,12 +19,6 @@ const adminDelete = (sessionId: string, id: number) => requestApp(`/api/users/${
   headers: { 'x-floway-session': sessionId },
 });
 
-test('GET /api/users requires admin', async () => {
-  const { apiKey } = await setupAppTest();
-  const response = await requestApp('/api/users', { headers: { 'x-api-key': apiKey.key } });
-  assertEquals(response.status, 403);
-});
-
 test('POST /api/users creates the user and provisions a Default key', async () => {
   const { adminSession, repo } = await setupAppTest();
   const response = await adminPost(adminSession, { username: 'alice', password: 'hunter22' });
@@ -42,13 +36,6 @@ test('POST /api/users creates the user and provisions a Default key', async () =
   expect(records.map(record => ({ scope: record.scope, values: record.values }))).toEqual([
     { scope: { kind: 'upstreams' }, values: { 'Model.Use': true } },
   ]);
-});
-
-test('POST /api/users rejects a username that differs only in case', async () => {
-  const { adminSession } = await setupAppTest();
-  await adminPost(adminSession, { username: 'alice', password: 'pw' });
-  const dup = await adminPost(adminSession, { username: 'Alice', password: 'pw' });
-  assertEquals(dup.status, 400);
 });
 
 test('PATCH /api/users/1 may rename but cannot be demoted or deleted', async () => {

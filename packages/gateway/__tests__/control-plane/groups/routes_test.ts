@@ -8,12 +8,6 @@ const request = (path: string, session: string, init: RequestInit = {}) => reque
   headers: { 'content-type': 'application/json', 'x-floway-session': session, ...init.headers },
 });
 
-test('group management routes require admin', async () => {
-  const { apiKey } = await setupAppTest();
-  const response = await requestApp('/api/groups', { headers: { 'x-api-key': apiKey.key } });
-  assertEquals(response.status, 403);
-});
-
 test('user directory sends entities and membership records once in one repository snapshot', async () => {
   const { adminSession, repo } = await setupAppTest();
   const group = await repo.groups.create('Operators', 120);

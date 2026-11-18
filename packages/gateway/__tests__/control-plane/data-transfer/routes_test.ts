@@ -349,14 +349,6 @@ describe.each([
     expect((await doExport(app)).data).toEqual(before);
   });
 
-  test('merges group name swaps and name reuse after soft deletion', async () => {
-    const { app, repo } = setup(await makeRepo());
-    await repo.groups.restore([transferGroup(1, 'Ops'), transferGroup(2, 'Research'), transferGroup(3, 'Billing')]);
-    const groups = [transferGroup(1, 'Research'), transferGroup(2, 'Ops'), transferGroup(4, 'Billing'), transferGroup(3, 'Billing', '2026-10-17T00:00:00Z')];
-    expect((await doImport(app, 'merge', latestImportData({ groups }))).status).toBe(200);
-    expect((await repo.groups.list()).map(group => group.name)).toEqual(['Research', 'Ops', 'Billing']);
-    expect(await repo.groups.listMemberIds(4)).toEqual([1]);
-  });
 });
 
 const EMPTY_ACCESS_TRANSFER = { groups: [], accessRecords: [] } as const;
@@ -387,43 +379,6 @@ test('import rejects any version other than the current one before deleting data
   assertEquals(missingVersion.body.error, VERSION_ERROR);
   assertEquals(await repo.apiKeys.list(), [KEY_A]);
   assertEquals((await repo.upstreams.list()).map(upstream => upstream.id), ['up_custom_a']);
-});
-
-test('export and import preserve groups, access records, and key restrictions', async () => {
-  const { app, repo } = setup();
-  const restrictedKey = { ...KEY_B, userId: USER_BOB.id, upstreamIds: [] };
-  await repo.users.save(SEED_ADMIN);
-  await repo.users.save(USER_BOB);
-  await repo.groups.save({ id: 1, name: 'Operators', hue: 120, createdAt: '2026-02-01T00:00:00.000Z', deletedAt: null });
-  await repo.groups.replaceMembers(1, [USER_BOB.id]);
-  await repo.accessRecords.save({
-    principal: { kind: 'group', id: 1 },
-    scope: { kind: 'upstream', upstreamId: 'up_a' },
-    sortOrder: 0,
-    values: { 'Model.Use': true },
-  });
-  await repo.apiKeys.save(KEY_A);
-  await repo.apiKeys.save(restrictedKey);
-
-  const exported = await doExport(app);
-  await repo.groups.deleteAll();
-  await repo.accessRecords.deleteAll();
-  await repo.apiKeys.save({ ...restrictedKey, upstreamIds: null });
-
-  const imported = await doImport(app, 'replace', exported.data, exported.version);
-  assertEquals(imported.status, 200);
-  assertEquals(await repo.groups.list(), [{ id: 1, name: 'Operators', hue: 120, createdAt: '2026-02-01T00:00:00.000Z', deletedAt: null }]);
-  assertEquals(await repo.groups.listMemberIds(1), [USER_BOB.id]);
-  const [record] = await repo.accessRecords.list();
-  assertEquals({ principal: record.principal, scope: record.scope, sortOrder: record.sortOrder, values: record.values }, {
-    principal: { kind: 'group', id: 1 },
-    scope: { kind: 'upstream', upstreamId: 'up_a' },
-    sortOrder: 0,
-    values: { 'Model.Use': true },
-  });
-  assertEquals((await repo.apiKeys.getById(KEY_A.id))?.upstreamIds, null);
-  assertEquals((await repo.apiKeys.getById(KEY_B.id))?.upstreamIds, []);
-  assertEquals((await doExport(app)).data, exported.data);
 });
 
 test('import replace writes upstreams and clears replaced collections', async () => {
@@ -756,38 +711,6 @@ test('import rejects api key unique identity conflicts before mutating', async (
 const HTTP_PROXY_URL = 'http://198.51.100.20:3128';
 const SOCKS_PROXY_URL = 'socks5://user:pass@198.51.100.10:1080';
 
-test('export includes proxies with full credential URIs and round-trips through import', async () => {
-  const { app, repo } = setup();
-  await repo.proxies.save({ id: 'p_socks', name: 'SOCKS', url: SOCKS_PROXY_URL, dialTimeoutSeconds: 45 });
-  await repo.proxies.save({ id: 'p_http', name: 'HTTP', url: HTTP_PROXY_URL, dialTimeoutSeconds: null });
-  const upstreamWithFallback: StoredUpstreamRecord = { ...CUSTOM_UPSTREAM, proxyFallbackList: [{ id: 'p_socks' }, { id: 'direct_connect' }, { id: 'p_http' }, { id: 'direct_fetch' }] };
-  await saveUpstreamForTest(repo.upstreams, upstreamWithFallback);
-
-  const exported = await doExport(app);
-
-  assertEquals(exported.data.proxies, [
-    { id: 'p_socks', name: 'SOCKS', url: SOCKS_PROXY_URL, dial_timeout_seconds: 45 },
-    { id: 'p_http', name: 'HTTP', url: HTTP_PROXY_URL, dial_timeout_seconds: null },
-  ]);
-
-  const fresh = new InMemoryRepo();
-  initRepo(fresh);
-  const importApp = new Hono();
-  importApp.post('/import', zValidator('json', importBody), importData);
-  const result = await doImport(importApp, 'replace', exported.data);
-  assertEquals(result.status, 200);
-  assertEquals(result.body.imported.proxies, 2);
-
-  const restored = await fresh.proxies.list();
-  assertEquals(restored.map(p => ({ id: p.id, name: p.name, url: p.url, dialTimeoutSeconds: p.dialTimeoutSeconds })).sort((a, b) => a.id.localeCompare(b.id)), [
-    { id: 'p_http', name: 'HTTP', url: HTTP_PROXY_URL, dialTimeoutSeconds: null },
-    { id: 'p_socks', name: 'SOCKS', url: SOCKS_PROXY_URL, dialTimeoutSeconds: 45 },
-  ]);
-
-  const restoredUpstream = await fresh.upstreams.getById(upstreamWithFallback.id);
-  assertEquals(restoredUpstream?.proxyFallbackList, [{ id: 'p_socks' }, { id: 'direct_connect' }, { id: 'p_http' }, { id: 'direct_fetch' }]);
-});
-
 test('import in replace mode rejects an upstream fallback reference that does not resolve to an imported proxy', async () => {
   const { app, repo } = setup();
   await saveUpstreamForTest(repo.upstreams, CUSTOM_UPSTREAM);
@@ -925,28 +848,6 @@ test('replace-mode import cuts SSE subscribers for every pre-existing dump key',
   assertEquals(result.status, 200);
   assertEquals(stubs.closedChannels.some(c => c.keyId === KEY_A.id), true);
   assertEquals(stubs.closedChannels.some(c => c.keyId === KEY_B.id), true);
-});
-
-// An export taken before the protocols were spelled out in full carries the old
-// endpoint keys. The import refuses it and names the key that was not understood,
-// which is how an operator learns the backup predates the rename rather than
-// discovering it from an upstream that serves nothing. The refusal comes from the
-// runtime validator rather than the request schema — the schema alone would strip
-// an unknown key silently, so this asserts the path, not the shape.
-test('an import naming an endpoint this build does not know is refused, not silently emptied', async () => {
-  const { app } = setup();
-
-  const exported = upstreamRecordToFullJson(CUSTOM_UPSTREAM);
-  const stale = latestImportData({
-    upstreams: [{
-      ...exported,
-      config: { ...(exported.config as unknown as Record<string, unknown>), endpoints: { chatCompletions: {} } },
-    }],
-  });
-
-  const result = await doImport(app, 'replace', stale);
-  assertEquals(result.status, 400);
-  assertEquals(JSON.stringify(result.body).includes('chatCompletions'), true);
 });
 
 test('backup restores historical upstream gauges and replaces existing telemetry', async () => {

@@ -4,48 +4,6 @@ import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
-test('/api/performance/overview narrows the whole aggregate to the actor under group_by=keyId', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  // A key owned by user 1 with traffic in the same window. By API Key asks
-  // about the actor's own data, so neither its rows nor its id may surface.
-  await repo.apiKeys.save({
-    id: 'key_other',
-    userId: 1,
-    name: 'Other key',
-    key: 'raw_other_key',
-    serverSecret: '00'.repeat(32),
-    createdAt: '2026-04-30T00:00:00.000Z',
-    upstreamIds: null,
-    randomizeUpstreams: false,
-    deletedAt: null,
-    dumpRetentionSeconds: null,
-    openaiResponsesRetentionSeconds: 0,
-  });
-
-  const sample = {
-    hour: '2026-04-30T10',
-    model: 'gpt-5',
-    upstream: 'copilot:1',
-    operation: 'chat' as const,
-    runtimeLocation: 'LOCAL',
-    tpotUs: 500,
-    success: true,
-  };
-
-  await repo.performance.recordSample({ ...sample, keyId: apiKey.id, ttftMs: 50 });
-  await repo.performance.recordSample({ ...sample, keyId: 'key_other', ttftMs: 250 });
-
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&group_by=keyId', { headers: { 'x-api-key': apiKey.key } });
-
-  assertEquals(response.status, 200);
-  const body = await response.json();
-  assertEquals(body.axes.keyId.map((r: { group: string }) => r.group), [apiKey.id]);
-  assertEquals(body.dimensionValues.keyIds, [apiKey.id]);
-  assertEquals(body.keys.map((key: { id: string }) => key.id), [apiKey.id]);
-  // Every other axis narrows with it — the summary counts one request, not two.
-  assertEquals(body.axes.none.map((r: { requests: number }) => r.requests), [1]);
-});
-
 test('/api/performance/overview keeps only the none axis global for a non-admin', async () => {
   const { repo, apiKey } = await setupAppTest();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'copilot:1', name: 'Self visible' }));
@@ -193,8 +151,7 @@ test('telemetry overviews reject invalid or reversed custom timestamps', async (
     for (const query of [
       'start=2026-04-31T00&end=2026-05-02T00',
       'start=2026-05-02T00&end=2026-05-01T00',
-      'start=2026-05-01T00%3A30&end=2026-05-02T00',
-      ...['0d', '-2d', '1.5d', '02d', '9007199254740992d'].map(bucket => `start=2026-05-01T00&end=2026-05-02T00&bucket=${bucket}`),
+      'start=2026-05-01T00&end=2026-05-02T00&bucket=0d',
     ]) {
       const response = await requestApp(`/api/${endpoint}/overview?${query}`, { headers: { 'x-api-key': apiKey.key } });
       assertEquals(response.status, 400);

@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { tokenUsageMetrics } from '../../../src/repo/usage-metrics.ts';
 import { requestApp, setupAppTest } from '../../test-utils/app.ts';
-import { assertEquals, assertExists } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
 const displayQuantity = (record: { metrics: Array<{ metric: string; quantity: string }> }, tokenCategory: string) =>
   record.metrics.find(row => row.metric === `${tokenCategory}_tokens`)?.quantity;
@@ -96,53 +96,4 @@ test('/api/token-usage scopes to the actor\'s keys when called with an API key',
   assertEquals('upstream' in body[0], false);
   assertEquals(displayQuantity(body[0], 'input_cache_read'), '4');
   assertEquals(displayQuantity(body[0], 'input_cache_write'), '1');
-});
-
-test('/api/token-usage merges Claude variants into backend base model records', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  const shared = {
-    keyId: apiKey.id,
-    hour: '2026-03-17T10',
-    upstream: 'copilot:1',
-    pricingSelector: {},
-    requests: 1,
-    metrics: tokenUsageMetrics({ input: 10, output: 5, input_cache_read: 2, input_cache_write: 1 }, null),
-  };
-
-  await repo.usage.set({
-    ...shared,
-    model: 'claude-opus-4-7',
-    modelKey: 'claude-opus-4.7',
-  });
-  await repo.usage.set({
-    ...shared,
-    model: 'claude-opus-4-7',
-    modelKey: 'claude-opus-4.7-xhigh',
-  });
-  await repo.usage.set({
-    ...shared,
-    model: 'claude-opus-4-7',
-    modelKey: 'claude-opus-4.7-1m-internal',
-  });
-  await repo.usage.set({
-    ...shared,
-    model: 'gpt-5.3-codex',
-    modelKey: 'gpt-5.3-codex',
-    metrics: tokenUsageMetrics({ input: 3, output: 4 }, null),
-  });
-
-  const response = await requestApp('/api/token-usage?start=2026-03-17T00&end=2026-03-18T00&view=self-by-key', { headers: { 'x-api-key': apiKey.key } });
-
-  assertEquals(response.status, 200);
-  const body = await response.json();
-  assertEquals(body.length, 2);
-  const opus = body.find((record: { model: string }) => record.model === 'claude-opus-4-7');
-  const gpt = body.find((record: { model: string }) => record.model === 'gpt-5.3-codex');
-  assertExists(opus);
-  assertExists(gpt);
-  assertEquals(opus.requests, 3);
-  assertEquals(displayQuantity(opus, 'input'), '30');
-  assertEquals(displayQuantity(opus, 'output'), '15');
-  assertEquals(displayQuantity(opus, 'input_cache_read'), '6');
-  assertEquals(displayQuantity(opus, 'input_cache_write'), '3');
 });

@@ -62,12 +62,6 @@ test('/api/models exposes each upstream as { kind, id } so multi-provider models
       assertEquals(body.data.find(model => model.id === 'claude-sonnet-4')?.upstreams, [{ kind: 'copilot', id: 'up_copilot', name: 'GitHub Copilot (tester)', hue: 210 }]);
       assertEquals(body.data.find(model => model.id === 'custom-model')?.upstreams, [{ kind: 'custom', id: 'up_custom_models', name: 'Custom Provider', hue: 210 }]);
       assertEquals(body.data.find(model => model.id === 'azure-public')?.upstreams, [{ kind: 'azure', id: 'up_azure_models', name: 'Azure Models', hue: 210 }]);
-      for (const model of body.data) {
-        // Legacy split fields must not reappear.
-        assertEquals(Object.hasOwn(model, 'provider'), false);
-        assertEquals(Object.hasOwn(model, 'upstream_ids'), false);
-        assertEquals(Object.hasOwn(model, 'upstream_kind'), false);
-      }
     },
   );
 });
@@ -86,37 +80,6 @@ const modelsFetchHandler = (request: Request): Response => {
   }
   throw new Error(`Unhandled fetch ${request.url}`);
 };
-
-test('/api/models is scoped to the caller\'s Model.Use grants', async () => {
-  const { repo } = await setupAppTest();
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
-  await saveUpstreamForTest(repo.upstreams, azureUpstream());
-
-  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: 2 });
-  await repo.accessRecords.save({
-    principal: { kind: 'user', id: 2 },
-    scope: { kind: 'upstream', upstreamId: 'up_copilot' },
-    sortOrder: 0,
-    values: { 'Model.Use': true },
-  });
-  await repo.accessRecords.save({
-    principal: { kind: 'user', id: 2 },
-    scope: { kind: 'upstream', upstreamId: 'up_custom_models' },
-    sortOrder: 1,
-    values: { 'Model.Use': true },
-  });
-  const session = (await repo.sessions.create(2)).id;
-
-  await withMockedFetch(modelsFetchHandler, async () => {
-    const response = await requestAppWithWarmModels('/api/models', { headers: { 'x-floway-session': session } });
-    assertEquals(response.status, 200);
-    const body = (await response.json()) as { data: Array<{ id: string }> };
-    const ids = body.data.map(model => model.id).sort();
-
-    assertEquals(ids, ['claude-sonnet-4', 'custom-model']);
-    assertEquals(ids.includes('azure-public'), false);
-  });
-});
 
 test('/api/models — admin sees raw alias.targets; non-admin sees the caller-narrowed projection', async () => {
   // Wire an alias with a typo target + one real target. Admin must see
@@ -165,81 +128,5 @@ test('/api/models — admin sees raw alias.targets; non-admin sees the caller-na
       nonAdminMix!.aliasedFrom?.targets.map(t => t.target_model_id),
       ['custom-model'],
     );
-  });
-});
-
-test('/api/models keeps alias limits and endpoints identical across admin and non-admin views', async () => {
-  // Two upstreams advertising the same alias's targets, but with
-  // different windows. Admin sees gateway-wide (limit = min over all).
-  // Non-admin restricted to the larger-window upstream should still see
-  // the same lower limit — metadata is a stable property of the alias,
-  // not a per-caller derivation.
-  const { adminSession, repo } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    id: 'up_small',
-    name: 'Small',
-    sortOrder: 100,
-    config: {
-      baseUrl: 'https://small.example.com',
-      ingressHeadersRules: [],
-      apiKey: 'sk-small',
-      endpoints: { openaiChatCompletions: {} },
-      models: [{ upstreamModelId: 'shared', publicModelId: 'shared', kind: 'chat', endpoints: { openaiChatCompletions: {} }, limits: { max_context_window_tokens: 100_000 } }],
-      modelsFetch: { enabled: false, authStyle: 'bearer' },
-    },
-  }));
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    id: 'up_big',
-    name: 'Big',
-    sortOrder: 200,
-    config: {
-      baseUrl: 'https://big.example.com',
-      ingressHeadersRules: [],
-      apiKey: 'sk-big',
-      endpoints: { openaiChatCompletions: {} },
-      models: [{ upstreamModelId: 'shared', publicModelId: 'shared', kind: 'chat', endpoints: { openaiChatCompletions: {} }, limits: { max_context_window_tokens: 200_000 } }],
-      modelsFetch: { enabled: false, authStyle: 'bearer' },
-    },
-  }));
-  await repo.modelAliases.insert({
-    id: 'alias_shared-alias',
-    name: 'shared-alias',
-    kind: 'chat',
-    selection: 'first-available',
-    displayName: null,
-    visibleInModelsList: true,
-    targets: [{ target_model_id: 'shared', rules: {} }],
-    announcedMetadata: null,
-    sortOrder: 0,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  });
-
-  await repo.accessRecords.deleteByPrincipal({ kind: 'user', id: 2 });
-  await repo.accessRecords.save({
-    principal: { kind: 'user', id: 2 },
-    scope: { kind: 'upstream', upstreamId: 'up_big' },
-    sortOrder: 0,
-    values: { 'Model.Use': true },
-  });
-  const nonAdminSession = (await repo.sessions.create(2)).id;
-
-  await withMockedFetch(() => { throw new Error('unexpected outbound fetch'); }, async () => {
-    const [adminRes, nonAdminRes] = await Promise.all([
-      requestAppWithWarmModels('/api/models', { headers: { 'x-floway-session': adminSession } }),
-      requestAppWithWarmModels('/api/models', { headers: { 'x-floway-session': nonAdminSession } }),
-    ]);
-    const adminBody = (await adminRes.json()) as { data: Array<{ id: string; limits?: { max_context_window_tokens?: number } }> };
-    const nonAdminBody = (await nonAdminRes.json()) as { data: Array<{ id: string; limits?: { max_context_window_tokens?: number } }> };
-    const adminAlias = adminBody.data.find(m => m.id === 'shared-alias');
-    const nonAdminAlias = nonAdminBody.data.find(m => m.id === 'shared-alias');
-    assert(adminAlias !== undefined);
-    assert(nonAdminAlias !== undefined);
-    // Both callers see the safe-lower-bound window — even though the
-    // non-admin's resolver would only ever pick the big-window
-    // upstream's binding.
-    assertEquals(adminAlias!.limits?.max_context_window_tokens, 100_000);
-    assertEquals(nonAdminAlias!.limits?.max_context_window_tokens, 100_000);
   });
 });

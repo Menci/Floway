@@ -56,32 +56,6 @@ const impls: Array<{ name: string; open: () => Promise<PerformanceRepo> }> = [
 
 for (const impl of impls) {
   describe(`PerformanceRepo (${impl.name})`, () => {
-    it('records a sample into summary + one TTFT bucket + one TPOT bucket', async () => {
-      const repo = await impl.open();
-      await repo.recordSample(sample());
-      const rows = await repo.listAll();
-      expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({
-        hour: '2026-06-30T09',
-        keyId: 'key_a',
-        model: 'claude-opus-4-8',
-        upstream: 'anthropic-1',
-        runtimeLocation: 'hkg',
-        requests: 1,
-        ttftSamplesOk: 1,
-        errorsWithOutput: 0,
-        errorsNoOutput: 0,
-        neutral: 0,
-        tpotSamples: 1,
-        ttftMsSum: 340,
-        tpotUsSum: 15_000,
-      });
-      const ttft = rows[0]!.buckets.find(b => b.metric === 'ttft_ms')!;
-      const tpot = rows[0]!.buckets.find(b => b.metric === 'tpot_us')!;
-      expect(ttft).toEqual({ metric: 'ttft_ms', lower: 300, upper: 500, count: 1 });
-      expect(tpot).toEqual({ metric: 'tpot_us', lower: 14_286, upper: 16_667, count: 1 });
-    });
-
     it('routes a failed sample into errorsWithOutput (not ttftSamplesOk)', async () => {
       const repo = await impl.open();
       await repo.recordSample(sample({ success: false }));

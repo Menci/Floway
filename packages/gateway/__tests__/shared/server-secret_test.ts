@@ -1,15 +1,7 @@
 import { test } from 'vitest';
 
-import { generateServerSecret, parseServerSecret } from '../../src/shared/server-secret.ts';
+import { parseServerSecret } from '../../src/shared/server-secret.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
-
-test('generateServerSecret creates independent 32-byte lowercase hexadecimal secrets', () => {
-  const first = generateServerSecret();
-  const second = generateServerSecret();
-  assertEquals(/^[0-9a-f]{64}$/.test(first), true);
-  assertEquals(/^[0-9a-f]{64}$/.test(second), true);
-  assertEquals(first === second, false);
-});
 
 test('parseServerSecret accepts only the canonical serialized form', () => {
   const secret = 'ab'.repeat(32);

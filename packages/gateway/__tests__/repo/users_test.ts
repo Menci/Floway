@@ -46,9 +46,9 @@ describe.each(backends)('UsersRepo (%s)', (_label, makeRepo) => {
     expect((await repo.users.findByUsername('alice'))?.id).toBe(3);
   });
 
-  test('saving a duplicate active username throws', async () => {
+  test('saving an active username that differs only in case throws', async () => {
     const repo = await makeRepo();
     await repo.users.save(sampleUser({ id: 2, username: 'alice' }));
-    await expect(repo.users.save(sampleUser({ id: 3, username: 'alice' }))).rejects.toThrow();
+    await expect(repo.users.save(sampleUser({ id: 3, username: 'Alice' }))).rejects.toThrow();
   });
 });

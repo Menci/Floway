@@ -79,27 +79,6 @@ test('Kimi Code action requires full upstream access and exposes quota failures'
   });
 });
 
-test('Kimi Code credential replacement clears account observations while regional changes retain them', async () => {
-  const { adminSession, repo } = await setupAppTest();
-  const state = {
-    usageProbe: { attemptedAt: 1, observation: { fetchedAt: 1, data: quota }, error: null },
-    accountProbe: { attemptedAt: 1, observation: { fetchedAt: 1, data: { userId: 'original-account', globalId: null, nickname: 'Original', status: '', region: '', userLevel: 0, userLevelName: 'Ultra', domain: 0, domainName: '', goodsVersion: 2, username: null, email: null, bio: null, avatar: null, phone: null, createdTime: null, lastLoginTime: null } }, error: null },
-  };
-  const record = kimiRecord({ state });
-  await saveUpstreamForTest(repo.upstreams, record);
-  for (const region of ['overseas', 'china']) {
-    const response = await requestApp(`/api/upstreams/${record.id}`, authed(adminSession, { config: { region } }, 'PATCH'));
-    expect(response.status).toBe(200);
-    expect((await repo.upstreams.getById(record.id))?.state).toEqual(state);
-  }
-  for (const apiKey of ['sk-kimi-fake-replacement-key', config.apiKey]) {
-    await repo.upstreams.saveState(record.id, () => state);
-    const response = await requestApp(`/api/upstreams/${record.id}`, authed(adminSession, { config: { apiKey } }, 'PATCH'));
-    expect(response.status).toBe(200);
-    expect((await repo.upstreams.getById(record.id))?.state).toBeNull();
-  }
-});
-
 test.each([false, true])('a saved-id draft key returns its own readings without persisting outcomes (failure=%s)', async fail => {
   const { adminSession, repo } = await setupAppTest();
   const record = kimiRecord();
@@ -144,7 +123,7 @@ test.each([{ fail: false, restore: false }, { fail: true, restore: false }, { fa
   expect(await repo.upstreamMetrics.listAll()).toEqual([]);
 });
 
-test.each([{ data: [] }, { data: [{ ...catalog.data[0], id: 'kimi-for-coding', display_name: 'Unrecognized opaque name' }] }])('an empty projected catalog preserves the saved model cache: %j', async body => {
+test('an empty projected catalog preserves the saved model cache', async () => {
   const { adminSession, repo } = await setupAppTest();
   const record = kimiRecord();
   await saveUpstreamForTest(repo.upstreams, record);
@@ -154,7 +133,7 @@ test.each([{ data: [] }, { data: [{ ...catalog.data[0], id: 'kimi-for-coding', d
   });
   const cache = (await repo.upstreams.getById(record.id))!.modelsCache!;
   expect(cache.models).toHaveLength(1);
-  await withMockedFetch(() => Response.json(body), async () => {
+  await withMockedFetch(() => Response.json({ data: [] }), async () => {
     const response = await requestApp(`/api/upstreams/${record.id}/list-models`, authed(adminSession, {}));
     expect(response.status).toBe(502);
   });

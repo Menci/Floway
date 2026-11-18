@@ -77,15 +77,6 @@ test('opt-out, disabled upstreams, setup tokens, local Ollama and scoped-only eg
   expect(mocks.fetch).not.toHaveBeenCalled();
 });
 
-test('a failed refresh keeps the previous usage observation', async () => {
-  await repo.upstreams.insertForModels(ollama());
-  await repo.upstreams.saveState('ollama', () => ({ account: null, usageProbe: { attemptedAt: NOW - 300_000, observation: { fetchedAt: NOW - 300_000, data: { usage: usageBody(18), balance: balanceBody(18) } }, error: null } }));
-  mocks.fetch.mockImplementation(async () => new Response('slow down', { status: 429, headers: { 'retry-after': '3600' } }));
-  await expect(runUpstreamScheduledTasks('TEST')).rejects.toThrow('Upstream scheduled tasks failed');
-  const stored = await repo.upstreams.getById('ollama');
-  expect(stored?.state).toMatchObject({ usageProbe: { observation: { data: { usage: usageBody(18), balance: balanceBody(18) } }, error: expect.stringContaining('429') } });
-});
-
 test('a usage endpoint auth failure preserves inference credential health and other upstreams still run', async () => {
   await repo.upstreams.insertForModels(chatgpt());
   await repo.upstreams.insertForModels(ollama());

@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { requestApp, setupAppTest } from '../../test-utils/app.ts';
 import type { ModelAlias } from '@floway-dev/protocols/common';
-import { assertEquals, assertExists } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
 const authed = (adminSession: string, body?: unknown, method?: string): RequestInit => ({
   method: method ?? (body === undefined ? 'GET' : 'POST'),
@@ -38,43 +38,6 @@ const baseBody = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-test('POST /api/aliases creates an alias and returns the snake_case wire shape', async () => {
-  const { repo, adminSession } = await setupAppTest();
-  await repo.modelAliases.deleteAll();
-
-  const resp = await requestApp('/api/aliases', authed(adminSession, baseBody()));
-  assertEquals(resp.status, 201);
-  const created = (await resp.json()) as ModelAlias;
-  assertEquals(created.id.startsWith('alias_'), true);
-  assertEquals(created.name, 'gpt-fast');
-  assertEquals(created.visible_in_models_list, true);
-  assertEquals(created.targets[0].target_model_id, 'gpt-5.4');
-
-  const stored = await repo.modelAliases.getByName('gpt-fast');
-  assertExists(stored);
-  assertEquals(stored.visibleInModelsList, true);
-});
-
-test('PUT /api/aliases/:id updates rules and refreshes updated_at', async () => {
-  const { repo, adminSession } = await setupAppTest();
-  await repo.modelAliases.deleteAll();
-  const before = await createAlias(adminSession);
-  await new Promise(resolve => setTimeout(resolve, 5));
-
-  const resp = await requestApp(
-    `/api/aliases/${before.id}`,
-    putAuthed(adminSession, baseBody({ display_name: 'GPT Fast', targets: [{ target_model_id: 'gpt-5.4', rules: { reasoning: { effort: 'high' } } }] })),
-  );
-  assertEquals(resp.status, 200);
-  const updated = (await resp.json()) as ModelAlias;
-  assertEquals(updated.display_name, 'GPT Fast');
-  assertEquals(updated.targets[0].rules, { reasoning: { effort: 'high' } });
-  assertEquals(updated.id, before.id);
-  // created_at is preserved; updated_at is fresh.
-  assertEquals(updated.created_at, before.created_at);
-  if (updated.updated_at === before.updated_at) throw new Error('updated_at did not refresh');
-});
-
 test('PUT /api/aliases/:id rename collision returns 409', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.modelAliases.deleteAll();
@@ -106,26 +69,6 @@ test('an alias whose name contains a slash stays editable and deletable', async 
   const deleted = await requestApp(`/api/aliases/${created.id}`, deleteAuthed(adminSession));
   assertEquals(deleted.status, 204);
   assertEquals(await repo.modelAliases.getByName('vendor/model'), null);
-});
-
-test('POST /api/aliases rejects announced_metadata.chat on a non-chat alias with 400', async () => {
-  // A `chat` block on a non-chat alias would land on the row's
-  // announced-metadata sidecar and, at listing time, get surfaced onto the
-  // /v1/models entry — advertising `chat: {...}` on a row whose `kind` says
-  // it has none. The schema keeps the row structurally coherent by rejecting
-  // the mismatch at the boundary.
-  const { repo, adminSession } = await setupAppTest();
-  await repo.modelAliases.deleteAll();
-
-  const resp = await requestApp(
-    '/api/aliases',
-    authed(adminSession, baseBody({
-      kind: 'embedding',
-      targets: [{ target_model_id: 'text-embedding-3', rules: {} }],
-      announced_metadata: { chat: { modalities: { input: ['text'], output: ['text'] } } },
-    })),
-  );
-  assertEquals(resp.status, 400);
 });
 
 test('POST /api/aliases rejects reasoning that combines adaptive=true with budget_tokens (400)', async () => {

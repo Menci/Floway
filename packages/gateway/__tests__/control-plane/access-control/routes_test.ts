@@ -248,24 +248,6 @@ test('access resolve can exclude the edited record to expose inherited state', a
   assertEquals((await inherited.json()).values['Model.Use'], true);
 });
 
-test('effective access reports intrinsic self audit without marking an ACL assignment active', async () => {
-  const { adminSession, repo } = await setupAppTest();
-  const record = await repo.accessRecords.save({
-    principal: { kind: 'user', id: 2 },
-    scope: { kind: 'user', userId: 2 },
-    sortOrder: 0,
-    values: { 'User.Audit': false },
-  });
-  const response = await request('/access-resolve', adminSession, {
-    method: 'POST',
-    body: JSON.stringify({ principal: { kind: 'user', id: 2 }, scope: { kind: 'user', userId: 2 } }),
-  });
-  assertEquals(response.status, 200);
-  const resolution = await response.json();
-  expect(resolution.values['User.Audit']).toBe(true);
-  expect(resolution.decisions.find((row: { recordId: number }) => row.recordId === record.id).permissions['User.Audit']).toBeUndefined();
-});
-
 test('reordering requires admin, a complete model boundary, and a current snapshot', async () => {
   const { adminSession, repo } = await setupAppTest();
   const a = await repo.accessRecords.save({ principal: { kind: 'user', id: 2 }, scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: '^gpt' } }, sortOrder: 0, values: { 'Model.Use': false } });

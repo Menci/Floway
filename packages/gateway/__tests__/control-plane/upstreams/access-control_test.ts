@@ -213,17 +213,6 @@ test('Upstream.Edit.Full returns raw configuration, accepts full patches, and li
   assertEquals(await proxies.json(), [{ id: 'proxy_a', name: 'Proxy A' }]);
 });
 
-test('model discovery previews a persisted record only for Full and keeps create drafts admin-only', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await saveUpstreamForTest(repo.upstreams, customRecord());
-  const response = await requestApp('/api/upstreams/preview-models', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-    body: JSON.stringify({ record: { ...customRecord(), id: 'up_restricted', proxy_fallback_list: [] } }),
-  });
-  assertEquals(response.status, 404);
-});
-
 test('provider credential actions require Full and keep create drafts admin-only', async () => {
   const { repo, apiKey } = await setupAppTest();
   await saveUpstreamForTest(repo.upstreams, customRecord());

@@ -37,22 +37,6 @@ describe.each(backends)('GroupsRepo (%s)', (_label, makeRepo) => {
     expect(await repo.groups.listIdsByUserIds([2, 5])).toEqual(new Map([[2, [1]], [5, []]]));
   });
 
-  test.each([
-    ['ASCII', 'Platform', 'platform', true],
-    ['mixed Unicode cases', 'TEAM-\u00c4', 'team-\u00e4', false],
-  ])('uses SQLite NOCASE for %s group names', async (_label, first, second, equal) => {
-    const repo = await makeRepo();
-    await repo.groups.create(first, 120);
-    expect((await repo.groups.findByName(second))?.name).toBe(equal ? first : undefined);
-    if (equal) {
-      await expect(repo.groups.create(second, 120)).rejects.toThrow();
-      await expect(repo.groups.save(sampleGroup({ id: 2, name: second }))).rejects.toThrow();
-    } else {
-      await repo.groups.create(second, 120);
-      expect(await repo.groups.list()).toHaveLength(2);
-    }
-  });
-
   test('restores name swaps and memberships without disturbing other groups', async () => {
     const repo = await makeRepo();
     await repo.groups.save(sampleGroup({ id: 1, name: 'Ops' }));

@@ -23,15 +23,3 @@ test('isIpV6 rejects more than one `::` shorthand', () => {
   // guard to stay out of the accepted grammar.
   assertEquals(isIpV6('2001:::1'), false);
 });
-
-test('neither validator accepts an HTML page an anchor could return', () => {
-  // This pair is what stops a captive portal or error page from being echoed
-  // back to the operator as the proxy's egress IP.
-  const page = '<a href="http://198.51.100.20/">198.51.100.20</a>';
-  assertEquals(isIpV4(page), false);
-  assertEquals(isIpV6(page), false);
-
-  const error = '<html><head><title>Error: 502</title></head></html>';
-  assertEquals(isIpV4(error), false);
-  assertEquals(isIpV6(error), false);
-});

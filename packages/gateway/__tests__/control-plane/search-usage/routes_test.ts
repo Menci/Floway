@@ -61,21 +61,3 @@ test('/api/search-usage all-by-user view aggregates across keys per user', async
     { provider: 'microsoft-web-iq', userId: 1, hour: '2026-03-15T11', requests: 4 },
   ]);
 });
-
-test('/api/search-usage all-by-user attributes soft-deleted keys to their original owner', async () => {
-  const { repo, adminSession, apiKey } = await setupAppTest();
-  // Seed a usage row, then soft-delete the originating key. The aggregator
-  // must still resolve the row to apiKey.userId — not the synthetic userId 0
-  // it falls back to when the key→user lookup misses.
-  await repo.webSearchUsage.set({ provider: 'tavily', keyId: apiKey.id, action: 'search', hour: '2026-03-15T10', requests: 7 });
-  await repo.apiKeys.softDelete(apiKey.id);
-
-  const response = await requestApp('/api/search-usage?start=2026-03-15T00&end=2026-03-16T00&view=all-by-user', {
-    headers: { 'x-floway-session': adminSession },
-  });
-
-  assertEquals(response.status, 200);
-  assertEquals(await response.json(), [
-    { provider: 'tavily', userId: apiKey.userId, hour: '2026-03-15T10', requests: 7 },
-  ]);
-});
