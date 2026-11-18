@@ -1,10 +1,11 @@
 import { test } from 'vitest';
 
 import { inputErrorResult } from '../../../../src/data-plane/chat/anthropic-messages/errors.ts';
+import { decodeResponseBody } from '@floway-dev/provider';
 import { assert, assertEquals, mockPerfTelemetryContext } from '@floway-dev/test-utils';
 
 const bodyOf = (result: ReturnType<typeof inputErrorResult>): Record<string, unknown> =>
-  JSON.parse(new TextDecoder().decode(result.body));
+  JSON.parse(decodeResponseBody(result.body));
 
 test('inputErrorResult renders an Anthropic 400 invalid_request_error envelope with top-level request_id', () => {
   const result = inputErrorResult(
@@ -27,7 +28,7 @@ test('inputErrorResult renders an Anthropic 400 invalid_request_error envelope w
 
 test('inputErrorResult preserves Anthropic key order: type, error, request_id', () => {
   const result = inputErrorResult({ message: 'whatever' });
-  const raw = new TextDecoder().decode(result.body);
+  const raw = decodeResponseBody(result.body);
   // Key-order is load-bearing for byte-faithfulness with Anthropic-direct.
   assert(/^\{"type":"error","error":\{"type":"invalid_request_error","message":"whatever"\},"request_id":"req_[A-Za-z0-9]{24}"\}$/.test(raw), `body ${raw} must match Anthropic-direct byte shape`);
 });

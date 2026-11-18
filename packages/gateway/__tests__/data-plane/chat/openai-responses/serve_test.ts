@@ -11,7 +11,7 @@ import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthr
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayloadEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { decodeResponseBody, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the provider
@@ -320,7 +320,7 @@ test('generate renders model-missing when no candidates are available', async ()
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
   assertEquals(result.http.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
+  const body = JSON.parse(decodeResponseBody(result.body));
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.message, 'Model unknown-model is not available on any configured upstream.');
 });
@@ -341,7 +341,7 @@ test('generate filters out candidates whose endpoints do not satisfy the respons
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
   assertEquals(result.http.status, 400);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
+  const body = JSON.parse(decodeResponseBody(result.body));
   assertEquals(body.error.type, 'invalid_request_error');
   assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
   assertEquals(callOpenAIResponses.mock.calls.length, 0);
@@ -360,7 +360,7 @@ test('compact renders model-missing as a 404 when no candidates are available', 
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
   assertEquals(result.http.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
+  const body = JSON.parse(decodeResponseBody(result.body));
   assertEquals(body.error.type, 'invalid_request_error');
   assert(typeof body.error.message === 'string' && body.error.message.includes('not available'));
 });
@@ -381,7 +381,7 @@ test('compact renders model-unsupported as a 400 when the only candidate\'s endp
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
   assertEquals(result.http.status, 400);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
+  const body = JSON.parse(decodeResponseBody(result.body));
   assertEquals(body.error.type, 'invalid_request_error');
   assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
   assertEquals(callOpenAIResponses.mock.calls.length, 0);
@@ -649,6 +649,6 @@ test('alias whose targets have no kind-matching binding surfaces as the regular 
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
   assertEquals(result.http.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
+  const body = JSON.parse(decodeResponseBody(result.body));
   assertEquals(body.error.message, 'Model gpt-fast is not available on any configured upstream.');
 });

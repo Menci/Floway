@@ -76,37 +76,6 @@ const runPassthroughAttempt = async (upstream: Response): Promise<RawAttemptResu
   return result;
 };
 
-// The fallback loop keeps only the most recent failure, so every superseded
-// attempt is dropped. On the direct-connect egress a dropped response strands
-// its socket, which is why a failed attempt must not carry a live body.
-test('passthroughAttempt materializes a failed upstream response so a discarded attempt holds no transport', async () => {
-  let sourceCancelled = false;
-  let sourceRead = false;
-  const upstream = new Response(
-    new ReadableStream<Uint8Array>({
-      start(controller) {
-        sourceRead = true;
-        controller.enqueue(new TextEncoder().encode('{"error":"upstream busy"}'));
-        controller.close();
-      },
-      cancel() { sourceCancelled = true; },
-    }),
-    { status: 503, statusText: 'Service Unavailable', headers: { 'content-type': 'application/json', 'retry-after': '12' } },
-  );
-
-  const result = await runPassthroughAttempt(upstream);
-
-  // The upstream body was consumed rather than left for someone else to close.
-  assertEquals(sourceRead, true);
-  assertEquals(sourceCancelled, false);
-  assertEquals(upstream.bodyUsed, true);
-  // Status, headers and bytes still forward verbatim.
-  assertEquals(result.http.status, 503);
-  assertEquals(result.http.statusText, 'Service Unavailable');
-  assertEquals(result.http.headers.get('retry-after'), '12');
-  assertEquals(await result.http.text(), '{"error":"upstream busy"}');
-});
-
 test('passthroughAttempt forwards a successful upstream response without reading it', async () => {
   const upstream = new Response('ok', { status: 200 });
   const result = await runPassthroughAttempt(upstream);

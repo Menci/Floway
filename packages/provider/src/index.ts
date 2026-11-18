@@ -13,6 +13,7 @@ export { internalDebugErrorFields, toInternalDebugError } from './error.ts';
 
 export type {
   ApiErrorResult,
+  BufferedHttpResult,
   EventResult,
   EventResultMetadata,
   ExecuteResult,
@@ -21,12 +22,13 @@ export type {
   PlainResult,
 } from './result.ts';
 export {
-  apiErrorToResponse,
-  decodeApiErrorBody,
+  bufferedResultToResponse,
+  decodeResponseBody,
   discardUpstreamResponse,
   eventResult,
   internalErrorResult,
   plainResult,
+  readResponseBody,
   readUpstreamApiError,
 } from './result.ts';
 
@@ -82,7 +84,6 @@ export { getProviderRepo, initProviderRepo, UpstreamGoneError } from './repo.ts'
 export {
   ProviderModelsUnavailableError,
   fetchUpstreamModels,
-  httpResponseToResponse,
 } from './models-fetch.ts';
 export type { ProviderModelsFailureResponse } from './models-fetch.ts';
 

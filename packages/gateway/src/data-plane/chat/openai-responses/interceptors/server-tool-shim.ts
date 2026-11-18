@@ -23,7 +23,7 @@ import {
   type OpenAIResponsesTool,
   type OpenAIResponsesToolChoice,
 } from '@floway-dev/protocols/openai-responses';
-import { internalDebugErrorFields, toInternalDebugError, type EventResultMetadata, type ExecuteResult } from '@floway-dev/provider';
+import { decodeResponseBody, internalDebugErrorFields, toInternalDebugError, type EventResultMetadata, type ExecuteResult } from '@floway-dev/provider';
 import type { SidecarCodec } from '@floway-dev/translate';
 
 export interface MergeUsage {
@@ -961,7 +961,7 @@ const errorEventFromResult = (
     type: 'error', code: 'server_error', message: result.error.message, param: null,
     provider_specific_fields: internalDebugErrorFields(result.error),
   };
-  const body = parseJSONWithRawNumbers(new TextDecoder().decode(result.body)) as Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>;
+  const body = parseJSONWithRawNumbers(decodeResponseBody(result.body)) as Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>;
   return { ...body, type: 'error' };
 };
 

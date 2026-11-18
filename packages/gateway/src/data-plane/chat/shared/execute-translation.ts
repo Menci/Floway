@@ -1,12 +1,12 @@
 import type { DumpAccumulator } from '../../../dump/accumulator.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ChatTargetApi, ExecuteResult } from '@floway-dev/provider';
+import type { BufferedHttpResult, ChatTargetApi, ExecuteResult } from '@floway-dev/provider';
 import type { TranslateTrip, TranslateInputError } from '@floway-dev/translate';
 
 // Capture target-protocol upstream data before translation so dumps use the target serializer.
 export interface TranslationUpstreamCapture {
   upstreamFrame(frame: ProtocolFrame<unknown>): void;
-  upstreamApiError(error: { status: number; headers: Headers; body: Uint8Array }): void;
+  upstreamApiError(error: { status: number; headers: Headers; body: BufferedHttpResult['body'] }): void;
 }
 
 // Stamp the target API before reading frames so an empty upstream stream retains its protocol identity.
@@ -46,6 +46,7 @@ export const executeTranslation = async <SP extends object, TP, SE, TE>(
   }
   if (inner.type === 'api-error' && inner.source === 'upstream') {
     capture?.upstreamApiError({ status: inner.http.status, headers: inner.http.headers, body: inner.body });
+    if (inner.body === null) return inner;
     const rewritten = trip.error(inner.http.status, inner.http.headers, inner.body);
     // Error renderers return JSON envelopes; this transport boundary encodes the response bytes.
     if (rewritten !== undefined) {

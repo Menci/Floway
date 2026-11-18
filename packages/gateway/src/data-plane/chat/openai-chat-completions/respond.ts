@@ -7,14 +7,13 @@ import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
-import { forwardUpstreamHeaders } from '../../shared/upstream-response.ts';
+import { forwardBufferedUpstreamResponse, prepareSseResponse } from '../../shared/upstream-response.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
-import { SourceStreamState, eventResultMetadata, jsonResponseInit, plainResultToResponse } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, jsonResponseInit } from '../shared/respond.ts';
 import { eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { openaiChatCompletionsProtocolFrameToSSEFrame, collectOpenAIChatCompletionsProtocolEventsToResult, openaiChatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/openai-chat-completions';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
-import { apiErrorToResponse } from '@floway-dev/provider';
 
 export const respondOpenAIChatCompletions = async (
   c: Context,
@@ -26,7 +25,7 @@ export const respondOpenAIChatCompletions = async (
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstreamId);
-    return apiErrorToResponse(result);
+    return forwardBufferedUpstreamResponse(result);
   }
 
   if (result.type === 'internal-error') {
@@ -39,7 +38,7 @@ export const respondOpenAIChatCompletions = async (
     if (result.http.status >= 400) {
       ctx.dump?.error(result.upstreamId !== undefined ? 'upstream' : 'gateway', result.upstreamId);
     }
-    return plainResultToResponse(result);
+    return forwardBufferedUpstreamResponse(result);
   }
 
   const state = new SourceStreamState();
@@ -61,7 +60,7 @@ export const respondOpenAIChatCompletions = async (
     }
   }
 
-  forwardUpstreamHeaders(c, result.http?.headers);
+  prepareSseResponse(c, result.http);
   return streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {

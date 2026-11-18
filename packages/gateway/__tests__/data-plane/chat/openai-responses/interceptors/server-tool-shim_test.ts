@@ -54,7 +54,7 @@ import type {
   OpenAIResponsesToolChoice,
   OpenAIResponsesWebSearchAction,
 } from '@floway-dev/protocols/openai-responses';
-import { eventResult, type EventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
+import { decodeResponseBody, eventResult, type EventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, assertFalse, assertRejects, stubModelCandidate } from '@floway-dev/test-utils';
 import { routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
@@ -1622,7 +1622,7 @@ test('invalid request registration preserves an upstream error type and null cod
     () => Promise.reject(new Error('run should not be called')),
   );
   assert(result.type === 'api-error');
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as {
+  const body = JSON.parse(decodeResponseBody(result.body)) as {
     error: { message: string; type: string; param: string | null; code: string | null };
   };
   assertEquals(body.error, {
@@ -1648,7 +1648,7 @@ test('invalid hosted web search in additional_tools reports its input path', asy
     throw new Error('Invalid request reached upstream');
   });
   assert(result.type === 'api-error');
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string } };
+  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { param: string } };
   assertEquals(body.error.param, 'input[0].tools[0].search_context_size');
 });
 
@@ -1675,7 +1675,7 @@ test('later hosted validation keeps original paths before another tool rewrites 
   });
 
   assert(result.type === 'api-error');
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string } };
+  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { param: string } };
   assertEquals(body.error.param, 'input[0].tools[2].size');
   assertEquals(inv.payload.input, originalInput);
 });
@@ -1706,7 +1706,7 @@ test('non-empty allowed_domains with every entry malformed is rejected as 400 in
   // Upstream is never invoked when the gate rejects.
   assertEquals(script.callCount(), 0);
   assertEquals(backend.calls.length, 0);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { message: string; type: string; param: string; code: string } };
+  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { message: string; type: string; param: string; code: string } };
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.code, 'invalid_request_error');
   assertEquals(body.error.param, 'tools');
@@ -1737,7 +1737,7 @@ test('non-empty blocked_domains with every entry malformed is rejected as 400 in
   assertEquals(result.http.status, 400);
   assertEquals(script.callCount(), 0);
   assertEquals(backend.calls.length, 0);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { message: string; type: string; param: string; code: string } };
+  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { message: string; type: string; param: string; code: string } };
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.param, 'tools');
 });
@@ -1769,7 +1769,7 @@ test('domain lists with any malformed entry alongside valid entries are rejected
   assertEquals(result.http.status, 400);
   assertEquals(script.callCount(), 0);
   assertEquals(backend.calls.length, 0);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { type: string; param: string; message: string } };
+  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { type: string; param: string; message: string } };
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.param, 'tools');
   assert(body.error.message.includes('bad domain'));
@@ -1799,7 +1799,7 @@ test('multiple hosted web_search entries: filter CONTENT is validated on each (n
   assertEquals(result.http.status, 400);
   assertEquals(script.callCount(), 0);
   assertEquals(backend.calls.length, 0);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; type: string } };
+  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { param: string; type: string } };
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.param, 'tools');
 });
@@ -1844,7 +1844,7 @@ test('allowed_domains containing a non-string entry rejects with 400 (no 502 cra
   assertEquals(result.http.status, 400);
   assertEquals(script.callCount(), 0);
   assertEquals(backend.calls.length, 0);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { type: string; param: string; code: string; message: string } };
+  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { type: string; param: string; code: string; message: string } };
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.param, 'tools');
 });
@@ -1868,7 +1868,7 @@ test('blocked_domains containing an object entry rejects with 400', async () => 
   assertEquals(result.http.status, 400);
   assertEquals(script.callCount(), 0);
   assertEquals(backend.calls.length, 0);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { type: string; param: string } };
+  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { type: string; param: string } };
   assertEquals(body.error.param, 'tools');
 });
 
@@ -1910,7 +1910,7 @@ for (const field of ['allowed_domains', 'blocked_domains'] as const) {
     assertEquals(result.http.status, 400);
     assertEquals(script.callCount(), 0);
     assertEquals(backend.calls.length, 0);
-    const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { type: string; param: string; message: string } };
+    const body = JSON.parse(decodeResponseBody(result.body)) as { error: { type: string; param: string; message: string } };
     assertEquals(body.error.type, 'invalid_request_error');
     assertEquals(body.error.param, 'tools');
     assert(body.error.message.includes('Invalid domain'));
@@ -1920,7 +1920,7 @@ for (const field of ['allowed_domains', 'blocked_domains'] as const) {
     const { result } = await runShimWithDomainEntry(field, 'http://example.com');
     assert(result.type === 'api-error');
     assertEquals(result.http.status, 400);
-    const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; message: string } };
+    const body = JSON.parse(decodeResponseBody(result.body)) as { error: { param: string; message: string } };
     assertEquals(body.error.param, 'tools');
     assert(body.error.message.includes('Invalid domain'));
   });
@@ -1929,7 +1929,7 @@ for (const field of ['allowed_domains', 'blocked_domains'] as const) {
     const { result } = await runShimWithDomainEntry(field, 'example.com/some/path');
     assert(result.type === 'api-error');
     assertEquals(result.http.status, 400);
-    const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; message: string } };
+    const body = JSON.parse(decodeResponseBody(result.body)) as { error: { param: string; message: string } };
     assertEquals(body.error.param, 'tools');
     assert(body.error.message.includes('Invalid domain'));
   });
@@ -1938,7 +1938,7 @@ for (const field of ['allowed_domains', 'blocked_domains'] as const) {
     const { result } = await runShimWithDomainEntry(field, 'example.com:8080');
     assert(result.type === 'api-error');
     assertEquals(result.http.status, 400);
-    const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; message: string } };
+    const body = JSON.parse(decodeResponseBody(result.body)) as { error: { param: string; message: string } };
     assertEquals(body.error.param, 'tools');
   });
 
@@ -1952,7 +1952,7 @@ for (const field of ['allowed_domains', 'blocked_domains'] as const) {
     const { result } = await runShimWithDomainEntry(field, '');
     assert(result.type === 'api-error');
     assertEquals(result.http.status, 400);
-    const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; message: string } };
+    const body = JSON.parse(decodeResponseBody(result.body)) as { error: { param: string; message: string } };
     assertEquals(body.error.param, 'tools');
   });
 
@@ -1966,7 +1966,7 @@ for (const field of ['allowed_domains', 'blocked_domains'] as const) {
     const { result } = await runShimWithDomainEntry(field, null);
     assert(result.type === 'api-error');
     assertEquals(result.http.status, 400);
-    const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; message: string } };
+    const body = JSON.parse(decodeResponseBody(result.body)) as { error: { param: string; message: string } };
     assertEquals(body.error.param, 'tools');
     // Non-string rejection mirrors `invalid_type` shape: message
     // describes what was expected vs got.
@@ -1988,7 +1988,7 @@ for (const field of ['allowed_domains', 'blocked_domains'] as const) {
     assertEquals(result.http.status, 400);
     assertEquals(script.callCount(), 0);
     assertEquals(backend.calls.length, 0);
-    const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { type: string; param: string; message: string } };
+    const body = JSON.parse(decodeResponseBody(result.body)) as { error: { type: string; param: string; message: string } };
     assertEquals(body.error.type, 'invalid_request_error');
     assertEquals(body.error.param, 'tools');
     assert(body.error.message.includes('at most 100'));
@@ -2019,7 +2019,7 @@ test('mixed list with one prefixed entry names the offending index (no silent dr
   const { result } = await runShimMixedList('blocked_domains', ['reddit.com', 'https://quora.com/']);
   assert(result.type === 'api-error');
   assertEquals(result.http.status, 400);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string; message: string } };
+  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { param: string; message: string } };
   assertEquals(body.error.param, 'tools');
   assert(body.error.message.includes('quora.com'));
 });
@@ -2066,7 +2066,7 @@ test('invalid search_context_size value rejects with 400 (no silent fall-through
   assertEquals(result.http.status, 400);
   assertEquals(script.callCount(), 0);
   assertEquals(backend.calls.length, 0);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { type: string; param: string; message: string } };
+  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { type: string; param: string; message: string } };
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.param, 'tools[].search_context_size');
   assert(body.error.message.includes('XXL'));
@@ -2124,7 +2124,7 @@ test('array-shaped filters rejects with 400 (typeof null/[] === "object" guards 
   assertEquals(result.http.status, 400);
   assertEquals(script.callCount(), 0);
   assertEquals(backend.calls.length, 0);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { message: string; param: string } };
+  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { message: string; param: string } };
   assert(body.error.message.includes('must be an object'));
   assert(body.error.message.includes('array'));
   // `param` must be exactly `tools` (not a sub-field), since
@@ -7269,7 +7269,7 @@ for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
         const { result } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), run);
         assert(result.type === 'api-error');
         assertEquals(result.http.status, 400);
-        assert(new TextDecoder().decode(result.body).includes('allowed_tools auto subset'));
+        assert(decodeResponseBody(result.body).includes('allowed_tools auto subset'));
         assertEquals(script.callCount(), 0);
         assertEquals(backend.calls.length, 0);
         assertEquals(choices, [{ type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: alias }] }]);

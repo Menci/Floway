@@ -9,7 +9,7 @@ import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { decodeResponseBody, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_gemini_attempt_test';
@@ -191,7 +191,7 @@ test('countTokens translates Gemini generateContent to Anthropic Messages count_
   assertEquals(result.type, 'plain');
   if (result.type !== 'plain') throw new Error('unreachable');
   assertEquals(result.http.status, 200);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
+  const body = JSON.parse(decodeResponseBody(result.body));
   assertEquals(body, { totalTokens: 42 });
   assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
   assertEquals(callOptions?.anthropicBeta, []);
@@ -217,7 +217,7 @@ test('countTokens accepts the upstream total_tokens dialect and refuses unknown 
   });
   assertEquals(totalTokensResp.type, 'plain');
   if (totalTokensResp.type !== 'plain') throw new Error('unreachable');
-  assertEquals(JSON.parse(new TextDecoder().decode(totalTokensResp.body)), { totalTokens: 19 });
+  assertEquals(JSON.parse(decodeResponseBody(totalTokensResp.body)), { totalTokens: 19 });
 
   const unexpectedResp = await geminiGenerateContentAttempt.countTokens({
     payload: makePayload(),
@@ -233,7 +233,7 @@ test('countTokens accepts the upstream total_tokens dialect and refuses unknown 
   assertEquals(unexpectedResp.type, 'plain');
   if (unexpectedResp.type !== 'plain') throw new Error('unreachable');
   assertEquals(unexpectedResp.http.status, 502);
-  const body = JSON.parse(new TextDecoder().decode(unexpectedResp.body));
+  const body = JSON.parse(decodeResponseBody(unexpectedResp.body));
   assertEquals(body.error.code, 502);
   assertEquals(body.error.status, 'UNAVAILABLE');
   assertEquals(Object.keys(body.error).sort(), ['code', 'details', 'message', 'status']);
@@ -336,7 +336,7 @@ test('countTokens relays a native Gemini count verbatim', async () => {
   assertEquals(result.type, 'plain');
   if (result.type !== 'plain') throw new Error('unreachable');
   assertEquals(result.http.status, 200);
-  assertEquals(JSON.parse(new TextDecoder().decode(result.body)), { totalTokens: 77 });
+  assertEquals(JSON.parse(decodeResponseBody(result.body)), { totalTokens: 77 });
   assertEquals(callGeminiGenerateContentCountTokens.mock.calls.length, 1);
 });
 

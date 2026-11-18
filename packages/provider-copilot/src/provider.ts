@@ -24,7 +24,7 @@ import { type DecisionProtocol, type DecisionTarget, type ModelEndpointKey, type
 import { DEFAULT_DECISION_PATHS, serializeDecisionRequest, type CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import { parseOpenAIChatCompletionsStream, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
-import { eventResult, getProviderRepo, headersForAnthropicMessagesCall, jsonRequestBody, serializeOpenAIImagesEditsRequest, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FetchInit, type FlagOverrides, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { eventResult, getProviderRepo, headersForAnthropicMessagesCall, jsonRequestBody, serializeOpenAIImagesEditsRequest, readUpstreamApiError, streamingProviderCall, bufferedResultToResponse, resolveEffectiveFlags, type ExecuteResult, type FetchInit, type FlagOverrides, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -349,7 +349,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       };
     }
     if (result.type === 'api-error') {
-      return { ok: false, http: apiErrorToResponse(result), modelKey };
+      return { ok: false, http: bufferedResultToResponse(result), modelKey };
     }
     throw new Error(`Copilot boundary chain produced unexpected ExecuteResult shape '${result.type}'`);
   };

@@ -19,7 +19,7 @@ const isContextWindowError = (text: string): boolean => text.includes('Request b
  */
 export const rewriteContextWindowError: CopilotAnthropicMessagesBoundaryInterceptor = async (_ctx, _env, run) => {
   const result = await run();
-  if (result.type !== 'api-error' || result.source !== 'upstream') return result;
+  if (result.type !== 'api-error' || result.source !== 'upstream' || result.body === null) return result;
 
   const body = new TextDecoder().decode(result.body);
   if (!isContextWindowError(body)) return result;

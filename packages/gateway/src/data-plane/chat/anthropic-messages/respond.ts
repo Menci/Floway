@@ -7,14 +7,13 @@ import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
-import { forwardUpstreamHeaders } from '../../shared/upstream-response.ts';
+import { forwardBufferedUpstreamResponse, prepareSseResponse } from '../../shared/upstream-response.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
-import { SourceStreamState, eventResultMetadata, jsonResponseInit, plainResultToResponse } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, jsonResponseInit } from '../shared/respond.ts';
 import { anthropicMessagesProtocolFrameToSSEFrame, ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE, collectAnthropicMessagesProtocolEventsToResult } from '@floway-dev/protocols/anthropic-messages';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
-import { apiErrorToResponse } from '@floway-dev/provider';
 
 // Renders an upstream Anthropic Messages result into the client HTTP/SSE response. An
 // error-typed result is a pre-stream failure and always answers as HTTP; an
@@ -29,7 +28,7 @@ export const respondAnthropicMessages = async (
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstreamId);
-    return apiErrorToResponse(result);
+    return forwardBufferedUpstreamResponse(result);
   }
 
   if (result.type === 'internal-error') {
@@ -42,7 +41,7 @@ export const respondAnthropicMessages = async (
     if (result.http.status >= 400) {
       ctx.dump?.error(result.upstreamId !== undefined ? 'upstream' : 'gateway', result.upstreamId);
     }
-    return plainResultToResponse(result);
+    return forwardBufferedUpstreamResponse(result);
   }
 
   const state = new SourceStreamState();
@@ -64,7 +63,7 @@ export const respondAnthropicMessages = async (
     }
   }
 
-  forwardUpstreamHeaders(c, result.http?.headers);
+  prepareSseResponse(c, result.http);
   return streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {

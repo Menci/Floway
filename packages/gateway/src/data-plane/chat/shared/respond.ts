@@ -1,28 +1,19 @@
 import type { StreamCompletion } from '../../shared/sse.ts';
 import { mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { plainResult } from '@floway-dev/provider';
+import { plainResult, readResponseBody } from '@floway-dev/provider';
 import type { EventResultMetadata, ExecuteResult, HttpHead, PlainResult } from '@floway-dev/provider';
-
-// Emits a measurement endpoint's already-shaped body verbatim. The endpoint's
-// `attempt` owns all shaping — the success body and any source-specific error
-// envelope — so every source's `respond` renders a plain result identically.
-export const plainResultToResponse = (result: PlainResult): Response =>
-  new Response(result.body.slice().buffer, result.http);
 
 // Used by count_tokens endpoints that either pass through the upstream body
 // or wrap an already-built error/success Response.
-export const plainResultFromResponse = async (response: Response, upstream?: string): Promise<PlainResult> =>
-  plainResult(
-    {
-      status: response.status,
-      headers: new Headers({ 'content-type': response.headers.get('content-type') ?? 'application/json' }),
-    },
-    new Uint8Array(await response.arrayBuffer()),
-    upstream,
-  );
+export const plainResultFromResponse = async (response: Response, upstream?: string): Promise<PlainResult> => {
+  const headers = new Headers(response.headers);
+  if (!headers.has('content-type')) headers.set('content-type', 'application/json');
+  return plainResult({ status: response.status, headers }, await readResponseBody(response), upstream);
+};
 
 export const jsonResponseInit = (http: HttpHead | undefined) => ({
+  ...(http === undefined ? {} : { status: http.status }),
   headers: mergeForwardedUpstreamHeaders(undefined, http?.headers),
 });
 

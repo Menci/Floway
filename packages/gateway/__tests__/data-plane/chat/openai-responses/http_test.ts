@@ -518,8 +518,8 @@ test('POST /v1/responses/compact returns a non-streaming compaction body', async
     headers: new Headers({ 'request-id': 'req_compact', 'content-type': 'application/vnd.upstream+json', 'set-cookie': 'private=1' }),
   });
 
-  assertEquals(response.status, 200);
-  assertEquals(response.headers.get('request-id'), null);
+  assertEquals(response.status, 202);
+  assertEquals(response.headers.get('request-id'), 'req_compact');
   assertEquals(response.headers.get('set-cookie'), null);
   assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
   const body = await response.json() as { object: string; id: string; output: Array<{ id: string }> };

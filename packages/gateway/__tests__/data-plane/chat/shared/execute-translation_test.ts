@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { executeTranslation } from '../../../../src/data-plane/chat/shared/execute-translation.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { toInternalDebugError, type ExecuteResult } from '@floway-dev/provider';
+import { decodeResponseBody, toInternalDebugError, type ExecuteResult } from '@floway-dev/provider';
 import { testTelemetryModelIdentity } from '@floway-dev/test-utils';
 import type { TranslateTrip } from '@floway-dev/translate';
 
@@ -122,7 +122,7 @@ describe('executeTranslation', () => {
     const result = await executeTranslation({ model: 'payload' }, translateWithRewrite, async () => inner);
     expect(result.type).toBe('api-error');
     if (result.type !== 'api-error') throw new Error('unreachable');
-    expect(JSON.parse(new TextDecoder().decode(result.body))).toEqual({ error: { message: 'rewritten' } });
+    expect(JSON.parse(decodeResponseBody(result.body))).toEqual({ error: { message: 'rewritten' } });
     expect(result.http.headers.get('content-type')).toBe('application/json');
     expect(result.http.headers.get('x-upstream-request-id')).toBeNull();
     // Fields not touched by the rewriter (source, performance, upstream) survive.
@@ -219,10 +219,10 @@ describe('executeTranslation upstream capture', () => {
       http: { status: 413, headers: new Headers({ 'x-upstream': 'yes' }) },
       body: new TextEncoder().encode('raw upstream body'),
     };
-    const captured: { status: number; headers: Headers; body: Uint8Array }[] = [];
+    const captured: { status: number; headers: Headers; body: Uint8Array | null }[] = [];
     const capture = {
       upstreamFrame: () => { throw new Error('should not be called on api-error path'); },
-      upstreamApiError: (error: { status: number; headers: Headers; body: Uint8Array }) => captured.push(error),
+      upstreamApiError: (error: { status: number; headers: Headers; body: Uint8Array | null }) => captured.push(error),
     };
     const translateWithRewrite = async (payload: SrcPayload): Promise<TranslateTrip<string, SrcEvent, TgtEvent>> => ({
       ...(await translate(payload)),
@@ -236,9 +236,9 @@ describe('executeTranslation upstream capture', () => {
     expect(captured).toHaveLength(1);
     expect(captured[0].status).toBe(413);
     expect(captured[0].headers.get('x-upstream')).toBe('yes');
-    expect(new TextDecoder().decode(captured[0].body)).toBe('raw upstream body');
+    expect(decodeResponseBody(captured[0].body)).toBe('raw upstream body');
     // Downstream got the rewrite.
-    expect(JSON.parse(new TextDecoder().decode(result.body))).toEqual({ error: { message: 'rewritten' } });
+    expect(JSON.parse(decodeResponseBody(result.body))).toEqual({ error: { message: 'rewritten' } });
   });
 
   test('api-error path — capture fires even when trip.error is undefined (no restatement)', async () => {
@@ -251,7 +251,7 @@ describe('executeTranslation upstream capture', () => {
     const captured: { status: number }[] = [];
     const capture = {
       upstreamFrame: () => {},
-      upstreamApiError: (error: { status: number; headers: Headers; body: Uint8Array }) => captured.push({ status: error.status }),
+      upstreamApiError: (error: { status: number; headers: Headers; body: Uint8Array | null }) => captured.push({ status: error.status }),
     };
 
     await executeTranslation({ model: 'payload' }, translate, async () => inner, capture);

@@ -11,10 +11,10 @@ import { iterateCandidates } from '../shared/iterate-candidates.ts';
 import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { recordFailedRequest, recordPerformance, type PerformanceTelemetryContext } from '../shared/telemetry/performance.ts';
 import { recordUsage } from '../shared/telemetry/usage.ts';
-import { forwardUpstreamResponse } from '../shared/upstream-response.ts';
+import { forwardUpstreamResponse, providerModelsUnavailableResponse } from '../shared/upstream-response.ts';
 import { parseDecimalString, type RerankSourceProtocol } from '@floway-dev/protocols/common';
 import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, rerankRequestIncompatibility, type CanonicalRerankResponse, type ParsedRerankRequest } from '@floway-dev/protocols/rerank';
-import { httpResponseToResponse, ProviderModelsUnavailableError, providerModelOf, toInternalDebugError } from '@floway-dev/provider';
+import { providerModelOf, toInternalDebugError } from '@floway-dev/provider';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 const apiError = (c: Context, message: string, status: ContentfulStatusCode): Response =>
@@ -172,12 +172,10 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Contex
     } else if (terminal === undefined) {
       recordFailedRequest(ctx, ctx.attempt.telemetry);
     }
-    if (error instanceof ProviderModelsUnavailableError) {
-      const forwarded = httpResponseToResponse(error.httpResponse);
-      if (forwarded) {
-        ctx.dump?.error('upstream');
-        return finalizeGatewayResponse(ctx, forwarded);
-      }
+    const forwarded = providerModelsUnavailableResponse(error);
+    if (forwarded) {
+      ctx.dump?.error('upstream');
+      return finalizeGatewayResponse(ctx, forwarded);
     }
     ctx.dump?.failed(error);
     return finalizeGatewayResponse(ctx, c.json({ error: toInternalDebugError(error) }, 502));

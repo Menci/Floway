@@ -1,10 +1,11 @@
 import { test } from 'vitest';
 
 import { inputErrorResult } from '../../../../src/data-plane/chat/gemini-generate-content/errors.ts';
+import { decodeResponseBody } from '@floway-dev/provider';
 import { assert, assertEquals, mockPerfTelemetryContext } from '@floway-dev/test-utils';
 
 const bodyOf = (result: ReturnType<typeof inputErrorResult>): Record<string, unknown> =>
-  JSON.parse(new TextDecoder().decode(result.body));
+  JSON.parse(decodeResponseBody(result.body));
 
 test('inputErrorResult renders a GenerateContent 400 INVALID_ARGUMENT envelope', () => {
   const result = inputErrorResult({ message: '"inlineData" parts are not supported in user content.' });

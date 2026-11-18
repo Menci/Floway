@@ -8,7 +8,7 @@ import type { AnthropicMessagesClientTool, AnthropicMessagesPayload, AnthropicMe
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayloadEx, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
-import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { decodeResponseBody, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 import type { FlagId } from '@floway-dev/provider/flags';
 import { createOllamaProvider } from '@floway-dev/provider-ollama';
 import { assertEquals, assertExists, stubProvider, stubInternalModel, stubProviderModel, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
@@ -424,7 +424,7 @@ test('countTokens proxies the upstream response as a plain result', async () => 
   assertEquals(result.type, 'plain');
   if (result.type !== 'plain') throw new Error('unreachable');
   assertEquals(result.http.status, 200);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
+  const body = JSON.parse(decodeResponseBody(result.body));
   assertEquals(body.input_tokens, 7);
   assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
 });

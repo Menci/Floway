@@ -3,10 +3,11 @@ import { test } from 'vitest';
 import { inputErrorResult, type OpenAIResponsesServeFailure } from '../../../../src/data-plane/chat/openai-responses/errors.ts';
 import { throwChatServeFailure, tryCatchChatServeFailure } from '../../../../src/data-plane/chat/shared/errors.ts';
 import type { ApiErrorResult } from '@floway-dev/provider';
+import { decodeResponseBody } from '@floway-dev/provider';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 const bodyOf = (result: ApiErrorResult): unknown =>
-  JSON.parse(new TextDecoder().decode(result.body));
+  JSON.parse(decodeResponseBody(result.body));
 
 test('round-trips the OpenAI-Responses-only item-not-found failure through throw/catch', () => {
   const failure: OpenAIResponsesServeFailure = { kind: 'item-not-found', itemId: 'msg_abc' };

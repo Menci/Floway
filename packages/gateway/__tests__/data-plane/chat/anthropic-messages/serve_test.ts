@@ -6,7 +6,7 @@ import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions, type FlagId } from '@floway-dev/provider';
+import { decodeResponseBody, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the provider
@@ -315,7 +315,7 @@ test('generate renders model-missing when no candidates are available', async ()
 
   const failure = assertResultType(result, 'api-error');
   assertEquals(failure.http.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(failure.body));
+  const body = JSON.parse(decodeResponseBody(failure.body));
   assertEquals(body.error.type, 'not_found_error');
   assertEquals(body.error.message, 'Model unknown-model is not available on any configured upstream.');
 });
@@ -335,7 +335,7 @@ test('generate filters out candidates whose endpoints do not satisfy the message
 
   const failure = assertResultType(result, 'api-error');
   assertEquals(failure.http.status, 400);
-  const body = JSON.parse(new TextDecoder().decode(failure.body));
+  const body = JSON.parse(decodeResponseBody(failure.body));
   assertEquals(body.error.type, 'invalid_request_error');
   assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
   assertEquals(callAnthropicMessages.mock.calls.length, 0);
@@ -368,7 +368,7 @@ test('countTokens proxies the upstream measurement response as a plain result', 
 
   const plain = assertResultType(result, 'plain');
   assertEquals(plain.http.status, 200);
-  const body = JSON.parse(new TextDecoder().decode(plain.body));
+  const body = JSON.parse(decodeResponseBody(plain.body));
   assertEquals(body.input_tokens, 42);
   assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
   assertEquals(callOptions?.anthropicBeta, ['context-1m-2025-08-07', 'advanced-tool-use-2025-11-20']);
@@ -389,7 +389,7 @@ test('countTokens renders model-missing as a 404 when no candidates are availabl
 
   const failure = assertResultType(result, 'api-error');
   assertEquals(failure.http.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(failure.body));
+  const body = JSON.parse(decodeResponseBody(failure.body));
   assertEquals(body.error.type, 'not_found_error');
   assertEquals(body.error.message, 'Model unknown-model is not available on any configured upstream.');
 });
@@ -409,7 +409,7 @@ test('countTokens filters out candidates whose endpoints do not satisfy the mess
 
   const failure = assertResultType(result, 'api-error');
   assertEquals(failure.http.status, 400);
-  const body = JSON.parse(new TextDecoder().decode(failure.body));
+  const body = JSON.parse(decodeResponseBody(failure.body));
   assertEquals(body.error.type, 'invalid_request_error');
   assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
   assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 0);
@@ -694,7 +694,7 @@ test('alias whose targets have no kind-matching binding surfaces as the regular 
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
   assertEquals(result.http.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
+  const body = JSON.parse(decodeResponseBody(result.body));
   assertEquals(body.error.type, 'not_found_error');
   assertEquals(body.error.message, 'Model claude-fast is not available on any configured upstream.');
 });

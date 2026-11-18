@@ -81,6 +81,7 @@ export const openaiResponsesAttempt = {
       return {
         type: 'result',
         result: upstreamCompacted,
+        ...(chainResult.http === undefined ? {} : { http: chainResult.http }),
         modelIdentity: chainResult.modelIdentity,
         usage: tokenUsageFromBillableUsage((await chainResult.finalMetadata)?.billableUsage),
         performance: chainResult.performance,

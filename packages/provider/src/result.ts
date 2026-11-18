@@ -4,6 +4,20 @@ import type { BillableUsage } from '@floway-dev/protocols/common';
 
 export type HttpHead = Pick<Response, 'status' | 'headers'>;
 
+export interface BufferedHttpResult {
+  http: HttpHead;
+  body: Uint8Array | null;
+}
+
+export const readResponseBody = async (response: Response): Promise<Uint8Array<ArrayBuffer> | null> =>
+  response.body === null ? null : new Uint8Array(await response.arrayBuffer());
+
+export const bufferedResultToResponse = (result: BufferedHttpResult): Response =>
+  new Response(result.body === null ? null : result.body.slice().buffer, result.http);
+
+export const decodeResponseBody = (body: BufferedHttpResult['body']): string =>
+  body === null ? '' : new TextDecoder().decode(body);
+
 export interface EventResult<T> {
   type: 'events';
   events: AsyncIterable<T>;
@@ -30,11 +44,9 @@ export interface EventResultMetadata {
 // upstream 4xx/5xx (`source === 'upstream'`) so the dump row can attribute the
 // failure to its source; it is absent on gateway-synthesized envelopes that
 // never reached an upstream.
-export interface ApiErrorResult {
+export interface ApiErrorResult extends BufferedHttpResult {
   type: 'api-error';
   source: 'upstream' | 'gateway';
-  http: HttpHead;
-  body: Uint8Array;
   performance?: PerformanceTelemetryContext;
   upstreamId?: string;
 }
@@ -52,10 +64,8 @@ export interface InternalErrorResult {
 
 // A buffered HTTP body for a measurement endpoint. The responder emits the
 // bytes directly. `upstreamId` identifies responses produced by an upstream.
-export interface PlainResult {
+export interface PlainResult extends BufferedHttpResult {
   type: 'plain';
-  http: HttpHead;
-  body: Uint8Array;
   upstreamId?: string;
 }
 
@@ -86,7 +96,7 @@ export const internalErrorResult = (status: number, error: InternalDebugError, p
   ...(performance ? { performance } : {}),
 });
 
-export const plainResult = (http: HttpHead, body: Uint8Array, upstreamId?: string): PlainResult => ({
+export const plainResult = (http: HttpHead, body: BufferedHttpResult['body'], upstreamId?: string): PlainResult => ({
   type: 'plain',
   http,
   body,
@@ -97,7 +107,7 @@ export const readUpstreamApiError = async (response: Response, upstreamId?: stri
   type: 'api-error',
   source: 'upstream',
   http: { status: response.status, headers: new Headers(response.headers) },
-  body: new Uint8Array(await response.arrayBuffer()),
+  body: await readResponseBody(response),
   ...(upstreamId !== undefined ? { upstreamId } : {}),
 });
 
@@ -109,8 +119,3 @@ export const readUpstreamApiError = async (response: Response, upstreamId?: stri
 export const discardUpstreamResponse = async (response: Response): Promise<void> => {
   await response.body?.cancel();
 };
-
-export const apiErrorToResponse = (error: ApiErrorResult): Response =>
-  new Response(error.body.slice().buffer, error.http);
-
-export const decodeApiErrorBody = (error: ApiErrorResult): string => new TextDecoder().decode(error.body);

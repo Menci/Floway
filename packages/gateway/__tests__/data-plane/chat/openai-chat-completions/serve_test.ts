@@ -5,7 +5,7 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { type ModelCandidate, directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
+import { decodeResponseBody, type ModelCandidate, directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the model
@@ -153,7 +153,7 @@ test('generate filters out candidates that do not expose any chat-completions-ta
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
   assertEquals(result.http.status, 400);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
+  const body = JSON.parse(decodeResponseBody(result.body));
   assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
   assertEquals(callOpenAIChatCompletions.mock.calls.length, 0);
 });
@@ -302,7 +302,7 @@ test('generate renders model-missing when no candidates are available', async ()
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
   assertEquals(result.http.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
+  const body = JSON.parse(decodeResponseBody(result.body));
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.message, 'Model unknown-model is not available on any configured upstream.');
 });
@@ -392,7 +392,7 @@ test('alias whose targets have no kind-matching binding surfaces as the regular 
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
   assertEquals(result.http.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
+  const body = JSON.parse(decodeResponseBody(result.body));
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.message, 'Model gpt-fast is not available on any configured upstream.');
 });

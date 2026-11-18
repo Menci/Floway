@@ -149,6 +149,27 @@ const makeAnthropicMessagesEvents = (): readonly AnthropicMessagesStreamEventEx[
   { type: 'message_stop' },
 ];
 
+test.each(['generateContent', 'streamGenerateContent'])('POST %s maps a native Google RPC error before responding', async action => {
+  installRepo();
+  const body = { error: { code: 412, status: 'FAILED_PRECONDITION', message: 'account is not ready' } };
+  const callGeminiGenerateContent = vi.fn(async (): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => ({
+    ok: false,
+    http: Response.json(body, { status: 400, headers: { 'request-id': 'req-google-rpc' } }),
+    modelKey: 'k',
+  }));
+  queueCandidates([makeCandidate({ endpoints: { geminiGenerateContent: {} }, callGeminiGenerateContent })]);
+
+  const response = await makeApp().request(`/v1beta/models/test-model:${action}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] }),
+  });
+
+  assertEquals(response.status, 412);
+  assertEquals(response.headers.get('request-id'), 'req-google-rpc');
+  assertEquals(await response.json(), body);
+});
+
 test('POST /v1beta/models/:model:generateContent returns a single JSON body for non-stream generate', async () => {
   installRepo();
   const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
@@ -227,6 +248,25 @@ test('POST /v1beta/models/:model:countTokens returns the Gemini generateContent 
   assertEquals(response.status, 200);
   assertEquals(await response.json(), { totalTokens: 23 });
   assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
+});
+
+test('POST /v1beta/models/:model:countTokens preserves an upstream 204 without a body', async () => {
+  installRepo();
+  const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
+    http: new Response(null, { status: 204, headers: { 'request-id': 'req-no-count' } }),
+    modelKey: 'k',
+  }));
+  queueCandidates([makeCandidate({ targetApi: 'anthropicMessages', callAnthropicMessagesCountTokens })]);
+
+  const response = await makeApp().request('/v1beta/models/test-model:countTokens', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] }),
+  });
+
+  assertEquals(response.status, 204);
+  assertEquals(response.headers.get('request-id'), 'req-no-count');
+  assertEquals(response.body, null);
 });
 
 test('POST /v1beta/models/:model:countTokens accepts the generateContentRequest envelope shape', async () => {

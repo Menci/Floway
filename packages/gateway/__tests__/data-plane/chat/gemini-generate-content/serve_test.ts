@@ -8,7 +8,7 @@ import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type Proto
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { decodeResponseBody, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the model
@@ -333,7 +333,7 @@ test('generate renders model-missing as a Google RPC 404 when no candidates are 
 
   const upstreamError = expectType(result, 'api-error');
   assertEquals(upstreamError.http.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(upstreamError.body));
+  const body = JSON.parse(decodeResponseBody(upstreamError.body));
   assertEquals(body.error.code, 404);
   assertEquals(body.error.status, 'NOT_FOUND');
   assert(typeof body.error.message === 'string' && body.error.message.includes('unknown-model'));
@@ -355,7 +355,7 @@ test('generate filters out candidates whose endpoints do not satisfy the gemini-
 
   const upstreamError = expectType(result, 'api-error');
   assertEquals(upstreamError.http.status, 400);
-  const body = JSON.parse(new TextDecoder().decode(upstreamError.body));
+  const body = JSON.parse(decodeResponseBody(upstreamError.body));
   assertEquals(body.error.code, 400);
   assertEquals(body.error.status, 'INVALID_ARGUMENT');
   assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
@@ -385,7 +385,7 @@ test('countTokens translates Gemini generateContent to Anthropic Messages count_
 
   const plain = expectType(result, 'plain');
   assertEquals(plain.http.status, 200);
-  const body = JSON.parse(new TextDecoder().decode(plain.body));
+  const body = JSON.parse(decodeResponseBody(plain.body));
   assertEquals(body, { totalTokens: 17 });
   assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
 });
@@ -403,7 +403,7 @@ test('countTokens renders a Google RPC NOT_FOUND when no Anthropic-Messages-capa
 
   const upstreamError = expectType(result, 'api-error');
   assertEquals(upstreamError.http.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(upstreamError.body));
+  const body = JSON.parse(decodeResponseBody(upstreamError.body));
   assertEquals(body.error.code, 404);
   assertEquals(body.error.status, 'NOT_FOUND');
   assert(typeof body.error.message === 'string' && body.error.message.includes('no-messages-model is not'));
@@ -425,7 +425,7 @@ test('countTokens filters out candidates whose endpoints do not satisfy the gemi
 
   const upstreamError = expectType(result, 'api-error');
   assertEquals(upstreamError.http.status, 400);
-  const body = JSON.parse(new TextDecoder().decode(upstreamError.body));
+  const body = JSON.parse(decodeResponseBody(upstreamError.body));
   assertEquals(body.error.code, 400);
   assertEquals(body.error.status, 'INVALID_ARGUMENT');
   assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
@@ -476,7 +476,7 @@ test('alias whose targets have no kind-matching binding surfaces as the regular 
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
   assertEquals(result.http.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
+  const body = JSON.parse(decodeResponseBody(result.body));
   assertEquals(body.error.message, 'Model gemini-fast is not available on any configured upstream.');
 });
 

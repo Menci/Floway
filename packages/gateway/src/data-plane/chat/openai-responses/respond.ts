@@ -8,13 +8,12 @@ import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
-import { forwardUpstreamHeaders } from '../../shared/upstream-response.ts';
-import { SourceStreamState, eventResultMetadata, jsonResponseInit, plainResultToResponse } from '../shared/respond.ts';
+import { forwardBufferedUpstreamResponse, prepareSseResponse } from '../../shared/upstream-response.ts';
+import { SourceStreamState, eventResultMetadata, jsonResponseInit } from '../shared/respond.ts';
 import { doneFrame, eventFrame, isJsonObject, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { openaiResponsesProtocolFrameToSSEFrame, OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, collectOpenAIResponsesProtocolEventsToResult } from '@floway-dev/protocols/openai-responses';
 import { isOpenAIResponsesErrorEvent, isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientResponseResource, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesStreamEventEx, type OpenAIResponsesErrorEx } from '@floway-dev/protocols/openai-responses';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
-import { apiErrorToResponse } from '@floway-dev/provider';
 
 // Renders an OpenAI Responses failure that never opened a stream. Separate entry
 // because a request that fails before its payload parses has no payload to
@@ -26,7 +25,7 @@ export const respondOpenAIResponsesFailure = (
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstreamId);
-    return apiErrorToResponse(result);
+    return forwardBufferedUpstreamResponse(result);
   }
 
   if (result.type === 'internal-error') {
@@ -38,7 +37,7 @@ export const respondOpenAIResponsesFailure = (
   if (result.http.status >= 400) {
     ctx.dump?.error(result.upstreamId !== undefined ? 'upstream' : 'gateway', result.upstreamId);
   }
-  return plainResultToResponse(result);
+  return forwardBufferedUpstreamResponse(result);
 };
 
 // Renders an upstream OpenAI Responses result into the client HTTP/SSE response. An
@@ -82,7 +81,7 @@ export const respondOpenAIResponses = async (
     }
   }
 
-  forwardUpstreamHeaders(c, result.http?.headers);
+  prepareSseResponse(c, result.http);
   c.header(OPENAI_RESPONSES_REASONING_INCLUDED_HEADER, OPENAI_RESPONSES_REASONING_INCLUDED_VALUE);
   const response = streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';

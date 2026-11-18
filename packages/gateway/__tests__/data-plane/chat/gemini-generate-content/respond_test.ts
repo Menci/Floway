@@ -133,7 +133,7 @@ test('respondGeminiGenerateContent preserves upstream Google RPC Status body', a
   const response = await requestGeminiGenerateContentResponse({
     type: 'api-error',
     source: 'upstream',
-    http: { status: 400, headers: new Headers({ 'content-type': 'application/json' }) },
+    http: { status: 412, headers: new Headers({ 'content-type': 'application/json' }) },
     body: encoder.encode(JSON.stringify(upstreamBody)),
   });
 
