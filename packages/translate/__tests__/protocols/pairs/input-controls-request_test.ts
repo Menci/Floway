@@ -50,14 +50,16 @@ test.each([
   expect(messages.target.max_tokens).toBe(messagesCeiling);
 });
 
-test('nullable token limits and cache controls remain explicit in source IR', async () => {
+test('nullable token limits remain explicit while non-nullable Chat identity and cache options are rejected', async () => {
   const source = {
     model: 'm', stream: true, messages: [], max_tokens: null, max_completion_tokens: null,
-    prompt_cache_options: null, prompt_cache_retention: null, user: null,
+    prompt_cache_retention: null,
   };
   expect(readOpenAIChatCompletionsRequest(source).request.settings).toMatchObject({
-    max_visible_output_tokens: null, max_output_tokens: null, prompt_cache_options: null, prompt_cache_retention: null, user: null,
+    max_visible_output_tokens: null, max_output_tokens: null, prompt_cache_retention: null,
   });
+  expect(() => readOpenAIChatCompletionsRequest({ ...source, prompt_cache_options: null })).toThrow("Invalid 'prompt_cache_options': expected an object when present.");
+  expect(() => readOpenAIChatCompletionsRequest({ ...source, user: null })).toThrow("Invalid 'user': expected a string when present.");
   const responses = await routeOpenAIChatCompletionsViaOpenAIResponses(source, options);
   if (responses.type !== 'trip') throw new Error(responses.message);
   expect(responses.target.max_output_tokens).toBeNull();

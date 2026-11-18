@@ -4811,14 +4811,15 @@ test.each([false, true])('forced namespaced client tool choice is not mistaken f
     },
   });
   const seenToolChoices: unknown[] = [];
+  const allocatedName = declared ? `${SHIM_TOOL_NAME}_2` : SHIM_TOOL_NAME;
   const script = scriptedRun([
-    fcTurn(0, 'call_search', `${SHIM_TOOL_NAME}_2`, JSON.stringify({ search_query: [{ q: 'q1' }] })),
+    fcTurn(0, 'call_search', allocatedName, JSON.stringify({ search_query: [{ q: 'q1' }] })),
     messageTurn('done'),
   ]);
   const run = async () => {
     const injected = inv.payload.tools?.[0];
     assert(injected?.type === 'function');
-    assertEquals(injected.name, `${SHIM_TOOL_NAME}_2`);
+    assertEquals(injected.name, allocatedName);
     seenToolChoices.push(inv.payload.tool_choice);
     return await script.run();
   };
@@ -7111,7 +7112,7 @@ test('helper allocation reserves names across callable scopes, history and searc
     { type: 'additional_tools', role: 'developer', tools: [{ type: 'custom', name: 'web_search_6' }] },
   ];
   const original = structuredClone({ tools, input });
-  assertEquals(resolveServerToolName('web_search', tools, input, { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: 'client.web_search_7' }] }), 'web_search_8');
+  assertEquals(resolveServerToolName('web_search', tools, input, { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: 'client.web_search_7' }] }), 'web_search_7');
   assertEquals(resolveServerToolName('web_search', [], [], { type: 'custom', name: 'web_search' }), 'web_search_2');
   assertEquals({ tools, input }, original);
 });
