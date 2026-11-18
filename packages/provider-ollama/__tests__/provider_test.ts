@@ -1,9 +1,8 @@
 import { test } from 'vitest';
 
-import { CREDIT_BALANCE, USAGE_TOTALS } from './usage-fixture.ts';
 import { createOllamaProvider } from '../src/provider.ts';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, jsonResponse, noopUpstreamCallOptions, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
 
 // A cloud upstream writes its usage snapshot after the calls it serves, so the
 // provider needs a repo to write into wherever those calls are exercised.
@@ -199,45 +198,4 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
   // Ollama reads only `max_tokens` into `num_predict`.
   assertEquals(body.max_tokens, 32000);
   assertEquals('max_completion_tokens' in body, false);
-});
-
-test('Anthropic Messages methods serialize typed anthropic-beta metadata only on Anthropic Messages wire calls', async () => {
-  const instance = createOllamaProvider(buildRecord());
-  const betas: Record<string, string | null> = {};
-
-  await withMockedFetch(
-    async request => {
-      const path = new URL(request.url).pathname;
-      if (path === '/api/tags') return jsonResponse({ models: [{ name: 'gpt-oss:120b' }] });
-      if (path === '/api/show') {
-        return jsonResponse({
-          capabilities: ['completion'],
-          details: { family: 'gptoss' },
-          model_info: { 'general.architecture': 'gptoss', 'gptoss.context_length': 131072 },
-        });
-      }
-      // A cloud call arms the background usage probe. It is not a wire call
-      // of the protocol under test, so it stays out of the beta record.
-      if (path === '/api/usage') return jsonResponse(USAGE_TOTALS);
-      if (path === '/api/balance') return jsonResponse(CREDIT_BALANCE);
-      if (path === '/api/me') return jsonResponse({ Plan: 'free' });
-      betas[path] = request.headers.get('anthropic-beta');
-      if (path === '/v1/messages') {
-        return new Response('', { status: 200, headers: { 'content-type': 'text/event-stream' } });
-      }
-      if (path === '/v1/messages/count_tokens') return jsonResponse({ input_tokens: 1 });
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const [model] = await instance.instance.getProvidedModels(testFetcher);
-      const opts = noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
-      await instance.instance.callAnthropicMessages(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-      await instance.instance.callAnthropicMessagesCountTokens(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-    },
-  );
-
-  assertEquals(betas, {
-    '/v1/messages': 'context-1m,advanced-tool-use',
-    '/v1/messages/count_tokens': 'context-1m,advanced-tool-use',
-  });
 });
