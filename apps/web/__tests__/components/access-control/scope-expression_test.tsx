@@ -128,6 +128,17 @@ test('lists matched models, custom entries, then every unmatched model', () => {
   expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['^GPT-5$', '/^GPT-5$/', 'gpt-5', 'gpt-6']);
 });
 
+test('preserves the existing regex kind when a model draft loses focus', async () => {
+  const { changed, container } = renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: '^gpt-' } });
+
+  fireEvent.click(container.querySelector('.floway-scope-expression-regex')!.closest('button')!);
+  const input = screen.getByRole('combobox', { name: 'Model' });
+  fireEvent.change(input, { target: { value: '^future-' } });
+  fireEvent.blur(input);
+
+  await waitFor(() => expect(changed).toHaveBeenLastCalledWith({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: '^future-' } }));
+});
+
 test('commits a model synchronously before focus reaches a submit action', () => {
   const { changed } = renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } });
   fireEvent.click(screen.getByRole('button', { name: 'gpt-5' }));

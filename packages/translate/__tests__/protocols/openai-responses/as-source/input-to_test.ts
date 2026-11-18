@@ -47,6 +47,16 @@ test.each([
   expect(slot.toIRInputTurns()).toEqual([{ kind: 'assistant', items: expected }]);
 });
 
+test('a standalone function call output is rejected as untranslatable', async () => {
+  const trip = await routeOpenAIResponsesViaAnthropicMessages({
+    model: 'm', stream: true, input: [
+      { type: 'message', role: 'user', content: 'hi' },
+      { type: 'function_call_output', name: 'goal_objective', namespace: 'agent', output: 'objective' },
+    ],
+  }, { sidecarCodec: createTestSidecarCodec() });
+  expect(trip).toMatchObject({ type: 'input-error', message: 'Cannot translate a function call output without a call_id.' });
+});
+
 test('custom result status reaches the Responses wire from the IR failure marker', () => {
   const output = openaiResponsesConversationFromIR([{
     kind: 'client', items: [{ type: 'tool_result', tool_kind: 'custom', call_id: 'c', output: 'failed', is_error: true }],
