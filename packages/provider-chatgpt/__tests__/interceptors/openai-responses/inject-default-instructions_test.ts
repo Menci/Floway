@@ -9,7 +9,7 @@ import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 const stubRequest = {};
 
 const okEvents = (): Promise<ProviderStreamResult<OpenAIResponsesStreamEventEx>> =>
-  Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test', headers: new Headers() });
+  Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test', http: { status: 200, headers: new Headers() } });
 
 const invocation = (payload: CanonicalOpenAIResponsesPayload, useResponsesLite = false): OpenAIResponsesBoundaryCtx => ({
   payload,

@@ -941,13 +941,12 @@ test('compact + flag on: upstream api-error propagates', async () => {
   const errorResult: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>> = {
     type: 'api-error',
     source: 'upstream',
-    status: 502,
-    headers: new Headers({ 'content-type': 'application/json' }),
+    http: { status: 502, headers: new Headers({ 'content-type': 'application/json' }) },
     body: new TextEncoder().encode('{"error":"upstream blew up"}'),
   };
   const result = await withOpenAIResponsesCompactShim(inv, stubCtx, () => Promise.resolve(errorResult));
   if (result.type !== 'api-error') throw new Error(`expected api-error, got ${result.type}`);
-  assertEquals(result.status, 502);
+  assertEquals(result.http.status, 502);
 });
 
 // ── Round-trip ────────────────────────────────────────────────────────────────

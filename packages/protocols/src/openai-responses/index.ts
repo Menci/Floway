@@ -181,7 +181,7 @@ export type CanonicalOpenAIResponsesPayload = Omit<OpenAIResponsesPayloadEx, 'in
   input: CanonicalOpenAIResponsesInputItem[];
 };
 
-export type OpenAIResponsesInputContent = CanonicalOpenAIResponsesText | OpenAIResponsesInputImage | OpenAIResponsesInputFile;
+export type OpenAIResponsesInputContent = CanonicalOpenAIResponsesText | OpenAIResponsesInputImage | OpenAIResponsesInputFile | OpenAIResponsesInputAudio;
 
 export type OpenAIResponsesAssistantInputContent = OpenAIResponsesInputContent | OpenAIResponsesOutputRefusal;
 
@@ -222,7 +222,12 @@ export interface OpenAIResponsesInputImage {
   prompt_cache_breakpoint?: OpenAIResponsesPromptCacheBreakpoint | null;
 }
 
-export type OpenAIResponsesToolOutputContent = CanonicalOpenAIResponsesText | OpenAIResponsesInputImage | OpenAIResponsesInputFile;
+// https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/protocol/src/models.rs#L922-L985
+export type OpenAIResponsesInputAudio = { type: 'input_audio'; prompt_cache_breakpoint?: OpenAIResponsesPromptCacheBreakpoint | null } & (
+  { audio_url: string; file_id?: never } | { file_id: string; audio_url?: never }
+);
+
+export type OpenAIResponsesToolOutputContent = OpenAIResponsesInputContent;
 
 export interface OpenAIResponsesInputFile {
   type: 'input_file';
@@ -278,7 +283,12 @@ export interface OpenAIResponsesFunctionToolCallItemEx {
 export interface OpenAIResponsesFunctionCallOutputItem {
   type: 'function_call_output';
   id?: string;
-  call_id: string;
+  // An output without `call_id` is standalone: it answers no function call and
+  // instead names the tool that produced it.
+  // https://github.com/openai/openai-node/blob/7423ac3e9351c46300cd094479cded5551a72eb4/src/resources/responses/responses.ts
+  call_id?: string | null;
+  name?: string | null;
+  namespace?: string | null;
   // Multimodal tool outputs carry an array of content parts (e.g. a screenshot
   // tool returning `input_image` parts) in addition to the plain-string form.
   output: string | OpenAIResponsesToolOutputContent[];
@@ -451,9 +461,7 @@ export interface OpenAIResponsesProgramOutputItem {
 // OpenAI beta OpenAI Responses multi-agent item shapes.
 // https://github.com/openai/openai-node/blob/228c224393ef4bf3bda2a9d7eb40f387499299b5/src/resources/beta/responses/responses.ts#L6549-L6805
 export type OpenAIResponsesAgentMessageContent =
-  | CanonicalOpenAIResponsesText
-  | OpenAIResponsesInputImage
-  | OpenAIResponsesInputFile
+  | OpenAIResponsesInputContent
   | { type: 'text' | 'summary_text' | 'reasoning_text'; text: string }
   | { type: 'refusal'; refusal: string }
   | { type: 'computer_screenshot'; image_url: string | null; file_id: string | null; detail?: 'auto' | 'low' | 'high' | 'original' | (string & {}) | null }
@@ -1449,5 +1457,5 @@ export { createRandomOpenAIResponsesItemId, type GeneratedOpenAIResponsesItemTyp
 export { reassembleOpenAIResponsesEvents } from './reassemble.ts';
 export { openaiResponsesProtocolFrameToSSEFrame } from './to-sse.ts';
 
-export { canonicalizeOpenAIResponsesPayload } from './canonicalize-payload.ts';
+export { canonicalizeOpenAIResponsesPayload, isCodexAudioReference } from './canonicalize-payload.ts';
 export { toOpenAIResponsesInputItem, toOpenAIResponsesInputItems } from './history.ts';

@@ -107,7 +107,7 @@ const installRepo = (): InMemoryRepo => {
 test('generate native openai-chat-completions target calls provider.callOpenAIChatCompletions', async () => {
   installRepo();
   const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   const result = await openaiChatCompletionsAttempt.generate({
     payload: makePayload(),
@@ -131,7 +131,7 @@ test('generate native target applies role compatibility flags in target-chain or
       ok: true,
       events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()),
       modelKey: 'k',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
   const result = await openaiChatCompletionsAttempt.generate({
@@ -170,7 +170,7 @@ test('generate translates through the Anthropic Messages target when only that e
   let anthropicBeta: readonly string[] | undefined;
   const callAnthropicMessages = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
     anthropicBeta = opts?.anthropicBeta;
-    return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers() };
+    return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() } };
   });
   const result = await openaiChatCompletionsAttempt.generate({
     payload: makePayload(),
@@ -194,7 +194,7 @@ test('generate states a remote image URL to Anthropic Messages without fetching 
   let observedBody: Omit<AnthropicMessagesPayload, 'model'> | undefined;
   const callAnthropicMessages = vi.fn(async (_model, body): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
     observedBody = body as Omit<AnthropicMessagesPayload, 'model'>;
-    return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers() };
+    return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() } };
   });
   const result = await openaiChatCompletionsAttempt.generate({
     payload: makePayload({
@@ -231,7 +231,7 @@ test('generate translates through the OpenAI Responses target when only that end
     action: 'generate', ok: true,
     events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: respResp }]),
     modelKey: 'k',
-    headers: new Headers(),
+    http: { status: 200, headers: new Headers() },
   }));
   const result = await openaiChatCompletionsAttempt.generate({
     payload: makePayload(),
@@ -261,7 +261,7 @@ test('generate preserves translated instructions before rewriting inline system 
         },
       }]),
       modelKey: 'k',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
 
@@ -302,7 +302,7 @@ test('generate propagates upstream response headers onto the EventResult so resp
     'cf-ray': 'cf_ray_cc',
   });
   const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: upstreamHeaders,
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: upstreamHeaders },
   }));
   const result = await openaiChatCompletionsAttempt.generate({
     payload: makePayload(),
@@ -312,7 +312,7 @@ test('generate propagates upstream response headers onto the EventResult so resp
   });
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
-  assertEquals(result.headers?.get('anthropic-ratelimit-unified-status'), 'allowed');
-  assertEquals(result.headers?.get('cf-ray'), 'cf_ray_cc');
+  assertEquals(result.http?.headers.get('anthropic-ratelimit-unified-status'), 'allowed');
+  assertEquals(result.http?.headers.get('cf-ray'), 'cf_ray_cc');
   await collectEvents(result.events);
 });

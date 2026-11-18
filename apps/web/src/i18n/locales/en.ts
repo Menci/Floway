@@ -737,6 +737,10 @@ const en = {
               label: 'OpenAI Responses Agent Message Shim',
               description: 'Codex sends sub-agent tasks and inter-agent messages as `agent_message` input items, which some OpenAI Responses-compatible upstreams drop or reject.\nEnable this option to rewrite them into ordinary user messages that are explicitly framed as coming from another agent before forwarding to the upstream.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.',
             },
+            'openai-responses-standalone-tool-output-shim': {
+              label: 'OpenAI Responses Standalone Tool Output Shim',
+              description: 'Codex injects context such as the `/goal` objective and companion pages as `function_call_output` items without a `call_id`, which some OpenAI Responses-compatible upstreams reject.\nEnable this option to rewrite them into user messages that wrap the content in `<external_{name}>` tags before forwarding to the upstream.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.',
+            },
             'openai-responses-compact-shim': {
               label: 'OpenAI Responses Context Compaction Shim',
               description:
@@ -862,6 +866,8 @@ const en = {
           endpoints: 'Supported endpoints',
           capabilities: 'Capabilities and limits',
           imageInput: 'Image input',
+          audioInput: 'Audio input',
+          textInput: 'Text input',
           imageDetailOriginal: 'Image detail "original"',
           reasoning: 'Reasoning',
           effortLevels: 'Effort levels',
@@ -1322,7 +1328,7 @@ const en = {
           ttftP95: 'TTFT p95', speedP95: 'Worst 5% speed',
           ttftP99: 'TTFT p99', speedP99: 'Worst 1% speed',
         },
-        chartTitle: '{{group}}: {{metric}} {{percentile}}',
+        chartTitle: '{{group}}: {{metric}}',
         series: {
           label: 'Performance series selection',
         },
@@ -1505,7 +1511,7 @@ const en = {
         visibility: { visible: 'Visible', hidden: 'Hidden' },
         target: { heading: 'Models', description: 'Targets are tried in order when using First available. Select a suggestion or enter any model ID.', label: 'Target {{number, number}}', modelId: 'Target model ID', placeholder: 'target model id', toggle: 'Toggle target rules', reorder: 'Reorder target', remove: 'Remove target', count_one: '{{count, number}} target', count_other: '{{count, number}} targets' },
         rules: { effort: 'Reasoning effort', budget: 'Reasoning budget tokens', adaptive: 'Adaptive reasoning', adaptiveAuto: 'Auto (defer to model)', adaptiveOn: 'On (force adaptive)', adaptiveOff: 'Off (force non-adaptive)', summary: 'Reasoning summary', verbosity: 'Verbosity', serviceTier: 'Service tier' },
-        metadata: { heading: 'Announce metadata manually', description: 'Capabilities reported for this alias by /v1/models', manual: 'Announce metadata manually', limits: 'Token limits', imageInput: 'Image input', imageDetailOriginal: 'Image detail "original"', reasoning: 'Reasoning', effortEnabled: 'Effort levels', budgetEnabled: 'Budget tokens', adaptive: 'Adaptive', mandatory: 'Mandatory', efforts: 'Supported efforts', effortsHint: 'Comma-separated; order is preserved.', defaultEffort: 'Default effort', minBudget: 'Minimum budget', maxBudget: 'Maximum budget' },
+        metadata: { heading: 'Announce metadata manually', description: 'Capabilities reported for this alias by /v1/models', manual: 'Announce metadata manually', limits: 'Token limits', reasoning: 'Reasoning', effortEnabled: 'Effort levels', budgetEnabled: 'Budget tokens', adaptive: 'Adaptive', mandatory: 'Mandatory', efforts: 'Supported efforts', effortsHint: 'Comma-separated; order is preserved.', defaultEffort: 'Default effort', minBudget: 'Minimum budget', maxBudget: 'Maximum budget' },
         warnings: { label: 'Alias warning', shadow: 'Alias ID shadows the real model {{id}} {{display}}.', noTarget: 'No target currently resolves to a model on this gateway.', unknownTarget: '{{id}} does not currently resolve to an enabled model.', wrongKind: '{{id}} is a {{actual}} model, but this alias is {{expected}}.', notAdvertisedEffort: 'Target does not advertise reasoning effort.', unsupportedEffort: 'Target advertises effort levels: {{values}}.', adaptiveBudgetConflict: 'Adaptive reasoning cannot be combined with a fixed budget.', notAdvertisedBudget: 'Target does not advertise a reasoning budget.', budgetBelow: 'Below target minimum ({{value, number}}).', budgetAbove: 'Above target maximum ({{value, number}}).', notAdvertisedAdaptive: 'Target does not advertise adaptive reasoning.', ruleAdvisory: 'One or more rules may not be supported by this target.' },
         validation: { nameRequired: 'Enter an alias ID.', duplicate: 'An alias with this ID already exists.', targetRequired: 'Enter a target model ID.', budget: 'Reasoning budget must be a non-negative integer.', adaptiveBudget: 'Adaptive reasoning cannot be combined with a fixed budget.', metadataNumber: 'Enter a whole number of tokens, zero or greater.', metadataRange: 'Maximum budget must be greater than or equal to minimum budget.' },
         delete: { title: 'Delete alias', message: 'Delete alias {{name}}?' },

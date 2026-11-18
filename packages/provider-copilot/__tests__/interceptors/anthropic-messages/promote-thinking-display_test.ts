@@ -88,7 +88,7 @@ test('withThinkingDisplayPromoted sends summarized upstream when thinking displa
   await withThinkingDisplayPromoted(ctx, stubRequest, () =>
     Promise.resolve({
       type: 'internal-error',
-      status: 418,
+      http: { status: 418, headers: new Headers() },
       error: {
         type: 'internal_error',
         name: 'Error',

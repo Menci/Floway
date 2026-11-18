@@ -8,7 +8,7 @@ import type { AnthropicMessagesClientTool, AnthropicMessagesPayload, AnthropicMe
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayloadEx, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
-import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { decodeResponseBody, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 import type { FlagId } from '@floway-dev/provider/flags';
 import { createOllamaProvider } from '@floway-dev/provider-ollama';
 import { assertEquals, assertExists, stubProvider, stubInternalModel, stubProviderModel, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
@@ -100,7 +100,7 @@ const installRepo = (): InMemoryRepo => {
 test('generate native messages target calls provider.callAnthropicMessages with no rewrite', async () => {
   installRepo();
   const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   const result = await anthropicMessagesAttempt.generate({
     payload: makePayload(),
@@ -123,7 +123,7 @@ test('generate carries anthropic-beta through the Anthropic Messages boundary ou
   const callAnthropicMessages = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
     upstreamHeaders = opts?.headers;
     upstreamAnthropicBeta = opts?.anthropicBeta;
-    return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers() };
+    return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() } };
   });
 
   const result = await anthropicMessagesAttempt.generate({
@@ -150,11 +150,11 @@ test('generate and countTokens drop the Claude Code beta flag on candidates that
   const upstreamAnthropicBeta: Array<readonly string[] | undefined> = [];
   const callAnthropicMessages = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
     upstreamAnthropicBeta.push(opts?.anthropicBeta);
-    return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers() };
+    return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() } };
   });
   const callAnthropicMessagesCountTokens = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderCallResult> => {
     upstreamAnthropicBeta.push(opts?.anthropicBeta);
-    return { response: Response.json({ input_tokens: 1 }), modelKey: 'k' };
+    return { http: Response.json({ input_tokens: 1 }), modelKey: 'k' };
   });
   const candidate = makeCandidate({ callAnthropicMessages, callAnthropicMessagesCountTokens, enabledFlags: new Set(['strip-billing-attribution']) });
   const anthropicBeta = ['claude-code-20250219', 'interleaved-thinking-2025-05-14'];
@@ -183,7 +183,7 @@ test('generate translate-to-responses branch routes through openaiResponsesAttem
       action: 'generate', ok: true,
       events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: respResp }]),
       modelKey: 'k',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
   const result = await anthropicMessagesAttempt.generate({
@@ -218,7 +218,7 @@ test('generate translates Anthropic Messages onto one Chat Completions output ca
         choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
       }]),
       modelKey: 'k',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
 
@@ -313,7 +313,7 @@ test('generate lets the target system-to-developer rewrite take precedence over 
         },
       }]),
       modelKey: 'k',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
 
@@ -371,7 +371,7 @@ test('generate translate-to-responses keeps top-level instructions apart from re
         },
       }]),
       modelKey: 'k',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
 
@@ -409,7 +409,7 @@ test('generate translate-to-responses keeps top-level instructions apart from re
 test('countTokens proxies the upstream response as a plain result', async () => {
   installRepo();
   const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
-    response: new Response(JSON.stringify({ input_tokens: 7 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
+    http: new Response(JSON.stringify({ input_tokens: 7 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
     modelKey: 'k',
   }));
 
@@ -423,8 +423,8 @@ test('countTokens proxies the upstream response as a plain result', async () => 
 
   assertEquals(result.type, 'plain');
   if (result.type !== 'plain') throw new Error('unreachable');
-  assertEquals(result.status, 200);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
+  assertEquals(result.http.status, 200);
+  const body = JSON.parse(decodeResponseBody(result.body));
   assertEquals(body.input_tokens, 7);
   assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
 });
@@ -436,7 +436,7 @@ test('countTokens carries anthropic-beta through the Anthropic Messages boundary
   const callAnthropicMessagesCountTokens = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderCallResult> => {
     upstreamHeaders = opts?.headers;
     upstreamAnthropicBeta = opts?.anthropicBeta;
-    return { response: Response.json({ input_tokens: 7 }), modelKey: 'k' };
+    return { http: Response.json({ input_tokens: 7 }), modelKey: 'k' };
   });
 
   await anthropicMessagesAttempt.countTokens({
@@ -460,7 +460,7 @@ test('countTokens applies generation request transforms before provider dispatch
   const observedBodies: Array<Omit<AnthropicMessagesPayload, 'model'>> = [];
   const callAnthropicMessagesCountTokens = vi.fn(async (_model, body): Promise<ProviderCallResult> => {
     observedBodies.push(body as Omit<AnthropicMessagesPayload, 'model'>);
-    return { response: Response.json({ input_tokens: 9 }), modelKey: 'k' };
+    return { http: Response.json({ input_tokens: 9 }), modelKey: 'k' };
   });
 
   const result = await anthropicMessagesAttempt.countTokens({
@@ -505,7 +505,7 @@ test('countTokens prepares the generation web-search request shape', async () =>
   const observedBodies: Array<Omit<AnthropicMessagesPayload, 'model'>> = [];
   const callAnthropicMessagesCountTokens = vi.fn(async (_model, body): Promise<ProviderCallResult> => {
     observedBodies.push(body as Omit<AnthropicMessagesPayload, 'model'>);
-    return { response: Response.json({ input_tokens: 11 }), modelKey: 'k' };
+    return { http: Response.json({ input_tokens: 11 }), modelKey: 'k' };
   });
 
   const result = await anthropicMessagesAttempt.countTokens({
@@ -557,7 +557,7 @@ test('generate attaches the performance context to the result', async () => {
     runtimeLocation: 'SJC',
   });
   const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'gpt-test', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'gpt-test', http: { status: 200, headers: new Headers() },
   }));
 
   const result = await anthropicMessagesAttempt.generate({
@@ -588,7 +588,7 @@ test('generate propagates upstream response headers onto the EventResult so resp
     'request-id': 'req_messages_xyz',
   });
   const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: upstreamHeaders,
+    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: upstreamHeaders },
   }));
   const result = await anthropicMessagesAttempt.generate({
     payload: makePayload(),
@@ -600,7 +600,7 @@ test('generate propagates upstream response headers onto the EventResult so resp
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
-  assertEquals(result.headers?.get('anthropic-ratelimit-unified-status'), 'allowed');
-  assertEquals(result.headers?.get('request-id'), 'req_messages_xyz');
+  assertEquals(result.http?.headers.get('anthropic-ratelimit-unified-status'), 'allowed');
+  assertEquals(result.http?.headers.get('request-id'), 'req_messages_xyz');
   await collectEvents(result.events);
 });

@@ -67,6 +67,10 @@ test.each(['exact', 'regex'] as const)('anchors long %s text to its first line a
     const options = screen.getAllByRole('option').map(option => option.querySelector('.floway-scope-expression-option')!);
     expect(options.every(option => getComputedStyle(option).alignItems === 'flex-start')).toBe(true);
     expect(options.every(option => getComputedStyle(option).overflowWrap === 'anywhere')).toBe(true);
+    const activeSegment = segments[0]!.closest('.floway-scope-expression')!.lastElementChild!;
+    expect(getComputedStyle(activeSegment).flexGrow).toBe('1');
+    expect(getComputedStyle(activeSegment.querySelector('.floway-scope-expression-part-editor')!).flexGrow).toBe('1');
+    expect(getComputedStyle(activeSegment.querySelector('.fui-Combobox')!).flexGrow).toBe('1');
     const resourceEditor = container.querySelectorAll('.floway-scope-editor')[1]!;
     fireEvent.click(resourceEditor.querySelector('.floway-scope-expression-segment:nth-child(2) button')!);
     expect(getComputedStyle(resourceEditor.querySelector('.floway-scope-expression-part-control')!).alignItems).toBe('center');
@@ -411,6 +415,17 @@ test('commits a freeform model on blur', async () => {
   fireEvent.blur(input);
 
   await waitFor(() => expect(changed).toHaveBeenLastCalledWith({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'future-model' } }));
+});
+
+test('preserves the existing regex kind when a model draft loses focus', async () => {
+  const { changed, container } = renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: '^gpt-' } });
+
+  fireEvent.click(container.querySelector('.floway-scope-expression-regex')!.closest('button')!);
+  const input = screen.getByRole('combobox', { name: 'Model' });
+  fireEvent.change(input, { target: { value: '^future-' } });
+  fireEvent.blur(input);
+
+  await waitFor(() => expect(changed).toHaveBeenLastCalledWith({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: '^future-' } }));
 });
 
 test('commits a model synchronously before focus reaches a submit action', () => {

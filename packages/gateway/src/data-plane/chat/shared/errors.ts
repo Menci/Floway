@@ -40,8 +40,7 @@ export const openAiErrorResult = (
 ): ApiErrorResult => ({
   type: 'api-error',
   source: 'gateway',
-  status,
-  headers: new Headers({ 'content-type': 'application/json' }),
+  http: { status, headers: new Headers({ 'content-type': 'application/json' }) },
   body: new TextEncoder().encode(JSON.stringify({
     error: { message, type: 'invalid_request_error', ...extra },
   })),

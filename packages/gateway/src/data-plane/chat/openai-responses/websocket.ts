@@ -21,7 +21,7 @@ import type { BackgroundScheduler } from '@floway-dev/platform';
 import { eventFrame, isJsonMediaType, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, canonicalizeOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesOutputItemEx, type OpenAIResponsesRequestPayloadEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { type ExecuteResult, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
+import { type ExecuteResult, decodeResponseBody, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
 
 interface WorkerWebSocket extends WebSocket {
   accept(): void;
@@ -458,16 +458,16 @@ const respondOpenAIResponsesWebSocket = async (input: {
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstreamId);
-    turnFailure.fail(result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status));
-    ctx.dump?.finalize(result.status, []);
+    turnFailure.fail(result.http.status, normalizeErrorBody(parseMaybeJson(result.body, result.http.headers), result.http.status));
+    ctx.dump?.finalize(result.http.status, []);
     return;
   }
 
   if (result.type === 'internal-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
-    turnFailure.fail(result.status, internalErrorEnvelope(result.error));
-    ctx.dump?.finalize(result.status, []);
+    turnFailure.fail(result.http.status, internalErrorEnvelope(result.error));
+    ctx.dump?.finalize(result.http.status, []);
     return;
   }
 
@@ -834,8 +834,8 @@ const createDownstreamSequence = (): DownstreamSequence => {
   };
 };
 
-const parseMaybeJson = (body: Uint8Array, headers: Headers): unknown => {
-  const text = new TextDecoder().decode(body);
+const parseMaybeJson = (body: Uint8Array | null, headers: Headers): unknown => {
+  const text = decodeResponseBody(body);
   if (!isJsonMediaType(headers.get('content-type'))) return { message: text };
   try {
     return JSON.parse(text) as unknown;

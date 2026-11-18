@@ -53,7 +53,7 @@ describe('iterateCandidates', () => {
         attempt.timing.firstOutputTokenAt = 200;
         return candidate.model.id === 'c'
           ? { type: 'events' as const }
-          : { type: 'api-error' as const };
+          : { type: 'api-error' as const, http: new Response(null, { status: 502 }) };
       },
     );
 
@@ -91,8 +91,8 @@ describe('iterateCandidates', () => {
     const ctx = stubCtx({ timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, telemetry: undefined });
     let index = 0;
     const failures = [
-      { type: 'api-error' as const, marker: 'first' },
-      { type: 'internal-error' as const, marker: 'last' },
+      { type: 'api-error' as const, http: new Response(null, { status: 429 }), marker: 'first' },
+      { type: 'internal-error' as const, http: new Response(null, { status: 502 }), marker: 'last' },
     ];
     const result = await iterateCandidates(
       [stubCandidate('a'), stubCandidate('b')],
@@ -103,6 +103,103 @@ describe('iterateCandidates', () => {
     );
 
     expect(result).toEqual(failures[1]);
+  });
+
+  it('starts the next attempt with the old body open and retains the selected failure untouched', async () => {
+    const cancellation = Promise.withResolvers<void>();
+    const tasks: Promise<unknown>[] = [];
+    const ctx = mockGatewayCtx({ backgroundScheduler: promise => { tasks.push(promise); } });
+    let cancelled = false;
+    const first = new Response(new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true;
+        return cancellation.promise;
+      },
+    }), { status: 503 });
+    const last = new Response('last failure', {
+      status: 429,
+      statusText: 'Too Many Requests',
+      headers: { 'retry-after': '12' },
+    });
+
+    try {
+      const result = await iterateCandidates(
+        [stubCandidate('a'), stubCandidate('b')],
+        'test',
+        ctx,
+        'rerank',
+        async candidate => {
+          if (candidate.model.id === 'a') return { type: 'response' as const, http: first };
+          expect(first.bodyUsed).toBe(false);
+          expect(cancelled).toBe(false);
+          return { type: 'response' as const, http: last };
+        },
+      );
+
+      expect(cancelled).toBe(true);
+      expect(tasks).toHaveLength(1);
+      expect(result.http).toBe(last);
+      expect(last.bodyUsed).toBe(false);
+      expect(result.http.statusText).toBe('Too Many Requests');
+      expect(result.http.headers.get('retry-after')).toBe('12');
+      expect(await result.http.text()).toBe('last failure');
+    } finally {
+      cancellation.resolve();
+      await Promise.all(tasks);
+    }
+  });
+
+  it.each(['success', 'throw'])('cancels the retained failure when the next attempt ends with %s', async outcome => {
+    let cancelled = false;
+    const first = new Response(new ReadableStream<Uint8Array>({
+      cancel() { cancelled = true; },
+    }), { status: 429 });
+    const success = new Response('ok');
+    const originalError = new Error('next attempt threw');
+    const selection = iterateCandidates(
+      [stubCandidate('a'), stubCandidate('b')],
+      'test',
+      mockGatewayCtx(),
+      'decision',
+      async candidate => {
+        if (candidate.model.id === 'a') return { type: 'response' as const, http: first };
+        if (outcome === 'throw') throw originalError;
+        return { type: 'response' as const, http: success };
+      },
+    );
+
+    if (outcome === 'throw') await expect(selection).rejects.toBe(originalError);
+    else expect((await selection).http).toBe(success);
+    expect(cancelled).toBe(true);
+    expect(success.bodyUsed).toBe(false);
+  });
+
+  it('keeps a successful candidate when cancellation of an errored body rejects', async () => {
+    const bodyError = new Error('upstream body broke');
+    const first = new Response(new ReadableStream<Uint8Array>({
+      start(controller) { controller.error(bodyError); },
+    }), { status: 429 });
+    const success = new Response('ok');
+    const tasks: Promise<unknown>[] = [];
+    const ctx = mockGatewayCtx({ backgroundScheduler: promise => { tasks.push(promise); } });
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      const result = await iterateCandidates(
+        [stubCandidate('a'), stubCandidate('b')],
+        'test',
+        ctx,
+        'rerank',
+        async candidate => ({ type: 'response' as const, http: candidate.model.id === 'a' ? first : success }),
+      );
+
+      expect(result.http).toBe(success);
+      expect(tasks).toHaveLength(1);
+      await Promise.all(tasks);
+      expect(warning).toHaveBeenCalledWith('Floway: failed to cancel a discarded upstream response', bodyError);
+    } finally {
+      warning.mockRestore();
+    }
   });
 
   it('treats non-2xx plain results as failure so the next candidate runs', async () => {
@@ -116,13 +213,13 @@ describe('iterateCandidates', () => {
       async candidate => {
         attempts.push(attempts.length);
         return candidate.model.id === 'a'
-          ? { type: 'plain' as const, status: 500 }
-          : { type: 'plain' as const, status: 200 };
+          ? { type: 'plain' as const, http: { status: 500, headers: new Headers() } }
+          : { type: 'plain' as const, http: { status: 200, headers: new Headers() } };
       },
     );
 
     expect(attempts).toEqual([0, 1]);
-    expect(result).toEqual({ type: 'plain', status: 200 });
+    expect(result).toEqual({ type: 'plain', http: { status: 200, headers: new Headers() } });
   });
 
   it.each([
@@ -141,8 +238,10 @@ describe('iterateCandidates', () => {
     vi.setSystemTime(new Date('2026-06-01T00:00:00Z'));
     const failures = [first, last].map((retryAfter, index) => ({
       type: 'api-error' as const,
-      status: index === 0 ? 429 : 503,
-      headers: new Headers(retryAfter === undefined ? {} : { 'retry-after': retryAfter }),
+      http: {
+        status: index === 0 ? 429 : 503,
+        headers: new Headers(retryAfter === undefined ? {} : { 'retry-after': retryAfter }),
+      },
       marker: index === 0 ? 'first' : 'last',
     }));
     let index = 0;
@@ -157,7 +256,7 @@ describe('iterateCandidates', () => {
   it('compares retry delays from when each response arrived', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-06-01T00:00:00Z'));
-    const failures = [60, 55].map(seconds => ({ type: 'api-error' as const, headers: new Headers({ 'retry-after': String(seconds) }) }));
+    const failures = [60, 55].map(seconds => ({ type: 'api-error' as const, http: { status: 429, headers: new Headers({ 'retry-after': String(seconds) }) } }));
     let index = 0;
     const result = await iterateCandidates(
       [stubCandidate('a'), stubCandidate('b')], 'test', mockGatewayCtx(), 'chat',
@@ -169,22 +268,38 @@ describe('iterateCandidates', () => {
     expect(result).toBe(failures[0]);
   });
 
-  it('uses retry hints on passthrough responses and still lets success win', async () => {
-    const failure = { type: 'plain' as const, status: 429, response: new Response('limited', { status: 429, headers: { 'retry-after': '60' } }) };
-    const last = { type: 'plain' as const, status: 503, response: new Response('unavailable', { status: 503 }) };
-    for (const terminal of [last, { type: 'plain' as const, status: 200, response: new Response('ok') }]) {
-      let index = 0;
-      const result = await iterateCandidates(
-        [stubCandidate('a'), stubCandidate('b')], 'test', mockGatewayCtx(), 'chat',
-        async () => [failure, terminal][index++]!,
-      );
-      expect(result).toBe(terminal.status === 200 ? terminal : failure);
-    }
+  it.each([false, true])('cancels the discarded raw response and preserves the winner (success=%s)', async succeeds => {
+    let countCancelled = 0;
+    const failure = {
+      type: 'response' as const,
+      http: new Response(new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(new TextEncoder().encode('limited')); },
+        cancel() { countCancelled++; },
+      }), { status: 429, headers: { 'retry-after': '60' } }),
+    };
+    let otherCancelled = 0;
+    const terminal = {
+      type: 'response' as const,
+      http: succeeds ? new Response('ok') : new Response(new ReadableStream<Uint8Array>({
+        cancel() { otherCancelled++; },
+      }), { status: 503 }),
+    };
+
+    const result = await iterateCandidates(
+      [stubCandidate('a'), stubCandidate('b')], 'test', mockGatewayCtx(), 'chat',
+      async candidate => candidate.model.id === 'a' ? failure : terminal,
+    );
+
+    expect(result).toBe(succeeds ? terminal : failure);
+    expect(result.http.bodyUsed).toBe(false);
+    expect(countCancelled).toBe(succeeds ? 1 : 0);
+    expect(otherCancelled).toBe(succeeds ? 0 : 1);
+    await result.http.body?.cancel();
   });
 
   it('advances after a dial failure and preserves a retry response if the last dial fails', async () => {
     const dialError = new ProxyDialError('connection refused', 'tcp-connect');
-    const failure = { type: 'api-error' as const, headers: new Headers({ 'retry-after': '60' }) };
+    const failure = { type: 'api-error' as const, http: { status: 429, headers: new Headers({ 'retry-after': '60' }) } };
     const calls: string[] = [];
     const result = await iterateCandidates(
       [stubCandidate('a'), stubCandidate('b'), stubCandidate('c')], 'test', mockGatewayCtx(), 'chat',
@@ -207,7 +322,7 @@ describe('iterateCandidates', () => {
       [stubCandidate('a'), stubCandidate('b')], 'test', ctx, 'chat',
       async candidate => {
         calls.push(candidate.model.id);
-        if (candidate.model.id === 'a') return { type: 'api-error' as const };
+        if (candidate.model.id === 'a') return { type: 'api-error' as const, http: { status: 503, headers: new Headers() } };
         throw terminal;
       },
     )).rejects.toBe(terminal);
@@ -237,7 +352,7 @@ describe('iterateCandidates', () => {
       async candidate => {
         calls.push(candidate.model.id);
         controller.abort(reason);
-        return { type: 'api-error' as const, headers: new Headers({ 'retry-after': '60' }) };
+        return { type: 'api-error' as const, http: { status: 429, headers: new Headers({ 'retry-after': '60' }) } };
       },
     )).rejects.toBe(reason);
     expect(calls).toEqual(['a']);

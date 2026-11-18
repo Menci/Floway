@@ -154,7 +154,7 @@ test('withSpeedFast surfaces non-events results (api-error / internal-error) ver
   const result = await withSpeedFast(ctx, stubRequest, () =>
     Promise.resolve({
       type: 'internal-error',
-      status: 502,
+      http: { status: 502, headers: new Headers() },
       error: {
         type: 'internal_error',
         name: 'Error',

@@ -1,8 +1,9 @@
-import { useId, useState } from 'react';
+import { useState } from 'react';
 
 import type { AnnouncedMetadataField, AnnouncedMetadataIssues } from './validation';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
+import { ModelInputFields } from '../models/input-modalities';
 import type { ModelLimitKey } from '../models/limits';
 import { ModelLimitsFields } from '../models/limits-editor';
 import { Dropdown, Input, Switch } from '../ui/fluent-form-controls';
@@ -10,7 +11,7 @@ import { SECTION_STACK_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { SectionHeader } from '../ui/section-header';
 import type { AnnouncedMetadata, ModelKind } from '@floway-dev/protocols/browser';
 
-const { Field, Option, Text } = fluentComponents;
+const { Field, Option } = fluentComponents;
 
 const numberValue = (value: string) => value === '' ? undefined : Number(value);
 const commaSeparatedValues = (value: string) => value.split(',').map(item => item.trim()).filter(Boolean);
@@ -26,7 +27,6 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
   value: AnnouncedMetadata;
 }) {
   const { t } = useTranslation();
-  const imageInputLabelId = useId();
   const patchLimit = (key: ModelLimitKey, raw: string) => {
     const limits = { ...(value.limits ?? {}), [key]: numberValue(raw) };
     if (limits[key] === undefined) delete limits[key];
@@ -43,7 +43,6 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
   };
   const effort = value.chat?.reasoning?.effort;
   const budget = value.chat?.reasoning?.budget_tokens;
-  const imageInput = value.chat?.modalities?.input.includes('image') ?? false;
   const issueProps = (field: AnnouncedMetadataField) => issues[field] === undefined
     ? {}
     : { validationMessage: t(issues[field]), validationState: 'error' as const };
@@ -66,34 +65,7 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
         />
       </section>}
       {kind === 'chat' && <>
-        {/* Image input leads the group that depends on it, matching the shape
-            the upstream editor's capabilities section gives the same two fields. */}
-        <section aria-labelledby={imageInputLabelId} className={SECTION_STACK_CLASS} role="group">
-          <Text id={imageInputLabelId} weight="semibold">{t('dashboard.modelAliases.metadata.imageInput')}</Text>
-          <div className="flex flex-wrap gap-4">
-            <Switch
-              checked={imageInput}
-              disabled={disabled}
-              readOnly={readOnly}
-              label={t('dashboard.modelAliases.metadata.imageInput')}
-              // Dropping image input drops the detail claim with it: the detail
-              // switch is only reachable while image input is on, so a claim left
-              // behind would be announced while the operator can no longer see or
-              // clear it.
-              onChange={(_, data) => patchChat({
-                modalities: data.checked ? { input: ['text', 'image'] as const, output: ['text'] as const } : undefined,
-                image_detail_original: data.checked ? value.chat?.image_detail_original ?? false : undefined,
-              })}
-            />
-            {imageInput && <Switch
-              checked={value.chat?.image_detail_original === true}
-              disabled={disabled}
-              readOnly={readOnly}
-              label={t('dashboard.modelAliases.metadata.imageDetailOriginal')}
-              onChange={(_, data) => patchChat({ image_detail_original: data.checked })}
-            />}
-          </div>
-        </section>
+        <ModelInputFields chat={value.chat} disabled={disabled} readOnly={readOnly} onChange={patchChat} />
         <section className={SECTION_STACK_CLASS}>
           <SectionHeader level={4} title={t('dashboard.modelAliases.metadata.reasoning')} />
           <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>

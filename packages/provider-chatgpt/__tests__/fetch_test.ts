@@ -135,8 +135,8 @@ describe('callChatGPTOpenAIResponses — gates', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.response.status).toBe(503);
-      expect(await result.response.text()).toMatch(/session_terminated/);
+      expect(result.http.status).toBe(503);
+      expect(await result.http.text()).toMatch(/session_terminated/);
     }
   });
   test('replaces the same family after success despite a future cached restriction, preserving other families', async () => {
@@ -181,10 +181,10 @@ describe('callChatGPTOpenAIResponses — gates', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('Expected upstream rejection');
-    expect(result.response.status).toBe(429);
-    expect(result.response.headers.get('retry-after')).toBe('60');
-    expect(result.response.headers.get('x-upstream-request-id')).toBe('fixture-429');
-    expect(await result.response.text()).toBe(JSON.stringify(body));
+    expect(result.http.status).toBe(429);
+    expect(result.http.headers.get('retry-after')).toBe('60');
+    expect(result.http.headers.get('x-upstream-request-id')).toBe('fixture-429');
+    expect(await result.http.text()).toBe(JSON.stringify(body));
   });
 });
 
@@ -244,8 +244,8 @@ describe('callChatGPTOpenAIResponses — token freshness', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.response.status).toBe(503);
-      expect(await result.response.text()).toMatch(/expired.*re-import/);
+      expect(result.http.status).toBe(503);
+      expect(await result.http.text()).toMatch(/expired.*re-import/);
     }
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -348,7 +348,8 @@ describe('Codex Responses wire selection', () => {
         const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => action === 'generate' ? sseEventsResponse([]) : compactJsonResponse());
         const body = {
           input: [
-            { type: 'message' as const, role: 'user' as const, content: 'hello' },
+            { type: 'message' as const, role: 'user' as const, content: [{ type: 'input_audio' as const, audio_url: 'data:audio/wav;base64,YQ==' }] },
+            { type: 'function_call_output' as const, call_id: 'audio', output: [{ type: 'input_audio' as const, file_id: 'file-audio' }] },
             // The CLI emits this only with its opt-in reasoning_effort_override feature.
             // https://github.com/openai/codex/blob/6b9826e3aa83b1a5947db50f4332cb9c65f1b340/codex-rs/core/src/session/reasoning_effort.rs#L16-L85
             { type: 'configuration_update', reasoning: { effort: 'disabled' } } as unknown as CanonicalOpenAIResponsesInputItem,
@@ -357,7 +358,7 @@ describe('Codex Responses wire selection', () => {
           reasoning: { effort: 'future_effort', context: 'current_turn' },
           tool_choice: 'auto' as const,
           text: { verbosity: 'high' as const },
-          service_tier: 'future_tier',
+          service_tier: 'ultrafast',
           client_metadata: { [CHATGPT_RESPONSES_LITE_CLIENT_METADATA_KEY]: marker, retained: { future: true } },
           temperature: 0.5,
         };
@@ -375,12 +376,12 @@ describe('Codex Responses wire selection', () => {
         const wire = await readJsonRequest(init as RequestInit) as Record<string, unknown>;
         const wireHeaders = new Headers(init?.headers);
         expect(wireHeaders.get(CHATGPT_RESPONSES_LITE_HEADER)).toBe(useResponsesLite ? 'true' : null);
-        expect(wireHeaders.get('user-agent')).toBe('codex_cli_rs/0.159.3 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10');
-        expect(wireHeaders.get('version')).toBe('0.159.3');
+        expect(wireHeaders.get('user-agent')).toBe('codex_cli_rs/0.169.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10');
+        expect(wireHeaders.get('version')).toBe('0.169.0');
         expect(headers.get(CHATGPT_RESPONSES_LITE_HEADER)).toBe(marker ?? null);
         expect(body).toEqual(original);
         expect(wire.text).toEqual(body.text);
-        expect(wire.service_tier).toBe('future_tier');
+        expect(wire.service_tier).toBe('ultrafast');
         if (useResponsesLite) {
           expect(wire).not.toHaveProperty('tools');
           expect(wire).not.toHaveProperty('instructions');
@@ -404,8 +405,8 @@ describe('Codex Responses wire selection', () => {
           expect(wire.tool_choice).toBe('auto');
           expect(wire.stream).toBe(true);
           expect(wire.store).toBe(false);
-          expect(result.headers?.get(CHATGPT_RESPONSES_LITE_HEADER)).toBe('true');
-          expect(result.headers?.get('x-upstream-custom')).toBe('retained');
+          expect(result.http?.headers.get(CHATGPT_RESPONSES_LITE_HEADER)).toBe('true');
+          expect(result.http?.headers.get('x-upstream-custom')).toBe('retained');
           for await (const _frame of result.events) { /* Drain the actual parser. */ }
         } else {
           for (const field of ['stream', 'store', 'client_metadata', 'temperature', 'tool_choice']) expect(wire).not.toHaveProperty(field);
@@ -447,8 +448,8 @@ describe('Codex Responses wire selection', () => {
       upstreamId, account: activeAccount, model: liteModel, body, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
     });
     if (!result.ok) throw new Error('expected successful Responses stream');
-    expect(result.headers?.get('content-type')).toBe('text/event-stream');
-    expect(result.headers?.has(CHATGPT_RESPONSES_LITE_HEADER)).toBe(true);
+    expect(result.http?.headers.get('content-type')).toBe('text/event-stream');
+    expect(result.http?.headers.has(CHATGPT_RESPONSES_LITE_HEADER)).toBe(true);
     expect(upstream.headers.get(CHATGPT_RESPONSES_LITE_HEADER)).toBe('true');
     if (stream) {
       const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
@@ -623,11 +624,11 @@ describe('Codex Responses wire selection', () => {
           headers: new Headers({ [CHATGPT_RESPONSES_LITE_HEADER]: 'false' }), effects: makeEffects(), call: noopUpstreamCallOptions(),
         });
         if (result.ok) throw new Error('expected upstream error');
-        expect(result.response).toBe(upstream);
-        expect(result.response.headers.get(CHATGPT_RESPONSES_LITE_HEADER)).toBe(marker ?? null);
-        expect(result.response.headers.get('content-type')).toBe('application/problem+json');
-        expect(result.response.statusText).toBe('Upstream failure');
-        expect(await result.response.text()).toBe('upstream bytes\nnot necessarily JSON');
+        expect(result.http).toBe(upstream);
+        expect(result.http.headers.get(CHATGPT_RESPONSES_LITE_HEADER)).toBe(marker ?? null);
+        expect(result.http.headers.get('content-type')).toBe('application/problem+json');
+        expect(result.http.statusText).toBe('Upstream failure');
+        expect(await result.http.text()).toBe('upstream bytes\nnot necessarily JSON');
       }
     }
   });
@@ -1206,7 +1207,7 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
       model, body: { input: [], stream: true }, headers: new Headers(), effects, call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.response.status).toBe(503);
+    if (!result.ok) expect(result.http.status).toBe(503);
     expect(effects.persistTerminalState).toHaveBeenCalledWith('session_terminated', expect.stringMatching(/session ended/));
   });
 
@@ -1225,9 +1226,9 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.response.status).toBe(401);
-      expect(result.response.headers.get('x-upstream-marker')).toBe('kept');
-      expect(await result.response.json()).toEqual(upstreamBody);
+      expect(result.http.status).toBe(401);
+      expect(result.http.headers.get('x-upstream-marker')).toBe('kept');
+      expect(await result.http.json()).toEqual(upstreamBody);
     }
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(persistTerminalState).toHaveBeenCalledWith('session_terminated', 're-import required');
@@ -1245,7 +1246,7 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
       model, body: { input: [], stream: true }, headers: new Headers(), effects, call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.response.status).toBe(401);
+    if (!result.ok) expect(result.http.status).toBe(401);
     expect(effects.persistRefreshTokenRotation).toHaveBeenCalledWith('rt_v2');
   });
 
@@ -1263,7 +1264,7 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
       model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.response.status).toBe(429);
+    if (!result.ok) expect(result.http.status).toBe(429);
     await flushMicrotasks();
     const stored = readQuotaEntry();
     expect(stored?.premium.data.ratelimited_until).toBe(new Date(Date.parse(stored!.premium.data.observed_at) + 3600 * 1000).toISOString());
@@ -1278,7 +1279,7 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
       model, body: { input: [], stream: true }, headers: new Headers(), effects, call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.response.status).toBe(503);
+    if (!result.ok) expect(result.http.status).toBe(503);
     expect(effects.persistTerminalState).not.toHaveBeenCalled();
     expect(effects.persistRefreshTokenRotation).not.toHaveBeenCalled();
   });
@@ -1356,7 +1357,7 @@ describe('callChatGPTOpenAIImagesGenerations', () => {
       effects: makeEffects(),
       call: { ...noopUpstreamCallOptions(), waitUntil },
     });
-    expect(result.response.status).toBe(200);
+    expect(result.http.status).toBe(200);
     expect(readQuotaEntry()).toEqual(quotaSnapshot);
     expect(waitUntil).not.toHaveBeenCalled();
   });
@@ -1377,7 +1378,7 @@ describe('callChatGPTOpenAIImagesGenerations', () => {
       effects: makeEffects(),
       call: noopUpstreamCallOptions(),
     });
-    expect(result.response.status).toBe(200);
+    expect(result.http.status).toBe(200);
     const imageCalls = fetchSpy.mock.calls.filter(([url]) => String(url).includes('/images/generations'));
     expect(imageCalls).toHaveLength(2);
     const firstHeaders = new Headers((imageCalls[0][1] as RequestInit).headers);
@@ -1407,7 +1408,7 @@ describe('callChatGPTOpenAIImagesGenerations', () => {
       effects: makeEffects(),
       call: noopUpstreamCallOptions(),
     });
-    expect(result.response.status).toBe(403);
+    expect(result.http.status).toBe(403);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(String(fetchSpy.mock.calls[0][0])).toContain('/oauth/token');
   });
@@ -1429,7 +1430,7 @@ describe('callChatGPTOpenAIImagesGenerations', () => {
       effects: makeEffects(),
       call: noopUpstreamCallOptions(),
     });
-    expect(result.response.status).toBe(403);
+    expect(result.http.status).toBe(403);
     expect(fetchSpy.mock.calls.filter(([url]) => String(url).includes('/images/generations'))).toHaveLength(1);
   });
 
@@ -1456,7 +1457,7 @@ describe('callChatGPTOpenAIImagesGenerations', () => {
       effects: makeEffects(),
       call: noopUpstreamCallOptions(),
     });
-    expect(result.response.status).toBe(403);
+    expect(result.http.status).toBe(403);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect((currentRecord.state as ChatGPTUpstreamState).accounts[0].accessToken).toEqual(winner);
   });
@@ -1479,7 +1480,7 @@ describe('callChatGPTOpenAIImagesGenerations', () => {
       effects: makeEffects(),
       call: noopUpstreamCallOptions(),
     });
-    expect(result.response.status).toBe(200);
+    expect(result.http.status).toBe(200);
     expect(fetchSpy.mock.calls.filter(([url]) => String(url).includes('/images/generations'))).toHaveLength(2);
     await flushMicrotasks();
     expect((currentRecord.state as ChatGPTUpstreamState).accounts[0].accessToken?.planType).toBe('plus');
@@ -1599,7 +1600,7 @@ describe('callChatGPTOpenAIResponsesCompact', () => {
       body: { input: [] }, headers: new Headers(), effects, call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.response.status).toBe(503);
+    if (!result.ok) expect(result.http.status).toBe(503);
     expect(effects.persistTerminalState).toHaveBeenCalledWith('session_terminated', expect.stringMatching(/session ended/));
   });
 
@@ -1617,7 +1618,7 @@ describe('callChatGPTOpenAIResponsesCompact', () => {
       body: { input: [] }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.response.status).toBe(429);
+    if (!result.ok) expect(result.http.status).toBe(429);
     await flushMicrotasks();
     const stored = readQuotaEntry();
     expect(stored?.premium.data.ratelimited_until).toBe(new Date(Date.parse(stored!.premium.data.observed_at) + 3600 * 1000).toISOString());
@@ -1632,7 +1633,7 @@ describe('callChatGPTOpenAIResponsesCompact', () => {
       body: { input: [] }, headers: new Headers(), effects, call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.response.status).toBe(503);
+    if (!result.ok) expect(result.http.status).toBe(503);
     expect(effects.persistTerminalState).not.toHaveBeenCalled();
     expect(effects.persistRefreshTokenRotation).not.toHaveBeenCalled();
   });
@@ -1658,7 +1659,7 @@ describe('callChatGPTAlphaSearch', () => {
       call: noopUpstreamCallOptions(),
     });
 
-    expect(result.response.status).toBe(200);
+    expect(result.http.status).toBe(200);
     expect(result.modelKey).toBe('gpt-5.4');
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://chatgpt.com/backend-api/codex/alpha/search');
@@ -1689,7 +1690,7 @@ describe('callChatGPTAlphaSearch', () => {
       effects: makeEffects(),
       call: noopUpstreamCallOptions(),
     });
-    expect(result.response.status).toBe(200);
+    expect(result.http.status).toBe(200);
     expect((currentRecord.state as ChatGPTUpstreamState).accounts[0].accessToken?.planType).toBe('free');
   });
 

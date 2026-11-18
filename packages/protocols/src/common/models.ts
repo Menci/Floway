@@ -46,6 +46,7 @@ export interface DecisionTarget {
 }
 
 export type Modality = 'text' | 'image';
+export type InputModality = Modality | 'audio';
 
 // Chat capability metadata for one model. Providers that can read it off the
 // raw upstream catalog fill it themselves; elsewhere it comes from the
@@ -55,7 +56,7 @@ export type Modality = 'text' | 'image';
 // definition serves both surfaces.
 export interface ChatModelInfo {
   modalities?: {
-    input: readonly Modality[];
+    input: readonly InputModality[];
     output: readonly Modality[];
   };
   // Whether the upstream accepts image detail 'original' — Codex's

@@ -5,7 +5,7 @@ import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/ch
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesInputAgentMessageItem, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
-import { eventResult, type FlagId } from '@floway-dev/provider';
+import { decodeResponseBody, eventResult, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const gatewayCtx = mockChatGatewayCtx();
@@ -133,8 +133,8 @@ test('returns an input error without running downstream when agent content canno
   }], { enabledFlags: FLAG });
   assertEquals(seen, undefined);
   assert(result.type === 'api-error');
-  assertEquals(result.status, 400);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { message: string; param: string } };
+  assertEquals(result.http.status, 400);
+  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { message: string; param: string } };
   assertEquals(body.error.message, "Invalid value: 'encrypted_content' for 'agent_message.content[0].type'.");
   assertEquals(body.error.param, 'agent_message.content[0].type');
 });

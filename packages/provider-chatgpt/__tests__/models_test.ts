@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { CHATGPT_CLI_VERSION, CHATGPT_ORIGINATOR, CHATGPT_USER_AGENT } from '../src/constants.ts';
-import { chatgptImageProviderModel, chatgptModelContextWindow, chatgptModelUsesResponsesLite, chatgptPlanSupportsImages, chatgptRawToProviderModel, fetchChatGPTCatalog, type ChatGPTRawModel } from '../src/models.ts';
+import { chatgptImageProviderModel, chatgptCodexModelMetadata, chatgptModelUsesResponsesLite, chatgptPlanSupportsImages, chatgptRawToProviderModel, fetchChatGPTCatalog, type ChatGPTRawModel } from '../src/models.ts';
 import { priceRequest } from '@floway-dev/protocols/common';
 import { directFetcher, type FlagId } from '@floway-dev/provider';
 
@@ -17,6 +17,19 @@ test('ChatGPT models share the upstream-bound OpenAI opaque blob scope', () => {
 });
 
 describe('fetchChatGPTCatalog', () => {
+  test.each([{ supports_search_tool: 'true' }, { experimental_supported_tools: 'clock' }, { experimental_supported_tools: [''] }, { service_tiers: 'ultrafast' }, { service_tiers: [{ id: 'ultrafast' }] }, { additional_speed_tiers: [false] }])('rejects malformed capabilities %j at refresh and after persistence', async codex => {
+    const model = { slug: 'm', display_name: 'M', context_window: 100 };
+    await expect(fetchChatGPTCatalog({ accessToken: 'at', accountId: null, fetcher: async () => okJson({ models: [{ ...model, ...codex }] }) })).rejects.toThrow(/malformed/);
+    const cached = chatgptRawToProviderModel({ ...model, id: model.slug }, new Set());
+    expect(() => chatgptCodexModelMetadata({ ...cached, providerData: { contextWindow: 100, codex } })).toThrow(/malformed/);
+  });
+
+  test('keeps explicit false capabilities and an empty tool list', async () => {
+    const codex = { supports_search_tool: false, experimental_supported_tools: [], default_verbosity: null };
+    const [raw] = await fetchChatGPTCatalog({ accessToken: 'at', accountId: null, fetcher: async () => okJson({ models: [{ slug: 'm', display_name: 'M', context_window: 100, ...codex }] }) });
+    expect(chatgptCodexModelMetadata(chatgptRawToProviderModel(raw!, new Set()))).toEqual({ context_window: 100, ...codex });
+  });
+
   test('calls /codex/models with auth + identity headers, returns parsed catalog from {models: [...]}', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
       models: [
@@ -41,28 +54,32 @@ describe('fetchChatGPTCatalog', () => {
     expect(headers.get('openai-beta')).toBeNull();
   });
 
-  test('uses the current stable CLI identity and preserves newer catalog model capabilities', async () => {
-    // https://github.com/openai/codex/releases/tag/rust-v0.159.3
+  test.each([
+    ['gpt-6.2-sol', 'GPT-6.2 Sol', 500000, ['text', 'image']],
+    ['gpt-6.2-astra', 'GPT-6.2 Astra', 272000, ['text', 'image']],
+  ] as const)('uses the current CLI identity and preserves %s catalog capabilities', async (slug, display_name, context_window, input_modalities) => {
+    // https://github.com/openai/codex/releases/tag/rust-v0.169.0
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
       models: [{
-        slug: 'gpt-6.1-sol', display_name: 'GPT-6.1-Sol', context_window: 272000, max_context_window: 872000,
-        supports_experimental_context: true, minimal_client_version: '0.153.0', use_responses_lite: true,
-        default_reasoning_level: 'low', input_modalities: ['text', 'image'], supports_image_detail_original: true,
+        slug, display_name, context_window, max_context_window: 872000,
+        minimal_client_version: '0.166.0', use_responses_lite: true,
+        default_reasoning_level: 'low', input_modalities, supports_image_detail_original: true,
         supported_reasoning_levels: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'].map(effort => ({ effort })),
       }],
     }));
     const [raw] = await fetchChatGPTCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher });
+    expect(raw.input_modalities).toEqual(input_modalities);
     const model = chatgptRawToProviderModel(raw, new Set());
-    expect(spy.mock.calls[0][0]).toBe('https://chatgpt.com/backend-api/codex/models?client_version=0.159.3');
+    expect(spy.mock.calls[0][0]).toBe('https://chatgpt.com/backend-api/codex/models?client_version=0.169.0');
     const headers = new Headers(spy.mock.calls[0][1]?.headers);
-    expect(headers.get('user-agent')).toBe('codex_cli_rs/0.159.3 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10');
-    expect(headers.get('version')).toBe('0.159.3');
-    expect(model.upstreamModelId).toBe('gpt-6.1-sol');
+    expect(headers.get('user-agent')).toBe('codex_cli_rs/0.169.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10');
+    expect(headers.get('version')).toBe('0.169.0');
+    expect(model.upstreamModelId).toBe(slug);
     expect(model.limits.max_context_window_tokens).toBe(872000);
-    expect(chatgptModelContextWindow(model)).toEqual({ context_window: 272000, max_context_window: 872000 });
+    expect(chatgptCodexModelMetadata(model)).toEqual({ context_window, max_context_window: 872000 });
     expect(chatgptModelUsesResponsesLite(model)).toBe(true);
     expect(model.chat).toEqual({
-      modalities: { input: ['text', 'image'], output: ['text'] },
+      modalities: { input: input_modalities, output: ['text'] },
       reasoning: { effort: { supported: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'], default: 'low' } },
       image_detail_original: true,
     });
@@ -117,7 +134,7 @@ describe('fetchChatGPTCatalog', () => {
     const [raw] = await fetchChatGPTCatalog({ accessToken: 'at', accountId: null, fetcher: directFetcher });
     const model = chatgptRawToProviderModel(raw, new Set());
     expect(model.limits).toEqual({});
-    expect(chatgptModelContextWindow(model)).toEqual({ context_window: 272000 });
+    expect(chatgptCodexModelMetadata(model)).toEqual({ context_window: 272000 });
   });
 
   test('carries input_modalities, supported_reasoning_levels, default_reasoning_level through to ChatGPTRawModel', async () => {
@@ -197,11 +214,30 @@ describe('fetchChatGPTCatalog', () => {
     await expect(fetchChatGPTCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/use_responses_lite not a boolean/);
   });
 
-  test('throws on malformed input_modalities entry (unknown modality)', async () => {
+  test('keeps new upstream modalities without rejecting other catalog entries or advertising unsupported input', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
-      models: [{ slug: 'gpt-x', display_name: 'GPT-X', context_window: 1, input_modalities: ['video'] }],
+      models: [
+        { slug: 'gpt-x', display_name: 'GPT-X', context_window: 1, input_modalities: ['text', 'video', 'image', 'video', 'audio'] },
+        { slug: 'gpt-old', display_name: 'GPT-Old', context_window: 1, input_modalities: ['text'] },
+        { slug: 'gpt-audio', display_name: 'GPT-Audio', context_window: 1, input_modalities: ['audio'] },
+        { slug: 'future', display_name: 'Future', context_window: 1, input_modalities: ['video'] },
+      ],
     }));
-    await expect(fetchChatGPTCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/modality/);
+    const catalog = await fetchChatGPTCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher });
+    expect(catalog).toHaveLength(4);
+    expect(catalog[0].input_modalities).toEqual(['text', 'video', 'image', 'audio']);
+    const models = catalog.map(raw => chatgptRawToProviderModel(raw, new Set()));
+    expect(models[0].chat?.modalities).toEqual({ input: ['text', 'image', 'audio'], output: ['text'] });
+    expect(models[1].chat?.modalities).toEqual({ input: ['text'], output: ['text'] });
+    expect(models[2].chat?.modalities).toEqual({ input: ['audio'], output: ['text'] });
+    expect(models[3].chat?.modalities).toEqual({ input: [], output: ['text'] });
+  });
+
+  test.each([null, 'text', [null], [1], [true], [{}], ['']])('rejects malformed input_modalities %j', async input_modalities => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
+      models: [{ slug: 'gpt-x', display_name: 'GPT-X', context_window: 1, input_modalities }],
+    }));
+    await expect(fetchChatGPTCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/input_modalities/);
   });
 
   test('throws on malformed supported_reasoning_levels entry (missing effort)', async () => {
@@ -225,7 +261,7 @@ describe('chatgptRawToProviderModel', () => {
     expect(m.endpoints).toEqual({ openaiResponses: {} });
     expect(m.kind).toBe('chat');
     expect(m.limits.max_context_window_tokens).toBe(872000);
-    expect(chatgptModelContextWindow(m)).toEqual({ context_window: 272000, max_context_window: 872000 });
+    expect(chatgptCodexModelMetadata(m)).toEqual({ context_window: 272000, max_context_window: 872000 });
     expect(m.owned_by).toBe('openai');
   });
 
@@ -248,12 +284,12 @@ describe('chatgptRawToProviderModel', () => {
   test('recovers separate windows after provider metadata is serialized', () => {
     const model = chatgptRawToProviderModel({ id: 'future-model', display_name: 'Future', context_window: 80000, max_context_window: 600000 }, noFlags);
     const restored = { ...model, providerData: JSON.parse(JSON.stringify(model.providerData)) as unknown };
-    expect(chatgptModelContextWindow(restored)).toEqual({ context_window: 80000, max_context_window: 600000 });
+    expect(chatgptCodexModelMetadata(restored)).toEqual({ context_window: 80000, max_context_window: 600000 });
   });
 
   test.each([undefined, {}, { contextWindow: 0 }, { contextWindow: '272000' }])('rejects missing or invalid persisted default %j', providerData => {
     const model = chatgptRawToProviderModel({ id: 'future-model', display_name: 'Future', context_window: 272000 }, noFlags);
-    expect(() => chatgptModelContextWindow({ ...model, providerData })).toThrow();
+    expect(() => chatgptCodexModelMetadata({ ...model, providerData })).toThrow();
   });
 
   test.each(['true', null, 1, {}, []])('rejects malformed raw and persisted flag %j', value => {

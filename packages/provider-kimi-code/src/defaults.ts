@@ -15,6 +15,11 @@ export const KIMI_CODE_DEFAULT_FLAGS: FlagDefaults = {
   // sub-agent task never reaches the model without the lowering.
   // https://github.com/openai/codex/blob/0a2eb4696c26ac33204bcd255721ab30220a4774/codex-rs/protocol/src/models.rs#L1036-L1046
   'openai-responses-agent-message-shim': true,
+  // The Responses endpoint rejects a `function_call_output` without `call_id`
+  // ("Invalid request: tool_call_id  is not found"), so Codex-injected context
+  // such as the `/goal` objective fails the whole request without the lowering.
+  // https://github.com/openai/codex/issues/43515
+  'openai-responses-standalone-tool-output-shim': true,
   'serialize-stream-items': false,
   'disable-reasoning-on-forced-tool-choice': false,
   'empty-tools-tool-choice-none': false,

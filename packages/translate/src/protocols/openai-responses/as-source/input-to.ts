@@ -59,6 +59,8 @@ const userContentPart = (part: OpenAIResponsesInputContent): IRInputUserContentP
   }
   case 'input_file':
     return { type: 'file', file: fileMedia(part), ...(typeof part.filename === 'string' ? { filename: part.filename } : {}) };
+  case 'input_audio':
+    throw new TranslateInputException('Codex input_audio references require a native OpenAI Responses upstream.');
   }
 };
 
@@ -90,6 +92,7 @@ const assistantContent = (message: Extract<OpenAIResponsesInputMessageEx, { role
 const toolResultContent = (output: string | readonly OpenAIResponsesInputContent[]): string | readonly IRInputToolResultContentPart[] => typeof output === 'string'
   ? output
   : output.map(part => {
+      if (part.type === 'input_audio') throw new TranslateInputException('Codex input_audio tool outputs require a native OpenAI Responses upstream.');
       if (part.type === 'input_image') return { type: 'image' as const, image: imageMedia(part), ...(part.detail == null ? {} : { detail: part.detail }) };
       if (part.type === 'input_file') return { type: 'file' as const, file: fileMedia(part), ...(typeof part.filename === 'string' ? { filename: part.filename } : {}) };
       return { type: 'text' as const, text: part.text };
@@ -142,6 +145,10 @@ const clientItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInp
     default: throw new TranslateInputException(`Invalid role '${item.role}' in input message.`);
     }
   case 'function_call_output': {
+    // A standalone output answers no call, and no other protocol can carry a
+    // tool result without one. Rejecting it here keeps the input IR free of
+    // call-less tool results.
+    if (item.call_id == null) throw new TranslateInputException('Cannot translate a function call output without a call_id.');
     const result: IRInputToolResultItem = {
       type: 'tool_result',
       call_id: item.call_id,

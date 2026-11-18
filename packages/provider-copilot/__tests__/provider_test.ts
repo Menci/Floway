@@ -7,7 +7,7 @@ import { createCopilotProvider } from '../src/provider.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from '../src/state.ts';
 import type { CopilotRawModel } from '../src/types.ts';
 import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/platform';
-import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
+import { PROMPT_TOO_LONG_MESSAGE, type AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { parseDecisionRequest } from '@floway-dev/protocols/decision';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, initProviderRepo } from '@floway-dev/provider';
@@ -1126,7 +1126,7 @@ test('Copilot provider routes speed=fast to the -fast raw variant and stamps usa
         noopAnthropicMessagesUpstreamCallOptions(),
       );
 
-      if (!result.ok) throw new Error(`expected ok stream, got ${JSON.stringify(result.response)}`);
+      if (!result.ok) throw new Error(`expected ok stream, got ${JSON.stringify(result.http)}`);
 
       const frames = [];
       for await (const frame of result.events) frames.push(frame);
@@ -1150,6 +1150,43 @@ test('Copilot provider routes speed=fast to the -fast raw variant and stamps usa
   assertEquals(upstreamBody?.model, 'claude-opus-4.6-fast');
   if (!upstreamBody) throw new Error('expected /v1/messages to be hit');
   assertEquals('speed' in upstreamBody, false);
+});
+
+test('Copilot provider carries the rewritten context-window failure status and headers', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const provider = createCopilotProvider(copilotUpstream).instance;
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'claude-haiku-4.5', supported_endpoints: ['/v1/messages'] }]));
+      }
+      if (url.pathname === '/v1/messages') {
+        return new Response('Request body is too large for model context window', { status: 413 });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [model] = await provider.getProvidedModels(directFetcher);
+      const result = await provider.callAnthropicMessages(
+        model,
+        { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
+        undefined,
+        noopAnthropicMessagesUpstreamCallOptions(),
+      );
+
+      if (result.ok) throw new Error('expected rewritten context-window error');
+      assertEquals(result.http.status, 400);
+      assertEquals(result.http.headers.get('content-type'), 'application/json');
+      const body = await result.http.json() as { error: { message: string } };
+      assertEquals(body.error.message, PROMPT_TOO_LONG_MESSAGE);
+    },
+  );
 });
 
 test('Copilot provider returns HTTP 400 invalid_request_error when speed=fast hits a model without a -fast variant', async () => {
@@ -1185,8 +1222,8 @@ test('Copilot provider returns HTTP 400 invalid_request_error when speed=fast hi
       );
 
       if (result.ok) throw new Error('expected 400 error, got ok stream');
-      assertEquals(result.response.status, 400);
-      const body = (await result.response.json()) as { type: string; error: { type: string; message: string } };
+      assertEquals(result.http.status, 400);
+      const body = (await result.http.json()) as { type: string; error: { type: string; message: string } };
       // Byte-identical to the wire string Anthropic emits on real api.anthropic.com
       // for the same failure mode — recorded verbatim from a live response in
       // https://github.com/Yeachan-Heo/gajae-code/blob/main/packages/ai/test/anthropic-fast-mode.test.ts
@@ -1379,7 +1416,7 @@ test('Copilot image generations POSTs JSON to the v1 path with the raw model id'
     async () => {
       const [model] = await provider.getProvidedModels(directFetcher);
       const result = await provider.callOpenAIImagesGenerations(model, { prompt: 'a red square' }, undefined, noopUpstreamCallOptions());
-      assertEquals(result.response.status, 200);
+      assertEquals(result.http.status, 200);
     },
   );
 
@@ -1417,7 +1454,7 @@ test('Copilot image edits keeps multipart uploads free of a JSON content-type', 
       const [model] = await provider.getProvidedModels(directFetcher);
       const file = new File([new Uint8Array([0x89, 0x50, 0x4E, 0x47])], 'in.png', { type: 'image/png' });
       const result = await provider.callOpenAIImagesEdits(model, { images: [{ type: 'upload', file }], parameters: { prompt: 'make it blue' } }, undefined, noopUpstreamCallOptions());
-      assertEquals(result.response.status, 200);
+      assertEquals(result.http.status, 200);
     },
   );
 
@@ -1662,7 +1699,7 @@ test('Copilot provider derives decision endpoints and forwards the System One bo
       });
       const result = await provider.callDecision(decision, parsed.request, undefined, noopUpstreamCallOptions());
       assertEquals(result.target, { protocol: 'typesafe-systemone' });
-      assertEquals(result.response.status, 200);
+      assertEquals(result.http.status, 200);
     },
   );
 
@@ -1706,7 +1743,7 @@ test('Copilot sends an OpenAI Decisions model to /v1/decisions in its own dialec
       });
       const result = await provider.callDecision(decision, parsed.request, undefined, noopUpstreamCallOptions());
       assertEquals(result.target, { protocol: 'openai-decisions' });
-      assertEquals(result.response.status, 200);
+      assertEquals(result.http.status, 200);
     },
   );
 

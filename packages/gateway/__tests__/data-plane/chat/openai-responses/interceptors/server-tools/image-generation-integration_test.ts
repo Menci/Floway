@@ -9,7 +9,7 @@ import { createInMemoryImageProcessor, initExternalResourceFetcher, initImagePro
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
-import { type EventResult, type ExecuteResult, type FlagId, type OpenAIImagesEditsRequest } from '@floway-dev/provider';
+import { decodeResponseBody, type EventResult, type ExecuteResult, type FlagId, type OpenAIImagesEditsRequest } from '@floway-dev/provider';
 import { assert, assertEquals, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
 
 // Dirty integration harness: mock the model registry so the image backend is a
@@ -52,13 +52,13 @@ const defaultCandidates = vi.hoisted(() => () => [{
         stub.generationsCalls.push(body);
         const response = stub.nextGenerations.shift();
         if (response === undefined) throw new Error('test did not enqueue a generations response');
-        return { response, modelKey: 'gpt-image-2' };
+        return { http: response, modelKey: 'gpt-image-2' };
       },
       callOpenAIImagesEdits: async (_model: unknown, request: OpenAIImagesEditsRequest) => {
         stub.editsRequests.push(request);
         const response = stub.nextEdits.shift();
         if (response === undefined) throw new Error('test did not enqueue an edits response');
-        return { response, modelKey: 'gpt-image-2' };
+        return { http: response, modelKey: 'gpt-image-2' };
       },
     },
   },
@@ -315,7 +315,7 @@ test('invalid image generation in tool_search_output reports its input path', as
     throw new Error('Invalid request reached upstream');
   });
   assert(result.type === 'api-error');
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string } };
+  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { param: string } };
   assertEquals(body.error.param, 'input[0].tools[0].size');
 });
 
