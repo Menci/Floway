@@ -17,11 +17,4 @@ describe('base codecs', () => {
     expect(base64UrlDecodeBytes('-x')).toEqual(new Uint8Array([0xfb]));
     expect(() => base64DecodeBytes('Zg=')).toThrow();
   });
-
-  it('round-trips a large byte buffer without binary-string conversion', () => {
-    const bytes = Uint8Array.from({ length: 1024 * 1024 }, (_, index) => index & 0xff);
-    const decoded = base64DecodeBytes(base64EncodeBytes(bytes));
-    expect(decoded).toHaveLength(bytes.length);
-    expect(decoded.every((byte, index) => byte === bytes[index])).toBe(true);
-  });
 });

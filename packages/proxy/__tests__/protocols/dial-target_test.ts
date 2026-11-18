@@ -47,6 +47,18 @@ describe('pre-dial target validation reaches every dialer', () => {
     expect(fake.connectCount()).toBe(0);
   });
 
+  // CR/LF inside the target host would split the CONNECT request line as
+  // `${target.host}:${target.port}` and inject a forged head onto the wire.
+  it.each(dialers)('$name rejects a target host containing CRLF at stage=config, before any TCP connect', async ({ dial }) => {
+    const fake = makeFakeSocketDial();
+    await expect(dial({ host: 'evil\r\n.example', port: 443 }, fake.socketDial)).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'config',
+      message: expect.stringContaining('forbidden byte'),
+    });
+    expect(fake.connectCount()).toBe(0);
+  });
+
   it.each(dialers)('$name rejects a non-ASCII target host at stage=config, before any TCP connect', async ({ dial }) => {
     const fake = makeFakeSocketDial();
     await expect(dial({ host: '例え.jp', port: 443 }, fake.socketDial)).rejects.toMatchObject({
