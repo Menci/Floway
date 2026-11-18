@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
-import { createSqliteTestDb } from './test-sqlite.ts';
+import { type CompletedStatement, recordCompletedStatements } from './recording-sql.ts';
+import { assertD1CompoundSelectLimit, createSqliteTestDb } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type {
   ApiKey,
@@ -243,4 +244,50 @@ it('SQL Performance overview ignores out-of-scope orphan histograms under key gr
     bucketForHour: hour => hour,
   });
   expect(overview.axes.none[0]?.requests).toBe(1);
+});
+
+it('SQL Performance overview stays within the D1 compound-select limit and returns aggregate cardinality', async () => {
+  const db = await createSqliteTestDb();
+  const seedRepo = new SqlRepo(db);
+  await seedRepo.apiKeys.save(apiKey('key-1', 1));
+  for (let index = 0; index < 40; index++) {
+    await seedRepo.performance.set({
+      hour: new Date(Date.UTC(2026, 5, 1, index)).toISOString().slice(0, 13),
+      keyId: 'key-1', model: 'shared-model', upstream: 'shared-upstream',
+      operation: 'chat', runtimeLocation: 'LOCAL', requests: 1,
+      ttftSamplesOk: 1, errorsWithOutput: 0, errorsNoOutput: 0, neutral: 0,
+      tpotSamples: 1, ttftMsSum: 100, tpotUsSum: 500,
+      buckets: [
+        { metric: 'ttft_ms', lower: 0, upper: 100, count: 1 },
+        { metric: 'tpot_us', lower: 0, upper: 500, count: 1 },
+      ],
+    });
+  }
+  const completed: CompletedStatement[] = [];
+  const repo = new SqlRepo(recordCompletedStatements(db, completed));
+
+  const overview = await repo.performance.queryOverview({
+    actorUserId: 1,
+    isAdmin: true,
+    visibleUserIds: [],
+    visibleUpstreams: [],
+    start: '2026-06-01T00',
+    end: '2026-08-01T00',
+    groupBy: 'keyId',
+    filters: {
+      keyIds: [], userIds: [], models: [], upstreams: [], operations: [], runtimeLocations: [],
+    },
+    bucketForHour: () => 'one-bucket',
+  });
+
+  const aggregates = completed.filter(statement => statement.query.startsWith('/* performance-overview */'));
+  const aggregate = aggregates.at(-1);
+  if (!aggregate) throw new Error('Performance overview SQL evidence was not captured');
+  assertD1CompoundSelectLimit(aggregate.query);
+  const rawRows = await db.prepare('SELECT (SELECT COUNT(*) FROM performance_summary) + (SELECT COUNT(*) FROM performance_buckets) AS count')
+    .first<{ count: number }>();
+  expect(rawRows?.count).toBe(120);
+  expect(aggregates).toHaveLength(1);
+  expect(aggregate.resultCount).toBeLessThan(120);
+  expect(overview.axes.none[0]).toMatchObject({ requests: 40, ttftSamples: 40, tpotSamples: 40 });
 });

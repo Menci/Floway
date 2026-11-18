@@ -1,7 +1,8 @@
 import { test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
-import { createSqliteTestDb } from './test-sqlite.ts';
+import { type CompletedStatement, recordCompletedStatements } from './recording-sql.ts';
+import { assertD1CompoundSelectLimit, createSqliteTestDb } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { ApiKey, Repo, UsageOverviewQueryOptions, UsageRecord } from '../../src/repo/types.ts';
 import { tokenRatesFromUsage, tokenUsageMetrics } from '../../src/repo/usage-metrics.ts';
@@ -194,5 +195,45 @@ test('SQL usage overview matches the in-memory oracle across filters, facets, ax
     requests: 11,
     metrics: [{ metric: 'input_tokens', quantity: '9007199254740992.1' }],
     cost: '900719925.4940992',
+  });
+});
+
+test('SQL usage overview stays within the D1 compound-select limit and returns grouped term cardinality', async () => {
+  const db = await createSqliteTestDb();
+  const seedRepo = new SqlRepo(db);
+  await seedRepo.apiKeys.save(apiKey('key-1', 1));
+  await Promise.all(Array.from({ length: 80 }, (_, index) => seedRepo.usage.set(record({
+    model: 'shared-model',
+    modelKey: `storage-${index}`,
+    pricingSelector: { serviceTier: `tier-${index}` },
+    metrics: [{ metric: 'input_tokens', quantity: String(index + 1) as `${number}`, unitPrice: '0.5' }],
+  }))));
+  const completed: CompletedStatement[] = [];
+  const repo = new SqlRepo(recordCompletedStatements(db, completed));
+
+  const overview = await repo.usage.queryOverview({
+    actorUserId: 1,
+    isAdmin: true,
+    visibleUserIds: [],
+    visibleUpstreams: [],
+    start: '2026-07-12T00',
+    end: '2026-07-12T01',
+    groupBy: 'model',
+    filters: { keyIds: [], userIds: [], models: [], upstreams: [] },
+    bucketForHour: hour => hour,
+  });
+
+  const rawRows = await db.prepare('SELECT (SELECT COUNT(*) FROM usage) + (SELECT COUNT(*) FROM usage_requests) AS count')
+    .first<{ count: number }>();
+  const aggregates = completed.filter(statement => statement.query.startsWith('/* usage-overview */'));
+  const aggregate = aggregates.at(-1);
+  if (!aggregate || !rawRows) throw new Error('Usage overview SQL evidence was not captured');
+  assertD1CompoundSelectLimit(aggregate.query);
+  assertEquals(rawRows.count, 160);
+  assertEquals(aggregates.length, 1);
+  assertEquals(aggregate.resultCount < rawRows.count, true);
+  assertEquals(overview.axes.none[0], {
+    bucket: 'all', group: 'all', requests: 80,
+    metrics: [{ metric: 'input_tokens', quantity: '3240' }], cost: '1620',
   });
 });
