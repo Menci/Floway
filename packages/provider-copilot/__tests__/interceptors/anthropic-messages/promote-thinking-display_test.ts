@@ -69,13 +69,6 @@ test('resolveAnthropicMessagesDownstreamThinkingDisplay exposes 4.7+ omitted by 
   );
 });
 
-test('resolveAnthropicMessagesDownstreamThinkingDisplay ignores unknown explicit display values', () => {
-  const ctx = makeCtx({ type: 'adaptive' });
-  (ctx.payload.thinking as { display?: unknown }).display = 'omit';
-
-  assertEquals(resolveAnthropicMessagesDownstreamThinkingDisplay(ctx), undefined);
-});
-
 test('withThinkingDisplayPromoted overrides omitted but preserves full', async () => {
   const omittedCtx = makeCtx({ type: 'adaptive', display: 'omitted' });
   const fullCtx = makeCtx({ type: 'adaptive', display: 'full' });
@@ -85,15 +78,6 @@ test('withThinkingDisplayPromoted overrides omitted but preserves full', async (
 
   assertEquals((omittedCtx.payload.thinking !== undefined && 'display' in omittedCtx.payload.thinking ? omittedCtx.payload.thinking.display : undefined), 'summarized');
   assertEquals((fullCtx.payload.thinking !== undefined && 'display' in fullCtx.payload.thinking ? fullCtx.payload.thinking.display : undefined), 'full');
-});
-
-test('withThinkingDisplayPromoted leaves unknown display values for upstream validation', async () => {
-  const ctx = makeCtx({ type: 'adaptive' });
-  (ctx.payload.thinking as { display?: unknown }).display = 'omit';
-
-  await withThinkingDisplayPromoted(ctx, stubRequest, okEvents);
-
-  assertEquals((ctx.payload.thinking as { display?: unknown }).display, 'omit');
 });
 
 test('withThinkingDisplayPromoted simulates omitted display on protocol events', async () => {

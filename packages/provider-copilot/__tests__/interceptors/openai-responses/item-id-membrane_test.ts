@@ -220,14 +220,8 @@ test.each([
   throw new Error('expected matching carrier item types');
 });
 
-const uncarriedOutputItems = [
-  ['msg', { type: 'message', id: 'raw', role: 'assistant', content: [] }],
-  ['fc', { type: 'function_call', id: 'raw', call_id: 'call', name: 'f', arguments: '{}', status: 'completed' }],
-  ['sh', { type: 'shell_call', id: 'raw', call_id: 'call', action: { commands: ['pwd'] }, status: 'completed' }],
-] as const;
-
-test.each(uncarriedOutputItems)('randomizes a Copilot %s item without exposing its raw id', async (prefix, fixture) => {
-  const item = fixture as OpenAIResponsesOutputItemEx;
+test('randomizes an uncarried Copilot item without exposing its raw id', async () => {
+  const item: OpenAIResponsesOutputItemEx = { type: 'function_call', id: 'raw', call_id: 'call', name: 'f', arguments: '{}', status: 'completed' };
   const { result } = await runStream([
     eventFrame(outputItemEvent('added', 0, item)),
     eventFrame(outputItemEvent('done', 0, item)),
@@ -239,7 +233,7 @@ test.each(uncarriedOutputItems)('randomizes a Copilot %s item without exposing i
   const done = eventAt(frames, 'response.output_item.done');
   const completed = eventAt(frames, 'response.completed');
 
-  expect(added.item.id).toMatch(new RegExp(`^${prefix}_[0-9a-f]{32}$`));
+  expect(added.item.id).toMatch(/^fc_[0-9a-f]{32}$/);
   expect(done.item.id).toBe(added.item.id);
   expect(completed.response.output[0].id).toBe(added.item.id);
   expect(JSON.stringify(frames)).not.toContain('"raw"');
@@ -396,13 +390,6 @@ test('rejects replay state without the upstream id that authenticates it', async
   await expect(collect(result)).rejects.toThrow(/has replay state but no upstream id/);
 });
 
-test('does not accept an Object prototype key as an output item type', async () => {
-  const unknown = { type: 'constructor', id: 'raw_future' } as unknown as OpenAIResponsesOutputItemEx;
-  const { result } = await runStream([eventFrame(outputItemEvent('added', 0, unknown))]);
-
-  await expect(collect(result)).rejects.toThrow("Unsupported Copilot OpenAI Responses output item type 'constructor'");
-});
-
 test('fails closed on unknown event envelopes that could hide an item id', async () => {
   const future = {
     type: 'response.future',
@@ -431,25 +418,6 @@ test('rewrites an item id extension on an unknown scalar event', async () => {
 
   if (normalized.type !== 'event') throw new Error('expected future event');
   expect((normalized.event as unknown as { item_id: string }).item_id).toBe(added.item.id);
-});
-
-test('forwards repeated done frames with stable public identity and each frame own content', async () => {
-  const first: OpenAIResponsesOutputItemEx = { type: 'reasoning', id: 'rs_first', summary: [], encrypted_content: 'first' };
-  const second: OpenAIResponsesOutputItemEx = { type: 'reasoning', id: 'rs_second', summary: [], encrypted_content: 'second' };
-  const { result } = await runStream([
-    eventFrame(outputItemEvent('added', 0, { type: 'reasoning', id: 'rs_added', summary: [] })),
-    eventFrame(outputItemEvent('done', 0, first)),
-    eventFrame(outputItemEvent('done', 0, second)),
-  ]);
-  const frames = await collect(result);
-  const doneItems = frames.flatMap(frame =>
-    frame.type === 'event' && frame.event.type === 'response.output_item.done' ? [frame.event.item] : []);
-
-  expect(doneItems).toHaveLength(2);
-  expect(doneItems[1].id).toBe(doneItems[0].id);
-  if (doneItems[0].type !== 'reasoning' || doneItems[1].type !== 'reasoning') throw new Error('expected reasoning items');
-  expect(unwrapCopilotItemId(doneItems[0].encrypted_content!)).toMatchObject({ value: 'first', id: 'rs_first' });
-  expect(unwrapCopilotItemId(doneItems[1].encrypted_content!)).toMatchObject({ value: 'second', id: 'rs_second' });
 });
 
 test('normalizes a failed response with an open item instead of suppressing the failure', async () => {

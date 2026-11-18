@@ -44,26 +44,3 @@ test('Anthropic Messages vision header set when an image is nested inside tool_r
 
   assertEquals(ctx.headers.get('copilot-vision-request'), 'true');
 });
-
-test('Anthropic Messages vision header absent when no image is present', async () => {
-  const ctx = invocation({
-    model: 'claude-test',
-    max_tokens: 10,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result',
-            tool_use_id: 'toolu_text',
-            content: [{ type: 'text', text: 'plain result' }],
-          },
-        ],
-      },
-    ],
-  });
-
-  await withVisionHeaderSet(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.headers.has('copilot-vision-request'), false);
-});

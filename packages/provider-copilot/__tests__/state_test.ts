@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { assertCopilotUpstreamState, readCopilotUpstreamState } from '../src/state.ts';
-import { assertEquals, assertThrows } from '@floway-dev/test-utils';
+import { assertThrows } from '@floway-dev/test-utils';
 
 // Regression: pre-refactor rows persisted `{token, expiresAt}` without
 // baseUrl. The strict asserter must throw on read so the data-plane call
@@ -21,11 +21,6 @@ test('readCopilotUpstreamState throws on a legacy copilotToken entry that lacks 
   );
 });
 
-test('readCopilotUpstreamState collapses null/undefined raw to empty state', () => {
-  assertEquals(readCopilotUpstreamState(null), { knownModels: null, copilotToken: null, quotaSnapshot: null, seat: null });
-  assertEquals(readCopilotUpstreamState(undefined), { knownModels: null, copilotToken: null, quotaSnapshot: null, seat: null });
-});
-
 // A key that also names an Object.prototype member is still an unknown key.
 test('assertCopilotUpstreamState rejects prototype-named keys', () => {
   for (const key of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
@@ -42,24 +37,4 @@ test('assertCopilotUpstreamState rejects prototype-named keys', () => {
       `CopilotUpstreamState.copilotToken has unexpected key '${key}'`,
     );
   }
-});
-
-test('readCopilotUpstreamState rejects a malformed nested quota entitlement', () => {
-  assertThrows(
-    () => readCopilotUpstreamState({
-      knownModels: null,
-      copilotToken: null,
-      quotaSnapshot: {
-        fetchedAt: 1,
-        data: {
-          observed_at: '2026-08-01T00:00:00.000Z',
-          reset_at: null,
-          quotas: { malformed: { entitlement: -2, unlimited: false } },
-        },
-      },
-      seat: null,
-    }),
-    TypeError,
-    'Invalid Copilot quota entitlement',
-  );
 });

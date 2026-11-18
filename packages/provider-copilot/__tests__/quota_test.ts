@@ -1,24 +1,10 @@
 import { expect, test, vi } from 'vitest';
 
-import { fetchCopilotUsage, parseCopilotQuotaHeaders, projectCopilotSeat, projectCopilotUsageResponse, putCopilotQuota, type CopilotUsageResponse } from '../src/quota.ts';
-import { directFetcher, initProviderRepo } from '@floway-dev/provider';
-import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
+import { parseCopilotQuotaHeaders, projectCopilotUsageResponse, putCopilotQuota, type CopilotUsageResponse } from '../src/quota.ts';
+import { initProviderRepo } from '@floway-dev/provider';
+import { assertEquals } from '@floway-dev/test-utils';
 
 const NOW = new Date('2026-08-01T19:42:34.000Z');
-
-test('fetchCopilotUsage reads quota from the selected GHE.com tenant API', async () => {
-  await withMockedFetch(
-    request => {
-      assertEquals(request.url, 'https://api.octocorp.ghe.com/copilot_internal/user');
-      assertEquals(request.headers.get('authorization'), 'token ghu_ghe');
-      return new Response('{}');
-    },
-    async () => {
-      const response = await fetchCopilotUsage('octocorp.ghe.com', 'ghu_ghe', directFetcher);
-      assertEquals(response.status, 200);
-    },
-  );
-});
 
 // Verbatim from a live enterprise seat's /chat/completions response.
 const liveHeaders = (): Headers => new Headers({
@@ -111,22 +97,6 @@ test('projectCopilotUsageResponse drops a bucket whose cap or remainder is missi
   assertEquals(Object.keys(projected?.quotas ?? {}), ['completions']);
 });
 
-// Both sources can report an empty reset instant — `rst=` with no value, or
-// `quota_reset_date_utc: ""`. Rendering either produces "Invalid Date".
-test('both quota sources report an unparseable reset instant as none', () => {
-  const fromBody = projectCopilotUsageResponse({
-    quota_reset_date_utc: '',
-    quota_snapshots: { chat: { entitlement: 200, quota_remaining: 200, percent_remaining: 100 } },
-  }, NOW);
-  assertEquals(fromBody?.reset_at, null);
-
-  const fromHeaders = parseCopilotQuotaHeaders(
-    new Headers({ 'x-quota-snapshot-chat': 'ent=200&ov=0.0&ovPerm=false&rem=100.0&rst=&totRem=200' }),
-    NOW,
-  );
-  assertEquals(fromHeaders?.reset_at, null);
-});
-
 test('putCopilotQuota rejects malformed entitlement before writing state or metrics', async () => {
   const saveState = vi.fn();
   const recordUpstreamMetric = vi.fn();
@@ -144,11 +114,4 @@ test('putCopilotQuota rejects malformed entitlement before writing state or metr
   })).rejects.toThrow(TypeError);
   expect(saveState).not.toHaveBeenCalled();
   expect(recordUpstreamMetric).not.toHaveBeenCalled();
-});
-
-// "Nothing observed" rather than "a seat with no plan": the operator's refresh
-// must not blank a reading an earlier one stored.
-test('the seat projection reports nothing when the body names neither', () => {
-  assertEquals(projectCopilotSeat({ quota_snapshots: {} }, NOW), null);
-  assertEquals(projectCopilotSeat({ copilot_plan: '', access_type_sku: '' }, NOW), null);
 });

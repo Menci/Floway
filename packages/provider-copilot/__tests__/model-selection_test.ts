@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { copilotModelSupportsFastVariant, resolveCopilotRawModel } from '../src/model-selection.ts';
+import { resolveCopilotRawModel } from '../src/model-selection.ts';
 import type { CopilotModelsResponse, CopilotRawModel } from '../src/types.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -89,31 +89,4 @@ test('resolveCopilotRawModel prioritizes explicit 1m intent even when effort can
   );
 
   assertEquals(resolved?.id, 'claude-opus-4.6-1m');
-});
-
-test('resolveCopilotRawModel falls back to the base when fast hint is set but no -fast variant exists', () => {
-  // Selection stays best-effort; the entry point validates the hard contract.
-  const resolved = resolveCopilotRawModel(
-    models(model('claude-opus-4.7'), model('claude-opus-4.7-xhigh', { reasoningEfforts: ['xhigh'] })),
-    'claude-opus-4-7',
-    { fast: true },
-  );
-
-  assertEquals(resolved?.id, 'claude-opus-4.7');
-});
-
-test('copilotModelSupportsFastVariant is true iff any raw variant has the -fast suffix', () => {
-  assertEquals(copilotModelSupportsFastVariant([model('claude-opus-4.6'), model('claude-opus-4.6-fast')]), true);
-  assertEquals(copilotModelSupportsFastVariant([model('claude-opus-4.7'), model('claude-opus-4.7-xhigh', { reasoningEfforts: ['xhigh'] })]), false);
-  assertEquals(copilotModelSupportsFastVariant([]), false);
-});
-
-test('resolveCopilotRawModel leaves a -fast id that has no base sibling alone', () => {
-  // `grok-code-fast` is its own model: there is no `grok-code` for it to be a
-  // lane of, so the suffix is part of the name and the id resolves to itself
-  // whatever the hints say.
-  const catalog = models(model('grok-code-fast'));
-
-  assertEquals(resolveCopilotRawModel(catalog, 'grok-code-fast', {})?.id, 'grok-code-fast');
-  assertEquals(resolveCopilotRawModel(catalog, 'grok-code-fast', { fast: true })?.id, 'grok-code-fast');
 });

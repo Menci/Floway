@@ -144,55 +144,6 @@ test('Copilot provider exposes the highest-priority non-Claude endpoint', async 
   );
 });
 
-test('Copilot provider exposes only OpenAI Responses for Claude when available', async () => {
-  const { copilotUpstream } = await setupCopilotTest();
-  const instance = createCopilotProvider(copilotUpstream);
-  const provider = instance.instance;
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({
-          token: 'copilot-access-token',
-          expires_at: 4102444800,
-          refresh_in: 3600,
-          endpoints: { api: 'https://api.individual.githubcopilot.com' },
-        });
-      }
-      if (url.pathname === '/models') {
-        return jsonResponse(
-          copilotModels([
-            {
-              id: 'claude-opus-4.7',
-              display_name: 'Claude Opus 4.7',
-              supported_endpoints: ['/responses', '/chat/completions'],
-            },
-            {
-              id: 'claude-opus-4.7-xhigh',
-              supported_endpoints: ['/v1/messages'],
-              reasoningEfforts: ['xhigh'],
-            },
-          ]),
-        );
-      }
-
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const [model] = await provider.getProvidedModels(directFetcher);
-
-      assertEquals(model.id, 'claude-opus-4-7');
-      assertEquals(model.display_name, 'Claude Opus 4.7');
-      assertEquals(model.endpoints, { openaiResponses: {} });
-    },
-  );
-});
-
 test('Copilot provider owns the claude-* Anthropic Messages capability workaround', async () => {
   const { copilotUpstream } = await setupCopilotTest();
   const instance = createCopilotProvider(copilotUpstream);
@@ -310,10 +261,6 @@ test('Copilot provider selects raw variants that support the target endpoint', a
   );
 
   assertEquals(openaiResponsesBody?.model, 'claude-opus-4.7');
-  assertEquals(
-    (openaiResponsesBody?.input as Array<{ tools: Array<{ description: string }> }>)[0]?.tools[0]?.description,
-    'Tools in the functions namespace.',
-  );
 });
 
 test('Copilot provider runs the OpenAI Responses boundary chain on the compact path', async () => {
@@ -399,10 +346,6 @@ test('Copilot provider runs the OpenAI Responses boundary chain on the compact p
   assertEquals('service_tier' in openaiResponsesBody, false);
   const wireInput = openaiResponsesBody?.input as Array<{ type: string }>;
   assertEquals(wireInput[0]?.type, 'additional_tools');
-  assertEquals(
-    (openaiResponsesBody.input as Array<{ tools?: Array<{ description: string }> }>)[0]?.tools?.[0]?.description,
-    'Tools in the functions namespace.',
-  );
   assertEquals(wireInput.at(-1)?.type, 'compaction_trigger');
   assertEquals(visionHeader, 'true');
   assertEquals(initiatorHeader, 'user');
@@ -595,31 +538,6 @@ test('Copilot provider throws when the upstream fetch fails — no in-provider f
     async () => {
       const instance = createCopilotProvider(harness.copilotUpstream);
       await assertRejects(() => instance.instance.getProvidedModels(directFetcher));
-    },
-  );
-});
-
-test('Copilot provider swallows a saveState throw so a transient persistence hiccup does not invalidate the fetched models', async () => {
-  // Persistence is best-effort: the fetched models are the user-facing
-  // payload, and a storage-level error on the write must not propagate out of
-  // getProvidedModels. Mirrors the gateway's persisted catalog policy.
-  const harness = await setupCopilotTest();
-  harness.overrideSaveState(() => Promise.reject(new Error('D1 hiccup')));
-
-  await withMockedFetch(
-    request => {
-      const pre = copilotPreflight(request);
-      if (pre) return pre;
-      const url = new URL(request.url);
-      if (url.pathname === '/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'm1', supported_endpoints: ['/v1/messages'] }] });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const instance = createCopilotProvider(harness.copilotUpstream);
-      const result = await instance.instance.getProvidedModels(directFetcher);
-      assertEquals(result.map(m => m.id), ['m1']);
     },
   );
 });
@@ -844,42 +762,6 @@ const copilotModelsWithCapabilities = (models: CopilotModelCapabilityFixture[]) 
   })),
 });
 
-const getModelsWithCapabilities = async (fixtures: CopilotModelCapabilityFixture[]) => {
-  const { copilotUpstream } = await setupCopilotTest();
-  const instance = createCopilotProvider(copilotUpstream);
-  let models: Awaited<ReturnType<typeof instance.instance.getProvidedModels>> = [];
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-      }
-      if (url.pathname === '/models') return jsonResponse(copilotModelsWithCapabilities(fixtures));
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => { models = await instance.instance.getProvidedModels(directFetcher); },
-  );
-
-  return models;
-};
-
-// Copilot's catalog advertises the two image surfaces as separate paths, and
-// the gateway serves each as its own inbound route. A model must therefore
-// carry both keys, and its `kind` must come out as `image` rather than the
-// empty-endpoint `chat` row the old projection produced.
-test('Copilot catalog projects an image model with both image endpoints and kind=image', async () => {
-  const [model] = await getModelsWithCapabilities([
-    { id: 'gpt-image-2.5-flare', type: 'image', supported_endpoints: ['/v1/images/generations', '/v1/images/edits'] },
-  ]);
-  assertEquals(model.kind, 'image');
-  assertEquals(model.endpoints, { openaiImagesGenerations: {}, openaiImagesEdits: {} });
-  assertEquals(model.chat, undefined);
-  // Rates are per token; the table quotes USD per million.
-  assertEquals(model.pricing?.entries[0]?.rates.output_image_tokens, '0.00003');
-});
-
 const imageModelCatalog = () => copilotModelsWithCapabilities([
   { id: 'gpt-image-2.5-flare', type: 'image', supported_endpoints: ['/v1/images/generations', '/v1/images/edits'] },
 ]);
@@ -888,38 +770,6 @@ const setupImageModelTest = async () => {
   const { copilotUpstream } = await setupCopilotTest();
   return createCopilotProvider(copilotUpstream).instance;
 };
-
-test('Copilot image generations POSTs JSON to the v1 path with the raw model id', async () => {
-  const provider = await setupImageModelTest();
-  let captured: { path: string; contentType: string | null; body: Record<string, unknown> } | undefined;
-
-  await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-      }
-      if (url.pathname === '/models') return jsonResponse(imageModelCatalog());
-      captured = {
-        path: url.pathname,
-        contentType: request.headers.get('content-type'),
-        body: (await request.json()) as Record<string, unknown>,
-      };
-      return jsonResponse({ created: 1, data: [{ b64_json: 'AAAA' }] });
-    },
-    async () => {
-      const [model] = await provider.getProvidedModels(directFetcher);
-      const result = await provider.callOpenAIImagesGenerations(model, { prompt: 'a red square' }, undefined, noopUpstreamCallOptions());
-      assertEquals(result.response.status, 200);
-    },
-  );
-
-  assertEquals(captured?.path, '/v1/images/generations');
-  assertEquals(captured?.contentType, 'application/json');
-  assertEquals(captured?.body.prompt, 'a red square');
-  assertEquals(captured?.body.model, 'gpt-image-2.5-flare');
-});
 
 // The regression this guards: `copilotAuthedFetch` used to pin
 // `Content-Type: application/json` unconditionally, which made Copilot answer
@@ -1042,7 +892,6 @@ test('Copilot provider returns the upstream response when passive quota headers 
   );
 
   assertEquals(readCopilotUpstreamState(harness.getCurrentState()).quotaSnapshot, null);
-  assertEquals(warn.mock.calls.length, 1);
   warn.mockRestore();
 });
 

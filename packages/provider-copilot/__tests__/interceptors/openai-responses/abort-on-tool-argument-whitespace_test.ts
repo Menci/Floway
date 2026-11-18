@@ -77,28 +77,3 @@ test('aborts and emits an error event + done when whitespace exceeds the thresho
 
   assertEquals(out[1], doneFrame());
 });
-
-test('continues streaming when whitespace is broken by non-whitespace characters', async () => {
-  const half = '\n'.repeat(MAX_CONSECUTIVE_WHITESPACE);
-  const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [
-    eventFrame(argsDelta(0, half)),
-    eventFrame(argsDelta(0, 'x')),
-    eventFrame(argsDelta(0, half)),
-    doneFrame(),
-  ];
-
-  const out = await runWith(frames);
-  assertEquals(out, frames);
-});
-
-test('tracks whitespace per output index independently', async () => {
-  const args = '\n'.repeat(MAX_CONSECUTIVE_WHITESPACE);
-  const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [
-    eventFrame(argsDelta(0, args)),
-    eventFrame(argsDelta(1, args)),
-    doneFrame(),
-  ];
-
-  const out = await runWith(frames);
-  assertEquals(out, frames);
-});

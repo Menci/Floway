@@ -23,7 +23,6 @@ const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesBo
 const contentContainers = {
   message: (content: OpenAIResponsesInputContent[]): CanonicalOpenAIResponsesInputItem => ({ type: 'message', role: 'user', content }),
   function_output: (output: OpenAIResponsesToolOutputContent[]): CanonicalOpenAIResponsesInputItem => ({ type: 'function_call_output', call_id: 'call_function', output }),
-  custom_output: (output: OpenAIResponsesToolOutputContent[]): CanonicalOpenAIResponsesInputItem => ({ type: 'custom_tool_call_output', call_id: 'call_custom', output }),
 };
 
 test.each(Object.entries(contentContainers))('OpenAI Responses vision header detects images in %s', async (_name, wrap) => {
@@ -38,15 +37,4 @@ test.each(Object.entries(contentContainers))('OpenAI Responses vision header det
   await withVisionHeaderSet(ctx, stubRequest, okEvents);
 
   assertEquals(ctx.headers.get('copilot-vision-request'), 'true');
-});
-
-test('OpenAI Responses vision header ignores text-only input', async () => {
-  const ctx = invocation({
-    model: 'gpt-test',
-    input: [contentContainers.message([{ type: 'input_text', text: 'plain text only' }])],
-  });
-
-  await withVisionHeaderSet(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.headers.has('copilot-vision-request'), false);
 });

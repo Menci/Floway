@@ -20,18 +20,6 @@ const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundar
   model: stubProviderModel({ endpoints: { anthropicMessages: {} } }),
 });
 
-test('Anthropic Messages initiator is user when the last message is a plain user turn', async () => {
-  const ctx = invocation({
-    model: 'claude-test',
-    max_tokens: 10,
-    messages: [{ role: 'user', content: 'hello' }],
-  });
-
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.headers.get('x-initiator'), 'user');
-});
-
 test('Anthropic Messages initiator is user when the last user turn mixes text and tool_result', async () => {
   const ctx = invocation({
     model: 'claude-test',

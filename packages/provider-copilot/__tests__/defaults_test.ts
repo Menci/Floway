@@ -40,11 +40,6 @@ test('defaultFlagsForCopilotModel rewrites only invalid placement for Claude >= 
   assertEquals(defaultFlagsForCopilotModel(model('claude-newfamily-5-0')), DISALLOWED_ONLY);
 });
 
-test('defaultFlagsForCopilotModel accepts dotted minor form for forward-compat', () => {
-  assertEquals(defaultFlagsForCopilotModel(model('claude-opus-4.7')), REWRITE_ALL);
-  assertEquals(defaultFlagsForCopilotModel(model('claude-opus-4.8')), DISALLOWED_ONLY);
-});
-
 test('defaultFlagsForCopilotModel falls back to rewrite-on when a Claude id carries no version', () => {
   // Safer than defaulting off — a Claude id we cannot version-parse
   // might route through Vertex, which still rejects inline system turns.

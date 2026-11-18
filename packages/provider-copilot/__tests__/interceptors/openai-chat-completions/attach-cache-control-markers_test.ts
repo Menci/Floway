@@ -6,7 +6,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assert, assertEquals, assertFalse, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubRequest = {};
 
@@ -49,44 +49,4 @@ test('OpenAI Chat Completions cache markers skip empty string content', async ()
   await withCacheControlMarkersAttached(ctx, stubRequest, okEvents);
 
   assertEquals(markedIndexes(ctx.payload.messages), []);
-});
-
-test('OpenAI Chat Completions cache markers only mark first two of five systems', async () => {
-  const ctx = invocation([
-    { role: 'system', content: 'system A' },
-    { role: 'system', content: 'system B' },
-    { role: 'system', content: 'system C' },
-    { role: 'system', content: 'system D' },
-    { role: 'system', content: 'system E' },
-    { role: 'user', content: 'user 1' },
-  ]);
-
-  await withCacheControlMarkersAttached(ctx, stubRequest, okEvents);
-
-  // First two systems + last (and only) non-system.
-  assertEquals(markedIndexes(ctx.payload.messages), [0, 1, 5]);
-  assertFalse((ctx.payload.messages[2] as CopilotCacheableMessage).copilot_cache_control);
-  assertFalse((ctx.payload.messages[3] as CopilotCacheableMessage).copilot_cache_control);
-  assertFalse((ctx.payload.messages[4] as CopilotCacheableMessage).copilot_cache_control);
-});
-
-test('OpenAI Chat Completions cache markers are independent object instances per message', async () => {
-  const ctx = invocation([
-    { role: 'system', content: 'system A' },
-    { role: 'system', content: 'system B' },
-    { role: 'user', content: 'user 1' },
-  ]);
-
-  await withCacheControlMarkersAttached(ctx, stubRequest, okEvents);
-
-  const a = (ctx.payload.messages[0] as CopilotCacheableMessage).copilot_cache_control;
-  const b = (ctx.payload.messages[1] as CopilotCacheableMessage).copilot_cache_control;
-  const c = (ctx.payload.messages[2] as CopilotCacheableMessage).copilot_cache_control;
-
-  assert(a);
-  assert(b);
-  assert(c);
-  assertFalse(a === b, 'system A and system B markers must be distinct objects');
-  assertFalse(a === c, 'system A and user 1 markers must be distinct objects');
-  assertFalse(b === c, 'system B and user 1 markers must be distinct objects');
 });

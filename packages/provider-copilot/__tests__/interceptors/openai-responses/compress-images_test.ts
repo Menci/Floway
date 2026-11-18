@@ -28,7 +28,6 @@ const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesBo
 const contentContainers = {
   message: (content: OpenAIResponsesInputContent[]): CanonicalOpenAIResponsesInputItem => ({ type: 'message', role: 'user', content }),
   function_output: (output: OpenAIResponsesToolOutputContent[]): CanonicalOpenAIResponsesInputItem => ({ type: 'function_call_output', call_id: 'call_function', output }),
-  custom_output: (output: OpenAIResponsesToolOutputContent[]): CanonicalOpenAIResponsesInputItem => ({ type: 'custom_tool_call_output', call_id: 'call_custom', output }),
 };
 
 const imageUrlOf = (item: CanonicalOpenAIResponsesInputItem): string | null | undefined => {

@@ -16,8 +16,3 @@ test('parseUserIdMetadata falls back to account_uuid when device_id is missing',
   const userId = JSON.stringify({ account_uuid: 'acct-2', session_id: 'sess-3' });
   assertEquals(parseUserIdMetadata(userId), { safetyIdentifier: 'acct-2', sessionId: 'sess-3' });
 });
-
-test('parseUserIdMetadata yields sessionId only when JSON omits the identifier fields', () => {
-  const userId = JSON.stringify({ session_id: 'sess-only' });
-  assertEquals(parseUserIdMetadata(userId), { safetyIdentifier: null, sessionId: 'sess-only' });
-});

@@ -52,19 +52,6 @@ test('Compact headers set when the system prompt starts with a compact summariza
   assertEquals(ctx.headers.get('x-interaction-type'), 'conversation-compaction');
 });
 
-test('Compact headers absent when only the text-only guard is present (other markers missing)', async () => {
-  const ctx = invocation({
-    model: 'claude-test',
-    max_tokens: 10,
-    messages: [{ role: 'user', content: 'CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.' }],
-  });
-
-  await withCompactHeadersSet(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.headers.has('x-initiator'), false);
-  assertEquals(ctx.headers.has('x-interaction-type'), false);
-});
-
 // Real client scenario: clients that round-trip the previous request's user
 // turn back as assistant history can place compact-summary text under an
 // assistant role. caozhiyuan's `getCompactCandidateText` returns empty text

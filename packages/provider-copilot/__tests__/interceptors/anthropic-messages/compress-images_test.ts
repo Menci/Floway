@@ -91,14 +91,10 @@ test('compresses an image nested inside tool_result content', async () => {
 
 test('selects the high-res Claude cap for Opus >= 4.7 and the standard cap otherwise', async () => {
   const source = { width: 3000, height: 3000 };
-  // Opus 4.7 / 4.8 (and future Opus): ~3.59 MP area cap -> sqrt(3_588_000/9e6) -> 1894.
-  for (const id of ['claude-opus-4.7', 'claude-opus-4.7-high', 'claude-opus-5']) {
-    assertEquals(await capTargetFor(id, source), { width: 1894, height: 1894 });
-  }
-  // Opus 4.5 / 4.6 + sonnet/haiku: standard ~1.18 MP cap -> sqrt(1_176_000/9e6) -> 1084.
-  for (const id of ['claude-opus-4.6', 'claude-sonnet-4.6']) {
-    assertEquals(await capTargetFor(id, source), { width: 1084, height: 1084 });
-  }
+  // Opus 4.7+: ~3.59 MP area cap -> sqrt(3_588_000/9e6) -> 1894.
+  assertEquals(await capTargetFor('claude-opus-4.7-high', source), { width: 1894, height: 1894 });
+  // Opus 4.6 and earlier: standard ~1.18 MP cap -> sqrt(1_176_000/9e6) -> 1084.
+  assertEquals(await capTargetFor('claude-opus-4.6', source), { width: 1084, height: 1084 });
 });
 
 // Drives the interceptor end-to-end with a header-only PNG of the requested

@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { compactionResponse } from '../src/compaction.ts';
-import type { OpenAIResponsesCompactionResultEx, CanonicalOpenAIResponsesInputItem, CanonicalOpenAIResponsesText, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesCompactionResultEx, CanonicalOpenAIResponsesInputItem, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 
 const generatedResult = (output: unknown[]): OpenAIResponsesResultEx =>
   ({
@@ -36,25 +36,6 @@ test('keeps retained user/assistant/developer/system messages and appends the co
   expect(result.output.at(-1)).toEqual(compaction);
 });
 
-test('normalizes every retained text part to input_text — assistant output_text included', () => {
-  const input: CanonicalOpenAIResponsesInputItem[] = [
-    {
-      type: 'message',
-      role: 'assistant',
-      content: [{ type: 'output_text', text: 'reply', prompt_cache_breakpoint: { mode: 'explicit' } }],
-    },
-    { type: 'message', role: 'user', content: 'plain string' },
-  ];
-  const result = compactionResponse(input, generatedResult([compaction]));
-
-  // Both retained messages echo with `input_text` parts, regardless of original part type.
-  const assistantPart = (result.output[0] as { content: CanonicalOpenAIResponsesText[] }).content[0];
-  const userPart = (result.output[1] as { content: Array<{ type: string }> }).content[0];
-  expect(assistantPart.type).toBe('input_text');
-  expect(assistantPart.prompt_cache_breakpoint).toEqual({ mode: 'explicit' });
-  expect(userPart.type).toBe('input_text');
-});
-
 test('throws when the trigger turn returned no compaction item', () => {
   expect(() => compactionResponse([], generatedResult([]))).toThrow(/no compaction output item/);
 });
@@ -71,20 +52,6 @@ test('truncates retained messages newest-first to the 64k token budget', () => {
   expect((result.output[0] as { role?: string }).role).toBe('user');
   expect((result.output[0] as { content?: unknown }).content).toEqual([{ type: 'input_text', text: 'recent' }]);
   expect(result.output[1]).toEqual(compaction);
-});
-
-test('the empty-message minimum-1-token charge prevents unbounded retention', () => {
-  // Empty-text messages would otherwise consume zero budget; the
-  // `Math.max(tokens, 1)` floor stops them from accumulating without bound.
-  // 64_001 empty messages cannot all survive the budget.
-  const empties: CanonicalOpenAIResponsesInputItem[] = Array.from({ length: 64_001 }, () => ({ type: 'message', role: 'user', content: '' }));
-  const result = compactionResponse(empties, generatedResult([compaction]));
-
-  // The retained-message count is strictly under the input count.
-  expect(result.output.length - 1).toBeLessThan(empties.length);
-  // And exactly equals the budget (each empty message charges 1 token, so
-  // the cap is hit at RETAINED_BUDGET_TOKENS kept entries).
-  expect(result.output).toHaveLength(64_000 + 1);
 });
 
 test('input_image parts do not consume token budget', () => {

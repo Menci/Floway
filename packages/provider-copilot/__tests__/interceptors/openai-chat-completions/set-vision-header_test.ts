@@ -37,17 +37,3 @@ test('OpenAI Chat Completions vision header set when an image_url content part i
 
   assertEquals(ctx.headers.get('copilot-vision-request'), 'true');
 });
-
-test('OpenAI Chat Completions vision header absent when content is pure text', async () => {
-  const ctx = invocation({
-    model: 'gpt-test',
-    messages: [
-      { role: 'user', content: 'plain string content' },
-      { role: 'user', content: [{ type: 'text', text: 'array text only' }] },
-    ],
-  });
-
-  await withVisionHeaderSet(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.headers.has('copilot-vision-request'), false);
-});

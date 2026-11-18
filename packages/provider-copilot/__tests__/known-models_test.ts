@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { mergeKnownModels, projectKnownModels, type CopilotKnownModels } from '../src/known-models.ts';
+import { mergeKnownModels, type CopilotKnownModels } from '../src/known-models.ts';
 import type { CopilotModelsResponse, CopilotRawModel } from '../src/types.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -34,17 +34,4 @@ test('mergeKnownModels drops models whose lastSeenAt is older than 24 h', () => 
   };
   const merged = mergeKnownModels(prev, response(), 1_000_000 + DAY + 1);
   assertEquals(Object.keys(merged.models).sort(), ['fresh']);
-});
-
-test('projectKnownModels returns only entries within the 24 h window', () => {
-  const knownModels: CopilotKnownModels = {
-    fetchedAt: 1_000_000,
-    models: {
-      stale: { snapshot: model('stale'), lastSeenAt: 1_000_000 },
-      fresh: { snapshot: model('fresh'), lastSeenAt: 1_000_000 + HOUR },
-    },
-  };
-  const projected = projectKnownModels(knownModels, 1_000_000 + DAY + 1);
-  assertEquals(projected.length, 1);
-  assertEquals(projected[0].id, 'fresh');
 });

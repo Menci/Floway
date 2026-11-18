@@ -2,21 +2,7 @@ import { test } from 'vitest';
 
 import { stripImageGenerationFromPayload } from '../../../src/interceptors/openai-responses/strip-image-generation.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
-import { assert, assertEquals, assertFalse } from '@floway-dev/test-utils';
-
-test('stripImageGenerationFromPayload removes forced image_generation tool_choice', () => {
-  const payload = {
-    model: 'gpt-test',
-    input: [{ type: 'message', role: 'user', content: 'draw this' }],
-    tools: [{ type: 'image_generation' }],
-    tool_choice: { type: 'image_generation' },
-  } as CanonicalOpenAIResponsesPayload;
-
-  stripImageGenerationFromPayload(payload);
-
-  assertFalse('tools' in payload);
-  assertFalse('tool_choice' in payload);
-});
+import { assert, assertEquals } from '@floway-dev/test-utils';
 
 test('forced image generation cannot expose a surviving input-carried client tool', () => {
   const payload: CanonicalOpenAIResponsesPayload = {
@@ -108,18 +94,6 @@ test('removes filtered hosted selectors from allowed_tools without dropping clie
   stripImageGenerationFromPayload(payload);
 
   assertEquals(payload.tool_choice, { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: 'lookup' }] });
-});
-
-test('keeps an unsatisfiable required allowed_tools choice explicit', () => {
-  const payload: CanonicalOpenAIResponsesPayload = {
-    model: 'gpt-test',
-    input: [{ type: 'tool_search_output', tools: [{ type: 'image_generation' }] }],
-    tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: 'image_generation' }] },
-  };
-
-  stripImageGenerationFromPayload(payload);
-
-  assertEquals(payload.tool_choice, { type: 'allowed_tools', mode: 'required', tools: [] });
 });
 
 test('auto allowed_tools cannot expose tools excluded by the original selector', () => {

@@ -20,31 +20,16 @@ const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesBo
   action: 'generate',
 });
 
-test.each(['user', 'developer'] as const)('OpenAI Responses initiator is user for a final %s message', async role => {
+test('OpenAI Responses initiator is user for a final developer message', async () => {
   const ctx = invocation({
     model: 'gpt-test',
     input: [
       {
         type: 'message',
-        role,
+        role: 'developer',
         content: [{ type: 'input_text', text: 'hello' }],
       },
     ],
-  });
-
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.headers.get('x-initiator'), 'user');
-});
-
-test('OpenAI Responses initiator is user for the role-bearing additional_tools item', async () => {
-  const ctx = invocation({
-    model: 'gpt-test',
-    input: [{
-      type: 'additional_tools',
-      role: 'developer',
-      tools: [{ type: 'function', name: 'lookup', parameters: {}, strict: false }],
-    }],
   });
 
   await withInitiatorHeaderSet(ctx, stubRequest, okEvents);

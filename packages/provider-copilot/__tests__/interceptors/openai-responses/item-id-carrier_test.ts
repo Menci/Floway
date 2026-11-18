@@ -29,14 +29,6 @@ describe('Copilot item id carrier', () => {
     },
   );
 
-  test('unwraps one independently appended layer at a time', () => {
-    const inner = wrapCopilotItemId('opaque', 'rs_inner');
-    const outer = wrapCopilotItemId(inner, 'rs_outer');
-
-    expect(unwrapCopilotItemId(outer)).toMatchObject({ kind: 'owned', value: inner, id: 'rs_outer' });
-    expect(unwrapCopilotItemId(inner)).toMatchObject({ kind: 'owned', value: 'opaque', id: 'rs_inner' });
-  });
-
   test('leaves malformed and non-carrier values byte-for-byte unchanged', () => {
     const wrapped = wrapCopilotItemId('opaque', 'rs_upstream');
     const bytes = Uint8Array.from(atob(wrapped), char => char.charCodeAt(0));

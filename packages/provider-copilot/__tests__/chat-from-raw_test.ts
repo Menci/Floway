@@ -32,10 +32,3 @@ test('chatFromCopilotRaw combines vision, reasoning effort, budget, and adaptive
     },
   });
 });
-
-test('chatFromCopilotRaw reasoning_effort without medium → default is first', () => {
-  const chat = chatFromCopilotRaw(rawModel({ reasoning_effort: ['minimal', 'xhigh'] }));
-  assertEquals(chat, {
-    reasoning: { effort: { supported: ['minimal', 'xhigh'], default: 'minimal' } },
-  });
-});

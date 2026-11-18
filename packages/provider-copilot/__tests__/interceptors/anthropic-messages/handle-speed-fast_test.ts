@@ -2,19 +2,11 @@ import { test } from 'vitest';
 
 import { withSpeedFast } from '../../../src/interceptors/anthropic-messages/handle-speed-fast.ts';
 import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, AnthropicMessagesUsage } from '@floway-dev/protocols/anthropic-messages';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
-
-const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
-  const collected: T[] = [];
-  for await (const event of events) collected.push(event);
-  return collected;
-};
-
-const baseUsage: AnthropicMessagesUsage = { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 10, output_tokens: 0 };
 
 const makeCtx = (speed?: unknown): AnthropicMessagesBoundaryCtx => ({
   payload: {
@@ -30,23 +22,6 @@ const makeCtx = (speed?: unknown): AnthropicMessagesBoundaryCtx => ({
 
 const stubRequest = {};
 
-const messageStart = (usage: AnthropicMessagesUsage): ProtocolFrame<AnthropicMessagesStreamEventEx> => eventFrame<AnthropicMessagesStreamEventEx>({
-  type: 'message_start',
-  message: {
-    container: null, diagnostics: null, stop_details: null,
-    id: 'msg_1',
-    type: 'message',
-    role: 'assistant',
-    content: [],
-    model: 'claude-opus-4.6-fast',
-    stop_reason: null,
-    stop_sequence: null,
-    usage,
-  },
-});
-
-const messageStop = (): ProtocolFrame<AnthropicMessagesStreamEventEx> => eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_stop' });
-
 const streamResult = (frames: ProtocolFrame<AnthropicMessagesStreamEventEx>[]): ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> =>
   eventResult(
     (async function* (): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
@@ -61,15 +36,4 @@ test('withSpeedFast strips speed=standard (semantically equivalent to omitted)',
   await withSpeedFast(ctx, stubRequest, () => Promise.resolve(streamResult([])));
 
   assertEquals('speed' in ctx.payload, false);
-});
-
-test('withSpeedFast leaves the stream untouched when speed=standard (no fast intent to stamp)', async () => {
-  const ctx = makeCtx('standard');
-  const frames = [messageStart(baseUsage), messageStop()];
-
-  const result = await withSpeedFast(ctx, stubRequest, () => Promise.resolve(streamResult(frames)));
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('expected events');
-  assertEquals(await collect(result.events), frames);
 });

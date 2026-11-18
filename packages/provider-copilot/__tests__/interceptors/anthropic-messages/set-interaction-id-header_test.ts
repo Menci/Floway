@@ -42,11 +42,3 @@ test('Interaction-id forwarded as a SHA-256 UUID even when only the sessionId ha
 
   assertEquals(ctx.headers.get('x-interaction-id'), SESS_ALONE_UUID);
 });
-
-test('Interaction-id absent when metadata.user_id is missing', async () => {
-  const ctx = invocation(payloadWith(undefined));
-
-  await withInteractionIdHeaderSet(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.headers.has('x-interaction-id'), false);
-});

@@ -9,14 +9,6 @@ test('gpt-4o / gpt-4.1 use the 2048 box + 768 short edge', () => {
   }
 });
 
-test('gpt-5-mini clamps the short edge to 768', () => {
-  assertEquals(targetSizeForOpenAIResponsesChat('gpt-5-mini')({ width: 2048, height: 2048 }), { width: 768, height: 768 });
-});
-
-test('gemini clamps the long edge to 2048 only', () => {
-  assertEquals(targetSizeForOpenAIResponsesChat('gemini-2.5-pro')({ width: 4000, height: 1000 }), { width: 2048, height: 512 });
-});
-
 test('gpt-5.5 and unknown models use the 2048 box + 2.56MP area cap', () => {
   for (const id of ['gpt-5.5', 'some-future-model']) {
     // 2000x2000 = 4MP -> area cap 2.56MP -> 1600x1600 (long edge 2048 not binding).

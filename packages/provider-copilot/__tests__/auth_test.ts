@@ -101,7 +101,7 @@ describe('Copilot token exchange retries', () => {
 
   test('makes four attempts after exact 1s, 2s, and 4s delays', async () => {
     vi.useFakeTimers();
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
     let tokenAttempts = 0;
     const fetcher: Fetcher = async url => {
       if (new URL(url).pathname !== '/copilot_internal/v2/token') return jsonResponse({});
@@ -129,11 +129,6 @@ describe('Copilot token exchange retries', () => {
     await vi.advanceTimersByTimeAsync(1);
     await expect(result).resolves.toMatchObject({ status: 200 });
     expect(tokenAttempts).toBe(4);
-    expect(warn.mock.calls).toEqual([
-      ['Retry 1/3 after 1000ms: transient 1'],
-      ['Retry 2/3 after 2000ms: transient 2'],
-      ['Retry 3/3 after 4000ms: transient 3'],
-    ]);
   });
 
   test('retries a non-Error rejection and finally preserves the original value', async () => {

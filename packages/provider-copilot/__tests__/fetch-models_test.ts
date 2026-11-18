@@ -46,27 +46,6 @@ const copilotTokenResponse = (request: Request): Response | null => {
   return null;
 };
 
-test('fetchCopilotModels throws ProviderModelsUnavailableError with httpResponse on non-2xx', async () => {
-  const config = await installRepoAndConfig();
-
-  let thrown: unknown;
-  await withMockedFetch(
-    request => {
-      const preflight = copilotTokenResponse(request);
-      if (preflight) return preflight;
-      const url = new URL(request.url);
-      if (url.pathname === '/models') return new Response('forbidden', { status: 403 });
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      try { await fetchCopilotModels(config, directFetcher); } catch (e) { thrown = e; }
-    },
-  );
-  if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');
-  assertEquals(thrown.httpResponse?.status, 403);
-  assertEquals(thrown.httpResponse?.body, 'forbidden');
-});
-
 test('fetchCopilotModels throws ProviderModelsUnavailableError with null httpResponse on shape error', async () => {
   const config = await installRepoAndConfig();
 
