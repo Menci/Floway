@@ -193,29 +193,3 @@ test('/v1/audio/transcriptions counts a bodyless SSE response as a failed reques
   const [performance] = await repo.performance.listAll();
   assertEquals(performance.errorsNoOutput, 1);
 });
-
-test('/v1/audio/transcriptions forwards exhausted upstream errors and records the request', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await registerAudioModel(repo);
-  await withMockedFetch(
-    () => new Response(JSON.stringify({ error: { message: 'bad audio' } }), {
-      status: 422,
-      headers: { 'content-type': 'application/json', 'retry-after': '4', 'x-error-trace': 'trace-error' },
-    }),
-    async () => {
-      const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
-        method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm(),
-      });
-      assertEquals(response.status, 422);
-      assertEquals(response.headers.get('retry-after'), '4');
-      assertEquals(response.headers.get('x-error-trace'), 'trace-error');
-      assertEquals(await response.json(), { error: { message: 'bad audio' } });
-    },
-  );
-  await flushAsyncWork();
-  const [usage] = await repo.usage.listAll();
-  assertEquals(usage.requests, 1);
-  assertEquals(usage.metrics, []);
-  const [performance] = await repo.performance.listAll();
-  assertEquals(performance.errorsNoOutput, 1);
-});

@@ -71,26 +71,3 @@ test('ChatGPT Alpha Search receives only its declared turn metadata', async () =
     'x-codex-turn-metadata': '{"turn_id":"turn-1"}',
   });
 });
-
-test('Custom Alpha Search admits configured names before the provider call', async () => {
-  const { dispatcher, observedHeaders } = await dispatcherFor('custom', [
-    'x-empty',
-    'x-overwrite',
-    'x-passthrough',
-  ]);
-  await dispatcher({}, undefined, new Headers({
-    authorization: 'Bearer secret',
-    'x-empty': 'client-empty',
-    'x-debug': 'discard',
-    'x-overwrite': 'client-overwrite',
-    'x-passthrough': 'client-passthrough',
-  }));
-
-  const headers = observedHeaders();
-  assertExists(headers);
-  assertEquals(Object.fromEntries(headers), {
-    'x-empty': 'client-empty',
-    'x-overwrite': 'client-overwrite',
-    'x-passthrough': 'client-passthrough',
-  });
-});

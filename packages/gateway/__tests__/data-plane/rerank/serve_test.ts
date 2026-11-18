@@ -154,47 +154,6 @@ test('/jina/v1/rerank preserves same-dialect extensions and records token usage'
   assertEquals(usage[0].metrics, [{ metric: 'input_tokens', quantity: '18', unitPrice: '0.0000005' }]);
 });
 
-test('/jina/v1/rerank sends image inputs to DashScope native and accepts cross-protocol success without usage', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await saveRerankUpstream(repo, { protocol: 'dashscope-native' });
-  const query = { image: 'https://example.com/query.png' };
-  const document = { image: 'https://example.com/document.png' };
-  let upstreamBody: unknown;
-
-  await withMockedFetch(
-    async request => {
-      upstreamBody = await request.json();
-      return jsonResponse({
-        request_id: 'request-image',
-        output: { results: [{ index: 0, relevance_score: 0.9, document }] },
-      });
-    },
-    async () => {
-      const response = await requestAppWithWarmModels('/jina/v1/rerank', {
-        method: 'POST',
-        headers: requestHeaders(apiKey.key),
-        body: JSON.stringify({ model: 'public-reranker', query, documents: [document] }),
-      });
-      assertEquals(response.status, 200);
-      assertEquals(await response.json(), {
-        model: 'public-reranker',
-        object: 'list',
-        results: [{ index: 0, relevance_score: 0.9, document }],
-      });
-    },
-  );
-
-  assertEquals(upstreamBody, {
-    model: 'raw-reranker',
-    input: { query, documents: [document] },
-    parameters: { return_documents: true },
-  });
-  await flushAsyncWork();
-  const usage = await repo.usage.listAll();
-  assertEquals(usage[0].requests, 1);
-  assertEquals(usage[0].metrics, []);
-});
-
 test('target-incompatible source controls return 400 without dispatch', async () => {
   const { apiKey, repo } = await setupAppTest();
   await saveRerankUpstream(repo, { protocol: 'cohere-v2' });

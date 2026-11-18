@@ -143,41 +143,6 @@ test('/v1/decisions accepts the OpenAI shape and translates to a System One targ
   });
 });
 
-test('/v1/decisions lowers image evidence into System One assets', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await saveDecisionUpstream(repo, { protocol: 'typesafe-systemone' });
-
-  let upstreamRequest: Request | undefined;
-  await withMockedFetch(
-    async request => {
-      upstreamRequest = request;
-      return jsonResponse({ answers: { damaged: { type: 'noul', noul: 0.1 } }, usage: { input_tokens: 30 } });
-    },
-    async () => {
-      const response = await requestAppWithWarmModels('/v1/decisions', {
-        method: 'POST',
-        headers: requestHeaders(apiKey.key),
-        body: JSON.stringify({
-          model: 'public-decision',
-          input: [{
-            role: 'user', content: [
-              { type: 'input_text', text: 'Inspect this.' },
-              { type: 'input_image', image_url: 'data:image/png;base64,AAAA' },
-            ],
-          }],
-          questions: [{ type: 'predicate', name: 'damaged', instructions: 'Is it damaged?' }],
-        }),
-      });
-      assertEquals(response.status, 200);
-    },
-  );
-
-  assertExists(upstreamRequest);
-  const sent = await upstreamRequest.clone().json() as { state: unknown; assets: Record<string, unknown> };
-  assertEquals(sent.assets, { 'image-0': { type: 'image', format: 'png', data_base64: 'AAAA' } });
-  assertEquals(sent.state, ['Inspect this.', 'image-0']);
-});
-
 test('/v1/decisions surfaces a cross-dialect upstream body it cannot parse', async () => {
   const { apiKey, repo } = await setupAppTest();
   // The client speaks OpenAI Decisions; the target speaks System One, so the

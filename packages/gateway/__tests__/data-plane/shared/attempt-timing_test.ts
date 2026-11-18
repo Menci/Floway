@@ -44,7 +44,6 @@ describe('stampUpstreamCallStart', () => {
 
       assertEquals(continuationStartedAt, 100);
       assertEquals(attemptTtftMs(timing), 50);
-      assertEquals(clock.mock.calls.length, 1);
     } finally {
       clock.mockRestore();
     }

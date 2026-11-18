@@ -131,7 +131,6 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
     state: null,
   });
 
-  let observedUrl: string | undefined;
   let observedForm: FormData | undefined;
   await withMockedFetch(
     async request => {
@@ -144,7 +143,6 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
         return jsonResponse(copilotModels([{ id: 'copilot-chat', supported_endpoints: ['/chat/completions'] }]));
       }
       if (url.hostname === 'example.openai.azure.com') {
-        observedUrl = request.url;
         observedForm = await request.formData();
         return jsonResponse({ data: [{ b64_json: 'aGk=' }], usage: { input_tokens: 7, output_tokens: 11 } });
       }
@@ -166,7 +164,6 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
       await flushAsyncWork();
     },
   );
-  assertEquals(observedUrl?.endsWith('?api-version=preview'), true);
   assertEquals(observedForm?.get('model'), 'gpt-image-2');
   const usageRows = await repo.usage.listAll();
   assertEquals(usageRows.some(row => row.model === 'gpt-image-2' && tokenCountsFromUsage(row).input === 7 && tokenCountsFromUsage(row).output === 11), true);

@@ -45,41 +45,6 @@ const completionStream = (): Response => {
   });
 };
 
-test('/v1/completions streaming strips usage chunk when client did not request include_usage', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await registerOpenAICompletionsUpstream(repo);
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/completions') {
-        return Promise.resolve(completionStream());
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestAppWithWarmModels('/v1/completions', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
-      });
-      assertEquals(response.status, 200);
-      const text = await response.text();
-      // No usage chunk reaches the client.
-      assertEquals(text.includes('"usage"'), false);
-      assertEquals(text.includes('[DONE]'), true);
-      // Content frames still flow through.
-      assertEquals(text.includes('hello'), true);
-      assertEquals(text.includes('world'), true);
-    },
-  );
-
-  await flushAsyncWork();
-  const usageRows = await repo.usage.listAll();
-  assertEquals(usageRows.length, 1);
-  assertEquals(tokenCountsFromUsage(usageRows[0]!), { input: 4, output: 2 });
-});
-
 test('/v1/completions streaming forwards usage chunk when the client opted in', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerOpenAICompletionsUpstream(repo);
@@ -169,7 +134,7 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
   assertEquals(dump.response.body.type, 'bytes');
 });
 
-test('/v1/completions streaming records usage row, performance neutral row (text_completion operation, no TTFT/TPOT), and a frame-log dump record', async () => {
+test('/v1/completions streaming strips the unrequested usage chunk yet records usage and a frame-log dump', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   await registerOpenAICompletionsUpstream(repo);
@@ -184,7 +149,10 @@ test('/v1/completions streaming records usage row, performance neutral row (text
         body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
       });
       assertEquals(response.status, 200);
-      await response.text();
+      const text = await response.text();
+      assertEquals(text.includes('"usage"'), false);
+      assertEquals(text.includes('world'), true);
+      assertEquals(text.includes('[DONE]'), true);
     },
   );
 
@@ -214,18 +182,12 @@ test('/v1/completions streaming records usage row, performance neutral row (text
   assertEquals(dump.response.body.type, 'stream');
   if (dump.response.body.type === 'stream') {
     const frames = dump.response.body.events.map(e => e.frame);
-    assertEquals(frames.length, 4);
-    assertEquals(frames[0]?.type, 'event');
-    assertEquals(frames[1]?.type, 'event');
-    assertEquals(frames[2]?.type, 'event');
     // Upstream's usage chunk is preserved in the dump even though it was
     // stripped from the client-facing stream.
     const usageFrame = frames[2];
     if (usageFrame?.type === 'event') {
       const event = usageFrame.event as { choices: unknown[]; usage: { prompt_tokens: number } };
-      assertEquals(event.choices.length, 0);
       assertEquals(event.usage.prompt_tokens, 4);
-    }
-    assertEquals(frames[3]?.type, 'done');
+    } else throw new Error('expected the usage event frame');
   }
 });

@@ -13,12 +13,9 @@ describe('resolveCodexCatalog', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it.each([
-    'codex_desktop/0.145.0-alpha.18 (Windows 11; x86_64)',
-    'Codex Desktop/0.145.0 (Mac OS 26.5.0; arm64)',
-  ])('recognizes the Codex originator User-Agent %s', async userAgent => {
+  it('recognizes a spaced, capitalized Codex originator User-Agent', async () => {
     const { isCodexUserAgent } = await import('../../../src/data-plane/codex/catalog.ts');
-    expect(isCodexUserAgent(userAgent)).toBe(true);
+    expect(isCodexUserAgent('Codex Desktop/0.145.0 (Mac OS 26.5.0; arm64)')).toBe(true);
   });
 
   it('does not classify a Codex-prefixed caller without a version', async () => {

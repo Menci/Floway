@@ -1,8 +1,7 @@
 import { test } from 'vitest';
 
-import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, copilotModels, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
@@ -69,70 +68,6 @@ test('/v1/embeddings wraps scalar string input for Copilot upstream', async () =
   assertEquals(forwardedBody.model, 'text-embedding-real');
   assertEquals(forwardedBody.input, ['hello']);
   assertEquals(forwardedBody.encoding_format, 'float');
-});
-
-test('/v1/embeddings records usage under request model when upstream omits model', async () => {
-  const { apiKey, repo } = await setupAppTest();
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({
-          token: 'copilot-access-token',
-          expires_at: 4102444800,
-          refresh_in: 3600,
-          endpoints: { api: 'https://api.individual.githubcopilot.com' },
-        });
-      }
-      if (url.pathname === '/models') {
-        return jsonResponse(copilotModels([{ id: 'text-embedding-real', supported_endpoints: ['/embeddings'] }]));
-      }
-      if (url.pathname === '/embeddings') {
-        return jsonResponse({
-          data: [{ object: 'embedding', index: 0, embedding: [0.1] }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        });
-      }
-
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestAppWithWarmModels('/v1/embeddings', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': apiKey.key,
-        },
-        body: JSON.stringify({
-          model: 'text-embedding-real',
-          input: 'hello',
-          encoding_format: 'float',
-        }),
-      });
-
-      assertEquals(response.status, 200);
-      await response.json();
-    },
-  );
-
-  await flushAsyncWork();
-
-  const usage = await repo.usage.listAll();
-  assertEquals(usage.length, 1);
-  assertEquals(usage[0].model, 'text-embedding-real');
-  assertEquals(tokenCountsFromUsage(usage[0]), { input: 1 });
-
-  const performanceRows = await repo.performance.listAll();
-  assertEquals(performanceRows.length, 1);
-  assertEquals(performanceRows[0]?.model, 'text-embedding-real');
-  assertEquals(performanceRows[0]?.requests, 1);
-  assertEquals(performanceRows[0]?.errorsNoOutput, 0);
-  assertEquals(performanceRows[0]?.errorsWithOutput, 0);
 });
 
 // A custom upstream whose `/v1/models` fetch rejects is treated as

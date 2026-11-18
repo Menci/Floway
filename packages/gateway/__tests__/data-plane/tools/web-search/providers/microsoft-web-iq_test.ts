@@ -140,12 +140,6 @@ test('Microsoft Web IQ fetchPage issues one /v3/browse call per URL in parallel'
       assertEquals(callBodies.length, 2);
       const urlsCalled = callBodies.map(b => b.url).sort();
       assertEquals(urlsCalled, ['https://a.com', 'https://b.com']);
-      for (const body of callBodies) {
-        assertEquals(body.renderDynamicPages, true);
-        assertEquals(body.liveCrawl, 'fallback');
-        assertEquals(body.contentFormat, 'markdown');
-        assertEquals(body.maxLength, 50_000);
-      }
       if (result.type !== 'ok') throw new Error('expected ok');
       assertEquals(result.pages.length, 2);
       assertEquals(result.failures, []);

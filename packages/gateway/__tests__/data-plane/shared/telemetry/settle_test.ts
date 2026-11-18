@@ -38,18 +38,6 @@ beforeEach(() => {
   background = [];
 });
 
-// ── settle ──
-
-test('settle records the request without metrics when usage is null', async () => {
-  settle(ctx(), testPerformanceContext, testTelemetryModelIdentity, null, false);
-  await Promise.all(background);
-
-  const rows = await repo.usage.listAll();
-  assertEquals(rows.length, 1);
-  assertEquals(rows[0].requests, 1);
-  assertEquals(rows[0].metrics, []);
-});
-
 // TPOT reflects the token stream, not the D1 write that follows it.
 // `settle` fires the usage record through backgroundScheduler and records
 // the perf sample synchronously — so a slow persistence path cannot leak

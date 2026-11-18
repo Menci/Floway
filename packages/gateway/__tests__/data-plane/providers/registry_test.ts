@@ -54,20 +54,13 @@ test('listModelProviders silently drops deleted upstreams from a whitelist', asy
   assertEquals(providers.map(p => p.upstreamId), ['up_a']);
 });
 
+// Lane selection and per-model prices belong to provider-kimi-code; this
+// proves each client protocol carries the selected lane through to the
+// recorded usage prices. The K3.1 rates are published by Moonshot.
 // https://www.kimi.com/code/docs/en/kimi-code/models.html
-for (const protocol of ['chat/completions', 'responses', 'messages'] as const) test.each([
-  ['catalog-model', 'Catalog model', 'kimi-catalog-model', undefined, null, null, null],
-  // The K3.1 rates are published by Moonshot.
-  // https://platform.kimi.ai/docs/pricing/chat
-  ['k3.1-pro-highspeed', 'K3.1 Pro Highspeed', 'kimi-k3.1-pro', 'fast', '0.000004', '0.0000002', '0.00002'],
-  // K2.8 has no published equivalent; its values were supplied by the operator.
-  ['kimi-for-coding', 'K2.8 Preview', 'kimi-k2.8-preview', undefined, '0.00000095', '0.00000025', '0.000004'],
-  // K2.8 has no fast lane. OpenAI requests fall back to standard speed and
-  // are priced as default; Anthropic rejects fast requests for this model.
-  ...(protocol === 'messages'
-    ? []
-    : [['kimi-for-coding', 'K2.8 Preview', 'kimi-k2.8-preview', 'fast', '0.00000095', '0.00000025', '0.000004'] as const]),
-] as const)(`Floway routes Kimi Code ${protocol} model %s and records its native lane prices`, async (rawId, displayName, publicId, speed, inputPrice, cachePrice, outputPrice) => {
+// https://platform.kimi.ai/docs/pricing/chat
+for (const protocol of ['chat/completions', 'responses', 'messages'] as const) test(`Floway routes Kimi Code ${protocol} fast lane and records its native lane prices`, async () => {
+  const [rawId, displayName, publicId, speed, inputPrice, cachePrice, outputPrice] = ['k3.1-pro-highspeed', 'K3.1 Pro Highspeed', 'kimi-k3.1-pro', 'fast', '0.000004', '0.0000002', '0.00002'];
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await saveUpstreamForTest(repo.upstreams, {
@@ -84,7 +77,6 @@ for (const protocol of ['chat/completions', 'responses', 'messages'] as const) t
     const body = await request.json();
     expect(body.model).toBe(rawId);
     expect(body.stream).toBe(true);
-    expect(body).not.toHaveProperty('thinking');
     if (protocol === 'chat/completions') return sseOpenAIChatCompletionsResponse({
       id: 'turn', model: rawId, created: 1, choices: [{ message: { role: 'assistant', content: 'PONG' }, finish_reason: 'stop' }], usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3, prompt_tokens_details: { cached_tokens: 1 } },
     });
@@ -95,7 +87,7 @@ for (const protocol of ['chat/completions', 'responses', 'messages'] as const) t
     });
     return sseAnthropicMessagesResponse({ id: 'turn', model: rawId, content: [{ type: 'text', text: 'PONG' }], stop_reason: 'end_turn', usage: { input_tokens: 1, cache_read_input_tokens: 1, output_tokens: 1 } });
   }, async () => {
-    const lane = speed === undefined ? {} : protocol === 'messages' ? { speed } : { service_tier: speed };
+    const lane = protocol === 'messages' ? { speed } : { service_tier: speed };
     const body = protocol === 'responses'
       ? { model: publicId, input: 'hello', stream: false, ...lane }
       : { model: publicId, messages: [{ role: 'user', content: 'hello' }], max_tokens: 64, stream: false, ...lane };

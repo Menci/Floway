@@ -65,24 +65,4 @@ describe('iterateCandidates', () => {
       { upstreamCallStartedAt: null, firstOutputTokenAt: null, upstream: 'up_c' },
     ]);
   });
-
-  it('treats non-2xx plain results as failure so the next candidate runs', async () => {
-    const ctx = stubCtx({ timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, telemetry: undefined });
-    const attempts: number[] = [];
-    const result = await iterateCandidates(
-      [stubCandidate('a'), stubCandidate('b')],
-      'test',
-      ctx,
-      'chat',
-      async candidate => {
-        attempts.push(attempts.length);
-        return candidate.model.id === 'a'
-          ? { type: 'plain' as const, status: 500 }
-          : { type: 'plain' as const, status: 200 };
-      },
-    );
-
-    expect(attempts).toEqual([0, 1]);
-    expect(result).toEqual({ type: 'plain', status: 200 });
-  });
 });

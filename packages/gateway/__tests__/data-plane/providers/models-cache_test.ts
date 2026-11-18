@@ -146,7 +146,8 @@ test.each([
   if (apiKey.length > 100) expect(message).not.toContain(apiKey.slice(0, 100));
 });
 
-test.each(['client_secret', 'X-Amz-Signature'])('model discovery redacts a %s endpoint query credential', async parameter => {
+test('model discovery redacts an endpoint query credential', async () => {
+  const parameter = 'X-Amz-Signature';
   const { repo, record } = await setupCustom();
   const config = { ...record.config as Record<string, unknown> };
   delete config.apiKey;

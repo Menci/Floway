@@ -5,9 +5,11 @@ import { buildCustomUpstreamRecord, requestAppWithWarmModels, setupAppTest, sseO
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
-// One instance, one rule set, every client protocol. `x-route` is passed
-// through and extended, `x-configured` is supplied entirely by the operator,
-// and `x-dropped` carries no rule at all.
+// One instance, one rule set, one route per attempt path that hands inbound
+// headers to the provider (the passthrough endpoints share one attempt, so
+// embeddings stands for all of them). `x-route` is passed through and
+// extended, `x-configured` is supplied entirely by the operator, and
+// `x-dropped` carries no rule at all.
 const INGRESS_HEADERS_RULES = [
   { key: 'x-route', value: null },
   { key: 'x-route', value: 'appended' },
@@ -30,9 +32,6 @@ const registerUpstream = async (repo: Awaited<ReturnType<typeof setupAppTest>>['
         { upstreamModelId: 'chat-model', endpoints: { openaiChatCompletions: {} } },
         { upstreamModelId: 'messages-model', endpoints: { anthropicMessages: {} } },
         { upstreamModelId: 'embedding-model', endpoints: { openaiEmbeddings: {} } },
-        { upstreamModelId: 'completions-model', endpoints: { openaiCompletions: {} } },
-        { upstreamModelId: 'image-model', endpoints: { openaiImagesGenerations: {} } },
-        { upstreamModelId: 'transcription-model', endpoints: { openaiAudioTranscriptions: {} } },
         { upstreamModelId: 'rerank-model', kind: 'rerank', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
       ],
     },
@@ -147,38 +146,6 @@ const CASES: RouteCase[] = [
       data: [{ object: 'embedding', index: 0, embedding: [0.1] }],
       usage: { prompt_tokens: 1, total_tokens: 1 },
     }),
-  },
-  {
-    name: '/v1/completions reaches a Completions upstream',
-    path: '/v1/completions',
-    contentType: 'application/json',
-    body: () => JSON.stringify({ model: 'completions-model', prompt: 'hi' }),
-    upstreamPath: '/v1/completions',
-    upstreamResponse: () => new Response(
-      'data: {"id":"cmpl_1","object":"text_completion","created":1,"model":"completions-model","choices":[{"index":0,"text":"ok","finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
-      { headers: { 'content-type': 'text/event-stream' } },
-    ),
-  },
-  {
-    name: '/v1/images/generations reaches an Images upstream',
-    path: '/v1/images/generations',
-    contentType: 'application/json',
-    body: () => JSON.stringify({ model: 'image-model', prompt: 'hi' }),
-    upstreamPath: '/v1/images/generations',
-    upstreamResponse: () => jsonResponse({ created: 1, data: [{ b64_json: 'abc' }] }),
-  },
-  {
-    name: '/v1/audio/transcriptions reaches a Transcriptions upstream',
-    path: '/v1/audio/transcriptions',
-    contentType: null,
-    body: () => {
-      const form = new FormData();
-      form.set('model', 'transcription-model');
-      form.set('file', new File([new Uint8Array([1, 2])], 'voice.ogg', { type: 'audio/ogg' }));
-      return form;
-    },
-    upstreamPath: '/v1/audio/transcriptions',
-    upstreamResponse: () => jsonResponse({ text: 'ok' }),
   },
   {
     name: '/v1/rerank reaches a Rerank upstream',

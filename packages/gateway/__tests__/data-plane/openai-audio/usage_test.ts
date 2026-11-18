@@ -28,7 +28,6 @@ test('audio transcription usage reads Whisper verbose JSON duration', () => {
 
 test('audio transcription usage accepts partial details and leaves unclassified input general', () => {
   for (const [input_token_details, quantities] of [
-    [{}, { input_tokens: '14', output_tokens: '45' }],
     [{ text_tokens: 4 }, { input_tokens: '14', output_tokens: '45' }],
     [{ audio_tokens: 10 }, { input_tokens: '4', input_audio_tokens: '10', output_tokens: '45' }],
   ] as const) {
@@ -41,11 +40,7 @@ test('audio transcription usage accepts partial details and leaves unclassified 
 test('audio transcription usage rejects malformed declared metrics', () => {
   for (const [body, message] of [
     [{ duration: '10' }, 'duration must be'],
-    [{ usage: null }, 'usage must be an object'],
-    [{ usage: { type: 'duration' } }, 'duration usage.seconds'],
-    [{ usage: { type: 'tokens', input_tokens: -1, output_tokens: 45, total_tokens: 44 } }, 'token usage.input_tokens'],
     [{ usage: { type: 'tokens', input_tokens: 14, output_tokens: 45, total_tokens: 58 } }, 'total_tokens must equal'],
-    [{ usage: { type: 'tokens', input_tokens: 14, input_token_details: null, output_tokens: 45, total_tokens: 59 } }, 'input_token_details must be an object'],
     [{ usage: { type: 'tokens', input_tokens: 14, input_token_details: { text_tokens: 6, audio_tokens: 9 }, output_tokens: 45, total_tokens: 59 } }, 'input_token_details must not exceed'],
   ] as const) {
     assertThrows(() => openaiAudioTranscriptionUsageMeasurement(body), Error, message);

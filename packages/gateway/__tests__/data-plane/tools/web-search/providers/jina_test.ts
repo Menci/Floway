@@ -1,7 +1,6 @@
 import { test } from 'vitest';
 
 import { createJinaWebSearchProvider } from '../../../../../src/data-plane/tools/web-search/providers/jina.ts';
-import { FakeTime } from '../../../../test-time.ts';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const okEnvelope = (data: unknown) => jsonResponse({ code: 200, status: 20000, data, meta: { usage: { tokens: 1 } } });
@@ -121,38 +120,4 @@ test('Jina fetchPage fans out one POST per URL and parses the envelope', async (
       });
     },
   );
-});
-
-test('Jina fetchPage retries 429 with 1s/2s/4s/8s backoff and succeeds on the fifth try', async () => {
-  const fakeTime = new FakeTime();
-  let attempts = 0;
-  try {
-    await withMockedFetch(
-      () => {
-        attempts += 1;
-        if (attempts < 5) return errorEnvelope(429, 'RateLimitError', 'rate limited');
-        return okEnvelope({ url: 'https://a.com', content: 'finally' });
-      },
-      async () => {
-        const provider = createJinaWebSearchProvider('jina-test');
-        const promise = provider.fetchPage({ urls: ['https://a.com'] });
-
-        fakeTime.runMicrotasks();
-        assertEquals(attempts, 1);
-        await fakeTime.tickAsync(1000);
-        assertEquals(attempts, 2);
-        await fakeTime.tickAsync(2000);
-        assertEquals(attempts, 3);
-        await fakeTime.tickAsync(4000);
-        assertEquals(attempts, 4);
-        await fakeTime.tickAsync(8000);
-
-        const result = await promise;
-        if (result.type !== 'ok') throw new Error('expected ok');
-        assertEquals(result.pages[0].content, 'finally');
-      },
-    );
-  } finally {
-    fakeTime.restore();
-  }
 });

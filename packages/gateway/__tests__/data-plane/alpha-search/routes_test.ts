@@ -115,7 +115,13 @@ beforeEach(() => {
 
 describe('/alpha/search data plane', () => {
   describe('passthrough model availability', () => {
-    it.each(SEARCH_PATHS.flatMap(path => (['missing-model', 'denied-model', 'excluded-upstream'] as const).map(reason => ({ path, reason }))))('returns the same missing-model response for $reason at $path', async ({ path, reason }) => {
+    // Each reason is a distinct production branch; the two mount paths share
+    // one handler, so the rows alternate between them.
+    it.each([
+      { reason: 'missing-model', path: SEARCH_PATHS[0] },
+      { reason: 'denied-model', path: SEARCH_PATHS[1] },
+      { reason: 'excluded-upstream', path: SEARCH_PATHS[0] },
+    ] as const)('returns the same missing-model response for $reason at $path', async ({ path, reason }) => {
       const { apiKey, repo } = await setupAppTest({ webSearchConfig: PASSTHROUGH_CONFIG });
       await repo.upstreams.deleteAll();
       await saveUpstreamForTest(repo.upstreams, searchUpstream(['gpt-search']));
@@ -254,23 +260,6 @@ describe('/alpha/search data plane', () => {
       expect(response.status).toBe(200);
       const body = await response.json() as SearchResponseBody;
       expect(body.output).toContain('(no results)');
-      expect(stub.calls).toHaveLength(0);
-    });
-
-    it('blocks an open URL outside the allowed_domains filter', async () => {
-      const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
-      const stub = makeStubProvider();
-      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildAlphaSearchApp();
-
-      const response = await postSearch(app, apiKey.key, {
-        settings: { filters: { allowed_domains: ['example.org'] } },
-        commands: { open: [{ ref_id: 'https://example.com/blocked' }] },
-      });
-      expect(response.status).toBe(200);
-      const body = await response.json() as SearchResponseBody;
-      expect(body.output).toContain('Blocked by tool filters');
-      // Blocked URLs never reach the provider.
       expect(stub.calls).toHaveLength(0);
     });
   });

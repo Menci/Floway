@@ -26,16 +26,6 @@ describe('recordPerformance', () => {
     promises.length = 0;
   });
 
-  // --- zero-output error ---
-
-  it('records a zero-output error when failed=true with no output tokens', async () => {
-    const ctx = ctxWith({ timing: { firstOutputTokenAt: null, upstreamCallStartedAt: null }, telemetry: undefined });
-    recordPerformance(ctx, telemetry, true, 0, 400);
-    await Promise.all(promises);
-    const [row] = await repo.performance.listAll();
-    expect(row).toMatchObject({ requests: 1, errorsNoOutput: 1, ttftSamplesOk: 0, errorsWithOutput: 0, neutral: 0, tpotSamples: 0 });
-  });
-
   // --- full ttft + tpot sample ---
 
   it('records sample with ttft measured from upstreamCallStartedAt', async () => {

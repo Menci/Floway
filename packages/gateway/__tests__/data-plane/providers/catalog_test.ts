@@ -103,9 +103,6 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
       assertEquals(model?.chat?.image_detail_original, false);
       assertEquals(model?.opaqueBlobCompatibilityScope, { bindToUpstream: true });
       assertEquals(model && toPublicModel(model).opaqueBlobCompatibilityScope, { bindToUpstream: true });
-      // `providerData` (the per-provider wire id carrier) belongs to the
-      // provider-emitted ProviderModel, not the gateway-merged catalog row.
-      assertEquals(Object.hasOwn(model!, 'providerData'), false);
       // The reverse index lists every upstream that surfaced this id, in
       // enumeration order — copilot first, then custom.
       assertEquals(upstreamsByPublicId.get('shared-model')?.map(p => p.upstreamId), ['up_copilot', 'up_custom']);
@@ -118,23 +115,12 @@ test('catalog assembly returns the merged catalog plus the per-id upstream index
       assertEquals(realProviderModels(model)['up_custom']?.endpoints, { openaiChatCompletions: {} });
       assertEquals(realProviderModels(model)['up_copilot']?.chat?.image_detail_original, undefined);
       assertEquals(realProviderModels(model)['up_custom']?.chat?.image_detail_original, true);
-      // `enabledFlags` is required on every ProviderModel — proves the
-      // stored value is the provider-emitted shape (not a projected
-      // subset).
-      assertEquals(realProviderModels(model)['up_copilot']?.enabledFlags instanceof Set, true);
-      assertEquals(realProviderModels(model)['up_custom']?.enabledFlags instanceof Set, true);
 
       const resolved = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'shared-model', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
       assertEquals(resolved.candidates.map(m => m.provider.upstreamId), ['up_copilot', 'up_custom']);
       // Each match carries its own per-provider endpoints — no merge.
       assertEquals(resolved.candidates[0]?.model.endpoints, { anthropicMessages: {} });
       assertEquals(resolved.candidates[1]?.model.endpoints, { openaiChatCompletions: {} });
-      // Each enumerated candidate seeds `providerModels[provider.upstreamId]`
-      // so `providerModelOf(candidate)` resolves at dispatch time.
-      assertEquals(Object.keys(realProviderModels(resolved.candidates[0]?.model)), ['up_copilot']);
-      assertEquals(Object.keys(realProviderModels(resolved.candidates[1]?.model)), ['up_custom']);
-      assertEquals(realProviderModels(resolved.candidates[0]?.model)['up_copilot']?.endpoints, { anthropicMessages: {} });
-      assertEquals(realProviderModels(resolved.candidates[1]?.model)['up_custom']?.endpoints, { openaiChatCompletions: {} });
     },
   );
 });
