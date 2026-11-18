@@ -54,7 +54,7 @@ type MessagesBlockFieldState = NonNullable<NonNullable<AnthropicMessagesInputAss
 interface MessagesBlockState {
   readonly item?: IRItemHandle;
   readonly part?: IRPartHandle;
-  readonly custom: boolean;
+  readonly tool?: 'function' | 'custom';
   annotationCount?: number;
   textField?: ReadFieldState<'text'>;
   jsonField?: ReadFieldState<'json'>;
@@ -88,7 +88,7 @@ export const readAnthropicMessagesEvents = async function* (
     let item: IRItemHandle | undefined;
     let part: IRPartHandle | undefined;
     let annotationCount: number | undefined;
-    let custom = false;
+    let tool: MessagesBlockState['tool'];
     let textField: ReadFieldState<'text'> | undefined;
     if (block.type === 'fallback') {
       ir.assign(['model'], block.to.model);
@@ -111,18 +111,18 @@ export const readAnthropicMessagesEvents = async function* (
         item.append(['summary', 0], block.thinking, [appendReadField(options.roundTrip.builder, textField, block.thinking)]);
       }
     } else if (block.type === 'tool_use') {
-      custom = options.customToolNames?.has(block.name) === true;
+      tool = options.customToolNames?.has(block.name) === true ? 'custom' : 'function';
       // Restore allocated names, including bare names renamed to avoid collisions.
       const identity = options.originalToolNames?.get(block.name);
       const naming = identity ?? { name: block.name };
-      item = ir.item(0, custom
+      item = ir.item(0, tool === 'custom'
         ? { type: 'custom_tool_call', call_id: block.id, ...naming, input: '' }
         : { type: 'function_call', call_id: block.id, ...naming, arguments: '' });
     } else if (!UNTRANSLATED_BLOCK_TYPES.includes(block.type)) {
       throw new TypeError(`Cannot translate Messages content block ${block.type}`);
     }
     const state: MessagesBlockState = {
-      item, part, custom, annotationCount, wrappedInput: '', textField,
+      item, part, tool, annotationCount, wrappedInput: '', textField,
       fieldState: textField === undefined ? undefined : block.type === 'text' ? { text: textField } : { thinking: textField },
     };
     blocks.set(index, state);
@@ -182,7 +182,7 @@ export const readAnthropicMessagesEvents = async function* (
             block.fieldState = { input: block.jsonField };
           }
           const partId = appendReadField(options.roundTrip.builder, block.jsonField, d.partial_json);
-          if (block.custom) block.wrappedInput += d.partial_json;
+          if (block.tool === 'custom') block.wrappedInput += d.partial_json;
           else block.item.append('arguments', d.partial_json, [partId]);
         }
         break;
@@ -208,9 +208,14 @@ export const readAnthropicMessagesEvents = async function* (
       if (block === undefined) throw new Error('Messages content_block_stop arrived before content_block_start');
       blocks.delete(e.index);
       if (block.item !== undefined) {
-        if (block.custom) {
+        if (block.tool === 'custom') {
           const input = unwrapCustomToolInput(block.wrappedInput);
           if (input !== '') block.item.append('input', input);
+        } else if (block.tool === 'function' && block.jsonField === undefined) {
+          // With no JSON fragments, the native block retains its initial input object.
+          const nativeBlock = nativeAccumulator.contentBlock(e.index);
+          if (nativeBlock?.type !== 'tool_use') throw new TypeError('Expected a Messages tool_use block');
+          block.item.append('arguments', JSON.stringify(requireJSONObject(nativeBlock.input)));
         }
         block.item.end();
       }
