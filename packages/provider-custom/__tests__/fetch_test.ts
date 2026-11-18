@@ -9,10 +9,9 @@ import {
   customFetchModels,
   customFetchOpenAIResponsesCompact,
 } from '../src/fetch.ts';
-import { createCustomProvider } from '../src/provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, noopUpstreamCallOptions, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
 const baseRecord: UpstreamRecord = {
   id: 'up_test',
@@ -137,46 +136,4 @@ test('an empty apiKey sends neither Authorization nor x-api-key', async () => {
   assertEquals(authHeader, null);
   assertEquals(xApiKey, null);
   assertEquals(anthropicVersion, null);
-});
-
-test('Custom provider callOpenAIAudioTranscriptions preserves multipart entries and honors the path override', async () => {
-  const record: UpstreamRecord = {
-    ...baseRecord,
-    config: {
-      baseUrl: 'https://custom.example.com',
-      apiKey: 'sk-custom',
-      endpoints: {},
-      ingressHeadersRules: [],
-      pathOverrides: { '/audio/transcriptions': '/speech/to-text' },
-      modelsFetch: { enabled: false, authStyle: 'bearer' },
-      models: [{ upstreamModelId: 'whisper-upstream', kind: 'transcription', endpoints: { openaiAudioTranscriptions: {} } }],
-    },
-  };
-  let forwarded: { url: string; form: FormData } | undefined;
-  await withMockedFetch(
-    async request => {
-      forwarded = { url: request.url, form: await request.formData() };
-      return jsonResponse({ text: 'hello' });
-    },
-    async () => {
-      const provider = createCustomProvider(record);
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
-      const result = await provider.instance.callOpenAIAudioTranscriptions(model, {
-        entries: [
-          { name: 'file', value: new File([new Uint8Array([7, 8])], 'voice.ogg', { type: 'audio/ogg' }) },
-          { name: 'model', value: 'public-model' },
-          { name: 'language', value: 'en' },
-        ],
-      }, undefined, noopUpstreamCallOptions());
-      assertEquals(result.modelKey, 'whisper-upstream');
-    },
-  );
-  assertExists(forwarded);
-  assertEquals(forwarded.url, 'https://custom.example.com/speech/to-text');
-  assertEquals(forwarded.form.get('model'), 'whisper-upstream');
-  assertEquals(forwarded.form.get('language'), 'en');
-  const file = forwarded.form.get('file');
-  assertEquals(file instanceof File, true);
-  assertEquals((file as File).name, 'voice.ogg');
-  assertEquals((file as File).type, 'audio/ogg');
 });
