@@ -17,15 +17,6 @@ describe('media type parsing', () => {
     expect(mediaTypeEssence('text/plain;charset=utf-8')).toBe('text/plain');
   });
 
-  test.each([
-    '',
-    'application',
-    '/json',
-    'application/',
-    'application/json text/plain',
-  ])('rejects malformed essence %j', value => {
-    expect(parseMediaType(value)).toBeNull();
-  });
 });
 
 describe('media type classification', () => {

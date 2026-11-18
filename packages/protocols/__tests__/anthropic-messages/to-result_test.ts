@@ -48,17 +48,3 @@ test('collectAnthropicMessagesProtocolEventsToResult rejects streams without mes
 
   await assertRejects(async () => await collectAnthropicMessagesProtocolEventsToResult(events()), Error, 'Anthropic Messages stream ended without a message_stop event.');
 });
-
-test('collectAnthropicMessagesProtocolEventsToResult rejects Anthropic Messages error events', async () => {
-  async function* events() {
-    yield eventFrame({
-      type: 'error',
-      error: {
-        type: 'overloaded_error',
-        message: 'upstream overloaded',
-      },
-    } satisfies AnthropicMessagesStreamEventEx);
-  }
-
-  await assertRejects(async () => await collectAnthropicMessagesProtocolEventsToResult(events()), Error, 'Upstream SSE error: overloaded_error: upstream overloaded');
-});

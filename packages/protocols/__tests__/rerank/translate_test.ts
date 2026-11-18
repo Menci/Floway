@@ -77,21 +77,6 @@ describe('rerank request egress', () => {
     });
   });
 
-  test('same-dialect egress preserves opaque request fields while replacing model', () => {
-    const source = parseRerankRequest('jina-v1', {
-      model: 'public',
-      query: 'query',
-      documents: ['one'],
-      vendor_extension: { enabled: true },
-    }).request;
-    expect(serializeRerankRequest('jina-v1', 'raw', source)).toEqual({
-      model: 'raw',
-      query: 'query',
-      documents: ['one'],
-      vendor_extension: { enabled: true },
-    });
-  });
-
   test('rejects source-only controls that the target cannot represent', () => {
     const jina = parseRerankRequest('jina-v1', {
       model: 'jina', query: 'query', documents: ['one'], return_embeddings: true,

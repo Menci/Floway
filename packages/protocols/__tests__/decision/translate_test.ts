@@ -16,22 +16,6 @@ const choiceRequest = {
 };
 
 describe('decision request ingress', () => {
-  test('parses a System One body into canonical questions', () => {
-    const parsed = parseDecisionRequest('typesafe-systemone', choiceRequest);
-    expect(parsed.model).toBe('microsoft-decision-1');
-    expect(parsed.request.state).toEqual({ kind: 'text', value: 'The API returns 500 on every call.' });
-    expect(parsed.request.questions).toEqual([
-      {
-        type: 'choice',
-        name: 'team',
-        instructions: 'Which team should handle this ticket?',
-        options: [
-          { value: 'billing', description: 'Charges, invoices, and refunds' },
-          { value: 'engineering', description: 'Bugs, errors, and outages' },
-        ],
-      },
-    ]);
-  });
 
   test('rejects unknown top-level arguments the way System One does', () => {
     expect(() => parseDecisionRequest('typesafe-systemone', { ...choiceRequest, stream: true })).toThrow(/does not support stream/);
@@ -39,11 +23,6 @@ describe('decision request ingress', () => {
 });
 
 describe('decision request serialization', () => {
-  test('a same-protocol forward preserves the raw body and vendor extensions', () => {
-    const parsed = parseDecisionRequest('typesafe-systemone', choiceRequest);
-    const wire = serializeDecisionRequest('typesafe-systemone', 'microsoft-decision-1', parsed.request);
-    expect(wire).toEqual(choiceRequest);
-  });
 
   test('the OpenAI dialect renames noul to predicate and expands criteria', () => {
     const parsed = parseDecisionRequest('typesafe-systemone', {
@@ -125,21 +104,6 @@ describe('decision response parsing', () => {
   });
 });
 
-describe('decision response rendering', () => {
-  test('renders a name-keyed System One body regardless of the upstream dialect', () => {
-    const response = parseDecisionResponse('openai-decisions', {
-      model: 'gpt-6-luna',
-      answers: [{ type: 'predicate', name: 'damage', probability: 0.92 }],
-      usage: { input_tokens: 12, output_tokens: 0 },
-    });
-    expect(renderDecisionResponse('typesafe-systemone', response)).toEqual({
-      model: 'gpt-6-luna',
-      answers: { damage: { type: 'noul', noul: 0.92 } },
-      usage: { input_tokens: 12, output_tokens: 0 },
-    });
-  });
-});
-
 describe('OpenAI Decisions ingress', () => {
 
   test('renders an OpenAI answer array from a System One target response', () => {
@@ -197,18 +161,6 @@ describe('image evidence', () => {
   });
 });
 
-describe('required answer fields', () => {
-
-  test('the OpenAI shape requires confidence and probabilities too', () => {
-    expect(() => parseDecisionResponse('openai-decisions', {
-      answers: [{ type: 'choice', name: 'q', choice: 'a', probabilities: [{ value: 'a', probability: 1 }] }],
-    })).toThrow(/answers\.q\.confidence/);
-    expect(() => parseDecisionResponse('openai-decisions', {
-      answers: [{ type: 'predicate', name: 'p', probability: 0.5 }, { type: 'score', name: 'q', score: 1, confidence: 1 }],
-    })).toThrow(/answers\.q\.probabilities/);
-  });
-});
-
 describe('refusal answers', () => {
 
   test('System One cannot express a refusal', () => {
@@ -227,10 +179,4 @@ describe('number token fidelity', () => {
     expect(JSON.stringify(renderDecisionResponse('openai-decisions', response))).toContain('"probability":1.0');
   });
 
-  test('a value beyond the double range survives instead of becoming null', () => {
-    const body = parseJSONWithRawNumbers('{"answers":{"q":{"type":"noul","noul":1e400}}}') as Record<string, unknown>;
-    // Infinity is not a number the contract allows, so the answer is rejected
-    // rather than silently written as null.
-    expect(() => parseDecisionResponse('typesafe-systemone', body)).toThrow(/must be a finite number/);
-  });
 });

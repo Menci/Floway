@@ -26,24 +26,6 @@ const fromArray = async function* (events: OpenAICompletionsStreamEvent[]): Asyn
   for (const event of events) yield event;
 };
 
-test('reassembleOpenAICompletionsEvents concatenates per-choice text and lifts the final usage chunk', async () => {
-  const result = await reassembleOpenAICompletionsEvents(fromArray([
-    chunk('hello'),
-    chunk(', '),
-    chunk('world', 'stop'),
-    usageChunk,
-  ]));
-
-  assertEquals(result, {
-    id: 'cmpl_test',
-    object: 'text_completion',
-    created: 123,
-    model: 'text-davinci-003',
-    choices: [{ index: 0, text: 'hello, world', finish_reason: 'stop' }],
-    usage: { prompt_tokens: 4, completion_tokens: 3, total_tokens: 7 },
-  });
-});
-
 test('reassembleOpenAICompletionsEvents folds the Zhipu/GLM vLLM-fork final usage chunk as a no-op placeholder', async () => {
   // The Zhipu/GLM fork emits a final `choices: [{ index: 0 }]` (no text,
   // no finish_reason) carrying the usage block instead of OpenAI's

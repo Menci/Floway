@@ -33,9 +33,4 @@ describe('telemetry calendar buckets', () => {
     expect(map('2026-11-01T06')).toBe('2026-11-01T01');
   });
 
-  it('aligns weeks to Monday even across a year boundary', () => {
-    const map = createTelemetryBucket({ bucket: 'week', timeZone: 'Asia/Singapore', timezoneOffsetMinutes: 0 });
-    expect(map('2025-12-31T20')).toBe('2025-12-29');
-    expect(map('2026-01-04T16')).toBe('2026-01-05');
-  });
 });

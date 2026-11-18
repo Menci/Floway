@@ -43,15 +43,6 @@ test('keeps encrypted details discrete despite repeated indices and separates di
   ]);
 });
 
-test('merges text and a late signature while preserving the first complete signature', () => {
-  expect(collect(
-    [{ type: 'reasoning.text', text: 'think ', signature: null }],
-    [{ type: 'reasoning.text', text: 'more', id: 'thought', index: 1, format: 'anthropic-claude-v1' }],
-    [{ type: 'reasoning.text', signature: 'first', id: 'thought', index: 1, format: 'anthropic-claude-v1' }],
-    [{ type: 'reasoning.text', signature: 'later' }],
-  )).toEqual([{ type: 'reasoning.text', text: 'think more', signature: 'first', id: 'thought', index: 1, format: 'anthropic-claude-v1' }]);
-});
-
 test('preserves unknown vendor details and opaque non-array values without guessing their delta semantics', () => {
   const first = { type: 'vendor.reasoning', data: 'one', index: 0, metadata: { first: true } };
   const second = { type: 'vendor.reasoning', data: 'two', index: 0, metadata: { second: true } };

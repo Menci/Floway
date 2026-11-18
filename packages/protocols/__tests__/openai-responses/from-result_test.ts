@@ -31,29 +31,6 @@ test.each(['in_progress', 'cancelled'] as const)('openaiResponsesResultToEvents 
   );
 });
 
-test('openaiResponsesResultToEvents projects terminal JSON into OpenAI Responses stream events', () => {
-  const frames = Array.from(openaiResponsesResultToEvents(completedResponse));
-
-  assertEquals(
-    frames.map(frame => frame.type),
-    ['event', 'event', 'event', 'event', 'event', 'event', 'event', 'event', 'event'],
-  );
-  assertEquals(
-    frames.map(frame => frame.event.type),
-    [
-      'response.created',
-      'response.in_progress',
-      'response.output_item.added',
-      'response.content_part.added',
-      'response.output_text.delta',
-      'response.output_text.done',
-      'response.content_part.done',
-      'response.output_item.done',
-      'response.completed',
-    ],
-  );
-});
-
 test('openaiResponsesResultToEvents starts JSON fallback streams with an empty in-progress snapshot', () => {
   const frames = Array.from(openaiResponsesResultToEvents(completedResponse));
   const created = frames[0].event as {

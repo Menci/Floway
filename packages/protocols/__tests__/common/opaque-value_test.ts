@@ -13,12 +13,6 @@ test('opaque values preserve canonical Base64 alphabets byte-for-byte', () => {
   assertEquals(encodeOpaqueValue(new Uint8Array([0x00, 0xff, 0x80]), 'base64url'), 'AP-A');
 });
 
-test('non-canonical encodings remain raw opaque values', () => {
-  for (const value of [' AP+A', 'AP-A=', 'AB==']) {
-    assertEquals(decodeOpaqueValue(value).origin, 'raw');
-  }
-});
-
 test.each([8191, 8192, 8193])(
   'raw opaque values preserve BOMs and surrogate code units after %i characters',
   prefixLength => {

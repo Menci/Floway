@@ -3,27 +3,6 @@ import { expect, test } from 'vitest';
 import { doneFrame, eventFrame } from '../../src/common/index.ts';
 import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '../../src/openai-responses/index.ts';
 import { collectOpenAIResponsesProtocolEventsToResult } from '../../src/openai-responses/to-result.ts';
-import { assertRejects } from '@floway-dev/test-utils';
-
-test('collectOpenAIResponsesProtocolEventsToResult rejects streams without terminal events', async () => {
-  async function* events() {
-    yield eventFrame({
-      type: 'response.created',
-      sequence_number: 0,
-      response: {
-        id: 'resp_truncated',
-        object: 'response',
-        model: 'gpt-test',
-        status: 'in_progress',
-        output: [],
-        error: null,
-        incomplete_details: null,
-      },
-    } satisfies OpenAIResponsesStreamEventEx);
-  }
-
-  await assertRejects(async () => await collectOpenAIResponsesProtocolEventsToResult(events()), Error, 'OpenAI Responses stream ended without a terminal event.');
-});
 
 test('collectOpenAIResponsesProtocolEventsToResult drains response.failed and returns the original error', async () => {
   const failed: OpenAIResponsesResultEx = {

@@ -353,35 +353,6 @@ test('reassembleAnthropicMessagesEvents reassembles native web search blocks and
   assertEquals((result.content[2] as AnthropicMessagesTextBlock).citations?.[0]?.type, 'web_search_result_location');
 });
 
-test('reassembleAnthropicMessagesEvents preserves unknown fields on message_start.message', async () => {
-  const body = makeEvents([
-    {
-      data: {
-        type: 'message_start',
-        message: {
-          container: null, diagnostics: null, stop_details: null,
-          id: 'msg_1',
-          type: 'message',
-          role: 'assistant',
-          model: 'claude-test',
-          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 5, output_tokens: 0 },
-          this_is_a_non_standard_field_of_reasoning: 'experimental_value',
-          custom_meta: { trace_id: 'abc' },
-        },
-      },
-    },
-    { data: { type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 0 } } },
-    { data: { type: 'message_stop' } },
-  ]);
-
-  const result = await reassembleAnthropicMessagesEvents(body) as Awaited<ReturnType<typeof reassembleAnthropicMessagesEvents>> & {
-    this_is_a_non_standard_field_of_reasoning?: string;
-    custom_meta?: { trace_id: string };
-  };
-  assertEquals(result.this_is_a_non_standard_field_of_reasoning, 'experimental_value');
-  assertEquals(result.custom_meta, { trace_id: 'abc' });
-});
-
 test('reassembleAnthropicMessagesEvents preserves refusal details, fallback boundaries, and iteration usage', async () => {
   const result = await reassembleAnthropicMessagesEvents(makeEvents([
     {

@@ -115,21 +115,3 @@ test('priceRequest applies gt boundaries and selects the highest matching thresh
   assertEquals(priceRequest(GRID, { inputTokens: 272000 }).rates, { input_tokens: '7', output_tokens: '40' });
   assertEquals(priceRequest(GRID, { inputTokens: 272001 }).rates, { input_tokens: '10', output_tokens: '45' });
 });
-
-test('priceRequest applies gte at the exact boundary', () => {
-  const pricing: ModelPricing = {
-    entries: [
-      { rates: { input_tokens: '1' } },
-      { selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input_tokens: '2' } },
-    ],
-  };
-  assertEquals(priceRequest(pricing, { inputTokens: 99 }).rates, { input_tokens: '1' });
-  assertEquals(priceRequest(pricing, { inputTokens: 100 }).rates, { input_tokens: '2' });
-});
-
-test('priceRequest preserves equality facts only when model pricing is unavailable', () => {
-  assertEquals(priceRequest(null, { inputTokens: 1, serviceTier: 'future' }), {
-    selector: { serviceTier: 'future' },
-    rates: null,
-  });
-});

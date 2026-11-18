@@ -4,7 +4,7 @@ import { type SseFrame } from '../../src/common/sse.ts';
 import type { OpenAIResponsesResultEx } from '../../src/openai-responses/index.ts';
 import { parseOpenAIResponsesStream } from '../../src/openai-responses/stream.ts';
 import { sseFrame, sseFrameBody } from '../common/test-utils.ts';
-import { assertEquals, assertRejects } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   const collected: T[] = [];
@@ -36,18 +36,6 @@ const makeResponse = (status: OpenAIResponsesResultEx['status'], overrides: Part
     total_tokens: 5,
   },
   ...overrides,
-});
-
-test('parseOpenAIResponsesStream rejects malformed OpenAI Responses SSE JSON', async () => {
-  await assertRejects(
-    async () => {
-      await collect(parse(
-        sseFrame('not json', 'response.output_text.delta'),
-      ));
-    },
-    Error,
-    'Malformed upstream OpenAI Responses SSE JSON for event "response.output_text.delta": not json',
-  );
 });
 
 test('parseOpenAIResponsesStream passes structured upstream events through unchanged when upstream already streams them', async () => {

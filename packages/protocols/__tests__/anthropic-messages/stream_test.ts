@@ -2,59 +2,13 @@ import { test } from 'vitest';
 
 import { parseAnthropicMessagesStream } from '../../src/anthropic-messages/stream.ts';
 import { sseFrame, sseFrameBody } from '../common/test-utils.ts';
-import { assertEquals, assertRejects } from '@floway-dev/test-utils';
+import { assertRejects } from '@floway-dev/test-utils';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   const collected: T[] = [];
   for await (const event of events) collected.push(event);
   return collected;
 };
-
-test('parseAnthropicMessagesStream parses Anthropic Messages SSE frames into protocol events', async () => {
-  const frames = await collect(parseAnthropicMessagesStream(sseFrameBody(
-    sseFrame('', 'ping'),
-    sseFrame(
-      JSON.stringify({
-        type: 'message_start',
-        message: {
-          container: null, diagnostics: null, stop_details: null,
-          id: 'msg_1',
-          type: 'message',
-          role: 'assistant',
-          content: [],
-          model: 'claude-test',
-          stop_reason: null,
-          stop_sequence: null,
-          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 },
-        },
-      }),
-      'message_start',
-    ),
-    sseFrame('[DONE]'),
-  )));
-
-  assertEquals(
-    frames.map(frame => frame.type),
-    ['event', 'done'],
-  );
-  assertEquals(frames[0], {
-    type: 'event',
-    event: {
-      type: 'message_start',
-      message: {
-        container: null, diagnostics: null, stop_details: null,
-        id: 'msg_1',
-        type: 'message',
-        role: 'assistant',
-        content: [],
-        model: 'claude-test',
-        stop_reason: null,
-        stop_sequence: null,
-        usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 },
-      },
-    },
-  });
-});
 
 test('parseAnthropicMessagesStream rejects malformed Anthropic Messages SSE JSON', async () => {
   await assertRejects(

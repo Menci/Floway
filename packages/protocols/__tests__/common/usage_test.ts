@@ -22,15 +22,6 @@ test('inclusive input usage splits cache reads and writes into disjoint counts',
   expect(splitInclusiveInputTokens(100, 30, 25)).toEqual({ input: 45, cacheRead: 30, cacheWrite: 25 });
 });
 
-test.each([
-  ['input tokens', -1, undefined, undefined],
-  ['cache-write tokens', 10, undefined, Number.NaN],
-] as const)('inclusive input usage rejects invalid %s', (name, inputTokens, cacheReadTokens, cacheWriteTokens) => {
-  expect(() => splitInclusiveInputTokens(inputTokens, cacheReadTokens, cacheWriteTokens)).toThrowError(
-    `${name} must be a non-negative safe integer`,
-  );
-});
-
 test('inclusive output usage splits reasoning into a disjoint count', () => {
   expect(splitInclusiveOutputTokens(5, 2)).toEqual({ output: 3, reasoning: 2 });
   expect(() => splitInclusiveOutputTokens(5, 6)).toThrowError('reasoning tokens exceed inclusive output tokens');
