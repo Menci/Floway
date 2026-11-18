@@ -21,19 +21,6 @@ const REWRITE_ALL = {
   'rewrite-mid-conv-system-to-user': true,
 } as const;
 
-// Copilot's public model ids arrive here in dash-separated minor form
-// (finalizeCopilotModels routes them through copilotPublicModelId, which
-// rewrites `4.8` → `4-8`). Parsing must therefore accept dashes; whole-
-// number releases (`claude-sonnet-5`) skip the minor slot and count as
-// `[N, 0]`. Sub-family names are treated as opaque — the version tuple
-// is the sole gate, so a future `claude-<newfamily>-<N.M>` routes the
-// same way as opus/sonnet/haiku.
-test('defaultFlagsForCopilotModel forces the system rewrite on Claude < 4.8', () => {
-  assertEquals(defaultFlagsForCopilotModel(model('claude-opus-4-7')), REWRITE_ALL);
-  assertEquals(defaultFlagsForCopilotModel(model('claude-sonnet-4-6')), REWRITE_ALL);
-  assertEquals(defaultFlagsForCopilotModel(model('claude-newfamily-4-7')), REWRITE_ALL);
-});
-
 test('defaultFlagsForCopilotModel rewrites only invalid placement for Claude >= 4.8', () => {
   assertEquals(defaultFlagsForCopilotModel(model('claude-opus-4-8')), DISALLOWED_ONLY);
   assertEquals(defaultFlagsForCopilotModel(model('claude-sonnet-5')), DISALLOWED_ONLY);

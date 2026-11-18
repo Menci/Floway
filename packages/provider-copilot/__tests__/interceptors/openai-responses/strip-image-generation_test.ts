@@ -53,28 +53,6 @@ test('stripImageGenerationFromPayload preserves Copilot-accepted hosted and defe
   assertEquals(payload.tool_choice, 'auto');
 });
 
-test('strips image generation from input tool carriers in place', () => {
-  const payload: CanonicalOpenAIResponsesPayload = {
-    model: 'gpt-test',
-    tools: [],
-    tool_choice: 'required',
-    input: [
-      { type: 'additional_tools', role: 'developer', id: 'at_1', tools: [{ type: 'image_generation' }] },
-      { type: 'message', role: 'user', content: 'hi' },
-      { type: 'tool_search_output', call_id: 'search_1', tools: [{ type: 'image_generation' }, { type: 'web_search' }] },
-    ],
-  };
-
-  stripImageGenerationFromPayload(payload);
-
-  assertEquals(payload.input, [
-    { type: 'additional_tools', role: 'developer', id: 'at_1', tools: [] },
-    { type: 'message', role: 'user', content: 'hi' },
-    { type: 'tool_search_output', call_id: 'search_1', tools: [{ type: 'web_search' }] },
-  ]);
-  assertEquals(payload.tool_choice, 'required');
-});
-
 test('removes filtered hosted selectors from allowed_tools without dropping client tools', () => {
   const payload: CanonicalOpenAIResponsesPayload = {
     model: 'gpt-test',

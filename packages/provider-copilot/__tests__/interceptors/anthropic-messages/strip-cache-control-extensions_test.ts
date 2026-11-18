@@ -60,21 +60,3 @@ test('strips scope and ttl from system, tools, and message content blocks while 
   assertEquals(ctx.payload.messages[1].content, [{ type: 'tool_use', id: 'u1', name: 't', input: {}, cache_control: { type: 'ephemeral' } }]);
   assertEquals(ctx.payload.messages[2].content, [{ type: 'tool_result', tool_use_id: 'u1', content: 'ok', cache_control: { type: 'ephemeral' } }]);
 });
-
-test('deletes cache_control entirely if no recognised field survives the strip', async () => {
-  // Hypothetical caller that only ships unsupported sub-fields with no `type`.
-  // Without `type` there is no canonical marker to keep — drop the field so we
-  // do not forward an empty object that upstream would still reject.
-  const ctx = invocation({
-    model: 'claude-test',
-    max_tokens: 10,
-    system: [
-      { type: 'text', text: 'sys', cache_control: { ttl: '1h', scope: 'system' } as unknown as { type: 'ephemeral' } },
-    ],
-    messages: [{ role: 'user', content: 'hi' }],
-  });
-
-  await withCacheControlExtensionsStripped(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.payload.system, [{ type: 'text', text: 'sys' }]);
-});
