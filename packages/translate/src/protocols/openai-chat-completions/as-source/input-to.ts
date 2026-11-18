@@ -21,9 +21,10 @@ import type {
 
 } from '../../../ir/input/types.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
+import { isAllowedToolsMode } from '../../../shared/tool-choice.ts';
 import type {
   OpenAIChatCompletionsNamedToolChoice,
-  OpenAIChatCompletionsPayload,
+  OpenAIChatCompletionsPayloadEx,
   OpenAIChatCompletionsTool,
   OpenAIChatCompletionsUserContentPart,
 } from '@floway-dev/protocols/openai-chat-completions';
@@ -42,7 +43,7 @@ interface OpenAIChatCompletionsInputContext {
 // A legacy call and result correlate by name and occurrence. Reserve modern
 // ids before choosing their synthetic spelling, including ids later in history.
 // This inventory also advances across assistant turns restored without the IR.
-const openaiChatCompletionsInputContext = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsInputContext => {
+const openaiChatCompletionsInputContext = (payload: OpenAIChatCompletionsPayloadEx): OpenAIChatCompletionsInputContext => {
   const claimed = new Set(payload.messages.flatMap(message => message.role === 'assistant' ? (message.tool_calls ?? []).map(call => call.id) : []));
   const occurrences = new Map<string, string[]>();
   const calls = new Map<string, number>();
@@ -147,7 +148,7 @@ const assistantItems = (turn: Extract<OpenAIChatCompletionsConversationTurn, { r
  * Call kinds keyed by call ID. A Chat `tool` message does not state which kind
  * it answers; only the preceding assistant message's `tool_calls` do.
  */
-const openaiChatCompletionsCallKinds = (payload: OpenAIChatCompletionsPayload): ReadonlyMap<string, 'function' | 'custom'> => {
+const openaiChatCompletionsCallKinds = (payload: OpenAIChatCompletionsPayloadEx): ReadonlyMap<string, 'function' | 'custom'> => {
   const kinds = new Map<string, 'function' | 'custom'>();
   for (const message of payload.messages) {
     if (message.role !== 'assistant') continue;
@@ -235,15 +236,31 @@ const selectionToIR = (selection: OpenAIChatCompletionsNamedToolChoice): IRInput
   ? { type: 'custom', name: selection.custom.name }
   : { type: 'function', name: selection.function.name };
 
-const toolChoiceToIR = (choice: NonNullable<OpenAIChatCompletionsPayload['tool_choice']>): IRInputToolChoice => {
-  if (typeof choice === 'string') return choice;
+// `allowed_tools.tools` is the wire's own open-object array, so this is where a
+// member becomes a named tool choice.
+const allowedToolSelectionToIR = (selection: Record<string, unknown>): IRInputToolSelector => {
+  const kind = selection.type;
+  const body = kind === 'function' || kind === 'custom' ? selection[kind] : undefined;
+  if (typeof body !== 'object' || body === null || typeof (body as { name?: unknown }).name !== 'string') {
+    throw new TranslateInputException('Cannot translate an allowed_tools selector that is not a function or custom tool.');
+  }
+  return { type: kind as 'function' | 'custom', name: (body as { name: string }).name };
+};
+
+const toolChoiceToIR = (choice: NonNullable<OpenAIChatCompletionsPayloadEx['tool_choice']>): IRInputToolChoice => {
+  if (typeof choice === 'string') {
+    if (choice === 'auto' || choice === 'none' || choice === 'required') return choice;
+    throw new TranslateInputException(`Cannot translate OpenAI Chat Completions tool choice '${choice}'.`);
+  }
   if (choice.type === 'allowed_tools') {
-    return { type: 'allowed_tools', mode: choice.allowed_tools.mode, tools: choice.allowed_tools.tools.map(selectionToIR) };
+    const mode = choice.allowed_tools.mode;
+    if (!isAllowedToolsMode(mode)) throw new TranslateInputException(`Cannot translate allowed_tools mode '${mode}'.`);
+    return { type: 'allowed_tools', mode, tools: choice.allowed_tools.tools.map(allowedToolSelectionToIR) };
   }
   return selectionToIR(choice);
 };
 
-const openaiChatCompletionsToolsToIR = (payload: OpenAIChatCompletionsPayload): Pick<IRInputRequestHeader, 'tools' | 'tool_choice'> => {
+const openaiChatCompletionsToolsToIR = (payload: OpenAIChatCompletionsPayloadEx): Pick<IRInputRequestHeader, 'tools' | 'tool_choice'> => {
   const declarations = payload.tools ?? payload.functions?.map(fn => ({ type: 'function' as const, function: fn }));
   const tools = declarations?.map(toolToIR);
   const legacyChoice = payload.function_call;
@@ -256,12 +273,12 @@ const openaiChatCompletionsToolsToIR = (payload: OpenAIChatCompletionsPayload): 
   };
 };
 
-const openaiChatCompletionsRequestToIR = (payload: OpenAIChatCompletionsPayload): IRInputRequestHeader => ({
+const openaiChatCompletionsRequestToIR = (payload: OpenAIChatCompletionsPayloadEx): IRInputRequestHeader => ({
   settings: openaiChatCompletionsSettingsToIR(payload),
   ...openaiChatCompletionsToolsToIR(payload),
 });
 
-const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload): IRInputSettings => {
+const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayloadEx): IRInputSettings => {
   const format = payload.response_format;
   const outputFormat: IRInputOutputFormat | undefined = format === undefined ? undefined
     : format.type === 'json_schema'
@@ -306,7 +323,7 @@ const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload
   };
 };
 
-export const readOpenAIChatCompletionsRequest = (payload: OpenAIChatCompletionsPayload): SourceReading<OpenAIChatCompletionsSourceAssistantTurn> => {
+export const readOpenAIChatCompletionsRequest = (payload: OpenAIChatCompletionsPayloadEx): SourceReading<OpenAIChatCompletionsSourceAssistantTurn> => {
   const context = openaiChatCompletionsInputContext(payload);
   let messageIndex = 0;
   return {

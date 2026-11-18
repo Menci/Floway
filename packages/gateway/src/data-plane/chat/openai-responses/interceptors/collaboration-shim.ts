@@ -7,7 +7,7 @@ import {
   type OpenAIResponsesResultEx,
   type OpenAIResponsesStreamEventEx,
   type OpenAIResponsesTool,
-  type OpenAIResponsesToolChoice,
+  type OpenAIResponsesToolChoiceEx,
 } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf } from '@floway-dev/provider';
 
@@ -114,12 +114,12 @@ const rewriteIdentity = <T extends { namespace?: unknown; name?: unknown }>(
 };
 
 const rewriteToolChoice = (
-  toolChoice: OpenAIResponsesToolChoice | null | undefined,
+  toolChoice: OpenAIResponsesToolChoiceEx | null | undefined,
   fromNamespace: string,
   toNamespace: string,
   names: ReadonlySet<string>,
   flatNames: ReadonlySet<string>,
-): OpenAIResponsesToolChoice | null | undefined => {
+): OpenAIResponsesToolChoiceEx | null | undefined => {
   if (!isRecord(toolChoice)) return toolChoice;
   const rewrite = (value: Record<string, unknown>): Record<string, unknown> => {
     if (value.type === 'namespace' && value.name === fromNamespace) return { ...value, name: toNamespace };
@@ -136,7 +136,7 @@ const rewriteToolChoice = (
   const rewritten = rewrite(toolChoice);
   return (Array.isArray(rewritten.tools)
     ? { ...rewritten, tools: rewritten.tools.map(tool => isRecord(tool) ? rewrite(tool) : tool) }
-    : rewritten) as OpenAIResponsesToolChoice;
+    : rewritten) as OpenAIResponsesToolChoiceEx;
 };
 
 const requestItem = (item: CanonicalOpenAIResponsesInputItem, upstreamNamespace: string, names: ReadonlySet<string>, flatNames: ReadonlySet<string>): CanonicalOpenAIResponsesInputItem => {

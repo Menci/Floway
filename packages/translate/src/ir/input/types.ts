@@ -218,7 +218,7 @@ export interface IRInputDocument {
 // Messages
 export interface IRInputCacheControl {
   readonly type: 'ephemeral'; // Messages
-  readonly ttl?: '5m' | '1h'; // Messages
+  readonly ttl?: '5m' | '1h' | (string & {}); // Messages
 }
 
 // Messages
@@ -229,7 +229,7 @@ export type IRInputDocumentSource =
   }
   | {
     readonly source_kind: 'text'; // Messages
-    readonly media_type: 'text/plain'; // Messages
+    readonly media_type: 'text/plain' | (string & {}); // Messages
     readonly text: string; // Messages
   }
   | {
@@ -243,7 +243,7 @@ export type IRInputDocumentContentPart = (
     readonly citations?: readonly object[] | null; // Messages
   })
   | (IRInputImagePart & {
-    readonly transformations?: { readonly oversized_image?: 'downsize' | 'error' } | null; // Messages
+    readonly transformations?: { readonly oversized_image?: 'downsize' | 'error' | (string & {}) } | null; // Messages
   })
 ) & {
   readonly cache_control?: IRInputCacheControl | null; // Messages

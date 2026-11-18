@@ -1,4 +1,4 @@
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesEasyInputMessageEx, CanonicalOpenAIResponsesInputItem, OpenAIResponsesRequestPayloadEx } from './index.ts';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesEasyInputMessage, CanonicalOpenAIResponsesInputItem, OpenAIResponsesRequestPayloadEx } from './index.ts';
 
 export const isCodexAudioReference = (part: object): part is { audio_url: string; file_id?: never } | { file_id: string; audio_url?: never } =>
   ('audio_url' in part && typeof part.audio_url === 'string' && !('file_id' in part))
@@ -15,7 +15,7 @@ export const canonicalizeOpenAIResponsesPayload = (value: unknown): CanonicalOpe
       && typeof (breakpoint as Record<string, unknown>).mode === 'string';
   };
 
-  const isImplicitEasyInputMessage = (item: unknown): item is OpenAIResponsesEasyInputMessageEx & { type?: undefined } => {
+  const isImplicitEasyInputMessage = (item: unknown): item is OpenAIResponsesEasyInputMessage & { type?: undefined } => {
     if (typeof item !== 'object' || item === null) return false;
     const message = item as Record<string, unknown>;
     if (message.type !== undefined) return false;

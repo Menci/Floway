@@ -12,16 +12,16 @@ import {
   type AnthropicMessagesToolUseBlock,
   type AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayload, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertExists, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
 // ── Helpers ──
 
 function mkPayload(
-  overrides: Partial<OpenAIChatCompletionsPayload> & {
-    messages: OpenAIChatCompletionsPayload['messages'];
+  overrides: Partial<OpenAIChatCompletionsPayloadEx> & {
+    messages: OpenAIChatCompletionsPayloadEx['messages'];
   },
-): OpenAIChatCompletionsPayload {
+): OpenAIChatCompletionsPayloadEx {
   return { model: 'claude-sonnet-4', stream: true, ...overrides };
 }
 
@@ -822,7 +822,7 @@ test('null tool_choice → not set', async () => {
   const result = await buildWithTestSidecar(
     mkPayload({
       messages: [{ role: 'user', content: 'Hi' }],
-      tool_choice: null as unknown as OpenAIChatCompletionsPayload['tool_choice'],
+      tool_choice: null as unknown as OpenAIChatCompletionsPayloadEx['tool_choice'],
     }),
   );
   assertEquals(result.tool_choice, undefined);

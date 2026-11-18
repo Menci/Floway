@@ -5,7 +5,7 @@ import type { OpenAIChatCompletionsInvocation } from '../../../../../src/data-pl
 import { billableUsageFromOpenAIChatCompletionsUsage } from '../../../../../src/data-plane/chat/openai-chat-completions/usage.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ExecuteResult, eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
@@ -15,7 +15,7 @@ const invocation = (
   enabledFlags: ReadonlySet<FlagId> = new Set(['usage-exclusive-cached-tokens']),
   targetApi: OpenAIChatCompletionsInvocation['targetApi'] = 'openaiChatCompletions',
 ): OpenAIChatCompletionsInvocation => ({
-  payload: { model: 'kimi-k3', messages: [{ role: 'user', content: 'hi' }] } satisfies OpenAIChatCompletionsPayload,
+  payload: { model: 'kimi-k3', messages: [{ role: 'user', content: 'hi' }] } satisfies OpenAIChatCompletionsPayloadEx,
   candidate: stubModelCandidate({ enabledFlags }),
   targetApi,
   headers: new Headers(),

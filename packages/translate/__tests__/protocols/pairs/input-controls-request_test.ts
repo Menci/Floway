@@ -13,8 +13,8 @@ import { readOpenAIChatCompletionsRequest } from '../../../src/protocols/openai-
 import { readOpenAIResponsesRequest } from '../../../src/protocols/openai-responses/as-source/input-to.ts';
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIResponsesToolChoiceEx } from '@floway-dev/protocols/openai-responses';
 
 const options = { sidecarCodec: createTestSidecarCodec() };
 
@@ -165,9 +165,10 @@ test.each([{ include: [] }, { include: null }])('Responses include $include stat
 });
 
 test('request settings own cache options separately from source and target mutations', async () => {
+  const promptCacheOptions: { mode: string; ttl: string } = { mode: 'explicit', ttl: '30m' };
   const source = {
-    model: 'm', stream: true, messages: [], prompt_cache_options: { mode: 'explicit', ttl: '30m' },
-  } satisfies OpenAIChatCompletionsPayload;
+    model: 'm', stream: true, messages: [], prompt_cache_options: promptCacheOptions,
+  } satisfies OpenAIChatCompletionsPayloadEx;
   const reading = readOpenAIChatCompletionsRequest(source);
   source.prompt_cache_options.mode = 'source-mutated';
   expect(reading.request.settings.prompt_cache_options).toEqual({ mode: 'explicit', ttl: '30m' });
@@ -211,7 +212,7 @@ test('tool selection never changes the complete allocated declaration inventory'
     { type: 'namespace' as const, name: 'x', description: 'group', tools: [{ type: 'function' as const, name: 'f' }, { type: 'custom' as const, name: 'f' }] },
     { type: 'function' as const, name: 'x_f' },
   ];
-  const choices: (OpenAIResponsesToolChoice | undefined)[] = [
+  const choices: (OpenAIResponsesToolChoiceEx | undefined)[] = [
     undefined, 'auto', 'none', 'required', { type: 'function', namespace: 'x', name: 'f' },
     { type: 'allowed_tools', mode: 'auto', tools: [] },
     { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', namespace: 'x', name: 'f' }] },

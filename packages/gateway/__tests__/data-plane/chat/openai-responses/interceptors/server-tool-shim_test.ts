@@ -7094,7 +7094,7 @@ test('helper allocation reserves names across callable scopes, history and searc
     { type: 'namespace', name: 'functions', description: '', tools: [{ type: 'function', name: 'web_search' }] },
     { type: 'namespace', name: 'client', description: '', tools: [{ type: 'custom', name: 'web_search_2' }] },
     { type: 'function', name: 'web_search_3' },
-    { type: 'web_search', name: 'web_search_8' },
+    { type: 'web_search' },
   ];
   const input: CanonicalOpenAIResponsesInputItem[] = [
     { type: 'function_call', namespace: 'history', name: 'web_search_4', call_id: 'old', arguments: '{}', status: 'completed' },

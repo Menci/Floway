@@ -18,7 +18,7 @@ import { acceptedAffinityEvaluation } from '../shared/affinity/helpers.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayloadEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
@@ -267,10 +267,10 @@ test('generate applies role compatibility flags in target-chain order', async ()
 
 test('generate defers the role rewrite until after translation to OpenAI Chat Completions', async () => {
   installRepo();
-  let observedBody: Omit<OpenAIChatCompletionsPayload, 'model'> | undefined;
+  let observedBody: Omit<OpenAIChatCompletionsPayloadEx, 'model'> | undefined;
   const callOpenAIChatCompletions = vi.fn(async (
     _model: ProviderModel,
-    body: Omit<OpenAIChatCompletionsPayload, 'model'>,
+    body: Omit<OpenAIChatCompletionsPayloadEx, 'model'>,
   ): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
     observedBody = body;
     return {
@@ -690,7 +690,7 @@ test('namespace wire mapping follows compact expansion and is isolated from oute
     input: [{ type: 'compaction', encrypted_content: encodeBase64UrlJson([history, { type: 'function_call_output', call_id: 'past', output: 'done' }]) }],
   });
   const original = structuredClone(payload);
-  const providerBodies: Omit<OpenAIChatCompletionsPayload, 'model'>[] = [];
+  const providerBodies: Omit<OpenAIChatCompletionsPayloadEx, 'model'>[] = [];
   const endpoints = { openaiChatCompletions: {} };
   const candidate: ModelCandidate = {
     ...makeCandidate(async () => { throw new Error('native Responses must not be called'); }),
@@ -817,7 +817,7 @@ test('generate lowers agent_message to a framed user message across translation 
 
 test('generate lowers agent_message to a framed user message across translation to OpenAI Chat Completions', async () => {
   installRepo();
-  let observedBody: Omit<OpenAIChatCompletionsPayload, 'model'> | undefined;
+  let observedBody: Omit<OpenAIChatCompletionsPayloadEx, 'model'> | undefined;
   const endpoints = { openaiChatCompletions: {} };
   const candidate: ModelCandidate = {
     provider: {
@@ -892,7 +892,7 @@ const goalObjectiveInput: OpenAIResponsesPayloadEx['input'] = [
 
 test('generate lowers a standalone function_call_output to external context across translation to OpenAI Chat Completions', async () => {
   installRepo();
-  let observedBody: Omit<OpenAIChatCompletionsPayload, 'model'> | undefined;
+  let observedBody: Omit<OpenAIChatCompletionsPayloadEx, 'model'> | undefined;
   const endpoints = { openaiChatCompletions: {} };
   const candidate: ModelCandidate = {
     provider: {

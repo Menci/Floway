@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { TranslateInputException } from '../../../src/shared/input-error.ts';
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import { assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
 
 const buildWithTestSidecar = (payload: OpenAIChatCompletionsPayloadEx) =>
@@ -145,7 +145,7 @@ test('buildTargetPayload omits tool_choice when OpenAI Chat Completions carries 
       model: 'gpt-test',
       messages: [{ role: 'user', content: 'hello' }],
       tool_choice: 'required',
-      tools: tools as OpenAIChatCompletionsPayload['tools'],
+      tools: tools as OpenAIChatCompletionsPayloadEx['tools'],
     });
 
     assertFalse('tool_choice' in result);
