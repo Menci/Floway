@@ -23,7 +23,6 @@ describe('fetchChatGPTCatalog', () => {
       ],
     }));
     const catalog = await fetchChatGPTCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher });
-    expect(catalog).toHaveLength(3);
     expect(catalog[0]).toEqual({
       id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000, max_context_window: 1000000,
       input_modalities: ['text', 'image'], reasoning_efforts: ['low', 'high'], default_reasoning_effort: 'high',

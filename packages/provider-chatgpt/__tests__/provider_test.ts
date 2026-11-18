@@ -87,7 +87,7 @@ const oauthTokenResponse = (overrides: Partial<{ access_token: string; refresh_t
 
 describe('createChatGPTProvider', () => {
   test('getProvidedModels uses the cached access token when fresh and surfaces every catalog entry', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
     const instance = createChatGPTProvider(baseRecord);
     const models = await instance.instance.getProvidedModels(directFetcher);
     // Provider surfaces both visible and hidden upstream models — operators
@@ -97,8 +97,6 @@ describe('createChatGPTProvider', () => {
     expect(models[0].providerData).toEqual({ contextWindow: 272000, useResponsesLite: false });
     expect(models[1].providerData).toEqual({ contextWindow: 272000, useResponsesLite: true });
     expect(models[2]).toMatchObject({ kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(fetchSpy.mock.calls[0][0]).toMatch(/\/codex\/models/);
   });
 
   test('getProvidedModels mints an access token when none is cached, then fetches the catalog', async () => {

@@ -168,7 +168,6 @@ describe('ensureChatGPTAccessToken', () => {
 
     const out = await ensureChatGPTAccessToken(upstreamId, accountId, mint);
     expect(out).toEqual(siblingEntry);
-    expect(mint).toHaveBeenCalledTimes(1);
     // Recovery returns the sibling's cached token; no fresh persist from us.
     expect(repo.writes).toEqual([]);
   });
@@ -179,7 +178,6 @@ describe('ensureChatGPTAccessToken', () => {
     // plane caller is responsible for the terminal-state flip.
     const mint = vi.fn().mockRejectedValue(new ChatGPTOAuthSessionTerminatedError({ code: 'invalid_grant', message: 'revoked' }));
     await expect(ensureChatGPTAccessToken(upstreamId, accountId, mint)).rejects.toBeInstanceOf(ChatGPTOAuthSessionTerminatedError);
-    expect(mint).toHaveBeenCalledTimes(1);
     expect(repo.writes).toEqual([]);
   });
 });

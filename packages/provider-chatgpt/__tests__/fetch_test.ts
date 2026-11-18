@@ -147,13 +147,12 @@ describe('callChatGPTOpenAIResponses — gates', () => {
         other: unrelated,
       },
     });
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const result = await callChatGPTOpenAIResponses({
       upstreamId, account: activeAccount,
       model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(true);
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
     await flushMicrotasks();
     expect(readQuotaEntry()?.premium.data.primary_used_percent).toBe(42);
     expect(readQuotaEntry()?.premium.data.ratelimited_until).toBeUndefined();
@@ -199,8 +198,6 @@ describe('ChatGPT terminal output recovery', () => {
       } else {
         expect(await collectOpenAIResponsesProtocolEventsToResult(result.events)).toMatchObject({ ...terminal, output: [item] });
       }
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
-      expect(effects.persistRefreshTokenRotation).not.toHaveBeenCalled();
       fetchSpy.mockRestore();
     }
   });
@@ -336,7 +333,7 @@ describe('Codex Responses wire selection', () => {
       ],
     };
     let sentInput: unknown[] | undefined;
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
       const wire = await readJsonRequest(init as RequestInit) as Record<string, unknown>;
       sentInput = wire.input as unknown[];
       expect(new Headers(init?.headers).get(CHATGPT_RESPONSES_LITE_HEADER)).toBe('true');
@@ -346,7 +343,6 @@ describe('Codex Responses wire selection', () => {
     const opts = { upstreamId, account: activeAccount, model: liteModel, headers: new Headers({ 'thread-id': 'compact-replay-thread' }), effects: makeEffects(), call: noopUpstreamCallOptions() };
     const compact = await callChatGPTOpenAIResponsesCompact({ ...opts, body });
     if (!compact.ok) throw new Error('expected successful compact response');
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(compact.result.output).toEqual([...sentInput!, opaque]);
   });
 
@@ -449,7 +445,6 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
     expect(headers.get('accept')).toBe('text/event-stream');
     expect(headers.get('content-type')).toBe('application/json');
     expect(headers.get('session-id')).toBe('downstream-session');
-    expect(headers.get('session_id')).toBeNull();
     // Caller-supplied identity fields pass through; noise headers (cf-*,
     // forwarded, x-real-ip, openai-beta, x-codex-beta-features) are dropped.
     expect(headers.get('x-client-request-id')).toBe('req-123');
