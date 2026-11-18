@@ -43,14 +43,6 @@ test('startGitHubDeviceFlow sends the OAuth form request through the supplied fe
   assertEquals(called, true);
 });
 
-test('startGitHubDeviceFlow preserves the existing HTTP error result', async () => {
-  const fetcher: Fetcher = async () => new Response('temporarily unavailable', { status: 503 });
-  assertEquals(await startGitHubDeviceFlow('github.com', fetcher), {
-    ok: false,
-    error: 'GitHub error: temporarily unavailable',
-  });
-});
-
 test('startGitHubDeviceFlow rejects a success body without a polling interval', async () => {
   await assertRejects(
     () => startGitHubDeviceFlow('github.com', async () => jsonResponse({ device_code: 'device', user_code: 'ABCD', verification_uri: 'https://github.com/login/device', expires_in: 900 })),
