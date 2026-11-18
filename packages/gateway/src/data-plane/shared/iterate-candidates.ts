@@ -1,7 +1,10 @@
+import parseHttpDate from 'http-dates';
+
 import type { GatewayCtx } from './gateway-ctx.ts';
 import type { RawAttemptResult } from './raw-attempt-result.ts';
 import { upstreamPerformanceContext } from './telemetry/attribution.ts';
-import { discardUpstreamResponse, type HttpHead, type ModelCandidate, type PerformanceOperation } from '@floway-dev/provider';
+import { isUpstreamTransportError } from '../../dial/transport-error.ts';
+import { discardUpstreamResponse, isAbortError, type HttpHead, type ModelCandidate, type PerformanceOperation } from '@floway-dev/provider';
 
 // HTTP in-flight streams are represented by a 2xx response head. Later
 // protocol errors in their body do not reopen candidate selection.
@@ -16,6 +19,23 @@ const isAttemptSuccess = (result: IterableAttemptResult): boolean => {
   return status === undefined || (status >= 200 && status < 300);
 };
 
+// https://www.rfc-editor.org/rfc/rfc9110.html#section-10.2.3
+const retryTime = (result: IterableAttemptResult): number | null => {
+  const value = result.http?.headers.get('retry-after')?.trim();
+  if (!value) return null;
+  const now = Date.now();
+  if (/^\d+(?:\.\d+)?$/.test(value)) {
+    const time = now + Number(value) * 1000;
+    return Number.isFinite(time) ? time : null;
+  }
+  try {
+    return Math.max(now, parseHttpDate(value).getTime());
+  } catch {
+    // http-dates signals malformed input by throwing.
+    return null;
+  }
+};
+
 const discardFailure = (ctx: GatewayCtx, result: IterableAttemptResult | undefined): void => {
   if (result?.type !== 'response' || result.http.body === null) return;
   ctx.backgroundScheduler(discardUpstreamResponse(result.http).catch(error => {
@@ -23,16 +43,10 @@ const discardFailure = (ctx: GatewayCtx, result: IterableAttemptResult | undefin
   }));
 };
 
-// Tries each narrowed candidate in order and returns the first success. A
-// per-candidate *failure result* falls through so a transient 5xx/429 on
-// one upstream rolls over to the next; a thrown error leaves the loop and
-// surfaces to the caller, so a dial failure does not advance. When the
-// list is exhausted the most recent failure is returned so callers can
-// forward it verbatim and clients still see real upstream telemetry rather
-// than a synthetic gateway envelope. Callers are contractually required to
-// hand in a non-empty candidate list — the empty-candidate branch renders
-// each caller's own protocol-shaped "no viable candidate" envelope at the
-// serve site.
+// Return the first success. HTTP failures and transport failures before a
+// response opens advance the loop. Cancellation and other throws propagate.
+// On exhaustion retain the earliest retry response, or the terminal failure
+// when no response carried a valid hint.
 //
 // Owns per-attempt AttemptState: clears the two timing slots and stamps
 // `ctx.attempt.telemetry` with the current candidate's
@@ -49,24 +63,45 @@ export const iterateCandidates = async <T extends IterableAttemptResult>(
   operation: PerformanceOperation,
   run: (candidate: ModelCandidate) => Promise<T>,
 ): Promise<T> => {
-  let lastFailure: T | undefined;
+  let selected: T | undefined;
+  let earliestRetryTime: number | null = null;
+  let lastTransportError: Error | undefined;
   try {
     for (const candidate of candidates) {
+      ctx.abortSignal?.throwIfAborted();
       ctx.attempt.timing.upstreamCallStartedAt = null;
       ctx.attempt.timing.firstOutputTokenAt = null;
       ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, operation);
-      const result = await run(candidate);
+      let result: T;
+      try {
+        result = await run(candidate);
+      } catch (error) {
+        if (ctx.abortSignal?.aborted || isAbortError(error) || !isUpstreamTransportError(error)) throw error;
+        lastTransportError = error;
+        continue;
+      }
+
       if (isAttemptSuccess(result)) return result;
-      discardFailure(ctx, lastFailure);
-      lastFailure = result;
+      lastTransportError = undefined;
+      const time = retryTime(result);
+      if (earliestRetryTime !== null && (time === null || time >= earliestRetryTime)) {
+        discardFailure(ctx, result);
+        continue;
+      }
+
+      discardFailure(ctx, selected);
+      selected = result;
+      earliestRetryTime = time;
     }
-    if (lastFailure === undefined) {
+
+    if (earliestRetryTime === null && lastTransportError !== undefined) throw lastTransportError;
+    if (selected === undefined) {
       throw new Error(`invariant broken: ${invocationLabel} exhausted candidates with neither success nor failure`);
     }
-    const selected = lastFailure;
-    lastFailure = undefined;
-    return selected;
+    const terminal = selected;
+    selected = undefined;
+    return terminal;
   } finally {
-    discardFailure(ctx, lastFailure);
+    discardFailure(ctx, selected);
   }
 };

@@ -239,6 +239,59 @@ test('passthrough-serve: when every candidate returns non-2xx the most recent up
   );
 });
 
+test.each([
+  ['disconnected', 'success', 200, null],
+  ['limited', 'disconnected', 429, '17'],
+  ['limited', 'unavailable', 429, '17'],
+  ['limited', 'limited-later', 429, '17'],
+  ['limited-later', 'limited', 429, '17'],
+  ['disabled', 'limited', 429, '17'],
+] as const)('passthrough-serve: %s followed by %s preserves the selected response', async (first, second, status, retryAfter) => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerTwoOpenAIEmbeddingsUpstreams(repo);
+  if (first === 'disabled') {
+    const upstream = await repo.upstreams.getById('up_a');
+    if (!upstream) throw new Error('missing fixture upstream');
+    await saveUpstreamForTest(repo.upstreams, { ...upstream, enabled: false });
+  }
+  const calls: string[] = [];
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/v1/models') return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
+      if (url.pathname !== '/v1/embeddings') throw new Error(`Unexpected fetch ${request.url}`);
+      const behavior = url.hostname === 'up-a.example.com' ? first : second;
+      calls.push(url.hostname);
+      if (behavior === 'disabled') throw new Error('disabled upstream was called');
+      if (behavior === 'disconnected') throw new TypeError('fixture connection refused');
+      if (behavior === 'success') return jsonResponse({ object: 'list', data: [], usage: { prompt_tokens: 1, total_tokens: 1 } });
+      if (behavior === 'unavailable') return new Response('fixture unavailable', { status: 503 });
+      return new Response(`limit from ${url.hostname}`, {
+        status: 429,
+        headers: { 'retry-after': behavior === 'limited' ? '17' : '60', 'x-request-id': url.hostname },
+      });
+    },
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/embeddings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
+      });
+      assertEquals(response.status, status);
+      assertEquals(response.headers.get('retry-after'), retryAfter);
+      if (retryAfter !== null) {
+        const selected = first === 'limited' ? 'up-a.example.com' : 'up-b.example.com';
+        assertEquals(response.headers.get('x-request-id'), selected);
+        assertEquals(await response.text(), `limit from ${selected}`);
+      } else {
+        await response.text();
+      }
+      assertEquals(calls, first === 'disabled' ? ['up-b.example.com'] : ['up-a.example.com', 'up-b.example.com']);
+      await flushAsyncWork();
+    },
+  );
+});
+
 // A throw during candidate rollover attributes the error row to the
 // throwing candidate, not the previously-succeeded one.
 test('passthrough-serve: throw during rollover attributes the error perf row to the throwing candidate, not the previous one', async () => {
