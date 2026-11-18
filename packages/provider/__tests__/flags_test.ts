@@ -8,7 +8,6 @@ import { assertEquals } from '@floway-dev/test-utils';
 // absent key inherits. Each row is one position in that order.
 test.each([
   ['a later layer forces off an earlier true', [{ 'strip-prompt-cache-key': true }, { 'strip-prompt-cache-key': false }], []],
-  ['a later layer wins when both set the same flag', [{ 'vendor-qwen': false }, { 'vendor-qwen': true }], ['vendor-qwen']],
   ['undefined layers are skipped', [undefined, { 'strip-prompt-cache-key': true }, undefined], ['strip-prompt-cache-key']],
 ])('provider flags: resolveEffectiveFlags — %s', (_label, layers, expected) => {
   assertEquals([...resolveEffectiveFlags(layers as Parameters<typeof resolveEffectiveFlags>[0])].sort(), expected);

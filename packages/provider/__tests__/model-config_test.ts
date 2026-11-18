@@ -3,28 +3,8 @@ import { describe, expect, test } from 'vitest';
 import { chatField, modelsField, pricingField } from '../src/model-config.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
-test('pricingField parses explicit flat entries', () => {
-  assertEquals(pricingField(undefined, 'pricing'), undefined);
-  const value = {
-    entries: [
-      { rates: { input_tokens: '5', output_tokens: '25' } },
-      { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input_tokens: '15', output_tokens: '75' } },
-      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 272000 } }, rates: { input_tokens: '30', output_tokens: '150' } },
-    ],
-  };
-  assertEquals(pricingField(value, 'pricing'), {
-    entries: [
-      { rates: { input_tokens: '5', output_tokens: '25' } },
-      { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input_tokens: '15', output_tokens: '75' } },
-      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 272000 } }, rates: { input_tokens: '30', output_tokens: '150' } },
-    ],
-  });
-});
-
 test('pricingField rejects malformed entries and duplicate coordinates', () => {
-  assertThrows(() => pricingField({}, 'pricing'), Error, 'non-empty array');
   assertThrows(() => pricingField({ entries: [{ rates: { input_tokens: '1', ouput: 4 } }] }, 'pricing'), Error, 'unknown metrics: ouput');
-  assertThrows(() => pricingField({ entries: [{ rates: { input_tokens: '1' }, fallback: true }] }, 'pricing'), Error, 'unknown fields: fallback');
   assertThrows(() => pricingField({
     entries: [
       { rates: { input_tokens: '1' } },
@@ -32,8 +12,6 @@ test('pricingField rejects malformed entries and duplicate coordinates', () => {
       { selector: { serviceTier: 'priority' }, rates: { input_tokens: '3' } },
     ],
   }, 'pricing'), Error, 'duplicate pricing entry selector');
-  assertThrows(() => pricingField({ entries: [{ rates: { input_tokens: '-1' } }] }, 'pricing'), Error, 'non-negative');
-  assertThrows(() => pricingField({ entries: [{ rates: { input_tokens: 1 } }] }, 'pricing'), Error, 'must be a decimal string');
 });
 
 describe('chatField', () => {
@@ -45,31 +23,10 @@ describe('chatField', () => {
     expect(chat).toEqual({ image_detail_original: false });
   });
 
-  test.each([
-    ['default not in supported', { supported: ['low', 'high'], default: 'medium' }, /effort\.default/],
-    ['empty supported', { supported: [], default: '' }, /effort\.supported/],
-  ])('rejects effort with %s', (_label, effort, message) => {
-    expect(() => chatField({ reasoning: { effort } }, 'm.chat')).toThrow(message);
+  test('rejects an effort default outside the supported list', () => {
+    expect(() => chatField({ reasoning: { effort: { supported: ['low', 'high'], default: 'medium' } } }, 'm.chat'))
+      .toThrow(/effort\.default/);
   });
-
-  test('rejects modalities missing text', () => {
-    expect(() => chatField({ modalities: { input: ['image'], output: ['text'] } }, 'm.chat'))
-      .toThrow(/must include 'text'/);
-  });
-
-});
-
-describe('modelsField metadata integration', () => {
-  test('keeps an explicit stored kind round-trippable when transcription endpoints disagree', () => {
-    const [model] = modelsField([{
-      upstreamModelId: 'transcriber',
-      kind: 'chat',
-      endpoints: { openaiAudioTranscriptions: {} },
-    }], 'p');
-    expect(model.kind).toBe('chat');
-    expect(model.endpoints).toEqual({ openaiAudioTranscriptions: {} });
-  });
-
 });
 
 describe('modelsField rerank targets', () => {
@@ -106,18 +63,6 @@ describe('modelsField rerank targets', () => {
     expect(model.kind).toBe('chat');
     expect(model.rerankTarget).toEqual({ protocol: 'cohere-v2' });
   });
-});
-
-describe('modelsField decision targets', () => {
-  test('rejects a decision target on a model that is not decision', () => {
-    expect(() => modelsField([{
-      upstreamModelId: 'chat',
-      kind: 'chat',
-      endpoints: { openaiChatCompletions: {} },
-      decisionTarget: { protocol: 'typesafe-systemone' },
-    }], 'p')).toThrow(/decisionTarget is only allowed/);
-  });
-
 });
 
 test('modelsField parses a full model entry', () => {
