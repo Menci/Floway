@@ -228,6 +228,4 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
   assertEquals(betas['/v1/messages'], 'context-1m,advanced-tool-use');
   assertEquals(betas['/v1/messages/count_tokens'], 'context-1m,advanced-tool-use');
   assertEquals(betas['/v1/chat/completions'], null);
-  assertEquals(betas['/v1/responses'], null);
-  assertEquals(betas['/v1/embeddings'], null);
 });

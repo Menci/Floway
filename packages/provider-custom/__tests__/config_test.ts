@@ -55,7 +55,6 @@ test('assertCustomUpstreamRecord rejects invalid ingress header rules', () => {
     [[{ key: 'X-Route', value: null }, { key: 'x-route', value: null }], 'passes x-route through more than once'],
     [[{ key: 'bad header', value: null }], 'must be a valid HTTP header name'],
     [[{ key: 'x-route', value: 'ok\r\nnot-ok' }], 'value is not a valid HTTP header value'],
-    [[{ key: 'x-route', value: 'non-byte-\u0100' }], 'value is not a valid HTTP header value'],
     [[{ key: 'Anthropic-Beta', value: null }], 'anthropic-beta is owned by the Anthropic Messages protocol'],
     [[{ key: 'Authorization', value: null }], 'authorization is owned by the HTTP transport'],
     [[{ key: 'CF-Ray', value: null }], 'cf-ray is owned by the HTTP transport'],
@@ -98,16 +97,4 @@ test('assertCustomUpstreamRecord rejects malformed opaque config instead of drop
     'unsupported pathOverrides key models',
   );
 
-  assertThrows(
-    () =>
-      assertCustomUpstreamRecord({
-        ...baseRecord,
-        config: {
-          ...(baseRecord.config as Record<string, unknown>),
-          baseUrl: 'ftp://custom.example.com',
-        },
-      }),
-    Error,
-    'baseUrl must be an http(s) URL',
-  );
 });

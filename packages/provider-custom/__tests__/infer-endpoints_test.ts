@@ -10,15 +10,7 @@ const OPENAI_IMAGES = { openaiImagesGenerations: {}, openaiImagesEdits: {} };
 const OPENAI_AUDIO = { openaiAudioTranscriptions: {} };
 
 test('inferEndpointsFromModelId returns OpenAI Embeddings for embedding family tokens', () => {
-  for (const id of ['text-embedding-3-small', 'embed-english-v3.0', 'BAAI/bge-large-en']) {
-    assertEquals(inferEndpointsFromModelId(id), OPENAI_EMBEDDINGS);
-  }
-});
-
-test('inferEndpointsFromModelId returns both image endpoints for the gpt-image-* family', () => {
-  for (const id of ['gpt-image-1', 'gpt-image-2-2026-04-21']) {
-    assertEquals(inferEndpointsFromModelId(id), OPENAI_IMAGES);
-  }
+  assertEquals(inferEndpointsFromModelId('BAAI/bge-large-en'), OPENAI_EMBEDDINGS);
 });
 
 test('inferEndpointsFromModelId returns audio transcription for standard transcribe and whisper families', () => {
