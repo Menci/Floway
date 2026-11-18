@@ -73,20 +73,12 @@ describe('assembleCodexCatalog', () => {
     expect(out.models[0].priority).toBe(2);  // gpt-5.4's priority
   });
 
-  test('non-chat models are dropped', () => {
-    const out = assembleCodexCatalog(bundled, [
-      entry({ id: 'text-embedding-3', display_name: 'emb', kind: 'embedding', limits: {}, endpoints: {} } as InternalModel),
-      entry(chat('gpt-5.5')),
-    ]);
-    expect(out.models).toHaveLength(1);
-    expect(out.models[0].slug).toBe('gpt-5.5');
-  });
-
-  test('unlisted addressable entries are dropped', () => {
+  test('non-chat models and unlisted addressable entries are dropped', () => {
     // A model reachable only via `modelPrefix.addressable` alternates (not
     // listed on /v1/models) also stays off the codex picker — the operator
     // opted out of the default listing surface on that side too.
     const out = assembleCodexCatalog(bundled, [
+      entry({ id: 'text-embedding-3', display_name: 'emb', kind: 'embedding', limits: {}, endpoints: {} } as InternalModel),
       entry(chat('gpt-5.5'), true),
       entry(chat('gpt-5.4')),
     ]);

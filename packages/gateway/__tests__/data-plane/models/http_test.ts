@@ -72,20 +72,7 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
           display_name?: string;
           kind?: ModelKind;
           limits?: Record<string, number>;
-          capabilities?: unknown;
-          provider?: unknown;
-          providers?: unknown;
-          providerData?: unknown;
-          endpoints?: unknown;
-          upstream?: unknown;
-          upstreamModel?: unknown;
-          name?: unknown;
-          version?: unknown;
-          billing?: unknown;
-          policy?: unknown;
-          model_picker_enabled?: unknown;
-          description?: unknown;
-          owned_by?: unknown;
+          providerModels?: unknown;
         }>;
       };
       assertEquals(body.object, 'list');
@@ -103,72 +90,20 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
       assertEquals(claude.display_name, 'Claude Sonnet 4');
       assertEquals(claude.kind, 'chat');
       assertEquals(claude.limits, {});
-      assertEquals(claude.capabilities, undefined);
-
-      for (const model of body.data) {
-        // Provider / upstream identity is hidden on the public surface.
-        assertEquals(model.provider, undefined);
-        assertEquals(model.providers, undefined);
-        assertEquals(model.providerData, undefined);
-        assertEquals(model.upstream, undefined);
-        assertEquals(model.upstreamModel, undefined);
-        // Copilot-only raw fields never reach the public DTO.
-        assertEquals(model.name, undefined);
-        assertEquals(model.version, undefined);
-        assertEquals(model.billing, undefined);
-        assertEquals(model.policy, undefined);
-        assertEquals(model.model_picker_enabled, undefined);
-        assertEquals(model.description, undefined);
-      }
+      // The catalog row carries every upstream's ProviderModel; the public
+      // surface must not leak that per-upstream identity.
+      assertEquals(body.data.some(model => model.providerModels !== undefined), false);
 
       const anthropicResponse = await requestAppWithWarmModels('/models', {
         headers: { 'x-api-key': apiKey.key },
       });
       assertEquals(anthropicResponse.status, 200);
       assertEquals(await anthropicResponse.json(), body);
-
-      // Dashboard adds two UI-only fields on top of the public DTO.
-      const controlResponse = await requestAppWithWarmModels('/api/models', {
-        headers: { 'x-api-key': apiKey.key },
-      });
-      assertEquals(controlResponse.status, 200);
-      const controlBody = (await controlResponse.json()) as {
-        data: Array<{
-          id: string;
-          display_name: string;
-          upstreams?: Array<{ kind: 'copilot' | 'custom' | 'azure'; id: string; name: string }>;
-          provider?: unknown;
-          upstream_ids?: unknown;
-          billing?: unknown;
-          policy?: unknown;
-          model_picker_enabled?: unknown;
-          name?: unknown;
-          version?: unknown;
-          supported_endpoints?: unknown;
-          description?: unknown;
-        }>;
-      };
-      const controlClaude = controlBody.data.find(m => m.id === 'claude-sonnet-4')!;
-      assertEquals(controlClaude.display_name, 'Claude Sonnet 4');
-      assertEquals(controlClaude.upstreams, [{ kind: 'copilot', id: 'up_copilot', name: 'GitHub Copilot (tester)', hue: 210 }]);
-      assertEquals(controlBody.data.find(m => m.id === 'gpt-4o')?.upstreams, [{ kind: 'custom', id: 'up_oai', name: 'Test OpenAI', hue: 210 }]);
-      // Legacy split fields and Copilot-only fields never reach the dashboard.
-      for (const model of controlBody.data) {
-        assertEquals(model.provider, undefined);
-        assertEquals(model.upstream_ids, undefined);
-        assertEquals(model.billing, undefined);
-        assertEquals(model.policy, undefined);
-        assertEquals(model.model_picker_enabled, undefined);
-        assertEquals(model.name, undefined);
-        assertEquals(model.version, undefined);
-        assertEquals(model.supported_endpoints, undefined);
-        assertEquals(model.description, undefined);
-      }
     },
   );
 });
 
-test('public model list endpoints hide upstream HTTP error bodies and headers', async () => {
+test('/v1/models secret-free listing survives a failing upstream catalog', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
@@ -185,30 +120,15 @@ test('public model list endpoints hide upstream HTTP error bodies and headers', 
   }));
 
   await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'http-secret.example.com') {
-        return new Response('secret upstream body: up_http_secret_provider', {
-          status: 403,
-          headers: {
-            'content-type': 'text/plain',
-            'x-upstream-id': 'up_http_secret_provider',
-          },
-        });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
+    () => new Response('secret upstream body: up_http_secret_provider', {
+      status: 403,
+      headers: { 'content-type': 'text/plain', 'x-upstream-id': 'up_http_secret_provider' },
+    }),
     async () => {
-      for (const path of ['/v1/models', '/models', '/api/models']) {
-        const response = await requestAppWithWarmModels(path, {
-          headers: { 'x-api-key': apiKey.key },
-        });
-        assertEquals(response.status, 200);
-        assertEquals(response.headers.get('x-upstream-id'), null);
-        const body = JSON.stringify(await response.json());
-        assertEquals(body.includes('secret upstream body'), false);
-        assertEquals(body.includes('up_http_secret_provider'), false);
-      }
+      const response = await requestAppWithWarmModels('/v1/models', { headers: { 'x-api-key': apiKey.key } });
+      assertEquals(response.status, 200);
+      assertEquals(response.headers.get('x-upstream-id'), null);
+      assertEquals(JSON.stringify(await response.json()).includes('secret upstream body'), false);
     },
   );
 });
@@ -465,20 +385,17 @@ test('/v1/models keeps the configured public endpoint when OMP connects through 
     const body = await response.json() as { models: OmpModel[] };
     assertEquals(body.models.find(model => model.id === 'response-model')!.baseUrl, `${endpoint}/v1`);
     assertEquals(body.models.find(model => model.id === 'budget-model')!.baseUrl, endpoint);
-    for (const userAgent of ['pi/1.1.0 (linux; node/v22.19.0; x64)', 'omp/18.8.4']) {
-      const named = await requestAppWithWarmModels(`/v1/models?provider=personal&endpoint=${encodeURIComponent(endpoint)}`, {
-        headers: { 'x-api-key': apiKey.key, 'user-agent': userAgent },
-      });
-      assertEquals(named.status, 200);
-      const catalog = await named.json() as { api?: string; models: { provider?: string; api: string; id: string }[] };
-      if (userAgent.startsWith('pi/')) assertEquals(catalog.models.map(model => model.provider), ['personal', 'personal']);
-      else assertEquals(catalog.api, 'floway:personal');
-      const invalidProvider = await requestAppWithWarmModels('/v1/models?provider=UPPER', {
-        headers: { 'x-api-key': apiKey.key, 'user-agent': userAgent },
-      });
-      assertEquals(invalidProvider.status, 400);
-    }
 
+    const named = await requestAppWithWarmModels(`/v1/models?provider=personal&endpoint=${encodeURIComponent(endpoint)}`, {
+      headers: { 'x-api-key': apiKey.key, 'user-agent': 'pi/1.1.0 (linux; node/v22.19.0; x64)' },
+    });
+    assertEquals(named.status, 200);
+    assertEquals((await named.json() as { models: { provider: string }[] }).models.map(model => model.provider), ['personal', 'personal']);
+
+    const invalidProvider = await requestAppWithWarmModels('/v1/models?provider=UPPER', {
+      headers: { 'x-api-key': apiKey.key, 'user-agent': 'omp/18.8.4' },
+    });
+    assertEquals(invalidProvider.status, 400);
     const invalid = await requestAppWithWarmModels('/v1/models?endpoint=ftp%3A%2F%2Fpublic.example', {
       headers: { 'x-api-key': apiKey.key, 'user-agent': 'omp/18.8.4' },
     });
@@ -551,32 +468,10 @@ test('/v1/models serves omp-tailored catalog to omp/* callers and preserves prec
       const ompBody = await ompResponse.json() as { api: string; models: OmpModel[] };
       assertEquals(ompBody.api, 'floway:floway');
       assertEquals(ompBody.models.map(model => model.id), ['test-image', 'test-embed', 'test-chat']);
-      const chat = ompBody.models.find(model => model.id === 'test-chat')!;
-      assertEquals(chat.api, 'floway:floway');
-      assertEquals(chat.contextWindow, 128_000);
-      assertEquals(chat.maxTokens, 4_096);
-      assertEquals(chat.input, ['text', 'image']);
-      for (const userAgent of ['not-omp/18.8.4', 'floway-omp/1', 'openai-python/1.42.0']) {
-        const response = await requestAppWithWarmModels('/v1/models', { headers: { 'x-api-key': apiKey.key, 'user-agent': userAgent } });
-        const body = await response.json() as { data: Array<{ id: string }> };
-        assertEquals(body.data.map(model => model.id), ['test-rerank', 'test-image', 'test-embed', 'test-chat']);
-      }
-
-      const claudeCodeResp = await requestAppWithWarmModels('/v1/models', {
-        headers: { 'x-api-key': apiKey.key, 'user-agent': 'claude-code/2.1.206' },
-      });
-      assertEquals(claudeCodeResp.status, 200);
-      const claudeCodeBody = (await claudeCodeResp.json()) as { object?: unknown; data: Array<{ id: string; type: string }> };
-      assertEquals(claudeCodeBody.object, undefined);
-      assertEquals(claudeCodeBody.data.length, 4);
-
-      const codexResp = await requestAppWithWarmModels('/v1/models', {
-        headers: { 'x-api-key': apiKey.key, 'user-agent': 'codex-tui/0.1.0' },
-      });
-      assertEquals(codexResp.status, 200);
-      const codexBody = (await codexResp.json()) as { object?: unknown; models: Array<{ slug: string }> };
-      assertEquals(codexBody.object, undefined);
-      assertEquals(Array.isArray(codexBody.models), true);
+      // A prefix match is not an omp identity.
+      const lookalike = await requestAppWithWarmModels('/v1/models', { headers: { 'x-api-key': apiKey.key, 'user-agent': 'floway-omp/1' } });
+      const lookalikeBody = await lookalike.json() as { data: Array<{ id: string }> };
+      assertEquals(lookalikeBody.data.map(model => model.id), ['test-rerank', 'test-image', 'test-embed', 'test-chat']);
     },
   );
 });

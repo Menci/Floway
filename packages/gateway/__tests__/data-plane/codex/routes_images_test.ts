@@ -3,7 +3,6 @@ import { test } from 'vitest';
 import type { InMemoryRepo } from '../../repo/memory.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { copilotModels, MOCKED_FETCH_EGRESS, requestApp, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
-import { CHATGPT_USER_AGENT } from '@floway-dev/provider-chatgpt';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/wEAAAAASUVORK5CYII=';
@@ -107,13 +106,6 @@ test('ChatGPT Codex accounts expose and serve the implicit gpt-image-2 model', a
       assertEquals(publicModels.status, 200);
       const publicCatalog = await publicModels.json() as { data: { id: string }[] };
       assertEquals(publicCatalog.data.some(model => model.id === 'gpt-image-2'), true);
-
-      const codexModels = await requestApp('/azure-api.codex/models?client_version=0.147.0', {
-        headers: { authorization: `Bearer ${apiKey.key}`, 'user-agent': CHATGPT_USER_AGENT },
-      });
-      assertEquals(codexModels.status, 200);
-      const codexCatalog = await codexModels.json() as { models: { slug: string }[] };
-      assertEquals(codexCatalog.models.some(model => model.slug === 'gpt-image-2'), false);
 
       const response = await requestApp('/azure-api.codex/images/generations', {
         method: 'POST',

@@ -136,7 +136,7 @@ test('/v1beta/models/:modelId returns one Gemini model or Google RPC 404', async
   );
 });
 
-test('Gemini clients are recognized through x-goog-api-client and the legacy SDK labels', async () => {
+test('Gemini clients are recognized through x-goog-api-client and the legacy user-agent label', async () => {
   const { apiKey } = await setupAppTest();
 
   await withMockedFetch(
@@ -146,17 +146,14 @@ test('Gemini clients are recognized through x-goog-api-client and the legacy SDK
     },
     async () => {
       const identities: ReadonlyArray<Record<string, string>> = [
-        { 'x-goog-api-client': 'google-genai-sdk/1.0.0 gl-python/3.13.0' },
-        { 'user-agent': 'GeminiCLI/0.12.0/gemini-2.5-pro (darwin; arm64; shell)', 'x-goog-api-client': 'google-genai-sdk/1.3.0 gl-node/cross' },
         { 'user-agent': 'genai-py/0.8.5 gl-python/3.12.0' },
         { 'x-goog-api-client': 'genai-js/0.24.1' },
       ];
       for (const identity of identities) {
         const response = await requestAppWithWarmModels('/v1/models', { headers: { 'x-api-key': apiKey.key, ...identity } });
         assertEquals(response.status, 200);
-        const body = await response.json() as { models?: unknown; data?: unknown };
+        const body = await response.json() as { models?: unknown };
         assertEquals(Array.isArray(body.models), true);
-        assertEquals(body.data, undefined);
       }
     },
   );

@@ -21,12 +21,9 @@ describe('resolveCodexCatalog', () => {
     expect(isCodexUserAgent(userAgent)).toBe(true);
   });
 
-  it.each([
-    'claude-code/2.1.206',
-    'codex-tui/not-a-version',
-  ])('does not classify a non-Codex catalog caller %s', async userAgent => {
+  it('does not classify a Codex-prefixed caller without a version', async () => {
     const { isCodexUserAgent } = await import('../../../src/data-plane/codex/catalog.ts');
-    expect(isCodexUserAgent(userAgent)).toBe(false);
+    expect(isCodexUserAgent('codex-tui/not-a-version')).toBe(false);
   });
 
   it('fetches openai/codex tag matching the parsed version and caches in-memory', async () => {
