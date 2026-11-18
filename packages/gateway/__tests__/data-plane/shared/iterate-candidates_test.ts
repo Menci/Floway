@@ -229,8 +229,11 @@ describe('iterateCandidates', () => {
     ['soon', '60', 'last'],
     ['60', '-1', 'first'],
     ['60', '1.2.3', 'first'],
+    ['Mon 1', '60', 'last'],
     ['0', '60', 'first'],
+    ['0.5', '1', 'first'],
     ['Mon, 01 Jun 2026 00:00:30 GMT', '60', 'first'],
+    ['Monday, 01-Jun-26 00:00:30 GMT', '60', 'first'],
     ['120', 'Mon, 01 Jun 2026 00:00:30 GMT', 'last'],
     ['Sun, 31 May 2026 23:59:00 GMT', '60', 'first'],
   ])('selects the original earliest retry response (%s, %s)', async (first, last, expected) => {
@@ -251,6 +254,32 @@ describe('iterateCandidates', () => {
     );
     expect(index).toBe(2);
     expect(result).toBe(failures[expected === 'first' ? 0 : 1]);
+  });
+
+  it('compares legacy asctime dates in UTC when the runtime time zone differs', async () => {
+    vi.stubEnv('TZ', 'Asia/Singapore');
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-01T00:00:00Z'));
+
+    try {
+      expect(new Date().getTimezoneOffset()).toBe(-480);
+      const first = {
+        type: 'response' as const,
+        http: new Response(null, { status: 429, headers: { 'retry-after': 'Mon Jun  1 00:00:30 2026' } }),
+      };
+      const last = {
+        type: 'response' as const,
+        http: new Response(null, { status: 429, headers: { 'retry-after': '17' } }),
+      };
+      const result = await iterateCandidates(
+        [stubCandidate('a'), stubCandidate('b')], 'test', mockGatewayCtx(), 'chat',
+        async candidate => candidate.model.id === 'a' ? first : last,
+      );
+
+      expect(result).toBe(last);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it('compares retry delays from when each response arrived', async () => {

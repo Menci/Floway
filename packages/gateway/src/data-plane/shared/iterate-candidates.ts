@@ -1,3 +1,5 @@
+import parseHttpDate from 'http-dates';
+
 import type { GatewayCtx } from './gateway-ctx.ts';
 import type { RawAttemptResult } from './raw-attempt-result.ts';
 import { upstreamPerformanceContext } from './telemetry/attribution.ts';
@@ -26,10 +28,12 @@ const retryTime = (result: IterableAttemptResult): number | null => {
     const time = now + Number(value) * 1000;
     return Number.isFinite(time) ? time : null;
   }
-  // Date.parse also accepts malformed numeric delays as calendar dates.
-  if (!/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)/i.test(value)) return null;
-  const time = Date.parse(value);
-  return Number.isFinite(time) ? Math.max(now, time) : null;
+  try {
+    return Math.max(now, parseHttpDate(value).getTime());
+  } catch {
+    // http-dates signals malformed input by throwing.
+    return null;
+  }
 };
 
 const discardFailure = (ctx: GatewayCtx, result: IterableAttemptResult | undefined): void => {

@@ -426,6 +426,9 @@ importers:
       hono:
         specifier: ^4
         version: 4.12.22
+      http-dates:
+        specifier: 1.2.0
+        version: 1.2.0
       jsonrepair:
         specifier: ^3.14.0
         version: 3.14.0
@@ -4127,6 +4130,9 @@ packages:
 
   html-url-attributes@3.0.1:
     resolution: {integrity: sha512-ol6UPyBWqsrO6EJySPz2O7ZSr856WDrEzM5zMqp+FJJLGMW35cLYmmZnl0vztAZxRUoNZJFTCohfjuIJ8I4QBQ==}
+
+  http-dates@1.2.0:
+    resolution: {integrity: sha512-y5SJalyaaJZRkc6BR7c0Ci9K+5IeUJDp7NbAdOCSgcomvmyvdL2W+eQcvPurqsD0NCfDI9mDWMJzUjEHxFkzWw==}
 
   husky@9.1.7:
     resolution: {integrity: sha512-5gs5ytaNjBrh5Ow3zrvdUUY+0VxIuWVL4i9irt6friV+BqdCfmV11CQTWMiBYWHbXhco+J1kHfTOUkePhCDvMA==}
@@ -9843,6 +9849,8 @@ snapshots:
   html-tags@5.1.0: {}
 
   html-url-attributes@3.0.1: {}
+
+  http-dates@1.2.0: {}
 
   husky@9.1.7: {}
 
