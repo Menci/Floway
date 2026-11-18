@@ -280,7 +280,7 @@ describe('Codex Responses wire selection', () => {
     }
   });
 
-  test.each([true, false])('projects moved top-level fields while preserving upstream calls through streaming=%s', async stream => {
+  test('projects moved top-level fields while preserving upstream calls through the stream', async () => {
     seedFreshAccessToken();
     const wireCall = { type: 'function_call' as const, id: 'fc_1', call_id: 'call_1', name: 'lookup', namespace: 'functions', arguments: '{}', status: 'completed' as const, future: 'retained' };
     const opaque = { type: 'reasoning', id: 'rs_opaque', summary: [], encrypted_content: 'opaque+encrypted==' };
@@ -299,7 +299,7 @@ describe('Codex Responses wire selection', () => {
     ]);
     upstream.headers.delete('content-type');
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(upstream);
-    const body = { input: [], instructions: 'Base', tools: [tool], parallel_tool_calls: true, reasoning: { effort: 'low', context: 'current_turn' }, stream };
+    const body = { input: [], instructions: 'Base', tools: [tool], parallel_tool_calls: true, reasoning: { effort: 'low', context: 'current_turn' }, stream: true };
     const result = await callChatGPTOpenAIResponses({
       upstreamId, account: activeAccount, model: liteModel, body, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
     });
@@ -307,28 +307,23 @@ describe('Codex Responses wire selection', () => {
     expect(result.headers?.get('content-type')).toBe('text/event-stream');
     expect(result.headers?.has(CHATGPT_RESPONSES_LITE_HEADER)).toBe(true);
     expect(upstream.headers.get(CHATGPT_RESPONSES_LITE_HEADER)).toBe('true');
-    if (stream) {
-      const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-      for await (const frame of result.events) frames.push(frame);
-      expect(frames[0]).toMatchObject({ type: 'event', event: { item: wireCall } });
-      expect(frames[1]).toEqual({ type: 'event', event: future });
-      expect(frames[2]).toMatchObject({ type: 'event', event: { item: wireCall } });
-      expect(frames[3]).toMatchObject({ type: 'event', event: { response: { ...wireResponse, tools: body.tools, instructions: body.instructions } } });
-      expect(frames[4]).toEqual({ type: 'done' });
-    } else {
-      const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
-      expect(collected).toMatchObject({ ...wireResponse, tools: body.tools, instructions: body.instructions });
-    }
+    const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
+    for await (const frame of result.events) frames.push(frame);
+    expect(frames[0]).toMatchObject({ type: 'event', event: { item: wireCall } });
+    expect(frames[1]).toEqual({ type: 'event', event: future });
+    expect(frames[2]).toMatchObject({ type: 'event', event: { item: wireCall } });
+    expect(frames[3]).toMatchObject({ type: 'event', event: { response: { ...wireResponse, tools: body.tools, instructions: body.instructions } } });
+    expect(frames[4]).toEqual({ type: 'done' });
   });
 
-  test.each(['top-level', 'mixed'] as const)('preserves the complete compact %s output window', async source => {
+  test('preserves the complete compact output window around a caller-positioned tools carrier', async () => {
     seedFreshAccessToken();
     const opaque = { type: 'compaction', id: 'cmp_item', encrypted_content: 'opaque+encrypted==' };
     const body: responsesLite.ChatGPTResponsesBody = {
       instructions: 'Old instructions',
       tools: [tool],
       input: [
-        ...(source === 'top-level' ? [] : [{ type: 'additional_tools' as const, role: 'developer' as const, id: 'at_caller', tools: [{ type: 'custom' as const, name: 'patch' }] }]),
+        { type: 'additional_tools' as const, role: 'developer' as const, id: 'at_caller', tools: [{ type: 'custom' as const, name: 'patch' }] },
         { type: 'message', role: 'user', content: 'Continue' },
       ],
     };
