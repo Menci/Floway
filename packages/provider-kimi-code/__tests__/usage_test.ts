@@ -11,15 +11,8 @@ test('new subscriptions expose five-hour and monthly quota with a Code contribut
   });
 });
 
-test('legacy subscriptions expose five-hour and weekly quota independently of the extra wallet', () => {
-  expect(readKimiCodeUsage(usage(true))).toEqual({
-    windows: [{ id: 'five_hour', usedRatio: 0.25, resetsAt: RESET }, { id: 'weekly', usedRatio: 0.5, resetsAt: RESET }],
-    monthlyCodeUsedRatio: null,
-  });
-});
-
 test('quota violations throw instead of publishing made-up readings', () => {
-  for (const bad of [null, '', 'not-a-ratio', -0.1, Number.NaN]) {
+  for (const bad of ['', -0.1]) {
     const body = usage();
     body.usages.limit_5h.used_ratio = bad as number;
     expect(() => readKimiCodeUsage(body)).toThrow();

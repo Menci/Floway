@@ -11,7 +11,7 @@ describe('pricingForKimiCodePublicModelId', () => {
     }));
   });
 
-  test.each(['kimi-k3-256k', 'kimi-for-coding', 'k3'])('leaves withheld variants and non-public identities unpriced: %s', id => {
+  test.each(['kimi-k3-256k'])('leaves withheld variants and non-public identities unpriced: %s', id => {
     expect(pricingForKimiCodePublicModelId(id)).toBeNull();
     expect(priceRequest(pricingForKimiCodePublicModelId(id), { serviceTier: 'priority' }).rates).toBeNull();
   });

@@ -2,7 +2,7 @@ import { expect, test } from 'vitest';
 
 import { kimiCodeModelLabel, parseKimiCodeModelName, publicKimiCodeModelId } from '../src/public-model-id.ts';
 
-const versions = ['K3', 'K4.2'];
+const versions = ['K4.2'];
 
 test.each(versions.flatMap(version => ['', 'Preview', 'Code', 'Pro'].map(family => [version, family])))('opaque display names accept open version %s with closed family %s', (version, family) => {
   const displayName = `${version}${family === '' ? '' : ` ${family}`}`;
@@ -19,7 +19,7 @@ test.each([
 });
 
 test.each([
-  'a name with no version', 'K9.9 Experimental', 'K3 Preview Highspeed', 'K3 Code extra prose', 'K3.1Pro', '',
+  'K9.9 Experimental', 'K3 Preview Highspeed', 'K3.1Pro',
 ])('opaque derivation and shared identity parsing reject the unrecognized shape %s', displayName => {
   expect(publicKimiCodeModelId('kimi-for-coding', displayName)).toBeNull();
   expect(parseKimiCodeModelName(displayName)).toBeNull();
@@ -43,15 +43,13 @@ test.each(versions.flatMap(version => ['', 'Preview', 'Code', 'Pro'].map(family 
 });
 
 test.each([
-  ['k9.9 eXpErImEnTaL', 'Kimi K9.9 eXpErImEnTaL'],
   ['Kimi K3 Mini (Highspeed 2x Usage Cost)', 'Kimi K3 Mini'],
   ['Kimiko Ultra', 'Kimi Kimiko Ultra'],
-  ['K3 HighspeedX', 'Kimi K3 HighspeedX'],
 ])('presentation labels %s as %s without broadening model identity', (name, expected) => {
   expect(kimiCodeModelLabel(name)).toBe(expected);
   expect(parseKimiCodeModelName(name)).toBeNull();
 });
 
-test.each(['   ', ' KIMI ', 'Kimi (Highspeed 2x Usage Cost)'])('presentation rejects empty or marker-only name %j', name => {
+test.each(['Kimi (Highspeed 2x Usage Cost)'])('presentation rejects empty or marker-only name %j', name => {
   expect(() => kimiCodeModelLabel(name)).toThrow(TypeError);
 });

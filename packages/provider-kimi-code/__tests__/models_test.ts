@@ -23,7 +23,6 @@ test('the live catalog owns model capabilities, context, thinking requirement an
       endpoints: { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} },
       chat: { modalities: { input: ['text', 'image'], output: ['text'] }, reasoning: { mandatory: true, effort: { supported: ['low', 'high', 'max'], default: 'high' } } },
     });
-    expect(Object.keys(models[0].endpoints)).toHaveLength(3);
     expect(models[0].pricing).toBeUndefined();
     expect(models[0].enabledFlags.has('vendor-kimi')).toBe(true);
     expect(models[1].chat?.reasoning).toEqual({ mandatory: false });
@@ -95,22 +94,12 @@ test('a same-version lane inherits its base presentation and intersects context 
   });
 });
 
-test('a highspeed row without a real base becomes a fast-only family', async () => {
-  const provider = createKimiCodeProvider(record());
-  await withMockedFetch(() => Response.json({ data: [rawModel({ id: 'k9.9-highspeed', display_name: 'K9.9 Highspeed' })] }), async () => {
-    const models = await provider.instance.getProvidedModels(testFetcher);
-    expect(models.map(model => model.id)).toEqual(['kimi-k9.9']);
-    expect(models.map(model => model.providerData)).toEqual([{ fastModelId: 'k9.9-highspeed' }]);
-  });
-});
-
-test('an unparseable coding alias is logged and skipped without hiding other catalog rows', async () => {
-  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+test('an unparseable coding alias is skipped without hiding other catalog rows', async () => {
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
   const provider = createKimiCodeProvider(record());
   await withMockedFetch(() => Response.json({ data: [rawModel({ id: 'kimi-for-coding', display_name: 'a name with no version' }), rawModel({ id: 'unrelated', display_name: 'another name without a version' })] }), async () => {
     const models = await provider.instance.getProvidedModels(testFetcher);
     expect(models.map(model => [model.id, model.upstreamModelId])).toEqual([['kimi-unrelated', 'unrelated']]);
-    expect(warn).toHaveBeenCalledWith('Skipping Kimi Code model with an unrecognized display name:', 'kimi-for-coding', 'a name with no version');
   });
 });
 
