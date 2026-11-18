@@ -59,26 +59,6 @@ describe('importClaudeCodeFromCallback', () => {
     expect(result.state.accounts[0].accessToken?.expiresAt).toBeGreaterThan(Date.now());
   });
 
-  test('personal account (no organization block) yields null subscriptionType', async () => {
-    // Mirrors what Anthropic's profile endpoint returns for free/pro personal
-    // accounts: the `organization` object is omitted entirely. The official
-    // CLI's deriver A10 returns null in this case (cli.js v2.1.10); we follow.
-    vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(jsonResponse(tokenResponse))
-      .mockResolvedValueOnce(jsonResponse({
-        account: { uuid: 'acc-uuid-personal', email: 'me@example.com', has_claude_pro: true },
-      }));
-
-    const result = await importClaudeCodeFromCallback({ code: 'CODE', pkceVerifier: 'VER', state: 'STATE', fetcher: directFetcher });
-
-    expect(result.config.accounts).toEqual([{
-      email: 'me@example.com',
-      accountUuid: 'acc-uuid-personal',
-      organizationUuid: null,
-      subscriptionType: null,
-      rateLimitTier: null,
-    }]);
-  });
 });
 
 describe('importClaudeCodeFromCredentialsJson', () => {

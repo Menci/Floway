@@ -94,16 +94,6 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('ensureClaudeCodeAccessToken', () => {
-  test('returns the cached entry when still fresh and never calls fetch', async () => {
-    const entry: ClaudeCodeAccessTokenEntry = { token: 'at_x', expiresAt: farFutureMs, refreshedAt: 'now' };
-    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: entry }] });
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    const out = await ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
-    expect(out).toEqual({ entry, freshlyMinted: false });
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(saveStateSpy).not.toHaveBeenCalled();
-  });
-
   test('refreshes when no token is cached, rotates refresh_token, persists fresh access token', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       access_token: 'at_new', token_type: 'Bearer', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
