@@ -132,10 +132,50 @@ const makeCandidate = (overrides: {
   };
 };
 
+test.each(['generateContent', 'streamGenerateContent'])('POST %s maps a native Google RPC error before responding', async action => {
+  installRepo();
+  const body = { error: { code: 412, status: 'FAILED_PRECONDITION', message: 'account is not ready' } };
+  const callGeminiGenerateContent = vi.fn(async (): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => ({
+    ok: false,
+    http: Response.json(body, { status: 400, headers: { 'request-id': 'req-google-rpc' } }),
+    modelKey: 'k',
+  }));
+  queueCandidates([makeCandidate({ endpoints: { geminiGenerateContent: {} }, callGeminiGenerateContent })]);
+
+  const response = await makeApp().request(`/v1beta/models/test-model:${action}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] }),
+  });
+
+  assertEquals(response.status, 412);
+  assertEquals(response.headers.get('request-id'), 'req-google-rpc');
+  assertEquals(await response.json(), body);
+});
+
+test('POST /v1beta/models/:model:countTokens preserves an upstream 204 without a body', async () => {
+  installRepo();
+  const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
+    http: new Response(null, { status: 204, headers: { 'request-id': 'req-no-count' } }),
+    modelKey: 'k',
+  }));
+  queueCandidates([makeCandidate({ targetApi: 'anthropicMessages', callAnthropicMessagesCountTokens })]);
+
+  const response = await makeApp().request('/v1beta/models/test-model:countTokens', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] }),
+  });
+
+  assertEquals(response.status, 204);
+  assertEquals(response.headers.get('request-id'), 'req-no-count');
+  assertEquals(response.body, null);
+});
+
 test('POST /v1beta/models/:model:countTokens accepts the generateContentRequest envelope shape', async () => {
   installRepo();
   const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
-    response: new Response(JSON.stringify({ total_tokens: 7 }), {
+    http: new Response(JSON.stringify({ total_tokens: 7 }), {
       status: 200, headers: new Headers({ 'content-type': 'application/json' }),
     }),
     modelKey: 'k',
@@ -189,7 +229,7 @@ test('generateContent retries a translation input failure and records the succes
     throw new Error('Unsupported input must fail before the upstream call');
   });
   const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   queueCandidates([
     makeCandidate({ upstream: 'up_messages', targetApi: 'anthropicMessages', callAnthropicMessages }),
@@ -219,7 +259,7 @@ test('POST /v1beta/models/models/:model:generateContent accepts the models/ pref
   let resolvedModel: string | undefined;
   const callOpenAIChatCompletions = vi.fn(async (model): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
     resolvedModel = (model as { id: string }).id;
-    return { ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers() };
+    return { ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() } };
   });
   queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
 
@@ -246,7 +286,7 @@ const makeNativeGeminiEvents = (): readonly GeminiGenerateContentStreamEvent[] =
 test('a native Gemini upstream is reached without translation and streams its own frames', async () => {
   installRepo();
   const callGeminiGenerateContent = vi.fn(async (): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeNativeGeminiEvents()), modelKey: 'gemini-3-flash', headers: new Headers({ 'x-goog-request-id': 'r1' }),
+    ok: true, events: makeProtocolFrames(makeNativeGeminiEvents()), modelKey: 'gemini-3-flash', http: { status: 200, headers: new Headers({ 'x-goog-request-id': 'r1' }) },
   }));
   queueCandidates([makeCandidate({ endpoints: { geminiGenerateContent: {} }, callGeminiGenerateContent })]);
 

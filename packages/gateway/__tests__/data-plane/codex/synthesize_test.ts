@@ -66,6 +66,24 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.max_context_window).toBe(936000);
   });
 
+  test('a matching client snapshot alone cannot grant audio input', () => {
+    const entry = synthesizeCatalogEntry(base, { ...bundledBase, input_modalities: ['text', 'audio'] }, { audioInput: true });
+    expect(entry.input_modalities).toEqual(['text']);
+  });
+
+  test('does not advertise Codex audio on a translated route', () => {
+    const entry = synthesizeCatalogEntry({ ...base, endpoints: { anthropicMessages: {} }, chat: { modalities: { input: ['text', 'audio'], output: ['text'] } } }, undefined, { audioInput: true });
+    expect(entry.input_modalities).toEqual(['text']);
+  });
+
+  test('audio requires native Responses and audio input on every chat fallback', () => {
+    const primary = stubProviderModel({ endpoints: { openaiResponses: {} }, chat: { modalities: { input: ['text', 'audio'], output: ['text'] } } });
+    const listed = (fallback: ProviderModel) => synthesizeCatalogEntry({ ...base, endpoints: primary.endpoints, chat: primary.chat, providerModels: { primary, fallback } }, undefined, { audioInput: true }).input_modalities;
+    expect(listed(primary)).toEqual(['text', 'audio']);
+    expect(listed({ ...primary, endpoints: { anthropicMessages: {} } })).toEqual(['text']);
+    expect(listed({ ...primary, chat: { modalities: { input: ['text'], output: ['text'] } } })).toEqual(['text']);
+  });
+
   test('rejects original detail when one of several providers does not state it', () => {
     const providerModel = (value: boolean | undefined): ProviderModel => stubProviderModel({
       id: 'gpt-5.5',
@@ -102,6 +120,26 @@ describe('synthesizeCatalogEntry', () => {
       expect(entry.input_modalities).toEqual(['text', 'image']);
       expect(entry.supports_image_detail_original).toBe(false);
       expect(entry.web_search_tool_type).toBe('text_and_image');
+    });
+
+    test.each(['v1', 'v2'])('preserves the explicit Ultra mapping for multi-agent %s', multiAgentVersion => {
+      const entry = synthesizeCatalogEntry(base, {
+        ...bundledBase,
+        supported_reasoning_levels: [
+          { effort: 'xhigh', description: 'Extra high' },
+          { effort: 'max', description: 'Maximum' },
+          { effort: 'ultra', description: 'Existing Ultra' },
+        ],
+        multi_agent_version: multiAgentVersion,
+        multi_agent_reasoning_effort: 'xhigh',
+      });
+      expect(entry.supported_reasoning_levels).toEqual([
+        { effort: 'xhigh', description: 'Extra high' },
+        { effort: 'max', description: 'Maximum' },
+        { effort: 'ultra', description: 'Existing Ultra' },
+      ]);
+      expect(entry.multi_agent_version).toBe(multiAgentVersion);
+      expect(entry.multi_agent_reasoning_effort).toBe('xhigh');
     });
 
     test('maps Ultra to the last non-Ultra effort, wherever Ultra sits', () => {

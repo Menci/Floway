@@ -19,7 +19,8 @@ const catalogModel = (overrides: Partial<PublicModel> = {}) => toPiCatalog([mode
 
 describe('Pi model catalog', () => {
   test('preserves model identity, vision and known token limits in an independent provider', () => {
-    const mapped = catalogModel({ chat: { modalities: { input: ['text', 'image'], output: ['text'] } } });
+    const mapped = catalogModel({ chat: { modalities: { input: ['text', 'image', 'audio'], output: ['text'] } } });
+    expect(catalogModel({ chat: { modalities: { input: ['audio'], output: ['text'] } } })).toBeUndefined();
     expect(mapped).toMatchObject({ provider: 'floway', api: 'openai-responses', baseUrl: 'https://gateway.example/v1', contextWindow: 200000, maxTokens: 32000, input: ['text', 'image'], reasoning: false });
     expect(toPiCatalog([model({ kind: 'embedding' })], 'https://gateway.example/v1', 'floway').models).toEqual([]);
   });

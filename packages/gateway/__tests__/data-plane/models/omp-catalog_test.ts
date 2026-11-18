@@ -14,6 +14,7 @@ const model: PublicModel = {
 
 describe('OMP model declarations', () => {
   it('gives arbitrary aliases exact prices, limits, modalities, default and mandatory reasoning', () => {
+    expect(toOmpModel({ ...model, chat: { modalities: { input: ['audio'], output: ['text'] } } }, 'floway')).toBeNull();
     expect(toOmpModel(model, 'floway')).toEqual({
       id: 'operator-alias', name: 'Operator Alias', kind: 'chat', api: 'floway:floway', reasoning: true,
       thinking: { mode: 'effort', efforts: ['low', 'medium', 'high'], defaultLevel: 'medium', requiresEffort: true },

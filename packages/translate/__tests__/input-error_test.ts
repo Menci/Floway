@@ -40,6 +40,14 @@ const routes = [
   () => translate.routeGeminiGenerateContentViaOpenAIResponses(gemini, options),
 ];
 
+test('cross-protocol routing rejects native audio references instead of silently losing them', async () => {
+  const content = [{ type: 'input_audio' as const, file_id: 'audio-file' }];
+  for (const item of [{ type: 'message' as const, role: 'user' as const, content }, { type: 'function_call_output' as const, call_id: 'call', output: content }]) {
+    const result = await translate.routeOpenAIResponsesViaAnthropicMessages({ model: 'm', input: [item] }, options);
+    expect(result).toMatchObject({ type: 'input-error', message: expect.stringContaining('input_audio') });
+  }
+});
+
 test.each(routes.map((run, index) => ({ index, run })))('route $index returns an ordinary input error object', async ({ run }) => {
   const result = await run();
   expect(result.type).toBe('input-error');

@@ -144,7 +144,7 @@ test('generate treats a translated OpenAI Responses payload as opaque to native 
         response: makeOpenAIResponsesResult(),
       }]),
       modelKey: 'test-model-key',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
   const candidate = makeCandidate(callOpenAIResponses);
@@ -215,7 +215,7 @@ test('generate defers the role rewrite until after translation to OpenAI Chat Co
         yield doneFrame();
       })(),
       modelKey: 'test-model-key',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
   const upstream = 'up_chat';
@@ -296,7 +296,7 @@ test('generate strips disallowed headers and states a remote image URL to Anthro
           yield doneFrame();
         })(),
         modelKey: 'k',
-        headers: new Headers(),
+        http: { status: 200, headers: new Headers() },
       };
     },
   });
@@ -371,7 +371,7 @@ test('generate restores signed hosted-tool replay data without stored state', as
   ];
   const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
     capturedBody = body as { input?: unknown[] };
-    return { action: 'generate', ok: true, events: makeProviderEvents(upstreamEvents), modelKey: 'test-model-key', headers: new Headers() };
+    return { action: 'generate', ok: true, events: makeProviderEvents(upstreamEvents), modelKey: 'test-model-key', http: { status: 200, headers: new Headers() } };
   });
   const candidate = makeCandidate(callOpenAIResponses, new Set(['openai-responses-web-search-shim']));
 
@@ -514,7 +514,7 @@ test('generate lowers a standalone function_call_output to external context acro
               yield doneFrame();
             })(),
             modelKey: 'k',
-            headers: new Headers(),
+            http: { status: 200, headers: new Headers() },
           };
         },
       }),

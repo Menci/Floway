@@ -5,7 +5,7 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type FlagId } from '@floway-dev/provider';
+import { decodeResponseBody, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the provider
@@ -167,7 +167,7 @@ test('generate routes a native Anthropic Messages candidate end to end', async (
       ok: true,
       events: makeProtocolFrames(makeAnthropicMessagesResultEvents()),
       modelKey: 'test-model-key',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
   queueResolution([makeCandidate({ upstream: 'up_a', callAnthropicMessages })]);
@@ -198,7 +198,7 @@ test('generate filters out candidates whose endpoints do not satisfy the message
   });
 
   const failure = assertResultType(result, 'api-error');
-  assertEquals(failure.status, 400);
+  assertEquals(failure.http.status, 400);
   assertEquals(callAnthropicMessages.mock.calls.length, 0);
 });
 
@@ -210,7 +210,7 @@ test('countTokens proxies the upstream measurement response as a plain result', 
     observedModelIds.push((model as { id: string }).id);
     callOptions = opts;
     return {
-      response: new Response(JSON.stringify({ input_tokens: 42 }), {
+      http: new Response(JSON.stringify({ input_tokens: 42 }), {
         status: 200,
         headers: new Headers({ 'content-type': 'application/json' }),
       }),
@@ -228,8 +228,8 @@ test('countTokens proxies the upstream measurement response as a plain result', 
   });
 
   const plain = assertResultType(result, 'plain');
-  assertEquals(plain.status, 200);
-  const body = JSON.parse(new TextDecoder().decode(plain.body));
+  assertEquals(plain.http.status, 200);
+  const body = JSON.parse(decodeResponseBody(plain.body));
   assertEquals(body.input_tokens, 42);
   assertEquals(callOptions?.anthropicBeta, ['context-1m-2025-08-07', 'advanced-tool-use-2025-11-20']);
   assertEquals(callOptions?.headers.has('anthropic-beta'), false);
@@ -256,7 +256,7 @@ test('generate failover preserves billing blocks for a strip-off candidate', asy
     message.content[0].text = 'mutated by first provider';
     return {
       ok: false,
-      response: new Response('unavailable', { status: 503 }),
+      http: new Response('unavailable', { status: 503 }),
       modelKey: 'first-key',
     };
   });

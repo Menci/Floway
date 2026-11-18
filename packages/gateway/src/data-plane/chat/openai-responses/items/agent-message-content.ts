@@ -1,5 +1,5 @@
 import { throwChatServeFailure } from '../../shared/errors.ts';
-import type { OpenAIResponsesInputAgentMessageItem, OpenAIResponsesInputContent, OpenAIResponsesInputImage } from '@floway-dev/protocols/openai-responses';
+import { isCodexAudioReference, type OpenAIResponsesInputAgentMessageItem, type OpenAIResponsesInputContent, type OpenAIResponsesInputImage } from '@floway-dev/protocols/openai-responses';
 
 interface AgentContentFields {
   type: string;
@@ -97,6 +97,10 @@ export const agentMessageContent = (
       break;
     case 'input_file':
       content.push({ ...part, type: 'input_file' });
+      break;
+    case 'input_audio':
+      if (!isCodexAudioReference(part)) return throwChatServeFailure({ kind: 'invalid-input', message: `Expected one audio_url or file_id in '${path}'.`, param: path });
+      content.push({ ...part, type: 'input_audio' });
       break;
     case 'computer_screenshot':
       pushTypedImagePart(content, part.type, {

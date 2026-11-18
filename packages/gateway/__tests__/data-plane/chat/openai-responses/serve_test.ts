@@ -9,7 +9,7 @@ import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayloadEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { decodeResponseBody, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the provider
@@ -156,8 +156,8 @@ test('generate filters out candidates whose endpoints do not satisfy the respons
 
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
-  assertEquals(result.status, 400);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
+  assertEquals(result.http.status, 400);
+  const body = JSON.parse(decodeResponseBody(result.body));
   assertEquals(body.error.type, 'invalid_request_error');
   assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
   assertEquals(callOpenAIResponses.mock.calls.length, 0);
@@ -170,7 +170,7 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   const callOpenAIResponses = vi.fn(async (model: unknown, body: unknown): Promise<ProviderOpenAIResponsesResult> => {
     observedModelIds.push((model as { id: string }).id);
     capturedBodies.push(body as OpenAIResponsesPayloadEx);
-    return { action: 'generate', ok: true, events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: makeOpenAIResponsesResult() }]), modelKey: 'gpt-5.4', headers: new Headers() };
+    return { action: 'generate', ok: true, events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: makeOpenAIResponsesResult() }]), modelKey: 'gpt-5.4', http: { status: 200, headers: new Headers() } };
   });
   const candidate = makeCandidate({ upstream: 'up_a', modelId: 'gpt-5.4', callOpenAIResponses });
   queueResolution([candidate], { reasoning: { effort: 'high', summary: 'detailed' }, verbosity: 'medium', serviceTier: 'priority' });

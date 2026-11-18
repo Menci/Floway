@@ -181,7 +181,7 @@ describe('createChatGPTProvider', () => {
       images: [{ type: 'upload', file: new File(['image'], 'image.png', { type: 'image/png' }) }],
       parameters: { prompt: 'make it blue' },
     }, undefined, options);
-    expect(result.response.status).toBe(200);
+    expect(result.http.status).toBe(200);
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe('https://chatgpt.com/backend-api/codex/images/edits');
     expect(new Headers((init as RequestInit).headers).get('originator')).toBe('chatgpt_cca');

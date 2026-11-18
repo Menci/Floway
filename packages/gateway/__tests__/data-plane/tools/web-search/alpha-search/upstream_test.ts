@@ -37,7 +37,7 @@ const dispatcherFor = async (kind: 'chatgpt' | 'custom', inboundHeaderAllowlist:
     instance: stubProvider({
       callAlphaSearch: async (_model, _body, _signal, opts) => {
         observedHeaders = opts.headers;
-        return { response: new Response('{}'), modelKey: 'search-model' };
+        return { http: new Response('{}'), modelKey: 'search-model' };
       },
     }),
   };

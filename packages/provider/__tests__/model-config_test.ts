@@ -27,6 +27,15 @@ describe('chatField', () => {
     expect(() => chatField({ reasoning: { effort: { supported: ['low', 'high'], default: 'medium' } } }, 'm.chat'))
       .toThrow(/effort\.default/);
   });
+
+  test.each(['audio', 'image'])('preserves %s-only input in manual configuration', modality => {
+    const chat = { modalities: { input: [modality], output: ['text'] } };
+    expect(chatField(chat, 'm.chat')).toEqual(chat);
+  });
+
+  test('rejects an empty input list', () => {
+    expect(() => chatField({ modalities: { input: [], output: ['text'] } }, 'm.chat')).toThrow(/at least one/);
+  });
 });
 
 describe('modelsField rerank targets', () => {

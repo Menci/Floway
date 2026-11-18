@@ -46,7 +46,7 @@ import type {
   OpenAIResponsesToolChoice,
   OpenAIResponsesWebSearchAction,
 } from '@floway-dev/protocols/openai-responses';
-import { eventResult, type EventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
+import { decodeResponseBody, eventResult, type EventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, assertFalse, assertRejects, stubModelCandidate } from '@floway-dev/test-utils';
 import { routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
@@ -954,7 +954,7 @@ test('invalid request registration preserves an upstream error type and null cod
     () => Promise.reject(new Error('run should not be called')),
   );
   assert(result.type === 'api-error');
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as {
+  const body = JSON.parse(decodeResponseBody(result.body)) as {
     error: { message: string; type: string; param: string | null; code: string | null };
   };
   assertEquals(body.error, {
@@ -988,7 +988,7 @@ test('later hosted validation keeps original paths before another tool rewrites 
   });
 
   assert(result.type === 'api-error');
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { param: string } };
+  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { param: string } };
   assertEquals(body.error.param, 'input[0].tools[2].size');
   assertEquals(inv.payload.input, originalInput);
 });
@@ -1029,10 +1029,10 @@ test.each([
 ] as const)('$field entry $raw rejects with 400 before any upstream or backend call', async ({ field, raw, message }) => {
   const { result, backend, script } = await runShimWithDomainEntry(field, raw);
   assert(result.type === 'api-error');
-  assertEquals(result.status, 400);
+  assertEquals(result.http.status, 400);
   assertEquals(script.callCount(), 0);
   assertEquals(backend.calls.length, 0);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { type: string; param: string; message: string } };
+  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { type: string; param: string; message: string } };
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.param, 'tools');
   assert(body.error.message.includes(message));
@@ -1641,8 +1641,7 @@ test.each([
     return {
       type: 'api-error',
       source: 'upstream',
-      status: 429,
-      headers: new Headers({ 'content-type': 'application/json' }),
+      http: { status: 429, headers: new Headers({ 'content-type': 'application/json' }) },
       body: new TextEncoder().encode(JSON.stringify(body)),
     };
   };
@@ -2504,8 +2503,8 @@ for (const [target, mode] of [
     if (target === 'anthropicMessages' && mode === 'auto') {
       const { result } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), run);
       assert(result.type === 'api-error');
-      assertEquals(result.status, 400);
-      assert(new TextDecoder().decode(result.body).includes('allowed_tools auto subset'));
+      assertEquals(result.http.status, 400);
+      assert(decodeResponseBody(result.body).includes('allowed_tools auto subset'));
       assertEquals(script.callCount(), 0);
       assertEquals(backend.calls.length, 0);
       assertEquals(choices, [{ type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: alias }] }]);
@@ -2612,7 +2611,7 @@ test('server-tool loop preserves internal failure diagnostics on the failed reso
   const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     if (runCalls === 1) return { type: 'events', events: framesOf(...searchCallTurn(0, 'call_1', 'q1')), modelIdentity: testTelemetryModelIdentity };
-    return { type: 'internal-error', status: 502, error: failure };
+    return { type: 'internal-error', http: { status: 502, headers: new Headers() }, error: failure };
   };
   const result = await withOpenAIResponsesWebSearchShim(makeInvocation(), makeGatewayCtx(), run);
   assert(result.type === 'events');

@@ -112,7 +112,7 @@ test('generate native target applies role compatibility flags in target-chain or
       ok: true,
       events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()),
       modelKey: 'k',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
   const result = await openaiChatCompletionsAttempt.generate({
@@ -151,7 +151,7 @@ test('generate translates through the Anthropic Messages target when only that e
   let anthropicBeta: readonly string[] | undefined;
   const callAnthropicMessages = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
     anthropicBeta = opts?.anthropicBeta;
-    return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers() };
+    return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() } };
   });
   const result = await openaiChatCompletionsAttempt.generate({
     payload: makePayload(),
@@ -181,7 +181,7 @@ test('generate preserves translated instructions before rewriting inline system 
         },
       }]),
       modelKey: 'k',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
 

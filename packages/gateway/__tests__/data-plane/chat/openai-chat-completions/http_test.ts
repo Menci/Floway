@@ -144,7 +144,7 @@ test('client-carried opaque state restores the exact preferred candidate on the 
         },
       ]),
       modelKey: 'a',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
   const callB = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
@@ -186,7 +186,7 @@ test('client-carried opaque state restores the exact preferred candidate on the 
 test.each([false, true])('POST /v1/chat/completions emits the usage-only chunk only when stream_options.include_usage is set (%s)', async includeUsage => {
   installRepo();
   const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
 
@@ -216,7 +216,7 @@ test('POST /v1/chat/completions stamps TTFT on a streamed record', async () => {
     opts?: UpstreamCallOptions,
   ): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
     return await (opts?.wrapUpstreamCall ?? (d => d()))(async () => ({
-      ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+      ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
     }));
   });
   queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);

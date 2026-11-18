@@ -7,14 +7,13 @@ import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
-import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
+import { forwardBufferedUpstreamResponse, prepareSseResponse } from '../../shared/upstream-response.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
-import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, jsonResponseInit } from '../shared/respond.ts';
 import { eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { openaiChatCompletionsProtocolFrameToSSEFrame, collectOpenAIChatCompletionsProtocolEventsToResult, openaiChatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/openai-chat-completions';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
-import { apiErrorToResponse } from '@floway-dev/provider';
 
 export const respondOpenAIChatCompletions = async (
   c: Context,
@@ -26,20 +25,20 @@ export const respondOpenAIChatCompletions = async (
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstreamId);
-    return apiErrorToResponse(result);
+    return forwardBufferedUpstreamResponse(result);
   }
 
   if (result.type === 'internal-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
-    return internalOpenAIChatCompletionsErrorResponse(result.status, result.error);
+    return internalOpenAIChatCompletionsErrorResponse(result.http, result.error);
   }
 
   if (result.type === 'plain') {
-    if (result.status >= 400) {
+    if (result.http.status >= 400) {
       ctx.dump?.error(result.upstreamId !== undefined ? 'upstream' : 'gateway', result.upstreamId);
     }
-    return plainResultToResponse(result);
+    return forwardBufferedUpstreamResponse(result);
   }
 
   const state = new SourceStreamState();
@@ -53,15 +52,15 @@ export const respondOpenAIChatCompletions = async (
       const usage = tokenUsageFromBillableUsage(metadata.billableUsage);
       ctx.dump?.success(metadata.modelIdentity, usage);
       settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed);
-      return Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) });
+      return Response.json(response, jsonResponseInit(result.http));
     } catch (error) {
       recordFailedRequest(ctx, result.performance);
       ctx.dump?.failed(error);
-      return internalOpenAIChatCompletionsErrorResponse(502, toInternalDebugError(error));
+      return internalOpenAIChatCompletionsErrorResponse({ status: 502 }, toInternalDebugError(error));
     }
   }
 
-  forwardUpstreamHeaders(c, result.headers);
+  prepareSseResponse(c, result.http);
   return streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {
@@ -92,7 +91,7 @@ const internalOpenAIChatCompletionsErrorPayload = (error: InternalDebugError) =>
   },
 });
 
-const internalOpenAIChatCompletionsErrorResponse = (status: number, error: InternalDebugError): Response => Response.json(internalOpenAIChatCompletionsErrorPayload(error), { status });
+const internalOpenAIChatCompletionsErrorResponse = (http: ResponseInit, error: InternalDebugError): Response => Response.json(internalOpenAIChatCompletionsErrorPayload(error), http);
 
 // --- frame observation ---
 

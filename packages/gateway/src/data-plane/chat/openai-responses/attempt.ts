@@ -81,6 +81,7 @@ export const openaiResponsesAttempt = {
       return {
         type: 'result',
         result: upstreamCompacted,
+        ...(chainResult.http === undefined ? {} : { http: chainResult.http }),
         modelIdentity: chainResult.modelIdentity,
         usage: tokenUsageFromBillableUsage((await chainResult.finalMetadata)?.billableUsage),
         performance: chainResult.performance,
@@ -192,9 +193,7 @@ const providerOpenAIResponsesResultToExecuteResult = async (
 ): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
   if (providerResult.action === 'generate') {
     return await providerStreamResultToExecuteResult(
-      providerResult.ok
-        ? { ok: true, events: providerResult.events, modelKey: providerResult.modelKey, ...(providerResult.headers ? { headers: providerResult.headers } : {}) }
-        : { ok: false, response: providerResult.response, modelKey: providerResult.modelKey },
+      providerResult,
       candidate,
       targetApi,
       ctx,
@@ -203,7 +202,7 @@ const providerOpenAIResponsesResultToExecuteResult = async (
   }
   const context = upstreamPerformanceContext(ctx, candidate, 'chat');
   if (!providerResult.ok) {
-    return { ...(await readUpstreamApiError(providerResult.response, candidate.provider.upstreamId)), performance: context };
+    return { ...(await readUpstreamApiError(providerResult.http, candidate.provider.upstreamId)), performance: context };
   }
   // A native compaction is a turn the upstream ran and charged for, and its
   // body states the counts.
@@ -214,6 +213,7 @@ const providerOpenAIResponsesResultToExecuteResult = async (
     modelIdentity,
     {
       performance: context,
+      http: providerResult.http,
       ...(billableUsage === null ? {} : { finalMetadata: Promise.resolve({ modelIdentity, billableUsage }) }),
     },
   );

@@ -129,8 +129,8 @@ describe('callClaudeCodeAnthropicMessages — pre-fetch gates', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.response.status).toBe(503);
-      expect(await result.response.text()).toMatch(/session_terminated/);
+      expect(result.http.status).toBe(503);
+      expect(await result.http.text()).toMatch(/session_terminated/);
     }
   });
 
@@ -159,8 +159,8 @@ describe('callClaudeCodeAnthropicMessages — pre-fetch gates', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.response.status).toBe(429);
-      expect(result.response.headers.get('retry-after')).toBeTruthy();
+      expect(result.http.status).toBe(429);
+      expect(result.http.headers.get('retry-after')).toBeTruthy();
     }
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -193,16 +193,16 @@ describe('callClaudeCodeAnthropicMessages — pre-fetch gates', () => {
     const first = await callClaudeCodeAnthropicMessages({ upstreamId, model: fableModel, body: minimalBody, shaped: false, call });
     expect(first.ok).toBe(false);
     if (!first.ok) {
-      expect(first.response.status).toBe(429);
-      expect(first.response.headers.get('retry-after')).toBe(quotaHeaders['retry-after']);
-      expect(await first.response.json()).toEqual(upstreamBody);
+      expect(first.http.status).toBe(429);
+      expect(first.http.headers.get('retry-after')).toBe(quotaHeaders['retry-after']);
+      expect(await first.http.json()).toEqual(upstreamBody);
     }
     await Promise.all(pending);
     expect(readQuotaEntry()).toMatchObject({ modelId: 'claude-fable-5-1', data: { status: 'rejected', representativeClaim: 'seven_day_overage_included' } });
 
     const again = await callClaudeCodeAnthropicMessages({ upstreamId, model: fableModel, body: minimalBody, shaped: false, call });
     expect(again.ok).toBe(false);
-    if (!again.ok) expect(again.response.status).toBe(429);
+    if (!again.ok) expect(again.http.status).toBe(429);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
 
     for (const modelId of ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5']) {
@@ -290,7 +290,7 @@ describe('callClaudeCodeAnthropicMessages — 401 retry', () => {
       upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.response.status).toBe(401);
+    if (!result.ok) expect(result.http.status).toBe(401);
   });
 });
 
@@ -329,10 +329,10 @@ describe('callClaudeCodeAnthropicMessages — terminal sentinel detection', () =
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.response.status).toBe(400);
+      expect(result.http.status).toBe(400);
       // Verbatim body still reaches the caller — the response body must be
       // readable after the provider call returned (we cloned for detection).
-      expect(await result.response.json()).toEqual(upstreamBody);
+      expect(await result.http.json()).toEqual(upstreamBody);
     }
     await flushAsyncQueue();
     const account = currentState().accounts[0]!;

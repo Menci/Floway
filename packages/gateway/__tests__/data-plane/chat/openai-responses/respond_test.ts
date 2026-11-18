@@ -41,7 +41,7 @@ test.each([false, true])('Responses success declares historical reasoning accoun
   const upstreamHeaders = new Headers({ 'x-reasoning-included': 'upstream-value', 'x-native': 'trace' });
   const app = new Hono().get('/', c => respondOpenAIResponses(
     c,
-    eventResult(successfulFrames(), testTelemetryModelIdentity, { headers: upstreamHeaders }),
+    eventResult(successfulFrames(), testTelemetryModelIdentity, { http: { status: 200, headers: upstreamHeaders } }),
     wantsStream,
     mockChatGatewayCtx(),
     { model: 'm', input: [] },
@@ -219,7 +219,7 @@ test('Responses non-streaming failure drains the failed resource, preserves erro
 
 test('Responses native upstream HTTP error is forwarded without diagnostic restructuring', async () => {
   const raw = '{"error":{"message":"native","stack":"provider-owned","custom":true}}';
-  const response = respondOpenAIResponsesFailure({ type: 'api-error', source: 'upstream', status: 429, headers: new Headers({ 'content-type': 'application/json', 'x-native': 'trace' }), body: new TextEncoder().encode(raw) }, mockChatGatewayCtx());
+  const response = respondOpenAIResponsesFailure({ type: 'api-error', source: 'upstream', http: { status: 429, headers: new Headers({ 'content-type': 'application/json', 'x-native': 'trace' }) }, body: new TextEncoder().encode(raw) }, mockChatGatewayCtx());
   expect(response.status).toBe(429);
   expect(response.headers.get('x-native')).toBe('trace');
   expect(response.headers.get(OPENAI_RESPONSES_REASONING_INCLUDED_HEADER)).toBeNull();

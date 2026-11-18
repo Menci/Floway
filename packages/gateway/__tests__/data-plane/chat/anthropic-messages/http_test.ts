@@ -126,7 +126,7 @@ const makeCandidate = (overrides: {
 test('POST /v1/messages returns a single JSON body when stream is omitted', async () => {
   installRepo();
   const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   queueCandidates([makeCandidate({ callAnthropicMessages })]);
 

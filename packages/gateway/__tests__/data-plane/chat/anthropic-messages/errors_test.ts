@@ -1,10 +1,11 @@
 import { test } from 'vitest';
 
 import { inputErrorResult } from '../../../../src/data-plane/chat/anthropic-messages/errors.ts';
+import { decodeResponseBody } from '@floway-dev/provider';
 import { assert, assertEquals } from '@floway-dev/test-utils';
 
 const bodyOf = (result: ReturnType<typeof inputErrorResult>): Record<string, unknown> =>
-  JSON.parse(new TextDecoder().decode(result.body));
+  JSON.parse(decodeResponseBody(result.body));
 
 test('inputErrorResult renders an Anthropic 400 invalid_request_error envelope with top-level request_id', () => {
   const result = inputErrorResult(
@@ -13,8 +14,8 @@ test('inputErrorResult renders an Anthropic 400 invalid_request_error envelope w
 
   assertEquals(result.type, 'api-error');
   assertEquals(result.source, 'gateway');
-  assertEquals(result.status, 400);
-  assertEquals(result.headers.get('content-type'), 'application/json');
+  assertEquals(result.http.status, 400);
+  assertEquals(result.http.headers.get('content-type'), 'application/json');
 
   const body = bodyOf(result);
   assertEquals(body.type, 'error');

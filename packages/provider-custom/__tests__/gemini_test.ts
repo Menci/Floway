@@ -99,7 +99,7 @@ test('countTokens posts the generate payload inside the generateContentRequest e
     },
     async () => {
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      const { response } = await provider.instance.callGeminiGenerateContentCountTokens(
+      const { http: response } = await provider.instance.callGeminiGenerateContentCountTokens(
         model,
         { contents: [{ role: 'user', parts: [{ text: 'hello' }] }], systemInstruction: { parts: [{ text: 'be brief' }] } },
         undefined,

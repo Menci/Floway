@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { executeTranslation } from '../../../../src/data-plane/chat/shared/execute-translation.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { type ExecuteResult } from '@floway-dev/provider';
+import { decodeResponseBody, type ExecuteResult } from '@floway-dev/provider';
 import { testTelemetryModelIdentity } from '@floway-dev/test-utils';
 import type { TranslateTrip } from '@floway-dev/translate';
 
@@ -93,14 +93,13 @@ describe('executeTranslation upstream capture', () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
       type: 'api-error',
       source: 'upstream',
-      status: 413,
-      headers: new Headers({ 'x-upstream': 'yes' }),
+      http: { status: 413, headers: new Headers({ 'x-upstream': 'yes' }) },
       body: new TextEncoder().encode('raw upstream body'),
     };
-    const captured: { status: number; headers: Headers; body: Uint8Array }[] = [];
+    const captured: { status: number; headers: Headers; body: Uint8Array | null }[] = [];
     const capture = {
       upstreamFrame: () => { throw new Error('should not be called on api-error path'); },
-      upstreamApiError: (error: { status: number; headers: Headers; body: Uint8Array }) => captured.push(error),
+      upstreamApiError: (error: { status: number; headers: Headers; body: Uint8Array | null }) => captured.push(error),
     };
     const translateWithRewrite = async (payload: SrcPayload): Promise<TranslateTrip<string, SrcEvent, TgtEvent>> => ({
       ...(await translate(payload)),
@@ -111,10 +110,10 @@ describe('executeTranslation upstream capture', () => {
     expect(result.type).toBe('api-error');
     if (result.type !== 'api-error') throw new Error('unreachable');
     // Capture saw the ORIGINAL envelope, not the rewrite.
-    expect(captured.map(({ status, headers, body }) => [status, headers.get('x-upstream'), new TextDecoder().decode(body)])).toEqual([[413, 'yes', 'raw upstream body']]);
+    expect(captured.map(({ status, headers, body }) => [status, headers.get('x-upstream'), decodeResponseBody(body)])).toEqual([[413, 'yes', 'raw upstream body']]);
     // Downstream got the rewrite, with the rewriter's headers in place of the upstream's.
-    expect(JSON.parse(new TextDecoder().decode(result.body))).toEqual({ error: { message: 'rewritten' } });
-    expect(result.headers.get('x-upstream')).toBeNull();
+    expect(JSON.parse(decodeResponseBody(result.body))).toEqual({ error: { message: 'rewritten' } });
+    expect(result.http.headers.get('x-upstream')).toBeNull();
     expect(result.source).toBe('upstream');
   });
 });

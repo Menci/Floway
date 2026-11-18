@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { chatgptImportExchangeBody, createUpstreamBody } from '../../src/control-plane/schemas.ts';
+import { chatgptImportExchangeBody, createAliasBody, createUpstreamBody } from '../../src/control-plane/schemas.ts';
 
 const baseAzure = {
   kind: 'azure' as const,
@@ -47,6 +47,17 @@ describe('upstreamModelSchema chat', () => {
       modalities: { input: ['text'], output: ['image'] },
     };
     expect(createUpstreamBody.safeParse(body).success).toBe(true);
+  });
+
+  test.each([[['audio'], true], [[], false]] as const)('validates %j inputs identically for manual models and alias announcements', (input, expected) => {
+    const chat = { modalities: { input, output: ['text'] } };
+    const body = structuredClone(baseAzure);
+    Object.assign(body.config.models[0], { chat });
+    expect(createUpstreamBody.safeParse(body).success).toBe(expected);
+    expect(createAliasBody.safeParse({
+      name: 'a', kind: 'chat', selection: 'first-available', display_name: null, visible_in_models_list: true,
+      targets: [{ target_model_id: 'm', rules: {} }], announced_metadata: { chat },
+    }).success).toBe(expected);
   });
 });
 

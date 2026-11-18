@@ -22,12 +22,12 @@ import { passthroughAttempt } from './passthrough-attempt.ts';
 import { type StreamCompletion, writeSSEFrames } from './sse.ts';
 import { recordFailedRequest } from './telemetry/performance.ts';
 import { settle } from './telemetry/settle.ts';
-import { forwardUpstreamHeaders, forwardUpstreamResponse } from './upstream-response.ts';
+import { forwardUpstreamHeaders, forwardUpstreamResponse, prepareSseResponse, providerModelsUnavailableResponse } from './upstream-response.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import { enumerateModelCandidates } from '../providers/resolution.ts';
 import { doneFrame, eventFrame, type ModelKind, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
-import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
+import { toInternalDebugError } from '@floway-dev/provider';
 import type { PerformanceOperation, PerformanceTelemetryContext, InternalModel, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
 
 // `json` (OpenAI Embeddings, OpenAI Images): single-shot body,
@@ -153,7 +153,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         call,
       }),
     );
-    const { response, performance: performanceContext, identity } = result;
+    const { http: response, performance: performanceContext, identity } = result;
 
     if (responseHandling.format === 'strategy') {
       return await responseHandling.respond({ c, ctx, sourceApi, response, performance: performanceContext, identity });
@@ -197,7 +197,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       forwardUpstreamHeaders(c, response.headers);
       return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
     }
-    forwardUpstreamHeaders(c, response.headers);
+    prepareSseResponse(c, response);
     return streamSSE(c, async stream => {
       let completion: StreamCompletion = 'error';
       let streamError: unknown;
@@ -243,12 +243,10 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       }
     });
   } catch (e) {
-    if (e instanceof ProviderModelsUnavailableError) {
-      const forwarded = httpResponseToResponse(e.httpResponse);
-      if (forwarded) {
-        ctx.dump?.error('upstream');
-        return forwarded;
-      }
+    const forwarded = providerModelsUnavailableResponse(e);
+    if (forwarded) {
+      ctx.dump?.error('upstream');
+      return forwarded;
     }
     // Attributes to whichever candidate iterateCandidates was on (or short-circuits if none started).
     recordFailedRequest(ctx, ctx.attempt.telemetry);

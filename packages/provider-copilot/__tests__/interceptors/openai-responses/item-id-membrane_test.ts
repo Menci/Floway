@@ -348,7 +348,7 @@ test('normalizes a generated compaction without touching retained compact messag
     action: 'compact',
     ok: true,
     result: compactResult,
-    modelKey: 'test-model',
+    modelKey: 'test-model', http: { status: 200, headers: new Headers() },
   }));
   if (result.action !== 'compact' || !result.ok) throw new Error('expected compact/ok result');
 

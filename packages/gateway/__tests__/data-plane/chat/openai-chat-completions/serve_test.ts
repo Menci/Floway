@@ -132,7 +132,7 @@ test('generate filters out candidates that do not expose any chat-completions-ta
   // model-missing 404) without ever reaching the upstream call.
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
-  assertEquals(result.status, 400);
+  assertEquals(result.http.status, 400);
   assertEquals(callOpenAIChatCompletions.mock.calls.length, 0);
 });
 
@@ -152,14 +152,14 @@ test('generate falls through to the next candidate when the first yields an upst
     const message = (body as Omit<OpenAIChatCompletionsPayload, 'model'>).messages[0];
     if (!Array.isArray(message.content) || message.content[0]?.type !== 'image_url') throw new Error('expected image content');
     message.content[0].image_url.url = 'data:image/webp;base64,COMPRESSED';
-    return { ok: false, response: firstError, modelKey: 'first-key' };
+    return { ok: false, http: firstError, modelKey: 'first-key' };
   });
   let fallbackImageUrl: string | undefined;
   const secondCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
     const message = (body as Omit<OpenAIChatCompletionsPayload, 'model'>).messages[0];
     if (!Array.isArray(message.content) || message.content[0]?.type !== 'image_url') throw new Error('expected image content');
     fallbackImageUrl = message.content[0].image_url.url;
-    return { ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'second-key', headers: new Headers() };
+    return { ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'second-key', http: { status: 200, headers: new Headers() } };
   });
   queueResolution([
     makeCandidate({ upstream: 'up_a', callOpenAIChatCompletions: firstCall }),
@@ -191,7 +191,7 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   const callOpenAIChatCompletions = vi.fn(async (model: unknown, body: unknown): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
     observedModelIds.push((model as { id: string }).id);
     capturedBodies.push(body as OpenAIChatCompletionsPayload);
-    return { ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'gpt-5.4', headers: new Headers() };
+    return { ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'gpt-5.4', http: { status: 200, headers: new Headers() } };
   });
   // Alias flow shape: the resolver returns candidates carrying the target's
   // upstream catalog id AND the alias's rule overlay on `candidate.rules`.

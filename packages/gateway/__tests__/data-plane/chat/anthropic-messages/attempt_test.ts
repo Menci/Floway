@@ -101,11 +101,11 @@ test('generate and countTokens drop the Claude Code beta flag on candidates that
   const upstreamAnthropicBeta: Array<readonly string[] | undefined> = [];
   const callAnthropicMessages = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
     upstreamAnthropicBeta.push(opts?.anthropicBeta);
-    return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers() };
+    return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() } };
   });
   const callAnthropicMessagesCountTokens = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderCallResult> => {
     upstreamAnthropicBeta.push(opts?.anthropicBeta);
-    return { response: Response.json({ input_tokens: 1 }), modelKey: 'k' };
+    return { http: Response.json({ input_tokens: 1 }), modelKey: 'k' };
   });
   const candidate = makeCandidate({ callAnthropicMessages, callAnthropicMessagesCountTokens, enabledFlags: new Set(['strip-billing-attribution']) });
   const anthropicBeta = ['claude-code-20250219', 'interleaved-thinking-2025-05-14'];
@@ -140,7 +140,7 @@ test('generate lets the target system-to-developer rewrite take precedence over 
         },
       }]),
       modelKey: 'k',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
 
@@ -180,7 +180,7 @@ test('countTokens applies generation request transforms before provider dispatch
   const observedBodies: Array<Omit<AnthropicMessagesPayload, 'model'>> = [];
   const callAnthropicMessagesCountTokens = vi.fn(async (_model, body): Promise<ProviderCallResult> => {
     observedBodies.push(body as Omit<AnthropicMessagesPayload, 'model'>);
-    return { response: Response.json({ input_tokens: 9 }), modelKey: 'k' };
+    return { http: Response.json({ input_tokens: 9 }), modelKey: 'k' };
   });
 
   const result = await anthropicMessagesAttempt.countTokens({

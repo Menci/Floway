@@ -147,10 +147,10 @@ test.each(['compact'] as const)('createAzureProvider preserves %s upstream error
       assertEquals(result.ok, false);
       if (result.ok) throw new Error('expected upstream error');
       assertEquals(result.modelKey, 'gpt-prod');
-      assertEquals(result.response, upstreamResponse);
-      assertEquals(result.response.status, 418);
-      assertEquals(result.response.headers.get('x-upstream-error'), action);
-      assertEquals(await result.response.text(), '{"error":"upstream rejected the request"}');
+      assertEquals(result.http, upstreamResponse);
+      assertEquals(result.http.status, 418);
+      assertEquals(result.http.headers.get('x-upstream-error'), action);
+      assertEquals(await result.http.text(), '{"error":"upstream rejected the request"}');
     },
   );
 });
@@ -260,7 +260,7 @@ test('createAzureProvider callOpenAIImagesEdits posts multipart with model repla
         }],
       }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
-      assertEquals(result.response.status, 200);
+      assertEquals(result.http.status, 200);
     },
   );
   assertEquals(observedUrl, 'https://example.openai.azure.com/openai/v1/images/edits?api-version=preview');

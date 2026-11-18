@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { CHATGPT_CLI_VERSION, CHATGPT_ORIGINATOR, CHATGPT_USER_AGENT } from '../src/constants.ts';
-import { chatgptModelContextWindow, chatgptPlanSupportsImages, chatgptRawToProviderModel, fetchChatGPTCatalog } from '../src/models.ts';
+import { chatgptCodexModelMetadata, chatgptPlanSupportsImages, chatgptRawToProviderModel, fetchChatGPTCatalog } from '../src/models.ts';
 import { directFetcher, type FlagId } from '@floway-dev/provider';
 
 const okJson = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -9,6 +9,19 @@ const okJson = (body: unknown): Response => new Response(JSON.stringify(body), {
 afterEach(() => vi.restoreAllMocks());
 
 describe('fetchChatGPTCatalog', () => {
+  test.each([{ supports_search_tool: 'true' }, { experimental_supported_tools: 'clock' }, { experimental_supported_tools: [''] }, { service_tiers: 'ultrafast' }, { service_tiers: [{ id: 'ultrafast' }] }, { additional_speed_tiers: [false] }])('rejects malformed capabilities %j at refresh and after persistence', async codex => {
+    const model = { slug: 'm', display_name: 'M', context_window: 100 };
+    await expect(fetchChatGPTCatalog({ accessToken: 'at', accountId: null, fetcher: async () => okJson({ models: [{ ...model, ...codex }] }) })).rejects.toThrow(/malformed/);
+    const cached = chatgptRawToProviderModel({ ...model, id: model.slug }, new Set());
+    expect(() => chatgptCodexModelMetadata({ ...cached, providerData: { contextWindow: 100, codex } })).toThrow(/malformed/);
+  });
+
+  test('keeps explicit false capabilities and an empty tool list', async () => {
+    const codex = { supports_search_tool: false, experimental_supported_tools: [], default_verbosity: null };
+    const [raw] = await fetchChatGPTCatalog({ accessToken: 'at', accountId: null, fetcher: async () => okJson({ models: [{ slug: 'm', display_name: 'M', context_window: 100, ...codex }] }) });
+    expect(chatgptCodexModelMetadata(chatgptRawToProviderModel(raw!, new Set()))).toEqual({ context_window: 100, ...codex });
+  });
+
   test('calls /codex/models with auth + identity headers, returns parsed catalog from {models: [...]}', async () => {
     const spy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
       models: [
@@ -51,7 +64,33 @@ describe('fetchChatGPTCatalog', () => {
     const [raw] = await fetchChatGPTCatalog({ accessToken: 'at', accountId: null, fetcher: directFetcher });
     const model = chatgptRawToProviderModel(raw, new Set());
     expect(model.limits).toEqual({});
-    expect(chatgptModelContextWindow(model)).toEqual({ context_window: 272000 });
+    expect(chatgptCodexModelMetadata(model)).toEqual({ context_window: 272000 });
+  });
+
+  test('keeps new upstream modalities without rejecting other catalog entries or advertising unsupported input', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
+      models: [
+        { slug: 'gpt-x', display_name: 'GPT-X', context_window: 1, input_modalities: ['text', 'video', 'image', 'video', 'audio'] },
+        { slug: 'gpt-old', display_name: 'GPT-Old', context_window: 1, input_modalities: ['text'] },
+        { slug: 'gpt-audio', display_name: 'GPT-Audio', context_window: 1, input_modalities: ['audio'] },
+        { slug: 'future', display_name: 'Future', context_window: 1, input_modalities: ['video'] },
+      ],
+    }));
+    const catalog = await fetchChatGPTCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher });
+    expect(catalog).toHaveLength(4);
+    expect(catalog[0].input_modalities).toEqual(['text', 'video', 'image', 'audio']);
+    const models = catalog.map(raw => chatgptRawToProviderModel(raw, new Set()));
+    expect(models[0].chat?.modalities).toEqual({ input: ['text', 'image', 'audio'], output: ['text'] });
+    expect(models[1].chat?.modalities).toEqual({ input: ['text'], output: ['text'] });
+    expect(models[2].chat?.modalities).toEqual({ input: ['audio'], output: ['text'] });
+    expect(models[3].chat?.modalities).toEqual({ input: [], output: ['text'] });
+  });
+
+  test.each([null, 'text', [null], [1], [true], [{}], ['']])('rejects malformed input_modalities %j', async input_modalities => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
+      models: [{ slug: 'gpt-x', display_name: 'GPT-X', context_window: 1, input_modalities }],
+    }));
+    await expect(fetchChatGPTCatalog({ accessToken: 'at', accountId: 'acc', fetcher: directFetcher })).rejects.toThrow(/input_modalities/);
   });
 
 });
@@ -64,7 +103,7 @@ describe('chatgptRawToProviderModel', () => {
     expect(m.endpoints).toEqual({ openaiResponses: {} });
     expect(m.kind).toBe('chat');
     expect(m.limits.max_context_window_tokens).toBe(872000);
-    expect(chatgptModelContextWindow(m)).toEqual({ context_window: 272000, max_context_window: 872000 });
+    expect(chatgptCodexModelMetadata(m)).toEqual({ context_window: 272000, max_context_window: 872000 });
   });
 
   test('rejects a default exceeding the declared maximum', () => {

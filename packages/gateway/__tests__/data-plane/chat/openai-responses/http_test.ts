@@ -160,7 +160,7 @@ const queueCompletedResponse = (id = 'resp_test') => {
     action: 'generate', ok: true,
     events: makeProviderEvents(completedEvents(id)),
     modelKey: 'test-model-key',
-    headers: new Headers(),
+    http: { status: 200, headers: new Headers() },
   }));
   queueResolution([makeCandidate({ callOpenAIResponses })]);
   return callOpenAIResponses;
@@ -280,6 +280,7 @@ test('POST /v1/responses returns 502 when the response snapshot cannot be persis
 const compactTurn = async (
   upstream: Partial<OpenAIResponsesResultEx> = {},
   requestFields: Record<string, unknown> = {},
+  http = { status: 200, headers: new Headers() },
 ): Promise<{ upstream: OpenAIResponsesResultEx; response: Response }> => {
   const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
   const compactionResult: OpenAIResponsesResultEx = {
@@ -291,7 +292,7 @@ const compactTurn = async (
   };
   const callOpenAIResponses = vi.fn(async (_model: unknown, _body: unknown, action: OpenAIResponsesAction): Promise<ProviderOpenAIResponsesResult> => {
     if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
-    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
+    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key', http };
   });
   queueResolution([makeCandidate({ callOpenAIResponses })]);
 
