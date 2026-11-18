@@ -128,7 +128,7 @@ test.each([
   { change: 'search results', original: boundSearchItem, changed: { ...boundSearchItem, results: [] } },
   { change: 'search status', original: boundSearchItem, changed: { ...boundSearchItem, status: 'failed' as const } },
   { change: 'image bytes', original: boundImageItem, changed: { ...boundImageItem, result: 'b3RoZXI=' } },
-  { change: 'image error', original: boundImageItem, changed: { ...boundImageItem, status: 'failed' as const, result: null, error: { message: 'different', code: 'server_error' } } },
+  { change: 'image error', original: boundImageItem, changed: { ...boundImageItem, status: 'failed' as const, result: null, error: { message: 'different', code: 'server_error', type: 'server_error', param: null } } },
 ])('shim retains replay when only call outputs change: $change', async ({ original, changed }) => {
   const ctx = makeGatewayCtx();
   const [carrier] = await searchHistory(ctx, 'signed_original', original);
@@ -590,24 +590,26 @@ const mkCustomToolCallDone = (outputIndex: number, callId: string, name: string,
     },
   });
 
-const mkMessageAdded = (outputIndex: number): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+const mkMessageAdded = (outputIndex: number, itemId = `msg_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.added',
     output_index: outputIndex,
     item: {
       type: 'message',
+      id: itemId,
       status: 'in_progress',
       role: 'assistant',
       content: [{ type: 'output_text', text: '', annotations: [] }],
     },
   });
 
-const mkMessageDone = (outputIndex: number, text: string): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+const mkMessageDone = (outputIndex: number, text: string, itemId = `msg_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.done',
     output_index: outputIndex,
     item: {
       type: 'message',
+      id: itemId,
       status: 'completed',
       role: 'assistant',
       content: [{ type: 'output_text', text, annotations: [] }],
@@ -3435,7 +3437,7 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
       object: 'response',
       model: 'test-model',
       output: [
-        { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'real result', annotations: [] }] },
+        { type: 'message', id: 'msg_stale', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'real result', annotations: [] }] },
       ],
       status: 'completed',
       error: null,
@@ -6001,7 +6003,7 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
     framesOf(
       mkResponseCreated(),
       mkResponseInProgress(),
-      mkMessageAdded(0),
+      mkMessageAdded(0, 'msg_upstream'),
       eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.content_part.added',
         item_id: 'msg_upstream',
@@ -6044,7 +6046,7 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
         content_index: 0,
         part: { type: 'output_text', text: 'hello world', annotations: [] },
       }),
-      mkMessageDone(0, 'hello world'),
+      mkMessageDone(0, 'hello world', 'msg_upstream'),
       mkResponseCompleted(),
     ),
     state,
@@ -6068,7 +6070,7 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
     frame.type === 'event' && frame.event.type === 'response.output_item.added');
   assert(addedFrame?.type === 'event');
   const messageId = (addedFrame.event as { item: { id?: string } }).item.id;
-  assert(messageId !== undefined && /^msg_[0-9a-f]{32}$/.test(messageId));
+  assertEquals(messageId, 'msg_upstream');
 
   for (const f of result.downstreamFrames) {
     if (f.type !== 'event') continue;
@@ -6084,14 +6086,14 @@ test('consumeTurn rewrites any structurally indexed child event without an event
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      mkMessageAdded(0),
+      mkMessageAdded(0, 'msg_upstream'),
       eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.future_child.delta',
         item_id: 'msg_upstream',
         output_index: 0,
         delta: 'future',
       } as unknown as OpenAIResponsesStreamEventEx),
-      mkMessageDone(0, 'future'),
+      mkMessageDone(0, 'future', 'msg_upstream'),
       mkResponseCompleted(),
     ),
     state,
@@ -6106,7 +6108,7 @@ test('consumeTurn rewrites any structurally indexed child event without an event
     f.type === 'event' && f.event.type === 'response.output_item.added');
   assert(addedFrame?.type === 'event');
   const messageId = (addedFrame.event as { item: { id?: string } }).item.id;
-  assert(messageId !== undefined && /^msg_[0-9a-f]{32}$/.test(messageId));
+  assertEquals(messageId, 'msg_upstream');
   assertEquals((futureFrame.event as { item_id: string }).item_id, messageId);
 });
 
@@ -6623,9 +6625,9 @@ test('createMergeState starts with empty sparse usage accumulator and a synthesi
 
 test('materializeAccumulatedOutput returns items in output_index order regardless of insertion order', () => {
   const s = createMergeState();
-  const itemA: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'A', annotations: [] }] };
-  const itemB: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
-  const itemC: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'C', annotations: [] }] };
+  const itemA: OpenAIResponsesOutputItemEx = { type: 'message', id: 'msg_a', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'A', annotations: [] }] };
+  const itemB: OpenAIResponsesOutputItemEx = { type: 'message', id: 'msg_b', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
+  const itemC: OpenAIResponsesOutputItemEx = { type: 'message', id: 'msg_c', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'C', annotations: [] }] };
   s.accumulatedOutput.set(2, itemC);
   s.accumulatedOutput.set(0, itemA);
   s.accumulatedOutput.set(1, itemB);
@@ -6638,7 +6640,7 @@ test('materializeAccumulatedOutput returns items in output_index order regardles
 
 test('materializeAccumulatedOutput drops holes in the index sequence (defensive)', () => {
   const s = createMergeState();
-  const itemB: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
+  const itemB: OpenAIResponsesOutputItemEx = { type: 'message', id: 'msg_b', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
   s.accumulatedOutput.set(1, itemB);
   const out = materializeAccumulatedOutput(s);
   assertEquals(out.length, 1);

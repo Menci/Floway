@@ -37,6 +37,21 @@ export const openaiChatCompletionsHttp = {
     try {
       const payload = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as OpenAIChatCompletionsPayload;
       const wantsStream = payload.stream === true;
+      const nullableField = payload.prompt_cache_options === null
+        ? 'prompt_cache_options'
+        : payload.user === null
+          ? 'user'
+          : undefined;
+      if (nullableField !== undefined) {
+        return c.json({
+          error: {
+            message: `Invalid '${nullableField}': expected ${nullableField === 'user' ? 'a string' : 'an object'} when present.`,
+            type: 'invalid_request_error',
+            param: nullableField,
+            code: null,
+          },
+        }, 400);
+      }
       // Read the caller's intent BEFORE any interceptor mutates
       // `payload.stream_options.include_usage`. Capturing it here means the
       // downstream renderer never needs to consult per-request Hono context

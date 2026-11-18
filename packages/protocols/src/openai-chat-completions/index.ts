@@ -21,7 +21,7 @@ export interface OpenAIChatCompletionsPayload extends Omit<Official.ChatCompleti
   prediction?: { type: 'content'; content: string | OpenAIChatCompletionsTextPart[] } | null;
   presence_penalty?: number | null;
   prompt_cache_key?: string | null;
-  prompt_cache_options?: { mode?: string; ttl?: string } | null;
+  prompt_cache_options?: { mode?: string; ttl?: string };
   prompt_cache_retention?: 'in_memory' | '24h' | (string & {}) | null;
   reasoning_effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | (string & {}) | null;
   response_format?: OpenAIChatCompletionsResponseFormat;
@@ -37,7 +37,7 @@ export interface OpenAIChatCompletionsPayload extends Omit<Official.ChatCompleti
   tools?: OpenAIChatCompletionsTool[];
   top_logprobs?: number | null;
   top_p?: number | null;
-  user?: string | null;
+  user?: string;
   verbosity?: 'low' | 'medium' | 'high' | (string & {}) | null;
   web_search_options?: { search_context_size?: 'low' | 'medium' | 'high' | (string & {}); user_location?: { type: 'approximate'; approximate: { city?: string; country?: string; region?: string; timezone?: string } } | null };
 }

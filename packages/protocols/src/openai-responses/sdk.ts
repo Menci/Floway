@@ -945,10 +945,26 @@ export namespace ResponseInputItem {
     type: 'image_generation_call';
     action?: 'generate' | 'edit' | 'auto' | null;
     background?: 'transparent' | 'opaque' | 'auto' | null;
+    error?: ImageGenerationCall.Error;
     output_format?: 'png' | 'webp' | 'jpeg' | null;
     quality?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto' | null;
     revised_prompt?: string | null;
     size?: (string & {}) | '1024x1024' | '1024x1536' | '1536x1024' | null;
+  }
+  export namespace ImageGenerationCall {
+    export interface Error {
+      code: string | null;
+      message: string;
+      param: string | null;
+      type: string;
+      moderation_details?: Error.ModerationDetails;
+    }
+    export namespace Error {
+      export interface ModerationDetails {
+        categories: Array<string>;
+        moderation_stage: 'input' | 'output' | 'unknown';
+      }
+    }
   }
   export interface LocalShellCall {
     id: string;
@@ -1187,10 +1203,26 @@ export namespace ResponseOutputItem {
     type: 'image_generation_call';
     action?: 'generate' | 'edit' | 'auto' | null;
     background?: 'transparent' | 'opaque' | 'auto' | null;
+    error?: ImageGenerationCall.Error;
     output_format?: 'png' | 'webp' | 'jpeg' | null;
     quality?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto' | null;
     revised_prompt?: string | null;
     size?: (string & {}) | '1024x1024' | '1024x1536' | '1536x1024' | null;
+  }
+  export namespace ImageGenerationCall {
+    export interface Error {
+      code: string | null;
+      message: string;
+      param: string | null;
+      type: string;
+      moderation_details?: Error.ModerationDetails;
+    }
+    export namespace Error {
+      export interface ModerationDetails {
+        categories: Array<string>;
+        moderation_stage: 'input' | 'output' | 'unknown';
+      }
+    }
   }
   export interface LocalShellCall {
     id: string;

@@ -68,6 +68,20 @@ test('rejects a payload without a usable model at the canonical boundary', () =>
   }
 });
 
+test('rejects a separate namespace on callable tool selectors', () => {
+  for (const tool_choice of [
+    { type: 'function', namespace: 'files', name: 'read' },
+    { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', namespace: 'files', name: 'edit' }] },
+  ]) {
+    expect(canonicalizeOpenAIResponsesPayload({ model: 'm', input: 'hi', tool_choice })).toEqual({
+      error: {
+        message: 'OpenAI Responses callable tool selectors must use a qualified name, not a separate namespace field.',
+        param: 'tool_choice',
+      },
+    });
+  }
+});
+
 test('recognizes both native Codex audio references in shorthand messages', () => {
   for (const reference of [{ audio_url: 'data:audio/wav;base64,YQ==' }, { file_id: 'file-1' }]) {
     const content = [{ type: 'input_audio', ...reference }];

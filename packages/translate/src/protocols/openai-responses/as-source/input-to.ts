@@ -216,8 +216,7 @@ const toolToIR = (tool: Extract<OpenAIResponsesTool, { type: 'function' | 'custo
   };
 };
 
-const selectionToIR = (selection: IRInputToolSelector, declarations: readonly IRInputTool[]): IRInputToolSelector => {
-  if (selection.namespace !== undefined) return selection;
+const selectionToIR = (selection: { readonly type: 'function' | 'custom'; readonly name: string }, declarations: readonly IRInputTool[]): IRInputToolSelector => {
   if (declarations.some(tool => tool.type === selection.type && tool.namespace === undefined && tool.name === selection.name)) return selection;
   const qualified = declarations.filter(tool => tool.type === selection.type && tool.namespace !== undefined
     && (selection.name === `${tool.namespace}.${tool.name}` || selection.name === `${tool.namespace}__${tool.name}`));

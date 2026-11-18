@@ -50,13 +50,13 @@ test.each([
   expect(messages.target.max_tokens).toBe(messagesCeiling);
 });
 
-test('nullable token limits and cache controls remain explicit in source IR', async () => {
+test('nullable token limits and cache retention remain explicit in source IR', async () => {
   const source = {
     model: 'm', stream: true, messages: [], max_tokens: null, max_completion_tokens: null,
-    prompt_cache_options: null, prompt_cache_retention: null, user: null,
+    prompt_cache_retention: null,
   };
   expect(readOpenAIChatCompletionsRequest(source).request.settings).toMatchObject({
-    max_visible_output_tokens: null, max_output_tokens: null, prompt_cache_options: null, prompt_cache_retention: null, user: null,
+    max_visible_output_tokens: null, max_output_tokens: null, prompt_cache_retention: null,
   });
   const responses = await routeOpenAIChatCompletionsViaOpenAIResponses(source, options);
   if (responses.type !== 'trip') throw new Error(responses.message);
@@ -64,6 +64,14 @@ test('nullable token limits and cache controls remain explicit in source IR', as
   const chat = await routeOpenAIResponsesViaOpenAIChatCompletions({ model: 'm', stream: true, input: 'hi', max_output_tokens: null }, options);
   if (chat.type !== 'trip') throw new Error(chat.message);
   expect(chat.target.max_completion_tokens).toBeNull();
+});
+
+test.each([
+  ['prompt_cache_options', { prompt_cache_options: null }],
+  ['user', { user: null }],
+] as const)('Chat rejects a null %s', (field, value) => {
+  const source = { model: 'm', stream: true, messages: [], ...value } as unknown as OpenAIChatCompletionsPayload;
+  expect(() => readOpenAIChatCompletionsRequest(source)).toThrow(`Invalid '${field}'`);
 });
 
 test('nullable Chat sampling, storage, parallelism and schema strictness remain explicit', async () => {
@@ -212,9 +220,9 @@ test('tool selection never changes the complete allocated declaration inventory'
     { type: 'function' as const, name: 'x_f' },
   ];
   const choices: (OpenAIResponsesToolChoice | undefined)[] = [
-    undefined, 'auto', 'none', 'required', { type: 'function', namespace: 'x', name: 'f' },
+    undefined, 'auto', 'none', 'required', { type: 'function', name: 'x.f' },
     { type: 'allowed_tools', mode: 'auto', tools: [] },
-    { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', namespace: 'x', name: 'f' }] },
+    { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', name: 'x.f' }] },
   ];
   let declarations: unknown;
   for (const tool_choice of choices) {

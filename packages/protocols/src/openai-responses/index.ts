@@ -332,7 +332,7 @@ export interface OpenAIResponsesInputWebSearchCall {
   id?: string;
   status?: 'completed' | 'in_progress' | 'searching' | 'failed';
   action?: OpenAIResponsesWebSearchAction;
-  results?: OpenAIResponsesWebSearchResult[];
+  results?: OpenAIResponsesWebSearchResultEx[];
 }
 
 export interface OpenAIResponsesFileSearchResult {
@@ -512,10 +512,15 @@ export interface OpenAIResponsesCompactionItem {
   id?: string | null;
   encrypted_content?: string | null;
   created_by?: string;
+  // Codex emits opaque provenance alongside native compaction items. Keep these
+  // fields on the item so provider-side terminal-snapshot recovery is lossless.
+  // https://github.com/openai/codex/blob/e0a64cf2bc4535eb330c22857260a7856c1e8749/codex-rs/protocol/src/models.rs#L1226-L1252
+  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
 }
 
+// Copilot's native compaction response carries a generic metadata envelope;
+// this is not declared by Codex's protocol item or by openai-node.
 export interface OpenAIResponsesCompactionItemEx extends OpenAIResponsesCompactionItem {
-  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
 }
 
@@ -668,9 +673,7 @@ export interface OpenAIResponsesMcpApprovalResponseItem {
   reason?: string | null;
 }
 
-export type OpenAIResponsesInputImageGenerationCall = Official.ResponseInputItem.ImageGenerationCall & {
-  error?: { message: string; code: string; type?: string };
-};
+export type OpenAIResponsesInputImageGenerationCall = Official.ResponseInputItem.ImageGenerationCall;
 
 // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L822-L851
 export type OpenAIResponsesToolAllowedCaller = 'direct' | 'programmatic';
@@ -844,8 +847,8 @@ export type OpenAIResponsesToolChoice =
   | 'auto'
   | 'none'
   | 'required'
-  | { type: 'function'; name: string; namespace?: string }
-  | { type: 'custom'; name: string; namespace?: string }
+  | { type: 'function'; name: string }
+  | { type: 'custom'; name: string }
   | { type: 'mcp'; server_label: string; name?: string | null }
   | { type: 'allowed_tools'; mode: 'auto' | 'required'; tools: Array<Record<string, unknown>> }
   | { type: 'shell' }
@@ -1019,7 +1022,7 @@ export type OpenAIResponsesOutputItemEx =
   | OpenAIResponsesMcpListToolsItem
   | OpenAIResponsesMcpApprovalRequestItem
   | OpenAIResponsesMcpApprovalResponseItem
-  | OpenAIResponsesOutputImageGenerationCallEx;
+  | OpenAIResponsesOutputImageGenerationCall;
 
 // The OpenAI Responses item schema requires `status` on an output message and
 // `annotations` on every `output_text` part, even when the text carries no
@@ -1027,11 +1030,9 @@ export type OpenAIResponsesOutputItemEx =
 // producer to state them:
 // https://github.com/openai/openai-openapi/blob/d2f04809d7961f01e94031e1f31617394599dbdd/openapi.yaml#L44868-L44873
 // https://github.com/openai/openai-openapi/blob/d2f04809d7961f01e94031e1f31617394599dbdd/openapi.yaml#L66303-L66307
-// `id` is schema-required too but stays optional: an upstream item that omits
-// it is surfaced by `requireItemId` rather than given an invented value.
 export interface OpenAIResponsesOutputMessageEx {
   type: 'message';
-  id?: string;
+  id: string;
   status: string;
   role: 'assistant';
   content: OpenAIResponsesOutputContentBlock[];
@@ -1127,7 +1128,12 @@ export type OpenAIResponsesWebSearchAction =
   | { type: 'open_page'; url?: string }
   | { type: 'find_in_page'; url: string; pattern: string };
 
-export interface OpenAIResponsesWebSearchResult {
+export interface OpenAIResponsesWebSearchResultEx {
+  // Copilot emits this entry shape. OpenAI only declares the
+  // `web_search_call.results` include, while Codex deliberately types results
+  // as opaque JSON so new variants remain forward-compatible.
+  // https://github.com/openai/openai-node/blob/b1d437885f3d3076a746a93e6950e29754bd6449/src/resources/responses/responses.ts#L4496-L4523
+  // https://github.com/openai/codex/blob/2f19a57704fb7b1db032bc38cf995034254eaebb/codex-rs/codex-api/src/search.rs#L297-L305
   type: 'text_result';
   url: string;
   title: string;
@@ -1142,11 +1148,10 @@ export interface OpenAIResponsesOutputWebSearchCall {
   // `output_item.added` and only populates it on `.done` once the
   // action shape (search vs open_page vs find_in_page) is known.
   action?: OpenAIResponsesWebSearchAction;
-  results?: OpenAIResponsesWebSearchResult[];
+  results?: OpenAIResponsesWebSearchResultEx[];
 }
 
 export type OpenAIResponsesOutputImageGenerationCall = Official.ResponseOutputItem.ImageGenerationCall;
-export type OpenAIResponsesOutputImageGenerationCallEx = OpenAIResponsesOutputImageGenerationCall & { error?: { message: string; code: string; type?: string } };
 
 // ── Stream event types ──
 

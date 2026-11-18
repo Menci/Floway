@@ -110,10 +110,8 @@ for (const target of ['chat', 'messages'] as const) {
   }
 }
 
-test('requireCallableSelector rejects a namespace that is not a string', () => {
-
-  assertEquals(requireCallableSelector({ type: 'function', name: 'read', namespace: 'files' }).namespace, 'files');
-  assertThrows(() => requireCallableSelector({ type: 'function', name: 'read', namespace: 42 }), TranslateInputException);
+test('requireCallableSelector rejects a separate namespace field', () => {
+  assertThrows(() => requireCallableSelector({ type: 'function', name: 'read', namespace: 'files' }), TranslateInputException);
 });
 
 test.each(['chat', 'messages'] as const)('rejects namespace selector extensions for %s', async target => {
@@ -160,7 +158,7 @@ test.each(['chat', 'messages'] as const)('preserves declarations and selects onl
         { type: 'custom', name: 'edit' },
       ],
     }],
-    tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', namespace: 'files', name: 'edit' }] },
+    tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', name: 'files.edit' }] },
   };
   const codec = createTestSidecarCodec();
   if (target === 'chat') {

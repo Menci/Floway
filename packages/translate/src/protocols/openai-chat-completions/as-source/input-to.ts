@@ -262,6 +262,12 @@ const openaiChatCompletionsRequestToIR = (payload: OpenAIChatCompletionsPayload)
 });
 
 const openaiChatCompletionsSettingsToIR = (payload: OpenAIChatCompletionsPayload): IRInputSettings => {
+  if (payload.prompt_cache_options === null) {
+    throw new TranslateInputException("Invalid 'prompt_cache_options': expected an object when present.");
+  }
+  if (payload.user === null) {
+    throw new TranslateInputException("Invalid 'user': expected a string when present.");
+  }
   const format = payload.response_format;
   const outputFormat: IRInputOutputFormat | undefined = format === undefined ? undefined
     : format.type === 'json_schema'

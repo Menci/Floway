@@ -283,7 +283,7 @@ const isForcedServerToolChoice = (
 ): boolean => {
   if (choice === 'required') return true;
   if (typeof choice !== 'object' || choice === null) return false;
-  if (choice.type === 'function') return choice.namespace === undefined && dispatchers.has(choice.name);
+  if (choice.type === 'function') return dispatchers.has(choice.name);
   if (choice.type !== 'allowed_tools' || choice.mode !== 'required' || !Array.isArray(choice.tools)) return false;
   return choice.tools.some(selector => selector?.type === 'function' && selector.namespace === undefined
     && typeof selector.name === 'string' && dispatchers.has(selector.name));
