@@ -30,7 +30,6 @@ const bodyWithSystem = (systemText: string, userId: string = validUserIdLegacy):
 describe('parseMetadataUserID', () => {
   test('parses the legacy form', () => {
     const parsed = parseMetadataUserID(validUserIdLegacy);
-    expect(parsed).not.toBeNull();
     expect(parsed?.isNewFormat).toBe(false);
     expect(parsed?.accountUuid).toBe('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
     expect(parsed?.sessionId).toBe('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');

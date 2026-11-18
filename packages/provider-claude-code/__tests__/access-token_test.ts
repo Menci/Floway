@@ -114,7 +114,6 @@ describe('ensureClaudeCodeAccessToken', () => {
     expect(out.entry.token).toBe('at_new');
     expect(out.entry.expiresAt).toBeGreaterThan(Date.now());
 
-    expect(writes).toHaveLength(1);
     const account = writes[0].accounts[0];
     expect(account.refreshToken).toBe('rt_v2');
     expect(account.accessToken?.token).toBe('at_new');

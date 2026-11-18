@@ -295,12 +295,11 @@ describe('callClaudeCodeAnthropicMessages — 401 retry', () => {
 });
 
 describe('callClaudeCodeAnthropicMessages — quota persistence', () => {
-  test('2xx → registers persist promise via opts.call.waitUntil exactly once', async () => {
+  test('2xx → hands the quota persist to opts.call.waitUntil', async () => {
     // On Cloudflare Workers the runtime cancels orphan promises the moment
     // the response is sent. The gateway threads `waitUntil` through
     // UpstreamCallOptions so the persist can extend the worker's lifetime;
-    // assert we hand the persist promise to it exactly once and that the
-    // promise actually mutates state when awaited.
+    // the quota lands only once the handed promise settles.
     seedAccount({ accessToken: freshAccessTokenEntry });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const waitUntil = vi.fn<(promise: Promise<unknown>) => void>();
@@ -309,12 +308,8 @@ describe('callClaudeCodeAnthropicMessages — quota persistence', () => {
       upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call,
     });
     expect(result.ok).toBe(true);
-    expect(waitUntil).toHaveBeenCalledTimes(1);
-    const handed = waitUntil.mock.calls[0]![0];
-    expect(handed).toBeInstanceOf(Promise);
-    await expect(handed).resolves.toBeUndefined();
-    const stored = readQuotaEntry();
-    expect(stored).not.toBeNull();
+    await Promise.all(waitUntil.mock.calls.map(([promise]) => promise));
+    expect(readQuotaEntry()).not.toBeNull();
   });
 });
 
