@@ -282,7 +282,7 @@ const handleInterruptMessage = async (
 
 interface OpenAIResponsesWsTurnFailure {
   evict(): void;
-  fail(status: number, error: Record<string, unknown>): void;
+  fail(status: number, error: Record<string, unknown>, retryAfter?: string): void;
 }
 
 const handleClientMessage = async (
@@ -320,9 +320,9 @@ const handleClientMessage = async (
       if (ctx === undefined || previousResponseId === undefined) return;
       session.evictSnapshot(ctx.store.apiKeyId, previousResponseId);
     },
-    fail: (status, error) => {
+    fail: (status, error, retryAfter) => {
       turnFailure.evict();
-      sendError(socket, status, error, eventId, ctx?.dump);
+      sendError(socket, status, error, eventId, ctx?.dump, retryAfter);
     },
   };
 
@@ -458,8 +458,10 @@ const respondOpenAIResponsesWebSocket = async (input: {
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstreamId);
-    turnFailure.fail(result.http.status, normalizeErrorBody(parseMaybeJson(result.body, result.http.headers), result.http.status));
-    ctx.dump?.finalize(result.http.status, []);
+    const { status, headers } = result.http;
+    const error = normalizeErrorBody(parseMaybeJson(result.body, headers), status);
+    turnFailure.fail(status, error, headers.get('retry-after') ?? undefined);
+    ctx.dump?.finalize(status, []);
     return;
   }
 
@@ -885,8 +887,12 @@ const sendError = (
   error: Record<string, unknown>,
   eventId?: string,
   dump?: DumpAccumulator | null,
+  retryAfter?: string,
 ): void => {
-  sendJson(socket, { type: 'error', status, error }, eventId, dump);
+  // Codex reads retry hints from the WS envelope after the HTTP upgrade.
+  // https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/codex-api/src/endpoint/responses_websocket.rs#L756-L768
+  const headers = retryAfter === undefined ? undefined : { 'retry-after': retryAfter };
+  sendJson(socket, { type: 'error', status, error, headers }, eventId, dump);
 };
 
 // A turn's own frames go out through this entry, which accepts only a stream

@@ -1173,9 +1173,16 @@ test('OpenAI Responses WebSocket answers a Codex generate:false prewarm locally 
   );
 });
 
-test('OpenAI Responses WebSocket evicts a failed continuation target so the next attempt reports previous_response_not_found', async () => {
+test.each([
+  { status: 400, retryAfter: undefined },
+  { status: 429, retryAfter: '104' },
+  { status: 503, retryAfter: 'Fri, 18 Nov 2033 09:18:34 GMT' },
+])('OpenAI Responses WebSocket preserves the retry hint on an upstream $status and evicts the failed continuation', async ({ status, retryAfter }) => {
   const { apiKey } = await setupAppTest();
   let responseCalls = 0;
+  const error = status === 429
+    ? { type: 'rate_limit_error', code: 'turn_rate_limit_exceeded', message: 'Codex is at capacity, please try again later' }
+    : { type: 'upstream_error', code: 'rejected', message: 'simulated upstream rejection' };
 
   await withMockedFetch(
     async request => {
@@ -1190,11 +1197,13 @@ test('OpenAI Responses WebSocket evicts a failed continuation target so the next
       if (url.pathname === '/responses') {
         responseCalls += 1;
         if (responseCalls === 2) {
-          return new Response(JSON.stringify({
-            error: { message: 'simulated upstream rejection', type: 'invalid_request_error', code: 'bad_request' },
-          }), {
-            status: 400,
-            headers: { 'content-type': 'Application/Problem+JSON; charset=utf-8' },
+          return new Response(JSON.stringify({ error }), {
+            status,
+            headers: {
+              'content-type': 'Application/Problem+JSON; charset=utf-8',
+              'set-cookie': 'upstream-only=1',
+              ...(retryAfter === undefined ? {} : { 'Retry-After': retryAfter }),
+            },
           });
         }
         return sseOpenAIResponsesResponse({
@@ -1236,12 +1245,9 @@ test('OpenAI Responses WebSocket evicts a failed continuation target so the next
       assertEquals(await rejected, [{
         type: 'error',
         event_id: 'evt_rejected',
-        status: 400,
-        error: {
-          message: 'simulated upstream rejection',
-          type: 'invalid_request_error',
-          code: 'bad_request',
-        },
+        status,
+        error,
+        ...(retryAfter === undefined ? {} : { headers: { 'retry-after': retryAfter } }),
       }]);
 
       const evicted = waitForMessages(client, messages => messages.some(message => message.type === 'error'));
