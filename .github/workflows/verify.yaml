@@ -31,15 +31,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - name: Enable Corepack
-        run: corepack enable
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: pnpm
-      - name: Install
-        run: pnpm install --frozen-lockfile
+      - name: Set up workspace
+        uses: ./.github/actions/setup-workspace
       - name: ${{ matrix.check.name }}
         run: ${{ matrix.check.run }}
 
@@ -77,15 +70,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - name: Enable Corepack
-        run: corepack enable
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: pnpm
-      - name: Install
-        run: pnpm install --frozen-lockfile
+      - name: Set up workspace
+        uses: ./.github/actions/setup-workspace
       # `apps/web`'s own typecheck script runs `react-router typegen` first; no
       # other package reads the generated route types.
       - name: ${{ matrix.name }}
@@ -119,15 +105,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - name: Enable Corepack
-        run: corepack enable
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: pnpm
-      - name: Install
-        run: pnpm install --frozen-lockfile
+      - name: Set up workspace
+        uses: ./.github/actions/setup-workspace
       - name: Generate route types
         run: pnpm run typegen
       - name: ${{ matrix.name }}
@@ -166,15 +145,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - name: Enable Corepack
-        run: corepack enable
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: pnpm
-      - name: Install
-        run: pnpm install --frozen-lockfile
+      - name: Set up workspace
+        uses: ./.github/actions/setup-workspace
       - name: Install latest Codex for installer compatibility
         run: npm install --prefix data/codex-ci --no-save --package-lock=false @openai/codex@latest
       - name: test-installers (${{ matrix.shard }}/6)
@@ -198,15 +170,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-      - name: Enable Corepack
-        run: corepack enable
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: pnpm
-      - name: Install
-        run: pnpm install --frozen-lockfile
+      - name: Set up workspace
+        uses: ./.github/actions/setup-workspace
       - name: Install latest Codex for installer compatibility
         run: npm install --prefix data/codex-ci --no-save --package-lock=false @openai/codex@latest
       - name: test (${{ matrix.shard }}/8)

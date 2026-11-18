@@ -4,7 +4,7 @@
 
 | Scope | Requirement | Enforcement |
 |---|---|---|
-| Index inventory | Keep `Index` as the complete sorted inventory of CI workflows, skills, and workspace package directories with a short responsibility overview. | Repository review |
+| Index inventory | Keep `Index` as the complete sorted inventory of CI workflows and actions, skills, and workspace package directories with a short responsibility overview. | Repository review |
 | Task scope | Derive every action from the user's request and preserve unrelated working-tree state. | Final diff review |
 | Questions | Answer requested questions from read-only evidence. | Final diff review |
 | Findings | Reproduce the reported scenario and validate third-party findings against primary sources before acting. | Investigation evidence |
@@ -48,6 +48,7 @@
 
 | Category | Entry | Overview |
 |---|---|---|
+| CI | `.github/actions/setup-workspace` | Installs the server image's Node.js release and locked dependencies. |
 | CI | `.github/workflows/build.yaml` | Builds and publishes deployment images. |
 | CI | `.github/workflows/verify.yaml` | Validates every repository change. |
 | Skill | `$backfill-usage-pricing` | Reprices recorded model usage. |
