@@ -23,6 +23,7 @@ test('agentMessageContent normalizes readable beta content into OpenAI Responses
       { type: 'input_image', image_url: 'https://example.com/image.png', file_id: null, detail: 'high' },
       { type: 'computer_screenshot', image_url: null, file_id: 'file_screen', detail: 'original' },
       { type: 'input_file', file_id: 'file_doc' },
+      { type: 'input_audio', file_id: 'file_audio' },
     ]),
     author: '/root/<reviewer>',
     recipient: '/root/"lead"',
@@ -44,6 +45,7 @@ test('agentMessageContent normalizes readable beta content into OpenAI Responses
     { type: 'input_image', image_url: null, file_id: 'file_screen', detail: 'original' },
     { type: 'input_text', text: '</content>' },
     { type: 'input_file', file_id: 'file_doc' },
+    { type: 'input_audio', file_id: 'file_audio' },
     { type: 'input_text', text: '\n</agent-message>' },
   ]);
 });

@@ -70,6 +70,31 @@ describe('assembleCodexCatalog', () => {
     expect(out.models[0]).toMatchObject({ context_window: 200000, max_context_window: 200000 });
   });
 
+  test.each([
+    { codex: {}, expected: [] },
+    { codex: { service_tiers: [], additional_speed_tiers: ['fast'] }, expected: [] },
+    { codex: { additional_speed_tiers: ['fast'] }, expected: ['priority'] },
+    { codex: { service_tiers: [{ id: 'ultrafast', name: 'Ultrafast', description: '' }] }, expected: ['ultrafast'] },
+  ])('only lists tiers shared with the ChatGPT catalog $codex, in either routing order', ({ codex, expected }) => {
+    const native = { ...stubModelCandidate().provider, kind: 'custom' as const };
+    const subscription = { ...native, kind: 'chatgpt' as const, upstreamId: 'subscription' };
+    const pricing = { entries: ['priority', 'ultrafast'].map(serviceTier => ({ selector: { serviceTier }, rates: { input_tokens: '1' } })) };
+    const model = {
+      ...chat('shared'), pricing,
+      providerModels: {
+        [native.upstreamId]: stubProviderModel({ pricing, endpoints: { openaiResponses: {} } }),
+        [subscription.upstreamId]: stubProviderModel({ providerData: { contextWindow: 100000, codex } }),
+      },
+    };
+    for (const upstreams of [[native, subscription], [subscription, native]]) {
+      const [row] = assembleCodexCatalog(bundled, [{ ...entry(model), upstreams }]).models;
+      expect(row.service_tiers?.map(tier => tier.id)).toEqual(expected);
+      expect(row.additional_speed_tiers).toEqual(expected.some(id => id === 'priority') ? ['fast'] : []);
+    }
+    model.providerModels[native.upstreamId] = stubProviderModel({ endpoints: { openaiResponses: {} } });
+    expect(assembleCodexCatalog(bundled, [{ ...entry(model), upstreams: [subscription, native] }]).models[0].service_tiers).toEqual([]);
+  });
+
   test('bundled match: reuses bundled entry, slug=publicId, display_name from registry', () => {
     const out = assembleCodexCatalog(bundled, entries(chat('gpt-5.5', 'Custom Display Name', 200000)));
     expect(out.models).toHaveLength(1);

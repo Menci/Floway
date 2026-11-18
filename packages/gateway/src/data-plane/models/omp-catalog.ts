@@ -79,6 +79,8 @@ const thinkingFor = (reasoning: ChatModelInfo['reasoning']): OmpThinking | undef
 
 export const toOmpModel = (model: PublicModel, provider: string): OmpModel | null => {
   if (model.kind !== 'chat' && model.kind !== 'embedding' && model.kind !== 'image') return null;
+  const input = model.chat?.modalities?.input.filter(m => m !== 'audio') ?? ['text'] as const;
+  if (!input.length) return null;
   const reasoning = model.chat?.reasoning;
   let thinking: OmpThinking | undefined;
   try {
@@ -96,7 +98,7 @@ export const toOmpModel = (model: PublicModel, provider: string): OmpModel | nul
     api: model.kind === 'embedding' ? 'openai-embeddings' : model.kind === 'image' ? 'openai-images' : `floway:${provider}`,
     reasoning: thinking !== undefined || reasoning?.mandatory === true,
     ...(thinking === undefined ? {} : { thinking }),
-    input: model.chat?.modalities?.input ?? ['text'],
+    input,
     // The defaults match OMP's explicit custom-model registration. Declaring
     // them prevents same-id bundled vendor rows from supplying unrelated caps.
     // https://github.com/can1357/oh-my-pi/blob/40e9368ef0458fd9073329cdff4174895f91bc6b/packages/coding-agent/src/config/custom-models.ts#L143-L144

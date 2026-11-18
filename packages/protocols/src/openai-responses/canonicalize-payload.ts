@@ -1,5 +1,9 @@
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesEasyInputMessageEx, CanonicalOpenAIResponsesInputItem, OpenAIResponsesRequestPayloadEx } from './index.ts';
 
+export const isCodexAudioReference = (part: object): part is { audio_url: string; file_id?: never } | { file_id: string; audio_url?: never } =>
+  ('audio_url' in part && typeof part.audio_url === 'string' && !('file_id' in part))
+  || ('file_id' in part && typeof part.file_id === 'string' && !('audio_url' in part));
+
 // Expand shorthand input into explicitly discriminated message items.
 export const canonicalizeOpenAIResponsesPayload = (value: unknown): CanonicalOpenAIResponsesPayload | {
   readonly error: { readonly message: string; readonly param?: string; readonly code?: string };
@@ -30,6 +34,8 @@ export const canonicalizeOpenAIResponsesPayload = (value: unknown): CanonicalOpe
             && hasValidPromptCacheBreakpoint(content);
         case 'input_file':
           return hasValidPromptCacheBreakpoint(content);
+        case 'input_audio':
+          return isCodexAudioReference(content) && hasValidPromptCacheBreakpoint(content);
         default:
           return false;
         }

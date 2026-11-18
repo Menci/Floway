@@ -163,9 +163,13 @@ describe('chatField', () => {
       .toThrow(/modalities\.input/);
   });
 
-  test('rejects modalities missing text', () => {
-    expect(() => chatField({ modalities: { input: ['image'], output: ['text'] } }, 'm.chat'))
-      .toThrow(/must include 'text'/);
+  test.each(['audio', 'image'])('preserves %s-only input in manual configuration', modality => {
+    const chat = { modalities: { input: [modality], output: ['text'] } };
+    expect(chatField(chat, 'm.chat')).toEqual(chat);
+  });
+
+  test('rejects an empty input list', () => {
+    expect(() => chatField({ modalities: { input: [], output: ['text'] } }, 'm.chat')).toThrow(/at least one/);
   });
 
   test('deduplicates modality entries', () => {

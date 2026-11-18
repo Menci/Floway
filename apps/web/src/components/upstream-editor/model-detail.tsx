@@ -13,6 +13,7 @@ import { EditorSection } from './section';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { type TFunction, useTranslation } from '../../i18n/translation';
+import { ModelInputFields } from '../models/input-modalities';
 import { pruneLimitsForKind } from '../models/limits';
 import { ModelLimitsFields } from '../models/limits-editor';
 import { ChoiceGroup } from '../ui/choice-group';
@@ -57,7 +58,6 @@ export function ModelDetail({
   upstreamFlags: UpstreamRecord['flag_overrides'];
 }) {
   const { t } = useTranslation();
-  const imageInputLabelId = useId();
   const reasoningLabelId = useId();
   const upstreamIdRef = useRef<HTMLInputElement>(null);
   const fieldsReadOnly = readOnly || row.source !== 'manual';
@@ -106,7 +106,6 @@ export function ModelDetail({
   const budget = row.config.chat?.reasoning?.budget_tokens;
   const mandatory = row.config.chat?.reasoning?.mandatory === true;
   const controlledReasoning = effort !== undefined || budget !== undefined || row.config.chat?.reasoning?.adaptive === true;
-  const imageInput = row.config.chat?.modalities?.input.includes('image') === true;
   const opaqueBlobCompatibilityScope = row.config.opaqueBlobCompatibilityScope;
   const bindOpaqueBlobsToUpstream = opaqueBlobCompatibilityScope?.bindToUpstream ?? true;
 
@@ -235,27 +234,7 @@ export function ModelDetail({
             t={t}
           />
           {row.config.kind === 'chat' && <>
-            <div aria-labelledby={imageInputLabelId} className="grid gap-3" role="group">
-              <Text id={imageInputLabelId} weight="semibold">{t('dashboard.upstreamEditor.models.imageInput')}</Text>
-              <div className="flex flex-wrap gap-4">
-                <Switch
-                  checked={imageInput}
-                  readOnly={fieldsReadOnly}
-                  label={t('dashboard.upstreamEditor.models.imageInput')}
-                  // Dropping image input drops the detail claim with it: the detail
-                  // switch is only reachable while image input is on, so a claim
-                  // left behind would be announced while the operator can no
-                  // longer see or clear it.
-                  onChange={(_, data) => patch({ chat: cleanChat({ ...(row.config.chat ?? {}), modalities: data.checked ? { input: ['text', 'image'], output: ['text'] } : undefined, image_detail_original: data.checked ? row.config.chat?.image_detail_original ?? false : undefined }) })}
-                />
-                {imageInput && <Switch
-                  checked={row.config.chat?.image_detail_original === true}
-                  readOnly={fieldsReadOnly}
-                  label={t('dashboard.upstreamEditor.models.imageDetailOriginal')}
-                  onChange={(_, data) => patch({ chat: cleanChat({ ...(row.config.chat ?? {}), image_detail_original: data.checked }) })}
-                />}
-              </div>
-            </div>
+            <ModelInputFields chat={row.config.chat} readOnly={fieldsReadOnly} onChange={change => patch({ chat: cleanChat({ ...row.config.chat, ...change }) })} />
             <div aria-labelledby={reasoningLabelId} className="grid gap-3" role="group">
               <Text id={reasoningLabelId} weight="semibold">{t('dashboard.upstreamEditor.models.reasoning')}</Text>
               <div className="flex flex-wrap gap-4">
