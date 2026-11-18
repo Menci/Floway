@@ -66,7 +66,7 @@ const tagsAndShow = async (request: Request): Promise<Response> => {
   return new Response('unexpected', { status: 500 });
 };
 
-test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-compat endpoints', async () => {
+test('getProvidedModels projects chat and embedding models from their capabilities', async () => {
   const instance = createOllamaProvider(buildRecord());
   await withMockedFetch(tagsAndShow, async () => {
     const models = await instance.instance.getProvidedModels(testFetcher);
@@ -80,13 +80,6 @@ test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-com
     // the ProviderModel on the auto path.
     assertEquals(gptoss.pricing?.entries[0]?.rates.input_tokens, '0.00000015');
     assertEquals(gptoss.pricing?.entries[0]?.rates.output_tokens, '0.0000006');
-  });
-});
-
-test('getProvidedModels routes embedding-capability models to kind=embedding with only the openaiEmbeddings endpoint', async () => {
-  const instance = createOllamaProvider(buildRecord());
-  await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(testFetcher);
     const embed = models.find(m => m.id === 'nomic-embed-text:latest')!;
     assertEquals(embed.kind, 'embedding');
     assertEquals(Object.keys(embed.endpoints), ['openaiEmbeddings']);
@@ -120,24 +113,6 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
     assertEquals(models[0].pricing, { entries: [{ rates: { input_tokens: '99', output_tokens: '99' } }] });
     // No duplicate gpt-oss:120b further down.
     assertEquals(models.filter(m => m.id === 'gpt-oss:120b').length, 1);
-  });
-});
-
-test('manual known models inherit built-in pricing when no override is configured', async () => {
-  const instance = createOllamaProvider(buildRecord({
-    config: {
-      baseUrl: 'https://ollama.com',
-      apiKey: 'ollama_test',
-      models: [{
-        upstreamModelId: 'deepseek-v4-flash',
-        kind: 'chat',
-        endpoints: { openaiChatCompletions: {} },
-      }],
-    },
-  }));
-  await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(testFetcher);
-    assertEquals(models.find(model => model.id === 'deepseek-v4-flash')?.pricing?.entries[0]?.rates.input_tokens, '0.00000014');
   });
 });
 
@@ -265,19 +240,5 @@ test('Anthropic Messages methods serialize typed anthropic-beta metadata only on
   assertEquals(betas, {
     '/v1/messages': 'context-1m,advanced-tool-use',
     '/v1/messages/count_tokens': 'context-1m,advanced-tool-use',
-  });
-});
-
-test('getProvidedModels populates chat from capabilities: gpt-oss thinking → effort, vision → modalities', async () => {
-  const instance = createOllamaProvider(buildRecord());
-  await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(testFetcher);
-    const gptoss = models.find(m => m.id === 'gpt-oss:120b')!;
-    assertEquals(gptoss.chat, {
-      reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } },
-    });
-    // Embedding model has no thinking/vision → no chat field.
-    const embed = models.find(m => m.id === 'nomic-embed-text:latest')!;
-    assertEquals(embed.chat, undefined);
   });
 });

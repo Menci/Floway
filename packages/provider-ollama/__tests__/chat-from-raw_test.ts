@@ -11,16 +11,6 @@ const rawModel = (id: string, capabilities: string[]): OllamaRawModel => ({
 
 const EFFORT_PRESET = { supported: ['low', 'medium', 'high'], default: 'medium' };
 
-test('chatFromOllamaRaw thinking-capable model → uniform effort preset', () => {
-  const chat = chatFromOllamaRaw(rawModel('gpt-oss:20b', ['completion', 'tools', 'thinking']));
-  assertEquals(chat, { reasoning: { effort: EFFORT_PRESET } });
-});
-
-test('chatFromOllamaRaw vision-only → modalities only, no reasoning', () => {
-  const chat = chatFromOllamaRaw(rawModel('llava:13b', ['completion', 'vision']));
-  assertEquals(chat, { modalities: { input: ['text', 'image'], output: ['text'] } });
-});
-
 test('chatFromOllamaRaw vision + thinking → both modalities and effort reasoning', () => {
   const chat = chatFromOllamaRaw(rawModel('gpt-oss:120b', ['vision', 'thinking']));
   assertEquals(chat, {

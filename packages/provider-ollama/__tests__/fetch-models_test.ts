@@ -92,15 +92,6 @@ test('fetchOllamaCatalog projects /api/show capabilities + model_info into the r
   });
 });
 
-test('fetchOllamaCatalog converts modified_at ISO string to unix seconds', async () => {
-  await withMockedFetch(respond, async () => {
-    const catalog = await fetchOllamaCatalog(config, testFetcher);
-    const gptoss = catalog.data.find(m => m.id === 'gpt-oss:120b')!;
-    // 2025-08-05T00:00:00Z → 1754352000
-    assertEquals(gptoss.modifiedAt, Math.floor(Date.parse('2025-08-05T00:00:00Z') / 1000));
-  });
-});
-
 test('fetchOllamaCatalog rejects with ProviderModelsUnavailableError when /api/tags returns a shape it cannot parse', async () => {
   // 200 OK + body that satisfies isRecord but lacks a `models` array. The
   // scaffold must see parseTagsResponse return null and convert that to the

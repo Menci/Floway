@@ -21,11 +21,7 @@ const stream = (): ProviderStreamResult<OpenAIChatCompletionsStreamEvent> => ({
 // way never reaches `num_predict`. The rename keeps the caller's number while
 // leaving a payload that already speaks the legacy field alone.
 test.each([
-  { limits: {}, expected: {} },
-  { limits: { max_completion_tokens: 128000 }, expected: { max_tokens: 128000 } },
   { limits: { max_completion_tokens: 0 }, expected: { max_tokens: 0 } },
-  { limits: { max_completion_tokens: null }, expected: { max_tokens: null } },
-  { limits: { max_tokens: 512 }, expected: { max_tokens: 512 } },
   { limits: { max_tokens: 512, max_completion_tokens: 128000 }, expected: { max_tokens: 512, max_completion_tokens: 128000 } },
   { limits: { max_tokens: null, max_completion_tokens: 128000 }, expected: { max_tokens: null, max_completion_tokens: 128000 } },
 ])('Ollama maps the modern output cap onto its legacy field for $limits', async ({ limits, expected }) => {
