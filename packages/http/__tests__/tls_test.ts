@@ -30,10 +30,9 @@ const startObservedHandshake = (
 const waitForClientHello = async (
   fake: ReturnType<typeof makeFakeDuplex>,
 ): Promise<Uint8Array> => {
-  const deadline = Date.now() + 1000;
-  while (fake.written().byteLength < 200 && Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, 5));
-  }
+  // The record is written once key generation finishes, which takes as long
+  // as the runner's load makes it; the test timeout bounds the wait.
+  while (fake.written().byteLength < 200) await new Promise(r => setTimeout(r, 5));
   return fake.written();
 };
 
@@ -139,8 +138,7 @@ describe('userspaceTls — handshake failure', () => {
       { readable: fake.readable, writable: fake.writable },
       { host: 'example.com' },
     );
-    // Wait for the ClientHello to be sent.
-    await new Promise(r => setTimeout(r, 5));
+    await waitForClientHello(fake);
     // Reply with bytes that don't form a TLS record at all.
     fake.respond(new Uint8Array([0xff, 0xff, 0xff, 0xff, 0xff]));
     fake.endResponse();
@@ -154,7 +152,7 @@ describe('userspaceTls — handshake failure', () => {
       { readable: fake.readable, writable: fake.writable },
       { host: 'example.com' },
     );
-    await new Promise(r => setTimeout(r, 5));
+    await waitForClientHello(fake);
     fake.endResponse();
     await expect(promise).rejects.toBeInstanceOf(Error);
   });
@@ -166,9 +164,7 @@ describe('userspaceTls — handshake failure', () => {
       { readable: fake.readable, writable: fake.writable },
       { host: 'example.com', signal: ac.signal },
     );
-    // Let the ClientHello be emitted first.
-    await new Promise(r => setTimeout(r, 10));
-    expect(fake.written().byteLength).toBeGreaterThan(0);
+    await waitForClientHello(fake);
     ac.abort(new DOMException('cancel after ClientHello', 'AbortError'));
     await expect(promise).rejects.toMatchObject({
       name: 'AbortError',
