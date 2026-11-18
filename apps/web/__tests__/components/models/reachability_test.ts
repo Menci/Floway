@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import { indexCatalog } from '../../../src/components/models/catalog-index';
 import { reachableModels } from '../../../src/components/models/reachability';
 import { aliasModel, catalogModel } from '../../api/model-fixture';
 

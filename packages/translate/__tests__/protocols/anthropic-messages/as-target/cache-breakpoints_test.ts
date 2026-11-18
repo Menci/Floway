@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../../../../src/protocols/anthropic-messages/as-target/cache-breakpoints.ts';
-import type { AnthropicMessagesAssistantMessage, AnthropicMessagesMessage, AnthropicMessagesTextBlockParam, AnthropicMessagesTool, AnthropicMessagesUserMessage } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesAssistantMessage, AnthropicMessagesMessage, AnthropicMessagesTextBlockParam, AnthropicMessagesTool } from '@floway-dev/protocols/anthropic-messages';
 import { assert, assertEquals } from '@floway-dev/test-utils';
 
 const cacheControlOf = (value: unknown): unknown => (value as { cache_control?: unknown }).cache_control;
