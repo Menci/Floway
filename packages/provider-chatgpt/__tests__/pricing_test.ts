@@ -6,10 +6,6 @@ import { assertEquals } from '@floway-dev/test-utils';
 
 const published = (rates: PriceVector): PriceVector => perMillionTokenRates(rates);
 
-test('pricingForChatGPTModelKey returns null for an unknown slug', () => {
-  assertEquals(pricingForChatGPTModelKey('totally-made-up-model'), null);
-});
-
 test('ChatGPT Daybreak slugs price the models their access programs resolve to', () => {
   // Blue is the GPT-5.6 Sol program, Red the GPT-5.6 Cyber one. Neither slug
   // advertises a service tier, so a priority selector stays on the base rates

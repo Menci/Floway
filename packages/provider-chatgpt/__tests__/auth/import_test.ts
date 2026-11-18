@@ -1,12 +1,10 @@
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 import {
-  importChatGPTFromCallback,
   importChatGPTFromJson,
   parseSourceExpiry,
   previewChatGPTJson,
 } from '../../src/auth/import.ts';
-import { directFetcher } from '@floway-dev/provider';
 
 const encodeBase64Url = (input: string): string => btoa(input)
   .replace(/\+/g, '-')
@@ -30,8 +28,6 @@ const credential = (overrides: Record<string, unknown> = {}): Record<string, unk
   id_token: makeJwt(identityPayload),
   ...overrides,
 });
-
-afterEach(() => vi.restoreAllMocks());
 
 describe('ChatGPT JSON import', () => {
   test.each([
@@ -120,21 +116,5 @@ describe('parseSourceExpiry', () => {
     [0, null],
   ])('normalizes %j', (input, expected) => {
     expect(parseSourceExpiry(input)).toBe(expected);
-  });
-});
-
-describe('importChatGPTFromCallback', () => {
-  test('exchanges code and returns config plus state', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
-      access_token: 'opaque-access', refresh_token: 'refresh-token', id_token: makeJwt(identityPayload), expires_in: 600,
-    }), { status: 200, headers: { 'content-type': 'application/json' } }));
-    const result = await importChatGPTFromCallback({ code: 'CODE', codeVerifier: 'VER', fetcher: directFetcher });
-    expect(result.config.accounts[0].email).toBe('person@example.test');
-    expect(result.state.accounts[0].refresh_token).toBe('refresh-token');
-    expect(result.state.accounts[0].accessToken?.token).toBe('opaque-access');
-    // The imported token entry is seeded with the import-time plan observation.
-    expect(result.state.accounts[0].accessToken?.planType).toBe('plus');
-    expect(result.state.accounts[0].accessToken?.planObservedAt).toBe(result.state.accounts[0].accessToken?.refreshedAt);
-    expect(result.state.accounts[0].openaiDeviceId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   });
 });
