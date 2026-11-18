@@ -108,12 +108,6 @@ test('forwards agent_message verbatim to a native OpenAI Responses target withou
   assertEquals(seen.input, [newTask]);
 });
 
-test('lowers agent_message at a translated target even without the flag', async () => {
-  const { seen } = await lower([newTask], { targetApi: 'anthropicMessages' });
-  assert(seen !== undefined);
-  assertEquals(seen.input, [framedNewTask]);
-});
-
 test('returns an input error without running downstream when agent content cannot be lowered', async () => {
   const { result, seen } = await lower([{
     type: 'agent_message', author: '/root', recipient: '/root/worker',

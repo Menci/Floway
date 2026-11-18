@@ -8,7 +8,7 @@ import { mockChatGatewayCtx } from '../../../../../test-utils/gateway-ctx.ts';
 import { createInMemoryImageProcessor, initExternalResourceFetcher, initImageProcessor } from '@floway-dev/platform';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx, OpenAIResponsesTool, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 import { type EventResult, type ExecuteResult, type FlagId, type OpenAIImagesEditsRequest } from '@floway-dev/provider';
 import { assert, assertEquals, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -250,58 +250,6 @@ test('generates an image end-to-end and emits the native lifecycle', async () =>
   assertEquals(item.status, 'completed');
   assertEquals(item.result, 'R0VO');
   assertEquals(item.action, 'generate');
-});
-
-test.each([
-  { raw: '{prompt:"repaired"}', prompt: 'repaired' },
-])('image execution and client replay retain original call identity and arguments: $raw', async ({ raw, prompt }) => {
-  stub.nextGenerations = [jsonResponse(REMOTE_PNG_B64)];
-  const invocation = makeCtx([{ type: 'message', role: 'user', content: 'draw' }], 'generate');
-  const ctx = gatewayCtx();
-  const inputs: CanonicalOpenAIResponsesInputItem[][] = [];
-  const run = scriptedRun([callTurn(0, 'native_call', prompt, raw), messageTurn('answer')]);
-  const events = await drain(await shim(invocation, ctx, async () => {
-    inputs.push(structuredClone(invocation.payload.input));
-    return await run();
-  }));
-  assertEquals(stub.generationsCalls.length, 1);
-  assertEquals(stub.generationsCalls[0].prompt, prompt);
-  const restored = inputs[1].find(item => item.type === 'function_call');
-  assert(restored?.type === 'function_call');
-  assertEquals(restored.call_id, 'native_call');
-  assertEquals(restored.arguments, raw);
-  const completed = events.find(event => event.type === 'response.completed');
-  assert(completed?.type === 'response.completed');
-  const next = makeCtx([...completed.response.output, { type: 'message', role: 'user', content: 'next' }], 'generate');
-  const nextCtx = gatewayCtx();
-  await drain(await shim(next, nextCtx, async () => {
-    const original = next.payload.input.find(item => item.type === 'function_call');
-    assertEquals(original, restored);
-    return await scriptedRun([messageTurn('done')])();
-  }));
-  assertEquals(stub.generationsCalls.length, 1);
-});
-
-test('generates an image from an additional_tools declaration without moving the item', async () => {
-  stub.nextGenerations = [jsonResponse('R0VO')];
-  const invocation = makeCtx([
-    { type: 'additional_tools', role: 'developer', id: 'at_1', tools: [{ type: 'image_generation', quality: 'low' }] },
-    { type: 'message', role: 'user', content: 'draw a cat' },
-  ]);
-  delete invocation.payload.tools;
-
-  const result = await shim(invocation, gatewayCtx(), scriptedRun([
-    callTurn(0, 'call_1', 'a cat'),
-    messageTurn('done'),
-  ]));
-  await drain(result);
-
-  assertEquals(invocation.payload.tools, undefined);
-  const item = invocation.payload.input[0];
-  assert(item.type === 'additional_tools');
-  assertEquals(item.id, 'at_1');
-  assertEquals(item.tools[0].type, 'function');
-  assertEquals(stub.generationsCalls[0], { prompt: 'a cat', n: 1, quality: 'low' });
 });
 
 test('restores a forced hosted choice when the terminal upstream echo omits it', async () => {

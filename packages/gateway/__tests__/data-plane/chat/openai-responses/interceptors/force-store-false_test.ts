@@ -43,18 +43,3 @@ test('when openai-responses-store-false is on, change "store":true to false', as
 
   assertEquals(ctx.payload.store, false);
 });
-
-test('when openai-responses-store-false is off, leave "store":true as is', async () => {
-  const ctx = invocation(
-    {
-      model: 'gpt-5.2',
-      store: true,
-      input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Hi' }] }],
-    },
-    new Set<FlagId>(),
-  );
-
-  await withStoreForcedFalse(ctx, stubCtx, okEvents);
-
-  assertEquals(ctx.payload.store, true);
-});

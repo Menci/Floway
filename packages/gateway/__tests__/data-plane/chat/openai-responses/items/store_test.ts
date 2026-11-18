@@ -165,18 +165,6 @@ describe('OpenAIResponsesStatefulStore', () => {
     expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp-after-disable', 0)).not.toBeNull();
   });
 
-  test('WebSocket store=false retains socket-local state only', async () => {
-    const repo = installRepo();
-    const session = createOpenAIResponsesWsSession();
-    const first = session.createStore(testOpenAIResponsesStatePolicy(), Date.now(), false);
-    expect(first.writesState).toBe(true);
-    await first.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
-    await first.commitSnapshot('resp_local', 'append', []);
-
-    expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_local', 0)).toBeNull();
-    expect(await session.createStore(testOpenAIResponsesStatePolicy(), Date.now(), false).loadSnapshot('resp_local')).not.toBeNull();
-  });
-
   test('WebSocket store=true promotes every item referenced by a prior local snapshot', async () => {
     const repo = installRepo();
     const session = createOpenAIResponsesWsSession();

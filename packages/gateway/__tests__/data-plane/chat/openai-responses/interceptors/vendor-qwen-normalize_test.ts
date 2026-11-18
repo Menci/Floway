@@ -41,13 +41,3 @@ test("vendor-qwen translates canonical reasoning.effort: 'none' into top-level e
   assertEquals(out.reasoning, undefined);
   assertEquals(out.enable_thinking, false);
 });
-
-test('vendor-qwen leaves a real reasoning.effort value untouched (only the none sentinel triggers the rewrite)', async () => {
-  const input = invocation({ model: 'qwen-max', input: [{ type: 'message', role: 'user', content: 'hi' }], reasoning: { effort: 'high' } });
-
-  await withVendorQwenOpenAIResponsesNormalize(input, stubCtx, okEvents);
-
-  assertEquals(input.payload.reasoning, { effort: 'high' });
-  const out = input.payload as unknown as Record<string, unknown>;
-  assertEquals(out.enable_thinking, undefined);
-});

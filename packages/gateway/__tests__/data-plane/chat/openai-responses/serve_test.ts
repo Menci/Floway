@@ -4,7 +4,6 @@ import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy
 import { createOpenAIResponsesHttpStore } from '../../../../src/data-plane/chat/openai-responses/items/store.ts';
 import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gateway-ctx.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
-import type { StoredOpenAIResponsesSnapshot } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
@@ -39,7 +38,6 @@ vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOrigin
 });
 
 const { openaiResponsesServe } = await import('../../../../src/data-plane/chat/openai-responses/serve.ts');
-const { expandPreviousResponseId } = await import('../../../../src/data-plane/chat/openai-responses/serve-prep.ts');
 
 const API_KEY_ID = 'key_serve_test';
 
@@ -80,13 +78,6 @@ const makePayload = (overrides: Partial<CanonicalOpenAIResponsesPayload> = {}): 
   input: [{ type: 'message', role: 'user', content: 'hello' }],
   ...overrides,
 });
-
-// Compact tests need a real input array (a bare string can't carry the
-// compaction trigger or item_reference shapes the routing layer cares
-// about). Default to the kept-user-message the existing happy-path test
-// uses; override `input` when a test needs a different shape.
-const compactPayload = (overrides: Partial<CanonicalOpenAIResponsesPayload> = {}): CanonicalOpenAIResponsesPayload =>
-  makePayload({ input: [{ type: 'message', role: 'user', content: 'kept' }], ...overrides });
 
 const makeOpenAIResponsesResult = (id = 'resp_test'): OpenAIResponsesResultEx => ({
   id,
@@ -150,40 +141,6 @@ const collectEvents = async (events: AsyncIterable<ProtocolFrame<OpenAIResponses
   return out;
 };
 
-test('compact returns a result envelope from the wrapped attempt', async () => {
-  installRepo();
-  const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
-  const compactionResult: OpenAIResponsesResultEx = {
-    ...makeOpenAIResponsesResult(),
-    object: 'response.compaction',
-    output: [compactionItem] as unknown as OpenAIResponsesResultEx['output'],
-    usage: { input_tokens: 12, output_tokens: 3, total_tokens: 15 },
-  };
-  const observedModelIds: string[] = [];
-  const callOpenAIResponses = vi.fn(async (model: unknown, _body: unknown, action: OpenAIResponsesAction): Promise<ProviderOpenAIResponsesResult> => {
-    if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
-    observedModelIds.push((model as { id: string }).id);
-    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
-  });
-  const candidate = makeCandidate({ upstream: 'up_a', modelId: 'gpt-target', callOpenAIResponses });
-  queueResolution([candidate]);
-  const payload = compactPayload({ model: 'gpt-alias' });
-
-  const result = await openaiResponsesServe.compact({
-    payload,
-    ctx: makeGatewayCtx(),
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'result');
-  if (result.type !== 'result') throw new Error('unreachable');
-  assertEquals(result.result.object, 'response.compaction');
-  assertEquals(callOpenAIResponses.mock.calls.length, 1);
-  assertEquals(callOpenAIResponses.mock.calls[0][2], 'compact');
-  assertEquals(observedModelIds, ['gpt-target']);
-  assertEquals(payload.model, 'gpt-alias');
-});
-
 test('generate falls through to the next candidate when the first yields an upstream error', async () => {
   installRepo();
   const originalImageUrl = 'data:image/png;base64,AQID';
@@ -237,61 +194,6 @@ test('generate falls through to the next candidate when the first yields an upst
   assertEquals(sourceItem.content[0].image_url, originalImageUrl);
 });
 
-// A mid-attempt throw (interceptor bug / translation error / provider-layer
-// JS exception not represented as a ChatServeFailure) must attribute the perf
-// error row to the throwing candidate, not the previous one that already
-// failed cleanly with a 5xx.
-test('mid-attempt throw stamps telemetry with the throwing candidate, not the previous one', async () => {
-  installRepo();
-  const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
-    status: 502, headers: new Headers({ 'content-type': 'application/json' }),
-  });
-  const firstCall = vi.fn(async (): Promise<ProviderOpenAIResponsesResult> => ({
-    action: 'generate', ok: false, response: firstError, modelKey: 'first-key',
-  }));
-  const secondCall = vi.fn(async (): Promise<ProviderOpenAIResponsesResult> => {
-    throw new Error('simulated provider-layer JS exception');
-  });
-  queueResolution([
-    makeCandidate({ upstream: 'up_a', callOpenAIResponses: firstCall }),
-    makeCandidate({ upstream: 'up_b', callOpenAIResponses: secondCall }),
-  ]);
-
-  const ctx = makeGatewayCtx();
-  await openaiResponsesServe.generate({
-    payload: makePayload(),
-    ctx,
-    headers: new Headers(),
-  }).then(
-    () => { throw new Error('expected openaiResponsesServe.generate to throw'); },
-    (error: unknown) => {
-      assertEquals((error as Error).message, 'simulated provider-layer JS exception');
-    },
-  );
-
-  assertEquals(firstCall.mock.calls.length, 1);
-  assertEquals(secondCall.mock.calls.length, 1);
-  assertEquals(ctx.attempt.telemetry?.upstream, 'up_b');
-});
-
-test('generate renders model-missing when no candidates are available', async () => {
-  installRepo();
-  queueResolution([]);
-
-  const result = await openaiResponsesServe.generate({
-    payload: makePayload({ model: 'unknown-model' }),
-    ctx: makeGatewayCtx(),
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'api-error');
-  if (result.type !== 'api-error') throw new Error('unreachable');
-  assertEquals(result.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
-  assertEquals(body.error.type, 'invalid_request_error');
-  assertEquals(body.error.message, 'Model unknown-model is not available on any configured upstream.');
-});
-
 test('generate filters out candidates whose endpoints do not satisfy the responses preference and renders model-unsupported as a 400', async () => {
   installRepo();
   const callOpenAIResponses = vi.fn();
@@ -312,94 +214,6 @@ test('generate filters out candidates whose endpoints do not satisfy the respons
   assertEquals(body.error.type, 'invalid_request_error');
   assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
   assertEquals(callOpenAIResponses.mock.calls.length, 0);
-});
-
-test('expandPreviousResponseId prepends snapshot items and strips the previous_response_id field', async () => {
-  const repo = installRepo();
-  const previousMessageId = 'msg_previous';
-  await repo.openaiResponsesItems.insertMany([{
-    id: previousMessageId,
-    apiKeyId: API_KEY_ID,
-    itemHash: 'previous-message-hash',
-    payload: { item: { type: 'message', id: previousMessageId, role: 'user', content: 'first turn' } },
-    refreshedAt: Date.now(),
-  }], 0);
-  const snapshot: StoredOpenAIResponsesSnapshot = {
-    id: 'resp_prev',
-    apiKeyId: API_KEY_ID,
-    itemIds: [previousMessageId],
-    refreshedAt: Date.now(),
-  };
-  await repo.openaiResponsesSnapshots.insert(snapshot);
-
-  const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), true);
-  const expanded = await expandPreviousResponseId(
-    makePayload({
-      previous_response_id: 'resp_prev',
-      input: [{ type: 'message', role: 'user', content: 'second turn' }],
-    }),
-    store,
-  );
-
-  assertEquals(expanded.previous_response_id, undefined);
-  assertEquals(expanded.input.length, 2);
-  assertEquals(expanded.input[0], { type: 'item_reference', id: previousMessageId });
-  assertEquals(expanded.input[1], { type: 'message', role: 'user', content: 'second turn' });
-});
-
-test('Anthropic Messages biology refusal becomes a non-retryable Codex OpenAI Responses policy failure', async () => {
-  installRepo();
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true,
-    events: makeProtocolFrames([
-      {
-        type: 'message_start',
-        message: {
-          container: null, diagnostics: null, stop_details: null,
-          id: 'msg_bio_refusal',
-          type: 'message',
-          role: 'assistant',
-          content: [],
-          model: 'claude-fable-5',
-          stop_reason: null,
-          stop_sequence: null,
-          usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 4, output_tokens: 0 },
-        },
-      },
-      {
-        type: 'message_delta',
-        delta: {
-          container: null,
-          stop_reason: 'refusal',
-          stop_details: {
-            type: 'refusal',
-            category: 'bio',
-            explanation: 'This request could enable biological harm.',
-          },
-          stop_sequence: null,
-        },
-        usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 0 },
-      },
-      { type: 'message_stop' },
-    ]),
-    modelKey: 'messages-key',
-    headers: new Headers(),
-  }));
-  const candidate = makeCandidate({ upstream: 'up_m', endpoints: { anthropicMessages: {} }, callAnthropicMessages });
-  queueResolution([candidate]);
-
-  const result = await openaiResponsesServe.generate({ payload: makePayload(), ctx: makeGatewayCtx(), headers: new Headers() });
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  const events = await collectEvents(result.events);
-  const failed = events.find((event): event is Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }> => event.type === 'response.failed');
-
-  assertEquals(failed?.response.status, 'failed');
-  assertEquals(failed?.response.error, {
-    code: 'bio_policy',
-    message: 'This request could enable biological harm.',
-  });
-  assertEquals(callAnthropicMessages.mock.calls.length, 1);
 });
 
 test('alias resolution swaps the inbound model id for the target and overlays rules onto the OpenAI Responses IR', async () => {

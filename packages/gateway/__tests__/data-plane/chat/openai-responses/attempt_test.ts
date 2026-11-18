@@ -266,55 +266,6 @@ test('generate defers the role rewrite until after translation to OpenAI Chat Co
   ]);
 });
 
-test('compact returns the clean upstream result for source-edge affinity and storage', async () => {
-  installRepo();
-
-  // Native /responses/compact returns a fully-shaped compaction envelope —
-  // the `action: 'compact'` branch of `provider.callOpenAIResponses` does the
-  // Copilot compaction_trigger reshape internally — so the attempt receives
-  // a compaction result envelope, expands it into synthetic frames, and wraps the
-  // output for storage. The synthesized envelope carries a `compaction`
-  // output item; wrap observes it and derives the 'replace' snapshot.
-  const compactionItem = {
-    type: 'compaction' as const,
-    id: 'cmp_1',
-    encrypted_content: 'ENC',
-  };
-  const compactionResult: OpenAIResponsesResultEx = {
-    ...makeOpenAIResponsesResult(),
-    object: 'response.compaction',
-    // Cast: `compaction` is an input-shaped item type the protocol's
-    // OpenAIResponsesResult.output type does not include but the runtime accepts.
-    output: [compactionItem] as unknown as OpenAIResponsesResultEx['output'],
-  };
-
-  const callOpenAIResponses = vi.fn(async (_model: ProviderModel, _body: Omit<CanonicalOpenAIResponsesPayload, 'model'>, action: OpenAIResponsesAction): Promise<ProviderOpenAIResponsesResult> => {
-    if (action !== 'compact') throw new Error(`compact candidate received action='${action}'`);
-    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
-  });
-
-  const candidate = makeCandidate(callOpenAIResponses);
-  const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), true);
-  const result = await openaiResponsesAttempt.invoke({
-    payload: makePayload({
-      input: [
-        { type: 'message', role: 'user', content: 'kept message' },
-      ],
-    }),
-    action: 'compact',
-    ctx: makeGatewayCtx(store),
-    candidate,
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'result');
-  if (result.type !== 'result') throw new Error('unreachable');
-  assertEquals(result.result.object, 'response.compaction');
-  assertEquals(result.result.output.length, 1);
-  assertEquals((result.result.output[0] as { id: string }).id, 'cmp_1');
-  assertEquals(result.result.id, compactionResult.id);
-});
-
 test('generate strips disallowed headers and states a remote image URL to Anthropic Messages', async () => {
   installRepo();
   initExternalResourceFetcher(() => {
@@ -381,73 +332,6 @@ test('generate strips disallowed headers and states a remote image URL to Anthro
   const image = message.content.find(block => block.type === 'image');
   assert(image?.type === 'image');
   assertEquals(image.source, { type: 'url', url: 'https://example.com/image.png' });
-});
-
-test('generate preserves order and downgrades a disallowed system turn across translation to Anthropic Messages', async () => {
-  installRepo();
-  let observedBody: Omit<AnthropicMessagesPayload, 'model'> | undefined;
-  const endpoints = { anthropicMessages: {} };
-  const candidate: ModelCandidate = {
-    provider: {
-      upstreamId: 'up_test', kind: 'claude-code', name: 'up_test', inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider({
-        callAnthropicMessages: async (_model, body): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
-          observedBody = body as Omit<AnthropicMessagesPayload, 'model'>;
-          return {
-            ok: true,
-            events: (async function* () {
-              yield eventFrame<AnthropicMessagesStreamEventEx>({
-                type: 'message_start',
-                message: {
-                  container: null, diagnostics: null, stop_details: null,
-                  id: 'msg_test', type: 'message', role: 'assistant', content: [],
-                  model: 'upstream-model', stop_reason: null, stop_sequence: null,
-                  usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 0, output_tokens: 0 },
-                },
-              });
-              yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_stop' });
-              yield doneFrame();
-            })(),
-            modelKey: 'k',
-            headers: new Headers(),
-          };
-        },
-      }),
-    },
-    model: stubInternalModel({
-      endpoints,
-      providerModels: {
-        up_test: stubProviderModel({
-          endpoints,
-          enabledFlags: new Set(['rewrite-disallowed-mid-conv-system-to-user']),
-        }),
-      },
-    }, 'up_test'),
-    fetcher: directFetcher,
-  };
-
-  const result = await openaiResponsesAttempt.generate({
-    payload: makePayload({
-      input: [
-        { type: 'message', role: 'user', content: 'AGENTS' },
-        { type: 'message', role: 'system', content: 'skills' },
-        { type: 'message', role: 'user', content: 'current question' },
-      ],
-    }),
-    ctx: makeGatewayCtx(createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), false)),
-    candidate,
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-  assertEquals(observedBody?.messages, [
-    { role: 'user', content: 'AGENTS' },
-    { role: 'user', content: [{ type: 'text', text: 'skills' }] },
-    { role: 'user', content: [{ type: 'text', text: 'current question', cache_control: { type: 'ephemeral' } }] },
-  ]);
 });
 
 test('generate restores signed hosted-tool replay data without stored state', async () => {

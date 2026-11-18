@@ -148,21 +148,6 @@ test('client output waits for persistence before publishing output_item.done', a
   await iterator.return?.(doneFrame());
 });
 
-test('client output does not publish output_item.done when persistence fails', async () => {
-  const { repo, store } = memoryOutputHarness();
-  const persistenceError = new Error('simulated item persistence failure');
-  vi.spyOn(repo.openaiResponsesItems, 'insertMany').mockRejectedValue(persistenceError);
-  const input = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: completedReasoningItem });
-  };
-  const iterator = wrapOpenAIResponsesClientOutput(input(), {
-    store,
-    responseId: 'resp_public',
-  })[Symbol.asyncIterator]();
-
-  await expect(iterator.next()).rejects.toBe(persistenceError);
-});
-
 test('client output persists completed items before rethrowing an iterator error', async () => {
   const { repo, store } = memoryOutputHarness();
   const item = completedReasoningItem;

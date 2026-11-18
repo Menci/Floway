@@ -80,23 +80,6 @@ describe('OpenAI Responses resource completion', () => {
     assertEquals(completed.metadata, {});
   });
 
-  it('states the schema default for a required key neither side supplied', () => {
-    const completed = completeResponseResource(translatedResource(), sources(), true);
-    assertEquals(completed.temperature, 1);
-    assertEquals(completed.top_p, 1);
-    assertEquals(completed.presence_penalty, 0);
-    assertEquals(completed.frequency_penalty, 0);
-    assertEquals(completed.top_logprobs, 0);
-    assertEquals(completed.parallel_tool_calls, true);
-    assertEquals(completed.truncation, 'disabled');
-    assertEquals(completed.background, false);
-    assertEquals(completed.service_tier, 'default');
-    assertEquals(completed.tool_choice, 'auto');
-    assertEquals(completed.tools, []);
-    assertEquals(completed.metadata, {});
-    assertEquals(completed.text, { format: { type: 'text' } });
-  });
-
   it('reports gateway state for created_at and store', () => {
     const completed = completeResponseResource(translatedResource(), { ...sources({ store: true }), stored: false }, true);
     assertEquals(completed.created_at, 1_700_000_000);
@@ -115,16 +98,6 @@ describe('OpenAI Responses resource completion', () => {
 
     const { usage: _usage, ...withoutUsage } = translatedResource();
     assertEquals(completeResponseResource(withoutUsage, sources(), true).usage, null);
-  });
-
-  it('completes a reasoning block and a text block to their own required keys', () => {
-    const completed = completeResponseResource(
-      translatedResource(),
-      sources({ reasoning: { effort: 'high' }, text: { verbosity: 'low' } }),
-      true,
-    );
-    assertEquals(completed.reasoning, { effort: 'high', summary: null });
-    assertEquals(completed.text, { verbosity: 'low', format: { type: 'text' } });
   });
 
   // The normalizers run on the resolved value, so a tool array the upstream

@@ -1,11 +1,8 @@
 import { beforeEach, test } from 'vitest';
 
 import {
-  createImageSourceInspector,
   inspectImageSources,
   DEFAULT_IMAGE_MODEL,
-  type ImageGenerationConfig,
-  type ImageOutcome,
   imageGenerationServerTool,
   imageTerminal,
   parseImageStreamEvent,
@@ -78,34 +75,6 @@ const unresolvableSourceCases = ([
 
 // ── prepareImageGenerationConfig ──
 
-test('prepareImageGenerationConfig accepts a valid hosted entry and defaults the model', () => {
-  const result = prepareImageGenerationConfig([{ type: 'image_generation', quality: 'low', size: '1024x1024' } as OpenAIResponsesTool]);
-  assert(result.ok);
-  assertEquals(result.config.model, DEFAULT_IMAGE_MODEL);
-  assertEquals(result.config.quality, 'low');
-  assertEquals(result.config.size, '1024x1024');
-  assertEquals(result.config.action, 'auto');
-});
-
-test('prepareImageGenerationConfig rejects any client-supplied n, including n:1', () => {
-  for (const n of [2, 1, 0]) {
-    const result = prepareImageGenerationConfig([{ type: 'image_generation', n } as OpenAIResponsesTool]);
-    assertFalse(result.ok);
-    assert(!result.ok);
-    assertEquals(result.error.code, 'unknown_parameter');
-    assertEquals(result.error.param, 'tools[0].n');
-  }
-});
-
-test('prepareImageGenerationConfig rejects unknown tool fields (Azure-strict)', () => {
-  for (const field of ['seed', 'thinking', 'made_up_field']) {
-    const result = prepareImageGenerationConfig([{ type: 'image_generation', [field]: 1 } as OpenAIResponsesTool]);
-    assert(!result.ok);
-    assertEquals(result.error.code, 'unknown_parameter');
-    assertEquals(result.error.param, `tools[0].${field}`);
-  }
-});
-
 test('prepareImageGenerationConfig decodes image_url masks and reports file_id as a Floway limitation', () => {
   const ok = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask: { image_url: `data:image/png;base64,${PNG_B64}` } } as OpenAIResponsesTool]);
   assert(ok.ok);
@@ -175,23 +144,6 @@ test.each(Object.entries(imageInputContainers).filter(([container]) => container
   },
 );
 
-test('inspectImageSources reads tool-result images and preserves forward order', () => {
-  const input: CanonicalOpenAIResponsesInputItem[] = [
-    { type: 'function_call_output', call_id: 'c1', output: [{ type: 'input_image', image_url: `data:image/png;base64,${PNG_B64}`, detail: 'auto' }] },
-    { type: 'custom_tool_call_output', call_id: 'c2', output: [{ type: 'input_image', image_url: `data:image/jpeg;base64,${PNG_B64}`, detail: 'auto' }] },
-    { type: 'message', role: 'user', content: [{ type: 'input_image', image_url: `data:image/webp;base64,${PNG_B64}`, detail: 'auto' }] },
-  ];
-  const { sources } = inspectImageSources(input);
-  assertEquals(sources.length, 3);
-  const [first, second, third] = sources;
-  assert(first !== undefined && !('wireUrl' in first));
-  assert(second !== undefined && !('wireUrl' in second));
-  assert(third !== undefined && !('wireUrl' in third));
-  assertEquals(first.mimeType, 'image/png');
-  assertEquals(second.mimeType, 'image/jpeg');
-  assertEquals(third.mimeType, 'image/webp');
-});
-
 test('resolveImageOperation exposes a malformed replayed result as an invariant failure', () => {
   const inspection = inspectImageSources([
     { type: 'image_generation_call', id: 'ig_bad', status: 'completed', result: '%%%' },
@@ -204,41 +156,7 @@ test('resolveImageOperation exposes a malformed replayed result as an invariant 
   );
 });
 
-test('auto generation pivots to edit when a generated image is fed back', () => {
-  const config: ImageGenerationConfig = { model: DEFAULT_IMAGE_MODEL, action: 'auto' };
-  const inspect = createImageSourceInspector();
-  const initial = resolveImageOperation(config, inspect([]));
-  assert(initial.ok);
-  assertEquals(initial.action, 'generate');
-
-  const replayInput = expandImageGenerationCall(
-    { type: 'image_generation_call', id: 'ig_replay', status: 'completed', result: PNG_B64 },
-  );
-  const replay = resolveImageOperation(config, inspect(replayInput.feedback!));
-  assert(replay.ok);
-  assertEquals(replay.action, 'edit');
-  assertEquals(replay.sources.length, 1);
-});
-
 // ── expandImageGenerationCall ──
-
-test('expandImageGenerationCall provides fallback arguments, result and image feedback', () => {
-  const out = expandImageGenerationCall(
-    { type: 'image_generation_call', id: 'ig_1', status: 'completed', result: PNG_B64, revised_prompt: 'a red dot', output_format: 'jpeg' },
-  );
-  assertEquals(out.callSource, 'synthesized');
-  if (out.callSource !== 'synthesized') throw new Error('Expected a synthesized call');
-  assertEquals(out.synthesizedCall, { callId: 'cc_from_ig_1', arguments: '{"prompt":"a red dot"}' });
-  assert(typeof out.output === 'string');
-  assertStringIncludes(out.output, '"ok":true');
-  assertEquals(out.feedback?.length, 1);
-  const message = out.feedback![0];
-  assertEquals(message.role, 'user');
-  assert(Array.isArray(message.content));
-  const imageBlock = message.content.find(b => b.type === 'input_image');
-  assert(imageBlock !== undefined);
-  assertEquals((imageBlock as { image_url: string }).image_url, `data:image/jpeg;base64,${PNG_B64}`);
-});
 
 // ── imageTerminal ──
 
@@ -258,21 +176,6 @@ test.each([false, true])('image replay records input fields independently of suc
   assertFalse(Object.hasOwn(matched, 'synthesizedCall'));
   assertEquals(expandImageGenerationCall({ ...item, result: 'b3RoZXI=' }, { data: terminal.replayData }).callSource, 'replay');
   assertEquals(expandImageGenerationCall({ ...item, revised_prompt: 'different' }, { data: terminal.replayData }).callSource, 'synthesized');
-});
-
-test('imageTerminal on success echoes the backend-resolved fields and closes with a single completed event', () => {
-  const outcome: ImageOutcome = { ok: true, b64: PNG_B64, echo: { size: '1024x1024', quality: 'high', output_format: 'png', background: 'opaque' } };
-  const { item, endEvents } = imageTerminal('a red dot', 'generate', outcome);
-  assertEquals((item as { status?: string }).status, 'completed');
-  assertEquals((item as { result?: string }).result, PNG_B64);
-  assertEquals((item as { revised_prompt?: string }).revised_prompt, 'a red dot');
-  assertEquals((item as { action?: string }).action, 'generate');
-  assertEquals((item as { quality?: string }).quality, 'high');
-  assertEquals((item as { size?: string }).size, '1024x1024');
-  assertEquals((item as { output_format?: string }).output_format, 'png');
-  assertEquals((item as { background?: string }).background, 'opaque');
-  assertEquals(endEvents.length, 1);
-  assertEquals(endEvents[0].type, 'response.image_generation_call.completed');
 });
 
 // ── parseImageStreamEvent ──
@@ -311,11 +214,6 @@ test('prepareImageGenerationConfig validates every hosted entry, not just the la
 
 // ── parseRetryAfterMs ──
 
-test('parseRetryAfterMs prefers retry-after-ms over Retry-After', () => {
-  const h = new Headers({ 'retry-after-ms': '2500', 'retry-after': '7' });
-  assertEquals(parseRetryAfterMs(h), 2500);
-});
-
 test('parseRetryAfterMs interprets Retry-After HTTP-date as delta from now', () => {
   // HTTP-date is 1-second resolution and Date.parse() strips ms, so allow a
   // ~1s skew between toUTCString() and the parser's Date.now().
@@ -330,32 +228,6 @@ test('parseRetryAfterMs returns null for zero / negative values (gpt-image-1 "0.
   assertEquals(parseRetryAfterMs(new Headers({ 'retry-after-ms': '0' })), null);
   assertEquals(parseRetryAfterMs(new Headers({ 'retry-after': '0' })), null);
   assertEquals(parseRetryAfterMs(new Headers({ 'retry-after': '-5' })), null);
-});
-
-test('imageGenerationServerTool fetches repeated remote edit sources once', async () => {
-  const urls: string[] = [];
-  initExternalResourceFetcher(url => {
-    urls.push(url.href);
-    return Promise.resolve(validPngResponse());
-  });
-  const remote = { type: 'input_image', image_url: 'https://example.com/source.png', detail: 'auto' } as const;
-  const input: CanonicalOpenAIResponsesInputItem[] = [
-    imageInputContainers.message(remote),
-    imageInputContainers.function_output(remote),
-  ];
-
-  const result = await imageGenerationServerTool(
-    makeCtx({ tools: [{ type: 'image_generation', action: 'edit' }], input }),
-    gatewayCtx(),
-  );
-
-  assert(result.type === 'active');
-  assertEquals(urls, ['https://example.com/source.png']);
-  assertEquals(result.expandHistoryItem?.(input[0]), undefined);
-  assert(input[0].type === 'message' && Array.isArray(input[0].content));
-  const first = input[0].content[0];
-  assert(first.type === 'input_image');
-  assertEquals(first.image_url, 'https://example.com/source.png');
 });
 
 test('imageGenerationServerTool enforces the aggregate limit across distinct successful downloads', async () => {

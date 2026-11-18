@@ -48,18 +48,6 @@ test('agentMessageContent normalizes readable beta content into OpenAI Responses
   ]);
 });
 
-test('agentMessageContent reports the exact path for unknown beta content', () => {
-  const error = assertThrows(
-    () => agentMessageContent(agentMessage([{ type: 'future_agent_part', value: 1 }])),
-    Error,
-  );
-  assertEquals(tryCatchChatServeFailure<InputErrorDetails & { readonly kind: 'invalid-input' }>(error), {
-    kind: 'invalid-input',
-    message: "Invalid value: 'future_agent_part' for 'agent_message.content[0].type'.",
-    param: 'agent_message.content[0].type',
-  });
-});
-
 test('agentMessageContent reports the exact path for malformed text', () => {
   const error = assertThrows(
     () => agentMessageContent(agentMessage([

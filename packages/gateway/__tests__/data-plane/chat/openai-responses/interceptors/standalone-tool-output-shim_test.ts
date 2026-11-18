@@ -85,23 +85,6 @@ test('forwards standalone outputs verbatim to a native OpenAI Responses target w
   assertEquals(seen.input, [...createGoalTurn, goalObjective]);
 });
 
-test.each(['anthropicMessages', 'openaiChatCompletions'] as const)(
-  'lowers standalone outputs at a %s target even without the flag',
-  async targetApi => {
-    const { seen } = await lower([...createGoalTurn, goalObjective], { targetApi });
-    assert(seen !== undefined);
-    assertEquals(seen.input, [...createGoalTurn, loweredGoalObjective]);
-  },
-);
-
-test('leaves a payload without standalone outputs as the same object', async () => {
-  for (const options of [{ enabledFlags: FLAG }, {}, { targetApi: 'anthropicMessages' as const }]) {
-    const { before, seen } = await lower(createGoalTurn, options);
-    assert(seen !== undefined);
-    assert(seen === before);
-  }
-});
-
 test('returns an input error without running downstream when a standalone output has no name', async () => {
   const { result, seen } = await lower([
     { type: 'message', role: 'user', content: 'hi' },

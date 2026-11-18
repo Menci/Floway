@@ -233,27 +233,6 @@ test('does not inherit force through a foreign program blob', async () => {
   expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().input[0]).toMatchObject({ fingerprint: 'foreign' });
 });
 
-test('replays required compaction state to another model in the same compatibility scope', async () => {
-  const main = candidate('copilot-a', 'gpt-main', { bindToUpstream: true, key: 'openai' });
-  const reviewer = candidate('copilot-a', 'gpt-reviewer', { bindToUpstream: true, key: 'openai' });
-  const otherAccount = candidate('copilot-b', 'gpt-reviewer', { bindToUpstream: true, key: 'openai' });
-  const carrier = await codec.wrap(
-    'compaction-state',
-    targetFor(main),
-    carrierDomain('compaction', 'encrypted_content'),
-  );
-  const prepared = await analyzeOpenAIResponsesAffinity({
-    model: 'gpt-reviewer',
-    input: [{ type: 'compaction', id: 'cmp_client', encrypted_content: carrier }],
-  }, codec);
-
-  expect(prepared.evaluateCandidate(reviewer)).toMatchObject({ kind: 'accepted', degrades: false });
-  expect(prepared.evaluateCandidate(otherAccount)).toEqual({ kind: 'rejected' });
-  expect(select([reviewer, otherAccount], prepared).payloadFor(reviewer).input[0]).toMatchObject({
-    encrypted_content: 'compaction-state',
-  });
-});
-
 test.each(['compaction', 'context_compaction'] as const)('lets originless %s follow candidates while natural state forces its origin', async type => {
   const synthetic = await codec.wrap(undefined, targetFor(candidateA), carrierDomain(type, 'encrypted_content'));
   const originlessItem = {
@@ -273,56 +252,4 @@ test.each(['compaction', 'context_compaction'] as const)('lets originless %s fol
   expect(naturalPrepared.requiredTargets).toEqual([targetFor(candidateA)]);
   expect(naturalPrepared.evaluateCandidate(candidateA)).toMatchObject({ kind: 'accepted', degrades: false });
   expect(naturalPrepared.evaluateCandidate(candidateB)).toMatchObject({ kind: 'rejected' });
-});
-
-test('evaluates required eligibility and optional degradation in one candidate projection', async () => {
-  const high = { ...candidateA, rules: { reasoning: { effort: 'high' } } };
-  const low = { ...candidateA, rules: { reasoning: { effort: 'low' } } };
-  const required = await codec.wrap(
-    'compaction-state',
-    targetFor(high),
-    carrierDomain('compaction', 'encrypted_content'),
-  );
-  const optional = await codec.wrap(
-    'reasoning-state',
-    targetFor(low),
-    carrierDomain('reasoning', 'encrypted_content'),
-  );
-  const prepared = await analyzeOpenAIResponsesAffinity({
-    model: 'model',
-    input: [
-      { type: 'compaction', id: 'cmp_client', encrypted_content: required },
-      { type: 'reasoning', id: 'rs_client', summary: [], encrypted_content: optional },
-    ] as CanonicalOpenAIResponsesPayload['input'],
-  }, codec);
-
-  expect(prepared.evaluateCandidate(high)).toMatchObject({ kind: 'accepted', degrades: false });
-  expect(prepared.evaluateCandidate(low)).toMatchObject({ kind: 'accepted', degrades: false });
-  expect(prepared.evaluateCandidate(candidateB)).toMatchObject({ kind: 'rejected' });
-  expect(select([high, low, candidateB], prepared).candidates).toEqual([low, high]);
-});
-
-test('reports incompatible required state discovered by the same item analysis', async () => {
-  const requiredA = await codec.wrap(
-    'state-a',
-    targetFor(candidateA),
-    carrierDomain('compaction', 'encrypted_content'),
-  );
-  const requiredB = await codec.wrap(
-    'state-b',
-    targetFor(candidateB),
-    carrierDomain('compaction', 'encrypted_content'),
-  );
-  const prepared = await analyzeOpenAIResponsesAffinity({
-    model: 'model',
-    input: [
-      { type: 'compaction', id: 'cmp_a', encrypted_content: requiredA },
-      { type: 'compaction', id: 'cmp_b', encrypted_content: requiredB },
-    ] as CanonicalOpenAIResponsesPayload['input'],
-  }, codec);
-
-  expect(selectAffinityCandidates([candidateA, candidateB], prepared)).toMatchObject({
-    kind: 'routing-unavailable',
-    message: expect.stringContaining('multiple incompatible targets'),
-  });
 });

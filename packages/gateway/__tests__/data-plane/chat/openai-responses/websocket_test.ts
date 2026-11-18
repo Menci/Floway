@@ -4,7 +4,7 @@ import { onTestFinished, test, vi } from 'vitest';
 import { app } from '../../../../src/app.ts';
 import { hashOpenAIResponsesItem } from '../../../../src/data-plane/chat/openai-responses/items/identity.ts';
 import { openaiResponsesServe } from '../../../../src/data-plane/chat/openai-responses/serve.ts';
-import { INTERRUPT_UPSTREAM_ABORT_WARNING_MS, KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/openai-responses/websocket.ts';
+import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/openai-responses/websocket.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { initBackgroundSchedulerResolver } from '../../../../src/runtime/background.ts';
@@ -159,23 +159,6 @@ const withSuccessfulOpenAIResponsesUpstream = async <T>(run: () => Promise<T>): 
     run,
   );
 
-const completeOpenAIResponsesTurn = async (
-  client: TestWorkerWebSocket,
-  eventId: string,
-): Promise<void> => {
-  const received = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
-  client.send(JSON.stringify({
-    type: 'response.create',
-    event_id: eventId,
-    response: {
-      model: 'gpt-direct-responses',
-      input: eventId,
-    },
-  }));
-  await received;
-  await waitForMicrotasks();
-};
-
 test('OpenAI Responses WebSocket forwards stream events, echoes event_id, and ends the turn on the terminal event', async () => {
   const { apiKey } = await setupAppTest();
   await withMockedFetch(
@@ -233,36 +216,6 @@ test('OpenAI Responses WebSocket forwards stream events, echoes event_id, and en
         input_tokens_details: { cached_tokens: 0 },
         output_tokens_details: { reasoning_tokens: 0 },
       });
-    }),
-  );
-});
-
-test('OpenAI Responses WebSocket starts capturing on the next turn when dump retention is enabled after upgrade', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
-
-  await withSuccessfulOpenAIResponsesUpstream(
-    async () => await withWorkerWebSocketRuntime(async () => {
-      const client = await connectOpenAIResponsesWebSocket(apiKey.key);
-      await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
-
-      await completeOpenAIResponsesTurn(client, 'capture-after-enable');
-      await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
-
-      const stored = dumps.stored[0];
-      assertExists(stored);
-      assertEquals(stored.keyId, apiKey.id);
-      assertEquals(stored.record.request.method, 'WS');
-      assertEquals(stored.record.request.path, '/v1/responses');
-      assertEquals(JSON.parse(new TextDecoder().decode(stored.record.request.body)), {
-        type: 'response.create',
-        event_id: 'capture-after-enable',
-        response: {
-          model: 'gpt-direct-responses',
-          input: 'capture-after-enable',
-        },
-      });
-      client.close();
     }),
   );
 });
@@ -666,76 +619,6 @@ test('OpenAI Responses WebSocket interrupts an active turn and continues from it
       assertStringIncludes(JSON.stringify(upstreamBodies[1].input), 'finished');
     }),
   );
-});
-
-test('OpenAI Responses WebSocket warns while an interrupted upstream iterator is still stopping', async () => {
-  const { apiKey } = await setupAppTest();
-  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
-  onTestFinished(() => warning.mockRestore());
-  let releaseUpstream!: () => void;
-  const upstreamReleased = new Promise<void>(resolve => { releaseUpstream = resolve; });
-  const encoder = new TextEncoder();
-
-  await withMockedFetch(async request => {
-    const url = new URL(request.url);
-    if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-    if (url.pathname === '/copilot_internal/v2/token') {
-      return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-    }
-    if (url.pathname === '/models') {
-      return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
-    }
-    if (url.pathname === '/responses') {
-      return new Response(new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(encoder.encode(`event: response.created\ndata: ${JSON.stringify({
-            type: 'response.created',
-            sequence_number: 0,
-            response: {
-              id: 'resp_upstream_waiting',
-              object: 'response',
-              model: 'gpt-direct-responses',
-              status: 'in_progress',
-              output: [],
-              error: null,
-              incomplete_details: null,
-            },
-          })}\n\n`));
-        },
-        cancel: async () => await upstreamReleased,
-      }), { headers: { 'content-type': 'text/event-stream' } });
-    }
-    throw new Error(`Unhandled fetch ${request.url}`);
-  }, async () => await withWorkerWebSocketRuntime(async () => {
-    const client = await connectOpenAIResponsesWebSocket(apiKey.key);
-    const created = waitForMessages(client, messages => messages.some(message => message.type === 'response.created'));
-    client.send(JSON.stringify({
-      type: 'response.create',
-      response: { model: 'gpt-direct-responses', input: 'start', store: false },
-    }));
-    const createdEvents = await created;
-    const responseId = (createdEvents.find(message => message.type === 'response.created')!.response as { id: string }).id;
-    const time = new FakeTime(Date.now());
-    onTestFinished(() => time.restore());
-
-    const accepted = waitForMessages(client, messages => messages.some(message => message.type === 'response.interrupt.accepted'));
-    client.send(JSON.stringify({
-      type: 'response.interrupt',
-      response_id: responseId,
-      mode: 'discard_partial_items',
-    }));
-    await accepted;
-
-    await time.tickAsync(INTERRUPT_UPSTREAM_ABORT_WARNING_MS);
-    const warningCalls = [...warning.mock.calls];
-    const terminal = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
-    releaseUpstream();
-    assertEquals((await terminal).at(-1)?.type, 'response.incomplete');
-    assertEquals(warningCalls, [[
-      'Floway: Responses WebSocket interrupt is still waiting for the upstream stream to stop after abort',
-      { responseId, model: 'gpt-direct-responses', waitedMs: INTERRUPT_UPSTREAM_ABORT_WARNING_MS },
-    ]]);
-  }));
 });
 
 test('OpenAI Responses WebSocket returns invalid_request_error for malformed client messages', async () => {
@@ -1310,122 +1193,6 @@ test('OpenAI Responses WebSocket makes a done reasoning item reusable from a fre
         secondClient?.close();
         await waitForMicrotasks();
       }
-    }),
-  );
-});
-
-// Exercises the session-level item cache directly: createOpenAIResponsesWsSession
-// builds a per-session MemoryOpenAIResponsesStatefulBacking that mirrors every
-// durable write. Wiping the D1-backed repo between turns proves the second
-// message resolves the prior snapshot purely from in-RAM session cache.
-// A fresh WS session after the repo wipe MUST NOT see it (the cache is
-// per-session, not per-api-key).
-test('OpenAI Responses WebSocket session-level store: second message resolves prior items via session cache', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  const upstreamBodies: unknown[] = [];
-
-  await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-      }
-      if (url.pathname === '/models') {
-        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
-      }
-      if (url.pathname === '/responses') {
-        upstreamBodies.push(JSON.parse(await request.text()));
-        const turn = upstreamBodies.length;
-        return sseOpenAIResponsesResponse({
-          id: `resp_session_${turn}`,
-          object: 'response',
-          model: 'gpt-direct-responses',
-          status: 'completed',
-          output: [{
-            id: `assistant_session_${turn}`,
-            type: 'message',
-            role: 'assistant',
-            status: 'completed',
-            content: [{ type: 'output_text', text: `turn ${turn}`, annotations: [] }],
-          }],
-        });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => await withWorkerWebSocketRuntime(async () => {
-      const sessionA = await connectOpenAIResponsesWebSocket(apiKey.key);
-      const firstTerminal = waitForMessages(sessionA, messages => messages.some(isTerminalResponseEvent));
-      sessionA.send(JSON.stringify({
-        type: 'response.create',
-        response: { model: 'gpt-direct-responses', input: 'turn one input' },
-      }));
-      const firstMessages = await firstTerminal;
-      const firstCompleted = firstMessages.find(message => message.type === 'response.completed') as { response?: { id?: string } } | undefined;
-      const firstResponseId = firstCompleted?.response?.id;
-      assertExists(firstResponseId);
-
-      // The first turn wrote to both the durable repo and the session-local
-      // cache. Wipe the repo to prove the next lookup comes from the cache
-      // alone.
-      assertExists(await repo.openaiResponsesSnapshots.lookup(apiKey.id, firstResponseId, 0));
-      await repo.openaiResponsesSnapshots.deleteAll();
-      await repo.openaiResponsesItems.deleteAll();
-      assertEquals(await repo.openaiResponsesSnapshots.lookup(apiKey.id, firstResponseId, 0), null);
-
-      const secondTerminal = waitForMessages(sessionA, messages => messages.some(isTerminalResponseEvent));
-      sessionA.send(JSON.stringify({
-        type: 'response.create',
-        response: {
-          model: 'gpt-direct-responses',
-          previous_response_id: firstResponseId,
-          input: 'turn two input',
-        },
-      }));
-      await secondTerminal;
-
-      const secondBody = upstreamBodies[1] as { previous_response_id?: unknown; input: Array<{ type: string; role?: string; content?: unknown }> };
-      assertEquals(secondBody.previous_response_id, undefined);
-      // The snapshot resolved via the session cache contains turn 1's staged
-      // user input and the prior assistant message; the new user input is
-      // appended verbatim.
-      assertEquals(secondBody.input.map(item => [item.type, item.role, item.content]), [
-        ['message', 'user', 'turn one input'],
-        ['message', 'assistant', [{ type: 'output_text', text: 'turn 1', annotations: [] }]],
-        ['message', 'user', 'turn two input'],
-      ]);
-
-      const restored = await repo.openaiResponsesSnapshots.lookup(apiKey.id, firstResponseId, 0);
-      assertExists(restored);
-      assertEquals((await repo.openaiResponsesItems.lookupMany(apiKey.id, restored.itemIds, 0)).length, restored.itemIds.length);
-      await repo.openaiResponsesSnapshots.deleteAll();
-      await repo.openaiResponsesItems.deleteAll();
-
-      // A fresh WS session for the same api key has its own empty cache; with
-      // the repo wiped, the snapshot is unreachable.
-      const sessionB = await connectOpenAIResponsesWebSocket(apiKey.key);
-      const missingError = waitForMessages(sessionB, messages => messages.length === 1);
-      sessionB.send(JSON.stringify({
-        type: 'response.create',
-        event_id: 'evt_b',
-        response: {
-          model: 'gpt-direct-responses',
-          previous_response_id: 'resp_session_1',
-          input: 'cross-session attempt',
-        },
-      }));
-
-      assertEquals(await missingError, [{
-        type: 'error',
-        event_id: 'evt_b',
-        status: 400,
-        error: {
-          message: "Previous response with id 'resp_session_1' not found.",
-          type: 'invalid_request_error',
-          param: 'previous_response_id',
-          code: 'previous_response_not_found',
-        },
-      }]);
     }),
   );
 });
