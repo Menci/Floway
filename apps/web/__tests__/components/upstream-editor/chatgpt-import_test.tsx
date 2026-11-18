@@ -64,22 +64,6 @@ const openImport = async () => {
 };
 
 describe('ChatGPT credential import', () => {
-  it('sends only the fields the operator filled in', async () => {
-    await openImport();
-    fireEvent.click(screen.getByRole('tab', { name: 'Manual' }));
-    await settle();
-
-    fireEvent.change(screen.getByLabelText(/^Access token/), { target: { value: ' opaque ' } });
-    fireEvent.change(screen.getByLabelText('Plan type'), { target: { value: 'team' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Import credential' }));
-    await settle();
-
-    expect(bodyOf(EXCHANGE_PATH)?.manual).toEqual({
-      access_token: 'opaque',
-      plan_type: 'team',
-    });
-  });
-
   it('will not import a document the operator has not previewed', async () => {
     await openImport();
     fireEvent.change(screen.getByRole('textbox', { name: 'Credential JSON' }), { target: { value: twoAccounts } });

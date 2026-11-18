@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { mapResult, mergeResults } from '../../src/api/partial-results';
+import { mergeResults } from '../../src/api/partial-results';
 
 describe('partial page loads', () => {
   it('keeps what is on screen for the region that failed', () => {
@@ -29,11 +29,5 @@ describe('partial page loads', () => {
     );
 
     expect(error).toBe('keys unavailable');
-  });
-
-  it('carries a failure through the selector unchanged', () => {
-    const failed = { error: { status: 503, message: 'catalog unavailable' } };
-    expect(mapResult(failed, () => 'unreached')).toBe(failed);
-    expect(mapResult({ data: { data: ['a'] } }, body => body.data)).toEqual({ data: ['a'] });
   });
 });

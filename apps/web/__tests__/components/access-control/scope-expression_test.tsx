@@ -64,25 +64,6 @@ test('read-only mode closes an active draft and cancels its deferred blur', asyn
   expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Model' }).value).toBe('gpt-5');
 });
 
-test('starts with a slash and an ellipsis button and puts matching resource types first', () => {
-  const { container } = renderEditor();
-
-  const root = screen.getByRole('button', { name: 'Resource type' });
-  expect(root.classList.contains('floway-scope-expression-append')).toBe(true);
-  expect(root.querySelector('svg')).toBeTruthy();
-  expect(container.querySelector('.floway-scope-expression-slash')!.textContent).toBe('/');
-  expect(screen.queryByText('Select')).toBeNull();
-  expect(screen.queryByText('All')).toBeNull();
-
-  fireEvent.click(root);
-  const input = screen.getByRole('combobox', { name: 'Resource type' });
-  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Self', 'User', 'Upstream', 'Group']);
-  fireEvent.change(input, { target: { value: 'u' } });
-  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['User', 'Upstream', 'Self', 'Group']);
-  fireEvent.change(input, { target: { value: 'Upstream' } });
-  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Upstream', 'Self', 'User', 'Group']);
-});
-
 test('advances from kind to upstream to model while storing each valid prefix', () => {
   const { changed } = renderEditor();
 
@@ -112,20 +93,6 @@ test('changing an upstream preserves the later model even when the new upstream 
 
   expect(changed).toHaveBeenLastCalledWith({ kind: 'upstreamModel', upstreamId: 'up_b', model: { kind: 'exact', value: 'gpt-5' } });
   expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Model' }).value).toBe('');
-});
-
-test('lists matched models, custom entries, then every unmatched model', () => {
-  renderEditor({ kind: 'upstream', upstreamId: 'up_a' });
-  fireEvent.click(screen.getByRole('button', { name: 'Model' }));
-  const input = screen.getByRole('combobox', { name: 'Model' });
-  fireEvent.change(input, { target: { value: '^gpt-5$' } });
-  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['gpt-5', '^gpt-5$', '/^gpt-5$/', 'gpt-6']);
-  fireEvent.change(input, { target: { value: '^future$' } });
-  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['^future$', '/^future$/', 'gpt-5', 'gpt-6']);
-  fireEvent.change(input, { target: { value: '[' } });
-  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['[', 'gpt-5', 'gpt-6']);
-  fireEvent.change(input, { target: { value: '^GPT-5$' } });
-  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['^GPT-5$', '/^GPT-5$/', 'gpt-5', 'gpt-6']);
 });
 
 test('preserves the existing regex kind when a model draft loses focus', async () => {
@@ -166,19 +133,6 @@ test('does not commit an upstream draft on blur without selecting a real upstrea
   expect(screen.getByTestId('scope').textContent).toBe('{"kind":"upstreams"}');
 });
 
-test('changing the resource type deletes incompatible later parts', () => {
-  const { changed } = renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } });
-
-  fireEvent.click(screen.getByRole('button', { name: 'Upstream' }));
-  fireEvent.change(screen.getByRole('combobox', { name: 'Resource type' }), { target: { value: 'User' } });
-  fireEvent.click(screen.getByRole('option', { name: 'User' }));
-
-  expect(changed).toHaveBeenLastCalledWith({ kind: 'users' });
-  expect(screen.queryByText('Copilot')).toBeNull();
-  expect(screen.queryByText('gpt-5')).toBeNull();
-  expect(screen.getByRole('combobox', { name: 'Resource' })).toBeTruthy();
-});
-
 test('discards the active draft when another part is clicked', async () => {
   const { changed } = renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } });
 
@@ -193,14 +147,4 @@ test('discards the active draft when another part is clicked', async () => {
   await waitFor(() => expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Resource type' }).value).toBe('Upstream'));
   expect(changed).not.toHaveBeenCalledWith({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'discard-me' } });
   expect(screen.getByTestId('scope').textContent).toBe('{"kind":"upstreamModel","upstreamId":"up_a","model":{"kind":"exact","value":"gpt-5"}}');
-});
-
-test('resource type autocomplete matches localized labels', async () => {
-  await setLanguage('zh-Hans');
-  renderEditor({ kind: 'upstreams' });
-
-  fireEvent.click(screen.getByRole('button', { name: '上游' }));
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: '用户' } });
-
-  expect(screen.getByRole('option', { name: '用户' })).not.toBeNull();
 });

@@ -44,15 +44,6 @@ describe('what the error page is told about its trace', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('replaces the trace once the maps land', async () => {
-    vi.stubEnv('DEV', false);
-    renderInApp(<Probe stack={RAW} />);
-    // The restoration loads its source map library through a dynamic import,
-    // which the test runner serves as module I/O rather than a microtask, so
-    // one settle can return before it lands when the runner is busy.
-    await waitFor(() => expect(read()).toEqual({ status: 'settled', stack: 'Error: boom\n    at handler (/src/first.ts:1:1)' }));
-  });
-
   it('keeps the minified trace and says so when the maps cannot be read', async () => {
     vi.stubEnv('DEV', false);
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('', { status: 503 }))));

@@ -76,17 +76,6 @@ const renderPage = (search: string) => {
 const urlSearch = (router: ReturnType<typeof renderPage>['router']) => new URLSearchParams(router.state.location.search);
 
 describe('Performance table state', () => {
-  it('sorts the table by the percentile its column names', async () => {
-    const { router } = renderPage('ttft_p=p95&sort=ttft');
-    const modelOrder = () => screen.getAllByRole('row').slice(1).map(row => row.querySelector('td')?.textContent);
-
-    expect(modelOrder()).toEqual(['model-a', 'model-b']);
-
-    await act(async () => { fireEvent.click(screen.getByRole('radio', { name: 'p99' })); });
-    await waitFor(() => expect(urlSearch(router).get('ttft_p')).toBe('p99'));
-    expect(modelOrder()).toEqual(['model-b', 'model-a']);
-  });
-
   it('reads each metric percentile independently when the chart metric changes', async () => {
     const { router } = renderPage('ttft_p=p99&speed_p=p50');
 

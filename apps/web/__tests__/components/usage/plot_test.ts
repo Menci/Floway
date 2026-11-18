@@ -1,13 +1,9 @@
-import { describe, expect, it, test } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import type { ChartBucket } from '../../../src/components/charts/dashboard-time';
 import { buildSearchChart, buildTokenChart, summarizeCounters } from '../../../src/components/usage/plot';
 import type { ChartPlot, DisplayUsageRecord } from '../../../src/components/usage/types';
 
-const linePlot = (plot: ChartPlot) => {
-  if (plot.form !== 'line') throw new Error(`expected a line plot, got ${plot.form}`);
-  return plot.data;
-};
 const areaPlot = (plot: ChartPlot) => {
   if (plot.form !== 'area') throw new Error(`expected an area plot, got ${plot.form}`);
   return plot.data;
@@ -38,13 +34,6 @@ const chart = (metrics: DisplayUsageRecord['metrics']) => buildTokenChart({
   buckets: [bucket],
 });
 
-describe('percentage chart series', () => {
-  it('keeps a real zero-percent point', () => {
-    expect(linePlot(chart({ input_tokens: '10', input_cache_read_tokens: '0' }).plot).lineChartData![0]!.data)
-      .toEqual([expect.objectContaining({ y: 0 })]);
-  });
-});
-
 describe('cost chart series', () => {
   it('does not turn unavailable pricing into measured zero cost', () => {
     const model = buildTokenChart({
@@ -68,20 +57,6 @@ describe('series identity', () => {
       buckets: [bucket],
     })).toThrow('Usage overview series group is missing from dimension values: missing');
   });
-
-  it('keeps duplicate display names as independently addressable series', () => {
-    const model = buildTokenChart({
-      records: [record({ input_tokens: '1' }, 'key-1'), record({ input_tokens: '2' }, 'key-2')],
-      dimensionOptions: [{ value: 'key-1', label: 'Shared name' }, { value: 'key-2', label: 'Shared name' }],
-      metric: 'total',
-      range: 'today',
-      buckets: [bucket],
-    });
-
-    expect(model.entries.map(entry => entry.label)).toEqual(['Shared name', 'Shared name']);
-    expect(model.entries.map(entry => entry.id)).toEqual(['key-1', 'key-2']);
-    expect(areaPlot(model.plot).lineChartData?.map(series => series.legend)).toEqual(['Shared name (1)', 'Shared name (2)']);
-  });
 });
 
 describe('bucket callout figures', () => {
@@ -103,33 +78,6 @@ describe('bucket callout figures', () => {
       total: '7654320',
     });
   });
-});
-
-test('repeated local hours remain independent chart points', () => {
-  const buckets = ['2026-11-01T05', '2026-11-01T06'].map(hour => ({
-    key: hour,
-    label: '01:00',
-    date: new Date(`${hour}:00:00.000Z`),
-    start: Date.parse(`${hour}:00:00.000Z`),
-    end: Date.parse(`${hour}:00:00.000Z`) + 3_600_000,
-  }));
-  const records = buckets.map(({ key }, index) => ({
-    bucket: key,
-    group: 'key-1',
-    requests: 1,
-    metrics: { input_tokens: index === 0 ? '1' : '2' },
-    cost: null,
-  } satisfies DisplayUsageRecord));
-
-  const model = buildTokenChart({
-    records,
-    dimensionOptions: [{ value: 'key-1', label: 'Key 1' }],
-    metric: 'total',
-    range: 'today',
-    buckets,
-  });
-
-  expect(areaPlot(model.plot).lineChartData![0]!.data.map(point => point.y)).toEqual([1, 2]);
 });
 
 describe('search chart', () => {

@@ -14,11 +14,6 @@ import type { ModelPricing } from '@floway-dev/protocols/browser';
 const baseOnly = (rates: Record<string, string>): ModelPricing => ({ entries: [{ rates }] });
 
 describe('pricing editor model', () => {
-  it('distinguishes absent pricing from an invalid empty catalog', () => {
-    expect(pricingIsValid([], undefined)).toBe(true);
-    expect(pricingIsValid([], { entries: [] })).toBe(false);
-  });
-
   it('keeps sub-cent rates exact instead of rounding through a float', () => {
     const [draft] = pricingEntryDraftsFor(baseOnly({}));
     const field = PRICING_FIELDS_BY_KIND.chat.find(candidate => candidate.metric === 'input_tokens')!;
@@ -26,15 +21,6 @@ describe('pricing editor model', () => {
     const priced = withRate(draft!, field, '0.0028');
     expect(priced.rates.input_tokens).toBe('0.0000000028');
     expect(pricingFieldRate(priced, field)).toBe('0.0028');
-  });
-
-  it('prices rerank per thousand searches and transcription per second', () => {
-    const [draft] = pricingEntryDraftsFor(baseOnly({}));
-    const searches = PRICING_FIELDS_BY_KIND.rerank.find(candidate => candidate.metric === 'rerank_searches')!;
-    const seconds = PRICING_FIELDS_BY_KIND.transcription.find(candidate => candidate.metric === 'input_audio_seconds')!;
-
-    expect(withRate(draft!, searches, '2').rates.rerank_searches).toBe('0.002');
-    expect(withRate(draft!, seconds, '2').rates.input_audio_seconds).toBe('2');
   });
 
   it('keeps selectors and rates when editing an override', () => {

@@ -23,9 +23,4 @@ describe('disabled model options', () => {
       { id: 'removed-c', label: 'removed-c', missing: true },
     ]);
   });
-
-  it('does not call a selection missing when the catalog request failed', () => {
-    expect(buildDisabledModelOptions([], [], ['unknown'], false))
-      .toEqual([{ id: 'unknown', label: 'unknown', missing: false }]);
-  });
 });

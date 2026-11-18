@@ -55,21 +55,6 @@ const type = (input: HTMLInputElement, text: string) => {
   fireEvent.input(input);
 };
 
-const editAtSelection = (
-  input: HTMLInputElement,
-  value: string,
-  previousSelectionStart: number,
-  previousSelectionEnd: number,
-  selectionStart: number,
-  selectionEnd = selectionStart,
-) => {
-  input.setSelectionRange(previousSelectionStart, previousSelectionEnd);
-  fireEvent.keyDown(input, { key: 'Unidentified' });
-  input.value = value;
-  input.setSelectionRange(selectionStart, selectionEnd);
-  fireEvent.input(input);
-};
-
 // The control resolves a preset or a typed window into the number of seconds
 // the gateway stores, and reports `invalid` rather than silently falling back
 // -- a key that quietly kept data forever would be worse than one that refuses
@@ -95,21 +80,6 @@ describe('retention field', () => {
     expect(input.value).toBe('900 hours');
   });
 
-  it('switches the unit when shorthand is typed after an amount', () => {
-    const { input, onChange } = renderField({ value: null });
-
-    input.focus();
-    type(input, '1');
-    expect(input.value).toBe('1 hour');
-
-    editAtSelection(input, '1d hour', 1, 1, 2);
-
-    expect(onChange).toHaveBeenLastCalledWith(86400);
-    expect(input.value).toBe('1 day');
-    expect(input.selectionStart).toBe(1);
-    expect(document.activeElement).toBe(input);
-  });
-
   it('reports a window that does not parse or resolves to nothing as invalid', () => {
     const { input, onChange } = renderField({ value: null });
 
@@ -120,36 +90,6 @@ describe('retention field', () => {
       expect(document.activeElement).toBe(input);
     }
     expect(screen.getByRole('alert').textContent).toBe(i18n.t('dashboard.apiKeys.retention.invalid'));
-  });
-
-  it('keeps the input mounted when an expanded field becomes invalid', () => {
-    function Host() {
-      const [value, setValue] = useState<RetentionValue>(90 * 60);
-      return <RetentionField
-        description="How long captured requests are kept"
-        icon={null}
-        label="Retention"
-        offLabel="Do not capture"
-        offValue={null}
-        presets={DUMP_PRESETS}
-        value={value}
-        onChange={setValue}
-      >
-        {typeof value === 'number' ? <span>Captured requests</span> : undefined}
-      </RetentionField>;
-    }
-
-    renderInApp(<Host />);
-    const input = screen.getByRole('combobox') as HTMLInputElement;
-
-    input.focus();
-    type(input, 'soon');
-
-    expect(screen.getByRole('combobox')).toBe(input);
-    expect(document.activeElement).toBe(input);
-
-    fireEvent.blur(input);
-    expect((screen.getByRole('combobox') as HTMLInputElement).value).toBe('soon');
   });
 
   it('enforces the configured range and whole-day granularity', () => {

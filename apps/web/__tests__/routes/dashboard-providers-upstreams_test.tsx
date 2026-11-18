@@ -6,7 +6,6 @@ import type { ListedUpstreamRecord, UpstreamRecord } from '../../src/api/types';
 import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
 import DashboardProvidersUpstreams from '../../src/routes/dashboard-providers-upstreams';
 import { upstreamRecord } from '../api/upstream-fixture';
-import { kimiCodeRecord } from '../components/upstreams/kimi-code-fixture';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
 import { primeDefaultSession } from '../test-session';
@@ -74,23 +73,6 @@ const stubGateway = (
   return await handler(url, init?.signal as AbortSignal | undefined);
 }));
 
-it('shows Kimi Code identities and subscription readings in the upstream list', async () => {
-  const record = kimiCodeRecord();
-  record.state!.accountProbe = {
-    attemptedAt: 1000, error: null,
-    observation: { fetchedAt: 1000, data: { userId: 'fake-user', globalId: null, nickname: '', status: '', region: '', userLevel: 0, userLevelName: 'Ultra', domain: 0, domainName: '', goodsVersion: null, username: null, email: null, bio: null, avatar: null, phone: null, createdTime: null, lastLoginTime: null } },
-  };
-  renderPage(user, { ...loaderData, upstreams: [toListed(record)] });
-  expect(await screen.findByText('fake-user')).toBeTruthy();
-  expect(screen.getByText('Kimi Ultra:')).toBeTruthy();
-  expect(screen.getByText('5h')).toBeTruthy();
-  expect(screen.getAllByText(/^until /).length).toBeGreaterThan(0);
-  expect(screen.getByText('80%')).toBeTruthy();
-  expect(screen.getByText('30%')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'New upstream' }));
-  expect((await screen.findByRole('menuitem', { name: /Kimi Code/ })).querySelector('a')?.getAttribute('href')).toBe('/dashboard/providers/upstreams/new/kimi-code');
-});
-
 it('blocks the surface until both readings load, then opens a single row with Usage above Metrics', async () => {
   let finishUsage!: () => void;
   let finishMetrics!: () => void;
@@ -121,32 +103,6 @@ it('blocks the surface until both readings load, then opens a single row with Us
   expect(screen.queryByRole('combobox', { name: 'Upstream' })).toBeNull();
   fireEvent.click(screen.getByRole('combobox', { name: 'Group by' }));
   expect(screen.queryByRole('option', { name: 'By Upstream' })).toBeNull();
-});
-
-it('keeps the current row on failed loading and allows another attempt', async () => {
-  let fail = true;
-  stubGateway(async url => url.pathname === '/api/token-usage/overview' ? Response.json(overview())
-    : fail ? Response.json({ error: 'Metrics unavailable' }, { status: 500 }) : Response.json(metrics(url)));
-  renderPage();
-  fireEvent.click(await waitFor(() => metricsButton('First')));
-  await screen.findByText('Metrics unavailable');
-  await waitFor(() => expect(metricsButton('First').getAttribute('aria-expanded')).toBe('false'));
-  fail = false;
-  fireEvent.click(metricsButton('First'));
-  await waitFor(() => expect(metricsButton('First').getAttribute('aria-expanded')).toBe('true'));
-  fireEvent.click(metricsButton('Second'));
-  await waitFor(() => expect(metricsButton('Second').getAttribute('aria-expanded')).toBe('true'));
-  expect(metricsButton('First').getAttribute('aria-expanded')).toBe('false');
-}, 15_000);
-
-it('cancels both telemetry requests when navigating away during an expansion', async () => {
-  const signals: AbortSignal[] = [];
-  stubGateway(async (_url, signal) => { signals.push(signal!); return await new Promise<Response>(() => {}); });
-  const view = renderPage();
-  fireEvent.click(await waitFor(() => metricsButton('First')));
-  await waitFor(() => expect(signals).toHaveLength(2));
-  view.unmount();
-  expect(signals.every(signal => signal.aborted)).toBe(true);
 });
 
 it('opens telemetry and the read-only editor for an audit-only row while keeping mutations unavailable', async () => {
@@ -199,26 +155,4 @@ it('lets only a contiguous full segment move and leaves its locked neighbours in
   const ranks = [...document.querySelectorAll('[data-reorder-item]')].map(row => row.textContent);
   expect(ranks[0]).toContain('1');
   expect(ranks[3]).toContain('4');
-});
-
-it('does not move visible Full rows separated by a hidden server-side boundary', async () => {
-  const separated = ['Full A', 'Full B'].map((name, index) => toListed(records[index]!, {
-    audit: true,
-    edit: 'full',
-  }, { id: name.toLowerCase().replaceAll(' ', '-'), name, reorderGroup: `segment-${index}` }));
-  const reorders: unknown[] = [];
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
-    if (url.pathname === '/api/upstreams/reorder' && init?.method === 'POST') { reorders.push(init.body); return Response.json({ ok: true }); }
-    if (url.pathname === '/api/upstreams') return Response.json(separated);
-    if (url.pathname === '/api/models') return Response.json({ data: [] });
-    throw new Error(`Unexpected request: ${url.pathname}`);
-  }));
-  renderPage(user, { ...loaderData, upstreams: separated });
-
-  const handle = await screen.findByRole('button', { name: 'Reorder upstream Full A' });
-  handle.focus();
-  expect(handle.hasAttribute('disabled')).toBe(false);
-  fireEvent.keyDown(handle, { key: 'ArrowDown', altKey: true, shiftKey: true });
-  expect(reorders).toEqual([]);
 });

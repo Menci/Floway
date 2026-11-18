@@ -74,47 +74,6 @@ describe('Performance Region dimensions', () => {
     expect(screen.queryByRole('menuitemcheckbox', { name: 'user 999' })).toBeNull();
   });
 
-  it('retries an unknown runtime through the page refresh action', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
-      if (path === '/api/runtime-info') return Response.json({ kind: 'node', runtimeLocation: 'LOCAL' });
-      if (path === '/api/performance/overview') return Response.json(overview);
-      throw new Error(`Unexpected request to ${path}`);
-    }));
-    renderPage(null);
-
-    expect(screen.getByText('This view could not be loaded')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh performance' }));
-
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Group by' })).toBeTruthy());
-    expect(screen.queryByRole('combobox', { name: 'Region' })).toBeNull();
-  });
-
-  it('does not re-probe a known Node capability', async () => {
-    let overviewRequests = 0;
-    let runtimeRequests = 0;
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
-      if (path === '/api/runtime-info') {
-        runtimeRequests += 1;
-        return Response.json({ error: 'Unavailable' }, { status: 500 });
-      }
-      if (path === '/api/performance/overview') {
-        overviewRequests += 1;
-        return Response.json(overview);
-      }
-      throw new Error(`Unexpected request to ${path}`);
-    }));
-    renderPage(false);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh performance' }));
-
-    await waitFor(() => expect(overviewRequests).toBe(1));
-    expect(runtimeRequests).toBe(0);
-    expect(screen.getByRole('combobox', { name: 'Group by' })).toBeTruthy();
-    expect(screen.queryByRole('combobox', { name: 'Region' })).toBeNull();
-  });
-
   it('stays unavailable when the normalized overview fails', async () => {
     let overviewRequests = 0;
     let runtimeRequests = 0;

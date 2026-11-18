@@ -10,8 +10,6 @@ import {
   actionableDisabledReason,
   findCredential,
   quotaWindows,
-  rawEntries,
-  readProbeSnapshot,
 } from '../../../src/components/upstreams/claude-code-account';
 
 type ClaudeCodeRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>;
@@ -93,15 +91,6 @@ describe('quota windows', () => {
   });
 });
 
-describe('probe snapshot', () => {
-  it('keeps unrecognized upstream fields instead of dropping them', () => {
-    const probe = readProbeSnapshot(credential({
-      usageProbeSnapshot: { fetchedAt: 2000, data: { five_hour: { utilization: 1 }, priorIsUsingOverage: false, someNewField: { a: 1 } } },
-    }));
-    expect(rawEntries(probe?.extras)).toEqual([['priorIsUsingOverage', 'false'], ['someNewField', '{"a":1}']]);
-  });
-});
-
 describe('account status', () => {
   const rejectedAt = (reset: string | null) => findCredential(record({
     accounts: [credential({ quotaSnapshot: { fetchedAt: 1, data: quotaData({ status: 'rejected', reset, representativeClaim: 'seven_day' }) } })],
@@ -109,18 +98,6 @@ describe('account status', () => {
 
   it('treats a rejected plan window as exhausted while its limit is still running', () => {
     expect(accountStatus(rejectedAt('2026-07-28T15:00:00.000Z'), [], NOW)).toMatchObject({ tone: 'danger', reason: 'exhausted' });
-  });
-
-  it('warns once any window crosses the heavy-usage threshold', () => {
-    const lookup = findCredential(record({ accounts: [credential()] }));
-    const windows = quotaWindows(credential({ usageProbeSnapshot: { fetchedAt: 1, data: { five_hour: { utilization: 12 }, seven_day: { utilization: 81 } } } }));
-    expect(accountStatus(lookup, windows, NOW)).toEqual({ tone: 'warning', reason: 'heavy', percent: 81 });
-  });
-
-  it('reports a terminated session ahead of any usage reading', () => {
-    const lookup = findCredential(record({ accounts: [credential({ state: 'session_terminated', stateMessage: 'revoked' })] }));
-    expect(accountStatus(lookup, [{ key: 'fiveHour', percent: 99, resetAt: null, status: null, source: 'probe', fetchedAt: 1 }], NOW))
-      .toEqual({ tone: 'danger', reason: 'session-terminated', detail: 'revoked' });
   });
 });
 

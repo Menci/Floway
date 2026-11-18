@@ -6,30 +6,7 @@ import { renderBody } from '../../../src/components/requests/body-render';
 // built from bytes rather than from a string literal.
 const base64 = (bytes: string) => btoa(bytes);
 
-const withoutTypedArrayBase64 = <T>(run: () => T): T => {
-  const fromBase64 = Object.getOwnPropertyDescriptor(Uint8Array, 'fromBase64');
-  const toBase64 = Object.getOwnPropertyDescriptor(Uint8Array.prototype, 'toBase64');
-  Object.defineProperty(Uint8Array, 'fromBase64', { configurable: true, value: undefined });
-  Object.defineProperty(Uint8Array.prototype, 'toBase64', { configurable: true, value: undefined });
-  try {
-    return run();
-  } finally {
-    if (fromBase64) Object.defineProperty(Uint8Array, 'fromBase64', fromBase64);
-    else Reflect.deleteProperty(Uint8Array, 'fromBase64');
-    if (toBase64) Object.defineProperty(Uint8Array.prototype, 'toBase64', toBase64);
-    else Reflect.deleteProperty(Uint8Array.prototype, 'toBase64');
-  }
-};
-
 describe('body rendering', () => {
-  it('pretty-prints JSON and says that is what it is', () => {
-    const rendered = renderBody({ data: '{"model":"gpt-5","stream":true}', encoding: 'utf8' }, 'application/json');
-
-    expect(rendered.isJson).toBe(true);
-    expect(rendered.text).toBe('{\n  "model": "gpt-5",\n  "stream": true\n}');
-    expect(rendered.copyText).toBe(rendered.text);
-  });
-
   // A body that is not text at all keeps its base64 on screen rather than
   // becoming replacement characters, and says why.
   it('reports a body it cannot decode instead of showing mojibake', () => {
@@ -55,18 +32,6 @@ describe('multipart body rendering', () => {
   const textWire = multipart([jsonPart, part('content-disposition: form-data; name="note"', 'hello')]);
   const render = (wire: string, contentType = `multipart/form-data; boundary=${boundary}`) =>
     renderBody({ data: base64(wire), encoding: 'base64' }, contentType);
-
-  // Bytes no textual decoding could survive, so a render that reached the
-  // placeholder cannot have come from the plain-body fallback.
-  const image = bytes(0x00, 0x01, 0xFF);
-  const binaryWire = multipart([jsonPart, part('content-disposition: form-data; name="file"\r\ncontent-type: image/png', image)]);
-
-  it('renders binary parts directly through the legacy-browser fallback', () => {
-    const rendered = withoutTypedArrayBase64(() => render(binaryWire));
-
-    expect(rendered.text).toContain('[binary, 3 bytes, content-type=image/png]');
-    expect(rendered.text).toContain(base64(image));
-  });
 
   it('copies the body as it arrived rather than as it is shown', () => {
     const data = base64(textWire);

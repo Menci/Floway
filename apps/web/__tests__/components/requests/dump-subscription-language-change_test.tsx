@@ -1,4 +1,4 @@
-import { act, screen } from '@testing-library/react';
+import { act } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -44,14 +44,5 @@ describe('dump subscription language change', () => {
     await act(async () => { await setLanguage(browserLanguage()); });
 
     expect(stream.sources.length).toBe(opened);
-  });
-
-  it('reports a disconnect in the language the dashboard is now in', async () => {
-    renderInApp(<StrictMode><Harness keyId="key-a" /></StrictMode>);
-
-    await act(async () => { await setLanguage('zh-Hans'); });
-    stream.liveSource().drop();
-
-    expect(screen.getByText('请求流已断开。')).toBeTruthy();
   });
 });

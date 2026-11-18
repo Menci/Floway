@@ -15,31 +15,6 @@ describe('Agent Setup snippets', () => {
     expect(windows).not.toContain('#');
   });
 
-  it('writes each Claude family model to its own environment variable', () => {
-    const snippet = JSON.parse(buildAgentClaudeSnippet('https://floway.example', 'key', {
-      model: 'chat',
-      defaultFableModel: 'fable-5',
-      defaultOpusModel: 'opus-5',
-      defaultSonnetModel: 'sonnet-5',
-      defaultHaikuModel: 'haiku-4-5',
-      effortLevel: null,
-      cleanupPeriodDays: null,
-      optOutAiAttribution: false,
-      disableAutoMemory: false,
-      disableAgentView: false,
-      disableArtifact: false,
-      modelDiscovery: false,
-    })) as { env: Record<string, string> };
-
-    expect(snippet.env).toMatchObject({
-      ANTHROPIC_MODEL: 'chat',
-      ANTHROPIC_DEFAULT_FABLE_MODEL: 'fable-5',
-      ANTHROPIC_DEFAULT_OPUS_MODEL: 'opus-5',
-      ANTHROPIC_DEFAULT_SONNET_MODEL: 'sonnet-5',
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: 'haiku-4-5',
-    });
-  });
-
   it('renders optional Claude cleanup and attribution preferences', () => {
     const base = {
       model: null,

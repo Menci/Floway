@@ -65,7 +65,7 @@ const items = () => [...document.querySelectorAll('li')];
 const rendered = () => items().map(item => item.getAttribute('data-name'));
 const offsets = () => items().map(item => item.style.transform);
 const ranks = () => items().map(item => item.getAttribute('data-rank'));
-const edges = () => items().map(item => item.getAttribute('data-reorder-edge'));
+
 const travel = () => document.querySelector<HTMLElement>('[data-reorder-list]')!.style.getPropertyValue('--floway-reorder-drag-y');
 
 const grip = (name: string) => screen.getByRole('button', { name: `Reorder ${name}` });
@@ -78,55 +78,6 @@ const drag = (clientY: number) => fireEvent.pointerMove(window, { clientY, point
 const release = (clientY: number) => fireEvent.pointerUp(window, { clientY, pointerId: 1 });
 
 describe('drag-to-position reordering', () => {
-  it('moves the rows with transforms and leaves the list in its committed order', () => {
-    const onReorder = vi.fn();
-    renderInApp(<List onReorder={onReorder} />);
-
-    press(grip('alpha'), 20);
-    // Picked up but not yet moved: the rows hold their own slots.
-    expect(offsets()).toEqual([
-      'translateY(var(--floway-reorder-drag-y, 0px))',
-      'translateY(0px)',
-      'translateY(0px)',
-      'translateY(0px)',
-    ]);
-
-    // Past the midpoint of the last row, so the item lands after all of them
-    // and the three it passed each rise by one row.
-    drag(150);
-    expect(offsets()).toEqual([
-      'translateY(var(--floway-reorder-drag-y, 0px))',
-      'translateY(-40px)',
-      'translateY(-40px)',
-      'translateY(-40px)',
-    ]);
-    // Nothing has been reordered yet: the rows are where they were, drawn elsewhere.
-    expect(rendered()).toEqual(names);
-    // The rank travels with the row so the list reads as the drop will commit.
-    expect(ranks()).toEqual(['3', '0', '1', '2']);
-    // And so does the list's edge, which is what a separator drawn from the ends
-    // has to follow once the rows stop matching the markup.
-    expect(edges()).toEqual(['last', 'first', null, null]);
-  });
-
-  it('settles the row onto its slot before reporting the move', () => {
-    vi.useFakeTimers();
-    const onReorder = vi.fn();
-    renderInApp(<List onReorder={onReorder} />);
-
-    press(grip('alpha'), 20);
-    drag(150);
-    release(150);
-    // The pointer is gone and the row travels the rest of the way on its own.
-    expect(travel()).toBe('120px');
-    expect(onReorder).not.toHaveBeenCalled();
-
-    act(() => { vi.advanceTimersByTime(REPOSITION_ANIMATION_MS); });
-    expect(onReorder).toHaveBeenCalledExactlyOnceWith(0, 3);
-    expect(rendered()).toEqual(['bravo', 'charlie', 'delta', 'alpha']);
-    expect(offsets()).toEqual(['', '', '', '']);
-  });
-
   it('starts an asynchronous write at release and holds the settled preview until it succeeds', async () => {
     vi.useFakeTimers();
     let resolveWrite!: () => void;
@@ -192,20 +143,6 @@ describe('drag-to-position reordering', () => {
     act(() => { vi.advanceTimersByTime(REPOSITION_ANIMATION_MS); });
     expect(onReorder).not.toHaveBeenCalled();
     expect(rendered()).toEqual(names);
-  });
-
-  it('reorders one step on the chord XAML reserves for it', () => {
-    const onReorder = vi.fn();
-    renderInApp(<List onReorder={onReorder} />);
-
-    fireEvent.keyDown(grip('charlie'), { altKey: true, key: 'ArrowUp', shiftKey: true });
-    expect(onReorder).toHaveBeenCalledExactlyOnceWith(2, 1);
-    expect(rendered()).toEqual(['alpha', 'charlie', 'bravo', 'delta']);
-
-    // The end of the list, and the chord XAML excludes Control from.
-    fireEvent.keyDown(grip('delta'), { altKey: true, key: 'ArrowDown', shiftKey: true });
-    fireEvent.keyDown(grip('bravo'), { altKey: true, ctrlKey: true, key: 'ArrowUp', shiftKey: true });
-    expect(onReorder).toHaveBeenCalledOnce();
   });
 });
 

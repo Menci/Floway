@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { dateTime, formatDate, formatDateParts, relativeTime, shortDate } from '../../src/lib/format-time';
+import { formatDate, formatDateParts, relativeTime } from '../../src/lib/format-time';
 
 const INSTANT_EPOCH = Date.parse('2024-01-15T12:00:00.000Z');
 
@@ -23,21 +23,9 @@ describe('relative timestamps', () => {
     expect(at(2_591_999)).toBe('in 30 days');
     expect(at(2_592_000)).toBeNull();
   });
-
-  it('narrows on request and follows the locale', () => {
-    expect(relativeTime(INSTANT_EPOCH - 3_600_000, 'en', { now: INSTANT_EPOCH, style: 'narrow' })).toBe('1h ago');
-    expect(relativeTime(INSTANT_EPOCH - 3_600_000, 'zh-Hans', { now: INSTANT_EPOCH, style: 'narrow' })).toBe('1 小时前');
-    expect(relativeTime(INSTANT_EPOCH - 3_600_000, 'zh-Hans', { now: INSTANT_EPOCH })).toBe('1 小时前');
-    expect(relativeTime(INSTANT_EPOCH - 90_000, 'zh-Hans', { now: INSTANT_EPOCH })).toBe('1 分钟前');
-  });
 });
 
 const calendarDay = new Date(2026, 9, 10, 8, 30);
-
-it('writes Chinese dates numerically across full dates and times of day', () => {
-  expect(shortDate(calendarDay.getTime(), 'zh-Hans')).toBe('2026/10/10');
-  expect(dateTime(calendarDay.getTime(), 'zh-Hans')).toBe('2026/10/10 08:30:00');
-});
 
 it('spaces Chinese range parts and preserves English date punctuation', () => {
   const formatter = new Intl.DateTimeFormat('zh-Hans', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });

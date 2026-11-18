@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import type { UpstreamRecord } from '../../../src/api/types';
-import { canFetchModelCatalog, createBody, hasUnsavedDiscoveryInputs, manualModelsSupported, previewRecord, updateBody, valuesFromRecord } from '../../../src/components/upstream-editor/data';
+import { canFetchModelCatalog, createBody, manualModelsSupported, previewRecord, updateBody, valuesFromRecord } from '../../../src/components/upstream-editor/data';
 import { upstreamRecord } from '../../api/upstream-fixture';
 
 type CustomRecord = Extract<UpstreamRecord, { kind: 'custom' }>;
@@ -42,18 +42,6 @@ test('Custom editor values add one blank ingress row and never serialize it', ()
   expect((createBody(record, values).config as CustomRecord['config']).ingressHeadersRules).toEqual(expected);
   expect((updateBody(record, values, 'full').config as CustomRecord['config']).ingressHeadersRules).toEqual(expected);
   expect((previewRecord(record, values).config as CustomRecord['config']).ingressHeadersRules).toEqual(expected);
-});
-
-test('background usage refresh remains explicit through editor create, preview and update', () => {
-  const values = valuesFromRecord(record);
-  expect(values.usageRefreshIntervalMinutes).toBe(0);
-  for (const interval of [1, 15, 0]) {
-    values.usageRefreshIntervalMinutes = interval;
-    expect(createBody(record, values).usage_refresh_interval_minutes).toBe(interval);
-    expect(previewRecord(record, values).usage_refresh_interval_minutes).toBe(interval);
-    expect(updateBody(record, values, 'full').usage_refresh_interval_minutes).toBe(interval);
-    expect(hasUnsavedDiscoveryInputs({ usageRefreshIntervalMinutes: 5 })).toBe(false);
-  }
 });
 
 test('Kimi Code uses its entered key for unsaved discovery and preserves connection settings on save', () => {

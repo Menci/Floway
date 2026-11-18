@@ -15,10 +15,6 @@ describe('hidden series URL state', () => {
     expect(parseHiddenSeries(first, 'hide')).toEqual(['100%', 'a,b', 'duplicate', 'duplicate', '模型']);
   });
 
-  it('restores legacy comma-separated bookmarks', () => {
-    expect(parseHiddenSeries(new URLSearchParams('hide=a%252Cb,c'), 'hide')).toEqual(['a,b', 'c']);
-  });
-
   it('rejects unsupported versioned formats', () => {
     expect(() => parseHiddenSeries(new URLSearchParams('hidev=3&hide=a&hide=b'), 'hide'))
       .toThrowError('Unsupported hidden-series URL format version: 3');

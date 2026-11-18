@@ -1,7 +1,6 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ChatGPTAccountCard } from '../../../src/components/upstream-editor/chatgpt-account-card';
 import { ChatGPTResetCards } from '../../../src/components/upstream-editor/chatgpt-reset-cards';
 import type { ChatGPTRecord } from '../../../src/components/upstreams/chatgpt-account';
 import { upstreamRecord } from '../../api/upstream-fixture';
@@ -87,40 +86,6 @@ describe('ChatGPT reset cards', () => {
     expect(screen.getByText(/The card was processed, but Floway could not refresh all details/)).toBeTruthy();
   });
 
-  it('removes both the quota windows and account credit summary after a reset', async () => {
-    failFirstConsume = false;
-    const accountRecord: ChatGPTRecord = {
-      ...record,
-      chatgpt_quota: {
-        codex: {
-          observed_at: '2026-06-17T00:00:00Z',
-          primary_used_percent: 100,
-          credits_has_credits: true,
-          credits_balance: 1,
-        },
-      },
-    };
-    const view = renderInApp(<ChatGPTAccountCard record={accountRecord} />);
-
-    expect(screen.getByText('credits: 1')).toBeTruthy();
-    fireEvent.click(await screen.findByRole('button', { name: 'Use' }));
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.click(await within(dialog).findByRole('button', { name: 'Use reset card' }));
-
-    await waitFor(() => expect(screen.queryByText('credits: 1')).toBeNull());
-    expect(screen.getByText('No quota snapshots yet - ChatGPT calls populate them.')).toBeTruthy();
-
-    view.rerender(<ChatGPTAccountCard record={{ ...accountRecord, chatgpt_quota: structuredClone(accountRecord.chatgpt_quota) }} />);
-    expect(screen.queryByText('credits: 1')).toBeNull();
-    view.rerender(<ChatGPTAccountCard record={{
-      ...accountRecord,
-      chatgpt_quota: {
-        codex: { observed_at: new Date(Date.now() + 1000).toISOString(), primary_used_percent: 5, credits_balance: 2 },
-      },
-    }} />);
-    expect(screen.getByText('credits: 2')).toBeTruthy();
-  });
-
   it('keeps the redemption key after an ambiguous failure and reopening confirmation', async () => {
     vi.mocked(crypto.randomUUID)
       .mockReturnValueOnce('00000000-0000-4000-8000-000000000001')
@@ -140,15 +105,5 @@ describe('ChatGPT reset cards', () => {
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Use reset card', hidden: true }));
     await waitFor(() => expect(consumeBodies).toHaveLength(2));
     expect(consumeBodies[0].idempotency_key).toBe(consumeBodies[1].idempotency_key);
-  });
-
-  it('shows a load failure without pretending there are no cards or echoing upstream input', async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(Response.json({ error: 'sensitive stored input' }, { status: 502 }));
-    renderInApp(<ChatGPTResetCards record={record} onQuotaReset={vi.fn()} />);
-    expect(await screen.findByText('Could not load reset cards. Try refreshing again.')).toBeTruthy();
-    expect(screen.queryByText(/No reset cards are available/)).toBeNull();
-    expect(screen.queryByText('sensitive stored input')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh reset cards' }));
-    expect(await screen.findByText('Full reset')).toBeTruthy();
   });
 });

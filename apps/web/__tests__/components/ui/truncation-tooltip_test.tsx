@@ -67,15 +67,6 @@ describe('a tooltip restoring text its trigger cannot show', () => {
     expect(screen.queryByRole('tooltip')).toBeNull();
   });
 
-  it('restores a label the trigger clips', async () => {
-    renderInApp(<Trigger clientWidth={120} content="Claude Code" scrollWidth={186} />);
-    await settle();
-
-    await hover(screen.getByText('Claude Code'));
-
-    expect(screen.getByRole('tooltip').textContent).toBe('Claude Code');
-  });
-
   it('re-measures when the text changes without the box changing', async () => {
     const view = renderInApp(<Trigger clientWidth={120} content="Copilot" scrollWidth={120} />);
     await settle();

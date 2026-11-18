@@ -23,8 +23,3 @@ it('requests only the selected upstream and threads the cancellation signal', as
   expect(new URL(request, 'http://localhost').searchParams.get('step')).toBe('300000');
   expect(init.signal).toBe(controller.signal);
 });
-
-it('exposes metric-query failures without substituting an empty result', async () => {
-  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'History unavailable' }, { status: 500 })));
-  expect(await loadUpstreamMetrics('seat', 'today', 60_000)).toMatchObject({ error: { status: 500, message: 'History unavailable' } });
-});

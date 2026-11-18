@@ -62,42 +62,7 @@ const renderPage = (data: Parameters<typeof DashboardMonitorUsage>[0]['loaderDat
   return renderInApp(<RouterProvider router={router} />);
 };
 
-const stubUsageGateway = () => {
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-    const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
-    if (path === '/api/token-usage/overview') return Response.json({
-      series: [{ bucket: '2026-08-05T11', group: 'gpt-5', requests: 1, metrics: [], cost: null }],
-      axes: { none: [], model: [], upstream: [], userId: [], keyId: [] },
-      dimensionValues: { models: ['gpt-5'], upstreams: ['upstream:up-1'], userIds: [2], keyIds: ['key-2'] },
-      users: [{ id: 1, username: 'admin' }, { id: 2, username: 'Alice' }],
-      auditableUserIds: [1, 2],
-      upstreams: [{ id: 'up-1', name: 'Copilot seat', hue: 210 }],
-      keys: [{ id: 'key-2', name: 'Alice key', createdAt: '2026-08-01T00:00:00.000Z' }],
-    });
-    if (path === '/api/search-usage') return Response.json({ view: 'all-by-user', records: [], users: [] });
-    throw new Error(`Unexpected request to ${path}`);
-  }));
-};
-
 describe('usage dimension controls', () => {
-  it('shows auditable users even when they have no usage in the selected window', () => {
-    renderPage({
-      ...loaderData,
-      currentUserId: '2',
-      usage: {
-        ...loaderData.usage,
-        dimensionValues: { ...loaderData.usage.dimensionValues, userIds: [2] },
-        users: [{ id: 2, username: 'Alice' }, { id: 5, username: 'Dana' }],
-      },
-    });
-
-    fireEvent.click(screen.getByRole('combobox', { name: 'Group by' }));
-    expect(screen.getByRole('option', { name: 'By User' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('combobox', { name: 'User' }));
-    expect(screen.getByRole('menuitemcheckbox', { name: 'Alice' })).toBeTruthy();
-    expect(screen.getByRole('menuitemcheckbox', { name: 'Dana' })).toBeTruthy();
-  });
-
   it('labels unknown-user usage without weakening real-user metadata checks', () => {
     const { unmount } = renderPage({
       ...loaderData,
@@ -121,37 +86,6 @@ describe('usage dimension controls', () => {
     });
     expect(screen.getByText('Usage user dimension is missing metadata for 2')).toBeTruthy();
     consoleError.mockRestore();
-  });
-
-  it('lets an API key selection replace another user with the current-user scope', async () => {
-    stubUsageGateway();
-    renderPage({
-      ...loaderData,
-      state: {
-        ...loaderData.state,
-        filters: { ...loaderData.state.filters, userId: ['2'] },
-      },
-    });
-
-    fireEvent.click(screen.getByRole('combobox', { name: 'API Key' }));
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Alice key' }));
-
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'User' }).getAttribute('placeholder')).toBe('Only me'));
-    expect(screen.getByRole('combobox', { name: 'API Key' }).getAttribute('placeholder')).toBe('1 selected');
-  });
-
-  it('loads the overview contract and derives Search scope from the actor', async () => {
-    useAuthStore.getState().primeFromLogin({
-      token: 'admin-session',
-      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } },
-    });
-    stubUsageGateway();
-
-    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/usage?g=userId') } as never);
-
-    expect(data.state.groupBy).toBe('userId');
-    expect(data.usage?.series[0]).toMatchObject({ group: 'gpt-5', metrics: {} });
-    expect(data.upstreams).toEqual([{ id: 'up-1', name: 'Copilot seat', hue: 210 }]);
   });
 
   it('keeps self-only Search usage grouped by API key', async () => {

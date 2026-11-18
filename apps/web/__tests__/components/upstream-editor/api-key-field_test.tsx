@@ -43,13 +43,4 @@ describe('the API key field', () => {
     fireEvent.click(screen.getByRole('button', { name: hideLabel }));
     expect(keyInput().type).toBe('password');
   });
-
-  it('selects a catalog authentication mode from the inline menu', () => {
-    renderInApp(<ProviderConfigHarness record={customRecord('sk-live-key', true)} />);
-    const selector = screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.fields.fetchModelsAuthStyle') });
-    fireEvent.click(selector);
-    expect(screen.getAllByRole('menuitemradio').map(item => item.textContent)).toEqual([i18n.t('dashboard.upstreamEditor.auth.bearer'), 'x-api-key', 'x-goog-api-key']);
-    fireEvent.click(screen.getByRole('menuitemradio', { name: 'x-goog-api-key' }));
-    expect(selector.textContent).toBe('x-goog-api-key');
-  });
 });

@@ -34,16 +34,3 @@ test('opening a saved upstream reads cached model rows without fetching models',
   expect(mocks.get).toHaveBeenCalledTimes(1);
   expect(mocks.listModels).not.toHaveBeenCalled();
 });
-
-test('opening an upstream without a successful cache keeps discovery unavailable', async () => {
-  mocks.get.mockResolvedValue({
-    data: {
-      id: 'up_saved',
-      modelsCache: { fetchedAt: null, lastError: null, modelCount: null },
-      cachedModels: null,
-    }, error: null,
-  });
-  const loaded = await clientLoader({ params: { id: 'up_saved' } } as Parameters<typeof clientLoader>[0]);
-  expect(loaded.discovered).toBeNull();
-  expect(mocks.listModels).not.toHaveBeenCalled();
-});

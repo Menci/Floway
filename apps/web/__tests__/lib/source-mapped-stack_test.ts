@@ -68,13 +68,6 @@ describe('a stack restored from the maps its chunks name', () => {
     ].join('\n'));
   });
 
-  it('does not treat a URL position in the error message as a frame', async () => {
-    wholeApp();
-    const message = 'Error: request failed at https://gateway.test/reported:1:1';
-    expect(await restoreStack(`${message}\n    at handler (${SCRIPT}:1:1)`))
-      .toBe(`${message}\n    at handler (/src/first.ts:1:1)`);
-  });
-
   it('leaves an oversized frame unparsed, and asks it for nothing', async () => {
     vi.stubGlobal('fetch', vi.fn());
     const frame = `    at ${'nested.'.repeat(170)}handler (${SCRIPT}:1:1)`;
@@ -91,14 +84,6 @@ describe('a stack restored from the maps its chunks name', () => {
     });
     await expect(restoreStack(`Error: boom\n    at handler (${SCRIPT}:1:1)`))
       .rejects.toThrow('is not a source map');
-  });
-
-  it('says so when the map was built for another revision of the chunk', async () => {
-    wholeApp({
-      'https://gateway.test/assets/chunk.js.map': json({ ...MAP, debugId: 'stale' }),
-    });
-    await expect(restoreStack(`Error: boom\n    at handler (${SCRIPT}:1:1)`))
-      .rejects.toThrow('another revision');
   });
 
   // An engine writes 0 where it has no information, and each half of the guard

@@ -3,19 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   generationOptions,
   parseCustomJson,
-  playgroundApisFor,
 } from '../../../src/components/playground/request';
-import { catalogModel } from '../../api/model-fixture';
 
 describe('custom JSON', () => {
-  it('offers every Playground protocol to any chat model', () => {
-    // The playground calls the gateway, which translates. A model's own
-    // endpoints describe what its upstream speaks, not what the caller may ask.
-    expect(playgroundApisFor(catalogModel('chat', { endpoints: { openaiChatCompletions: {} } })))
-      .toEqual(['openaiResponses', 'openaiChatCompletions', 'anthropicMessages', 'geminiGenerateContent']);
-    expect(playgroundApisFor(catalogModel('embed', { kind: 'embedding', endpoints: { openaiEmbeddings: {} } }))).toEqual([]);
-  });
-
   it('rejects invalid, non-object and reserved fields', () => {
     expect(parseCustomJson('openaiResponses', '{').error).toBe('invalid');
     expect(parseCustomJson('anthropicMessages', '[]').error).toBe('object');

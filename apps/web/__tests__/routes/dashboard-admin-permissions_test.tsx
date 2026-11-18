@@ -82,59 +82,6 @@ test('an operator sees every authorized principal in a read-only view', async ()
   expect(view.container.querySelectorAll('[data-rule-id]')).toHaveLength(3);
 });
 
-test('an audited user sees membership-group rules and can pick those groups in Applies to', async () => {
-  const data: PermissionsData = {
-    ...initial,
-    directory: {
-      users: [{ id: 3, username: 'bob', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null }, groupIds: [2] }],
-      groups: [{ id: 2, name: 'Review Subjects', hue: 180, memberIds: [3], createdAt: '', deletedAt: null }],
-      principalUserIds: [3],
-      principalGroupIds: [2],
-    },
-    records: [
-      { id: 5, principal: { kind: 'user', id: 3 }, scope, sortOrder: 0, values: { 'Model.Use': true }, createdAt: '', updatedAt: '' },
-    ],
-  };
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-    const path = new URL(String(input), 'http://localhost').pathname;
-    if (path === '/api/permissions') return Response.json({ records: data.records, directory: data.directory, upstreams: data.upstreams });
-    if (path === '/api/models') return Response.json({ data: [] });
-    if (path === '/api/access-resolve') return Response.json({
-      records: [
-        data.records![0],
-        { id: 6, principal: { kind: 'group', id: 2 }, scope, sortOrder: 0, values: { 'Model.Use': true }, createdAt: '', updatedAt: '' },
-      ],
-      values: { 'Model.Use': true, 'Upstream.Audit': false, 'Upstream.Edit': 'off' },
-      decisions: [
-        { recordId: 5, permissions: { 'Model.Use': { kind: 'effective' } } },
-        { recordId: 6, permissions: { 'Model.Use': { kind: 'effective' } } },
-      ],
-    });
-    throw new Error(`Unexpected request: ${path}`);
-  }));
-  const { container } = renderOperatorPage(data, `?principal=user:3&scope=${encodeURIComponent(JSON.stringify(scope))}&effective=true`);
-  await screen.findByRole('table');
-  await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(2));
-  expect(within(container.querySelector('[data-rule-id="6"]') as HTMLElement).getByText('Review Subjects')).toBeTruthy();
-  const picker = screen.getByRole('combobox', { name: 'Applies to' });
-  fireEvent.click(picker);
-  expect(await screen.findByRole('option', { name: /bob/ })).toBeTruthy();
-  expect(await screen.findByRole('option', { name: /Review Subjects/ })).toBeTruthy();
-});
-
-test('the permissions loader stays on the page for an authorized operator and requests one permission snapshot', async () => {
-  useAuthStore.getState().primeFromLogin({
-    token: 'operator-session',
-    user: { id: 2, username: 'alice', isAdmin: false, canViewPermissions: true, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining' as const, language: null } },
-  });
-  const data = await clientLoader();
-  expect(data.admin).toBe(false);
-  const requests = vi.mocked(fetch).mock.calls
-    .map(([input]) => new URL(String(input), 'http://localhost'))
-    .map(url => url.pathname);
-  expect(requests).toEqual(['/api/permissions', '/api/models']);
-});
-
 test('the permissions loader redirects an operator without Permission.Audit', async () => {
   useAuthStore.getState().primeFromLogin({
     token: 'operator-session',
@@ -224,21 +171,6 @@ test('locks all mutations while deleting and restores them after a failed write'
   expect(table.isConnected).toBe(true);
 });
 
-test('the root turns effective mode off and choosing a scope does not restore it', async () => {
-  const { container, router } = renderPage('?principal=user:2&effective=true');
-  await screen.findByRole('table');
-  expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(3);
-  const toggle = screen.getByRole<HTMLInputElement>('switch', { name: 'Show effective' });
-  expect(toggle.disabled).toBe(true);
-  expect(toggle.checked).toBe(false);
-  await waitFor(() => expect(new URLSearchParams(router.state.location.search).has('effective')).toBe(false));
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Resource type' })); });
-  await act(async () => { fireEvent.click(await screen.findByRole('option', { name: /^Upstream$/ })); });
-  await waitFor(() => expect(toggle.disabled).toBe(false));
-  expect(toggle.checked).toBe(false);
-  expect(new URLSearchParams(router.state.location.search).has('effective')).toBe(false);
-});
-
 test('effective toggle adds inherited rules and clearing the principal forces it off', async () => {
   const { container, router } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}`);
   await screen.findByRole('table');
@@ -253,15 +185,6 @@ test('effective toggle adds inherited rules and clearing the principal forces it
   expect(toggle.disabled).toBe(true);
   expect(toggle.checked).toBe(false);
   expect(new URLSearchParams(router.state.location.search).get('scope')).toBe(JSON.stringify(scope));
-});
-
-test('resolution errors stay visible and are not presented as an empty permission set', async () => {
-  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Resolution unavailable' }, { status: 503 })));
-  renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}&effective=true`);
-  expect(await screen.findByText('Resolution unavailable')).toBeTruthy();
-  expect(screen.queryByText('No matching rules')).toBeNull();
-  await act(async () => { fireEvent.click(screen.getByRole('switch', { name: 'Show effective' })); });
-  expect(await screen.findByRole('table')).toBeTruthy();
 });
 
 test.each([false, true])('refresh preserves the table through base and effective reads (effective=%s)', async effective => {

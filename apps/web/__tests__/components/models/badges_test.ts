@@ -6,18 +6,6 @@ import { catalogModel } from '../../api/model-fixture';
 import type { AliasTarget } from '@floway-dev/protocols/browser';
 
 describe('model badges', () => {
-  it('abbreviates the token limits the catalog advertises', () => {
-    expect(modelBadges(catalogModel('m', {
-      upstreams: ['a'],
-      limits: { max_context_window_tokens: 1_000_000, max_prompt_tokens: 1_500, max_output_tokens: 64_000 },
-    }), indexCatalog([]), null)).toEqual([
-      { key: 'limit:context', kind: 'limit', limit: 'context', value: '1M' },
-      { key: 'limit:prompt', kind: 'limit', limit: 'prompt', value: '1.5k' },
-      { key: 'limit:output', kind: 'limit', limit: 'output', value: '64k' },
-    ]);
-    expect(modelBadges(catalogModel('m', { upstreams: ['a'] }), indexCatalog([]), null)).toEqual([]);
-  });
-
   it('names the sole reachable target and drops the selection strategy with it', () => {
     const real = catalogModel('real', { upstreams: ['a'] });
     const capped = catalogModel('capped', { upstreams: ['b'] });

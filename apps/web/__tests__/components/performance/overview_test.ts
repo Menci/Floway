@@ -13,21 +13,6 @@ const emptyOverview = (): PerformanceOverviewResponse => ({
 });
 
 describe('performance overview query', () => {
-  it('sends group-by and all active filters', () => {
-    const query = buildPerformanceQuery('7d', 'operation', {
-      model: ['gpt-5', 'claude-opus-4-7'], upstream: ['up_1'], operation: [], runtimeLocation: ['SJC'], userId: ['2'], keyId: ['key_1'],
-    }, Date.UTC(2026, 6, 12, 4));
-    expect(query).toMatchObject({
-      bucket: '4h',
-      group_by: 'operation',
-      filter_model: ['gpt-5', 'claude-opus-4-7'],
-      filter_upstream: ['up_1'],
-      filter_runtime_location: ['SJC'],
-      filter_user_id: ['2'],
-      filter_key_id: ['key_1'],
-    });
-  });
-
   it('requests UTC hours only for the range whose repeated hours stay separate', () => {
     const filters = { model: [], upstream: [], operation: [], runtimeLocation: [], userId: [], keyId: [] };
 

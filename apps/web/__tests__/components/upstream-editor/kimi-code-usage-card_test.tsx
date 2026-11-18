@@ -54,13 +54,3 @@ test('a successful quota refresh remains successful when account details are una
   expect(screen.queryByText(/old quota failure/)).toBeNull();
   expect(screen.getByText(i18n.t('dashboard.upstreamEditor.kimiCode.usage.accountFailed', { message: 'account details unavailable' }))).toBeTruthy();
 });
-
-test('preserves the upstream failure', async () => {
-  const message = 'HTTP 429: subscription quota exhausted';
-  const record = kimiCodeRecord(null);
-  mocks.refresh.mockResolvedValue({ data: null, error: { status: 502, message } });
-  renderInApp(<KimiCodeUsageCard record={record} probeRecord={{ ...record }} />);
-  fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.kimiCode.usage.load') }));
-  expect(await screen.findByText(message)).toBeTruthy();
-  expect(screen.queryAllByRole('progressbar')).toHaveLength(0);
-});

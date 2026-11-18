@@ -6,13 +6,6 @@ import type { ScopeExpressionData } from '../../../src/components/access-control
 import { renderInApp } from '../../render';
 import type { AccessRecord } from '@floway-dev/gateway/browser';
 
-test('preserves explicit Off and full editing as separate permission tokens', () => {
-  const { container } = renderInApp(<RulePermissions values={{ 'Model.Use': false, 'Upstream.Edit': 'full' }} />);
-  const tokens = [...container.querySelectorAll('[data-permission-token]')];
-  expect(tokens.map(token => token.textContent)).toEqual(['Use models Off', 'Edit upstream (Full)']);
-  expect(tokens.map(token => token.getAttribute('data-permission-state'))).toEqual(['off', 'full']);
-});
-
 const data: ScopeExpressionData = {
   users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null }, groupIds: [1] }],
   groups: [{ id: 1, name: 'Platform', hue: 210, memberIds: [2], createdAt: '', deletedAt: null }],

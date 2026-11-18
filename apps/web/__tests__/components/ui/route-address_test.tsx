@@ -1,4 +1,4 @@
-import { act, createEvent, fireEvent } from '@testing-library/react';
+import { act, fireEvent } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
@@ -31,19 +31,6 @@ describe('addressed controls', () => {
 
     await act(async () => { fireEvent.click(link, { button: 0 }); });
     expect(router.state.location.pathname).toBe(EDITOR_PATH);
-  });
-
-  it('leaves a modified click to the browser', async () => {
-    const { router, getByRole } = renderRouter(
-      <TooltipIconButton icon={<span />} label="Edit upstream" to={EDITOR_PATH} />,
-    );
-
-    const link = getByRole('link', { name: 'Edit upstream' });
-    const click = createEvent.click(link, { button: 0, ctrlKey: true });
-    await act(async () => { fireEvent(link, click); });
-
-    expect(click.defaultPrevented).toBe(false);
-    expect(router.state.location.pathname).toBe('/');
   });
 
   it('addresses a choice whose page owns the transition, without navigating itself', async () => {

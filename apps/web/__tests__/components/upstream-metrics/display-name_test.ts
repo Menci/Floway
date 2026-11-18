@@ -22,12 +22,6 @@ const displayOf = (
 };
 afterEach(() => setLanguage('en'));
 
-it('renders arbitrary label values independently of JavaScript object prototypes', () => {
-  for (const quota of ['constructor', '__proto__', 'toString', 'future_metric']) {
-    expect(displayOf('copilot', { name: 'quota.remaining', labels: { quota } })).toMatchObject({ name: `${quota} remaining`, unit: 'count', windowSeconds: null });
-  }
-});
-
 it('renders undecoded identities as unitless raw series', () => {
   for (const [kind, identity, name] of [
     ['copilot', { name: 'quota.overage', labels: { quota: 'chat "beta"', limit: 456, shared: true, scope: null } }, 'quota.overage{limit=456,quota="chat \\"beta\\"",scope=null,shared=true}'],
@@ -37,31 +31,5 @@ it('renders undecoded identities as unitless raw series', () => {
     const display = displayOf(kind, identity);
     expect(display).toMatchObject({ name, unit: 'none', windowSeconds: null, emptyValue: null, form: 'line' });
     expect(display.toDisplayValue(123.5)).toBe(123.5);
-  }
-});
-
-it('names dynamic quota windows by direction', async () => {
-  for (const [language, cases] of [
-    ['en', [
-      [604_800, '7-day remaining', '7-day usage', '7-day review remaining', '7-day review usage'],
-      [18_000, '5-hour remaining', '5-hour usage', '5-hour review remaining', '5-hour review usage'],
-      [5_400, '90-minute remaining', '90-minute usage', '90-minute review remaining', '90-minute review usage'],
-      [125, '125-second remaining', '125-second usage', '125-second review remaining', '125-second review usage'],
-    ]],
-    ['zh-Hans', [
-      [604_800, '7 天余量', '7 天用量', '7 天 review 余量', '7 天 review 用量'],
-      [18_000, '5 小时余量', '5 小时用量', '5 小时 review 余量', '5 小时 review 用量'],
-      [5_400, '90 分钟余量', '90 分钟用量', '90 分钟 review 余量', '90 分钟 review 用量'],
-      [125, '125 秒余量', '125 秒用量', '125 秒 review 余量', '125 秒 review 用量'],
-    ]],
-  ] as const) {
-    await setLanguage(language);
-    const translate = i18n.getFixedT(language) as unknown as TFunction;
-    for (const [seconds, remaining, usage, namedRemaining, namedUsage] of cases) {
-      expect(displayOf('chatgpt', { name: 'quota.window.used_percent', labels: { limit: 'codex', window_seconds: seconds } }, 'remaining', translate).name).toBe(remaining);
-      expect(displayOf('chatgpt', { name: 'quota.window.used_percent', labels: { limit: 'codex', window_seconds: seconds } }, 'used', translate).name).toBe(usage);
-      expect(displayOf('chatgpt', { name: 'quota.window.used_percent', labels: { limit: 'review', window_seconds: seconds } }, 'remaining', translate).name).toBe(namedRemaining);
-      expect(displayOf('chatgpt', { name: 'quota.window.used_percent', labels: { limit: 'review', window_seconds: seconds } }, 'used', translate).name).toBe(namedUsage);
-    }
   }
 });

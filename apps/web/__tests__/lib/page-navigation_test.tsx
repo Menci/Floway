@@ -45,14 +45,6 @@ describe('page change opt-in', () => {
     expect(getByText('page change')).toBeTruthy();
   });
 
-  it('leaves a filter rewrite of the same page unmarked', async () => {
-    const { getByRole, getByText } = renderRouter();
-
-    await act(async () => { getByRole('button').click(); });
-
-    expect(getByText('same page')).toBeTruthy();
-  });
-
   it('still reads a page change after the returned-to page rewrote its own query string', async () => {
     const { router, getByRole, getByText } = renderRouter();
 

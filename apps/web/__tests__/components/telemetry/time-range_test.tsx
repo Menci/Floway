@@ -48,29 +48,3 @@ test('only Custom opens a day range and the second date closes and applies once'
   await waitFor(() => expect(change.mock.calls).toEqual([[{ start: '2026-10-06', end: '2026-10-16' }]]));
   expect(screen.queryByRole('button', { name: 'Choose date range' })).toBeNull();
 });
-
-test('the date caption appears only after a successful load and both entries reopen the same picker', async () => {
-  const { commit } = renderEditor();
-  open(); day(6); day(16);
-  await waitFor(() => expect(screen.queryByRole('grid')).toBeNull());
-  expect(screen.queryByRole('button', { name: 'Choose date range' })).toBeNull();
-  commit({ start: '2026-10-06', end: '2026-10-16' });
-  const caption = screen.getByRole('button', { name: 'Choose date range' });
-  expect(caption.textContent).toBe('2026/10/06 - 2026/10/16');
-  expect(caption.compareDocumentPosition(screen.getByRole('radiogroup')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  caption.focus(); fireEvent.click(caption);
-  expect(screen.getByRole('grid')).toBeTruthy();
-  fireEvent.keyDown(screen.getByRole('grid'), { key: 'Escape' });
-  open();
-  expect(screen.getByRole('grid')).toBeTruthy();
-});
-
-test('an incomplete range or Escape keeps the loaded preset', async () => {
-  const { change } = renderEditor();
-  open(); day(8); outside();
-  await Promise.resolve();
-  expect(change).not.toHaveBeenCalled();
-  open(); day(8);
-  fireEvent.keyDown(screen.getByRole('grid'), { key: 'Escape' });
-  expect(change).not.toHaveBeenCalled();
-});

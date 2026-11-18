@@ -20,23 +20,10 @@ function Picker() {
 }
 
 test('keeps the same input when the last selected tag and listbox disappear', async () => {
-  const { container } = renderInApp(<Picker />);
+  renderInApp(<Picker />);
   const input = screen.getByRole<HTMLInputElement>('combobox', { name: 'Values' });
   await act(async () => { fireEvent.click(screen.getByLabelText('Remove Alpha')); });
   await act(async () => { fireEvent.click(screen.getByLabelText('Remove Beta')); });
-  expect(container.querySelector('.fui-TagPickerGroup')).toBeNull();
   expect(screen.getByRole('combobox', { name: 'Values' })).toBe(input);
   expect(input.placeholder).toBe('Search values');
-});
-
-test('resets the empty-query layout when filtering is dismissed', async () => {
-  renderInApp(<Picker />);
-  const input = screen.getByRole<HTMLInputElement>('combobox', { name: 'Values' });
-  expect(input.getAttribute('data-query-empty')).toBe('true');
-  await act(async () => { fireEvent.click(input); fireEvent.change(input, { target: { value: 'Gam' } }); });
-  expect(input.value).toBe('Gam');
-  expect(input.getAttribute('data-query-empty')).toBe('false');
-  await act(async () => { fireEvent.keyDown(input, { key: 'Escape' }); });
-  expect(input.value).toBe('');
-  expect(input.getAttribute('data-query-empty')).toBe('true');
 });

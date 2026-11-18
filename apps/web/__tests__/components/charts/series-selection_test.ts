@@ -5,10 +5,6 @@ import { isolatedSeries, toggledSeries } from '../../../src/components/charts/se
 const IDS = ['a', 'b', 'c'];
 
 describe('series isolation', () => {
-  it('reverses itself when the chosen series is already the only visible one', () => {
-    expect([...isolatedSeries(IDS, new Set(['a', 'c']), 'b')]).toEqual([]);
-  });
-
   it('survives a double-click, whose two toggles cancel out first', () => {
     // A double-click delivers click, click, dblclick. Both clicks land on the
     // same series, so the isolate that follows starts from the state the

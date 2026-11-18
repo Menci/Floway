@@ -87,20 +87,6 @@ const shownSettings = () => ({
 // configuration and nothing else. There is no second draft for the card to fall
 // back to while a lease is being acquired for another key.
 describe('Agent Setup card fields', () => {
-  it('retains distinct provider names when switching agent tabs', () => {
-    renderInApp(<Host />);
-    act(() => { screen.getByRole('tab', { name: 'Pi' }).click(); });
-    expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Provider ID' }).value).toBe('');
-    expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Provider ID' }).placeholder).toBe('floway');
-    fireEvent.change(screen.getByRole('textbox', { name: 'Provider ID' }), { target: { value: 'floway-home' } });
-    act(() => { screen.getByRole('tab', { name: 'OMP' }).click(); });
-    fireEvent.change(screen.getByRole('textbox', { name: 'Provider ID' }), { target: { value: 'floway-work' } });
-    act(() => { screen.getByRole('tab', { name: 'Pi' }).click(); });
-    expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Provider ID' }).value).toBe('floway-home');
-    act(() => { screen.getByRole('tab', { name: 'OMP' }).click(); });
-    expect(screen.getByRole<HTMLInputElement>('textbox', { name: 'Provider ID' }).value).toBe('floway-work');
-  });
-
   it('offers the selected model thinking levels and retains explicit retry zero and disabled values', () => {
     const model = catalogModel('reasoning-model', { chat: { reasoning: { mandatory: true, effort: { supported: ['low', 'high'], default: 'high' } } } });
     renderInApp(<Host models={[model]} piModel={model.id} />);

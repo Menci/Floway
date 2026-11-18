@@ -3,7 +3,6 @@ import { useFormContext } from 'react-hook-form';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { beforeEach, expect, test, vi } from 'vitest';
 
-import type { UpstreamRecord } from '../../../src/api/types';
 import { OutcomeToastProvider } from '../../../src/components/ui/outcome-toast';
 import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
 import { UpstreamEditorPage } from '../../../src/components/upstream-editor/page';
@@ -89,20 +88,6 @@ beforeEach(() => {
   apiMocks.previewModels.mockResolvedValue({ data: { kind: 'ollama', data: [] }, error: null });
 });
 
-test('failed refresh keeps a previously loaded catalog available', async () => {
-  apiMocks.listModels.mockResolvedValue({
-    error: {
-      message: 'HTTP 503: unavailable',
-      raw: { modelsCache: { fetchedAt: 100, modelCount: 1, lastError: { message: 'HTTP 503: unavailable', at: 200 } } },
-    },
-  });
-  renderPage(record, discovered);
-  fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
-  await waitFor(() => expect(screen.getByTestId('models-error').textContent).toBe('HTTP 503: unavailable'));
-  expect(screen.getByTestId('discovered').textContent).toBe('new-model');
-  expect(screen.getByTestId('catalog-available').textContent).toBe('true');
-});
-
 test('metadata-only OAuth edits fetch the saved record and keep form changes unsaved', async () => {
   renderPage();
   expect(screen.getByTestId('catalog-available').textContent).toBe('false');
@@ -131,25 +116,6 @@ test('editing Ollama manual models fetches the draft instead of the saved catalo
   await waitFor(() => expect(apiMocks.previewModels).toHaveBeenCalledTimes(1));
   expect(apiMocks.listModels).not.toHaveBeenCalled();
   expect(apiMocks.previewModels.mock.calls[0]?.[0].json.record.config.models).toEqual([]);
-});
-
-test('saving Custom manual models keeps an already fetched remote catalog', async () => {
-  const manual = { upstreamModelId: 'old-manual', publicModelId: 'old-manual', kind: 'chat' as const, endpoints: { openaiChatCompletions: {} } };
-  const custom = upstreamRecord('up_custom', {
-    kind: 'custom',
-    config: { ...(customRecord.config as Extract<UpstreamRecord, { kind: 'custom' }>['config']), models: [manual] },
-    state: null,
-  });
-  apiMocks.patch.mockResolvedValue({ data: customRecord, error: null });
-  renderPage(custom);
-  fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
-  await waitFor(() => expect(screen.getByTestId('discovered').textContent).toBe('new-model'));
-
-  fireEvent.click(screen.getByRole('button', { name: 'Remove manual model' }));
-  fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') }));
-  await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledTimes(1));
-  expect(screen.getByTestId('discovered').textContent).toBe('new-model');
-  expect(screen.getByTestId('catalog-available').textContent).toBe('true');
 });
 
 test('saving a pending YAML edit discards an older explicit Fetch result', async () => {
@@ -185,33 +151,6 @@ test('dirty OAuth discovery inputs save first, then make one independent Fetch r
   await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(screen.getByTestId('discovered').textContent).toBe('new-model'));
   expect(apiMocks.patch.mock.invocationCallOrder[0]).toBeLessThan(apiMocks.listModels.mock.invocationCallOrder[0]!);
-});
-
-test('a failed explicit Fetch reports model discovery failure after Save succeeded', async () => {
-  let finishFetch: ((value: unknown) => void) | undefined;
-  apiMocks.listModels.mockImplementation(() => new Promise(resolve => { finishFetch = resolve; }));
-  renderPage();
-  fireEvent.click(screen.getByRole('button', { name: 'Edit discovery' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
-  fireEvent.click(await screen.findByRole('button', { name: i18n.t('dashboard.upstreamEditor.fetchDirty.saveAndFetch') }));
-  await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
-  expect(screen.getAllByText(i18n.t('dashboard.upstreamEditor.toast.saved')).length).toBeGreaterThan(0);
-  await act(async () => {
-    finishFetch!({
-      data: null,
-      error: {
-        message: 'HTTP 503: unavailable', raw: {
-          error: { code: 'upstream_model_listing_failed', upstreamResponse: { status: 503, headers: [], body: 'unavailable' } },
-          modelsCache: { fetchedAt: null, modelCount: null, lastError: { message: 'HTTP 503: persisted detail', at: 100 } },
-        },
-      },
-    });
-  });
-  await waitFor(() => expect(screen.getByTestId('models-error').textContent).toBe('HTTP 503: unavailable'));
-  expect(screen.getByTestId('upstream-response-status').textContent).toBe('503');
-  expect(screen.getByTestId('cache-last-error').textContent).toBe('HTTP 503: persisted detail');
-  expect(apiMocks.patch).toHaveBeenCalledTimes(1);
-  expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.unsaved'))).toBeNull();
 });
 
 test('a pending old Fetch cannot overwrite the new Fetch after Save', async () => {

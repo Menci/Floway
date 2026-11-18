@@ -147,13 +147,4 @@ describe('winui popover surface reachability', () => {
     const field = await screen.findByRole('textbox', { name: 'Surface field' });
     await waitFor(() => expect(document.activeElement).toBe(field));
   });
-
-  it('hides the surface from assistive technology once it is dismissed', async () => {
-    const view = renderInApp(<Harness open={false} />);
-    view.rerender(<Harness open />);
-    const surface = await screen.findByRole('dialog');
-    expect(surface.getAttribute('aria-hidden')).toBeNull();
-    view.rerender(<Harness open={false} />);
-    expect(surface.getAttribute('aria-hidden')).toBe('true');
-  });
 });

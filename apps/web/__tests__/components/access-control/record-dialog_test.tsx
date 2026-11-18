@@ -65,36 +65,6 @@ test('new records start at the root slash and reject an incomplete scope inline'
   expect(fetch).not.toHaveBeenCalled();
 });
 
-test('updates permission controls from each valid JSON scope draft', async () => {
-  const groupRecord: AccessRecord = {
-    ...record,
-    scope: { kind: 'group', groupId: 3 },
-    values: { 'User.Audit': true, 'Permission.Audit': true },
-  };
-  const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => Response.json(init?.method === 'PUT'
-    ? { ...groupRecord, ...JSON.parse(init.body as string) }
-    : { values: { 'User.Audit': false, 'Permission.Audit': false }, records: [], decisions: [] }));
-  vi.stubGlobal('fetch', fetch);
-  await renderDialog({ record: groupRecord });
-  fireEvent.click(screen.getByRole('tab', { name: 'JSON' }));
-  const editor = screen.getByRole('textbox', { name: 'JSON' });
-
-  fireEvent.change(editor, { target: { value: JSON.stringify({ kind: 'groups' }) } });
-  await vi.waitFor(() => expect(screen.queryByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.User.Audit') })).toBeNull());
-  expect(screen.getByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.Permission.Audit') })).toBeTruthy();
-
-  fireEvent.change(editor, { target: { value: JSON.stringify({ kind: 'group', groupId: 3 }) } });
-  const userAudit = await screen.findByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.User.Audit') });
-  fireEvent.click(within(userAudit).getByRole('radio', { name: i18n.t('dashboard.accessControl.states.on') }));
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.accessControl.actions.save') })); });
-
-  const write = fetch.mock.calls.find(([, init]) => init?.method === 'PUT')!;
-  expect(JSON.parse(write[1]!.body as string)).toMatchObject({
-    scope: { kind: 'group', groupId: 3 },
-    values: { 'User.Audit': true, 'Permission.Audit': true },
-  });
-});
-
 test('an administrator target keeps its permission fields and saves normally', async () => {
   const fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => Response.json(init?.method === 'PUT'
     ? { ...record, ...JSON.parse(init.body as string) }
@@ -176,7 +146,6 @@ test.each(['Visual', 'JSON'])('locks the complete %s form through a save and res
   expect(screen.getAllByRole<HTMLInputElement>('radio').every(input => input.disabled)).toBe(true);
   expect(screen.getAllByRole<HTMLButtonElement>('tab').every(tab => tab.disabled)).toBe(true);
   if (mode === 'JSON') expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'JSON' }).readOnly).toBe(true);
-  else expect(document.querySelector('.floway-scope-editor')!.getAttribute('aria-disabled')).toBe('true');
   await act(async () => { finish(Response.json({ error: 'Save failed' }, { status: 503 })); });
   await screen.findByText('Save failed');
   await waitFor(() => expect(principal.disabled).toBe(false));

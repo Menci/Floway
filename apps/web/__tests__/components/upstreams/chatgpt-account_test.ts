@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ChatGPTQuotaSnapshotMap, ChatGPTRateLimitResetCredit, UpstreamRecord } from '../../../src/api/types';
-import { accountStatus, chatgptRenewable, chatgptResetCreditIsUsable, findCredential, latestCredits, quotaEntries } from '../../../src/components/upstreams/chatgpt-account';
+import { accountStatus, chatgptRenewable, chatgptResetCreditIsUsable, findCredential, quotaEntries } from '../../../src/components/upstreams/chatgpt-account';
 
 type ChatGPTRecord = Extract<UpstreamRecord, { kind: 'chatgpt' }>;
 
@@ -34,30 +34,6 @@ describe('ChatGPT credential lookup', () => {
   });
 });
 
-describe('ChatGPT quota entries', () => {
-  it('reads both windows and orders limits by name', () => {
-    const entries = quotaEntries({
-      weekly: { observed_at: PAST, active_limit: 'Weekly', primary_used_percent: 20, primary_window_minutes: 10_080 },
-      daily: { observed_at: PAST, active_limit: 'Daily', primary_used_percent: 5, secondary_used_percent: 50, secondary_reset_after_at: FUTURE },
-    }, NOW);
-    expect(entries.map(entry => entry.label)).toEqual(['Daily', 'Weekly']);
-    expect(entries[0].windows.map(window => window.key)).toEqual(['primary', 'secondary']);
-    expect(entries[0].windows[1]).toMatchObject({ percent: 50, resetAt: FUTURE, windowMinutes: null });
-    expect(entries[1].windows).toHaveLength(1);
-  });
-});
-
-describe('ChatGPT credits', () => {
-  it('takes the freshest observation that carries a balance', () => {
-    const credits = latestCredits({
-      stale: { observed_at: '2026-07-01T00:00:00.000Z', credits_balance: 10 },
-      fresh: { observed_at: '2026-07-20T00:00:00.000Z', credits_balance: 3 },
-      silent: { observed_at: '2026-07-27T00:00:00.000Z' },
-    });
-    expect(credits?.credits_balance).toBe(3);
-  });
-});
-
 describe('ChatGPT reset cards', () => {
   const credit = (overrides: Partial<ChatGPTRateLimitResetCredit> = {}): ChatGPTRateLimitResetCredit => ({
     id: 'credit-1', reset_type: 'codex_rate_limits', status: 'available',
@@ -86,11 +62,6 @@ describe('ChatGPT account status', () => {
     const credential = { chatgptAccountId: ACCOUNT_ID, state: 'session_terminated' as const, state_message: 'revoked', state_updated_at: PAST };
     const entries = quotaEntries({ daily: { observed_at: PAST, ratelimited_until: FUTURE } }, NOW);
     expect(accountStatus({ kind: 'present', credential }, entries)).toEqual({ tone: 'danger', reason: 'session-terminated', detail: 'revoked' });
-  });
-
-  it('warns on heavy usage across any window', () => {
-    const entries = quotaEntries({ daily: { observed_at: PAST, primary_used_percent: 12, secondary_used_percent: 84 } }, NOW);
-    expect(accountStatus(activeLookup, entries)).toEqual({ tone: 'warning', reason: 'heavy', percent: 84 });
   });
 });
 

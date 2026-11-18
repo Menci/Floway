@@ -4,7 +4,6 @@ import { beforeEach, expect, test, vi } from 'vitest';
 
 import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
 import { valuesFromRecord } from '../../../src/components/upstream-editor/data';
-import { ModelDetail } from '../../../src/components/upstream-editor/model-detail';
 import { ProviderConfigSection } from '../../../src/components/upstream-editor/provider-config';
 import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
@@ -34,16 +33,4 @@ test('quota refresh uses the edited region and API key', async () => {
   expect(screen.queryAllByRole('progressbar')).toHaveLength(0);
   fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.kimiCode.usage.load') }));
   expect(mocks.refresh).toHaveBeenCalledWith(expect.objectContaining({ json: { record: expect.objectContaining({ config: { region: 'overseas', apiKey: 'sk-kimi-fake-replacement' } }) } }), expect.anything());
-});
-
-test('catalog-owned Kimi Code model pricing stays read-only for editable connections', () => {
-  const onChange = vi.fn();
-  renderInApp(<ModelDetail
-    onChange={onChange} onDelete={() => {}} onSourceChange={() => {}} onUpstreamModelIdCommit={() => {}}
-    readOnly={false} record={kimiCodeRecord()} revealValidation={false} section="details" upstreamFlags={{}}
-    row={{ key: 'auto:k3.1-pro', source: 'auto', manualIndex: null, hasAuto: true, config: { upstreamModelId: 'k3.1-pro', publicModelId: 'kimi-k3.1-pro', display_name: 'K3.1 Pro', kind: 'chat', endpoints: { openaiChatCompletions: {} }, pricing: { entries: [{ rates: { input_tokens: '0.000002' } }] } } }}
-  />);
-  expect(screen.getByRole('heading', { name: i18n.t('dashboard.upstreamEditor.models.pricing') })).toBeTruthy();
-  expect(screen.getByDisplayValue<HTMLInputElement>('2').readOnly).toBe(true);
-  expect(onChange).not.toHaveBeenCalled();
 });

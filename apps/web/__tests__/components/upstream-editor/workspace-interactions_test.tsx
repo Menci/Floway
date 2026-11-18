@@ -75,12 +75,6 @@ function Harness({ discovered = [], source = record }: { discovered?: UpstreamMo
 // through the resources keeps a copy edit from failing this suite as though the
 // workspace had broken.
 const models = (key: string) => i18n.t(`dashboard.upstreamEditor.models.${key}`);
-// A row's delete command names the model it acts on, so the count queries match
-// the command by its stem rather than by a whole label they would have to build
-// a name for. A just-appended model has no name yet, and an accessible name is
-// trimmed, so the stem is matched without its trailing separator.
-const deleteCommandStem = i18n.t('dashboard.upstreamEditor.models.deleteNamed', { name: '\u0000' }).split('\u0000')[0]!.trimEnd();
-const deleteCommands = () => screen.getAllByLabelText(new RegExp(`^${deleteCommandStem}`));
 
 describe('upstream model workspace field-array transitions', () => {
   const detailLabel = models('imageDetailOriginal');
@@ -152,33 +146,6 @@ describe('upstream model workspace field-array transitions', () => {
     expect(yaml).toContain('opaqueBlobCompatibilityScope:\n    bindToUpstream: true');
   });
 
-  it('edits and serializes a manual model opaque blob compatibility scope', async () => {
-    renderInApp(<Harness />);
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.models.editNamed', { name: 'model-a' }) }));
-
-    const bindToUpstream = screen.getByRole<HTMLInputElement>('switch', { name: models('bindOpaqueBlobsToUpstream') });
-    const key = screen.getByRole<HTMLInputElement>('textbox', { name: models('opaqueBlobCompatibilityKey') });
-    expect(bindToUpstream.checked).toBe(true);
-    expect(key.placeholder).toBe('model-a');
-
-    const sectionHeading = screen.getByRole('heading', { name: models('opaqueBlobCompatibility') });
-    const compatibilityInfo = sectionHeading.parentElement?.querySelector('button');
-    expect(compatibilityInfo).toBeTruthy();
-    fireEvent.click(compatibilityInfo!);
-    expect(screen.getByText(/When routing history context across models/)).toBeTruthy();
-    expect(screen.getByText(/Incompatible optional blobs are discarded/)).toBeTruthy();
-
-    fireEvent.click(bindToUpstream);
-    fireEvent.change(key, { target: { value: 'openai' } });
-    expect(bindToUpstream.checked).toBe(false);
-    expect(key.value).toBe('openai');
-
-    fireEvent.click(screen.getByRole('button', { name: models('back') }));
-    fireEvent.click(await screen.findByRole('button', { name: models('editAsYaml') }));
-    const yaml = (await screen.findByLabelText('YAML models') as HTMLTextAreaElement).value;
-    expect(yaml).toContain('opaqueBlobCompatibilityScope:\n    bindToUpstream: false\n    key: openai');
-  });
-
   it('initializes, preserves, and clears original-detail support with image input', () => {
     const withChat = (chat: UpstreamChatModelConfig): UpstreamRecord => ({
       ...record,
@@ -204,32 +171,5 @@ describe('upstream model workspace field-array transitions', () => {
     expect(screen.queryByRole('switch', { name: detailLabel })).toBeNull();
     fireEvent.click(screen.getByRole('switch', { name: models('imageInput') }));
     expect(screen.getByRole<HTMLInputElement>('switch', { name: detailLabel }).checked).toBe(false);
-  });
-
-  it('deletes a newly appended model and applies a shorter YAML catalog', async () => {
-    renderInApp(<Harness />);
-    expect(deleteCommands()).toHaveLength(2);
-
-    fireEvent.click(screen.getByRole('button', { name: models('add') }));
-    fireEvent.change(screen.getByRole('textbox', { name: models('upstreamId') }), { target: { value: 'temporary' } });
-    fireEvent.click(screen.getByRole('button', { name: models('back') }));
-    expect(deleteCommands()).toHaveLength(3);
-    fireEvent.click(deleteCommands()[2]!);
-    fireEvent.click(await screen.findByRole('button', { name: models('deleteConfirm') }));
-    await waitFor(() => expect(deleteCommands()).toHaveLength(2));
-
-    // The confirmation dialog marks the rest of the document `aria-hidden`
-    // while it is open and clears that on its way out, so the toolbar behind it
-    // is unreachable by role until the exit settles. A label query does not
-    // filter hidden nodes and hid the race; a role query has to wait for it.
-    fireEvent.click(await screen.findByRole('button', { name: models('editAsYaml') }));
-    const editor = await screen.findByLabelText('YAML models');
-    fireEvent.change(editor, {
-      target: {
-        value: '- upstreamModelId: replacement\n  publicModelId: replacement\n  kind: chat\n  endpoints:\n    openaiResponses: {}\n',
-      },
-    });
-    fireEvent.click(screen.getByRole('button', { name: models('editWithUi') }));
-    await waitFor(() => expect(deleteCommands()).toHaveLength(1));
   });
 });

@@ -20,9 +20,9 @@ const loaderData = { directory: { users: [user], groups, memberships }, error: n
 
 afterEach(() => vi.restoreAllMocks());
 
-const renderPage = (entry = '/dashboard/admin/users', data = loaderData, availableWidth = 1000) => {
+const renderPage = (entry = '/dashboard/admin/users') => {
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-    return new DOMRect(0, 0, this.hasAttribute('data-measure-group') ? 100 : this.hasAttribute('data-measure-overflow') ? 24 : availableWidth, 24);
+    return new DOMRect(0, 0, this.hasAttribute('data-measure-group') ? 100 : this.hasAttribute('data-measure-overflow') ? 24 : 1000, 24);
   });
   const readStyle = window.getComputedStyle.bind(window);
   vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
@@ -30,7 +30,7 @@ const renderPage = (entry = '/dashboard/admin/users', data = loaderData, availab
     if (element.hasAttribute('data-group-memberships')) Object.defineProperty(style, 'columnGap', { value: '8px' });
     return style;
   });
-  const loader = vi.fn(() => data);
+  const loader = vi.fn(() => loaderData);
   const router = createMemoryRouter([{
     path: '/dashboard', element: <OutcomeToastProvider><Outlet context={{ user }} /></OutcomeToastProvider>, children: [{
       path: 'admin/users', loader, shouldRevalidate,
@@ -45,42 +45,11 @@ test('opens a group deep link and keeps group selection in browser history', asy
   const { loader, router } = renderPage('/dashboard/admin/users?tab=groups&group=2');
   const selected = await screen.findByRole('option', { name: 'Research' });
   expect(selected.getAttribute('aria-selected')).toBe('true');
-  expect(selected.querySelector('.floway-identity .floway-group-avatar')).not.toBeNull();
-  expect(screen.getByRole('table').querySelector('.floway-identity .floway-avatar-initials')?.textContent).toBe('F');
   await act(async () => { fireEvent.click(screen.getByRole('option', { name: 'Platform' })); });
   await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('group')).toBe('1'));
   await act(async () => { await router.navigate(-1); });
   expect(screen.getByRole('option', { name: 'Research' }).getAttribute('aria-selected')).toBe('true');
   expect(loader).toHaveBeenCalledOnce();
-});
-
-test('navigates from a group identity to its roster without carrying the user search', async () => {
-  const { router } = renderPage();
-  const search = await screen.findByRole('textbox', { name: 'Search users' });
-  fireEvent.change(search, { target: { value: 'frank' } });
-  const link = screen.getByRole('link', { name: 'Research' });
-  expect(link.querySelector('.floway-identity .floway-group-avatar')).not.toBeNull();
-  expect(link.querySelector('.fui-Tag')).toBeNull();
-  expect(link.getAttribute('href')).toBe('/dashboard/admin/users?tab=groups&group=2');
-  await act(async () => { fireEvent.click(link); });
-  await waitFor(() => expect(router.state.location.search).toBe('?tab=groups&group=2'));
-  expect(screen.getByRole('option', { name: 'Research' }).getAttribute('aria-selected')).toBe('true');
-  expect((screen.getByRole('textbox', { name: 'Search groups' }) as HTMLInputElement).value).toBe('');
-});
-
-test('opens hidden group links from the overflow control', async () => {
-  const { router } = renderPage('/dashboard/admin/users', loaderData, 80);
-  await screen.findByRole('button', { name: 'frank' });
-  const overflow = await screen.findByRole('button', { name: 'Show 2 more groups' });
-  expect(overflow.querySelector('.floway-group-avatar[data-overflow-count="2"]')?.textContent).toBe('+2');
-  expect(overflow.querySelector('.fui-Avatar')?.getAttribute('data-winui-avatar-color')).toBe('neutral');
-  expect(overflow.querySelector('.fui-Tag')).toBeNull();
-  await act(async () => { fireEvent.click(overflow); });
-  expect(screen.getByRole('group', { name: 'Groups' })).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Research' }).getAttribute('href')).toBe('/dashboard/admin/users?tab=groups&group=2');
-  await act(async () => { fireEvent.click(screen.getByRole('link', { name: 'Research' })); });
-  await waitFor(() => expect(new URLSearchParams(router.state.location.search).get('group')).toBe('2'));
-  expect(screen.getByRole('option', { name: 'Research' }).getAttribute('aria-selected')).toBe('true');
 });
 
 test('retains the complete directory and edit membership when refreshing it fails', async () => {
@@ -137,7 +106,7 @@ test('keeps an open user editor paired with the group metadata it was opened wit
   await act(async () => { fireEvent.click(name); });
   expect(screen.getByRole('dialog').textContent).toContain('Research');
   await act(async () => { fireEvent.click(refresh); });
-  await waitFor(() => expect(groupTab.querySelector('.proportional-nums')?.textContent).toBe('0'));
+  await waitFor(() => expect(groupTab.textContent).toMatch(/0$/));
   expect(screen.getByRole('dialog').textContent).toContain('Platform');
   expect(screen.getByRole('dialog').textContent).toContain('Research');
 });

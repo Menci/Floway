@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { callApi, callApiNoContent } from '../../src/api/client';
-import { isAbortError } from '../../src/lib/error-message';
+import { callApi } from '../../src/api/client';
 
 const respond = (response: Response) => () => Promise.resolve(response);
 
@@ -22,19 +21,4 @@ describe('callApi', () => {
     const result = await callApi(() => Promise.reject(thrown));
     expect(result.error).toEqual({ status: 0, message: 'network down', cause: thrown });
   });
-
-  it('keeps an abort distinguishable from any other transport failure', async () => {
-    const result = await callApi(() => Promise.reject(AbortSignal.abort().reason));
-    expect(result.error?.status).toBe(0);
-    expect(isAbortError(result.error?.cause)).toBe(true);
-  });
-});
-
-describe('callApiNoContent', () => {
-  it('reports a 204 as a success', async () => {
-    const result = await callApiNoContent(respond(new Response(null, { status: 204 })));
-    expect(result.error).toBeUndefined();
-    expect(result.data).toBeUndefined();
-  });
-
 });

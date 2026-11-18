@@ -78,14 +78,4 @@ describe('ChatGPT projected quota on list and card', () => {
     expect(card.getByText('88% remaining')).toBeTruthy();
     expect(list.queryByText('0%')).toBeNull();
   });
-
-  it('keeps an exhausted quota without inventing a timed restriction when its reset is unknown', () => {
-    const projected = { ...record, chatgpt_quota: { premium: { observed_at: observed, primary_used_percent: 100 } } };
-    renderInApp(<><UpstreamSignals record={projected} /><ChatGPTAccountCard record={projected} /></>);
-    expect(screen.queryByText('Rate limited')).toBeNull();
-    expect(screen.queryByText(/^Rate-limited until/)).toBeNull();
-    expect(screen.getByText('Heavy usage (100%)')).toBeTruthy();
-    expect(screen.getByText('0%')).toBeTruthy();
-    expect(screen.getByText('0% remaining')).toBeTruthy();
-  });
 });

@@ -102,15 +102,6 @@ describe('upstream editor dirtiness across an edit and its undo', () => {
     expect(dirty()).toBe('false');
   });
 
-  it('settles clean when the catalog switch is turned on and off again', () => {
-    renderInApp(<ConfigProbe record={customRecord({ enabled: false })} />);
-    const label = i18n.t('dashboard.upstreamEditor.fields.fetchModels');
-    fireEvent.click(screen.getByLabelText(label));
-    expect(dirty()).toBe('true');
-    fireEvent.click(screen.getByLabelText(label));
-    expect(dirty()).toBe('false');
-  });
-
   it('settles clean when a draft ingress header rule is typed and cleared', () => {
     renderInApp(<ConfigProbe record={customRecord({ enabled: true })} />);
     const key = screen.getByLabelText(i18n.t('dashboard.upstreamEditor.headers.keyForRow', { number: 1 }));

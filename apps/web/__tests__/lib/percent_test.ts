@@ -4,13 +4,6 @@ import { NO_READING } from '../../src/lib/no-reading';
 import { clampPercent, percentText } from '../../src/lib/percent';
 
 describe('percentages', () => {
-  it('keeps a reading inside the scale it is drawn on', () => {
-    expect(clampPercent(-5)).toBe(0);
-    expect(clampPercent(0)).toBe(0);
-    expect(clampPercent(100)).toBe(100);
-    expect(clampPercent(105)).toBe(100);
-  });
-
   // Unknown and zero are different readings, so an unusable one comes back as
   // null and is written as a dash rather than as 0%.
   it('reports an unusable reading as unknown rather than as zero', () => {

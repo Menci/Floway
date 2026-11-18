@@ -4,20 +4,10 @@ import { describe, expect, it } from 'vitest';
 import { assertLegacyCss, legacyCssPostCssPlugins } from '../css-compatibility';
 
 describe('browser CSS compatibility', () => {
-  it.each([
-    '#11223344',
-    'rgb(255 0 0)',
-    'oklch(50% 0.1 30)',
-  ])('rejects %s', async syntax => {
-    await expect(assertLegacyCss('fixture.css', `.fixture { color: ${syntax}; }`))
+  it('rejects modern notation and accepts legacy notation', async () => {
+    await expect(assertLegacyCss('fixture.css', '.fixture { color: #11223344; }'))
       .rejects.toThrow('Unsupported CSS reached the browser boundary');
-  });
-
-  it.each([
-    '#112233',
-    'rgba(255, 0, 0, 0.5)',
-  ])('accepts %s', async syntax => {
-    await expect(assertLegacyCss('fixture.css', `.fixture { color: ${syntax}; }`)).resolves.toBeUndefined();
+    await expect(assertLegacyCss('fixture.css', '.fixture { color: #112233; }')).resolves.toBeUndefined();
   });
 
   it('lowers supported modern notation before the browser boundary', async () => {

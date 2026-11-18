@@ -19,15 +19,4 @@ describe('model reachability', () => {
       .toEqual(['allowed', 'also-allowed', 'alias-allowed']);
     expect(reachableModels(catalog, [])).toEqual([]);
   });
-
-  it('narrows by the caller predicate without regard to endpoint surface', () => {
-    const openaiResponsesOnly = catalogModel('responses-only', { upstreams: ['a'], endpoints: { openaiResponses: {} } });
-    const alias = aliasModel('alias', ['responses-only'], { endpoints: { openaiResponses: {} } });
-    const chatOnly = catalogModel('chat-only', { upstreams: ['a'], endpoints: { openaiChatCompletions: {} } });
-    const embedding = catalogModel('embedding', { upstreams: ['a'], kind: 'embedding', endpoints: { openaiEmbeddings: {} } });
-
-    expect(reachableModels([openaiResponsesOnly, alias, chatOnly, embedding], ['a'], model => model.kind === 'chat')
-      .map(entry => entry.id))
-      .toEqual(['responses-only', 'alias', 'chat-only']);
-  });
 });

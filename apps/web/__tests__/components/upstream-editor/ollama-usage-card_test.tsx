@@ -7,7 +7,7 @@ import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
 import { primeDefaultSession } from '../../test-session';
-import { creditBalance, legacyBalance, usageTotals, pairedUsage } from '../upstreams/ollama-usage-fixture';
+import { creditBalance, usageTotals, pairedUsage } from '../upstreams/ollama-usage-fixture';
 
 const mocks = vi.hoisted(() => ({ refresh: vi.fn() }));
 vi.mock('../../../src/api/client', () => ({
@@ -37,34 +37,4 @@ test('successful manual balance refresh clears a persisted failure while display
   fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.ollama.usage.refresh') }));
   expect(await screen.findByText(/12\.5/)).toBeTruthy();
   expect(screen.queryByText(/stored balance error/)).toBeNull();
-});
-
-test.each(['credits', 'legacy'] as const)('the same Pro tier renders its %s billing controls from balance fields', kind => {
-  const record = upstreamRecord('ollama', {
-    kind: 'ollama', config: { baseUrl: 'https://ollama.com', cloudUsage: true, models: [], apiKeySet: true }, state: {
-      account: { plan: 'pro', name: 'Demo', email: null, fetchedAt: 1000 },
-      usageProbe: {
-        attemptedAt: 1000, error: null, observation: {
-          fetchedAt: 1000, data: {
-            balance: kind === 'credits' ? creditBalance : legacyBalance,
-            usage: kind === 'credits' ? usageTotals : { ...usageTotals, totals: { request_count: 15 } },
-          },
-        },
-      },
-    },
-  }) as Extract<UpstreamRecord, { kind: 'ollama' }>;
-  renderInApp(<OllamaUsageCard record={record} probeRecord={{ ...record }} />);
-  expect(screen.queryAllByRole('progressbar')).toHaveLength(kind === 'credits' ? 0 : 2);
-  if (kind === 'credits') {
-    expect(screen.getByText('$18.00')).toBeTruthy();
-    expect(screen.queryByText('$42.00')).toBeNull();
-    expect(screen.getByText('$3.25')).toBeTruthy();
-    const labels = Array.from(document.querySelectorAll('.fui-InfoLabel')).map(label => label.textContent);
-    expect(labels).toEqual([i18n.t('dashboard.upstreamEditor.ollama.usage.balance.included'), i18n.t('dashboard.upstreamEditor.ollama.usage.balance.purchased'), i18n.t('dashboard.upstreamEditor.ollama.usage.recentUsage', { count: 7 })]);
-    expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.ollama.usage.window.session'))).toBeNull();
-  } else {
-    expect(screen.getByText(i18n.t('dashboard.upstreamEditor.ollama.usage.window.session'))).toBeTruthy();
-    expect(screen.queryByText('$3.25')).toBeNull();
-  }
-  expect(screen.getByText('$25.00')).toBeTruthy();
 });

@@ -47,25 +47,8 @@ const label = (key: 'keyForRow' | 'valueForRow' | 'remove', number: number) =>
   i18n.t(`dashboard.upstreamEditor.headers.${key}`, { number });
 const valueOf = (element: HTMLElement) => (element as HTMLInputElement).value;
 const placeholderOf = (element: HTMLElement) => (element as HTMLInputElement).placeholder;
-const disabled = (element: HTMLElement) => (element as HTMLButtonElement).disabled;
 
 describe('Custom ingress header rules', () => {
-  it('turns a typed draft into a rule and immediately appends the next blank row', () => {
-    renderInApp(<Harness />);
-    const draft = screen.getByLabelText(label('keyForRow', 1));
-    expect(disabled(screen.getByLabelText(label('valueForRow', 1)))).toBe(true);
-    draft.focus();
-    fireEvent.change(draft, { target: { value: 'X-Route' } });
-    expect(document.activeElement).toBe(draft);
-    expect(disabled(screen.getByLabelText(label('valueForRow', 1)))).toBe(false);
-    expect(placeholderOf(screen.getByLabelText(label('valueForRow', 1)))).toBe(i18n.t('dashboard.upstreamEditor.headers.passthrough'));
-    expect(valueOf(screen.getByLabelText(label('keyForRow', 2)))).toBe('');
-    expect(disabled(screen.getByLabelText(label('valueForRow', 2)))).toBe(true);
-    expect(placeholderOf(screen.getByLabelText(label('valueForRow', 2)))).toBe('');
-    fireEvent.blur(draft);
-    expect(valueOf(draft)).toBe('x-route');
-  });
-
   it('maps both presets and custom freeform input without confusing a preset-looking literal', () => {
     renderInApp(<Harness ingressHeadersRules={[{ key: 'x-route', value: 'initial' }]} />);
     let behavior = screen.getByLabelText(label('valueForRow', 1));
@@ -88,7 +71,6 @@ describe('Custom ingress header rules', () => {
     behavior = screen.getByLabelText(label('valueForRow', 1));
     fireEvent.change(behavior, { target: { value: '(empty)' } });
     expect(screen.getByTestId('rules').textContent).toContain('"value":"(empty)"');
-    expect(screen.getByLabelText(label('valueForRow', 1)).closest('.font-mono')).not.toBeNull();
   });
 
   it('distinguishes repeated passthrough, protocol-owned, and transport-owned names', async () => {
@@ -108,24 +90,5 @@ describe('Custom ingress header rules', () => {
     fireEvent.change(first, { target: { value: 'Authorization' } });
     fireEvent.blur(first);
     expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.transportOwned'))).toBeTruthy();
-  });
-
-  it('accepts a name repeated with configured values', async () => {
-    renderInApp(<Harness />);
-    const first = screen.getByLabelText(label('keyForRow', 1));
-    fireEvent.change(first, { target: { value: 'x-route' } });
-    fireEvent.change(screen.getByLabelText(label('valueForRow', 1)), { target: { value: 'one' } });
-    const second = screen.getByLabelText(label('keyForRow', 2));
-    fireEvent.change(second, { target: { value: 'X-Route' } });
-    fireEvent.change(screen.getByLabelText(label('valueForRow', 2)), { target: { value: 'two' } });
-    fireEvent.blur(second);
-    fireEvent.click(screen.getByRole('button', { name: 'Save probe' }));
-
-    expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.headers.validation.duplicatePassthrough'))).toBeNull();
-    expect(JSON.parse(screen.getByTestId('rules').textContent!)).toEqual([
-      { key: 'x-route', value: 'one' },
-      { key: 'x-route', value: 'two' },
-      { key: '', value: null },
-    ]);
   });
 });

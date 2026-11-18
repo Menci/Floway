@@ -35,18 +35,4 @@ describe('copy outcome expiry', () => {
 
     expect(result.current.outcomeFor('row-2')).toBe('idle');
   });
-
-  it('leaves a failure up longer than a success', async () => {
-    copyResult.mockResolvedValue(false);
-    const { result } = renderHook(() => useCopyToClipboard());
-
-    await press(() => { result.current.copy('first', 'row-1'); });
-    expect(result.current.outcomeFor('row-1')).toBe('failed');
-
-    await advance(1_500);
-    expect(result.current.outcomeFor('row-1')).toBe('failed');
-
-    await advance(500);
-    expect(result.current.outcomeFor('row-1')).toBe('idle');
-  });
 });

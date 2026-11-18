@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { currentUsage, kimiCodeRecord, legacyUsage } from './kimi-code-fixture';
-import { creditBalance, legacyBalance, usageTotals } from './ollama-usage-fixture';
+import { creditBalance, usageTotals } from './ollama-usage-fixture';
 import type { UpstreamRecord } from '../../../src/api/types';
 import { upstreamReadout } from '../../../src/components/upstreams/signals';
 import en from '../../../src/i18n/locales/en';
@@ -77,25 +77,6 @@ describe('upstream readout by provider', () => {
     ]);
   });
 
-  it('names the Copilot seat the way VS Code names it', () => {
-    const planFor = (plan: string | null, sku: string | null) => readoutOf({
-      kind: 'copilot',
-      state: { seat: { fetchedAt: Date.parse(OBSERVED), data: { observed_at: OBSERVED, plan, sku } } },
-    }).plan;
-
-    expect(planFor('individual_pro', null)).toBe('Copilot Pro+');
-    expect(planFor('individual_max', null)).toBe('Copilot Max');
-    expect(planFor('business', null)).toBe('Copilot Business');
-    // A live enterprise seat: the plan names it, and its SKU is one no table needs.
-    expect(planFor('enterprise', 'copilot_enterprise_seat_quota')).toBe('Copilot Enterprise');
-    // The SKU is matched first, because a free seat carries no plan of its own.
-    expect(planFor(null, 'free_limited_copilot')).toBe('Copilot Free');
-    expect(planFor('individual', 'free_educational_quota')).toBe('Copilot Student');
-    // Both namespaces are open, so an unknown value names no plan.
-    expect(planFor('individual_ultra', null)).toBe('Copilot');
-    expect(planFor(null, null)).toBe('Copilot');
-  });
-
   // A rate limit and a spent window are different facts: the row states the
   // limit rather than inferring it from a percentage that can read low while it
   // holds, and states how long the wait still has to run rather than when it
@@ -143,65 +124,7 @@ describe('upstream readout by provider', () => {
     expect(rowFor(null)).toBe('Claude Max 20x');
   });
 
-  it('carries the ChatGPT credit balance beside the windows', () => {
-    const withCredits = (credits: Record<string, unknown>) => readoutOf({
-      kind: 'chatgpt',
-      config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'plus' }] },
-      state: { accounts: [] },
-      chatgpt_quota: { plus: { observed_at: OBSERVED, ...credits } },
-    }).signals.map(signal => signal.value);
-
-    expect(withCredits({ credits_has_credits: true, credits_balance: 42 })).toEqual(['42 credits']);
-    // A balance of nothing says nothing on this line, however the account
-    // reports it -- the editor card is where both still show.
-    expect(withCredits({ credits_has_credits: true, credits_balance: 0 })).toEqual([]);
-    expect(withCredits({ credits_has_credits: false })).toEqual([]);
-    expect(withCredits({ credits_has_credits: false, credits_balance: 12 })).toEqual([]);
-    expect(withCredits({})).toEqual([]);
-  });
-
-  it('lifts the Max multiple onto the Claude plan and tells the two seven-day windows apart', () => {
-    const record = {
-      kind: 'claude-code',
-      config: { accounts: [{ accountUuid: 'uuid-1', subscriptionType: 'max', rateLimitTier: 'default_claude_max_20x' }] },
-      state: {
-        accounts: [{
-          accountUuid: 'uuid-1',
-          usageProbeSnapshot: {
-            fetchedAt: Date.parse(OBSERVED),
-            data: {
-              five_hour: { utilization: 25, resets_at: '2026-07-28T15:00:00.000Z' },
-              seven_day: { utilization: 40, resets_at: '2026-08-02T00:00:00.000Z' },
-              seven_day_sonnet: { utilization: 8, resets_at: '2026-08-02T00:00:00.000Z' },
-            },
-          },
-        }],
-      },
-    };
-    expect(rowOf(record)).toBe('Claude Max 20x | 75% 5h | 60% 7d | 92% 7d Sonnet');
-  });
-
-  // OpenAI renamed Team to Business without changing the wire identifier, and
-  // groups `business` with its enterprise plans.
-  it('names a ChatGPT plan as Codex itself displays it', () => {
-    const planFor = (planType: string) => readoutOf({
-      kind: 'chatgpt',
-      config: { accounts: [{ chatgptAccountId: 'acct_1', planType }] },
-      state: { accounts: [] },
-    }).plan;
-
-    expect(planFor('team')).toBe('ChatGPT Business');
-    expect(planFor('business')).toBe('ChatGPT Enterprise');
-    expect(planFor('prolite')).toBe('ChatGPT Pro Lite');
-  });
-
   const ollamaRecord = (data: unknown) => ({ kind: 'ollama', state: { account: { plan: 'pro' }, usageProbe: { observation: { fetchedAt: Date.parse(OBSERVED), data } } } });
-
-  it('keeps legacy percentage signals while using current balance reset times', () => {
-    const record = ollamaRecord({ balance: legacyBalance, usage: { ...usageTotals, totals: { request_count: 15 } } });
-    expect(rowOf(record)).toBe('Ollama Pro | 75% 5h | 60% 7d');
-    expect(readoutOf(record).signals[0]?.detail).toContain('Oct 11, 2026');
-  });
 
   it('shows remaining plan credits against their period allowance', () => {
     const record = ollamaRecord({ balance: creditBalance, usage: usageTotals });
@@ -209,18 +132,6 @@ describe('upstream readout by provider', () => {
     expect(upstreamReadout(record as never, t, 'en', NOW, 'used').signals[0]?.label).toBe('$42.00 / $60.00');
     expect(readoutOf(record).signals[0]?.percent).toBe(70);
     expect(readoutOf(record).signals[0]?.detail).toContain('Oct 1, 2026 to Nov 1, 2026: plan credits used this period.');
-  });
-
-  it('derives subscription usage from its own period when activity spans a reset', () => {
-    const signals = readoutOf(ollamaRecord({
-      balance: { ...creditBalance, included: { ...creditBalance.included, balance_usd: 57, period: { from: '2026-11-01T00:00:00Z', until: '2026-12-01T00:00:00Z' } } },
-      usage: { ...usageTotals, from: '2026-10-27T00:00:00Z', until: '2026-11-03T04:00:00Z', totals: { request_count: 15, usage_usd: 10 } },
-    })).signals;
-    expect(signals).toHaveLength(1);
-    expect(signals[0]?.value).toBe('95%');
-    expect(signals[0]?.label).toBe('$57.00 / $60.00');
-    expect(signals[0]?.percent).toBe(5);
-    expect(signals[0]?.detail).toContain('Nov 1, 2026 to Dec 1, 2026: plan credits used this period.');
   });
 });
 

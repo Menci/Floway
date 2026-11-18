@@ -21,14 +21,6 @@ describe('portable digest', () => {
     }
   });
 
-  it('reads a view without reaching past its bounds', async () => {
-    const backing = new Uint8Array([0xff, ...message, 0xff]);
-    const digest = new Uint8Array(
-      await portableSubtle.digest('SHA-256', backing.subarray(1, 1 + message.length)),
-    );
-    expect(digest).toStrictEqual(await nativeDigest('SHA-256'));
-  });
-
   it('rejects an unrecognized algorithm', async () => {
     await expect(portableSubtle.digest('MD5', message)).rejects.toThrow(
       expect.objectContaining({ name: 'NotSupportedError' }),

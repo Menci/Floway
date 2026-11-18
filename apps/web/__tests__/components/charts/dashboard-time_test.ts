@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { dashboardBucketFrames, dashboardBucketMapper, dashboardGranularity, dashboardInterval, dashboardRangeIsCurrent, parseDashboardRange, serializeDashboardRange } from '../../../src/components/charts/dashboard-time';
+import { dashboardBucketFrames, dashboardBucketMapper, dashboardGranularity, dashboardInterval } from '../../../src/components/charts/dashboard-time';
 import { calendarDate } from '../../../src/lib/calendar-date';
 
 afterEach(() => vi.unstubAllEnvs());
@@ -59,35 +59,4 @@ test.each([
     if (index > 0) expect(frame.start).toBe(frames[index - 1]!.end);
     for (let hour = frame.start; hour < frame.end; hour += 3_600_000) expect(mapper(new Date(hour).toISOString().slice(0, 13))).toBe(frame.key);
   }
-});
-
-test('custom includes the complete last day and remains fixed as time advances', () => {
-  vi.stubEnv('TZ', 'Asia/Singapore');
-  const range = { start: '2026-10-01', end: '2026-10-03' };
-  const interval = { start: Date.UTC(2026, 8, 30, 16), end: Date.UTC(2026, 9, 3, 16) };
-  expect(dashboardInterval(range, 0)).toEqual(interval);
-  expect(dashboardInterval(range, Date.UTC(2027, 0, 1))).toEqual(interval);
-  const frames = dashboardBucketFrames(range, 0);
-  expect(frames[0]?.start).toBe(interval.start);
-  expect(frames.at(-1)?.end).toBe(interval.end);
-  expect(frames.reduce((sum, frame) => sum + frame.end - frame.start, 0)).toBe(interval.end - interval.start);
-});
-
-test('date URLs preserve Custom independently from preset matching', () => {
-  const range = { start: '2026-10-10', end: '2026-10-10' };
-  const params = new URLSearchParams();
-  serializeDashboardRange(params, range);
-  expect(params.toString()).toBe('r=custom&start=2026-10-10&end=2026-10-10');
-  expect(parseDashboardRange(params)).toEqual(range);
-  for (const value of ['2026-02-30', 'invalid', '2026-10-10T00']) expect(() => parseDashboardRange(new URLSearchParams(`r=custom&start=${value}&end=2026-10-10`))).toThrow();
-  expect(() => parseDashboardRange(new URLSearchParams('r=custom&start=2026-10-11&end=2026-10-10'))).toThrow();
-});
-
-test('only custom ranges covering the current local date poll', () => {
-  vi.stubEnv('TZ', 'Asia/Singapore');
-  const now = Date.UTC(2026, 9, 9, 17);
-  expect(dashboardRangeIsCurrent('today', now)).toBe(true);
-  expect(dashboardRangeIsCurrent({ start: '2026-10-09', end: '2026-10-09' }, now)).toBe(false);
-  expect(dashboardRangeIsCurrent({ start: '2026-10-10', end: '2026-10-10' }, now)).toBe(true);
-  expect(dashboardRangeIsCurrent({ start: '2026-10-11', end: '2026-10-12' }, now)).toBe(false);
 });

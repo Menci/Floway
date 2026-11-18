@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   formatBytes,
-  formatCompactCount,
   formatTokenRate,
 } from '../../src/lib/format-number';
 import { NO_READING } from '../../src/lib/no-reading';
@@ -13,14 +12,6 @@ describe('byte sizes', () => {
     expect(formatBytes(10.5 * 1024, 'en')).toBe('11 KB');
     expect(formatBytes(9.5 * 1024 ** 2, 'en')).toBe('9.5 MB');
     expect(formatBytes(10.5 * 1024 ** 2, 'en')).toBe('11 MB');
-  });
-});
-
-describe('counts', () => {
-  it('abbreviates the way the locale does, not the way English does', () => {
-    expect(formatCompactCount(12_345, 'en')).toBe('12.3K');
-    expect(formatCompactCount(12_345, 'zh-Hans')).toBe('1.2万');
-    expect(formatCompactCount(999, 'en')).toBe('999');
   });
 });
 

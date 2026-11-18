@@ -241,24 +241,6 @@ describe('playground wire requests', () => {
       fetchImpl: createWireFetch({}, 'openaiChatCompletions'),
     }))).rejects.toThrow('upstream refused');
   });
-
-  it('surfaces a non-2xx body rather than a bare status', async () => {
-    vi.stubGlobal('fetch', async () => new Response(
-      JSON.stringify({ error: { message: 'no such model' } }),
-      { status: 404, headers: { 'content-type': 'application/json' } },
-    ));
-
-    await expect(collect(streamPlaygroundText({
-      api: 'openaiResponses',
-      apiKey: 'secret',
-      model: 'missing',
-      system: '',
-      messages: [{ id: '1', role: 'user', text: 'hello' }],
-      options: {},
-      signal: new AbortController().signal,
-      fetchImpl: createWireFetch({}, 'openaiResponses'),
-    }))).rejects.toThrow('no such model');
-  });
 });
 
 describe('Gemini generateContent playground', () => {

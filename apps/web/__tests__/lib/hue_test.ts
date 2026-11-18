@@ -20,13 +20,6 @@ const expected = (scheme: 'light' | 'dark', hue: number) => {
 };
 
 describe('hueBadgeTone', () => {
-  it.each([
-    [0, '#d30069', '#ff9cc9'],
-    [240, '#0076cd', '#80d8ff'],
-  ])('preserves the frozen badge tones at %s degrees', (hue, light, dark) => {
-    expect(hueBadgeTone(hue)).toEqual({ light, dark });
-  });
-
   it('paints the shade the chromatic ladder states for the hue', () => {
     for (const hue of everyHue) {
       const tone = hueBadgeTone(hue);

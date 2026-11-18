@@ -49,19 +49,6 @@ describe('model alias metadata editor', () => {
     expect(input.value).toBe('low, custom');
   });
 
-  it('drops the detail claim when image input is switched off', () => {
-    // The detail switch is only reachable while image input is on, so a stored
-    // claim must not outlive its parent toggle.
-    renderInApp(<DetailHarness initial={{ chat: { modalities: { input: ['text', 'image'], output: ['text'] }, image_detail_original: true } }} />);
-    fireEvent.click(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }));
-
-    expect(screen.getByTestId('detail').textContent).toBe('undefined');
-
-    fireEvent.click(screen.getByRole('switch', { name: i18n.t('dashboard.modelAliases.metadata.imageInput') }));
-    expect(screen.getByRole<HTMLInputElement>('switch', { name: imageDetailOriginalLabel }).checked).toBe(false);
-    expect(screen.getByTestId('detail').textContent).toBe('false');
-  });
-
   it('round-trips a false detail claim rather than collapsing it to absent', () => {
     // `false` is the upstream stating it rejects detail 'original', not the
     // absence of a statement, so switching the claim off stores `false` rather

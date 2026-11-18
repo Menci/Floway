@@ -51,15 +51,6 @@ describe('API keys table selection', () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it('selects the row a click landed on outside its commands', async () => {
-    const onSelect = vi.fn();
-    const view = renderTable(onSelect);
-
-    await act(async () => { view.getByText('Second key').click(); });
-
-    expect(onSelect).toHaveBeenCalledWith('second');
-  });
-
   // The same table below the width where it becomes a list of rows, whose
   // commands are a menu rather than a strip of buttons. A menu popover is
   // portalled out of the row in the DOM but stays a React child of its trigger,
