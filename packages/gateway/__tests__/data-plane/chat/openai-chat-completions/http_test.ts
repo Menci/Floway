@@ -183,73 +183,7 @@ test('client-carried opaque state restores the exact preferred candidate on the 
   assertEquals(observedBodies[1].messages?.[1].reasoning_opaque, 'opaque-a');
 });
 
-test('synthetic affinity keeps first-available candidate order when no reasoning blob would be lost', async () => {
-  installRepo();
-  const observedB: Array<{ messages?: Array<{ reasoning_opaque?: string }> }> = [];
-  const result = (): ProviderStreamResult<OpenAIChatCompletionsStreamEvent> => ({
-    ok: true,
-    events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()),
-    modelKey: 'k',
-    headers: new Headers(),
-  });
-  const callA = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => result());
-  const callB = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
-    observedB.push(body as { messages?: Array<{ reasoning_opaque?: string }> });
-    return result();
-  });
-  const candidateA = makeCandidate({ upstream: 'up-a', callOpenAIChatCompletions: callA });
-  const candidateB = makeCandidate({ upstream: 'up-b', callOpenAIChatCompletions: callB });
-  queueCandidates([candidateA]);
-
-  const first = await makeApp().request('/v1/chat/completions', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'first' }] }),
-  });
-  const firstBody = await first.json() as { choices: Array<{ message: { content: string; reasoning_opaque: string } }> };
-  const assistant = firstBody.choices[0].message;
-  assert(typeof assistant.reasoning_opaque === 'string');
-
-  queueCandidates([candidateB, candidateA]);
-  const second = await makeApp().request('/v1/chat/completions', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({
-      model: 'test-model',
-      messages: [
-        { role: 'user', content: 'first' },
-        assistant,
-        { role: 'user', content: 'continue' },
-      ],
-    }),
-  });
-
-  assertEquals(second.status, 200);
-  assertEquals(callA.mock.calls.length, 1);
-  assertEquals(callB.mock.calls.length, 1);
-  assertEquals(observedB[0].messages?.[1].reasoning_opaque, undefined);
-});
-
-test('POST /v1/chat/completions omits the usage-only chunk unless stream_options.include_usage is set', async () => {
-  installRepo();
-  const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
-  }));
-  queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
-
-  const response = await makeApp().request('/v1/chat/completions', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'test-model', stream: true, messages: [{ role: 'user', content: 'hello' }] }),
-  });
-
-  assertEquals(response.status, 200);
-  const body = await response.text();
-  // The usage-only chunk has empty choices array; absence verifies the filter.
-  assert(!body.includes('"choices":[]'));
-});
-
-test('POST /v1/chat/completions emits the usage-only chunk when stream_options.include_usage is true', async () => {
+test.each([false, true])('POST /v1/chat/completions emits the usage-only chunk only when stream_options.include_usage is set (%s)', async includeUsage => {
   installRepo();
   const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
@@ -262,15 +196,14 @@ test('POST /v1/chat/completions emits the usage-only chunk when stream_options.i
     body: JSON.stringify({
       model: 'test-model',
       stream: true,
-      stream_options: { include_usage: true },
+      ...(includeUsage ? { stream_options: { include_usage: true } } : {}),
       messages: [{ role: 'user', content: 'hello' }],
     }),
   });
 
   assertEquals(response.status, 200);
   const body = await response.text();
-  assert(body.includes('"choices":[]'));
-  assert(body.includes('"prompt_tokens":4'));
+  assertEquals(body.includes('"choices":[]'), includeUsage);
 });
 
 test('POST /v1/chat/completions stamps TTFT on a streamed record', async () => {

@@ -4,14 +4,13 @@ import { openaiChatCompletionsAttempt } from '../../../../src/data-plane/chat/op
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import { initExternalResourceFetcher } from '@floway-dev/platform';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import type { FlagId } from '@floway-dev/provider/flags';
-import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
+import { assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_chat_completions_attempt_test';
 
@@ -164,40 +163,7 @@ test('generate translates through the Anthropic Messages target when only that e
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
-  assertEquals(callAnthropicMessages.mock.calls.length, 1);
   assertEquals(anthropicBeta, []);
-});
-
-test('generate states a remote image URL to Anthropic Messages without fetching it', async () => {
-  installRepo();
-  initExternalResourceFetcher(() => {
-    throw new Error('translation must not fetch images');
-  });
-  let observedBody: Omit<AnthropicMessagesPayload, 'model'> | undefined;
-  const callAnthropicMessages = vi.fn(async (_model, body): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
-    observedBody = body as Omit<AnthropicMessagesPayload, 'model'>;
-    return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers() };
-  });
-  const result = await openaiChatCompletionsAttempt.generate({
-    payload: makePayload({
-      messages: [{
-        role: 'user',
-        content: [{ type: 'image_url', image_url: { url: 'https://example.com/image.png' } }],
-      }],
-    }),
-    ctx: makeGatewayCtx(),
-    candidate: makeCandidate({ callAnthropicMessages, endpoints: { anthropicMessages: {} } }),
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-  const message = observedBody?.messages[0];
-  assert(message?.role === 'user' && Array.isArray(message.content));
-  const image = message.content.find(block => block.type === 'image');
-  assert(image?.type === 'image');
-  assertEquals(image.source, { type: 'url', url: 'https://example.com/image.png' });
 });
 
 test('generate preserves translated instructions before rewriting inline system messages', async () => {
@@ -241,7 +207,7 @@ test('generate preserves translated instructions before rewriting inline system 
   await collectEvents(result.events);
   const observedBody = observedBodies[0];
   if (!observedBody) throw new Error('expected observed OpenAI Responses body');
-  assertEquals(observedBody.instructions, undefined);
+  assertEquals('instructions' in observedBody, false);
   const input = observedBody.input;
   if (!Array.isArray(input)) throw new Error('expected OpenAI Responses input array');
   assertEquals(input[0], { type: 'message', role: 'developer', content: 'base instructions' });

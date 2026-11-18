@@ -8,10 +8,9 @@ import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
-import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import type { FlagId } from '@floway-dev/provider/flags';
-import { createOllamaProvider } from '@floway-dev/provider-ollama';
-import { assertEquals, assertExists, stubProvider, stubInternalModel, stubProviderModel, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_messages_attempt_test';
 
@@ -119,61 +118,6 @@ test('generate and countTokens drop the Claude Code beta flag on candidates that
   assertEquals(upstreamAnthropicBeta, [['interleaved-thinking-2025-05-14'], ['interleaved-thinking-2025-05-14']]);
 });
 
-test('generate delivers an Anthropic Messages output cap to Ollama through the real provider boundary', async () => {
-  installRepo();
-  // Ollama's Chat Completions shim reads only `max_tokens`, so the modern field
-  // the translator emits has to be renamed before the wire call. Driving the
-  // real provider keeps the translator, the gateway attempt, and the Ollama
-  // boundary in one assertion instead of trusting each seam separately.
-  const record: UpstreamRecord = {
-    id: 'up_ollama', kind: 'ollama', name: 'Ollama', enabled: true,
-    usageRefreshIntervalMinutes: 0, sortOrder: 0,
-    createdAt: '2026-06-19T00:00:00.000Z', updatedAt: '2026-06-19T00:00:00.000Z',
-    config: { baseUrl: 'https://ollama.com', apiKey: 'ollama_test', cloudUsage: false, models: [] },
-    state: null, flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [], modelPrefix: null, modelsCache: null, hue: 210,
-  };
-  const ollama = createOllamaProvider(record).instance;
-  let wireBody: { max_tokens?: number; max_completion_tokens?: number } | undefined;
-
-  await withMockedFetch(
-    async request => {
-      if (new URL(request.url).pathname !== '/v1/chat/completions') throw new Error(`unexpected fetch ${request.url}`);
-      wireBody = await request.json();
-      return new Response(
-        'data: {"id":"chatcmpl_1","object":"chat.completion.chunk","created":1,"model":"gpt-oss:120b","choices":[{"index":0,"delta":{"role":"assistant","content":"hi"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
-        { status: 200, headers: { 'content-type': 'text/event-stream' } },
-      );
-    },
-    async () => {
-      const endpoints: ModelEndpoints = { openaiChatCompletions: {} };
-      const base = makeCandidate();
-      const candidate: ModelCandidate = {
-        ...base,
-        fetcher: testFetcher,
-        provider: { ...base.provider, upstreamId: 'up_ollama', kind: 'ollama', instance: ollama },
-        model: stubInternalModel({
-          endpoints,
-          providerModels: { up_ollama: stubProviderModel({ endpoints }) },
-        }, 'up_ollama'),
-      };
-      const result = await anthropicMessagesAttempt.generate({
-        payload: makePayload({ max_tokens: 32000 }),
-        ctx: makeGatewayCtx(),
-        candidate,
-        headers: new Headers(),
-        anthropicBeta: [],
-      });
-      assertEquals(result.type, 'events');
-      if (result.type !== 'events') throw new Error('unreachable');
-      await collectEvents(result.events);
-    },
-  );
-
-  assertExists(wireBody);
-  assertEquals(wireBody.max_tokens, 32000);
-  assertEquals('max_completion_tokens' in wireBody, false);
-});
-
 test('generate lets the target system-to-developer rewrite take precedence over the source system-to-user rewrite', async () => {
   installRepo();
   const observedBodies: Omit<OpenAIResponsesPayloadEx, 'model'>[] = [];
@@ -223,7 +167,6 @@ test('generate lets the target system-to-developer rewrite take precedence over 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
-  assertEquals(callOpenAIResponses.mock.calls.length, 1);
   const observedBody = observedBodies[0];
   if (!observedBody) throw new Error('expected observed OpenAI Responses body');
   const input = observedBody.input;

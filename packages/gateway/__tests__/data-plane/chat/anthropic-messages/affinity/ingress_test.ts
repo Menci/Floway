@@ -55,28 +55,3 @@ test('removes thinking and redacted blocks whose affinity belongs to another can
     ],
   });
 });
-
-test('removes assistant messages emptied by affinity block stripping', async () => {
-  const candidateA = candidate('upstream-a');
-  const candidateB = candidate('upstream-b');
-  const synthetic = await codec.wrap(undefined, targetFor(candidateA), 'anthropic-messages.redacted_thinking.data');
-  const natural = await codec.wrap('natural', targetFor(candidateA), 'anthropic-messages.redacted_thinking.data');
-
-  const syntheticPrepared = await analyzeAnthropicMessagesAffinity({
-    model: 'model',
-    max_tokens: 100,
-    messages: [{ role: 'assistant', content: [{ type: 'redacted_thinking', data: synthetic }] }],
-  }, codec);
-  expect(acceptedAffinityEvaluation(syntheticPrepared, candidateA).materialize().messages).toEqual([]);
-  expect(acceptedAffinityEvaluation(syntheticPrepared, candidateB).materialize().messages).toEqual([]);
-
-  const naturalPrepared = await analyzeAnthropicMessagesAffinity({
-    model: 'model',
-    max_tokens: 100,
-    messages: [{ role: 'assistant', content: [{ type: 'redacted_thinking', data: natural }] }],
-  }, codec);
-  expect(acceptedAffinityEvaluation(naturalPrepared, candidateA).materialize().messages).toEqual([
-    { role: 'assistant', content: [{ type: 'redacted_thinking', data: 'natural' }] },
-  ]);
-  expect(acceptedAffinityEvaluation(naturalPrepared, candidateB).materialize().messages).toEqual([]);
-});

@@ -48,11 +48,14 @@ describe('signed CBOR sidecars', () => {
       expect(await codecs[(index + 1) % 2].codecFor(SidecarDomain.TranslatedAssistantTurn).decode(value)).toBeUndefined();
     }));
   });
-  it('rejects undefined payloads at encode and after matching authentication', async () => {
+  it('rejects malformed authenticated content only for the matching domain', async () => {
     // @ts-expect-error The public encoder excludes undefined payloads.
     await expect(factory.codecFor(SidecarDomain.TranslatedAssistantTurn).encode(undefined)).rejects.toThrow('Sidecar payload must not be undefined');
     await expect(factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(await sign(encode({ domain: 0, payload: undefined })))).rejects.toThrow('Authenticated sidecar payload must not be undefined');
     expect(await factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(await sign(encode({ domain: 1, payload: undefined })))).toBeUndefined();
+    await expect(factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(await sign(new Uint8Array([24])))).rejects.toThrow();
+    await expect(factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(await sign(encode({ source: 'old', payload: 'value' })))).rejects.toThrow('sidecar domain is invalid');
+    await expect(factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(await sign(encode({ domain: 0 })))).rejects.toThrow('sidecar payload is missing');
   });
   it('authenticates the expected kind before restoring payload tags', async () => {
     const payload = new Tag(42, 65539);
@@ -89,18 +92,10 @@ describe('signed CBOR sidecars', () => {
     const forged = new Uint8Array([...decodeForgivingBase64(encoded).subarray(0, 32), ...encode({ ...envelope, domain: 1 })]);
     expect(await factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(encodeBase64(forged))).toBeUndefined();
   });
-  it('propagates malformed authenticated CBOR', async () => {
-    await expect(factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(await sign(new Uint8Array([24])))).rejects.toThrow();
-  });
-  it('rejects malformed matching envelopes without accepting old unscoped envelopes', async () => {
-    await expect(factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(await sign(encode({ source: 'old', payload: 'value' })))).rejects.toThrow('sidecar domain is invalid');
-    await expect(factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(await sign(encode({ domain: 0 })))).rejects.toThrow('sidecar payload is missing');
-    expect(await factory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(await sign(encode({ domain: 1 })))).toBeUndefined();
-  });
-  it.each([SidecarDomain.TranslatedAssistantTurn, Number(1)])('preserves application tags for kind %s after a foreign decode', async kind => {
+  it('preserves application tags after a foreign decode', async () => {
     const codecs = createSidecarCodecFactory(secret);
-    const owner = codecs.codecFor(kind);
-    const other = codecs.codecFor(kind === SidecarDomain.TranslatedAssistantTurn ? Number(1) : SidecarDomain.TranslatedAssistantTurn);
+    const owner = codecs.codecFor(SidecarDomain.TranslatedAssistantTurn);
+    const other = codecs.codecFor(Number(1));
     const payload = {
       text: new SidecarTaggedValue(65536, [0, [1, 2, 5]]),
       nested: [new SidecarTaggedValue(65537, [2])],

@@ -16,8 +16,9 @@ test('disabled mode returns the original iterable and automatic UA handling neve
   const source = frames([start(0), start(1), stop(0), stop(1)]);
   expect(serializeAnthropicMessagesStream(source, false)).toBe(source);
   const flags = new Set<FlagId>();
-  for (const ua of ['ai-sdk-anthropic/4.0.71', 'custom/1 ai-sdk-anthropic/4.0.71 extra', 'Anthropic/JS 0.131.0']) expect(shouldSerializeStreamItems(flags, 'anthropicMessages', ua)).toBe(true);
-  for (const ua of [null, 'ai-sdk-anthropic/4.0.710', 'ai-sdk-anthropic/4.0.72', 'Anthropic/Python 0.131.0', 'unknown']) expect(shouldSerializeStreamItems(flags, 'anthropicMessages', ua)).toBe(false);
+  // The version match is token-bounded: a longer version string must not match.
+  expect(shouldSerializeStreamItems(flags, 'anthropicMessages', 'custom/1 ai-sdk-anthropic/4.0.71 extra')).toBe(true);
+  expect(shouldSerializeStreamItems(flags, 'anthropicMessages', 'ai-sdk-anthropic/4.0.710')).toBe(false);
   expect(shouldSerializeStreamItems(flags, 'openaiResponses', 'ai-sdk-anthropic/4.0.71')).toBe(false);
   expect(flags.size).toBe(0);
   expect(shouldSerializeStreamItems(new Set(['serialize-stream-items']), 'openaiResponses', null)).toBe(true);

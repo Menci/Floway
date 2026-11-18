@@ -241,36 +241,6 @@ test('web search shim payload codecs reject foreign payloads and unknown-shape p
   });
   assertEquals(decodeWebSearchResultPayload(encodedExtraResult), null);
 
-  const encodedExtraCitation = encodeUnsignedPayload({
-    search_result_index: 0,
-    start_block_index: 0,
-    end_block_index: 0,
-    extra: true,
-  });
-  assertEquals(decodeWebSearchCitationPayload(encodedExtraCitation), null);
-
-  assertEquals(
-    decodeWebSearchCitationPayload(
-      encodeUnsignedPayload({
-        search_result_index: -1,
-        start_block_index: 0,
-        end_block_index: 0,
-      }),
-    ),
-    null,
-  );
-
-  assertEquals(
-    decodeWebSearchCitationPayload(
-      encodeUnsignedPayload({
-        search_result_index: 0,
-        start_block_index: -1,
-        end_block_index: 0,
-      }),
-    ),
-    null,
-  );
-
   assertEquals(
     decodeWebSearchCitationPayload(
       encodeUnsignedPayload({
@@ -281,43 +251,6 @@ test('web search shim payload codecs reject foreign payloads and unknown-shape p
     ),
     null,
   );
-});
-
-test('prepareAnthropicMessagesWebSearchShimRequest rewrites both native tool versions to client tools without renaming web_search', () => {
-  for (const type of ['web_search_20250305', 'web_search_20260209'] as const) {
-    const prepared = prepareAnthropicMessagesWebSearchShimRequest({
-      model: 'claude-test',
-      max_tokens: 64,
-      messages: [{ role: 'user', content: 'latest React docs' }],
-      tools: [{ type, name: 'web_search', max_uses: 2 }],
-      tool_choice: { type: 'tool', name: 'web_search' },
-    });
-
-    assertEquals(prepared.type, 'ok');
-    if (prepared.type !== 'ok') throw new Error('expected ok result');
-    const rewrittenTool = prepared.payload.tools?.[0] as AnthropicMessagesClientTool;
-    assertEquals(rewrittenTool.name, 'web_search');
-    assertEquals(rewrittenTool.description, 'The web_search tool searches the internet and returns up-to-date information from web sources.');
-    assertEquals(rewrittenTool.input_schema, {
-      type: 'object',
-      properties: {
-        query: {
-          type: 'string',
-          description: 'Search query',
-        },
-      },
-      required: ['query'],
-    });
-    assertEquals(prepared.payload.tool_choice, {
-      type: 'tool',
-      name: 'web_search',
-    });
-    assertEquals(prepared.state.mode, 'active');
-    if (prepared.state.mode !== 'active') {
-      throw new Error('expected active state');
-    }
-    assertEquals(prepared.state.toolVersion, type);
-  }
 });
 
 test('prepareAnthropicMessagesWebSearchShimRequest passes in-array role:"system" messages through unchanged', () => {

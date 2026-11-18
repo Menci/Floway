@@ -8,7 +8,7 @@ const apiErrorOf = (result: ReturnType<typeof inputErrorResult>): ApiErrorResult
 const bodyOf = (result: ReturnType<typeof inputErrorResult>): unknown =>
   JSON.parse(new TextDecoder().decode(apiErrorOf(result).body));
 
-test('inputErrorResult renders an OpenAI 400 invalid_request_error envelope with default `messages` param', () => {
+test('inputErrorResult renders an OpenAI 400 invalid_request_error envelope that defaults param to `messages`', () => {
   const result = inputErrorResult(
     { message: "Missing required field 'tool_call_id' on a 'tool' role message." },
   );
@@ -25,19 +25,7 @@ test('inputErrorResult renders an OpenAI 400 invalid_request_error envelope with
       code: null,
     },
   });
-});
-
-test('inputErrorResult honors an explicit param from the translator', () => {
-  const result = inputErrorResult(
-    { message: 'content part not supported', param: 'messages[2].content[1]' },
-  );
-
-  assertEquals(bodyOf(result), {
-    error: {
-      message: 'content part not supported',
-      type: 'invalid_request_error',
-      param: 'messages[2].content[1]',
-      code: null,
-    },
+  assertEquals(bodyOf(inputErrorResult({ message: 'unsupported', param: 'messages[2].content[1]' })), {
+    error: { message: 'unsupported', type: 'invalid_request_error', param: 'messages[2].content[1]', code: null },
   });
 });

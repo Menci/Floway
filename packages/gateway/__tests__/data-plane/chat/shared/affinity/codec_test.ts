@@ -70,8 +70,9 @@ describe('AffinityCodec', () => {
     await expect(codec.unwrap(FROZEN_NATURAL_CARRIER, DOMAIN)).rejects.toBe(failure);
   });
 
+  // The raw row carries lone surrogates, which must survive as UTF-16 code units.
   test.each([
-    ['raw', 'not base64!'],
+    ['raw', `a\ud800${String.fromCodePoint(0x1f600)}\udfffz`],
     ['base64', btoa('upstream opaque bytes')],
     ['base64url', '--__'],
   ])('round-trips %s input', async (_label, original) => {
@@ -112,21 +113,6 @@ describe('AffinityCodec', () => {
     );
 
     expect(await codec.unwrap(wrapped, DOMAIN)).toEqual({ kind: 'foreign', value: wrapped });
-  });
-
-  test.each([`a\ud800${String.fromCodePoint(0x1f600)}\udfffz`])(
-    'round-trips raw UTF-16 code units exactly',
-    async original => {
-      const codec = new AffinityCodec(SECRET);
-      const wrapped = await codec.wrap(original, identity, DOMAIN);
-      expect(await codec.unwrap(wrapped, DOMAIN)).toMatchObject({ kind: 'owned', value: original });
-    },
-  );
-
-  test('preserves a foreign value byte-for-byte on authentication failure', async () => {
-    const wrapped = await new AffinityCodec(SECRET).wrap('opaque', identity, DOMAIN);
-
-    expect(await new AffinityCodec(OTHER_SECRET).unwrap(wrapped, DOMAIN)).toEqual({ kind: 'foreign', value: wrapped });
   });
 
   test('unwraps nested gateway carriers one layer at a time', async () => {

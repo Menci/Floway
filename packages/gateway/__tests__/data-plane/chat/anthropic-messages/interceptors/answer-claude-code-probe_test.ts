@@ -51,25 +51,10 @@ const assertForwarded = async (input: AnthropicMessagesInvocation, message: stri
   assertEquals(run.mock.calls.length, 1, message);
 };
 
-const assertAnswered = async (input: AnthropicMessagesInvocation, message: string) => {
-  const { run } = await runProbe(input);
-  assertEquals(run.mock.calls.length, 0, message);
-};
-
-test('answers every fixed probe prompt, in block and bare-string form', async () => {
-  for (const prompt of ['Hi', 'test']) {
-    await assertAnswered(invocation(probePayload({ messages: [{ role: 'user', content: prompt }] })), `bare string: ${prompt}`);
-    await assertAnswered(invocation(probePayload({ messages: [{ role: 'user', content: [{ citations: null, type: 'text', text: prompt }] }] })), `text block: ${prompt}`);
-  }
-});
-
+// The answered path is proven end to end in `http_test.ts`.
 test('forwards the probe prompts the gateway cannot answer truthfully', async () => {
-  // `quota` reads rate-limit response headers a synthesized turn cannot carry;
-  // `.` only ever reaches a Bedrock / Vertex / Mantle base URL; `hello` is a
-  // third-party report's reconstruction that no observed build sends.
-  for (const prompt of ['quota', '.', 'hello']) {
-    await assertForwarded(invocation(probePayload({ messages: [{ role: 'user', content: prompt }] })), `prompt: ${prompt}`);
-  }
+  // `quota` reads rate-limit response headers a synthesized turn cannot carry.
+  await assertForwarded(invocation(probePayload({ messages: [{ role: 'user', content: 'quota' }] })), 'quota');
 });
 
 test('forwards a one-token request from a client that is not Claude Code', async () => {

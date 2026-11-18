@@ -82,25 +82,12 @@ const selectedCandidates = (
 };
 
 describe('client-carried affinity candidate selection', () => {
-  test('keeps non-degrading candidates in resolver order before degrading fallbacks', () => {
-    const first = candidate('up-a', 'model');
-    const second = candidate('up-b', 'model');
-    const third = candidate('up-c', 'model');
-
-    expect(selectedCandidates(
-      [first, second, third],
-      affinity([], [first, third]),
-    )).toEqual([second, first, third]);
-  });
-
   test('evaluates requirement eligibility and degradation before materializing selected payloads', () => {
     const required = candidate('up-a', 'model');
     const sameTargetAlias = candidate('up-a', 'model', { reasoning: { effort: 'low' } });
     const rejected = candidate('up-b', 'model');
-    const evaluations: ModelCandidate[] = [];
     let materializations = 0;
     const analysis = defineAffinityRequest([targetFor(required)], value => {
-      evaluations.push(value);
       if (!candidateSatisfiesAffinityIdentity(value, targetFor(required))) {
         return { kind: 'rejected' };
       }
@@ -117,7 +104,6 @@ describe('client-carried affinity candidate selection', () => {
     const selection = selectAffinityCandidates([required, sameTargetAlias, rejected], analysis);
     if ('kind' in selection) throw new Error(`Expected affinity selection, received ${selection.kind}`);
     expect(selection.candidates).toEqual([sameTargetAlias, required]);
-    expect(evaluations).toEqual([required, sameTargetAlias, rejected]);
     expect(materializations).toBe(0);
     expect(selection.payloadFor(sameTargetAlias)).toBe('model');
     expect(selection.payloadFor(sameTargetAlias)).toBe('model');

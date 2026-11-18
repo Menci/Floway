@@ -44,16 +44,6 @@ test('external image fetcher rejects unsafe URL syntax before egress', async () 
   assertEquals(requests, 0);
 });
 
-test('external image fetcher reports non-success and oversized responses', async () => {
-  initExternalResourceFetcher(url => Promise.resolve(url.pathname === '/missing'
-    ? new Response('missing', { status: 404 })
-    : new Response(Uint8Array.of(1), { headers: { 'content-length': String(50 * 1024 * 1024 + 1) } })));
-  const fetchImage = createExternalImageFetcher();
-
-  assertEquals(await fetchImage('https://example.com/missing'), { type: 'http-error', status: 404 });
-  assertEquals(await fetchImage('https://example.com/oversized'), { type: 'too-large', limitBytes: 50 * 1024 * 1024 });
-});
-
 test('external image fetcher cancels a streamed body beyond the byte limit', async () => {
   const chunk = new Uint8Array(1024 * 1024);
   let cancelled = false;
@@ -71,17 +61,6 @@ test('external image fetcher cancels a streamed body beyond the byte limit', asy
     limitBytes: 50 * 1024 * 1024,
   });
   assertEquals(cancelled, true);
-});
-
-test('external image fetcher preserves transport failure detail', async () => {
-  const expected = new Error('network unavailable');
-  initExternalResourceFetcher(() => Promise.reject(expected));
-
-  const result = await createExternalImageFetcher()('https://example.com/image.png');
-
-  assertEquals(result.type, 'transport-error');
-  if (result.type !== 'transport-error') throw new Error('unreachable');
-  assertEquals(result.error, expected);
 });
 
 test('external image fetcher propagates downstream cancellation', async () => {

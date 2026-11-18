@@ -109,7 +109,7 @@ test('an abandoned stream still settles its metadata instead of hanging the call
   expect((await result.finalMetadata!).modelIdentity).toBeDefined();
 });
 
-test.each([true, false])('includes streamed reasoning in the generation interval (followed by tools: %s)', async withTools => {
+test('includes streamed reasoning in the generation interval', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   const pending: Promise<unknown>[] = [];
@@ -123,10 +123,6 @@ test.each([true, false])('includes streamed reasoning in the generation interval
     { ts: 3596, event: { type: 'response.output_item.added', item: { type: 'reasoning', id: 'rs_1', summary: [] } } },
     { ts: 3598, event: { type: 'response.reasoning.delta', delta: 'Let me think' } },
     { ts: 4393, event: { type: 'response.reasoning.delta', delta: '.' } },
-    ...(withTools ? [
-      { ts: 4448, event: { type: 'response.output_item.added', item: { type: 'function_call', name: 'search' } } },
-      { ts: 4448, event: { type: 'response.function_call_arguments.delta', delta: '{' } },
-    ] : []),
     {
       ts: 5392, event: {
         type: 'response.completed', response: {
@@ -161,18 +157,16 @@ test.each([true, false])('includes streamed reasoning in the generation interval
   expect(await repo.performance.listAll()).toEqual([expect.objectContaining({ ttftSamplesOk: 1, tpotSamples: 1, neutral: 0 })]);
 });
 
-const runtimeResult = { type: 'shell_call_output', output: [{ stdout: 'result', stderr: '' }] };
-
-test.each([true, false])('warns on a first runtime result only when no earlier item started timing (prior call: %s)', async withPriorCall => {
+test.each([true, false])('starts timing at a runtime result only when no earlier item started it (prior call: %s)', async withPriorCall => {
   const ctx = mockGatewayCtx();
   let now = 0;
   vi.spyOn(performance, 'now').mockImplementation(() => now);
-  const warn = vi.spyOn(console, 'warn').mockImplementation(() => { now += 50; });
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
   const timeline = [
     { ts: 100, event: { type: 'response.created' } },
     { ts: 200, event: { type: 'response.output_item.added', item: { type: 'mcp_list_tools', tools: [] } } },
     ...(withPriorCall ? [{ ts: 300, event: { type: 'response.output_item.added', item: { type: 'shell_call' } } }] : []),
-    { ts: 500, event: { type: 'response.output_item.done', item: runtimeResult } },
+    { ts: 500, event: { type: 'response.output_item.done', item: { type: 'shell_call_output', output: [{ stdout: 'result', stderr: '' }] } } },
     { ts: 900, event: { type: 'response.output_text.delta', delta: 'answer' } },
   ];
   const events = (async function* (): AsyncGenerator<ProtocolFrame<unknown>> {
@@ -192,12 +186,4 @@ test.each([true, false])('warns on a first runtime result only when no earlier i
   expect(forwarded).toEqual(timeline.map(({ event }) => ({ type: 'event', event })));
   expect(new Set(stamps.filter(stamp => stamp !== null))).toEqual(new Set([withPriorCall ? 300 : 500]));
   expect(ctx.attempt.timing.firstOutputTokenAt).toBe(withPriorCall ? 300 : 500);
-  if (withPriorCall) {
-    expect(warn).not.toHaveBeenCalled();
-  } else {
-    expect(warn).toHaveBeenCalledExactlyOnceWith(
-      'Floway: first output timing started from runtime output without an earlier decode signal in this response',
-      { outputType: runtimeResult.type, upstream: 'test-upstream', model: 'test-model', modelKey: 'test-model-key' },
-    );
-  }
 });

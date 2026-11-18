@@ -64,10 +64,7 @@ test('renames outbound reasoning_text to reasoning_content on assistant messages
 
   const assistant = observed!.messages[1] as unknown as Record<string, unknown>;
   assertEquals(assistant.reasoning_content, 'let me check the docs');
-  assertEquals(assistant.reasoning_text, undefined);
-  assertEquals(assistant.reasoning_opaque, undefined);
-  assertEquals(assistant.reasoning_items, undefined);
-  assertEquals((assistant.tool_calls as unknown[]).length, 1);
+  assertEquals(Object.keys(assistant).sort(), ['content', 'reasoning_content', 'role', 'tool_calls']);
 });
 
 test('synthesizes reasoning_content from reasoning_items when reasoning_text is absent', async () => {
@@ -102,37 +99,15 @@ test('synthesizes reasoning_content from reasoning_items when reasoning_text is 
 
   const assistant = observed!.messages[1] as unknown as Record<string, unknown>;
   assertEquals(assistant.reasoning_content, 'step one. step two.');
-  assertEquals(assistant.reasoning_text, undefined);
-  assertEquals(assistant.reasoning_opaque, undefined);
-  assertEquals(assistant.reasoning_items, undefined);
 });
 
-// ── Outbound: reasoning_effort === 'none' canonical sentinel ──
+// ── Outbound: reasoning_effort === 'none' sentinel and json_schema downgrade ──
 
-test("translates canonical reasoning_effort: 'none' into top-level thinking:{type:'disabled'}", async () => {
+test("rewrites reasoning_effort: 'none' to thinking:{type:'disabled'} and downgrades json_schema to json_object", async () => {
   const ctx = invocation({
     model: 'deepseek-reasoner',
     messages: [{ role: 'user', content: 'hi' }],
     reasoning_effort: 'none',
-  });
-
-  let observed: OpenAIChatCompletionsPayload | null = null;
-  await withVendorDeepSeekOpenAIChatCompletionsNormalize(ctx, stubCtx, () => {
-    observed = ctx.payload;
-    return okEvents();
-  });
-
-  const out = observed! as unknown as Record<string, unknown>;
-  assertEquals(out.reasoning_effort, undefined);
-  assertEquals(out.thinking, { type: 'disabled' });
-});
-
-// ── Outbound: structured-output json_schema downgrade ──
-
-test('downgrades response_format json_schema to json_object (schema body dropped)', async () => {
-  const ctx = invocation({
-    model: 'deepseek-chat',
-    messages: [{ role: 'user', content: 'hi' }],
     response_format: {
       type: 'json_schema',
       json_schema: {
@@ -149,7 +124,10 @@ test('downgrades response_format json_schema to json_object (schema body dropped
     return okEvents();
   });
 
-  assertEquals(observed!.response_format, { type: 'json_object' });
+  const out = observed! as unknown as Record<string, unknown>;
+  assertEquals('reasoning_effort' in out, false);
+  assertEquals(out.thinking, { type: 'disabled' });
+  assertEquals(out.response_format, { type: 'json_object' });
 });
 
 // ── Inbound: delta reasoning_content → reasoning_text ──
@@ -183,7 +161,7 @@ test('renames inbound protocol reasoning_content deltas to reasoning_text', asyn
   if (frame.type !== 'event') throw new Error('expected event frame');
   const delta = frame.event.choices[0].delta as Record<string, unknown>;
   assertEquals(delta.reasoning_text, 'thinking...');
-  assertEquals(delta.reasoning_content, undefined);
+  assertEquals('reasoning_content' in delta, false);
 });
 
 // ── Inbound: usage cache-token field rewrite ──

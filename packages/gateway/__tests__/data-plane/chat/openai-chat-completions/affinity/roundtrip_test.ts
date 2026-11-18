@@ -106,6 +106,7 @@ test('encrypted reasoning detail data follows affinity without changing the opaq
   expect(projectionB.materialize().messages[0]).toMatchObject({
     reasoning_details: [{ type: 'reasoning.summary', summary: 'visible' }],
   });
+  // Egress minted a synthetic reasoning_opaque carrier; ingress removes it for every candidate.
   expect(projectionA.materialize().messages[0]).not.toHaveProperty('reasoning_opaque');
   expect(projectionB.materialize().messages[0]).not.toHaveProperty('reasoning_opaque');
 });

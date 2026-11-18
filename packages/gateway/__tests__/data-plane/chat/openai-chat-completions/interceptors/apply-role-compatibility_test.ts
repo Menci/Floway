@@ -26,6 +26,8 @@ const applyRoles = async (
   return invocation.payload.messages;
 };
 
+// The leading-system-run and flag-overlap orderings are proven through the
+// native attempt chain in `attempt_test.ts`.
 test('applies the system and developer rewrites independently', async () => {
   assertEquals(
     await applyRoles(
@@ -40,47 +42,5 @@ test('applies the system and developer rewrites independently', async () => {
       new Set(['rewrite-developer-to-system']),
     ),
     [{ role: 'system', content: 'rules' }, { role: 'user', content: 'hello' }],
-  );
-});
-
-test('preserves the leading system run and rewrites later system messages', async () => {
-  assertEquals(
-    await applyRoles(
-      [
-        { role: 'system', content: 'base A' },
-        { role: 'system', content: 'base B' },
-        { role: 'user', content: 'hello' },
-        { role: 'system', content: 'inline rules' },
-      ],
-      new Set(['rewrite-mid-conv-system-to-user']),
-    ),
-    [
-      { role: 'system', content: 'base A' },
-      { role: 'system', content: 'base B' },
-      { role: 'user', content: 'hello' },
-      { role: 'user', content: 'inline rules' },
-    ],
-  );
-});
-
-test('applies overlapping flags in system-to-developer then developer-to-system order', async () => {
-  assertEquals(
-    await applyRoles(
-      [
-        { role: 'system', content: 'base rules' },
-        { role: 'user', content: 'hello' },
-        { role: 'system', content: 'inline rules' },
-      ],
-      new Set([
-        'rewrite-system-to-developer',
-        'rewrite-developer-to-system',
-        'rewrite-mid-conv-system-to-user',
-      ]),
-    ),
-    [
-      { role: 'system', content: 'base rules' },
-      { role: 'user', content: 'hello' },
-      { role: 'user', content: 'inline rules' },
-    ],
   );
 });

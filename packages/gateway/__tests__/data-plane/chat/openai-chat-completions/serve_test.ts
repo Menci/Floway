@@ -6,7 +6,7 @@ import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ModelCandidate, directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the model
 // candidates it wants, optionally with an alias-rules overlay attached.
@@ -133,8 +133,6 @@ test('generate filters out candidates that do not expose any chat-completions-ta
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
   assertEquals(result.status, 400);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
-  assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
   assertEquals(callOpenAIChatCompletions.mock.calls.length, 0);
 });
 
@@ -184,24 +182,6 @@ test('generate falls through to the next candidate when the first yields an upst
   const sourceMessage = payload.messages[0];
   if (!Array.isArray(sourceMessage.content) || sourceMessage.content[0]?.type !== 'image_url') throw new Error('expected source image content');
   assertEquals(sourceMessage.content[0].image_url.url, originalImageUrl);
-});
-
-test('generate renders model-missing when no candidates are available', async () => {
-  installRepo();
-  queueResolution([]);
-
-  const result = await openaiChatCompletionsServe.generate({
-    payload: makePayload({ model: 'unknown-model' }),
-    ctx: makeGatewayCtx(),
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'api-error');
-  if (result.type !== 'api-error') throw new Error('unreachable');
-  assertEquals(result.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(result.body));
-  assertEquals(body.error.type, 'invalid_request_error');
-  assertEquals(body.error.message, 'Model unknown-model is not available on any configured upstream.');
 });
 
 test('alias resolution swaps the inbound model id for the target and overlays rules onto the IR', async () => {

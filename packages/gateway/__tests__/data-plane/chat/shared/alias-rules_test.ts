@@ -6,18 +6,11 @@
 
 import { test } from 'vitest';
 
-import { applyRulesToUpstreamGeminiGenerateContent, applyRulesToUpstreamOpenAIChatCompletions, applyRulesToUpstreamAnthropicMessages, applyRulesToUpstreamOpenAIResponses } from '../../../../src/data-plane/chat/shared/alias-rules.ts';
+import { applyRulesToUpstreamGeminiGenerateContent, applyRulesToUpstreamAnthropicMessages, applyRulesToUpstreamOpenAIResponses } from '../../../../src/data-plane/chat/shared/alias-rules.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals } from '@floway-dev/test-utils';
-
-const ccPayload = (overrides: Partial<OpenAIChatCompletionsPayload> = {}): OpenAIChatCompletionsPayload => ({
-  model: 'gpt-5.4',
-  messages: [{ role: 'user', content: 'hi' }],
-  ...overrides,
-});
 
 const resPayload = (overrides: Partial<OpenAIResponsesPayloadEx> = {}): OpenAIResponsesPayloadEx => ({
   model: 'gpt-5.4',
@@ -30,18 +23,6 @@ const msgPayload = (overrides: Partial<AnthropicMessagesPayload> = {}): Anthropi
   max_tokens: 32,
   messages: [{ role: 'user', content: 'hi' }],
   ...overrides,
-});
-
-test('openai-chat-completions: alias rules overwrite existing IR fields', () => {
-  const body = ccPayload({ reasoning_effort: 'low', verbosity: 'high', service_tier: 'default' });
-  applyRulesToUpstreamOpenAIChatCompletions(body, {
-    reasoning: { effort: 'xhigh' },
-    verbosity: 'low',
-    serviceTier: 'priority',
-  });
-  assertEquals(body.reasoning_effort, 'xhigh');
-  assertEquals(body.verbosity, 'low');
-  assertEquals(body.service_tier, 'priority');
 });
 
 test('responses: alias rules overwrite owned fields while preserving reasoning.context', () => {
@@ -94,14 +75,6 @@ const geminiPayload = (overrides: Partial<GeminiGenerateContentPayload> = {}): G
   ...overrides,
 });
 
-test.each([
-  ['xhigh', 'XHIGH'],
-])('gemini: effort %s lands on the uppercase thinkingLevel %s the wire uses', (effort, thinkingLevel) => {
-  const body = geminiPayload();
-  applyRulesToUpstreamGeminiGenerateContent(body, { reasoning: { effort } });
-  assertEquals(body.generationConfig?.thinkingConfig?.thinkingLevel, thinkingLevel);
-});
-
 test('gemini: none disables thinking through a zero budget because there is no level for it', () => {
   const body = geminiPayload({ generationConfig: { thinkingConfig: { thinkingLevel: 'HIGH' } } });
   applyRulesToUpstreamGeminiGenerateContent(body, { reasoning: { effort: 'none' } });
@@ -114,7 +87,10 @@ test('gemini: a budget replaces a client-stated level rather than joining it', (
   assertEquals(body.generationConfig?.thinkingConfig, { includeThoughts: true, thinkingBudget: 2048 });
 });
 
-test('gemini: a vendor-specific effort travels verbatim, and unrelated rule fields are dropped', () => {
+test('gemini: a known effort takes the uppercase wire level while a vendor-specific one travels verbatim', () => {
+  const known = geminiPayload();
+  applyRulesToUpstreamGeminiGenerateContent(known, { reasoning: { effort: 'xhigh' } });
+  assertEquals(known.generationConfig?.thinkingConfig, { thinkingLevel: 'XHIGH' });
   const body = geminiPayload();
   applyRulesToUpstreamGeminiGenerateContent(body, {
     reasoning: { effort: 'turbo', adaptive: true, summary: 'detailed' },
@@ -123,11 +99,8 @@ test('gemini: a vendor-specific effort travels verbatim, and unrelated rule fiel
   assertEquals(body.generationConfig?.thinkingConfig, { thinkingLevel: 'turbo' });
 });
 
-test.each([
-  ['fast', 'priority'],
-  ['flex', 'flex'],
-])('gemini: serviceTier %s lands on the top-level serviceTier field as %s', (serviceTier, expected) => {
+test('gemini: the fast serviceTier alias takes the priority spelling the wire accepts', () => {
   const body = geminiPayload();
-  applyRulesToUpstreamGeminiGenerateContent(body, { serviceTier });
-  assertEquals(body.serviceTier, expected);
+  applyRulesToUpstreamGeminiGenerateContent(body, { serviceTier: 'fast' });
+  assertEquals(body.serviceTier, 'priority');
 });

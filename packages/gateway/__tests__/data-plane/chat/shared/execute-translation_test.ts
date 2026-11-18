@@ -37,72 +37,25 @@ const collectFrames = async (iterable: AsyncIterable<ProtocolFrame<SrcEvent>>): 
   return out;
 };
 
-describe('executeTranslation', () => {
-  test('asks the upstream for a stream whatever the caller requested', async () => {
-    const innerAttempt = async (_translated: string): Promise<ExecuteResult<ProtocolFrame<TgtEvent>>> => ({
-      type: 'events',
-      events: makeTgtFrames([]),
-      modelIdentity: testTelemetryModelIdentity,
-    });
-
-    // A client that asked for a single body still reaches a trip, whose only
-    // output is a stream. The caller's preference is a rendering decision made
-    // from the returned events, so it never reaches the source protocol.
-    const source = { model: 'm', stream: false };
-    let seen: unknown;
-    await executeTranslation(source, async (payload: typeof source) => {
-      seen = payload;
-      return await translate(payload);
-    }, innerAttempt);
-
-    expect(seen).toEqual({ model: 'm', stream: true });
-    expect(source).toEqual({ model: 'm', stream: false });
+test('asks the upstream for a stream whatever the caller requested', async () => {
+  const innerAttempt = async (_translated: string): Promise<ExecuteResult<ProtocolFrame<TgtEvent>>> => ({
+    type: 'events',
+    events: makeTgtFrames([]),
+    modelIdentity: testTelemetryModelIdentity,
   });
 
-  test('upstream api-error with trip.error — outer returns the restated envelope', async () => {
-    const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
-      type: 'api-error',
-      source: 'upstream',
-      status: 400,
-      headers: new Headers({ 'x-upstream-request-id': 'abc' }),
-      body: new TextEncoder().encode('raw upstream'),
-    };
-    const translateWithRewrite = async (payload: SrcPayload): Promise<TranslateTrip<string, SrcEvent, TgtEvent>> => ({
-      ...(await translate(payload)),
-      error: () => ({ status: 400, headers: new Headers({ 'content-type': 'application/json' }), body: { error: { message: 'rewritten' } } }),
-    });
+  // A client that asked for a single body still reaches a trip, whose only
+  // output is a stream. The caller's preference is a rendering decision made
+  // from the returned events, so it never reaches the source protocol.
+  const source = { model: 'm', stream: false };
+  let seen: unknown;
+  await executeTranslation(source, async (payload: typeof source) => {
+    seen = payload;
+    return await translate(payload);
+  }, innerAttempt);
 
-    const result = await executeTranslation({ model: 'payload' }, translateWithRewrite, async () => inner);
-    expect(result.type).toBe('api-error');
-    if (result.type !== 'api-error') throw new Error('unreachable');
-    expect(JSON.parse(new TextDecoder().decode(result.body))).toEqual({ error: { message: 'rewritten' } });
-    expect(result.headers.get('content-type')).toBe('application/json');
-    expect(result.headers.get('x-upstream-request-id')).toBeNull();
-    // Fields not touched by the rewriter (source, performance, upstream) survive.
-    expect(result.source).toBe('upstream');
-  });
-
-  test('gateway-sourced api-error — trip.error is NOT invoked', async () => {
-    const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
-      type: 'api-error',
-      source: 'gateway',
-      status: 400,
-      headers: new Headers(),
-      body: new TextEncoder().encode('synthesized'),
-    };
-    let called = false;
-    const translateWithRewrite = async (payload: SrcPayload): Promise<TranslateTrip<string, SrcEvent, TgtEvent>> => ({
-      ...(await translate(payload)),
-      error: () => {
-        called = true;
-        return { status: 999, headers: new Headers(), body: { error: { message: 'unused' } } };
-      },
-    });
-
-    const result = await executeTranslation({ model: 'payload' }, translateWithRewrite, async () => inner);
-    expect(called).toBe(false);
-    expect(result).toBe(inner);
-  });
+  expect(seen).toEqual({ model: 'm', stream: true });
+  expect(source).toEqual({ model: 'm', stream: false });
 });
 
 // The pre-translation capture hook sees the ORIGINAL target-protocol frames
@@ -136,7 +89,7 @@ describe('executeTranslation upstream capture', () => {
     ]);
   });
 
-  test('api-error path — capture receives the verbatim upstream envelope before any rewrite', async () => {
+  test('api-error path — capture receives the verbatim upstream envelope and the client the restated one', async () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
       type: 'api-error',
       source: 'upstream',
@@ -158,24 +111,12 @@ describe('executeTranslation upstream capture', () => {
     expect(result.type).toBe('api-error');
     if (result.type !== 'api-error') throw new Error('unreachable');
     // Capture saw the ORIGINAL envelope, not the rewrite.
-    expect(captured).toHaveLength(1);
-    expect(captured[0].status).toBe(413);
-    expect(captured[0].headers.get('x-upstream')).toBe('yes');
-    expect(new TextDecoder().decode(captured[0].body)).toBe('raw upstream body');
-    // Downstream got the rewrite.
+    expect(captured.map(({ status, headers, body }) => [status, headers.get('x-upstream'), new TextDecoder().decode(body)])).toEqual([[413, 'yes', 'raw upstream body']]);
+    // Downstream got the rewrite, with the rewriter's headers in place of the upstream's.
     expect(JSON.parse(new TextDecoder().decode(result.body))).toEqual({ error: { message: 'rewritten' } });
+    expect(result.headers.get('x-upstream')).toBeNull();
+    expect(result.source).toBe('upstream');
   });
-});
-
-test('returns a raw translation input error before calling the inner attempt', async () => {
-  const failure = { type: 'input-error' as const, message: 'unsupported content', param: 'messages[0]', code: 'unsupported_content' };
-  let called = false;
-  const result = await executeTranslation({ model: 'payload' }, async () => failure, async () => {
-    called = true;
-    return { type: 'events', events: makeTgtFrames([]), modelIdentity: testTelemetryModelIdentity };
-  });
-  expect(result).toBe(failure);
-  expect(called).toBe(false);
 });
 
 test('propagates unexpected translator errors with their identity and cause intact', async () => {

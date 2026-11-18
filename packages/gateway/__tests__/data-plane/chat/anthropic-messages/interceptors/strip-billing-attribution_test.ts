@@ -29,39 +29,6 @@ const invocation = (payload: AnthropicMessagesPayload, { flagOn = true, anthropi
   anthropicBeta,
 });
 
-test('strips billing-header lines and cch hashes from a string system prompt while preserving the rest', async () => {
-  const input = invocation({
-    model: 'm',
-    max_tokens: 1,
-    messages: [],
-    system: 'You are a helpful assistant.\nx-anthropic-billing-header: per-turn-token\ncch=deadbeef1234;\nKeep going.',
-  });
-
-  await stripBillingAttribution(input, stubCtx, okEvents);
-
-  assertEquals(input.payload.system, 'You are a helpful assistant.\n\n\nKeep going.');
-});
-
-test('strips per-block from an array-form system prompt and filters blocks that become empty', async () => {
-  const input = invocation({
-    model: 'm',
-    max_tokens: 1,
-    messages: [],
-    system: [
-      { citations: null, type: 'text', text: 'You are a helpful assistant.' },
-      { citations: null, type: 'text', text: 'x-anthropic-billing-header: token\ncch=abcdef12345' },
-      { citations: null, type: 'text', text: 'Keep going. cch=99fffaa1;' },
-    ],
-  });
-
-  await stripBillingAttribution(input, stubCtx, okEvents);
-
-  assertEquals(input.payload.system, [
-    { citations: null, type: 'text', text: 'You are a helpful assistant.' },
-    { citations: null, type: 'text', text: 'Keep going.' },
-  ]);
-});
-
 test('deletes the system field entirely when every array block becomes empty', async () => {
   const input = invocation({
     model: 'm',

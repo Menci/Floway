@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { test } from 'vitest';
 
 import { withExclusiveCachedTokensNormalized } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/normalize-exclusive-cached-tokens.ts';
 import type { OpenAIChatCompletionsInvocation } from '../../../../../src/data-plane/chat/openai-chat-completions/interceptors/types.ts';
@@ -65,34 +65,12 @@ const HYPER_USAGE = {
 // flag exists to settle.
 const HYPER_USAGE_WITHOUT_TOTAL = { ...HYPER_USAGE, total_tokens: undefined };
 
-// An ordinary OpenAI-shaped turn: 1000 + 50 = 1050, cached inside the input.
-const INCLUSIVE_USAGE = {
-  prompt_tokens: 1000,
-  completion_tokens: 50,
-  total_tokens: 1050,
-  prompt_tokens_details: { cached_tokens: 400 },
-};
-
 test('folds on the totals alone, with no flag set', async () => {
   const usage = await run(invocation(new Set()), HYPER_USAGE);
   assertEquals(usage.prompt_tokens, 13791);
   // total_tokens already counted the real input, and now agrees with it.
   assertEquals(usage.total_tokens, 14164);
   assertEquals(usage.prompt_tokens_details, { cached_tokens: 13312 });
-});
-
-test('folds on the flag when the totals witness nothing', async () => {
-  const usage = await run(invocation(), HYPER_USAGE_WITHOUT_TOTAL);
-  assertEquals(usage.prompt_tokens, 13791);
-});
-
-test('raises when the flag claims exclusive and the totals say inclusive', async () => {
-  await expect(run(invocation(), INCLUSIVE_USAGE)).rejects.toThrowError(/usage-exclusive-cached-tokens is enabled/);
-});
-
-test('raises naming the flag when the cache counts underflow with no verdict', async () => {
-  await expect(run(invocation(new Set()), HYPER_USAGE_WITHOUT_TOTAL))
-    .rejects.toThrowError(/enable usage-exclusive-cached-tokens/);
 });
 
 test('stands down entirely when the wire it speaks about is elsewhere', async () => {

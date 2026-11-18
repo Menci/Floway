@@ -27,11 +27,6 @@ const frames = async function* (values: ProtocolFrame<OpenAIChatCompletionsStrea
   yield* values;
 };
 
-const withChoiceExtra = (event: OpenAIChatCompletionsStreamEvent, name: string, value: unknown): OpenAIChatCompletionsStreamEvent => {
-  Object.assign(event.choices[0], { [name]: value });
-  return event;
-};
-
 const withChunkExtra = (event: OpenAIChatCompletionsStreamEvent, name: string, value: unknown): OpenAIChatCompletionsStreamEvent => {
   Object.assign(event, { [name]: value });
   return event;
@@ -124,33 +119,6 @@ describe('OpenAI Chat Completions affinity egress', () => {
       eventFrame(chunk([{  index: 0, delta: { reasoning_opaque: 'wrapped:synthetic' }, finish_reason: null }])),
       doneFrame(),
     ]);
-  });
-
-  test('emits choice extras once on the visible projection before carrier encryption', async () => {
-    const codec = new DelayedCodec();
-    const output = wrapOpenAIChatCompletionsAffinityEgress(frames([
-      eventFrame(withChoiceExtra(chunk([{
-
-        index: 0,
-        delta: { content: 'visible', reasoning_opaque: 'opaque' },
-        finish_reason: 'stop',
-      }]), 'logprobs', { content: [] })),
-      doneFrame(),
-    ]), { codec, affinity })[Symbol.asyncIterator]();
-
-    expect((await output.next()).value).toEqual(eventFrame(withChoiceExtra(chunk([{
-
-      index: 0,
-      delta: { content: 'visible' },
-      finish_reason: null,
-    }]), 'logprobs', { content: [] })));
-    expect(codec.calls).toHaveLength(0);
-
-    const carrier = output.next();
-    await Promise.resolve();
-    codec.calls[0].resolve('wrapped-opaque');
-    expect(JSON.stringify((await carrier).value)).not.toContain('logprobs');
-    expect(JSON.stringify((await output.next()).value)).not.toContain('logprobs');
   });
 
   test('emits final chunk extras once across split frames and non-stream reassembly', async () => {

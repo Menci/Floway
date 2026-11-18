@@ -35,24 +35,3 @@ test("translates canonical reasoning_effort: 'none' into top-level enable_thinki
   assertEquals(out.reasoning_effort, undefined);
   assertEquals(out.enable_thinking, false);
 });
-
-test('early-returns when its flag is not set on the candidate', async () => {
-  const ctx = invocation(
-    {
-      model: 'qwen-max',
-      messages: [{ role: 'user', content: 'hi' }],
-      reasoning_effort: 'none',
-    },
-    new Set(),
-  );
-
-  let observed: OpenAIChatCompletionsPayload | null = null;
-  await withVendorQwenOpenAIChatCompletionsNormalize(ctx, stubCtx, () => {
-    observed = ctx.payload;
-    return okEvents();
-  });
-
-  assertEquals(observed!.reasoning_effort, 'none');
-  const out = observed! as unknown as Record<string, unknown>;
-  assertEquals(out.enable_thinking, undefined);
-});

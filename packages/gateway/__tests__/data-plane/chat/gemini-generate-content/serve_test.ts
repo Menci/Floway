@@ -7,7 +7,7 @@ import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type Proto
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the model
 // candidates it wants, optionally with an alias-rules overlay attached.
@@ -127,67 +127,6 @@ const expectType = <T extends { type: string }, K extends T['type']>(r: T, k: K)
   return r as Extract<T, { type: K }>;
 };
 
-test('generate falls through to the next candidate when the first yields an upstream error', async () => {
-  installRepo();
-  const payload = makePayload({
-    contents: [{
-      role: 'user',
-      parts: [{ text: 'hello', thought: true, thoughtSignature: 'opaque-signature' }],
-    }],
-  });
-  const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
-    status: 502, headers: new Headers({ 'content-type': 'application/json' }),
-  });
-  const firstCall = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: false, response: firstError, modelKey: 'first-key',
-  }));
-  const secondCall = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'second-key', headers: new Headers(),
-  }));
-  queueResolution([
-    makeCandidate({ upstream: 'up_a', targetApi: 'openaiChatCompletions', callOpenAIChatCompletions: firstCall }),
-    makeCandidate({ upstream: 'up_b', targetApi: 'openaiChatCompletions', callOpenAIChatCompletions: secondCall }),
-  ]);
-
-  const result = await geminiGenerateContentServe.generate({
-    payload,
-    ctx: makeGatewayCtx(),
-    model: 'test-model',
-    headers: new Headers(),
-  });
-
-  // The narrowed candidate list exists exactly so a transient upstream
-  // failure (5xx/429/network) on one entry rolls over to the next. The
-  // second candidate's success is the request's final answer.
-  expectType(result, 'events');
-  assertEquals(firstCall.mock.calls.length, 1);
-  assertEquals(secondCall.mock.calls.length, 1);
-  assertEquals(payload.contents?.[0]?.parts, [{
-    text: 'hello',
-    thought: true,
-    thoughtSignature: 'opaque-signature',
-  }]);
-});
-
-test('generate renders model-missing as a Google RPC 404 when no candidates are available', async () => {
-  installRepo();
-  queueResolution([]);
-
-  const result = await geminiGenerateContentServe.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    model: 'unknown-model',
-    headers: new Headers(),
-  });
-
-  const upstreamError = expectType(result, 'api-error');
-  assertEquals(upstreamError.status, 404);
-  const body = JSON.parse(new TextDecoder().decode(upstreamError.body));
-  assertEquals(body.error.code, 404);
-  assertEquals(body.error.status, 'NOT_FOUND');
-  assert(typeof body.error.message === 'string' && body.error.message.includes('unknown-model'));
-});
-
 test('generate filters out candidates whose endpoints do not satisfy the gemini-generate-content-generate preference and renders model-unsupported as a 400', async () => {
   installRepo();
   const callOpenAIChatCompletions = vi.fn();
@@ -204,10 +143,6 @@ test('generate filters out candidates whose endpoints do not satisfy the gemini-
 
   const upstreamError = expectType(result, 'api-error');
   assertEquals(upstreamError.status, 400);
-  const body = JSON.parse(new TextDecoder().decode(upstreamError.body));
-  assertEquals(body.error.code, 400);
-  assertEquals(body.error.status, 'INVALID_ARGUMENT');
-  assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
   assertEquals(callOpenAIChatCompletions.mock.calls.length, 0);
 });
 

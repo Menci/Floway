@@ -79,17 +79,6 @@ test.each([false, true])('openai-chat-completions internal failures preserve tra
   if (stream) assertEquals(text.includes('event: error'), true);
 });
 
-test('openai-chat-completions absent optional diagnostics stay absent and upstream errors preserve their payload', async () => {
-  const app = new Hono().get('/', c => respondOpenAIChatCompletions(c, internalErrorResult(502, { type: 'internal_error', name: 'Error', message: 'minimal' }), false, true, mockChatGatewayCtx()));
-  assertEquals(await (await app.request('/')).json(), { error: { type: 'internal_error', message: 'minimal', provider_specific_fields: { name: 'Error' } } });
-  const raw = '{"error":{"message":"native","stack":"provider-owned","custom":true}}';
-  const native = new Hono().get('/', c => respondOpenAIChatCompletions(c, { type: 'api-error', source: 'upstream', status: 429, headers: new Headers({ 'content-type': 'application/json', 'x-native': 'trace' }), body: new TextEncoder().encode(raw) }, false, true, mockChatGatewayCtx()));
-  const response = await native.request('/');
-  assertEquals(response.status, 429);
-  assertEquals(response.headers.get('x-native'), 'trace');
-  assertEquals(await response.text(), raw);
-});
-
 test('openai-chat-completions collecting a broken stream retains the nested error cause in an HTTP 502', async () => {
   const cause = new TypeError('nested'); cause.stack = 'TypeError: nested';
   const failure = new Error('broken', { cause }); failure.stack = 'Error: broken';

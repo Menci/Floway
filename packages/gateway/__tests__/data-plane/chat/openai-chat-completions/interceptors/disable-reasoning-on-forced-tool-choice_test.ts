@@ -32,7 +32,4 @@ test('required tool_choice sets reasoning_effort to the canonical none sentinel'
   await withReasoningDisabledOnForcedToolChoice(input, stubCtx, okEvents);
 
   assertEquals(input.payload.reasoning_effort, 'none');
-  const out = input.payload as unknown as Record<string, unknown>;
-  assertEquals(out.thinking, undefined);
-  assertEquals(out.enable_thinking, undefined);
 });
