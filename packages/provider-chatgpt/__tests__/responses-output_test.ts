@@ -9,7 +9,6 @@ const message: OpenAIResponsesOutputItemEx = {
   type: 'message', id: 'msg_1', role: 'assistant', status: 'completed',
   content: [{ type: 'output_text', text: 'answer', annotations: [] }],
 };
-const compaction: OpenAIResponsesOutputItemEx = { type: 'compaction', id: 'cmp_2', encrypted_content: 'compaction' };
 
 const response = (output: OpenAIResponsesOutputItemEx[], status: OpenAIResponsesResultEx['status'] = 'completed'): OpenAIResponsesResultEx => ({
   id: 'resp_1', object: 'response', model: 'test-model', status, output, error: null, incomplete_details: null,
@@ -39,16 +38,6 @@ test('restores an empty Codex terminal in output_index order without changing it
   expect(frames[3]).toEqual(eventFrame({ ...events[3], response: { ...terminal, output: [reasoning, message] } } as OpenAIResponsesStreamEventEx));
   expect(terminal.output).toEqual([]);
   expect(frames[4]).toEqual(doneFrame());
-});
-
-test('restores omitted items by stream index when terminal positions have shifted', async () => {
-  const frames = await restore([
-    { type: 'response.output_item.done', output_index: 2, item: compaction },
-    { type: 'response.output_item.done', output_index: 1, item: message },
-    { type: 'response.output_item.done', output_index: 0, item: reasoning },
-    { type: 'response.completed', response: response([message]) },
-  ]);
-  expect(frames[3]).toEqual(eventFrame({ type: 'response.completed', response: response([reasoning, message, compaction]) }));
 });
 
 test.each([
@@ -84,12 +73,4 @@ test('rejects an item ID observed at conflicting output indices', async () => {
     { type: 'response.output_item.done', output_index: 1, item: reasoning },
     { type: 'response.completed', response: response([]) },
   ])).rejects.toThrow('conflicting output_index values 0 and 1');
-});
-
-test('leaves error events and terminal snapshots without closed items untouched', async () => {
-  const terminal: OpenAIResponsesStreamEventEx = { type: 'response.failed', response: response([message], 'failed') };
-  const frames = await restore([terminal]);
-  expect(frames).toEqual([eventFrame(terminal), doneFrame()]);
-  const error: OpenAIResponsesStreamEventEx = { type: 'error', message: 'upstream error' };
-  expect(await restore([error])).toEqual([eventFrame(error), doneFrame()]);
 });

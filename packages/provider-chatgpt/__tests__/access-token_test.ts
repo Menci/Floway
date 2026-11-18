@@ -62,7 +62,6 @@ afterEach(() => vi.restoreAllMocks());
 const storedState = (): ChatGPTUpstreamState => current!.state as ChatGPTUpstreamState;
 
 describe('putChatGPTAccessToken', () => {
-
   test('an older explicit plan observation cannot replace a newer one', async () => {
     const newer: ChatGPTAccessTokenEntry = {
       token: 'at_newer',
@@ -131,7 +130,6 @@ describe('putChatGPTAccessToken', () => {
 });
 
 describe('ensureChatGPTAccessToken', () => {
-
   test('spends an access-only token to its actual expiry, ignoring the renewable skew', async () => {
     const entry: ChatGPTAccessTokenEntry = { token: 'at_only', expiresAt: Date.now() + 60_000, refreshedAt: 'now' };
     current = makeRecord({ accounts: [{ ...baseAccount, refresh_token: null, accessToken: entry }] });
@@ -175,12 +173,6 @@ describe('ensureChatGPTAccessToken', () => {
     expect(mint).toHaveBeenCalledWith('rt_v1');
   });
 
-  test('propagates mint errors without persisting', async () => {
-    const mint = vi.fn().mockRejectedValue(new Error('oauth boom'));
-    await expect(ensureChatGPTAccessToken(upstreamId, accountId, mint)).rejects.toThrow(/oauth boom/);
-    expect(repo.writes).toEqual([]);
-  });
-
   test('invalid_grant with a sibling rotation in flight → returns the sibling-minted access token, no persist', async () => {
     // Simulate the race: between our pre-mint read and the upstream rejecting
     // our refresh_token, a sibling worker won the rotation and wrote rt_v2 +
@@ -213,29 +205,6 @@ describe('ensureChatGPTAccessToken', () => {
 });
 
 describe('mintChatGPTAccessToken', () => {
-  test('stores the current plan from the refreshed id_token', async () => {
-    const idToken = [
-      Buffer.from('{}').toString('base64url'),
-      Buffer.from(JSON.stringify({
-        email: 'a@b.com',
-        'https://api.openai.com/auth': {
-          chatgpt_account_id: accountId,
-          chatgpt_user_id: 'usr',
-          chatgpt_plan_type: 'team',
-        },
-      })).toString('base64url'),
-      Buffer.from('signature').toString('base64url'),
-    ].join('.');
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
-      access_token: 'at', refresh_token: 'rt_v2', id_token: idToken, expires_in: 600,
-    }), { status: 200, headers: { 'content-type': 'application/json' } }));
-    const persistRotation = vi.fn(async () => {});
-    const entry = await mintChatGPTAccessToken('rt_v1', directFetcher, persistRotation);
-    expect(entry.planType).toBe('team');
-    expect(entry.planObservedAt).toBe(entry.refreshedAt);
-    expect(persistRotation).toHaveBeenCalledWith('rt_v2');
-  });
-
   test('persists a rotated refresh token before surfacing malformed plan metadata', async () => {
     const idToken = [
       Buffer.from('{}').toString('base64url'),

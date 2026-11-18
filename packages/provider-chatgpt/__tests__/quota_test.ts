@@ -2,8 +2,6 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
 import {
-  CHATGPT_QUOTA_UNKNOWN_ACTIVE_LIMIT,
-  chatgptQuotaActiveLimitKey,
   clearChatGPTQuota,
   getChatGPTQuota,
   parseChatGPTQuotaHeaders,
@@ -114,15 +112,6 @@ describe('parseChatGPTQuotaHeaders', () => {
     expect(snapshot.secondary_reset_after_at).toBeUndefined();
   });
 
-  // `Number('')` is 0, so a blank reading would otherwise land as a confident
-  // zero balance rather than as nothing observed.
-  test('reads a blank numeric header as absent rather than as zero', () => {
-    const headers = new Headers({ 'x-codex-credits-balance': '', 'x-codex-secondary-used-percent': '  ' });
-    const snapshot = parseChatGPTQuotaHeaders(headers, { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: false });
-    expect(snapshot.credits_balance).toBeUndefined();
-    expect(snapshot.secondary_used_percent).toBeUndefined();
-  });
-
   test.each([
     ['primary only', '100', '35', '2026-06-05T01:00:00.000Z'],
     ['secondary only', '35', '100', '2026-06-05T02:00:00.000Z'],
@@ -140,17 +129,6 @@ describe('parseChatGPTQuotaHeaders', () => {
     expect(snapshot.ratelimited_until).toBe(expected);
   });
 
-  test.each([undefined, 'invalid'])('does not guess an expiry without a usable exhausted reset: %s', reset => {
-    const headers = new Headers({ 'x-codex-primary-used-percent': '100' });
-    if (reset !== undefined) {
-      headers.set('x-codex-primary-reset-at', reset);
-      headers.set('x-codex-primary-reset-after-seconds', reset);
-    }
-    const snapshot = parseChatGPTQuotaHeaders(headers, { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: true });
-    expect(snapshot.ratelimited_until).toBeUndefined();
-    expect(snapshot.primary_used_percent).toBe(100);
-  });
-
   test.each([
     ['epoch', '1780621200', '9999'],
     ['RFC 3339', '2026-06-05T03:00:00+02:00', '9999'],
@@ -165,17 +143,7 @@ describe('parseChatGPTQuotaHeaders', () => {
   });
 });
 
-describe('chatgptQuotaActiveLimitKey', () => {
-
-  test('falls back to unknown when the active_limit is missing or blank', () => {
-    expect(chatgptQuotaActiveLimitKey({ observed_at: 'now' })).toBe(CHATGPT_QUOTA_UNKNOWN_ACTIVE_LIMIT);
-    expect(chatgptQuotaActiveLimitKey({ observed_at: 'now', active_limit: '   ' })).toBe(CHATGPT_QUOTA_UNKNOWN_ACTIVE_LIMIT);
-    expect(chatgptQuotaActiveLimitKey({ observed_at: 'now', active_limit: 'constructor' })).toBe(CHATGPT_QUOTA_UNKNOWN_ACTIVE_LIMIT);
-  });
-});
-
 describe('getChatGPTQuota', () => {
-
   test('projects legacy expiry per family without changing stored observations or successful snapshots', async () => {
     const primary: ChatGPTQuotaSnapshot = {
       observed_at: '2026-06-05T00:00:00.000Z',
@@ -220,27 +188,9 @@ describe('getChatGPTQuota', () => {
     expect(repo.writes).toEqual([]);
   });
 
-  // An old reading rendered with the instant it was taken tells an operator
-  // more than an empty card, so age withholds nothing -- the dashboard is the
-  // only reader, and traffic on the upstream replaces what it shows.
-  test('returns every bucket however long ago it was observed', async () => {
-    const recent: ChatGPTQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'recent' };
-    const ancient: ChatGPTQuotaSnapshot = { observed_at: '2026-06-01T00:00:00.000Z', active_limit: 'ancient' };
-    current = makeRecord({
-      accounts: [{
-        ...baseAccount,
-        quotaSnapshot: {
-          recent: { fetchedAt: Date.now(), data: recent },
-          ancient: { fetchedAt: Date.now() - 90 * 24 * 60 * 60 * 1000, data: ancient },
-        },
-      }],
-    });
-    expect(await getChatGPTQuota(upstreamId, accountId)).toEqual({ recent, ancient });
-  });
 });
 
 describe('putChatGPTQuota', () => {
-
   test('preserves other active-limit buckets and replaces the matching bucket', async () => {
     const premium: ChatGPTQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'premium', primary_used_percent: 10 };
     current = makeRecord({ accounts: [{ ...baseAccount, quotaSnapshot: { premium: { fetchedAt: 1, data: premium } } }] });

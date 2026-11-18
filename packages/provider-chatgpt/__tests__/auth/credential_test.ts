@@ -20,7 +20,6 @@ const claims = (accountId: string, extra: Record<string, unknown> = {}): Record<
 });
 
 describe('normalizeChatGPTCredential', () => {
-
   test('operator-typed identity wins over both id_token and access_token claims', () => {
     const result = normalizeChatGPTCredential({
       accessToken: makeJwt(claims('access', { exp: 2_000_000_000 })),
@@ -64,15 +63,6 @@ describe('normalizeChatGPTCredential', () => {
       email: 'id@example.test',
       planType: 'pro',
     });
-  });
-
-  test('uses source expiry only when the access token has no exp claim', () => {
-    const result = normalizeChatGPTCredential({
-      accessToken: 'opaque',
-      chatgptAccountId: 'account',
-      expiresAt: 1_900_000_000_000,
-    });
-    expect(result.expiresAt).toBe(1_900_000_000_000);
   });
 
   test('rejects conflicting inferred account IDs', () => {

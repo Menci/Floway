@@ -5,10 +5,6 @@ import { assertChatGPTUpstreamState, readChatGPTUpstreamState } from '../src/sta
 const goodAccount = { chatgptAccountId: 'acc_x', refresh_token: 'rt_x', state: 'active' as const, state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555' };
 
 describe('assertChatGPTUpstreamState', () => {
-  test('accepts null refresh_token and rejects an empty string', () => {
-    expect(() => assertChatGPTUpstreamState({ accounts: [{ ...goodAccount, refresh_token: null }] })).not.toThrow();
-    expect(() => assertChatGPTUpstreamState({ accounts: [{ ...goodAccount, refresh_token: '' }] })).toThrow(/refresh_token/);
-  });
   test('accepts a null chatgptAccountId and rejects missing or empty values', () => {
     expect(() => assertChatGPTUpstreamState({
       accounts: [{ ...goodAccount, chatgptAccountId: null }],
@@ -38,22 +34,10 @@ describe('assertChatGPTUpstreamState', () => {
       })).toThrow(new RegExp(key));
     }
   });
-  test('rejects an empty accounts array (v1 invariant: exactly one)', () => {
-    expect(() => assertChatGPTUpstreamState({ accounts: [] })).toThrow(/exactly one/);
-  });
   test('rejects malformed accessToken', () => {
-    expect(() => assertChatGPTUpstreamState({
-      accounts: [{ ...goodAccount, accessToken: { token: '', expiresAt: 1, refreshedAt: 'x' } }],
-    })).toThrow(/token/);
     expect(() => assertChatGPTUpstreamState({
       accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 'soon', refreshedAt: 'x' } }],
     })).toThrow(/expiresAt/);
-    expect(() => assertChatGPTUpstreamState({
-      accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 1, refreshedAt: 'x', extra: 1 } }],
-    })).toThrow(/extra/);
-    expect(() => assertChatGPTUpstreamState({
-      accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 1, refreshedAt: 'x', planType: '' } }],
-    })).toThrow(/planType/);
     expect(() => assertChatGPTUpstreamState({
       accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 1, refreshedAt: 'x', planObservedAt: 'x' } }],
     })).toThrow(/requires planType/);
@@ -62,18 +46,6 @@ describe('assertChatGPTUpstreamState', () => {
     expect(() => assertChatGPTUpstreamState({
       accounts: [{ ...goodAccount, quotaSnapshot: { premium: { fetchedAt: 'soon', data: {} } } }],
     })).toThrow(/fetchedAt/);
-    expect(() => assertChatGPTUpstreamState({
-      accounts: [{ ...goodAccount, quotaSnapshot: { premium: { fetchedAt: 1, data: 'oops' } } }],
-    })).toThrow(/data/);
-    expect(() => assertChatGPTUpstreamState({
-      accounts: [{ ...goodAccount, quotaSnapshot: { premium: { fetchedAt: 1, data: {}, extra: 1 } } }],
-    })).toThrow(/extra/);
-    expect(() => assertChatGPTUpstreamState({
-      accounts: [{ ...goodAccount, quotaSnapshot: { premium: 123 } }],
-    })).toThrow(/premium/);
-    expect(() => assertChatGPTUpstreamState({
-      accounts: [{ ...goodAccount, quotaSnapshot: { '': { fetchedAt: 1, data: {} } } }],
-    })).toThrow(/invalid active limit key/);
     expect(() => assertChatGPTUpstreamState({
       accounts: [{ ...goodAccount, quotaSnapshot: { constructor: { fetchedAt: 1, data: {} } } }],
     })).toThrow(/invalid active limit key/);

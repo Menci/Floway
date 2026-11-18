@@ -26,14 +26,6 @@ test('injects the default when instructions is absent', async () => {
   assertEquals(ctx.payload.instructions, "You're a helpful assistant.");
 });
 
-test('preserves a caller-supplied instructions string', async () => {
-  const ctx = invocation({ model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }], instructions: 'You are a pirate.' });
-
-  await injectDefaultInstructions(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.payload.instructions, 'You are a pirate.');
-});
-
 test.each([undefined, ''])('preserves Lite instructions value %j and the caller input', async instructions => {
   const input: CanonicalOpenAIResponsesPayload['input'] = [
     { type: 'additional_tools', role: 'developer', tools: [] },

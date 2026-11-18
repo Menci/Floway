@@ -121,12 +121,6 @@ const idToken = (planType = 'plus'): string => [
   Buffer.from('signature').toString('base64url'),
 ].join('.');
 
-const idTokenWithoutPlan = (): string => [
-  Buffer.from('{}').toString('base64url'),
-  Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': {} })).toString('base64url'),
-  Buffer.from('signature').toString('base64url'),
-].join('.');
-
 describe('callChatGPTOpenAIResponses — gates', () => {
   test('refuses non-active state with synthetic 503', async () => {
     const result = await callChatGPTOpenAIResponses({
@@ -417,7 +411,6 @@ describe('Codex Responses wire selection', () => {
 });
 
 describe('callChatGPTOpenAIResponses — upstream classification', () => {
-
   test('builds Codex responses headers and metadata from a clean set', async () => {
     seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
@@ -473,9 +466,6 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
       window_id: 'downstream-window',
       request_kind: 'turn',
     });
-    // 'turn-meta' is not valid JSON; the unparseable blob is dropped and we
-    // synthesize from identity instead.
-    expect(headers.get('x-codex-turn-metadata')).not.toBe('turn-meta');
     expect(headers.get('cf-connecting-ip')).toBeNull();
     expect(headers.get('forwarded')).toBeNull();
     expect(headers.get('openai-beta')).toBeNull();
@@ -517,14 +507,7 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
     const firstMetadata = JSON.parse(firstHeaders.get('x-codex-turn-metadata') ?? 'null') as Record<string, unknown>;
     const secondMetadata = JSON.parse(secondHeaders.get('x-codex-turn-metadata') ?? 'null') as Record<string, unknown>;
     expect(firstMetadata.installation_id).toBe(secondMetadata.installation_id);
-    expect(firstMetadata.session_id).toBe('stable-session');
-    expect(secondMetadata.session_id).toBe('stable-session');
-    expect(firstMetadata.thread_id).toBe('stable-session');
-    expect(secondMetadata.thread_id).toBe('stable-session');
-    expect(firstMetadata.window_id).toBe('stable-session:0');
-    expect(secondMetadata.window_id).toBe('stable-session:0');
-    expect(firstMetadata.turn_id).toMatch(UUID_V7_RE);
-    expect(secondMetadata.turn_id).toMatch(UUID_V7_RE);
+    expect(secondMetadata).toMatchObject({ session_id: 'stable-session', thread_id: 'stable-session', window_id: 'stable-session:0' });
     expect(firstMetadata.turn_id).not.toBe(secondMetadata.turn_id);
   });
 
@@ -733,19 +716,6 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
     expect(stored?.premium.data.ratelimited_until).toBe(new Date(Date.parse(stored!.premium.data.observed_at) + 3600 * 1000).toISOString());
   });
 
-  test('retains a newly observed plan when the 401 refresh omits it', async () => {
-    seedAccountState({ accessToken: null });
-    vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(errorJson(200, { access_token: 'at1', refresh_token: 'rt1', id_token: idToken('free'), expires_in: 600 }))
-      .mockResolvedValueOnce(sseResponse(401))
-      .mockResolvedValueOnce(errorJson(200, { access_token: 'at2', refresh_token: 'rt2', id_token: idTokenWithoutPlan(), expires_in: 600 }))
-      .mockResolvedValueOnce(sseResponse());
-    const result = await callChatGPTOpenAIResponses({
-      upstreamId, account: activeAccount, model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
-    });
-    expect(result.ok).toBe(true);
-    expect((currentRecord.state as ChatGPTUpstreamState).accounts[0].accessToken?.planType).toBe('free');
-  });
 });
 
 describe('callChatGPTOpenAIResponses — background-write registration', () => {

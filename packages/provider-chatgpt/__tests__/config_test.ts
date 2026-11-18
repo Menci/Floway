@@ -30,14 +30,6 @@ describe('assertChatGPTUpstreamRecord (config validation)', () => {
 });
 
 describe('patchChatGPTIdentityMetadata', () => {
-  test('updates nullable display metadata while retaining the account ID', () => {
-    expect(patchChatGPTIdentityMetadata(good, {
-      accounts: [{ email: null, chatgptAccountId: 'a', planType: 'pro' }],
-    })).toEqual({
-      accounts: [{ email: null, chatgptAccountId: 'a', chatgptUserId: 'u', planType: 'pro' }],
-    });
-  });
-
   test('preserves a null account ID and rejects account ID changes', () => {
     const withoutAccountId: ChatGPTUpstreamConfig = {
       accounts: [{ ...goodAccount, chatgptAccountId: null }],

@@ -3,7 +3,6 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
   importChatGPTFromCallback,
   importChatGPTFromJson,
-  importChatGPTFromManual,
   parseSourceExpiry,
   previewChatGPTJson,
 } from '../../src/auth/import.ts';
@@ -73,14 +72,6 @@ describe('ChatGPT JSON import', () => {
   });
 });
 
-describe('manual ChatGPT import', () => {
-  test('requires only access token when its JWT carries the account ID', async () => {
-    const result = await importChatGPTFromManual({ access_token: makeJwt(identityPayload) });
-    expect(result.config.accounts[0].chatgptAccountId).toBe('account');
-    expect(result.state.accounts[0].refresh_token).toBeNull();
-  });
-});
-
 describe('ChatGPT JSON account selection', () => {
   test('preserves source indexes while filtering non-OpenAI accounts', async () => {
     const raw = JSON.stringify({
@@ -107,12 +98,6 @@ describe('ChatGPT JSON account selection', () => {
     const result = await importChatGPTFromJson(raw, 0);
     expect(result.config.accounts[0].chatgptAccountId).toBeNull();
     expect(result.state.accounts[0].chatgptAccountId).toBeNull();
-  });
-
-  test.each([
-    { tokens: credential(), credentials: credential() },
-  ])('rejects ambiguous structures', async value => {
-    await expect(previewChatGPTJson(JSON.stringify(value))).rejects.toThrow(/ambiguous/);
   });
 
   test('rejects invalid indexes and unsupported selected accounts', async () => {

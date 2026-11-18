@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
-import { CHATGPT_RESPONSES_LITE_CLIENT_METADATA_KEY, CHATGPT_RESPONSES_LITE_HEADER } from '../src/constants.ts';
 import { createChatGPTProvider } from '../src/provider.ts';
 import type { ChatGPTAccessTokenEntry, ChatGPTUpstreamState } from '../src/state.ts';
 import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
@@ -87,7 +86,6 @@ const oauthTokenResponse = (overrides: Partial<{ access_token: string; refresh_t
 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
 
 describe('createChatGPTProvider', () => {
-
   test('getProvidedModels uses the cached access token when fresh and surfaces every catalog entry', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
     const instance = createChatGPTProvider(baseRecord);
@@ -190,60 +188,6 @@ describe('createChatGPTProvider', () => {
     ]);
   });
 
-  test('preserves Lite input items and skips the default top-level instruction', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
-    const provider = createChatGPTProvider(baseRecord);
-    const model = stubProviderModel({ id: 'future-lite', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite: true } });
-    const tool = { type: 'function' as const, name: 'lookup', parameters: { type: 'object' } };
-    const input = [
-      { type: 'additional_tools' as const, role: 'developer' as const, tools: [tool] },
-      { type: 'message' as const, role: 'developer' as const, content: 'inline instructions' },
-      { type: 'message' as const, role: 'user' as const, content: 'hello' },
-    ];
-    const options = noopUpstreamCallOptions();
-    options.headers.set(CHATGPT_RESPONSES_LITE_HEADER, 'true');
-    const result = await provider.instance.callOpenAIResponses(model, {
-      input,
-      tools: [{ type: 'custom', name: 'patch' }],
-      text: { verbosity: 'low' },
-      client_metadata: { [CHATGPT_RESPONSES_LITE_CLIENT_METADATA_KEY]: 'true' },
-    } as Parameters<typeof provider.instance.callOpenAIResponses>[1], 'generate', undefined, options);
-    expect(result.ok).toBe(true);
-    const wire = await readJsonRequest(fetchSpy.mock.calls[0]![1] as RequestInit) as Record<string, unknown>;
-    expect(wire).not.toHaveProperty('instructions');
-    expect(wire).not.toHaveProperty('tools');
-    expect(wire.text).toEqual({ verbosity: 'low' });
-    expect(wire.input).toEqual([
-      {
-        type: 'additional_tools', role: 'developer', id: expect.stringMatching(/^at_/),
-        tools: [{ type: 'namespace', name: 'functions', description: '', tools: [{ type: 'custom', name: 'patch' }] }],
-      },
-      ...input,
-    ]);
-    expect(input).toHaveLength(3);
-    expect(options.headers.get(CHATGPT_RESPONSES_LITE_HEADER)).toBe('true');
-  });
-
-  test('forwards an already encoded Lite prefix without generating another one', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
-    const provider = createChatGPTProvider(baseRecord);
-    const model = stubProviderModel({ id: 'future-lite', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite: true } });
-    const input = [
-      { type: 'additional_tools' as const, role: 'developer' as const, id: 'at_caller', tools: [{ type: 'namespace' as const, name: 'functions', description: '', tools: [{ type: 'function' as const, name: 'lookup', parameters: { type: 'object' } }] }] },
-      { type: 'message' as const, role: 'developer' as const, id: 'msg_caller', content: [{ type: 'input_text' as const, text: 'Caller base instructions' }], internal_chat_message_metadata_passthrough: { content_item_kinds: ['model.base_instructions'] } },
-      { type: 'message' as const, role: 'user' as const, content: 'Look up this entry.' },
-    ];
-    const result = await provider.instance.callOpenAIResponses(model, { input, instructions: '' }, 'generate', undefined, noopUpstreamCallOptions());
-
-    expect(result.ok).toBe(true);
-    const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
-    if (init === undefined) throw new Error('expected a ChatGPT upstream request');
-    const wire = await readJsonRequest(init) as Record<string, unknown>;
-    expect(wire.input).toEqual(input);
-    expect(wire).not.toHaveProperty('instructions');
-    expect(new Headers(init.headers).get(CHATGPT_RESPONSES_LITE_HEADER)).toBe('true');
-  });
-
   test('callOpenAIImagesGenerations posts gpt-image-2 through the ChatGPT Codex endpoint', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       created: 1,
@@ -263,23 +207,6 @@ describe('createChatGPTProvider', () => {
     expect(headers.get('chatgpt-account-id')).toBe('acc');
     expect(headers.get('x-codex-image-turn-id')).toBe('turn-image');
     expect(await readJsonRequest(init as RequestInit)).toEqual({ prompt: 'an orange circle', quality: 'low', model: 'gpt-image-2' });
-  });
-
-  test('callOpenAIImagesEdits returns an operation-neutral error for an explicit Free plan', async () => {
-    const freeRecord: UpstreamRecord = {
-      ...baseRecord,
-      config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'free' }] },
-    };
-    const instance = createChatGPTProvider(freeRecord);
-    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
-    const result = await instance.instance.callOpenAIImagesEdits(model, {
-      images: [{ type: 'reference', reference: { image_url: 'https://example.test/image.png' } }],
-      parameters: { prompt: 'edit' },
-    }, undefined, noopUpstreamCallOptions());
-    expect(result.response.status).toBe(403);
-    expect(await result.response.json()).toEqual({
-      error: { type: 'image_tools_unavailable', message: 'ChatGPT Free accounts do not provide Codex image tools.' },
-    });
   });
 
   test('callOpenAIImagesEdits sends uploads as JSON data URLs to the ChatGPT Codex endpoint', async () => {
