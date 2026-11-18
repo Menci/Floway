@@ -24,6 +24,7 @@ test('reassembleOpenAIResponsesEvents extracts response from completed event', a
     output: [
       {
         type: 'message',
+        id: 'msg_1',
         status: 'completed',
         role: 'assistant',
         content: [{ type: 'output_text', text: 'Hello', annotations: [] }],

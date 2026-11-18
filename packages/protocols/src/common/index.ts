@@ -17,3 +17,4 @@ export * from './preferences.ts';
 
 export { isJsonObject, isRawNumber, jsonInteger, parseJsonNumber, parseJSONWithRawNumbers, type JsonNumber, type JsonObject } from './json.ts';
 export { captureExtras } from './reassemble-extras.ts';
+export type { OpenWire } from './open-wire.ts';

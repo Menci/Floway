@@ -6,7 +6,7 @@ import { DOCUMENT_CLOSE_TAG, documentImage, documentOpening } from '../../../sha
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import type {
-  OpenAIChatCompletionsPayload,
+  OpenAIChatCompletionsPayloadEx,
   OpenAIChatCompletionsMessage,
   OpenAIChatCompletionsStreamOptionsEx,
   OpenAIChatCompletionsToolCall,
@@ -230,7 +230,7 @@ const toolFromIR = (tool: IRInputTool): OpenAIChatCompletionsTool => {
   };
 };
 
-const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<OpenAIChatCompletionsPayload['tool_choice']> => {
+const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<OpenAIChatCompletionsPayloadEx['tool_choice']> => {
   if (typeof choice === 'string') return choice;
   if (choice.type === 'allowed_tools') return {
     type: 'allowed_tools',
@@ -251,7 +251,7 @@ const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<OpenAIChatComp
  * assistant turns a sidecar already resolved, so only this half is computed once
  * per payload.
  */
-export const openaiChatCompletionsHeaderFromIR = (request: IRInputRequestHeader): Omit<OpenAIChatCompletionsPayload, 'messages'> => {
+export const openaiChatCompletionsHeaderFromIR = (request: IRInputRequestHeader): Omit<OpenAIChatCompletionsPayloadEx, 'messages'> => {
   const tools = request.tools;
   const choice = tools === undefined || tools.length === 0 ? request.tool_choice === 'required' ? 'required' : undefined : request.tool_choice;
   return {
@@ -272,7 +272,7 @@ export const openaiChatCompletionsHeaderFromIR = (request: IRInputRequestHeader)
 const chatReasoningEffort = (settings: IRInputSettings): string | undefined =>
   settings.reasoning_effort ?? (settings.reasoning_budget === undefined ? undefined : reasoningEffortForBudget(settings.reasoning_budget));
 
-export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): Partial<OpenAIChatCompletionsPayload> => {
+export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): Partial<OpenAIChatCompletionsPayloadEx> => {
   const ceiling = settings.max_output_tokens !== undefined ? settings.max_output_tokens : settings.max_visible_output_tokens;
   const format = settings.output_format;
   const reasoningEffort = chatReasoningEffort(settings);
@@ -295,7 +295,7 @@ export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): 
     ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
     ...(settings.prompt_cache_key === undefined ? {} : { prompt_cache_key: settings.prompt_cache_key }),
     ...(settings.prompt_cache_retention === undefined ? {} : { prompt_cache_retention: settings.prompt_cache_retention }),
-    ...(settings.prompt_cache_options === undefined ? {} : { prompt_cache_options: settings.prompt_cache_options === null ? null : { ...settings.prompt_cache_options } }),
+    ...(settings.prompt_cache_options === undefined ? {} : { prompt_cache_options: { ...settings.prompt_cache_options } }),
     ...(settings.safety_identifier === undefined ? {} : { safety_identifier: settings.safety_identifier }),
     ...(settings.user === undefined ? {} : { user: settings.user }),
     ...(settings.logprobs === undefined ? {} : { logprobs: settings.logprobs }),

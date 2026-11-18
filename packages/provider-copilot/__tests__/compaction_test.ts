@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { compactionResponse } from '../src/compaction.ts';
-import type { OpenAIResponsesCompactionResultEx, CanonicalOpenAIResponsesInputItem, CanonicalOpenAIResponsesText, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesCompactionResultEx, CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputText, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 
 const generatedResult = (output: unknown[]): OpenAIResponsesResultEx =>
   ({
@@ -48,7 +48,7 @@ test('normalizes every retained text part to input_text — assistant output_tex
   const result = compactionResponse(input, generatedResult([compaction]));
 
   // Both retained messages echo with `input_text` parts, regardless of original part type.
-  const assistantPart = (result.output[0] as { content: CanonicalOpenAIResponsesText[] }).content[0];
+  const assistantPart = (result.output[0] as { content: OpenAIResponsesInputText[] }).content[0];
   const userPart = (result.output[1] as { content: Array<{ type: string }> }).content[0];
   expect(assistantPart.type).toBe('input_text');
   expect(assistantPart.prompt_cache_breakpoint).toEqual({ mode: 'explicit' });

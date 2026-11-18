@@ -1,7 +1,7 @@
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesContentBlockDeltaEvent, AnthropicMessagesContentBlockStartEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPart, GeminiGenerateContentResult } from '@floway-dev/protocols/gemini-generate-content';
-import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsReasoningItemEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesOutputItemEx } from '@floway-dev/protocols/openai-responses';
 import type { ChatTargetApi } from '@floway-dev/provider';
 
@@ -270,7 +270,7 @@ const hasReasoningDetailsOutput = (details: unknown): boolean => Array.isArray(d
   (detail.type === 'reasoning.text' && nonEmptyString(detail.text))
   || (detail.type === 'reasoning.summary' && nonEmptyString(detail.summary)));
 
-const hasReasoningItemsOutput = (items: unknown): boolean => Array.isArray(items) && items.some((item: OpenAIChatCompletionsReasoningItem) =>
+const hasReasoningItemsOutput = (items: unknown): boolean => Array.isArray(items) && items.some((item: OpenAIChatCompletionsReasoningItemEx) =>
   item.type === 'reasoning' && item.summary?.some(part => nonEmptyString(part.text)) === true);
 
 const isOpenAIChatCompletionsOutputEvent = (event: Record<string, unknown>): boolean => {

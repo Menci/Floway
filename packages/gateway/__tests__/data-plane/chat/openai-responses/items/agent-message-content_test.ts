@@ -62,7 +62,7 @@ test('agentMessageContent carries images that omit detail', () => {
 
 test('agentMessageContent reports the exact path for unknown beta content', () => {
   const error = assertThrows(
-    () => agentMessageContent(agentMessage([{ type: 'future_agent_part', value: 1 }])),
+    () => agentMessageContent(agentMessage([{ type: 'future_agent_part', value: 1 } as never])),
     Error,
   );
   assertEquals(tryCatchChatServeFailure<InputErrorDetails & { readonly kind: 'invalid-input' }>(error), {

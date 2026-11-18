@@ -4,7 +4,7 @@ import { withInlineImagesCompressed } from '../../../src/interceptors/openai-cha
 import type { OpenAIChatCompletionsBoundaryCtx } from '../../../src/interceptors/openai-chat-completions/types.ts';
 import { type ImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -18,13 +18,13 @@ const fixedProcessor: ImageProcessor = {
   compressToWebp: () => Promise.resolve(new Uint8Array([1, 2, 3])),
 };
 
-const invocation = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsBoundaryCtx => ({
+const invocation = (payload: OpenAIChatCompletionsPayloadEx): OpenAIChatCompletionsBoundaryCtx => ({
   payload,
   headers: new Headers(),
   model: stubProviderModel({ endpoints: { openaiChatCompletions: {} } }),
 });
 
-const imageUrl = (payload: OpenAIChatCompletionsPayload): string => {
+const imageUrl = (payload: OpenAIChatCompletionsPayloadEx): string => {
   const part = (payload.messages[0].content as Array<{ type: string; image_url?: { url: string } }>).find(p => p.type === 'image_url');
   return part?.image_url?.url ?? '';
 };
@@ -35,7 +35,7 @@ test('rewrites a base64 image_url data URL to a WebP data URL', async () => {
   const textPart = { type: 'text' as const, text: 'look' };
   const imagePart = { type: 'image_url' as const, image_url: { url: 'data:image/png;base64,AAAA', detail: 'high' as const } };
   const untouchedMessage = { role: 'user' as const, content: [{ type: 'image_url' as const, image_url: { url: 'https://example.com/cat.png' } }] };
-  const payload: OpenAIChatCompletionsPayload = {
+  const payload: OpenAIChatCompletionsPayloadEx = {
     model: 'gpt-test',
     messages: [
       {
@@ -68,7 +68,7 @@ test('rewrites a base64 image_url data URL to a WebP data URL', async () => {
 test('leaves remote https image references untouched', async () => {
   initImageProcessor(fixedProcessor);
 
-  const payload: OpenAIChatCompletionsPayload = {
+  const payload: OpenAIChatCompletionsPayloadEx = {
     model: 'gpt-test',
     messages: [
       {

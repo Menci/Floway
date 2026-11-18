@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { withInitiatorHeaderSet } from '../../../src/interceptors/openai-chat-completions/set-initiator-header.ts';
 import type { OpenAIChatCompletionsBoundaryCtx } from '../../../src/interceptors/openai-chat-completions/types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -13,7 +13,7 @@ const stubRequest = {};
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {})(), testTelemetryModelIdentity));
 
-const invocation = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsBoundaryCtx => ({
+const invocation = (payload: OpenAIChatCompletionsPayloadEx): OpenAIChatCompletionsBoundaryCtx => ({
   payload,
   headers: new Headers(),
   model: stubProviderModel({ endpoints: { openaiChatCompletions: {} } }),

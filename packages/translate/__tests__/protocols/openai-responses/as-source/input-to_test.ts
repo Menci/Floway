@@ -109,7 +109,7 @@ test.each([
 ])('preserves unrecognized custom format in IR and rejects it at target writing: %j', async format => {
   const payload: OpenAIResponsesRequestPayloadEx = {
     model: 'm', stream: true, input: [],
-    tools: [{ type: 'custom', name: 'edit', format }],
+    tools: [{ type: 'custom', name: 'edit', format: format as never }],
   };
   const tool = readOpenAIResponsesRequest(payload).request.tools?.[0];
   expect(tool).toEqual({ type: 'custom', name: 'edit', format: { type: 'unrecognized', value: format } });
@@ -126,7 +126,7 @@ test('an allowed-tools subset does not hide an unrecognized tool declaration', a
     model: 'm', stream: true, input: [],
     tools: [
       { type: 'function', name: 'read', parameters: { type: 'object', properties: {} }, strict: false },
-      { type: 'custom', name: 'edit', format: { type: 'future_format' } },
+      { type: 'custom', name: 'edit', format: { type: 'future_format' } as never },
     ],
     tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: 'read' }] },
   };

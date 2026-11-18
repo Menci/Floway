@@ -477,7 +477,7 @@ test('openaiResponsesResultToEvents omits image_generation_call completed event 
           id: 'ig_1',
           status: 'failed',
           result: null,
-          error: { message: 'failed', code: 'server_error' },
+          error: { message: 'failed', code: 'server_error', type: 'server_error', param: null },
         },
       ],
       error: null,

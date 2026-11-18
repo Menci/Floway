@@ -7,7 +7,7 @@ import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayloadEx, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import type { FlagId } from '@floway-dev/provider/flags';
@@ -17,7 +17,7 @@ const API_KEY_ID = 'key_chat_completions_attempt_test';
 
 const makeGatewayCtx = () => mockChatGatewayCtx({ apiKeyId: API_KEY_ID, wantsStream: true });
 
-const makePayload = (overrides: Partial<OpenAIChatCompletionsPayload> = {}): OpenAIChatCompletionsPayload => ({
+const makePayload = (overrides: Partial<OpenAIChatCompletionsPayloadEx> = {}): OpenAIChatCompletionsPayloadEx => ({
   model: 'test-model',
   messages: [{ role: 'user', content: 'hello' }],
   ...overrides,
@@ -124,9 +124,9 @@ test('generate native openai-chat-completions target calls provider.callOpenAICh
 
 test('generate native target applies role compatibility flags in target-chain order', async () => {
   installRepo();
-  let observedBody: Omit<OpenAIChatCompletionsPayload, 'model'> | undefined;
+  let observedBody: Omit<OpenAIChatCompletionsPayloadEx, 'model'> | undefined;
   const callOpenAIChatCompletions = vi.fn(async (_model, body): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
-    observedBody = body as Omit<OpenAIChatCompletionsPayload, 'model'>;
+    observedBody = body as Omit<OpenAIChatCompletionsPayloadEx, 'model'>;
     return {
       ok: true,
       events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()),

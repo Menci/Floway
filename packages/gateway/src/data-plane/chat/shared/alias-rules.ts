@@ -11,13 +11,13 @@
 import type { AnthropicMessagesPayload, AnthropicMessagesThinkingDisplay } from '@floway-dev/protocols/anthropic-messages';
 import { FAST_SERVICE_TIER, isFastServiceTier, type AliasRules } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 
 const hasReasoning = (rules: AliasRules): rules is AliasRules & { reasoning: NonNullable<AliasRules['reasoning']> } =>
   rules.reasoning !== undefined;
 
-export const applyRulesToUpstreamOpenAIChatCompletions = (body: OpenAIChatCompletionsPayload, rules: AliasRules): void => {
+export const applyRulesToUpstreamOpenAIChatCompletions = (body: OpenAIChatCompletionsPayloadEx, rules: AliasRules): void => {
   if (hasReasoning(rules)) {
     const { effort } = rules.reasoning;
     if (effort !== undefined) body.reasoning_effort = effort;

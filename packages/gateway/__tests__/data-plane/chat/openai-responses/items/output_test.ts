@@ -9,7 +9,7 @@ import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy } from '../test-policy.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIResponsesOutputReasoning, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesOutputItemEx, OpenAIResponsesOutputReasoning, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 const frames = async function* (response: OpenAIResponsesResultEx): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   const item = response.output[0];
@@ -448,7 +448,7 @@ test('client output refuses to persist an id-less upstream item', async () => {
     role: 'assistant' as const,
     status: 'completed' as const,
     content: [{ type: 'output_text' as const, text: 'answer', annotations: [] }],
-  };
+  } as unknown as OpenAIResponsesOutputItemEx;
   const result: OpenAIResponsesResultEx = {
     id: 'resp_upstream',
     object: 'response',
@@ -526,7 +526,7 @@ test('interrupted output persists completed items after a discarded output_index
   expect(await repo.openaiResponsesItems.lookupMany('key-a', [pending.id], 0)).toEqual([]);
 });
 
-test('store=false forwards an id-less finalized item without persistence work', async () => {
+test('store=false also rejects an id-less finalized item', async () => {
   initRepo(new InMemoryRepo());
   const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), false);
   const item = {
@@ -534,7 +534,7 @@ test('store=false forwards an id-less finalized item without persistence work', 
     role: 'assistant' as const,
     status: 'completed' as const,
     content: [{ type: 'output_text' as const, text: 'answer', annotations: [] }],
-  };
+  } as unknown as OpenAIResponsesOutputItemEx;
   const response: OpenAIResponsesResultEx = {
     id: 'resp_upstream',
     object: 'response',
@@ -551,18 +551,13 @@ test('store=false forwards an id-less finalized item without persistence work', 
     yield eventFrame({ type: 'response.completed', response });
   };
 
-  const events: OpenAIResponsesStreamEventEx[] = [];
-  for await (const frame of wrapOpenAIResponsesClientOutput(input(), {
-    store,
-    responseId: 'resp_public',
-  })) if (frame.type === 'event') events.push(frame.event);
-
-  expect(events.map(event => event.type)).toEqual([
-    'response.output_item.added',
-    'response.output_text.delta',
-    'response.output_item.done',
-    'response.completed',
-  ]);
+  const collect = async () => {
+    for await (const _frame of wrapOpenAIResponsesClientOutput(input(), {
+      store,
+      responseId: 'resp_public',
+    })) { /* drain */ }
+  };
+  await expect(collect()).rejects.toThrow('OpenAI Responses message output has no id');
 });
 
 test('client output forwards terminal item drift while retaining the first done snapshot', async () => {
@@ -632,7 +627,7 @@ test('client output forwards repeated done drift while retaining the first done 
   });
 });
 
-test('later done and terminal views may omit id after first-done durability', async () => {
+test('later done and terminal views cannot omit the required message id', async () => {
   const { repo, store } = memoryOutputHarness();
   const first = {
     type: 'message' as const,
@@ -646,7 +641,7 @@ test('later done and terminal views may omit id after first-done durability', as
     status: 'completed' as const,
     role: 'assistant' as const,
     content: [{ type: 'output_text' as const, text: 'later', annotations: [] }],
-  };
+  } as unknown as OpenAIResponsesOutputItemEx;
   const response: OpenAIResponsesResultEx = {
     id: 'resp_upstream',
     object: 'response',
@@ -661,16 +656,13 @@ test('later done and terminal views may omit id after first-done durability', as
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: later });
     yield eventFrame({ type: 'response.completed', response });
   })();
-  const events: OpenAIResponsesStreamEventEx[] = [];
-  for await (const frame of wrapOpenAIResponsesClientOutput(input, {
-    store,
-    responseId: 'resp_public',
-  })) if (frame.type === 'event') events.push(frame.event);
-
-  const doneItems = events.flatMap(event => event.type === 'response.output_item.done' ? [event.item] : []);
-  expect(doneItems).toEqual([first, later]);
-  const terminal = events.at(-1);
-  expect(terminal?.type === 'response.completed' && terminal.response.output).toEqual([later]);
+  const collect = async () => {
+    for await (const _frame of wrapOpenAIResponsesClientOutput(input, {
+      store,
+      responseId: 'resp_public',
+    })) { /* drain */ }
+  };
+  await expect(collect()).rejects.toThrow('OpenAI Responses message output has no id');
   expect((await repo.openaiResponsesItems.lookupMany('key-a', [first.id], 0))[0].payload.item).toEqual(first);
 });
 
