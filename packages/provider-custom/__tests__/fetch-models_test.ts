@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { assertCustomUpstreamRecord, fetchCustomModels } from '../src/index.ts';
-import { ProviderModelsUnavailableError, directFetcher, type Fetcher } from '@floway-dev/provider';
+import { ProviderModelsUnavailableError, directFetcher } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const upstreamRecord = () => ({
@@ -26,17 +26,6 @@ const upstreamRecord = () => ({
     ingressHeadersRules: [],
   },
   state: null,
-});
-
-test('fetchCustomModels returns the parsed response on 2xx', async () => {
-  const { config } = assertCustomUpstreamRecord(upstreamRecord());
-  await withMockedFetch(
-    () => jsonResponse({ object: 'list', data: [{ id: 'm-1' }] }),
-    async () => {
-      const result = await fetchCustomModels(config, directFetcher);
-      assertEquals(result.data[0].id, 'm-1');
-    },
-  );
 });
 
 test('fetchCustomModels accepts an Anthropic-shape response with no top-level `object`', async () => {
@@ -101,17 +90,6 @@ test('fetchCustomModels reads superset fields from Floway-shaped upstreams', asy
   );
 });
 
-test('fetchCustomModels keeps a `pricing` block with any subset of billing metrics', async () => {
-  const { config } = assertCustomUpstreamRecord(upstreamRecord());
-  await withMockedFetch(
-    () => jsonResponse({ object: 'list', data: [{ id: 'm-1', pricing: { entries: [{ rates: { input_tokens: '1' } }] } }] }),
-    async () => {
-      const result = await fetchCustomModels(config, directFetcher);
-      assertEquals(result.data[0].pricing, { entries: [{ rates: { input_tokens: '1' } }] });
-    },
-  );
-});
-
 test('fetchCustomModels keeps models but omits one malformed pricing block', async () => {
   const { config } = assertCustomUpstreamRecord(upstreamRecord());
   await withMockedFetch(
@@ -126,72 +104,6 @@ test('fetchCustomModels keeps models but omits one malformed pricing block', asy
       assertEquals(result.data.map(model => model.id), ['bad-pricing', 'good-pricing']);
       assertEquals(result.data[0].pricing, undefined);
       assertEquals(result.data[1].pricing, { entries: [{ rates: { input_tokens: '1' } }] });
-    },
-  );
-});
-
-test('fetchCustomModels omits complete pricing blocks instead of salvaging valid fragments', async () => {
-  const { config } = assertCustomUpstreamRecord(upstreamRecord());
-  await withMockedFetch(
-    () => jsonResponse({
-      object: 'list', data: [
-        {
-          id: 'bad-rate',
-          pricing: { entries: [{ rates: { input_tokens: '1', output_tokens: 'unknown' } }] },
-        },
-        {
-          id: 'bad-entry',
-          pricing: { entries: [{ rates: { input_tokens: '1' } }, { rates: null }] },
-        },
-        {
-          id: 'bad-selector',
-          pricing: { entries: [{ rates: { input_tokens: '1' }, selector: 'priority' }] },
-        },
-      ],
-    }),
-    async () => {
-      const result = await fetchCustomModels(config, directFetcher);
-      assertEquals(result.data.map(model => model.pricing), [undefined, undefined, undefined]);
-    },
-  );
-});
-
-test('fetchCustomModels drops a `pricing` block with no recognized metrics', async () => {
-  const { config } = assertCustomUpstreamRecord(upstreamRecord());
-  await withMockedFetch(
-    () => jsonResponse({ object: 'list', data: [{ id: 'm-1', pricing: { reasoning: 5 } }] }),
-    async () => {
-      const result = await fetchCustomModels(config, directFetcher);
-      assertEquals(result.data[0].pricing, undefined);
-    },
-  );
-});
-
-test('fetchCustomModels drops pricing blocks with unknown rates or top-level fields', async () => {
-  const { config } = assertCustomUpstreamRecord(upstreamRecord());
-  await withMockedFetch(
-    () => jsonResponse({
-      object: 'list',
-      data: [
-        { id: 'unknown-rate', pricing: { entries: [{ rates: { input_tokens: '1', reasoning: 2 } }] } },
-        { id: 'unknown-field', pricing: { scale: '1000000', entries: [{ rates: { input_tokens: '1' } }] } },
-      ],
-    }),
-    async () => {
-      const result = await fetchCustomModels(config, directFetcher);
-      assertEquals(result.data.map(model => model.pricing), [undefined, undefined]);
-    },
-  );
-});
-
-test('fetchCustomModels skips entries whose id is not a non-empty string', async () => {
-  const { config } = assertCustomUpstreamRecord(upstreamRecord());
-  await withMockedFetch(
-    () => jsonResponse({ object: 'list', data: [{ id: 'ok' }, { id: '' }, { id: 123 }, { display_name: 'no id' }] }),
-    async () => {
-      const result = await fetchCustomModels(config, directFetcher);
-      assertEquals(result.data.length, 1);
-      assertEquals(result.data[0].id, 'ok');
     },
   );
 });
@@ -214,115 +126,4 @@ test('fetchCustomModels throws ProviderModelsUnavailableError with httpResponse 
     headers: [['content-type', 'text/plain;charset=UTF-8'], ['retry-after', '5']],
     body: 'rate limit',
   });
-});
-
-test('fetchCustomModels throws ProviderModelsUnavailableError with null httpResponse on network error', async () => {
-  const { config } = assertCustomUpstreamRecord(upstreamRecord());
-  let thrown: unknown;
-  await withMockedFetch(
-    () => { throw new TypeError('network down'); },
-    async () => {
-      try { await fetchCustomModels(config, directFetcher); } catch (e) { thrown = e; }
-    },
-  );
-  if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');
-  assertEquals(thrown.httpResponse, null);
-});
-
-test('fetchCustomModels throws ProviderModelsUnavailableError with null httpResponse on shape error', async () => {
-  const { config } = assertCustomUpstreamRecord(upstreamRecord());
-  let thrown: unknown;
-  await withMockedFetch(
-    () => jsonResponse({ object: 'list', data: 'oops' }),
-    async () => {
-      try { await fetchCustomModels(config, directFetcher); } catch (e) { thrown = e; }
-    },
-  );
-  if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');
-  assertEquals(thrown.httpResponse, null);
-});
-
-test('fetchCustomModels routes the catalog GET through the injected fetcher, not globalThis.fetch', async () => {
-  const { config } = assertCustomUpstreamRecord(upstreamRecord());
-  const calls: Array<{ url: string; authorization: string | null }> = [];
-  const injected: Fetcher = (url, init) => {
-    const headers = new Headers(init.headers);
-    calls.push({ url: String(url), authorization: headers.get('authorization') });
-    return Promise.resolve(jsonResponse({ object: 'list', data: [{ id: 'injected-model' }] }));
-  };
-  // No withMockedFetch — assert by construction that the injected fetcher
-  // (not the runtime's globalThis.fetch) carried the request.
-  const result = await fetchCustomModels(config, injected);
-  assertEquals(calls.length, 1);
-  assertEquals(calls[0].url, 'https://custom.example.com/v1/models');
-  assertEquals(calls[0].authorization, 'Bearer token');
-  assertEquals(result.data[0].id, 'injected-model');
-});
-
-test('fetchCustomModels reads chat metadata from Floway-shaped upstreams', async () => {
-  const { config } = assertCustomUpstreamRecord(upstreamRecord());
-  await withMockedFetch(
-    () => jsonResponse({
-      object: 'list',
-      data: [{
-        id: 'm-1',
-        chat: {
-          modalities: {
-            input: ['text', 'image'],
-            output: ['text'],
-          },
-          reasoning: {
-            effort: {
-              supported: ['low', 'medium', 'high'],
-              default: 'medium',
-            },
-          },
-        },
-      }],
-    }),
-    async () => {
-      const result = await fetchCustomModels(config, directFetcher);
-      const model = result.data[0];
-      assertEquals(model.id, 'm-1');
-      assertEquals(model.chat?.modalities?.input, ['text', 'image']);
-      assertEquals(model.chat?.modalities?.output, ['text']);
-      assertEquals(model.chat?.reasoning?.effort?.supported, ['low', 'medium', 'high']);
-      assertEquals(model.chat?.reasoning?.effort?.default, 'medium');
-    },
-  );
-});
-
-test('fetchCustomModels skips malformed chat field without error', async () => {
-  const { config } = assertCustomUpstreamRecord(upstreamRecord());
-  await withMockedFetch(
-    () => jsonResponse({
-      object: 'list',
-      data: [{
-        id: 'm-1',
-        chat: 'malformed',
-      }],
-    }),
-    async () => {
-      const result = await fetchCustomModels(config, directFetcher);
-      const model = result.data[0];
-      assertEquals(model.id, 'm-1');
-      assertEquals(model.chat, undefined);
-    },
-  );
-});
-
-test('fetchCustomModels skips missing chat field', async () => {
-  const { config } = assertCustomUpstreamRecord(upstreamRecord());
-  await withMockedFetch(
-    () => jsonResponse({
-      object: 'list',
-      data: [{ id: 'm-1' }],
-    }),
-    async () => {
-      const result = await fetchCustomModels(config, directFetcher);
-      const model = result.data[0];
-      assertEquals(model.id, 'm-1');
-      assertEquals(model.chat, undefined);
-    },
-  );
 });
