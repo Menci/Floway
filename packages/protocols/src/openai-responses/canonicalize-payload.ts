@@ -83,6 +83,9 @@ export const canonicalizeOpenAIResponsesPayload = (value: unknown): CanonicalOpe
       } else if (typeof item !== 'object' || item === null || (item as { type?: unknown }).type === undefined) {
         return { error: { message: 'Untyped OpenAI Responses input items require a valid role and content.', param: `input[${index}]` } };
       } else {
+        if ((item as { type?: unknown }).type === 'web_search_call' && Object.hasOwn(item, 'results')) {
+          return { error: { message: 'OpenAI Responses input web_search_call items must not include results.', param: `input[${index}].results` } };
+        }
         items.push(item as CanonicalOpenAIResponsesInputItem);
       }
     }

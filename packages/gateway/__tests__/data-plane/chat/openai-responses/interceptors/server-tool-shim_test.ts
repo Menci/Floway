@@ -3859,14 +3859,12 @@ test('input preprocessor: each web_search_call item becomes one shim call + func
     id: 'ws_old_search',
     status: 'completed',
     action: { type: 'search', queries: ['hello world'] },
-    results: [{ type: 'text_result', url: 'https://x', title: 'X', snippet: 'snippet body' }],
   };
   const replayedOpen: OpenAIResponsesInputWebSearchCall = {
     type: 'web_search_call',
     id: 'ws_old_open',
     status: 'completed',
     action: { type: 'open_page', url: 'https://y' },
-    results: [{ type: 'text_result', url: 'https://y', title: 'Y', snippet: 'page body' }],
   };
   const inv = makeInvocation({
     payload: {
@@ -3919,7 +3917,6 @@ test('input preprocessor: replay-only activation leaves hosted tool_choice uncha
           id: 'ws_old_search',
           status: 'completed',
           action: { type: 'search', queries: ['hello world'] },
-          results: [{ type: 'text_result', url: 'https://x', title: 'X', snippet: 'snippet body' }],
         },
       ],
     },

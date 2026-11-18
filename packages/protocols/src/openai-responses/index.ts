@@ -332,7 +332,6 @@ export interface OpenAIResponsesInputWebSearchCall {
   id?: string;
   status?: 'completed' | 'in_progress' | 'searching' | 'failed';
   action?: OpenAIResponsesWebSearchAction;
-  results?: OpenAIResponsesWebSearchResultEx[];
 }
 
 export interface OpenAIResponsesFileSearchResult {

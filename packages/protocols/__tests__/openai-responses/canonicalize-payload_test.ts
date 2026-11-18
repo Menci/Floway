@@ -82,6 +82,18 @@ test('rejects a separate namespace on callable tool selectors', () => {
   }
 });
 
+test('rejects output-only results on an input web_search_call', () => {
+  expect(canonicalizeOpenAIResponsesPayload({
+    model: 'm',
+    input: [{ type: 'web_search_call', id: 'ws_1', status: 'completed', results: [] }],
+  })).toEqual({
+    error: {
+      message: 'OpenAI Responses input web_search_call items must not include results.',
+      param: 'input[0].results',
+    },
+  });
+});
+
 test('recognizes both native Codex audio references in shorthand messages', () => {
   for (const reference of [{ audio_url: 'data:audio/wav;base64,YQ==' }, { file_id: 'file-1' }]) {
     const content = [{ type: 'input_audio', ...reference }];
