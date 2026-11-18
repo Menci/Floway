@@ -25,7 +25,8 @@ export const openaiResponsesServe = {
     // Iterate the affinity-selected candidates: success (SSE stream opened) is the
     // final answer; per-candidate failures fall through so a transient
     // 5xx/429/network does not become the request's verdict when another
-    // candidate can serve. The last failure surfaces verbatim on exhaustion.
+    // candidate can serve. On exhaustion, the selected failure surfaces verbatim,
+    // preferring the earliest retry hint.
     // Each attempt stamps its private prepared-payload clone with the
     // candidate's canonical model id.
     const result = await iterateCandidates(
