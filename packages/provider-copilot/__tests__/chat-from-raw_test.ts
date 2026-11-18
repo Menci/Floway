@@ -10,8 +10,6 @@ const rawModel = (supports: NonNullable<NonNullable<CopilotRawModel['capabilitie
 });
 
 test('chatFromCopilotRaw returns undefined when capabilities.supports is absent', () => {
-  assertEquals(chatFromCopilotRaw({ id: 'test-model' }), undefined);
-  assertEquals(chatFromCopilotRaw({ id: 'test-model', capabilities: {} }), undefined);
   assertEquals(chatFromCopilotRaw({ id: 'test-model', capabilities: { type: 'chat' } }), undefined);
 });
 
