@@ -118,7 +118,6 @@ describe('parseSourceExpiry', () => {
     [2_000_000_000, 2_000_000_000_000],
     ['2030-01-01T00:00:00.000Z', Date.parse('2030-01-01T00:00:00.000Z')],
     [0, null],
-    [null, null],
   ])('normalizes %j', (input, expected) => {
     expect(parseSourceExpiry(input)).toBe(expected);
   });

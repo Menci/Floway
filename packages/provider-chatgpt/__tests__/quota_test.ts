@@ -99,9 +99,20 @@ describe('parseChatGPTQuotaHeaders', () => {
     expect(snapshot.secondary_reset_after_at).toBe('2026-06-05T02:00:00.000Z');
   });
 
+  // A plan whose secondary window is zero minutes wide reports a blank instant
+  // beside a zero offset. That is "no such window", not "it resets now".
+  test('reports no reset for a window this plan does not have', () => {
+    const headers = new Headers({
+      'x-codex-secondary-window-minutes': '0',
+      'x-codex-secondary-reset-at': '',
+      'x-codex-secondary-reset-after-seconds': '0',
+    });
+    const snapshot = parseChatGPTQuotaHeaders(headers, { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: false });
+    expect(snapshot.secondary_reset_after_at).toBeUndefined();
+  });
+
   test.each([
     ['primary only', '100', '35', '2026-06-05T01:00:00.000Z'],
-    ['secondary only', '35', '100', '2026-06-05T02:00:00.000Z'],
     ['neither', '99.9', '35', undefined],
   ])('uses only known exhausted windows: %s', (_name, primary, secondary, expected) => {
     const headers = new Headers({

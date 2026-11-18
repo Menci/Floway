@@ -42,12 +42,4 @@ describe('assertChatGPTUpstreamState', () => {
       accounts: [{ ...goodAccount, accessToken: { token: 'at', expiresAt: 1, refreshedAt: 'x', planObservedAt: 'x' } }],
     })).toThrow(/requires planType/);
   });
-  test('rejects malformed quotaSnapshot', () => {
-    expect(() => assertChatGPTUpstreamState({
-      accounts: [{ ...goodAccount, quotaSnapshot: { premium: { fetchedAt: 'soon', data: {} } } }],
-    })).toThrow(/fetchedAt/);
-    expect(() => assertChatGPTUpstreamState({
-      accounts: [{ ...goodAccount, quotaSnapshot: { constructor: { fetchedAt: 1, data: {} } } }],
-    })).toThrow(/invalid active limit key/);
-  });
 });

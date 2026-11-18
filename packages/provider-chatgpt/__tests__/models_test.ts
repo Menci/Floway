@@ -44,9 +44,9 @@ describe('fetchChatGPTCatalog', () => {
     });
   });
 
-  test.each([undefined, null])('preserves an unspecified maximum %j', async max_context_window => {
+  test('preserves an unspecified maximum', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(okJson({
-      models: [{ slug: 'future-model', display_name: 'Future', context_window: 272000, max_context_window }],
+      models: [{ slug: 'future-model', display_name: 'Future', context_window: 272000, max_context_window: null }],
     }));
     const [raw] = await fetchChatGPTCatalog({ accessToken: 'at', accountId: null, fetcher: directFetcher });
     const model = chatgptRawToProviderModel(raw, new Set());

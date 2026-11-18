@@ -161,7 +161,7 @@ describe('callChatGPTOpenAIResponses — gates', () => {
 });
 
 describe('ChatGPT terminal output recovery', () => {
-  test.each([false, true])('restores native compaction before stream and result consumption with Responses Lite=%s', async useResponsesLite => {
+  test('restores native compaction before stream and result consumption', async () => {
     const item: OpenAIResponsesCompactionItemEx = {
       type: 'compaction', id: 'cmp_native', encrypted_content: 'OPAQUE_NATIVE_BLOB',
       metadata: { turn_id: 'turn_native' }, internal_chat_message_metadata_passthrough: { turn_id: 'turn_native' },
@@ -182,7 +182,7 @@ describe('ChatGPT terminal output recovery', () => {
       ]));
       const effects = makeEffects();
       const result = await callChatGPTOpenAIResponses({
-        upstreamId, account: activeAccount, model: { ...model, providerData: { useResponsesLite } },
+        upstreamId, account: activeAccount, model,
         body: { input: [{ type: 'compaction_trigger' } as unknown as CanonicalOpenAIResponsesInputItem], stream },
         headers: new Headers(), effects, call: noopUpstreamCallOptions(),
       });

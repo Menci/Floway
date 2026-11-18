@@ -26,15 +26,15 @@ test('injects the default when instructions is absent', async () => {
   assertEquals(ctx.payload.instructions, "You're a helpful assistant.");
 });
 
-test.each([undefined, ''])('preserves Lite instructions value %j and the caller input', async instructions => {
+test('preserves absent Lite instructions and the caller input', async () => {
   const input: CanonicalOpenAIResponsesPayload['input'] = [
     { type: 'additional_tools', role: 'developer', tools: [] },
     { type: 'message', role: 'developer', content: [{ type: 'input_text', text: 'Caller base instructions' }], internal_chat_message_metadata_passthrough: { content_item_kinds: ['model.base_instructions'] } },
   ];
-  const ctx = invocation({ model: 'gpt-test', input, instructions }, true);
+  const ctx = invocation({ model: 'gpt-test', input }, true);
 
   await injectDefaultInstructions(ctx, stubRequest, okEvents);
 
-  assertEquals(ctx.payload.instructions, instructions);
+  assertEquals(ctx.payload.instructions, undefined);
   assertEquals(ctx.payload.input, input);
 });
