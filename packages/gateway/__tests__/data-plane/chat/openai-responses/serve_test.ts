@@ -165,7 +165,7 @@ test('generate routes a native OpenAI Responses candidate end to end', async () 
     action: 'generate', ok: true,
     events: makeProtocolFrames([completed]),
     modelKey: 'test-model-key',
-    headers: new Headers(),
+    http: { status: 200, headers: new Headers() },
   }));
   const candidate = makeCandidate({ upstream: 'up_a', callOpenAIResponses });
   queueResolution([candidate]);
@@ -196,7 +196,7 @@ test('compact returns a result envelope from the wrapped attempt', async () => {
   const callOpenAIResponses = vi.fn(async (model: unknown, _body: unknown, action: OpenAIResponsesAction): Promise<ProviderOpenAIResponsesResult> => {
     if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
     observedModelIds.push((model as { id: string }).id);
-    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
+    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key', http: { status: 200, headers: new Headers() } };
   });
   const candidate = makeCandidate({ upstream: 'up_a', modelId: 'gpt-target', callOpenAIResponses });
   queueResolution([candidate]);
@@ -234,7 +234,7 @@ test('generate falls through to the next candidate when the first yields an upst
     const item = (body as Omit<CanonicalOpenAIResponsesPayload, 'model'>).input[0];
     if (item.type !== 'message' || !Array.isArray(item.content) || item.content[0]?.type !== 'input_image') throw new Error('expected image content');
     item.content[0].image_url = 'data:image/webp;base64,COMPRESSED';
-    return { action: 'generate', ok: false, response: firstError, modelKey: 'first-key' };
+    return { action: 'generate', ok: false, http: firstError, modelKey: 'first-key' };
   });
   const completed: OpenAIResponsesStreamEventEx = {
     type: 'response.completed',
@@ -246,7 +246,7 @@ test('generate falls through to the next candidate when the first yields an upst
     const item = (body as Omit<CanonicalOpenAIResponsesPayload, 'model'>).input[0];
     if (item.type !== 'message' || !Array.isArray(item.content) || item.content[0]?.type !== 'input_image') throw new Error('expected image content');
     fallbackImageUrl = item.content[0].image_url;
-    return { action: 'generate', ok: true, events: makeProtocolFrames([completed]), modelKey: 'second-key', headers: new Headers() };
+    return { action: 'generate', ok: true, events: makeProtocolFrames([completed]), modelKey: 'second-key', http: { status: 200, headers: new Headers() } };
   });
   const first = makeCandidate({ upstream: 'up_a', callOpenAIResponses: firstCall });
   const second = makeCandidate({ upstream: 'up_b', callOpenAIResponses: secondCall });
@@ -280,7 +280,7 @@ test('mid-attempt throw stamps telemetry with the throwing candidate, not the pr
     status: 502, headers: new Headers({ 'content-type': 'application/json' }),
   });
   const firstCall = vi.fn(async (): Promise<ProviderOpenAIResponsesResult> => ({
-    action: 'generate', ok: false, response: firstError, modelKey: 'first-key',
+    action: 'generate', ok: false, http: firstError, modelKey: 'first-key',
   }));
   const secondCall = vi.fn(async (): Promise<ProviderOpenAIResponsesResult> => {
     throw new Error('simulated provider-layer JS exception');
@@ -319,7 +319,7 @@ test('generate renders model-missing when no candidates are available', async ()
 
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
-  assertEquals(result.status, 404);
+  assertEquals(result.http.status, 404);
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.message, 'Model unknown-model is not available on any configured upstream.');
@@ -340,7 +340,7 @@ test('generate filters out candidates whose endpoints do not satisfy the respons
 
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
-  assertEquals(result.status, 400);
+  assertEquals(result.http.status, 400);
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body.error.type, 'invalid_request_error');
   assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
@@ -359,7 +359,7 @@ test('compact renders model-missing as a 404 when no candidates are available', 
 
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
-  assertEquals(result.status, 404);
+  assertEquals(result.http.status, 404);
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body.error.type, 'invalid_request_error');
   assert(typeof body.error.message === 'string' && body.error.message.includes('not available'));
@@ -380,7 +380,7 @@ test('compact renders model-unsupported as a 400 when the only candidate\'s endp
 
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
-  assertEquals(result.status, 400);
+  assertEquals(result.http.status, 400);
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body.error.type, 'invalid_request_error');
   assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
@@ -487,7 +487,7 @@ test('generate falls through translate-out to messages target', async () => {
       { type: 'message_stop' },
     ]),
     modelKey: 'messages-key',
-    headers: new Headers(),
+    http: { status: 200, headers: new Headers() },
   }));
   const candidate = makeCandidate({ upstream: 'up_m', endpoints: { anthropicMessages: {} }, callAnthropicMessages });
   queueResolution([candidate]);
@@ -540,7 +540,7 @@ test('Anthropic Messages biology refusal becomes a non-retryable Codex OpenAI Re
       { type: 'message_stop' },
     ]),
     modelKey: 'messages-key',
-    headers: new Headers(),
+    http: { status: 200, headers: new Headers() },
   }));
   const candidate = makeCandidate({ upstream: 'up_m', endpoints: { anthropicMessages: {} }, callAnthropicMessages });
   queueResolution([candidate]);
@@ -582,7 +582,7 @@ test('generate falls through translate-out to openai-chat-completions target', a
       },
     ]),
     modelKey: 'chat-completions-key',
-    headers: new Headers(),
+    http: { status: 200, headers: new Headers() },
   }));
   const candidate = makeCandidate({ upstream: 'up_c', endpoints: { openaiChatCompletions: {} }, callOpenAIChatCompletions });
   queueResolution([candidate]);
@@ -606,7 +606,7 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   const callOpenAIResponses = vi.fn(async (model: unknown, body: unknown): Promise<ProviderOpenAIResponsesResult> => {
     observedModelIds.push((model as { id: string }).id);
     capturedBodies.push(body as OpenAIResponsesPayloadEx);
-    return { action: 'generate', ok: true, events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: makeOpenAIResponsesResult() }]), modelKey: 'gpt-5.4', headers: new Headers() };
+    return { action: 'generate', ok: true, events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: makeOpenAIResponsesResult() }]), modelKey: 'gpt-5.4', http: { status: 200, headers: new Headers() } };
   });
   const candidate = makeCandidate({ upstream: 'up_a', modelId: 'gpt-5.4', callOpenAIResponses });
   queueResolution([candidate], {
@@ -648,7 +648,7 @@ test('alias whose targets have no kind-matching binding surfaces as the regular 
 
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
-  assertEquals(result.status, 404);
+  assertEquals(result.http.status, 404);
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body.error.message, 'Model gpt-fast is not available on any configured upstream.');
 });

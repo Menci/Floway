@@ -63,7 +63,7 @@ const callRespond = async (wantsStream: boolean): Promise<Response> => {
     const result: ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> = eventResult(
       anthropicMessagesProtocolFrames(),
       testTelemetryModelIdentity,
-      { headers: forwardedHeadersFixture() },
+      { http: { status: 200, headers: forwardedHeadersFixture() } },
     );
     const response = await respondAnthropicMessages(c, result, wantsStream, makeRespondCtx());
     captured = response;
@@ -148,7 +148,7 @@ test('anthropic-messages absent optional diagnostics stay absent and upstream er
   const app = new Hono().get('/', c => respondAnthropicMessages(c, internalErrorResult(502, { type: 'internal_error', name: 'Error', message: 'minimal' }), false, mockChatGatewayCtx()));
   assertEquals(await (await app.request('/')).json(), { type: 'error', error: { type: 'internal_error', message: 'minimal', provider_specific_fields: { name: 'Error' } } });
   const raw = '{"error":{"message":"native","stack":"provider-owned","custom":true}}';
-  const native = new Hono().get('/', c => respondAnthropicMessages(c, { type: 'api-error', source: 'upstream', status: 429, headers: new Headers({ 'content-type': 'application/json', 'x-native': 'trace' }), body: new TextEncoder().encode(raw) }, false, mockChatGatewayCtx()));
+  const native = new Hono().get('/', c => respondAnthropicMessages(c, { type: 'api-error', source: 'upstream', http: { status: 429, headers: new Headers({ 'content-type': 'application/json', 'x-native': 'trace' }) }, body: new TextEncoder().encode(raw) }, false, mockChatGatewayCtx()));
   const response = await native.request('/');
   assertEquals(response.status, 429);
   assertEquals(response.headers.get('x-native'), 'trace');

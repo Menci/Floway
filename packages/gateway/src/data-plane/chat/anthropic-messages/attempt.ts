@@ -84,7 +84,7 @@ export const anthropicMessagesAttempt = {
     const response = await runInterceptors(invocation, ctx, anthropicMessagesCountTokensInterceptors, async () => {
       if (candidate.rules !== undefined) applyRulesToUpstreamAnthropicMessages(invocation.payload, candidate.rules);
       const { model: _model, ...body } = invocation.payload;
-      const { response } = await candidate.provider.instance.callAnthropicMessagesCountTokens(
+      const { http: response } = await candidate.provider.instance.callAnthropicMessagesCountTokens(
         providerModelOf(candidate),
         body,
         ctx.abortSignal,

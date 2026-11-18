@@ -26,8 +26,7 @@ export const rewriteContextWindowError: CopilotAnthropicMessagesBoundaryIntercep
 
   return {
     ...result,
-    status: 400,
-    headers: new Headers({ 'content-type': 'application/json' }),
+    http: { status: 400, headers: new Headers({ 'content-type': 'application/json' }) },
     body: buildPromptTooLongBody(),
   };
 };

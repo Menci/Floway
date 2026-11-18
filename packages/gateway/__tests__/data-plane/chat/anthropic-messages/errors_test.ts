@@ -13,8 +13,8 @@ test('inputErrorResult renders an Anthropic 400 invalid_request_error envelope w
 
   assertEquals(result.type, 'api-error');
   assertEquals(result.source, 'gateway');
-  assertEquals(result.status, 400);
-  assertEquals(result.headers.get('content-type'), 'application/json');
+  assertEquals(result.http.status, 400);
+  assertEquals(result.http.headers.get('content-type'), 'application/json');
 
   const body = bodyOf(result);
   assertEquals(body.type, 'error');

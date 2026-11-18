@@ -882,8 +882,7 @@ const anthropicMessagesWebSearchInvalidRequestBody = (message: string) => ({
 const buildSyntheticInvalidRequestUpstreamError = (message: string) => ({
   type: 'api-error' as const,
   source: 'gateway' as const,
-  status: 400,
-  headers: new Headers({ 'content-type': 'application/json' }),
+  http: { status: 400, headers: new Headers({ 'content-type': 'application/json' }) },
   body: new TextEncoder().encode(JSON.stringify(anthropicMessagesWebSearchInvalidRequestBody(message))),
 });
 

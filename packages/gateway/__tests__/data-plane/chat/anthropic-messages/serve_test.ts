@@ -193,7 +193,7 @@ test('generate routes a native Anthropic Messages candidate end to end', async (
       ok: true,
       events: makeProtocolFrames(makeAnthropicMessagesResultEvents()),
       modelKey: 'test-model-key',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
   queueResolution([makeCandidate({ upstream: 'up_a', callAnthropicMessages })]);
@@ -217,7 +217,7 @@ test('generate translates through the OpenAI Responses target when only that end
     action: 'generate', ok: true,
     events: makeProtocolFrames([makeOpenAIResponsesResultEvent()]),
     modelKey: 'responses-model-key',
-    headers: new Headers(),
+    http: { status: 200, headers: new Headers() },
   }));
   queueResolution([makeCandidate({ upstream: 'up_r', endpoints: { openaiResponses: {} }, callOpenAIResponses })]);
 
@@ -237,10 +237,10 @@ test('generate falls through to the next candidate when the first yields an upst
     status: 502, headers: new Headers({ 'content-type': 'application/json' }),
   });
   const firstCall = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: false, response: firstError, modelKey: 'first-key',
+    ok: false, http: firstError, modelKey: 'first-key',
   }));
   const secondCall = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesResultEvents('msg_second')), modelKey: 'second-key', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeAnthropicMessagesResultEvents('msg_second')), modelKey: 'second-key', http: { status: 200, headers: new Headers() },
   }));
   queueResolution([
     makeCandidate({ upstream: 'up_a', callAnthropicMessages: firstCall }),
@@ -266,8 +266,8 @@ test('generate surfaces the last upstream error verbatim when every candidate fa
   const firstError = new Response('first', { status: 503 });
   const lastError = new Response('last', { status: 502 });
   queueResolution([
-    makeCandidate({ upstream: 'up_a', callAnthropicMessages: async () => ({ ok: false, response: firstError, modelKey: 'first-key' }) }),
-    makeCandidate({ upstream: 'up_b', callAnthropicMessages: async () => ({ ok: false, response: lastError, modelKey: 'last-key' }) }),
+    makeCandidate({ upstream: 'up_a', callAnthropicMessages: async () => ({ ok: false, http: firstError, modelKey: 'first-key' }) }),
+    makeCandidate({ upstream: 'up_b', callAnthropicMessages: async () => ({ ok: false, http: lastError, modelKey: 'last-key' }) }),
   ]);
 
   const result = await anthropicMessagesServe.generate({
@@ -277,7 +277,7 @@ test('generate surfaces the last upstream error verbatim when every candidate fa
   });
 
   const failure = assertResultType(result, 'api-error');
-  assertEquals(failure.status, 502);
+  assertEquals(failure.http.status, 502);
 });
 
 test('generate stops at the first candidate when the payload has no reasoning carriers to route on', async () => {
@@ -286,7 +286,7 @@ test('generate stops at the first candidate when the payload has no reasoning ca
     ok: true,
     events: makeProtocolFrames(makeAnthropicMessagesResultEvents()),
     modelKey: 'test-model-key',
-    headers: new Headers(),
+    http: { status: 200, headers: new Headers() },
   }));
   queueResolution([
     makeCandidate({ upstream: 'up_a', callAnthropicMessages }),
@@ -314,7 +314,7 @@ test('generate renders model-missing when no candidates are available', async ()
   });
 
   const failure = assertResultType(result, 'api-error');
-  assertEquals(failure.status, 404);
+  assertEquals(failure.http.status, 404);
   const body = JSON.parse(new TextDecoder().decode(failure.body));
   assertEquals(body.error.type, 'not_found_error');
   assertEquals(body.error.message, 'Model unknown-model is not available on any configured upstream.');
@@ -334,7 +334,7 @@ test('generate filters out candidates whose endpoints do not satisfy the message
   });
 
   const failure = assertResultType(result, 'api-error');
-  assertEquals(failure.status, 400);
+  assertEquals(failure.http.status, 400);
   const body = JSON.parse(new TextDecoder().decode(failure.body));
   assertEquals(body.error.type, 'invalid_request_error');
   assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
@@ -349,7 +349,7 @@ test('countTokens proxies the upstream measurement response as a plain result', 
     observedModelIds.push((model as { id: string }).id);
     callOptions = opts;
     return {
-      response: new Response(JSON.stringify({ input_tokens: 42 }), {
+      http: new Response(JSON.stringify({ input_tokens: 42 }), {
         status: 200,
         headers: new Headers({ 'content-type': 'application/json' }),
       }),
@@ -367,7 +367,7 @@ test('countTokens proxies the upstream measurement response as a plain result', 
   });
 
   const plain = assertResultType(result, 'plain');
-  assertEquals(plain.status, 200);
+  assertEquals(plain.http.status, 200);
   const body = JSON.parse(new TextDecoder().decode(plain.body));
   assertEquals(body.input_tokens, 42);
   assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
@@ -388,7 +388,7 @@ test('countTokens renders model-missing as a 404 when no candidates are availabl
   });
 
   const failure = assertResultType(result, 'api-error');
-  assertEquals(failure.status, 404);
+  assertEquals(failure.http.status, 404);
   const body = JSON.parse(new TextDecoder().decode(failure.body));
   assertEquals(body.error.type, 'not_found_error');
   assertEquals(body.error.message, 'Model unknown-model is not available on any configured upstream.');
@@ -408,7 +408,7 @@ test('countTokens filters out candidates whose endpoints do not satisfy the mess
   });
 
   const failure = assertResultType(result, 'api-error');
-  assertEquals(failure.status, 400);
+  assertEquals(failure.http.status, 400);
   const body = JSON.parse(new TextDecoder().decode(failure.body));
   assertEquals(body.error.type, 'invalid_request_error');
   assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
@@ -546,7 +546,7 @@ test('generate failover preserves billing blocks for a strip-off candidate', asy
     message.content[0].text = 'mutated by first provider';
     return {
       ok: false,
-      response: new Response('unavailable', { status: 503 }),
+      http: new Response('unavailable', { status: 503 }),
       modelKey: 'first-key',
     };
   });
@@ -604,7 +604,7 @@ test('countTokens failover preserves billing blocks for a strip-off candidate', 
     if (!Array.isArray(message.content) || message.content[0]?.type !== 'text') throw new Error('expected text content');
     message.content[0].text = 'mutated by first provider';
     return {
-      response: new Response('unavailable', { status: 503 }),
+      http: new Response('unavailable', { status: 503 }),
       modelKey: 'first-key',
     };
   });
@@ -612,7 +612,7 @@ test('countTokens failover preserves billing blocks for a strip-off candidate', 
   const secondCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderCallResult> => {
     observedBodies.push(body as Omit<AnthropicMessagesPayload, 'model'>);
     return {
-      response: Response.json({ input_tokens: 12 }),
+      http: Response.json({ input_tokens: 12 }),
       modelKey: 'second-key',
     };
   });
@@ -632,7 +632,7 @@ test('countTokens failover preserves billing blocks for a strip-off candidate', 
   const payload = makePayload({ system, messages });
   const result = await anthropicMessagesServe.countTokens({ payload, ctx: makeGatewayCtx(), headers: new Headers() });
 
-  assertEquals(assertResultType(result, 'plain').status, 200);
+  assertEquals(assertResultType(result, 'plain').http.status, 200);
   assertEquals(firstCall.mock.calls.length, 1);
   assertEquals(secondCall.mock.calls.length, 1);
   assertEquals(firstBodies[0]?.system, [{ type: 'text', text: 'Count this prompt.' }]);
@@ -693,7 +693,7 @@ test('alias whose targets have no kind-matching binding surfaces as the regular 
 
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
-  assertEquals(result.status, 404);
+  assertEquals(result.http.status, 404);
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body.error.type, 'not_found_error');
   assertEquals(body.error.message, 'Model claude-fast is not available on any configured upstream.');
@@ -713,7 +713,7 @@ test('mid-attempt throw stamps telemetry with the throwing candidate, not the pr
     status: 502, headers: new Headers({ 'content-type': 'application/json' }),
   });
   const firstCall = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: false, response: firstError, modelKey: 'first-key',
+    ok: false, http: firstError, modelKey: 'first-key',
   }));
   const secondCall = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
     throw new Error('simulated provider-layer JS exception');

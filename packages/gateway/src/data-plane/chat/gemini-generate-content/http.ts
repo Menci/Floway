@@ -67,8 +67,7 @@ const respondWithGeminiGenerateContentError = async (
     const apiErrorResult = {
       type: 'api-error' as const,
       source: 'upstream' as const,
-      status,
-      headers: new Headers(headers),
+      http: { status, headers: new Headers(headers) },
       body: new TextEncoder().encode(body),
     };
     const response = await respondGeminiGenerateContent(c, apiErrorResult, wantsStream, ctx);

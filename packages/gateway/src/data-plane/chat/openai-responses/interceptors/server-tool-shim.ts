@@ -990,8 +990,7 @@ const invalidRequestEnvelope = (
   return {
     type: 'api-error',
     source: 'gateway',
-    status: 400,
-    headers: new Headers({ 'content-type': 'application/json' }),
+    http: { status: 400, headers: new Headers({ 'content-type': 'application/json' }) },
     body: new TextEncoder().encode(body),
   };
 };

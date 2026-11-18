@@ -126,7 +126,7 @@ const makeCandidate = (overrides: {
 test('POST /v1/messages streams a successful SSE body', async () => {
   installRepo();
   const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   queueCandidates([makeCandidate({ callAnthropicMessages })]);
 
@@ -147,7 +147,7 @@ test('POST /v1/messages streams a successful SSE body', async () => {
 test('POST /v1/messages returns a single JSON body when stream is omitted', async () => {
   installRepo();
   const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   queueCandidates([makeCandidate({ callAnthropicMessages })]);
 
@@ -223,7 +223,7 @@ test('POST /v1/messages rejects body anthropic_beta with a 400 before routing', 
 test('POST /v1/messages/count_tokens proxies the upstream measurement body', async () => {
   installRepo();
   const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
-    response: new Response(JSON.stringify({ input_tokens: 99 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
+    http: new Response(JSON.stringify({ input_tokens: 99 }), { status: 200, headers: new Headers({ 'content-type': 'application/json', 'request-id': 'req_count' }) }),
     modelKey: 'k',
   }));
   queueCandidates([makeCandidate({ callAnthropicMessagesCountTokens })]);
@@ -237,6 +237,7 @@ test('POST /v1/messages/count_tokens proxies the upstream measurement body', asy
   assertEquals(response.status, 200);
   const body = await response.json() as { input_tokens: number };
   assertEquals(body.input_tokens, 99);
+  assertEquals(response.headers.get('request-id'), null);
   assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
 });
 
@@ -251,7 +252,7 @@ test('POST /v1/messages forwards upstream response headers end-to-end (streaming
     'set-cookie': 'session=secret',
   });
   const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: upstreamHeaders,
+    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 201, headers: upstreamHeaders },
   }));
   queueCandidates([makeCandidate({ callAnthropicMessages })]);
 
@@ -280,9 +281,10 @@ test('POST /v1/messages forwards upstream response headers end-to-end (non-strea
   const upstreamHeaders = new Headers({
     'anthropic-ratelimit-unified-status': 'allowed',
     'cf-ray': 'cf_ray_e2e',
+    'content-type': 'text/event-stream',
   });
   const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: upstreamHeaders,
+    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 201, headers: upstreamHeaders },
   }));
   queueCandidates([makeCandidate({ callAnthropicMessages })]);
 
@@ -295,6 +297,7 @@ test('POST /v1/messages forwards upstream response headers end-to-end (non-strea
   assertEquals(response.status, 200);
   assertEquals(response.headers.get('anthropic-ratelimit-unified-status'), 'allowed');
   assertEquals(response.headers.get('cf-ray'), 'cf_ray_e2e');
+  assertEquals(response.headers.get('content-type'), 'application/json');
 });
 
 test('POST /v1/messages renders the Anthropic-shaped model-unsupported 400 when no candidate matches the messages-generate picker', async () => {

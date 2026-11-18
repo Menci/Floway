@@ -20,7 +20,7 @@ test('inputErrorResult renders an OpenAI 400 invalid_request_error envelope with
   );
   assertEquals(result.type, 'api-error');
   assertEquals(result.source, 'gateway');
-  assertEquals(result.status, 400);
+  assertEquals(result.http.status, 400);
   assertEquals(bodyOf(result), {
     error: {
       message: "Invalid input item type 'image_generation_call'.",

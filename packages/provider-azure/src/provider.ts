@@ -43,7 +43,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
   const callNonStreaming = async (transport: AzureTypedFetch, model: ProviderModel, body: Record<string, unknown>, signal: AbortSignal | undefined, headers: HttpHeaderLines, opts: UpstreamCallOptions) => {
     const upstreamModelId = upstreamModelIdOf(model);
     const response = await transport(azure.config, { method: 'POST', body: jsonRequestBody({ ...body, model: upstreamModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
-    return { response, modelKey: upstreamModelId };
+    return { http: response, modelKey: upstreamModelId };
   };
 
   const instance: ProviderInstance = {
@@ -87,9 +87,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
           switch (ctx.action) {
           case 'generate': {
             const stream = await callStreaming(azureFetchOpenAIResponses, model, wireBody, signal, [...ctx.headers], parseOpenAIResponsesStream, opts);
-            return stream.ok
-              ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
-              : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
+            return { action: 'generate', ...stream };
           }
           case 'compact': {
             const upstreamModelId = upstreamModelIdOf(model);
@@ -99,8 +97,8 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
               { extraHeaders: [...ctx.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
             );
             return response.ok
-              ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResultEx, modelKey: upstreamModelId }
-              : { action: 'compact', ok: false, response, modelKey: upstreamModelId };
+              ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResultEx, modelKey: upstreamModelId, http: { status: response.status, headers: response.headers } }
+              : { action: 'compact', ok: false, http: response, modelKey: upstreamModelId };
           }
           default:
             ctx.action satisfies never;
@@ -119,13 +117,13 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
       const upstreamModelId = upstreamModelIdOf(model);
       const body = await serializeOpenAIImagesEditsRequest(request, upstreamModelId);
       const response = await azureFetchOpenAIImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
-      return { response, modelKey: upstreamModelId };
+      return { http: response, modelKey: upstreamModelId };
     },
     callOpenAIAudioTranscriptions: async (model, request, signal, opts) => {
       const upstreamModelId = upstreamModelIdOf(model);
       const body = serializeModelPathOpenAIAudioTranscriptionRequest(request);
       const response = await azureFetchOpenAIAudioTranscriptions(azure.config, upstreamModelId, { method: 'POST', body, signal }, { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
-      return { response, modelKey: upstreamModelId };
+      return { http: response, modelKey: upstreamModelId };
     },
     callRerank: () => Promise.reject(new Error('Azure provider does not support callRerank')),
     callDecision: async (model: ProviderModel, request: CanonicalDecisionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => {
@@ -139,7 +137,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
         { method: 'POST', body: jsonRequestBody(body), signal },
         { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       );
-      return { response, modelKey: upstreamModelId, target };
+      return { http: response, modelKey: upstreamModelId, target };
     },
   };
 

@@ -458,16 +458,16 @@ const respondOpenAIResponsesWebSocket = async (input: {
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstreamId);
-    turnFailure.fail(result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status));
-    ctx.dump?.finalize(result.status, []);
+    turnFailure.fail(result.http.status, normalizeErrorBody(parseMaybeJson(result.body, result.http.headers), result.http.status));
+    ctx.dump?.finalize(result.http.status, []);
     return;
   }
 
   if (result.type === 'internal-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
-    turnFailure.fail(result.status, internalErrorEnvelope(result.error));
-    ctx.dump?.finalize(result.status, []);
+    turnFailure.fail(result.http.status, internalErrorEnvelope(result.error));
+    ctx.dump?.finalize(result.http.status, []);
     return;
   }
 

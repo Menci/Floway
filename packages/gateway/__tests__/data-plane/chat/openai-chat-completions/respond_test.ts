@@ -94,7 +94,7 @@ test('openai-chat-completions absent optional diagnostics stay absent and upstre
   const app = new Hono().get('/', c => respondOpenAIChatCompletions(c, internalErrorResult(502, { type: 'internal_error', name: 'Error', message: 'minimal' }), false, true, mockChatGatewayCtx()));
   assertEquals(await (await app.request('/')).json(), { error: { type: 'internal_error', message: 'minimal', provider_specific_fields: { name: 'Error' } } });
   const raw = '{"error":{"message":"native","stack":"provider-owned","custom":true}}';
-  const native = new Hono().get('/', c => respondOpenAIChatCompletions(c, { type: 'api-error', source: 'upstream', status: 429, headers: new Headers({ 'content-type': 'application/json', 'x-native': 'trace' }), body: new TextEncoder().encode(raw) }, false, true, mockChatGatewayCtx()));
+  const native = new Hono().get('/', c => respondOpenAIChatCompletions(c, { type: 'api-error', source: 'upstream', http: { status: 429, headers: new Headers({ 'content-type': 'application/json', 'x-native': 'trace' }) }, body: new TextEncoder().encode(raw) }, false, true, mockChatGatewayCtx()));
   const response = await native.request('/');
   assertEquals(response.status, 429);
   assertEquals(response.headers.get('x-native'), 'trace');

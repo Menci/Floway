@@ -184,7 +184,7 @@ const synthetic405 = (): Response => new Response(
 );
 
 const unsupportedStreamResult = <TEvent>(): Promise<ProviderStreamResult<TEvent>> =>
-  Promise.resolve({ ok: false, modelKey: '', response: synthetic405() });
+  Promise.resolve({ ok: false, modelKey: '', http: synthetic405() });
 
 const unsupportedCallResult = (): Promise<ProviderCallResult> =>
-  Promise.resolve({ modelKey: '', response: synthetic405() });
+  Promise.resolve({ modelKey: '', http: synthetic405() });

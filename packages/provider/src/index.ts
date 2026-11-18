@@ -16,6 +16,7 @@ export type {
   EventResult,
   EventResultMetadata,
   ExecuteResult,
+  HttpHead,
   InternalErrorResult,
   PlainResult,
 } from './result.ts';
@@ -50,6 +51,7 @@ export type {
   InboundHeaderMatcher,
   ProviderInstance,
   ProviderCallResult,
+  ProviderCompactionResult,
   ProviderRerankCallResult,
   ProviderDecisionCallResult,
   ProviderModule,

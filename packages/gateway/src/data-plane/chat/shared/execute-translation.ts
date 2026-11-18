@@ -45,14 +45,13 @@ export const executeTranslation = async <SP extends object, TP, SE, TE>(
     return { ...inner, events: trip.events(events) };
   }
   if (inner.type === 'api-error' && inner.source === 'upstream') {
-    capture?.upstreamApiError({ status: inner.status, headers: inner.headers, body: inner.body });
-    const rewritten = trip.error(inner.status, inner.headers, inner.body);
+    capture?.upstreamApiError({ status: inner.http.status, headers: inner.http.headers, body: inner.body });
+    const rewritten = trip.error(inner.http.status, inner.http.headers, inner.body);
     // Error renderers return JSON envelopes; this transport boundary encodes the response bytes.
     if (rewritten !== undefined) {
       return {
         ...inner,
-        status: rewritten.status,
-        headers: rewritten.headers,
+        http: { status: rewritten.status, headers: rewritten.headers },
         body: new TextEncoder().encode(JSON.stringify(rewritten.body)),
       };
     }

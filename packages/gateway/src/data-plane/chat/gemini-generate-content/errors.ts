@@ -49,8 +49,7 @@ const geminiGenerateContentRpcErrorResult = (
 ): ApiErrorResult => ({
   type: 'api-error',
   source: 'gateway',
-  status,
-  headers: new Headers({ 'content-type': 'application/json' }),
+  http: { status, headers: new Headers({ 'content-type': 'application/json' }) },
   body: new TextEncoder().encode(JSON.stringify({
     error: {
       code: status,

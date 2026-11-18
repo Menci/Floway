@@ -345,7 +345,7 @@ test('Custom provider callOpenAIImagesEdits forwards multipart body with model f
         }],
       }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
-      assertEquals(result.response.status, 200);
+      assertEquals(result.http.status, 200);
     },
   );
   assertExists(forwarded);

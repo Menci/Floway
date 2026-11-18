@@ -189,7 +189,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     const rawModelId = rawModelIdOf(model);
     return transport(config, { method: 'POST', body: jsonRequestBody({ ...body, model: rawModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall })
       .then(response => ({
-        response,
+        http: response,
         modelKey: rawModelId,
       }));
   };
@@ -234,9 +234,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
       switch (action) {
       case 'generate': {
         const stream = await callStreaming(customFetchOpenAIResponses, model, body, signal, headersForCall(opts.headers), parseOpenAIResponsesStream, opts);
-        return stream.ok
-          ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
-          : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
+        return { action: 'generate', ...stream };
       }
       case 'compact': {
         const rawModelId = rawModelIdOf(model);
@@ -246,8 +244,8 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
           { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         );
         return response.ok
-          ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResultEx, modelKey: rawModelId }
-          : { action: 'compact', ok: false, response, modelKey: rawModelId };
+          ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResultEx, modelKey: rawModelId, http: { status: response.status, headers: response.headers } }
+          : { action: 'compact', ok: false, http: response, modelKey: rawModelId };
       }
       default:
         action satisfies never;
@@ -278,7 +276,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
         { method: 'POST', body: jsonRequestBody(request), signal },
         { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       );
-      return { response, modelKey: modelId };
+      return { http: response, modelKey: modelId };
     },
     callOpenAIEmbeddings: (model, body, signal, opts) => call(customFetchOpenAIEmbeddings, model, body, signal, headersForCall(opts.headers), opts),
     callOpenAIImagesGenerations: (model, body, signal, opts) => call(customFetchOpenAIImagesGenerations, model, body, signal, headersForCall(opts.headers), opts),
@@ -286,13 +284,13 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
       const rawModelId = rawModelIdOf(model);
       const body = await serializeOpenAIImagesEditsRequest(request, rawModelId);
       const response = await customFetchOpenAIImagesEdits(config, { method: 'POST', body, signal }, { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
-      return { response, modelKey: rawModelId };
+      return { http: response, modelKey: rawModelId };
     },
     callOpenAIAudioTranscriptions: async (model, request, signal, opts) => {
       const rawModelId = rawModelIdOf(model);
       const body = serializeModelFieldOpenAIAudioTranscriptionRequest(request, rawModelId);
       const response = await customFetchOpenAIAudioTranscriptions(config, { method: 'POST', body, signal }, { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
-      return { response, modelKey: rawModelId };
+      return { http: response, modelKey: rawModelId };
     },
     callRerank: async (model, request, signal, opts) => {
       const target = model.rerankTarget;
@@ -305,7 +303,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
         { method: 'POST', body: jsonRequestBody(body), signal },
         { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       );
-      return { response, modelKey: rawModelId, target };
+      return { http: response, modelKey: rawModelId, target };
     },
     callDecision: async (model: ProviderModel, request: CanonicalDecisionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => {
       const target = model.decisionTarget;
@@ -318,7 +316,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
         { method: 'POST', body: jsonRequestBody(body), signal },
         { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       );
-      return { response, modelKey: rawModelId, target };
+      return { http: response, modelKey: rawModelId, target };
     },
   };
 

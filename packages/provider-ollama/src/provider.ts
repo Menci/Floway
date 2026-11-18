@@ -147,7 +147,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       config,
       { method: 'POST', body: jsonRequestBody({ ...body, model: rawModelId }), signal },
       { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
-    ).then(response => ({ response, modelKey: rawModelId }));
+    ).then(response => ({ http: response, modelKey: rawModelId }));
   };
 
   const callStreaming = <TEvent>(
@@ -200,9 +200,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       switch (action) {
       case 'generate': {
         const stream = await withProbes(opts, callStreaming(ollamaFetchOpenAIResponses, model, body, signal, [...opts.headers], parseOpenAIResponsesStream, opts));
-        return stream.ok
-          ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
-          : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
+        return { action: 'generate', ...stream };
       }
       case 'compact': {
         const rawModelId = rawModelIdOf(model);
@@ -212,8 +210,8 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
           { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         ));
         return response.ok
-          ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResultEx, modelKey: rawModelId }
-          : { action: 'compact', ok: false, response, modelKey: rawModelId };
+          ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResultEx, modelKey: rawModelId, http: { status: response.status, headers: response.headers } }
+          : { action: 'compact', ok: false, http: response, modelKey: rawModelId };
       }
       default:
         action satisfies never;
@@ -231,7 +229,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       const rawModelId = rawModelIdOf(model);
       const body = serializeModelFieldOpenAIAudioTranscriptionRequest(request, rawModelId);
       const response = await withProbes(opts, ollamaFetchOpenAIAudioTranscriptions(config, { method: 'POST', body, signal }, { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall }));
-      return { response, modelKey: rawModelId };
+      return { http: response, modelKey: rawModelId };
     },
     callRerank: rejectUnsupported('callRerank'),
     callDecision: async (model: ProviderModel, request: CanonicalDecisionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => {
@@ -245,7 +243,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
         { method: 'POST', body: jsonRequestBody(body), signal },
         { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       );
-      return { response, modelKey: rawModelId, target };
+      return { http: response, modelKey: rawModelId, target };
     },
   };
 

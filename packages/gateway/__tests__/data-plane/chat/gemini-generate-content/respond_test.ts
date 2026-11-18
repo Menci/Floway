@@ -133,8 +133,7 @@ test('respondGeminiGenerateContent preserves upstream Google RPC Status body', a
   const response = await requestGeminiGenerateContentResponse({
     type: 'api-error',
     source: 'upstream',
-    status: 400,
-    headers: new Headers({ 'content-type': 'application/json' }),
+    http: { status: 400, headers: new Headers({ 'content-type': 'application/json' }) },
     body: encoder.encode(JSON.stringify(upstreamBody)),
   });
 
@@ -154,7 +153,7 @@ test('respondGeminiGenerateContent internal errors include debug fields in Googl
 
   const response = await requestGeminiGenerateContentResponse({
     type: 'internal-error',
-    status: 502,
+    http: { status: 502, headers: new Headers() },
     error,
   });
   const body = await response.json();

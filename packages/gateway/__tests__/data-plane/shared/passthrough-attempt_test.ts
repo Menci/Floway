@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { test } from 'vitest';
 
-import { passthroughAttempt, type PassthroughAttemptResult } from '../../../src/data-plane/shared/passthrough-attempt.ts';
+import { passthroughAttempt } from '../../../src/data-plane/shared/passthrough-attempt.ts';
+import type { RawAttemptResult } from '../../../src/data-plane/shared/raw-attempt-result.ts';
 import type { AuthVars } from '../../../src/middleware/auth.ts';
 import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import { assertEquals, assertExists, stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
@@ -16,7 +17,7 @@ test('passthroughAttempt applies the selected provider ingress policy', async ()
       instance: stubProvider({
         callOpenAIEmbeddings: async (_model, _body, _signal, opts) => {
           observed = opts.headers;
-          return { response: new Response('{}'), modelKey: 'test-model' };
+          return { http: new Response('{}'), modelKey: 'test-model' };
         },
       }),
     },
@@ -47,18 +48,18 @@ test('passthroughAttempt applies the selected provider ingress policy', async ()
 
 // Drives one attempt against a canned upstream response, through the same Hono
 // context the serve layer builds.
-const runPassthroughAttempt = async (upstream: Response): Promise<PassthroughAttemptResult> => {
+const runPassthroughAttempt = async (upstream: Response): Promise<RawAttemptResult> => {
   const base = stubModelCandidate();
   const candidate = stubModelCandidate({
     provider: {
       ...base.provider,
       kind: 'custom',
       instance: stubProvider({
-        callOpenAIEmbeddings: async () => ({ response: upstream, modelKey: 'test-model' }),
+        callOpenAIEmbeddings: async () => ({ http: upstream, modelKey: 'test-model' }),
       }),
     },
   });
-  let result: PassthroughAttemptResult | undefined;
+  let result: RawAttemptResult | undefined;
   const app = new Hono<{ Variables: AuthVars }>();
   app.post('/test', async c => {
     result = await passthroughAttempt({
@@ -95,16 +96,15 @@ test('passthroughAttempt materializes a failed upstream response so a discarded 
 
   const result = await runPassthroughAttempt(upstream);
 
-  assertEquals(result.status, 503);
   // The upstream body was consumed rather than left for someone else to close.
   assertEquals(sourceRead, true);
   assertEquals(sourceCancelled, false);
   assertEquals(upstream.bodyUsed, true);
   // Status, headers and bytes still forward verbatim.
-  assertEquals(result.response.status, 503);
-  assertEquals(result.response.statusText, 'Service Unavailable');
-  assertEquals(result.response.headers.get('retry-after'), '12');
-  assertEquals(await result.response.text(), '{"error":"upstream busy"}');
+  assertEquals(result.http.status, 503);
+  assertEquals(result.http.statusText, 'Service Unavailable');
+  assertEquals(result.http.headers.get('retry-after'), '12');
+  assertEquals(await result.http.text(), '{"error":"upstream busy"}');
 });
 
 test('passthroughAttempt forwards a successful upstream response without reading it', async () => {
@@ -113,6 +113,6 @@ test('passthroughAttempt forwards a successful upstream response without reading
 
   // A 2xx is returned to the caller immediately and is never discarded, so it
   // must keep streaming rather than be buffered here.
-  assertEquals(result.response, upstream);
+  assertEquals(result.http, upstream);
   assertEquals(upstream.bodyUsed, false);
 });

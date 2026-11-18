@@ -153,7 +153,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         call,
       }),
     );
-    const { response, performance: performanceContext, identity } = result;
+    const { http: response, performance: performanceContext, identity } = result;
 
     if (responseHandling.format === 'strategy') {
       return await responseHandling.respond({ c, ctx, sourceApi, response, performance: performanceContext, identity });

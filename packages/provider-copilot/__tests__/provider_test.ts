@@ -1126,7 +1126,7 @@ test('Copilot provider routes speed=fast to the -fast raw variant and stamps usa
         noopAnthropicMessagesUpstreamCallOptions(),
       );
 
-      if (!result.ok) throw new Error(`expected ok stream, got ${JSON.stringify(result.response)}`);
+      if (!result.ok) throw new Error(`expected ok stream, got ${JSON.stringify(result.http)}`);
 
       const frames = [];
       for await (const frame of result.events) frames.push(frame);
@@ -1185,8 +1185,8 @@ test('Copilot provider returns HTTP 400 invalid_request_error when speed=fast hi
       );
 
       if (result.ok) throw new Error('expected 400 error, got ok stream');
-      assertEquals(result.response.status, 400);
-      const body = (await result.response.json()) as { type: string; error: { type: string; message: string } };
+      assertEquals(result.http.status, 400);
+      const body = (await result.http.json()) as { type: string; error: { type: string; message: string } };
       // Byte-identical to the wire string Anthropic emits on real api.anthropic.com
       // for the same failure mode — recorded verbatim from a live response in
       // https://github.com/Yeachan-Heo/gajae-code/blob/main/packages/ai/test/anthropic-fast-mode.test.ts
@@ -1379,7 +1379,7 @@ test('Copilot image generations POSTs JSON to the v1 path with the raw model id'
     async () => {
       const [model] = await provider.getProvidedModels(directFetcher);
       const result = await provider.callOpenAIImagesGenerations(model, { prompt: 'a red square' }, undefined, noopUpstreamCallOptions());
-      assertEquals(result.response.status, 200);
+      assertEquals(result.http.status, 200);
     },
   );
 
@@ -1417,7 +1417,7 @@ test('Copilot image edits keeps multipart uploads free of a JSON content-type', 
       const [model] = await provider.getProvidedModels(directFetcher);
       const file = new File([new Uint8Array([0x89, 0x50, 0x4E, 0x47])], 'in.png', { type: 'image/png' });
       const result = await provider.callOpenAIImagesEdits(model, { images: [{ type: 'upload', file }], parameters: { prompt: 'make it blue' } }, undefined, noopUpstreamCallOptions());
-      assertEquals(result.response.status, 200);
+      assertEquals(result.http.status, 200);
     },
   );
 
@@ -1662,7 +1662,7 @@ test('Copilot provider derives decision endpoints and forwards the System One bo
       });
       const result = await provider.callDecision(decision, parsed.request, undefined, noopUpstreamCallOptions());
       assertEquals(result.target, { protocol: 'typesafe-systemone' });
-      assertEquals(result.response.status, 200);
+      assertEquals(result.http.status, 200);
     },
   );
 
@@ -1706,7 +1706,7 @@ test('Copilot sends an OpenAI Decisions model to /v1/decisions in its own dialec
       });
       const result = await provider.callDecision(decision, parsed.request, undefined, noopUpstreamCallOptions());
       assertEquals(result.target, { protocol: 'openai-decisions' });
-      assertEquals(result.response.status, 200);
+      assertEquals(result.http.status, 200);
     },
   );
 

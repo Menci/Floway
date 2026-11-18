@@ -16,7 +16,7 @@ test('inputErrorResult renders an OpenAI 400 invalid_request_error envelope with
 
   assertEquals(apiError.type, 'api-error');
   assertEquals(apiError.source, 'gateway');
-  assertEquals(apiError.status, 400);
+  assertEquals(apiError.http.status, 400);
   assertEquals(bodyOf(result), {
     error: {
       message: "Missing required field 'tool_call_id' on a 'tool' role message.",

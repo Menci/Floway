@@ -152,7 +152,7 @@ const makeAnthropicMessagesEvents = (): readonly AnthropicMessagesStreamEventEx[
 test('POST /v1beta/models/:model:generateContent returns a single JSON body for non-stream generate', async () => {
   installRepo();
   const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
 
@@ -172,7 +172,7 @@ test('POST /v1beta/models/:model:generateContent returns a single JSON body for 
 test('POST /v1beta/models/:model:streamGenerateContent streams a Gemini generateContent SSE body', async () => {
   installRepo();
   const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
 
@@ -192,7 +192,7 @@ test('POST /v1beta/models/:model:streamGenerateContent streams a Gemini generate
 test('POST /v1/models/:model:generateContent serves the same Gemini body as the v1beta prefix', async () => {
   installRepo();
   const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
 
@@ -211,7 +211,7 @@ test('POST /v1/models/:model:generateContent serves the same Gemini body as the 
 test('POST /v1beta/models/:model:countTokens returns the Gemini generateContent totalTokens envelope', async () => {
   installRepo();
   const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
-    response: new Response(JSON.stringify({ input_tokens: 23 }), {
+    http: new Response(JSON.stringify({ input_tokens: 23 }), {
       status: 200, headers: new Headers({ 'content-type': 'application/json' }),
     }),
     modelKey: 'k',
@@ -232,7 +232,7 @@ test('POST /v1beta/models/:model:countTokens returns the Gemini generateContent 
 test('POST /v1beta/models/:model:countTokens accepts the generateContentRequest envelope shape', async () => {
   installRepo();
   const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
-    response: new Response(JSON.stringify({ total_tokens: 7 }), {
+    http: new Response(JSON.stringify({ total_tokens: 7 }), {
       status: 200, headers: new Headers({ 'content-type': 'application/json' }),
     }),
     modelKey: 'k',
@@ -293,7 +293,7 @@ test('generateContent retries a translation input failure and records the succes
     throw new Error('Unsupported input must fail before the upstream call');
   });
   const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   queueCandidates([
     makeCandidate({ upstream: 'up_messages', targetApi: 'anthropicMessages', callAnthropicMessages }),
@@ -323,7 +323,7 @@ test('generateContent retries a translation input failure and records the succes
 test('POST /v1beta/models/:model:generateContent translates through Anthropic Messages target end to end', async () => {
   installRepo();
   const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   queueCandidates([makeCandidate({ targetApi: 'anthropicMessages', callAnthropicMessages })]);
 
@@ -361,7 +361,7 @@ test('POST /v1beta/models/models/:model:generateContent accepts the models/ pref
   let resolvedModel: string | undefined;
   const callOpenAIChatCompletions = vi.fn(async (model): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
     resolvedModel = (model as { id: string }).id;
-    return { ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers() };
+    return { ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() } };
   });
   queueCandidates([makeCandidate({ callOpenAIChatCompletions })]);
 
@@ -410,7 +410,7 @@ const makeNativeGeminiEvents = (): readonly GeminiGenerateContentStreamEvent[] =
 test('a native Gemini upstream is reached without translation and streams its own frames', async () => {
   installRepo();
   const callGeminiGenerateContent = vi.fn(async (): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeNativeGeminiEvents()), modelKey: 'gemini-3-flash', headers: new Headers({ 'x-goog-request-id': 'r1' }),
+    ok: true, events: makeProtocolFrames(makeNativeGeminiEvents()), modelKey: 'gemini-3-flash', http: { status: 200, headers: new Headers({ 'x-goog-request-id': 'r1' }) },
   }));
   queueCandidates([makeCandidate({ endpoints: { geminiGenerateContent: {} }, callGeminiGenerateContent })]);
 
@@ -434,7 +434,7 @@ test('a native Gemini upstream is reached without translation and streams its ow
 test('a non-streaming client collects the native Gemini stream into one response', async () => {
   installRepo();
   const callGeminiGenerateContent = vi.fn(async (): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeNativeGeminiEvents()), modelKey: 'gemini-3-flash', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeNativeGeminiEvents()), modelKey: 'gemini-3-flash', http: { status: 200, headers: new Headers() },
   }));
   queueCandidates([makeCandidate({ endpoints: { geminiGenerateContent: {} }, callGeminiGenerateContent })]);
 
@@ -467,7 +467,7 @@ test('countTokens on a native upstream forwards the whole SDK generateContentReq
   const callGeminiGenerateContentCountTokens = vi.fn(async (_model, body): Promise<ProviderCallResult> => {
     observed = body;
     return {
-      response: Response.json({ totalTokens: 9 }),
+      http: Response.json({ totalTokens: 9 }),
       modelKey: 'gemini-3-flash',
     };
   });

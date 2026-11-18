@@ -112,11 +112,11 @@ export const decision = (sourceProtocol: DecisionProtocol) => async (c: Context)
       candidate => decisionAttempt(c, ctx, candidate, request),
     );
 
-    if (!terminal.response.ok) {
+    if (!terminal.http.ok) {
       ctx.dump?.error('upstream', terminal.identity.upstream);
       settleDecision(ctx, terminal.performance, terminal.identity, undefined, true);
       usageSettled = true;
-      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
+      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.http));
     }
 
     const sameProtocol = sourceProtocol === terminal.target.protocol;
@@ -124,7 +124,7 @@ export const decision = (sourceProtocol: DecisionProtocol) => async (c: Context)
     try {
       // Raw-number parsing keeps each probability's source token, so a
       // cross-dialect render writes the digits back unchanged.
-      upstreamBody = parseJSONWithRawNumbers(await terminal.response.clone().text()) as Record<string, unknown>;
+      upstreamBody = parseJSONWithRawNumbers(await terminal.http.clone().text()) as Record<string, unknown>;
     } catch (error) {
       // A cross-dialect client cannot read the upstream's own body, so a
       // translation failure must surface instead of being forwarded as success.
@@ -136,21 +136,21 @@ export const decision = (sourceProtocol: DecisionProtocol) => async (c: Context)
       ctx.dump?.success(terminal.identity, null);
       settleDecision(ctx, terminal.performance, terminal.identity, undefined, false);
       usageSettled = true;
-      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
+      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.http));
     }
     measuredUsage = parseDecisionUsage(upstreamBody);
     if (sameProtocol) {
       ctx.dump?.success(terminal.identity, null);
       settleDecision(ctx, terminal.performance, terminal.identity, measuredUsage, false);
       usageSettled = true;
-      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
+      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.http));
     }
     const canonical = parseDecisionResponse(terminal.target.protocol, upstreamBody);
     const rendered = renderDecisionResponse(sourceProtocol, canonical);
     ctx.dump?.success(terminal.identity, null);
     settleDecision(ctx, terminal.performance, terminal.identity, measuredUsage, false);
     usageSettled = true;
-    return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response, { body: JSON.stringify(rendered) }));
+    return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.http, { body: JSON.stringify(rendered) }));
   } catch (error) {
     if (terminal !== undefined && !usageSettled) {
       settleDecision(ctx, terminal.performance, terminal.identity, measuredUsage, true);

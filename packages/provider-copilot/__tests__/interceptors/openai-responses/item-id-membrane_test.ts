@@ -462,7 +462,7 @@ test.each(['compaction', 'compaction_summary', 'context_compaction'] as const)('
     action: 'compact',
     ok: true,
     result: compactResult,
-    modelKey: 'test-model',
+    modelKey: 'test-model', http: { status: 200, headers: new Headers() },
   }));
   if (result.action !== 'compact' || !result.ok) throw new Error('expected compact/ok result');
 

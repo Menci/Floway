@@ -60,7 +60,7 @@ export const geminiGenerateContentAttempt = {
     const invocation: GeminiGenerateContentInvocation = { payload, candidate, targetApi, headers };
     return await runInterceptors(invocation, ctx, geminiGenerateContentCountTokensInterceptors, async () => {
       if (targetApi === 'geminiGenerateContent') {
-        const { response } = await candidate.provider.instance.callGeminiGenerateContentCountTokens(
+        const { http: response } = await candidate.provider.instance.callGeminiGenerateContentCountTokens(
           providerModelOf(candidate),
           invocation.payload,
           ctx.abortSignal,
@@ -96,10 +96,10 @@ export const geminiGenerateContentAttempt = {
 // 502 Google-RPC error so the caller sees a typed Gemini generateContent failure rather
 // than a passthrough of the upstream shape.
 const reshapeAnthropicMessagesCountAsGeminiGenerateContent = (anthropicMessagesResult: PlainResult): PlainResult => {
-  if (anthropicMessagesResult.status !== 200) {
+  if (anthropicMessagesResult.http.status !== 200) {
     // Empty upstream bodies fall back to a fixed message so the Google-RPC envelope is never empty.
     const text = new TextDecoder().decode(anthropicMessagesResult.body);
-    return geminiGenerateContentErrorPlainResult(anthropicMessagesResult.status, text || 'Upstream token counting request failed.', anthropicMessagesResult.upstreamId);
+    return geminiGenerateContentErrorPlainResult(anthropicMessagesResult.http.status, text || 'Upstream token counting request failed.', anthropicMessagesResult.upstreamId);
   }
   let decoded: unknown;
   try { decoded = JSON.parse(new TextDecoder().decode(anthropicMessagesResult.body)); } catch {}
@@ -115,23 +115,20 @@ const reshapeAnthropicMessagesCountAsGeminiGenerateContent = (anthropicMessagesR
     return geminiGenerateContentInternalPlainResult(502, new Error('Invalid upstream token counting response.'));
   }
   return plainResult(
-    200,
-    new Headers({ 'content-type': 'application/json' }),
+    { status: 200, headers: new Headers({ 'content-type': 'application/json' }) },
     new TextEncoder().encode(JSON.stringify({ totalTokens })),
     anthropicMessagesResult.upstreamId,
   );
 };
 
 const geminiGenerateContentErrorPlainResult = (status: number, message: string, upstream?: string): PlainResult => plainResult(
-  status,
-  new Headers({ 'content-type': 'application/json' }),
+  { status, headers: new Headers({ 'content-type': 'application/json' }) },
   new TextEncoder().encode(JSON.stringify({ error: { code: status, message, status: gatewayErrorStatus(status) } })),
   upstream,
 );
 
 const geminiGenerateContentInternalPlainResult = (status: number, error: Error): PlainResult => plainResult(
-  status,
-  new Headers({ 'content-type': 'application/json' }),
+  { status, headers: new Headers({ 'content-type': 'application/json' }) },
   new TextEncoder().encode(JSON.stringify(geminiGenerateContentInternalErrorPayload(status, toInternalDebugError(error)))),
 );
 

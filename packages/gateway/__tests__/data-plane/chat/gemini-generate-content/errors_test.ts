@@ -10,8 +10,8 @@ test('inputErrorResult renders a GenerateContent 400 INVALID_ARGUMENT envelope',
   const result = inputErrorResult({ message: '"inlineData" parts are not supported in user content.' });
   assertEquals(result.type, 'api-error');
   assertEquals(result.source, 'gateway');
-  assertEquals(result.status, 400);
-  assertEquals(result.headers.get('content-type'), 'application/json');
+  assertEquals(result.http.status, 400);
+  assertEquals(result.http.headers.get('content-type'), 'application/json');
   assertEquals(bodyOf(result).error, {
     code: 400,
     message: '"inlineData" parts are not supported in user content.',

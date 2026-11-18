@@ -1,27 +1,13 @@
 import type { GatewayCtx } from './gateway-ctx.ts';
+import type { RawAttemptResult } from './raw-attempt-result.ts';
 import { upstreamPerformanceContext } from './telemetry/attribution.ts';
-import type { ModelCandidate, PerformanceOperation } from '@floway-dev/provider';
+import type { HttpHead, ModelCandidate, PerformanceOperation } from '@floway-dev/provider';
 
-// A serve-layer attempt result counts as success when:
-//   - The SSE event stream actually opened (`type: 'events'`). Mid-stream
-//     failure is the upstream's responsibility from there on; a fresh
-//     attempt on a different upstream does not start once the client has
-//     begun consuming events.
-//   - The non-streaming envelope landed: `PlainResult` with a 2xx status,
-//     or the OpenAI-Responses-compact `{type:'result'}` envelope.
-// `api-error` and `internal-error` are failures: the serve loop falls
-// through to the next candidate. 4xx is on the failure side — 429
-// (rate-limit) is the responsibility of the upstream that issued it, and
-// the gateway's candidate ordering exists to absorb that kind of
-// transient. Passthrough serves feed in an enlarged `plain` shape that
-// carries the raw upstream Response plus per-attempt telemetry alongside
-// the status; the success discriminant is unchanged.
+// Once an event stream opens, later protocol errors belong to the response.
 type IterableAttemptResult =
-  | { readonly type: 'events' }
-  | { readonly type: 'result' }
-  | { readonly type: 'plain'; readonly status: number }
-  | { readonly type: 'api-error' }
-  | { readonly type: 'internal-error' };
+  | { readonly type: 'events' | 'result' }
+  | { readonly type: 'plain' | 'api-error' | 'internal-error'; readonly http: HttpHead }
+  | Pick<RawAttemptResult, 'type' | 'http'>;
 
 const isAttemptSuccess = (result: IterableAttemptResult): boolean => {
   switch (result.type) {
@@ -29,7 +15,8 @@ const isAttemptSuccess = (result: IterableAttemptResult): boolean => {
   case 'result':
     return true;
   case 'plain':
-    return result.status >= 200 && result.status < 300;
+  case 'response':
+    return result.http.status >= 200 && result.http.status < 300;
   case 'api-error':
   case 'internal-error':
     return false;

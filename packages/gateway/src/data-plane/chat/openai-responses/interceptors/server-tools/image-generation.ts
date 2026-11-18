@@ -23,7 +23,7 @@ import {
   type OpenAIResponsesOutputImageGenerationCallEx,
   type OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
-import { providerModelOf, type Fetcher, type OpenAIImagesEditsRequest, type Provider, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
+import { providerModelOf, type Fetcher, type OpenAIImagesEditsRequest, type Provider, type ProviderCallResult, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
 
 export const SHIM_TOOL_NAME = 'image_generation';
 
@@ -1089,7 +1089,7 @@ const issueImageCall = async (
   state: ShimState,
   stream: boolean,
   attempt: AttemptState,
-): Promise<{ response: Response; modelKey: string }> => {
+): Promise<ProviderCallResult> => {
   for (let retry = 0; ; retry++) {
     const opts = {
       fetcher,
@@ -1102,10 +1102,11 @@ const issueImageCall = async (
       // retry so it reflects the dispatch that actually returned.
       wrapUpstreamCall: stampUpstreamCallStart(attempt.timing),
     };
-    const { response, modelKey } = await (editRequest === null
+    const result = await (editRequest === null
       ? provider.instance.callOpenAIImagesGenerations(model, buildGenerationsBody(prompt, config, stream), state.downstreamAbortSignal, opts)
       : provider.instance.callOpenAIImagesEdits(model, editRequest, state.downstreamAbortSignal, opts));
-    if (response.status !== 429 || retry >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
+    const { http: response } = result;
+    if (response.status !== 429 || retry >= MAX_RATE_LIMIT_RETRIES) return result;
 
     // 25% jitter desynchronizes parallel callers so a burst of orchestrator
     // turns doesn't all re-issue at the same instant.
@@ -1285,7 +1286,7 @@ const streamImageGeneration = (
       const prepared = await prepareEditRequest(sources, state.config);
       editRequest = buildEditsRequest(prompt, state.config, prepared.sources, prepared.mask, wantsPartials);
     }
-    ({ response, modelKey } = await issueImageCall(
+    ({ http: response, modelKey } = await issueImageCall(
       provider,
       model,
       fetcher,

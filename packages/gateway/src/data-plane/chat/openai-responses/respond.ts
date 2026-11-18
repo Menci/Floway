@@ -8,8 +8,8 @@ import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
-import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
-import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
+import { forwardUpstreamHeaders } from '../../shared/upstream-response.ts';
+import { SourceStreamState, eventResultMetadata, jsonResponseInit, plainResultToResponse } from '../shared/respond.ts';
 import { doneFrame, eventFrame, isJsonObject, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { openaiResponsesProtocolFrameToSSEFrame, OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, collectOpenAIResponsesProtocolEventsToResult } from '@floway-dev/protocols/openai-responses';
 import { isOpenAIResponsesErrorEvent, isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientResponseResource, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesStreamEventEx, type OpenAIResponsesErrorEx } from '@floway-dev/protocols/openai-responses';
@@ -32,10 +32,10 @@ export const respondOpenAIResponsesFailure = (
   if (result.type === 'internal-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
-    return internalOpenAIResponsesErrorResponse(result.status, result.error);
+    return internalOpenAIResponsesErrorResponse(result.http, result.error);
   }
 
-  if (result.status >= 400) {
+  if (result.http.status >= 400) {
     ctx.dump?.error(result.upstreamId !== undefined ? 'upstream' : 'gateway', result.upstreamId);
   }
   return plainResultToResponse(result);
@@ -64,9 +64,9 @@ export const respondOpenAIResponses = async (
       const usage = tokenUsageFromBillableUsage(metadata.billableUsage);
       ctx.dump?.success(metadata.modelIdentity, usage);
       settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed || response.status === 'failed');
-      const headers = mergeForwardedUpstreamHeaders(undefined, result.headers);
-      headers.set(OPENAI_RESPONSES_REASONING_INCLUDED_HEADER, OPENAI_RESPONSES_REASONING_INCLUDED_VALUE);
-      return Response.json(response, { headers });
+      const init = jsonResponseInit(result.http);
+      init.headers.set(OPENAI_RESPONSES_REASONING_INCLUDED_HEADER, OPENAI_RESPONSES_REASONING_INCLUDED_VALUE);
+      return Response.json(response, init);
     } catch (error) {
       ctx.dump?.failed(error);
       if (error instanceof Error && isOpenAIResponsesErrorEvent(error.cause)) {
@@ -78,11 +78,11 @@ export const respondOpenAIResponses = async (
         return Response.json(body, { status: openAIResponsesErrorHttpStatus(error.cause) });
       }
       recordFailedRequest(ctx, result.performance);
-      return internalOpenAIResponsesErrorResponse(502, toInternalDebugError(error));
+      return internalOpenAIResponsesErrorResponse({ status: 502 }, toInternalDebugError(error));
     }
   }
 
-  forwardUpstreamHeaders(c, result.headers);
+  forwardUpstreamHeaders(c, result.http?.headers);
   c.header(OPENAI_RESPONSES_REASONING_INCLUDED_HEADER, OPENAI_RESPONSES_REASONING_INCLUDED_VALUE);
   const response = streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
@@ -138,14 +138,14 @@ const openAIResponsesErrorHttpStatus = (event: Extract<OpenAIResponsesStreamEven
   return 502;
 };
 
-const internalOpenAIResponsesErrorResponse = (status: number, error: InternalDebugError): Response =>
+const internalOpenAIResponsesErrorResponse = (http: ResponseInit, error: InternalDebugError): Response =>
   Response.json({
     error: {
       type: error.type,
       message: error.message,
       provider_specific_fields: internalDebugErrorFields(error),
     },
-  }, { status });
+  }, http);
 
 // --- frame observation ---
 

@@ -164,7 +164,7 @@ const expectType = <T extends { type: string }, K extends T['type']>(r: T, k: K)
 test('generate translates through native OpenAI Chat Completions target end to end', async () => {
   installRepo();
   const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   queueResolution([makeCandidate({ targetApi: 'openaiChatCompletions', callOpenAIChatCompletions })]);
 
@@ -183,7 +183,7 @@ test('generate translates through native OpenAI Chat Completions target end to e
 test('generate translates through Anthropic Messages when only that endpoint is exposed', async () => {
   installRepo();
   const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   queueResolution([makeCandidate({ targetApi: 'anthropicMessages', callAnthropicMessages })]);
 
@@ -202,7 +202,7 @@ test('generate translates through Anthropic Messages when only that endpoint is 
 test('generate translates through OpenAI Responses when only that endpoint is exposed', async () => {
   installRepo();
   const callOpenAIResponses = vi.fn(async (): Promise<ProviderOpenAIResponsesResult> => ({
-    action: 'generate', ok: true, events: makeProtocolFrames([makeOpenAIResponsesResultEvent()]), modelKey: 'k', headers: new Headers(),
+    action: 'generate', ok: true, events: makeProtocolFrames([makeOpenAIResponsesResultEvent()]), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   queueResolution([makeCandidate({ targetApi: 'openaiResponses', callOpenAIResponses })]);
 
@@ -230,10 +230,10 @@ test('generate falls through to the next candidate when the first yields an upst
     status: 502, headers: new Headers({ 'content-type': 'application/json' }),
   });
   const firstCall = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: false, response: firstError, modelKey: 'first-key',
+    ok: false, http: firstError, modelKey: 'first-key',
   }));
   const secondCall = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'second-key', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'second-key', http: { status: 200, headers: new Headers() },
   }));
   queueResolution([
     makeCandidate({ upstream: 'up_a', targetApi: 'openaiChatCompletions', callOpenAIChatCompletions: firstCall }),
@@ -270,7 +270,7 @@ test('mid-attempt throw stamps telemetry with the throwing candidate, not the pr
     status: 502, headers: new Headers({ 'content-type': 'application/json' }),
   });
   const firstCall = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: false, response: firstError, modelKey: 'first-key',
+    ok: false, http: firstError, modelKey: 'first-key',
   }));
   const secondCall = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
     throw new Error('simulated provider-layer JS exception');
@@ -301,7 +301,7 @@ test('mid-attempt throw stamps telemetry with the throwing candidate, not the pr
 test('generate is a routing no-op for a bare user-text request (degenerate path)', async () => {
   installRepo();
   const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   queueResolution([
     makeCandidate({ upstream: 'up_a', targetApi: 'openaiChatCompletions', callOpenAIChatCompletions }),
@@ -332,7 +332,7 @@ test('generate renders model-missing as a Google RPC 404 when no candidates are 
   });
 
   const upstreamError = expectType(result, 'api-error');
-  assertEquals(upstreamError.status, 404);
+  assertEquals(upstreamError.http.status, 404);
   const body = JSON.parse(new TextDecoder().decode(upstreamError.body));
   assertEquals(body.error.code, 404);
   assertEquals(body.error.status, 'NOT_FOUND');
@@ -354,7 +354,7 @@ test('generate filters out candidates whose endpoints do not satisfy the gemini-
   });
 
   const upstreamError = expectType(result, 'api-error');
-  assertEquals(upstreamError.status, 400);
+  assertEquals(upstreamError.http.status, 400);
   const body = JSON.parse(new TextDecoder().decode(upstreamError.body));
   assertEquals(body.error.code, 400);
   assertEquals(body.error.status, 'INVALID_ARGUMENT');
@@ -369,7 +369,7 @@ test('generate filters out candidates whose endpoints do not satisfy the gemini-
 test('countTokens translates Gemini generateContent to Anthropic Messages count_tokens and returns the Gemini generateContent envelope', async () => {
   installRepo();
   const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
-    response: new Response(JSON.stringify({ input_tokens: 17 }), {
+    http: new Response(JSON.stringify({ input_tokens: 17 }), {
       status: 200, headers: new Headers({ 'content-type': 'application/json' }),
     }),
     modelKey: 'k',
@@ -384,7 +384,7 @@ test('countTokens translates Gemini generateContent to Anthropic Messages count_
   });
 
   const plain = expectType(result, 'plain');
-  assertEquals(plain.status, 200);
+  assertEquals(plain.http.status, 200);
   const body = JSON.parse(new TextDecoder().decode(plain.body));
   assertEquals(body, { totalTokens: 17 });
   assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
@@ -402,7 +402,7 @@ test('countTokens renders a Google RPC NOT_FOUND when no Anthropic-Messages-capa
   });
 
   const upstreamError = expectType(result, 'api-error');
-  assertEquals(upstreamError.status, 404);
+  assertEquals(upstreamError.http.status, 404);
   const body = JSON.parse(new TextDecoder().decode(upstreamError.body));
   assertEquals(body.error.code, 404);
   assertEquals(body.error.status, 'NOT_FOUND');
@@ -424,7 +424,7 @@ test('countTokens filters out candidates whose endpoints do not satisfy the gemi
   });
 
   const upstreamError = expectType(result, 'api-error');
-  assertEquals(upstreamError.status, 400);
+  assertEquals(upstreamError.http.status, 400);
   const body = JSON.parse(new TextDecoder().decode(upstreamError.body));
   assertEquals(body.error.code, 400);
   assertEquals(body.error.status, 'INVALID_ARGUMENT');
@@ -437,7 +437,7 @@ test('alias resolution overlays rules onto the target IR at the wire call', asyn
   const capturedBodies: Record<string, unknown>[] = [];
   const callOpenAIChatCompletions = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
     capturedBodies.push(body as Record<string, unknown>);
-    return { ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'gpt-5.4', headers: new Headers() };
+    return { ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'gpt-5.4', http: { status: 200, headers: new Headers() } };
   });
   queueResolution([makeCandidate({ targetApi: 'openaiChatCompletions', callOpenAIChatCompletions })], {
     aliasRules: { reasoning: { effort: 'high', budget_tokens: 1024 }, verbosity: 'low' },
@@ -475,7 +475,7 @@ test('alias whose targets have no kind-matching binding surfaces as the regular 
 
   assertEquals(result.type, 'api-error');
   if (result.type !== 'api-error') throw new Error('unreachable');
-  assertEquals(result.status, 404);
+  assertEquals(result.http.status, 404);
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body.error.message, 'Model gemini-fast is not available on any configured upstream.');
 });
@@ -488,10 +488,10 @@ test('generate prefers a native Gemini candidate over a translated one', async (
       { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'native' }] }, finishReason: 'STOP' }] },
     ]),
     modelKey: 'k',
-    headers: new Headers(),
+    http: { status: 200, headers: new Headers() },
   }));
   const callOpenAIChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
+    ok: true, events: makeProtocolFrames(makeOpenAIChatCompletionsEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
   }));
   queueResolution([
     makeCandidate({ endpoints: { geminiGenerateContent: {}, openaiChatCompletions: {} }, callGeminiGenerateContent, callOpenAIChatCompletions }),
@@ -523,7 +523,7 @@ test('a native candidate keeps a foreign signature verbatim', async () => {
         { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'ok' }] }, finishReason: 'STOP' }] },
       ]),
       modelKey: 'k',
-      headers: new Headers(),
+      http: { status: 200, headers: new Headers() },
     };
   });
   const payload = makePayload({

@@ -50,7 +50,7 @@ describe('iterateCandidates', () => {
         attempt.timing.firstOutputTokenAt = 200;
         return candidate.model.id === 'c'
           ? { type: 'events' as const }
-          : { type: 'api-error' as const };
+          : { type: 'api-error' as const, http: new Response(null, { status: 502 }) };
       },
     );
 
@@ -88,8 +88,8 @@ describe('iterateCandidates', () => {
     const ctx = stubCtx({ timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, telemetry: undefined });
     let index = 0;
     const failures = [
-      { type: 'api-error' as const, marker: 'first' },
-      { type: 'internal-error' as const, marker: 'last' },
+      { type: 'api-error' as const, http: new Response(null, { status: 429 }), marker: 'first' },
+      { type: 'internal-error' as const, http: new Response(null, { status: 502 }), marker: 'last' },
     ];
     const result = await iterateCandidates(
       [stubCandidate('a'), stubCandidate('b')],
@@ -113,12 +113,12 @@ describe('iterateCandidates', () => {
       async candidate => {
         attempts.push(attempts.length);
         return candidate.model.id === 'a'
-          ? { type: 'plain' as const, status: 500 }
-          : { type: 'plain' as const, status: 200 };
+          ? { type: 'plain' as const, http: new Response(null, { status: 500 }) }
+          : { type: 'plain' as const, http: { status: 200, headers: new Headers() } };
       },
     );
 
     expect(attempts).toEqual([0, 1]);
-    expect(result).toEqual({ type: 'plain', status: 200 });
+    expect(result).toEqual({ type: 'plain', http: { status: 200, headers: new Headers() } });
   });
 });

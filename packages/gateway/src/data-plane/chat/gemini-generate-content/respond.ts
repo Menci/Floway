@@ -35,11 +35,11 @@ export const respondGeminiGenerateContent = async (
   if (result.type === 'internal-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
-    return geminiGenerateContentErrorResponse(result.status, result.error.message, result.error);
+    return geminiGenerateContentErrorResponse(result.http.status, result.error.message, result.error);
   }
 
   if (result.type === 'plain') {
-    if (result.status >= 400) {
+    if (result.http.status >= 400) {
       ctx.dump?.error(result.upstreamId !== undefined ? 'upstream' : 'gateway', result.upstreamId);
     }
     return plainResultToResponse(result);
@@ -56,7 +56,7 @@ export const respondGeminiGenerateContent = async (
       const usage = tokenUsageFromBillableUsage(metadata.billableUsage);
       ctx.dump?.success(metadata.modelIdentity, usage);
       settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed);
-      return Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) });
+      return Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.http?.headers) });
     } catch (error) {
       recordFailedRequest(ctx, result.performance);
       ctx.dump?.failed(error);
@@ -64,7 +64,7 @@ export const respondGeminiGenerateContent = async (
     }
   }
 
-  forwardUpstreamHeaders(c, result.headers);
+  forwardUpstreamHeaders(c, result.http?.headers);
   return streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {
@@ -118,7 +118,7 @@ const geminiGenerateContentErrorResponse = (status: number, message: string, err
   return Response.json(payload, { status: code });
 };
 
-const geminiGenerateContentApiErrorResponse = (error: ApiErrorResult): Response => googleRpcErrorPassthroughResponse(error) ?? geminiGenerateContentErrorResponse(error.status, apiErrorMessage(error));
+const geminiGenerateContentApiErrorResponse = (error: ApiErrorResult): Response => googleRpcErrorPassthroughResponse(error) ?? geminiGenerateContentErrorResponse(error.http.status, apiErrorMessage(error));
 
 const geminiGenerateContentCollectErrorResponse = (error: unknown): Response => {
   const geminiGenerateContentError = caughtGeminiGenerateContentErrorEvent(error);
@@ -152,7 +152,7 @@ const googleRpcErrorPassthroughResponse = (error: ApiErrorResult): Response | nu
 
   return new Response(error.body.slice(), {
     status: googleRpcHttpStatusCode(parsed.error.code),
-    headers: new Headers(error.headers),
+    headers: new Headers(error.http.headers),
   });
 };
 
