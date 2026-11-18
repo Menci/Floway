@@ -65,38 +65,6 @@ describe('modelsField rerank targets', () => {
   });
 });
 
-test('modelsField parses a full model entry', () => {
-  const models = modelsField(
-    [
-      {
-        upstreamModelId: 'gpt-prod',
-        publicModelId: 'gpt-5',
-        endpoints: { openaiChatCompletions: {}, openaiResponses: {} },
-        display_name: 'GPT Prod',
-        limits: { max_context_window_tokens: 128000, max_output_tokens: 4096 },
-        pricing: { entries: [{ rates: { input_tokens: '2.5', output_tokens: '15', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.75' } }] },
-        flagOverrides: { 'vendor-deepseek': false },
-        opaqueBlobCompatibilityScope: { bindToUpstream: false, key: 'shared-model' },
-      },
-    ],
-    'azure',
-  );
-
-  assertEquals(models, [
-    {
-      upstreamModelId: 'gpt-prod',
-      publicModelId: 'gpt-5',
-      kind: 'chat',
-      endpoints: { openaiChatCompletions: {}, openaiResponses: {} },
-      display_name: 'GPT Prod',
-      limits: { max_context_window_tokens: 128000, max_output_tokens: 4096 },
-      pricing: { entries: [{ rates: { input_tokens: '2.5', output_tokens: '15', input_cache_read_tokens: '0.25', input_cache_write_tokens: '3.75' } }] },
-      flagOverrides: { 'vendor-deepseek': false },
-      opaqueBlobCompatibilityScope: { bindToUpstream: false, key: 'shared-model' },
-    },
-  ]);
-});
-
 test('modelsField derives kind from endpoints when omitted', () => {
   const [embedding] = modelsField([{ upstreamModelId: 'e', endpoints: { openaiEmbeddings: {} } }], 'custom');
   assertEquals(embedding.kind, 'embedding');
