@@ -1439,8 +1439,10 @@ const assertAmbiguousShimRejection = async (args: string, backend: { calls: unkn
   const item = wsCallDone[0].item as OpenAIResponsesOutputWebSearchCall;
   assertEquals(item.action?.type, 'search');
   assert(Array.isArray(item.results));
-  assert(item.results![0].snippet.includes('ambiguous'));
-  assert(item.results![0].snippet.includes('one web_search_call'));
+  const webResult = item.results[0];
+  assert(webResult.type === 'text_result');
+  assert(webResult.snippet.includes('ambiguous'));
+  assert(webResult.snippet.includes('one web_search_call'));
 };
 
 test('multi-kind shim call (search_query + open) is rejected as ambiguous before any backend dispatch', async () => {
@@ -3647,7 +3649,9 @@ test('open with valid URL whose fetch fails: done frame carries action.type="ope
   assertEquals(doneItem.action, { type: 'open_page', url: failingUrl });
   // Error explanation lives on the results snippet, not the action.
   assertEquals(doneItem.results?.length, 1);
-  assert(doneItem.results?.[0].snippet.includes('404 Not Found'));
+  const webResult = doneItem.results?.[0];
+  assert(webResult?.type === 'text_result');
+  assert(webResult.snippet.includes('404 Not Found'));
 });
 
 test('include: ["web_search_call.action.sources"] populates action.sources with search-result URLs', async () => {
@@ -4179,7 +4183,9 @@ test('disabled search provider: dispatched op surfaces explanation snippet (no 5
     .map(e => e.item)
     .filter((i): i is OpenAIResponsesOutputWebSearchCall => i.type === 'web_search_call');
   assertEquals(done.length, 1);
-  const snippet = done[0].results![0].snippet;
+  const webResult = done[0].results?.[0];
+  assert(webResult?.type === 'text_result');
+  const snippet = webResult.snippet;
   assert(snippet.includes('not configured'));
 });
 
@@ -4199,7 +4205,9 @@ test('missing-credential search provider: dispatched op surfaces explanation sni
     .map(e => e.item)
     .filter((i): i is OpenAIResponsesOutputWebSearchCall => i.type === 'web_search_call');
   assertEquals(done.length, 1);
-  const snippet = done[0].results![0].snippet;
+  const webResult = done[0].results?.[0];
+  assert(webResult?.type === 'text_result');
+  const snippet = webResult.snippet;
   assert(snippet.includes('tavily'));
 });
 
@@ -5259,7 +5267,9 @@ test('wrong-typed supported sub-property (search_query as object) synthesizes a 
   assertEquals(item.action?.type, 'search');
   assert(item.results !== undefined);
   assert(item.results.length > 0);
-  assert(item.results[0].snippet.includes('search_query'));
+  const webResult = item.results[0];
+  assert(webResult.type === 'text_result');
+  assert(webResult.snippet.includes('search_query'));
   // No backend search fired — schema errors short-circuit before dispatch.
   assertEquals(backend.calls.length, 0);
 });

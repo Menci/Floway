@@ -1127,17 +1127,30 @@ export type OpenAIResponsesWebSearchAction =
   | { type: 'open_page'; url?: string }
   | { type: 'find_in_page'; url: string; pattern: string };
 
-export interface OpenAIResponsesWebSearchResultEx {
-  // Copilot emits this entry shape. OpenAI only declares the
-  // `web_search_call.results` include, while Codex deliberately types results
-  // as opaque JSON so new variants remain forward-compatible.
-  // https://github.com/openai/openai-node/blob/b1d437885f3d3076a746a93e6950e29754bd6449/src/resources/responses/responses.ts#L4496-L4523
-  // https://github.com/openai/codex/blob/2f19a57704fb7b1db032bc38cf995034254eaebb/codex-rs/codex-api/src/search.rs#L297-L305
+export interface OpenAIResponsesWebSearchTextResult {
+  // Codex's official wire tests preserve future fields alongside this shape.
+  // https://github.com/openai/codex/blob/081f205f423eb2a4db54318e7ded3b074aeb5532/codex-rs/codex-api/src/endpoint/search.rs#L138-L150
   type: 'text_result';
   url: string;
   title: string;
   snippet: string;
+  ref_id?: string;
+  [field: string]: unknown;
 }
+
+export interface OpenAIResponsesWebSearchImageResult {
+  // https://developers.openai.com/api/docs/guides/tools-web-search#image-search-results
+  type: 'image_result';
+  image_url: string;
+  source_website_url: string;
+  thumbnail_url?: string | null;
+  caption?: string | null;
+  [field: string]: unknown;
+}
+
+export type OpenAIResponsesWebSearchResult =
+  | OpenAIResponsesWebSearchTextResult
+  | OpenAIResponsesWebSearchImageResult;
 
 export interface OpenAIResponsesOutputWebSearchCall {
   type: 'web_search_call';
@@ -1147,7 +1160,7 @@ export interface OpenAIResponsesOutputWebSearchCall {
   // `output_item.added` and only populates it on `.done` once the
   // action shape (search vs open_page vs find_in_page) is known.
   action?: OpenAIResponsesWebSearchAction;
-  results?: OpenAIResponsesWebSearchResultEx[];
+  results?: OpenAIResponsesWebSearchResult[];
 }
 
 export type OpenAIResponsesOutputImageGenerationCall = Official.ResponseOutputItem.ImageGenerationCall;
