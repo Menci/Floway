@@ -14,7 +14,7 @@ import { readOpenAIResponsesRequest } from '../../../src/protocols/openai-respon
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesToolChoiceEx } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
 
 const options = { sidecarCodec: createTestSidecarCodec() };
 
@@ -212,10 +212,10 @@ test('tool selection never changes the complete allocated declaration inventory'
     { type: 'namespace' as const, name: 'x', description: 'group', tools: [{ type: 'function' as const, name: 'f' }, { type: 'custom' as const, name: 'f' }] },
     { type: 'function' as const, name: 'x_f' },
   ];
-  const choices: (OpenAIResponsesToolChoiceEx | undefined)[] = [
-    undefined, 'auto', 'none', 'required', { type: 'function', namespace: 'x', name: 'f' },
+  const choices: (OpenAIResponsesToolChoice | undefined)[] = [
+    undefined, 'auto', 'none', 'required', { type: 'function', name: 'x.f' },
     { type: 'allowed_tools', mode: 'auto', tools: [] },
-    { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', namespace: 'x', name: 'f' }] },
+    { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', name: 'x.f' }] },
   ];
   let declarations: unknown;
   for (const tool_choice of choices) {

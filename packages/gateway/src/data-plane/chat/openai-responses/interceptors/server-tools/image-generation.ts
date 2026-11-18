@@ -20,7 +20,7 @@ import {
   type OpenAIResponsesInputImage,
   type OpenAIResponsesInputImageGenerationCall,
   type CanonicalOpenAIResponsesInputItem,
-  type OpenAIResponsesOutputImageGenerationCallEx,
+  type OpenAIResponsesOutputImageGenerationCall,
   type OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf, type Fetcher, type OpenAIImagesEditsRequest, type Provider, type ProviderCallResult, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
@@ -1179,17 +1179,17 @@ export const imageTerminal = (
   outcome: ImageOutcome,
 ): ServerToolSlotResult => {
   if (!outcome.ok) {
-    const item: ServerToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCallEx, 'id'> = {
+    const item: ServerToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCall, 'id'> = {
       type: 'image_generation_call',
       status: 'failed',
       result: null,
       revised_prompt: prompt,
-      error: { message: outcome.error.message, code: outcome.error.code, type: outcome.error.type },
+      error: { message: outcome.error.message, code: outcome.error.code, type: outcome.error.type, param: null },
     };
     return { item, endEvents: [], replayData: imageReplayInputs(item) };
   }
 
-  const item: ServerToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCallEx, 'id'> = {
+  const item: ServerToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCall, 'id'> = {
     type: 'image_generation_call',
     status: 'completed',
     action,

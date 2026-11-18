@@ -54,6 +54,24 @@ export const canonicalizeOpenAIResponsesPayload = (value: unknown): CanonicalOpe
   if (typeof input !== 'string' && !Array.isArray(input)) {
     return { error: { message: 'OpenAI Responses input must be a string or an array.', param: 'input' } };
   }
+  const isSeparateNamespaceSelector = (selector: unknown): boolean => {
+    if (typeof selector !== 'object' || selector === null) return false;
+    const value = selector as Record<string, unknown>;
+    return (value.type === 'function' || value.type === 'custom') && Object.hasOwn(value, 'namespace');
+  };
+  const toolChoice: unknown = payload.tool_choice;
+  if (isSeparateNamespaceSelector(toolChoice)
+    || (typeof toolChoice === 'object' && toolChoice !== null
+      && (toolChoice as { type?: unknown }).type === 'allowed_tools'
+      && Array.isArray((toolChoice as { tools?: unknown }).tools)
+      && (toolChoice as { tools: unknown[] }).tools.some(isSeparateNamespaceSelector))) {
+    return {
+      error: {
+        message: 'OpenAI Responses callable tool selectors, including allowed_tools entries, must use a qualified name, not a separate namespace field.',
+        param: 'tool_choice',
+      },
+    };
+  }
   const canonical: CanonicalOpenAIResponsesPayload = { ...payload, model: payload.model, input: [] };
   const items = canonical.input;
   if (typeof input === 'string') {
@@ -65,6 +83,9 @@ export const canonicalizeOpenAIResponsesPayload = (value: unknown): CanonicalOpe
       } else if (typeof item !== 'object' || item === null || (item as { type?: unknown }).type === undefined) {
         return { error: { message: 'Untyped OpenAI Responses input items require a valid role and content.', param: `input[${index}]` } };
       } else {
+        if ((item as { type?: unknown }).type === 'web_search_call' && Object.hasOwn(item, 'results')) {
+          return { error: { message: 'OpenAI Responses input web_search_call items must not include results.', param: `input[${index}].results` } };
+        }
         items.push(item as CanonicalOpenAIResponsesInputItem);
       }
     }

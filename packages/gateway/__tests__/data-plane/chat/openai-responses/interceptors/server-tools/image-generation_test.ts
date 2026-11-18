@@ -425,14 +425,14 @@ test('expandImageGenerationCall provides fallback arguments, result and image fe
 
 test('expandImageGenerationCall does not feed back an image for a failed call', () => {
   const out = expandImageGenerationCall(
-    { type: 'image_generation_call', id: 'ig_f', status: 'failed', result: null, error: { message: 'x', code: 'server_error' } },
+    { type: 'image_generation_call', id: 'ig_f', status: 'failed', result: null, error: { message: 'x', code: 'server_error', type: 'server_error', param: null } },
   );
   assertEquals(out.feedback, []);
 });
 
 test('expandImageGenerationCall encodes a failed call as ok:false with error detail', () => {
   const out = expandImageGenerationCall(
-    { type: 'image_generation_call', id: 'ig_2', status: 'failed', result: null, revised_prompt: 'x', error: { message: 'overloaded', code: 'EngineOverloaded' } },
+    { type: 'image_generation_call', id: 'ig_2', status: 'failed', result: null, revised_prompt: 'x', error: { message: 'overloaded', code: 'EngineOverloaded', type: 'image_generation_server_error', param: null } },
   );
   assert(typeof out.output === 'string');
   const parsed = JSON.parse(out.output) as { ok: boolean; error: { code: string; message: string; retryable: boolean } };
@@ -552,7 +552,7 @@ test('prepareImageGenerationConfig preserves a remote mask for materialization',
 
 test('expandImageGenerationCall preserves error type and retryability on replay', () => {
   const out = expandImageGenerationCall(
-    { type: 'image_generation_call', id: 'ig_3', status: 'failed', result: null, error: { message: 'blocked', code: 'content_filter', type: 'image_generation_user_error' } },
+    { type: 'image_generation_call', id: 'ig_3', status: 'failed', result: null, error: { message: 'blocked', code: 'content_filter', type: 'image_generation_user_error', param: null } },
   );
   assert(typeof out.output === 'string');
   const parsed = JSON.parse(out.output) as { error: { type: string; code: string; retryable: boolean } };

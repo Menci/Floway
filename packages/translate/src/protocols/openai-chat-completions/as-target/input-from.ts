@@ -295,7 +295,7 @@ export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): 
     ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
     ...(settings.prompt_cache_key === undefined ? {} : { prompt_cache_key: settings.prompt_cache_key }),
     ...(settings.prompt_cache_retention === undefined ? {} : { prompt_cache_retention: settings.prompt_cache_retention }),
-    ...(settings.prompt_cache_options === undefined ? {} : { prompt_cache_options: settings.prompt_cache_options === null ? null : { ...settings.prompt_cache_options } }),
+    ...(settings.prompt_cache_options === undefined ? {} : { prompt_cache_options: { ...settings.prompt_cache_options } }),
     ...(settings.safety_identifier === undefined ? {} : { safety_identifier: settings.safety_identifier }),
     ...(settings.user === undefined ? {} : { user: settings.user }),
     ...(settings.logprobs === undefined ? {} : { logprobs: settings.logprobs }),

@@ -25,9 +25,9 @@ export interface IRInputSettings {
   readonly verbosity?: string; // ChatCompletions, Responses
   readonly prompt_cache_key?: string | null; // ChatCompletions, Responses
   readonly prompt_cache_retention?: string | null; // ChatCompletions, Responses
-  readonly prompt_cache_options?: IRInputPromptCacheOptions | null; // ChatCompletions, Responses
+  readonly prompt_cache_options?: IRInputPromptCacheOptions; // ChatCompletions, Responses
   readonly safety_identifier?: string | null; // ChatCompletions, Responses
-  readonly user?: string | null; // ChatCompletions, Responses
+  readonly user?: string; // ChatCompletions, Responses
   readonly logprobs?: boolean | null; // ChatCompletions, Responses
   readonly top_logprobs?: number | null; // ChatCompletions, Responses
   readonly choice_count?: number; // ChatCompletions, GenerateContent

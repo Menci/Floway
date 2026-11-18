@@ -7,7 +7,7 @@ import {
   type OpenAIResponsesResultEx,
   type OpenAIResponsesStreamEventEx,
   type OpenAIResponsesTool,
-  type OpenAIResponsesToolChoiceEx,
+  type OpenAIResponsesToolChoice,
 } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf } from '@floway-dev/provider';
 
@@ -114,16 +114,17 @@ const rewriteIdentity = <T extends { namespace?: unknown; name?: unknown }>(
 };
 
 const rewriteToolChoice = (
-  toolChoice: OpenAIResponsesToolChoiceEx | null | undefined,
+  toolChoice: OpenAIResponsesToolChoice | null | undefined,
   fromNamespace: string,
   toNamespace: string,
   names: ReadonlySet<string>,
   flatNames: ReadonlySet<string>,
-): OpenAIResponsesToolChoiceEx | null | undefined => {
+): OpenAIResponsesToolChoice | null | undefined => {
   if (!isRecord(toolChoice)) return toolChoice;
   const rewrite = (value: Record<string, unknown>): Record<string, unknown> => {
     if (value.type === 'namespace' && value.name === fromNamespace) return { ...value, name: toNamespace };
     if (value.type !== 'function' && value.type !== 'custom') return value;
+    if ('namespace' in value) return value;
     // A qualified selector stays qualified, preserving its original wire shape.
     const identity = rewriteIdentity(value, fromNamespace, toNamespace, names, flatNames);
     if (identity !== value && value.namespace === undefined && typeof value.name === 'string') {
@@ -136,7 +137,7 @@ const rewriteToolChoice = (
   const rewritten = rewrite(toolChoice);
   return (Array.isArray(rewritten.tools)
     ? { ...rewritten, tools: rewritten.tools.map(tool => isRecord(tool) ? rewrite(tool) : tool) }
-    : rewritten) as OpenAIResponsesToolChoiceEx;
+    : rewritten) as OpenAIResponsesToolChoice;
 };
 
 const requestItem = (item: CanonicalOpenAIResponsesInputItem, upstreamNamespace: string, names: ReadonlySet<string>, flatNames: ReadonlySet<string>): CanonicalOpenAIResponsesInputItem => {

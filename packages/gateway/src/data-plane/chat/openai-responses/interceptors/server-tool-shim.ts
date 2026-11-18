@@ -21,7 +21,7 @@ import {
   type OpenAIResponsesErrorPayload,
   type OpenAIResponsesStreamEventEx,
   type OpenAIResponsesTool,
-  type OpenAIResponsesToolChoiceEx,
+  type OpenAIResponsesToolChoice,
 } from '@floway-dev/protocols/openai-responses';
 import { decodeResponseBody, internalDebugErrorFields, toInternalDebugError, type EventResultMetadata, type ExecuteResult } from '@floway-dev/provider';
 import type { SidecarCodec } from '@floway-dev/translate';
@@ -150,7 +150,7 @@ type ActiveServerTool = Extract<ServerToolPrepareResult, { type: 'active' }> & {
   // top-level replacements participate in response.tools restoration.
   canonicalHostedTool: OpenAIResponsesHostedTool | undefined;
   // Captures the exact forced choice shape before request rewriting.
-  originalToolChoice: Exclude<OpenAIResponsesToolChoiceEx, string> | undefined;
+  originalToolChoice: Exclude<OpenAIResponsesToolChoice, string> | undefined;
 };
 
 // How a single upstream turn ended, as observed while consuming its
@@ -243,9 +243,9 @@ const usageOf = (usage: OpenAIResponsesResultEx['usage']): MergeUsage => {
 };
 
 const rewriteHostedToolChoice = (
-  toolChoice: OpenAIResponsesToolChoiceEx | null | undefined,
+  toolChoice: OpenAIResponsesToolChoice | null | undefined,
   active: readonly ActiveServerTool[],
-): OpenAIResponsesToolChoiceEx | null | undefined => {
+): OpenAIResponsesToolChoice | null | undefined => {
   if (toolChoice == null || typeof toolChoice === 'string') return toolChoice;
   if (toolChoice.type === 'allowed_tools' && Array.isArray(toolChoice.tools)) {
     const tools = toolChoice.tools.map(selector => {
@@ -264,10 +264,10 @@ const rewriteHostedToolChoice = (
 };
 
 const hostedToolChoiceToRestore = (
-  choice: OpenAIResponsesToolChoiceEx | null | undefined,
+  choice: OpenAIResponsesToolChoice | null | undefined,
   hosted: ServerToolHostedDispatch | undefined,
   toolName: string,
-): Exclude<OpenAIResponsesToolChoiceEx, string> | undefined => {
+): Exclude<OpenAIResponsesToolChoice, string> | undefined => {
   if (hosted === undefined || typeof choice !== 'object' || choice === null) return undefined;
   if (hosted.hostedTypes.includes(choice.type)) return choice;
   if (choice.type !== 'allowed_tools' || !Array.isArray(choice.tools)) return undefined;
@@ -281,12 +281,12 @@ const hostedToolChoiceToRestore = (
 };
 
 const isForcedServerToolChoice = (
-  choice: OpenAIResponsesToolChoiceEx | null | undefined,
+  choice: OpenAIResponsesToolChoice | null | undefined,
   dispatchers: ReadonlyMap<string, ServerToolDispatcher>,
 ): boolean => {
   if (choice === 'required') return true;
   if (typeof choice !== 'object' || choice === null) return false;
-  if (choice.type === 'function') return choice.namespace === undefined && dispatchers.has(choice.name);
+  if (choice.type === 'function') return dispatchers.has(choice.name);
   if (choice.type !== 'allowed_tools' || choice.mode !== 'required' || !Array.isArray(choice.tools)) return false;
   return choice.tools.some(selector => selector?.type === 'function' && selector.namespace === undefined
     && typeof selector.name === 'string' && dispatchers.has(selector.name));
@@ -295,9 +295,9 @@ const isForcedServerToolChoice = (
 // The shim demotes forced choice to `auto` after the first turn, so synthesized
 // echoes restore the captured client shape rather than the final upstream echo.
 const restoreEchoedToolChoice = (
-  toolChoice: OpenAIResponsesToolChoiceEx | null | undefined,
+  toolChoice: OpenAIResponsesToolChoice | null | undefined,
   active: readonly ActiveServerTool[],
-): OpenAIResponsesToolChoiceEx | null | undefined => {
+): OpenAIResponsesToolChoice | null | undefined => {
   for (const entry of active) {
     if (entry.originalToolChoice !== undefined) return entry.originalToolChoice;
   }
@@ -327,7 +327,7 @@ export const resolveServerToolName = (
   baseName: string,
   tools: readonly OpenAIResponsesTool[],
   input: readonly CanonicalOpenAIResponsesInputItem[] = [],
-  choice?: OpenAIResponsesToolChoiceEx | null,
+  choice?: OpenAIResponsesToolChoice | null,
 ): string => {
   const MAX_NAME_RESOLUTION_ATTEMPTS = 1000;
   const taken = new Set<string>();
@@ -1251,7 +1251,7 @@ export const withOpenAIResponsesServerToolShim = (
     const toolName = resolveServerToolName(prepared.baseToolName, currentTools, ctx.payload.input, ctx.payload.tool_choice);
     const { hosted } = prepared;
     const choice = ctx.payload.tool_choice;
-    let helperFunctionChoice: Exclude<OpenAIResponsesToolChoiceEx, string> | undefined;
+    let helperFunctionChoice: Exclude<OpenAIResponsesToolChoice, string> | undefined;
     let rewrittenHelperChoice = choice;
     if (hosted !== undefined && toolName !== prepared.baseToolName
       && typeof choice === 'object' && choice !== null) {

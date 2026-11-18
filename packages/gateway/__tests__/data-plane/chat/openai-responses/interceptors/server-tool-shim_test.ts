@@ -128,7 +128,7 @@ test.each([
   { change: 'search results', original: boundSearchItem, changed: { ...boundSearchItem, results: [] } },
   { change: 'search status', original: boundSearchItem, changed: { ...boundSearchItem, status: 'failed' as const } },
   { change: 'image bytes', original: boundImageItem, changed: { ...boundImageItem, result: 'b3RoZXI=' } },
-  { change: 'image error', original: boundImageItem, changed: { ...boundImageItem, status: 'failed' as const, result: null, error: { message: 'different', code: 'server_error' } } },
+  { change: 'image error', original: boundImageItem, changed: { ...boundImageItem, status: 'failed' as const, result: null, error: { message: 'different', code: 'server_error', type: 'server_error', param: null } } },
 ])('shim retains replay when only call outputs change: $change', async ({ original, changed }) => {
   const ctx = makeGatewayCtx();
   const [carrier] = await searchHistory(ctx, 'signed_original', original);
@@ -590,24 +590,26 @@ const mkCustomToolCallDone = (outputIndex: number, callId: string, name: string,
     },
   });
 
-const mkMessageAdded = (outputIndex: number): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+const mkMessageAdded = (outputIndex: number, itemId = `msg_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.added',
     output_index: outputIndex,
     item: {
       type: 'message',
+      id: itemId,
       status: 'in_progress',
       role: 'assistant',
       content: [{ type: 'output_text', text: '', annotations: [] }],
     },
   });
 
-const mkMessageDone = (outputIndex: number, text: string): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
+const mkMessageDone = (outputIndex: number, text: string, itemId = `msg_${outputIndex}`): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
     type: 'response.output_item.done',
     output_index: outputIndex,
     item: {
       type: 'message',
+      id: itemId,
       status: 'completed',
       role: 'assistant',
       content: [{ type: 'output_text', text, annotations: [] }],
@@ -1437,8 +1439,10 @@ const assertAmbiguousShimRejection = async (args: string, backend: { calls: unkn
   const item = wsCallDone[0].item as OpenAIResponsesOutputWebSearchCall;
   assertEquals(item.action?.type, 'search');
   assert(Array.isArray(item.results));
-  assert(item.results![0].snippet.includes('ambiguous'));
-  assert(item.results![0].snippet.includes('one web_search_call'));
+  const webResult = item.results[0];
+  assert(webResult.type === 'text_result');
+  assert(webResult.snippet.includes('ambiguous'));
+  assert(webResult.snippet.includes('one web_search_call'));
 };
 
 test('multi-kind shim call (search_query + open) is rejected as ambiguous before any backend dispatch', async () => {
@@ -3435,7 +3439,7 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
       object: 'response',
       model: 'test-model',
       output: [
-        { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'real result', annotations: [] }] },
+        { type: 'message', id: 'msg_stale', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'real result', annotations: [] }] },
       ],
       status: 'completed',
       error: null,
@@ -3645,7 +3649,9 @@ test('open with valid URL whose fetch fails: done frame carries action.type="ope
   assertEquals(doneItem.action, { type: 'open_page', url: failingUrl });
   // Error explanation lives on the results snippet, not the action.
   assertEquals(doneItem.results?.length, 1);
-  assert(doneItem.results?.[0].snippet.includes('404 Not Found'));
+  const webResult = doneItem.results?.[0];
+  assert(webResult?.type === 'text_result');
+  assert(webResult.snippet.includes('404 Not Found'));
 });
 
 test('include: ["web_search_call.action.sources"] populates action.sources with search-result URLs', async () => {
@@ -3857,14 +3863,12 @@ test('input preprocessor: each web_search_call item becomes one shim call + func
     id: 'ws_old_search',
     status: 'completed',
     action: { type: 'search', queries: ['hello world'] },
-    results: [{ type: 'text_result', url: 'https://x', title: 'X', snippet: 'snippet body' }],
   };
   const replayedOpen: OpenAIResponsesInputWebSearchCall = {
     type: 'web_search_call',
     id: 'ws_old_open',
     status: 'completed',
     action: { type: 'open_page', url: 'https://y' },
-    results: [{ type: 'text_result', url: 'https://y', title: 'Y', snippet: 'page body' }],
   };
   const inv = makeInvocation({
     payload: {
@@ -3917,7 +3921,6 @@ test('input preprocessor: replay-only activation leaves hosted tool_choice uncha
           id: 'ws_old_search',
           status: 'completed',
           action: { type: 'search', queries: ['hello world'] },
-          results: [{ type: 'text_result', url: 'https://x', title: 'X', snippet: 'snippet body' }],
         },
       ],
     },
@@ -4180,7 +4183,9 @@ test('disabled search provider: dispatched op surfaces explanation snippet (no 5
     .map(e => e.item)
     .filter((i): i is OpenAIResponsesOutputWebSearchCall => i.type === 'web_search_call');
   assertEquals(done.length, 1);
-  const snippet = done[0].results![0].snippet;
+  const webResult = done[0].results?.[0];
+  assert(webResult?.type === 'text_result');
+  const snippet = webResult.snippet;
   assert(snippet.includes('not configured'));
 });
 
@@ -4200,7 +4205,9 @@ test('missing-credential search provider: dispatched op surfaces explanation sni
     .map(e => e.item)
     .filter((i): i is OpenAIResponsesOutputWebSearchCall => i.type === 'web_search_call');
   assertEquals(done.length, 1);
-  const snippet = done[0].results![0].snippet;
+  const webResult = done[0].results?.[0];
+  assert(webResult?.type === 'text_result');
+  const snippet = webResult.snippet;
   assert(snippet.includes('tavily'));
 });
 
@@ -4790,7 +4797,7 @@ test('tool_choice "auto" stays "auto" — no demotion when never forced', async 
 
 test.each([false, true])('forced namespaced client tool choice is not mistaken for the hosted shim function (declared %s)', async declared => {
   const { backend } = makeStubDeps();
-  const choice = { type: 'function' as const, namespace: 'client', name: SHIM_TOOL_NAME };
+  const choice = { type: 'function' as const, name: `client.${SHIM_TOOL_NAME}` };
   const inv = makeInvocation({
     payload: {
       tool_choice: choice,
@@ -5260,7 +5267,9 @@ test('wrong-typed supported sub-property (search_query as object) synthesizes a 
   assertEquals(item.action?.type, 'search');
   assert(item.results !== undefined);
   assert(item.results.length > 0);
-  assert(item.results[0].snippet.includes('search_query'));
+  const webResult = item.results[0];
+  assert(webResult.type === 'text_result');
+  assert(webResult.snippet.includes('search_query'));
   // No backend search fired — schema errors short-circuit before dispatch.
   assertEquals(backend.calls.length, 0);
 });
@@ -6001,7 +6010,7 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
     framesOf(
       mkResponseCreated(),
       mkResponseInProgress(),
-      mkMessageAdded(0),
+      mkMessageAdded(0, 'msg_upstream'),
       eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.content_part.added',
         item_id: 'msg_upstream',
@@ -6044,7 +6053,7 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
         content_index: 0,
         part: { type: 'output_text', text: 'hello world', annotations: [] },
       }),
-      mkMessageDone(0, 'hello world'),
+      mkMessageDone(0, 'hello world', 'msg_upstream'),
       mkResponseCompleted(),
     ),
     state,
@@ -6068,7 +6077,7 @@ test('consumeTurn forwards content_part / output_text / annotation events live w
     frame.type === 'event' && frame.event.type === 'response.output_item.added');
   assert(addedFrame?.type === 'event');
   const messageId = (addedFrame.event as { item: { id?: string } }).item.id;
-  assert(messageId !== undefined && /^msg_[0-9a-f]{32}$/.test(messageId));
+  assertEquals(messageId, 'msg_upstream');
 
   for (const f of result.downstreamFrames) {
     if (f.type !== 'event') continue;
@@ -6084,14 +6093,14 @@ test('consumeTurn rewrites any structurally indexed child event without an event
   const result = await consumeTurn(
     framesOf(
       mkResponseCreated(),
-      mkMessageAdded(0),
+      mkMessageAdded(0, 'msg_upstream'),
       eventFrame<OpenAIResponsesStreamEventEx>({
         type: 'response.future_child.delta',
         item_id: 'msg_upstream',
         output_index: 0,
         delta: 'future',
       } as unknown as OpenAIResponsesStreamEventEx),
-      mkMessageDone(0, 'future'),
+      mkMessageDone(0, 'future', 'msg_upstream'),
       mkResponseCompleted(),
     ),
     state,
@@ -6106,7 +6115,7 @@ test('consumeTurn rewrites any structurally indexed child event without an event
     f.type === 'event' && f.event.type === 'response.output_item.added');
   assert(addedFrame?.type === 'event');
   const messageId = (addedFrame.event as { item: { id?: string } }).item.id;
-  assert(messageId !== undefined && /^msg_[0-9a-f]{32}$/.test(messageId));
+  assertEquals(messageId, 'msg_upstream');
   assertEquals((futureFrame.event as { item_id: string }).item_id, messageId);
 });
 
@@ -6623,9 +6632,9 @@ test('createMergeState starts with empty sparse usage accumulator and a synthesi
 
 test('materializeAccumulatedOutput returns items in output_index order regardless of insertion order', () => {
   const s = createMergeState();
-  const itemA: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'A', annotations: [] }] };
-  const itemB: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
-  const itemC: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'C', annotations: [] }] };
+  const itemA: OpenAIResponsesOutputItemEx = { type: 'message', id: 'msg_a', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'A', annotations: [] }] };
+  const itemB: OpenAIResponsesOutputItemEx = { type: 'message', id: 'msg_b', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
+  const itemC: OpenAIResponsesOutputItemEx = { type: 'message', id: 'msg_c', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'C', annotations: [] }] };
   s.accumulatedOutput.set(2, itemC);
   s.accumulatedOutput.set(0, itemA);
   s.accumulatedOutput.set(1, itemB);
@@ -6638,7 +6647,7 @@ test('materializeAccumulatedOutput returns items in output_index order regardles
 
 test('materializeAccumulatedOutput drops holes in the index sequence (defensive)', () => {
   const s = createMergeState();
-  const itemB: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
+  const itemB: OpenAIResponsesOutputItemEx = { type: 'message', id: 'msg_b', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
   s.accumulatedOutput.set(1, itemB);
   const out = materializeAccumulatedOutput(s);
   assertEquals(out.length, 1);
@@ -7102,7 +7111,7 @@ test('helper allocation reserves names across callable scopes, history and searc
     { type: 'additional_tools', role: 'developer', tools: [{ type: 'custom', name: 'web_search_6' }] },
   ];
   const original = structuredClone({ tools, input });
-  assertEquals(resolveServerToolName('web_search', tools, input, { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: 'web_search_7', namespace: 'client' }] }), 'web_search_8');
+  assertEquals(resolveServerToolName('web_search', tools, input, { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: 'client.web_search_7' }] }), 'web_search_8');
   assertEquals(resolveServerToolName('web_search', [], [], { type: 'custom', name: 'web_search' }), 'web_search_2');
   assertEquals({ tools, input }, original);
 });

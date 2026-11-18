@@ -51,7 +51,7 @@ export interface OpenAIResponsesPayloadEx extends Omit<OpenAIResponsesPayload, '
   // https://github.com/openai/openai-python/blob/main/src/openai/types/responses/response_create_params.py
   max_tool_calls?: number | null;
   tools?: OpenAIResponsesTool[] | null;
-  tool_choice?: OpenAIResponsesToolChoiceEx | null;
+  tool_choice?: OpenAIResponsesToolChoice | null;
   metadata?: Record<string, string> | null;
   stream?: boolean | null;
   store?: boolean | null;
@@ -258,22 +258,37 @@ export type OpenAIResponsesCustomToolCallOutputItem = Omit<OpenWire<Official.Res
 // without `type` is a wire shorthand.
 export type OpenAIResponsesItemReference = OpenWire<Official.ResponseInputItem.ItemReference> & { type: 'item_reference' };
 
-// Floway's web-search shim emits text results. The Codex search endpoint returns
-// the same `text_result` entries.
-// https://github.com/openai/codex/blob/24e236514bebcef874c2d38ce5df26164aa50ca4/codex-rs/codex-api/src/endpoint/search.rs#L140-L150
-export interface OpenAIResponsesWebSearchResultEx {
+export interface OpenAIResponsesWebSearchTextResult {
+  // Codex's official wire tests preserve future fields alongside this shape.
+  // https://github.com/openai/codex/blob/081f205f423eb2a4db54318e7ded3b074aeb5532/codex-rs/codex-api/src/endpoint/search.rs#L138-L150
   type: 'text_result';
   url: string;
   title: string;
   snippet: string;
+  ref_id?: string;
+  [field: string]: unknown;
 }
+
+export interface OpenAIResponsesWebSearchImageResult {
+  // https://developers.openai.com/api/docs/guides/tools-web-search#image-search-results
+  type: 'image_result';
+  image_url: string;
+  source_website_url: string;
+  thumbnail_url?: string | null;
+  caption?: string | null;
+  [field: string]: unknown;
+}
+
+export type OpenAIResponsesWebSearchResult =
+  | OpenAIResponsesWebSearchTextResult
+  | OpenAIResponsesWebSearchImageResult;
 
 export type OpenAIResponsesWebSearchAction = OpenWire<Official.ResponseFunctionWebSearch['action']>;
 
 // `results` is returned on `include: ["web_search_call.results"]`.
 // https://github.com/openai/openai-node/blob/7423ac3e9351c46300cd094479cded5551a72eb4/src/resources/responses/responses.ts
-type OpenAIResponsesWebSearchCallFields = Omit<OpenWire<Official.ResponseFunctionWebSearch>, 'action'> & CodexInternalChatMessageMetadata & {
-  results?: OpenAIResponsesWebSearchResultEx[];
+type OpenAIResponsesWebSearchCallFields = Omit<OpenWire<Official.ResponseFunctionWebSearch>, 'action' | 'results'> & CodexInternalChatMessageMetadata & {
+  results?: OpenAIResponsesWebSearchResult[];
 };
 
 // An upstream omits `action` on `output_item.added`; clients echo the item back
@@ -282,7 +297,7 @@ export type OpenAIResponsesOutputWebSearchCall = OpenAIResponsesWebSearchCallFie
   action?: OpenAIResponsesWebSearchAction;
 };
 
-export type OpenAIResponsesInputWebSearchCall = Omit<OpenAIResponsesOutputWebSearchCall, 'id' | 'status'> & {
+export type OpenAIResponsesInputWebSearchCall = Omit<OpenAIResponsesOutputWebSearchCall, 'id' | 'status' | 'results'> & {
   id?: string;
   status?: OpenAIResponsesOutputWebSearchCall['status'];
 };
@@ -363,12 +378,7 @@ export interface OpenAIResponsesCompactionItemEx extends OpenAIResponsesCompacti
 
 export type OpenAIResponsesCompactionTriggerItem = OpenWire<Official.ResponseInputItem.CompactionTrigger>;
 
-// The image-generation shim reports a failed generation on the item.
-export interface OpenAIResponsesImageGenerationCallErrorEx {
-  error?: { message: string; code: string; type?: string };
-}
-
-export type OpenAIResponsesInputImageGenerationCall = OpenWire<Official.ResponseInputItem.ImageGenerationCall> & CodexInternalChatMessageMetadata & OpenAIResponsesImageGenerationCallErrorEx;
+export type OpenAIResponsesInputImageGenerationCall = OpenWire<Official.ResponseInputItem.ImageGenerationCall> & CodexInternalChatMessageMetadata;
 
 export type OpenAIResponsesCodeInterpreterCallItem = OpenWire<Official.ResponseCodeInterpreterToolCall>;
 
@@ -492,14 +502,6 @@ export type OpenAIResponsesToolChoice =
   | OpenWire<Official.ToolChoiceShell>
   | OpenAIResponsesHostedToolChoice;
 
-// Floway's collaboration shim forces a namespaced callable with a separated
-// `namespace`, the selector shape tool declarations use.
-// https://github.com/lidge-jun/opencodex/blob/e45692f8d8e4dedfb4e9b0217fc245080fb2fba8/src/responses/plaintext-v2-agent-messages.ts#L130-L156
-export type OpenAIResponsesToolChoiceEx =
-  | Exclude<OpenAIResponsesToolChoice, OpenWire<Official.ToolChoiceFunction> | OpenWire<Official.ToolChoiceCustom>>
-  | (OpenWire<Official.ToolChoiceFunction> & { namespace?: string })
-  | (OpenWire<Official.ToolChoiceCustom> & { namespace?: string });
-
 // ── Response types ──
 
 export type OpenAIResponsesResult = Official.Response & { presence_penalty?: number; frequency_penalty?: number };
@@ -534,7 +536,7 @@ export interface OpenAIResponsesResultEx extends Omit<Partial<OpenAIResponsesRes
   // declares both fields; observed upstream echoes (Copilot, Azure)
   // confirm they're populated with server-enriched defaults.
   tools?: OpenAIResponsesTool[];
-  tool_choice?: OpenAIResponsesToolChoiceEx | null;
+  tool_choice?: OpenAIResponsesToolChoice | null;
   // The response resource requires `usage` and gives it an explicit `null`
   // alternative, so `null` is what an upstream sends for a response that
   // reported no token counts. The key stays optional because a partially built
@@ -632,7 +634,7 @@ export type OpenAIResponsesOutputItemEx =
   | OpenAIResponsesMcpListToolsItem
   | OpenAIResponsesMcpApprovalRequestItem
   | OpenAIResponsesMcpApprovalResponseItem
-  | OpenAIResponsesOutputImageGenerationCallEx;
+  | OpenAIResponsesOutputImageGenerationCall;
 
 export type OpenAIResponsesOutputText = Omit<OpenWire<Official.ResponseOutputText>, 'logprobs'> & {
   logprobs?: OpenAIResponsesOutputLogprobEx[];
@@ -644,11 +646,9 @@ export type OpenAIResponsesOutputContentBlock = OpenAIResponsesOutputText | Open
 
 export type OpenAIResponsesAnnotation = OpenAIResponsesOutputText['annotations'][number];
 
-// The item schema requires `id` on every output item. An upstream that omits it
-// is surfaced by `requireItemId` rather than given an invented value, so the
-// upstream-facing view keeps it optional.
-export type OpenAIResponsesOutputMessageEx = Omit<OpenWire<Official.ResponseOutputMessage>, 'id' | 'content'> & {
-  id?: string;
+// The item schema requires `id` on every output message, so producers must
+// preserve the upstream value rather than synthesize a replacement.
+export type OpenAIResponsesOutputMessageEx = Omit<OpenWire<Official.ResponseOutputMessage>, 'content'> & {
   content: OpenAIResponsesOutputContentBlock[];
 };
 
@@ -660,8 +660,7 @@ export type OpenAIResponsesOutputCustomToolCall = OpenAIResponsesCustomToolCallI
 
 export type OpenAIResponsesOutputReasoning = OpenWire<Official.ResponseReasoningItem> & CodexInternalChatMessageMetadata;
 
-export type OpenAIResponsesOutputImageGenerationCall = OpenWire<Official.ResponseOutputItem.ImageGenerationCall>;
-export type OpenAIResponsesOutputImageGenerationCallEx = OpenAIResponsesOutputImageGenerationCall & CodexInternalChatMessageMetadata & OpenAIResponsesImageGenerationCallErrorEx;
+export type OpenAIResponsesOutputImageGenerationCall = OpenWire<Official.ResponseOutputItem.ImageGenerationCall> & CodexInternalChatMessageMetadata;
 
 export type OpenAIResponsesLogprob = OpenWire<Official.ResponseOutputText.Logprob>;
 
