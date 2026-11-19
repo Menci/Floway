@@ -41,8 +41,8 @@ test('failed probes retain the last successful observation and propagate the fai
   const initial = recentState();
   const repo = setupRepo(initial);
   await withMockedFetch(() => new Response('temporarily unavailable', { status: 503 }), async () => {
-    await expect(refreshKimiCodeUsageProbe('up_kimi_code', config, testFetcher)).rejects.toThrow('503');
-    await expect(refreshKimiCodeAccountProbe('up_kimi_code', config, testFetcher)).rejects.toThrow('503');
+    await expect(refreshKimiCodeUsageProbe('up_kimi_code', config, testFetcher)).rejects.toThrow('temporarily unavailable');
+    await expect(refreshKimiCodeAccountProbe('up_kimi_code', config, testFetcher)).rejects.toThrow('temporarily unavailable');
   });
   expect(repo.read().usageProbe?.observation).toEqual(initial.usageProbe?.observation);
   expect(repo.read().accountProbe?.observation).toEqual(initial.accountProbe?.observation);
@@ -72,9 +72,9 @@ test('older concurrent probes cannot replace newer state or metrics', async () =
 test('scheduled quota refresh succeeds even when the optional account endpoint fails', async () => {
   const repo = setupRepo();
   const fetcher: Fetcher = async url => url.endsWith('/usages') ? Response.json(usage()) : new Response('profile unavailable', { status: 404 });
-  await expect(runKimiCodeScheduledTask(record({ state: null, usageRefreshIntervalMinutes: 5 }), { fetcher: async () => fetcher })).rejects.toThrow('scheduled probes');
+  await expect(runKimiCodeScheduledTask(record({ state: null, usageRefreshIntervalMinutes: 5 }), { fetcher: async () => fetcher })).rejects.toThrow(AggregateError);
   expect(repo.read().usageProbe?.observation?.data).toEqual(usage());
-  expect(repo.read().accountProbe?.error).toContain('404');
+  expect(repo.read().accountProbe?.error).toContain('profile unavailable');
 });
 
 test('request-time debounce, opt-out and scheduled intervals issue only due reads', async () => {

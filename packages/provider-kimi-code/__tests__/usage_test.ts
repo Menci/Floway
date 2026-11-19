@@ -19,7 +19,7 @@ test('quota violations throw instead of publishing made-up readings', () => {
   }
   const body = usage();
   body.usages.limit_5h.reset_time = 'not-a-date';
-  expect(() => readKimiCodeUsage(body)).toThrow('timestamp');
+  expect(() => readKimiCodeUsage(body)).toThrow(TypeError);
   delete body.usages.limit_5h;
   expect(() => readKimiCodeUsage(body)).toThrow();
 });

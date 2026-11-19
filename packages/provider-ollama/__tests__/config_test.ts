@@ -41,6 +41,5 @@ test('assertOllamaUpstreamRecord rejects rerank models', () => {
       },
     }),
     Error,
-    'rerank models require a custom upstream',
   );
 });

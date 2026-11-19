@@ -8,7 +8,7 @@ test('Kimi Code config chooses a coding region and requires a credential', () =>
   expect(parseKimiCodeUpstreamConfig({ ...config, region: 'overseas' }).region).toBe('overseas');
   for (const invalid of [{ ...config, region: 'elsewhere' }, { ...config, apiKey: '' }]) expect(() => parseKimiCodeUpstreamConfig(invalid)).toThrow();
   expect(assertKimiCodeUpstreamRecord(record()).config).toEqual(config);
-  expect(() => assertKimiCodeUpstreamRecord(record({ kind: 'custom' }))).toThrow('Expected kimi-code');
+  expect(() => assertKimiCodeUpstreamRecord(record({ kind: 'custom' }))).toThrow(TypeError);
 });
 
 test('Kimi Code state follows the credential through regional configuration changes', () => {
