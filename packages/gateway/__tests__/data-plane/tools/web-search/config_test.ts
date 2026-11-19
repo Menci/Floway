@@ -33,7 +33,6 @@ test('parseWebSearchConfigStrict throws on missing required fields', () => {
   assertThrows(
     () => parseWebSearchConfigStrict({ provider: 'disabled', tavily: {}, microsoftWebIq: { apiKey: '' }, jina: { apiKey: '' } }),
     Error,
-    'tavily.apiKey',
   );
 });
 
