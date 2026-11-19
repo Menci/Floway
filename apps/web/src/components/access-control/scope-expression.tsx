@@ -86,8 +86,9 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
   const [dirty, setDirty] = useState(false);
   const [pendingKind, setPendingKind] = useState<ScopeKind | null>(null);
   const editRevision = useRef(0);
+  const activePartRef = useRef<Part | null>(null);
   // A deferred blur must not commit after replacement or a read-only transition.
-  useEffect(() => () => { editRevision.current++; }, [readOnly]);
+  useEffect(() => () => { editRevision.current++; activePartRef.current = null; }, [readOnly]);
   if (readOnly && editingPart !== null) {
     setActive(null);
     setQuery('');
@@ -98,6 +99,7 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
 
   const resetInput = (nextActive: Part | null, nextQuery = '') => {
     editRevision.current++;
+    activePartRef.current = nextActive;
     setActive(nextActive);
     setQuery(nextQuery);
     setDirty(false);
@@ -171,7 +173,8 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
       commitModel(`${patternKind}:${trimmed}`);
     } else closeInput();
   };
-  const onInputBlur: NonNullable<ComponentProps<typeof InlineCombobox>['onBlur']> = event => {
+  const onInputBlur = (part: Part, event: Parameters<NonNullable<ComponentProps<typeof InlineCombobox>['onBlur']>>[0]) => {
+    if (activePartRef.current !== part) return;
     const next = event.relatedTarget;
     // A submit click reads the parent's scope after focus leaves this editor.
     // Internal focus and option selection must still be able to replace a draft.
@@ -182,7 +185,7 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
     }
     const revision = editRevision.current;
     window.setTimeout(() => {
-      if (editRevision.current === revision) commitBlur();
+      if (editRevision.current === revision && activePartRef.current === part) commitBlur();
     });
   };
 
@@ -195,7 +198,7 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
     emptyMessage={t('dashboard.accessControl.scope.noMatches')}
     inputRef={inputRef}
     name={`scope-${active}`}
-    onBlur={onInputBlur}
+    onBlur={event => onInputBlur(active, event)}
     onChange={next => {
       setDirty(true);
       setQuery(active === 'model' && purpose === 'scope' ? next.replace(/^\//, '').replace(/\/$/, '') : next);
@@ -219,6 +222,17 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
     else onChange?.(null);
     setPendingKind(null);
   };
+  const editable = !readOnly && !onNavigate;
+  const removePreviousPart = (part: Part) => {
+    setPendingKind(null);
+    if (part === 'model') {
+      resetInput('instance');
+      onChange?.({ kind: 'upstreams' });
+    } else if (part === 'instance') {
+      resetInput('kind');
+      onChange?.(null);
+    }
+  };
 
   const expression = <div aria-label={interactive ? t('dashboard.accessControl.fields.scope') : undefined} className={mergeClasses('floway-scope-expression', !framed && className)} ref={expressionRef} role={interactive ? 'group' : undefined}
     onMouseDown={event => {
@@ -230,12 +244,12 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
       : <PartToken className="floway-scope-expression-kind">{kindLabel(kind, t)}</PartToken>}
     </Segment>
 
-    {showInstance && <Segment active={active === 'instance'} dirty={dirty} input={input} interactive={interactive} onActivate={() => activate('instance')} onCancel={closeInput} part="instance">{hasInstance
+    {showInstance && <Segment active={active === 'instance'} dirty={dirty} input={input} interactive={interactive} onActivate={() => activate('instance')} onBackspace={editable && (active === 'instance' ? query === '' : !hasInstance) ? () => removePreviousPart('instance') : undefined} onCancel={closeInput} part="instance">{hasInstance
       ? <InstancePart data={data} kind={kind} t={t} value={value} />
       : <AppendTrigger label={t('dashboard.accessControl.scope.instance')} />}
     </Segment>}
 
-    {showModel && <Segment active={active === 'model'} dirty={dirty} input={input} interactive={interactive} onActivate={() => activate('model')} onCancel={closeInput} part="model">{value.kind === 'upstreamModel'
+    {showModel && <Segment active={active === 'model'} dirty={dirty} input={input} interactive={interactive} onActivate={() => activate('model')} onBackspace={editable && (active === 'model' ? query === '' : value.kind !== 'upstreamModel') ? () => removePreviousPart('model') : undefined} onCancel={closeInput} part="model">{value.kind === 'upstreamModel'
       ? <ModelPart scope={value} />
       : <AppendTrigger label={t('dashboard.accessControl.scope.model')} />}
     </Segment>}
@@ -243,13 +257,14 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
   return framed ? <ScopeEditorSurface className={className} expressionRef={expressionRef} onActivate={() => activate(lastPart)} onRemove={kind === null ? undefined : removeLast} readOnly={readOnly}>{expression}</ScopeEditorSurface> : expression;
 }
 
-function Segment({ active, children, dirty, input, interactive, onActivate, onCancel, part }: {
+function Segment({ active, children, dirty, input, interactive, onActivate, onBackspace, onCancel, part }: {
   active: boolean;
   children: ReactNode;
   dirty: boolean;
   input: ReactNode;
   interactive: boolean;
   onActivate: () => void;
+  onBackspace?: () => void;
   onCancel: () => void;
   part: Part;
 }) {
@@ -267,6 +282,11 @@ function Segment({ active, children, dirty, input, interactive, onActivate, onCa
       event.stopPropagation();
       restoreFocus.current = true;
       onCancel();
+    } else if (onBackspace && event.key === 'Backspace' && !event.nativeEvent.isComposing
+      && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      onBackspace();
     }
   }}><Slash onActivate={interactive ? onActivate : undefined} />{active
       ? <span className="floway-scope-expression-part-editor" data-pristine={!dirty ? true : undefined}>

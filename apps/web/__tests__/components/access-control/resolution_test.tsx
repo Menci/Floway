@@ -1,9 +1,9 @@
 import { act, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { useAccessResolution } from '../../../src/components/access-control/resolution';
+import { resolveInheritedValues, useAccessResolution } from '../../../src/components/access-control/resolution';
 import { renderInApp } from '../../render';
-import type { AccessPrincipal, AccessScope } from '@floway-dev/gateway/browser';
+import type { AccessPrincipal, AccessRecord, AccessScope } from '@floway-dev/gateway/browser';
 
 const principal: AccessPrincipal = { kind: 'group', id: 3 };
 const scope: AccessScope = { kind: 'upstream', upstreamId: 'up_a' };
@@ -64,4 +64,36 @@ test('resolution failures expose an error without inventing values', async () =>
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Resolution unavailable' }, { status: 503 })));
   renderInApp(<Harness enabled principal={principal} scope={scope} />);
   await waitFor(() => expect(result()).toEqual({ data: null, error: 'Resolution unavailable', pending: false }));
+});
+
+test('resolveInheritedValues computes user, membership group, self, and admin inheritance locally', () => {
+  const data = {
+    users: [
+      { id: 1, username: 'admin', isAdmin: true, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null }, groupIds: [] },
+      { id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null }, groupIds: [3] },
+    ],
+  };
+  const records: AccessRecord[] = [
+    { id: 1, principal: { kind: 'group', id: 3 }, scope: { kind: 'upstreams' }, sortOrder: 0, values: { 'Model.Use': true, 'Upstream.Edit': 'models' }, createdAt: '', updatedAt: '' },
+    { id: 2, principal: { kind: 'user', id: 2 }, scope: { kind: 'upstream', upstreamId: 'up_a' }, sortOrder: 0, values: { 'Model.Use': false }, createdAt: '', updatedAt: '' },
+    { id: 3, principal: { kind: 'group', id: 3 }, scope: { kind: 'self' }, sortOrder: 0, values: { 'Permission.Audit': true }, createdAt: '', updatedAt: '' },
+    { id: 4, principal: { kind: 'group', id: 4 }, scope: { kind: 'upstreams' }, sortOrder: 0, values: { 'Upstream.Audit': true }, createdAt: '', updatedAt: '' },
+  ];
+
+  expect(resolveInheritedValues({ data, excludeRecordId: 2, principal: { kind: 'user', id: 2 }, records, scope })).toEqual({
+    'Model.Use': true,
+    'Upstream.Audit': false,
+    'Upstream.Edit': 'models',
+  });
+  expect(resolveInheritedValues({ data, principal: { kind: 'user', id: 2 }, records, scope: { kind: 'user', userId: 2 } })).toEqual({
+    'User.Audit': true,
+    'Permission.Audit': true,
+  });
+  expect(resolveInheritedValues({ data, principal: { kind: 'user', id: 1 }, records, scope })).toEqual({
+    'Model.Use': true,
+    'Upstream.Audit': true,
+    'Upstream.Edit': 'full',
+  });
+  expect(resolveInheritedValues({ data, principal: { kind: 'user', id: 2 }, records, scope: { kind: 'self' } })).toBeUndefined();
+  expect(resolveInheritedValues({ data, principal: null, records, scope })).toBeUndefined();
 });

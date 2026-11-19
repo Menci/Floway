@@ -1,7 +1,35 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import type { ScopeExpressionData } from './scope-expression';
 import { api, callApi } from '../../api/client';
-import type { AccessPrincipal, AccessRecord, AccessResolution, AccessScope } from '@floway-dev/gateway/browser';
+import type { AccessPrincipal, AccessRecord, AccessResolution, AccessScope, AccessValues } from '@floway-dev/gateway/browser';
+import { resolveEffectiveAssignments } from '@floway-dev/protocols/browser';
+
+export const resolveInheritedValues = ({ data, excludeRecordId, principal, records, scope }: {
+  data: Pick<ScopeExpressionData, 'users'>;
+  excludeRecordId?: number;
+  principal: AccessPrincipal | null;
+  records: readonly AccessRecord[];
+  scope: AccessScope | null;
+}): AccessValues | undefined => {
+  if (principal === null || scope === null || scope.kind === 'self') return undefined;
+  const user = principal.kind === 'user' ? data.users.find(candidate => candidate.id === principal.id) : undefined;
+  const groupIds = new Set(user?.groupIds ?? []);
+  const applicable = records.filter(record => record.id !== excludeRecordId && (
+    (record.principal.kind === principal.kind && record.principal.id === principal.id)
+    || (principal.kind === 'user' && record.principal.kind === 'group' && groupIds.has(record.principal.id))
+  ));
+  const targetGroups = scope.kind === 'user' && principal.kind === 'user' && scope.userId === principal.id
+    ? groupIds
+    : new Set<number>();
+  return resolveEffectiveAssignments({
+    records: applicable,
+    scope,
+    targetGroups,
+    isAdmin: user?.isAdmin ?? false,
+    subjectUserId: principal.kind === 'user' ? principal.id : undefined,
+  }).values;
+};
 
 export const useAccessResolution = ({ enabled, excludeRecordId, principal, revision, scope }: {
   enabled: boolean;
@@ -28,9 +56,8 @@ export const useAccessResolution = ({ enabled, excludeRecordId, principal, revis
     });
     return () => controller.abort();
   }, [request]);
-  // Disabling keeps the result for an unchanged target: a closing dialog stays
-  // mounted for its exit motion, and dropping the result in that frame would
-  // flash every permission field to "Inherit (unknown)".
+  // Disabling keeps the result for an unchanged target so transient pauses
+  // (such as a page refresh) do not drop resolved effective decisions.
   const current = result?.request === target ? result : null;
   return { data: current?.data ?? null, error: current?.error ?? null, pending: request !== null && current === null };
 };

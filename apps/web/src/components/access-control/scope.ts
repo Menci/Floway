@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import type { ScopeExpressionData } from './scope-expression';
 import type { AccessScope } from '@floway-dev/gateway/browser';
+import { accessScopeDepth, accessScopeKey } from '@floway-dev/protocols/browser';
 
 const modelPatternSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('exact'), value: z.string().min(1) }),
@@ -21,20 +22,8 @@ export const scopeSchema = z.discriminatedUnion('kind', [
 ]);
 
 export const parseScope = (value: string | null): AccessScope | null => value === null ? null : scopeSchema.parse(JSON.parse(value));
-export const scopeDepth = (scope: AccessScope) => scope.kind === 'self' ? 4 : scope.kind === 'upstreamModel' ? 3
-  : scope.kind === 'upstreams' || scope.kind === 'users' || scope.kind === 'groups' ? 1 : 2;
-export const scopeKey = (scope: AccessScope): string => {
-  switch (scope.kind) {
-  case 'upstream': return JSON.stringify([scope.kind, scope.upstreamId]);
-  case 'upstreamModel': return JSON.stringify([scope.kind, scope.upstreamId, scope.model.kind, scope.model.value]);
-  case 'user': return JSON.stringify([scope.kind, scope.userId]);
-  case 'group': return JSON.stringify([scope.kind, scope.groupId]);
-  case 'self':
-  case 'upstreams':
-  case 'users':
-  case 'groups': return scope.kind;
-  }
-};
+export const scopeDepth = accessScopeDepth;
+export const scopeKey = accessScopeKey;
 
 export const scopeContains = (outer: AccessScope | null, inner: AccessScope, data: Pick<ScopeExpressionData, 'groups'>): boolean => {
   if (outer === null || scopeKey(outer) === scopeKey(inner)) return true;

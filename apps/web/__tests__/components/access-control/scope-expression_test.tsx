@@ -559,3 +559,64 @@ test('resource type autocomplete matches localized labels', async () => {
 
   expect(screen.getByRole('option', { name: '用户' })).not.toBeNull();
 });
+
+test('Backspace on an empty segment removes the previous segment and focuses it', async () => {
+  const { changed } = renderEditor();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Resource type' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Upstream' }));
+  fireEvent.click(screen.getByRole('option', { name: 'Copilot' }));
+  const modelInput = screen.getByRole<HTMLInputElement>('combobox', { name: 'Model' });
+  expect(modelInput.value).toBe('');
+
+  fireEvent.keyDown(modelInput, { key: 'Backspace' });
+  expect(changed).toHaveBeenLastCalledWith({ kind: 'upstreams' });
+  const instanceInput = screen.getByRole<HTMLInputElement>('combobox', { name: 'Resource' });
+  expect(instanceInput.value).toBe('');
+  expect(document.activeElement).toBe(instanceInput);
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Copilot', 'vLLM']);
+
+  // A blur fired from the unmounted model input must not close the newly focused instance input.
+  fireEvent.blur(modelInput);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(screen.getByRole('combobox', { name: 'Resource' })).toBe(instanceInput);
+
+  fireEvent.keyDown(instanceInput, { key: 'Backspace' });
+  expect(changed).toHaveBeenLastCalledWith(null);
+  const kindInput = screen.getByRole<HTMLInputElement>('combobox', { name: 'Resource type' });
+  expect(kindInput.value).toBe('');
+  expect(document.activeElement).toBe(kindInput);
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Self', 'User', 'Upstream', 'Group']);
+
+  fireEvent.keyDown(kindInput, { key: 'Backspace' });
+  expect(screen.getByRole('combobox', { name: 'Resource type' })).toBe(kindInput);
+});
+
+test('Backspace only removes the previous segment once the active segment text is empty', () => {
+  const { changed } = renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } });
+  fireEvent.click(screen.getByRole('button', { name: 'gpt-5' }));
+  const input = screen.getByRole<HTMLInputElement>('combobox', { name: 'Model' });
+
+  fireEvent.keyDown(input, { key: 'Backspace' });
+  expect(changed).not.toHaveBeenCalled();
+  expect(screen.getByRole('combobox', { name: 'Model' })).toBe(input);
+
+  fireEvent.change(input, { target: { value: '' } });
+  fireEvent.keyDown(input, { key: 'Backspace', isComposing: true });
+  expect(changed).not.toHaveBeenCalled();
+
+  fireEvent.keyDown(input, { key: 'Backspace' });
+  expect(changed).toHaveBeenLastCalledWith({ kind: 'upstreams' });
+  const instanceInput = screen.getByRole<HTMLInputElement>('combobox', { name: 'Resource' });
+  expect(document.activeElement).toBe(instanceInput);
+});
+
+test('Backspace on an empty append trigger removes the previous segment and activates it', () => {
+  const { changed } = renderEditor({ kind: 'upstreams' });
+  const append = screen.getByRole('button', { name: 'Resource' });
+  append.focus();
+  fireEvent.keyDown(append, { key: 'Backspace' });
+  expect(changed).toHaveBeenLastCalledWith(null);
+  const kindInput = screen.getByRole<HTMLInputElement>('combobox', { name: 'Resource type' });
+  expect(document.activeElement).toBe(kindInput);
+});
