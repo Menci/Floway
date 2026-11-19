@@ -3,21 +3,25 @@ import {
   ArrowUndo16Regular,
   Checkmark16Regular,
   Copy16Regular,
-  Delete16Regular,
   Dismiss16Regular,
   Edit16Regular,
   Warning16Regular,
 } from '@fluentui/react-icons';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useEditorTranslation } from './use-editor-t';
 import { fluentComponents } from '../../fluent';
 import { useCopyEditorStore } from '../../i18n/copy-editor/store';
-import { supportedLanguages } from '../../i18n/languages';
+import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages';
 import { copyToClipboard } from '../ui/copy-to-clipboard';
 import { Textarea } from '../ui/fluent-form-controls';
 
 const { Button, Tab, TabList, Text } = fluentComponents;
+
+const SHORT_LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
+  'en': 'EN',
+  'zh-Hans': '中文',
+};
 
 export interface DraftsPanelProps {
   onClose: () => void;
@@ -39,7 +43,14 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
   const [tab, setTab] = useState<'list' | 'import'>('list');
   const [importText, setImportText] = useState('');
   const [importStatus, setImportStatus] = useState<{ ok: boolean; text: string } | null>(null);
-  const [copyBanner, setCopyBanner] = useState<{ ok: boolean; count: number; message?: string } | null>(null);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const copyTimerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (copyTimerRef.current !== null) {
+      window.clearTimeout(copyTimerRef.current);
+    }
+  }, []);
 
   const allEntries = Object.values(entriesMap).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const pendingEntries = allEntries.filter(entry => entry.exportedAt === null);
@@ -49,12 +60,17 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
     const payload = buildExportPayload(scope);
     if (payload.entries.length === 0) return;
     const ok = await copyToClipboard(JSON.stringify(payload, null, 2));
+    if (copyTimerRef.current !== null) {
+      window.clearTimeout(copyTimerRef.current);
+    }
     if (!ok) {
-      setCopyBanner({ ok: false, count: 0, message: t('common.copyEditor.copyFailed') });
+      setCopyState('failed');
+      copyTimerRef.current = window.setTimeout(() => setCopyState('idle'), 2000);
       return;
     }
     markExported(payload.entries.map(item => item.key), payload.exportedAt);
-    setCopyBanner({ ok: true, count: payload.entries.length });
+    setCopyState('copied');
+    copyTimerRef.current = window.setTimeout(() => setCopyState('idle'), 1600);
   };
 
   const handleImport = () => {
@@ -79,6 +95,8 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
     }
   };
 
+  const showClearExported = exportedEntries.length > 0 && pendingEntries.length > 0;
+
   return (
     <div
       aria-label={t('common.copyEditor.panelTitle')}
@@ -86,12 +104,10 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
       role="dialog"
     >
       <div className="floway-copy-editor-header">
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="floway-copy-editor-header-main">
           <Text size={400} weight="semibold">{t('common.copyEditor.panelTitle')}</Text>
           {allEntries.length > 0 && (
-            <span className="floway-copy-editor-pill" data-tone="accent">
-              {allEntries.length}
-            </span>
+            <span className="floway-copy-editor-header-count">{allEntries.length}</span>
           )}
         </div>
         <Button
@@ -116,43 +132,17 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
 
       {tab === 'list' ? (
         <>
-          <div className="floway-copy-editor-body">
+          <div className="floway-copy-editor-body floway-copy-editor-body--list">
             {autoPrunedCount > 0 && (
-              <span className="floway-copy-editor-original">
+              <div className="floway-copy-editor-list-notice">
                 {t('common.copyEditor.autoPruned', { count: autoPrunedCount })}
-              </span>
-            )}
-
-            {copyBanner && (
-              <div className="floway-copy-editor-banner">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  {copyBanner.ok ? <Checkmark16Regular /> : <Warning16Regular />}
-                  <span>
-                    {copyBanner.ok
-                      ? t('common.copyEditor.copiedCount', { count: copyBanner.count })
-                      : copyBanner.message}
-                  </span>
-                </div>
-                {copyBanner.ok && exportedEntries.length > 0 && (
-                  <Button
-                    appearance="subtle"
-                    icon={<Delete16Regular />}
-                    size="small"
-                    onClick={() => {
-                      clearExported();
-                      setCopyBanner(null);
-                    }}
-                  >
-                    {t('common.copyEditor.clearExported')}
-                  </Button>
-                )}
               </div>
             )}
 
             {allEntries.length === 0 ? (
-              <span className="floway-copy-editor-original">
+              <div className="floway-copy-editor-empty">
                 {t('common.copyEditor.emptyDrafts')}
-              </span>
+              </div>
             ) : (
               allEntries.map(entry => {
                 const stale = getStaleLanguages(entry.key);
@@ -163,32 +153,24 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
                     className="floway-copy-editor-draft-item"
                     data-exported={isExported ? 'true' : 'false'}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 grid gap-1.5">
-                        <span className="floway-copy-editor-key-text" title={entry.key}>
+                    <div className="floway-copy-editor-draft-head">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="floway-copy-editor-draft-key" title={entry.key}>
                           {entry.key}
                         </span>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span
-                            className="floway-copy-editor-pill"
-                            data-tone={isExported ? undefined : 'accent'}
-                          >
-                            {isExported ? t('common.copyEditor.statusExported') : t('common.copyEditor.statusPending')}
+                        {isExported && (
+                          <span className="floway-copy-editor-draft-status">
+                            {t('common.copyEditor.statusExported')}
                           </span>
-                          <span className="floway-copy-editor-pill" data-mono="true">{entry.route}</span>
-                          {stale.length > 0 && (
-                            <span className="floway-copy-editor-pill" data-tone="caution">
-                              {t('common.copyEditor.staleNotice')}
-                            </span>
-                          )}
-                        </div>
+                        )}
                       </div>
-                      <div className="flex items-center gap-1 flex-none">
+                      <div className="flex items-center gap-0.5 flex-none">
                         <Button
                           appearance="subtle"
                           aria-label={t('common.copyEditor.flyoutTitle')}
                           icon={<Edit16Regular />}
                           size="small"
+                          title={t('common.copyEditor.flyoutTitle')}
                           onClick={() => onEditKey(entry.key, entry.route)}
                         />
                         <Button
@@ -196,30 +178,42 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
                           aria-label={t('common.copyEditor.revert')}
                           icon={<ArrowUndo16Regular />}
                           size="small"
+                          title={t('common.copyEditor.revert')}
                           onClick={() => revertEntry(entry.key)}
                         />
                       </div>
                     </div>
 
-                    {supportedLanguages.map(language => {
-                      const change = entry.changes[language];
-                      if (!change) return null;
-                      return (
-                        <div key={language} className="floway-copy-editor-diff-row">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <span className="floway-copy-editor-pill" data-mono="true">{language}</span>
-                            <span className="floway-copy-editor-diff-before">{change.before}</span>
+                    <div className="floway-copy-editor-diff-list">
+                      {supportedLanguages.map(language => {
+                        const change = entry.changes[language];
+                        if (!change) return null;
+                        return (
+                          <div key={language} className="floway-copy-editor-diff-row">
+                            <span className="floway-copy-editor-diff-lang">
+                              {SHORT_LANGUAGE_LABELS[language]}
+                            </span>
+                            <div className="floway-copy-editor-diff-values">
+                              <span className="floway-copy-editor-diff-before">{change.before}</span>
+                              <span className="floway-copy-editor-diff-after">{change.after}</span>
+                            </div>
                           </div>
-                          <div className="floway-copy-editor-diff-after">{change.after}</div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
 
-                    {entry.note.trim().length > 0 && (
-                      <span className="floway-copy-editor-original">
-                        {t('common.copyEditor.noteLabel')}: {entry.note}
-                      </span>
-                    )}
+                      {entry.note.trim().length > 0 && (
+                        <span className="floway-copy-editor-meta">
+                          {t('common.copyEditor.noteLabel')}: {entry.note}
+                        </span>
+                      )}
+
+                      {stale.length > 0 && (
+                        <span className="floway-copy-editor-caution">
+                          <Warning16Regular />
+                          <span>{t('common.copyEditor.staleNotice')}</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
                 );
               })
@@ -227,8 +221,8 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
           </div>
 
           <div className="floway-copy-editor-footer">
-            <div className="flex items-center gap-1">
-              {exportedEntries.length > 0 && (
+            <div className="floway-copy-editor-footer-start">
+              {showClearExported && (
                 <Button appearance="subtle" size="small" onClick={clearExported}>
                   {t('common.copyEditor.clearExported')}
                 </Button>
@@ -243,7 +237,6 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
               {pendingEntries.length > 0 && exportedEntries.length > 0 && (
                 <Button
                   appearance="secondary"
-                  icon={<Copy16Regular />}
                   onClick={() => void handleCopy('all')}
                 >
                   {t('common.copyEditor.copyAllJson')}
@@ -252,12 +245,14 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
               <Button
                 appearance="primary"
                 disabled={allEntries.length === 0}
-                icon={<Copy16Regular />}
+                icon={copyState === 'copied' ? <Checkmark16Regular /> : <Copy16Regular />}
                 onClick={() => void handleCopy(pendingEntries.length > 0 ? 'unexported' : 'all')}
               >
-                {pendingEntries.length > 0
-                  ? t('common.copyEditor.copyUnexportedJson')
-                  : t('common.copyEditor.copyAllJson')}
+                {copyState === 'copied'
+                  ? t('common.copy.copied')
+                  : copyState === 'failed'
+                    ? t('common.copy.failed')
+                    : pendingEntries.length > 0 && exportedEntries.length > 0 ? t('common.copyEditor.copyPendingJson') : t('common.copyEditor.copyJson')}
               </Button>
             </div>
           </div>
@@ -274,7 +269,7 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
             />
             {importStatus && (
               <span
-                className="floway-copy-editor-original"
+                className="floway-copy-editor-meta"
                 style={importStatus.ok ? undefined : { color: 'var(--winui-system-fill-critical)' }}
               >
                 {importStatus.text}

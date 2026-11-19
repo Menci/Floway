@@ -74,11 +74,11 @@ describe('CopyEditorOverlay', () => {
     fireEvent.click(button, { altKey: true, button: 0, clientX: 60, clientY: 50 });
 
     expect(onButtonClick).not.toHaveBeenCalled();
-    expect(await screen.findByRole('dialog', { name: 'Edit copy' })).toBeTruthy();
+    expect(await screen.findByRole('dialog', { name: 'Edit' })).toBeTruthy();
 
     // Escape closes the copy editor flyout without leaking to underlying listeners.
     fireEvent.keyDown(window, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit copy' })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit' })).toBeNull());
     expect(onExternalEscape).not.toHaveBeenCalled();
 
     window.removeEventListener('keydown', onExternalEscape);

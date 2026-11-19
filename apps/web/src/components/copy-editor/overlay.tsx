@@ -2,7 +2,6 @@ import type { Theme } from '@fluentui/react-components';
 import {
   Checkmark16Regular,
   Copy16Regular,
-  Delete16Regular,
   Edit16Regular,
   LocalLanguage16Regular,
 } from '@fluentui/react-icons';
@@ -26,7 +25,7 @@ import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages
 import { winuiLightTheme } from '../../winui/theme';
 import { copyToClipboard } from '../ui/copy-to-clipboard';
 
-const { Button, FluentProvider, Text } = fluentComponents;
+const { Button, FluentProvider } = fluentComponents;
 
 const SHORT_LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
   'en': 'EN',
@@ -93,16 +92,16 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
   const entries = useCopyEditorStore(state => state.entries);
   const buildExportPayload = useCopyEditorStore(state => state.buildExportPayload);
   const markExported = useCopyEditorStore(state => state.markExported);
-  const clearExported = useCopyEditorStore(state => state.clearExported);
 
   const layerRef = useRef<HTMLDivElement | null>(null);
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
+  const quickCopyTimerRef = useRef<number | null>(null);
 
   const [altPressed, setAltPressed] = useState(false);
   const [hoverTarget, setHoverTarget] = useState<HitTarget | null>(null);
   const [activeFlyout, setActiveFlyout] = useState<ActiveFlyoutState | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [quickCopyNotice, setQuickCopyNotice] = useState<{ count: number } | null>(null);
+  const [quickCopied, setQuickCopied] = useState(false);
 
   const uiOpen = activeFlyout !== null || panelOpen;
   const freezePopovers = altPressed || uiOpen;
@@ -120,6 +119,9 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
 
   useEffect(() => () => {
     setCopyEditorFreezeActive(false);
+    if (quickCopyTimerRef.current !== null) {
+      window.clearTimeout(quickCopyTimerRef.current);
+    }
   }, []);
 
   // Start observing the DOM first, then activate markers and load all locale
@@ -281,7 +283,7 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
   const totalCount = allEntries.length;
   const pendingCount = allEntries.filter(entry => entry.exportedAt === null).length;
   const exportedCount = totalCount - pendingCount;
-  const showDock = totalCount > 0 || altPressed || uiOpen || quickCopyNotice !== null;
+  const showDock = totalCount > 0 || altPressed || uiOpen;
 
   const currentLang = (supportedLanguages.includes(i18n.language as SupportedLanguage)
     ? i18n.language
@@ -299,7 +301,11 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
     const ok = await copyToClipboard(JSON.stringify(payload, null, 2));
     if (!ok) return;
     markExported(payload.entries.map(item => item.key), payload.exportedAt);
-    setQuickCopyNotice({ count: payload.entries.length });
+    setQuickCopied(true);
+    if (quickCopyTimerRef.current !== null) {
+      window.clearTimeout(quickCopyTimerRef.current);
+    }
+    quickCopyTimerRef.current = window.setTimeout(() => setQuickCopied(false), 1600);
   };
 
   if (typeof document === 'undefined') return null;
@@ -341,21 +347,11 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
           </>
         )}
 
-        {activeFlyout && (
-          <EditorFlyout
-            key={activeFlyout.key}
-            anchorRect={activeFlyout.anchorRect}
-            candidates={activeFlyout.candidates}
-            initialKey={activeFlyout.key}
-            route={activeFlyout.route}
-            onClose={() => setActiveFlyout(null)}
-          />
-        )}
-
         {panelOpen && (
           <DraftsPanel
             onClose={() => setPanelOpen(false)}
             onEditKey={(key, route) => {
+              setPanelOpen(false);
               setActiveFlyout({
                 key,
                 candidates: [{ key, baseKey: key, source: 'text' }],
@@ -367,6 +363,17 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
           />
         )}
 
+        {activeFlyout && (
+          <EditorFlyout
+            key={activeFlyout.key}
+            anchorRect={activeFlyout.anchorRect}
+            candidates={activeFlyout.candidates}
+            initialKey={activeFlyout.key}
+            route={activeFlyout.route}
+            onClose={() => setActiveFlyout(null)}
+          />
+        )}
+
         {showDock && (
           <div
             aria-label={t('common.copyEditor.dockLabel')}
@@ -375,23 +382,15 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
           >
             <Button
               appearance="subtle"
-              aria-label={t('common.copyEditor.openPanel')}
+              title={t('common.copyEditor.panelTitle')}
               icon={<Edit16Regular />}
               size="small"
               onClick={() => setPanelOpen(open => !open)}
             >
-              {totalCount === 0
-                ? t('common.copyEditor.noChanges')
-                : pendingCount > 0 && exportedCount > 0
-                  ? t('common.copyEditor.pendingCount', { count: pendingCount })
-                  : t('common.copyEditor.stagedCount', { count: totalCount })}
+              {pendingCount > 0 && exportedCount > 0
+                ? t('common.copyEditor.pendingCount', { count: pendingCount })
+                : t('common.copyEditor.stagedCount', { count: totalCount })}
             </Button>
-
-            {pendingCount > 0 && exportedCount > 0 && (
-              <span className="floway-copy-editor-pill" data-tone="accent">
-                {totalCount}
-              </span>
-            )}
 
             <span className="floway-copy-editor-dock-divider" />
 
@@ -411,35 +410,12 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
                 <span className="floway-copy-editor-dock-divider" />
                 <Button
                   appearance="primary"
-                  icon={<Copy16Regular />}
+                  icon={quickCopied ? <Checkmark16Regular /> : <Copy16Regular />}
                   size="small"
                   onClick={() => void handleQuickCopy()}
                 >
-                  {t('common.copyEditor.copyJson')}
+                  {quickCopied ? t('common.copy.copied') : t('common.copyEditor.copyJson')}
                 </Button>
-              </>
-            )}
-
-            {quickCopyNotice && (
-              <>
-                <span className="floway-copy-editor-dock-divider" />
-                <span className="inline-flex items-center gap-1.5 pl-1">
-                  <Checkmark16Regular />
-                  <Text size={200}>{t('common.copyEditor.copiedCount', { count: quickCopyNotice.count })}</Text>
-                  {exportedCount > 0 && (
-                    <Button
-                      appearance="subtle"
-                      icon={<Delete16Regular />}
-                      size="small"
-                      onClick={() => {
-                        clearExported();
-                        setQuickCopyNotice(null);
-                      }}
-                    >
-                      {t('common.copyEditor.clearExported')}
-                    </Button>
-                  )}
-                </span>
               </>
             )}
           </div>

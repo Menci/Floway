@@ -5,7 +5,7 @@ import {
   Dismiss16Regular,
   Warning16Regular,
 } from '@fluentui/react-icons';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { useEditorTranslation } from './use-editor-t';
 import { fluentComponents } from '../../fluent';
@@ -15,7 +15,7 @@ import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages
 import { copyToClipboard } from '../ui/copy-to-clipboard';
 import { Textarea } from '../ui/fluent-form-controls';
 
-const { Button, Field, Text } = fluentComponents;
+const { Button, Label, Text } = fluentComponents;
 
 const LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
   'en': 'English',
@@ -57,6 +57,7 @@ export interface EditorFlyoutProps {
 
 export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, route }: EditorFlyoutProps) {
   const { t } = useEditorTranslation();
+  const idPrefix = useId();
   const entries = useCopyEditorStore(state => state.entries);
   const getOriginal = useCopyEditorStore(state => state.getOriginal);
   const getCurrent = useCopyEditorStore(state => state.getCurrent);
@@ -82,7 +83,7 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
   const dragOffsetRef = useRef<{ dx: number; dy: number } | null>(null);
 
   const [position, setPosition] = useState(() =>
-    computeInitialPosition(anchorRect, Math.min(468, window.innerWidth - 24), 480));
+    computeInitialPosition(anchorRect, Math.min(460, window.innerWidth - 24), 440));
 
   // Re-clamp once the real rendered height is known so tall multi-candidate
   // flyouts never clip below the viewport edge.
@@ -90,7 +91,7 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
     const el = surfaceRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    setPosition(computeInitialPosition(anchorRect, rect.width || 468, rect.height || 480));
+    setPosition(computeInitialPosition(anchorRect, rect.width || 460, rect.height || 440));
   }, [anchorRect]);
 
   useEffect(() => {
@@ -168,6 +169,8 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
     setNote('');
   };
 
+  const noteInputId = `${idPrefix}-note`;
+
   return (
     <div
       ref={surfaceRef}
@@ -193,9 +196,23 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
           };
         }}
       >
-        <div className="flex items-center gap-2 min-w-0">
-          <Text size={400} weight="semibold">{t('common.copyEditor.flyoutTitle')}</Text>
-          <span className="floway-copy-editor-pill" data-mono="true">{route}</span>
+        <div className="floway-copy-editor-header-main">
+          <Text className="floway-copy-editor-header-title" size={400} weight="semibold">
+            {t('common.copyEditor.flyoutTitle')}
+          </Text>
+          <span className="floway-copy-editor-header-key-group">
+            <span className="floway-copy-editor-header-key" title={activeKey}>
+              {activeKey}
+            </span>
+            <Button
+              appearance="subtle"
+              aria-label={copiedKey ? t('common.copyEditor.keyCopied') : t('common.copyEditor.copyKey')}
+              icon={copiedKey ? <Checkmark16Regular /> : <Copy16Regular />}
+              size="small"
+              title={copiedKey ? t('common.copyEditor.keyCopied') : t('common.copyEditor.copyKey')}
+              onClick={() => void handleCopyKey()}
+            />
+          </span>
         </div>
         <Button
           appearance="subtle"
@@ -208,127 +225,106 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
 
       <div className="floway-copy-editor-body">
         {candidates.length > 1 && (
-          <div className="floway-copy-editor-section">
-            <span className="floway-copy-editor-section-label">
-              {t('common.copyEditor.matchedKeys')}
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              {candidates.map(candidate => (
-                <button
-                  key={candidate.key}
-                  className="floway-copy-editor-candidate winui-focus-rect"
-                  data-active={candidate.key === activeKey ? 'true' : 'false'}
-                  type="button"
-                  onClick={() => switchKey(candidate.key)}
-                >
-                  <span className="truncate max-w-[360px]">{candidate.key}</span>
-                  {candidate.attribute && (
-                    <span className="floway-copy-editor-pill">{candidate.attribute}</span>
-                  )}
-                </button>
-              ))}
-            </div>
+          <div className="floway-copy-editor-candidates">
+            {candidates.map(candidate => (
+              <button
+                key={candidate.key}
+                className="floway-copy-editor-candidate winui-focus-rect"
+                data-active={candidate.key === activeKey ? 'true' : 'false'}
+                type="button"
+                onClick={() => switchKey(candidate.key)}
+              >
+                <span className="truncate max-w-[340px]">{candidate.key}</span>
+                {candidate.attribute && (
+                  <span className="floway-copy-editor-candidate-attr">{candidate.attribute}</span>
+                )}
+              </button>
+            ))}
           </div>
         )}
 
         {relatedKeys.length > 1 && (
-          <div className="floway-copy-editor-section">
-            <span className="floway-copy-editor-section-label">
-              {t('common.copyEditor.pluralVariants')}
-            </span>
-            <div className="flex flex-wrap gap-1.5">
-              {relatedKeys.map(key => (
-                <button
-                  key={key}
-                  className="floway-copy-editor-candidate winui-focus-rect"
-                  data-active={key === activeKey ? 'true' : 'false'}
-                  type="button"
-                  onClick={() => switchKey(key)}
-                >
-                  {key}
-                </button>
-              ))}
-            </div>
+          <div className="floway-copy-editor-candidates">
+            {relatedKeys.map(key => (
+              <button
+                key={key}
+                className="floway-copy-editor-candidate winui-focus-rect"
+                data-active={key === activeKey ? 'true' : 'false'}
+                type="button"
+                onClick={() => switchKey(key)}
+              >
+                {key}
+              </button>
+            ))}
           </div>
         )}
-
-        <div className="floway-copy-editor-key-row">
-          <span className="floway-copy-editor-key-text" title={activeKey}>{activeKey}</span>
-          <Button
-            appearance="subtle"
-            aria-label={copiedKey ? t('common.copyEditor.keyCopied') : t('common.copyEditor.copyKey')}
-            icon={copiedKey ? <Checkmark16Regular /> : <Copy16Regular />}
-            size="small"
-            title={copiedKey ? t('common.copyEditor.keyCopied') : t('common.copyEditor.copyKey')}
-            onClick={() => void handleCopyKey()}
-          />
-        </div>
 
         {supportedLanguages.map((language, index) => {
           const original = getOriginal(language, activeKey) ?? '';
           const modified = values[language] !== original;
           const stale = staleLanguages.has(language);
+          const inputId = `${idPrefix}-${language}`;
           return (
-            <div key={language} className="floway-copy-editor-section">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Text size={300} weight="semibold">{LANGUAGE_LABELS[language]}</Text>
-                  <span className="floway-copy-editor-pill" data-mono="true">{language}</span>
-                </div>
+            <div key={language} className="floway-copy-editor-field">
+              <div className="floway-copy-editor-field-header">
+                <Label htmlFor={inputId}>{LANGUAGE_LABELS[language]}</Label>
                 {modified && (
                   <Button
                     appearance="subtle"
+                    aria-label={t('common.copyEditor.resetLanguage')}
                     icon={<ArrowUndo16Regular />}
                     size="small"
+                    title={t('common.copyEditor.resetLanguage')}
                     onClick={() => handleResetLanguage(language)}
-                  >
-                    {t('common.copyEditor.resetLanguage')}
-                  </Button>
+                  />
                 )}
               </div>
 
               <Textarea
                 ref={index === 0 ? firstInputRef : undefined}
                 className="w-full"
+                id={inputId}
                 rows={Math.min(5, Math.max(2, values[language].split('\n').length))}
                 value={values[language]}
                 onChange={(_, data) => setValues(prev => ({ ...prev, [language]: data.value }))}
               />
 
               {modified && (
-                <span className="floway-copy-editor-original">
+                <span className="floway-copy-editor-meta">
                   {t('common.copyEditor.originalLabel')}: {original}
                 </span>
               )}
 
               {stale && (
-                <span className="floway-copy-editor-pill" data-tone="caution">
+                <span className="floway-copy-editor-caution">
                   <Warning16Regular />
-                  {t('common.copyEditor.staleNotice')}
+                  <span>{t('common.copyEditor.staleNotice')}</span>
                 </span>
               )}
             </div>
           );
         })}
 
-        <Field label={t('common.copyEditor.noteLabel')}>
+        <div className="floway-copy-editor-field">
+          <div className="floway-copy-editor-field-header">
+            <Label htmlFor={noteInputId}>{t('common.copyEditor.noteLabel')}</Label>
+          </div>
           <Textarea
             className="w-full"
-            placeholder={t('common.copyEditor.notePlaceholder')}
+            id={noteInputId}
             rows={2}
             value={note}
             onChange={(_, data) => setNote(data.value)}
           />
-        </Field>
+        </div>
       </div>
 
       <div className="floway-copy-editor-footer">
-        <div>
+        <div className="floway-copy-editor-footer-start">
           {existingEntry && (
             <Button
               appearance="subtle"
               icon={<ArrowUndo16Regular />}
-              size="small"
               onClick={handleRevertEntry}
             >
               {t('common.copyEditor.revert')}
