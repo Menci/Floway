@@ -30,23 +30,8 @@ const initial: PermissionsData = {
 };
 
 beforeEach(() => {
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const path = new URL(String(input), 'http://localhost').pathname;
-    if (path === '/api/access-resolve') {
-      const body = JSON.parse(init!.body as string);
-      const records = body.scope.kind === 'upstreams' ? [initial.records![0]] : body.principal.kind === 'group' ? initial.records!.slice(0, 2) : initial.records!;
-      return Response.json({
-        records,
-        values: { 'Model.Use': true, 'Upstream.Audit': true, 'Upstream.Edit': 'off' },
-        decisions: records.map(record => ({
-          recordId: record!.id,
-          permissions: {
-            'Model.Use': record!.id === 3 || body.scope.kind === 'upstreams' ? { kind: 'effective' } : { kind: 'overridden', by: initial.records![2] },
-            ...(record!.id === 2 ? { 'Upstream.Audit': { kind: 'effective' } } : {}),
-          },
-        })),
-      });
-    }
     if (path === '/api/permissions') return Response.json({ records: initial.records, directory: initial.directory, upstreams: initial.upstreams });
     if (path === '/api/models') return Response.json({ data: initial.models });
     throw new Error(`Unexpected request: ${path}`);
@@ -91,7 +76,7 @@ test('the permissions loader redirects an operator without Permission.Audit', as
   await expect(clientLoader()).rejects.toMatchObject({ status: 302 });
 });
 
-test('a non-admin URL naming an invisible principal never requests that principal\'s rules', async () => {
+test('a non-admin URL naming an invisible principal is normalized to all visible principals', async () => {
   const visible: PermissionsData = {
     ...initial,
     directory: { ...initial.directory!, users: initial.directory!.users.map(user => ({ ...user, groupIds: [] })), groups: [] },
@@ -103,7 +88,6 @@ test('a non-admin URL naming an invisible principal never requests that principa
   }], { initialEntries: ['/permissions?principal=user:1'] });
   renderInApp(<MemoryRouterProvider router={router} />);
   await waitFor(() => expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Applies to' }).value).toBe('All visible principals'), { timeout: 6_000 });
-  expect(vi.mocked(fetch).mock.calls.every(([input]) => !String(input).includes('/access-resolve'))).toBe(true);
 });
 
 test.each([
@@ -120,7 +104,6 @@ test.each([
   expect(params.has('page')).toBe(false);
   expect(params.has('effective')).toBe(false);
   expect(router.state.historyAction).toBe('REPLACE');
-  expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).includes('/access-resolve'))).toBe(false);
 });
 
 test('a confirmed delete retires its rule and its confirmation without reading the page again', async () => {
@@ -188,7 +171,7 @@ test('effective toggle adds inherited rules and clearing the principal forces it
   expect(new URLSearchParams(router.state.location.search).get('scope')).toBe(JSON.stringify(scope));
 });
 
-test.each([false, true])('refresh preserves the table through base and effective reads (effective=%s)', async effective => {
+test.each([false, true])('refresh preserves the table through base and effective views (effective=%s)', async effective => {
   const { container } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}${effective ? '&effective=true' : ''}`);
   await screen.findByRole('table');
   await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(effective ? 3 : 2));
@@ -198,30 +181,20 @@ test.each([false, true])('refresh preserves the table through base and effective
   const contents = table.textContent;
   const fetch = globalThis.fetch;
   let finishRecords!: () => Promise<void>;
-  let finishResolution!: () => Promise<void>;
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const path = new URL(String(input), 'http://localhost').pathname;
     if (path === '/api/permissions') return new Promise<Response>(resolve => { finishRecords = async () => resolve(await fetch(input, init)); });
-    if (path === '/api/access-resolve') return new Promise<Response>(resolve => { finishResolution = async () => resolve(await fetch(input, init)); });
     return fetch(input, init);
   }));
-  const retained = () => {
-    expect(screen.getByRole('table')).toBe(table);
-    expect([...container.querySelectorAll('[data-rule-id]')]).toEqual(rows);
-    expect(table.textContent).toBe(contents);
-    expect(within(table).getAllByRole<HTMLButtonElement>('button', { name: 'Edit rule' }).every(button => button.disabled)).toBe(true);
-    expect(within(table).queryByRole('progressbar')).toBeNull();
-    expect(table.closest('[aria-busy="true"]')).toBeTruthy();
-  };
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Refresh permissions' })); });
   await waitFor(() => expect(finishRecords).toBeTypeOf('function'));
-  retained();
+  expect(screen.getByRole('table')).toBe(table);
+  expect([...container.querySelectorAll('[data-rule-id]')]).toEqual(rows);
+  expect(table.textContent).toBe(contents);
+  expect(within(table).getAllByRole<HTMLButtonElement>('button', { name: 'Edit rule' }).every(button => button.disabled)).toBe(true);
+  expect(within(table).queryByRole('progressbar')).toBeNull();
+  expect(table.closest('[aria-busy="true"]')).toBeTruthy();
   await act(async () => { await finishRecords(); });
-  if (effective) {
-    await waitFor(() => expect(finishResolution).toBeTypeOf('function'));
-    retained();
-    await act(async () => { await finishResolution(); });
-  }
   await waitFor(() => expect(within(table).getAllByRole<HTMLButtonElement>('button', { name: 'Edit rule' }).every(button => !button.disabled)).toBe(true));
   expect(screen.getByRole('table')).toBe(table);
   expect(table.closest('[aria-busy="true"]')).toBeNull();

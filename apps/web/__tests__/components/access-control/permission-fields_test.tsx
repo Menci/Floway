@@ -9,7 +9,7 @@ import type { AccessValues } from '@floway-dev/gateway/browser';
 function Editor() {
   const [values, setValues] = useState<AccessValues>({});
   return <>
-    <PermissionFields busy={false} disabled={false} inherited={{ 'Model.Use': true }} onChange={(permission, value) => setValues(current => {
+    <PermissionFields disabled={false} inherited={{ 'Model.Use': true }} onChange={(permission, value) => setValues(current => {
       if (value !== undefined) return { ...current, [permission]: value };
       const next = { ...current };
       delete next[permission];

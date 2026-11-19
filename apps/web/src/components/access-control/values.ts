@@ -23,3 +23,7 @@ export const scopePermissions = (scope: AccessScope | null): readonly AccessPerm
   case 'group': return ['User.Audit', 'Permission.Audit'];
   }
 };
+export const filterScopeValues = (scope: AccessScope | null, values: AccessValues): AccessValues => {
+  const allowed = scopePermissions(scope);
+  return Object.fromEntries(Object.entries(values).filter(([permission]) => allowed.includes(permission as AccessPermission))) as AccessValues;
+};
