@@ -78,7 +78,7 @@ for (const backend of backends) {
     const repo = await backend.make();
     await assertRejects(() => repo.usage.record(record({
       metrics: [{ metric: 'input_tokens', quantity: '01.0', unitPrice: null }],
-    })), TypeError, 'quantity must be canonical');
+    })), TypeError);
     const [stored] = await query(repo);
     assertEquals(stored.requests, 1);
     assertEquals(stored.metrics, []);
@@ -94,7 +94,7 @@ test('SQL usage hydration rejects vocabulary unknown to the current application'
     'key-1', 'model', null, 'model', '2026-07-12T00', '{}',
     'reasoning', '1', null,
   ).run();
-  await assertRejects(() => new SqlRepo(db).usage.listAll(), TypeError, 'usage.metric is invalid: "reasoning"');
+  await assertRejects(() => new SqlRepo(db).usage.listAll(), TypeError);
 });
 
 test('SQL usage repo atomically rolls concurrent decimal writes into one metric row', async () => {

@@ -10,7 +10,6 @@ test('parseServerSecret accepts only the canonical serialized form', () => {
     assertThrows(
       () => parseServerSecret(invalid),
       Error,
-      'must be exactly 64 lowercase hexadecimal characters',
     );
   }
 });

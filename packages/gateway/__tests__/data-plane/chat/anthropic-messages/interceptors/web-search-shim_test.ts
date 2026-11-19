@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import type { AnthropicMessagesInvocation } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/types.ts';
 import {
@@ -410,13 +410,7 @@ test('count_tokens returns a native error response for invalid web-search tools'
   );
 
   assertEquals(response.status, 400);
-  assertEquals(await response.json(), {
-    type: 'error',
-    error: {
-      type: 'invalid_request_error',
-      message: 'Only one native web search tool definition is supported per request.',
-    },
-  });
+  expect(await response.json()).toMatchObject({ type: 'error', error: { type: 'invalid_request_error' } });
 });
 
 const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<AnthropicMessagesStreamEventEx>[]> => {

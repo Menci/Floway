@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { copilotModels, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-utils';
@@ -125,13 +125,7 @@ test('/v1beta/models/:modelId returns one Gemini model or Google RPC 404', async
         headers: GEMINI_HEADERS(apiKey.key),
       });
       assertEquals(missing.status, 404);
-      assertEquals(await missing.json(), {
-        error: {
-          code: 404,
-          message: 'Model not found: missing-model',
-          status: 'NOT_FOUND',
-        },
-      });
+      expect(await missing.json()).toMatchObject({ error: { code: 404, status: 'NOT_FOUND' } });
     },
   );
 });

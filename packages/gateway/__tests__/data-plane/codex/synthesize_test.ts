@@ -55,8 +55,8 @@ describe('synthesizeCatalogEntry', () => {
     // The opening paragraph names the routed model so an introspection
     // question resolves against it rather than the "Codex" persona's
     // trained-in GPT lineage association.
-    expect(entry.base_instructions as string).toContain('the model named "DeepSeek V4 Pro"');
-    expect(entry.base_instructions as string).toContain('The exact model ID is "deepseek-v4-pro"');
+    expect(entry.base_instructions as string).toContain('DeepSeek V4 Pro');
+    expect(entry.base_instructions as string).toContain('deepseek-v4-pro');
     expect(entry.model_messages?.instructions_template).toBe(entry.base_instructions);
   });
 

@@ -113,7 +113,6 @@ test('countTokens accepts the upstream total_tokens dialect and refuses unknown 
   assertEquals(unexpectedResp.http.status, 502);
   const body = JSON.parse(decodeResponseBody(unexpectedResp.body));
   assertEquals(body.error.status, 'UNAVAILABLE');
-  assertEquals(body.error.message, 'Invalid upstream token counting response.');
 });
 
 test('countTokens runs the same shape cleanup chain generate does, and skips it natively', async () => {

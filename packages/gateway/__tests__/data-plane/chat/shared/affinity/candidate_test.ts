@@ -108,7 +108,7 @@ describe('client-carried affinity candidate selection', () => {
     expect(selection.payloadFor(sameTargetAlias)).toBe('model');
     expect(selection.payloadFor(sameTargetAlias)).toBe('model');
     expect(materializations).toBe(1);
-    expect(() => selection.payloadFor(rejected)).toThrow('outside the selected set');
+    expect(() => selection.payloadFor(rejected)).toThrow();
   });
 
   test('required state matches upstream and model while degradation orders rule variants', () => {

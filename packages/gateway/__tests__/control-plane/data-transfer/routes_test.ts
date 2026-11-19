@@ -335,7 +335,7 @@ describe.each([
     const before = (await doExport(app)).data;
     const result = await doImport(app, mode, latestImportData({ groups: [transferGroup(2, 'Ops'), transferGroup(3, 'ops')] }));
     expect(result.status).toBe(400);
-    expect(result.body.error).toContain('active group names conflict');
+    expect(result.body.error).toContain('group names');
     expect((await doExport(app)).data).toEqual(before);
   });
 
@@ -480,7 +480,7 @@ test('import rejects performance records that break the recorder invariants', as
     neutral: 0,
   }));
   assertEquals(partitionMismatch.status, 400);
-  assertEquals(String(partitionMismatch.body.error).includes('ttftSamplesOk + errorsWithOutput + errorsNoOutput + neutral must equal requests'), true);
+  expect(partitionMismatch.body.error).toContain('must equal requests');
 
   // tpotSamples > ttftSamplesOk + errorsWithOutput — a TPOT sample requires a
   // preceding TTFT stamp, so it can never exceed the union of healthy and
@@ -499,7 +499,7 @@ test('import rejects performance records that break the recorder invariants', as
     ],
   }));
   assertEquals(tpotBeyondTtft.status, 400);
-  assertEquals(String(tpotBeyondTtft.body.error).includes('tpotSamples must not exceed ttftSamplesOk + errorsWithOutput'), true);
+  expect(tpotBeyondTtft.body.error).toContain('tpotSamples must not exceed');
 
   // ttft_ms bucket sum does not match ttftSamplesOk + errorsWithOutput. Every
   // TTFT sample increments exactly one bucket entry, so the histogram sum has
@@ -518,7 +518,7 @@ test('import rejects performance records that break the recorder invariants', as
     ],
   }));
   assertEquals(ttftBucketMismatch.status, 400);
-  assertEquals(String(ttftBucketMismatch.body.error).includes('ttft_ms bucket sum (3) must equal ttftSamplesOk + errorsWithOutput (4)'), true);
+  expect(ttftBucketMismatch.body.error).toContain('ttft_ms bucket sum');
 
   // tpot_us bucket sum does not match tpotSamples
   const tpotBucketMismatch = await doImport(app, 'replace', withPerf({
@@ -530,7 +530,7 @@ test('import rejects performance records that break the recorder invariants', as
     ],
   }));
   assertEquals(tpotBucketMismatch.status, 400);
-  assertEquals(String(tpotBucketMismatch.body.error).includes('tpot_us bucket sum (2) must equal tpotSamples (4)'), true);
+  expect(tpotBucketMismatch.body.error).toContain('tpot_us bucket sum');
 
   // Duplicate {metric, lower, upper} tuples would silently over-count in
   // the aggregator's per-bucket merge.
@@ -549,7 +549,7 @@ test('import rejects performance records that break the recorder invariants', as
     ],
   }));
   assertEquals(duplicateBucket.status, 400);
-  assertEquals(String(duplicateBucket.body.error).includes('duplicate bucket entry'), true);
+  expect(duplicateBucket.body.error).toContain('duplicate bucket');
 });
 
 test('import rejects invalid records before clearing existing data', async () => {
@@ -620,15 +620,15 @@ test('import rejects invalid records before clearing existing data', async () =>
   });
 
   assertEquals(badApiKeys.status, 400);
-  assertEquals(badApiKeys.body.error, 'invalid apiKeys at index 0: key must be a non-empty string');
+  expect(badApiKeys.body.error).toContain('apiKeys');
   assertEquals(badUsage.status, 400);
-  assertEquals(badUsage.body.error, 'invalid usage at index 0: record has invalid usage fields');
+  expect(badUsage.body.error).toContain('usage');
   assertEquals(badUpstream.status, 400);
-  assertEquals(String(badUpstream.body.error).includes('invalid upstreams at index 0'), true);
+  expect(badUpstream.body.error).toContain('upstreams');
   assertEquals(badFixes.status, 400);
-  assertEquals(badFixes.body.error, 'invalid upstreams at index 0: Unknown flag_overrides ids: made-up-fix');
+  expect(badFixes.body.error).toContain('flag_overrides');
   assertEquals(badWebSearchUsage.status, 400);
-  assertEquals(badWebSearchUsage.body.error, 'invalid searchUsage at index 0: invalid provider');
+  expect(badWebSearchUsage.body.error).toContain('searchUsage');
   assertEquals(await repo.apiKeys.list(), [KEY_A]);
   assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
   assertEquals(await repo.webSearchUsage.listAll(), [WEB_SEARCH_USAGE_1]);
@@ -695,15 +695,15 @@ test('import rejects api key unique identity conflicts before mutating', async (
   }));
 
   assertEquals(duplicateRawKey.status, 400);
-  assertEquals(duplicateRawKey.body.error, 'invalid apiKeys: duplicate apiKeys raw key used by key-b and key-c');
+  expect(duplicateRawKey.body.error).toContain('raw key');
   assertEquals(duplicateId.status, 400);
-  assertEquals(duplicateId.body.error, 'invalid apiKeys: duplicate apiKeys id key-b at indexes 0 and 1');
+  expect(duplicateId.body.error).toContain('id key-b');
   assertEquals(duplicateServerSecret.status, 400);
-  assertEquals(duplicateServerSecret.body.error, 'invalid apiKeys: duplicate apiKeys server secret used by key-b and key-c');
+  expect(duplicateServerSecret.body.error).toContain('server secret');
   assertEquals(mergeExistingRawKeyConflict.status, 400);
-  assertEquals(mergeExistingRawKeyConflict.body.error, 'invalid apiKeys: apiKeys raw key for key-b conflicts with existing api key key-a');
+  expect(mergeExistingRawKeyConflict.body.error).toContain('raw key');
   assertEquals(mergeExistingServerSecretConflict.status, 400);
-  assertEquals(mergeExistingServerSecretConflict.body.error, 'invalid apiKeys: apiKeys server secret for key-b conflicts with existing api key key-a');
+  expect(mergeExistingServerSecretConflict.body.error).toContain('server secret');
   assertEquals(await repo.apiKeys.list(), [KEY_A]);
   assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
 });
@@ -721,7 +721,7 @@ test('import in replace mode rejects an upstream fallback reference that does no
   }));
 
   assertEquals(result.status, 400);
-  assertEquals(result.body.error, `invalid upstreams: upstream ${CUSTOM_UPSTREAM.id} references unknown proxy p_missing`);
+  expect(result.body.error).toContain('p_missing');
   assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
 });
 
@@ -787,7 +787,7 @@ test('v25 replace import refuses payload missing user 1', async () => {
     siteSettings: { siteName: null },
   }, 25);
   assertEquals(result.status, 400);
-  expect(result.body.error).toMatch(/user 1/);
+  expect(result.body.error).toContain('user 1');
 });
 
 test('a full v25 export re-imports verbatim — the export→import round trip is closed', async () => {

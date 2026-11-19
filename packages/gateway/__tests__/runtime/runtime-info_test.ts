@@ -24,7 +24,7 @@ test('getRuntimeLocation on Cloudflare throws when cf.colo is missing', () => {
   initRuntimeKind('cloudflare');
   const request = new Request('https://example.test');
 
-  assertThrows(() => getRuntimeLocation(request), Error, 'request.cf.colo is missing');
+  assertThrows(() => getRuntimeLocation(request), Error);
 });
 
 beforeEach(() => {

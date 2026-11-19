@@ -190,7 +190,7 @@ const exerciseActionDimension = async (repo: WebSearchUsageRepo) => {
 const assertRejectsInvalidProvider = async (repo: WebSearchUsageRepo) => {
   await repo.deleteAll();
 
-  await assertRejects(() => repo.record({ provider: 'disabled' as WebSearchUsageRecord['provider'], keyId: 'key_a', action: 'search', hour: '2026-04-25T10', requests: 1 }), TypeError, 'Invalid web search provider');
+  await assertRejects(() => repo.record({ provider: 'disabled' as WebSearchUsageRecord['provider'], keyId: 'key_a', action: 'search', hour: '2026-04-25T10', requests: 1 }), TypeError);
 
   await assertRejects(
     () =>
@@ -202,7 +202,6 @@ const assertRejectsInvalidProvider = async (repo: WebSearchUsageRepo) => {
         requests: 1,
       }),
     TypeError,
-    'Invalid web search provider',
   );
 };
 

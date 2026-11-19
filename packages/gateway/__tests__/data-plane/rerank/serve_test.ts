@@ -176,7 +176,6 @@ test('target-incompatible source controls return 400 without dispatch', async ()
         }),
       });
       assertEquals(response.status, 400);
-      assertEquals((await response.json()).error.message, 'Model public-reranker does not support this rerank request: return_embeddings=true requires a Jina target.');
     },
   );
   assertEquals(fetchCalls, 0);

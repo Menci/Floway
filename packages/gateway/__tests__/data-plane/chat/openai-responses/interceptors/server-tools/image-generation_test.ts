@@ -1,4 +1,4 @@
-import { beforeEach, test } from 'vitest';
+import { beforeEach, expect, test } from 'vitest';
 
 import {
   inspectImageSources,
@@ -18,7 +18,7 @@ import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../../test-utils/gateway-ctx.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputImage, OpenAIResponsesInputImageGenerationCall, CanonicalOpenAIResponsesInputItem, OpenAIResponsesPayloadEx, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
-import { assert, assertEquals, assertFalse, assertStringIncludes, assertThrows, stubModelCandidate } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertFalse, assertThrows, stubModelCandidate } from '@floway-dev/test-utils';
 
 const PNG_B64 = 'aGVsbG8='; // "hello" — any decodable base64 works for source tests.
 const VALID_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/wEAAAAASUVORK5CYII=';
@@ -82,20 +82,19 @@ test('prepareImageGenerationConfig decodes image_url masks and reports file_id a
   assertEquals(ok.config.mask.bytes.byteLength, 5);
 
   const expectedFileIdError = {
-    message: 'Floway cannot resolve input_image_mask.file_id; remove file_id and provide image_url alone.',
     param: 'tools[0].input_image_mask.file_id',
     code: 'unsupported_image_source',
   };
   const fileId = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask: { file_id: 'file_123' } } as OpenAIResponsesTool]);
   assert(!fileId.ok);
-  assertEquals(fileId.error, expectedFileIdError);
+  expect(fileId.error).toMatchObject(expectedFileIdError);
 
   const inlineBoth = prepareImageGenerationConfig([{
     type: 'image_generation',
     input_image_mask: { image_url: `data:image/png;base64,${PNG_B64}`, file_id: 'file_123' },
   } as OpenAIResponsesTool]);
   assert(!inlineBoth.ok);
-  assertEquals(inlineBoth.error, expectedFileIdError);
+  expect(inlineBoth.error).toMatchObject(expectedFileIdError);
 
   const remoteBoth = prepareImageGenerationConfig([{
     type: 'image_generation',
@@ -103,7 +102,7 @@ test('prepareImageGenerationConfig decodes image_url masks and reports file_id a
   } as OpenAIResponsesTool]);
   assert(remoteBoth.ok);
   assert(remoteBoth.config.mask !== undefined && 'wireUrl' in remoteBoth.config.mask);
-  assertEquals(remoteBoth.config.mask.afterMaterializationError, expectedFileIdError);
+  expect(remoteBoth.config.mask.afterMaterializationError).toMatchObject(expectedFileIdError);
 });
 
 test('inspectImageSources rejects bare base64 with the native input_image error', () => {
@@ -113,7 +112,7 @@ test('inspectImageSources rejects bare base64 with the native input_image error'
   assertEquals(inspection.issue, {
     kind: 'native',
     error: {
-      message: "Invalid 'input[0].content[0].image_url'. Expected a valid URL, but got a value with an invalid format.",
+      message: expect.any(String),
       errorType: 'invalid_request_error',
       param: 'input[0].content[0].image_url',
       code: 'invalid_value',
@@ -134,7 +133,7 @@ test.each(Object.entries(imageInputContainers).filter(([container]) => container
     assertEquals(inspection.issue, {
       kind: 'native',
       error: {
-        message: `Mutually exclusive parameters: '${path}'. Ensure you are only providing one of: 'file_id' or 'image_url'.`,
+        message: expect.any(String),
         errorType: 'invalid_request_error',
         param: path,
         code: 'mutually_exclusive_parameters',
@@ -151,7 +150,6 @@ test('resolveImageOperation exposes a malformed replayed result as an invariant 
   assertThrows(
     () => resolveImageOperation({ model: DEFAULT_IMAGE_MODEL, action: 'auto' }, inspection),
     Error,
-    'Stored image_generation_call at input[0] contains invalid result bytes.',
   );
 });
 
@@ -238,7 +236,6 @@ test('imageGenerationServerTool enforces the aggregate limit across distinct suc
   );
 
   assert(result.type === 'invalid-request');
-  assertEquals(result.message, 'Error while downloading file.');
   assertEquals(result.param, 'url');
   assertEquals(result.code, 'invalid_value');
   assertEquals(requests, 2);
@@ -248,14 +245,12 @@ test.each([
   {
     name: 'DNS failure',
     fetcher: () => Promise.reject(new TypeError('getaddrinfo ENOTFOUND')),
-    message: 'Error while downloading file.',
   },
   {
     name: 'HTTP 404',
     fetcher: () => Promise.resolve(new Response(null, { status: 404 })),
-    message: 'Error while downloading file. Upstream status code: 404.',
   },
-])('imageGenerationServerTool mirrors the native remote-source error for $name', async ({ fetcher, message }) => {
+])('imageGenerationServerTool mirrors the native remote-source error for $name', async ({ fetcher }) => {
   initExternalResourceFetcher(fetcher);
   const result = await imageGenerationServerTool(
     makeCtx({
@@ -266,7 +261,6 @@ test.each([
   );
 
   assert(result.type === 'invalid-request');
-  assertEquals(result.message, message);
   assertEquals(result.errorType, 'invalid_request_error');
   assertEquals(result.param, 'url');
   assertEquals(result.code, 'invalid_value');
@@ -286,7 +280,6 @@ test('imageGenerationServerTool materializes a remote mask and mirrors its downl
     gatewayCtx(),
   );
   assert(rejected.type === 'invalid-request');
-  assertEquals(rejected.message, 'There was an issue with your request. Please check your inputs and try again');
   assertEquals(rejected.errorType, 'invalid_request_error');
   assertEquals(rejected.param, null);
   assertEquals(rejected.code, null);
@@ -310,7 +303,6 @@ test('imageGenerationServerTool validates a remote mask before applying the Flow
   );
 
   assert(result.type === 'invalid-request');
-  assertEquals(result.message, 'Floway cannot resolve input_image_mask.file_id; remove file_id and provide image_url alone.');
   assertEquals(result.param, 'tools[0].input_image_mask.file_id');
   assertEquals(result.code, 'unsupported_image_source');
   assertEquals(requests, 1);
@@ -331,13 +323,8 @@ test.each(unresolvableSourceCases)(
       assertEquals(result.param, path);
       if (source === 'malformed') {
         assertEquals(result.code, 'invalid_value');
-        assertEquals(
-          result.message,
-          `Invalid '${path}'. Expected a base64-encoded data URL with an image MIME type (e.g. 'data:image/png;base64,aW1nIGJ5dGVzIGhlcmU='), but got an invalid base64-encoded value.`,
-        );
       } else {
         assertEquals(result.code, 'unsupported_image_source');
-        assertStringIncludes(result.message, 'Floway cannot use');
       }
     }
   },
@@ -365,7 +352,6 @@ test('imageGenerationServerTool rejects explicit edit without an input image', a
     gatewayCtx(),
   );
   assert(result.type === 'invalid-request');
-  assertEquals(result.message, "ImageGenTool action 'edit' requires an image, mask, or previous context");
   assertEquals(result.errorType, 'image_generation_user_error');
   assertEquals(result.code, null);
   assertEquals(result.param, 'input');

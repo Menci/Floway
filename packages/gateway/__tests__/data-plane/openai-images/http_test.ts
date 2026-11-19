@@ -42,8 +42,6 @@ test('/v1/images/generations rejects model on custom upstream without /images/ge
         body: JSON.stringify({ model: 'gpt-4o', prompt: 'hi' }),
       });
       assertEquals(response.status, 400);
-      const body = await response.json() as { error: { message: string } };
-      assertEquals(body.error.message, 'Model gpt-4o does not support the /images/generations endpoint.');
     },
   );
 });

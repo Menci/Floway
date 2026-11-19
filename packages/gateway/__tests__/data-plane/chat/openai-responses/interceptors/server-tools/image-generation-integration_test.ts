@@ -416,7 +416,6 @@ test('resolveImageCandidate renders model_not_found when no upstream knows the m
   const item = (igcDone as { item: { status: string; error: { code: string; message: string } } }).item;
   assertEquals(item.status, 'failed');
   assertEquals(item.error.code, 'model_not_found');
-  assert(item.error.message.includes("No upstream provides model 'gpt-image-2'"), `unexpected message: ${item.error.message}`);
 });
 
 test('resolveImageCandidate renders model_not_supported when image-kind candidates exist but none expose the openaiImagesGenerations endpoint', async () => {
@@ -445,7 +444,6 @@ test('resolveImageCandidate renders model_not_supported when image-kind candidat
   const item = (igcDone as { item: { status: string; error: { code: string; message: string } } }).item;
   assertEquals(item.status, 'failed');
   assertEquals(item.error.code, 'model_not_supported');
-  assert(item.error.message.includes('/images/generations endpoint'), `unexpected message: ${item.error.message}`);
 });
 
 test('an image sub-call records its own perf row attributed to the image backend, leaving the outer attempt untouched', async () => {

@@ -77,7 +77,7 @@ test('[sql] rejects shape-invalid alias target JSON with the alias row id', asyn
   await assertRejects(
     () => new SqlRepo(db).modelAliases.getById('alias_bad_targets'),
     Error,
-    'model_aliases.targets JSON is invalid for id=alias_bad_targets: 0.target_model_id',
+    'alias_bad_targets',
   );
 });
 

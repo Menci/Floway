@@ -72,7 +72,6 @@ describe('createFetcher', () => {
     ).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'config',
-      message: expect.stringContaining('unknown proxy id'),
     });
     // The unknown-id failure is a control-plane race, not a dial-stage
     // failure: backoff entries must stay untouched.

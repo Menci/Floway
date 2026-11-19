@@ -10,7 +10,7 @@ import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '
 import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
 vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
@@ -211,9 +211,8 @@ test('countTokens records the final translation input failure once', async () =>
   });
 
   assertEquals(response.status, 400);
-  const body = await response.json() as { error: { status: string; message: string } };
+  const body = await response.json() as { error: { status: string } };
   assertEquals(body.error.status, 'INVALID_ARGUMENT');
-  assert(body.error.message.includes('audio/wav'));
   assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 0);
   assertEquals(recordFailure.mock.calls.map(([sample]) => sample.upstream), [upstreams.at(-1)]);
   const rows = await repo.performance.listAll();

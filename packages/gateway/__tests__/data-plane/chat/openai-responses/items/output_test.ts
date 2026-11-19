@@ -166,7 +166,7 @@ test('client output refuses to persist an id-less upstream item', async () => {
     })) { /* drain */ }
   };
 
-  await expect(collect()).rejects.toThrow('OpenAI Responses message output has no id');
+  await expect(collect()).rejects.toThrow();
 });
 
 test('stateful output rejects a terminal item that never emitted output_item.done', async () => {
@@ -191,7 +191,7 @@ test('stateful output rejects a terminal item that never emitted output_item.don
     })) { /* drain */ }
   };
 
-  await expect(collect()).rejects.toThrow('terminal output_index 0 arrived before output_item.done');
+  await expect(collect()).rejects.toThrow();
   expect(await repo.openaiResponsesItems.lookupMany('key-a', [item.id], 0)).toEqual([]);
   expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
 });

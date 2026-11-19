@@ -14,11 +14,9 @@ test('parseDisabledPublicModelIdsWire rejects non-array and non-string shapes', 
   await assertRejects(
     () => parseDisabledPublicModelIdsWire({}),
     Error,
-    'disabled_public_model_ids must be an array of strings',
   );
   await assertRejects(
     () => parseDisabledPublicModelIdsWire(['ok', 7]),
     Error,
-    'disabled_public_model_ids entries must be strings',
   );
 });

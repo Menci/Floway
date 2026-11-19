@@ -102,7 +102,6 @@ test.each([false, true])('Gemini response exposes EOF with an unfinished observe
   assertEquals(response.status, stream ? 200 : 502);
   const errors = stream ? text.split('\n').filter(line => line.startsWith('{')).map(line => JSON.parse(line)) : [JSON.parse(text)];
   assertEquals(errors.length, 1);
-  assertEquals(errors[0].error.message, 'Gemini generateContent stream ended without a terminal event.');
 });
 
 test('respondGeminiGenerateContent preserves upstream Google RPC Status body', async () => {

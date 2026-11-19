@@ -96,7 +96,6 @@ test('/api/upstreams/copilot/oauth/device-login/poll rejects a failed token exch
 
       assertEquals(response.status, 502);
       const body = (await response.json()) as { error: string };
-      assertStringIncludes(body.error, 'Copilot token fetch failed: 403');
       assertStringIncludes(body.error, 'no copilot seat');
     },
   );

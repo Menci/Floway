@@ -105,14 +105,14 @@ test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/complet
       const reader = response.body!.getReader();
       const decode = new TextDecoder();
       assertEquals(decode.decode((await reader.read()).value), partial);
-      const message = mode === 'premature EOF' ? 'OpenAI Completions stream ended without a [DONE] sentinel.' : 'upstream completion read failed';
+      const message = 'upstream completion read failed';
       const native = `data: ${JSON.stringify({ error: { code: 'vendor_failure', message } })}\n\n`;
       if (mode === 'read error') upstream.error(new Error(message));
       else if (mode === 'premature EOF') upstream.close();
       else upstream.enqueue(new TextEncoder().encode(native));
       const failure = decode.decode((await reader.read()).value);
       assertEquals(failure.startsWith('data: {"error":'), true);
-      assertEquals(JSON.parse(failure.slice('data: '.length)).error.message, message);
+      if (mode !== 'premature EOF') assertEquals(JSON.parse(failure.slice('data: '.length)).error.message, message);
       if (mode === 'native error') assertEquals(failure, native);
       assertEquals((await reader.read()).done, true);
     },

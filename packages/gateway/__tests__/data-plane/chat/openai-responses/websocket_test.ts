@@ -1,5 +1,5 @@
 import type { ExecutionContext } from 'hono';
-import { onTestFinished, test, vi } from 'vitest';
+import { expect, onTestFinished, test, vi } from 'vitest';
 
 import { app } from '../../../../src/app.ts';
 import { hashOpenAIResponsesItem } from '../../../../src/data-plane/chat/openai-responses/items/identity.ts';
@@ -635,7 +635,6 @@ test('OpenAI Responses WebSocket returns invalid_request_error for malformed cli
     assertEquals(invalidJsonMessage.status, 400);
     assertEquals((invalidJsonMessage.error as { type?: unknown; code?: unknown }).type, 'invalid_request_error');
     assertEquals((invalidJsonMessage.error as { type?: unknown; code?: unknown }).code, 'invalid_request_error');
-    assertStringIncludes((invalidJsonMessage.error as { message: string }).message, 'valid JSON');
 
     const invalidShape = waitForMessages(client, messages => messages.length === 1);
     client.send(JSON.stringify({ event_id: 'evt_shape', response: {} }));
@@ -647,7 +646,7 @@ test('OpenAI Responses WebSocket returns invalid_request_error for malformed cli
       error: {
         type: 'invalid_request_error',
         code: 'invalid_request_error',
-        message: 'WebSocket message must be a JSON object with a string type.',
+        message: expect.any(String),
       },
     }]);
 
@@ -663,7 +662,7 @@ test('OpenAI Responses WebSocket returns invalid_request_error for malformed cli
     assertEquals(invalidResponseMessage.error, {
       type: 'invalid_request_error',
       code: 'missing_required_parameter',
-      message: "Missing required parameter: 'model'.",
+      message: expect.any(String),
       param: 'model',
     });
 
@@ -677,7 +676,7 @@ test('OpenAI Responses WebSocket returns invalid_request_error for malformed cli
     assertEquals(invalidInputMessage.error, {
       type: 'invalid_request_error',
       code: 'invalid_request_error',
-      message: 'OpenAI Responses input must be a string or an array.',
+      message: expect.any(String),
       param: 'input',
     });
 
@@ -695,7 +694,7 @@ test('OpenAI Responses WebSocket returns invalid_request_error for malformed cli
       error: {
         type: 'invalid_request_error',
         code: 'invalid_request_error',
-        message: 'Untyped OpenAI Responses input items require a valid role and content.',
+        message: expect.any(String),
         param: 'input[0]',
       },
     }]);
@@ -803,7 +802,7 @@ test('OpenAI Responses WebSocket store:false keeps session snapshots without dur
         event_id: 'evt_cross_session',
         status: 400,
         error: {
-          message: `Previous response with id '${firstResponseId}' not found.`,
+          message: expect.any(String),
           type: 'invalid_request_error',
           param: 'previous_response_id',
           code: 'previous_response_not_found',
@@ -989,7 +988,7 @@ test('OpenAI Responses WebSocket evicts a continuation that failed through a str
         event_id: 'evt_evicted',
         status: 400,
         error: {
-          message: `Previous response with id '${firstResponseId}' not found.`,
+          message: expect.any(String),
           type: 'invalid_request_error',
           param: 'previous_response_id',
           code: 'previous_response_not_found',

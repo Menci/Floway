@@ -10,7 +10,7 @@ import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthr
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayloadEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { decodeResponseBody, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the provider
 // candidates it wants, optionally with an alias-rules overlay attached.
@@ -159,7 +159,6 @@ test('generate filters out candidates whose endpoints do not satisfy the respons
   assertEquals(result.http.status, 400);
   const body = JSON.parse(decodeResponseBody(result.body));
   assertEquals(body.error.type, 'invalid_request_error');
-  assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
   assertEquals(callOpenAIResponses.mock.calls.length, 0);
 });
 

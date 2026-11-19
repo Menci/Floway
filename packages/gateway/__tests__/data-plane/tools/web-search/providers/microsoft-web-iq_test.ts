@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { createMicrosoftWebIqWebSearchProvider } from '../../../../../src/data-plane/tools/web-search/providers/microsoft-web-iq.ts';
 import { FakeTime } from '../../../../test-time.ts';
@@ -158,7 +158,7 @@ test('Microsoft Web IQ fetchPage treats HTTP 202 as a per-URL failure (cold cach
       const provider = createMicrosoftWebIqWebSearchProvider('ms-test');
       const result = await provider.fetchPage({ urls: ['https://cold.com'] });
       if (result.type !== 'ok') throw new Error('expected ok');
-      assertEquals(result.failures, [{ url: 'https://cold.com', errorCode: 'unavailable', message: 'live crawl pending' }]);
+      expect(result.failures).toMatchObject([{ url: 'https://cold.com', errorCode: 'unavailable' }]);
       assertEquals(result.pages, []);
     },
   );

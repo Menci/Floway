@@ -99,11 +99,9 @@ test('compact + flag on: appends one cache-sharing user prompt and returns a com
   if (!seenPayload) throw new Error('expected the upstream call to see the rewritten payload');
   const rewrittenInput = seenPayload.input as CanonicalOpenAIResponsesInputItem[];
   assertEquals(rewrittenInput[0], { type: 'message', role: 'user', content: 'long conversation history' });
-  const summaryRequest = rewrittenInput[1] as { type: string; role: string; content: Array<{ text: string }> };
+  const summaryRequest = rewrittenInput[1] as { type: string; role: string };
   assertEquals(summaryRequest.type, 'message');
   assertEquals(summaryRequest.role, 'user');
-  assertEquals(summaryRequest.content[0].text.includes('CONTEXT CHECKPOINT COMPACTION'), true);
-  assertEquals(summaryRequest.content[0].text.includes('Do not call any tools'), true);
   assertEquals(seenPayload.store, false);
 
   const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);

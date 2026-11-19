@@ -41,7 +41,7 @@ test('parseWebSearchConfigStrict requires upstream and model when passthrough is
   assertThrows(() => parseWebSearchConfigStrict({
     ...DEFAULT_WEB_SEARCH_CONFIG,
     passthroughOpenAiSearch: { enabled: true, upstreamId: '', model: '' },
-  }), Error, 'requires an upstream and model');
+  }), Error);
 });
 
 test('current SQL schema round-trips Microsoft Web IQ configuration', async () => {

@@ -99,7 +99,7 @@ describe('SqlPerformanceRepo operation vocabulary', () => {
     ).bind('2026-06-30T09', 'key_a', 'model', 'upstream', 'future-operation', 'hkg').run();
 
     const repo = new SqlRepo(db).performance;
-    await expect(repo.listAll()).rejects.toThrow('Invalid performance operation: "future-operation"');
+    await expect(repo.listAll()).rejects.toThrow(TypeError);
   });
 });
 

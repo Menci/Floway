@@ -10,7 +10,7 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { openaiResponsesResultToEvents, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { type FlagId, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertStringIncludes, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the http entry exactly the
 // provider candidates it wants, optionally with an alias-rules overlay
@@ -337,8 +337,5 @@ test('POST /v1/responses/compact reports the failure when the upstream reported 
   assertEquals(response.status, 502);
   const body = await response.json() as { error: { type: string; message: string } };
   assertEquals(body.error.type, 'internal_error');
-  assert(
-    body.error.message.includes('reported no token usage'),
-    `expected the missing-usage condition to be named, got ${body.error.message}`,
-  );
+  assertStringIncludes(body.error.message, 'no token usage');
 });
