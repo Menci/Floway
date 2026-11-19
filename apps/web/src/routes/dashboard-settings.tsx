@@ -1,4 +1,4 @@
-import { DataUsage24Regular, Edit24Regular, LocalLanguage24Regular, LockClosed24Regular } from '@fluentui/react-icons';
+import { DataUsage24Regular, Edit24Regular, LockClosed24Regular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -15,6 +15,7 @@ import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { DialogShell } from '../components/ui/dialog-shell';
 import { Dropdown, Input, Switch } from '../components/ui/fluent-form-controls';
 import { SETTINGS_PAGE_CLASS, SETTINGS_SECTION_HEADER_CLASS } from '../components/ui/layout';
+import { LocalLanguageZiIcon } from '../components/ui/local-language-zi-icon';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { SectionHeader } from '../components/ui/section-header';
@@ -196,7 +197,7 @@ function PreferencesSection() {
         </Dropdown>}
         description={t('dashboard.settings.preferences.language.description')}
         header={t('common.language')}
-        icon={<LocalLanguage24Regular />}
+        icon={<LocalLanguageZiIcon />}
       />
 
       <SettingsCard

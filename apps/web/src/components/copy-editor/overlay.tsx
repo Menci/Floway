@@ -3,7 +3,6 @@ import {
   Checkmark16Regular,
   Copy16Regular,
   Edit16Regular,
-  Globe16Regular,
 } from '@fluentui/react-icons';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -25,6 +24,7 @@ import { useCopyEditorStore } from '../../i18n/copy-editor/store';
 import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages';
 import { winuiLightTheme } from '../../winui/theme';
 import { copyToClipboard } from '../ui/copy-to-clipboard';
+import { LocalLanguageZiIcon } from '../ui/local-language-zi-icon';
 
 const { Button, FluentProvider, Tooltip } = fluentComponents;
 
@@ -407,7 +407,7 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
                   <Button
                     appearance="subtle"
                     aria-label={t('common.copyEditor.previewLanguage')}
-                    icon={<Globe16Regular />}
+                    icon={<LocalLanguageZiIcon size={16} />}
                     size="small"
                     onClick={() => void handlePreviewLanguageToggle()}
                   >
