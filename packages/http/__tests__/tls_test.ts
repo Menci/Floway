@@ -27,16 +27,6 @@ const startObservedHandshake = (
   return { fake, abort, handshake };
 };
 
-const waitForClientHello = async (
-  fake: ReturnType<typeof makeFakeDuplex>,
-): Promise<Uint8Array> => {
-  const deadline = Date.now() + 1000;
-  while (fake.written().byteLength < 200 && Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, 5));
-  }
-  return fake.written();
-};
-
 const clientHelloServerName = (record: Uint8Array): string | undefined => {
   let offset = 5;
   if (record[offset++] !== 0x01) throw new Error('expected ClientHello');
@@ -84,9 +74,7 @@ describe('userspaceTls — handshake failure', () => {
       { readable: fake.readable, writable: fake.writable },
       { host: 'example.com', signal: ac.signal },
     );
-    // Let the ClientHello be emitted first.
-    await new Promise(r => setTimeout(r, 10));
-    expect(fake.written().byteLength).toBeGreaterThan(0);
+    await fake.firstWrite();
     ac.abort(new DOMException('cancel after ClientHello', 'AbortError'));
     await expect(promise).rejects.toMatchObject({
       name: 'AbortError',
@@ -109,7 +97,7 @@ describe('userspaceTls — prefix coalescing', () => {
     );
     handshake.catch(() => { /* expected — we abort below */ });
 
-    const written = await waitForClientHello(fake);
+    const written = await fake.firstWrite();
     expect(written[0]).toBe(0xde);
     expect(written[1]).toBe(0xad);
     expect(written[2]).toBe(0xbe);
@@ -125,7 +113,7 @@ describe('userspaceTls — prefix coalescing', () => {
     const host = 'sni-test.example';
     const { fake, abort, handshake } = startObservedHandshake(host);
 
-    expect(clientHelloServerName(await waitForClientHello(fake))).toBe(host);
+    expect(clientHelloServerName(await fake.firstWrite())).toBe(host);
 
     abort.abort(new DOMException('done', 'AbortError'));
     await handshake.catch(() => { /* expected */ });
@@ -136,7 +124,7 @@ describe('userspaceTls — prefix coalescing', () => {
     async host => {
       const { fake, abort, handshake } = startObservedHandshake(host);
 
-      expect(clientHelloServerName(await waitForClientHello(fake))).toBeUndefined();
+      expect(clientHelloServerName(await fake.firstWrite())).toBeUndefined();
 
       abort.abort(new DOMException('done', 'AbortError'));
       await handshake.catch(() => { /* expected */ });
