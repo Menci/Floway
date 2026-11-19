@@ -255,7 +255,7 @@ const en = {
             browser: 'Follow browser',
           },
           copyEditor: {
-            title: 'Copy editing mode',
+            title: 'Copy editor',
             description: 'Hold Alt and click any interface text to edit multilingual copy for export',
           },
           save: 'Save preferences',

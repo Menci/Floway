@@ -57,7 +57,7 @@ export const copyEditorCss = `
   color: var(--winui-text-fill-primary);
   box-shadow: 0 4px 12px var(--winui-tooltip-shadow-color);
   font-family: var(--fontFamilyMonospace);
-  font-size: 11px;
+  font-size: calc(var(--fontSizeBase200) - 1px);
   line-height: 16px;
   white-space: nowrap;
   overflow: hidden;
@@ -165,7 +165,7 @@ export const copyEditorCss = `
 
 .floway-copy-editor-header-key {
   font-family: var(--fontFamilyMonospace);
-  font-size: var(--fontSizeBase300);
+  font-size: calc(var(--fontSizeBase300) - 1px);
   line-height: var(--lineHeightBase300);
   font-weight: 500;
   color: var(--winui-text-fill-primary);
@@ -248,7 +248,7 @@ export const copyEditorCss = `
   background-color: var(--winui-control-fill-default);
   color: var(--winui-text-fill-primary);
   font-family: var(--fontFamilyMonospace);
-  font-size: 11px;
+  font-size: calc(var(--fontSizeBase200) - 1px);
   line-height: 16px;
   cursor: pointer;
 }
@@ -375,8 +375,8 @@ export const copyEditorCss = `
 
 .floway-copy-editor-draft-key {
   font-family: var(--fontFamilyMonospace);
-  font-size: 12px;
-  line-height: 18px;
+  font-size: calc(var(--fontSizeBase300) - 1px);
+  line-height: var(--lineHeightBase300);
   color: var(--winui-text-fill-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -409,6 +409,7 @@ export const copyEditorCss = `
 
 .floway-copy-editor-batch-key {
   font-family: var(--fontFamilyMonospace);
+  font-size: calc(var(--fontSizeBase300) - 1px);
   color: var(--winui-text-fill-primary);
   margin-inline-end: 8px;
 }

@@ -140,10 +140,17 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
     };
   }, [ensureInitialized]);
 
-  // Promote the overlay host into the browser top layer on mount and whenever
-  // the editor flyout or panel opens so it always sits above native/Fluent dialogs.
+  // Promote the overlay host into the browser top layer on mount and when
+  // opening a surface (never on close, so an outside drag-select that closes
+  // the panel is not interrupted by toggling top-layer state).
   useEffect(() => {
     promoteTopLayer(layerRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (activeFlyout !== null || panelOpen) {
+      promoteTopLayer(layerRef.current);
+    }
   }, [activeFlyout, panelOpen]);
 
   // Keep the virtual parent aligned with the clicked element (or topmost open
@@ -319,7 +326,7 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
       ref={layerRef}
       className="floway-copy-editor-layer"
       data-floway-copy-editor-root=""
-      data-tabster={JSON.stringify({ modalizer: { id: 'floway-copy-editor', isAlwaysAccessible: true } })}
+      data-tabster={JSON.stringify({ modalizer: { id: 'floway-copy-editor', isAlwaysAccessible: true, isOthersAccessible: true } })}
       popover="manual"
     >
       <CopyEditorInternalContext value={true}>
