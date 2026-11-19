@@ -19,7 +19,7 @@ import {
   type HitTarget,
   type KeyCandidate,
 } from '../../i18n/copy-editor/dom-registry';
-import { setCopyEditorFreezeActive } from '../../i18n/copy-editor/freeze';
+import { CopyEditorInternalContext, setCopyEditorFreezeActive } from '../../i18n/copy-editor/freeze';
 import { useCopyEditorStore } from '../../i18n/copy-editor/store';
 import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages';
 import { winuiLightTheme } from '../../winui/theme';
@@ -91,7 +91,7 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
   const ensureInitialized = useCopyEditorStore(state => state.ensureInitialized);
   const entries = useCopyEditorStore(state => state.entries);
   const buildExportPayload = useCopyEditorStore(state => state.buildExportPayload);
-  const markExported = useCopyEditorStore(state => state.markExported);
+  const archiveActiveAsExport = useCopyEditorStore(state => state.archiveActiveAsExport);
 
   const layerRef = useRef<HTMLDivElement | null>(null);
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
@@ -102,6 +102,7 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
   const [activeFlyout, setActiveFlyout] = useState<ActiveFlyoutState | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [quickCopied, setQuickCopied] = useState(false);
+  const [portalRoot, setPortalRoot] = useState<HTMLDivElement | null>(null);
 
   const uiOpen = activeFlyout !== null || panelOpen;
   const freezePopovers = altPressed || uiOpen;
@@ -279,11 +280,8 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
     };
   }, []);
 
-  const allEntries = Object.values(entries);
-  const totalCount = allEntries.length;
-  const pendingCount = allEntries.filter(entry => entry.exportedAt === null).length;
-  const exportedCount = totalCount - pendingCount;
-  const showDock = totalCount > 0 || altPressed || uiOpen;
+  const activeCount = Object.keys(entries).length;
+  const showDock = activeCount > 0 || altPressed || uiOpen || quickCopied;
 
   const currentLang = (supportedLanguages.includes(i18n.language as SupportedLanguage)
     ? i18n.language
@@ -295,12 +293,11 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
   };
 
   const handleQuickCopy = async () => {
-    const scope = pendingCount > 0 ? 'unexported' : 'all';
-    const payload = buildExportPayload(scope);
+    const payload = buildExportPayload();
     if (payload.entries.length === 0) return;
     const ok = await copyToClipboard(JSON.stringify(payload, null, 2));
     if (!ok) return;
-    markExported(payload.entries.map(item => item.key), payload.exportedAt);
+    archiveActiveAsExport(payload.exportedAt);
     setQuickCopied(true);
     if (quickCopyTimerRef.current !== null) {
       window.clearTimeout(quickCopyTimerRef.current);
@@ -325,102 +322,104 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
       data-tabster={JSON.stringify({ modalizer: { id: 'floway-copy-editor', isAlwaysAccessible: true } })}
       popover="manual"
     >
-      <FluentProvider className="floway-copy-editor-provider" theme={theme}>
-        {altPressed && hoverTarget && (
-          <>
-            <div
-              className="floway-copy-editor-highlight"
-              style={{
-                left: `${hoverTarget.rect.left - 2}px`,
-                top: `${hoverTarget.rect.top - 2}px`,
-                width: `${hoverTarget.rect.width + 4}px`,
-                height: `${hoverTarget.rect.height + 4}px`,
+      <CopyEditorInternalContext value={true}>
+        <FluentProvider className="floway-copy-editor-provider" theme={theme}>
+          {altPressed && hoverTarget && (
+            <>
+              <div
+                className="floway-copy-editor-highlight"
+                style={{
+                  left: `${hoverTarget.rect.left - 2}px`,
+                  top: `${hoverTarget.rect.top - 2}px`,
+                  width: `${hoverTarget.rect.width + 4}px`,
+                  height: `${hoverTarget.rect.height + 4}px`,
+                }}
+              />
+              <div
+                className="floway-copy-editor-highlight-tag"
+                style={{ left: `${highlightTagLeft}px`, top: `${highlightTagTop}px` }}
+              >
+                {hoverTarget.primaryKey}
+                {hoverTarget.candidates.length > 1 ? ` (+${hoverTarget.candidates.length - 1})` : ''}
+              </div>
+            </>
+          )}
+
+          {panelOpen && (
+            <DraftsPanel
+              mountNode={portalRoot}
+              onClose={() => setPanelOpen(false)}
+              onEditKey={(key, route) => {
+                setPanelOpen(false);
+                setActiveFlyout({
+                  key,
+                  candidates: [{ key, baseKey: key, source: 'text' }],
+                  anchorRect: null,
+                  anchorElement: findActiveFloatingSurface() ?? null,
+                  route,
+                });
               }}
             />
+          )}
+
+          {activeFlyout && (
+            <EditorFlyout
+              key={activeFlyout.key}
+              anchorRect={activeFlyout.anchorRect}
+              candidates={activeFlyout.candidates}
+              initialKey={activeFlyout.key}
+              route={activeFlyout.route}
+              onClose={() => setActiveFlyout(null)}
+            />
+          )}
+
+          {showDock && (
             <div
-              className="floway-copy-editor-highlight-tag"
-              style={{ left: `${highlightTagLeft}px`, top: `${highlightTagTop}px` }}
+              aria-label={t('common.copyEditor.dockLabel')}
+              className="floway-copy-editor-dock"
+              role="region"
             >
-              {hoverTarget.primaryKey}
-              {hoverTarget.candidates.length > 1 ? ` (+${hoverTarget.candidates.length - 1})` : ''}
+              <Button
+                appearance="subtle"
+                icon={<Edit16Regular />}
+                size="small"
+                title={t('common.copyEditor.panelTitle')}
+                onClick={() => setPanelOpen(open => !open)}
+              >
+                {t('common.copyEditor.stagedCount', { count: activeCount })}
+              </Button>
+
+              <span className="floway-copy-editor-dock-divider" />
+
+              <Button
+                appearance="subtle"
+                aria-label={t('common.copyEditor.previewLanguage')}
+                icon={<LocalLanguage16Regular />}
+                size="small"
+                title={t('common.copyEditor.previewLanguage')}
+                onClick={() => void handlePreviewLanguageToggle()}
+              >
+                {SHORT_LANGUAGE_LABELS[currentLang]}
+              </Button>
+
+              {(activeCount > 0 || quickCopied) && (
+                <>
+                  <span className="floway-copy-editor-dock-divider" />
+                  <Button
+                    appearance="primary"
+                    icon={quickCopied ? <Checkmark16Regular /> : <Copy16Regular />}
+                    size="small"
+                    onClick={() => void handleQuickCopy()}
+                  >
+                    {quickCopied ? t('common.copy.copied') : t('common.copyEditor.export')}
+                  </Button>
+                </>
+              )}
             </div>
-          </>
-        )}
-
-        {panelOpen && (
-          <DraftsPanel
-            onClose={() => setPanelOpen(false)}
-            onEditKey={(key, route) => {
-              setPanelOpen(false);
-              setActiveFlyout({
-                key,
-                candidates: [{ key, baseKey: key, source: 'text' }],
-                anchorRect: null,
-                anchorElement: findActiveFloatingSurface() ?? null,
-                route,
-              });
-            }}
-          />
-        )}
-
-        {activeFlyout && (
-          <EditorFlyout
-            key={activeFlyout.key}
-            anchorRect={activeFlyout.anchorRect}
-            candidates={activeFlyout.candidates}
-            initialKey={activeFlyout.key}
-            route={activeFlyout.route}
-            onClose={() => setActiveFlyout(null)}
-          />
-        )}
-
-        {showDock && (
-          <div
-            aria-label={t('common.copyEditor.dockLabel')}
-            className="floway-copy-editor-dock"
-            role="region"
-          >
-            <Button
-              appearance="subtle"
-              title={t('common.copyEditor.panelTitle')}
-              icon={<Edit16Regular />}
-              size="small"
-              onClick={() => setPanelOpen(open => !open)}
-            >
-              {pendingCount > 0 && exportedCount > 0
-                ? t('common.copyEditor.pendingCount', { count: pendingCount })
-                : t('common.copyEditor.stagedCount', { count: totalCount })}
-            </Button>
-
-            <span className="floway-copy-editor-dock-divider" />
-
-            <Button
-              appearance="subtle"
-              aria-label={t('common.copyEditor.previewLanguage')}
-              icon={<LocalLanguage16Regular />}
-              size="small"
-              title={t('common.copyEditor.previewLanguage')}
-              onClick={() => void handlePreviewLanguageToggle()}
-            >
-              {SHORT_LANGUAGE_LABELS[currentLang]}
-            </Button>
-
-            {totalCount > 0 && (
-              <>
-                <span className="floway-copy-editor-dock-divider" />
-                <Button
-                  appearance="primary"
-                  icon={quickCopied ? <Checkmark16Regular /> : <Copy16Regular />}
-                  size="small"
-                  onClick={() => void handleQuickCopy()}
-                >
-                  {quickCopied ? t('common.copy.copied') : t('common.copyEditor.copyJson')}
-                </Button>
-              </>
-            )}
-          </div>
-        )}
-      </FluentProvider>
+          )}
+          <div ref={setPortalRoot} className="floway-copy-editor-portal-host" />
+        </FluentProvider>
+      </CopyEditorInternalContext>
     </div>,
     document.body,
   );

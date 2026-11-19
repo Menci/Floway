@@ -14,6 +14,11 @@ export const setCopyEditorFreezeActive = (next: boolean): void => {
   frozen = next;
 };
 
+// Signals that a floating control lives inside the copy editor's own chrome so
+// its own confirmation flyouts and popovers open and close normally even while
+// external page popovers are frozen.
+export const CopyEditorInternalContext = React.createContext(false);
+
 interface OpenCarrier extends PropCarrier {
   open?: boolean;
   defaultOpen?: boolean;
@@ -32,6 +37,7 @@ interface VisibleCarrier extends PropCarrier {
 // modes.
 const wrapOpenSurface = <Component>(component: Component): Component =>
   wrapFluent(component, (props: OpenCarrier) => {
+    const insideEditor = React.useContext(CopyEditorInternalContext);
     const controlled = props.open !== undefined;
     const [uncontrolledOpen, setUncontrolledOpen] = React.useState<boolean>(() => Boolean(props.defaultOpen));
     const currentOpen = controlled ? Boolean(props.open) : uncontrolledOpen;
@@ -41,7 +47,7 @@ const wrapOpenSurface = <Component>(component: Component): Component =>
       ...rest,
       open: currentOpen,
       onOpenChange: (event: unknown, data: { open: boolean }) => {
-        if (!data.open && isCopyEditorFreezeActive()) return;
+        if (!insideEditor && !data.open && isCopyEditorFreezeActive()) return;
         if (!controlled) setUncontrolledOpen(data.open);
         props.onOpenChange?.(event, data);
       },
@@ -50,6 +56,7 @@ const wrapOpenSurface = <Component>(component: Component): Component =>
 
 const wrapTooltipSurface = <Component>(component: Component): Component =>
   wrapFluent(component, (props: VisibleCarrier) => {
+    const insideEditor = React.useContext(CopyEditorInternalContext);
     const controlled = props.visible !== undefined;
     const [uncontrolledVisible, setUncontrolledVisible] = React.useState(false);
     const currentVisible = controlled ? Boolean(props.visible) : uncontrolledVisible;
@@ -58,7 +65,7 @@ const wrapTooltipSurface = <Component>(component: Component): Component =>
       ...props,
       visible: currentVisible,
       onVisibleChange: (event: unknown, data: { visible: boolean }) => {
-        if (!data.visible && isCopyEditorFreezeActive()) return;
+        if (!insideEditor && !data.visible && isCopyEditorFreezeActive()) return;
         if (!controlled) setUncontrolledVisible(data.visible);
         props.onVisibleChange?.(event, data);
       },
