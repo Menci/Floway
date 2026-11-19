@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { i18n, setLanguage } from '../../../src/i18n';
-import { __testing, useCopyEditorStore } from '../../../src/i18n/copy-editor/store';
+import { __testing, MAX_HISTORY_SESSIONS, useCopyEditorStore } from '../../../src/i18n/copy-editor/store';
 import { stubLocalStorage } from '../../local-storage-stub';
 
 stubLocalStorage();
@@ -122,9 +122,44 @@ describe('copy editor store', () => {
     expect(useCopyEditorStore.getState().getOriginal('en', 'nonexistent.removed.key')).toBeUndefined();
     expect(i18n.exists('nonexistent.removed.key', { lng: 'en' })).toBe(false);
 
-    // Deleting history reverts keys no longer overridden by active entries.
+    // Stale edits whose before does not match the current build do not override live i18next copy.
+    useCopyEditorStore.getState().importFromJson(JSON.stringify({
+      version: 1,
+      entries: [{ key: 'common.cancel', changes: { en: { before: 'Outdated Cancel', after: 'Should Not Apply' } } }],
+    }));
+    expect(useCopyEditorStore.getState().entries['common.cancel']?.changes.en?.after).toBe('Should Not Apply');
+    // Falls back to the latest matching history entry ('Abort') rather than applying the stale edit.
+    expect(i18n.t('common.cancel', { lng: 'en' })).toBe('Abort');
+
+    // Deleting history reverts keys no longer overridden by valid active entries.
     useCopyEditorStore.getState().clearHistory();
     expect(useCopyEditorStore.getState().history).toHaveLength(0);
+    expect(i18n.t('common.cancel', { lng: 'en' })).toBe('Cancel');
     expect(i18n.t('common.dismiss', { lng: 'en' })).toBe('Dismiss');
+  });
+
+  it('caps history at MAX_HISTORY_SESSIONS and reverts evicted oldest overrides', () => {
+    const store = useCopyEditorStore.getState();
+    store.stageEntry({
+      key: 'common.cancel',
+      values: { en: 'Oldest override' },
+      note: '',
+    });
+    store.archiveActiveAsExport('2026-01-01T00:00:00.000Z');
+    expect(i18n.t('common.cancel', { lng: 'en' })).toBe('Oldest override');
+
+    for (let i = 0; i < MAX_HISTORY_SESSIONS; i += 1) {
+      store.stageEntry({
+        key: 'common.dismiss',
+        values: { en: `Dismiss ${i}` },
+        note: '',
+      });
+      store.archiveActiveAsExport(`2026-01-02T00:00:${String(i % 60).padStart(2, '0')}.000Z`);
+    }
+
+    expect(useCopyEditorStore.getState().history).toHaveLength(MAX_HISTORY_SESSIONS);
+    // The first session (common.cancel) was evicted and reverted back to original copy.
+    expect(i18n.t('common.cancel', { lng: 'en' })).toBe('Cancel');
+    expect(i18n.t('common.dismiss', { lng: 'en' })).toBe(`Dismiss ${MAX_HISTORY_SESSIONS - 1}`);
   });
 });

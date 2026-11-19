@@ -70,10 +70,13 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, onSa
   const [activeKey, setActiveKey] = useState(initialKey);
   const [copiedKey, setCopiedKey] = useState(false);
 
-  const buildInitialValues = (key: string): Record<SupportedLanguage, string> => ({
-    'en': getCurrent('en', key) ?? '',
-    'zh-Hans': getCurrent('zh-Hans', key) ?? '',
-  });
+  const buildInitialValues = (key: string): Record<SupportedLanguage, string> => {
+    const active = useCopyEditorStore.getState().entries[key];
+    return {
+      'en': active?.changes.en?.after ?? getCurrent('en', key) ?? '',
+      'zh-Hans': active?.changes['zh-Hans']?.after ?? getCurrent('zh-Hans', key) ?? '',
+    };
+  };
 
   const [values, setValues] = useState<Record<SupportedLanguage, string>>(() => buildInitialValues(initialKey));
   const [note, setNote] = useState(() => entries[initialKey]?.note ?? '');

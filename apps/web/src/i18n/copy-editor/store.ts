@@ -5,6 +5,7 @@ import { supportedLanguages, type SupportedLanguage } from '../languages';
 import { loadLocale } from '../resources';
 
 const STORAGE_KEY = 'floway.copyEditorState.v4';
+export const MAX_HISTORY_SESSIONS = 200;
 const PLURAL_SUFFIX_RE = /_(zero|one|two|few|many|other)$/;
 
 export interface LanguageChange {
@@ -133,7 +134,7 @@ const readStoredState = (): PersistedState => {
       }
     }
 
-    return { entries, history };
+    return { entries, history: history.slice(0, MAX_HISTORY_SESSIONS) };
   } catch {
     return { entries: {}, history: [] };
   }
@@ -166,6 +167,8 @@ const applyResourceValue = (language: SupportedLanguage, key: string, value: str
 /**
  * Resolves the effective override for `(language, key)` across history
  * sessions (newest first) and active drafts (highest precedence).
+ * An edit only takes effect when its recorded `before` matches the running
+ * build's original string so stale edits never overwrite newly shipped copy.
  */
 const resolveEffectiveValue = (
   language: SupportedLanguage,
@@ -174,16 +177,33 @@ const resolveEffectiveValue = (
   entries: Record<string, CopyDraftEntry>,
   history: CopyHistorySession[],
 ): string | undefined => {
+  const original = originals[language].get(key);
+  if (original === undefined) return undefined;
+
   const active = entries[key]?.changes[language];
-  if (active) return active.after;
+  if (active?.before === original) return active.after;
 
   for (const session of history) {
     const match = session.entries.find(item => item.key === key);
     const change = match?.changes[language];
-    if (change) return change.after;
+    if (change?.before === original) return change.after;
   }
 
-  return originals[language].get(key);
+  return original;
+};
+
+const capHistory = (
+  sessions: CopyHistorySession[],
+): { kept: CopyHistorySession[]; evictedKeys: string[] } => {
+  if (sessions.length <= MAX_HISTORY_SESSIONS) {
+    return { kept: sessions, evictedKeys: [] };
+  }
+  const kept = sessions.slice(0, MAX_HISTORY_SESSIONS);
+  const evictedKeys: string[] = [];
+  for (const session of sessions.slice(MAX_HISTORY_SESSIONS)) {
+    for (const entry of session.entries) evictedKeys.push(entry.key);
+  }
+  return { kept, evictedKeys };
 };
 
 const syncKeysToI18n = (
@@ -467,11 +487,14 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
   },
 
   archiveActiveAsExport: (archivedAt = new Date().toISOString()) => {
-    const { entries, history } = get();
+    const { originals, entries, history } = get();
     const session = buildHistorySession(entries, archivedAt);
     if (!session) return null;
 
-    const nextHistory = [session, ...history];
+    const { kept: nextHistory, evictedKeys } = capHistory([session, ...history]);
+    if (evictedKeys.length > 0) {
+      syncKeysToI18n(evictedKeys, originals, {}, nextHistory);
+    }
     writeStoredState({ entries: {}, history: nextHistory });
     set({ entries: {}, history: nextHistory });
     return session;
@@ -485,10 +508,12 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
     const now = new Date().toISOString();
     const archivedCurrent = buildHistorySession(entries, now);
     const remaining = history.filter(item => item.id !== sessionId);
-    const nextHistory = archivedCurrent ? [archivedCurrent, ...remaining] : remaining;
+    const { kept: nextHistory, evictedKeys } = capHistory(
+      archivedCurrent ? [archivedCurrent, ...remaining] : remaining,
+    );
 
     const nextEntries: Record<string, CopyDraftEntry> = {};
-    const touchedKeys = new Set<string>(Object.keys(entries));
+    const touchedKeys = new Set<string>([...Object.keys(entries), ...evictedKeys]);
     for (const item of target.entries) {
       nextEntries[item.key] = { ...item };
       touchedKeys.add(item.key);
@@ -577,11 +602,14 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
     }
 
     const archivedCurrent = buildHistorySession(entries, now);
-    const nextHistory = archivedCurrent ? [archivedCurrent, ...history] : history;
+    const { kept: nextHistory, evictedKeys } = capHistory(
+      archivedCurrent ? [archivedCurrent, ...history] : history,
+    );
 
     const touchedKeys = new Set<string>([
       ...Object.keys(entries),
       ...Object.keys(importedEntries),
+      ...evictedKeys,
     ]);
     syncKeysToI18n(touchedKeys, originals, importedEntries, nextHistory);
     writeStoredState({ entries: importedEntries, history: nextHistory });
