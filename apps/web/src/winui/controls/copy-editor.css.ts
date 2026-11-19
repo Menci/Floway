@@ -328,17 +328,25 @@ export const copyEditorCss = `
   text-align: center;
 }
 
-.floway-copy-editor-error-bar {
+.floway-copy-editor-notice-bar {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 8px 10px 8px 16px;
   border-bottom: 1px solid var(--winui-divider-stroke-default);
-  background-color: var(--winui-system-fill-critical-background);
-  color: var(--winui-system-fill-critical);
   font-size: 12px;
   line-height: 16px;
   flex: none;
+}
+
+.floway-copy-editor-notice-bar[data-tone="error"] {
+  background-color: var(--winui-system-fill-critical-background);
+  color: var(--winui-system-fill-critical);
+}
+
+.floway-copy-editor-notice-bar[data-tone="success"] {
+  background-color: var(--winui-system-fill-success-background);
+  color: var(--winui-system-fill-success);
 }
 
 .floway-copy-editor-draft-item {

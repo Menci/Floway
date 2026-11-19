@@ -3,7 +3,7 @@ import {
   Checkmark16Regular,
   Copy16Regular,
   Edit16Regular,
-  LocalLanguage16Regular,
+  Globe16Regular,
 } from '@fluentui/react-icons';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -102,6 +102,7 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
   const [activeFlyout, setActiveFlyout] = useState<ActiveFlyoutState | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [quickCopied, setQuickCopied] = useState(false);
+  const [exportedNotice, setExportedNotice] = useState(false);
   const [portalRoot, setPortalRoot] = useState<HTMLDivElement | null>(null);
 
   const uiOpen = activeFlyout !== null || panelOpen;
@@ -304,6 +305,8 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
     const ok = await copyToClipboard(JSON.stringify(payload, null, 2));
     if (!ok) return;
     archiveActiveAsExport(payload.exportedAt);
+    setExportedNotice(true);
+    setPanelOpen(true);
     setQuickCopied(true);
     if (quickCopyTimerRef.current !== null) {
       window.clearTimeout(quickCopyTimerRef.current);
@@ -354,7 +357,13 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
 
             {panelOpen && (
               <DraftsPanel
-                onClose={() => setPanelOpen(false)}
+                exportedNotice={exportedNotice}
+                onClearExportedNotice={() => setExportedNotice(false)}
+                onClose={() => {
+                  setPanelOpen(false);
+                  setExportedNotice(false);
+                }}
+                onExported={() => setExportedNotice(true)}
                 onEditKey={key => {
                   setActiveFlyout({
                     key,
@@ -373,7 +382,7 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
                 candidates={activeFlyout.candidates}
                 initialKey={activeFlyout.key}
                 onClose={() => setActiveFlyout(null)}
-                onSaved={() => setPanelOpen(true)}
+                onSaved={() => { setExportedNotice(false); setPanelOpen(true); }}
               />
             )}
 
@@ -398,7 +407,7 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
                   <Button
                     appearance="subtle"
                     aria-label={t('common.copyEditor.previewLanguage')}
-                    icon={<LocalLanguage16Regular />}
+                    icon={<Globe16Regular />}
                     size="small"
                     onClick={() => void handlePreviewLanguageToggle()}
                   >

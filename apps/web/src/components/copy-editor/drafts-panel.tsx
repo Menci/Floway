@@ -247,11 +247,20 @@ const isInsideCopyEditor = (target: EventTarget | null): boolean => {
 };
 
 export interface DraftsPanelProps {
+  exportedNotice: boolean;
+  onClearExportedNotice: () => void;
   onClose: () => void;
   onEditKey: (key: string) => void;
+  onExported: () => void;
 }
 
-export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
+export function DraftsPanel({
+  exportedNotice,
+  onClearExportedNotice,
+  onClose,
+  onEditKey,
+  onExported,
+}: DraftsPanelProps) {
   const { t, i18n } = useEditorTranslation();
   const mountNode = useCopyEditorPortal();
   const now = useNow(30_000);
@@ -270,7 +279,7 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
 
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const [pasteError, setPasteError] = useState<string | null>(null);
+  const [errorNotice, setErrorNotice] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [copiedSessionId, setCopiedSessionId] = useState<string | null>(null);
   const [copiedSegmentId, setCopiedSegmentId] = useState<string | null>(null);
@@ -312,8 +321,13 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
   const viewingHistory = isRootHistory || (showHistory && historySessions.length > 0);
   const showBackButton = viewingHistory && activeEntries.length > 0;
 
+  const clearNotices = () => {
+    setErrorNotice(null);
+    onClearExportedNotice();
+  };
+
   const handleExport = async () => {
-    setPasteError(null);
+    clearNotices();
     const payload = buildExportPayload();
     if (payload.entries.length === 0) return;
     const ok = await copyToClipboard(JSON.stringify(payload, null, 2));
@@ -322,12 +336,14 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
     }
     if (!ok) {
       setCopyState('failed');
+      setErrorNotice(t('common.copy.failed'));
       copyTimerRef.current = window.setTimeout(() => setCopyState('idle'), 2000);
       return;
     }
     archiveActiveAsExport(payload.exportedAt);
     setShowHistory(false);
     setCopyState('copied');
+    onExported();
     copyTimerRef.current = window.setTimeout(() => setCopyState('idle'), 1600);
   };
 
@@ -353,26 +369,26 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
   };
 
   const handleRestoreSession = (sessionId: string) => {
-    setPasteError(null);
+    clearNotices();
     restoreHistorySession(sessionId);
     setShowHistory(false);
   };
 
   const handlePasteImport = async () => {
-    setPasteError(null);
+    clearNotices();
     if (!navigator.clipboard || typeof navigator.clipboard.readText !== 'function') {
-      setPasteError(t('common.copyEditor.pasteReadError'));
+      setErrorNotice(t('common.copyEditor.pasteReadError'));
       return;
     }
     let rawText: string;
     try {
       rawText = await navigator.clipboard.readText();
     } catch {
-      setPasteError(t('common.copyEditor.pasteReadError'));
+      setErrorNotice(t('common.copyEditor.pasteReadError'));
       return;
     }
     if (rawText.trim().length === 0) {
-      setPasteError(t('common.copyEditor.pasteEmptyError'));
+      setErrorNotice(t('common.copyEditor.pasteEmptyError'));
       return;
     }
     try {
@@ -381,7 +397,7 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
         setShowHistory(false);
       }
     } catch (error) {
-      setPasteError(t('common.copyEditor.importError', {
+      setErrorNotice(t('common.copyEditor.importError', {
         message: error instanceof Error ? error.message : String(error),
       }));
     }
@@ -416,7 +432,7 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
               icon={<History16Regular />}
               label={t('common.copyEditor.historyTitle')}
               onClick={() => {
-                setPasteError(null);
+                clearNotices();
                 setShowHistory(true);
               }}
             />
@@ -448,13 +464,20 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
         </div>
       </div>
 
-      {pasteError && (
-        <div className="floway-copy-editor-error-bar" role="alert">
-          <span className="min-w-0 flex-1">{pasteError}</span>
+      {(errorNotice !== null || exportedNotice) && (
+        <div
+          className="floway-copy-editor-notice-bar"
+          data-tone={errorNotice ? 'error' : 'success'}
+          role={errorNotice ? 'alert' : 'status'}
+        >
+          {!errorNotice && <CheckmarkCircle16Regular className="flex-none" />}
+          <span className="min-w-0 flex-1">
+            {errorNotice ?? t('common.copyEditor.exportedNotice')}
+          </span>
           <EditorIconButton
             icon={<Dismiss16Regular />}
             label={t('common.copyEditor.close')}
-            onClick={() => setPasteError(null)}
+            onClick={clearNotices}
           />
         </div>
       )}
@@ -640,7 +663,9 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
           )}
 
           {historySessions.map(session => {
-            const relative = relativeTime(session.archivedAt, locale, { now }) ?? shortDate(session.archivedAt, locale);
+            const archivedMs = Date.parse(session.archivedAt);
+            const effectiveNow = Number.isNaN(archivedMs) ? now : Math.max(now, archivedMs);
+            const relative = relativeTime(session.archivedAt, locale, { now: effectiveNow }) ?? shortDate(session.archivedAt, locale);
             return (
               <div
                 key={session.id}

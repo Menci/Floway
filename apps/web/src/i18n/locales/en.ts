@@ -43,6 +43,7 @@ const en = {
         editsCount_other: '{{count, number}} edits',
         previewLanguage: 'Switch preview language',
         export: 'Export',
+        exportedNotice: 'Copied to clipboard and saved to history',
         discardEdits: 'Discard all',
         discardEditsTitle: 'Discard edits?',
         discardEditsMessage: 'All unexported edits in this session will be discarded and reverted.',
