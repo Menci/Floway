@@ -17,7 +17,7 @@ import { supportedLanguages } from '../../i18n/languages';
 import { copyToClipboard } from '../ui/copy-to-clipboard';
 import { Textarea } from '../ui/fluent-form-controls';
 
-const { Badge, Button, Tab, TabList, Text } = fluentComponents;
+const { Button, Tab, TabList, Text } = fluentComponents;
 
 export interface DraftsPanelProps {
   onClose: () => void;
@@ -87,11 +87,11 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
     >
       <div className="floway-copy-editor-header">
         <div className="flex items-center gap-2 min-w-0">
-          <Text weight="semibold">{t('common.copyEditor.panelTitle')}</Text>
+          <Text size={400} weight="semibold">{t('common.copyEditor.panelTitle')}</Text>
           {allEntries.length > 0 && (
-            <Badge appearance="tint" color="brand" size="small">
+            <span className="floway-copy-editor-pill" data-tone="accent">
               {allEntries.length}
-            </Badge>
+            </span>
           )}
         </div>
         <Button
@@ -103,7 +103,7 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
         />
       </div>
 
-      <div className="px-3.5 pt-2">
+      <div className="floway-copy-editor-tabs">
         <TabList
           selectedValue={tab}
           size="small"
@@ -118,43 +118,41 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
         <>
           <div className="floway-copy-editor-body">
             {autoPrunedCount > 0 && (
-              <Text size={200} style={{ color: 'var(--winui-text-fill-secondary)' }}>
+              <span className="floway-copy-editor-original">
                 {t('common.copyEditor.autoPruned', { count: autoPrunedCount })}
-              </Text>
+              </span>
             )}
 
             {copyBanner && (
-              <div className="floway-copy-editor-draft-item">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
-                    {copyBanner.ok ? <Checkmark16Regular /> : <Warning16Regular />}
-                    <Text size={200}>
-                      {copyBanner.ok
-                        ? t('common.copyEditor.copiedCount', { count: copyBanner.count })
-                        : copyBanner.message}
-                    </Text>
-                  </div>
-                  {copyBanner.ok && exportedEntries.length > 0 && (
-                    <Button
-                      appearance="subtle"
-                      icon={<Delete16Regular />}
-                      size="small"
-                      onClick={() => {
-                        clearExported();
-                        setCopyBanner(null);
-                      }}
-                    >
-                      {t('common.copyEditor.clearExported')}
-                    </Button>
-                  )}
+              <div className="floway-copy-editor-banner">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {copyBanner.ok ? <Checkmark16Regular /> : <Warning16Regular />}
+                  <span>
+                    {copyBanner.ok
+                      ? t('common.copyEditor.copiedCount', { count: copyBanner.count })
+                      : copyBanner.message}
+                  </span>
                 </div>
+                {copyBanner.ok && exportedEntries.length > 0 && (
+                  <Button
+                    appearance="subtle"
+                    icon={<Delete16Regular />}
+                    size="small"
+                    onClick={() => {
+                      clearExported();
+                      setCopyBanner(null);
+                    }}
+                  >
+                    {t('common.copyEditor.clearExported')}
+                  </Button>
+                )}
               </div>
             )}
 
             {allEntries.length === 0 ? (
-              <Text size={200} style={{ color: 'var(--winui-text-fill-secondary)' }}>
+              <span className="floway-copy-editor-original">
                 {t('common.copyEditor.emptyDrafts')}
-              </Text>
+              </span>
             ) : (
               allEntries.map(entry => {
                 const stale = getStaleLanguages(entry.key);
@@ -166,23 +164,22 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
                     data-exported={isExported ? 'true' : 'false'}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 grid gap-1">
-                        <Text block className="font-mono" size={200} truncate wrap={false}>
+                      <div className="min-w-0 grid gap-1.5">
+                        <span className="floway-copy-editor-key-text" title={entry.key}>
                           {entry.key}
-                        </Text>
+                        </span>
                         <div className="flex flex-wrap items-center gap-1.5">
-                          <Badge
-                            appearance="tint"
-                            color={isExported ? 'subtle' : 'brand'}
-                            size="extra-small"
+                          <span
+                            className="floway-copy-editor-pill"
+                            data-tone={isExported ? undefined : 'accent'}
                           >
                             {isExported ? t('common.copyEditor.statusExported') : t('common.copyEditor.statusPending')}
-                          </Badge>
-                          <Badge appearance="outline" size="extra-small">{entry.route}</Badge>
+                          </span>
+                          <span className="floway-copy-editor-pill" data-mono="true">{entry.route}</span>
                           {stale.length > 0 && (
-                            <Badge appearance="tint" color="warning" size="extra-small">
+                            <span className="floway-copy-editor-pill" data-tone="caution">
                               {t('common.copyEditor.staleNotice')}
-                            </Badge>
+                            </span>
                           )}
                         </div>
                       </div>
@@ -208,25 +205,20 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
                       const change = entry.changes[language];
                       if (!change) return null;
                       return (
-                        <div key={language} className="grid gap-0.5 text-xs">
-                          <div className="flex items-center gap-1.5">
-                            <Badge appearance="outline" size="extra-small">{language}</Badge>
-                            <span
-                              className="line-through truncate"
-                              style={{ color: 'var(--winui-text-fill-secondary)' }}
-                            >
-                              {change.before}
-                            </span>
+                        <div key={language} className="floway-copy-editor-diff-row">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="floway-copy-editor-pill" data-mono="true">{language}</span>
+                            <span className="floway-copy-editor-diff-before">{change.before}</span>
                           </div>
-                          <div className="pl-1">{change.after}</div>
+                          <div className="floway-copy-editor-diff-after">{change.after}</div>
                         </div>
                       );
                     })}
 
                     {entry.note.trim().length > 0 && (
-                      <Text size={200} style={{ color: 'var(--winui-text-fill-secondary)' }}>
+                      <span className="floway-copy-editor-original">
                         {t('common.copyEditor.noteLabel')}: {entry.note}
-                      </Text>
+                      </span>
                     )}
                   </div>
                 );
@@ -247,12 +239,11 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
                 </Button>
               )}
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
               {pendingEntries.length > 0 && exportedEntries.length > 0 && (
                 <Button
                   appearance="secondary"
                   icon={<Copy16Regular />}
-                  size="small"
                   onClick={() => void handleCopy('all')}
                 >
                   {t('common.copyEditor.copyAllJson')}
@@ -262,7 +253,6 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
                 appearance="primary"
                 disabled={allEntries.length === 0}
                 icon={<Copy16Regular />}
-                size="small"
                 onClick={() => void handleCopy(pendingEntries.length > 0 ? 'unexported' : 'all')}
               >
                 {pendingEntries.length > 0
@@ -276,22 +266,19 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
         <>
           <div className="floway-copy-editor-body">
             <Textarea
+              className="w-full"
               placeholder={t('common.copyEditor.importPlaceholder')}
               rows={10}
               value={importText}
               onChange={(_, data) => setImportText(data.value)}
             />
             {importStatus && (
-              <Text
-                size={200}
-                style={{
-                  color: importStatus.ok
-                    ? 'var(--winui-text-fill-secondary)'
-                    : 'var(--winui-system-fill-critical)',
-                }}
+              <span
+                className="floway-copy-editor-original"
+                style={importStatus.ok ? undefined : { color: 'var(--winui-system-fill-critical)' }}
               >
                 {importStatus.text}
-              </Text>
+              </span>
             )}
           </div>
           <div className="floway-copy-editor-footer">
@@ -300,7 +287,6 @@ export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
               appearance="primary"
               disabled={importText.trim().length === 0}
               icon={<ArrowImport16Regular />}
-              size="small"
               onClick={handleImport}
             >
               {t('common.copyEditor.importAction')}

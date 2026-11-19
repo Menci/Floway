@@ -18,6 +18,8 @@ import { numberFormatter } from './number-format';
 import { loadLocale } from './resources';
 import { shellResources } from './shell';
 
+const cloneResource = <T>(value: T): T => structuredClone(value);
+
 // Translation data is the larger part of what the dashboard has to load before
 // it can paint, and half of that again is a language the visitor is not
 // reading, so each locale is fetched on its own. That makes the strings
@@ -34,8 +36,6 @@ import { shellResources } from './shell';
 // and carries the bundle loaded here. Every key outside the shell resolves
 // through that fallback, which puts whatever renders between hydration and
 // LanguageSync in the visitor's language rather than briefly in English.
-const cloneResource = <T>(value: T): T => structuredClone(value);
-
 const language = browserLanguage();
 const loaded = new Set<SupportedLanguage>([language]);
 const copyEditorActive = isCopyEditorEnabled();
@@ -75,26 +75,32 @@ i18n.on('languageChanged', language => {
   }
 });
 
+// Loads a locale's full bundle into i18next at most once. Using `loaded`
+// instead of `i18n.hasResourceBundle` matters because the default language
+// boots with only `shellResources` (one key), which makes `hasResourceBundle`
+// return true even though the full catalog has never been fetched.
+export const ensureLocaleLoaded = async (next: SupportedLanguage): Promise<void> => {
+  if (loaded.has(next)) return;
+  const bundle = await loadLocale(next);
+  // `overwrite: false` preserves any staged copy-editor overrides already
+  // applied to this language while filling in all untouched keys.
+  i18n.addResourceBundle(next, 'translation', cloneResource(bundle.translation), true, false);
+  loaded.add(next);
+};
+
 // The way the app changes language. A bare `changeLanguage` would reach a
 // language whose bundle was never fetched, and the default language is present
 // from boot carrying the shell's strings alone. Persisting the choice is the
 // caller's job: boot sync and tests also call this, and neither is an explicit
 // in-page choice.
 export const setLanguage = async (next: SupportedLanguage): Promise<void> => {
-  if (!loaded.has(next)) {
-    const bundle = await loadLocale(next);
-    // Keep any live copy-editor overrides intact if the store already merged
-    // them into this language's resource bundle.
-    i18n.addResourceBundle(next, 'translation', cloneResource(bundle.translation), true, false);
-    loaded.add(next);
-  }
+  await ensureLocaleLoaded(next);
   await i18n.changeLanguage(next);
 };
 
-// Called once after client hydration when copy-editor mode is active so that
-// markers never enter the prerendered HydrateFallback frame. Emitting the
-// store `added` event refreshes every mounted `useTranslation` consumer with
-// markers attached.
+// Called once the copy-editor overlay and its DOM observer are mounted so that
+// markers never enter the prerendered HydrateFallback frame, yet every already
+// mounted `useTranslation` consumer re-renders with markers right away.
 export const activateCopyEditorTracking = (): void => {
   if (!copyEditorActive) return;
   setCopyEditorTrackingActive(true);

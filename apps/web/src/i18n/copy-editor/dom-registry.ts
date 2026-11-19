@@ -94,7 +94,8 @@ export class CopyEditorDomRegistry {
   private root: HTMLElement | null = null;
 
   start(root: HTMLElement): void {
-    if (this.observer) return;
+    if (this.observer && this.root === root) return;
+    this.stop();
     this.root = root;
     this.scanSubtree(root);
     this.observer = new MutationObserver(records => {
@@ -142,17 +143,25 @@ export class CopyEditorDomRegistry {
 
     this.processElementAttributes(node);
 
+    // FILTER_REJECT skips a subtree cleanly without terminating traversal of
+    // following siblings/ancestors (unlike calling walker.nextSibling() manually).
     const walker = node.ownerDocument.createTreeWalker(
       node,
       NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+      {
+        acceptNode(candidate) {
+          if (candidate instanceof Element) {
+            if (candidate.hasAttribute(COPY_EDITOR_ROOT_ATTR) || isRestrictedElement(candidate)) {
+              return NodeFilter.FILTER_REJECT;
+            }
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        },
+      },
     );
     let current: Node | null = walker.nextNode();
     while (current) {
       if (current instanceof Element) {
-        if (current.hasAttribute(COPY_EDITOR_ROOT_ATTR) || isRestrictedElement(current)) {
-          current = walker.nextSibling();
-          continue;
-        }
         this.processElementAttributes(current);
       } else if (current instanceof Text) {
         this.processTextNode(current);
@@ -266,13 +275,21 @@ export class CopyEditorDomRegistry {
       ...this.collectTextCandidates(element),
       ...this.collectAttributeCandidates(element),
     ];
-    const walker = element.ownerDocument.createTreeWalker(element, NodeFilter.SHOW_ELEMENT);
+    const walker = element.ownerDocument.createTreeWalker(
+      element,
+      NodeFilter.SHOW_ELEMENT,
+      {
+        acceptNode(candidate) {
+          return candidate instanceof Element && candidate.hasAttribute(COPY_EDITOR_ROOT_ATTR)
+            ? NodeFilter.FILTER_REJECT
+            : NodeFilter.FILTER_ACCEPT;
+        },
+      },
+    );
     let child = walker.nextNode() as Element | null;
     let visited = 0;
     while (child && visited < 40) {
-      if (!child.hasAttribute(COPY_EDITOR_ROOT_ATTR)) {
-        collected.push(...this.collectTextCandidates(child), ...this.collectAttributeCandidates(child));
-      }
+      collected.push(...this.collectTextCandidates(child), ...this.collectAttributeCandidates(child));
       visited += 1;
       child = walker.nextNode() as Element | null;
     }
@@ -352,3 +369,7 @@ export class CopyEditorDomRegistry {
     return null;
   }
 }
+
+// Single shared registry instance so React StrictMode double-mounts never drop
+// previously stripped TextNode mappings.
+export const sharedCopyEditorRegistry = new CopyEditorDomRegistry();

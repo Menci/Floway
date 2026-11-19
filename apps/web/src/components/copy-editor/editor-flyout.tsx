@@ -5,7 +5,7 @@ import {
   Dismiss16Regular,
   Warning16Regular,
 } from '@fluentui/react-icons';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { useEditorTranslation } from './use-editor-t';
 import { fluentComponents } from '../../fluent';
@@ -15,38 +15,36 @@ import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages
 import { copyToClipboard } from '../ui/copy-to-clipboard';
 import { Textarea } from '../ui/fluent-form-controls';
 
-const { Badge, Button, Field, Text } = fluentComponents;
+const { Button, Field, Text } = fluentComponents;
 
 const LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
   'en': 'English',
   'zh-Hans': '简体中文',
 };
 
-const computeFlyoutPosition = (anchorRect: DOMRect | null): { left: number; top: number } => {
-  const width = Math.min(460, window.innerWidth - 24);
-  const estimatedHeight = 460;
+const clampPosition = (left: number, top: number, width: number, height: number): { left: number; top: number } => {
+  const margin = 12;
+  const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+  const maxTop = Math.max(margin, window.innerHeight - height - margin);
+  return {
+    left: Math.round(Math.max(margin, Math.min(left, maxLeft))),
+    top: Math.round(Math.max(margin, Math.min(top, maxTop))),
+  };
+};
+
+const computeInitialPosition = (anchorRect: DOMRect | null, width: number, height: number): { left: number; top: number } => {
   if (!anchorRect) {
-    return {
-      left: Math.max(12, Math.round((window.innerWidth - width) / 2)),
-      top: Math.max(12, Math.round((window.innerHeight - estimatedHeight) / 2)),
-    };
+    return clampPosition((window.innerWidth - width) / 2, (window.innerHeight - height) / 2, width, height);
   }
   const margin = 12;
   const gap = 8;
-
-  let left = anchorRect.left;
-  if (left + width > window.innerWidth - margin) {
-    left = window.innerWidth - width - margin;
-  }
-  left = Math.max(margin, left);
-
-  let top = anchorRect.bottom + gap;
-  if (top + estimatedHeight > window.innerHeight - margin) {
-    const above = anchorRect.top - estimatedHeight - gap;
-    top = above >= margin ? above : Math.max(margin, window.innerHeight - estimatedHeight - margin);
-  }
-
-  return { left: Math.round(left), top: Math.round(top) };
+  const preferredBelow = anchorRect.bottom + gap;
+  const top = preferredBelow + height <= window.innerHeight - margin
+    ? preferredBelow
+    : anchorRect.top - height - gap >= margin
+      ? anchorRect.top - height - gap
+      : window.innerHeight - height - margin;
+  return clampPosition(anchorRect.left, top, width, height);
 };
 
 export interface EditorFlyoutProps {
@@ -78,13 +76,45 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
 
   const [values, setValues] = useState<Record<SupportedLanguage, string>>(() => buildInitialValues(initialKey));
   const [note, setNote] = useState(() => entries[initialKey]?.note ?? '');
+
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
   const firstInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const dragOffsetRef = useRef<{ dx: number; dy: number } | null>(null);
+
+  const [position, setPosition] = useState(() =>
+    computeInitialPosition(anchorRect, Math.min(468, window.innerWidth - 24), 480));
+
+  // Re-clamp once the real rendered height is known so tall multi-candidate
+  // flyouts never clip below the viewport edge.
+  useLayoutEffect(() => {
+    const el = surfaceRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setPosition(computeInitialPosition(anchorRect, rect.width || 468, rect.height || 480));
+  }, [anchorRect]);
 
   useEffect(() => {
-    // Focus the first textarea asynchronously so opening from Alt+Click does
-    // not fight the browser's native click focus sequence.
     const timer = window.setTimeout(() => firstInputRef.current?.focus(), 0);
     return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      const drag = dragOffsetRef.current;
+      const el = surfaceRef.current;
+      if (!drag || !el) return;
+      const rect = el.getBoundingClientRect();
+      setPosition(clampPosition(event.clientX - drag.dx, event.clientY - drag.dy, rect.width, rect.height));
+    };
+    const onPointerUp = () => {
+      dragOffsetRef.current = null;
+    };
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
   }, []);
 
   const switchKey = (nextKey: string) => {
@@ -97,7 +127,6 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
   const relatedKeys = useMemo(() => getRelatedKeys(activeKey), [activeKey, getRelatedKeys]);
   const staleLanguages = new Set(getStaleLanguages(activeKey));
   const existingEntry = entries[activeKey];
-  const position = useMemo(() => computeFlyoutPosition(anchorRect), [anchorRect]);
 
   const hasAnyDiffOrNote = supportedLanguages.some(lang => {
     const original = getOriginal(lang, activeKey) ?? '';
@@ -141,6 +170,7 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
 
   return (
     <div
+      ref={surfaceRef}
       aria-label={t('common.copyEditor.flyoutTitle')}
       className="floway-copy-editor-surface floway-copy-editor-flyout"
       role="dialog"
@@ -152,10 +182,20 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
         }
       }}
     >
-      <div className="floway-copy-editor-header">
+      <div
+        className="floway-copy-editor-header"
+        data-draggable="true"
+        onPointerDown={event => {
+          if ((event.target as HTMLElement).closest('button')) return;
+          dragOffsetRef.current = {
+            dx: event.clientX - position.left,
+            dy: event.clientY - position.top,
+          };
+        }}
+      >
         <div className="flex items-center gap-2 min-w-0">
-          <Text weight="semibold">{t('common.copyEditor.flyoutTitle')}</Text>
-          <Badge appearance="tint" color="informative" size="small">{route}</Badge>
+          <Text size={400} weight="semibold">{t('common.copyEditor.flyoutTitle')}</Text>
+          <span className="floway-copy-editor-pill" data-mono="true">{route}</span>
         </div>
         <Button
           appearance="subtle"
@@ -168,10 +208,10 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
 
       <div className="floway-copy-editor-body">
         {candidates.length > 1 && (
-          <div className="grid gap-1.5">
-            <Text size={200} style={{ color: 'var(--winui-text-fill-secondary)' }}>
+          <div className="floway-copy-editor-section">
+            <span className="floway-copy-editor-section-label">
               {t('common.copyEditor.matchedKeys')}
-            </Text>
+            </span>
             <div className="flex flex-wrap gap-1.5">
               {candidates.map(candidate => (
                 <button
@@ -182,7 +222,9 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
                   onClick={() => switchKey(candidate.key)}
                 >
                   <span className="truncate max-w-[360px]">{candidate.key}</span>
-                  {candidate.attribute && <Badge appearance="outline" size="extra-small">{candidate.attribute}</Badge>}
+                  {candidate.attribute && (
+                    <span className="floway-copy-editor-pill">{candidate.attribute}</span>
+                  )}
                 </button>
               ))}
             </div>
@@ -190,10 +232,10 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
         )}
 
         {relatedKeys.length > 1 && (
-          <div className="grid gap-1.5">
-            <Text size={200} style={{ color: 'var(--winui-text-fill-secondary)' }}>
+          <div className="floway-copy-editor-section">
+            <span className="floway-copy-editor-section-label">
               {t('common.copyEditor.pluralVariants')}
-            </Text>
+            </span>
             <div className="flex flex-wrap gap-1.5">
               {relatedKeys.map(key => (
                 <button
@@ -210,15 +252,14 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
           </div>
         )}
 
-        <div className="flex items-center gap-1.5 min-w-0">
-          <div className="floway-copy-editor-key-chip min-w-0 flex-1">
-            <span className="truncate">{activeKey}</span>
-          </div>
+        <div className="floway-copy-editor-key-row">
+          <span className="floway-copy-editor-key-text" title={activeKey}>{activeKey}</span>
           <Button
             appearance="subtle"
             aria-label={copiedKey ? t('common.copyEditor.keyCopied') : t('common.copyEditor.copyKey')}
             icon={copiedKey ? <Checkmark16Regular /> : <Copy16Regular />}
             size="small"
+            title={copiedKey ? t('common.copyEditor.keyCopied') : t('common.copyEditor.copyKey')}
             onClick={() => void handleCopyKey()}
           />
         </div>
@@ -228,11 +269,11 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
           const modified = values[language] !== original;
           const stale = staleLanguages.has(language);
           return (
-            <div key={language} className="grid gap-1">
+            <div key={language} className="floway-copy-editor-section">
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5">
-                  <Text size={200} weight="semibold">{LANGUAGE_LABELS[language]}</Text>
-                  <Badge appearance="outline" size="extra-small">{language}</Badge>
+                <div className="flex items-center gap-2">
+                  <Text size={300} weight="semibold">{LANGUAGE_LABELS[language]}</Text>
+                  <span className="floway-copy-editor-pill" data-mono="true">{language}</span>
                 </div>
                 {modified && (
                   <Button
@@ -248,22 +289,23 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
 
               <Textarea
                 ref={index === 0 ? firstInputRef : undefined}
+                className="w-full"
                 rows={Math.min(5, Math.max(2, values[language].split('\n').length))}
                 value={values[language]}
                 onChange={(_, data) => setValues(prev => ({ ...prev, [language]: data.value }))}
               />
 
               {modified && (
-                <Text size={200} style={{ color: 'var(--winui-text-fill-secondary)' }}>
+                <span className="floway-copy-editor-original">
                   {t('common.copyEditor.originalLabel')}: {original}
-                </Text>
+                </span>
               )}
 
               {stale && (
-                <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--winui-system-fill-caution)' }}>
+                <span className="floway-copy-editor-pill" data-tone="caution">
                   <Warning16Regular />
-                  <span>{t('common.copyEditor.staleNotice')}</span>
-                </div>
+                  {t('common.copyEditor.staleNotice')}
+                </span>
               )}
             </div>
           );
@@ -271,6 +313,7 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
 
         <Field label={t('common.copyEditor.noteLabel')}>
           <Textarea
+            className="w-full"
             placeholder={t('common.copyEditor.notePlaceholder')}
             rows={2}
             value={note}
@@ -293,13 +336,12 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Button appearance="secondary" size="small" onClick={onClose}>
+          <Button appearance="secondary" onClick={onClose}>
             {t('common.cancel')}
           </Button>
           <Button
             appearance="primary"
             disabled={!hasAnyDiffOrNote && !existingEntry}
-            size="small"
             onClick={handleStage}
           >
             {t('common.copyEditor.stage')}

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-import { i18n } from '../index';
+import { ensureLocaleLoaded, i18n } from '../index';
 import { supportedLanguages, type SupportedLanguage } from '../languages';
 import { loadLocale } from '../resources';
 
@@ -208,11 +208,10 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
         supportedLanguages.map(async language => {
           const resource = await loadLocale(language);
           const translation = (resource.translation ?? {}) as object;
-          // Ensure every supported language bundle is loaded in i18next so
-          // edits to any language can be applied and previewed immediately.
-          if (!i18n.hasResourceBundle(language, 'translation')) {
-            i18n.addResourceBundle(language, 'translation', structuredClone(translation), true, true);
-          }
+          // Ensure every supported language's full bundle is loaded in i18next
+          // (not just shellResources for defaultLanguage) so edits to any
+          // language can be applied and previewed immediately.
+          await ensureLocaleLoaded(language);
           return [language, flattenLeaves(translation)] as const;
         }),
       );

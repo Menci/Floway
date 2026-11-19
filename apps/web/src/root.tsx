@@ -82,7 +82,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <body className="text-[14px]">
         <FluentProvider theme={theme}>
           <LanguageSync />
-          <CopyEditorHost />
+          <CopyEditorHost theme={theme} />
           <GradientBackground>{children}</GradientBackground>
         </FluentProvider>
         <Scripts />
