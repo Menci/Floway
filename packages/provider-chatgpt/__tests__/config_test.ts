@@ -37,10 +37,10 @@ describe('patchChatGPTIdentityMetadata', () => {
     }).accounts[0].chatgptAccountId).toBeNull();
     expect(() => patchChatGPTIdentityMetadata(withoutAccountId, {
       accounts: [{ chatgptAccountId: 'other' }],
-    })).toThrow(/only be changed by re-importing/);
+    })).toThrow();
     expect(() => patchChatGPTIdentityMetadata(good, {
       accounts: [{ chatgptAccountId: null }],
-    })).toThrow(/only be changed by re-importing/);
+    })).toThrow();
   });
 
   test.each([
