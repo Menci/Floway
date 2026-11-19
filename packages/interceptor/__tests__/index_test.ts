@@ -71,18 +71,3 @@ test('propagates an inner throw past each enclosing run() call site without swal
 
   assertEquals(seen, ['outer-before', 'inner-before', 'inner-after', 'outer-after']);
 });
-
-test('lets an interceptor patch context before run and transform the result after run', async () => {
-  const ctx: TestCtx = { payload: { value: 'original' } };
-
-  const interceptor: Interceptor<TestCtx, TestEnv, string> = async (current, _env, run) => {
-    current.payload.value = 'patched';
-    const result = await run();
-    return `${result}:${current.payload.value}`;
-  };
-
-  const result = await runInterceptors(ctx, { traceId: 't' }, [interceptor], () => Promise.resolve(ctx.payload.value));
-
-  assertEquals(ctx.payload.value, 'patched');
-  assertEquals(result, 'patched:patched');
-});

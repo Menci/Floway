@@ -1,29 +1,10 @@
 import type { SqlBindValue, SqlDatabase, SqlPreparedStatement } from '@floway-dev/platform';
 
-export interface CapturedStatement {
+export interface CompletedStatement {
   query: string;
   binds: readonly SqlBindValue[];
-}
-
-export interface CompletedStatement extends CapturedStatement {
   resultCount: number;
 }
-
-export const recordBoundStatements = (db: SqlDatabase, captured: CapturedStatement[]): SqlDatabase => ({
-  prepare: queryText => {
-    const statement = db.prepare(queryText);
-    return {
-      bind: (...binds) => {
-        captured.push({ query: queryText, binds });
-        return statement.bind(...binds);
-      },
-      first: () => statement.first(),
-      all: () => statement.all(),
-      run: () => statement.run(),
-    };
-  },
-  exec: sql => db.exec(sql),
-});
 
 export const recordCompletedStatements = (db: SqlDatabase, completed: CompletedStatement[]): SqlDatabase => {
   const wrap = (

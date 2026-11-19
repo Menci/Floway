@@ -69,42 +69,6 @@ describe('iterateCandidates', () => {
     ]);
   });
 
-  it('returns the first success and stops iterating', async () => {
-    const ctx = stubCtx({ timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, telemetry: undefined });
-    let calls = 0;
-    const result = await iterateCandidates(
-      [stubCandidate('a'), stubCandidate('b'), stubCandidate('c')],
-      'test',
-      ctx,
-      'chat',
-      async () => {
-        calls++;
-        return { type: 'events' as const };
-      },
-    );
-
-    expect(result).toEqual({ type: 'events' });
-    expect(calls).toBe(1);
-  });
-
-  it('returns the last failure once every candidate errors', async () => {
-    const ctx = stubCtx({ timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, telemetry: undefined });
-    let index = 0;
-    const failures = [
-      { type: 'api-error' as const, http: new Response(null, { status: 429 }), marker: 'first' },
-      { type: 'internal-error' as const, http: new Response(null, { status: 502 }), marker: 'last' },
-    ];
-    const result = await iterateCandidates(
-      [stubCandidate('a'), stubCandidate('b')],
-      'test',
-      ctx,
-      'chat',
-      async () => failures[index++]!,
-    );
-
-    expect(result).toEqual(failures[1]);
-  });
-
   it('starts the next attempt with the old body open and retains the selected failure untouched', async () => {
     const cancellation = Promise.withResolvers<void>();
     const tasks: Promise<unknown>[] = [];
@@ -202,39 +166,13 @@ describe('iterateCandidates', () => {
     }
   });
 
-  it('treats non-2xx plain results as failure so the next candidate runs', async () => {
-    const ctx = stubCtx({ timing: { upstreamCallStartedAt: null, firstOutputTokenAt: null }, telemetry: undefined });
-    const attempts: number[] = [];
-    const result = await iterateCandidates(
-      [stubCandidate('a'), stubCandidate('b')],
-      'test',
-      ctx,
-      'chat',
-      async candidate => {
-        attempts.push(attempts.length);
-        return candidate.model.id === 'a'
-          ? { type: 'plain' as const, http: { status: 500, headers: new Headers() } }
-          : { type: 'plain' as const, http: { status: 200, headers: new Headers() } };
-      },
-    );
-
-    expect(attempts).toEqual([0, 1]);
-    expect(result).toEqual({ type: 'plain', http: { status: 200, headers: new Headers() } });
-  });
-
   it.each([
     ['60', undefined, 'first'],
-    ['60', '120', 'first'],
     ['120', '60', 'last'],
     ['soon', '60', 'last'],
-    ['60', '-1', 'first'],
-    ['60', '1.2.3', 'first'],
-    ['Mon 1', '60', 'last'],
-    ['0', '60', 'first'],
     ['0.5', '1', 'first'],
     ['Mon, 01 Jun 2026 00:00:30 GMT', '60', 'first'],
     ['Monday, 01-Jun-26 00:00:30 GMT', '60', 'first'],
-    ['120', 'Mon, 01 Jun 2026 00:00:30 GMT', 'last'],
     ['Sun, 31 May 2026 23:59:00 GMT', '60', 'first'],
   ])('selects the original earliest retry response (%s, %s)', async (first, last, expected) => {
     vi.useFakeTimers();

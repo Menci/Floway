@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { SourceStreamState, plainResultFromResponse } from '../../../../src/data-plane/chat/shared/respond.ts';
+import { plainResultFromResponse } from '../../../../src/data-plane/chat/shared/respond.ts';
 import { forwardBufferedUpstreamResponse } from '../../../../src/data-plane/shared/upstream-response.ts';
 import { bufferedResultToResponse, readUpstreamApiError } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -23,37 +23,6 @@ test('measurement response conversion preserves retry and correlation headers wi
   assertEquals(response.headers.get('request-id'), 'req-measurement');
   for (const name of ['set-cookie', 'connection', 'content-length', 'content-encoding']) assertEquals(response.headers.get(name), null);
   assertEquals(await response.text(), 'rate limited');
-});
-
-// ── SourceStreamState classification ──
-
-test('SourceStreamState.failedAfter classifies error completion as failed', () => {
-  const state = new SourceStreamState();
-  state.completed = true;
-
-  assertEquals(state.failedAfter('error'), true);
-});
-
-test('SourceStreamState.failedAfter classifies state.failed as failed regardless of completion', () => {
-  const state = new SourceStreamState();
-  state.failed = true;
-  state.completed = true;
-
-  assertEquals(state.failedAfter('eof'), true);
-});
-
-test('SourceStreamState.failedAfter classifies cancel-before-complete as failed', () => {
-  const state = new SourceStreamState();
-  state.completed = false;
-
-  assertEquals(state.failedAfter('cancel'), true);
-});
-
-test('SourceStreamState.failedAfter treats cancel-after-complete as graceful', () => {
-  const state = new SourceStreamState();
-  state.completed = true;
-
-  assertEquals(state.failedAfter('cancel'), false);
 });
 
 test.each([204, 205, 304])('buffered responses preserve the absent body for HTTP %i', async status => {

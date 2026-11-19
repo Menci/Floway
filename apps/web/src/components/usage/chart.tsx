@@ -100,7 +100,7 @@ export function UsageChart({ chart, hidden, valueFormatter }: { chart: UsageChar
   const hasData = visibleData.lineChartData?.some(series => series.data.length > 0) ?? false;
 
   return (
-    <ChartHost className={areaBoundaryStyles.root} emptyText={t('dashboard.usage.empty')} hasData={hasData}
+    <ChartHost className={areaBoundaryStyles.root} emptyText={t('monitoring.usage.empty')} hasData={hasData}
       onMouseEnter={() => setRealHover(true)} onMouseLeave={() => { pointerRef.current = null; reportRealHover(null); }}
       onMouseMove={event => {
         const pointer = chartHoverPointer(event.currentTarget, event.clientX, event.clientY);

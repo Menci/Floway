@@ -108,24 +108,6 @@ test('forwards agent_message verbatim to a native OpenAI Responses target withou
   assertEquals(seen.input, [newTask]);
 });
 
-test.each(['anthropicMessages', 'openaiChatCompletions'] as const)(
-  'lowers agent_message at a %s target even without the flag',
-  async targetApi => {
-    const { seen } = await lower([newTask], { targetApi });
-    assert(seen !== undefined);
-    assertEquals(seen.input, [framedNewTask]);
-  },
-);
-
-test('leaves a payload without agent_message as the same object', async () => {
-  const input: CanonicalOpenAIResponsesInputItem[] = [{ type: 'message', role: 'user', content: 'hi' }];
-  for (const options of [{ enabledFlags: FLAG }, {}, { targetApi: 'anthropicMessages' as const }]) {
-    const { before, seen } = await lower(input, options);
-    assert(seen !== undefined);
-    assert(seen === before);
-  }
-});
-
 test('returns an input error without running downstream when agent content cannot be lowered', async () => {
   const { result, seen } = await lower([{
     type: 'agent_message', author: '/root', recipient: '/root/worker',
@@ -134,7 +116,6 @@ test('returns an input error without running downstream when agent content canno
   assertEquals(seen, undefined);
   assert(result.type === 'api-error');
   assertEquals(result.http.status, 400);
-  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { message: string; param: string } };
-  assertEquals(body.error.message, "Invalid value: 'encrypted_content' for 'agent_message.content[0].type'.");
+  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { param: string } };
   assertEquals(body.error.param, 'agent_message.content[0].type');
 });

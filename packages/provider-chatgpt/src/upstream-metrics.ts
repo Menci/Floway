@@ -18,7 +18,7 @@ export const chatgptMetrics = (snapshot: ChatGPTQuotaSnapshot): UpstreamMetrics 
 };
 
 export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIdentity, options: UpstreamMetricDisplayOptions): UpstreamMetricDisplay | null => {
-  if (name === 'credits.balance' && Object.keys(labels).length === 0) return { name: 'credits_balance', labelKey: 'dashboard.upstreamMetrics.metrics.credits', unit: 'credits', axisPriority: upstreamMetricAxisPriority.purchasedBalance, windowSeconds: null, emptyValue: 0, form: 'line', toDisplayValue: value => value };
+  if (name === 'credits.balance' && Object.keys(labels).length === 0) return { name: 'credits_balance', labelKey: 'monitoring.upstreams.series.credits', unit: 'credits', axisPriority: upstreamMetricAxisPriority.purchasedBalance, windowSeconds: null, emptyValue: 0, form: 'line', toDisplayValue: value => value };
   const limit = labels.limit;
   const windowSeconds = labels.window_seconds;
   if (name !== 'quota.window.used_percent' || typeof limit !== 'string' || typeof windowSeconds !== 'number' || windowSeconds <= 0) return null;
@@ -27,8 +27,8 @@ export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIde
   return quotaPercentDisplay(options, 'used', {
     name: limit === 'codex' ? '' : limit,
     labelKey: limit === 'codex'
-      ? options.quotaDisplay === 'used' ? 'dashboard.upstreamMetrics.metrics.usage' : 'dashboard.upstreamMetrics.metrics.remaining'
-      : `dashboard.upstreamMetrics.metrics.named${options.quotaDisplay === 'used' ? 'Usage' : 'Remaining'}`,
+      ? options.quotaDisplay === 'used' ? 'monitoring.upstreams.series.usage' : 'monitoring.upstreams.series.remaining'
+      : `monitoring.upstreams.series.named${options.quotaDisplay === 'used' ? 'Usage' : 'Remaining'}`,
     labelValues: limit === 'codex' ? undefined : { name: limit },
     axisPriority: upstreamMetricAxisPriority.subscriptionQuota,
     windowSeconds,

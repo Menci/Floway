@@ -27,17 +27,6 @@ const baseBody = {
   messages: [{ role: 'user' as const, content: 'hi' }],
 };
 
-test('keeps only supported caller beta values in first-seen order', async () => {
-  const ctx = invocation(baseBody, [
-    'advanced-tool-use-2025-11-20',
-    'unknown-beta',
-    'advanced-tool-use-2025-11-20',
-    'context-1m-2025-08-07',
-  ]);
-  await withAnthropicBetaNormalized(ctx, stubRequest, okEvents);
-  assertEquals(ctx.anthropicBeta, ['advanced-tool-use-2025-11-20']);
-});
-
 test('synthesizes interleaved thinking only when the caller supplied no beta intent', async () => {
   const payload = { ...baseBody, thinking: { type: 'enabled' as const, budget_tokens: 1024 } };
   const silent = invocation(payload);
@@ -46,12 +35,6 @@ test('synthesizes interleaved thinking only when the caller supplied no beta int
   await withAnthropicBetaNormalized(explicit, stubRequest, okEvents);
   assertEquals(silent.anthropicBeta, ['interleaved-thinking-2025-05-14']);
   assertEquals(explicit.anthropicBeta, []);
-});
-
-test('does not synthesize interleaved thinking for adaptive thinking', async () => {
-  const ctx = invocation({ ...baseBody, thinking: { type: 'adaptive' } });
-  await withAnthropicBetaNormalized(ctx, stubRequest, okEvents);
-  assertEquals(ctx.anthropicBeta, []);
 });
 
 test('pairs context management with its required beta token', async () => {

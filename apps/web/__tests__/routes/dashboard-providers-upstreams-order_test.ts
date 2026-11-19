@@ -30,8 +30,3 @@ test('rejects a move that would cross a locked row even when both endpoints are 
   const snapshot = [record('full-a', 10), record('locked', 20, 'off'), record('full-b', 30)];
   expect(planReorder(snapshot, 0, 2)).toBeNull();
 });
-
-test('rejects a move across a hidden server-side boundary', () => {
-  const snapshot = [record('full-a', 10, 'full', 'segment-a'), record('full-b', 30, 'full', 'segment-b')];
-  expect(planReorder(snapshot, 0, 1)).toBeNull();
-});

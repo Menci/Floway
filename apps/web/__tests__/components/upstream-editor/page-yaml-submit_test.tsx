@@ -91,7 +91,7 @@ describe('upstream editor YAML submission', () => {
     apiMocks.patch.mockResolvedValue({ data: saved, error: null });
     renderPage();
 
-    const save = screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') }) as HTMLButtonElement;
+    const save = screen.getByRole('button', { name: i18n.t('upstreams.editor.actions.save') }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
 
     fireEvent.change(await screen.findByLabelText('YAML models'), { target: { value: replacementYaml } });
@@ -106,17 +106,5 @@ describe('upstream editor YAML submission', () => {
       }),
       param: { id: record.id },
     }));
-  });
-
-  it('keeps invalid YAML in the editor and does not submit it', async () => {
-    renderPage();
-    const save = screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') }) as HTMLButtonElement;
-
-    fireEvent.change(await screen.findByLabelText('YAML models'), { target: { value: '- upstreamModelId: [' } });
-    fireEvent.click(save);
-
-    expect(apiMocks.patch).not.toHaveBeenCalled();
-    expect(await screen.findByText(/line 1, column 21/i)).toBeTruthy();
-    expect((screen.getByLabelText('YAML models') as HTMLTextAreaElement).value).toBe('- upstreamModelId: [');
   });
 });

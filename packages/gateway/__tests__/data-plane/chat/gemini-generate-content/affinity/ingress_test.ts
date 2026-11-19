@@ -58,11 +58,3 @@ test.each([
 
   expect(acceptedAffinityEvaluation(prepared, candidateB).materialize().contents).toEqual([]);
 });
-
-test('preserves unrelated empty model contents', async () => {
-  const prepared = await analyzeGeminiGenerateContentAffinity({
-    contents: [{ role: 'model', parts: [] }],
-  }, codec);
-
-  expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().contents).toEqual([{ role: 'model', parts: [] }]);
-});

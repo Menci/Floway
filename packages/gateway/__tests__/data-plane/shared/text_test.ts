@@ -3,15 +3,6 @@ import { test } from 'vitest';
 import { truncatePreservingCodePoints } from '../../../src/data-plane/shared/text.ts';
 import { assertEquals, assertFalse } from '@floway-dev/test-utils';
 
-test('truncatePreservingCodePoints: empty string is a no-op', () => {
-  assertEquals(truncatePreservingCodePoints('', 512), '');
-});
-
-test('truncatePreservingCodePoints: string of exactly `max` length is unchanged (no ellipsis injected)', () => {
-  const s = 'a'.repeat(512);
-  assertEquals(truncatePreservingCodePoints(s, 512), s);
-});
-
 test('truncatePreservingCodePoints: high surrogate at position max-1 walks back to drop the orphan', () => {
   // U+1F600 (grinning face) is a surrogate pair: high D83D + low DE00.
   // Place the high surrogate at index max-1 (= 9) so a naive

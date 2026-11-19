@@ -71,7 +71,7 @@ beforeEach(() => {
 test('creating a ChatGPT upstream saves the imported credential', async () => {
   renderPage(blueprint, 'create');
   fireEvent.click(screen.getByRole('button', { name: 'Import credential' }));
-  fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') }));
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('upstreams.editor.actions.save') }));
 
   await waitFor(() => expect(apiMocks.create).toHaveBeenCalledWith({
     json: expect.objectContaining({
@@ -80,14 +80,14 @@ test('creating a ChatGPT upstream saves the imported credential', async () => {
       state: imported.state,
     }),
   }));
-  expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.fetchDirty.unsavedCredential'))).toBeNull();
+  expect(screen.queryByText(i18n.t('upstreams.editor.fetchDirty.unsavedCredential'))).toBeNull();
 });
 
 test('editing a saved ChatGPT upstream still rejects unsaved credential changes', async () => {
   renderPage({ ...blueprint, id: 'up_chatgpt' }, 'edit');
   fireEvent.click(screen.getByRole('button', { name: 'Edit credential draft' }));
-  fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') }));
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('upstreams.editor.actions.save') }));
 
-  expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.fetchDirty.unsavedCredential'))).toBeTruthy();
+  expect(await screen.findByText(i18n.t('upstreams.editor.fetchDirty.unsavedCredential'))).toBeTruthy();
   expect(apiMocks.patch).not.toHaveBeenCalled();
 });

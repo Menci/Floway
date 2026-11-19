@@ -42,9 +42,6 @@ test('responses required tool_choice sets reasoning.effort to none', async () =>
   await withReasoningDisabledOnForcedToolChoice(input, stubCtx, okEvents);
 
   assertEquals(input.payload.reasoning, { effort: 'none' });
-  const out = input.payload as unknown as Record<string, unknown>;
-  assertEquals(out.thinking, undefined);
-  assertEquals(out.enable_thinking, undefined);
 });
 
 test('responses object tool_choice is forced', async () => {

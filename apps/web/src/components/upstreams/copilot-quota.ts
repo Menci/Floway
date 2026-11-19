@@ -61,9 +61,9 @@ export const formatBucketAmount = (bucket: QuotaBucket, amount: number, locale: 
 // as the id itself rather than rewritten.
 export const copilotQuotaName = (t: TFunction, id: string, quantity: 'allowance' | 'remaining' | 'usage'): string => {
   switch (id) {
-  case 'premium_interactions': return t(`dashboard.upstreams.copilotQuota.premiumInteractions.${quantity}`);
-  case 'chat': return t(`dashboard.upstreams.copilotQuota.chat.${quantity}`);
-  case 'completions': return t(`dashboard.upstreams.copilotQuota.completions.${quantity}`);
-  default: return t(`dashboard.upstreams.copilotQuota.other.${quantity}`, { name: id });
+  case 'premium_interactions': return t(`monitoring.upstreams.series.copilot.premiumInteractions.${quantity}`);
+  case 'chat': return t(`monitoring.upstreams.series.copilot.chat.${quantity}`);
+  case 'completions': return t(`monitoring.upstreams.series.copilot.completions.${quantity}`);
+  default: return t(`monitoring.upstreams.series.copilot.other.${quantity}`, { name: id });
   }
 };

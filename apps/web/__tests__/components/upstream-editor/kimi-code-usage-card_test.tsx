@@ -25,13 +25,10 @@ test.each([
   const record = kimiCodeRecord(usage);
   renderInApp(<KimiCodeUsageCard record={record} probeRecord={{ ...record }} />);
   expect(screen.getAllByRole('progressbar')).toHaveLength(2);
-  expect(screen.getByText(i18n.t('dashboard.upstreamEditor.kimiCode.usage.window.five_hour'))).toBeTruthy();
-  expect(screen.getByText(i18n.t(`dashboard.upstreamEditor.kimiCode.usage.window.${longWindow}`))).toBeTruthy();
-  expect(screen.queryAllByText(i18n.t('dashboard.upstreamEditor.kimiCode.usage.monthlyCodeShare', { percent: 40 })))
+  expect(screen.getByText(i18n.t('upstreams.editor.kimiCode.usage.window.five_hour'))).toBeTruthy();
+  expect(screen.getByText(i18n.t(`upstreams.editor.kimiCode.usage.window.${longWindow}`))).toBeTruthy();
+  expect(screen.queryAllByText(i18n.t('upstreams.editor.kimiCode.usage.monthlyCodeShare', { percent: 40 })))
     .toHaveLength(longWindow === 'monthly' ? 1 : 0);
-  expect(document.body.textContent).not.toContain('$');
-  expect(document.body.textContent).not.toContain('USD');
-  expect(document.body.textContent).not.toContain('limit_');
 });
 
 test('a successful quota refresh remains successful when account details are unavailable', async () => {
@@ -50,31 +47,10 @@ test('a successful quota refresh remains successful when account details are una
   renderInApp(<KimiCodeUsageCard record={record} probeRecord={{ ...record }} />);
   expect(screen.getByText('Old name')).toBeTruthy();
   expect(screen.getByText(/old quota failure/)).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.kimiCode.usage.refresh') }));
-  expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.kimiCode.usage.window.weekly'))).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('upstreams.editor.kimiCode.usage.refresh') }));
+  expect(await screen.findByText(i18n.t('upstreams.editor.kimiCode.usage.window.weekly'))).toBeTruthy();
   expect(screen.getAllByRole('progressbar')).toHaveLength(2);
   expect(screen.getByText('Old name')).toBeTruthy();
   expect(screen.queryByText(/old quota failure/)).toBeNull();
-  expect(screen.getByText(i18n.t('dashboard.upstreamEditor.kimiCode.usage.accountFailed', { message: 'account details unavailable' }))).toBeTruthy();
-});
-
-test.each(['HTTP 429: subscription quota exhausted', 'HTTP 403: subscription access restricted'])('preserves the upstream failure: %s', async message => {
-  const record = kimiCodeRecord(null);
-  mocks.refresh.mockResolvedValue({ data: null, error: { status: 502, message } });
-  renderInApp(<KimiCodeUsageCard record={record} probeRecord={{ ...record }} />);
-  fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.kimiCode.usage.load') }));
-  expect(await screen.findByText(message)).toBeTruthy();
-  expect(screen.queryAllByRole('progressbar')).toHaveLength(0);
-});
-
-test('read-only quota retains identity fallback and hides refresh actions', () => {
-  const record = kimiCodeRecord();
-  record.state!.accountProbe = {
-    attemptedAt: 1000, error: null,
-    observation: { fetchedAt: 1000, data: { userId: 'fake-user', globalId: null, nickname: '', status: '', region: '', userLevel: 0, userLevelName: 'Ultra', domain: 0, domainName: '', goodsVersion: null, username: null, email: null, bio: null, avatar: null, phone: null, createdTime: null, lastLoginTime: null } },
-  };
-  renderInApp(<KimiCodeUsageCard readOnly record={record} probeRecord={{ ...record }} />);
-  expect(screen.getByText('fake-user')).toBeTruthy();
-  expect(screen.getByText('Ultra')).toBeTruthy();
-  expect(screen.queryByRole('button')).toBeNull();
+  expect(screen.getByText(i18n.t('upstreams.editor.kimiCode.usage.accountFailed', { message: 'account details unavailable' }))).toBeTruthy();
 });

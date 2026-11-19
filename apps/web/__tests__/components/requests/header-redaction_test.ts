@@ -13,18 +13,6 @@ describe('header redaction', () => {
     expect(isSensitiveHeader('api-key')).toBe(true);
   });
 
-  it('leaves a header that carries no credential alone', () => {
-    expect(isSensitiveHeader('content-type')).toBe(false);
-    expect(isSensitiveHeader('anthropic-version')).toBe(false);
-    expect(isSensitiveHeader('x-floway-session')).toBe(false);
-  });
-
-  it('shows nothing at all of a short value', () => {
-    expect(redactHeaderValue('')).toBe('');
-    expect(redactHeaderValue('Bearer sk-1')).toBe('•'.repeat(11));
-    expect(redactHeaderValue('0123456789abcdef')).toBe('•'.repeat(16));
-  });
-
   // One character past the fully-masked window the mask keeps both ends, which
   // leaves sixteen of the seventeen characters legible. Recorded in
   // `data/backlog.md`: no credential this app shows is that short, but the

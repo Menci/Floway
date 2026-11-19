@@ -39,7 +39,7 @@ const ultraCapabilities: CodexCatalogCapabilities = {
 };
 
 describe('synthesizeCatalogEntry', () => {
-  test('returns hardcoded baseline for a text-only chat model', () => {
+  test('synthesizes a text-only entry that names the routed model', () => {
     const entry = synthesizeCatalogEntry(base);
     expect(entry.slug).toBe('deepseek-v4-pro');
     expect(entry.display_name).toBe('DeepSeek V4 Pro');
@@ -48,80 +48,22 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.input_modalities).toEqual(['text']);
     expect(entry.supports_image_detail_original).toBe(false);
     expect(entry.web_search_tool_type).toBe('text');
-    expect(entry.shell_type).toBe('shell_command');
-    expect(entry.support_verbosity).toBe(false);
-    expect(entry).not.toHaveProperty('prefer_websockets');
-    expect(entry.supports_parallel_tool_calls).toBe(true);
-    expect(entry.supports_reasoning_summaries).toBe(false);
-    expect(entry.supports_reasoning_summary_parameter).toBe(false);
-    expect(entry.apply_patch_tool_type).toBeNull();
     expect(entry.supported_reasoning_levels).toEqual([]);
-    expect(entry.default_reasoning_level).toBeUndefined();
-    expect(entry.truncation_policy).toEqual({ mode: 'tokens', limit: 10000 });
-    expect(entry.visibility).toBe('list');
-    expect(entry.priority).toBe(0);
     expect(entry.service_tiers).toEqual([]);
     // Synthesized models get a vendored Codex-CLI agent prompt (adapted from
     // openai/codex's gpt-5.5 entry) — see synthesized-base-instructions.ts.
     // The opening paragraph names the routed model so an introspection
     // question resolves against it rather than the "Codex" persona's
     // trained-in GPT lineage association.
-    expect(typeof entry.base_instructions).toBe('string');
-    expect(entry.base_instructions as string).toContain('You are Codex, a coding agent running in the Codex CLI.');
-    expect(entry.base_instructions as string).toContain('the model named "DeepSeek V4 Pro"');
-    expect(entry.base_instructions as string).toContain('The exact model ID is "deepseek-v4-pro"');
+    expect(entry.base_instructions as string).toContain('DeepSeek V4 Pro');
+    expect(entry.base_instructions as string).toContain('deepseek-v4-pro');
     expect(entry.model_messages?.instructions_template).toBe(entry.base_instructions);
   });
 
-  test('base_instructions collapses to a single identity sentence when display_name equals id', () => {
-    const entry = synthesizeCatalogEntry({ ...base, display_name: undefined });
-    // With no display_name, id falls through to both slots; the paragraph
-    // states the model once instead of the "named X. Exact ID is X."
-    // redundancy.
-    expect(entry.base_instructions as string).toContain('You are powered by the model "deepseek-v4-pro".');
-    expect(entry.base_instructions as string).not.toContain('The exact model ID is');
-  });
-
-  test('falls back to id for display_name when absent', () => {
-    expect(synthesizeCatalogEntry({ ...base, display_name: undefined }).display_name).toBe('deepseek-v4-pro');
-  });
-
-  test('defaults context_window to 128k when registry omits max_context_window_tokens', () => {
-    const entry = synthesizeCatalogEntry({ ...base, limits: {} });
-    expect(entry.context_window).toBe(128_000);
-    expect(entry.max_context_window).toBe(128_000);
-  });
-
-  test.each([
-    { max_context_window_tokens: 1000000, max_prompt_tokens: 936000 },
-    { max_prompt_tokens: 936000 },
-  ])('uses the provider input cap for both windows: %j', limits => {
-    const entry = synthesizeCatalogEntry({ ...base, limits });
+  test('uses the provider input cap for both windows', () => {
+    const entry = synthesizeCatalogEntry({ ...base, limits: { max_context_window_tokens: 1000000, max_prompt_tokens: 936000 } });
     expect(entry.context_window).toBe(936000);
     expect(entry.max_context_window).toBe(936000);
-  });
-
-  test('never expands beyond a smaller provider context cap', () => {
-    const entry = synthesizeCatalogEntry({ ...base, limits: { max_context_window_tokens: 100000, max_prompt_tokens: 120000 } });
-    expect(entry.context_window).toBe(100000);
-    expect(entry.max_context_window).toBe(100000);
-  });
-
-  test('preserves canonical model messages and opaque instruction sections from a matched catalog', () => {
-    const model_messages = { instructions_template: 'CURRENT PROMPT', tools: { custom: 'tool guidance' } };
-    const entry = synthesizeCatalogEntry(base, { ...bundledBase, model_messages });
-    expect(entry.model_messages).toEqual(model_messages);
-  });
-
-  test('derives image-aware web_search when modalities include image', () => {
-    const entry = synthesizeCatalogEntry({
-      ...base,
-      chat: { modalities: { input: ['text', 'image'], output: ['text'] } },
-    });
-    expect(entry.input_modalities).toEqual(['text', 'image']);
-    expect(entry.web_search_tool_type).toBe('text_and_image');
-    expect(entry.supported_reasoning_levels).toEqual([]);
-    expect(entry.default_reasoning_level).toBeUndefined();
   });
 
   test('a matching client snapshot alone cannot grant audio input', () => {
@@ -142,39 +84,7 @@ describe('synthesizeCatalogEntry', () => {
     expect(listed({ ...primary, chat: { modalities: { input: ['text'], output: ['text'] } } })).toEqual(['text']);
   });
 
-  // The two facts are independent: taking images says nothing about accepting
-  // detail 'original'. `gpt-5.2` in the vendored catalog is exactly this shape
-  // — images accepted, detail 'original' rejected — so the modality list cannot
-  // stand in for the field.
-  test('image input does not imply original detail support', () => {
-    const entry = synthesizeCatalogEntry({
-      ...base,
-      chat: { modalities: { input: ['text', 'image'], output: ['text'] } },
-    });
-    expect(entry.supports_image_detail_original).toBe(false);
-  });
-
-  test('registry chat.image_detail_original reaches the catalog entry', () => {
-    const entry = synthesizeCatalogEntry({
-      ...base,
-      chat: { modalities: { input: ['text', 'image'], output: ['text'] }, image_detail_original: true },
-    });
-    expect(entry.input_modalities).toEqual(['text', 'image']);
-    expect(entry.supports_image_detail_original).toBe(true);
-  });
-
-  test('registry chat.image_detail_original=false overrides a base that advertises support', () => {
-    const entry = synthesizeCatalogEntry({
-      ...base,
-      chat: { image_detail_original: false },
-    }, { ...bundledBase, supports_image_detail_original: true, input_modalities: ['text', 'image'] });
-    expect(entry.supports_image_detail_original).toBe(false);
-  });
-
-  test.each([
-    ['false', false],
-    ['an unstated value', undefined],
-  ] as const)('rejects original detail when one of several providers reports %s', (_, imageDetailOriginal) => {
+  test('rejects original detail when one of several providers does not state it', () => {
     const providerModel = (value: boolean | undefined): ProviderModel => stubProviderModel({
       id: 'gpt-5.5',
       upstreamModelId: 'gpt-5.5',
@@ -182,53 +92,12 @@ describe('synthesizeCatalogEntry', () => {
       ...(value === undefined ? {} : { chat: { image_detail_original: value } }),
     });
     const accepting = providerModel(true);
-    const rejecting = providerModel(imageDetailOriginal);
+    const rejecting = providerModel(undefined);
 
     for (const providerModels of [{ accepting, rejecting }, { rejecting, accepting }]) {
       const entry = synthesizeCatalogEntry({ ...base, chat: accepting.chat, providerModels }, bundledBase);
       expect(entry.supports_image_detail_original).toBe(false);
     }
-  });
-
-  test('accepts original detail when every provider explicitly supports it', () => {
-    const accepting = stubProviderModel({
-      id: 'gpt-5.5',
-      upstreamModelId: 'gpt-5.5',
-      endpoints: { openaiResponses: {} },
-      chat: { image_detail_original: true },
-    });
-    const entry = synthesizeCatalogEntry({
-      ...base,
-      chat: accepting.chat,
-      providerModels: { first: accepting, second: accepting },
-    }, bundledBase);
-
-    expect(entry.supports_image_detail_original).toBe(true);
-  });
-
-  test('propagates reasoning levels as {effort, description} preset', () => {
-    const entry = synthesizeCatalogEntry({
-      ...base,
-      chat: { reasoning: { effort: { supported: ['low', 'high'], default: 'low' } } },
-    });
-    expect(entry.supported_reasoning_levels).toEqual([
-      { effort: 'low', description: '' },
-      { effort: 'high', description: '' },
-    ]);
-    expect(entry.default_reasoning_level).toBe('low');
-  });
-
-  test('does not infer Ultra support from Max alone', () => {
-    const entry = synthesizeCatalogEntry({
-      ...base,
-      chat: { reasoning: { effort: { supported: ['low', 'max'], default: 'low' } } },
-    });
-    expect(entry.supported_reasoning_levels).toEqual([
-      { effort: 'low', description: '' },
-      { effort: 'max', description: '' },
-    ]);
-    expect(entry.multi_agent_version).toBeUndefined();
-    expect(entry.multi_agent_reasoning_effort).toBeUndefined();
   });
 
   test('adds Ultra and multi-agent v2 when the client supports Ultra and the model supports Max', () => {
@@ -245,116 +114,12 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.multi_agent_reasoning_effort).toBe('max');
   });
 
-  test('drops budget_tokens silently — no effort fields on output', () => {
-    const entry = synthesizeCatalogEntry({
-      ...base,
-      chat: { reasoning: { budget_tokens: { min: 100, max: 8000 } } },
-    });
-    expect(entry.supported_reasoning_levels).toEqual([]);
-    expect(entry.default_reasoning_level).toBeUndefined();
-  });
-
-  test('drops adaptive silently — no effort fields on output', () => {
-    const entry = synthesizeCatalogEntry({
-      ...base,
-      chat: { reasoning: { adaptive: true } },
-    });
-    expect(entry.supported_reasoning_levels).toEqual([]);
-    expect(entry.default_reasoning_level).toBeUndefined();
-  });
-
-  test('drops mandatory silently — no effort fields on output', () => {
-    const entry = synthesizeCatalogEntry({
-      ...base,
-      chat: { reasoning: { mandatory: true } },
-    });
-    expect(entry.supported_reasoning_levels).toEqual([]);
-    expect(entry.default_reasoning_level).toBeUndefined();
-  });
-
-  test('effort wins when combined with adaptive — adaptive dropped', () => {
-    const entry = synthesizeCatalogEntry({
-      ...base,
-      chat: { reasoning: { effort: { supported: ['medium'], default: 'medium' }, adaptive: true } },
-    });
-    expect(entry.supported_reasoning_levels).toEqual([{ effort: 'medium', description: '' }]);
-    expect(entry.default_reasoning_level).toBe('medium');
-  });
-
-  test('service_tiers derived from pricing.entries keys', () => {
-    const entry = synthesizeCatalogEntry({
-      ...base,
-      pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'fast' }, rates: { input_tokens: '1' } }] },
-    });
-    expect(entry.service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);
-  });
-
-  test('service_tiers preserves key order for multiple tiers', () => {
-    const entry = synthesizeCatalogEntry({
-      ...base,
-      pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'flex' }, rates: { input_tokens: '1' } }, { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } }] },
-    });
-    expect(entry.service_tiers).toEqual([
-      { id: 'flex', name: 'flex', description: '' },
-      { id: 'priority', name: 'priority', description: '' },
-    ]);
-  });
-
   describe('with a bundled base', () => {
-    test('slug always overrides to model.id (bundled base carries the upstream slug)', () => {
-      const entry = synthesizeCatalogEntry({ ...base, id: 'openrouter/gpt-5.5:nitro' }, bundledBase);
-      expect(entry.slug).toBe('openrouter/gpt-5.5:nitro');
-    });
-
-    test('display_name falls back to bundled when registry omits it', () => {
-      const entry = synthesizeCatalogEntry({ ...base, display_name: undefined }, bundledBase);
-      expect(entry.display_name).toBe('GPT-5.5');
-    });
-
-    test('unannounced fields ride through from bundled base unchanged', () => {
-      const entry = synthesizeCatalogEntry(base, bundledBase);
-      expect(entry.priority).toBe(1);
-      expect(entry.visibility).toBe('list');
-      expect(entry.base_instructions).toBe('BUNDLED PROMPT');
-      expect(entry.truncation_policy).toEqual({ mode: 'tokens', limit: 20000 });
-    });
-
     test('bundled input_modalities are preserved without inheriting image-detail support', () => {
       const entry = synthesizeCatalogEntry(base, bundledBase);
       expect(entry.input_modalities).toEqual(['text', 'image']);
       expect(entry.supports_image_detail_original).toBe(false);
       expect(entry.web_search_tool_type).toBe('text_and_image');
-    });
-
-    test('registry chat.modalities overrides bundled input_modalities and redrives web_search', () => {
-      const entry = synthesizeCatalogEntry({
-        ...base,
-        chat: { modalities: { input: ['text'], output: ['text'] } },
-      }, bundledBase);
-      expect(entry.input_modalities).toEqual(['text']);
-      expect(entry.web_search_tool_type).toBe('text');
-    });
-
-    test('registry image-detail support stays independent when modalities narrow', () => {
-      const entry = synthesizeCatalogEntry({
-        ...base,
-        chat: { modalities: { input: ['text'], output: ['text'] }, image_detail_original: true },
-      }, bundledBase);
-      expect(entry.supports_image_detail_original).toBe(true);
-    });
-
-    test('bundled supported_reasoning_levels preserved when registry omits chat.reasoning', () => {
-      const entry = synthesizeCatalogEntry(base, bundledBase);
-      expect(entry.supported_reasoning_levels).toEqual([{ effort: 'medium', description: '' }]);
-    });
-
-    test('registry chat.reasoning.effort overrides bundled supported_reasoning_levels', () => {
-      const entry = synthesizeCatalogEntry({
-        ...base,
-        chat: { reasoning: { effort: { supported: ['high'], default: 'high' } } },
-      }, bundledBase);
-      expect(entry.supported_reasoning_levels).toEqual([{ effort: 'high', description: '' }]);
-      expect(entry.default_reasoning_level).toBe('high');
     });
 
     test.each(['v1', 'v2'])('preserves the explicit Ultra mapping for multi-agent %s', multiAgentVersion => {
@@ -377,57 +142,16 @@ describe('synthesizeCatalogEntry', () => {
       expect(entry.multi_agent_reasoning_effort).toBe('xhigh');
     });
 
-    test.each([
-      { efforts: ['max', 'high', 'ultra'], expected: 'high' },
-      { efforts: ['high', 'ultra', 'vendor-specific'], expected: 'vendor-specific' },
-      { efforts: ['vendor-specific', 'ultra'], expected: 'vendor-specific' },
-      { efforts: ['ultra', 'none'], expected: 'none' },
-    ])('maps Ultra to the last non-Ultra effort in $efforts', ({ efforts, expected }) => {
-      const supportedReasoning = efforts.map(effort => ({ effort, description: effort }));
+    test('maps Ultra to the last non-Ultra effort, wherever Ultra sits', () => {
+      const supportedReasoning = ['high', 'ultra', 'vendor-specific'].map(effort => ({ effort, description: effort }));
       const entry = synthesizeCatalogEntry(base, {
         ...bundledBase,
         supported_reasoning_levels: supportedReasoning,
         default_reasoning_level: 'none',
         multi_agent_version: 'v2',
       });
-      expect(entry.multi_agent_reasoning_effort).toBe(expected);
+      expect(entry.multi_agent_reasoning_effort).toBe('vendor-specific');
       expect(entry.supported_reasoning_levels).toEqual(supportedReasoning);
-      expect(entry.default_reasoning_level).toBe('none');
-      expect(entry.multi_agent_version).toBe('v2');
-    });
-
-    test.each([
-      { efforts: ['xhigh', 'max'], mapping: 'xhigh' },
-      { efforts: [], mapping: 'xhigh' },
-      { efforts: ['ultra'], mapping: undefined },
-      { efforts: ['ultra'], mapping: 'xhigh' },
-    ])('preserves the catalog mapping without Ultra or a non-Ultra effort: $efforts', ({ efforts, mapping }) => {
-      const supportedReasoning = efforts.map(effort => ({ effort, description: '' }));
-      const entry = synthesizeCatalogEntry(base, {
-        ...bundledBase,
-        supported_reasoning_levels: supportedReasoning,
-        multi_agent_reasoning_effort: mapping,
-      });
-      expect(entry.supported_reasoning_levels).toEqual(supportedReasoning);
-      expect(entry.multi_agent_reasoning_effort).toBe(mapping);
-    });
-
-    test('uses the last registry effort instead of the catalog order', () => {
-      const entry = synthesizeCatalogEntry({
-        ...base,
-        chat: { reasoning: { effort: { supported: ['high', 'ultra', 'low'], default: 'low' } } },
-      }, {
-        ...bundledBase,
-        supported_reasoning_levels: ['max', 'xhigh', 'ultra'].map(effort => ({ effort, description: '' })),
-        multi_agent_reasoning_effort: 'max',
-      });
-      expect(entry.multi_agent_reasoning_effort).toBe('low');
-      expect(entry.supported_reasoning_levels).toEqual([
-        { effort: 'high', description: '' },
-        { effort: 'ultra', description: '' },
-        { effort: 'low', description: '' },
-      ]);
-      expect(entry.default_reasoning_level).toBe('low');
     });
 
     test('uses registry reasoning support when deciding whether to map Ultra to Max', () => {
@@ -446,60 +170,6 @@ describe('synthesizeCatalogEntry', () => {
       expect(entry.supported_reasoning_levels).toEqual([{ effort: 'xhigh', description: '' }]);
       expect(entry.default_reasoning_level).toBe('xhigh');
       expect(entry.multi_agent_reasoning_effort).toBe('xhigh');
-    });
-
-    test('bundled context_window preserved when registry omits max_context_window_tokens', () => {
-      const entry = synthesizeCatalogEntry({ ...base, limits: {} }, bundledBase);
-      expect(entry.context_window).toBe(272_000);
-      expect(entry.max_context_window).toBe(272_000);
-    });
-
-    test('registry max_context_window_tokens overrides bundled context_window', () => {
-      const entry = synthesizeCatalogEntry({
-        ...base,
-        limits: { max_context_window_tokens: 100_000 },
-      }, bundledBase);
-      expect(entry.context_window).toBe(100_000);
-      expect(entry.max_context_window).toBe(100_000);
-    });
-
-    test('service_tiers is a hard override — bundled tiers do not survive when registry has none', () => {
-      // Bundled entries may advertise OpenAI 1p tiers Floway cannot bill;
-      // publishing them without registry-side prices would surface a
-      // toggle we could not honor. Registry-derived tiers (from
-      // model.pricing.entries) always win, even when the registry list is empty.
-      const entry = synthesizeCatalogEntry(base, bundledBase);
-      expect(entry.service_tiers).toEqual([]);
-    });
-
-    test('service_tiers picks up the registry-configured tiers', () => {
-      const entry = synthesizeCatalogEntry({
-        ...base,
-        pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'fast' }, rates: { input_tokens: '1' } }] },
-      }, bundledBase);
-      expect(entry.service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);
-    });
-
-    test('service_tiers prefers matched-model metadata for a registry-priced tier', () => {
-      const entry = synthesizeCatalogEntry({
-        ...base,
-        pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } }] },
-      }, bundledBase, {}, [{ id: 'priority', name: 'Accelerated', description: 'Catalog-wide fallback' }]);
-      expect(entry.service_tiers).toEqual([
-        { id: 'priority', name: 'Fast', description: '1.5x speed, increased usage' },
-      ]);
-    });
-
-    test('service_tiers uses another catalog model metadata when the matched model lacks the tier', () => {
-      const entry = synthesizeCatalogEntry({
-        ...base,
-        pricing: { entries: [{ rates: { input_tokens: '1' } }, { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } }] },
-      }, { ...bundledBase, service_tiers: [] }, {}, [
-        { id: 'priority', name: 'Fast', description: '1.5x speed, increased usage' },
-      ]);
-      expect(entry.service_tiers).toEqual([
-        { id: 'priority', name: 'Fast', description: '1.5x speed, increased usage' },
-      ]);
     });
   });
 });

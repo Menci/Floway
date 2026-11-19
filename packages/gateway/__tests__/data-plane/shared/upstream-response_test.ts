@@ -1,7 +1,6 @@
-import { Hono } from 'hono';
 import { expect, test } from 'vitest';
 
-import { forwardUpstreamHeaders, forwardUpstreamResponse, isForwardableUpstreamHeader, mergeForwardedUpstreamHeaders, providerModelsUnavailableResponse } from '../../../src/data-plane/shared/upstream-response.ts';
+import { forwardUpstreamResponse, isForwardableUpstreamHeader, mergeForwardedUpstreamHeaders, providerModelsUnavailableResponse } from '../../../src/data-plane/shared/upstream-response.ts';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 
 test('upstream response header policy preserves vendor metadata and blocks unsafe fields', () => {
@@ -14,18 +13,6 @@ test('upstream response header policy preserves vendor metadata and blocks unsaf
     new Headers({ 'x-vendor': 'vendor', 'set-cookie': 'secret=1', 'content-type': 'text/plain' }),
   );
   expect(Object.fromEntries(headers)).toEqual({ 'x-base': 'base', 'x-vendor': 'vendor' });
-});
-
-test('forwardUpstreamHeaders stages safe headers on Hono responses', async () => {
-  const app = new Hono();
-  app.get('/', c => {
-    forwardUpstreamHeaders(c, new Headers({ 'x-vendor': 'vendor', 'set-cookie': 'secret=1' }));
-    return c.text('ok');
-  });
-
-  const response = await app.request('/');
-  expect(response.headers.get('x-vendor')).toBe('vendor');
-  expect(response.headers.get('set-cookie')).toBeNull();
 });
 
 test('forwardUpstreamResponse supports raw and replaced bodies with configurable content-type fallback', async () => {

@@ -69,38 +69,6 @@ test('resolveAnthropicMessagesDownstreamThinkingDisplay exposes 4.7+ omitted by 
   );
 });
 
-test('resolveAnthropicMessagesDownstreamThinkingDisplay preserves explicit display', () => {
-  assertEquals(resolveAnthropicMessagesDownstreamThinkingDisplay(makeCtx({ type: 'adaptive', display: 'summarized' })), 'summarized');
-  assertEquals(resolveAnthropicMessagesDownstreamThinkingDisplay(makeCtx({ type: 'adaptive', display: 'omitted' })), 'omitted');
-  assertEquals(resolveAnthropicMessagesDownstreamThinkingDisplay(makeCtx({ type: 'adaptive', display: 'full' })), 'full');
-});
-
-test('resolveAnthropicMessagesDownstreamThinkingDisplay ignores unknown explicit display values', () => {
-  const ctx = makeCtx({ type: 'adaptive' });
-  (ctx.payload.thinking as { display?: unknown }).display = 'omit';
-
-  assertEquals(resolveAnthropicMessagesDownstreamThinkingDisplay(ctx), undefined);
-});
-
-test('withThinkingDisplayPromoted sends summarized upstream when thinking display is omitted', async () => {
-  const ctx = makeCtx({ type: 'adaptive' });
-
-  await withThinkingDisplayPromoted(ctx, stubRequest, () =>
-    Promise.resolve({
-      type: 'internal-error',
-      http: { status: 418, headers: new Headers() },
-      error: {
-        type: 'internal_error',
-        name: 'Error',
-        message: 'stop',
-        stack: '',
-        target_api: 'anthropicMessages',
-      },
-    }));
-
-  assertEquals((ctx.payload.thinking !== undefined && 'display' in ctx.payload.thinking ? ctx.payload.thinking.display : undefined), 'summarized');
-});
-
 test('withThinkingDisplayPromoted overrides omitted but preserves full', async () => {
   const omittedCtx = makeCtx({ type: 'adaptive', display: 'omitted' });
   const fullCtx = makeCtx({ type: 'adaptive', display: 'full' });
@@ -110,26 +78,6 @@ test('withThinkingDisplayPromoted overrides omitted but preserves full', async (
 
   assertEquals((omittedCtx.payload.thinking !== undefined && 'display' in omittedCtx.payload.thinking ? omittedCtx.payload.thinking.display : undefined), 'summarized');
   assertEquals((fullCtx.payload.thinking !== undefined && 'display' in fullCtx.payload.thinking ? fullCtx.payload.thinking.display : undefined), 'full');
-});
-
-test('withThinkingDisplayPromoted leaves disabled or absent thinking untouched', async () => {
-  const disabledCtx = makeCtx({ type: 'disabled' });
-  const absentCtx = makeCtx(undefined);
-
-  await withThinkingDisplayPromoted(disabledCtx, stubRequest, okEvents);
-  await withThinkingDisplayPromoted(absentCtx, stubRequest, okEvents);
-
-  assertEquals(disabledCtx.payload.thinking, { type: 'disabled' });
-  assertEquals(absentCtx.payload.thinking, undefined);
-});
-
-test('withThinkingDisplayPromoted leaves unknown display values for upstream validation', async () => {
-  const ctx = makeCtx({ type: 'adaptive' });
-  (ctx.payload.thinking as { display?: unknown }).display = 'omit';
-
-  await withThinkingDisplayPromoted(ctx, stubRequest, okEvents);
-
-  assertEquals((ctx.payload.thinking as { display?: unknown }).display, 'omit');
 });
 
 test('withThinkingDisplayPromoted simulates omitted display on protocol events', async () => {

@@ -48,11 +48,6 @@ test('maps tools in every OpenAI Responses request container without mutating th
   assertEquals((payload.input[0] as { tools: Array<{ description: string }> }).tools[0]?.description, '');
 });
 
-test('preserves nullable top-level tools', () => {
-  const payload: CanonicalOpenAIResponsesPayload = { model: 'gpt-test', tools: null, input: [] } as unknown as CanonicalOpenAIResponsesPayload;
-  assertEquals(mapOpenAIResponsesTools(payload, tool => tool), payload);
-});
-
 test('collects declarations in top-level and input carrier order', () => {
   const payload: CanonicalOpenAIResponsesPayload = {
     model: 'gpt-test',

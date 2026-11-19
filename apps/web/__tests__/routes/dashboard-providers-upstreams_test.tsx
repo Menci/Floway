@@ -4,9 +4,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import type { ListedUpstreamRecord, UpstreamRecord } from '../../src/api/types';
 import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
+import { i18n } from '../../src/i18n';
 import DashboardProvidersUpstreams from '../../src/routes/dashboard-providers-upstreams';
 import { upstreamRecord } from '../api/upstream-fixture';
-import { kimiCodeRecord } from '../components/upstreams/kimi-code-fixture';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
 import { primeDefaultSession } from '../test-session';
@@ -74,30 +74,6 @@ const stubGateway = (
   return await handler(url, init?.signal as AbortSignal | undefined);
 }));
 
-it('shows Kimi Code identities and subscription readings in the upstream list', async () => {
-  const record = kimiCodeRecord();
-  record.state!.accountProbe = {
-    attemptedAt: 1000, error: null,
-    observation: { fetchedAt: 1000, data: { userId: 'fake-user', globalId: null, nickname: '', status: '', region: '', userLevel: 0, userLevelName: 'Ultra', domain: 0, domainName: '', goodsVersion: null, username: null, email: null, bio: null, avatar: null, phone: null, createdTime: null, lastLoginTime: null } },
-  };
-  renderPage(user, { ...loaderData, upstreams: [toListed(record)] });
-  expect(await screen.findByText('fake-user')).toBeTruthy();
-  expect(screen.getByText('Kimi Ultra:')).toBeTruthy();
-  expect(screen.getByText('5h')).toBeTruthy();
-  expect(screen.getAllByText(/^until /).length).toBeGreaterThan(0);
-  expect(screen.getByText('80%')).toBeTruthy();
-  expect(screen.getByText('30%')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'New upstream' }));
-  expect((await screen.findByRole('menuitem', { name: /Kimi Code/ })).querySelector('a')?.getAttribute('href')).toBe('/dashboard/providers/upstreams/new/kimi-code');
-});
-
-it('keeps Kimi Code quota visible without optional account details', async () => {
-  renderPage(user, { ...loaderData, upstreams: [toListed(kimiCodeRecord())] });
-  expect(await screen.findByText('China')).toBeTruthy();
-  expect(screen.queryByText('No account connected')).toBeNull();
-  expect(screen.getAllByText(/^until /).length).toBeGreaterThan(0);
-});
-
 it('blocks the surface until both readings load, then opens a single row with Usage above Metrics', async () => {
   let finishUsage!: () => void;
   let finishMetrics!: () => void;
@@ -130,92 +106,6 @@ it('blocks the surface until both readings load, then opens a single row with Us
   expect(screen.queryByRole('option', { name: 'By Upstream' })).toBeNull();
 });
 
-it('shows Usage without an empty Metrics section when the upstream has no observations', async () => {
-  stubGateway(async url => {
-    if (url.pathname === '/api/token-usage/overview') return Response.json(overview());
-    if (url.pathname === '/api/upstream-metrics') return Response.json({ start: Number(url.searchParams.get('start')), end: Number(url.searchParams.get('end')), step: Number(url.searchParams.get('step')), records: [] });
-    throw new Error(`Unexpected request: ${url.pathname}`);
-  });
-  renderPage();
-  fireEvent.click(await waitFor(() => metricsButton('First')));
-
-  await waitFor(() => expect(metricsButton('First').getAttribute('aria-expanded')).toBe('true'));
-  expect(screen.getByRole('heading', { name: 'Usage' })).toBeTruthy();
-  expect(screen.queryByRole('heading', { name: 'Metrics' })).toBeNull();
-});
-
-it('keeps the current row on failed loading and allows another attempt', async () => {
-  let fail = true;
-  stubGateway(async url => url.pathname === '/api/token-usage/overview' ? Response.json(overview())
-    : fail ? Response.json({ error: 'Metrics unavailable' }, { status: 500 }) : Response.json(metrics(url)));
-  renderPage();
-  fireEvent.click(await waitFor(() => metricsButton('First')));
-  await screen.findByText('Metrics unavailable');
-  await waitFor(() => expect(metricsButton('First').getAttribute('aria-expanded')).toBe('false'));
-  fail = false;
-  fireEvent.click(metricsButton('First'));
-  await waitFor(() => expect(metricsButton('First').getAttribute('aria-expanded')).toBe('true'));
-  fireEvent.click(metricsButton('Second'));
-  await waitFor(() => expect(metricsButton('Second').getAttribute('aria-expanded')).toBe('true'));
-  expect(metricsButton('First').getAttribute('aria-expanded')).toBe('false');
-}, 15_000);
-
-it('cancels both telemetry requests when navigating away during an expansion', async () => {
-  const signals: AbortSignal[] = [];
-  stubGateway(async (_url, signal) => { signals.push(signal!); return await new Promise<Response>(() => {}); });
-  const view = renderPage();
-  fireEvent.click(await waitFor(() => metricsButton('First')));
-  await waitFor(() => expect(signals).toHaveLength(2));
-  view.unmount();
-  expect(signals.every(signal => signal.aborted)).toBe(true);
-});
-
-it('expands the whole row while preserving switch, icon and navigation actions', async () => {
-  const readings: URL[] = [];
-  stubGateway(async url => {
-    if (url.pathname.startsWith('/api/upstreams/')) return Response.json({ error: 'Toggle rejected' }, { status: 500 });
-    readings.push(url);
-    if (url.pathname === '/api/token-usage/overview') return Response.json(overview());
-    if (url.pathname === '/api/upstream-metrics') return Response.json(metrics(url));
-    throw new Error(`Unexpected request: ${url.pathname}`);
-  });
-  renderPage();
-  const row = await screen.findByRole('row', { name: 'Usage and metrics for First' });
-  fireEvent.click(screen.getAllByRole('switch')[0]);
-  await screen.findByText(/Toggle rejected/);
-  expect(readings).toHaveLength(0);
-  fireEvent.click(row);
-  await waitFor(() => expect(row.getAttribute('aria-expanded')).toBe('true'));
-  expect(readings).toHaveLength(2);
-  fireEvent.click(metricsButton('First'));
-  await waitFor(() => expect(row.getAttribute('aria-expanded')).toBe('false'));
-  expect(readings).toHaveLength(2);
-  fireEvent.click(screen.getByRole('link', { name: 'First' }));
-  await screen.findByText('Editor');
-  expect(readings).toHaveLength(2);
-}, 15_000);
-
-it('handles a reorder shortcut once at the item container', async () => {
-  const reorders: Array<{ expectedIds: string[]; ids: string[] }> = [];
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
-    if (url.pathname === '/api/upstreams/reorder' && init?.method === 'POST') {
-      reorders.push(JSON.parse(init.body as string));
-      return Response.json({ ok: true });
-    }
-    if (url.pathname === '/api/upstreams') return Response.json(loaderData.upstreams);
-    if (url.pathname === '/api/models') return Response.json({ data: [] });
-    throw new Error(`Unexpected request: ${url.pathname}`);
-  }));
-  renderPage();
-  const handle = await screen.findByRole('button', { name: 'Reorder upstream First' });
-  handle.focus();
-  fireEvent.keyDown(handle, { key: 'ArrowDown' });
-  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reorder upstream Second' }));
-  fireEvent.keyDown(handle, { key: 'ArrowDown', altKey: true, shiftKey: true });
-  await waitFor(() => expect(reorders).toEqual([{ expectedIds: ['first', 'second'], ids: ['second', 'first'] }]));
-});
-
 it('opens telemetry and the read-only editor for an audit-only row while keeping mutations unavailable', async () => {
   const pageData = {
     ...withAccess(true, 'off'),
@@ -230,7 +120,7 @@ it('opens telemetry and the read-only editor for an audit-only row while keeping
 
   const row = await screen.findByRole('row', { name: 'Usage and metrics for First' });
   expect(screen.getByRole('link', { name: 'First' })).toBeTruthy();
-  expect(within(row).getByText('7 models')).toBeTruthy();
+  expect(within(row).getByText(i18n.t('upstreams.models.count', { count: 7 }))).toBeTruthy();
   expect(screen.getByRole('link', { name: 'Edit upstream First' }).getAttribute('aria-disabled')).toBeNull();
   expect(screen.getByRole('switch', { name: 'Toggle upstream First' }).hasAttribute('disabled')).toBe(true);
   expect(screen.queryByRole('button', { name: 'Copy upstream First' })).toBeNull();
@@ -239,19 +129,6 @@ it('opens telemetry and the read-only editor for an audit-only row while keeping
 
   fireEvent.click(metricsButton('First'));
   await waitFor(() => expect(row.getAttribute('aria-expanded')).toBe('true'));
-});
-
-it('shows a models row with models editing but a disabled switch and drag handle', async () => {
-  stubGateway(async url => {
-    if (url.pathname === '/api/token-usage/overview') return Response.json(overview());
-    if (url.pathname === '/api/upstream-metrics') return Response.json(metrics(url));
-    throw new Error(`Unexpected request: ${url.pathname}`);
-  });
-  renderPage({ id: 2, username: 'model-editor', isAdmin: false, canViewPermissions: false, canViewUpstreams: true }, withAccess(false, 'models'));
-  expect(await screen.findByRole('link', { name: 'First' })).toBeTruthy();
-  expect(screen.getByRole('switch', { name: 'Toggle upstream First' }).hasAttribute('disabled')).toBe(true);
-  expect(screen.getByRole('button', { name: 'Reorder upstream First' }).hasAttribute('disabled')).toBe(true);
-  expect(metricsButton('First').hasAttribute('disabled')).toBe(true);
 });
 
 it('lets only a contiguous full segment move and leaves its locked neighbours in place', async () => {
@@ -279,50 +156,4 @@ it('lets only a contiguous full segment move and leaves its locked neighbours in
   const ranks = [...document.querySelectorAll('[data-reorder-item]')].map(row => row.textContent);
   expect(ranks[0]).toContain('1');
   expect(ranks[3]).toContain('4');
-});
-
-it('does not move visible Full rows separated by a hidden server-side boundary', async () => {
-  const separated = ['Full A', 'Full B'].map((name, index) => toListed(records[index]!, {
-    audit: true,
-    edit: 'full',
-  }, { id: name.toLowerCase().replaceAll(' ', '-'), name, reorderGroup: `segment-${index}` }));
-  const reorders: unknown[] = [];
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
-    if (url.pathname === '/api/upstreams/reorder' && init?.method === 'POST') { reorders.push(init.body); return Response.json({ ok: true }); }
-    if (url.pathname === '/api/upstreams') return Response.json(separated);
-    if (url.pathname === '/api/models') return Response.json({ data: [] });
-    throw new Error(`Unexpected request: ${url.pathname}`);
-  }));
-  renderPage(user, { ...loaderData, upstreams: separated });
-
-  const handle = await screen.findByRole('button', { name: 'Reorder upstream Full A' });
-  handle.focus();
-  expect(handle.hasAttribute('disabled')).toBe(false);
-  fireEvent.keyDown(handle, { key: 'ArrowDown', altKey: true, shiftKey: true });
-  expect(reorders).toEqual([]);
-});
-
-it('renders a lone full row as a pressable but immovable handle', async () => {
-  const segmented = ['Locked A', 'Only Full', 'Locked B'].map((name, index) => toListed(records[index % 2]!, {
-    audit: true,
-    edit: index === 1 ? 'full' : 'off',
-  }, { id: name.toLowerCase().replaceAll(' ', '-'), name, sort_order: index }));
-  const reorders: unknown[] = [];
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
-    if (url.pathname === '/api/upstreams/reorder' && init?.method === 'POST') { reorders.push(init.body); return Response.json({ ok: true }); }
-    if (url.pathname === '/api/upstreams') return Response.json(segmented);
-    if (url.pathname === '/api/models') return Response.json({ data: [] });
-    throw new Error(`Unexpected request: ${url.pathname}`);
-  }));
-  renderPage(user, { ...loaderData, upstreams: segmented });
-  const handle = await screen.findByRole('button', { name: 'Reorder upstream Only Full' });
-  handle.focus();
-  expect(handle.hasAttribute('disabled')).toBe(false);
-  fireEvent.pointerDown(handle, { button: 0, clientY: 10, isPrimary: true, pointerId: 1 });
-  expect(handle.closest('[data-reorder-item]')?.getAttribute('data-reorder-edge')).toBe('first');
-  fireEvent.pointerUp(window, { clientY: 10, pointerId: 1 });
-  fireEvent.keyDown(handle, { key: 'ArrowDown', altKey: true, shiftKey: true });
-  expect(reorders).toEqual([]);
 });

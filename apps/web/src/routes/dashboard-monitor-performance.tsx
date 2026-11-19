@@ -271,30 +271,30 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
   ] as const;
   return <section className="dashboard-page">
     <DashboardPageHeader
-      actions={<ResourceListActions appearance="subtle" onRefresh={() => void refresh()} refreshLabel={t('dashboard.performance.actions.refresh')} refreshing={refreshing} />}
-      description={t('dashboard.pages.performance')}
-      title={t('dashboard.nav.performance')}
+      actions={<ResourceListActions appearance="subtle" onRefresh={() => void refresh()} refreshLabel={t('monitoring.performance.actions.refresh')} refreshing={refreshing} />}
+      description={t('monitoring.performance.description')}
+      title={t('monitoring.performance.title')}
     />
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
     {(() => {
-      if (overview === null || chart === null || labels === null || regionAvailable === null) return <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel>;
+      if (overview === null || chart === null || labels === null || regionAvailable === null) return <Panel><EmptyStateLine>{t('common.errors.viewUnavailable')}</EmptyStateLine></Panel>;
       const dimensions: Array<TelemetryDimension<PerformanceGroupBy>> = [
-        { key: 'model', groupLabel: t('dashboard.performance.groupBy.model'), filterLabel: t('dashboard.performance.filters.model'), allLabel: t('dashboard.performance.filters.all.model'), options: overview.dimensionValues.models.map(value => ({ value, label: value })) },
-        { key: 'upstream', groupLabel: t('dashboard.performance.groupBy.upstream'), filterLabel: t('dashboard.performance.filters.upstream'), allLabel: t('dashboard.performance.filters.all.upstream'), options: overview.dimensionValues.upstreams.map(value => ({ value, label: labels.upstreams.get(value) ?? value })) },
-        { key: 'operation', groupLabel: t('dashboard.performance.groupBy.operation'), filterLabel: t('dashboard.performance.filters.operation'), allLabel: t('dashboard.performance.filters.all.operation'), options: overview.dimensionValues.operations.map(value => ({ value, label: value })) },
-        { key: 'runtimeLocation', groupLabel: t('dashboard.performance.groupBy.runtimeLocation'), filterLabel: t('dashboard.performance.filters.runtimeLocation'), allLabel: t('dashboard.performance.filters.all.runtimeLocation'), options: overview.dimensionValues.runtimeLocations.map(value => ({ value, label: value })) },
+        { key: 'model', groupLabel: t('monitoring.performance.groupBy.model'), filterLabel: t('monitoring.performance.filters.model'), allLabel: t('monitoring.performance.filters.all.model'), options: overview.dimensionValues.models.map(value => ({ value, label: value })) },
+        { key: 'upstream', groupLabel: t('monitoring.performance.groupBy.upstream'), filterLabel: t('monitoring.performance.filters.upstream'), allLabel: t('monitoring.performance.filters.all.upstream'), options: overview.dimensionValues.upstreams.map(value => ({ value, label: labels.upstreams.get(value) ?? value })) },
+        { key: 'operation', groupLabel: t('monitoring.performance.groupBy.operation'), filterLabel: t('monitoring.performance.filters.operation'), allLabel: t('monitoring.performance.filters.all.operation'), options: overview.dimensionValues.operations.map(value => ({ value, label: value })) },
+        { key: 'runtimeLocation', groupLabel: t('monitoring.performance.groupBy.runtimeLocation'), filterLabel: t('monitoring.performance.filters.runtimeLocation'), allLabel: t('monitoring.performance.filters.all.runtimeLocation'), options: overview.dimensionValues.runtimeLocations.map(value => ({ value, label: value })) },
         {
           key: 'userId',
-          groupLabel: t('dashboard.performance.groupBy.userId'),
-          filterLabel: t('dashboard.performance.filters.userId'),
-          allLabel: t('dashboard.performance.filters.all.userId'),
+          groupLabel: t('monitoring.performance.groupBy.userId'),
+          filterLabel: t('monitoring.performance.filters.userId'),
+          allLabel: t('monitoring.performance.filters.all.userId'),
           options: [...new Set([...overview.users.map(user => String(user.id)), ...overview.dimensionValues.userIds.map(String)])]
             .map(value => ({ value, label: labels.users.get(value) ?? `user ${value}` })),
           selectionLabel: values => values.length === 1 && values[0] === loaderData.currentUserId
-            ? t('dashboard.telemetry.currentUserOnly')
-            : t('dashboard.performance.filters.selected', { count: values.length }),
+            ? t('monitoring.controls.currentUserOnly')
+            : t('monitoring.performance.filters.selected', { count: values.length }),
         },
-        { key: 'keyId', groupLabel: t('dashboard.performance.groupBy.keyId'), filterLabel: t('dashboard.performance.filters.keyId'), allLabel: t('dashboard.performance.filters.all.keyId'), options: overview.dimensionValues.keyIds.map(value => ({ value, label: labels.keys.get(value) ?? value })) },
+        { key: 'keyId', groupLabel: t('monitoring.performance.groupBy.keyId'), filterLabel: t('monitoring.performance.filters.keyId'), allLabel: t('monitoring.performance.filters.all.keyId'), options: overview.dimensionValues.keyIds.map(value => ({ value, label: labels.keys.get(value) ?? value })) },
       ];
       const availableDimensions = dimensions.filter(dimension => (
         (dimension.key !== 'runtimeLocation' || regionAvailable)
@@ -309,21 +309,21 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
               disabled={refreshing}
               dimensions={availableDimensions}
               groupBy={loadedQuery.groupBy}
-              groupByAdornment={loadedQuery.groupBy === 'keyId' && <Tooltip content={t('dashboard.performance.apiKeyScopeInfo')} relationship="description">
+              groupByAdornment={loadedQuery.groupBy === 'keyId' && <Tooltip content={t('monitoring.performance.apiKeyScopeInfo')} relationship="description">
                 <Button
                   appearance="subtle"
-                  aria-label={t('dashboard.performance.apiKeyScopeLabel')}
+                  aria-label={t('monitoring.performance.apiKeyScopeLabel')}
                   className={CONTROL_ROW_CLASS}
                   icon={<InfoRegular />}
                 />
               </Tooltip>}
-              groupByLabel={t('dashboard.performance.groupBy.label')}
+              groupByLabel={t('monitoring.performance.groupBy.label')}
               onGroupByChange={changeGroupBy}
             />
             <div className="ml-auto flex-none">
               <TelemetryTimeRange
                 addressOf={range => addressOf({ range })}
-                ariaLabel={t('dashboard.performance.range.label')}
+                ariaLabel={t('monitoring.performance.range.label')}
                 loadedAt={loadedAt}
                 onChange={changeRange}
                 onEditingChange={setEditingRange}
@@ -338,34 +338,34 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
               filters={loadedQuery.filters}
               groupBy={loadedQuery.groupBy}
               onFilterChange={setFilter}
-              selectedLabel={count => t('dashboard.performance.filters.selected', { count })}
+              selectedLabel={count => t('monitoring.performance.filters.selected', { count })}
             />
           </div>
           <div className="grid gap-2.5 grid-cols-8 max-[1150px]:grid-cols-4 max-[620px]:grid-cols-2">
             {summaryCards.map(([label, value]) => <div className="grid gap-1 min-w-0 px-2 py-1" key={label}>
-              <Text size={200} weight="semibold" className="text-fui-fg2">{t(`dashboard.performance.summary.${label}`)}</Text>
+              <Text size={200} weight="semibold" className="text-fui-fg2">{t(`monitoring.performance.summary.${label}`)}</Text>
               <Text size={500} weight="semibold" className="tabular-nums [overflow-wrap:anywhere]">{value}</Text>
             </div>)}
           </div>
           <div className="flex items-end justify-between gap-4 min-w-0 flex-wrap">
-            <ChoiceGroup ariaLabel={t('dashboard.performance.metric.label')} items={[
-              { value: 'ttft', label: t('dashboard.performance.metric.ttft'), to: addressOf({ metric: 'ttft' }) },
-              { value: 'tokPerSec', label: t('dashboard.performance.metric.outputSpeed'), to: addressOf({ metric: 'tokPerSec' }) },
+            <ChoiceGroup ariaLabel={t('monitoring.performance.metric.label')} items={[
+              { value: 'ttft', label: t('monitoring.performance.metric.ttft'), to: addressOf({ metric: 'ttft' }) },
+              { value: 'tokPerSec', label: t('monitoring.performance.metric.outputSpeed'), to: addressOf({ metric: 'tokPerSec' }) },
             ]} onChange={value => setMetric(value as PerformanceMetric)} value={metric} />
             <div className="ml-auto flex-none">
-              <ChoiceGroup ariaLabel={t('dashboard.performance.percentile.label')} items={performancePercentiles.map(value => ({ value, label: value, to: addressOf({ percentile: value }) }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
+              <ChoiceGroup ariaLabel={t('monitoring.performance.percentile.label')} items={performancePercentiles.map(value => ({ value, label: value, to: addressOf({ percentile: value }) }))} onChange={value => setPercentile(value as PerformancePercentile)} value={percentile} />
             </div>
           </div>
         </Panel>
         <Panel className="min-w-0">
-          <PerformanceChartSection chart={chart} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={t('dashboard.performance.chartTitle', { metric: metric === 'ttft' ? t('dashboard.performance.tables.ttft', { percentile }) : t('dashboard.performance.tables.speed', { tail: performancePercentileTailOf(percentile) }), group: t(`dashboard.performance.groupBy.${loadedQuery.groupBy}`) })} />
+          <PerformanceChartSection chart={chart} hidden={hiddenSeries} onHiddenChange={setHiddenSeries} title={t('monitoring.performance.chartTitle', { metric: metric === 'ttft' ? t('monitoring.performance.tables.ttft', { percentile }) : t('monitoring.performance.tables.speed', { tail: performancePercentileTailOf(percentile) }), group: t(`monitoring.performance.groupBy.${loadedQuery.groupBy}`) })} />
         </Panel>
         <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
           {/* The scrollport clips the 2px ring a focused tab paints, so it takes
             a gutter and the host removes the same distance again to keep the
             row aligned. An inward ring would land on the tab's selection pipe. */}
-          <ScrollArea axes="horizontal" className="min-w-0 -m-0.5" viewportClassName="p-0.5"><TabList aria-label={t('dashboard.performance.breakdown')} selectedValue={activeBreakdown.key} onTabSelect={(_, data) => changeBreakdown(data.value as PerformanceGroupBy)}>
-            {breakdowns.map(({ key }) => <Tab key={key} value={key}>{t(`dashboard.performance.groupBy.${key}`)}</Tab>)}
+          <ScrollArea axes="horizontal" className="min-w-0 -m-0.5" viewportClassName="p-0.5"><TabList aria-label={t('monitoring.performance.breakdown')} selectedValue={activeBreakdown.key} onTabSelect={(_, data) => changeBreakdown(data.value as PerformanceGroupBy)}>
+            {breakdowns.map(({ key }) => <Tab key={key} value={key}>{t(`monitoring.performance.groupBy.${key}`)}</Tab>)}
           </TabList></ScrollArea>
           <PerformanceTable groupBy={activeBreakdown.key} labels={labels} onSortChange={setSort} percentile={percentile} rows={activeBreakdown.rows} sort={sort} />
         </Panel>

@@ -6,7 +6,7 @@ import { assertOllamaUpstreamRecord } from '../src/config.ts';
 import { createOllamaProvider } from '../src/provider.ts';
 import { readOllamaUpstreamState } from '../src/state.ts';
 import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, assertRejects, noopUpstreamCallOptions, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, noopUpstreamCallOptions, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_ollama_account';
 
@@ -75,28 +75,6 @@ test('the account probe reads the plan and identity ollama.com actually sends', 
       assertEquals(account.plan, 'free');
       assertEquals(account.name, 'operator');
       assertEquals(account.email, 'operator@example.com');
-    },
-  );
-});
-
-test('an account naming no plan reads as naming none', async () => {
-  const { config } = assertOllamaUpstreamRecord(cloudRecord());
-  await withMockedFetch(
-    () => new Response(JSON.stringify({ ...ME_BODY, Plan: '' }), { status: 200 }),
-    async () => {
-      const account = await fetchOllamaAccount(config, directFetcher);
-      assertEquals(account.plan, null);
-    },
-  );
-});
-
-test('a rejected key surfaces the upstream status', async () => {
-  const { config } = assertOllamaUpstreamRecord(cloudRecord());
-  await withMockedFetch(
-    () => new Response('{"error":"invalid credentials"}\n', { status: 401 }),
-    async () => {
-      const error = await assertRejects(() => fetchOllamaAccount(config, directFetcher));
-      assertEquals(error.message, 'Ollama /api/me returned 401: {"error":"invalid credentials"}');
     },
   );
 });

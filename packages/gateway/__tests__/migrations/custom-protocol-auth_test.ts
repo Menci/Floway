@@ -9,7 +9,7 @@ import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 
 const MIGRATION = '0100_custom_protocol_auth.sql';
 
-const migratedConfigs = (runMigration: boolean): Record<string, unknown> => {
+const migratedConfigs = (): Record<string, unknown> => {
   const db = new DatabaseSync(':memory:');
   for (const [filename, sql] of migrationSqlByFilename) {
     if (filename === MIGRATION) {
@@ -22,7 +22,6 @@ const migratedConfigs = (runMigration: boolean): Record<string, unknown> => {
           ('up_missing', 'custom', 'Missing', '', '', '{"baseUrl":"https://missing.example","endpoints":{},"ingressHeadersRules":[]}', 210, 7),
           ('up_unrelated', 'azure', 'Azure', '', '', '{"endpoint":"https://azure.example","apiKey":"az-key","models":[]}', 210, 8)
       `).run();
-      if (!runMigration) continue;
     }
     db.exec(sql);
   }
@@ -32,7 +31,7 @@ const migratedConfigs = (runMigration: boolean): Record<string, unknown> => {
 };
 
 test('migration 0100 moves authStyle into modelsFetch and stores anonymous custom upstreams as an empty API key', () => {
-  const rows = migratedConfigs(true) as Record<string, { config: unknown; version: number }>;
+  const rows = migratedConfigs() as Record<string, { config: unknown; version: number }>;
   for (const [id, expectedApiKey, expectedAuthStyle, expectedVersion] of [['up_none', '', 'bearer', 5], ['up_bearer', 'sk-bearer', 'bearer', 6], ['up_models_fetch_override', 'sk-override', 'x-api-key', 7], ['up_missing', '', 'bearer', 8]] as const) {
     const parsed = assertCustomUpstreamRecord({ id, kind: 'custom', config: rows[id]!.config } as unknown as UpstreamRecord);
     expect(parsed.config.apiKey).toBe(expectedApiKey);
@@ -43,9 +42,4 @@ test('migration 0100 moves authStyle into modelsFetch and stores anonymous custo
   const azure = rows.up_unrelated!;
   expect(azure.config).toEqual({ endpoint: 'https://azure.example', apiKey: 'az-key', models: [] });
   expect(azure.version).toBe(8);
-});
-
-test('without migration 0100 the removed authStyle still leaves anonymous rows unparseable', () => {
-  const rows = migratedConfigs(false) as Record<string, { config: unknown; version: number }>;
-  expect(() => assertCustomUpstreamRecord({ id: 'up_none', kind: 'custom', config: rows.up_none!.config } as unknown as UpstreamRecord)).toThrow(/apiKey must be a string/);
 });

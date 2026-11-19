@@ -1,28 +1,16 @@
-import { scopeDepth } from './scope';
+import { scopeDepth, scopeKind, scopeResourceId, type ScopeKind } from './scope';
 import type { AccessRecord } from '../../api/types';
 import type { AccessScope } from '@floway-dev/gateway/browser';
 
-const family = (scope: AccessScope) => scope.kind.startsWith('upstream') ? 0
-  : scope.kind === 'self' ? 1 : scope.kind === 'users' || scope.kind === 'user' ? 2 : 3;
-const resource = (scope: AccessScope): string => {
-  switch (scope.kind) {
-  case 'upstreamModel':
-  case 'upstream': return scope.upstreamId;
-  case 'user': return String(scope.userId);
-  case 'group': return String(scope.groupId);
-  case 'self':
-  case 'upstreams':
-  case 'users':
-  case 'groups': return '';
-  }
-};
+const FAMILY_ORDER: Record<ScopeKind, number> = { upstream: 0, self: 1, user: 2, group: 3 };
+const family = (scope: AccessScope) => FAMILY_ORDER[scopeKind(scope)!];
 
 // Model patterns share the resolver's depth and order group: exact matches do
 // not outrank regex matches. Other scopes never enter a draggable segment.
 export const orderedRecords = (records: readonly AccessRecord[]): AccessRecord[] => records.toSorted((left, right) =>
   scopeDepth(left.scope) - scopeDepth(right.scope)
   || family(left.scope) - family(right.scope)
-  || resource(left.scope).localeCompare(resource(right.scope), 'en', { numeric: true })
+  || scopeResourceId(left.scope).localeCompare(scopeResourceId(right.scope), 'en', { numeric: true })
   || left.sortOrder - right.sortOrder || left.id - right.id);
 
 export interface RecordSegment { key: string; movable: boolean; records: AccessRecord[] }
@@ -34,7 +22,8 @@ export const recordSegments = (records: readonly AccessRecord[]): RecordSegment[
     // Model-pattern priority is a single ordered list per upstream: the
     // resolver compares the stored sort order across every principal, so the
     // editor must expose the same list as one draggable segment.
-    const key = movable ? `upstream:${resource(record.scope)}` : `fixed:${record.scope.kind}:${resource(record.scope)}`;
+    const resource = scopeResourceId(record.scope);
+    const key = movable ? `upstream:${resource}` : `fixed:${record.scope.kind}:${resource}`;
     const previous = segments.at(-1);
     if (previous?.key === key) previous.records.push(record);
     else segments.push({ key, movable, records: [record] });

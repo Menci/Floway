@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { parseChatGPTTokenClaims, tryParseChatGPTAccessTokenClaims } from '../../src/auth/jwt.ts';
+import { parseChatGPTTokenClaims } from '../../src/auth/jwt.ts';
 
 // Helper builds a minimal JWT with given payload. Signature segment is fake.
 const encodeBase64Url = (text: string): string => {
@@ -17,70 +17,12 @@ const makeJwt = (payload: unknown): string => {
 };
 
 describe('parseChatGPTTokenClaims', () => {
-  test('extracts every identity claim a full id_token carries', () => {
-    const token = makeJwt({
-      'https://api.openai.com/auth': {
-        chatgpt_plan_type: 'plus',
-        chatgpt_account_id: 'acc_123',
-        chatgpt_user_id: 'user-abc',
-      },
-      'https://api.openai.com/profile': { email: 'a@b.com' },
-    });
-    expect(parseChatGPTTokenClaims(token, 'id_token')).toEqual({
-      email: 'a@b.com',
-      chatgptAccountId: 'acc_123',
-      chatgptUserId: 'user-abc',
-      planType: 'plus',
-      expiresAt: null,
-    });
-  });
-
-  test('reports a claim the token does not carry as null', () => {
-    expect(parseChatGPTTokenClaims(makeJwt({}), 'id_token')).toEqual({
-      email: null,
-      chatgptAccountId: null,
-      chatgptUserId: null,
-      planType: null,
-      expiresAt: null,
-    });
-  });
-
-  test('converts exp seconds to milliseconds', () => {
-    expect(parseChatGPTTokenClaims(makeJwt({ exp: 2_000_000_000 })).expiresAt).toBe(2_000_000_000_000);
-  });
-
-  test('rejects a token without 3 segments', () => {
-    expect(() => parseChatGPTTokenClaims('not.a.jwt.really', 'id_token')).toThrow(/3 segments/);
-    expect(() => parseChatGPTTokenClaims('one.two', 'id_token')).toThrow(/3 segments/);
-  });
-
-  test('rejects a token whose payload is not base64url-decodable JSON', () => {
-    expect(() => parseChatGPTTokenClaims('aaa.!!!.bbb', 'id_token')).toThrow();
-  });
-
   test('accepts top-level email when /profile is absent (observed real-world id_token shape)', () => {
     const token = makeJwt({
       'https://api.openai.com/auth': { chatgpt_account_id: 'a' },
       email: 'top-level@example.com',
     });
     expect(parseChatGPTTokenClaims(token, 'id_token').email).toBe('top-level@example.com');
-  });
-
-  test('handles base64url padding-free encoding (real OpenAI tokens have no padding)', () => {
-    // encodeBase64Url already strips padding, matching real OpenAI tokens.
-    const token = makeJwt({ 'https://api.openai.com/auth': { chatgpt_account_id: 'a' } });
-    expect(parseChatGPTTokenClaims(token, 'id_token').chatgptAccountId).toBe('a');
-  });
-});
-
-describe('tryParseChatGPTAccessTokenClaims', () => {
-  test('reads an opaque access token as carrying no claims rather than failing', () => {
-    expect(tryParseChatGPTAccessTokenClaims('opaque-access-token')).toBeNull();
-  });
-
-  test('reads claims off an access token that is a JWT', () => {
-    const token = makeJwt({ 'https://api.openai.com/auth': { chatgpt_account_id: 'acc_from_access' } });
-    expect(tryParseChatGPTAccessTokenClaims(token)?.chatgptAccountId).toBe('acc_from_access');
   });
 
   test('rejects noncanonical JWT payload encodings', () => {

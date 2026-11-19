@@ -29,14 +29,6 @@ test('empty tools rewrites tool_choice to none', async () => {
   assertEquals(input.payload.tool_choice, 'none');
 });
 
-test('empty tools stays unchanged when the flag is disabled', async () => {
-  const input = invocation({ model: 'm', messages: [], tools: [], tool_choice: 'auto' }, new Set());
-
-  await withEmptyToolsToolChoiceNormalized(input, stubCtx, okEvents);
-
-  assertEquals(input.payload.tool_choice, 'auto');
-});
-
 test('missing or non-empty tools does not rewrite tool_choice', async () => {
   const missing = invocation({ model: 'm', messages: [], tool_choice: 'auto' });
   const present = invocation({

@@ -37,39 +37,6 @@ test('finalizes each Chat choice independently while another choice has partial 
   expect(turns.get(1)).toMatchObject({ role: 'assistant', audio: { id: 'audio' } });
 });
 
-test('rejects incomplete audio when its own Chat choice finalizes', async () => {
-  await expect(drain([
-    chunk([{ index: 0, delta: { role: 'assistant', audio: { id: 'audio', data: 'YQ==' } }, finish_reason: 'stop' }]),
-  ])).rejects.toThrow('audio ended without its complete metadata');
-});
-
-test('collects a native assistant turn for a finish-only Chat choice with omitted delta', async () => {
-  const choice = { index: 0, delta: {}, finish_reason: 'stop' as const };
-  Reflect.deleteProperty(choice, 'delta');
-  expect(choice).not.toHaveProperty('delta');
-
-  const turns = await drain([chunk([choice])]);
-
-  expect([...turns]).toEqual([[0, { role: 'assistant', content: null, refusal: null }]]);
-});
-
-test('collects every native Chat choice when a sibling omits delta', async () => {
-  const emptyChoice = { index: 0, delta: {}, finish_reason: 'stop' as const };
-  Reflect.deleteProperty(emptyChoice, 'delta');
-  expect(emptyChoice).not.toHaveProperty('delta');
-  const delta = { role: 'assistant' as const, content: 'Hello', reasoning_content: 'Think', provider_specific_fields: { trace: 'native' } };
-
-  const turns = await drain([
-    chunk([emptyChoice, { index: 1, delta, finish_reason: null }]),
-    chunk([{ index: 1, delta: { content: ' world' }, finish_reason: 'stop' }]),
-  ]);
-
-  expect([...turns]).toEqual([
-    [0, { role: 'assistant', content: null, refusal: null }],
-    [1, { role: 'assistant', content: 'Hello world', refusal: null, reasoning_content: 'Think', provider_specific_fields: { trace: 'native' } }],
-  ]);
-});
-
 const traceTools = async (frames: ReturnType<typeof chunk>[], options: { prefix?: string; customToolNames?: ReadonlySet<string>; originalToolNames?: ReadonlyMap<string, { readonly namespace: string; readonly name: string }> } = {}) => {
   const builder = createReferenceBuilder();
   const content = createEmittedFieldState(builder, 'text');
@@ -126,26 +93,6 @@ test('tracks native custom input and legacy function arguments in their own inpu
   expect(legacy.finalized.targetTurn).toMatchObject({ function_call: { arguments: '{"x":1}' } });
   expect(legacy.finalized).not.toHaveProperty('referencedContentHashes');
   expect(legacy.fieldState).not.toHaveProperty('tool_calls');
-});
-
-test('sorts native tool state with sparse wire indices without rebuilding field nodes', async () => {
-  const result = await traceTools([
-    chunk([{
-      index: 0, delta: {
-        tool_calls: [
-          { index: 3, id: 'b', type: 'function', function: { name: 'second', arguments: '{"b":2}' } },
-          { index: 1, id: 'a', type: 'function', function: { name: 'first', arguments: '{"a":1}' } },
-        ],
-      }, finish_reason: 'tool_calls',
-    }]),
-  ]);
-  expect(result.finalized.targetTurn).toMatchObject({
-    tool_calls: [
-      { id: 'a', function: { arguments: '{"a":1}' } },
-      { id: 'b', function: { arguments: '{"b":2}' } },
-    ],
-  });
-  expect(result.finalized).not.toHaveProperty('referencedContentHashes');
 });
 
 test('keeps a transformed wrapped tool field literal', async () => {

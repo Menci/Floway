@@ -55,7 +55,7 @@ function MetricsCallout({ active, coordinate, label, payload, element, formatter
   };
   return <ChartCalloutPopover pointerStore={pointerStore} target={target}>
     <ChartCalloutTable
-      columns={[{ key: 'value', label: t('dashboard.upstreamMetrics.value') }]}
+      columns={[{ key: 'value', label: t('monitoring.upstreams.value') }]}
       rows={payload.map(value => ({ key: value.graphicalItemId, label: value.name, color: value.color!, values: [formatters[value.unit as UpstreamMetricUnit](value.value as number)] }))}
       title={formatAxisDate(new Date(Number(label)))}
     />
@@ -109,8 +109,8 @@ export function UpstreamMetricsChartSection({ chart, start, end }: { chart: Upst
     count: numberFormat.format,
     none: numberFormat.format,
   };
-  return <ChartSection controlsLabel={chart.title} emptyText={t('dashboard.upstreamMetrics.empty')} entries={series} hidden={hidden} onHiddenChange={onHiddenChange} title={chart.title}>
-    <ChartHost className={frameStyles.root} emptyText={t('dashboard.upstreamMetrics.empty')} hasData={chart.entries.some(entry => !hidden.has(entry.id) && data.some(row => entry.id in row.values))}
+  return <ChartSection controlsLabel={chart.title} emptyText={t('monitoring.upstreams.empty')} entries={series} hidden={hidden} onHiddenChange={onHiddenChange} title={chart.title}>
+    <ChartHost className={frameStyles.root} emptyText={t('monitoring.upstreams.empty')} hasData={chart.entries.some(entry => !hidden.has(entry.id) && data.some(row => entry.id in row.values))}
       onMouseEnter={() => setRealHover(true)} onMouseLeave={() => { setRealHover(false); linkedHover.report(null); }}>
       {({ element, size }) => {
         const plotWidth = chartPlotWidth(size.width);
@@ -200,7 +200,7 @@ export function UpstreamMetricsChartSection({ chart, start, end }: { chart: Upst
           if (rows.length === 0) return null;
           const x = chartMargins.left + (row.timestamp - start) / (end - start) * plotWidth;
           return <AssumedChartHover bottom={chartMargins.bottom} element={element} pointerStore={linkedHover.pointerStore} top={chartMargins.top} x={x}>
-            <ChartCalloutTable columns={[{ key: 'value', label: t('dashboard.upstreamMetrics.value') }]} rows={rows} title={formatAxisDate(new Date(row.timestamp))} />
+            <ChartCalloutTable columns={[{ key: 'value', label: t('monitoring.upstreams.value') }]} rows={rows} title={formatAxisDate(new Date(row.timestamp))} />
           </AssumedChartHover>;
         };
         return <>

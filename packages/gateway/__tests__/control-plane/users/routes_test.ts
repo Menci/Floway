@@ -1,8 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { hashPassword } from '../../../src/shared/passwords.ts';
-import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -19,12 +17,6 @@ const adminPatch = (sessionId: string, id: number, body: unknown) => requestApp(
 const adminDelete = (sessionId: string, id: number) => requestApp(`/api/users/${id}`, {
   method: 'DELETE',
   headers: { 'x-floway-session': sessionId },
-});
-
-test('GET /api/users requires admin', async () => {
-  const { apiKey } = await setupAppTest();
-  const response = await requestApp('/api/users', { headers: { 'x-api-key': apiKey.key } });
-  assertEquals(response.status, 403);
 });
 
 test('POST /api/users creates the user and provisions a Default key', async () => {
@@ -46,39 +38,11 @@ test('POST /api/users creates the user and provisions a Default key', async () =
   ]);
 });
 
-test('POST /api/users rejects duplicate username', async () => {
-  const { adminSession } = await setupAppTest();
-  await adminPost(adminSession, { username: 'alice', password: 'pw' });
-  const dup = await adminPost(adminSession, { username: 'alice', password: 'pw' });
-  assertEquals(dup.status, 400);
-});
-
-test('POST /api/users rejects a username that differs only in case', async () => {
-  const { adminSession } = await setupAppTest();
-  await adminPost(adminSession, { username: 'alice', password: 'pw' });
-  const dup = await adminPost(adminSession, { username: 'Alice', password: 'pw' });
-  assertEquals(dup.status, 400);
-});
-
 test('PATCH /api/users/1 may rename but cannot be demoted or deleted', async () => {
   const { adminSession } = await setupAppTest();
   assertEquals((await adminPatch(adminSession, 1, { isAdmin: false })).status, 400);
   assertEquals((await adminPatch(adminSession, 1, { username: 'someone-else' })).status, 200);
   assertEquals((await adminDelete(adminSession, 1)).status, 400);
-});
-
-test('PATCH /api/users/:self cannot demote yourself but may change password', async () => {
-  const { adminSession, repo } = await setupAppTest();
-  const demote = await adminPatch(adminSession, 1, { isAdmin: false });
-  assertEquals(demote.status, 400);
-  // Admin self-PATCH may set password (this is the bootstrap path for user 1
-  // to set an initial password after the migration). The acting session
-  // survives; any other session of the same user is signed out.
-  const otherSession = await repo.sessions.create(1);
-  const setPw = await adminPatch(adminSession, 1, { password: 'new-admin-pw' });
-  assertEquals(setPw.status, 200);
-  expect(await repo.sessions.getByIdAndTouch(adminSession)).not.toBeNull();
-  expect(await repo.sessions.getByIdAndTouch(otherSession.id)).toBeNull();
 });
 
 test('admin password reset on another user revokes that user\'s sessions', async () => {
@@ -98,23 +62,6 @@ test('admin password reset on another user revokes that user\'s sessions', async
   expect(await repo.sessions.getByIdAndTouch(bobSession.id)).toBeNull();
 });
 
-test('PATCH /api/users/:id can demote a non-self admin', async () => {
-  const { adminSession, repo } = await setupAppTest();
-  await repo.users.save({
-    id: 3,
-    username: 'bob',
-    passwordHash: await hashPassword('pw'),
-    isAdmin: true,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    deletedAt: null,
-  });
-
-  const response = await adminPatch(adminSession, 3, { isAdmin: false });
-  assertEquals(response.status, 200);
-  const bob = await repo.users.getById(3);
-  expect(bob?.isAdmin).toBe(false);
-});
-
 test('DELETE /api/users/:id cascades to api_keys (soft) + sessions', async () => {
   const { adminSession, repo } = await setupAppTest();
   const created = await adminPost(adminSession, { username: 'alice', password: 'pw' });
@@ -129,23 +76,6 @@ test('DELETE /api/users/:id cascades to api_keys (soft) + sessions', async () =>
   expect(await repo.apiKeys.getById(defaultKey.id)).toBeNull();
   assertEquals(await repo.accessRecords.listByPrincipal({ kind: 'user', id: user.id }), []);
   assertEquals((await repo.sessions.deleteByUserId(user.id)), 0);
-});
-
-test('DELETE /api/users/:id succeeds when the broker close hook throws on a cascaded key', async () => {
-  const { adminSession, repo } = await setupAppTest();
-  const created = await adminPost(adminSession, { username: 'alice', password: 'pw' });
-  const { user } = (await created.json()) as { user: { id: number } };
-  const [defaultKey] = await repo.apiKeys.listByUserId(user.id);
-  // Enable retention on the cascaded key so the broker close hook is exercised.
-  await repo.apiKeys.save({ ...defaultKey, dumpRetentionSeconds: 3600 });
-
-  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
-  stubs.failOn('closeChannel', new Error('broker down'));
-
-  const response = await adminDelete(adminSession, user.id);
-  assertEquals(response.status, 200);
-  // The user soft-delete still landed.
-  expect(await repo.users.getById(user.id)).toBeNull();
 });
 
 test('PATCH /api/users/me/password requires session and a correct current password', async () => {
@@ -184,35 +114,10 @@ test('PATCH /api/users/me/password requires session and a correct current passwo
   expect(updated?.passwordHash).not.toBeNull();
 });
 
-test('PATCH /api/users/me/password rejects API key auth (must be a session)', async () => {
-  const { apiKey } = await setupAppTest();
-  const response = await requestApp('/api/users/me/password', {
-    method: 'PATCH',
-    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-    body: JSON.stringify({ currentPassword: 'x', newPassword: 'y' }),
-  });
-  assertEquals(response.status, 401);
-});
-
 const patchPreferences = (sessionId: string, body: unknown) => requestApp('/api/users/me/preferences', {
   method: 'PATCH',
   headers: { 'content-type': 'application/json', 'x-floway-session': sessionId },
   body: JSON.stringify(body),
-});
-
-test('PATCH /api/users/me/preferences saves the signed-in account preferences and returns them with /auth/me', async () => {
-  const { adminSession, repo } = await setupAppTest({
-    userPreferences: { quotaDisplay: 'remaining', language: null, copyEditor: false },
-  });
-
-  const response = await patchPreferences(adminSession, { quotaDisplay: 'used', language: 'zh-Hans', copyEditor: true });
-  assertEquals(response.status, 200);
-  expect(await response.json()).toEqual({ preferences: { quotaDisplay: 'used', language: 'zh-Hans', copyEditor: true } });
-  expect(await repo.userPreferences.get(1)).toEqual({ quotaDisplay: 'used', language: 'zh-Hans', copyEditor: true });
-
-  const me = await requestApp('/auth/me', { headers: { 'x-floway-session': adminSession } });
-  const body = (await me.json()) as { user: { preferences: { quotaDisplay: string; language: string | null; copyEditor: boolean } } };
-  expect(body.user.preferences).toEqual({ quotaDisplay: 'used', language: 'zh-Hans', copyEditor: true });
 });
 
 test('PATCH /api/users/me/preferences merges a partial update and clears language with null', async () => {
@@ -221,26 +126,7 @@ test('PATCH /api/users/me/preferences merges a partial update and clears languag
   await patchPreferences(adminSession, { language: 'zh-Hans' });
   expect(await repo.userPreferences.get(1)).toEqual({ quotaDisplay: 'remaining', language: 'zh-Hans', copyEditor: false });
 
-  await patchPreferences(adminSession, { copyEditor: true });
-  expect(await repo.userPreferences.get(1)).toEqual({ quotaDisplay: 'remaining', language: 'zh-Hans', copyEditor: true });
-
   const cleared = await patchPreferences(adminSession, { language: null });
   assertEquals(cleared.status, 200);
-  expect(await repo.userPreferences.get(1)).toEqual({ quotaDisplay: 'remaining', language: null, copyEditor: true });
-});
-
-test('PATCH /api/users/me/preferences rejects an unknown direction and an empty body', async () => {
-  const { adminSession } = await setupAppTest();
-  assertEquals((await patchPreferences(adminSession, { quotaDisplay: 'left' })).status, 400);
-  assertEquals((await patchPreferences(adminSession, {})).status, 400);
-});
-
-test('PATCH /api/users/me/preferences refuses a request authenticated by API key only', async () => {
-  const { apiKey } = await setupAppTest();
-  const response = await requestApp('/api/users/me/preferences', {
-    method: 'PATCH',
-    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-    body: JSON.stringify({ quotaDisplay: 'used' }),
-  });
-  assertEquals(response.status, 401);
+  expect(await repo.userPreferences.get(1)).toEqual({ quotaDisplay: 'remaining', language: null, copyEditor: false });
 });

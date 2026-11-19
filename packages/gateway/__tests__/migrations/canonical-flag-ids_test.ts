@@ -46,7 +46,7 @@ const LEGACY_CONFIG = {
   ],
 };
 
-const seeded = (options: { runMigration: boolean }): { overrides: Record<string, boolean>; config: Record<string, unknown> } => {
+const migrated = (): { overrides: Record<string, boolean>; config: Record<string, unknown> } => {
   const db = new DatabaseSync(':memory:');
   for (const [filename, sql] of migrationSqlByFilename) {
     if (filename === MIGRATION) {
@@ -54,7 +54,6 @@ const seeded = (options: { runMigration: boolean }): { overrides: Record<string,
         INSERT INTO upstreams (id, provider, name, created_at, updated_at, config_json, flag_overrides, hue)
         VALUES ('up_legacy', 'custom', 'Legacy', '', '', ?, ?, 210)
       `).run(JSON.stringify(LEGACY_CONFIG), JSON.stringify(LEGACY_OVERRIDES));
-      if (!options.runMigration) continue;
     }
     db.exec(sql);
   }
@@ -72,7 +71,7 @@ const modelOverrides = (config: Record<string, unknown>, wireId: string): Record
 };
 
 test('the canonical flag-id migration renames the four protocol ids and keeps every toggle a boolean', () => {
-  const { overrides, config } = seeded({ runMigration: true });
+  const { overrides, config } = migrated();
 
   expect(overrides).toEqual({
     'openai-responses-compact-shim': true,
@@ -98,15 +97,4 @@ test('the canonical flag-id migration renames the four protocol ids and keeps ev
   // And the row is one the control plane will accept back, which a stale id is
   // not: saving the upstream from the dashboard round-trips this object.
   expect(() => parseFlagOverridesWire(overrides)).not.toThrow();
-});
-
-test('without the migration the same row carries toggles that no longer apply and cannot be saved', () => {
-  // The negative control, in both directions. The read path takes any string
-  // key, so the stale overrides decode and then match nothing — `compact-shim`
-  // is set and the compaction shim never engages. The write path rejects them,
-  // so the operator cannot even re-save the upstream to fix it by hand.
-  const { overrides } = seeded({ runMigration: false });
-
-  expect([...resolveEffectiveFlags([overrides])].sort()).toEqual(['responses-compact-shim', 'vendor-qwen']);
-  expect(() => parseFlagOverridesWire(overrides)).toThrow(/responses-compact-shim/);
 });

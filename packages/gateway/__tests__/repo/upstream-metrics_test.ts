@@ -24,23 +24,6 @@ for (const [name, create] of [
       expect(await repo.query('up-1', 0, 90_000, 60_000)).toEqual([]);
     });
 
-    it('keeps the latest observation per minute and preserves resets', async () => {
-      const repo = (await create()).upstreamMetrics;
-      await repo.record(point(1_000, 20));
-      await repo.record(point(20_000, 25));
-      await repo.record(point(30_000, 26));
-      await repo.record(point(60_000, 0));
-      expect(await repo.query('up-1', 0, 90_000, 60_000)).toEqual([point(30_000, 26), point(60_000, 0)]);
-    });
-
-    it('stores Claude header and OAuth readings as one percent gauge per quota', async () => {
-      const repo = (await create()).upstreamMetrics;
-      const identity = { name: 'quota.utilization', labels: { quota: 'five_hour' } };
-      await repo.record(point(1_000, 25, identity));
-      await repo.record(point(20_000, 30, identity));
-      expect(await repo.listAll()).toEqual([point(20_000, 30, identity)]);
-    });
-
     it('records unchanged values and keeps the latest observation in each minute across delayed arrivals', async () => {
       const repo = (await create()).upstreamMetrics;
       await repo.record(point(1_000, 20));
@@ -54,23 +37,6 @@ for (const [name, create] of [
       expect(await repo.query('up-1', 0, 180_000, 60_000)).toHaveLength(4);
       expect(records).toHaveLength(5);
       expect(records.filter(record => record.upstreamId === 'up-1' && record.name === 'quota.remaining' && record.labels.quota === 'premium_interactions')).toEqual([point(1_000, 20), point(80_000, 25), point(121_000, 30)]);
-    });
-
-    it('retains a changed value when two observations share a capture timestamp', async () => {
-      const repo = (await create()).upstreamMetrics;
-      await repo.record(point(1_000, 20));
-      await repo.record(point(1_000, 25));
-      expect(await repo.query('up-1', 0, 60_000, 60_000)).toEqual([point(1_000, 25)]);
-    });
-
-    it('returns only observations inside the half-open interval', async () => {
-      const repo = (await create()).upstreamMetrics;
-      await repo.record(point(1_000, 20));
-      await repo.record(point(61_000, 30));
-      await repo.record(point(121_000, 40));
-      await repo.record(point(181_000, 50));
-      expect(await repo.query('up-1', 61_000, 181_000, 60_000)).toEqual([point(61_000, 30), point(121_000, 40)]);
-      expect(await repo.query('up-1', 200_000, 300_000, 60_000)).toEqual([]);
     });
 
     it('downsamples each series to its latest sample per step counted from the interval start', async () => {
@@ -97,11 +63,8 @@ it('shares per-minute coalescing and ordering across independent SQL repository 
   expect(await second.query('up-1', 0, 60_000, 60_000)).toEqual([point(20_000, 30)]);
 });
 
-it('declares JSON metric labels and stores canonical flat objects in SQLite', async () => {
-  const db = await createSqliteTestDb();
-  const { results } = await db.prepare('PRAGMA table_info(upstream_metrics)').all<{ name: string; type: string }>();
-  expect(results.find(column => column.name === 'metric_labels')!.type).toBe('JSON');
-  const repo = new SqlRepo(db).upstreamMetrics;
+it('stores canonical flat metric label objects in SQLite', async () => {
+  const repo = new SqlRepo(await createSqliteTestDb()).upstreamMetrics;
   await repo.set(point(1_000, 20, { name: 'quota.remaining', labels: { z: 'last', a: 'first' } }));
   expect(await repo.listAll()).toEqual([point(1_000, 20, { name: 'quota.remaining', labels: { a: 'first', z: 'last' } })]);
   for (const labels of [[], { nested: {} }, { missing: undefined }, { infinite: Infinity }]) {

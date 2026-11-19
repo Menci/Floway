@@ -25,7 +25,7 @@ export const refineKeySource = (values: KeySourceValues, ctx: z.RefinementCtx) =
   if (values.keySource === 'custom' && !values.customKey.trim()) {
     ctx.addIssue({
       code: 'custom',
-      message: 'dashboard.apiKeys.validation.customKeyRequired',
+      message: 'apiKeys.validation.customKeyRequired',
       path: ['customKey'],
     });
   }

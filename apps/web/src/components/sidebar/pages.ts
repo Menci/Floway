@@ -43,40 +43,40 @@ export interface NavGroup {
 export const navGroups: NavGroup[] = [
   {
     items: [
-      { to: '/dashboard/playground', labelKey: 'dashboard.nav.playground', icon: Chat20Color },
+      { to: '/dashboard/playground', labelKey: 'playground.title', icon: Chat20Color },
     ],
   },
   {
-    labelKey: 'dashboard.groups.providers',
+    labelKey: 'app.navigation.groups.providers',
     items: [
-      { to: '/dashboard/providers/upstreams', labelKey: 'dashboard.nav.upstreams', icon: Cloud20Color, upstreams: true },
-      { to: '/dashboard/providers/search', labelKey: 'dashboard.nav.search', icon: SearchSparkle20Color, adminOnly: true },
-      { to: '/dashboard/providers/proxy', labelKey: 'dashboard.nav.proxy', icon: ShareAndroid20Color, adminOnly: true },
-      { to: '/dashboard/providers/model-aliases', labelKey: 'dashboard.nav.modelAliases', icon: TextEditStyle20Color, adminOnly: true },
+      { to: '/dashboard/providers/upstreams', labelKey: 'upstreams.title', icon: Cloud20Color, upstreams: true },
+      { to: '/dashboard/providers/search', labelKey: 'search.title', icon: SearchSparkle20Color, adminOnly: true },
+      { to: '/dashboard/providers/proxy', labelKey: 'proxies.title', icon: ShareAndroid20Color, adminOnly: true },
+      { to: '/dashboard/providers/model-aliases', labelKey: 'models.aliases.title', icon: TextEditStyle20Color, adminOnly: true },
     ],
   },
   {
-    labelKey: 'dashboard.groups.services',
+    labelKey: 'app.navigation.groups.services',
     items: [
-      { to: '/dashboard/services/api-keys', labelKey: 'dashboard.nav.apiKeys', icon: PersonKey20Color },
-      { to: '/dashboard/services/api-docs', labelKey: 'dashboard.nav.apiDocs', icon: DocumentText20Color },
+      { to: '/dashboard/services/api-keys', labelKey: 'apiKeys.title', icon: PersonKey20Color },
+      { to: '/dashboard/services/api-docs', labelKey: 'apiDocs.title', icon: DocumentText20Color },
     ],
   },
   {
-    labelKey: 'dashboard.groups.monitor',
+    labelKey: 'app.navigation.groups.monitor',
     items: [
-      { to: '/dashboard/monitor/requests', labelKey: 'dashboard.nav.requests', icon: Clipboard20Color },
-      { to: '/dashboard/monitor/usage', labelKey: 'dashboard.nav.usage', icon: DataPie20Color },
-      { to: '/dashboard/monitor/performance', labelKey: 'dashboard.nav.performance', icon: Gauge20Color },
+      { to: '/dashboard/monitor/requests', labelKey: 'requests.title', icon: Clipboard20Color },
+      { to: '/dashboard/monitor/usage', labelKey: 'monitoring.usage.title', icon: DataPie20Color },
+      { to: '/dashboard/monitor/performance', labelKey: 'monitoring.performance.title', icon: Gauge20Color },
     ],
   },
   {
-    labelKey: 'dashboard.groups.admin',
+    labelKey: 'app.navigation.groups.admin',
     items: [
-      { to: '/dashboard/admin/users', labelKey: 'dashboard.nav.users', icon: People20Color, adminOnly: true },
-      { to: '/dashboard/admin/permissions', labelKey: 'dashboard.nav.permissions', icon: PersonKey20Color, permissions: true },
-      { to: '/dashboard/admin/backup-restore', labelKey: 'dashboard.nav.backupRestore', icon: Database20Color, adminOnly: true },
-      { to: '/dashboard/admin/site-settings', labelKey: 'dashboard.nav.siteSettings', icon: Settings20Color, adminOnly: true },
+      { to: '/dashboard/admin/users', labelKey: 'directory.title', icon: People20Color, adminOnly: true },
+      { to: '/dashboard/admin/permissions', labelKey: 'permissions.title', icon: PersonKey20Color, permissions: true },
+      { to: '/dashboard/admin/backup-restore', labelKey: 'backupRestore.title', icon: Database20Color, adminOnly: true },
+      { to: '/dashboard/admin/site-settings', labelKey: 'settings.site.title', icon: Settings20Color, adminOnly: true },
     ],
   },
 ];
@@ -87,7 +87,7 @@ export const navGroups: NavGroup[] = [
 // under its own label.
 export const accountPage: DashboardPage = {
   to: '/dashboard/settings',
-  labelKey: 'dashboard.nav.settings',
+  labelKey: 'settings.account.title',
   icon: Person20Color,
 };
 

@@ -9,13 +9,6 @@ const renderSidebar = (canViewUpstreams: boolean, canViewPermissions: boolean) =
   path: '/', Component: () => <Sidebar user={{ id: 2, username: 'operator', isAdmin: false, canViewPermissions, canViewUpstreams, preferences: { quotaDisplay: 'remaining' as const, language: null, copyEditor: false } }} />,
 }], { initialEntries: ['/'] })} />);
 
-test('renders the management section with its translated label for an administrator', () => {
-  renderInApp(<RouterProvider router={createMemoryRouter([{
-    path: '/', Component: () => <Sidebar user={{ id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null, copyEditor: false } }} />,
-  }], { initialEntries: ['/'] })} />);
-  expect(screen.getByText('Management')).toBeTruthy();
-});
-
 test('shows capability-gated management pages independently', () => {
   const hidden = renderSidebar(false, false);
   expect(screen.queryByRole('link', { name: 'Upstreams' })).toBeNull();

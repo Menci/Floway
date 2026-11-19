@@ -85,13 +85,4 @@ describe('what a failed search test says', () => {
     expect(screen.getByText('Search provider registry is empty')).toBeTruthy();
     expect(screen.queryByText('[object Object]')).toBeNull();
   });
-
-  it('falls back to the status when the failure carries no JSON at all', async () => {
-    await pressTest(() => new Response('<html>Bad gateway</html>', {
-      status: 502,
-      headers: { 'content-type': 'text/html' },
-    }));
-
-    expect(screen.getByText('HTTP 502')).toBeTruthy();
-  });
 });

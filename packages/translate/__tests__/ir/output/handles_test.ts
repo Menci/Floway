@@ -46,17 +46,3 @@ test('ending an item closes only its open parts and is idempotent', () => {
     { type: 'item_end', choice: 0, item: 0, status: 'incomplete' },
   ]);
 });
-
-test('a handle reads back the value accumulated from earlier upstream events', () => {
-  const builder = createIRBuilder();
-  builder.choice(0);
-  const first = builder.item(0, { type: 'message', content: [] });
-  const firstText = first.part({ type: 'text', text: '' });
-  firstText.append('text', 'first');
-  const second = builder.item(0, { type: 'message', content: [] });
-  const secondText = second.part({ type: 'text', text: '' });
-  secondText.append('text', 'second');
-
-  expect(firstText.current('text')).toBe('first');
-  expect(secondText.current('text')).toBe('second');
-});

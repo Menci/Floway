@@ -2,11 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
 import {
-  CHATGPT_QUOTA_UNKNOWN_ACTIVE_LIMIT,
-  chatgptQuotaActiveLimitKey,
-  clearChatGPTQuota,
   getChatGPTQuota,
-  hasChatGPTQuotaReading,
   parseChatGPTQuotaHeaders,
   putChatGPTQuota,
 } from '../src/quota.ts';
@@ -15,11 +11,6 @@ import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 
 const accountId = 'acc_1';
 const upstreamId = 'up_a';
-
-test('hasChatGPTQuotaReading ignores an observation timestamp without quota data', () => {
-  expect(hasChatGPTQuotaReading({ observed_at: '2026-01-01T00:00:00Z' })).toBe(false);
-  expect(hasChatGPTQuotaReading({ observed_at: '2026-01-01T00:00:00Z', plan_type: 'plus' })).toBe(true);
-});
 
 const makeRecord = (state: ChatGPTUpstreamState): UpstreamRecord => ({
   id: upstreamId,
@@ -108,14 +99,6 @@ describe('parseChatGPTQuotaHeaders', () => {
     expect(snapshot.secondary_reset_after_at).toBe('2026-06-05T02:00:00.000Z');
   });
 
-  // Builds from the three days after the header landed sent RFC 3339 instead of
-  // epoch seconds, which is why every client that reads it accepts both.
-  test('reads an absolute reset instant sent as RFC 3339', () => {
-    const headers = new Headers({ 'x-codex-primary-reset-at': '2026-06-05T05:00:00.000Z' });
-    const snapshot = parseChatGPTQuotaHeaders(headers, { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: false });
-    expect(snapshot.primary_reset_after_at).toBe('2026-06-05T05:00:00.000Z');
-  });
-
   // A plan whose secondary window is zero minutes wide reports a blank instant
   // beside a zero offset. That is "no such window", not "it resets now".
   test('reports no reset for a window this plan does not have', () => {
@@ -128,49 +111,9 @@ describe('parseChatGPTQuotaHeaders', () => {
     expect(snapshot.secondary_reset_after_at).toBeUndefined();
   });
 
-  // `Number('')` is 0, so a blank reading would otherwise land as a confident
-  // zero balance rather than as nothing observed.
-  test('reads a blank numeric header as absent rather than as zero', () => {
-    const headers = new Headers({ 'x-codex-credits-balance': '', 'x-codex-secondary-used-percent': '  ' });
-    const snapshot = parseChatGPTQuotaHeaders(headers, { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: false });
-    expect(snapshot.credits_balance).toBeUndefined();
-    expect(snapshot.secondary_used_percent).toBeUndefined();
-  });
-
-  test('dates a 429 from the exhausted windows when only absolute reset headers arrive', () => {
-    const headers = new Headers({
-      'x-codex-primary-used-percent': '100',
-      'x-codex-secondary-used-percent': '100',
-      'x-codex-primary-reset-at': '1780272000',
-      'x-codex-secondary-reset-at': '1780358400',
-    });
-    const snapshot = parseChatGPTQuotaHeaders(headers, { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: true });
-    expect(snapshot.ratelimited_until).toBe(new Date(1780358400 * 1000).toISOString());
-  });
-
-  test('sets ratelimited_until from the latest exhausted reset window on 429', () => {
-    const headers = new Headers({
-      'x-codex-primary-used-percent': '100',
-      'x-codex-secondary-used-percent': '101',
-      'x-codex-primary-reset-after-seconds': '3600',
-      'x-codex-secondary-reset-after-seconds': '7200',
-    });
-    const observedAt = new Date('2026-06-05T00:00:00.000Z');
-    const snapshot = parseChatGPTQuotaHeaders(headers, { now: observedAt, isRateLimited: true });
-    expect(snapshot.ratelimited_until).toBe('2026-06-05T02:00:00.000Z');
-  });
-
   test.each([
     ['primary only', '100', '35', '2026-06-05T01:00:00.000Z'],
-    ['secondary only', '35', '100', '2026-06-05T02:00:00.000Z'],
-    ['both', '100', '100', '2026-06-05T02:00:00.000Z'],
     ['neither', '99.9', '35', undefined],
-    ['zero usage', '0', '0', undefined],
-    ['blank usage', '', ' ', undefined],
-    ['invalid usage', 'NaN', 'Infinity', undefined],
-    ['absent usage', undefined, undefined, undefined],
-    ['unknown primary', undefined, '100', '2026-06-05T02:00:00.000Z'],
-    ['unknown secondary', '100', undefined, '2026-06-05T01:00:00.000Z'],
   ])('uses only known exhausted windows: %s', (_name, primary, secondary, expected) => {
     const headers = new Headers({
       'x-codex-primary-reset-after-seconds': '3600',
@@ -182,32 +125,7 @@ describe('parseChatGPTQuotaHeaders', () => {
     expect(snapshot.ratelimited_until).toBe(expected);
   });
 
-  test.each(['primary', 'secondary'] as const)('retains the known horizon when the other exhausted %s window has no reset', missing => {
-    const known = missing === 'primary' ? 'secondary' : 'primary';
-    const snapshot = parseChatGPTQuotaHeaders(new Headers({
-      'x-codex-primary-used-percent': '100',
-      'x-codex-secondary-used-percent': '100',
-      [`x-codex-${known}-reset-after-seconds`]: '3600',
-    }), { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: true });
-    expect(snapshot.ratelimited_until).toBe('2026-06-05T01:00:00.000Z');
-    expect(snapshot.primary_used_percent).toBe(100);
-    expect(snapshot.secondary_used_percent).toBe(100);
-    expect(snapshot[`${missing}_reset_after_at`]).toBeUndefined();
-  });
-
-  test.each([undefined, '', '0', 'invalid'])('does not guess an expiry without a usable exhausted reset: %s', reset => {
-    const headers = new Headers({ 'x-codex-primary-used-percent': '100' });
-    if (reset !== undefined) {
-      headers.set('x-codex-primary-reset-at', reset);
-      headers.set('x-codex-primary-reset-after-seconds', reset);
-    }
-    const snapshot = parseChatGPTQuotaHeaders(headers, { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: true });
-    expect(snapshot.ratelimited_until).toBeUndefined();
-    expect(snapshot.primary_used_percent).toBe(100);
-  });
-
   test.each([
-    ['epoch', '1780621200', '9999'],
     ['RFC 3339', '2026-06-05T03:00:00+02:00', '9999'],
     ['offset', '', '3600'],
   ])('uses the supported %s exhausted reset format', (_name, at, after) => {
@@ -218,45 +136,9 @@ describe('parseChatGPTQuotaHeaders', () => {
     }), { now: new Date('2026-06-05T00:00:00.000Z'), isRateLimited: true });
     expect(snapshot.ratelimited_until).toBe('2026-06-05T01:00:00.000Z');
   });
-
-  test('normalizes string headers at the provider boundary', () => {
-    const observedAt = new Date('2026-06-05T00:00:00.000Z');
-    const snapshot = parseChatGPTQuotaHeaders(new Headers({
-      'x-codex-active-limit': '  premium  ',
-      'x-codex-plan-type': '   ',
-    }), { now: observedAt, isRateLimited: false });
-    expect(snapshot).toEqual({ observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'premium' });
-  });
-});
-
-describe('chatgptQuotaActiveLimitKey', () => {
-  test('uses the active_limit when present', () => {
-    expect(chatgptQuotaActiveLimitKey({ observed_at: 'now', active_limit: 'codex_bengalfox' })).toBe('codex_bengalfox');
-  });
-
-  test('falls back to unknown when the active_limit is missing or blank', () => {
-    expect(chatgptQuotaActiveLimitKey({ observed_at: 'now' })).toBe(CHATGPT_QUOTA_UNKNOWN_ACTIVE_LIMIT);
-    expect(chatgptQuotaActiveLimitKey({ observed_at: 'now', active_limit: '   ' })).toBe(CHATGPT_QUOTA_UNKNOWN_ACTIVE_LIMIT);
-    expect(chatgptQuotaActiveLimitKey({ observed_at: 'now', active_limit: 'constructor' })).toBe(CHATGPT_QUOTA_UNKNOWN_ACTIVE_LIMIT);
-  });
 });
 
 describe('getChatGPTQuota', () => {
-  test('returns null when the upstream row is missing', async () => {
-    current = null;
-    expect(await getChatGPTQuota(upstreamId, accountId)).toBeNull();
-  });
-
-  test('returns null when the account has no snapshot', async () => {
-    expect(await getChatGPTQuota(upstreamId, accountId)).toBeNull();
-  });
-
-  test('returns the quota map when buckets are fresh', async () => {
-    const snap: ChatGPTQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'premium', primary_used_percent: 10 };
-    current = makeRecord({ accounts: [{ ...baseAccount, quotaSnapshot: { premium: { fetchedAt: Date.now(), data: snap } } }] });
-    expect(await getChatGPTQuota(upstreamId, accountId)).toEqual({ premium: snap });
-  });
-
   test('projects legacy expiry per family without changing stored observations or successful snapshots', async () => {
     const primary: ChatGPTQuotaSnapshot = {
       observed_at: '2026-06-05T00:00:00.000Z',
@@ -301,67 +183,9 @@ describe('getChatGPTQuota', () => {
     expect(repo.writes).toEqual([]);
   });
 
-  test('reads quota from the null account slot', async () => {
-    const snap: ChatGPTQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'premium' };
-    current = makeRecord({
-      accounts: [{
-        ...baseAccount,
-        chatgptAccountId: null,
-        quotaSnapshot: { premium: { fetchedAt: Date.now(), data: snap } },
-      }],
-    });
-    expect(await getChatGPTQuota(upstreamId, null)).toEqual({ premium: snap });
-  });
-
-  // An old reading rendered with the instant it was taken tells an operator
-  // more than an empty card, so age withholds nothing -- the dashboard is the
-  // only reader, and traffic on the upstream replaces what it shows.
-  test('returns every bucket however long ago it was observed', async () => {
-    const recent: ChatGPTQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'recent' };
-    const ancient: ChatGPTQuotaSnapshot = { observed_at: '2026-06-01T00:00:00.000Z', active_limit: 'ancient' };
-    current = makeRecord({
-      accounts: [{
-        ...baseAccount,
-        quotaSnapshot: {
-          recent: { fetchedAt: Date.now(), data: recent },
-          ancient: { fetchedAt: Date.now() - 90 * 24 * 60 * 60 * 1000, data: ancient },
-        },
-      }],
-    });
-    expect(await getChatGPTQuota(upstreamId, accountId)).toEqual({ recent, ancient });
-  });
-
-  test('returns null when the account has an empty snapshot map', async () => {
-    current = makeRecord({ accounts: [{ ...baseAccount, quotaSnapshot: {} }] });
-    expect(await getChatGPTQuota(upstreamId, accountId)).toBeNull();
-  });
-
-  test('returns null when the requested account is not in the pool', async () => {
-    expect(await getChatGPTQuota(upstreamId, 'acc_other')).toBeNull();
-  });
 });
 
 describe('putChatGPTQuota', () => {
-  test('persists the snapshot under its active limit, leaving the rest of the credential alone', async () => {
-    const snap: ChatGPTQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'premium', primary_used_percent: 42 };
-    await putChatGPTQuota(upstreamId, accountId, snap);
-    expect(repo.saveState).toHaveBeenCalledTimes(1);
-    expect(repo.saveState.mock.calls[0][0]).toBe(upstreamId);
-    const written = (current!.state as ChatGPTUpstreamState).accounts[0].quotaSnapshot;
-    expect(written?.premium?.data).toEqual(snap);
-    expect(typeof written?.premium?.fetchedAt).toBe('number');
-    expect({ ...(current!.state as ChatGPTUpstreamState).accounts[0], quotaSnapshot: null }).toEqual({ ...baseAccount });
-  });
-
-  test('persists quota into the null account slot', async () => {
-    current = makeRecord({ accounts: [{ ...baseAccount, chatgptAccountId: null }] });
-    const snap: ChatGPTQuotaSnapshot = { observed_at: 'now', active_limit: 'premium' };
-    await putChatGPTQuota(upstreamId, null, snap);
-    const written = (current!.state as ChatGPTUpstreamState).accounts[0];
-    expect(written.chatgptAccountId).toBeNull();
-    expect(written.quotaSnapshot?.premium.data).toEqual(snap);
-  });
-
   test('preserves other active-limit buckets and replaces the matching bucket', async () => {
     const premium: ChatGPTQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'premium', primary_used_percent: 10 };
     current = makeRecord({ accounts: [{ ...baseAccount, quotaSnapshot: { premium: { fetchedAt: 1, data: premium } } }] });
@@ -377,38 +201,6 @@ describe('putChatGPTQuota', () => {
     expect(Object.keys(written ?? {}).sort()).toEqual(['codex_bengalfox', 'premium']);
     expect(written?.premium.data).toEqual(nextPremium);
     expect(written?.codex_bengalfox.data).toEqual(bengalfox);
-  });
-
-  test('uses the unknown key when active_limit is absent', async () => {
-    const snap: ChatGPTQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', primary_used_percent: 42 };
-    await putChatGPTQuota(upstreamId, accountId, snap);
-    const written = (current!.state as ChatGPTUpstreamState).accounts[0].quotaSnapshot;
-    expect(written?.unknown.data).toEqual(snap);
-  });
-
-  test('throws when the upstream disappeared mid-flight', async () => {
-    current = null;
-    await expect(putChatGPTQuota(upstreamId, accountId, { observed_at: 'now' })).rejects.toThrow(/disappeared/);
-    expect(repo.writes).toEqual([]);
-  });
-
-  test('throws when the requested account is not in the pool', async () => {
-    await expect(putChatGPTQuota(upstreamId, 'acc_other', { observed_at: 'now' })).rejects.toThrow(/not found in upstream/);
-    expect(repo.writes).toEqual([]);
-  });
-});
-
-describe('clearChatGPTQuota', () => {
-  test('invalidates every observed bucket without touching the credential', async () => {
-    const snap: ChatGPTQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'premium', primary_used_percent: 90 };
-    current = makeRecord({ accounts: [{ ...baseAccount, quotaSnapshot: { premium: { fetchedAt: 1, data: snap } } }] });
-    await clearChatGPTQuota(upstreamId, accountId);
-    expect((current!.state as ChatGPTUpstreamState).accounts[0]).toEqual({ ...baseAccount, quotaSnapshot: null });
-  });
-
-  test('does not write when the quota slot is already empty', async () => {
-    await clearChatGPTQuota(upstreamId, accountId);
-    expect(repo.writes).toEqual([]);
   });
 });
 

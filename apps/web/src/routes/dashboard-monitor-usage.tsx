@@ -153,9 +153,9 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
 
   return <section className="dashboard-page">
     <DashboardPageHeader
-      actions={<ResourceListActions appearance="subtle" onRefresh={() => void refresh()} refreshLabel={t('dashboard.usage.actions.refresh')} refreshing={refreshing} />}
-      description={t('dashboard.pages.usage')}
-      title={t('dashboard.nav.usage')}
+      actions={<ResourceListActions appearance="subtle" onRefresh={() => void refresh()} refreshLabel={t('monitoring.usage.actions.refresh')} refreshing={refreshing} />}
+      description={t('monitoring.usage.description')}
+      title={t('monitoring.usage.title')}
     />
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
 
@@ -165,7 +165,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
         <div className="ml-auto flex-none">
           <TelemetryTimeRange
             addressOf={range => addressOf({ range })}
-            ariaLabel={t('dashboard.usage.range.label')}
+            ariaLabel={t('monitoring.usage.range.label')}
             loadedAt={loadedAt}
             onChange={changeRange}
             onEditingChange={setEditingRange}
@@ -180,7 +180,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
           filters={loadedQuery.filters}
           groupBy={loadedQuery.groupBy}
           onFilterChange={setFilter}
-          selectedLabel={count => t('dashboard.usage.filters.selected', { count })}
+          selectedLabel={count => t('monitoring.usage.filters.selected', { count })}
         />
       </div>}
 
@@ -189,13 +189,13 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     </Panel>
 
     {showSearch && <Panel className="min-w-0">
-      {searchChart === null ? <EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine> : (
+      {searchChart === null ? <EmptyStateLine>{t('common.errors.viewUnavailable')}</EmptyStateLine> : (
         <UsageChartSection
           chart={searchChart}
-          detailsLabel={t('dashboard.usage.charts.search')}
+          detailsLabel={t('monitoring.usage.charts.search')}
           hidden={hiddenSearch}
           onHiddenChange={setHiddenSearch}
-          title={t('dashboard.usage.charts.searchWithProvider', {
+          title={t('monitoring.usage.charts.searchWithProvider', {
             provider: searchChart.providers
               .map(id => SEARCH_PROVIDER_LABEL_KEYS[id] === undefined ? id : t(SEARCH_PROVIDER_LABEL_KEYS[id]))
               .join(', '),

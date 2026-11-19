@@ -52,31 +52,31 @@ export function KimiCodeUsageCard({ probeRecord, readOnly = false, record }: { p
       <Text block className="min-w-0 flex-1" weight="semibold" truncate wrap={false}>{kimiCodeAccountName(account)}</Text>
       {account.userLevelName && <StatusBadge tone="accent">{account.userLevelName}</StatusBadge>}
     </div>}
-    <SectionHeader level={3} title={t('dashboard.upstreamEditor.kimiCode.usage.title')} actions={!readOnly &&
+    <SectionHeader level={3} title={t('upstreams.editor.kimiCode.usage.title')} actions={!readOnly &&
       <ResourceListActions
         appearance="subtle"
         onRefresh={() => void load()}
-        refreshLabel={t(`dashboard.upstreamEditor.kimiCode.usage.${observation ? 'refresh' : 'load'}`)}
+        refreshLabel={t(`upstreams.editor.kimiCode.usage.${observation ? 'refresh' : 'load'}`)}
         refreshing={loading}
       />
     } />
     {windows.map(window => <QuotaProgressRow
       key={window.id}
-      label={t(`dashboard.upstreamEditor.kimiCode.usage.window.${window.id}`)}
+      label={t(`upstreams.editor.kimiCode.usage.window.${window.id}`)}
       percent={window.percent}
       quotaDisplay={preferences.quotaDisplay}
-      footer={<Text size={200} className="text-fui-fg3 tabular-nums">{t('dashboard.upstreamEditor.kimiCode.usage.resets', { time: dateTime(window.resetsAt, locale) })}</Text>}
+      footer={<Text size={200} className="text-fui-fg3 tabular-nums">{t('upstreams.editor.kimiCode.usage.resets', { time: dateTime(window.resetsAt, locale) })}</Text>}
     />)}
     {usage?.monthlyCodeUsedRatio != null && <Text size={200} className="text-fui-fg2">
-      {t('dashboard.upstreamEditor.kimiCode.usage.monthlyCodeShare', { percent: Math.round(usage.monthlyCodeUsedRatio * 1000) / 10 })}
+      {t('upstreams.editor.kimiCode.usage.monthlyCodeShare', { percent: Math.round(usage.monthlyCodeUsedRatio * 1000) / 10 })}
     </Text>}
-    {observation !== null && <Text size={200} align="end" className="text-fui-fg3">{t('dashboard.upstreamEditor.kimiCode.usage.updated', { time: dateTime(observation.fetchedAt, locale) })}</Text>}
-    {observation === null && !loading && <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.kimiCode.usage.empty')}</Text>}
+    {observation !== null && <Text size={200} align="end" className="text-fui-fg3">{t('upstreams.editor.kimiCode.usage.updated', { time: dateTime(observation.fetchedAt, locale) })}</Text>}
+    {observation === null && !loading && <Text size={200} className="text-fui-fg3">{t('upstreams.editor.kimiCode.usage.empty')}</Text>}
     {backgroundError !== null && <OutcomeMessageBar intent="warning">
-      {t('dashboard.upstreamEditor.kimiCode.usage.backgroundFailed', { message: backgroundError })}
+      {t('upstreams.editor.kimiCode.usage.backgroundFailed', { message: backgroundError })}
     </OutcomeMessageBar>}
     {refreshed?.accountError && <OutcomeMessageBar intent="warning">
-      {t('dashboard.upstreamEditor.kimiCode.usage.accountFailed', { message: refreshed.accountError })}
+      {t('upstreams.editor.kimiCode.usage.accountFailed', { message: refreshed.accountError })}
     </OutcomeMessageBar>}
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
   </section>;

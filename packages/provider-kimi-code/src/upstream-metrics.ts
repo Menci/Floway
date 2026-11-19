@@ -8,9 +8,9 @@ export const kimiCodeMetrics = (data: unknown): UpstreamMetrics => readKimiCodeU
 
 // https://github.com/MoonshotAI/kimi-code/blob/fec742878d73678082b304c887e4fb1564088c54/apps/kimi-code/src/utils/usage/usage-format.ts#L92-L114
 const WINDOW_DISPLAYS: Record<KimiCodeQuotaWindow['id'], { used: NonNullable<UpstreamMetricDisplay['labelKey']>; remaining: NonNullable<UpstreamMetricDisplay['labelKey']> }> = {
-  five_hour: { used: 'dashboard.upstreamMetrics.metrics.usage', remaining: 'dashboard.upstreamMetrics.metrics.remaining' },
-  monthly: { used: 'dashboard.upstreamMetrics.metrics.monthlyUsage', remaining: 'dashboard.upstreamMetrics.metrics.monthlyRemaining' },
-  weekly: { used: 'dashboard.upstreamMetrics.metrics.usage', remaining: 'dashboard.upstreamMetrics.metrics.remaining' },
+  five_hour: { used: 'monitoring.upstreams.series.usage', remaining: 'monitoring.upstreams.series.remaining' },
+  monthly: { used: 'monitoring.upstreams.series.monthlyUsage', remaining: 'monitoring.upstreams.series.monthlyRemaining' },
+  weekly: { used: 'monitoring.upstreams.series.usage', remaining: 'monitoring.upstreams.series.remaining' },
 };
 
 export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIdentity, options: UpstreamMetricDisplayOptions): UpstreamMetricDisplay | null => {

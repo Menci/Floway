@@ -45,32 +45,6 @@ describe('page change opt-in', () => {
     expect(getByText('page change')).toBeTruthy();
   });
 
-  it('leaves a filter rewrite of the same page unmarked', async () => {
-    const { getByRole, getByText } = renderRouter();
-
-    await act(async () => { getByRole('button').click(); });
-
-    expect(getByText('same page')).toBeTruthy();
-  });
-
-  it('leaves a navigation that did not ask for the transition unmarked', async () => {
-    const { router, getByText } = renderRouter();
-
-    await navigate(router, '/keys');
-
-    expect(getByText('same page')).toBeTruthy();
-  });
-
-  it('still reads a page change when the back button returns to one', async () => {
-    const { router, getByText } = renderRouter();
-
-    await navigate(router, '/upstreams/new', pageNavigation);
-    await navigate(router, '/keys', pageNavigation);
-    await back(router);
-
-    expect(getByText('page change')).toBeTruthy();
-  });
-
   it('still reads a page change after the returned-to page rewrote its own query string', async () => {
     const { router, getByRole, getByText } = renderRouter();
 

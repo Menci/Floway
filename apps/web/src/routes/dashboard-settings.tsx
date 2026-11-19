@@ -44,16 +44,16 @@ const passwordSchema = z
   .object({
     currentPassword: z
       .string()
-      .min(1, 'dashboard.settings.validation.currentPasswordRequired')
-      .max(1024, 'validation.passwordMax'),
+      .min(1, 'settings.account.validation.currentPasswordRequired')
+      .max(1024, 'common.validation.passwordMax'),
     newPassword: z
       .string()
-      .min(1, 'dashboard.settings.validation.newPasswordRequired')
-      .max(1024, 'validation.passwordMax'),
+      .min(1, 'settings.account.validation.newPasswordRequired')
+      .max(1024, 'common.validation.passwordMax'),
     confirmPassword: z.string(),
   })
   .refine(values => values.newPassword === values.confirmPassword, {
-    message: 'dashboard.settings.validation.passwordMismatch',
+    message: 'settings.account.validation.passwordMismatch',
     path: ['confirmPassword'],
   });
 
@@ -88,16 +88,16 @@ export default function DashboardSettings() {
 
   return (
     <section className="dashboard-page max-w-[960px]">
-      <DashboardPageHeader description={t('dashboard.settings.description')} title={t('dashboard.nav.settings')} />
+      <DashboardPageHeader description={t('settings.account.description')} title={t('settings.account.title')} />
 
       <div className={SETTINGS_PAGE_CLASS}>
-        <div className={SETTINGS_SECTION_HEADER_CLASS}><SectionHeader level={4} title={t('dashboard.settings.appearance')} /></div>
+        <div className={SETTINGS_SECTION_HEADER_CLASS}><SectionHeader level={4} title={t('settings.account.appearance')} /></div>
         <PreferencesSection />
 
-        <div className={SETTINGS_SECTION_HEADER_CLASS}><SectionHeader level={4} title={t('dashboard.settings.security')} /></div>
+        <div className={SETTINGS_SECTION_HEADER_CLASS}><SectionHeader level={4} title={t('settings.account.security')} /></div>
         <SettingsCard
-          description={t('dashboard.settings.password.description')}
-          header={t('dashboard.settings.password.title')}
+          description={t('settings.account.password.description')}
+          header={t('settings.account.password.title')}
           icon={<LockClosed24Regular />}
           onClick={() => setPasswordOpen(true)}
         />
@@ -148,20 +148,20 @@ function PreferencesSection() {
     if (syncCopyEditorPreference(next.copyEditor)) return;
     if (next.language !== null) await setLanguage(next.language);
     else await setLanguage(browserLanguage());
-    toasts.succeed(t('dashboard.settings.preferences.saved'));
+    toasts.succeed(t('settings.account.preferences.saved'));
   };
 
   const quotaLabels: Record<QuotaDisplay, string> = {
-    remaining: t('dashboard.settings.preferences.quotaDisplay.remaining'),
-    used: t('dashboard.settings.preferences.quotaDisplay.used'),
+    remaining: t('settings.account.preferences.quotaDisplay.remaining'),
+    used: t('settings.account.preferences.quotaDisplay.used'),
   };
-  const languageLabel = draft.language === null ? t('dashboard.settings.preferences.language.browser') : languageNames[draft.language];
+  const languageLabel = draft.language === null ? t('settings.account.preferences.language.browser') : languageNames[draft.language];
 
   return <>
     <div className="grid gap-1">
       <SettingsCard
         action={<Dropdown
-          aria-label={t('dashboard.settings.preferences.quotaDisplay.title')}
+          aria-label={t('settings.account.preferences.quotaDisplay.title')}
           onOptionSelect={(_, data) => {
             // `Dropdown` still opens its list for an option it reports as
             // undefined, so the guard is what keeps an unknown selection from
@@ -174,8 +174,8 @@ function PreferencesSection() {
         >
           {QUOTA_DISPLAYS.map(value => <Option key={value} text={quotaLabels[value]} value={value}>{quotaLabels[value]}</Option>)}
         </Dropdown>}
-        description={t('dashboard.settings.preferences.quotaDisplay.description')}
-        header={t('dashboard.settings.preferences.quotaDisplay.title')}
+        description={t('settings.account.preferences.quotaDisplay.description')}
+        header={t('settings.account.preferences.quotaDisplay.title')}
         icon={<DataUsage24Regular />}
       />
 
@@ -192,22 +192,22 @@ function PreferencesSection() {
           selectedOptions={[draft.language ?? 'browser']}
           value={languageLabel}
         >
-          <Option text={t('dashboard.settings.preferences.language.browser')} value="browser">{t('dashboard.settings.preferences.language.browser')}</Option>
+          <Option text={t('settings.account.preferences.language.browser')} value="browser">{t('settings.account.preferences.language.browser')}</Option>
           {supportedLanguages.map(language => <Option key={language} text={languageNames[language]} value={language}>{languageNames[language]}</Option>)}
         </Dropdown>}
-        description={t('dashboard.settings.preferences.language.description')}
+        description={t('settings.account.preferences.language.description')}
         header={t('common.language')}
         icon={<LocalLanguageZiIcon />}
       />
 
       <SettingsCard
         action={<Switch
-          aria-label={t('dashboard.settings.preferences.copyEditor.title')}
+          aria-label={t('settings.account.preferences.copyEditor.title')}
           checked={draft.copyEditor}
           onChange={(_, data) => setDraft(current => ({ ...current, copyEditor: data.checked }))}
         />}
-        description={t('dashboard.settings.preferences.copyEditor.description', { key: getAltKeyLabel() })}
-        header={t('dashboard.settings.preferences.copyEditor.title')}
+        description={t('settings.account.preferences.copyEditor.description', { key: getAltKeyLabel() })}
+        header={t('settings.account.preferences.copyEditor.title')}
         icon={<Edit24Regular />}
       />
     </div>
@@ -216,7 +216,7 @@ function PreferencesSection() {
 
     <div className="flex justify-start mt-3">
       <Button appearance="primary" disabledFocusable={saving} onClick={() => void save()}>
-        {t('dashboard.settings.preferences.save')}
+        {t('settings.account.preferences.save')}
       </Button>
     </div>
   </>;
@@ -253,7 +253,7 @@ function PasswordDialog({ onOpenChange, open }: { onOpenChange: (open: boolean) 
   useEffect(() => {
     if (!fetcher.data?.ok) return;
     reset();
-    toasts.succeed(t('dashboard.settings.passwordUpdated'));
+    toasts.succeed(t('settings.account.passwordUpdated'));
     onOpenChange(false);
   }, [fetcher.data, onOpenChange, reset, t, toasts]);
 
@@ -267,20 +267,20 @@ function PasswordDialog({ onOpenChange, open }: { onOpenChange: (open: boolean) 
   return <DialogShell
     actions={<DialogActions>
       <Button disabled={saving} onClick={() => onOpenChange(false)}>{t('common.cancel')}</Button>
-      <Button appearance="primary" disabledFocusable={saving} type="submit">{t('dashboard.settings.password.submit')}</Button>
+      <Button appearance="primary" disabledFocusable={saving} type="submit">{t('settings.account.password.submit')}</Button>
     </DialogActions>}
     onOpenChange={(_, data) => { if (!data.open && !saving) onOpenChange(false); }}
     onSubmit={() => void handleSubmit(submit)()}
     open={open}
     surfaceClassName="!w-[min(430px,calc(100vw-48px))]"
-    title={<DialogTitle>{t('dashboard.settings.password.title')}</DialogTitle>}
+    title={<DialogTitle>{t('settings.account.password.title')}</DialogTitle>}
   >
     <Controller
       control={control}
       name="currentPassword"
       render={({ field }) => (
         <Field
-          label={t('dashboard.settings.currentPassword')}
+          label={t('settings.account.currentPassword')}
           validationMessage={errors.currentPassword?.message ? t(errors.currentPassword.message) : undefined}
           validationState={errors.currentPassword ? 'error' : undefined}
         >
@@ -294,7 +294,7 @@ function PasswordDialog({ onOpenChange, open }: { onOpenChange: (open: boolean) 
       name="newPassword"
       render={({ field }) => (
         <Field
-          label={t('dashboard.settings.newPassword')}
+          label={t('settings.account.newPassword')}
           validationMessage={errors.newPassword?.message ? t(errors.newPassword.message) : undefined}
           validationState={errors.newPassword ? 'error' : undefined}
         >
@@ -308,7 +308,7 @@ function PasswordDialog({ onOpenChange, open }: { onOpenChange: (open: boolean) 
       name="confirmPassword"
       render={({ field }) => (
         <Field
-          label={t('dashboard.settings.confirmPassword')}
+          label={t('settings.account.confirmPassword')}
           validationMessage={errors.confirmPassword?.message ? t(errors.confirmPassword.message) : undefined}
           validationState={errors.confirmPassword ? 'error' : undefined}
         >
@@ -317,7 +317,7 @@ function PasswordDialog({ onOpenChange, open }: { onOpenChange: (open: boolean) 
       )}
     />
 
-    <Text size={200} className="text-fui-fg2">{t('dashboard.settings.otherDevices')}</Text>
+    <Text size={200} className="text-fui-fg2">{t('settings.account.otherDevices')}</Text>
 
     {error && <OutcomeMessageBar onDismiss={() => setDismissed(fetcher.data ?? null)}>{error}</OutcomeMessageBar>}
   </DialogShell>;

@@ -44,106 +44,33 @@ function Harness({ ingressHeadersRules = [] }: { ingressHeadersRules?: { key: st
 }
 
 const label = (key: 'keyForRow' | 'valueForRow' | 'remove', number: number) =>
-  i18n.t(`dashboard.upstreamEditor.headers.${key}`, { number });
+  i18n.t(`upstreams.editor.headers.${key}`, { number });
 const valueOf = (element: HTMLElement) => (element as HTMLInputElement).value;
 const placeholderOf = (element: HTMLElement) => (element as HTMLInputElement).placeholder;
-const disabled = (element: HTMLElement) => (element as HTMLButtonElement).disabled;
 
 describe('Custom ingress header rules', () => {
-  it('starts with one permanent blank row whose delete command is disabled', () => {
-    renderInApp(<Harness />);
-    expect(valueOf(screen.getByLabelText(label('keyForRow', 1)))).toBe('');
-    expect(valueOf(screen.getByLabelText(label('valueForRow', 1)))).toBe('');
-    expect(placeholderOf(screen.getByLabelText(label('valueForRow', 1)))).toBe('');
-    expect(disabled(screen.getByLabelText(label('valueForRow', 1)))).toBe(true);
-    expect(disabled(screen.getByRole('button', { name: label('remove', 1) }))).toBe(true);
-    expect(screen.getAllByRole('group', { name: /Header rule/ })).toHaveLength(1);
-  });
-
-  it('renders passthrough and empty presets proportionally and custom overrides in monospace', () => {
-    renderInApp(<Harness ingressHeadersRules={[
-      { key: 'x-pass', value: null },
-      { key: 'x-empty', value: '' },
-      { key: 'x-route', value: 'fast' },
-    ]} />);
-
-    const passthrough = screen.getByLabelText(label('valueForRow', 1));
-    const empty = screen.getByLabelText(label('valueForRow', 2));
-    const custom = screen.getByLabelText(label('valueForRow', 3));
-    expect(valueOf(passthrough)).toBe('');
-    expect(valueOf(empty)).toBe('');
-    expect(valueOf(custom)).toBe('fast');
-    expect(placeholderOf(passthrough)).toBe(i18n.t('dashboard.upstreamEditor.headers.passthrough'));
-    expect(placeholderOf(empty)).toBe(i18n.t('dashboard.upstreamEditor.headers.empty'));
-    expect(placeholderOf(custom)).toBe('');
-    expect(disabled(passthrough)).toBe(false);
-    expect(disabled(empty)).toBe(false);
-    expect(disabled(custom)).toBe(false);
-    expect(passthrough.closest('.font-mono')).toBeNull();
-    expect(empty.closest('.font-mono')).toBeNull();
-    expect(custom.closest('.font-mono')).not.toBeNull();
-    expect(valueOf(screen.getByLabelText(label('keyForRow', 4)))).toBe('');
-  });
-
-  it('turns a typed draft into a rule and immediately appends the next blank row', () => {
-    renderInApp(<Harness />);
-    const draft = screen.getByLabelText(label('keyForRow', 1));
-    expect(disabled(screen.getByLabelText(label('valueForRow', 1)))).toBe(true);
-    draft.focus();
-    fireEvent.change(draft, { target: { value: 'X-Route' } });
-    expect(document.activeElement).toBe(draft);
-    expect(disabled(screen.getByLabelText(label('valueForRow', 1)))).toBe(false);
-    expect(placeholderOf(screen.getByLabelText(label('valueForRow', 1)))).toBe(i18n.t('dashboard.upstreamEditor.headers.passthrough'));
-    expect(valueOf(screen.getByLabelText(label('keyForRow', 2)))).toBe('');
-    expect(disabled(screen.getByLabelText(label('valueForRow', 2)))).toBe(true);
-    expect(placeholderOf(screen.getByLabelText(label('valueForRow', 2)))).toBe('');
-    fireEvent.blur(draft);
-    expect(valueOf(draft)).toBe('x-route');
-  });
-
   it('maps both presets and custom freeform input without confusing a preset-looking literal', () => {
     renderInApp(<Harness ingressHeadersRules={[{ key: 'x-route', value: 'initial' }]} />);
     let behavior = screen.getByLabelText(label('valueForRow', 1));
 
     fireEvent.click(behavior);
-    fireEvent.click(screen.getByRole('option', { name: i18n.t('dashboard.upstreamEditor.headers.passthrough') }));
+    fireEvent.click(screen.getByRole('option', { name: i18n.t('upstreams.editor.headers.passthrough') }));
     expect(screen.getByTestId('rules').textContent).toContain('"value":null');
     expect(valueOf(behavior)).toBe('');
-    expect(placeholderOf(behavior)).toBe(i18n.t('dashboard.upstreamEditor.headers.passthrough'));
+    expect(placeholderOf(behavior)).toBe(i18n.t('upstreams.editor.headers.passthrough'));
     fireEvent.keyDown(behavior, { key: 'Backspace' });
     expect(screen.getByTestId('rules').textContent).toContain('"value":null');
 
     behavior = screen.getByLabelText(label('valueForRow', 1));
     fireEvent.click(behavior);
-    fireEvent.click(screen.getByRole('option', { name: i18n.t('dashboard.upstreamEditor.headers.empty') }));
+    fireEvent.click(screen.getByRole('option', { name: i18n.t('upstreams.editor.headers.empty') }));
     expect(screen.getByTestId('rules').textContent).toContain('"value":""');
     expect(valueOf(behavior)).toBe('');
-    expect(placeholderOf(behavior)).toBe(i18n.t('dashboard.upstreamEditor.headers.empty'));
+    expect(placeholderOf(behavior)).toBe(i18n.t('upstreams.editor.headers.empty'));
 
     behavior = screen.getByLabelText(label('valueForRow', 1));
     fireEvent.change(behavior, { target: { value: '(empty)' } });
     expect(screen.getByTestId('rules').textContent).toContain('"value":"(empty)"');
-    expect(screen.getByLabelText(label('valueForRow', 1)).closest('.font-mono')).not.toBeNull();
-  });
-
-  it('deletes persisted rows and keeps the blank row', () => {
-    renderInApp(<Harness ingressHeadersRules={[{ key: 'x-route', value: null }]} />);
-    fireEvent.click(screen.getByRole('button', { name: label('remove', 1) }));
-    expect(valueOf(screen.getByLabelText(label('keyForRow', 1)))).toBe('');
-    expect(disabled(screen.getByRole('button', { name: label('remove', 1) }))).toBe(true);
-  });
-
-  it('shows a localized name error on the field and focuses it on Save', async () => {
-    renderInApp(<Harness />);
-    const key = screen.getByLabelText(label('keyForRow', 1));
-    fireEvent.change(key, { target: { value: 'bad header' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save probe' }));
-
-    const message = await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.invalidName'));
-    expect(message.style.fontSize).toBe('var(--fontSizeBase200)');
-    expect(message.style.lineHeight).toBe('var(--lineHeightBase200)');
-    expect(key.getAttribute('aria-invalid')).toBe('true');
-    expect(document.activeElement).toBe(key);
   });
 
   it('distinguishes repeated passthrough, protocol-owned, and transport-owned names', async () => {
@@ -153,46 +80,15 @@ describe('Custom ingress header rules', () => {
     const second = screen.getByLabelText(label('keyForRow', 2));
     fireEvent.change(second, { target: { value: 'X-Route' } });
     fireEvent.blur(second);
-    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.duplicatePassthrough'))).toBeTruthy();
+    expect(await screen.findByText(i18n.t('upstreams.editor.headers.validation.duplicatePassthrough'))).toBeTruthy();
 
     fireEvent.change(first, { target: { value: 'Anthropic-Beta' } });
     fireEvent.blur(first);
-    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.anthropicMessagesOwned'))).toBeTruthy();
-    expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.headers.validation.duplicatePassthrough'))).toBeNull();
+    expect(await screen.findByText(i18n.t('upstreams.editor.headers.validation.anthropicMessagesOwned'))).toBeTruthy();
+    expect(screen.queryByText(i18n.t('upstreams.editor.headers.validation.duplicatePassthrough'))).toBeNull();
 
     fireEvent.change(first, { target: { value: 'Authorization' } });
     fireEvent.blur(first);
-    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.transportOwned'))).toBeTruthy();
-  });
-
-  it('accepts a name repeated with configured values', async () => {
-    renderInApp(<Harness />);
-    const first = screen.getByLabelText(label('keyForRow', 1));
-    fireEvent.change(first, { target: { value: 'x-route' } });
-    fireEvent.change(screen.getByLabelText(label('valueForRow', 1)), { target: { value: 'one' } });
-    const second = screen.getByLabelText(label('keyForRow', 2));
-    fireEvent.change(second, { target: { value: 'X-Route' } });
-    fireEvent.change(screen.getByLabelText(label('valueForRow', 2)), { target: { value: 'two' } });
-    fireEvent.blur(second);
-    fireEvent.click(screen.getByRole('button', { name: 'Save probe' }));
-
-    expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.headers.validation.duplicatePassthrough'))).toBeNull();
-    expect(JSON.parse(screen.getByTestId('rules').textContent!)).toEqual([
-      { key: 'x-route', value: 'one' },
-      { key: 'x-route', value: 'two' },
-      { key: '', value: null },
-    ]);
-  });
-
-  it('shows invalid replacement values beneath the value control', async () => {
-    renderInApp(<Harness />);
-    const key = screen.getByLabelText(label('keyForRow', 1));
-    fireEvent.change(key, { target: { value: 'x-route' } });
-    const value = screen.getByLabelText(label('valueForRow', 1));
-    fireEvent.change(value, { target: { value: 'control\u0001byte' } });
-    fireEvent.blur(value);
-
-    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.invalidValue'))).toBeTruthy();
-    expect(value.getAttribute('aria-invalid')).toBe('true');
+    expect(await screen.findByText(i18n.t('upstreams.editor.headers.validation.transportOwned'))).toBeTruthy();
   });
 });

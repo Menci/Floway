@@ -48,9 +48,9 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
     : { validationMessage: t(issues[field]), validationState: 'error' as const };
 
   return (
-    <div className="grid gap-5" role="group" aria-label={t('dashboard.modelAliases.metadata.heading')}>
+    <div className="grid gap-5" role="group" aria-label={t('models.aliases.metadata.heading')}>
       {kind !== 'image' && <section className={SECTION_STACK_CLASS}>
-        <SectionHeader level={4} title={t('dashboard.modelAliases.metadata.limits')} />
+        <SectionHeader level={4} title={t('models.aliases.metadata.limits')} />
         <ModelLimitsFields
           columnGapClass="gap-3"
           errorFor={key => {
@@ -67,27 +67,27 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
       {kind === 'chat' && <>
         <ModelInputFields chat={value.chat} disabled={disabled} readOnly={readOnly} onChange={patchChat} />
         <section className={SECTION_STACK_CLASS}>
-          <SectionHeader level={4} title={t('dashboard.modelAliases.metadata.reasoning')} />
+          <SectionHeader level={4} title={t('models.aliases.metadata.reasoning')} />
           <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
-            <Switch checked={effort !== undefined} disabled={disabled || value.chat?.reasoning?.mandatory === true} readOnly={readOnly} label={t('dashboard.modelAliases.metadata.effortEnabled')} onChange={(_, data) => patchReasoning({ effort: data.checked ? { supported: ['low', 'medium', 'high'], default: 'medium' } : undefined })} />
-            <Switch checked={budget !== undefined} disabled={disabled || value.chat?.reasoning?.mandatory === true} readOnly={readOnly} label={t('dashboard.modelAliases.metadata.budgetEnabled')} onChange={(_, data) => patchReasoning({ budget_tokens: data.checked ? {} : undefined })} />
-            <Switch checked={value.chat?.reasoning?.adaptive === true} disabled={disabled || value.chat?.reasoning?.mandatory === true} readOnly={readOnly} label={t('dashboard.modelAliases.metadata.adaptive')} onChange={(_, data) => patchReasoning({ adaptive: data.checked ? true : undefined })} />
-            <Switch checked={value.chat?.reasoning?.mandatory === true} disabled={disabled || effort !== undefined || budget !== undefined || value.chat?.reasoning?.adaptive === true} readOnly={readOnly} label={t('dashboard.modelAliases.metadata.mandatory')} onChange={(_, data) => patchReasoning({ mandatory: data.checked ? true : undefined })} />
+            <Switch checked={effort !== undefined} disabled={disabled || value.chat?.reasoning?.mandatory === true} readOnly={readOnly} label={t('models.aliases.metadata.effortEnabled')} onChange={(_, data) => patchReasoning({ effort: data.checked ? { supported: ['low', 'medium', 'high'], default: 'medium' } : undefined })} />
+            <Switch checked={budget !== undefined} disabled={disabled || value.chat?.reasoning?.mandatory === true} readOnly={readOnly} label={t('models.aliases.metadata.budgetEnabled')} onChange={(_, data) => patchReasoning({ budget_tokens: data.checked ? {} : undefined })} />
+            <Switch checked={value.chat?.reasoning?.adaptive === true} disabled={disabled || value.chat?.reasoning?.mandatory === true} readOnly={readOnly} label={t('models.aliases.metadata.adaptive')} onChange={(_, data) => patchReasoning({ adaptive: data.checked ? true : undefined })} />
+            <Switch checked={value.chat?.reasoning?.mandatory === true} disabled={disabled || effort !== undefined || budget !== undefined || value.chat?.reasoning?.adaptive === true} readOnly={readOnly} label={t('models.aliases.metadata.mandatory')} onChange={(_, data) => patchReasoning({ mandatory: data.checked ? true : undefined })} />
           </div>
           {effort && <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
             <CommaSeparatedEffortsInput
               disabled={disabled}
-              label={t('dashboard.modelAliases.metadata.efforts')}
-              hint={t('dashboard.modelAliases.metadata.effortsHint')}
+              label={t('models.aliases.metadata.efforts')}
+              hint={t('models.aliases.metadata.effortsHint')}
               onChange={supported => patchReasoning({ effort: { supported, default: supported.includes(effort.default) ? effort.default : supported[0] ?? '' } })}
               readOnly={readOnly}
               value={effort.supported}
             />
-            <Field label={t('dashboard.modelAliases.metadata.defaultEffort')}><Dropdown disabled={disabled || effort.supported.length === 0} readOnly={readOnly} selectedOptions={[effort.default]} value={effort.default} onOptionSelect={(_, data) => data.optionValue !== undefined && patchReasoning({ effort: { supported: effort.supported, default: data.optionValue } })}>{effort.supported.map(item => <Option key={item} value={item}>{item}</Option>)}</Dropdown></Field>
+            <Field label={t('models.aliases.metadata.defaultEffort')}><Dropdown disabled={disabled || effort.supported.length === 0} readOnly={readOnly} selectedOptions={[effort.default]} value={effort.default} onOptionSelect={(_, data) => data.optionValue !== undefined && patchReasoning({ effort: { supported: effort.supported, default: data.optionValue } })}>{effort.supported.map(item => <Option key={item} value={item}>{item}</Option>)}</Dropdown></Field>
           </div>}
           {budget && <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
-            <Field label={t('dashboard.modelAliases.metadata.minBudget')} {...issueProps('budgetMin')}><Input disabled={disabled} min={0} readOnly={readOnly} type="number" value={budget.min?.toString() ?? ''} onChange={(_, data) => patchReasoning({ budget_tokens: { ...budget, min: numberValue(data.value) } })} /></Field>
-            <Field label={t('dashboard.modelAliases.metadata.maxBudget')} {...issueProps('budgetMax')}><Input disabled={disabled} min={0} readOnly={readOnly} type="number" value={budget.max?.toString() ?? ''} onChange={(_, data) => patchReasoning({ budget_tokens: { ...budget, max: numberValue(data.value) } })} /></Field>
+            <Field label={t('models.aliases.metadata.minBudget')} {...issueProps('budgetMin')}><Input disabled={disabled} min={0} readOnly={readOnly} type="number" value={budget.min?.toString() ?? ''} onChange={(_, data) => patchReasoning({ budget_tokens: { ...budget, min: numberValue(data.value) } })} /></Field>
+            <Field label={t('models.aliases.metadata.maxBudget')} {...issueProps('budgetMax')}><Input disabled={disabled} min={0} readOnly={readOnly} type="number" value={budget.max?.toString() ?? ''} onChange={(_, data) => patchReasoning({ budget_tokens: { ...budget, max: numberValue(data.value) } })} /></Field>
           </div>}
         </section>
       </>}
