@@ -1,8 +1,8 @@
 import {
-  ArrowImport16Regular,
   ArrowLeft16Regular,
   ArrowUndo16Regular,
   Checkmark16Regular,
+  ClipboardPaste16Regular,
   Copy16Regular,
   Delete16Regular,
   Dismiss16Regular,
@@ -19,7 +19,6 @@ import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 import { useNow } from '../../lib/use-now';
 import { copyToClipboard } from '../ui/copy-to-clipboard';
-import { Textarea } from '../ui/fluent-form-controls';
 
 const { Button, Popover, PopoverSurface, PopoverTrigger, Text } = fluentComponents;
 
@@ -28,7 +27,7 @@ const SHORT_LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
   'zh-Hans': '中文',
 };
 
-const formatBatchPreview = (entry: CopyDraftEntry): string => {
+const formatSessionPreview = (entry: CopyDraftEntry): string => {
   const parts: string[] = [];
   for (const language of supportedLanguages) {
     const after = entry.changes[language]?.after;
@@ -78,20 +77,28 @@ function StaleSourcePopover({
   );
 }
 
-function DeleteAllExportsFlyout({
+function ConfirmActionFlyout({
   actionLabel,
+  align = 'end',
   cancelLabel,
+  label,
   message,
   mountNode,
   onConfirm,
+  position = 'below',
+  size = 'small',
   title,
   triggerLabel,
 }: {
   actionLabel: string;
+  align?: 'start' | 'end';
   cancelLabel: string;
+  label?: string;
   message: string;
   mountNode: HTMLElement | null;
   onConfirm: () => void;
+  position?: 'above' | 'below';
+  size?: 'small' | 'medium';
   title: string;
   triggerLabel: string;
 }) {
@@ -102,7 +109,7 @@ function DeleteAllExportsFlyout({
     <Popover
       mountNode={mountNode}
       open={open}
-      positioning={{ position: 'below', align: 'end' }}
+      positioning={{ position, align }}
       trapFocus
       onOpenChange={(_, data) => setOpen(data.open)}
     >
@@ -111,9 +118,11 @@ function DeleteAllExportsFlyout({
           appearance="subtle"
           aria-label={triggerLabel}
           icon={<Delete16Regular />}
-          size="small"
-          title={triggerLabel}
-        />
+          size={size}
+          title={label ? undefined : triggerLabel}
+        >
+          {label}
+        </Button>
       </PopoverTrigger>
       <PopoverSurface
         aria-labelledby={titleId}
@@ -144,29 +153,26 @@ export interface DraftsPanelProps {
   onEditKey: (key: string, route: string) => void;
 }
 
-type PanelView = 'list' | 'exported' | 'import';
-
 export function DraftsPanel({ mountNode, onClose, onEditKey }: DraftsPanelProps) {
   const { t, i18n } = useEditorTranslation();
   const now = useNow(30_000);
   const entriesMap = useCopyEditorStore(state => state.entries);
-  const exportedBatches = useCopyEditorStore(state => state.exports);
+  const historySessions = useCopyEditorStore(state => state.history);
   const getOriginal = useCopyEditorStore(state => state.getOriginal);
   const revertEntry = useCopyEditorStore(state => state.revertEntry);
   const clearActive = useCopyEditorStore(state => state.clearActive);
   const buildExportPayload = useCopyEditorStore(state => state.buildExportPayload);
-  const buildBatchExportPayload = useCopyEditorStore(state => state.buildBatchExportPayload);
+  const buildHistoryExportPayload = useCopyEditorStore(state => state.buildHistoryExportPayload);
   const archiveActiveAsExport = useCopyEditorStore(state => state.archiveActiveAsExport);
-  const restoreExportBatch = useCopyEditorStore(state => state.restoreExportBatch);
-  const deleteExportBatch = useCopyEditorStore(state => state.deleteExportBatch);
-  const clearExports = useCopyEditorStore(state => state.clearExports);
+  const restoreHistorySession = useCopyEditorStore(state => state.restoreHistorySession);
+  const deleteHistorySession = useCopyEditorStore(state => state.deleteHistorySession);
+  const clearHistory = useCopyEditorStore(state => state.clearHistory);
   const importFromJson = useCopyEditorStore(state => state.importFromJson);
 
-  const [view, setView] = useState<PanelView>('list');
-  const [importText, setImportText] = useState('');
-  const [importStatus, setImportStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [pasteError, setPasteError] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
-  const [copiedBatchId, setCopiedBatchId] = useState<string | null>(null);
+  const [copiedSessionId, setCopiedSessionId] = useState<string | null>(null);
   const copyTimerRef = useRef<number | null>(null);
 
   useEffect(() => () => {
@@ -178,7 +184,14 @@ export function DraftsPanel({ mountNode, onClose, onEditKey }: DraftsPanelProps)
   const activeEntries = Object.values(entriesMap).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const locale = i18n.language;
 
+  // When there are no active edits, surface history directly as the root view
+  // (like chat session history) without requiring an extra click.
+  const isRootHistory = activeEntries.length === 0 && historySessions.length > 0;
+  const viewingHistory = isRootHistory || (showHistory && historySessions.length > 0);
+  const showBackButton = viewingHistory && activeEntries.length > 0;
+
   const handleExport = async () => {
+    setPasteError(null);
     const payload = buildExportPayload();
     if (payload.entries.length === 0) return;
     const ok = await copyToClipboard(JSON.stringify(payload, null, 2));
@@ -191,53 +204,60 @@ export function DraftsPanel({ mountNode, onClose, onEditKey }: DraftsPanelProps)
       return;
     }
     archiveActiveAsExport(payload.exportedAt);
+    setShowHistory(false);
     setCopyState('copied');
     copyTimerRef.current = window.setTimeout(() => setCopyState('idle'), 1600);
   };
 
-  const handleCopyBatch = async (batchId: string) => {
-    const payload = buildBatchExportPayload(batchId);
+  const handleCopySession = async (sessionId: string) => {
+    const payload = buildHistoryExportPayload(sessionId);
     if (!payload) return;
     const ok = await copyToClipboard(JSON.stringify(payload, null, 2));
     if (!ok) return;
-    setCopiedBatchId(batchId);
+    setCopiedSessionId(sessionId);
     window.setTimeout(() => {
-      setCopiedBatchId(current => (current === batchId ? null : current));
+      setCopiedSessionId(current => (current === sessionId ? null : current));
     }, 1500);
   };
 
-  const handleRestoreBatch = (batchId: string) => {
-    restoreExportBatch(batchId);
-    setView('list');
+  const handleRestoreSession = (sessionId: string) => {
+    setPasteError(null);
+    restoreHistorySession(sessionId);
+    setShowHistory(false);
   };
 
-  const handleImport = () => {
+  const handlePasteImport = async () => {
+    setPasteError(null);
+    if (!navigator.clipboard || typeof navigator.clipboard.readText !== 'function') {
+      setPasteError(t('common.copyEditor.pasteReadError'));
+      return;
+    }
+    let rawText: string;
     try {
-      const result = importFromJson(importText);
-      setImportStatus({
-        ok: true,
-        text: t('common.copyEditor.importSuccess', {
-          imported: result.imported,
-          skipped: result.skippedUpToDate,
-        }),
-      });
-      setImportText('');
-      if (result.imported > 0) setView('list');
+      rawText = await navigator.clipboard.readText();
+    } catch {
+      setPasteError(t('common.copyEditor.pasteReadError'));
+      return;
+    }
+    if (rawText.trim().length === 0) {
+      setPasteError(t('common.copyEditor.pasteEmptyError'));
+      return;
+    }
+    try {
+      const result = importFromJson(rawText);
+      if (result.changed) {
+        setShowHistory(false);
+      }
     } catch (error) {
-      setImportStatus({
-        ok: false,
-        text: t('common.copyEditor.importError', {
-          message: error instanceof Error ? error.message : String(error),
-        }),
-      });
+      setPasteError(t('common.copyEditor.importError', {
+        message: error instanceof Error ? error.message : String(error),
+      }));
     }
   };
 
-  const headerTitle = view === 'list'
-    ? t('common.copyEditor.panelTitle')
-    : view === 'exported'
-      ? t('common.copyEditor.exportedTitle')
-      : t('common.copyEditor.importTitle');
+  const headerTitle = viewingHistory
+    ? t('common.copyEditor.historyTitle')
+    : t('common.copyEditor.panelTitle');
 
   return (
     <div
@@ -247,50 +267,51 @@ export function DraftsPanel({ mountNode, onClose, onEditKey }: DraftsPanelProps)
     >
       <div className="floway-copy-editor-header">
         <div className="floway-copy-editor-header-main">
-          {view !== 'list' && (
+          {showBackButton && (
             <Button
               appearance="subtle"
               aria-label={t('common.errors.back')}
               className="floway-copy-editor-header-back"
               icon={<ArrowLeft16Regular />}
               size="small"
-              onClick={() => setView('list')}
+              onClick={() => setShowHistory(false)}
             />
           )}
           <Text size={400} weight="semibold">{headerTitle}</Text>
         </div>
         <div className="floway-copy-editor-header-actions">
-          {view === 'list' && exportedBatches.length > 0 && (
+          {!viewingHistory && historySessions.length > 0 && (
             <Button
               appearance="subtle"
-              aria-label={t('common.copyEditor.exportedTitle')}
+              aria-label={t('common.copyEditor.historyTitle')}
               icon={<History16Regular />}
               size="small"
-              title={t('common.copyEditor.exportedTitle')}
-              onClick={() => setView('exported')}
+              title={t('common.copyEditor.historyTitle')}
+              onClick={() => {
+                setPasteError(null);
+                setShowHistory(true);
+              }}
             />
           )}
-          {view === 'list' && (
-            <Button
-              appearance="subtle"
-              aria-label={t('common.copyEditor.importTitle')}
-              icon={<ArrowImport16Regular />}
-              size="small"
-              title={t('common.copyEditor.importTitle')}
-              onClick={() => setView('import')}
-            />
-          )}
-          {view === 'exported' && exportedBatches.length > 0 && (
-            <DeleteAllExportsFlyout
-              actionLabel={t('common.copyEditor.deleteAllExportsAction')}
+          <Button
+            appearance="subtle"
+            aria-label={t('common.copyEditor.pasteJson')}
+            icon={<ClipboardPaste16Regular />}
+            size="small"
+            title={t('common.copyEditor.pasteJson')}
+            onClick={() => void handlePasteImport()}
+          />
+          {viewingHistory && historySessions.length > 0 && (
+            <ConfirmActionFlyout
+              actionLabel={t('common.copyEditor.deleteAllHistoryAction')}
               cancelLabel={t('common.cancel')}
-              message={t('common.copyEditor.deleteAllExportsMessage')}
+              message={t('common.copyEditor.deleteAllHistoryMessage')}
               mountNode={mountNode}
-              title={t('common.copyEditor.deleteAllExportsTitle')}
-              triggerLabel={t('common.copyEditor.deleteAllExports')}
+              title={t('common.copyEditor.deleteAllHistoryTitle')}
+              triggerLabel={t('common.copyEditor.deleteAllHistory')}
               onConfirm={() => {
-                clearExports();
-                setView('list');
+                clearHistory();
+                setShowHistory(false);
               }}
             />
           )}
@@ -304,22 +325,25 @@ export function DraftsPanel({ mountNode, onClose, onEditKey }: DraftsPanelProps)
         </div>
       </div>
 
-      {view === 'list' && (
+      {pasteError && (
+        <div className="floway-copy-editor-error-bar" role="alert">
+          <span className="min-w-0 flex-1">{pasteError}</span>
+          <Button
+            appearance="subtle"
+            aria-label={t('common.copyEditor.close')}
+            icon={<Dismiss16Regular />}
+            size="small"
+            onClick={() => setPasteError(null)}
+          />
+        </div>
+      )}
+
+      {!viewingHistory ? (
         <>
           <div className="floway-copy-editor-body floway-copy-editor-body--list">
             {activeEntries.length === 0 ? (
-              <div className="floway-copy-editor-empty-stack">
-                <span className="floway-copy-editor-meta">{t('common.copyEditor.emptyDrafts')}</span>
-                {exportedBatches.length > 0 && (
-                  <Button
-                    appearance="subtle"
-                    icon={<History16Regular />}
-                    size="small"
-                    onClick={() => setView('exported')}
-                  >
-                    {t('common.copyEditor.exportedTitle')}
-                  </Button>
-                )}
+              <div className="floway-copy-editor-empty">
+                {t('common.copyEditor.emptyDrafts')}
               </div>
             ) : (
               activeEntries.map(entry => (
@@ -340,7 +364,7 @@ export function DraftsPanel({ mountNode, onClose, onEditKey }: DraftsPanelProps)
                       <Button
                         appearance="subtle"
                         aria-label={t('common.copyEditor.revert')}
-                        icon={<ArrowUndo16Regular />}
+                        icon={<Delete16Regular />}
                         size="small"
                         title={t('common.copyEditor.revert')}
                         onClick={() => revertEntry(entry.key)}
@@ -391,9 +415,19 @@ export function DraftsPanel({ mountNode, onClose, onEditKey }: DraftsPanelProps)
           <div className="floway-copy-editor-footer">
             <div className="floway-copy-editor-footer-start">
               {activeEntries.length > 0 && (
-                <Button appearance="subtle" onClick={clearActive}>
-                  {t('common.copyEditor.discardEdits', { count: activeEntries.length })}
-                </Button>
+                <ConfirmActionFlyout
+                  actionLabel={t('common.copyEditor.discardEdits', { count: activeEntries.length })}
+                  align="start"
+                  cancelLabel={t('common.cancel')}
+                  label={t('common.copyEditor.discardEdits', { count: activeEntries.length })}
+                  message={t('common.copyEditor.discardEditsMessage')}
+                  mountNode={mountNode}
+                  position="above"
+                  size="medium"
+                  title={t('common.copyEditor.discardEditsTitle')}
+                  triggerLabel={t('common.copyEditor.discardEdits', { count: activeEntries.length })}
+                  onConfirm={clearActive}
+                />
               )}
             </div>
             <Button
@@ -410,113 +444,72 @@ export function DraftsPanel({ mountNode, onClose, onEditKey }: DraftsPanelProps)
             </Button>
           </div>
         </>
-      )}
-
-      {view === 'exported' && (
+      ) : (
         <div className="floway-copy-editor-body floway-copy-editor-body--list">
-          {exportedBatches.length === 0 ? (
-            <div className="floway-copy-editor-empty">
-              {t('common.copyEditor.emptyExports')}
-            </div>
-          ) : (
-            exportedBatches.map(batch => {
-              const relative = relativeTime(batch.exportedAt, locale, { now }) ?? shortDate(batch.exportedAt, locale);
-              return (
-                <div key={batch.id} className="floway-copy-editor-draft-item">
-                  <div className="floway-copy-editor-draft-head">
-                    <div className="flex items-baseline gap-2 min-w-0">
-                      <span
-                        className="floway-copy-editor-batch-time"
-                        title={dateTime(batch.exportedAt, locale)}
-                      >
-                        {relative}
-                      </span>
-                      <span className="floway-copy-editor-batch-count">
-                        ×{batch.entries.length}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-0.5 flex-none">
-                      <Button
-                        appearance="subtle"
-                        aria-label={t('common.copyEditor.restoreBatch')}
-                        icon={<ArrowUndo16Regular />}
-                        size="small"
-                        title={t('common.copyEditor.restoreBatch')}
-                        onClick={() => handleRestoreBatch(batch.id)}
-                      />
-                      <Button
-                        appearance="subtle"
-                        aria-label={copiedBatchId === batch.id ? t('common.copy.copied') : t('common.copyEditor.export')}
-                        icon={copiedBatchId === batch.id ? <Checkmark16Regular /> : <Copy16Regular />}
-                        size="small"
-                        title={copiedBatchId === batch.id ? t('common.copy.copied') : t('common.copyEditor.export')}
-                        onClick={() => void handleCopyBatch(batch.id)}
-                      />
-                      <Button
-                        appearance="subtle"
-                        aria-label={t('common.copyEditor.deleteBatch')}
-                        icon={<Delete16Regular />}
-                        size="small"
-                        title={t('common.copyEditor.deleteBatch')}
-                        onClick={() => deleteExportBatch(batch.id)}
-                      />
-                    </div>
+          {historySessions.map(session => {
+            const relative = relativeTime(session.archivedAt, locale, { now }) ?? shortDate(session.archivedAt, locale);
+            return (
+              <div key={session.id} className="floway-copy-editor-draft-item">
+                <div className="floway-copy-editor-draft-head">
+                  <div className="flex items-baseline gap-2 min-w-0">
+                    <span
+                      className="floway-copy-editor-batch-time"
+                      title={dateTime(session.archivedAt, locale)}
+                    >
+                      {relative}
+                    </span>
+                    <span className="floway-copy-editor-batch-count">
+                      ×{session.entries.length}
+                    </span>
                   </div>
-                  <div className="floway-copy-editor-batch-lines">
-                    {batch.entries.map(item => {
-                      const preview = formatBatchPreview(item);
-                      return (
-                        <div
-                          key={item.key}
-                          className="floway-copy-editor-batch-line"
-                          title={preview ? `${item.key}  ${preview}` : item.key}
-                        >
-                          <span className="floway-copy-editor-batch-key">{item.key}</span>
-                          {preview && (
-                            <span className="floway-copy-editor-batch-preview">{preview}</span>
-                          )}
-                        </div>
-                      );
-                    })}
+                  <div className="flex items-center gap-0.5 flex-none">
+                    <Button
+                      appearance="subtle"
+                      aria-label={t('common.copyEditor.restoreHistory')}
+                      icon={<ArrowUndo16Regular />}
+                      size="small"
+                      title={t('common.copyEditor.restoreHistory')}
+                      onClick={() => handleRestoreSession(session.id)}
+                    />
+                    <Button
+                      appearance="subtle"
+                      aria-label={copiedSessionId === session.id ? t('common.copy.copied') : t('common.copyEditor.export')}
+                      icon={copiedSessionId === session.id ? <Checkmark16Regular /> : <Copy16Regular />}
+                      size="small"
+                      title={copiedSessionId === session.id ? t('common.copy.copied') : t('common.copyEditor.export')}
+                      onClick={() => void handleCopySession(session.id)}
+                    />
+                    <Button
+                      appearance="subtle"
+                      aria-label={t('common.copyEditor.deleteHistory')}
+                      icon={<Delete16Regular />}
+                      size="small"
+                      title={t('common.copyEditor.deleteHistory')}
+                      onClick={() => deleteHistorySession(session.id)}
+                    />
                   </div>
                 </div>
-              );
-            })
-          )}
+                <div className="floway-copy-editor-batch-lines">
+                  {session.entries.map(item => {
+                    const preview = formatSessionPreview(item);
+                    return (
+                      <div
+                        key={item.key}
+                        className="floway-copy-editor-batch-line"
+                        title={preview ? `${item.key}  ${preview}` : item.key}
+                      >
+                        <span className="floway-copy-editor-batch-key">{item.key}</span>
+                        {preview && (
+                          <span className="floway-copy-editor-batch-preview">{preview}</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
         </div>
-      )}
-
-      {view === 'import' && (
-        <>
-          <div className="floway-copy-editor-body">
-            <Textarea
-              className="w-full"
-              placeholder={t('common.copyEditor.importPlaceholder')}
-              rows={10}
-              value={importText}
-              onChange={(_, data) => setImportText(data.value)}
-            />
-            {importStatus && (
-              <span
-                className="floway-copy-editor-meta"
-                style={importStatus.ok ? undefined : { color: 'var(--winui-system-fill-critical)' }}
-              >
-                {importStatus.text}
-              </span>
-            )}
-          </div>
-          <div className="floway-copy-editor-footer">
-            <div />
-            <Button
-              appearance="primary"
-              disabled={importText.trim().length === 0}
-              icon={<ArrowImport16Regular />}
-              onClick={handleImport}
-            >
-              {t('common.copyEditor.importAction')}
-            </Button>
-          </div>
-        </>
       )}
     </div>
   );

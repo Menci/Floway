@@ -4,7 +4,7 @@ import { ensureLocaleLoaded, i18n } from '../index';
 import { supportedLanguages, type SupportedLanguage } from '../languages';
 import { loadLocale } from '../resources';
 
-const STORAGE_KEY = 'floway.copyEditorState.v2';
+const STORAGE_KEY = 'floway.copyEditorState.v3';
 const PLURAL_SUFFIX_RE = /_(zero|one|two|few|many|other)$/;
 
 export interface LanguageChange {
@@ -20,9 +20,9 @@ export interface CopyDraftEntry {
   updatedAt: string;
 }
 
-export interface ExportedBatch {
+export interface CopyHistorySession {
   id: string;
-  exportedAt: string;
+  archivedAt: string;
   entries: CopyDraftEntry[];
 }
 
@@ -49,11 +49,12 @@ export interface StageEntryInput {
 export interface ImportResult {
   imported: number;
   skippedUpToDate: number;
+  changed: boolean;
 }
 
 interface PersistedState {
   entries: Record<string, CopyDraftEntry>;
-  exports: ExportedBatch[];
+  history: CopyHistorySession[];
 }
 
 const flattenLeaves = (value: object, prefix = ''): Map<string, string> => {
@@ -102,13 +103,13 @@ const parseEntry = (raw: unknown, fallbackKey?: string): CopyDraftEntry | null =
 };
 
 const readStoredState = (): PersistedState => {
-  if (typeof window === 'undefined') return { entries: {}, exports: [] };
+  if (typeof window === 'undefined') return { entries: {}, history: [] };
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { entries: {}, exports: [] };
+    if (!raw) return { entries: {}, history: [] };
     const parsed = JSON.parse(raw) as unknown;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return { entries: {}, exports: [] };
+      return { entries: {}, history: [] };
     }
     const rec = parsed as Record<string, unknown>;
 
@@ -120,33 +121,33 @@ const readStoredState = (): PersistedState => {
       }
     }
 
-    const exports: ExportedBatch[] = [];
-    if (Array.isArray(rec.exports)) {
-      for (const rawBatch of rec.exports) {
-        if (!rawBatch || typeof rawBatch !== 'object' || Array.isArray(rawBatch)) continue;
-        const batchRec = rawBatch as Record<string, unknown>;
-        const id = typeof batchRec.id === 'string' && batchRec.id.length > 0 ? batchRec.id : null;
-        const exportedAt = typeof batchRec.exportedAt === 'string' ? batchRec.exportedAt : null;
-        if (!id || !exportedAt || !Array.isArray(batchRec.entries)) continue;
-        const batchEntries = batchRec.entries
+    const history: CopyHistorySession[] = [];
+    if (Array.isArray(rec.history)) {
+      for (const rawSession of rec.history) {
+        if (!rawSession || typeof rawSession !== 'object' || Array.isArray(rawSession)) continue;
+        const sessionRec = rawSession as Record<string, unknown>;
+        const id = typeof sessionRec.id === 'string' && sessionRec.id.length > 0 ? sessionRec.id : null;
+        const archivedAt = typeof sessionRec.archivedAt === 'string' ? sessionRec.archivedAt : null;
+        if (!id || !archivedAt || !Array.isArray(sessionRec.entries)) continue;
+        const sessionEntries = sessionRec.entries
           .map(item => parseEntry(item))
           .filter((item): item is CopyDraftEntry => item !== null);
-        if (batchEntries.length > 0) {
-          exports.push({ id, exportedAt, entries: batchEntries });
+        if (sessionEntries.length > 0) {
+          history.push({ id, archivedAt, entries: sessionEntries });
         }
       }
     }
 
-    return { entries, exports };
+    return { entries, history };
   } catch {
-    return { entries: {}, exports: [] };
+    return { entries: {}, history: [] };
   }
 };
 
 const writeStoredState = (state: PersistedState): void => {
   if (typeof window === 'undefined') return;
   try {
-    if (Object.keys(state.entries).length === 0 && state.exports.length === 0) {
+    if (Object.keys(state.entries).length === 0 && state.history.length === 0) {
       window.localStorage.removeItem(STORAGE_KEY);
     } else {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -172,7 +173,7 @@ const reconcileEntry = (entry: CopyDraftEntry, originals: OriginalsMap): CopyDra
   for (const language of supportedLanguages) {
     const change = entry.changes[language];
     if (!change) continue;
-    const currentOriginal = originals[language].get(keyOf(entry));
+    const currentOriginal = originals[language].get(entry.key);
     if (currentOriginal !== undefined && change.after === currentOriginal) {
       continue;
     }
@@ -184,11 +185,9 @@ const reconcileEntry = (entry: CopyDraftEntry, originals: OriginalsMap): CopyDra
   return { ...entry, changes: nextChanges };
 };
 
-const keyOf = (entry: CopyDraftEntry): string => entry.key;
-
 /**
- * Reconciles active drafts and archived export batches against the running
- * build's locale catalogs, silently pruning any edit that has already shipped.
+ * Reconciles active drafts and history sessions against the running build's
+ * locale catalogs, silently pruning any edit that has already shipped.
  */
 const reconcileState = (
   raw: PersistedState,
@@ -209,10 +208,10 @@ const reconcileState = (
     entries[reconciled.key] = reconciled;
   }
 
-  const exports: ExportedBatch[] = [];
-  for (const batch of raw.exports) {
-    const nextBatchEntries: CopyDraftEntry[] = [];
-    for (const entry of batch.entries) {
+  const history: CopyHistorySession[] = [];
+  for (const session of raw.history) {
+    const nextSessionEntries: CopyDraftEntry[] = [];
+    for (const entry of session.entries) {
       const reconciled = reconcileEntry(entry, originals);
       if (!reconciled) {
         changed = true;
@@ -221,35 +220,34 @@ const reconcileState = (
       if (Object.keys(reconciled.changes).length !== Object.keys(entry.changes).length) {
         changed = true;
       }
-      nextBatchEntries.push(reconciled);
+      nextSessionEntries.push(reconciled);
     }
-    if (nextBatchEntries.length > 0) {
-      exports.push({ ...batch, entries: nextBatchEntries });
+    if (nextSessionEntries.length > 0) {
+      history.push({ ...session, entries: nextSessionEntries });
     } else {
       changed = true;
     }
   }
 
-  return { state: { entries, exports }, changed };
+  return { state: { entries, history }, changed };
 };
 
 /**
- * Resolves the effective override for `(language, key)` across archived
- * exports (oldest to newest) and active drafts (highest precedence).
+ * Resolves the effective override for `(language, key)` across history
+ * sessions (newest first) and active drafts (highest precedence).
  */
 const resolveEffectiveValue = (
   language: SupportedLanguage,
   key: string,
   originals: OriginalsMap,
   entries: Record<string, CopyDraftEntry>,
-  exports: ExportedBatch[],
+  history: CopyHistorySession[],
 ): string | undefined => {
   const active = entries[key]?.changes[language];
   if (active) return active.after;
 
-  // `exports` is stored newest-first, so the first match is the latest archived override.
-  for (const batch of exports) {
-    const match = batch.entries.find(item => item.key === key);
+  for (const session of history) {
+    const match = session.entries.find(item => item.key === key);
     const change = match?.changes[language];
     if (change) return change.after;
   }
@@ -261,11 +259,11 @@ const syncKeysToI18n = (
   keys: Iterable<string>,
   originals: OriginalsMap,
   entries: Record<string, CopyDraftEntry>,
-  exports: ExportedBatch[],
+  history: CopyHistorySession[],
 ): void => {
   for (const key of keys) {
     for (const language of supportedLanguages) {
-      const value = resolveEffectiveValue(language, key, originals, entries, exports);
+      const value = resolveEffectiveValue(language, key, originals, entries, history);
       if (value !== undefined) {
         applyResourceValue(language, key, value);
       }
@@ -291,15 +289,50 @@ const formatExportEntries = (list: CopyDraftEntry[]): ExportedCopyChange[] =>
       return item;
     });
 
-const makeBatchId = (exportedAt: string): string =>
-  `${exportedAt}-${Math.random().toString(36).slice(2, 8)}`;
+const makeSessionId = (archivedAt: string): string =>
+  `${archivedAt}-${Math.random().toString(36).slice(2, 8)}`;
+
+const areEntrySetsEqual = (
+  a: Record<string, CopyDraftEntry>,
+  b: Record<string, CopyDraftEntry>,
+): boolean => {
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  for (const key of keysA) {
+    const ea = a[key];
+    const eb = b[key];
+    if (!ea || !eb) return false;
+    if (ea.note.trim() !== eb.note.trim()) return false;
+    for (const lang of supportedLanguages) {
+      const ca = ea.changes[lang];
+      const cb = eb.changes[lang];
+      if ((ca === undefined) !== (cb === undefined)) return false;
+      if (ca && cb && (ca.before !== cb.before || ca.after !== cb.after)) return false;
+    }
+  }
+  return true;
+};
+
+const buildHistorySession = (
+  entries: Record<string, CopyDraftEntry>,
+  archivedAt: string,
+): CopyHistorySession | null => {
+  const list = Object.values(entries).sort((a, b) => a.key.localeCompare(b.key));
+  if (list.length === 0) return null;
+  return {
+    id: makeSessionId(archivedAt),
+    archivedAt,
+    entries: list,
+  };
+};
 
 export interface CopyEditorStore {
   initialized: boolean;
   initializing: boolean;
   originals: OriginalsMap;
   entries: Record<string, CopyDraftEntry>;
-  exports: ExportedBatch[];
+  history: CopyHistorySession[];
   ensureInitialized: () => Promise<void>;
   getOriginal: (language: SupportedLanguage, key: string) => string | undefined;
   getCurrent: (language: SupportedLanguage, key: string) => string | undefined;
@@ -310,11 +343,11 @@ export interface CopyEditorStore {
   revertLanguage: (key: string, language: SupportedLanguage) => void;
   clearActive: () => void;
   buildExportPayload: () => CopyEditorExportPayload;
-  buildBatchExportPayload: (batchId: string) => CopyEditorExportPayload | null;
-  archiveActiveAsExport: (exportedAt?: string) => ExportedBatch | null;
-  restoreExportBatch: (batchId: string) => void;
-  deleteExportBatch: (batchId: string) => void;
-  clearExports: () => void;
+  buildHistoryExportPayload: (sessionId: string) => CopyEditorExportPayload | null;
+  archiveActiveAsExport: (archivedAt?: string) => CopyHistorySession | null;
+  restoreHistorySession: (sessionId: string) => void;
+  deleteHistorySession: (sessionId: string) => void;
+  clearHistory: () => void;
   importFromJson: (rawJson: string) => ImportResult;
 }
 
@@ -325,7 +358,7 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
   initializing: false,
   originals: emptyOriginals(),
   entries: {},
-  exports: [],
+  history: [],
 
   ensureInitialized: async () => {
     if (get().initialized) return;
@@ -354,21 +387,19 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
       const { state, changed } = reconcileState(stored, originals);
       if (changed) writeStoredState(state);
 
-      // Apply archived exports oldest-first, then active drafts on top, so
-      // previously exported edits remain silently active on the page.
       const touchedKeys = new Set<string>();
-      for (const batch of state.exports) {
-        for (const entry of batch.entries) touchedKeys.add(entry.key);
+      for (const session of state.history) {
+        for (const entry of session.entries) touchedKeys.add(entry.key);
       }
       for (const key of Object.keys(state.entries)) touchedKeys.add(key);
-      syncKeysToI18n(touchedKeys, originals, state.entries, state.exports);
+      syncKeysToI18n(touchedKeys, originals, state.entries, state.history);
 
       set({
         initialized: true,
         initializing: false,
         originals,
         entries: state.entries,
-        exports: state.exports,
+        history: state.history,
       });
     })();
 
@@ -382,8 +413,8 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
   getOriginal: (language, key) => get().originals[language].get(key),
 
   getCurrent: (language, key) => {
-    const { originals, entries, exports } = get();
-    return resolveEffectiveValue(language, key, originals, entries, exports);
+    const { originals, entries, history } = get();
+    return resolveEffectiveValue(language, key, originals, entries, history);
   },
 
   getRelatedKeys: key => {
@@ -422,7 +453,7 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
   },
 
   stageEntry: ({ key, route, values, note }) => {
-    const { originals, entries, exports } = get();
+    const { originals, entries, history } = get();
     const prev = entries[key];
     const nextChanges: Partial<Record<SupportedLanguage, LanguageChange>> = {};
 
@@ -458,13 +489,13 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
       };
     }
 
-    syncKeysToI18n([key], originals, nextEntries, exports);
-    writeStoredState({ entries: nextEntries, exports });
+    syncKeysToI18n([key], originals, nextEntries, history);
+    writeStoredState({ entries: nextEntries, history });
     set({ entries: nextEntries });
   },
 
   revertLanguage: (key, language) => {
-    const { originals, entries, exports } = get();
+    const { originals, entries, history } = get();
     const prev = entries[key];
     if (!prev) return;
 
@@ -482,27 +513,27 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
       };
     }
 
-    syncKeysToI18n([key], originals, nextEntries, exports);
-    writeStoredState({ entries: nextEntries, exports });
+    syncKeysToI18n([key], originals, nextEntries, history);
+    writeStoredState({ entries: nextEntries, history });
     set({ entries: nextEntries });
   },
 
   revertEntry: key => {
-    const { originals, entries, exports } = get();
+    const { originals, entries, history } = get();
     if (!entries[key]) return;
     const nextEntries = { ...entries };
     delete nextEntries[key];
-    syncKeysToI18n([key], originals, nextEntries, exports);
-    writeStoredState({ entries: nextEntries, exports });
+    syncKeysToI18n([key], originals, nextEntries, history);
+    writeStoredState({ entries: nextEntries, history });
     set({ entries: nextEntries });
   },
 
   clearActive: () => {
-    const { originals, entries, exports } = get();
+    const { originals, entries, history } = get();
     const touched = Object.keys(entries);
     if (touched.length === 0) return;
-    syncKeysToI18n(touched, originals, {}, exports);
-    writeStoredState({ entries: {}, exports });
+    syncKeysToI18n(touched, originals, {}, history);
+    writeStoredState({ entries: {}, history });
     set({ entries: {} });
   },
 
@@ -512,83 +543,70 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
     entries: formatExportEntries(Object.values(get().entries)),
   }),
 
-  buildBatchExportPayload: batchId => {
-    const batch = get().exports.find(item => item.id === batchId);
-    if (!batch) return null;
+  buildHistoryExportPayload: sessionId => {
+    const session = get().history.find(item => item.id === sessionId);
+    if (!session) return null;
     return {
       version: 1,
-      exportedAt: batch.exportedAt,
-      entries: formatExportEntries(batch.entries),
+      exportedAt: session.archivedAt,
+      entries: formatExportEntries(session.entries),
     };
   },
 
-  archiveActiveAsExport: (exportedAt = new Date().toISOString()) => {
-    const { entries, exports } = get();
-    const activeList = Object.values(entries).sort((a, b) => a.key.localeCompare(b.key));
-    if (activeList.length === 0) return null;
+  archiveActiveAsExport: (archivedAt = new Date().toISOString()) => {
+    const { entries, history } = get();
+    const session = buildHistorySession(entries, archivedAt);
+    if (!session) return null;
 
-    const batch: ExportedBatch = {
-      id: makeBatchId(exportedAt),
-      exportedAt,
-      entries: activeList,
-    };
-    const nextExports = [batch, ...exports];
-    // Archived entries stay applied in i18next; only the active list clears.
-    writeStoredState({ entries: {}, exports: nextExports });
-    set({ entries: {}, exports: nextExports });
-    return batch;
+    const nextHistory = [session, ...history];
+    writeStoredState({ entries: {}, history: nextHistory });
+    set({ entries: {}, history: nextHistory });
+    return session;
   },
 
-  restoreExportBatch: batchId => {
-    const { originals, entries, exports } = get();
-    const batch = exports.find(item => item.id === batchId);
-    if (!batch) return;
+  restoreHistorySession: sessionId => {
+    const { originals, entries, history } = get();
+    const target = history.find(item => item.id === sessionId);
+    if (!target) return;
 
-    const nextEntries = { ...entries };
-    const touchedKeys: string[] = [];
-    for (const archived of batch.entries) {
-      touchedKeys.push(archived.key);
-      const current = nextEntries[archived.key];
-      if (!current) {
-        nextEntries[archived.key] = { ...archived };
-      } else {
-        // Merge archived languages/note beneath any newer active edits on the same key.
-        nextEntries[archived.key] = {
-          ...archived,
-          ...current,
-          changes: { ...archived.changes, ...current.changes },
-          note: current.note.trim().length > 0 ? current.note : archived.note,
-        };
-      }
+    const now = new Date().toISOString();
+    const archivedCurrent = buildHistorySession(entries, now);
+    const remaining = history.filter(item => item.id !== sessionId);
+    const nextHistory = archivedCurrent ? [archivedCurrent, ...remaining] : remaining;
+
+    const nextEntries: Record<string, CopyDraftEntry> = {};
+    const touchedKeys = new Set<string>(Object.keys(entries));
+    for (const item of target.entries) {
+      nextEntries[item.key] = { ...item };
+      touchedKeys.add(item.key);
     }
 
-    const nextExports = exports.filter(item => item.id !== batchId);
-    syncKeysToI18n(touchedKeys, originals, nextEntries, nextExports);
-    writeStoredState({ entries: nextEntries, exports: nextExports });
-    set({ entries: nextEntries, exports: nextExports });
+    syncKeysToI18n(touchedKeys, originals, nextEntries, nextHistory);
+    writeStoredState({ entries: nextEntries, history: nextHistory });
+    set({ entries: nextEntries, history: nextHistory });
   },
 
-  deleteExportBatch: batchId => {
-    const { originals, entries, exports } = get();
-    const batch = exports.find(item => item.id === batchId);
-    if (!batch) return;
+  deleteHistorySession: sessionId => {
+    const { originals, entries, history } = get();
+    const session = history.find(item => item.id === sessionId);
+    if (!session) return;
 
-    const nextExports = exports.filter(item => item.id !== batchId);
-    syncKeysToI18n(batch.entries.map(item => item.key), originals, entries, nextExports);
-    writeStoredState({ entries, exports: nextExports });
-    set({ exports: nextExports });
+    const nextHistory = history.filter(item => item.id !== sessionId);
+    syncKeysToI18n(session.entries.map(item => item.key), originals, entries, nextHistory);
+    writeStoredState({ entries, history: nextHistory });
+    set({ history: nextHistory });
   },
 
-  clearExports: () => {
-    const { originals, entries, exports } = get();
-    if (exports.length === 0) return;
+  clearHistory: () => {
+    const { originals, entries, history } = get();
+    if (history.length === 0) return;
     const touchedKeys = new Set<string>();
-    for (const batch of exports) {
-      for (const item of batch.entries) touchedKeys.add(item.key);
+    for (const session of history) {
+      for (const item of session.entries) touchedKeys.add(item.key);
     }
     syncKeysToI18n(touchedKeys, originals, entries, []);
-    writeStoredState({ entries, exports: [] });
-    set({ exports: [] });
+    writeStoredState({ entries, history: [] });
+    set({ history: [] });
   },
 
   importFromJson: rawJson => {
@@ -602,11 +620,11 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
       throw new TypeError('Invalid JSON format: expected an object with an "entries" array.');
     }
 
-    const { originals, entries, exports } = get();
-    const nextEntries = { ...entries };
-    const touchedKeys: string[] = [];
+    const { originals, entries, history } = get();
+    const importedEntries: Record<string, CopyDraftEntry> = {};
     let imported = 0;
     let skippedUpToDate = 0;
+    const now = new Date().toISOString();
 
     for (const item of rawItems) {
       if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
@@ -636,21 +654,33 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
         continue;
       }
 
-      nextEntries[key] = {
+      importedEntries[key] = {
         key,
         route,
         changes,
         note,
-        updatedAt: new Date().toISOString(),
+        updatedAt: now,
       };
-      touchedKeys.push(key);
       imported += 1;
     }
 
-    syncKeysToI18n(touchedKeys, originals, nextEntries, exports);
-    writeStoredState({ entries: nextEntries, exports });
-    set({ entries: nextEntries });
-    return { imported, skippedUpToDate };
+    // No-op when nothing needs applying or when the imported set is identical
+    // to the active session so repeated pastes never duplicate history entries.
+    if (imported === 0 || areEntrySetsEqual(entries, importedEntries)) {
+      return { imported, skippedUpToDate, changed: false };
+    }
+
+    const archivedCurrent = buildHistorySession(entries, now);
+    const nextHistory = archivedCurrent ? [archivedCurrent, ...history] : history;
+
+    const touchedKeys = new Set<string>([
+      ...Object.keys(entries),
+      ...Object.keys(importedEntries),
+    ]);
+    syncKeysToI18n(touchedKeys, originals, importedEntries, nextHistory);
+    writeStoredState({ entries: importedEntries, history: nextHistory });
+    set({ entries: importedEntries, history: nextHistory });
+    return { imported, skippedUpToDate, changed: true };
   },
 }));
 
@@ -663,7 +693,7 @@ export const __testing = {
       initializing: false,
       originals: emptyOriginals(),
       entries: {},
-      exports: [],
+      history: [],
     });
   },
 };

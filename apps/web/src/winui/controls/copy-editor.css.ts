@@ -325,13 +325,17 @@ export const copyEditorCss = `
   text-align: center;
 }
 
-.floway-copy-editor-empty-stack {
-  padding: 28px 16px;
+.floway-copy-editor-error-bar {
   display: flex;
-  flex-direction: column;
   align-items: center;
   gap: 8px;
-  text-align: center;
+  padding: 8px 10px 8px 16px;
+  border-bottom: 1px solid var(--winui-divider-stroke-default);
+  background-color: var(--winui-system-fill-critical-background);
+  color: var(--winui-system-fill-critical);
+  font-size: 12px;
+  line-height: 16px;
+  flex: none;
 }
 
 .floway-copy-editor-draft-item {

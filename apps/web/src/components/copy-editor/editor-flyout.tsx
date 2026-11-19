@@ -2,6 +2,7 @@ import {
   ArrowUndo16Regular,
   Checkmark16Regular,
   Copy16Regular,
+  Delete16Regular,
   Dismiss16Regular,
   Warning16Regular,
 } from '@fluentui/react-icons';
@@ -281,14 +282,15 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
                 ref={index === 0 ? firstInputRef : undefined}
                 className="w-full"
                 id={inputId}
+                placeholder={t('common.copyEditor.emptyTextPlaceholder')}
                 rows={Math.min(5, Math.max(2, values[language].split('\n').length))}
                 value={values[language]}
                 onChange={(_, data) => setValues(prev => ({ ...prev, [language]: data.value }))}
               />
 
               {modified && (
-                <span className="floway-copy-editor-meta">
-                  {t('common.copyEditor.originalLabel')}: {original}
+                <span className="floway-copy-editor-meta floway-copy-editor-diff-before">
+                  {original}
                 </span>
               )}
 
@@ -321,11 +323,11 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
           {existingEntry && (
             <Button
               appearance="subtle"
-              icon={<ArrowUndo16Regular />}
+              aria-label={t('common.copyEditor.revert')}
+              icon={<Delete16Regular />}
+              title={t('common.copyEditor.revert')}
               onClick={handleRevertEntry}
-            >
-              {t('common.copyEditor.revert')}
-            </Button>
+            />
           )}
         </div>
         <div className="flex items-center gap-2">
