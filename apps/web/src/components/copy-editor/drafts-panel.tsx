@@ -1,6 +1,5 @@
 import {
   ArrowLeft16Regular,
-  ArrowUndo16Regular,
   Checkmark16Regular,
   ClipboardPaste16Regular,
   Copy16Regular,
@@ -10,7 +9,7 @@ import {
   History16Regular,
   Warning16Regular,
 } from '@fluentui/react-icons';
-import { useEffect, useId, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useRef, useState } from 'react';
 
 import { useEditorTranslation } from './use-editor-t';
 import { fluentComponents } from '../../fluent';
@@ -27,18 +26,28 @@ const SHORT_LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
   'zh-Hans': '中文',
 };
 
-const formatSessionPreview = (entry: CopyDraftEntry): string => {
-  const parts: string[] = [];
+const MAX_HISTORY_PREVIEW_ROWS = 2;
+
+interface PreviewSegment {
+  id: string;
+  text: string;
+}
+
+const getSessionPreviewSegments = (entry: CopyDraftEntry): PreviewSegment[] => {
+  const segments: PreviewSegment[] = [];
   for (const language of supportedLanguages) {
     const after = entry.changes[language]?.after;
     if (after !== undefined) {
-      parts.push(after.replace(/\s+/g, ' ').trim());
+      const normalized = after.replace(/\s+/g, ' ').trim();
+      if (normalized.length > 0) {
+        segments.push({ id: `${entry.key}:${language}`, text: normalized });
+      }
     }
   }
-  if (parts.length === 0 && entry.note.trim().length > 0) {
-    parts.push(entry.note.replace(/\s+/g, ' ').trim());
+  if (segments.length === 0 && entry.note.trim().length > 0) {
+    segments.push({ id: `${entry.key}:note`, text: entry.note.replace(/\s+/g, ' ').trim() });
   }
-  return parts.join(' / ');
+  return segments;
 };
 
 function StaleSourcePopover({
@@ -148,12 +157,13 @@ function ConfirmActionFlyout({
 }
 
 export interface DraftsPanelProps {
+  dockRef: React.RefObject<HTMLDivElement | null>;
   mountNode: HTMLElement | null;
   onClose: () => void;
   onEditKey: (key: string, route: string) => void;
 }
 
-export function DraftsPanel({ mountNode, onClose, onEditKey }: DraftsPanelProps) {
+export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPanelProps) {
   const { t, i18n } = useEditorTranslation();
   const now = useNow(30_000);
   const entriesMap = useCopyEditorStore(state => state.entries);
@@ -169,10 +179,12 @@ export function DraftsPanel({ mountNode, onClose, onEditKey }: DraftsPanelProps)
   const clearHistory = useCopyEditorStore(state => state.clearHistory);
   const importFromJson = useCopyEditorStore(state => state.importFromJson);
 
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [pasteError, setPasteError] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [copiedSessionId, setCopiedSessionId] = useState<string | null>(null);
+  const [copiedSegmentId, setCopiedSegmentId] = useState<string | null>(null);
   const copyTimerRef = useRef<number | null>(null);
 
   useEffect(() => () => {
@@ -181,11 +193,26 @@ export function DraftsPanel({ mountNode, onClose, onEditKey }: DraftsPanelProps)
     }
   }, []);
 
+  // Close the panel when clicking anywhere outside the panel, its internal
+  // popovers/flyouts, and the floating dock.
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (panelRef.current?.contains(target)) return;
+      if (mountNode?.contains(target)) return;
+      if (dockRef.current?.contains(target)) return;
+      onClose();
+    };
+    window.addEventListener('pointerdown', onPointerDown, true);
+    return () => window.removeEventListener('pointerdown', onPointerDown, true);
+  }, [dockRef, mountNode, onClose]);
+
   const activeEntries = Object.values(entriesMap).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const locale = i18n.language;
 
-  // When there are no active edits, surface history directly as the root view
-  // (like chat session history) without requiring an extra click.
+  // Opening the panel with no active edits goes straight to History edits;
+  // when active edits exist it opens on Edits.
   const isRootHistory = activeEntries.length === 0 && historySessions.length > 0;
   const viewingHistory = isRootHistory || (showHistory && historySessions.length > 0);
   const showBackButton = viewingHistory && activeEntries.length > 0;
@@ -218,6 +245,15 @@ export function DraftsPanel({ mountNode, onClose, onEditKey }: DraftsPanelProps)
     window.setTimeout(() => {
       setCopiedSessionId(current => (current === sessionId ? null : current));
     }, 1500);
+  };
+
+  const handleCopySegment = async (segmentId: string, text: string) => {
+    const ok = await copyToClipboard(text);
+    if (!ok) return;
+    setCopiedSegmentId(segmentId);
+    window.setTimeout(() => {
+      setCopiedSegmentId(current => (current === segmentId ? null : current));
+    }, 1200);
   };
 
   const handleRestoreSession = (sessionId: string) => {
@@ -261,6 +297,7 @@ export function DraftsPanel({ mountNode, onClose, onEditKey }: DraftsPanelProps)
 
   return (
     <div
+      ref={panelRef}
       aria-label={headerTitle}
       className="floway-copy-editor-surface floway-copy-editor-panel"
       role="dialog"
@@ -448,29 +485,33 @@ export function DraftsPanel({ mountNode, onClose, onEditKey }: DraftsPanelProps)
         <div className="floway-copy-editor-body floway-copy-editor-body--list">
           {historySessions.map(session => {
             const relative = relativeTime(session.archivedAt, locale, { now }) ?? shortDate(session.archivedAt, locale);
+            const visibleEntries = session.entries.slice(0, MAX_HISTORY_PREVIEW_ROWS);
+            const extraCount = session.entries.length - visibleEntries.length;
             return (
-              <div key={session.id} className="floway-copy-editor-draft-item">
+              <div
+                key={session.id}
+                className="floway-copy-editor-draft-item floway-copy-editor-history-item winui-focus-rect"
+                role="button"
+                tabIndex={0}
+                onClick={() => handleRestoreSession(session.id)}
+                onKeyDown={event => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    handleRestoreSession(session.id);
+                  }
+                }}
+              >
                 <div className="floway-copy-editor-draft-head">
-                  <div className="flex items-baseline gap-2 min-w-0">
-                    <span
-                      className="floway-copy-editor-batch-time"
-                      title={dateTime(session.archivedAt, locale)}
-                    >
-                      {relative}
-                    </span>
-                    <span className="floway-copy-editor-batch-count">
-                      ×{session.entries.length}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-0.5 flex-none">
-                    <Button
-                      appearance="subtle"
-                      aria-label={t('common.copyEditor.restoreHistory')}
-                      icon={<ArrowUndo16Regular />}
-                      size="small"
-                      title={t('common.copyEditor.restoreHistory')}
-                      onClick={() => handleRestoreSession(session.id)}
-                    />
+                  <span
+                    className="floway-copy-editor-batch-time"
+                    title={dateTime(session.archivedAt, locale)}
+                  >
+                    {relative}
+                  </span>
+                  <div
+                    className="flex items-center gap-0.5 flex-none"
+                    onClick={event => event.stopPropagation()}
+                  >
                     <Button
                       appearance="subtle"
                       aria-label={copiedSessionId === session.id ? t('common.copy.copied') : t('common.copyEditor.export')}
@@ -490,21 +531,39 @@ export function DraftsPanel({ mountNode, onClose, onEditKey }: DraftsPanelProps)
                   </div>
                 </div>
                 <div className="floway-copy-editor-batch-lines">
-                  {session.entries.map(item => {
-                    const preview = formatSessionPreview(item);
+                  {visibleEntries.map(item => {
+                    const segments = getSessionPreviewSegments(item);
                     return (
-                      <div
-                        key={item.key}
-                        className="floway-copy-editor-batch-line"
-                        title={preview ? `${item.key}  ${preview}` : item.key}
-                      >
-                        <span className="floway-copy-editor-batch-key">{item.key}</span>
-                        {preview && (
-                          <span className="floway-copy-editor-batch-preview">{preview}</span>
-                        )}
+                      <div key={item.key} className="floway-copy-editor-batch-line">
+                        <span className="floway-copy-editor-batch-key" title={item.key}>{item.key}</span>
+                        {segments.map((seg, index) => (
+                          <Fragment key={seg.id}>
+                            {index > 0 && (
+                              <span aria-hidden="true" className="floway-copy-editor-batch-preview-sep">
+                                {' / '}
+                              </span>
+                            )}
+                            <span
+                              className="floway-copy-editor-batch-preview-part"
+                              data-copied={copiedSegmentId === seg.id ? 'true' : 'false'}
+                              title={copiedSegmentId === seg.id ? t('common.copy.copied') : `${t('common.copy.action')}: ${seg.text}`}
+                              onClick={event => {
+                                event.stopPropagation();
+                                void handleCopySegment(seg.id, seg.text);
+                              }}
+                            >
+                              {seg.text}
+                            </span>
+                          </Fragment>
+                        ))}
                       </div>
                     );
                   })}
+                  {extraCount > 0 && (
+                    <span className="floway-copy-editor-batch-more">
+                      {t('common.copyEditor.moreEdits', { count: extraCount })}
+                    </span>
+                  )}
                 </div>
               </div>
             );

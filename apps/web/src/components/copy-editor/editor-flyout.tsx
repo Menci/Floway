@@ -54,9 +54,10 @@ export interface EditorFlyoutProps {
   anchorRect: DOMRect | null;
   route: string;
   onClose: () => void;
+  onStaged?: () => void;
 }
 
-export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, route }: EditorFlyoutProps) {
+export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, onStaged, route }: EditorFlyoutProps) {
   const { t } = useEditorTranslation();
   const idPrefix = useId();
   const entries = useCopyEditorStore(state => state.entries);
@@ -142,6 +143,7 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
       values,
       note,
     });
+    onStaged?.();
     onClose();
   };
 

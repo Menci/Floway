@@ -350,6 +350,19 @@ export const copyEditorCss = `
   border-bottom: 0;
 }
 
+.floway-copy-editor-history-item {
+  cursor: pointer;
+  transition: background-color 80ms ease;
+}
+
+.floway-copy-editor-history-item:hover {
+  background-color: var(--winui-subtle-fill-secondary);
+}
+
+.floway-copy-editor-history-item:active {
+  background-color: var(--winui-subtle-fill-tertiary);
+}
+
 .floway-copy-editor-draft-head {
   display: flex;
   align-items: center;
@@ -375,13 +388,6 @@ export const copyEditorCss = `
   color: var(--winui-text-fill-primary);
 }
 
-.floway-copy-editor-batch-count {
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--winui-text-fill-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
 .floway-copy-editor-batch-lines {
   display: flex;
   flex-direction: column;
@@ -401,12 +407,37 @@ export const copyEditorCss = `
 .floway-copy-editor-batch-key {
   font-family: var(--fontFamilyMonospace);
   color: var(--winui-text-fill-primary);
+  margin-inline-end: 8px;
 }
 
-.floway-copy-editor-batch-preview {
+.floway-copy-editor-batch-preview-part {
   color: var(--winui-text-fill-tertiary);
   font-weight: 400;
-  margin-inline-start: 8px;
+  border-radius: 3px;
+  cursor: copy;
+  transition: color 80ms ease;
+}
+
+.floway-copy-editor-batch-preview-part:hover {
+  color: var(--winui-text-fill-primary);
+}
+
+.floway-copy-editor-batch-preview-part[data-copied="true"] {
+  color: var(--winui-accent-text-fill-primary);
+}
+
+.floway-copy-editor-batch-preview-sep {
+  color: var(--winui-text-fill-primary);
+  opacity: 0.75;
+  user-select: none;
+  pointer-events: none;
+}
+
+.floway-copy-editor-batch-more {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--winui-text-fill-tertiary);
+  margin-top: 1px;
 }
 
 .floway-copy-editor-diff-list {
