@@ -193,7 +193,6 @@ function SessionPreviewLines({
         const segments = getSessionPreviewSegments(item);
         return (
           <div key={item.key} className="floway-copy-editor-batch-line">
-            <span className="floway-copy-editor-batch-key" title={item.key}>{item.key}</span>
             {segments.map((seg, index) => {
               const segId = `${scopeKey}:${seg.id}`;
               return (
@@ -217,6 +216,13 @@ function SessionPreviewLines({
                 </Fragment>
               );
             })}
+            <span
+              className="floway-copy-editor-batch-key"
+              data-leading={segments.length === 0 ? 'true' : 'false'}
+              title={item.key}
+            >
+              {item.key}
+            </span>
           </div>
         );
       })}
