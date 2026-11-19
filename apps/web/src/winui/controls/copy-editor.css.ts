@@ -303,6 +303,17 @@ export const copyEditorCss = `
   background-color: var(--winui-subtle-fill-secondary);
 }
 
+.floway-copy-editor-applied-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--winui-system-fill-success);
+  flex: none;
+  vertical-align: middle;
+}
+
 .floway-copy-editor-stale-popover {
   display: flex;
   flex-direction: column;

@@ -21,7 +21,6 @@ describe('copy editor store', () => {
 
     store.stageEntry({
       key: 'common.cancel',
-      route: '/dashboard/settings',
       values: { 'zh-Hans': '放弃' },
       note: '',
     });
@@ -34,7 +33,6 @@ describe('copy editor store', () => {
 
     store.stageEntry({
       key: 'common.dismiss',
-      route: '/dashboard',
       values: {},
       note: 'Use a friendlier word',
     });
@@ -49,18 +47,24 @@ describe('copy editor store', () => {
     expect(i18n.t('common.cancel', { lng: 'zh-Hans' })).toBe(originalZh);
   });
 
-  it('switches sessions cleanly across export, restore, paste import, no-op paste, and clearHistory', () => {
+  it('exports without route, switches sessions cleanly, ignores exportedAt on import, and no-ops identical paste', () => {
     const store = useCopyEditorStore.getState();
     store.stageEntry({
       key: 'common.cancel',
-      route: '/dashboard/settings',
       values: { en: 'Abort' },
       note: 'Match desktop terminology',
     });
 
     const payload = useCopyEditorStore.getState().buildExportPayload();
     expect(payload.version).toBe(1);
-    expect(payload.entries).toHaveLength(1);
+    expect(payload.exportedAt).toBeTruthy();
+    expect(payload.entries).toEqual([
+      {
+        key: 'common.cancel',
+        changes: { en: { before: 'Cancel', after: 'Abort' } },
+        note: 'Match desktop terminology',
+      },
+    ]);
 
     const session1 = useCopyEditorStore.getState().archiveActiveAsExport(payload.exportedAt);
     expect(session1).not.toBeNull();
@@ -71,7 +75,6 @@ describe('copy editor store', () => {
     // Start a second active session, then restore session1: the active session swaps into history.
     useCopyEditorStore.getState().stageEntry({
       key: 'common.dismiss',
-      route: '/dashboard',
       values: { en: 'Close now' },
       note: '',
     });
@@ -79,13 +82,14 @@ describe('copy editor store', () => {
     expect(Object.keys(useCopyEditorStore.getState().entries)).toEqual(['common.cancel']);
     expect(useCopyEditorStore.getState().history).toHaveLength(1);
     expect(useCopyEditorStore.getState().history[0]!.entries.map(e => e.key)).toEqual(['common.dismiss']);
-    // Both active and history remain silently applied in i18next.
     expect(i18n.t('common.cancel', { lng: 'en' })).toBe('Abort');
     expect(i18n.t('common.dismiss', { lng: 'en' })).toBe('Close now');
 
-    // Pasting the identical JSON is a no-op and does not duplicate history.
-    const sameResult = useCopyEditorStore.getState().importFromJson(JSON.stringify(payload));
-    expect(sameResult).toEqual({ imported: 1, skippedUpToDate: 0, changed: false });
+    // Pasting the identical JSON (even with a different exportedAt) is a no-op.
+    const sameResult = useCopyEditorStore.getState().importFromJson(
+      JSON.stringify({ ...payload, exportedAt: '2020-01-01T00:00:00.000Z' }),
+    );
+    expect(sameResult).toEqual({ imported: 1, changed: false });
     expect(useCopyEditorStore.getState().history).toHaveLength(1);
 
     // Pasting a different payload archives the active session and activates the pasted one.
@@ -95,57 +99,22 @@ describe('copy editor store', () => {
       entries: [
         {
           key: 'common.cancel',
-          route: '/dashboard/settings',
-          changes: { en: { before: 'Cancel', after: 'Stop' } },
+          changes: { en: { before: 'Old Cancel', after: 'Cancel' } },
         },
       ],
     };
     const nextResult = useCopyEditorStore.getState().importFromJson(JSON.stringify(otherPayload));
-    expect(nextResult).toEqual({ imported: 1, skippedUpToDate: 0, changed: true });
+    expect(nextResult).toEqual({ imported: 1, changed: true });
     expect(useCopyEditorStore.getState().history).toHaveLength(2);
-    expect(i18n.t('common.cancel', { lng: 'en' })).toBe('Stop');
+    // Already-applied entry is kept so the UI can show the green checkmark state.
+    expect(useCopyEditorStore.getState().entries['common.cancel']?.changes.en).toEqual({
+      before: 'Old Cancel',
+      after: 'Cancel',
+    });
 
     // Deleting history reverts keys no longer overridden by active entries.
     useCopyEditorStore.getState().clearHistory();
     expect(useCopyEditorStore.getState().history).toHaveLength(0);
     expect(i18n.t('common.dismiss', { lng: 'en' })).toBe('Dismiss');
-    expect(i18n.t('common.cancel', { lng: 'en' })).toBe('Stop');
-  });
-
-  it('silently prunes persisted active and history edits that already shipped', async () => {
-    window.localStorage.setItem(
-      __testing.storageKey,
-      JSON.stringify({
-        entries: {
-          'common.cancel': {
-            key: 'common.cancel',
-            route: '/',
-            changes: { en: { before: 'Old Cancel', after: 'Cancel' } },
-            note: '',
-            updatedAt: '2026-11-19T00:00:00.000Z',
-          },
-        },
-        history: [
-          {
-            id: 'session-1',
-            archivedAt: '2026-11-19T00:00:00.000Z',
-            entries: [
-              {
-                key: 'common.cancel',
-                route: '/',
-                changes: { en: { before: 'Old Cancel', after: 'Cancel' } },
-                note: '',
-                updatedAt: '2026-11-19T00:00:00.000Z',
-              },
-            ],
-          },
-        ],
-      }),
-    );
-
-    __testing.reset();
-    await useCopyEditorStore.getState().ensureInitialized();
-    expect(useCopyEditorStore.getState().entries['common.cancel']).toBeUndefined();
-    expect(useCopyEditorStore.getState().history).toHaveLength(0);
   });
 });

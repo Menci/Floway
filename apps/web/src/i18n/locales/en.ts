@@ -59,6 +59,7 @@ const en = {
         keyCopied: 'Key copied',
         emptyTextPlaceholder: 'Empty text',
         resetLanguage: 'Reset',
+        appliedNotice: 'Already in current version',
         staleNotice: 'Source text changed',
         noteLabel: 'Note',
         save: 'Save',

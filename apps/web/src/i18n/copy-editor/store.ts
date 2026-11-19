@@ -4,7 +4,7 @@ import { ensureLocaleLoaded, i18n } from '../index';
 import { supportedLanguages, type SupportedLanguage } from '../languages';
 import { loadLocale } from '../resources';
 
-const STORAGE_KEY = 'floway.copyEditorState.v3';
+const STORAGE_KEY = 'floway.copyEditorState.v4';
 const PLURAL_SUFFIX_RE = /_(zero|one|two|few|many|other)$/;
 
 export interface LanguageChange {
@@ -14,7 +14,6 @@ export interface LanguageChange {
 
 export interface CopyDraftEntry {
   key: string;
-  route: string;
   changes: Partial<Record<SupportedLanguage, LanguageChange>>;
   note: string;
   updatedAt: string;
@@ -28,7 +27,6 @@ export interface CopyHistorySession {
 
 export interface ExportedCopyChange {
   key: string;
-  route: string;
   changes?: Partial<Record<SupportedLanguage, LanguageChange>>;
   note?: string;
 }
@@ -41,14 +39,12 @@ export interface CopyEditorExportPayload {
 
 export interface StageEntryInput {
   key: string;
-  route: string;
   values: Partial<Record<SupportedLanguage, string>>;
   note: string;
 }
 
 export interface ImportResult {
   imported: number;
-  skippedUpToDate: number;
   changed: boolean;
 }
 
@@ -97,9 +93,8 @@ const parseEntry = (raw: unknown, fallbackKey?: string): CopyDraftEntry | null =
   const note = typeof rec.note === 'string' ? rec.note : '';
   if (Object.keys(changes).length === 0 && note.trim().length === 0) return null;
 
-  const route = typeof rec.route === 'string' ? rec.route : '/';
   const updatedAt = typeof rec.updatedAt === 'string' ? rec.updatedAt : new Date().toISOString();
-  return { key, route, changes, note, updatedAt };
+  return { key, changes, note, updatedAt };
 };
 
 const readStoredState = (): PersistedState => {
@@ -168,70 +163,6 @@ const applyResourceValue = (language: SupportedLanguage, key: string, value: str
   i18n.addResource(language, 'translation', key, value);
 };
 
-const reconcileEntry = (entry: CopyDraftEntry, originals: OriginalsMap): CopyDraftEntry | null => {
-  const nextChanges: Partial<Record<SupportedLanguage, LanguageChange>> = {};
-  for (const language of supportedLanguages) {
-    const change = entry.changes[language];
-    if (!change) continue;
-    const currentOriginal = originals[language].get(entry.key);
-    if (currentOriginal !== undefined && change.after === currentOriginal) {
-      continue;
-    }
-    nextChanges[language] = change;
-  }
-  if (Object.keys(nextChanges).length === 0 && entry.note.trim().length === 0) {
-    return null;
-  }
-  return { ...entry, changes: nextChanges };
-};
-
-/**
- * Reconciles active drafts and history sessions against the running build's
- * locale catalogs, silently pruning any edit that has already shipped.
- */
-const reconcileState = (
-  raw: PersistedState,
-  originals: OriginalsMap,
-): { state: PersistedState; changed: boolean } => {
-  let changed = false;
-  const entries: Record<string, CopyDraftEntry> = {};
-
-  for (const entry of Object.values(raw.entries)) {
-    const reconciled = reconcileEntry(entry, originals);
-    if (!reconciled) {
-      changed = true;
-      continue;
-    }
-    if (Object.keys(reconciled.changes).length !== Object.keys(entry.changes).length) {
-      changed = true;
-    }
-    entries[reconciled.key] = reconciled;
-  }
-
-  const history: CopyHistorySession[] = [];
-  for (const session of raw.history) {
-    const nextSessionEntries: CopyDraftEntry[] = [];
-    for (const entry of session.entries) {
-      const reconciled = reconcileEntry(entry, originals);
-      if (!reconciled) {
-        changed = true;
-        continue;
-      }
-      if (Object.keys(reconciled.changes).length !== Object.keys(entry.changes).length) {
-        changed = true;
-      }
-      nextSessionEntries.push(reconciled);
-    }
-    if (nextSessionEntries.length > 0) {
-      history.push({ ...session, entries: nextSessionEntries });
-    } else {
-      changed = true;
-    }
-  }
-
-  return { state: { entries, history }, changed };
-};
-
 /**
  * Resolves the effective override for `(language, key)` across history
  * sessions (newest first) and active drafts (highest precedence).
@@ -277,7 +208,6 @@ const formatExportEntries = (list: CopyDraftEntry[]): ExportedCopyChange[] =>
     .map(entry => {
       const item: ExportedCopyChange = {
         key: entry.key,
-        route: entry.route,
       };
       if (Object.keys(entry.changes).length > 0) {
         item.changes = entry.changes;
@@ -383,10 +313,7 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
         originals[language] = leaves;
       }
 
-      const stored = readStoredState();
-      const { state, changed } = reconcileState(stored, originals);
-      if (changed) writeStoredState(state);
-
+      const state = readStoredState();
       const touchedKeys = new Set<string>();
       for (const session of state.history) {
         for (const entry of session.entries) touchedKeys.add(entry.key);
@@ -452,7 +379,7 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
     return stale;
   },
 
-  stageEntry: ({ key, route, values, note }) => {
+  stageEntry: ({ key, values, note }) => {
     const { originals, entries, history } = get();
     const prev = entries[key];
     const nextChanges: Partial<Record<SupportedLanguage, LanguageChange>> = {};
@@ -472,6 +399,9 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
       }
       if (nextValue !== original) {
         nextChanges[language] = { before: original, after: nextValue };
+      } else if (prev?.changes[language]?.after === original) {
+        // Keep an already-applied entry intact when editing another field on the same key.
+        nextChanges[language] = prev.changes[language]!;
       }
     }
 
@@ -482,7 +412,6 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
     } else {
       nextEntries[key] = {
         key,
-        route,
         changes: nextChanges,
         note,
         updatedAt: new Date().toISOString(),
@@ -623,7 +552,6 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
     const { originals, entries, history } = get();
     const importedEntries: Record<string, CopyDraftEntry> = {};
     let imported = 0;
-    let skippedUpToDate = 0;
     const now = new Date().toISOString();
 
     for (const item of rawItems) {
@@ -631,7 +559,6 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
       const rec = item as Record<string, unknown>;
       if (typeof rec.key !== 'string' || rec.key.trim().length === 0) continue;
       const key = rec.key.trim();
-      const route = typeof rec.route === 'string' ? rec.route : '/';
       const note = typeof rec.note === 'string' ? rec.note : '';
       const changes: Partial<Record<SupportedLanguage, LanguageChange>> = {};
 
@@ -641,22 +568,17 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
           const ch = rawChange as Record<string, unknown>;
           if (typeof ch.after !== 'string') continue;
           const currentOriginal = originals[lang].get(key);
-          if (currentOriginal !== undefined && ch.after === currentOriginal) {
-            continue;
-          }
           const before = typeof ch.before === 'string' ? ch.before : (currentOriginal ?? '');
           changes[lang] = { before, after: ch.after };
         }
       }
 
       if (Object.keys(changes).length === 0 && note.trim().length === 0) {
-        skippedUpToDate += 1;
         continue;
       }
 
       importedEntries[key] = {
         key,
-        route,
         changes,
         note,
         updatedAt: now,
@@ -664,10 +586,10 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
       imported += 1;
     }
 
-    // No-op when nothing needs applying or when the imported set is identical
-    // to the active session so repeated pastes never duplicate history entries.
+    // No-op when nothing was parsed or when the imported set is identical to
+    // the active session so repeated pastes never duplicate history entries.
     if (imported === 0 || areEntrySetsEqual(entries, importedEntries)) {
-      return { imported, skippedUpToDate, changed: false };
+      return { imported, changed: false };
     }
 
     const archivedCurrent = buildHistorySession(entries, now);
@@ -680,7 +602,7 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
     syncKeysToI18n(touchedKeys, originals, importedEntries, nextHistory);
     writeStoredState({ entries: importedEntries, history: nextHistory });
     set({ entries: importedEntries, history: nextHistory });
-    return { imported, skippedUpToDate, changed: true };
+    return { imported, changed: true };
   },
 }));
 

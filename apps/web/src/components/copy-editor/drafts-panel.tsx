@@ -1,6 +1,7 @@
 import {
   ArrowLeft16Regular,
   Checkmark16Regular,
+  CheckmarkCircle16Regular,
   ClipboardPaste16Regular,
   Copy16Regular,
   Delete16Regular,
@@ -224,7 +225,7 @@ export interface DraftsPanelProps {
   dockRef: React.RefObject<HTMLDivElement | null>;
   mountNode: HTMLElement | null;
   onClose: () => void;
-  onEditKey: (key: string, route: string) => void;
+  onEditKey: (key: string) => void;
 }
 
 export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPanelProps) {
@@ -454,11 +455,11 @@ export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPa
                   className="floway-copy-editor-draft-item floway-copy-editor-interactive-item winui-focus-rect"
                   role="button"
                   tabIndex={0}
-                  onClick={() => onEditKey(entry.key, entry.route)}
+                  onClick={() => onEditKey(entry.key)}
                   onKeyDown={event => {
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault();
-                      onEditKey(entry.key, entry.route);
+                      onEditKey(entry.key);
                     }
                   }}
                 >
@@ -487,9 +488,10 @@ export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPa
                         const change = entry.changes[language];
                         if (!change) return null;
                         const currentOriginal = getOriginal(language, entry.key);
+                        const isApplied = currentOriginal !== undefined && currentOriginal === change.after;
                         const isStale = currentOriginal !== undefined
-                          && currentOriginal !== change.before
-                          && currentOriginal !== change.after;
+                          && !isApplied
+                          && currentOriginal !== change.before;
                         return (
                           <div key={language} className="floway-copy-editor-diff-row">
                             <span className="floway-copy-editor-diff-lang">
@@ -498,6 +500,15 @@ export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPa
                             <div className="floway-copy-editor-diff-values">
                               <span className="floway-copy-editor-diff-before-line">
                                 <span className="floway-copy-editor-diff-before">{change.before}</span>
+                                {isApplied && (
+                                  <span
+                                    aria-label={t('common.copyEditor.appliedNotice')}
+                                    className="floway-copy-editor-applied-icon"
+                                    title={t('common.copyEditor.appliedNotice')}
+                                  >
+                                    <CheckmarkCircle16Regular />
+                                  </span>
+                                )}
                                 {isStale && (
                                   <StaleSourcePopover
                                     mountNode={mountNode}

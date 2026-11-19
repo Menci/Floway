@@ -52,12 +52,11 @@ export interface EditorFlyoutProps {
   initialKey: string;
   candidates: KeyCandidate[];
   anchorRect: DOMRect | null;
-  route: string;
   onClose: () => void;
   onSaved?: () => void;
 }
 
-export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, onSaved, route }: EditorFlyoutProps) {
+export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, onSaved }: EditorFlyoutProps) {
   const { t } = useEditorTranslation();
   const idPrefix = useId();
   const entries = useCopyEditorStore(state => state.entries);
@@ -139,7 +138,6 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, onSa
   const handleStage = () => {
     stageEntry({
       key: activeKey,
-      route,
       values,
       note,
     });

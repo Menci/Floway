@@ -55,6 +55,7 @@ const zhHansCN = {
         keyCopied: '已复制 Key',
         emptyTextPlaceholder: '空文本',
         resetLanguage: '还原',
+        appliedNotice: '当前版本已生效',
         staleNotice: '原文已变更',
         noteLabel: '备注',
         save: '保存',

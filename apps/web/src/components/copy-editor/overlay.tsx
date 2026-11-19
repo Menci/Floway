@@ -81,7 +81,6 @@ interface ActiveFlyoutState {
   candidates: KeyCandidate[];
   anchorRect: DOMRect | null;
   anchorElement: Element | null;
-  route: string;
 }
 
 const FREEZE_EVENTS = ['pointerout', 'pointerleave', 'mouseout', 'mouseleave', 'blur', 'focusout'] as const;
@@ -240,7 +239,6 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
           candidates: hit.candidates,
           anchorRect: hit.rect,
           anchorElement: hit.element,
-          route: window.location.pathname,
         });
       }
     };
@@ -351,14 +349,13 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
               dockRef={dockRef}
               mountNode={portalRoot}
               onClose={() => setPanelOpen(false)}
-              onEditKey={(key, route) => {
+              onEditKey={key => {
                 setPanelOpen(false);
                 setActiveFlyout({
                   key,
                   candidates: [{ key, baseKey: key, source: 'text' }],
                   anchorRect: null,
                   anchorElement: findActiveFloatingSurface() ?? null,
-                  route,
                 });
               }}
             />
@@ -370,7 +367,6 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
               anchorRect={activeFlyout.anchorRect}
               candidates={activeFlyout.candidates}
               initialKey={activeFlyout.key}
-              route={activeFlyout.route}
               onClose={() => setActiveFlyout(null)}
               onSaved={() => setPanelOpen(true)}
             />
