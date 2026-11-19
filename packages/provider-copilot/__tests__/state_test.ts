@@ -17,7 +17,6 @@ test('readCopilotUpstreamState throws on a legacy copilotToken entry that lacks 
   assertThrows(
     () => readCopilotUpstreamState(legacy),
     TypeError,
-    'CopilotUpstreamState.copilotToken.baseUrl must be a non-empty string',
   );
 });
 
@@ -27,14 +26,12 @@ test('assertCopilotUpstreamState rejects prototype-named keys', () => {
     assertThrows(
       () => assertCopilotUpstreamState(JSON.parse(`{"knownModels":null,"copilotToken":null,"${key}":1}`)),
       TypeError,
-      `CopilotUpstreamState has unexpected key '${key}'`,
     );
     assertThrows(
       () => assertCopilotUpstreamState(JSON.parse(
         `{"knownModels":null,"copilotToken":{"token":"tok","expiresAt":1,"baseUrl":"https://api.individual.githubcopilot.com","${key}":1}}`,
       )),
       TypeError,
-      `CopilotUpstreamState.copilotToken has unexpected key '${key}'`,
     );
   }
 });

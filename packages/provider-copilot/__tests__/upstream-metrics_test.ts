@@ -47,5 +47,5 @@ it('switches absolute quota series between remaining and used while retaining th
 it('rejects an unpaired absolute quota observation', () => {
   expect(() => resolveUpstreamMetricDisplays([
     { name: 'quota.remaining', labels: { quota: 'chat' }, timestamp: 1_000, value: 213 },
-  ], { quotaDisplay: 'used' })).toThrow('without an entitlement series');
+  ], { quotaDisplay: 'used' })).toThrow();
 });

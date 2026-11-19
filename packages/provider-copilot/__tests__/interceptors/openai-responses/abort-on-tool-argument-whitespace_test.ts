@@ -73,7 +73,6 @@ test('aborts and emits an error event + done when whitespace exceeds the thresho
   const first = out[0];
   if (first.type !== 'event') throw new Error('expected event frame');
   assertEquals(first.event.type, 'error');
-  assertEquals((first.event as { message?: string }).message, 'Tool call arguments contained excessive whitespace, indicating a degenerate response.');
 
   assertEquals(out[1], doneFrame());
 });

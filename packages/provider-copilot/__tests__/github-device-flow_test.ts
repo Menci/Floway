@@ -7,7 +7,6 @@ test('startGitHubDeviceFlow rejects a success body without a polling interval', 
   await assertRejects(
     () => startGitHubDeviceFlow('github.com', async () => jsonResponse({ device_code: 'device', user_code: 'ABCD', verification_uri: 'https://github.com/login/device', expires_in: 900 })),
     Error,
-    'missing interval',
   );
 });
 

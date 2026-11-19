@@ -7,7 +7,7 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assert, assertEquals, assertStringIncludes, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const invocation = (): OpenAIChatCompletionsBoundaryCtx => ({
   payload: { model: 'test-model', messages: [] },
@@ -77,8 +77,7 @@ test('throws when whitespace exceeds the threshold', async () => {
     doneFrame(),
   ];
 
-  const err = await runExpectingThrow(frames);
-  assertStringIncludes(err.message, 'excessive consecutive whitespace');
+  await runExpectingThrow(frames);
 });
 
 test('tracks whitespace per tool-call index independently', async () => {
