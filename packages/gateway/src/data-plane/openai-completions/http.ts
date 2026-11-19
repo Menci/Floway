@@ -8,6 +8,7 @@
 
 import type { Context } from 'hono';
 
+import { respondOpenAICompletionsSse } from './respond.ts';
 import { tokenUsageFromOpenAICompletionsUsage } from './usage.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
@@ -82,7 +83,7 @@ export const openaiCompletions = async (c: Context): Promise<Response> => {
       return provider.instance.callOpenAICompletions(model, upstreamBody, ctx.abortSignal, opts);
     },
     response: wantsStream
-      ? { format: 'sse', transformFrame, settleUsage }
+      ? { format: 'strategy', respond: context => respondOpenAICompletionsSse(context, transformFrame, settleUsage) }
       : {
           format: 'json',
           extractBilling: (body: unknown) => {
