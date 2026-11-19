@@ -438,14 +438,21 @@ test('Escape discards the draft without committing a freeform model', () => {
   expect(changed).not.toHaveBeenCalled();
 });
 
-test('keeps an existing regex behind matching models even before the input changes', () => {
-  const { container } = renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: 'gp' } });
+test('puts the regex candidate first when editing an existing regex model', () => {
+  const { changed, container } = renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: 'gp' } });
 
   fireEvent.click(container.querySelector('.floway-scope-expression-regex')!.closest('button')!);
-  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['gpt-5', 'gpt-6', 'gp', '/gp/']);
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['/gp/', 'gpt-5', 'gpt-6', 'gp']);
 
+  const input = screen.getByRole('combobox', { name: 'Model' });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(changed).toHaveBeenLastCalledWith({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: 'gp' } });
+
+  fireEvent.click(container.querySelector('.floway-scope-expression-regex')!.closest('button')!);
   fireEvent.change(screen.getByRole('combobox', { name: 'Model' }), { target: { value: 'g' } });
-  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['gpt-5', 'gpt-6', 'g', '/g/']);
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['/g/', 'gpt-5', 'gpt-6', 'g']);
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Model' }), { key: 'Enter' });
+  expect(changed).toHaveBeenLastCalledWith({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: 'g' } });
 });
 
 test('commits a freeform model on blur', async () => {
@@ -686,4 +693,63 @@ test('hides the trailing model append trigger while editing the upstream segment
   expect(screen.queryByRole('button', { name: 'Model' })).toBeNull();
   fireEvent.keyDown(screen.getByRole('combobox', { name: 'Resource' }), { key: 'Escape' });
   expect(screen.getByRole('button', { name: 'Model' })).toBeTruthy();
+});
+
+test('Enter selects the top matching candidate across kind, instance, and model segments', () => {
+  const { changed } = renderEditor();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Resource type' }));
+  const kindInput = screen.getByRole('combobox', { name: 'Resource type' });
+  fireEvent.change(kindInput, { target: { value: 'up' } });
+  fireEvent.keyDown(kindInput, { key: 'Enter' });
+  expect(changed).toHaveBeenLastCalledWith({ kind: 'upstreams' });
+
+  const instanceInput = screen.getByRole('combobox', { name: 'Resource' });
+  fireEvent.change(instanceInput, { target: { value: 'v' } });
+  fireEvent.keyDown(instanceInput, { key: 'Enter' });
+  expect(changed).toHaveBeenLastCalledWith({ kind: 'upstream', upstreamId: 'up_b' });
+
+  const modelInput = screen.getByRole('combobox', { name: 'Model' });
+  fireEvent.change(modelInput, { target: { value: 'custom-model' } });
+  fireEvent.keyDown(modelInput, { key: 'Enter' });
+  expect(changed).toHaveBeenLastCalledWith({ kind: 'upstreamModel', upstreamId: 'up_b', model: { kind: 'exact', value: 'custom-model' } });
+});
+
+test('blur commits the same top matching candidate as Enter for edited resource segments', async () => {
+  const { changed } = renderEditor({ kind: 'upstream', upstreamId: 'up_a' });
+
+  fireEvent.click(screen.getByRole('button', { name: 'Copilot' }));
+  const input = screen.getByRole('combobox', { name: 'Resource' });
+  fireEvent.change(input, { target: { value: 'v' } });
+  fireEvent.blur(input);
+
+  await waitFor(() => expect(changed).toHaveBeenLastCalledWith({ kind: 'upstream', upstreamId: 'up_b' }));
+  expect(screen.queryByRole('combobox')).toBeNull();
+});
+
+test('Enter keeps an unknown resource intact when no real option matches its ID', () => {
+  const { changed } = renderEditor({ kind: 'upstream', upstreamId: 'up_removed' });
+  fireEvent.click(screen.getByRole('button', { name: 'Unknown' }));
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Resource' }), { key: 'Enter' });
+  expect(changed).not.toHaveBeenCalled();
+  expect(screen.queryByRole('combobox')).toBeNull();
+  expect(screen.getByTestId('scope').textContent).toBe('{"kind":"upstream","upstreamId":"up_removed"}');
+});
+
+test('editing a custom literal model keeps that literal first so Enter and blur keep it', () => {
+  const { changed } = renderEditor({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gp' } });
+  fireEvent.click(screen.getByRole('button', { name: 'gp' }));
+  expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['gp', 'gpt-5', 'gpt-6', '/gp/']);
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Model' }), { key: 'Enter' });
+  expect(changed).toHaveBeenLastCalledWith({ kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gp' } });
+});
+
+test('Enter respects keyboard arrow navigation when choosing a lower candidate', () => {
+  const { changed } = renderEditor({ kind: 'upstreams' });
+  fireEvent.click(screen.getByRole('button', { name: 'Resource' }));
+  const input = screen.getByRole('combobox', { name: 'Resource' });
+  fireEvent.keyDown(input, { key: 'ArrowDown' });
+  fireEvent.keyDown(input, { key: 'ArrowDown' });
+  fireEvent.keyDown(input, { key: 'Enter' });
+  expect(changed).toHaveBeenLastCalledWith({ kind: 'upstream', upstreamId: 'up_b' });
 });

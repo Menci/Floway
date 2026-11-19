@@ -90,8 +90,9 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
   const [pendingKind, setPendingKind] = useState<ScopeKind | null>(null);
   const editRevision = useRef(0);
   const activePartRef = useRef<Part | null>(null);
+  const keyboardNavigatedRef = useRef(false);
   // A deferred blur must not commit after replacement or a read-only transition.
-  useEffect(() => () => { editRevision.current++; activePartRef.current = null; }, [readOnly]);
+  useEffect(() => () => { editRevision.current++; activePartRef.current = null; keyboardNavigatedRef.current = false; }, [readOnly]);
   if (readOnly && editingPart !== null) {
     setActive(null);
     setQuery('');
@@ -103,6 +104,7 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
   const resetInput = (nextActive: Part | null, nextQuery = '') => {
     editRevision.current++;
     activePartRef.current = nextActive;
+    keyboardNavigatedRef.current = false;
     setActive(nextActive);
     setQuery(nextQuery);
     setDirty(false);
@@ -125,11 +127,11 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
     }
     resetInput(part, partValue(part, kind, value, data, t));
   };
-  const commitKind = (nextKind: ScopeKind) => {
+  const commitKind = (nextKind: ScopeKind, advance = true) => {
     if (nextKind !== kindFor(value) || purpose === 'filter') {
       onChange?.(collectionScope(nextKind));
     }
-    if (nextKind === 'self') {
+    if (!advance || nextKind === 'self') {
       setPendingKind(null);
       resetInput(null);
       return;
@@ -137,14 +139,15 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
     setPendingKind(nextKind);
     resetInput('instance');
   };
-  const commitInstance = (id: string) => {
+  const commitInstance = (id: string, advance = true) => {
     if (kind === 'upstream') {
       const next = value?.kind === 'upstreamModel' && purpose !== 'filter'
         ? { ...value, upstreamId: id }
         : { kind: 'upstream' as const, upstreamId: id };
       onChange?.(next);
       setPendingKind(null);
-      resetInput('model');
+      if (advance) resetInput('model');
+      else resetInput(null);
       return;
     }
     if (kind === 'user') onChange?.({ kind: 'user', userId: Number(id) });
@@ -160,21 +163,27 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
     onChange?.({ kind: 'upstreamModel', upstreamId: value.upstreamId, model: { kind: patternKind, value: pattern } });
     closeInput();
   };
-  const commitOption = (part: Part, option: string) => {
-    if (part === 'kind') commitKind(option as ScopeKind);
-    else if (part === 'instance') commitInstance(option);
+  const commitOption = (part: Part, option: string, advance = true) => {
+    if (part === 'kind') commitKind(option as ScopeKind, advance);
+    else if (part === 'instance') commitInstance(option, advance);
     else commitModel(option);
   };
+  const options = useMemo(
+    () => optionsFor(active, kind, query, value, data, t),
+    [active, data, kind, query, t, value],
+  );
+  const defaultOption = options.find(option => option.matched) ?? null;
   const commitBlur = () => {
-    if (!dirty) {
+    if (!dirty || active === null) {
       closeInput();
       return;
     }
     const trimmed = query.trim();
-    if (active === 'model' && trimmed) {
-      const patternKind = value?.kind === 'upstreamModel' ? value.model.kind : 'exact';
-      commitModel(`${patternKind}:${trimmed}`);
-    } else closeInput();
+    if (!trimmed || defaultOption === null || defaultOption.value === currentOptionValue(active, kind, value)) {
+      closeInput();
+      return;
+    }
+    commitOption(active, defaultOption.value, false);
   };
   const onInputBlur = (part: Part, event: Parameters<NonNullable<ComponentProps<typeof InlineCombobox>['onBlur']>>[0]) => {
     if (activePartRef.current !== part) return;
@@ -192,10 +201,12 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
     });
   };
 
-  const options = useMemo(
-    () => optionsFor(active, kind, query, value, data, t),
-    [active, data, kind, query, t, value],
-  );
+  const commitEnter = () => {
+    if (active === null) return;
+    const candidate = query.trim() === '' ? (options[0] ?? null) : defaultOption;
+    if (candidate !== null) commitOption(active, candidate.value);
+    else closeInput();
+  };
   const input = active === null ? null : <PartInput
     ariaLabel={t(`dashboard.accessControl.scope.${active === 'kind' ? 'kind' : active === 'instance' ? 'instance' : 'model'}`)}
     emptyMessage={t('dashboard.accessControl.scope.noMatches')}
@@ -203,6 +214,7 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
     name={`scope-${active}`}
     onBlur={event => onInputBlur(active, event)}
     onChange={next => {
+      keyboardNavigatedRef.current = false;
       setDirty(true);
       setQuery(active === 'model' && purpose === 'scope' ? next.replace(/^\//, '').replace(/\/$/, '') : next);
     }}
@@ -250,17 +262,17 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
       if (onNavigate) event.preventDefault();
     }}
   >
-    <Segment active={active === 'kind'} dirty={dirty} input={input} interactive={interactive} onActivate={() => activate('kind')} onBackspace={editable && active === 'kind' && query === '' && value !== null ? () => discardSegment('kind', 'backspace') : undefined} onCancel={closeInput} part="kind">{kind === null
+    <Segment active={active === 'kind'} dirty={dirty} input={input} interactive={interactive} keyboardNavigatedRef={keyboardNavigatedRef} onActivate={() => activate('kind')} onBackspace={editable && active === 'kind' && query === '' && value !== null ? () => discardSegment('kind', 'backspace') : undefined} onCancel={closeInput} onEnter={commitEnter} part="kind">{kind === null
       ? !readOnly && <AppendTrigger label={t('dashboard.accessControl.scope.kind')} />
       : <PartToken className="floway-scope-expression-kind">{kindLabel(kind, t)}</PartToken>}
     </Segment>
 
-    {showInstance && <Segment active={active === 'instance'} dirty={dirty} input={input} interactive={interactive} onActivate={() => activate('instance')} onBackspace={editable && (active === 'instance' ? query === '' : !hasInstance) ? () => discardSegment('instance', 'backspace') : undefined} onCancel={closeInput} part="instance">{hasInstance
+    {showInstance && <Segment active={active === 'instance'} dirty={dirty} input={input} interactive={interactive} keyboardNavigatedRef={keyboardNavigatedRef} onActivate={() => activate('instance')} onBackspace={editable && (active === 'instance' ? query === '' : !hasInstance) ? () => discardSegment('instance', 'backspace') : undefined} onCancel={closeInput} onEnter={commitEnter} part="instance">{hasInstance
       ? <InstancePart data={data} kind={kind} t={t} value={value} />
       : <AppendTrigger label={t('dashboard.accessControl.scope.instance')} />}
     </Segment>}
 
-    {showModel && <Segment active={active === 'model'} dirty={dirty} input={input} interactive={interactive} onActivate={() => activate('model')} onBackspace={editable && (active === 'model' ? query === '' : value.kind !== 'upstreamModel') ? () => discardSegment('model', 'backspace') : undefined} onCancel={closeInput} part="model">{value.kind === 'upstreamModel'
+    {showModel && <Segment active={active === 'model'} dirty={dirty} input={input} interactive={interactive} keyboardNavigatedRef={keyboardNavigatedRef} onActivate={() => activate('model')} onBackspace={editable && (active === 'model' ? query === '' : value.kind !== 'upstreamModel') ? () => discardSegment('model', 'backspace') : undefined} onCancel={closeInput} onEnter={commitEnter} part="model">{value.kind === 'upstreamModel'
       ? <ModelPart scope={value} />
       : <AppendTrigger label={t('dashboard.accessControl.scope.model')} />}
     </Segment>}
@@ -268,15 +280,17 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
   return framed ? <ScopeEditorSurface className={className} expressionRef={expressionRef} onActivate={() => activate(lastPart)} onRemove={kind === null ? undefined : removeLast} readOnly={readOnly}>{expression}</ScopeEditorSurface> : expression;
 }
 
-function Segment({ active, children, dirty, input, interactive, onActivate, onBackspace, onCancel, part }: {
+function Segment({ active, children, dirty, input, interactive, keyboardNavigatedRef, onActivate, onBackspace, onCancel, onEnter, part }: {
   active: boolean;
   children: ReactNode;
   dirty: boolean;
   input: ReactNode;
   interactive: boolean;
+  keyboardNavigatedRef: RefObject<boolean>;
   onActivate: () => void;
   onBackspace?: () => void;
   onCancel: () => void;
+  onEnter: () => void;
   part: Part;
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -288,6 +302,23 @@ function Segment({ active, children, dirty, input, interactive, onActivate, onBa
     }
   }, [active]);
   return <SegmentContext value={{ onActivate, readOnly: active || !interactive, triggerRef }}><span className="floway-scope-expression-segment" data-scope-part={part} onKeyDownCapture={event => {
+    if (active && !event.nativeEvent.isComposing) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End' || event.key === 'PageDown' || event.key === 'PageUp') {
+        keyboardNavigatedRef.current = true;
+        return;
+      }
+      if (event.key === 'Enter' && !event.altKey && !event.ctrlKey && !event.metaKey) {
+        const navigatedOption = keyboardNavigatedRef.current
+          && event.target instanceof HTMLElement
+          && Boolean(event.target.getAttribute('aria-activedescendant'));
+        if (!navigatedOption) {
+          event.preventDefault();
+          event.stopPropagation();
+          onEnter();
+          return;
+        }
+      }
+    }
     if (active && event.key === 'Escape' && !event.nativeEvent.isComposing) {
       event.preventDefault();
       event.stopPropagation();
@@ -377,7 +408,18 @@ function PartToken({ children, className }: {
     : <button className={classes} onClick={onActivate} ref={triggerRef} type="button">{content}</button>;
 }
 
-interface ScopeOption { key: string; value: string; text: string; content: ReactNode; dimmed?: boolean }
+interface ScopeOption { key: string; value: string; text: string; content: ReactNode; dimmed?: boolean; matched: boolean }
+
+const currentOptionValue = (part: Part | null, kind: ScopeKind | null, value: AccessScope | null): string | null => {
+  if (part === 'kind') return kind;
+  if (part === 'instance') {
+    if (hasUpstreamInstance(value)) return value.upstreamId;
+    if (value?.kind === 'user') return String(value.userId);
+    if (value?.kind === 'group') return String(value.groupId);
+  }
+  if (part === 'model' && value?.kind === 'upstreamModel') return `${value.model.kind}:${value.model.value}`;
+  return null;
+};
 
 const optionsFor = (
   active: Part | null,
@@ -387,11 +429,14 @@ const optionsFor = (
   data: ScopeExpressionData,
   t: TFunction,
 ): ScopeOption[] => {
-  const needle = query.toLowerCase();
+  const trimmed = query.trim();
+  const needle = trimmed.toLowerCase();
   const matching: ScopeOption[] = [];
   const unmatched: ScopeOption[] = [];
   const custom: ScopeOption[] = [];
-  const add = (option: ScopeOption, matches: boolean) => (matches ? matching : unmatched).push(option);
+  const preferred: ScopeOption[] = [];
+  const add = (option: Omit<ScopeOption, 'matched'>, matches: boolean) =>
+    (matches ? matching : unmatched).push({ ...option, matched: matches });
   if (active === 'kind') {
     for (const candidate of ['self', 'user', 'upstream', 'group'] as const) {
       const label = kindLabel(candidate, t);
@@ -412,19 +457,39 @@ const optionsFor = (
   } else if (active === 'model' && hasUpstreamInstance(value)) {
     const ids = [...new Set(data.models.filter(model => model.upstreams.some(upstream => upstream.id === value.upstreamId)).map(model => model.id))]
       .sort((a, b) => a.localeCompare(b));
-    const pattern = query ? draftPattern(query) : null;
+    const editingRegex = value.kind === 'upstreamModel' && value.model.kind === 'regex';
+    const pattern = trimmed ? draftPattern(trimmed) : null;
     for (const id of ids) {
       add({ key: id, value: `exact:${id}`, text: id, content: <><CubeRegular className="floway-scope-expression-model-icon" /><span className="floway-control-label font-mono" translate="no">{id}</span></> }, id.toLowerCase().includes(needle) || pattern?.test(id) === true);
     }
-    if (query && !ids.includes(query)) {
-      custom.push({ key: `literal:${query}`, value: `exact:${query}`, text: query, content: <><CubeRegular className="floway-scope-expression-model-icon" /><span className="floway-control-label font-mono" translate="no">{query}</span></>, dimmed: true });
+    if (trimmed && !ids.includes(trimmed)) {
+      custom.push({ key: `literal:${trimmed}`, value: `exact:${trimmed}`, text: trimmed, content: <><CubeRegular className="floway-scope-expression-model-icon" /><span className="floway-control-label font-mono" translate="no">{trimmed}</span></>, dimmed: true, matched: true });
     }
     if (pattern !== null) {
-      custom.push({ key: `regex:${query}`, value: `regex:${query}`, text: `/${query}/`, content: <><TextAsteriskRegular className="floway-scope-expression-model-icon" /><RegexPattern pattern={query} /></> });
+      const regexOption: ScopeOption = { key: `regex:${trimmed}`, value: `regex:${trimmed}`, text: `/${trimmed}/`, content: <><TextAsteriskRegular className="floway-scope-expression-model-icon" /><RegexPattern pattern={trimmed} /></>, matched: true };
+      if (editingRegex) preferred.push(regexOption);
+      else custom.push(regexOption);
     }
   }
 
-  return [...matching, ...custom, ...unmatched];
+  const ordered = [...preferred, ...matching, ...custom, ...unmatched];
+  // Exact text matches (preferring the current selection when names collide)
+  // sit at the top so Enter, clicking the first candidate, and blur resolve
+  // identically.
+  if (trimmed !== '' && preferred.length === 0) {
+    const current = currentOptionValue(active, kind, value);
+    const exactCurrent = current === null
+      ? -1
+      : ordered.findIndex(option => option.matched && option.value === current && option.text.toLowerCase() === needle);
+    const promotedIndex = exactCurrent >= 0
+      ? exactCurrent
+      : ordered.findIndex(option => option.matched && !option.dimmed && option.text.toLowerCase() === needle);
+    if (promotedIndex > 0) {
+      const [promoted] = ordered.splice(promotedIndex, 1);
+      ordered.unshift(promoted!);
+    }
+  }
+  return ordered;
 };
 
 const draftPattern = (query: string): RegExp | null => {
