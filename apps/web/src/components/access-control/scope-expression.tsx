@@ -54,7 +54,10 @@ function ScopeEditorSurface({ children, className, expressionRef, onActivate, on
   const isWhitespace = (target: EventTarget, root: HTMLElement) => target === root || target === expressionRef.current;
   return <div aria-disabled={readOnly ? true : undefined} className={mergeClasses('floway-scope-editor', className)}
     onMouseDown={event => {
-      if (!readOnly && isWhitespace(event.target, event.currentTarget)) event.preventDefault();
+      if (!readOnly && (isWhitespace(event.target, event.currentTarget)
+        || (event.target instanceof Element && !expressionRef.current?.contains(event.target)))) {
+        event.preventDefault();
+      }
     }}
     onClick={event => {
       if (!readOnly && isWhitespace(event.target, event.currentTarget)) {
@@ -213,25 +216,33 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
   const showInstance = kind !== null && kind !== 'self' && (active === 'instance' || hasInstance || !readOnly);
   const showModel = kind === 'upstream' && hasUpstreamInstance(value) && (active === 'model' || value.kind === 'upstreamModel' || !readOnly);
   const lastPart = showModel ? 'model' : showInstance ? 'instance' : 'kind';
-  const removeLast = () => {
-    resetInput(null);
-    if (value?.kind === 'upstreamModel') onChange?.({ kind: 'upstream', upstreamId: value.upstreamId });
-    else if (value?.kind === 'upstream') onChange?.({ kind: 'upstreams' });
-    else if (value?.kind === 'user') onChange?.({ kind: 'users' });
-    else if (value?.kind === 'group') onChange?.({ kind: 'groups' });
-    else onChange?.(null);
-    setPendingKind(null);
-  };
   const editable = !readOnly && !onNavigate;
-  const removePreviousPart = (part: Part) => {
+  const deepestPart: Part | null = value?.kind === 'upstreamModel' || active === 'model'
+    ? 'model'
+    : hasInstance || active === 'instance'
+      ? 'instance'
+      : kind !== null || active === 'kind'
+        ? 'kind'
+        : null;
+  const discardSegment = (part: Part, reason: 'remove' | 'backspace') => {
     setPendingKind(null);
     if (part === 'model') {
-      resetInput('instance');
-      onChange?.({ kind: 'upstreams' });
+      const next = value?.kind === 'upstreamModel' ? { kind: 'upstream' as const, upstreamId: value.upstreamId } : value;
+      resetInput('instance', partValue('instance', kind, next, data, t));
+      if (next !== value) onChange?.(next);
+      inputRef.current?.focus();
     } else if (part === 'instance') {
-      resetInput('kind');
-      onChange?.(null);
+      const next = hasInstance ? collectionScope(kind) : value;
+      resetInput('kind', partValue('kind', kind, next, data, t));
+      if (next !== value) onChange?.(next);
+      inputRef.current?.focus();
+    } else {
+      resetInput(reason === 'backspace' ? 'kind' : null);
+      if (value !== null) onChange?.(null);
     }
+  };
+  const removeLast = () => {
+    if (deepestPart !== null) discardSegment(deepestPart, 'remove');
   };
 
   const expression = <div aria-label={interactive ? t('dashboard.accessControl.fields.scope') : undefined} className={mergeClasses('floway-scope-expression', !framed && className)} ref={expressionRef} role={interactive ? 'group' : undefined}
@@ -239,17 +250,17 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
       if (onNavigate) event.preventDefault();
     }}
   >
-    <Segment active={active === 'kind'} dirty={dirty} input={input} interactive={interactive} onActivate={() => activate('kind')} onCancel={closeInput} part="kind">{kind === null
+    <Segment active={active === 'kind'} dirty={dirty} input={input} interactive={interactive} onActivate={() => activate('kind')} onBackspace={editable && active === 'kind' && query === '' && value !== null ? () => discardSegment('kind', 'backspace') : undefined} onCancel={closeInput} part="kind">{kind === null
       ? !readOnly && <AppendTrigger label={t('dashboard.accessControl.scope.kind')} />
       : <PartToken className="floway-scope-expression-kind">{kindLabel(kind, t)}</PartToken>}
     </Segment>
 
-    {showInstance && <Segment active={active === 'instance'} dirty={dirty} input={input} interactive={interactive} onActivate={() => activate('instance')} onBackspace={editable && (active === 'instance' ? query === '' : !hasInstance) ? () => removePreviousPart('instance') : undefined} onCancel={closeInput} part="instance">{hasInstance
+    {showInstance && <Segment active={active === 'instance'} dirty={dirty} input={input} interactive={interactive} onActivate={() => activate('instance')} onBackspace={editable && (active === 'instance' ? query === '' : !hasInstance) ? () => discardSegment('instance', 'backspace') : undefined} onCancel={closeInput} part="instance">{hasInstance
       ? <InstancePart data={data} kind={kind} t={t} value={value} />
       : <AppendTrigger label={t('dashboard.accessControl.scope.instance')} />}
     </Segment>}
 
-    {showModel && <Segment active={active === 'model'} dirty={dirty} input={input} interactive={interactive} onActivate={() => activate('model')} onBackspace={editable && (active === 'model' ? query === '' : value.kind !== 'upstreamModel') ? () => removePreviousPart('model') : undefined} onCancel={closeInput} part="model">{value.kind === 'upstreamModel'
+    {showModel && <Segment active={active === 'model'} dirty={dirty} input={input} interactive={interactive} onActivate={() => activate('model')} onBackspace={editable && (active === 'model' ? query === '' : value.kind !== 'upstreamModel') ? () => discardSegment('model', 'backspace') : undefined} onCancel={closeInput} part="model">{value.kind === 'upstreamModel'
       ? <ModelPart scope={value} />
       : <AppendTrigger label={t('dashboard.accessControl.scope.model')} />}
     </Segment>}
