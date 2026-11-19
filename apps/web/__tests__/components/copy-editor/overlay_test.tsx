@@ -32,10 +32,10 @@ describe('CopyEditorOverlay', () => {
       </>,
     );
 
-    expect(screen.queryByRole('region', { name: 'Copy editor' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'UI text editor' })).toBeNull();
 
     fireEvent.keyDown(window, { key: 'Alt', altKey: true });
-    expect(await screen.findByRole('region', { name: 'Copy editor' })).toBeTruthy();
+    expect(await screen.findByRole('region', { name: 'UI text editor' })).toBeTruthy();
 
     // Mouse leaving an external trigger while Alt is pressed is swallowed to
     // keep hover tooltips/popovers frozen.
@@ -43,7 +43,7 @@ describe('CopyEditorOverlay', () => {
     expect(onExternalLeave).not.toHaveBeenCalled();
 
     fireEvent.keyUp(window, { key: 'Alt', altKey: false });
-    await waitFor(() => expect(screen.queryByRole('region', { name: 'Copy editor' })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'UI text editor' })).toBeNull());
   });
 
   it('opens the flyout on Alt+click without triggering the underlying button and intercepts Escape', async () => {

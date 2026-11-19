@@ -62,7 +62,7 @@ const zhHansCN = {
         noteLabel: '备注',
         save: '保存',
         revert: '删除',
-        emptyDrafts: '暂无编辑',
+        emptyDrafts: '按住 {{key}} 并点击页面文案即可开始编辑',
         moreEdits_other: '还有 {{count, number}} 项',
         deleteHistory: '删除并还原',
         deleteAllHistory: '全部删除',
@@ -245,7 +245,7 @@ const zhHansCN = {
           },
           copyEditor: {
             title: '文案编辑模式',
-            description: '按住 Alt 点击界面上的任意文案，即可现场编辑多语言字符串并导出',
+            description: '按住 {{key}} 并点击界面上的任意文案，即可现场编辑并导出',
           },
           save: '保存偏好',
           saved: '偏好已保存。',

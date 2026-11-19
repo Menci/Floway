@@ -6,7 +6,7 @@ import { useFetcher } from 'react-router';
 import { z } from 'zod';
 
 import { setLanguage } from '../i18n';
-import { syncCopyEditorPreference } from '../i18n/copy-editor/mirror';
+import { getAltKeyLabel, syncCopyEditorPreference } from '../i18n/copy-editor/mirror';
 import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-settings';
 import { requireDashboardSession } from './guards';
@@ -206,7 +206,7 @@ function PreferencesSection() {
           checked={draft.copyEditor}
           onChange={(_, data) => setDraft(current => ({ ...current, copyEditor: data.checked }))}
         />}
-        description={t('dashboard.settings.preferences.copyEditor.description')}
+        description={t('dashboard.settings.preferences.copyEditor.description', { key: getAltKeyLabel() })}
         header={t('dashboard.settings.preferences.copyEditor.title')}
         icon={<Edit24Regular />}
       />

@@ -71,7 +71,7 @@ describe('preference form', () => {
     vi.stubGlobal('fetch', fetch);
     renderPage();
 
-    fireEvent.click(screen.getByRole('switch', { name: 'Copy editor' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'UI text editor' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save preferences' }));
 
     await waitFor(() => expect(useAuthStore.getState().session!.user.preferences.copyEditor).toBe(true));

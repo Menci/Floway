@@ -50,3 +50,10 @@ export const __testing = {
   },
   storageKey: STORAGE_KEY,
 };
+
+export const getAltKeyLabel = (): 'Option' | 'Alt' => {
+  if (typeof navigator === 'undefined') return 'Alt';
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const platform = nav.userAgentData?.platform ?? navigator.platform ?? navigator.userAgent;
+  return /mac|iphone|ipad|ipod/i.test(platform) ? 'Option' : 'Alt';
+};

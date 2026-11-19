@@ -16,6 +16,7 @@ import { EditorIconButton, useCopyEditorPortal } from './editor-icon-button';
 import { useEditorTranslation } from './use-editor-t';
 import { fluentComponents } from '../../fluent';
 import { COPY_EDITOR_ROOT_ATTR } from '../../i18n/copy-editor/dom-registry';
+import { getAltKeyLabel } from '../../i18n/copy-editor/mirror';
 import { useCopyEditorStore, type CopyDraftEntry } from '../../i18n/copy-editor/store';
 import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
@@ -490,7 +491,7 @@ export function DraftsPanel({
           <div className="floway-copy-editor-body floway-copy-editor-body--list">
             {activeEntries.length === 0 ? (
               <div className="floway-copy-editor-empty">
-                {t('common.copyEditor.emptyDrafts')}
+                {t('common.copyEditor.emptyDrafts', { key: getAltKeyLabel() })}
               </div>
             ) : (
               activeEntries.map(entry => {
