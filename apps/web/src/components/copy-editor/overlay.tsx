@@ -372,7 +372,7 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
               initialKey={activeFlyout.key}
               route={activeFlyout.route}
               onClose={() => setActiveFlyout(null)}
-              onStaged={() => setPanelOpen(true)}
+              onSaved={() => setPanelOpen(true)}
             />
           )}
 
@@ -390,7 +390,7 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
                 title={t('common.copyEditor.panelTitle')}
                 onClick={() => setPanelOpen(open => !open)}
               >
-                {t('common.copyEditor.stagedCount', { count: activeCount })}
+                {t('common.copyEditor.editsCount', { count: activeCount })}
               </Button>
 
               <span className="floway-copy-editor-dock-divider" />

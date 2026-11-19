@@ -54,10 +54,10 @@ export interface EditorFlyoutProps {
   anchorRect: DOMRect | null;
   route: string;
   onClose: () => void;
-  onStaged?: () => void;
+  onSaved?: () => void;
 }
 
-export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, onStaged, route }: EditorFlyoutProps) {
+export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, onSaved, route }: EditorFlyoutProps) {
   const { t } = useEditorTranslation();
   const idPrefix = useId();
   const entries = useCopyEditorStore(state => state.entries);
@@ -143,7 +143,7 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, onSt
       values,
       note,
     });
-    onStaged?.();
+    onSaved?.();
     onClose();
   };
 
@@ -341,7 +341,7 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, onSt
             disabled={!hasAnyDiffOrNote && !existingEntry}
             onClick={handleStage}
           >
-            {t('common.copyEditor.stage')}
+            {t('common.copyEditor.save')}
           </Button>
         </div>
       </div>

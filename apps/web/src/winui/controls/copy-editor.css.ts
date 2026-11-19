@@ -112,7 +112,7 @@ export const copyEditorCss = `
   right: 16px;
   bottom: 62px;
   width: min(460px, calc(100vw - 32px));
-  max-height: min(620px, calc(100vh - 96px));
+  max-height: min(480px, calc(100vh - 96px));
 }
 
 .floway-copy-editor-header {
@@ -178,6 +178,7 @@ export const copyEditorCss = `
 .floway-copy-editor-body {
   padding: 16px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -350,16 +351,24 @@ export const copyEditorCss = `
   border-bottom: 0;
 }
 
-.floway-copy-editor-history-item {
+.floway-copy-editor-interactive-item {
   cursor: pointer;
   transition: background-color 80ms ease;
 }
 
-.floway-copy-editor-history-item:hover {
+.floway-copy-editor-interactive-item:hover {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
-.floway-copy-editor-history-item:active {
+.floway-copy-editor-interactive-item:active {
+  background-color: var(--winui-subtle-fill-tertiary);
+}
+
+.floway-copy-editor-current-session {
+  background-color: var(--winui-subtle-fill-secondary);
+}
+
+.floway-copy-editor-current-session:hover {
   background-color: var(--winui-subtle-fill-tertiary);
 }
 
@@ -386,6 +395,13 @@ export const copyEditorCss = `
   line-height: 18px;
   font-weight: 500;
   color: var(--winui-text-fill-primary);
+}
+
+.floway-copy-editor-current-label {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--winui-accent-text-fill-primary);
 }
 
 .floway-copy-editor-batch-lines {
@@ -442,16 +458,17 @@ export const copyEditorCss = `
 
 .floway-copy-editor-diff-list {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 8px 18px;
   padding-right: 6px;
 }
 
 .floway-copy-editor-diff-row {
-  display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  column-gap: 6px;
+  display: inline-flex;
   align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
   font-size: 12px;
   line-height: 17px;
 }
@@ -460,6 +477,7 @@ export const copyEditorCss = `
   font-size: 11px;
   line-height: 17px;
   color: var(--winui-text-fill-tertiary);
+  flex: none;
 }
 
 .floway-copy-editor-diff-values {
