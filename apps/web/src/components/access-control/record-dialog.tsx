@@ -8,10 +8,10 @@ import { z } from 'zod';
 import { PermissionFields } from './permission-fields';
 import { PrincipalPicker } from './principal';
 import { parsePrincipal, principalKey } from './principals';
-import { resolveInheritedValues } from './resolution';
+import { resolveAccess } from './resolution';
 import { scopeSchema } from './scope';
 import { ScopeEditor, type ScopeExpressionData } from './scope-expression';
-import { scopePermissions } from './values';
+import { filterScopeValues, scopePermissions } from './values';
 import { api, callApi } from '../../api/client';
 import type { AccessRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
@@ -25,7 +25,6 @@ import type { AccessPrincipal, AccessScope, AccessValues } from '@floway-dev/gat
 const { Button, DialogActions, DialogTitle, Field, Tab, TabList } = fluentComponents;
 const JsonEditor = lazy(() => import('../ui/json-editor').then(module => ({ default: module.JsonEditor })));
 
-type Permission = keyof AccessValues;
 interface FormValues { principal: string }
 
 export function AccessRecordDialog({ data, principalData, records, initialPrincipal, initialScope, onOpenChange, onSaved, open, record, suggestedSortOrder = 0 }: {
@@ -62,7 +61,7 @@ export function AccessRecordDialog({ data, principalData, records, initialPrinci
   const selectedPrincipal = formValues.principal;
   const principal = useMemo(() => parsePrincipal(selectedPrincipal), [selectedPrincipal]);
   const inherited = useMemo(
-    () => resolveInheritedValues({ data, excludeRecordId: record?.id, principal, records, scope }),
+    () => resolveAccess({ data, excludeRecordId: record?.id, principal, records, scope })?.values,
     [data, principal, record?.id, records, scope],
   );
   const administratorBypass = principal?.kind === 'user' && data.users.some(user => user.id === principal.id && user.isAdmin);
@@ -74,8 +73,7 @@ export function AccessRecordDialog({ data, principalData, records, initialPrinci
   const permissions = useMemo(() => scopePermissions(scope), [scope]);
   const applyScope = (next: AccessScope | null) => {
     setScope(next);
-    const nextPermissions = scopePermissions(next);
-    setValues(current => Object.fromEntries(Object.entries(current).filter(([permission]) => nextPermissions.includes(permission as Permission))) as AccessValues);
+    setValues(current => filterScopeValues(next, current));
   };
   const changeScope = (next: AccessScope | null) => {
     applyScope(next);
@@ -113,7 +111,7 @@ export function AccessRecordDialog({ data, principalData, records, initialPrinci
     if (parsed === null) return;
     const finalScope = validateVisualScope(parsed.scope, setScopeError, t('dashboard.accessControl.validation.scopeRequired'));
     if (finalScope === null) return;
-    const finalValues = Object.fromEntries(Object.entries(values).filter(([permission]) => scopePermissions(finalScope).includes(permission as Permission))) as AccessValues;
+    const finalValues = filterScopeValues(finalScope, values);
     if (Object.keys(finalValues).length === 0) {
       setError(t('dashboard.accessControl.validation.emptyRecord'));
       return;

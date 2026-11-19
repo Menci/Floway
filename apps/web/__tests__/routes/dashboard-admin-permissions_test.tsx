@@ -29,23 +29,8 @@ const initial: PermissionsData = {
 };
 
 beforeEach(() => {
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const path = new URL(String(input), 'http://localhost').pathname;
-    if (path === '/api/access-resolve') {
-      const body = JSON.parse(init!.body as string);
-      const records = body.scope.kind === 'upstreams' ? [initial.records![0]] : body.principal.kind === 'group' ? initial.records!.slice(0, 2) : initial.records!;
-      return Response.json({
-        records,
-        values: { 'Model.Use': true, 'Upstream.Audit': true, 'Upstream.Edit': 'off' },
-        decisions: records.map(record => ({
-          recordId: record!.id,
-          permissions: {
-            'Model.Use': record!.id === 3 || body.scope.kind === 'upstreams' ? { kind: 'effective' } : { kind: 'overridden', by: initial.records![2] },
-            ...(record!.id === 2 ? { 'Upstream.Audit': { kind: 'effective' } } : {}),
-          },
-        })),
-      });
-    }
     if (path === '/api/permissions') return Response.json({ records: initial.records, directory: initial.directory, upstreams: initial.upstreams });
     if (path === '/api/models') return Response.json({ data: initial.models });
     throw new Error(`Unexpected request: ${path}`);
@@ -133,25 +118,9 @@ test('an audited user sees membership-group rules and can pick those groups in A
     },
     records: [
       { id: 5, principal: { kind: 'user', id: 3 }, scope, sortOrder: 0, values: { 'Model.Use': true }, createdAt: '', updatedAt: '' },
+      { id: 6, principal: { kind: 'group', id: 2 }, scope, sortOrder: 0, values: { 'Model.Use': true }, createdAt: '', updatedAt: '' },
     ],
   };
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-    const path = new URL(String(input), 'http://localhost').pathname;
-    if (path === '/api/permissions') return Response.json({ records: data.records, directory: data.directory, upstreams: data.upstreams });
-    if (path === '/api/models') return Response.json({ data: [] });
-    if (path === '/api/access-resolve') return Response.json({
-      records: [
-        data.records![0],
-        { id: 6, principal: { kind: 'group', id: 2 }, scope, sortOrder: 0, values: { 'Model.Use': true }, createdAt: '', updatedAt: '' },
-      ],
-      values: { 'Model.Use': true, 'Upstream.Audit': false, 'Upstream.Edit': 'off' },
-      decisions: [
-        { recordId: 5, permissions: { 'Model.Use': { kind: 'effective' } } },
-        { recordId: 6, permissions: { 'Model.Use': { kind: 'effective' } } },
-      ],
-    });
-    throw new Error(`Unexpected request: ${path}`);
-  }));
   const { container } = renderOperatorPage(data, `?principal=user:3&scope=${encodeURIComponent(JSON.stringify(scope))}&effective=true`);
   await screen.findByRole('table');
   await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(2));
@@ -320,36 +289,25 @@ test('a confirmed delete retires its rule and its confirmation without reading t
   expect(await screen.findByText('Deleted rule')).toBeTruthy();
 });
 
-test('an effective view drops a deleted rule before its resolution arrives', async () => {
+test('an effective view drops a deleted rule and recomputes effective decisions locally', async () => {
   const originalFetch = vi.mocked(fetch).getMockImplementation()!;
-  const deleted = new Set<number>();
-  let holdResolution = false;
-  let release!: () => void;
-  const held = new Promise<void>(resolve => { release = resolve; });
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = new URL(String(input), 'http://localhost').pathname;
-    if (path === '/api/access-records/3' && init?.method === 'DELETE') { deleted.add(3); return Response.json({ ok: true }); }
-    if (path === '/api/access-resolve') {
-      if (holdResolution) await held;
-      const response = await originalFetch(input, init);
-      const body = await response.json() as { records: Array<{ id: number }>; decisions: Array<{ recordId: number }> };
-      const records = body.records.filter(record => !deleted.has(record.id));
-      return Response.json({ ...body, records, decisions: body.decisions.filter(decision => !deleted.has(decision.recordId)) });
-    }
+    if (path === '/api/access-records/3' && init?.method === 'DELETE') return Response.json({ ok: true });
     return await originalFetch(input, init);
   }));
   const { container } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}&effective=true`);
   await screen.findByRole('table');
-  await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(3));
+  expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(3);
+  expect(container.querySelector('[data-rule-id="2"] [data-permission-emphasis="overridden"]')).toBeTruthy();
   const row = container.querySelector('[data-rule-id="3"]') as HTMLElement;
   await act(async () => { fireEvent.click(within(row).getByRole('button', { name: 'Delete rule' })); });
   const confirmation = screen.getByRole('dialog');
-  holdResolution = true;
   await act(async () => { fireEvent.click(within(confirmation).getByRole('button', { name: 'Delete rule' })); });
   await waitFor(() => expect(container.querySelector('[data-rule-id="3"]')).toBeNull());
   expect([...container.querySelectorAll<HTMLElement>('[data-rule-id]')].map(element => element.dataset.ruleId)).toEqual(['1', '2']);
-  await act(async () => { release(); await held; });
-  await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(2));
+  expect(container.querySelector('[data-rule-id="2"] [data-permission-emphasis="overridden"]')).toBeNull();
+  expect(container.querySelector('[data-rule-id="2"] [data-permission-emphasis="effective"]')).toBeTruthy();
 });
 
 test('locks all mutations while deleting and restores them after a failed write', async () => {
@@ -495,15 +453,6 @@ test('new rule starts with the selected principal and scope', async () => {
   expect(dialog.querySelector('.floway-scope-expression')!.textContent).toContain('Copilot');
 });
 
-test('resolution errors stay visible and are not presented as an empty permission set', async () => {
-  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Resolution unavailable' }, { status: 503 })));
-  renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}&effective=true`);
-  expect(await screen.findByText('Resolution unavailable')).toBeTruthy();
-  expect(screen.queryByText('No matching rules')).toBeNull();
-  await act(async () => { fireEvent.click(screen.getByRole('switch', { name: 'Show effective' })); });
-  expect(await screen.findByRole('table')).toBeTruthy();
-});
-
 test('a save refresh keeps the table and its controls available while it is in flight', async () => {
   const originalFetch = vi.mocked(fetch).getMockImplementation()!;
   let finishRefresh!: () => Promise<void>;
@@ -536,27 +485,7 @@ test('preview query parameters never expose design or example controls', async (
   expect(dialog.querySelector('[data-permission-preview-controls]')).toBeNull();
 });
 
-test('effective loading retains the existing table and disables its actions', async () => {
-  const fetch = globalThis.fetch;
-  let complete!: () => Promise<void>;
-  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>(resolve => {
-    complete = async () => resolve(await fetch(input, init));
-  })));
-  const { container } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}`);
-  const table = await screen.findByRole('table');
-  const rows = [...container.querySelectorAll('[data-rule-id]')];
-  await act(async () => { fireEvent.click(screen.getByRole('switch', { name: 'Show effective' })); });
-  await waitFor(() => expect(complete).toBeTypeOf('function'));
-  expect(screen.getByRole('table')).toBe(table);
-  expect([...container.querySelectorAll('[data-rule-id]')]).toEqual(rows);
-  expect(within(table).getAllByRole<HTMLButtonElement>('button', { name: 'Edit rule' }).every(button => button.disabled)).toBe(true);
-  expect(within(table).queryByRole('progressbar')).toBeNull();
-  await act(async () => { await complete(); });
-  await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(3));
-  expect(screen.getByRole('table')).toBe(table);
-});
-
-test.each([false, true])('refresh preserves the table through base and effective reads (effective=%s)', async effective => {
+test.each([false, true])('refresh preserves the table through base and effective views (effective=%s)', async effective => {
   const { container } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}${effective ? '&effective=true' : ''}`);
   await screen.findByRole('table');
   await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(effective ? 3 : 2));
@@ -566,67 +495,29 @@ test.each([false, true])('refresh preserves the table through base and effective
   const contents = table.textContent;
   const fetch = globalThis.fetch;
   let finishRecords!: () => Promise<void>;
-  let finishResolution!: () => Promise<void>;
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const path = new URL(String(input), 'http://localhost').pathname;
     if (path === '/api/permissions') return new Promise<Response>(resolve => { finishRecords = async () => resolve(await fetch(input, init)); });
-    if (path === '/api/access-resolve') return new Promise<Response>(resolve => { finishResolution = async () => resolve(await fetch(input, init)); });
     return fetch(input, init);
   }));
-  const retained = () => {
-    expect(screen.getByRole('table')).toBe(table);
-    expect([...container.querySelectorAll('[data-rule-id]')]).toEqual(rows);
-    expect(table.textContent).toBe(contents);
-    expect(within(table).getAllByRole<HTMLButtonElement>('button', { name: 'Edit rule' }).every(button => button.disabled)).toBe(true);
-    expect(within(table).queryByRole('progressbar')).toBeNull();
-    expect(table.closest('[aria-busy="true"]')).toBeTruthy();
-  };
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Refresh permissions' })); });
   await waitFor(() => expect(finishRecords).toBeTypeOf('function'));
-  retained();
+  expect(screen.getByRole('table')).toBe(table);
+  expect([...container.querySelectorAll('[data-rule-id]')]).toEqual(rows);
+  expect(table.textContent).toBe(contents);
+  expect(within(table).getAllByRole<HTMLButtonElement>('button', { name: 'Edit rule' }).every(button => button.disabled)).toBe(true);
+  expect(within(table).queryByRole('progressbar')).toBeNull();
+  expect(table.closest('[aria-busy="true"]')).toBeTruthy();
   await act(async () => { await finishRecords(); });
-  if (effective) {
-    await waitFor(() => expect(finishResolution).toBeTypeOf('function'));
-    retained();
-    await act(async () => { await finishResolution(); });
-  }
   await waitFor(() => expect(within(table).getAllByRole<HTMLButtonElement>('button', { name: 'Edit rule' }).every(button => !button.disabled)).toBe(true));
   expect(screen.getByRole('table')).toBe(table);
   expect(table.closest('[aria-busy="true"]')).toBeNull();
 });
 
-test('an effective request preserves the displayed page until its results arrive', async () => {
-  const models: NonNullable<PermissionsData['records']> = Array.from({ length: 42 }, (_, index) => ({
-    ...initial.records![2]!, id: index + 100, sortOrder: index,
-    scope: { kind: 'upstreamModel', upstreamId: 'a', model: { kind: 'exact', value: `model-${index}` } },
-  }));
-  const data = { ...initial, records: [...initial.records!, ...models] };
-  const { container } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}&page=2`, data);
-  const table = await screen.findByRole('table');
-  const rows = [...container.querySelectorAll('[data-rule-id]')];
-  expect(screen.getByText('21 - 40 / 44')).toBeTruthy();
-  const fetch = globalThis.fetch;
-  let complete!: () => Promise<void>;
-  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>(resolve => { complete = async () => resolve(await fetch(input, init)); })));
-  await act(async () => { fireEvent.click(screen.getByRole('switch', { name: 'Show effective' })); });
-  await waitFor(() => expect(complete).toBeTypeOf('function'));
-  expect(screen.getByRole('table')).toBe(table);
-  expect([...container.querySelectorAll('[data-rule-id]')]).toEqual(rows);
-  expect(screen.getByText('21 - 40 / 44')).toBeTruthy();
-  expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Next page' }).disabled).toBe(true);
-  await act(async () => { await complete(); });
-  await waitFor(() => expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(3));
-  expect(screen.queryByText('21 - 40 / 44')).toBeNull();
-});
-
-test('an initial effective read never displays descendant rules', async () => {
-  const fetch = globalThis.fetch;
-  let complete!: () => Promise<void>;
-  vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>(resolve => { complete = async () => resolve(await fetch(input, init)); })));
+test('an initial effective view computes locally without displaying descendant rules', async () => {
   const descendant = { ...initial.records![0]!, id: 4, scope: { kind: 'upstreamModel' as const, upstreamId: 'a', model: { kind: 'exact' as const, value: 'gpt-5' } } };
   const { container } = renderPage(`?principal=user:2&scope=${encodeURIComponent(JSON.stringify(scope))}&effective=true`, { ...initial, records: [...initial.records!, descendant] });
   await screen.findByRole('table');
-  await waitFor(() => expect(complete).toBeTypeOf('function'));
   expect([...container.querySelectorAll<HTMLElement>('[data-rule-id]')].map(row => row.dataset.ruleId)).toEqual(['1', '2', '3']);
-  await act(async () => { await complete(); });
+  expect(vi.mocked(fetch)).not.toHaveBeenCalled();
 });

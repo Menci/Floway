@@ -2,6 +2,7 @@ import { CubeRegular, MoreHorizontal16Regular, PeopleRegular, PersonRegular, Tex
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentProps, ReactNode, Ref, RefObject } from 'react';
 
+import { scopeKind, scopeResourceId, scopeResourceName, type ScopeKind } from './scope';
 import type { ControlPlaneModel, PermissionsGroup, PermissionsUser, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { type TFunction, useTranslation } from '../../i18n/translation';
@@ -17,7 +18,6 @@ import type { AccessScope } from '@floway-dev/gateway/browser';
 const { Option, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 
 type Part = 'kind' | 'instance' | 'model';
-type ScopeKind = 'self' | 'upstream' | 'user' | 'group';
 
 interface SegmentContextValue {
   onActivate: () => void;
@@ -98,7 +98,7 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
     setQuery('');
     setDirty(false);
   }
-  const kind = (purpose === 'scope' ? pendingKind : null) ?? kindFor(value);
+  const kind = (purpose === 'scope' ? pendingKind : null) ?? scopeKind(value);
   const interactive = !readOnly || onNavigate !== undefined;
 
   const resetInput = (nextActive: Part | null, nextQuery = '') => {
@@ -128,7 +128,7 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
     resetInput(part, partValue(part, kind, value, data, t));
   };
   const commitKind = (nextKind: ScopeKind, advance = true) => {
-    if (nextKind !== kindFor(value) || purpose === 'filter') {
+    if (nextKind !== scopeKind(value) || purpose === 'filter') {
       onChange?.(collectionScope(nextKind));
     }
     if (!advance || nextKind === 'self') {
@@ -556,19 +556,6 @@ function UnknownPart({ description, icon }: {
   </Tooltip>;
 }
 
-const kindFor = (scope: AccessScope | null): ScopeKind | null => {
-  if (scope === null) return null;
-  switch (scope.kind) {
-  case 'upstreams':
-  case 'upstream':
-  case 'upstreamModel': return 'upstream';
-  case 'users':
-  case 'user': return 'user';
-  case 'groups':
-  case 'group': return 'group';
-  case 'self': return 'self';
-  }
-};
 const collectionScope = (kind: ScopeKind | null): AccessScope | null => {
   switch (kind) {
   case 'upstream': return { kind: 'upstreams' };
@@ -586,10 +573,6 @@ const instanceMatchesKind = (kind: ScopeKind | null, scope: AccessScope | null) 
 const partValue = (part: Part, kind: ScopeKind | null, value: AccessScope | null, data: ScopeExpressionData, t: TFunction): string => {
   if (part === 'kind' && kind !== null) return kindLabel(kind, t);
   if (part === 'model' && value?.kind === 'upstreamModel') return value.model.value;
-  if (part === 'instance') {
-    if (hasUpstreamInstance(value)) return data.upstreams.find(upstream => upstream.id === value.upstreamId)?.name ?? value.upstreamId;
-    if (value?.kind === 'user') return data.users.find(user => user.id === value.userId)?.username ?? String(value.userId);
-    if (value?.kind === 'group') return data.groups.find(group => group.id === value.groupId)?.name ?? String(value.groupId);
-  }
+  if (part === 'instance' && value !== null) return scopeResourceName(value, data) ?? scopeResourceId(value);
   return '';
 };
