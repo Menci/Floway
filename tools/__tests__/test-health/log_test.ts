@@ -13,6 +13,7 @@ const LOG = [
   '2026-11-18T12:53:52.0Z  ❯  @floway-dev/gateway  __tests__/migrations/canonical-flag-ids_test.ts (1 test | 1 failed) 110ms',
   '2026-11-18T12:53:53.0Z  ❯  @floway-dev/web  __tests__/routes/broken_test.tsx (0 test)',
   '2026-11-18T12:54:47.7Z  FAIL   @floway-dev/gateway  __tests__/migrations/canonical-flag-ids_test.ts > the canonical flag-id migration renames ids > keeps a boolean',
+  '2026-11-18T12:54:47.71Z  FAIL   @floway-dev/gateway  __tests__/migrations/canonical-flag-ids_test.ts > the canonical flag-id migration renames ids > keeps a string',
   '2026-11-18T12:54:47.75Z AssertionError: expected 1 to be 2',
   '2026-11-18T12:54:47.8Z  FAIL   @floway-dev/web  __tests__/routes/broken_test.tsx [ __tests__/routes/broken_test.tsx ]',
   '2026-11-18T12:54:47.85Z ',
@@ -20,11 +21,12 @@ const LOG = [
   '2026-11-18T12:54:47.9Z  ❯ modelOverrides __tests__/migrations/canonical-flag-ids_test.ts:70:17',
 ].join('\n');
 
-test('a job log yields clean files, failures with their errors, and the tested commit', () => {
+test('a job log yields clean files, failures with their errors, shared by tests that failed alike, and the tested commit', () => {
   expect(parseJobLog(LOG)).toEqual({
     cleanFiles: ['@floway-dev/agent-setup|__tests__/installers/bash/pi_test.ts', '@floway-dev/web|__tests__/routes/broken_test.tsx'],
     failures: [
       { key: '@floway-dev/gateway|__tests__/migrations/canonical-flag-ids_test.ts|the canonical flag-id migration renames ids > keeps a boolean', error: 'AssertionError: expected 1 to be 2' },
+      { key: '@floway-dev/gateway|__tests__/migrations/canonical-flag-ids_test.ts|the canonical flag-id migration renames ids > keeps a string', error: 'AssertionError: expected 1 to be 2' },
       { key: '@floway-dev/web|__tests__/routes/broken_test.tsx', error: 'Error: Cannot find module \'./gone\'' },
     ],
     testedCommit: '217b54af76d50eda968dc54ea31c40c648b4cb2f',

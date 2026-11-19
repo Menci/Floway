@@ -34,14 +34,11 @@ export const parseJobLog = (log: string): JobTestResults => {
   const failures = new Map<string, string>();
   let testedCommit: string | undefined;
   let commitFollows = false;
-  let errorFor: string | undefined;
+  // Tests that failed with the same error share one block: consecutive `FAIL`
+  // lines followed by that error.
+  let awaitingError: string[] = [];
   for (const raw of log.split('\n')) {
     const line = raw.replace(TIMESTAMP, '').replace(ANSI, '').trimEnd();
-    if (errorFor !== undefined && line !== '') {
-      failures.set(errorFor, line.trim());
-      errorFor = undefined;
-      continue;
-    }
     if (commitFollows) {
       commitFollows = false;
       if (/^[0-9a-f]{40}$/.test(line)) testedCommit ??= line;
@@ -59,8 +56,14 @@ export const parseJobLog = (log: string): JobTestResults => {
     const fail = FAIL_LINE.exec(line);
     if (fail) {
       const [, project, path, name] = fail;
-      errorFor = name === undefined ? fileKey(project!, path!) : testKey(project!, path!, name);
-      failures.set(errorFor, '');
+      const key = name === undefined ? fileKey(project!, path!) : testKey(project!, path!, name);
+      failures.set(key, '');
+      awaitingError.push(key);
+      continue;
+    }
+    if (awaitingError.length > 0 && line !== '') {
+      for (const key of awaitingError) failures.set(key, line.trim());
+      awaitingError = [];
     }
   }
   return { cleanFiles: [...cleanFiles], failures: [...failures].map(([key, error]) => ({ key, error })), testedCommit };
