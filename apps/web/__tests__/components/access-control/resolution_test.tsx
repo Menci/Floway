@@ -1,67 +1,105 @@
-import { act, screen, waitFor } from '@testing-library/react';
-import { afterEach, expect, test, vi } from 'vitest';
+import { expect, test } from 'vitest';
 
-import { useAccessResolution } from '../../../src/components/access-control/resolution';
-import { renderInApp } from '../../render';
+import type { AccessRecord } from '../../../src/api/types';
+import { resolveAccess } from '../../../src/components/access-control/resolution';
 import type { AccessPrincipal, AccessScope } from '@floway-dev/gateway/browser';
 
-const principal: AccessPrincipal = { kind: 'group', id: 3 };
 const scope: AccessScope = { kind: 'upstream', upstreamId: 'up_a' };
-const response = (value: boolean) => Response.json({ values: { 'Model.Use': value }, records: [], decisions: [] });
-const Harness = (props: Parameters<typeof useAccessResolution>[0]) => {
-  const result = useAccessResolution(props);
-  return <output data-testid="result">{JSON.stringify(result)}</output>;
-};
-const result = () => JSON.parse(screen.getByTestId('result').textContent!);
-afterEach(() => vi.unstubAllGlobals());
-
-test('resolves group scopes and excludes the edited record without duplicate requests for equal inputs', async () => {
-  const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => response(true));
-  vi.stubGlobal('fetch', fetch);
-  const { rerender } = renderInApp(<Harness enabled excludeRecordId={7} principal={principal} scope={scope} />);
-  await waitFor(() => expect(result().data?.values['Model.Use']).toBe(true));
-  expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string)).toEqual({ principal, scope, excludeRecordId: 7 });
-  rerender(<Harness enabled excludeRecordId={7} principal={{ ...principal }} scope={{ ...scope }} />);
-  expect(fetch).toHaveBeenCalledOnce();
+const row = (id: number, principal: AccessPrincipal, recordScope: AccessScope, values: AccessRecord['values'], sortOrder = id): AccessRecord => ({
+  id, principal, scope: recordScope, values, sortOrder, createdAt: '', updatedAt: '',
 });
 
-test('aborts stale requests and ignores a late result after the target changes', async () => {
-  const requests: Array<{ signal: AbortSignal; complete: (response: Response) => void }> = [];
-  const fetch = vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>(complete => requests.push({ signal: init!.signal!, complete })));
-  vi.stubGlobal('fetch', fetch);
-  const { rerender } = renderInApp(<Harness enabled principal={principal} scope={scope} />);
-  await waitFor(() => expect(requests).toHaveLength(1));
-  expect(result().pending).toBe(true);
-  rerender(<Harness enabled principal={principal} scope={{ kind: 'upstreams' }} />);
-  await waitFor(() => expect(requests).toHaveLength(2));
-  expect(requests[0]!.signal.aborted).toBe(true);
-  await act(async () => { requests[1]!.complete(response(false)); });
-  await waitFor(() => expect(result().data?.values['Model.Use']).toBe(false));
-  await act(async () => { requests[0]!.complete(response(true)); });
-  expect(result().data.values['Model.Use']).toBe(false);
+test('resolveAccess computes values, applicable records, and decisions for users, groups, self, and admins', () => {
+  const data = {
+    users: [
+      { id: 1, username: 'admin', isAdmin: true, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null }, groupIds: [] },
+      { id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null }, groupIds: [3] },
+    ],
+  };
+  const records: AccessRecord[] = [
+    row(1, { kind: 'group', id: 3 }, { kind: 'upstreams' }, { 'Model.Use': true, 'Upstream.Edit': 'models' }, 0),
+    row(2, { kind: 'user', id: 2 }, scope, { 'Model.Use': false }, 0),
+    row(3, { kind: 'group', id: 3 }, { kind: 'self' }, { 'Permission.Audit': true }, 0),
+    row(4, { kind: 'group', id: 4 }, { kind: 'upstreams' }, { 'Upstream.Audit': true }, 0),
+  ];
+
+  const excluded = resolveAccess({ data, excludeRecordId: 2, principal: { kind: 'user', id: 2 }, records, scope })!;
+  expect(excluded.values).toEqual({ 'Model.Use': true, 'Upstream.Audit': false, 'Upstream.Edit': 'models' });
+  expect(excluded.records.map(record => record.id)).toEqual([1]);
+
+  const effective = resolveAccess({ data, principal: { kind: 'user', id: 2 }, records, scope })!;
+  expect(effective.values).toEqual({ 'Model.Use': false, 'Upstream.Audit': false, 'Upstream.Edit': 'models' });
+  expect(effective.decisions).toEqual([
+    { recordId: 1, permissions: { 'Model.Use': { kind: 'overridden', by: records[1] }, 'Upstream.Edit': { kind: 'effective' } } },
+    { recordId: 2, permissions: { 'Model.Use': { kind: 'effective' } } },
+  ]);
+
+  const selfUser = resolveAccess({ data, principal: { kind: 'user', id: 2 }, records, scope: { kind: 'user', userId: 2 } })!;
+  expect(selfUser.values).toEqual({ 'User.Audit': true, 'Permission.Audit': true });
+  expect(selfUser.records.map(record => record.id)).toEqual([3]);
+
+  const admin = resolveAccess({ data, principal: { kind: 'user', id: 1 }, records, scope })!;
+  expect(admin).toEqual({
+    values: { 'Model.Use': true, 'Upstream.Audit': true, 'Upstream.Edit': 'full' },
+    records: [],
+    decisions: [],
+  });
+
+  expect(resolveAccess({ data, principal: { kind: 'user', id: 2 }, records, scope: { kind: 'self' } })).toBeNull();
+  expect(resolveAccess({ data, principal: null, records, scope })).toBeNull();
 });
 
-test('disabling keeps the result for an unchanged target and drops it once the target changes', async () => {
-  vi.stubGlobal('fetch', vi.fn(async () => response(true)));
-  const { rerender } = renderInApp(<Harness enabled principal={principal} scope={scope} />);
-  await waitFor(() => expect(result().data?.values['Model.Use']).toBe(true));
-  rerender(<Harness enabled={false} principal={principal} scope={scope} />);
-  expect(result()).toMatchObject({ data: { values: { 'Model.Use': true } }, pending: false });
-  rerender(<Harness enabled={false} principal={principal} scope={{ kind: 'upstreams' }} />);
-  expect(result()).toEqual({ data: null, error: null, pending: false });
-});
+test('resolveAccess matches gateway precedence for personal overrides, group union, model order, and membership scopes', () => {
+  const data = {
+    users: [
+      { id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null }, groupIds: [3, 4] },
+    ],
+  };
+  const modelScope: AccessScope = { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } };
 
-test('disabled or root selections never request inherited values', () => {
-  const fetch = vi.fn();
-  vi.stubGlobal('fetch', fetch);
-  const { rerender } = renderInApp(<Harness enabled principal={principal} scope={null} />);
-  expect(result()).toEqual({ data: null, error: null, pending: false });
-  rerender(<Harness enabled={false} principal={principal} scope={scope} />);
-  expect(fetch).not.toHaveBeenCalled();
-});
+  const combined = resolveAccess({
+    data,
+    principal: { kind: 'user', id: 2 },
+    records: [
+      row(1, { kind: 'group', id: 3 }, scope, { 'Model.Use': true, 'Upstream.Edit': 'models' }),
+      row(2, { kind: 'group', id: 4 }, scope, { 'Upstream.Edit': 'full' }),
+      row(3, { kind: 'user', id: 2 }, scope, { 'Model.Use': false }),
+    ],
+    scope,
+  })!;
+  expect(combined.values).toEqual({ 'Model.Use': false, 'Upstream.Audit': false, 'Upstream.Edit': 'full' });
+  expect(combined.decisions.find(row => row.recordId === 1)!.permissions).toEqual({
+    'Model.Use': { kind: 'overridden', by: expect.objectContaining({ id: 3 }) },
+    'Upstream.Edit': { kind: 'effective' },
+  });
+  expect(combined.decisions.find(row => row.recordId === 2)!.permissions).toEqual({
+    'Upstream.Edit': { kind: 'effective' },
+  });
 
-test('resolution failures expose an error without inventing values', async () => {
-  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Resolution unavailable' }, { status: 503 })));
-  renderInApp(<Harness enabled principal={principal} scope={scope} />);
-  await waitFor(() => expect(result()).toEqual({ data: null, error: 'Resolution unavailable', pending: false }));
+  const regexScope: AccessScope = { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: '^gpt-' } };
+  expect(resolveAccess({
+    data,
+    principal: { kind: 'user', id: 2 },
+    records: [
+      row(1, { kind: 'group', id: 3 }, regexScope, { 'Model.Use': false }, 0),
+      row(2, { kind: 'user', id: 2 }, modelScope, { 'Model.Use': true }, 1),
+    ],
+    scope: modelScope,
+  })!.values).toEqual({ 'Model.Use': false });
+  expect(resolveAccess({
+    data,
+    principal: { kind: 'user', id: 2 },
+    records: [
+      row(1, { kind: 'group', id: 3 }, scope, { 'Model.Use': true }, 0),
+      row(2, { kind: 'user', id: 2 }, { ...regexScope, model: { kind: 'regex', value: '.*' } }, { 'Model.Use': false }, 1),
+    ],
+    scope: regexScope,
+  })!.values).toEqual({ 'Model.Use': true });
+
+  expect(resolveAccess({
+    data,
+    principal: { kind: 'user', id: 2 },
+    records: [row(1, { kind: 'group', id: 3 }, { kind: 'group', groupId: 3 }, { 'Permission.Audit': true })],
+    scope: { kind: 'user', userId: 2 },
+  })!.values).toEqual({ 'User.Audit': true, 'Permission.Audit': false });
 });
