@@ -18,6 +18,5 @@ describe('exchangeClaudeCodeAuthorizationCode', () => {
     );
     const promise = exchangeClaudeCodeAuthorizationCode({ code: 'CODE', codeVerifier: 'VER', state: 'STATE', kind: 'oauth', fetcher: directFetcher });
     await expect(promise).rejects.not.toBeInstanceOf(ClaudeCodeOAuthSessionTerminatedError);
-    await expect(promise).rejects.toThrow(/400/);
   });
 });

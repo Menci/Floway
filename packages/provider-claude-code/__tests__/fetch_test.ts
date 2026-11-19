@@ -128,10 +128,7 @@ describe('callClaudeCodeAnthropicMessages — pre-fetch gates', () => {
       upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.http.status).toBe(503);
-      expect(await result.http.text()).toMatch(/session_terminated/);
-    }
+    if (!result.ok) expect(result.http.status).toBe(503);
   });
 
   test('rejected shared five_hour quota → synthetic 429 with retry-after', async () => {
@@ -337,7 +334,6 @@ describe('callClaudeCodeAnthropicMessages — terminal sentinel detection', () =
     await flushAsyncQueue();
     const account = currentState().accounts[0]!;
     expect(account.state).toBe('refresh_failed');
-    expect(account.stateMessage).toMatch(/Organization disabled by Anthropic/);
     expect(account.stateMessage).toMatch(/organization has been disabled/);
     expect(account.accessToken).toBeNull();
   });

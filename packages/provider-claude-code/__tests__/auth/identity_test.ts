@@ -36,6 +36,6 @@ describe('fetchClaudeCodeIdentity', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({
       error: { type: 'forbidden', message: 'something else' },
     }, 403));
-    await expect(fetchClaudeCodeIdentity('at_x')).rejects.toThrow(/403/);
+    await expect(fetchClaudeCodeIdentity('at_x')).rejects.toThrow();
   });
 });

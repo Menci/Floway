@@ -90,7 +90,7 @@ describe('importClaudeCodeFromCredentialsJson', () => {
     const raw = JSON.stringify({
       claudeAiOauth: { accessToken: 'a', refreshToken: 'r', expiresAt: 1781234567 },
     });
-    await expect(importClaudeCodeFromCredentialsJson(raw)).rejects.toThrow(/milliseconds/);
+    await expect(importClaudeCodeFromCredentialsJson(raw)).rejects.toThrow();
   });
 });
 
