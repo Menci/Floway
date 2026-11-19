@@ -330,7 +330,7 @@ test('/v1/audio/transcriptions preserves token usage unpriced when the model is 
   ]);
 });
 
-test('/v1/audio/transcriptions streams through transcript.text.done without adding Chat termination', async () => {
+test('/v1/audio/transcriptions opens SSE with 200 and streams through transcript.text.done', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo, {
     entries: [{ rates: { input_audio_tokens: '0.000001', output_tokens: '0.000001' } }],
@@ -341,7 +341,7 @@ test('/v1/audio/transcriptions streams through transcript.text.done without addi
       '',
       'data: {"type":"transcript.text.done","text":"hello","usage":{"type":"tokens","input_tokens":3,"output_tokens":1,"total_tokens":4}}',
       '',
-    ].join('\n'), { headers: { 'content-type': 'Text/Event-Stream; charset=utf-8', 'x-stream-trace': 'trace-sse' } }),
+    ].join('\n'), { status: 201, headers: { 'content-type': 'Text/Event-Stream; charset=utf-8', 'x-stream-trace': 'trace-sse' } }),
     async () => {
       const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),

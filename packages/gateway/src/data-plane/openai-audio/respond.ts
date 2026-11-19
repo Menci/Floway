@@ -39,8 +39,8 @@ const respondStreaming = ({ c, ctx, sourceApi, response, performance, identity }
     return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
   }
   let measurement = requestOnlyUsageMeasurement();
+  forwardUpstreamHeaders(c, response.headers);
   return serveSse(c, {
-    http: response,
     events: parseSSEStream(upstreamBody, { signal: ctx.abortSignal }),
     downstreamAbortController: ctx.downstreamAbortController,
     protocol: {

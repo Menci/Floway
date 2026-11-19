@@ -44,11 +44,12 @@ export const respondGeminiGenerateContent = async (
     return forwardBufferedUpstreamResponse(result);
   }
 
-  const frames = wrapGeminiGenerateContentAffinityEgress(observeChatFrames(result.events, ctx), affinityEgressOptions(ctx));
+  const observed = observeChatFrames(result.events, ctx);
+  const affinity = affinityEgressOptions(ctx);
 
   if (!wantsStream) {
     try {
-      const response = await collectGeminiGenerateContentProtocolEventsToResult(frames);
+      const response = await collectGeminiGenerateContentProtocolEventsToResult(wrapGeminiGenerateContentAffinityEgress(observed, affinity));
       const metadata = await eventResultMetadata(result);
       const usage = tokenUsageFromBillableUsage(metadata.billableUsage);
       ctx.dump?.success(metadata.modelIdentity, usage);
@@ -62,20 +63,31 @@ export const respondGeminiGenerateContent = async (
   }
 
   const completion = createGeminiGenerateContentCandidateCompletion();
+  let upstreamTerminal: ReturnType<typeof geminiSseTerminal>;
+  // Affinity can hold a frame while looking ahead. Cancellation settles what
+  // the upstream finished, including candidates the wrapper has buffered.
+  const upstream = (async function* () {
+    for await (const frame of observed) {
+      upstreamTerminal = geminiSseTerminal(frame);
+      if (frame.type === 'event' && upstreamTerminal === undefined) completion.observe(frame.event);
+      yield frame;
+      if (upstreamTerminal !== undefined) return;
+    }
+  })();
+  const upstreamCompleted = () => upstreamTerminal === 'completed' || (upstreamTerminal === undefined && completion.isComplete());
+
   return serveSse(c, {
     http: result.http,
-    events: frames,
+    events: wrapGeminiGenerateContentAffinityEgress(upstream, affinity),
     downstreamAbortController: ctx.downstreamAbortController,
     protocol: {
       encode: frame => {
-        if (frame.type === 'done') return { wire: null, end: { type: 'completed' } };
-        const wire = serializeSseFrame(geminiGenerateContentProtocolFrameToSSEFrame(frame)!);
-        if (isGeminiGenerateContentErrorEvent(frame.event)) return { wire, end: { type: 'protocol-error' } };
-        if (isGeminiGenerateContentTerminalEvent(frame.event)) return { wire, end: { type: 'completed' } };
-        completion.observe(frame.event);
-        return { wire };
+        const output = geminiGenerateContentProtocolFrameToSSEFrame(frame);
+        const wire = output === null ? null : serializeSseFrame(output);
+        const terminal = geminiSseTerminal(frame);
+        return terminal === undefined ? { wire } : { wire, end: { type: terminal } };
       },
-      eof: () => completion.isComplete()
+      eof: () => upstreamCompleted()
         ? { type: 'completed' }
         : { type: 'premature-eof', error: new Error(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE) },
       failure: error => {
@@ -84,8 +96,15 @@ export const respondGeminiGenerateContent = async (
         return [serializeSseFrame(geminiGenerateContentProtocolFrameToSSEFrame(frame)!)];
       },
     },
-    settle: outcome => settleChatSse(ctx, result, outcome),
+    settle: outcome => settleChatSse(ctx, result, outcome.type === 'cancelled' && upstreamCompleted() ? { type: 'completed' } : outcome),
   });
+};
+
+const geminiSseTerminal = (frame: ProtocolFrame<GeminiGenerateContentStreamEvent>): 'completed' | 'protocol-error' | undefined => {
+  if (frame.type === 'done') return 'completed';
+  if (isGeminiGenerateContentErrorEvent(frame.event)) return 'protocol-error';
+  if (isGeminiGenerateContentTerminalEvent(frame.event)) return 'completed';
+  return undefined;
 };
 
 // --- error rendering: Google-RPC envelope ---
