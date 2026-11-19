@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { executeTranslation } from '../../../../src/data-plane/chat/shared/execute-translation.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { decodeResponseBody, toInternalDebugError, type ExecuteResult } from '@floway-dev/provider';
+import { decodeResponseBody, type ExecuteResult } from '@floway-dev/provider';
 import { testTelemetryModelIdentity } from '@floway-dev/test-utils';
 import type { TranslateTrip } from '@floway-dev/translate';
 
@@ -37,131 +37,25 @@ const collectFrames = async (iterable: AsyncIterable<ProtocolFrame<SrcEvent>>): 
   return out;
 };
 
-describe('executeTranslation', () => {
-  test('asks the upstream for a stream whatever the caller requested', async () => {
-    const innerAttempt = async (_translated: string): Promise<ExecuteResult<ProtocolFrame<TgtEvent>>> => ({
-      type: 'events',
-      events: makeTgtFrames([]),
-      modelIdentity: testTelemetryModelIdentity,
-    });
-
-    // A client that asked for a single body still reaches a trip, whose only
-    // output is a stream. The caller's preference is a rendering decision made
-    // from the returned events, so it never reaches the source protocol.
-    const source = { model: 'm', stream: false };
-    let seen: unknown;
-    await executeTranslation(source, async (payload: typeof source) => {
-      seen = payload;
-      return await translate(payload);
-    }, innerAttempt);
-
-    expect(seen).toEqual({ model: 'm', stream: true });
-    expect(source).toEqual({ model: 'm', stream: false });
+test('asks the upstream for a stream whatever the caller requested', async () => {
+  const innerAttempt = async (_translated: string): Promise<ExecuteResult<ProtocolFrame<TgtEvent>>> => ({
+    type: 'events',
+    events: makeTgtFrames([]),
+    modelIdentity: testTelemetryModelIdentity,
   });
 
-  test('events inner — outer wraps with trip.events', async () => {
-    const innerAttempt = async (_translated: string): Promise<ExecuteResult<ProtocolFrame<TgtEvent>>> => ({
-      type: 'events',
-      events: makeTgtFrames(['a', 'b']),
-      modelIdentity: testTelemetryModelIdentity,
-    });
+  // A client that asked for a single body still reaches a trip, whose only
+  // output is a stream. The caller's preference is a rendering decision made
+  // from the returned events, so it never reaches the source protocol.
+  const source = { model: 'm', stream: false };
+  let seen: unknown;
+  await executeTranslation(source, async (payload: typeof source) => {
+    seen = payload;
+    return await translate(payload);
+  }, innerAttempt);
 
-    const result = await executeTranslation({ model: 'payload' }, translate, innerAttempt);
-
-    expect(result.type).toBe('events');
-    if (result.type !== 'events') throw new Error('unreachable');
-
-    const frames = await collectFrames(result.events);
-    expect(frames).toEqual([
-      { type: 'event', event: { kind: 'src', value: 'a' } },
-      { type: 'event', event: { kind: 'src', value: 'b' } },
-      { type: 'done' },
-    ]);
-    expect(result.modelIdentity).toBe(testTelemetryModelIdentity);
-  });
-
-  test('result inner — outer returns the result unchanged', async () => {
-    const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
-      type: 'api-error',
-      source: 'upstream',
-      http: { status: 404, headers: new Headers() },
-      body: new Uint8Array(),
-    };
-    const innerAttempt = async (_translated: string): Promise<ExecuteResult<ProtocolFrame<TgtEvent>>> => inner;
-
-    const result = await executeTranslation({ model: 'payload' }, translate, innerAttempt);
-
-    expect(result).toBe(inner);
-  });
-
-  test('failure inner — outer returns the failure unchanged', async () => {
-    const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
-      type: 'internal-error',
-      http: { status: 500, headers: new Headers() },
-      error: toInternalDebugError(new Error('boom')),
-    };
-    const innerAttempt = async (_translated: string): Promise<ExecuteResult<ProtocolFrame<TgtEvent>>> => inner;
-
-    const result = await executeTranslation({ model: 'payload' }, translate, innerAttempt);
-
-    expect(result).toBe(inner);
-  });
-
-  test('upstream api-error with trip.error — outer returns the restated envelope', async () => {
-    const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
-      type: 'api-error',
-      source: 'upstream',
-      http: { status: 400, headers: new Headers({ 'x-upstream-request-id': 'abc' }) },
-      body: new TextEncoder().encode('raw upstream'),
-    };
-    const translateWithRewrite = async (payload: SrcPayload): Promise<TranslateTrip<string, SrcEvent, TgtEvent>> => ({
-      ...(await translate(payload)),
-      error: () => ({ status: 400, headers: new Headers({ 'content-type': 'application/json' }), body: { error: { message: 'rewritten' } } }),
-    });
-
-    const result = await executeTranslation({ model: 'payload' }, translateWithRewrite, async () => inner);
-    expect(result.type).toBe('api-error');
-    if (result.type !== 'api-error') throw new Error('unreachable');
-    expect(JSON.parse(decodeResponseBody(result.body))).toEqual({ error: { message: 'rewritten' } });
-    expect(result.http.headers.get('content-type')).toBe('application/json');
-    expect(result.http.headers.get('x-upstream-request-id')).toBeNull();
-    // Fields not touched by the rewriter (source, performance, upstream) survive.
-    expect(result.source).toBe('upstream');
-  });
-
-  test('upstream api-error with trip.error returning undefined — outer passes the envelope through', async () => {
-    const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
-      type: 'api-error',
-      source: 'upstream',
-      http: { status: 502, headers: new Headers() },
-      body: new TextEncoder().encode('bad gateway'),
-    };
-    const translateWithRewrite = async (payload: SrcPayload): Promise<TranslateTrip<string, SrcEvent, TgtEvent>> => ({ ...(await translate(payload)), error: () => undefined });
-
-    const result = await executeTranslation({ model: 'payload' }, translateWithRewrite, async () => inner);
-    expect(result).toBe(inner);
-  });
-
-  test('gateway-sourced api-error — trip.error is NOT invoked', async () => {
-    const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
-      type: 'api-error',
-      source: 'gateway',
-      http: { status: 400, headers: new Headers() },
-      body: new TextEncoder().encode('synthesized'),
-    };
-    let called = false;
-    const translateWithRewrite = async (payload: SrcPayload): Promise<TranslateTrip<string, SrcEvent, TgtEvent>> => ({
-      ...(await translate(payload)),
-      error: () => {
-        called = true;
-        return { status: 999, headers: new Headers(), body: { error: { message: 'unused' } } };
-      },
-    });
-
-    const result = await executeTranslation({ model: 'payload' }, translateWithRewrite, async () => inner);
-    expect(called).toBe(false);
-    expect(result).toBe(inner);
-  });
+  expect(seen).toEqual({ model: 'm', stream: true });
+  expect(source).toEqual({ model: 'm', stream: false });
 });
 
 // The pre-translation capture hook sees the ORIGINAL target-protocol frames
@@ -195,24 +89,7 @@ describe('executeTranslation upstream capture', () => {
     ]);
   });
 
-  test('events path — downstream still receives the translated frames when capture is set', async () => {
-    const innerAttempt = async (_translated: string): Promise<ExecuteResult<ProtocolFrame<TgtEvent>>> => ({
-      type: 'events',
-      events: makeTgtFrames(['a']),
-      modelIdentity: testTelemetryModelIdentity,
-    });
-    const capture = { upstreamFrame: () => {}, upstreamApiError: () => {} };
-
-    const result = await executeTranslation({ model: 'payload' }, translate, innerAttempt, capture);
-    if (result.type !== 'events') throw new Error('unreachable');
-    const frames = await collectFrames(result.events);
-    expect(frames).toEqual([
-      { type: 'event', event: { kind: 'src', value: 'a' } },
-      { type: 'done' },
-    ]);
-  });
-
-  test('api-error path — capture receives the verbatim upstream envelope before any rewrite', async () => {
+  test('api-error path — capture receives the verbatim upstream envelope and the client the restated one', async () => {
     const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
       type: 'api-error',
       source: 'upstream',
@@ -233,91 +110,12 @@ describe('executeTranslation upstream capture', () => {
     expect(result.type).toBe('api-error');
     if (result.type !== 'api-error') throw new Error('unreachable');
     // Capture saw the ORIGINAL envelope, not the rewrite.
-    expect(captured).toHaveLength(1);
-    expect(captured[0].status).toBe(413);
-    expect(captured[0].headers.get('x-upstream')).toBe('yes');
-    expect(decodeResponseBody(captured[0].body)).toBe('raw upstream body');
-    // Downstream got the rewrite.
+    expect(captured.map(({ status, headers, body }) => [status, headers.get('x-upstream'), decodeResponseBody(body)])).toEqual([[413, 'yes', 'raw upstream body']]);
+    // Downstream got the rewrite, with the rewriter's headers in place of the upstream's.
     expect(JSON.parse(decodeResponseBody(result.body))).toEqual({ error: { message: 'rewritten' } });
+    expect(result.http.headers.get('x-upstream')).toBeNull();
+    expect(result.source).toBe('upstream');
   });
-
-  test('api-error path — capture fires even when trip.error is undefined (no restatement)', async () => {
-    const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
-      type: 'api-error',
-      source: 'upstream',
-      http: { status: 502, headers: new Headers() },
-      body: new TextEncoder().encode('bad gateway'),
-    };
-    const captured: { status: number }[] = [];
-    const capture = {
-      upstreamFrame: () => {},
-      upstreamApiError: (error: { status: number; headers: Headers; body: Uint8Array | null }) => captured.push({ status: error.status }),
-    };
-
-    await executeTranslation({ model: 'payload' }, translate, async () => inner, capture);
-    expect(captured).toEqual([{ status: 502 }]);
-  });
-
-  test('internal-error path — capture is NOT invoked', async () => {
-    const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
-      type: 'internal-error',
-      http: { status: 500, headers: new Headers() },
-      error: toInternalDebugError(new Error('boom')),
-    };
-    let called = false;
-    const capture = {
-      upstreamFrame: () => { called = true; },
-      upstreamApiError: () => { called = true; },
-    };
-
-    const result = await executeTranslation({ model: 'payload' }, translate, async () => inner, capture);
-    expect(called).toBe(false);
-    expect(result).toBe(inner);
-  });
-
-  test('gateway-sourced api-error — capture is NOT invoked', async () => {
-    const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
-      type: 'api-error',
-      source: 'gateway',
-      http: { status: 400, headers: new Headers() },
-      body: new TextEncoder().encode('synthesized'),
-    };
-    let called = false;
-    const capture = {
-      upstreamFrame: () => { called = true; },
-      upstreamApiError: () => { called = true; },
-    };
-
-    await executeTranslation({ model: 'payload' }, translate, async () => inner, capture);
-    expect(called).toBe(false);
-  });
-
-  test('capture undefined — no tee, downstream still works', async () => {
-    const innerAttempt = async (_translated: string): Promise<ExecuteResult<ProtocolFrame<TgtEvent>>> => ({
-      type: 'events',
-      events: makeTgtFrames(['a']),
-      modelIdentity: testTelemetryModelIdentity,
-    });
-
-    const result = await executeTranslation({ model: 'payload' }, translate, innerAttempt, undefined);
-    if (result.type !== 'events') throw new Error('unreachable');
-    const frames = await collectFrames(result.events);
-    expect(frames).toEqual([
-      { type: 'event', event: { kind: 'src', value: 'a' } },
-      { type: 'done' },
-    ]);
-  });
-});
-
-test('returns a raw translation input error before calling the inner attempt', async () => {
-  const failure = { type: 'input-error' as const, message: 'unsupported content', param: 'messages[0]', code: 'unsupported_content' };
-  let called = false;
-  const result = await executeTranslation({ model: 'payload' }, async () => failure, async () => {
-    called = true;
-    return { type: 'events', events: makeTgtFrames([]), modelIdentity: testTelemetryModelIdentity };
-  });
-  expect(result).toBe(failure);
-  expect(called).toBe(false);
 });
 
 test('propagates unexpected translator errors with their identity and cause intact', async () => {

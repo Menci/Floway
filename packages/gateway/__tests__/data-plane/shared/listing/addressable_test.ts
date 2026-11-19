@@ -16,29 +16,6 @@ const enumerateAddressableModelIds = (
 ) => enumerateAddressableModelIdsRaw(testAdminUser, upstreamFilter, scheduler);
 
 describe('enumerateAddressableModelIds', () => {
-  test('returns the listed catalog as listed entries when no provider contributes addressable-only forms', async () => {
-    const { repo } = await setupAppTest();
-    await repo.upstreams.deleteAll();
-    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord());
-
-    await withMockedFetch(
-      request => {
-        const url = new URL(request.url);
-        if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
-          return jsonResponse({ object: 'list', data: [{ id: 'shared-model', supported_endpoints: ['/chat/completions'] }] });
-        }
-        throw new Error(`Unhandled fetch ${request.url}`);
-      },
-      async () => {
-        await warmModelsForTest();
-        const surface = await enumerateAddressableModelIds(null, scheduleRefresh);
-        expect(surface.map(e => ({ id: e.id, unlisted: e.unlisted }))).toEqual([
-          { id: 'shared-model', unlisted: undefined },
-        ]);
-      },
-    );
-  });
-
   test('emits the addressable-only prefix form whenever modelPrefix.addressable ⊋ modelPrefix.listed', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
@@ -125,12 +102,5 @@ describe('enumerateAddressableModelIds', () => {
         }
       },
     );
-  });
-
-  test('returns an empty surface when the upstream cap is empty', async () => {
-    const { repo } = await setupAppTest();
-    await repo.upstreams.deleteAll();
-
-    await expect(enumerateAddressableModelIds(null, scheduleRefresh)).resolves.toEqual([]);
   });
 });

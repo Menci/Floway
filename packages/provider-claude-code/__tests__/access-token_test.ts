@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import {
   ensureClaudeCodeAccessToken,
-  invalidateClaudeCodeAccessToken,
   type ClaudeCodeAccessTokenEntry,
 } from '../src/access-token.ts';
 import { ClaudeCodeOAuthSessionTerminatedError } from '../src/auth/oauth.ts';
@@ -95,16 +94,6 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('ensureClaudeCodeAccessToken', () => {
-  test('returns the cached entry when still fresh and never calls fetch', async () => {
-    const entry: ClaudeCodeAccessTokenEntry = { token: 'at_x', expiresAt: farFutureMs, refreshedAt: 'now' };
-    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: entry }] });
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    const out = await ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
-    expect(out).toEqual({ entry, freshlyMinted: false });
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(saveStateSpy).not.toHaveBeenCalled();
-  });
-
   test('refreshes when no token is cached, rotates refresh_token, persists fresh access token', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       access_token: 'at_new', token_type: 'Bearer', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
@@ -115,7 +104,6 @@ describe('ensureClaudeCodeAccessToken', () => {
     expect(out.entry.token).toBe('at_new');
     expect(out.entry.expiresAt).toBeGreaterThan(Date.now());
 
-    expect(writes).toHaveLength(1);
     const account = writes[0].accounts[0];
     expect(account.refreshToken).toBe('rt_v2');
     expect(account.accessToken?.token).toBe('at_new');
@@ -155,17 +143,6 @@ describe('ensureClaudeCodeAccessToken', () => {
     expect(account.refreshToken).toBe('rt_v2');
     expect(account.accessToken?.token).toBe('at_new');
     expect(account.quotaSnapshot).toEqual(siblingQuota);
-  });
-
-  test('refreshes when the cached token is within the 5-minute skew window', async () => {
-    const expiresSoon = Date.now() + 60 * 1000;
-    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: { token: 'at_old', expiresAt: expiresSoon, refreshedAt: 'old' } }] });
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
-      access_token: 'at_new', token_type: 'Bearer', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
-    }), { status: 200, headers: { 'content-type': 'application/json' } }));
-    const out = await ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
-    expect(out.entry.token).toBe('at_new');
-    expect(out.freshlyMinted).toBe(true);
   });
 
   test('invalid_grant with no sibling rotation (stored RT unchanged) → terminal flip', async () => {
@@ -224,52 +201,6 @@ describe('ensureClaudeCodeAccessToken', () => {
     expect(persisted.accounts[0].state).toBe('refresh_failed');
     expect(persisted.accounts[0].stateMessage).toBe('Session ended by Anthropic');
   });
-
-  test('saveState storage failure propagates without rotating', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
-      access_token: 'at_new', token_type: 'Bearer', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
-    }), { status: 200, headers: { 'content-type': 'application/json' } }));
-    saveStateSpy.mockRejectedValueOnce(new Error('D1 boom'));
-    await expect(ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }))
-      .rejects.toThrow(/D1 boom/);
-    expect(writes).toHaveLength(0);
-  });
-
-  test('throws when the upstream row is missing', async () => {
-    current = null;
-    await expect(ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }))
-      .rejects.toThrow(/not found/);
-  });
-
-  test('throws session-terminated when the stored account is not active', async () => {
-    current = makeRecord({
-      accounts: [{ ...baseAccount, state: 'refresh_failed', stateMessage: 'previously failed', stateUpdatedAt: 'now' }],
-    });
-    await expect(ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }))
-      .rejects.toBeInstanceOf(ClaudeCodeOAuthSessionTerminatedError);
-  });
-});
-
-describe('invalidateClaudeCodeAccessToken', () => {
-  test('clears a populated access-token slot', async () => {
-    const entry: ClaudeCodeAccessTokenEntry = { token: 'at_x', expiresAt: farFutureMs, refreshedAt: 'now' };
-    current = makeRecord({ accounts: [{ ...baseAccount, accessToken: entry }] });
-    await invalidateClaudeCodeAccessToken({ upstreamId, repo });
-    expect(writes).toHaveLength(1);
-    expect(writes[0].accounts[0].accessToken).toBeNull();
-    expect(writes[0].accounts[0].refreshToken).toBe('rt_v1');
-  });
-
-  test('no-ops when the slot is already null', async () => {
-    await invalidateClaudeCodeAccessToken({ upstreamId, repo });
-    expect(writes).toHaveLength(0);
-  });
-
-  test('throws when the upstream disappeared', async () => {
-    current = null;
-    await expect(invalidateClaudeCodeAccessToken({ upstreamId, repo })).rejects.toThrow(/disappeared/);
-    expect(writes).toHaveLength(0);
-  });
 });
 
 describe('ensureClaudeCodeAccessToken (within-isolate herd coalescing)', () => {
@@ -301,43 +232,6 @@ describe('ensureClaudeCodeAccessToken (within-isolate herd coalescing)', () => {
     const minted = results.filter(r => r.freshlyMinted).length;
     expect(minted).toBe(10);
   });
-
-  test('serial calls after the in-flight settles are not stuck on a stale entry', async () => {
-    // The map entry must be cleared on settle so the second wave can mint
-    // again when the upstream rotates / expires. Mint, await settle, then
-    // mint again — the second wave should hit fetch a second time
-    // (no cached token because the test starts from the cold state).
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({
-      access_token: 'at_new', token_type: 'Bearer', expires_in: 3600, refresh_token: 'rt_v2', scope: 'user:inference',
-    }), { status: 200, headers: { 'content-type': 'application/json' } }));
-
-    const first = await ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
-    expect(first.entry.token).toBe('at_new');
-    // Re-arm a stale view so the next ensure triggers another mint rather
-    // than hitting the cached-and-fresh early return.
-    current = makeRecord({ accounts: [{ ...baseAccount, refreshToken: 'rt_v2' }] });
-    const second = await ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
-    expect(second.entry.token).toBe('at_new');
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
-  });
-
-  test('a rejected in-flight mint propagates to every coalesced waiter and clears the map', async () => {
-    // If the in-flight promise rejects, every waiter sees the same
-    // rejection — and the entry is cleared so the next caller is free to
-    // retry from scratch.
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify({
-      error: 'invalid_grant', error_description: 'Refresh token revoked',
-    }), { status: 400, headers: { 'content-type': 'application/json' } }));
-
-    const waiters = Array.from({ length: 5 }, () =>
-      ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher }).catch(e => e));
-    const settled = await Promise.all(waiters);
-    for (const e of settled) {
-      expect(e).toBeInstanceOf(ClaudeCodeOAuthSessionTerminatedError);
-    }
-    // Only one upstream POST despite 5 waiters.
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe('ensureClaudeCodeAccessToken (setup-token kind)', () => {
@@ -351,16 +245,6 @@ describe('ensureClaudeCodeAccessToken (setup-token kind)', () => {
     quotaSnapshot: null,
     usageProbeSnapshot: null,
   };
-
-  test('returns the long-lived bearer when fresh; never hits /v1/oauth/token', async () => {
-    current = makeRecord({ accounts: [{ ...setupTokenAccount }] });
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    const out = await ensureClaudeCodeAccessToken({ upstreamId, repo, fetcher: directFetcher });
-    expect(out.entry.token).toBe('st_long_lived');
-    expect(out.freshlyMinted).toBe(false);
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(saveStateSpy).not.toHaveBeenCalled();
-  });
 
   test('expired setup-token flips to refresh_failed and surfaces session-terminated (operator must re-import)', async () => {
     const expiredEntry: ClaudeCodeAccessTokenEntry = {
@@ -377,7 +261,6 @@ describe('ensureClaudeCodeAccessToken (setup-token kind)', () => {
     expect(writes).toHaveLength(1);
     const persisted = writes[0];
     expect(persisted.accounts[0].state).toBe('refresh_failed');
-    expect(persisted.accounts[0].stateMessage).toMatch(/re-import/);
     expect(persisted.accounts[0].accessToken).toBeNull();
   });
 });

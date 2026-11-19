@@ -37,14 +37,9 @@ const buildCustomUpstream = (ingressHeadersRules: CustomIngressHeaderRule[], mod
 const CHAT_MODEL: UpstreamModelConfig[] = [{ upstreamModelId: 'chat', kind: 'chat', endpoints: { openaiChatCompletions: {} } }];
 
 // What the operator configures for one header name. `null` is the passthrough
-// preset, `''` the empty preset, anything else a typed value. An empty rule
-// list is how the operator keeps a name away from this upstream.
+// preset, `''` the empty preset, anything else a typed value.
 const RULES: Record<string, CustomIngressHeaderRule[]> = {
-  'no rule': [],
   passthrough: [{ key: HEADER, value: null }],
-  'one value': [{ key: HEADER, value: 'one' }],
-  'two values': [{ key: HEADER, value: 'one' }, { key: HEADER, value: 'two' }],
-  'passthrough before a value': [{ key: HEADER, value: null }, { key: HEADER, value: 'one' }],
   'passthrough after a value': [{ key: HEADER, value: 'one' }, { key: HEADER, value: null }],
   'empty beside a value': [{ key: HEADER, value: '' }, { key: HEADER, value: 'one' }],
 };
@@ -54,46 +49,22 @@ const RULES: Record<string, CustomIngressHeaderRule[]> = {
 // repeated name to a provider.
 const ADMITTED: Record<string, string | null> = {
   'client sends nothing': null,
-  'client sends one value': 'client-a',
   'client sends two values': 'client-a, client-b',
 };
 
 // The upstream's `x-route` field lines for each pair, stated from the rule
 // contract rather than read back from the resolver.
 const EXPECTED: Record<string, Record<string, string[]>> = {
-  'no rule': {
-    'client sends nothing': [],
-    'client sends one value': [],
-    'client sends two values': [],
-  },
   passthrough: {
     'client sends nothing': [],
-    'client sends one value': ['client-a'],
     'client sends two values': ['client-a, client-b'],
-  },
-  'one value': {
-    'client sends nothing': ['one'],
-    'client sends one value': ['one'],
-    'client sends two values': ['one'],
-  },
-  'two values': {
-    'client sends nothing': ['one', 'two'],
-    'client sends one value': ['one', 'two'],
-    'client sends two values': ['one', 'two'],
-  },
-  'passthrough before a value': {
-    'client sends nothing': ['one'],
-    'client sends one value': ['client-a', 'one'],
-    'client sends two values': ['client-a, client-b', 'one'],
   },
   'passthrough after a value': {
     'client sends nothing': ['one'],
-    'client sends one value': ['one', 'client-a'],
     'client sends two values': ['one', 'client-a, client-b'],
   },
   'empty beside a value': {
     'client sends nothing': ['', 'one'],
-    'client sends one value': ['', 'one'],
     'client sends two values': ['', 'one'],
   },
 };

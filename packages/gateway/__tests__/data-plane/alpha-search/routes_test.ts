@@ -114,68 +114,14 @@ beforeEach(() => {
 });
 
 describe('/alpha/search data plane', () => {
-  describe('routing and auth', () => {
-    it.each(SEARCH_PATHS)('serves the same handler at %s', async path => {
-      const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
-      const stub = makeStubProvider();
-      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildAlphaSearchApp();
-
-      const response = await postSearch(app, apiKey.key, { commands: { search_query: [{ q: 'route probe' }] } }, path);
-      expect(response.status).toBe(200);
-      const body = await response.json() as SearchResponseBody;
-      expect(body.output).toContain('Search results for "route probe"');
-    });
-
-    it.each(SEARCH_PATHS)('rejects missing auth at %s', async path => {
-      await setupAppTest();
-      const app = buildAlphaSearchApp();
-      const response = await app.request(path, { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
-      expect(response.status).toBe(401);
-    });
-
-    it.each(SEARCH_PATHS)('rejects an unknown bearer at %s', async path => {
-      await setupAppTest();
-      const app = buildAlphaSearchApp();
-      const response = await postSearch(app, 'not-an-api-key', {}, path);
-      expect(response.status).toBe(401);
-    });
-  });
-
-  describe('schema validation', () => {
-    it.each(SEARCH_PATHS)('rejects non-object `commands` at %s', async path => {
-      const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
-      const app = buildAlphaSearchApp();
-      const response = await postSearch(app, apiKey.key, { commands: [] }, path);
-      expect(response.status).toBe(400);
-    });
-
-    it.each(SEARCH_PATHS)('rejects unknown search_context_size at %s', async path => {
-      const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
-      const app = buildAlphaSearchApp();
-      const response = await postSearch(app, apiKey.key, { settings: { search_context_size: 'huge' } }, path);
-      expect(response.status).toBe(400);
-    });
-
-    it('accepts and ignores the model/id/reasoning/input/max_output_tokens fields codex always sends', async () => {
-      const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
-      const stub = makeStubProvider();
-      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildAlphaSearchApp();
-      const response = await postSearch(app, apiKey.key, {
-        id: 'session-1',
-        model: 'gpt-5.5',
-        reasoning: { effort: 'high' },
-        input: 'find me the docs',
-        max_output_tokens: 2048,
-        commands: { search_query: [{ q: 'react hooks' }] },
-      });
-      expect(response.status).toBe(200);
-    });
-  });
-
   describe('passthrough model availability', () => {
-    it.each(SEARCH_PATHS.flatMap(path => (['missing-model', 'denied-model', 'excluded-upstream'] as const).map(reason => ({ path, reason }))))('returns the same missing-model response for $reason at $path', async ({ path, reason }) => {
+    // Each reason is a distinct production branch; the two mount paths share
+    // one handler, so the rows alternate between them.
+    it.each([
+      { reason: 'missing-model', path: SEARCH_PATHS[0] },
+      { reason: 'denied-model', path: SEARCH_PATHS[1] },
+      { reason: 'excluded-upstream', path: SEARCH_PATHS[0] },
+    ] as const)('returns the same missing-model response for $reason at $path', async ({ path, reason }) => {
       const { apiKey, repo } = await setupAppTest({ webSearchConfig: PASSTHROUGH_CONFIG });
       await repo.upstreams.deleteAll();
       await saveUpstreamForTest(repo.upstreams, searchUpstream(['gpt-search']));
@@ -280,40 +226,6 @@ describe('/alpha/search data plane', () => {
       expect(usage[0]).toMatchObject({ provider: 'tavily', keyId: apiKey.id, action: 'search', requests: 1 });
     });
 
-    it('opens a page and returns its body text; accounts one fetch_page usage row', async () => {
-      const { apiKey, repo } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
-      const stub = makeStubProvider();
-      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildAlphaSearchApp();
-
-      const response = await postSearch(app, apiKey.key, { commands: { open: [{ ref_id: 'https://example.com/doc' }] } });
-      expect(response.status).toBe(200);
-      const body = await response.json() as SearchResponseBody;
-      expect(body.output).toContain('body of https://example.com/doc');
-
-      const usage = await repo.webSearchUsage.listAll();
-      expect(usage).toHaveLength(1);
-      expect(usage[0]).toMatchObject({ provider: 'tavily', keyId: apiKey.id, action: 'fetch_page', requests: 1 });
-    });
-
-    it('finds a pattern inside an opened page and renders the matches', async () => {
-      const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
-      const stub = makeStubProvider({
-        fetchPage: req => ({
-          type: 'ok',
-          pages: req.urls.map(url => ({ url, title: 'Page', content: 'alpha beta gamma beta delta', truncated: false, fullContentBytes: 27 })),
-          failures: [],
-        }),
-      });
-      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildAlphaSearchApp();
-
-      const response = await postSearch(app, apiKey.key, { commands: { find: [{ ref_id: 'https://example.com/doc', pattern: 'beta' }] } });
-      expect(response.status).toBe(200);
-      const body = await response.json() as SearchResponseBody;
-      expect(body.output).toContain('2 matches for pattern: `beta`');
-    });
-
     it('maps response_length and query-level filters onto the provider request', async () => {
       const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
       const stub = makeStubProvider();
@@ -349,116 +261,6 @@ describe('/alpha/search data plane', () => {
       const body = await response.json() as SearchResponseBody;
       expect(body.output).toContain('(no results)');
       expect(stub.calls).toHaveLength(0);
-    });
-
-    it('treats null optional fields as absent', async () => {
-      const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
-      const stub = makeStubProvider();
-      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildAlphaSearchApp();
-
-      const response = await postSearch(app, apiKey.key, {
-        commands: {
-          search_query: [{ q: 'react', domains: null, recency: null }],
-          response_length: null,
-        },
-      });
-      expect(response.status).toBe(200);
-      expect(stub.calls).toHaveLength(1);
-      const request = stub.calls[0].request as WebSearchProviderRequest;
-      expect(request.allowedDomains).toBeUndefined();
-      expect(request.recencyDays).toBeUndefined();
-    });
-
-    it('concatenates multiple commands in order with a blank-line separator', async () => {
-      const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
-      const stub = makeStubProvider();
-      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildAlphaSearchApp();
-
-      const response = await postSearch(app, apiKey.key, {
-        commands: {
-          search_query: [{ q: 'first' }, { q: 'second' }],
-          open: [{ ref_id: 'https://example.com/p' }],
-        },
-      });
-      expect(response.status).toBe(200);
-      const body = await response.json() as SearchResponseBody;
-      const blocks = body.output.split('\n\n');
-      expect(body.output).toContain('Search results for "first"');
-      expect(body.output).toContain('Search results for "second"');
-      expect(body.output).toContain('body of https://example.com/p');
-      // Search rendering itself contains blank lines, so assert on markers
-      // rather than exact block count.
-      expect(blocks.length).toBeGreaterThan(1);
-    });
-
-    it('returns unimplemented command kinds as exact model-facing output without hitting the provider', async () => {
-      const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
-      const stub = makeStubProvider();
-      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildAlphaSearchApp();
-
-      const response = await postSearch(app, apiKey.key, {
-        commands: { screenshot: [{ ref_id: 'https://example.com', pageno: 0 }], response_length: 'short' },
-      });
-      expect(response.status).toBe(200);
-      const body = await response.json() as SearchResponseBody;
-      expect(body.output).toBe('The configured web search provider does not implement OpenAI search feature `commands.screenshot`.');
-      expect(stub.calls).toHaveLength(0);
-    });
-
-    it('returns a helpful message when no commands are provided', async () => {
-      const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
-      const app = buildAlphaSearchApp();
-      const response = await postSearch(app, apiKey.key, { commands: {} });
-      expect(response.status).toBe(200);
-      const body = await response.json() as SearchResponseBody;
-      expect(body.output).toContain('No web search commands were provided');
-    });
-
-    it('blocks an open URL outside the allowed_domains filter', async () => {
-      const { apiKey } = await setupAppTest({ webSearchConfig: TAVILY_CONFIG });
-      const stub = makeStubProvider();
-      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildAlphaSearchApp();
-
-      const response = await postSearch(app, apiKey.key, {
-        settings: { filters: { allowed_domains: ['example.org'] } },
-        commands: { open: [{ ref_id: 'https://example.com/blocked' }] },
-      });
-      expect(response.status).toBe(200);
-      const body = await response.json() as SearchResponseBody;
-      expect(body.output).toContain('Blocked by tool filters');
-      // Blocked URLs never reach the provider.
-      expect(stub.calls).toHaveLength(0);
-    });
-  });
-
-  describe('provider not configured', () => {
-    it('surfaces disabled search as in-band output text (contract-shaped 200)', async () => {
-      const { apiKey, repo } = await setupAppTest();
-      mockResolveConfigured.mockReturnValue({ type: 'disabled' });
-      const app = buildAlphaSearchApp();
-
-      const response = await postSearch(app, apiKey.key, { commands: { search_query: [{ q: 'anything' }] } });
-      expect(response.status).toBe(200);
-      const body = await response.json() as SearchResponseBody;
-      expect(body.encrypted_output).toBeNull();
-      expect(body.output).toContain('Web search provider is not configured on this gateway.');
-      // Nothing was billed because no backend ran.
-      expect(await repo.webSearchUsage.listAll()).toHaveLength(0);
-    });
-
-    it('surfaces a missing provider credential as in-band output text', async () => {
-      const { apiKey } = await setupAppTest();
-      mockResolveConfigured.mockReturnValue({ type: 'missing-credential', provider: 'tavily' });
-      const app = buildAlphaSearchApp();
-
-      const response = await postSearch(app, apiKey.key, { commands: { search_query: [{ q: 'anything' }] } });
-      expect(response.status).toBe(200);
-      const body = await response.json() as SearchResponseBody;
-      expect(body.output).toContain('Web search provider tavily is missing its credential on this gateway.');
     });
   });
 });

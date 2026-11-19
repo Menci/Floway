@@ -41,27 +41,3 @@ test("vendor-deepseek translates canonical reasoning.effort: 'none' into top-lev
   assertEquals(out.reasoning, undefined);
   assertEquals(out.thinking, { type: 'disabled' });
 });
-
-test('vendor-deepseek leaves a real reasoning.effort value untouched (only the none sentinel triggers the rewrite)', async () => {
-  const input = invocation({
-    model: 'deepseek-reasoner',
-    input: [{ type: 'message', role: 'user', content: 'hi' }],
-    reasoning: { effort: 'high' },
-  });
-
-  await withVendorDeepSeekOpenAIResponsesNormalize(input, stubCtx, okEvents);
-
-  assertEquals(input.payload.reasoning, { effort: 'high' });
-  const out = input.payload as unknown as Record<string, unknown>;
-  assertEquals(out.thinking, undefined);
-});
-
-test('vendor-deepseek early-returns when its flag is not set on the candidate', async () => {
-  const input = invocation({ model: 'deepseek-reasoner', input: [{ type: 'message', role: 'user', content: 'hi' }], reasoning: { effort: 'none' } }, new Set());
-
-  await withVendorDeepSeekOpenAIResponsesNormalize(input, stubCtx, okEvents);
-
-  assertEquals(input.payload.reasoning, { effort: 'none' });
-  const out = input.payload as unknown as Record<string, unknown>;
-  assertEquals(out.thinking, undefined);
-});

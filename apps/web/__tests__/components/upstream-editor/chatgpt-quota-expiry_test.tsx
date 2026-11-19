@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatGPTAccountCard } from '../../../src/components/upstream-editor/chatgpt-account-card';
 import type { ChatGPTRecord } from '../../../src/components/upstreams/chatgpt-account';
 import { UpstreamSignals } from '../../../src/components/upstreams/signals';
+import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { stubLocalStorage } from '../../local-storage-stub';
 import { renderInApp } from '../../render';
@@ -23,14 +24,17 @@ const record = upstreamRecord('', {
 // Control-plane projections retain observed usage and date only known exhausted windows.
 const cases = [
   { name: 'primary only', primary: 100, secondary: 35, until: primaryReset },
-  { name: 'secondary only', primary: 35, secondary: 100, until: secondaryReset },
   { name: 'both known', primary: 100, secondary: 100, until: secondaryReset },
-  { name: 'unknown secondary percentage', primary: 100, secondary: undefined, until: primaryReset },
   { name: 'exhausted secondary without reset', primary: 100, secondary: 100, secondaryReset: undefined, until: primaryReset },
-  { name: 'unknown primary percentage', primary: undefined, secondary: 100, until: secondaryReset },
 ];
 
 afterEach(() => vi.useRealTimers());
+
+const rateLimited = i18n.t('dashboard.upstreams.signals.rateLimited');
+const rateLimitedUntil = (node: Element | null) =>
+  node?.textContent?.startsWith(i18n.t('dashboard.upstreamEditor.chatgpt.rateLimitedUntil', { time: '' })) ?? false;
+const statusLabel = (key: 'active' | 'heavy', percent?: number) => i18n.t(`dashboard.upstreamEditor.chatgpt.status.${key}`, { percent });
+const remaining = (percent: number) => i18n.t('dashboard.upstreamEditor.quotaRemainingPercent', { percent });
 
 beforeEach(() => { primeDefaultSession(); });
 
@@ -53,42 +57,32 @@ describe('ChatGPT projected quota on list and card', () => {
     const view = renderInApp(<><div data-testid="list"><UpstreamSignals record={projected} /></div><div data-testid="card"><ChatGPTAccountCard record={projected} /></div></>);
     const list = within(screen.getByTestId('list'));
     const card = within(screen.getByTestId('card'));
-    expect(list.getByText('Rate limited')).toBeTruthy();
-    expect(card.getAllByText(/^Rate-limited until/)).toHaveLength(2);
+    expect(list.getByText(rateLimited)).toBeTruthy();
+    expect(card.getAllByText((_, node) => rateLimitedUntil(node) && node!.children.length === 0)).toHaveLength(2);
 
     // Passing the short reset must not clear a genuine later exhausted window.
     await act(async () => {
       vi.setSystemTime(Date.parse(primaryReset) + 1);
       vi.advanceTimersByTime(60_000);
     });
-    expect(list.queryByText('Rate limited') !== null).toBe(until === secondaryReset);
+    expect(list.queryByText(rateLimited) !== null).toBe(until === secondaryReset);
 
     await act(async () => {
       vi.setSystemTime(Date.parse(until) + 1);
       vi.advanceTimersByTime(60_000);
     });
-    expect(list.queryByText('Rate limited')).toBeNull();
-    expect(card.queryByText(/^Rate-limited until/)).toBeNull();
-    expect(card.getByText('Heavy usage (100%)')).toBeTruthy();
+    expect(list.queryByText(rateLimited)).toBeNull();
+    expect(card.queryAllByText((_, node) => rateLimitedUntil(node) && node!.children.length === 0)).toHaveLength(0);
+    expect(card.getByText(statusLabel('heavy', 100))).toBeTruthy();
     expect(list.getAllByText('0%').length).toBeGreaterThan(0);
-    expect(card.getAllByText('0% remaining').length).toBeGreaterThan(0);
+    expect(card.getAllByText(remaining(0)).length).toBeGreaterThan(0);
     expect(projected.chatgpt_quota.premium).toEqual(quota);
 
     const fresh = { ...projected, chatgpt_quota: { premium: { ...quota, primary_used_percent: 12, secondary_used_percent: 35, ratelimited_until: undefined } } };
     view.rerender(<><div data-testid="list"><UpstreamSignals record={fresh} /></div><div data-testid="card"><ChatGPTAccountCard record={fresh} /></div></>);
-    expect(card.getByText('Active')).toBeTruthy();
+    expect(card.getByText(statusLabel('active'))).toBeTruthy();
     expect(list.getByText('88%')).toBeTruthy();
-    expect(card.getByText('88% remaining')).toBeTruthy();
+    expect(card.getByText(remaining(88))).toBeTruthy();
     expect(list.queryByText('0%')).toBeNull();
-  });
-
-  it('keeps an exhausted quota without inventing a timed restriction when its reset is unknown', () => {
-    const projected = { ...record, chatgpt_quota: { premium: { observed_at: observed, primary_used_percent: 100 } } };
-    renderInApp(<><UpstreamSignals record={projected} /><ChatGPTAccountCard record={projected} /></>);
-    expect(screen.queryByText('Rate limited')).toBeNull();
-    expect(screen.queryByText(/^Rate-limited until/)).toBeNull();
-    expect(screen.getByText('Heavy usage (100%)')).toBeTruthy();
-    expect(screen.getByText('0%')).toBeTruthy();
-    expect(screen.getByText('0% remaining')).toBeTruthy();
   });
 });

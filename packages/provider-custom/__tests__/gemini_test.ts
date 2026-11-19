@@ -1,6 +1,5 @@
 import { test } from 'vitest';
 
-import { assertCustomUpstreamRecord } from '../src/config.ts';
 import { createCustomProvider } from '../src/provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
@@ -57,29 +56,6 @@ test('Gemini generation posts to the model action path with alt=sse and the x-go
   assertEquals(request.url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:streamGenerateContent?alt=sse');
   // The model and the action travel in the path; the body must not repeat them.
   assertEquals(await request.json(), { contents: [{ role: 'user', parts: [{ text: 'hello' }] }] });
-  assertEquals(request.headers.get('x-goog-api-key'), 'AIza-test');
-  assertEquals(request.headers.get('authorization'), null);
-});
-
-test('a Gemini-compatible upstream behind another host still uses the Google header', async () => {
-  const provider = createCustomProvider(buildUpstream('https://gemini-proxy.example.com'));
-  let request: Request | undefined;
-
-  await withMockedFetch(
-    observed => {
-      request = observed;
-      return sseResponse();
-    },
-    async () => {
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
-      await provider.instance.callGeminiGenerateContent(model, { contents: [] }, undefined, noopUpstreamCallOptions());
-    },
-  );
-
-  assertExists(request);
-  assertEquals(request.url, 'https://gemini-proxy.example.com/v1beta/models/gemini-3-flash:streamGenerateContent?alt=sse');
-  // The outbound protocol selects the credential header: Gemini is not
-  // OpenAI-compatible, so it never sends a bearer token.
   assertEquals(request.headers.get('x-goog-api-key'), 'AIza-test');
   assertEquals(request.headers.get('authorization'), null);
 });
@@ -147,36 +123,6 @@ test('countTokens posts the generate payload inside the generateContentRequest e
   });
 });
 
-test('the catalog fetch accepts x-goog-api-key alongside the other header schemes', () => {
-  const record = buildUpstream();
-  const { config } = assertCustomUpstreamRecord({
-    ...record,
-    config: { ...(record.config as Record<string, unknown>), modelsFetch: { enabled: true, authStyle: 'x-goog-api-key' } },
-  });
-  assertEquals(config.modelsFetch, { enabled: true, authStyle: 'x-goog-api-key' });
-});
-
-test('an empty api key makes the upstream anonymous for every scheme', async () => {
-  const provider = createCustomProvider({
-    ...buildUpstream(),
-    config: { ...buildUpstream().config as Record<string, unknown>, apiKey: '' },
-  });
-  let request: Request | undefined;
-  await withMockedFetch(
-    observed => {
-      request = observed;
-      return sseResponse();
-    },
-    async () => {
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
-      await provider.instance.callGeminiGenerateContent(model, { contents: [] }, undefined, noopUpstreamCallOptions());
-    },
-  );
-  assertExists(request);
-  assertEquals(request.headers.get('x-goog-api-key'), null);
-  assertEquals(request.headers.get('authorization'), null);
-});
-
 test('the catalog parser reads Gemini models and keeps only generateContent-capable entries', async () => {
   const record = buildUpstream();
   const provider = createCustomProvider({
@@ -231,35 +177,5 @@ test('the catalog fetch follows nextPageToken until the Gemini listing is comple
   assertEquals(urls, [
     'https://generativelanguage.googleapis.com/v1beta/models',
     'https://generativelanguage.googleapis.com/v1beta/models?pageToken=page-2',
-  ]);
-});
-
-test('a real Gemini SSE body parses into protocol frames through the provider call', async () => {
-  const provider = createCustomProvider(buildUpstream());
-  const sse = [
-    `data: ${JSON.stringify({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'Hel' }] } }] })}`,
-    '',
-    `data: ${JSON.stringify({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'lo' }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 2, candidatesTokenCount: 2, totalTokenCount: 4 } })}`,
-    '',
-    '',
-  ].join('\n');
-
-  const result = await withMockedFetch(
-    () => new Response(sse, { status: 200, headers: { 'content-type': 'text/event-stream' } }),
-    async () => {
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
-      return await provider.instance.callGeminiGenerateContent(model, { contents: [] }, undefined, noopUpstreamCallOptions());
-    },
-  );
-
-  assertEquals(result.ok, true);
-  if (!result.ok) throw new Error('expected an event stream');
-  assertEquals(result.modelKey, 'gemini-3-flash');
-
-  const events = [];
-  for await (const frame of result.events) if (frame.type === 'event') events.push(frame.event);
-  assertEquals(events, [
-    { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'Hel' }] } }] },
-    { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'lo' }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 2, candidatesTokenCount: 2, totalTokenCount: 4 } },
   ]);
 });

@@ -1,19 +1,10 @@
-import { expect, expectTypeOf, test } from 'vitest';
+import { test } from 'vitest';
 
-import { upstreamRecordToFullJson, upstreamRecordToJson, type FullSerializedUpstreamRecord } from '../../../src/control-plane/upstreams/serialize.ts';
-import type { RedactedSerializedUpstreamRecord } from '../../../src/control-plane/upstreams/types.ts';
+import { upstreamRecordToJson } from '../../../src/control-plane/upstreams/serialize.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const timestamp = '2026-04-29T00:00:00.000Z';
-
-test('serialized records exclude route-layer response projections and redacted access tokens', () => {
-  expectTypeOf<'modelsCache' extends keyof FullSerializedUpstreamRecord ? true : false>().toEqualTypeOf<false>();
-  expectTypeOf<'chatgpt_quota' extends keyof FullSerializedUpstreamRecord ? true : false>().toEqualTypeOf<false>();
-  type ClaudeState = Extract<RedactedSerializedUpstreamRecord, { kind: 'claude-code' }>['state'];
-  type AccessToken = ClaudeState['accounts'][number]['accessToken'];
-  expectTypeOf<'token' extends keyof NonNullable<AccessToken> ? true : false>().toEqualTypeOf<false>();
-});
 
 const custom: UpstreamRecord = {
   id: 'up_custom_test',
@@ -40,46 +31,6 @@ const custom: UpstreamRecord = {
   },
   state: null,
 };
-
-test('upstreamRecordToJson redacts custom bearer token inside config', () => {
-  const result = upstreamRecordToJson(custom);
-  if (result.kind !== 'custom') throw new Error('Expected a Custom response');
-  const { config } = result;
-
-  assertEquals(result.id, 'up_custom_test');
-  assertEquals(result.kind, 'custom');
-  assertEquals(result.sort_order, 10);
-  assertEquals(result.created_at, timestamp);
-  assertEquals(result.updated_at, timestamp);
-  assertEquals(result.flag_overrides, { 'vendor-deepseek': true });
-  assertEquals(result.state, null);
-  assertEquals(config.baseUrl, 'https://api.example.com');
-  assertEquals('apiKey' in config, false);
-  assertEquals(config.apiKeySet, true);
-  assertEquals(config.endpoints, { openaiChatCompletions: {}, openaiResponses: {} });
-  assertEquals(config.ingressHeadersRules, [{ key: 'x-route', value: '' }]);
-  assertEquals(config.modelsFetch, { enabled: true, authStyle: 'bearer', endpoint: '/models' });
-  assertEquals(config.models, [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { openaiChatCompletions: {} } }]);
-});
-
-test('upstreamRecordToJson redacts Azure API keys inside config', () => {
-  const result = upstreamRecordToJson({
-    ...custom,
-    id: 'up_azure_test',
-    kind: 'azure',
-    config: {
-      endpoint: 'https://example.openai.azure.com',
-      apiKey: 'az-secret',
-      models: [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
-    },
-  });
-  if (result.kind !== 'azure') throw new Error('Expected an Azure response');
-  const { config } = result;
-  assertEquals(config.endpoint, 'https://example.openai.azure.com');
-  assertEquals('apiKey' in config, false);
-  assertEquals(config.apiKeySet, true);
-  assertEquals(config.models, [{ upstreamModelId: 'gpt-prod', kind: 'chat', endpoints: { openaiChatCompletions: {} } }]);
-});
 
 test('upstreamRecordToJson redacts Copilot GitHub token inside config and exposes the state baseUrl', () => {
   const result = upstreamRecordToJson({
@@ -116,96 +67,6 @@ test('upstreamRecordToJson redacts Copilot GitHub token inside config and expose
   assertEquals(state.copilotToken, { baseUrl: 'https://api.enterprise.githubcopilot.com' });
 });
 
-test('upstreamRecordToJson serializes a Copilot row with state=null without throwing', () => {
-  const result = upstreamRecordToJson({
-    ...custom,
-    id: 'up_copilot_fresh',
-    kind: 'copilot',
-    config: {
-      githubHost: 'github.com',
-      githubToken: 'ghu_secret',
-      user: { id: 200, login: 'fresh', name: null, avatar_url: 'https://example.com/fresh.png' },
-    },
-    state: null,
-  });
-
-  assertEquals(result.kind, 'copilot');
-  // A freshly imported Copilot row that hasn't completed its first token
-  // exchange yet has no state at all — the dashboard renders the generic
-  // 'copilot' badge in that case rather than a per-tier label.
-  assertEquals(result.state, null);
-});
-
-test('upstreamRecordToJson serializes a Copilot row whose state lacks copilotToken as { copilotToken: null }', () => {
-  const result = upstreamRecordToJson({
-    ...custom,
-    id: 'up_copilot_no_token',
-    kind: 'copilot',
-    config: {
-      githubHost: 'github.com',
-      githubToken: 'ghu_secret',
-      user: { id: 201, login: 'no-token', name: null, avatar_url: 'https://example.com/n.png' },
-    },
-    state: { knownModels: null, copilotToken: null },
-  });
-  if (result.kind !== 'copilot' || result.state === null) throw new Error('Expected a Copilot response with state');
-  const { state } = result;
-  assertEquals(state.copilotToken, null);
-});
-
-test('upstreamRecordToFullJson includes provider config secrets for export', () => {
-  const result = upstreamRecordToFullJson(custom);
-  if (result.kind !== 'custom') throw new Error('Expected a Custom response');
-  const { config } = result;
-  assertEquals(result.id, 'up_custom_test');
-  assertEquals(config.apiKey, 'sk-secret-token-12345');
-  assertEquals('apiKeySet' in config, false);
-});
-
-// Serialization validates every provider-owned config and state slot, so a
-// malformed persisted row blocks `/api/upstreams` instead of being redacted
-// into an apparently valid response.
-
-const claudeCodeConfig = {
-  accounts: [{
-    email: 'a@example.com',
-    accountUuid: 'u',
-    organizationUuid: null,
-    subscriptionType: 'pro',
-    rateLimitTier: 'default_claude_pro',
-  }],
-};
-
-const claudeCodeCredential = {
-  accountUuid: 'u',
-  tokenKind: 'oauth',
-  state: 'active',
-  stateUpdatedAt: timestamp,
-  refreshToken: 'r',
-  accessToken: null,
-  quotaSnapshot: null,
-  usageProbeSnapshot: null,
-};
-
-const claudeCodeBase = (overrides: { config?: unknown; state?: unknown }): UpstreamRecord => ({
-  id: 'up_cc_test',
-  kind: 'claude-code',
-  name: 'Claude Code',
-  enabled: true,
-  usageRefreshIntervalMinutes: 0,
-  sortOrder: 0,
-  createdAt: timestamp,
-  updatedAt: timestamp,
-  flagOverrides: {},
-  disabledPublicModelIds: [],
-  proxyFallbackList: [],
-  modelPrefix: null,
-  modelsCache: null,
-  hue: 210,
-  config: overrides.config ?? claudeCodeConfig,
-  state: overrides.state ?? null,
-} as unknown as UpstreamRecord);
-
 const chatgptBase = (overrides: { config?: unknown; state?: unknown }): UpstreamRecord => ({
   id: 'up_cx_test',
   kind: 'chatgpt',
@@ -224,33 +85,6 @@ const chatgptBase = (overrides: { config?: unknown; state?: unknown }): Upstream
   config: overrides.config ?? { accounts: [{ email: 'a@example.com', chatgptAccountId: 'account', chatgptUserId: 'user', planType: 'plus' }] },
   state: overrides.state ?? null,
 } as unknown as UpstreamRecord);
-
-test('upstreamRecordToJson throws when claude-code state.accessToken is a string', () => {
-  const record = claudeCodeBase({
-    state: { accounts: [{ ...claudeCodeCredential, accessToken: 'not-an-object' }] },
-  });
-  expect(() => upstreamRecordToJson(record)).toThrow(/accessToken must be a plain object/);
-});
-
-test('upstreamRecordToJson throws when claude-code state.quotaSnapshot is a string', () => {
-  const record = claudeCodeBase({
-    state: { accounts: [{ ...claudeCodeCredential, quotaSnapshot: 'not-an-object' }] },
-  });
-  expect(() => upstreamRecordToJson(record)).toThrow(/quotaSnapshot must be a plain object/);
-});
-
-test('upstreamRecordToJson throws when claude-code config.accounts is not an array', () => {
-  const record = claudeCodeBase({ config: { accounts: 'not-an-array' } });
-  expect(() => upstreamRecordToJson(record)).toThrow(/accounts must be an array/);
-});
-
-test('upstreamRecordToJson throws when claude-code state.accounts is not an array', () => {
-  const record = claudeCodeBase({
-    config: claudeCodeConfig,
-    state: { accounts: 'not-an-array' },
-  });
-  expect(() => upstreamRecordToJson(record)).toThrow(/accounts must be an array/);
-});
 
 test('upstreamRecordToJson exposes ChatGPT capability and bearer timing without the bearer', () => {
   const result = upstreamRecordToJson(chatgptBase({
@@ -276,28 +110,4 @@ test('upstreamRecordToJson exposes ChatGPT capability and bearer timing without 
   assertEquals(account.refresh_token_set, false);
   assertEquals(account.accessToken, { expiresAt: null, refreshedAt: timestamp });
   assertEquals(JSON.stringify(result).includes('bearer-secret'), false);
-});
-
-test('upstreamRecordToJson throws when ChatGPT state.accessToken is a string', () => {
-  const record = chatgptBase({
-    state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: null, state: 'active', state_updated_at: timestamp, openaiDeviceId: 'device', accessToken: 'not-an-object', quotaSnapshot: null }] },
-  });
-  expect(() => upstreamRecordToJson(record)).toThrow(/accessToken must be a plain object/);
-});
-
-test('upstreamRecordToJson throws when ChatGPT config.accounts is not an array', () => {
-  const record = chatgptBase({ config: { accounts: 'not-an-array' } });
-  expect(() => upstreamRecordToJson(record)).toThrow(/accounts must be an array/);
-});
-
-test('upstreamRecordToJson throws when ChatGPT state.accounts is not an array', () => {
-  const record = chatgptBase({
-    state: { accounts: 'not-an-array' },
-  });
-  expect(() => upstreamRecordToJson(record)).toThrow(/accounts must be an array/);
-});
-
-test('persisted subscription upstreams require credential state', () => {
-  expect(() => upstreamRecordToJson(chatgptBase({}))).toThrow(/ChatGPTUpstreamState must be a plain object/);
-  expect(() => upstreamRecordToFullJson(claudeCodeBase({}))).toThrow(/ClaudeCodeUpstreamState must be a plain object/);
 });

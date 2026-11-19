@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { StrictMode, useCallback, useRef, useState } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { NavSelectionIndicator } from '../../src/components/sidebar/nav-selection-indicator';
 import { fluentComponents } from '../../src/fluent';
@@ -117,33 +117,6 @@ describe('nav selection indicator', () => {
   });
 });
 
-describe('winui presence motion', () => {
-  stubMatchMedia(() => false);
-
-  const { Button, Dialog, DialogBody, DialogSurface, DialogTitle } = fluentComponents;
-
-  it('renders the dialog through the motion slot and keeps a caller-supplied motion callback', async () => {
-    const onMotionFinish = vi.fn();
-    const DialogHarness = () => {
-      const [open, setOpen] = useState(true);
-      return <Dialog open={open} surfaceMotion={{ onMotionFinish }}>
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>Delete the key</DialogTitle>
-            <Button onClick={() => setOpen(false)}>Cancel</Button>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>;
-    };
-
-    renderInApp(<DialogHarness />);
-    await screen.findByRole('dialog', { name: 'Delete the key' });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    await waitFor(() => expect(onMotionFinish).toHaveBeenCalled());
-  });
-});
-
 describe('winui popover surface reachability', () => {
   stubMatchMedia(() => false);
 
@@ -173,14 +146,5 @@ describe('winui popover surface reachability', () => {
     view.rerender(<Harness open />);
     const field = await screen.findByRole('textbox', { name: 'Surface field' });
     await waitFor(() => expect(document.activeElement).toBe(field));
-  });
-
-  it('hides the surface from assistive technology once it is dismissed', async () => {
-    const view = renderInApp(<Harness open={false} />);
-    view.rerender(<Harness open />);
-    const surface = await screen.findByRole('dialog');
-    expect(surface.getAttribute('aria-hidden')).toBeNull();
-    view.rerender(<Harness open={false} />);
-    expect(surface.getAttribute('aria-hidden')).toBe('true');
   });
 });

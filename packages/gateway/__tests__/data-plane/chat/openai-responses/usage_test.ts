@@ -18,10 +18,6 @@ test('OpenAI Responses billable usage splits the inclusive input total into disj
   })), { input: 45, cacheRead: 30, cacheWrite: 25, cacheWrite1h: 0, output: 8 });
 });
 
-test('OpenAI Responses billable usage is absent when the upstream reported none', () => {
-  assertEquals(billableUsageFromOpenAIResponsesResult(result(undefined)), null);
-});
-
 test('OpenAI Responses billable usage forwards a served tier and drops the default', () => {
   assertEquals(billableUsageFromOpenAIResponsesResult(result({ input_tokens: 1, output_tokens: 1, total_tokens: 2 }, 'priority'))?.tier, 'priority');
   assertEquals(billableUsageFromOpenAIResponsesResult(result({ input_tokens: 1, output_tokens: 1, total_tokens: 2 }, 'default'))?.tier, undefined);

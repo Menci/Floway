@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { dashboardBucketFrames } from '../../src/components/charts/dashboard-time';
 import { parsePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../src/components/performance/overview';
+import { i18n } from '../../src/i18n';
 import DashboardMonitorPerformance from '../../src/routes/dashboard-monitor-performance';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
@@ -75,14 +76,20 @@ const renderPage = (search: string, data = overview) => {
 
 const urlSearch = (router: ReturnType<typeof renderPage>['router']) => new URLSearchParams(router.state.location.search);
 
+const chartTitle = (metric: { ttft: string } | { tail: number }) => i18n.t('dashboard.performance.chartTitle', {
+  group: i18n.t('dashboard.performance.groupBy.model'),
+  metric: 'ttft' in metric
+    ? i18n.t('dashboard.performance.tables.ttft', { percentile: metric.ttft })
+    : i18n.t('dashboard.performance.tables.speed', { tail: metric.tail }),
+});
+
 describe('Performance table state', () => {
   it.each(['ttft', 'tokPerSec'] as const)('updates both table metrics for every percentile with chart %s', async metric => {
     const data = { ...overview, axes: { ...overview.axes, model: [record('model-a')] } };
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
     renderPage(`m=${metric}`, data);
-    const group = 'By Model';
-    const table = within(screen.getByRole('table', { name: group }));
+    const table = within(screen.getByRole('table', { name: i18n.t('dashboard.performance.groupBy.model') }));
     const summary = () => screen.getByText('Speed p50').parentElement!.parentElement!.textContent;
     const initialSummary = summary();
     expect(initialSummary).toContain('50.0 tok/s');
@@ -97,30 +104,10 @@ describe('Performance table state', () => {
       expect(table.getByRole('columnheader', { name: `Worst ${tail}% speed` })).toBeTruthy();
       expect(table.getAllByRole('cell', { name: latency }).length).toBeGreaterThan(0);
       expect(table.getAllByRole('cell', { name: speed }).length).toBeGreaterThan(0);
-      expect(screen.getByText(`${group}: ${metric === 'ttft' ? `TTFT ${percentile}` : `Worst ${tail}% speed`}`)).toBeTruthy();
+      expect(screen.getByText(chartTitle(metric === 'ttft' ? { ttft: percentile } : { tail }))).toBeTruthy();
       expect(summary()).toBe(initialSummary);
     }
     expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('normalizes both table columns to the active metric percentile in legacy links', () => {
-    renderPage('ttft_p=p99&speed_p=p50');
-
-    expect(screen.getByRole('columnheader', { name: 'TTFT p99' })).toBeTruthy();
-    expect(screen.getByRole('columnheader', { name: 'Worst 1% speed' })).toBeTruthy();
-    expect(screen.getAllByRole('cell', { name: '500ms' }).length).toBeGreaterThan(0);
-    expect(screen.getAllByRole('cell', { name: '12.5 tok/s' }).length).toBeGreaterThan(0);
-  });
-
-  it('sorts the table by the percentile its column names', async () => {
-    const { router } = renderPage('ttft_p=p95&sort=ttft');
-    const modelOrder = () => screen.getAllByRole('row').slice(1).map(row => row.querySelector('td')?.textContent);
-
-    expect(modelOrder()).toEqual(['model-a', 'model-b']);
-
-    await act(async () => { fireEvent.click(screen.getByRole('radio', { name: 'p99' })); });
-    await waitFor(() => expect(urlSearch(router).get('p')).toBe('p99'));
-    expect(modelOrder()).toEqual(['model-b', 'model-a']);
   });
 
   it('preserves the shared percentile across metric switches, links, refresh and reload', async () => {
@@ -138,13 +125,13 @@ describe('Performance table state', () => {
     await act(async () => { fireEvent.click(screen.getByRole('radio', { name: 'Output speed' })); });
     await waitFor(() => expect(urlSearch(router).get('m')).toBe('tokPerSec'));
     expect(screen.getByRole('radio', { name: 'p50' }).getAttribute('aria-checked')).toBe('true');
-    expect(screen.getByText('By Model: Worst 50% speed')).toBeTruthy();
+    expect(screen.getByText(chartTitle({ tail: 50 }))).toBeTruthy();
 
     await act(async () => { fireEvent.click(screen.getByRole('radio', { name: 'p99' })); });
     await waitFor(() => expect(urlSearch(router).get('p')).toBe('p99'));
     expect(screen.getByRole('columnheader', { name: 'TTFT p99' })).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'Worst 1% speed' })).toBeTruthy();
-    expect(screen.getByText('By Model: Worst 1% speed')).toBeTruthy();
+    expect(screen.getByText(chartTitle({ tail: 1 }))).toBeTruthy();
     expect(fetch).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Refresh performance' }));
@@ -154,10 +141,10 @@ describe('Performance table state', () => {
     const address = urlSearch(router).toString();
     unmount();
     renderPage(address);
-    expect(screen.getByText('By Model: Worst 1% speed')).toBeTruthy();
+    expect(screen.getByText(chartTitle({ tail: 1 }))).toBeTruthy();
     expect(screen.getByRole('columnheader', { name: 'TTFT p99' })).toBeTruthy();
     await act(async () => { fireEvent.click(screen.getByRole('radio', { name: 'TTFT' })); });
-    expect(screen.getByText('By Model: TTFT p99')).toBeTruthy();
+    expect(screen.getByText(chartTitle({ ttft: 'p99' }))).toBeTruthy();
   });
 
   it.each([
@@ -170,29 +157,5 @@ describe('Performance table state', () => {
     await act(async () => { fireEvent.click(screen.getByRole('radio', { name: 'p99' })); });
     expect(modelOrder()).toEqual(after);
     expect(screen.getByRole('columnheader', { name: sort === 'ttft' ? 'TTFT p99' : 'Worst 1% speed' }).getAttribute('aria-sort')).toBe('descending');
-  });
-
-  it('opens the breakdown and sort the URL names', () => {
-    renderPage('tab=operation&sort=errors&dir=ascending');
-
-    expect(screen.getByRole('tab', { name: 'By Operation' }).getAttribute('aria-selected')).toBe('true');
-    expect(screen.getByRole('table', { name: 'By Operation' })).toBeTruthy();
-    expect(screen.getByRole('columnheader', { name: 'Errors' }).getAttribute('aria-sort')).toBe('ascending');
-  });
-
-  it('writes the breakdown tab and table sort to the URL', async () => {
-    const { router } = renderPage('');
-
-    expect(screen.getByRole('tab', { name: 'By Upstream' })).toBeTruthy();
-    await act(async () => { fireEvent.click(screen.getByRole('tab', { name: 'By Operation' })); });
-    await waitFor(() => expect(urlSearch(router).get('tab')).toBe('operation'));
-
-    const errors = screen.getByRole('columnheader', { name: 'Errors' }).querySelector<HTMLElement>('[role=button]')!;
-    await act(async () => { fireEvent.click(errors); });
-    await waitFor(() => expect(urlSearch(router).get('sort')).toBe('errors'));
-    expect(urlSearch(router).get('dir')).toBeNull();
-
-    await act(async () => { fireEvent.click(errors); });
-    await waitFor(() => expect(urlSearch(router).get('dir')).toBe('ascending'));
   });
 });

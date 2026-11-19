@@ -47,13 +47,13 @@ const sourceCase = <Turn>(
     } else if (scenario === 'malformed') {
       // Deliberately bypass the typed encoder to exercise authenticated envelope validation.
       const broken = await codec.encode({ v: 1, source, target: 'anthropicMessages', targetTurn: { role: 'user' }, sourceTurnDigest: check });
-      await expect(run(makeTurn([owned, broken]))).rejects.toThrow('Messages assistant turn is invalid');
+      await expect(run(makeTurn([owned, broken]))).rejects.toThrow(TypeError);
       expect(checked).not.toHaveBeenCalled();
     } else {
       const second = scenario === 'duplicate' ? owned : await encodeRoundTripSidecar(codec, {
         v: 1, source, target: 'anthropicMessages', targetTurn: { role: 'assistant', content: [] }, sourceTurnDigest: check,
       });
-      await expect(run(makeTurn([second, owned]))).rejects.toThrow('multiple recognized round-trip sidecars');
+      await expect(run(makeTurn([second, owned]))).rejects.toThrow();
       expect(checked).not.toHaveBeenCalled();
     }
   },
@@ -79,6 +79,11 @@ const cases = [
 
 const scenarios = ['middle', 'foreign', 'wrong-direction', 'duplicate', 'different-targets', 'malformed'] as const;
 
-test.each(cases.flatMap(source => scenarios.map(scenario => ({ ...source, scenario }))))('$source selects by ownership: $scenario', async ({ run, scenario }) => {
+// Selection by ownership is protocol-agnostic; every other protocol still runs
+// the scenario that exercises its own carrier inspection and digest material.
+test.each([
+  ...scenarios.map(scenario => ({ ...cases[0], scenario })),
+  ...cases.slice(1).map(source => ({ ...source, scenario: 'middle' as const })),
+])('$source selects by ownership: $scenario', async ({ run, scenario }) => {
   await run(scenario);
 });

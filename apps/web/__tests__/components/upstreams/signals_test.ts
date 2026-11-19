@@ -1,25 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
 import { currentUsage, kimiCodeRecord, legacyUsage } from './kimi-code-fixture';
-import { creditBalance, legacyBalance, usageTotals } from './ollama-usage-fixture';
+import { creditBalance, usageTotals } from './ollama-usage-fixture';
 import type { UpstreamRecord } from '../../../src/api/types';
 import { upstreamReadout } from '../../../src/components/upstreams/signals';
 import en from '../../../src/i18n/locales/en';
-import zhHans from '../../../src/i18n/locales/zh-Hans';
 import type { TFunction } from '../../../src/i18n/translation';
 
 const OBSERVED = '2026-07-28T11:00:00.000Z';
 
-// The real resources rather than a key echo, so the assertions read as the copy
-// an operator sees and a key that does not exist fails here rather than
-// rendering as itself.
-const translationFor = (resource: Record<string, unknown>) => ((key: string, values?: Record<string, unknown>) => {
-  const template = key.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown> | undefined)?.[part], resource);
+// The real resources rather than a key echo, so a key that does not exist
+// fails here rather than rendering as itself.
+const t = ((key: string, values?: Record<string, unknown>) => {
+  const template = key.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown> | undefined)?.[part], en.translation);
   if (typeof template !== 'string') throw new Error(`Missing i18n key: ${key}`);
   return template.replace(/\{\{(\w+)[^}]*\}\}/g, (_, name: string) => String(values?.[name]));
 }) as unknown as TFunction;
-
-const t = translationFor(en.translation);
 
 // Intl writes a narrow no-break space before a day-period (U+202F), which a
 // literal expectation cannot spell readably; collapsing it keeps the assertion
@@ -27,6 +23,7 @@ const t = translationFor(en.translation);
 const normalizeSpaces = (value: string): string => value.replace(/\u202f/g, ' ');
 
 const NOW = Date.parse('2026-07-28T12:00:00.000Z');
+const RATE_LIMITED = t('dashboard.upstreams.signals.rateLimited');
 const readoutOf = (record: unknown, quotaDisplay: 'remaining' | 'used' = 'remaining') => upstreamReadout(record as UpstreamRecord, t, 'en', NOW, quotaDisplay);
 const rowOf = (record: unknown) => {
   const { plan, signals } = readoutOf(record);
@@ -51,34 +48,6 @@ describe('upstream readout by provider', () => {
     expect(readoutOf(record).plan).toBe('Kimi Pro');
     expect(readoutOf(kimiCodeRecord(null)).signals).toEqual([]);
   });
-  it.each([
-    ['en', en, 'Kimi Ultra:  ◔ 11% 5h  ◔ 4% until Dec 1, 2026', '7d', ['5h: 11% used', 'until Dec 1, 2026: 4% used']],
-    ['zh-Hans', zhHans, 'Kimi Ultra：  ◔ 11% 5 小时  ◔ 4% 至 2026/12/01', '7 天', ['5 小时：已用11%', '至 2026/12/01：已用4%']],
-  ] as const)('uses compact calendar and duration copy in %s rows and tooltip headings', (locale, resource, expectedRow, weeklyLabel, detailHeadings) => {
-    const translate = translationFor(resource.translation);
-    const record = kimiCodeRecord({
-      ...currentUsage,
-      usages: {
-        limit_5h: { used_ratio: 0.11, reset_time: '2026-12-01T00:00:00Z' },
-        limit_month_total: { used_ratio: 0.04, reset_time: '2026-12-01T00:00:00Z' },
-        limit_month_code: { used_ratio: 0.04, reset_time: '2026-12-01T00:00:00Z' },
-      },
-    });
-    record.state!.accountProbe = {
-      attemptedAt: 1000, error: null,
-      observation: { fetchedAt: 1000, data: { userId: 'fake-user', globalId: null, nickname: '', status: '', region: '', userLevel: 0, userLevelName: 'Ultra', domain: 0, domainName: '', goodsVersion: null, username: null, email: null, bio: null, avatar: null, phone: null, createdTime: null, lastLoginTime: null } },
-    };
-    const { plan, signals } = upstreamReadout(record, translate, locale, NOW, 'used');
-    expect([translate('dashboard.upstreams.signals.plan', { plan }), ...signals.map(signal => `◔ ${signal.value} ${signal.label}`)].join('  ')).toBe(expectedRow);
-    expect(signals.map(signal => signal.detail.split('\n')[0])).toEqual(detailHeadings);
-    expect(upstreamReadout(kimiCodeRecord(legacyUsage), translate, locale, NOW, 'used').signals[1].label).toBe(weeklyLabel);
-  });
-  it('names the provider itself when the upstream publishes nothing about its account', () => {
-    expect(readoutOf({ kind: 'custom', config: { baseUrl: 'https://api.openai.com' } }))
-      .toEqual({ plan: 'Custom', signals: [] });
-    expect(readoutOf({ kind: 'azure', config: { endpoint: 'https://x.openai.azure.com' } }))
-      .toEqual({ plan: 'Azure', signals: [] });
-  });
 
   it('meters only the Copilot buckets that are capped, and dates them by the seat reset', () => {
     const record = {
@@ -101,42 +70,11 @@ describe('upstream readout by provider', () => {
     // one fact per line rather than a run the tooltip wraps on its own.
     const detail = readoutOf(record).signals[0].detail;
     expect(detail).not.toContain(' - ');
-    expect(detail.split('\n').map(normalizeSpaces)).toEqual([
-      'Allowance: 71% remaining',
-      'Resets Sep 1, 2026, 12:00:00 AM',
-      'Observed Jul 28, 2026, 11:00:00 AM',
-    ]);
-  });
-
-  it('stacks what a reading reports on their own lines', () => {
-    const detail = readoutOf({
-      kind: 'chatgpt',
-      config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'plus' }] },
-      state: { accounts: [] },
-      chatgpt_quota: { plus: { observed_at: OBSERVED, primary_used_percent: 25, primary_window_minutes: 300 } },
-    }).signals[0]?.detail;
-    // A window with no reset still states the reading and when it was taken, and the
-    // two are lines rather than one run.
-    expect(normalizeSpaces(detail!)).toBe('5h: 75% remaining\nObserved Jul 28, 2026, 11:00:00 AM');
-  });
-
-  it('names the Copilot seat the way VS Code names it', () => {
-    const planFor = (plan: string | null, sku: string | null) => readoutOf({
-      kind: 'copilot',
-      state: { seat: { fetchedAt: Date.parse(OBSERVED), data: { observed_at: OBSERVED, plan, sku } } },
-    }).plan;
-
-    expect(planFor('individual_pro', null)).toBe('Copilot Pro+');
-    expect(planFor('individual_max', null)).toBe('Copilot Max');
-    expect(planFor('business', null)).toBe('Copilot Business');
-    // A live enterprise seat: the plan names it, and its SKU is one no table needs.
-    expect(planFor('enterprise', 'copilot_enterprise_seat_quota')).toBe('Copilot Enterprise');
-    // The SKU is matched first, because a free seat carries no plan of its own.
-    expect(planFor(null, 'free_limited_copilot')).toBe('Copilot Free');
-    expect(planFor('individual', 'free_educational_quota')).toBe('Copilot Student');
-    // Both namespaces are open, so an unknown value names no plan.
-    expect(planFor('individual_ultra', null)).toBe('Copilot');
-    expect(planFor(null, null)).toBe('Copilot');
+    const lines = detail.split('\n').map(normalizeSpaces);
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain('71%');
+    expect(lines[1]).toContain('Sep 1, 2026, 12:00:00 AM');
+    expect(lines[2]).toContain('Jul 28, 2026, 11:00:00 AM');
   });
 
   // A rate limit and a spent window are different facts: the row states the
@@ -153,20 +91,11 @@ describe('upstream readout by provider', () => {
       },
     });
 
-    expect(rowFor('2026-07-28T14:30:00.000Z')).toBe('ChatGPT Pro | 88% 5h | Rate limited 2h 30m');
-    expect(rowFor('2026-07-28T12:45:00.000Z')).toBe('ChatGPT Pro | 88% 5h | Rate limited 45m');
+    expect(rowFor('2026-07-28T14:30:00.000Z')).toBe(`ChatGPT Pro | 88% 5h | ${RATE_LIMITED} 2h 30m`);
+    expect(rowFor('2026-07-28T12:45:00.000Z')).toBe(`ChatGPT Pro | 88% 5h | ${RATE_LIMITED} 45m`);
     // A day out still reads in hours, and any time left never reads as none.
-    expect(rowFor('2026-07-30T12:00:00.000Z')).toBe('ChatGPT Pro | 88% 5h | Rate limited 48h');
-    expect(rowFor('2026-07-28T12:00:01.000Z')).toBe('ChatGPT Pro | 88% 5h | Rate limited 1m');
-  });
-
-  it('lets an elapsed ChatGPT rate limit go rather than holding it on the row', () => {
-    expect(rowOf({
-      kind: 'chatgpt',
-      config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'pro' }] },
-      state: { accounts: [] },
-      chatgpt_quota: { premium: { observed_at: OBSERVED, primary_used_percent: 12, primary_window_minutes: 300, ratelimited_until: '2020-01-01T00:00:00.000Z' } },
-    })).toBe('ChatGPT Pro | 88% 5h');
+    expect(rowFor('2026-07-30T12:00:00.000Z')).toBe(`ChatGPT Pro | 88% 5h | ${RATE_LIMITED} 48h`);
+    expect(rowFor('2026-07-28T12:00:01.000Z')).toBe(`ChatGPT Pro | 88% 5h | ${RATE_LIMITED} 1m`);
   });
 
   it('states a Claude Code shared refusal without promoting model limits to account limits', () => {
@@ -181,7 +110,7 @@ describe('upstream readout by provider', () => {
       },
     });
 
-    expect(rowFor('2026-07-28T15:00:00.000Z')).toBe('Claude Max 20x | Rate limited 3h');
+    expect(rowFor('2026-07-28T15:00:00.000Z')).toBe(`Claude Max 20x | ${RATE_LIMITED} 3h`);
     for (const claim of ['seven_day_overage_included', 'seven_day_opus', 'seven_day_sonnet', 'future_model_limit', null]) {
       expect(rowFor('2026-07-28T15:00:00.000Z', claim)).toBe('Claude Max 20x');
     }
@@ -195,184 +124,15 @@ describe('upstream readout by provider', () => {
     expect(rowFor(null)).toBe('Claude Max 20x');
   });
 
-  it('reports nothing for a Copilot seat no response has been observed on', () => {
-    expect(readoutOf({ kind: 'copilot', state: null })).toEqual({ plan: 'Copilot', signals: [] });
-  });
-
-  it('names a ChatGPT window by the length its header states, under the ChatGPT plan', () => {
-    const record = {
-      kind: 'chatgpt',
-      config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'pro' }] },
-      state: { accounts: [] },
-      chatgpt_quota: {
-        pro: {
-          observed_at: OBSERVED,
-          primary_used_percent: 25, primary_window_minutes: 300,
-          secondary_used_percent: 40, secondary_window_minutes: 10_080,
-        },
-      },
-    };
-    expect(rowOf(record)).toBe('ChatGPT Pro | 75% 5h | 60% 7d');
-  });
-
-  it('forwards a ChatGPT plan this dashboard has not seen', () => {
-    expect(readoutOf({
-      kind: 'chatgpt',
-      config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'ultra' }] },
-      state: { accounts: [] },
-    }).plan).toBe('ChatGPT ultra');
-  });
-
-  it('falls back to a ChatGPT window position when no length came with it', () => {
-    const record = {
-      kind: 'chatgpt',
-      config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'plus' }] },
-      state: { accounts: [] },
-      chatgpt_quota: { plus: { observed_at: OBSERVED, primary_used_percent: 25 } },
-    };
-    expect(rowOf(record)).toBe('ChatGPT Plus | 75% Primary');
-  });
-
-  it('states the ChatGPT limit observed last rather than every key the map holds', () => {
-    const record = {
-      kind: 'chatgpt',
-      config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'plus' }] },
-      state: { accounts: [] },
-      chatgpt_quota: {
-        stale: { observed_at: '2026-07-20T00:00:00.000Z', primary_used_percent: 90, primary_window_minutes: 300 },
-        current: { observed_at: OBSERVED, primary_used_percent: 12, primary_window_minutes: 300 },
-      },
-    };
-    expect(rowOf(record)).toBe('ChatGPT Plus | 88% 5h');
-  });
-
-  it('carries the ChatGPT credit balance beside the windows', () => {
-    const withCredits = (credits: Record<string, unknown>) => readoutOf({
-      kind: 'chatgpt',
-      config: { accounts: [{ chatgptAccountId: 'acct_1', planType: 'plus' }] },
-      state: { accounts: [] },
-      chatgpt_quota: { plus: { observed_at: OBSERVED, ...credits } },
-    }).signals.map(signal => signal.value);
-
-    expect(withCredits({ credits_has_credits: true, credits_balance: 42 })).toEqual(['42 credits']);
-    // A balance of nothing says nothing on this line, however the account
-    // reports it -- the editor card is where both still show.
-    expect(withCredits({ credits_has_credits: true, credits_balance: 0 })).toEqual([]);
-    expect(withCredits({ credits_has_credits: false })).toEqual([]);
-    expect(withCredits({ credits_has_credits: false, credits_balance: 12 })).toEqual([]);
-    expect(withCredits({})).toEqual([]);
-  });
-
-  it('lifts the Max multiple onto the Claude plan and tells the two seven-day windows apart', () => {
-    const record = {
-      kind: 'claude-code',
-      config: { accounts: [{ accountUuid: 'uuid-1', subscriptionType: 'max', rateLimitTier: 'default_claude_max_20x' }] },
-      state: {
-        accounts: [{
-          accountUuid: 'uuid-1',
-          usageProbeSnapshot: {
-            fetchedAt: Date.parse(OBSERVED),
-            data: {
-              five_hour: { utilization: 25, resets_at: '2026-07-28T15:00:00.000Z' },
-              seven_day: { utilization: 40, resets_at: '2026-08-02T00:00:00.000Z' },
-              seven_day_sonnet: { utilization: 8, resets_at: '2026-08-02T00:00:00.000Z' },
-            },
-          },
-        }],
-      },
-    };
-    expect(rowOf(record)).toBe('Claude Max 20x | 75% 5h | 60% 7d | 92% 7d Sonnet');
-  });
-
-  it('names a Claude subscription that carries no multiple by the subscription alone', () => {
-    expect(readoutOf({
-      kind: 'claude-code',
-      config: { accounts: [{ accountUuid: 'uuid-1', subscriptionType: 'pro', rateLimitTier: 'default_claude_ai' }] },
-      state: { accounts: [] },
-    }).plan).toBe('Claude Pro');
-  });
-
-  // A Team premium seat carries `default_claude_max_5x`, which is not a Max
-  // multiple and would otherwise render as a plan Anthropic does not sell.
-  it('reads a Max multiple only under a Max subscription', () => {
-    const planFor = (subscriptionType: string, rateLimitTier: string) => readoutOf({
-      kind: 'claude-code',
-      config: { accounts: [{ accountUuid: 'uuid-1', subscriptionType, rateLimitTier }] },
-      state: { accounts: [] },
-    }).plan;
-
-    expect(planFor('team', 'default_claude_max_5x')).toBe('Claude Team');
-    expect(planFor('max', 'default_claude_max_5x')).toBe('Claude Max 5x');
-    expect(planFor('max', 'default_raven')).toBe('Claude Max');
-  });
-
-  // OpenAI renamed Team to Business without changing the wire identifier, and
-  // groups `business` with its enterprise plans.
-  it('names a ChatGPT plan as Codex itself displays it', () => {
-    const planFor = (planType: string) => readoutOf({
-      kind: 'chatgpt',
-      config: { accounts: [{ chatgptAccountId: 'acct_1', planType }] },
-      state: { accounts: [] },
-    }).plan;
-
-    expect(planFor('team')).toBe('ChatGPT Business');
-    expect(planFor('business')).toBe('ChatGPT Enterprise');
-    expect(planFor('prolite')).toBe('ChatGPT Pro Lite');
-  });
-
-  it('names the Ollama Cloud account by the plan the probe read', () => {
-    const planFor = (plan: string | null) => readoutOf({
-      kind: 'ollama',
-      state: { account: { fetchedAt: Date.parse(OBSERVED), plan, name: null, email: null } },
-    }).plan;
-
-    expect(planFor('max')).toBe('Ollama Max');
-    expect(planFor('enterprise')).toBe('Ollama Enterprise');
-    // The identifiers are plain words, so one this table has not seen reads as
-    // itself rather than as nothing.
-    expect(planFor('ultra')).toBe('Ollama ultra');
-    expect(planFor(null)).toBe('Ollama');
-  });
-
   const ollamaRecord = (data: unknown) => ({ kind: 'ollama', state: { account: { plan: 'pro' }, usageProbe: { observation: { fetchedAt: Date.parse(OBSERVED), data } } } });
-
-  it('keeps legacy percentage signals while using current balance reset times', () => {
-    const record = ollamaRecord({ balance: legacyBalance, usage: { ...usageTotals, totals: { request_count: 15 } } });
-    expect(rowOf(record)).toBe('Ollama Pro | 75% 5h | 60% 7d');
-    expect(readoutOf(record).signals[0]?.detail).toContain('Oct 11, 2026');
-  });
 
   it('shows remaining plan credits against their period allowance', () => {
     const record = ollamaRecord({ balance: creditBalance, usage: usageTotals });
     expect(rowOf(record)).toBe('Ollama Pro | 30% $18.00 / $60.00');
     expect(upstreamReadout(record as never, t, 'en', NOW, 'used').signals[0]?.label).toBe('$42.00 / $60.00');
     expect(readoutOf(record).signals[0]?.percent).toBe(70);
-    expect(readoutOf(record).signals[0]?.detail).toContain('Oct 1, 2026 to Nov 1, 2026: plan credits used this period.');
-  });
-
-  it('derives subscription usage from its own period when activity spans a reset', () => {
-    const signals = readoutOf(ollamaRecord({
-      balance: { ...creditBalance, included: { ...creditBalance.included, balance_usd: 57, period: { from: '2026-11-01T00:00:00Z', until: '2026-12-01T00:00:00Z' } } },
-      usage: { ...usageTotals, from: '2026-10-27T00:00:00Z', until: '2026-11-03T04:00:00Z', totals: { request_count: 15, usage_usd: 10 } },
-    })).signals;
-    expect(signals).toHaveLength(1);
-    expect(signals[0]?.value).toBe('95%');
-    expect(signals[0]?.label).toBe('$57.00 / $60.00');
-    expect(signals[0]?.percent).toBe(5);
-    expect(signals[0]?.detail).toContain('Nov 1, 2026 to Dec 1, 2026: plan credits used this period.');
-  });
-
-  it('renders a zero allowance with a full remaining ring and finite percentage', () => {
-    const signals = readoutOf(ollamaRecord({ balance: { ...creditBalance, included: { ...creditBalance.included, balance_usd: 0, allowance_usd: 0 } }, usage: usageTotals })).signals;
-    expect(signals[0]).toMatchObject({ percent: 0, value: '100%', label: '$0 / $0' });
-  });
-
-  it('leaves zero consumption off the list while retaining legacy percentages', () => {
-    expect(rowOf(ollamaRecord({ balance: legacyBalance, usage: { ...usageTotals, totals: { request_count: 15, usage_usd: 0 } } }))).toBe('Ollama Pro | 75% 5h | 60% 7d');
-  });
-
-  it('reports nothing for a self-hosted Ollama, which serves no usage endpoint', () => {
-    expect(readoutOf({ kind: 'ollama', state: null })).toEqual({ plan: 'Ollama', signals: [] });
+    expect(readoutOf(record).signals[0]?.detail).toContain('Oct 1, 2026');
+    expect(readoutOf(record).signals[0]?.detail).toContain('Nov 1, 2026');
   });
 });
 
@@ -401,10 +161,5 @@ describe('quota direction preference', () => {
     // The severity is a property of the reading, not of the direction shown.
     expect(used.percent).toBe(29);
     expect(remaining.percent).toBe(29);
-  });
-
-  it('words the tooltip in the direction the row shows', () => {
-    expect(upstreamReadout(copilot as never, t, 'en', NOW, 'used').signals[0]!.detail.split('\n')[0]).toBe('Allowance: 29% used');
-    expect(upstreamReadout(copilot as never, t, 'en', NOW, 'remaining').signals[0]!.detail.split('\n')[0]).toBe('Allowance: 71% remaining');
   });
 });

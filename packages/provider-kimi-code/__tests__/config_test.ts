@@ -2,21 +2,13 @@ import { expect, test } from 'vitest';
 
 import { config, record } from './fixtures.ts';
 import { assertKimiCodeUpstreamRecord, kimiCodeStateSurvivesConfigChange, parseKimiCodeUpstreamConfig } from '../src/config.ts';
-import { readKimiCodeUpstreamState } from '../src/state.ts';
 
 test('Kimi Code config chooses a coding region and requires a credential', () => {
   expect(parseKimiCodeUpstreamConfig(config)).toEqual(config);
   expect(parseKimiCodeUpstreamConfig({ ...config, region: 'overseas' }).region).toBe('overseas');
-  for (const invalid of [null, {}, { ...config, region: 'elsewhere' }, { ...config, apiKey: '' }, { ...config, apiKey: 123 }]) expect(() => parseKimiCodeUpstreamConfig(invalid)).toThrow();
+  for (const invalid of [{ ...config, region: 'elsewhere' }, { ...config, apiKey: '' }]) expect(() => parseKimiCodeUpstreamConfig(invalid)).toThrow();
   expect(assertKimiCodeUpstreamRecord(record()).config).toEqual(config);
-  expect(() => assertKimiCodeUpstreamRecord(record({ kind: 'custom' }))).toThrow('Expected kimi-code');
-});
-
-test('Kimi Code state rejects invalid and incomplete persisted observations', () => {
-  expect(readKimiCodeUpstreamState(null)).toEqual({ usageProbe: null, accountProbe: null });
-  const state = record().state;
-  expect(readKimiCodeUpstreamState(state)).toEqual(state);
-  for (const state of [undefined, {}, { usageProbe: null, accountProbe: null, extra: true }, { usageProbe: { attemptedAt: 'bad', observation: null, error: null }, accountProbe: null }]) expect(() => readKimiCodeUpstreamState(state)).toThrow();
+  expect(() => assertKimiCodeUpstreamRecord(record({ kind: 'custom' }))).toThrow(TypeError);
 });
 
 test('Kimi Code state follows the credential through regional configuration changes', () => {

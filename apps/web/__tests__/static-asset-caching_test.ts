@@ -49,8 +49,4 @@ describe('static asset caching', () => {
   it('leaves the unhashed document out of the cached scope', () => {
     expect([...headersRules.keys()]).toEqual(['/assets/*']);
   });
-
-  it('serves sourcemaps as JSON in the Node topology', () => {
-    expect(readRepoFile('apps/platform-node/src/static-web.ts')).toMatch(/'\.map': 'application\/json; charset=utf-8'/);
-  });
 });

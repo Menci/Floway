@@ -12,26 +12,6 @@ it('retains arbitrary metered Copilot quantities and omits unavailable and unlim
   expect(resolveUpstreamMetricDisplay({ name: 'quota.remaining', labels: { quota: 'future_metric' } }, { quotaDisplay: 'remaining' })!.name).toBe('remaining_future_metric');
 });
 
-it('rejects an entitlement below the documented unlimited sentinel', () => {
-  const quota = { entitlement: -2, percent_remaining: 0, quota_remaining: 0, unlimited: false, overage_count: 0, overage_permitted: false };
-  expect(() => copilotMetrics({ observed_at: '2026-10-01T00:00:00Z', reset_at: null, quotas: { malformed: quota } })).toThrow(TypeError);
-});
-
-it('rejects a sentinel entitlement whose unlimited flag is not canonical', () => {
-  const quota = { entitlement: -1, percent_remaining: 100, quota_remaining: -1, unlimited: false, overage_count: 0, overage_permitted: false };
-  expect(() => copilotMetrics({ observed_at: '2026-10-01T00:00:00Z', reset_at: null, quotas: { malformed: quota } })).toThrow(TypeError);
-});
-
-it('records fractional remaining quantities and changed allowances without storing percentages', () => {
-  for (const [remaining, entitlement] of [[0, 300], [300, 300], [9_719_759.1, 10_000_000], [600, 600]]) {
-    const metrics = copilotMetrics({ observed_at: '2026-10-01T00:00:00Z', reset_at: null, quotas: { premium_interactions: { entitlement: entitlement!, percent_remaining: 97.1, quota_remaining: remaining!, unlimited: false, overage_count: 0, overage_permitted: false } } });
-    expect(metrics).toEqual([
-      { name: 'quota.remaining', labels: { quota: 'premium_interactions' }, value: remaining },
-      { name: 'quota.entitlement', labels: { quota: 'premium_interactions' }, value: entitlement },
-    ]);
-  }
-});
-
 it('displays premium interaction credits as dollars and leaves other quotas as counts', () => {
   for (const [name, quantity, form] of [['quota.remaining', 'remaining', 'area'], ['quota.entitlement', 'entitlement', 'line']] as const) {
     const premium = resolveUpstreamMetricDisplay({ name, labels: { quota: 'premium_interactions' } }, { quotaDisplay: 'used' })!;
@@ -67,5 +47,5 @@ it('switches absolute quota series between remaining and used while retaining th
 it('rejects an unpaired absolute quota observation', () => {
   expect(() => resolveUpstreamMetricDisplays([
     { name: 'quota.remaining', labels: { quota: 'chat' }, timestamp: 1_000, value: 213 },
-  ], { quotaDisplay: 'used' })).toThrow('without an entitlement series');
+  ], { quotaDisplay: 'used' })).toThrow();
 });

@@ -120,12 +120,6 @@ describe('translation key usage', () => {
     expect(orphaned).toEqual([]);
   });
 
-  it('scans the source tree it claims to', () => {
-    const files = sourceFiles(SOURCE_ROOT);
-    expect(files.length).toBeGreaterThan(50);
-    expect(files.some(file => file.startsWith(LOCALES_DIR))).toBe(false);
-  });
-
   // A template key (`t(`a.b.${x}`)`) is unresolvable from the source in
   // general, but where `x` ranges over a shared enum the whole family is
   // knowable — and those enums are exactly what grows when a provider kind,

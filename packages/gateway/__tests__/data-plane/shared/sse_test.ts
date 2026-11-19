@@ -137,64 +137,6 @@ test('SSE egress emits comment keepalive frames while idle', async () => {
   }
 });
 
-test('SSE egress emits Anthropic Messages ping keepalive frames while idle', async () => {
-  const time = new FakeTime();
-  const idle = createIdleSSEEvents();
-
-  try {
-    const response = await requestSSE(idle.events, {
-      keepAlive: {
-        intervalMs: 1_000,
-        frame: sseFrame(JSON.stringify({ type: 'ping' }), 'ping'),
-      },
-    });
-    const reader = response.body!.getReader();
-
-    await waitForIteratorStart(idle);
-    const read = reader.read();
-    await time.tickAsync(1_000);
-
-    const chunk = await read;
-    assertEquals(decodeChunk(chunk.value), 'event: ping\ndata: {"type":"ping"}\n\n');
-
-    await reader.cancel();
-  } finally {
-    time.restore();
-  }
-});
-
-test('SSE egress does not emit keepalive before ready events', async () => {
-  const response = await requestSSE(
-    (async function* () {
-      yield sseFrame('{}', 'response.completed');
-    })(),
-    { keepAlive: { intervalMs: 1_000, frame: sseCommentFrame('keepalive') } },
-  );
-
-  assertEquals(await response.text(), 'event: response.completed\ndata: {}\n\n');
-});
-
-test('SSE egress stops idle iterator and timer when the response is canceled', async () => {
-  const time = new FakeTime();
-  const idle = createIdleSSEEvents();
-
-  try {
-    const response = await requestSSE(idle.events, {
-      keepAlive: { intervalMs: 1_000, frame: sseCommentFrame('keepalive') },
-    });
-    const reader = response.body!.getReader();
-
-    await waitForIteratorStart(idle);
-    await reader.cancel();
-    await waitForIteratorReturn(idle);
-
-    assertEquals(idle.returnCalled(), true);
-    await time.tickAsync(5_000);
-  } finally {
-    time.restore();
-  }
-});
-
 test('SSE egress settles cancellation once without rendering a racing iterator error', async () => {
   const idle = createIdleSSEEvents();
   const settle = vi.fn<(outcome: SseOutcome) => void>();

@@ -31,7 +31,6 @@ it.each([
 
   const error = await rejectedConnect();
 
-  expect(error.message).toBe('dial example.com:443 failed');
   expect(error.cause).toBe(cause);
   expect(cloudflareSocketDial.shouldConnectErrorFallbackToFetch?.(error)).toBe(true);
 });

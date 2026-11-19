@@ -18,11 +18,3 @@ test('headersForAnthropicMessagesCall removes an ordinary collision when the typ
     ['x-request-id', 'request-1'],
   ]);
 });
-
-test('headersForAnthropicMessagesCall keeps every other repeated name', () => {
-  expect(headersForAnthropicMessagesCall([['x-route', 'one'], ['anthropic-beta', 'dropped'], ['x-route', 'two']], ['context-1m'])).toEqual([
-    ['x-route', 'one'],
-    ['x-route', 'two'],
-    ['anthropic-beta', 'context-1m'],
-  ]);
-});

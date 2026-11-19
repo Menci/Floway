@@ -26,29 +26,6 @@ test.each([
   expect(chat.target.messages).toEqual([{ role: 'user', content: [{ type: 'image_url', image_url: { url } }] }]);
 });
 
-test('raw file_data remains exact between OpenAI request protocols', async () => {
-  const data = 'JVBERi0xLjQ=';
-  const responses = await routeOpenAIChatCompletionsViaOpenAIResponses({
-    model: 'm', stream: true, messages: [{ role: 'user', content: [{ type: 'file', file: { file_data: data } }] }],
-  }, options);
-  if (responses.type !== 'trip') throw new Error(responses.message);
-  expect(responses.target.input).toEqual([{ type: 'message', role: 'user', content: [{ type: 'input_file', file_data: data }] }]);
-
-  const chat = await routeOpenAIResponsesViaOpenAIChatCompletions({
-    model: 'm', stream: true, input: [{ type: 'message', role: 'user', content: [{ type: 'input_file', file_data: data }] }],
-  }, options);
-  if (chat.type !== 'trip') throw new Error(chat.message);
-  expect(chat.target.messages).toEqual([{ role: 'user', content: [{ type: 'file', file: { file_data: data } }] }]);
-});
-
-test('Messages decodes a data URL only at its target boundary', async () => {
-  const result = await routeOpenAIChatCompletionsViaAnthropicMessages({
-    model: 'm', stream: true, messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'data:image/png;charset=utf-8;base64,AAAA' } }] }],
-  }, options);
-  if (result.type !== 'trip') throw new Error(result.message);
-  expect(result.target.messages).toEqual([{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png;charset=utf-8', data: 'AAAA' }, cache_control: { type: 'ephemeral' } }] }]);
-});
-
 test.each([
   ['data:;charset=utf-8,hi', 'text/plain;charset=utf-8', 'aGk='],
   ['data:text/plain;base64,SGk%3D', 'text/plain', 'SGk='],

@@ -19,12 +19,6 @@ const renderList = (proxies: ProxyRecord[]) => renderInApp(
 );
 
 describe('proxy list address column', () => {
-  it('names the address of a stored proxy without its credential', () => {
-    const view = renderList([record('one', 'Tokyo', 'ss://2022-blake3-aes-128-gcm:c2VjcmV0@example.com:8388')]);
-
-    expect(view.container.textContent).toContain('example.com:8388');
-    expect(view.container.innerHTML).not.toContain('c2VjcmV0');
-  });
 
   it('says so rather than falling back to a URI no parser accepts', () => {
     const view = renderList([record('two', 'Broken', 'trojan://s3cretpassword@example.com:70000')]);

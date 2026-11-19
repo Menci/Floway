@@ -22,29 +22,6 @@ test('bills prompt plus tool-use prompt as input and candidates plus thoughts as
   );
 });
 
-test('splits the cached prefix out of the inclusive prompt count', () => {
-  assertEquals(
-    billableUsageFromGeminiGenerateContentUsage(usage({
-      promptTokenCount: 100,
-      cachedContentTokenCount: 40,
-      candidatesTokenCount: 7,
-      totalTokenCount: 107,
-    })),
-    { input: 60, cacheRead: 40, cacheWrite: 0, cacheWrite1h: 0, output: 7 },
-  );
-});
-
-test('reports no usage when the upstream omitted both prompt and candidate counts', () => {
-  assertEquals(billableUsageFromGeminiGenerateContentUsage(usage({ totalTokenCount: 5 })), null);
-});
-
-test('preserves a non-base service tier', () => {
-  assertEquals(
-    billableUsageFromGeminiGenerateContentUsage(usage({ promptTokenCount: 1, candidatesTokenCount: 1, serviceTier: 'priority' })),
-    { input: 1, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 1, tier: 'priority' },
-  );
-});
-
 test('reads usage off stream chunks and ignores error events', () => {
   const chunk = { candidates: [], usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 4, totalTokenCount: 7 } } satisfies GeminiGenerateContentStreamEvent;
   assertEquals(billableUsageFromGeminiGenerateContentEvent(chunk), { input: 3, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 4 });

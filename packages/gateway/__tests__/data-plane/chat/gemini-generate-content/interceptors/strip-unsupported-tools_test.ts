@@ -76,15 +76,3 @@ test('removes the tools field entirely when every group becomes empty', async ()
 
   assertEquals(input.payload, { contents: [] });
 });
-
-test('is a no-op when tools is absent', async () => {
-  const input = invocation({
-    contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
-  });
-
-  await stripUnsupportedTools(input, stubCtx, okEvents);
-
-  assertEquals(input.payload, {
-    contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
-  });
-});

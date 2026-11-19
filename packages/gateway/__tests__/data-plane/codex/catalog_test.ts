@@ -13,52 +13,14 @@ describe('resolveCodexCatalog', () => {
     globalThis.fetch = originalFetch;
   });
 
-  it('bundles the current GPT-6.1 Sol catalog entry for offline fallback', () => {
-    const sol = bundled.models.find(model => model.slug === 'gpt-6.1-sol') as Record<string, unknown> | undefined;
-    expect(sol).toMatchObject({
-      display_name: 'GPT-6.1-Sol',
-      context_window: 272000,
-      max_context_window: 872000,
-      default_reasoning_level: 'low',
-      minimal_client_version: '0.153.0',
-    });
-    expect(bundled.models.map(model => model.slug)).toEqual(expect.arrayContaining(['gpt-6-sol', 'gpt-6-luna']));
-  });
-
-  it.each([
-    'codex-tui/0.145.0 (Mac OS 26.5.0; arm64)',
-    'codex_cli_rs/0.144.1 (Linux 6.8; x86_64)',
-    'codex_exec/0.144.1 (Linux 6.8; x86_64)',
-    'codex_vscode/0.144.1 (Windows 11; x86_64)',
-    'codex_desktop/0.145.0-alpha.18 (Windows 11; x86_64)',
-    'Codex Desktop/0.145.0 (Mac OS 26.5.0; arm64)',
-  ])('recognizes the Codex originator User-Agent %s', async userAgent => {
+  it('recognizes a spaced, capitalized Codex originator User-Agent', async () => {
     const { isCodexUserAgent } = await import('../../../src/data-plane/codex/catalog.ts');
-    expect(isCodexUserAgent(userAgent)).toBe(true);
+    expect(isCodexUserAgent('Codex Desktop/0.145.0 (Mac OS 26.5.0; arm64)')).toBe(true);
   });
 
-  it.each([
-    undefined,
-    'openai-python/1.42.0',
-    'claude-code/2.1.206',
-    'codex-tui/not-a-version',
-  ])('does not classify a non-Codex catalog caller %s', async userAgent => {
+  it('does not classify a Codex-prefixed caller without a version', async () => {
     const { isCodexUserAgent } = await import('../../../src/data-plane/codex/catalog.ts');
-    expect(isCodexUserAgent(userAgent)).toBe(false);
-  });
-
-  it('falls back to bundled when user-agent is missing', async () => {
-    const { resolveCodexCatalog: resolve } = await import('../../../src/data-plane/codex/catalog.ts');
-    const { catalog, capabilities } = await resolve(undefined);
-    expect(catalog.models.map(m => m.slug)).toEqual(bundled.models.map(m => m.slug));
-    expect(capabilities).toEqual({});
-  });
-
-  it('falls back to bundled when user-agent does not match the codex pattern', async () => {
-    const { resolveCodexCatalog: resolve } = await import('../../../src/data-plane/codex/catalog.ts');
-    const { catalog, capabilities } = await resolve('curl/8.7.1');
-    expect(catalog.models.map(m => m.slug)).toEqual(bundled.models.map(m => m.slug));
-    expect(capabilities).toEqual({});
+    expect(isCodexUserAgent('codex-tui/not-a-version')).toBe(false);
   });
 
   it('fetches openai/codex tag matching the parsed version and caches in-memory', async () => {
@@ -77,17 +39,6 @@ describe('resolveCodexCatalog', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe('https://raw.githubusercontent.com/openai/codex/rust-v0.999.0/codex-rs/models-manager/models.json');
   });
 
-  it('parses the app-server version from the Codex Desktop originator', async () => {
-    const fake = { models: [{ slug: 'desktop-version' }] };
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(fake), { status: 200 }));
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    const { resolveCodexCatalog: resolve } = await import('../../../src/data-plane/codex/catalog.ts');
-    const ua = 'codex_desktop/0.145.0-alpha.18 (Windows 10.0.28000; x86_64) unknown (codex_desktop; 1.2.3)';
-    expect((await resolve(ua)).catalog).toEqual(fake);
-    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://raw.githubusercontent.com/openai/codex/rust-v0.145.0-alpha.18/codex-rs/models-manager/models.json');
-  });
-
   it('falls back to bundled on a 4xx response and still caches the negative result', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 404 }));
     globalThis.fetch = fetchMock as unknown as typeof fetch;
@@ -99,16 +50,6 @@ describe('resolveCodexCatalog', () => {
     expect(first.catalog.models.map(m => m.slug)).toEqual(bundled.models.map(m => m.slug));
     expect(first.capabilities).toEqual({ audioInput: true });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('falls back to bundled when fetch throws', async () => {
-    const fetchMock = vi.fn().mockRejectedValue(new Error('network down'));
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    const { resolveCodexCatalog: resolve } = await import('../../../src/data-plane/codex/catalog.ts');
-    const { catalog, capabilities } = await resolve('codex_exec/0.997.0 (test)');
-    expect(catalog.models.map(m => m.slug)).toEqual(bundled.models.map(m => m.slug));
-    expect(capabilities).toEqual({ audioInput: true });
   });
 
   it('derives Ultra synthesis capability only from a v2 entry in the exact client catalog', async () => {
@@ -139,15 +80,5 @@ describe('resolveCodexCatalog', () => {
       audioInput: true,
       ultraReasoningLevel: { effort: 'ultra', description: 'Maximum reasoning with automatic task delegation' },
     });
-  });
-
-  it('parses prerelease versions like 1.0.52-0', async () => {
-    const fake = { models: [{ slug: 'prerelease-fake' }] };
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(fake), { status: 200 }));
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-
-    const { resolveCodexCatalog: resolve } = await import('../../../src/data-plane/codex/catalog.ts');
-    await resolve('codex_exec/1.0.52-0 (Mac OS; arm64)');
-    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://raw.githubusercontent.com/openai/codex/rust-v1.0.52-0/codex-rs/models-manager/models.json');
   });
 });

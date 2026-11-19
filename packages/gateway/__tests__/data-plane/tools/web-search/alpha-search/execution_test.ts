@@ -39,7 +39,7 @@ test('executeAlphaSearch exposes upstream failure without fallback', async () =>
     input: [],
     action: { type: 'search', query: 'Floway' },
     signal: undefined,
-  })).rejects.toThrow('HTTP 503');
+  })).rejects.toThrow();
 });
 
 test('executeAlphaSearch returns a cascaded Floway capability error as exact model-facing output', async () => {

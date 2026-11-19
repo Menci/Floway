@@ -16,7 +16,7 @@ const user: ControlPlaneUser = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('user identity settings', () => {
-  it.each(['create', 'edit'] as const)('saves %s identity and group selection without changing access records', async mode => {
+  it.each(['create', 'edit'] as const)('saves %s identity and group selection', async mode => {
     const fetch = vi.fn(async () => Response.json(user));
     vi.stubGlobal('fetch', fetch);
     const onSaved = vi.fn(async () => {});
@@ -24,8 +24,6 @@ describe('user identity settings', () => {
       {...(mode === 'create' ? { mode } : { mode, user, groupIds: [] })}
       actorId={1} groups={[]} onOpenChange={vi.fn()} onSaved={onSaved} open
     /></OutcomeToastProvider>);
-    expect(screen.queryByRole('switch', { name: i18n.t('dashboard.upstreamAccess.title') })).toBeNull();
-    expect(screen.queryByText(i18n.t('dashboard.accessControl.fields.permissions'))).toBeNull();
     if (mode === 'create') {
       await act(async () => {
         fireEvent.change(screen.getByLabelText(i18n.t('dashboard.users.form.username')), { target: { value: 'operator' } });

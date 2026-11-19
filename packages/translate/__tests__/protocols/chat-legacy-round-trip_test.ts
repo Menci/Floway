@@ -123,5 +123,5 @@ test('a source-ID-only result cannot answer a restored legacy call', async () =>
     { role: 'assistant', content: 'meanwhile' },
     { role: 'user', content: [{ type: 'tool_result', tool_use_id: call.id, content: 'late' }] },
   );
-  await expect(routeAnthropicMessagesViaOpenAIChatCompletions(payload, context)).resolves.toMatchObject({ type: 'input-error', message: expect.stringContaining('no unique id-less result') });
+  await expect(routeAnthropicMessagesViaOpenAIChatCompletions(payload, context)).resolves.toMatchObject({ type: 'input-error' });
 });

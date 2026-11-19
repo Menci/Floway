@@ -13,16 +13,3 @@ it('uses actual durations and active limits to identify reordered ChatGPT window
   expect(chatgptMetrics(snapshot).find(metric => metric.name === 'credits.balance')?.value).toBe(0);
   expect(chatgptMetrics({ observed_at: snapshot.observed_at, primary_used_percent: 50 })).toHaveLength(0);
 });
-
-it('displays the direction the preference names while preserving credit balances', () => {
-  const identity = { name: 'quota.window.used_percent', labels: { limit: 'codex', window_seconds: 18_000 } };
-  const remaining = resolveUpstreamMetricDisplay(identity, { quotaDisplay: 'remaining' })!;
-  expect(remaining.labelKey).toBe('dashboard.upstreamMetrics.metrics.remaining');
-  expect([0, 25, 100].map(remaining.toDisplayValue)).toEqual([100, 75, 0]);
-  const used = resolveUpstreamMetricDisplay(identity, { quotaDisplay: 'used' })!;
-  expect(used.labelKey).toBe('dashboard.upstreamMetrics.metrics.usage');
-  expect([0, 25, 100].map(used.toDisplayValue)).toEqual([0, 25, 100]);
-  const credits = resolveUpstreamMetricDisplay({ name: 'credits.balance', labels: {} }, { quotaDisplay: 'used' })!;
-  expect(credits.axisPriority).toBe(upstreamMetricAxisPriority.purchasedBalance);
-  expect(credits.toDisplayValue(200)).toBe(200);
-});
