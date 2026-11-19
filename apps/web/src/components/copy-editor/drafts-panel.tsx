@@ -301,6 +301,8 @@ export function DraftsPanel({
       onClose();
     };
     const onFocusIn = (event: FocusEvent) => {
+      if (event.target === document.body || event.target === document.documentElement) return;
+      if (event.target instanceof Element && 'flowayClipboardHelper' in (event.target as HTMLElement).dataset) return;
       if (isInsideCopyEditor(event.target)) return;
       onClose();
     };
