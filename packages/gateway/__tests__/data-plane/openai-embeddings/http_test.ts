@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, copilotModels, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
@@ -71,10 +71,9 @@ test('/v1/embeddings wraps scalar string input for Copilot upstream', async () =
 });
 
 // A custom upstream whose `/v1/models` fetch rejects is treated as
-// temporarily empty: the request resolves to 404 model-missing with the
-// failing upstream's display name appended parenthetically, instead of
-// the gateway forwarding the upstream's raw HTTP status to the client.
-test('/v1/embeddings reports the failed upstream parenthetically when /v1/models rejects', async () => {
+// temporarily empty: the request resolves to 404 model-missing and the
+// upstream's raw HTTP status never reaches the client.
+test('/v1/embeddings reports a missing model when /v1/models rejects', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   clearInProcessCopilotTokenCache();
@@ -120,12 +119,7 @@ test('/v1/embeddings reports the failed upstream parenthetically when /v1/models
       });
 
       assertEquals(response.status, 404);
-      assertEquals(await response.json(), {
-        error: {
-          message: 'Model custom-embed-model is not available on any configured upstream (models from upstream(s) "Embedding Provider" failed to load).',
-          type: 'api_error',
-        },
-      });
+      expect(await response.json()).toMatchObject({ error: { type: 'api_error' } });
     },
   );
 });

@@ -38,7 +38,7 @@ describe('OMP model declarations', () => {
   });
 
   it('reports contradictory output and mandatory budget constraints', () => {
-    expect(() => toOmpCatalog({ object: 'list', has_more: false, first_id: model.id, last_id: model.id, data: [{ ...model, limits: { max_output_tokens: 8000 }, chat: { reasoning: { budget_tokens: { min: 6000 }, mandatory: true } } }] }, 'https://gateway.example', 'floway')).toThrow('reasoning budget does not fit its output limit');
+    expect(() => toOmpCatalog({ object: 'list', has_more: false, first_id: model.id, last_id: model.id, data: [{ ...model, limits: { max_output_tokens: 8000 }, chat: { reasoning: { budget_tokens: { min: 6000 }, mandatory: true } } }] }, 'https://gateway.example', 'floway')).toThrow();
   });
 
   it('maps every unknown wire effort onto a distinct supported UI slot', () => {

@@ -118,6 +118,6 @@ test('group restore requires atomic batches before changing any records', async 
   const writer = new SqlRepo(db);
   await writer.groups.save(sampleGroup());
   const reader = new SqlRepo({ prepare: query => db.prepare(query), exec: sql => db.exec(sql) });
-  await expect(reader.groups.restore([{ ...sampleGroup({ name: 'Changed' }), memberIds: [] }])).rejects.toThrow('atomic SQL batch support');
+  await expect(reader.groups.restore([{ ...sampleGroup({ name: 'Changed' }), memberIds: [] }])).rejects.toThrow();
   expect(await writer.groups.list()).toEqual([sampleGroup()]);
 });

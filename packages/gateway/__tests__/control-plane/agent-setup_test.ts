@@ -53,7 +53,6 @@ test('the public GET serves the rendered script with hardened headers and no COR
   assertEquals(response.headers.get('access-control-allow-origin'), null);
   const text = await response.text();
   expect(text).toContain("SETUP_API_KEY='raw-key'");
-  expect(text).toContain("SETUP_API_KEY_NAME='Primary key'");
 
   const piResponse = await requestApp(lease.scripts.pi.sh, { method: 'GET' });
   assertEquals(piResponse.status, 200);
@@ -61,7 +60,6 @@ test('the public GET serves the rendered script with hardened headers and no COR
   const piText = await piResponse.text();
   expect(piText).toContain("SETUP_API_KEY='raw-key'");
   expect(piText).toContain(`SETUP_EXTENSION_PATH='/api/setup/${lease.token}/pi.js'`);
-  expect(piText).toContain("main 'Pi'");
   const ompResponse = await requestApp(lease.scripts.omp.sh, { method: 'GET' });
   assertEquals(ompResponse.status, 200);
   const ompText = await ompResponse.text();

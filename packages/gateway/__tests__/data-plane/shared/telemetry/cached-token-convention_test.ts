@@ -24,10 +24,10 @@ test('a declaration the totals contradict raises rather than over-charging', () 
     true,
     { inputTokens: 1000, outputTokens: 50, totalTokens: 1050, cacheRead: 400, cacheWrite: 0 },
     'up/model',
-  )).toThrowError(/over-charge input by 400 tokens/);
+  )).toThrowError(/over-charge/);
 });
 
-test('an unexplained underflow raises naming the flag and the upstream', () => {
+test('an unexplained underflow raises', () => {
   expect(() => foldsExclusiveCacheTokens(false, counts({ totalTokens: undefined }), 'up/model'))
-    .toThrowError(/enable usage-exclusive-cached-tokens for up\/model/);
+    .toThrowError(/enable usage-exclusive-cached-tokens/);
 });

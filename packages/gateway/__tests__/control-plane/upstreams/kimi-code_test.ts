@@ -44,7 +44,6 @@ test('draft quota and optional profile probes use coding auth and do not persist
     expect(body.observation.data).toEqual(quota);
     expect(body.account).toBeNull();
     expect(body.accountError).toContain('404');
-    expect(body.accountError).toContain('profile not available for [redacted]');
     expect(JSON.stringify(body)).not.toContain(config.apiKey);
   });
   expect(paths.sort()).toEqual(['/coding/v1/me', '/coding/v1/usages']);

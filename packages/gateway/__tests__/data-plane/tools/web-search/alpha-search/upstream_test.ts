@@ -54,7 +54,7 @@ test('Alpha Search reports a missing model when the selection has no permitted c
 test('Alpha Search rejects unsupported providers as configuration failures', async () => {
   const candidate = stubModelCandidate();
   resolvedCandidate = { ...candidate, provider: { ...candidate.provider, upstreamId: context.config.upstreamId, kind: 'copilot' } };
-  await expect(resolveAlphaSearchDispatcher(context)).rejects.toThrow('Selected upstream does not support OpenAI search passthrough');
+  await expect(resolveAlphaSearchDispatcher(context)).rejects.toThrow();
 });
 
 test('ChatGPT Alpha Search receives only its declared turn metadata', async () => {

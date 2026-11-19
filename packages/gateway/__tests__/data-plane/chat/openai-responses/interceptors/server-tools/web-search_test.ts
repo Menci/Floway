@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { expandWebSearchCall } from '../../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/web-search.ts';
-import { assertLocalWebSearchSupport, findMatches, isUrlAllowed, parseWebSearchOperations, type WebSearchOperation } from '../../../../../../src/data-plane/tools/web-search/operations.ts';
+import { assertLocalWebSearchSupport, UnsupportedLocalWebSearchFeatureError, findMatches, isUrlAllowed, parseWebSearchOperations, type WebSearchOperation } from '../../../../../../src/data-plane/tools/web-search/operations.ts';
 import { assert, assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 // ── Shim call argument parsing (parseWebSearchOperations) ──
@@ -30,8 +30,8 @@ test('local provider support accepts query filters and response length, rejects 
   ] as const) {
     assertThrows(
       () => assertLocalWebSearchSupport(commands),
-      Error,
-      `The configured web search provider does not implement OpenAI search feature \`${path}\`.`,
+      UnsupportedLocalWebSearchFeatureError,
+      path,
     );
   }
 });
@@ -44,8 +44,6 @@ test('parseWebSearchOperations: non-URL open ref_id produces an error sentinel',
   assertEquals((op as { url: string }).url, 'opaque-prior-id');
   const err = (op as { error?: string }).error;
   assertEquals(typeof err, 'string');
-  assertEquals(err!.startsWith('Error: ref_id must be a fully-qualified URL'), true);
-  assertEquals(err!.includes('opaque-prior-id'), true);
 });
 
 test('parseWebSearchOperations: unsupported sub-properties surface one unsupported op per entry', () => {

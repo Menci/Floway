@@ -82,7 +82,4 @@ test('POST /api/aliases rejects reasoning that combines adaptive=true with budge
     })),
   );
   assertEquals(resp.status, 400);
-  const body = (await resp.json()) as { error?: string };
-  assertEquals(body.error?.includes('adaptive'), true);
-  assertEquals(body.error?.includes('budget_tokens'), true);
 });

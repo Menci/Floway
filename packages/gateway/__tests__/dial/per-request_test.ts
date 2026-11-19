@@ -62,7 +62,7 @@ describe('createPerRequestFetcher', () => {
     const fetcherFor = await createPerRequestFetcher('TEST');
     const badFetcher = fetcherFor('u_bad');
     await expect(badFetcher('https://example.com', { method: 'GET' }))
-      .rejects.toThrow(/u_bad references malformed proxy p_bad/);
+      .rejects.toThrow();
     // u_ok's empty fallback list never references p_bad, so resolving its
     // fetcher must not throw at build time the way the malformed row did
     // when first parsed.

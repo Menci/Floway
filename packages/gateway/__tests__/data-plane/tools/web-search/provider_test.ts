@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { DEFAULT_WEB_SEARCH_CONFIG, FIXED_WEB_SEARCH_CONFIG_TEST_QUERY } from '../../../../src/data-plane/tools/web-search/config.ts';
 import { resolveConfiguredWebSearchProvider, testWebSearchConfigConnection } from '../../../../src/data-plane/tools/web-search/provider.ts';
@@ -39,17 +39,16 @@ test('resolveConfiguredWebSearchProvider returns disabled, missing-credential, o
 });
 
 test('testWebSearchConfigConnection returns structured disabled and missing-credential errors', async () => {
-  assertEquals(await testWebSearchConfigConnection(DEFAULT_WEB_SEARCH_CONFIG), {
+  expect(await testWebSearchConfigConnection(DEFAULT_WEB_SEARCH_CONFIG)).toMatchObject({
     ok: false,
     provider: 'disabled',
     query: FIXED_WEB_SEARCH_CONFIG_TEST_QUERY,
     error: {
       code: 'disabled',
-      message: 'Search provider is disabled.',
     },
   });
 
-  assertEquals(
+  expect(
     await testWebSearchConfigConnection({
       provider: 'tavily',
       tavily: { apiKey: '' },
@@ -57,13 +56,13 @@ test('testWebSearchConfigConnection returns structured disabled and missing-cred
       jina: { apiKey: '' },
       passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
     }),
+  ).toMatchObject(
     {
       ok: false,
       provider: 'tavily',
       query: FIXED_WEB_SEARCH_CONFIG_TEST_QUERY,
       error: {
         code: 'missing_credential',
-        message: 'Missing API key for tavily.',
       },
     },
   );

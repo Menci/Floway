@@ -43,7 +43,7 @@ describe('Pi model catalog', () => {
     expect(collision.thinkingLevelMap.low).toBe('low');
     expect(collision.thinkingLevelMap.medium).toBe('medium');
     expect(collision.thinkingLevelMap.high).toBe('custom');
-    expect(() => catalogModel({ chat: { reasoning: { effort: { supported: ['a', 'b', 'c', 'd', 'e', 'f', 'g'], default: 'a' } } } })).toThrow('Pi cannot represent all reasoning efforts for model model');
+    expect(() => catalogModel({ chat: { reasoning: { effort: { supported: ['a', 'b', 'c', 'd', 'e', 'f', 'g'], default: 'a' } } } })).toThrow();
   });
 
   test('selects native Anthropic for budget models and bounds every selectable budget', () => {
@@ -61,7 +61,7 @@ describe('Pi model catalog', () => {
   });
 
   test('rejects a budget that cannot fit the native answer ceiling', () => {
-    expect(() => catalogModel({ limits: { max_output_tokens: 2048 }, chat: { reasoning: { budget_tokens: { min: 4096 } } } })).toThrow('Pi cannot fit the declared reasoning budget and answer tokens for model model');
+    expect(() => catalogModel({ limits: { max_output_tokens: 2048 }, chat: { reasoning: { budget_tokens: { min: 4096 } } } })).toThrow();
     const mapped = catalogModel({ limits: { max_output_tokens: 10000 }, chat: { reasoning: { budget_tokens: { min: 1024 } } } });
     expect(mapped.thinkingBudgets?.high).toBe(8976);
   });

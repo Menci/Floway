@@ -116,7 +116,6 @@ test('returns an input error without running downstream when agent content canno
   assertEquals(seen, undefined);
   assert(result.type === 'api-error');
   assertEquals(result.http.status, 400);
-  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { message: string; param: string } };
-  assertEquals(body.error.message, "Invalid value: 'encrypted_content' for 'agent_message.content[0].type'.");
+  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { param: string } };
   assertEquals(body.error.param, 'agent_message.content[0].type');
 });

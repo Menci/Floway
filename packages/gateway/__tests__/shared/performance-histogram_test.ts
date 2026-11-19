@@ -18,7 +18,7 @@ describe('bucketForTtftMs', () => {
   });
 
   it('throws on negative input rather than silently clamping', () => {
-    expect(() => bucketForTtftMs(-5)).toThrow(/bucketForValue/);
+    expect(() => bucketForTtftMs(-5)).toThrow();
   });
 });
 

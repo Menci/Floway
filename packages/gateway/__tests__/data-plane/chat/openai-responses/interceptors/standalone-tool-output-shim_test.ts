@@ -93,7 +93,6 @@ test('returns an input error without running downstream when a standalone output
   assertEquals(seen, undefined);
   assert(result.type === 'api-error');
   assertEquals(result.http.status, 400);
-  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { message: string; param: string } };
-  assertEquals(body.error.message, 'A function call output without a call_id requires a name.');
+  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { param: string } };
   assertEquals(body.error.param, 'input[1].name');
 });

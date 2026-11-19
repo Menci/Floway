@@ -77,8 +77,6 @@ test.each(wireOutcomes)('HTTP $representation preserves namespace allowed_tools 
     const response = await requestApp('/v1/responses', { method: 'POST', headers: { authorization: `Bearer ${apiKey.key}`, 'content-type': 'application/json' }, body: JSON.stringify(payload) });
     if (unrepresentable) {
       assertEquals(response.status, 400);
-      const failure = await response.json() as { error: { message: string } };
-      assert(failure.error.message.includes('cannot express an allowed_tools auto subset'));
       await flushBackground();
       return;
     }

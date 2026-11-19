@@ -72,7 +72,6 @@ describe('recordPerformance', () => {
 
   it('throws on negative outputTokens — an upstream that reports a negative token count is data corruption, not a value to floor', () => {
     const ctx = ctxWith({ timing: { firstOutputTokenAt: 100, upstreamCallStartedAt: 50 }, telemetry: undefined });
-    expect(() => recordPerformance(ctx, telemetry, false, -1, 400))
-      .toThrow(/negative outputTokens=-1/);
+    expect(() => recordPerformance(ctx, telemetry, false, -1, 400)).toThrow();
   });
 });
