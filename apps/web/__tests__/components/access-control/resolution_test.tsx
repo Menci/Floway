@@ -97,3 +97,56 @@ test('resolveInheritedValues computes user, membership group, self, and admin in
   expect(resolveInheritedValues({ data, principal: { kind: 'user', id: 2 }, records, scope: { kind: 'self' } })).toBeUndefined();
   expect(resolveInheritedValues({ data, principal: null, records, scope })).toBeUndefined();
 });
+
+test('resolveInheritedValues matches gateway precedence for personal overrides, group union, model order, and membership scopes', () => {
+  const data = {
+    users: [
+      { id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null }, groupIds: [3, 4] },
+    ],
+  };
+  const row = (id: number, principal: AccessPrincipal, scope: AccessScope, values: AccessRecord['values'], sortOrder = id): AccessRecord => ({
+    id, principal, scope, values, sortOrder, createdAt: '', updatedAt: '',
+  });
+  const modelScope: AccessScope = { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value: 'gpt-5' } };
+
+  // Personal false overrides same-scope group true; group assignments union by max.
+  expect(resolveInheritedValues({
+    data,
+    principal: { kind: 'user', id: 2 },
+    records: [
+      row(1, { kind: 'group', id: 3 }, scope, { 'Model.Use': true, 'Upstream.Edit': 'models' }),
+      row(2, { kind: 'group', id: 4 }, scope, { 'Upstream.Edit': 'full' }),
+      row(3, { kind: 'user', id: 2 }, scope, { 'Model.Use': false }),
+    ],
+    scope,
+  })).toEqual({ 'Model.Use': false, 'Upstream.Audit': false, 'Upstream.Edit': 'full' });
+
+  // Matching model regex and exact id follow sortOrder, while regex targets only match their own scopeKey.
+  const regexScope: AccessScope = { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'regex', value: '^gpt-' } };
+  expect(resolveInheritedValues({
+    data,
+    principal: { kind: 'user', id: 2 },
+    records: [
+      row(1, { kind: 'group', id: 3 }, regexScope, { 'Model.Use': false }, 0),
+      row(2, { kind: 'user', id: 2 }, modelScope, { 'Model.Use': true }, 1),
+    ],
+    scope: modelScope,
+  })).toEqual({ 'Model.Use': false });
+  expect(resolveInheritedValues({
+    data,
+    principal: { kind: 'user', id: 2 },
+    records: [
+      row(1, { kind: 'group', id: 3 }, scope, { 'Model.Use': true }, 0),
+      row(2, { kind: 'user', id: 2 }, { ...regexScope, model: { kind: 'regex', value: '.*' } }, { 'Model.Use': false }, 1),
+    ],
+    scope: regexScope,
+  })).toEqual({ 'Model.Use': true });
+
+  // Group-scoped Permission.Audit never applies to a user target.
+  expect(resolveInheritedValues({
+    data,
+    principal: { kind: 'user', id: 2 },
+    records: [row(1, { kind: 'group', id: 3 }, { kind: 'group', groupId: 3 }, { 'Permission.Audit': true })],
+    scope: { kind: 'user', userId: 2 },
+  })).toEqual({ 'User.Audit': true, 'Permission.Audit': false });
+});

@@ -1,4 +1,3 @@
-export * from './access-control.ts';
 export * from './aliases.ts';
 export * from './base-encoding.ts';
 export * from './endpoints.ts';

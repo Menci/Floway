@@ -16,13 +16,6 @@ export type * from './rerank/index.ts';
 export type * from './decision/index.ts';
 
 export {
-  accessScopeDepth,
-  accessScopeKey,
-  permissionsForScope,
-  resolveEffectiveAssignments,
-} from './common/access-control.ts';
-
-export {
   DEFAULT_LANGUAGE,
   QUOTA_DISPLAYS,
   SUPPORTED_LANGUAGES,
