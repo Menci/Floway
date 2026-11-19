@@ -9,6 +9,8 @@ export interface FakeDuplex {
   writable: WritableStream<Uint8Array>;
 
   written(): Uint8Array;
+  /** Resolves with the first chunk written. */
+  firstWrite(): Promise<Uint8Array>;
   waitWritableClosed(): Promise<void>;
 
   respond(bytes: Uint8Array | string): void;
@@ -18,6 +20,8 @@ export interface FakeDuplex {
 
 export const makeFakeDuplex = (): FakeDuplex => {
   let writeBuffer = new Uint8Array(0);
+  let firstWriteResolve!: (chunk: Uint8Array) => void;
+  const firstWritePromise = new Promise<Uint8Array>(r => { firstWriteResolve = r; });
   let writableClosedResolve!: () => void;
   const writableClosedPromise = new Promise<void>(r => { writableClosedResolve = r; });
 
@@ -27,6 +31,7 @@ export const makeFakeDuplex = (): FakeDuplex => {
       next.set(writeBuffer, 0);
       next.set(chunk, writeBuffer.byteLength);
       writeBuffer = next;
+      firstWriteResolve(new Uint8Array(chunk));
     },
     close() { writableClosedResolve(); },
     abort() { writableClosedResolve(); },
@@ -43,6 +48,7 @@ export const makeFakeDuplex = (): FakeDuplex => {
     readable,
     writable,
     written: () => new Uint8Array(writeBuffer),
+    firstWrite: () => firstWritePromise,
     waitWritableClosed: () => writableClosedPromise,
     respond(bytes) {
       const u = typeof bytes === 'string' ? enc.encode(bytes) : bytes;

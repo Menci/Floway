@@ -27,16 +27,6 @@ const startObservedHandshake = (
   return { fake, abort, handshake };
 };
 
-const waitForClientHello = async (
-  fake: ReturnType<typeof makeFakeDuplex>,
-): Promise<Uint8Array> => {
-  const deadline = Date.now() + 1000;
-  while (fake.written().byteLength < 200 && Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, 5));
-  }
-  return fake.written();
-};
-
 const clientHelloServerName = (record: Uint8Array): string | undefined => {
   let offset = 5;
   if (record[offset++] !== 0x01) throw new Error('expected ClientHello');
@@ -117,7 +107,7 @@ describe('userspaceTls — ClientHello on the wire', () => {
     // first byte is enough to discriminate a TLS handshake record from
     // anything else; we read more once it's there. Polling avoids a hard-
     // coded sleep that races reclaim's synchronous startup path under load.
-    const written = await waitForClientHello(fake);
+    const written = await fake.firstWrite();
     expect(written.byteLength).toBeGreaterThanOrEqual(5);
     // TLS record header: type=Handshake(0x16), legacy_record_version=TLS1.2(0x0303)
     // for TLS 1.3 ClientHellos (RFC 8446 §5.1).
@@ -139,8 +129,7 @@ describe('userspaceTls — handshake failure', () => {
       { readable: fake.readable, writable: fake.writable },
       { host: 'example.com' },
     );
-    // Wait for the ClientHello to be sent.
-    await new Promise(r => setTimeout(r, 5));
+    await fake.firstWrite();
     // Reply with bytes that don't form a TLS record at all.
     fake.respond(new Uint8Array([0xff, 0xff, 0xff, 0xff, 0xff]));
     fake.endResponse();
@@ -154,7 +143,7 @@ describe('userspaceTls — handshake failure', () => {
       { readable: fake.readable, writable: fake.writable },
       { host: 'example.com' },
     );
-    await new Promise(r => setTimeout(r, 5));
+    await fake.firstWrite();
     fake.endResponse();
     await expect(promise).rejects.toBeInstanceOf(Error);
   });
@@ -166,9 +155,7 @@ describe('userspaceTls — handshake failure', () => {
       { readable: fake.readable, writable: fake.writable },
       { host: 'example.com', signal: ac.signal },
     );
-    // Let the ClientHello be emitted first.
-    await new Promise(r => setTimeout(r, 10));
-    expect(fake.written().byteLength).toBeGreaterThan(0);
+    await fake.firstWrite();
     ac.abort(new DOMException('cancel after ClientHello', 'AbortError'));
     await expect(promise).rejects.toMatchObject({
       name: 'AbortError',
@@ -209,7 +196,7 @@ describe('userspaceTls — prefix coalescing', () => {
     );
     handshake.catch(() => { /* expected — we abort below */ });
 
-    const written = await waitForClientHello(fake);
+    const written = await fake.firstWrite();
     expect(written[0]).toBe(0xde);
     expect(written[1]).toBe(0xad);
     expect(written[2]).toBe(0xbe);
@@ -230,7 +217,7 @@ describe('userspaceTls — prefix coalescing', () => {
     );
     handshake.catch(() => { /* expected */ });
 
-    await waitForClientHello(fake);
+    await fake.firstWrite();
     expect(fake.written()[0]).toBe(0x16);
 
     ac.abort(new DOMException('done', 'AbortError'));
@@ -246,7 +233,7 @@ describe('userspaceTls — prefix coalescing', () => {
     const host = 'sni-test.example';
     const { fake, abort, handshake } = startObservedHandshake(host);
 
-    expect(clientHelloServerName(await waitForClientHello(fake))).toBe(host);
+    expect(clientHelloServerName(await fake.firstWrite())).toBe(host);
 
     abort.abort(new DOMException('done', 'AbortError'));
     await handshake.catch(() => { /* expected */ });
@@ -257,7 +244,7 @@ describe('userspaceTls — prefix coalescing', () => {
     async host => {
       const { fake, abort, handshake } = startObservedHandshake(host);
 
-      expect(clientHelloServerName(await waitForClientHello(fake))).toBeUndefined();
+      expect(clientHelloServerName(await fake.firstWrite())).toBeUndefined();
 
       abort.abort(new DOMException('done', 'AbortError'));
       await handshake.catch(() => { /* expected */ });
