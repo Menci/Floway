@@ -33,7 +33,11 @@ export default function setup(): (() => void) | undefined {
   if (spawnSync('pwsh', ['-NoProfile', '-Command', 'exit 0']).status !== 0) return undefined;
   const directory = mkdtempSync(join(tmpdir(), 'floway-pwsh-'));
   process.env.PSModuleAnalysisCachePath = join(directory, 'ModuleAnalysisCache');
+  const cleanup = (): void => rmSync(directory, { recursive: true, force: true });
   const result = spawnSync('pwsh', ['-NoProfile', '-Command', WARM], { encoding: 'utf8', timeout: 60_000 });
-  if (result.status !== 0) throw new Error(`warming pwsh failed: ${result.stdout}${result.stderr}`, { cause: result.error });
-  return () => rmSync(directory, { recursive: true, force: true });
+  if (result.status !== 0) {
+    cleanup();
+    throw new Error(`warming pwsh failed: ${result.stdout}${result.stderr}`, { cause: result.error });
+  }
+  return cleanup;
 }
