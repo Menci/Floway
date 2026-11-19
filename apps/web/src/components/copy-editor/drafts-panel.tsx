@@ -6,6 +6,7 @@ import {
   Copy16Regular,
   Delete16Regular,
   Dismiss16Regular,
+  ErrorCircle16Regular,
   History16Regular,
   Warning16Regular,
 } from '@fluentui/react-icons';
@@ -492,93 +493,120 @@ export function DraftsPanel({
                 {t('common.copyEditor.emptyDrafts')}
               </div>
             ) : (
-              activeEntries.map(entry => (
-                <div
-                  key={entry.key}
-                  className="floway-copy-editor-draft-item floway-copy-editor-interactive-item winui-focus-rect"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => onEditKey(entry.key)}
-                  onKeyDown={event => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      onEditKey(entry.key);
-                    }
-                  }}
-                >
-                  <div className="floway-copy-editor-draft-head">
-                    <span className="floway-copy-editor-draft-key" title={entry.key}>
-                      {entry.key}
-                    </span>
-                    <div
-                      className="flex items-center gap-0.5 flex-none"
-                      onClick={event => event.stopPropagation()}
-                    >
-                      <EditorIconButton
-                        icon={<Delete16Regular />}
-                        label={t('common.copyEditor.revert')}
-                        onClick={() => revertEntry(entry.key)}
-                      />
+              activeEntries.map(entry => {
+                const keyExists = supportedLanguages.some(lang => getOriginal(lang, entry.key) !== undefined);
+                return (
+                  <div
+                    key={entry.key}
+                    className={keyExists
+                      ? 'floway-copy-editor-draft-item floway-copy-editor-interactive-item winui-focus-rect'
+                      : 'floway-copy-editor-draft-item'}
+                    role={keyExists ? 'button' : undefined}
+                    tabIndex={keyExists ? 0 : undefined}
+                    onClick={keyExists ? () => onEditKey(entry.key) : undefined}
+                    onKeyDown={keyExists
+                      ? event => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          onEditKey(entry.key);
+                        }
+                      }
+                      : undefined}
+                  >
+                    <div className="floway-copy-editor-draft-head">
+                      <span className="floway-copy-editor-draft-key-group">
+                        <span
+                          className="floway-copy-editor-draft-key"
+                          data-missing={keyExists ? 'false' : 'true'}
+                          title={entry.key}
+                        >
+                          {entry.key}
+                        </span>
+                        {!keyExists && (
+                          <Tooltip
+                            content={t('common.copyEditor.missingKeyNotice')}
+                            mountNode={mountNode}
+                            relationship="label"
+                          >
+                            <span
+                              aria-label={t('common.copyEditor.missingKeyNotice')}
+                              className="floway-copy-editor-missing-icon"
+                            >
+                              <ErrorCircle16Regular />
+                            </span>
+                          </Tooltip>
+                        )}
+                      </span>
+                      <div
+                        className="flex items-center gap-0.5 flex-none"
+                        onClick={event => event.stopPropagation()}
+                      >
+                        <EditorIconButton
+                          icon={<Delete16Regular />}
+                          label={t('common.copyEditor.revert')}
+                          onClick={() => revertEntry(entry.key)}
+                        />
+                      </div>
                     </div>
-                  </div>
 
-                  {Object.keys(entry.changes).length > 0 && (
-                    <div className="floway-copy-editor-diff-list">
-                      {supportedLanguages.map(language => {
-                        const change = entry.changes[language];
-                        if (!change) return null;
-                        const currentOriginal = getOriginal(language, entry.key);
-                        const isApplied = currentOriginal !== undefined && currentOriginal === change.after;
-                        const isStale = currentOriginal !== undefined
+                    {Object.keys(entry.changes).length > 0 && (
+                      <div className="floway-copy-editor-diff-list">
+                        {supportedLanguages.map(language => {
+                          const change = entry.changes[language];
+                          if (!change) return null;
+                          const currentOriginal = getOriginal(language, entry.key);
+                          const isApplied = currentOriginal !== undefined && currentOriginal === change.after;
+                          const isStale = currentOriginal !== undefined
                           && !isApplied
                           && currentOriginal !== change.before;
-                        return (
-                          <div key={language} className="floway-copy-editor-diff-row">
-                            <span className="floway-copy-editor-diff-lang">
-                              {SHORT_LANGUAGE_LABELS[language]}
-                            </span>
-                            <div className="floway-copy-editor-diff-values">
-                              <span className="floway-copy-editor-diff-before-line">
-                                <span className="floway-copy-editor-diff-before">{change.before}</span>
-                                {isApplied && (
-                                  <Tooltip
-                                    content={t('common.copyEditor.appliedNotice')}
-                                    mountNode={mountNode}
-                                    relationship="label"
-                                  >
-                                    <span
-                                      aria-label={t('common.copyEditor.appliedNotice')}
-                                      className="floway-copy-editor-applied-icon"
-                                      onClick={event => event.stopPropagation()}
-                                    >
-                                      <CheckmarkCircle16Regular />
-                                    </span>
-                                  </Tooltip>
-                                )}
-                                {isStale && (
-                                  <StaleSourcePopover
-                                    mountNode={mountNode}
-                                    nextOriginal={currentOriginal}
-                                    previousOriginal={change.before}
-                                    title={t('common.copyEditor.staleNotice')}
-                                  />
-                                )}
+                          return (
+                            <div key={language} className="floway-copy-editor-diff-row">
+                              <span className="floway-copy-editor-diff-lang">
+                                {SHORT_LANGUAGE_LABELS[language]}
                               </span>
-                              {change.after.length > 0 && (
-                                <span className="floway-copy-editor-diff-after">{change.after}</span>
-                              )}
+                              <div className="floway-copy-editor-diff-values">
+                                <span className="floway-copy-editor-diff-before-line">
+                                  <span className="floway-copy-editor-diff-before">{change.before}</span>
+                                  {isApplied && (
+                                    <Tooltip
+                                      content={t('common.copyEditor.appliedNotice')}
+                                      mountNode={mountNode}
+                                      relationship="label"
+                                    >
+                                      <span
+                                        aria-label={t('common.copyEditor.appliedNotice')}
+                                        className="floway-copy-editor-applied-icon"
+                                        onClick={event => event.stopPropagation()}
+                                      >
+                                        <CheckmarkCircle16Regular />
+                                      </span>
+                                    </Tooltip>
+                                  )}
+                                  {isStale && (
+                                    <StaleSourcePopover
+                                      mountNode={mountNode}
+                                      nextOriginal={currentOriginal}
+                                      previousOriginal={change.before}
+                                      title={t('common.copyEditor.staleNotice')}
+                                    />
+                                  )}
+                                </span>
+                                {change.after.length > 0 && (
+                                  <span className="floway-copy-editor-diff-after">{change.after}</span>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                          );
+                        })}
+                      </div>
+                    )}
 
-                  {entry.note.trim().length > 0 && (
-                    <span className="floway-copy-editor-meta pr-1.5">{entry.note}</span>
-                  )}
-                </div>
-              ))
+                    {entry.note.trim().length > 0 && (
+                      <span className="floway-copy-editor-meta pr-1.5">{entry.note}</span>
+                    )}
+                  </div>
+                );
+              })
             )}
           </div>
 

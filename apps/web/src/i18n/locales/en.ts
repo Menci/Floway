@@ -60,6 +60,7 @@ const en = {
         emptyTextPlaceholder: 'Empty text',
         resetLanguage: 'Reset',
         appliedNotice: 'Already in current version',
+        missingKeyNotice: 'Key does not exist',
         staleNotice: 'Source text changed',
         noteLabel: 'Note',
         save: 'Save',

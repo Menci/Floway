@@ -57,6 +57,7 @@ const zhHansCN = {
         emptyTextPlaceholder: '空文本',
         resetLanguage: '还原',
         appliedNotice: '当前版本已生效',
+        missingKeyNotice: '当前 Key 不存在',
         staleNotice: '原文已变更',
         noteLabel: '备注',
         save: '保存',

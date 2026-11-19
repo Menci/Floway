@@ -305,6 +305,17 @@ export const copyEditorCss = `
   vertical-align: middle;
 }
 
+.floway-copy-editor-missing-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--winui-system-fill-critical);
+  flex: none;
+  vertical-align: middle;
+}
+
 .floway-copy-editor-stale-popover {
   display: flex;
   flex-direction: column;
@@ -381,6 +392,13 @@ export const copyEditorCss = `
   gap: 8px;
 }
 
+.floway-copy-editor-draft-key-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
 .floway-copy-editor-draft-key {
   font-family: var(--fontFamilyMonospace);
   font-size: calc(var(--fontSizeBase300) - 1px);
@@ -390,6 +408,11 @@ export const copyEditorCss = `
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+
+.floway-copy-editor-draft-key[data-missing="true"] {
+  color: var(--winui-text-fill-secondary);
+  text-decoration: line-through;
 }
 
 .floway-copy-editor-batch-time {

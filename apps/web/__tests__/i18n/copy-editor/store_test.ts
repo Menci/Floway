@@ -112,6 +112,16 @@ describe('copy editor store', () => {
       after: 'Cancel',
     });
 
+    // Importing a key absent from the current build preserves it for UI display without polluting i18next.
+    const missingResult = useCopyEditorStore.getState().importFromJson(JSON.stringify({
+      version: 1,
+      entries: [{ key: 'nonexistent.removed.key', changes: { en: { before: 'Old', after: 'New' } } }],
+    }));
+    expect(missingResult).toEqual({ imported: 1, changed: true });
+    expect(useCopyEditorStore.getState().entries['nonexistent.removed.key']).toBeDefined();
+    expect(useCopyEditorStore.getState().getOriginal('en', 'nonexistent.removed.key')).toBeUndefined();
+    expect(i18n.exists('nonexistent.removed.key', { lng: 'en' })).toBe(false);
+
     // Deleting history reverts keys no longer overridden by active entries.
     useCopyEditorStore.getState().clearHistory();
     expect(useCopyEditorStore.getState().history).toHaveLength(0);

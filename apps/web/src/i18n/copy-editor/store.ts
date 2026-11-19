@@ -194,6 +194,7 @@ const syncKeysToI18n = (
 ): void => {
   for (const key of keys) {
     for (const language of supportedLanguages) {
+      if (!originals[language].has(key)) continue;
       const value = resolveEffectiveValue(language, key, originals, entries, history);
       if (value !== undefined) {
         applyResourceValue(language, key, value);
