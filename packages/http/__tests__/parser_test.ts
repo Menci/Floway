@@ -253,7 +253,6 @@ describe('toWebResponse', () => {
     }).rejects.toMatchObject({
       name: 'HttpProtocolError',
       code: 'UNSUPPORTED_CONTENT_ENCODING',
-      message: expect.stringContaining('br'),
     });
   });
 

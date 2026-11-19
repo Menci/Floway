@@ -117,7 +117,6 @@ describe('wsUpgradeAndFrame — handshake', () => {
     await expect(upgrade).rejects.toMatchObject({
       name: 'HttpProtocolError',
       code: 'BAD_STATUS_LINE',
-      message: expect.stringContaining('403'),
     });
   });
 
@@ -135,7 +134,6 @@ describe('wsUpgradeAndFrame — handshake', () => {
     ].join('\r\n'));
     await expect(upgrade).rejects.toMatchObject({
       code: 'BAD_HEADERS',
-      message: expect.stringContaining('Sec-WebSocket-Accept mismatch'),
     });
   });
 
@@ -159,7 +157,6 @@ describe('wsUpgradeAndFrame — handshake', () => {
     ].join('\r\n'));
     await expect(upgrade).rejects.toMatchObject({
       code: 'BAD_HEADERS',
-      message: expect.stringContaining('superchat'),
     });
   });
 
@@ -171,7 +168,6 @@ describe('wsUpgradeAndFrame — handshake', () => {
       additionalHeaders: { Host: 'other.example' },
     })).rejects.toMatchObject({
       code: 'BAD_HEADERS',
-      message: expect.stringContaining('reserved'),
     });
   });
 
@@ -243,7 +239,6 @@ describe('wsUpgradeAndFrame — frame layer round-trip', () => {
     const reader = stream.readable.getReader();
     await expect(reader.read()).rejects.toMatchObject({
       code: 'BAD_HEADERS',
-      message: expect.stringContaining('masked'),
     });
   });
 

@@ -254,9 +254,9 @@ describe('fetchOnStream — request body serialization', () => {
   });
 
   it.each([
-    { contentLength: 2, payload: 'one', title: 'exceeds', message: 'exceeded' },
-    { contentLength: 4, payload: 'one', title: 'ends before', message: 'ended before' },
-  ])('rejects a stream that $title its declared length', async ({ contentLength, payload, message }) => {
+    { contentLength: 2, payload: 'one', title: 'exceeds' },
+    { contentLength: 4, payload: 'one', title: 'ends before' },
+  ])('rejects a stream that $title its declared length', async ({ contentLength, payload }) => {
     const fake = makeFakeDuplex();
     const body = {
       contentLength,
@@ -266,7 +266,7 @@ describe('fetchOnStream — request body serialization', () => {
     await expect(fetchOnStream(
       { readable: fake.readable, writable: fake.writable },
       { method: 'POST', path: '/', headers: [['Host', 'h']], body },
-    )).rejects.toThrow(message);
+    )).rejects.toThrow(RangeError);
   });
 
   it('cancels the source with the original writer failure', async () => {

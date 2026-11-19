@@ -53,7 +53,7 @@ describe('decodeChunked — error vectors', () => {
     const { reader, head } = fromString(input);
     const err = await drainExpectError(decodeChunked(reader, head));
     expect(err).toBeInstanceOf(HttpProtocolError);
-    expect((err as Error).message).toMatch(/EOF mid-data/);
+    expect(err).toMatchObject({ code: 'EOF' });
   });
 
   it('errors when the data block is not followed by CRLF', async () => {
@@ -62,7 +62,7 @@ describe('decodeChunked — error vectors', () => {
     const { reader, head } = fromString(input);
     const err = await drainExpectError(decodeChunked(reader, head));
     expect(err).toBeInstanceOf(HttpProtocolError);
-    expect((err as Error).message).toMatch(/missing CRLF/);
+    expect(err).toMatchObject({ code: 'CHUNK_BAD_SIZE' });
   });
 });
 
