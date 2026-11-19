@@ -4,7 +4,6 @@ import {
   Copy16Regular,
   Delete16Regular,
   Dismiss16Regular,
-  Warning16Regular,
 } from '@fluentui/react-icons';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
@@ -63,7 +62,6 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, onSa
   const getOriginal = useCopyEditorStore(state => state.getOriginal);
   const getCurrent = useCopyEditorStore(state => state.getCurrent);
   const getRelatedKeys = useCopyEditorStore(state => state.getRelatedKeys);
-  const getStaleLanguages = useCopyEditorStore(state => state.getStaleLanguages);
   const stageEntry = useCopyEditorStore(state => state.stageEntry);
   const revertEntry = useCopyEditorStore(state => state.revertEntry);
   const revertLanguage = useCopyEditorStore(state => state.revertLanguage);
@@ -127,7 +125,6 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, onSa
   };
 
   const relatedKeys = useMemo(() => getRelatedKeys(activeKey), [activeKey, getRelatedKeys]);
-  const staleLanguages = new Set(getStaleLanguages(activeKey));
   const existingEntry = entries[activeKey];
 
   const hasAnyDiffOrNote = supportedLanguages.some(lang => {
@@ -260,7 +257,6 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, onSa
         {supportedLanguages.map((language, index) => {
           const original = getOriginal(language, activeKey) ?? '';
           const modified = values[language] !== original;
-          const stale = staleLanguages.has(language);
           const inputId = `${idPrefix}-${language}`;
           return (
             <div key={language} className="floway-copy-editor-field">
@@ -294,12 +290,6 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, onSa
                 </span>
               )}
 
-              {stale && (
-                <span className="floway-copy-editor-caution">
-                  <Warning16Regular />
-                  <span>{t('common.copyEditor.staleNotice')}</span>
-                </span>
-              )}
             </div>
           );
         })}

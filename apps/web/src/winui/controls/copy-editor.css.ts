@@ -274,15 +274,6 @@ export const copyEditorCss = `
   word-break: break-word;
 }
 
-.floway-copy-editor-caution {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  line-height: 16px;
-  color: var(--winui-system-fill-caution);
-}
-
 .floway-copy-editor-stale-trigger {
   display: inline-flex;
   align-items: center;
@@ -470,7 +461,7 @@ export const copyEditorCss = `
 }
 
 .floway-copy-editor-diff-lang {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 17px;
   color: var(--winui-text-fill-tertiary);
   flex: none;

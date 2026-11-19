@@ -40,7 +40,7 @@ const zhHansCN = {
         editsCount_other: '{{count, number}} 项编辑',
         previewLanguage: '切换预览语言',
         export: '导出',
-        discardEdits_other: '放弃 {{count, number}} 项编辑',
+        discardEdits: '全部放弃',
         discardEditsTitle: '放弃当前编辑？',
         discardEditsMessage: '当前会话中的未导出编辑将被清除并还原为原文。',
         close: '关闭',

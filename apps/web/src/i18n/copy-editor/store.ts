@@ -267,7 +267,6 @@ export interface CopyEditorStore {
   getOriginal: (language: SupportedLanguage, key: string) => string | undefined;
   getCurrent: (language: SupportedLanguage, key: string) => string | undefined;
   getRelatedKeys: (key: string) => string[];
-  getStaleLanguages: (key: string) => SupportedLanguage[];
   stageEntry: (input: StageEntryInput) => void;
   revertEntry: (key: string) => void;
   revertLanguage: (key: string, language: SupportedLanguage) => void;
@@ -361,22 +360,6 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
       if (b === key) return 1;
       return a.localeCompare(b);
     });
-  },
-
-  getStaleLanguages: key => {
-    const entry = get().entries[key];
-    if (!entry) return [];
-    const { originals } = get();
-    const stale: SupportedLanguage[] = [];
-    for (const language of supportedLanguages) {
-      const change = entry.changes[language];
-      if (!change) continue;
-      const original = originals[language].get(key);
-      if (original !== undefined && original !== change.before && original !== change.after) {
-        stale.push(language);
-      }
-    }
-    return stale;
   },
 
   stageEntry: ({ key, values, note }) => {

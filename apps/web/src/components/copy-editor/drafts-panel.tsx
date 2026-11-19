@@ -19,7 +19,7 @@ import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 import { useNow } from '../../lib/use-now';
 import { copyToClipboard } from '../ui/copy-to-clipboard';
 
-const { Button, Popover, PopoverSurface, PopoverTrigger, Text } = fluentComponents;
+const { Button, Popover, PopoverSurface, PopoverTrigger, Text, Tooltip } = fluentComponents;
 
 const SHORT_LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
   'en': 'EN',
@@ -62,12 +62,11 @@ function StaleSourcePopover({
   title: string;
 }) {
   return (
-    <Popover mountNode={mountNode} positioning={{ position: 'above', align: 'center' }} withArrow={false}>
+    <Popover mountNode={mountNode} mouseLeaveDelay={120} openOnHover positioning={{ position: 'above', align: 'center' }} withArrow={false}>
       <PopoverTrigger disableButtonEnhancement>
         <button
           aria-label={title}
           className="floway-copy-editor-stale-trigger winui-focus-rect"
-          title={title}
           type="button"
           onClick={event => event.stopPropagation()}
         >
@@ -92,7 +91,6 @@ function ConfirmActionFlyout({
   align = 'end',
   appearance = 'subtle',
   cancelLabel,
-  label,
   message,
   mountNode,
   onConfirm,
@@ -105,7 +103,6 @@ function ConfirmActionFlyout({
   align?: 'start' | 'end';
   appearance?: 'subtle' | 'secondary';
   cancelLabel: string;
-  label?: string;
   message: string;
   mountNode: HTMLElement | null;
   onConfirm: () => void;
@@ -131,10 +128,8 @@ function ConfirmActionFlyout({
           aria-label={triggerLabel}
           icon={<Delete16Regular />}
           size={size}
-          title={label ? undefined : triggerLabel}
-        >
-          {label}
-        </Button>
+          title={triggerLabel}
+        />
       </PopoverTrigger>
       <PopoverSurface
         aria-labelledby={titleId}
@@ -501,13 +496,19 @@ export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPa
                               <span className="floway-copy-editor-diff-before-line">
                                 <span className="floway-copy-editor-diff-before">{change.before}</span>
                                 {isApplied && (
-                                  <span
-                                    aria-label={t('common.copyEditor.appliedNotice')}
-                                    className="floway-copy-editor-applied-icon"
-                                    title={t('common.copyEditor.appliedNotice')}
+                                  <Tooltip
+                                    content={t('common.copyEditor.appliedNotice')}
+                                    mountNode={mountNode}
+                                    relationship="label"
                                   >
-                                    <CheckmarkCircle16Regular />
-                                  </span>
+                                    <span
+                                      aria-label={t('common.copyEditor.appliedNotice')}
+                                      className="floway-copy-editor-applied-icon"
+                                      onClick={event => event.stopPropagation()}
+                                    >
+                                      <CheckmarkCircle16Regular />
+                                    </span>
+                                  </Tooltip>
                                 )}
                                 {isStale && (
                                   <StaleSourcePopover
@@ -540,17 +541,16 @@ export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPa
             <div className="floway-copy-editor-footer-start">
               {activeEntries.length > 0 && (
                 <ConfirmActionFlyout
-                  actionLabel={t('common.copyEditor.discardEdits', { count: activeEntries.length })}
+                  actionLabel={t('common.copyEditor.discardEdits')}
                   align="start"
                   appearance="secondary"
                   cancelLabel={t('common.cancel')}
-                  label={t('common.copyEditor.discardEdits', { count: activeEntries.length })}
                   message={t('common.copyEditor.discardEditsMessage')}
                   mountNode={mountNode}
                   position="above"
                   size="medium"
                   title={t('common.copyEditor.discardEditsTitle')}
-                  triggerLabel={t('common.copyEditor.discardEdits', { count: activeEntries.length })}
+                  triggerLabel={t('common.copyEditor.discardEdits')}
                   onConfirm={clearActive}
                 />
               )}
@@ -602,12 +602,12 @@ export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPa
                     onClick={() => void handleExport()}
                   />
                   <ConfirmActionFlyout
-                    actionLabel={t('common.copyEditor.discardEdits', { count: activeEntries.length })}
+                    actionLabel={t('common.copyEditor.discardEdits')}
                     cancelLabel={t('common.cancel')}
                     message={t('common.copyEditor.discardEditsMessage')}
                     mountNode={mountNode}
                     title={t('common.copyEditor.discardEditsTitle')}
-                    triggerLabel={t('common.copyEditor.discardEdits', { count: activeEntries.length })}
+                    triggerLabel={t('common.copyEditor.discardEdits')}
                     onConfirm={clearActive}
                   />
                 </div>
