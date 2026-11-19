@@ -91,7 +91,7 @@ describe('upstream editor YAML submission', () => {
     apiMocks.patch.mockResolvedValue({ data: saved, error: null });
     renderPage();
 
-    const save = screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') }) as HTMLButtonElement;
+    const save = screen.getByRole('button', { name: i18n.t('upstreams.editor.actions.save') }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
 
     fireEvent.change(await screen.findByLabelText('YAML models'), { target: { value: replacementYaml } });

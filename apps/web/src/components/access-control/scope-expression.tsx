@@ -66,7 +66,7 @@ function ScopeEditorSurface({ children, className, expressionRef, onActivate, on
     }}
   >
     {children}
-    {onRemove && <TooltipIconButton disabled={readOnly} icon={<FieldClearIcon />} label={t('dashboard.accessControl.actions.removeScopeSegment')} onClick={onRemove} />}
+    {onRemove && <TooltipIconButton disabled={readOnly} icon={<FieldClearIcon />} label={t('permissions.actions.removeScopeSegment')} onClick={onRemove} />}
   </div>;
 }
 
@@ -208,8 +208,8 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
     else closeInput();
   };
   const input = active === null ? null : <PartInput
-    ariaLabel={t(`dashboard.accessControl.scope.${active === 'kind' ? 'kind' : active === 'instance' ? 'instance' : 'model'}`)}
-    emptyMessage={t('dashboard.accessControl.scope.noMatches')}
+    ariaLabel={t(`permissions.scope.${active === 'kind' ? 'kind' : active === 'instance' ? 'instance' : 'model'}`)}
+    emptyMessage={t('permissions.scope.noMatches')}
     inputRef={inputRef}
     name={`scope-${active}`}
     onBlur={event => onInputBlur(active, event)}
@@ -257,24 +257,24 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
     if (deepestPart !== null) discardSegment(deepestPart, 'remove');
   };
 
-  const expression = <div aria-label={interactive ? t('dashboard.accessControl.fields.scope') : undefined} className={mergeClasses('floway-scope-expression', !framed && className)} ref={expressionRef} role={interactive ? 'group' : undefined}
+  const expression = <div aria-label={interactive ? t('permissions.fields.scope') : undefined} className={mergeClasses('floway-scope-expression', !framed && className)} ref={expressionRef} role={interactive ? 'group' : undefined}
     onMouseDown={event => {
       if (onNavigate) event.preventDefault();
     }}
   >
     <Segment active={active === 'kind'} dirty={dirty} input={input} interactive={interactive} keyboardNavigatedRef={keyboardNavigatedRef} onActivate={() => activate('kind')} onBackspace={editable && active === 'kind' && query === '' && value !== null ? () => discardSegment('kind', 'backspace') : undefined} onCancel={closeInput} onEnter={commitEnter} part="kind">{kind === null
-      ? !readOnly && <AppendTrigger label={t('dashboard.accessControl.scope.kind')} />
+      ? !readOnly && <AppendTrigger label={t('permissions.scope.kind')} />
       : <PartToken className="floway-scope-expression-kind">{kindLabel(kind, t)}</PartToken>}
     </Segment>
 
     {showInstance && <Segment active={active === 'instance'} dirty={dirty} input={input} interactive={interactive} keyboardNavigatedRef={keyboardNavigatedRef} onActivate={() => activate('instance')} onBackspace={editable && (active === 'instance' ? query === '' : !hasInstance) ? () => discardSegment('instance', 'backspace') : undefined} onCancel={closeInput} onEnter={commitEnter} part="instance">{hasInstance
       ? <InstancePart data={data} kind={kind} t={t} value={value} />
-      : <AppendTrigger label={t('dashboard.accessControl.scope.instance')} />}
+      : <AppendTrigger label={t('permissions.scope.instance')} />}
     </Segment>}
 
     {showModel && <Segment active={active === 'model'} dirty={dirty} input={input} interactive={interactive} keyboardNavigatedRef={keyboardNavigatedRef} onActivate={() => activate('model')} onBackspace={editable && (active === 'model' ? query === '' : value.kind !== 'upstreamModel') ? () => discardSegment('model', 'backspace') : undefined} onCancel={closeInput} onEnter={commitEnter} part="model">{value.kind === 'upstreamModel'
       ? <ModelPart scope={value} />
-      : <AppendTrigger label={t('dashboard.accessControl.scope.model')} />}
+      : <AppendTrigger label={t('permissions.scope.model')} />}
     </Segment>}
   </div>;
   return framed ? <ScopeEditorSurface className={className} expressionRef={expressionRef} onActivate={() => activate(lastPart)} onRemove={kind === null ? undefined : removeLast} readOnly={readOnly}>{expression}</ScopeEditorSurface> : expression;
@@ -509,19 +509,19 @@ function InstancePart({ data, kind, t, value }: {
     const upstream = data.upstreams.find(candidate => candidate.id === value.upstreamId);
     return upstream
       ? <PartToken><ProviderBadge label={upstream.name} upstream={upstream} /></PartToken>
-      : <UnknownPart description={t('dashboard.accessControl.scope.unknownUpstreamId', { id: value.upstreamId })} />;
+      : <UnknownPart description={t('permissions.scope.unknownUpstreamId', { id: value.upstreamId })} />;
   }
   if (kind === 'user' && value?.kind === 'user') {
     const user = data.users.find(candidate => candidate.id === value.userId);
     return user
       ? <PartToken><UserIdentity isAdmin={user.isAdmin} username={user.username} /></PartToken>
-      : <UnknownPart description={t('dashboard.accessControl.scope.unknownUserId', { id: String(value.userId) })} icon={<PersonRegular />} />;
+      : <UnknownPart description={t('permissions.scope.unknownUserId', { id: String(value.userId) })} icon={<PersonRegular />} />;
   }
   if (kind === 'group' && value?.kind === 'group') {
     const group = data.groups.find(candidate => candidate.id === value.groupId);
     return group
       ? <PartToken><GroupIdentity group={group} /></PartToken>
-      : <UnknownPart description={t('dashboard.accessControl.scope.unknownGroupId', { id: String(value.groupId) })} icon={<PeopleRegular />} />;
+      : <UnknownPart description={t('permissions.scope.unknownGroupId', { id: String(value.groupId) })} icon={<PeopleRegular />} />;
   }
   return null;
 }
@@ -550,7 +550,7 @@ function UnknownPart({ description, icon }: {
   return <Tooltip content={description} relationship="description">
     <span className="winui-focus-rect inline-flex max-w-full" tabIndex={readOnly ? 0 : undefined}>
       <PartToken className="floway-scope-expression-dimmed">{icon}
-        <span className="floway-control-label">{t('dashboard.accessControl.scope.unknownLabel')}</span>
+        <span className="floway-control-label">{t('permissions.scope.unknownLabel')}</span>
       </PartToken>
     </span>
   </Tooltip>;
@@ -565,7 +565,7 @@ const collectionScope = (kind: ScopeKind | null): AccessScope | null => {
   case null: return null;
   }
 };
-const kindLabel = (kind: ScopeKind, t: TFunction) => t(`dashboard.accessControl.scope.kinds.${kind}`);
+const kindLabel = (kind: ScopeKind, t: TFunction) => t(`permissions.scope.kinds.${kind}`);
 const hasUpstreamInstance = (scope: AccessScope | null): scope is Extract<AccessScope, { kind: 'upstream' | 'upstreamModel' }> => scope?.kind === 'upstream' || scope?.kind === 'upstreamModel';
 const instanceMatchesKind = (kind: ScopeKind | null, scope: AccessScope | null) => kind === 'upstream'
   ? hasUpstreamInstance(scope)

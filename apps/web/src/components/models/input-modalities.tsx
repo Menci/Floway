@@ -30,16 +30,16 @@ export function ModelInputFields({ chat, onChange, disabled = false, readOnly }:
   };
   return <>
     <div aria-labelledby={imageLabel} className="grid gap-3" role="group">
-      <Text id={imageLabel} weight="semibold">{t('dashboard.upstreamEditor.models.imageInput')}</Text>
+      <Text id={imageLabel} weight="semibold">{t('models.editor.imageInput')}</Text>
       <div className="flex flex-wrap gap-4">
-        {inputSwitch('image', t('dashboard.upstreamEditor.models.imageInput'))}
+        {inputSwitch('image', t('models.editor.imageInput'))}
         {input.includes('image') && <Switch checked={chat?.image_detail_original === true} disabled={disabled} readOnly={readOnly}
-          label={t('dashboard.upstreamEditor.models.imageDetailOriginal')} onChange={(_, data) => onChange({ image_detail_original: data.checked })} />}
+          label={t('models.editor.imageDetailOriginal')} onChange={(_, data) => onChange({ image_detail_original: data.checked })} />}
       </div>
     </div>
     <div className="flex flex-wrap gap-4">
-      {inputSwitch('text', t('dashboard.upstreamEditor.models.textInput'))}
-      {inputSwitch('audio', t('dashboard.upstreamEditor.models.audioInput'))}
+      {inputSwitch('text', t('models.editor.textInput'))}
+      {inputSwitch('audio', t('models.editor.audioInput'))}
     </div>
   </>;
 }

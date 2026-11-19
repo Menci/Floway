@@ -77,7 +77,7 @@ describe('usage dimension controls', () => {
       },
     });
 
-    expect(screen.getByText(i18n.t('dashboard.usage.filters.unknownUser'))).toBeTruthy();
+    expect(screen.getByText(i18n.t('monitoring.usage.filters.unknownUser'))).toBeTruthy();
     unmount();
 
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});

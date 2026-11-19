@@ -72,15 +72,15 @@ export function TelemetryTimeRange({ addressOf, ariaLabel, loadedAt, onChange, o
     event.preventDefault(); event.stopPropagation(); close();
   }}>
     <div className="floway-telemetry-range-caption">
-      {typeof range !== 'string' && <button aria-label={t('dashboard.telemetry.range.choose')} className="floway-telemetry-range-caption-button winui-focus-rect" onClick={begin} type="button">
+      {typeof range !== 'string' && <button aria-label={t('monitoring.controls.range.choose')} className="floway-telemetry-range-caption-button winui-focus-rect" onClick={begin} type="button">
         {formatEndpoint(range.start)}{' - '}{formatEndpoint(range.end)}
       </button>}
     </div>
     <ChoiceGroup ariaLabel={ariaLabel} items={[
-      { value: 'today', label: t('dashboard.telemetry.range.oneDay'), ...(addressOf === null ? { button: true } : { to: addressOf('today') }) },
-      { value: '7d', label: t('dashboard.telemetry.range.sevenDays'), ...(addressOf === null ? { button: true } : { to: addressOf('7d') }) },
-      { value: '30d', label: t('dashboard.telemetry.range.thirtyDays'), ...(addressOf === null ? { button: true } : { to: addressOf('30d') }) },
-      { value: 'custom', label: t('dashboard.telemetry.range.custom'), button: true, elementRef: setAnchorRef, ariaExpanded: editing, ariaControls: popupId },
+      { value: 'today', label: t('monitoring.controls.range.oneDay'), ...(addressOf === null ? { button: true } : { to: addressOf('today') }) },
+      { value: '7d', label: t('monitoring.controls.range.sevenDays'), ...(addressOf === null ? { button: true } : { to: addressOf('7d') }) },
+      { value: '30d', label: t('monitoring.controls.range.thirtyDays'), ...(addressOf === null ? { button: true } : { to: addressOf('30d') }) },
+      { value: 'custom', label: t('monitoring.controls.range.custom'), button: true, elementRef: setAnchorRef, ariaExpanded: editing, ariaControls: popupId },
     ]} onChange={value => {
       if (value === 'custom') begin();
       else { close(); onChange(value as DashboardPreset); }
@@ -90,7 +90,7 @@ export function TelemetryTimeRange({ addressOf, ariaLabel, loadedAt, onChange, o
       if (event.type === 'keydown' && 'key' in event && event.key === 'Escape') close();
       else if (!owns(event.target)) close();
     }} positioning={{ target: anchor ?? undefined, position: 'below', align: 'end', fallbackPositions: ['above'] }}>
-      <PopoverSurface aria-label={t('dashboard.telemetry.range.choose')} className="floway-date-range-surface" id={popupId} onBlurCapture={event => blur(event.relatedTarget)} ref={surfaceRef}>
+      <PopoverSurface aria-label={t('monitoring.controls.range.choose')} className="floway-date-range-surface" id={popupId} onBlurCapture={event => blur(event.relatedTarget)} ref={surfaceRef}>
         <CalendarRange autoFocus displayDate={session.date} key={session.serial} onChange={select} value={draft} />
       </PopoverSurface>
     </Popover>

@@ -97,7 +97,7 @@ describe('Performance Region dimensions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Refresh performance' }));
 
     await waitFor(() => expect(screen.getByText('Corrected overview failed')).toBeTruthy());
-    expect(screen.getByText(i18n.t('dashboard.pages.unavailable'))).toBeTruthy();
+    expect(screen.getByText(i18n.t('common.errors.viewUnavailable'))).toBeTruthy();
     expect(screen.queryByRole('combobox', { name: 'Group by' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Refresh performance' }));

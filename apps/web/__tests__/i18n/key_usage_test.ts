@@ -55,13 +55,13 @@ const ANY_STRING = /['"`]([a-zA-Z][a-zA-Z0-9_.]*)['"`]/g;
 // A template key is recognised by its own shape -- rooted in a namespace, like
 // `LITERAL_KEY` -- rather than by sitting at a `t(` or `i18nKey=`. The call
 // site is free to build the key first and hand it over later, which is how
-// `dashboard.proxy.validation.timeout.${error}`, assigned to a field of a
+// `proxies.validation.timeout.${error}`, assigned to a field of a
 // validation result, came to be accused of orphaning both strings under it.
 const TEMPLATE_KEY_PREFIX = new RegExp(`\`((?:${NAMESPACES.join('|')})\\.(?:[a-zA-Z0-9_.]*\\.)?)\\$\\{`, 'g');
 
 // Both scans are evidence about call sites, so both must read code only. A
-// comment is prose: the letter `d` quoted in a sentence is not a use of
-// `dashboard.*`. Tokenizing the file rather than regexing it is also what keeps
+// comment is prose: a word quoted in a sentence is not a translation key.
+// Tokenizing the file rather than regexing it is also what keeps
 // a quote inside a comment, or a delimiter inside a string, from being read as
 // the other kind of thing.
 const STRING_OR_COMMENT = /\/\/[^\n]*|\/\*[\s\S]*?\*\/|'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`/g;
@@ -71,8 +71,8 @@ const withoutComments = (source: string) =>
 
 // A literal clears a longer key only when the literal is itself shaped like a
 // key -- rooted in a namespace, carrying a separator. Without that test any
-// literal at all could clear one, and five one-word literals (`common`, `auth`,
-// `provider`, `app`, and a bare `d`) between them cleared 1044 of the 1063
+// literal at all could clear one, and the old one-word literals (`common`,
+// `auth`, `provider`, `app`, and a bare `d`) between them cleared 1044 of the 1063
 // defined keys: the suite reported no orphans because it had no way to report
 // one.
 const KEY_STEM = new RegExp(`^(?:${NAMESPACES.join('|')})\\.`);
@@ -82,7 +82,7 @@ describe('translation key usage', () => {
   const pluralBases = new Set([...defined].filter(isPlural).map(pluralBase));
   const resolves = (key: string) => defined.has(key) || pluralBases.has(key);
 
-  it('has a string behind every literal key the dashboard asks for', () => {
+  it('has a string behind every literal key the web app asks for', () => {
     const unresolved: string[] = [];
     for (const file of sourceFiles(SOURCE_ROOT)) {
       const source = withoutComments(readFileSync(file, 'utf8'));
@@ -125,16 +125,15 @@ describe('translation key usage', () => {
   // knowable — and those enums are exactly what grows when a provider kind,
   // model kind, billing metric, or feature flag is added.
   it.each([
-    ['dashboard.modelAliases.kind', MODEL_KINDS],
-    ['dashboard.upstreamEditor.models.pricingMetrics', BILLING_METRICS],
-    ['dashboard.upstreamEditor.flags.entries', OPTIONAL_FLAG_IDS.flatMap(id => [`${id}.label`, `${id}.description`])],
-    ['dashboard.upstreams.providers', ALL_PROVIDER_KINDS],
-    ['provider', ALL_PROVIDER_KINDS],
+    ['models.aliases.kind', MODEL_KINDS],
+    ['models.editor.pricingMetrics', BILLING_METRICS],
+    ['upstreams.editor.flags.entries', OPTIONAL_FLAG_IDS.flatMap(id => [`${id}.label`, `${id}.description`])],
+    ['upstreams.kinds', ALL_PROVIDER_KINDS.flatMap(kind => [`${kind}.label`, `${kind}.description`])],
     // The badge's own union. Reached only as `i18nKey={`…badges.${badge.limit}`}`,
     // so no literal spells these and neither direction of the scan above can see
     // them -- deleting all three once passed every check and shipped three raw
     // keys into the badge row.
-    ['dashboard.models.badges', ['context', 'prompt', 'output']],
+    ['models.badges', ['context', 'prompt', 'output']],
   ])('covers every member of the enum behind %s.*', (prefix, members) => {
     expect([...members].filter(member => !resolves(`${prefix}.${member}`))).toEqual([]);
   });

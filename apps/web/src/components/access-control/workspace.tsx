@@ -160,10 +160,10 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
   const remove = async (record: AccessRecord): Promise<string | null> => {
     setRemoving(true);
     try {
-      const handle = toasts.start(t('dashboard.accessControl.toast.delete.pending'));
+      const handle = toasts.start(t('permissions.toast.delete.pending'));
       const result = await callApi(() => api.api['access-records'][':id'].$delete({ param: { id: String(record.id) } }));
       if (result.error) { handle.settle(); return result.error.message; }
-      handle.succeed(t('dashboard.accessControl.toast.delete.success'));
+      handle.succeed(t('permissions.toast.delete.success'));
       // The DELETE is the whole write: nothing else this page holds -- the
       // directory, the upstreams, the model list -- derives from the rule. So
       // the acknowledged removal is applied here rather than awaited through a
@@ -184,51 +184,51 @@ export function PermissionsWorkspace({ admin, initial }: { admin: boolean; initi
 
   return <section aria-busy={loading || reordering || removing} className="dashboard-page">
     <DashboardPageHeader
-      actions={<ResourceListActions disabled={reordering || removing} onRefresh={() => void refresh()} refreshLabel={t('dashboard.accessControl.actions.refresh')} refreshing={loading} />}
-      description={t('dashboard.accessControl.description')}
-      title={t('dashboard.nav.permissions')}
+      actions={<ResourceListActions disabled={reordering || removing} onRefresh={() => void refresh()} refreshLabel={t('permissions.actions.refresh')} refreshing={loading} />}
+      description={t('permissions.description')}
+      title={t('permissions.title')}
     />
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
     <div className="flex items-end gap-3 flex-wrap" data-permission-filters="">
-      <Field className="w-[240px] max-w-full" label={t('dashboard.accessControl.fields.principal')}><PrincipalPicker
+      <Field className="w-[240px] max-w-full" label={t('permissions.fields.principal')}><PrincipalPicker
         clearable={principal !== null}
-        data={principalData} disabled={!loaded} includeAll label={t('dashboard.accessControl.fields.principal')} onChange={next => updateParams(nextParams => {
+        data={principalData} disabled={!loaded} includeAll label={t('permissions.fields.principal')} onChange={next => updateParams(nextParams => {
           if (next === null) nextParams.delete('principal'); else nextParams.set('principal', principalKey(next));
           nextParams.delete('page');
         })} value={principal}
       /></Field>
       <div className="flex flex-wrap items-end gap-3 flex-[1_1_auto] min-w-0 max-w-full">
-        <Field className="w-max min-w-0 max-w-full" label={t('dashboard.accessControl.fields.scope')}>
+        <Field className="w-max min-w-0 max-w-full" label={t('permissions.fields.scope')}>
           <ScopeEditor data={scopeData} key={scopeEditorState.revision} onChange={selectScope} purpose="filter" readOnly={!loaded} value={scope} />
         </Field>
         <div className="min-h-[34px] flex items-center flex-none"><SwitchSetting
           checked={showEffective}
           disabled={effectiveUnavailable || !loaded}
-          label={t('dashboard.accessControl.effective.label')}
+          label={t('permissions.effective.label')}
           onChange={checked => setFilter('effective', checked ? 'true' : null)}
           description={<div className="grid gap-3 max-w-[420px]">
-            <p className="m-0"><strong>{t('dashboard.accessControl.effective.checked')}</strong>{' '}{t('dashboard.accessControl.effective.checkedDescription')}</p>
-            <p className="m-0"><strong>{t('dashboard.accessControl.effective.unchecked')}</strong>{' '}{t('dashboard.accessControl.effective.uncheckedDescription')}</p>
+            <p className="m-0"><strong>{t('permissions.effective.checked')}</strong>{' '}{t('permissions.effective.checkedDescription')}</p>
+            <p className="m-0"><strong>{t('permissions.effective.unchecked')}</strong>{' '}{t('permissions.effective.uncheckedDescription')}</p>
           </div>}
         /></div>
       </div>
       <div className="flex items-center gap-2 max-w-full ml-auto">
-        <Input aria-label={t('dashboard.accessControl.search')} autoComplete="off" className="w-[220px]" contentBefore={<SearchRegular />} onChange={(_, event) => setFilter('q', event.value || null, true)} placeholder={t('dashboard.accessControl.search')} spellCheck={false} value={query} />
-        {admin && <Button appearance="primary" className="flex-none whitespace-nowrap" disabled={!loaded || busy} icon={<AddRegular />} onClick={create}>{t('dashboard.accessControl.actions.add')}</Button>}
+        <Input aria-label={t('permissions.search')} autoComplete="off" className="w-[220px]" contentBefore={<SearchRegular />} onChange={(_, event) => setFilter('q', event.value || null, true)} placeholder={t('permissions.search')} spellCheck={false} value={query} />
+        {admin && <Button appearance="primary" className="flex-none whitespace-nowrap" disabled={!loaded || busy} icon={<AddRegular />} onClick={create}>{t('permissions.actions.add')}</Button>}
       </div>
     </div>
-    {administrator && <OutcomeMessageBar intent="info">{t('dashboard.accessControl.administratorBypass')}</OutcomeMessageBar>}
-    {!loaded ? <EmptyState title={t('dashboard.pages.unavailable')} /> : <>
+    {administrator && <OutcomeMessageBar intent="info">{t('permissions.administratorBypass')}</OutcomeMessageBar>}
+    {!loaded ? <EmptyState title={t('common.errors.viewUnavailable')} /> : <>
       <ResourceListPanel>
         {results.records.length === 0 ? <EmptyState
-          action={results.empty ? admin ? <Button appearance="primary" disabled={busy} icon={<AddRegular />} onClick={create}>{t('dashboard.accessControl.actions.add')}</Button> : null : <Button disabled={busy} onClick={() => updateParams(next => { for (const key of ['q', 'principal', 'scope', 'effective', 'page']) next.delete(key); })}>{t('dashboard.accessControl.actions.clearFilters')}</Button>}
-          title={t(results.empty ? 'dashboard.accessControl.empty' : 'dashboard.accessControl.noMatches')}
+          action={results.empty ? admin ? <Button appearance="primary" disabled={busy} icon={<AddRegular />} onClick={create}>{t('permissions.actions.add')}</Button> : null : <Button disabled={busy} onClick={() => updateParams(next => { for (const key of ['q', 'principal', 'scope', 'effective', 'page']) next.delete(key); })}>{t('permissions.actions.clearFilters')}</Button>}
+          title={t(results.empty ? 'permissions.empty' : 'permissions.noMatches')}
         /> : <RulesTable admin={admin} busy={busy} data={results.data} decisions={results.decisions} onEdit={record => editor.open({ record })} onRemove={remove} onReorder={reorder} onReordered={commitReorder} onReorderError={rejectReorder} onScopeSelect={navigateScope} params={results.params} records={results.records} />}
       </ResourceListPanel>
       {results.totalPages > 1 && <div className="flex items-center justify-end gap-3">
-        <Text className="text-fui-fg2" size={200}>{t('dashboard.accessControl.pagination.range', { from: (results.page - 1) * PAGE_SIZE + 1, to: Math.min(results.page * PAGE_SIZE, results.total), total: results.total })}</Text>
-        <TooltipIconButton disabled={busy || results.page === 1} icon={<ChevronLeftRegular />} label={t('dashboard.accessControl.pagination.previous')} onClick={() => updateParams(next => next.set('page', String(results.page - 1)))} />
-        <TooltipIconButton disabled={busy || results.page === results.totalPages} icon={<ChevronRightRegular />} label={t('dashboard.accessControl.pagination.next')} onClick={() => updateParams(next => next.set('page', String(results.page + 1)))} />
+        <Text className="text-fui-fg2" size={200}>{t('permissions.pagination.range', { from: (results.page - 1) * PAGE_SIZE + 1, to: Math.min(results.page * PAGE_SIZE, results.total), total: results.total })}</Text>
+        <TooltipIconButton disabled={busy || results.page === 1} icon={<ChevronLeftRegular />} label={t('permissions.pagination.previous')} onClick={() => updateParams(next => next.set('page', String(results.page - 1)))} />
+        <TooltipIconButton disabled={busy || results.page === results.totalPages} icon={<ChevronRightRegular />} label={t('permissions.pagination.next')} onClick={() => updateParams(next => next.set('page', String(results.page + 1)))} />
       </div>}
     </>}
     {admin && editor.invocation && <AccessRecordDialog data={scopeData} principalData={principalData} records={data.records ?? []} initialPrincipal={editor.invocation.value.principal} initialScope={editor.invocation.value.scope} key={editor.invocation.key} onOpenChange={open => { if (!open) editor.close(); }} onSaved={refreshInBackground} open={editor.isOpen} record={editor.invocation.value.record} suggestedSortOrder={Math.max(-1, ...(data.records ?? []).map(record => record.sortOrder)) + 1} />}

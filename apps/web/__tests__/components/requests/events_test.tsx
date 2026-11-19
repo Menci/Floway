@@ -30,9 +30,9 @@ describe('per-event view', () => {
     expect(view.container.querySelector('script')).toBeNull();
     expect(view.container.querySelector('code')?.textContent).toContain('<script>alert(1)</script>');
     fireEvent.change(screen.getByRole('textbox', { name: 'Search events' }), { target: { value: 'unmatched' } });
-    expect(screen.getByText(i18n.t('dashboard.requests.noEventMatches'))).toBeTruthy();
+    expect(screen.getByText(i18n.t('requests.noEventMatches'))).toBeTruthy();
     fireEvent.change(screen.getByRole('textbox', { name: 'Search events' }), { target: { value: '[DONE]' } });
     expect(screen.getByRole('button', { name: '#121 [DONE]' })).toBeTruthy();
-    expect(screen.queryByText(i18n.t('dashboard.requests.eventParseError'))).toBeNull();
+    expect(screen.queryByText(i18n.t('requests.eventParseError'))).toBeNull();
   });
 });

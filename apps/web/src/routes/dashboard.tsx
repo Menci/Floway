@@ -100,7 +100,7 @@ function DashboardShell({ user }: { user: AuthUser }) {
         className="fixed left-3 top-3 z-[100000] -translate-y-20 rounded-md bg-fui-bg1 px-3 py-2 text-fui-fg1 shadow-lg focus:translate-y-0"
         href="#dashboard-main"
       >
-        {t('dashboard.nav.skip')}
+        {t('app.navigation.skip')}
       </a>
       <div className="grid grid-cols-[clamp(240px,18vw,290px)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] h-[100dvh] min-h-0 max-[900px]:grid-cols-1 max-[900px]:grid-rows-[58px_minmax(0,1fr)]">
         <div className="min-h-0 max-[900px]:hidden">
@@ -109,7 +109,7 @@ function DashboardShell({ user }: { user: AuthUser }) {
         <header className="hidden max-[900px]:flex items-center gap-3 border-b border-b-solid border-fui-divider px-4">
           <Button
             appearance="subtle"
-            aria-label={t('dashboard.nav.open')}
+            aria-label={t('app.navigation.open')}
             icon={<NavigationRegular />}
             onClick={() => setNavigationOpen(true)}
           />
@@ -130,7 +130,7 @@ function DashboardShell({ user }: { user: AuthUser }) {
         </div>
       </div>
       <OverlayDrawer
-        aria-label={t('dashboard.nav.label')}
+        aria-label={t('app.navigation.label')}
         backdrop={{ className: 'floway-drawer-light-dismiss' }}
         onOpenChange={(_, data) => setNavigationOpen(data.open)}
         open={navigationOpen}

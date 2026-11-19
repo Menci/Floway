@@ -35,7 +35,7 @@ export function PermissionFields({ disabled, inherited, onChange, permissions, v
   const { t } = useTranslation();
   const styles = useStyles();
   return <fieldset className="m-0 p-0 border-0 min-w-0" data-permission-editor="radio">
-    <legend className="p-0 mb-2 text-[14px] leading-5 font-normal">{t('dashboard.accessControl.fields.permissions')}</legend>
+    <legend className="p-0 mb-2 text-[14px] leading-5 font-normal">{t('permissions.fields.permissions')}</legend>
     <div className={styles.grid}>{permissions.map(permission => <PermissionField
       disabled={disabled} inherited={inherited?.[permission]} key={permission} levelColumns={permissions.includes('Upstream.Edit')}
       onChange={value => onChange(permission, value)} permission={permission} value={values[permission]}
@@ -61,8 +61,8 @@ function PermissionField({ disabled, inherited, levelColumns, onChange, permissi
   const Marker = inheriting ? BranchForkFilled : BranchForkRegular;
   const sourceId = `${id}-source`;
   const inheritedId = `${id}-inherited`;
-  const source = t(`dashboard.accessControl.inheritance.${inheriting ? 'currentlyInherited' : 'explicitAssignment'}`);
-  const description = inherited === undefined ? null : t('dashboard.accessControl.inheritance.inheritedValue', { value: permissionValueLabel(inherited, t) });
+  const source = t(`permissions.inheritance.${inheriting ? 'currentlyInherited' : 'explicitAssignment'}`);
+  const description = inherited === undefined ? null : t('permissions.inheritance.inheritedValue', { value: permissionValueLabel(inherited, t) });
   const choose = (choice: string) => {
     if (choice === 'on') onChange(true);
     else if (choice === 'off') onChange(permission === 'Upstream.Edit' ? 'off' : false);
@@ -71,7 +71,7 @@ function PermissionField({ disabled, inherited, levelColumns, onChange, permissi
   };
   return <div className="contents" data-permission-field={permission} data-permission-source={inheriting ? 'inherited' : 'explicit'}>
     <div className="flex self-start items-center min-w-0 min-h-[34px]">
-      <Label id={id} style={{ color: inheriting ? tokens.colorNeutralForeground2 : tokens.colorNeutralForeground1, fontWeight: inheriting ? tokens.fontWeightRegular : tokens.fontWeightMedium }}>{t(`dashboard.accessControl.permissions.${permission}`)}</Label>
+      <Label id={id} style={{ color: inheriting ? tokens.colorNeutralForeground2 : tokens.colorNeutralForeground1, fontWeight: inheriting ? tokens.fontWeightRegular : tokens.fontWeightMedium }}>{t(`permissions.permissions.${permission}`)}</Label>
       <span aria-live="polite" className="sr-only" id={sourceId}>{source}</span>
       {description !== null && <span className="sr-only" id={inheritedId}>{description}</span>}
     </div>
@@ -83,7 +83,7 @@ function PermissionField({ disabled, inherited, levelColumns, onChange, permissi
       {choices.map(choice => {
         const radio = (root?: ComponentProps<typeof Radio>['root']) => <Radio
           input={{
-            'aria-label': t(`dashboard.accessControl.states.${choice}`),
+            'aria-label': t(`permissions.states.${choice}`),
             'aria-describedby': choice === inheritedChoice ? `${sourceId} ${inheritedId}` : sourceId,
             // Handle Space before native activation so the source toggles once.
             onClick: () => { if (selected === choice) { if (inheriting) choose(choice); else onChange(undefined); } },
@@ -95,7 +95,7 @@ function PermissionField({ disabled, inherited, levelColumns, onChange, permissi
             },
           }} key={choice} root={root} value={choice}
           label={<span className="inline-flex items-center gap-1 min-w-0">
-            <span className="floway-control-label whitespace-nowrap">{t(`dashboard.accessControl.states.${choice}`)}</span>
+            <span className="floway-control-label whitespace-nowrap">{t(`permissions.states.${choice}`)}</span>
             {choice === inheritedChoice && <span aria-hidden className="inline-flex flex-none" data-inherited-value-icon="branch" data-inheritance-active={inheriting} data-inheritance-glyph={inheriting ? 'filled' : 'regular'} style={{ color: inheriting ? tokens.colorBrandForeground1 : tokens.colorNeutralForeground2 }}><Marker style={{ width: 16, height: 16 }} /></span>}
           </span>}
         />;
@@ -103,9 +103,9 @@ function PermissionField({ disabled, inherited, levelColumns, onChange, permissi
         // so Tooltip also covers the label and the full option surface.
         // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-radio/library/src/components/Radio/useRadio.tsx#L56-L83
         // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-radio/library/src/components/Radio/renderRadio.tsx#L14-L20
-        return choice === inheritedChoice && description !== null ? <Tooltip content={t('dashboard.accessControl.inheritance.tooltip', { description, source })} key={choice} relationship="description">{triggerProps => radio({ ...triggerProps, ref: triggerProps.ref as Ref<HTMLSpanElement> })}</Tooltip> : radio();
+        return choice === inheritedChoice && description !== null ? <Tooltip content={t('permissions.inheritance.tooltip', { description, source })} key={choice} relationship="description">{triggerProps => radio({ ...triggerProps, ref: triggerProps.ref as Ref<HTMLSpanElement> })}</Tooltip> : radio();
       })}
-      {inheriting && inheritedChoice === undefined && <span className="col-span-full text-[12px] leading-4 text-fui-fg2" data-inheritance-unknown="">{t('dashboard.accessControl.inheritance.unknown')}</span>}
+      {inheriting && inheritedChoice === undefined && <span className="col-span-full text-[12px] leading-4 text-fui-fg2" data-inheritance-unknown="">{t('permissions.inheritance.unknown')}</span>}
     </RadioGroup>
   </div>;
 }

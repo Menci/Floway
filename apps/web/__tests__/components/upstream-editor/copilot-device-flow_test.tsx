@@ -34,7 +34,7 @@ let startRecord: { config: { githubHost: string } } | null;
 const pollCount = () =>
   fetchMock.mock.calls.filter(([input]) => String(input).includes(DEVICE_LOGIN_POLL)).length;
 
-const copilot = (key: string) => i18n.t(`dashboard.upstreamEditor.copilot.${key}`);
+const copilot = (key: string) => i18n.t(`upstreams.editor.copilot.${key}`);
 
 const startFlow = async () => {
   renderInApp(<ProviderConfigHarness record={record} />);

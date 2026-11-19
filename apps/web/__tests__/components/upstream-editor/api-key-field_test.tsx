@@ -9,9 +9,9 @@ import { primeDefaultSession } from '../../test-session';
 
 beforeEach(() => { primeDefaultSession(); });
 
-const apiKeyLabel = i18n.t('dashboard.upstreamEditor.fields.apiKey');
-const showLabel = i18n.t('dashboard.upstreamEditor.actions.showSecret');
-const hideLabel = i18n.t('dashboard.upstreamEditor.actions.hideSecret');
+const apiKeyLabel = i18n.t('upstreams.editor.fields.apiKey');
+const showLabel = i18n.t('upstreams.editor.actions.showSecret');
+const hideLabel = i18n.t('upstreams.editor.actions.hideSecret');
 
 const customRecord = (apiKey: string, modelsFetchEnabled = false) => upstreamRecord('up_custom', {
   kind: 'custom',

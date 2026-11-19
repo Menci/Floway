@@ -13,14 +13,14 @@ export function RequestFilters({ q, failures, onChange }: { q: string; failures:
   const [onlyFailures, setOnlyFailures] = useState(failures);
   return <form className="flex flex-col gap-2" onSubmit={event => { event.preventDefault(); onChange(query.trim(), onlyFailures); }}>
     <Input
-      aria-label={t('dashboard.requests.search')}
-      placeholder={t('dashboard.requests.search')}
+      aria-label={t('requests.search')}
+      placeholder={t('requests.search')}
       value={query}
       onChange={(_, data) => setQuery(data.value)}
-      contentAfter={<Tooltip content={t('dashboard.requests.applyFilters')} relationship="label">
-        <Button appearance="subtle" aria-label={t('dashboard.requests.applyFilters')} icon={<SearchRegular />} size="small" type="submit" />
+      contentAfter={<Tooltip content={t('requests.applyFilters')} relationship="label">
+        <Button appearance="subtle" aria-label={t('requests.applyFilters')} icon={<SearchRegular />} size="small" type="submit" />
       </Tooltip>}
     />
-    <Checkbox checked={onlyFailures} label={t('dashboard.requests.failuresOnly')} onChange={(_, data) => setOnlyFailures(data.checked === true)} />
+    <Checkbox checked={onlyFailures} label={t('requests.failuresOnly')} onChange={(_, data) => setOnlyFailures(data.checked === true)} />
   </form>;
 }

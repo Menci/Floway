@@ -148,7 +148,7 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
     setSaving(true);
     const timeout = parseDialTimeoutInput(form.dialTimeout);
     const body = { name: form.name.trim(), url: proxyDraftUrl(form).trim(), dial_timeout_seconds: timeout.value };
-    const handle = toasts.start(t('dashboard.proxy.toast.save.pending', { name: body.name }));
+    const handle = toasts.start(t('proxies.toast.save.pending', { name: body.name }));
     const result = editingId === null
       ? await callApi(() => api.api.proxies.$post({ json: body }))
       : await callApi(() => api.api.proxies[':id'].$patch({ param: { id: editingId }, json: body }));
@@ -159,7 +159,7 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
       return;
     }
     close();
-    handle.succeed(t('dashboard.proxy.toast.save.success', { name: body.name }));
+    handle.succeed(t('proxies.toast.save.success', { name: body.name }));
     await onSaved();
   }, [close, editingId, onSaved, saving, t, toasts]);
   const handleTest = useCallback(async () => {
@@ -187,14 +187,14 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
     open={open}
     actions={<DialogActions>
       <Button className="!whitespace-nowrap" disabled={saving || testing} onClick={requestClose}>{t('common.cancel')}</Button>
-      <Button className="!whitespace-nowrap" disabled={!canTest || saving} disabledFocusable={testing} onClick={() => void handleTest()}>{t('dashboard.proxy.actions.test')}</Button>
-      <Button appearance="primary" className="!whitespace-nowrap" disabled={testing} disabledFocusable={saving} type="submit">{t('dashboard.proxy.actions.save')}</Button>
+      <Button className="!whitespace-nowrap" disabled={!canTest || saving} disabledFocusable={testing} onClick={() => void handleTest()}>{t('proxies.actions.test')}</Button>
+      <Button appearance="primary" className="!whitespace-nowrap" disabled={testing} disabledFocusable={saving} type="submit">{t('proxies.actions.save')}</Button>
     </DialogActions>}
     onOpenChange={(_, data) => {
       if (!data.open && !saving && !testing) requestClose();
     }}
     onSubmit={() => void handleSubmit(save)()}
-    title={<DialogTitle>{editingId === null ? t('dashboard.proxy.addTitle') : t('dashboard.proxy.editTitle')}</DialogTitle>}
+    title={<DialogTitle>{editingId === null ? t('proxies.addTitle') : t('proxies.editTitle')}</DialogTitle>}
   >
     {editingId !== null && <ProxyBackoffPanel backoffs={backoffs} onReset={() => void onSaved()} proxyId={editingId} />}
     <ProxyForm
@@ -213,8 +213,8 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
     {testResult && <OutcomeMessageBar
       intent={testResult.ok ? 'success' : 'error'}
       onDismiss={() => setTestResult(null)}
-      title={testResult.ok ? t('dashboard.proxy.test.ok') : t('dashboard.proxy.test.failed')}
-    >{testResult.ok ? t('dashboard.proxy.test.egressIp', { ip: testResult.egress_ip }) : testResult.error}</OutcomeMessageBar>}
+      title={testResult.ok ? t('proxies.test.ok') : t('proxies.test.failed')}
+    >{testResult.ok ? t('proxies.test.egressIp', { ip: testResult.egress_ip }) : testResult.error}</OutcomeMessageBar>}
     {saveError && <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>}
   </DialogShell></>;
 }

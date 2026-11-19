@@ -36,19 +36,19 @@ export function PlaygroundEditDialog({ imageEnabled, message, onOpenChange, onSa
       actions={<DialogActions>
         <Button onClick={requestClose}>{t('common.cancel')}</Button>
         <Button appearance="primary" disabled={!text.trim() && !imageUrl.trim()} type="submit">
-          {t('dashboard.playground.actions.save')}
+          {t('playground.actions.save')}
         </Button>
       </DialogActions>}
       onOpenChange={(_, data) => { if (!data.open) requestClose(); }}
       onSubmit={() => onSave({ imageUrl, text })}
-      title={<DialogTitle>{t('dashboard.playground.edit.title')}</DialogTitle>}
+      title={<DialogTitle>{t('playground.edit.title')}</DialogTitle>}
     >
-      <Field label={t('dashboard.playground.edit.message')}>
+      <Field label={t('playground.edit.message')}>
         <Textarea autoFocus rows={8} value={text} onChange={(_, data) => setText(data.value)} />
       </Field>
       {message.role === 'user' && imageEnabled && (
-        <Field label={t('dashboard.playground.edit.imageUrl')}>
-          <Input type="url" value={imageUrl} placeholder={t('dashboard.playground.imagePlaceholder')} onChange={(_, data) => setImageUrl(data.value)} />
+        <Field label={t('playground.edit.imageUrl')}>
+          <Input type="url" value={imageUrl} placeholder={t('playground.imagePlaceholder')} onChange={(_, data) => setImageUrl(data.value)} />
         </Field>
       )}
     </DialogShell></>

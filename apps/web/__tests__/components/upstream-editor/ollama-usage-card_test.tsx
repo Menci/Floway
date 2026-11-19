@@ -34,7 +34,7 @@ test('successful manual balance refresh clears a persisted failure while display
   });
   renderInApp(<OllamaUsageCard record={record} probeRecord={{ ...record }} />);
   expect(screen.getByText(/stored balance error/)).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.ollama.usage.refresh') }));
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('upstreams.editor.ollama.usage.refresh') }));
   expect(await screen.findByText(/12\.5/)).toBeTruthy();
   expect(screen.queryByText(/stored balance error/)).toBeNull();
 });

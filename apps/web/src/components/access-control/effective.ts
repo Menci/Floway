@@ -33,15 +33,15 @@ export const permissionSearchText = (record: AccessRecord, data: ScopeExpression
   const kind = scopeKind(scope)!;
   return [
     principalName(record.principal, data), scope.kind, scopeKey(scope), scopeResourceName(scope, data) ?? '',
-    t(`dashboard.accessControl.scope.kinds.${kind}`),
+    t(`permissions.scope.kinds.${kind}`),
     scope.kind === 'upstreamModel' ? scope.model.value : '',
     ...Object.keys(record.values).flatMap(key => {
       const permission = key as AccessPermission;
       const value = record.values[permission];
       if (value === undefined) return [];
-      const label = t(`dashboard.accessControl.columns.${permission}`);
+      const label = t(`permissions.columns.${permission}`);
       const level = permissionValueLabel(value, t);
-      return [permission, label, level, t('dashboard.accessControl.permissionWithLevel', { permission: label, level })];
+      return [permission, label, level, t('permissions.permissionWithLevel', { permission: label, level })];
     }),
   ].join(' ').toLowerCase();
 };

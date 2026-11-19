@@ -200,19 +200,19 @@ export function UpstreamWorkspace({
     <div className="flex items-center gap-2 border-0 border-b border-solid border-fui-divider px-5 pt-2">
       {showModelDetail
         ? <>
-            <BackNavigationButton onClick={leaveModel}>{t('dashboard.upstreamEditor.models.back')}</BackNavigationButton>
-            <TabList aria-label={t('dashboard.upstreamEditor.models.sections')} selectedValue={modelDetailTab} onTabSelect={(_, data) => navigate({ tab, model: selectedUpstreamModelId, section: data.value as ModelDetailTab, view: 'list' })}>
-              <Tab value="details">{t('dashboard.upstreamEditor.models.details')}</Tab>
-              <Tab value="flags">{t('dashboard.upstreamEditor.models.flags')}</Tab>
+            <BackNavigationButton onClick={leaveModel}>{t('models.editor.back')}</BackNavigationButton>
+            <TabList aria-label={t('models.editor.sections')} selectedValue={modelDetailTab} onTabSelect={(_, data) => navigate({ tab, model: selectedUpstreamModelId, section: data.value as ModelDetailTab, view: 'list' })}>
+              <Tab value="details">{t('models.editor.details')}</Tab>
+              <Tab value="flags">{t('models.editor.flags')}</Tab>
             </TabList>
           </>
         // The models view is carried across tab switches rather than reset,
         // because the YAML draft belongs to the view's presence in the URL: a
         // reset here would leave the view and discard whatever had been typed
         // and not yet applied.
-        : <TabList aria-label={t('dashboard.upstreamEditor.tabs.label')} selectedValue={tab} onTabSelect={(_, data) => navigate({ tab: data.value as WorkspaceTab, model: null, section: 'details', view: modelView === 'yaml' ? 'yaml' : 'list' })}>
-            <Tab value="models">{t('dashboard.upstreamEditor.tabs.models')}</Tab>
-            <Tab value="flags">{t('dashboard.upstreamEditor.tabs.flags')}</Tab>
+        : <TabList aria-label={t('upstreams.editor.tabs.label')} selectedValue={tab} onTabSelect={(_, data) => navigate({ tab: data.value as WorkspaceTab, model: null, section: 'details', view: modelView === 'yaml' ? 'yaml' : 'list' })}>
+            <Tab value="models">{t('upstreams.editor.tabs.models')}</Tab>
+            <Tab value="flags">{t('upstreams.editor.tabs.flags')}</Tab>
           </TabList>}
     </div>
     <ScrollArea ref={workspaceScrollRef} axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" contentClassName={tab === 'models' && modelView === 'yaml' ? 'h-full min-w-0' : ''} noTabIndex>
@@ -224,7 +224,7 @@ export function UpstreamWorkspace({
               {modelsWorkspace}
             </div> : <div className="grid gap-5">
               <Text size={300} className="text-fui-fg2">
-                {t('dashboard.upstreamEditor.flags.intro')}
+                {t('upstreams.editor.flags.intro')}
               </Text>
               <Controller name="flagOverrides" render={({ field }) => <FeatureFlagsEditor defaults={record.flag_defaults} readOnly={editLevel !== 'full'} value={field.value} onChange={field.onChange} />} />
             </div>}
@@ -357,12 +357,12 @@ function ModelsWorkspace({ detailSection, discovered, editableModels, modelSelec
   // no frames to run in.
   const deleteConfirmation = manualDeleteTarget && <ConfirmDialog
     open={deleteDialog.isOpen}
-    actionLabel={t('dashboard.upstreamEditor.models.deleteConfirm')}
+    actionLabel={t('models.editor.deleteConfirm')}
     key={deleteDialog.invocation!.key}
-    message={t('dashboard.upstreamEditor.models.deleteMessage', { name: manualDeleteTarget.config.display_name ?? publicModelId(manualDeleteTarget.config) })}
+    message={t('models.editor.deleteMessage', { name: manualDeleteTarget.config.display_name ?? publicModelId(manualDeleteTarget.config) })}
     onConfirm={() => deleteModel(manualDeleteTarget)}
     onOpenChange={open => { if (!open) deleteDialog.close(); }}
-    title={t('dashboard.upstreamEditor.models.deleteTitle')}
+    title={t('models.editor.deleteTitle')}
   />;
 
   if (view === 'yaml') {
@@ -380,11 +380,11 @@ function ModelsWorkspace({ detailSection, discovered, editableModels, modelSelec
     return <><div className="grid grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] h-full min-h-[480px] min-w-0">
       <div className="px-5 py-4">
         <SectionHeader
-          description={t('dashboard.upstreamEditor.models.yamlHint')}
+          description={t('models.editor.yamlHint')}
           level={2}
-          title={t('dashboard.upstreamEditor.models.yamlTitle')}
+          title={t('models.editor.yamlTitle')}
           actions={<Button className="!min-w-[160px]" icon={<CheckmarkCircleRegular />} onClick={applyAndLeave}>
-            {t('dashboard.upstreamEditor.models.editWithUi')}
+            {t('models.editor.editWithUi')}
           </Button>}
         />
       </div>
@@ -407,15 +407,15 @@ function ModelsWorkspace({ detailSection, discovered, editableModels, modelSelec
 
   return <><div className="grid grid-cols-[minmax(0,1fr)] gap-4 min-w-0">
     <SectionHeader
-      description={t('dashboard.upstreamEditor.models.summary', { total: rows.length, manual: manual.length, auto: rows.length - manual.length })}
+      description={t('models.editor.summary', { total: rows.length, manual: manual.length, auto: rows.length - manual.length })}
       level={2}
-      title={t('dashboard.upstreamEditor.models.title')}
+      title={t('models.editor.title')}
       actions={<>
-        {editableModels && !readOnly && <Button appearance="primary" icon={<AddRegular />} onClick={addModel}>{t('dashboard.upstreamEditor.models.add')}</Button>}
-        {editableModels && !readOnly && <Button className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => onViewChange('yaml')}>{t('dashboard.upstreamEditor.models.editAsYaml')}</Button>}
+        {editableModels && !readOnly && <Button appearance="primary" icon={<AddRegular />} onClick={addModel}>{t('models.editor.add')}</Button>}
+        {editableModels && !readOnly && <Button className="!min-w-[160px]" icon={<CodeRegular />} onClick={() => onViewChange('yaml')}>{t('models.editor.editAsYaml')}</Button>}
         {record.kind !== 'azure' && <>
           <ModelsCacheStatus cache={record.modelsCache} />
-          <Button disabled={!canFetch || !editableModels} disabledFocusable={modelsLoading} icon={modelsLoading ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefreshModels}>{t('dashboard.upstreamEditor.models.refresh')}</Button>
+          <Button disabled={!canFetch || !editableModels} disabledFocusable={modelsLoading} icon={modelsLoading ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefreshModels}>{t('models.editor.refresh')}</Button>
         </>}
       </>}
     />
@@ -423,12 +423,12 @@ function ModelsWorkspace({ detailSection, discovered, editableModels, modelSelec
       <div className="flex min-w-0 flex-col gap-2 whitespace-normal">
         <div className="flex min-w-0 items-start justify-between gap-2">
           <span className="min-w-0">{modelsError.upstreamResponse === null
-            ? t('dashboard.upstreamEditor.models.listingFailedWithDetail', { message: modelErrorExcerpt(modelsError.message, MODEL_ERROR_EDITOR_LENGTH) })
-            : t('dashboard.upstreamEditor.models.listingFailed')}</span>
+            ? t('models.editor.listingFailedWithDetail', { message: modelErrorExcerpt(modelsError.message, MODEL_ERROR_EDITOR_LENGTH) })
+            : t('models.editor.listingFailed')}</span>
           <TooltipIconButton
             className="flex-none"
             icon={copyOutcomeIcon(outcomeFor('models-error'))}
-            label={copyLabel(outcomeFor('models-error'), t('dashboard.upstreamEditor.models.copyError'))}
+            label={copyLabel(outcomeFor('models-error'), t('models.editor.copyError'))}
             onClick={() => copy(modelsError.message, 'models-error')}
           />
         </div>
@@ -437,14 +437,14 @@ function ModelsWorkspace({ detailSection, discovered, editableModels, modelSelec
         </pre>}
       </div>
     </OutcomeMessageBar>}
-    <Input value={search} onChange={(_, data) => setSearch(data.value)} placeholder={t('dashboard.upstreamEditor.models.search')} />
+    <Input value={search} onChange={(_, data) => setSearch(data.value)} placeholder={t('models.editor.search')} />
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table aria-label={t('dashboard.upstreamEditor.models.title')} className="w-full min-w-[664px]">
+      <Table aria-label={t('models.editor.title')} className="w-full min-w-[664px]">
         <TableColumns widths={['80px', '25%', '88px', null, '80px', TABLE_ACTIONS_WIDTH]} />
-        <TableHeader><TableRow><TableCentredHeader>{t('dashboard.upstreamEditor.models.enabled')}</TableCentredHeader><TableHeaderCell>{t('dashboard.upstreamEditor.models.name')}</TableHeaderCell><TableCentredHeader>{t('dashboard.upstreamEditor.models.kind')}</TableCentredHeader><TableHeaderCell>{t('dashboard.upstreamEditor.models.id')}</TableHeaderCell><TableCentredHeader>{t('dashboard.upstreamEditor.models.source')}</TableCentredHeader><TableActionsHeader /></TableRow></TableHeader>
-        <TableBody>{filtered.length === 0 ? <TableRow><TableCell colSpan={6}><EmptyStateLine>{t('dashboard.upstreamEditor.models.noMatches')}</EmptyStateLine></TableCell></TableRow> : filtered.map(row => {
+        <TableHeader><TableRow><TableCentredHeader>{t('models.editor.enabled')}</TableCentredHeader><TableHeaderCell>{t('models.editor.name')}</TableHeaderCell><TableCentredHeader>{t('models.editor.kind')}</TableCentredHeader><TableHeaderCell>{t('models.editor.id')}</TableHeaderCell><TableCentredHeader>{t('models.editor.source')}</TableCentredHeader><TableActionsHeader /></TableRow></TableHeader>
+        <TableBody>{filtered.length === 0 ? <TableRow><TableCell colSpan={6}><EmptyStateLine>{t('models.editor.noMatches')}</EmptyStateLine></TableCell></TableRow> : filtered.map(row => {
           const id = publicModelId(row.config); return <TableRow className="h-14" key={row.key}>
-            <TableCentredCell><Switch aria-label={t('dashboard.upstreamEditor.models.enabledFor', { name: row.config.display_name ?? id })} checked={!disabled.includes(id)} readOnly={!editableModels} onChange={(_, data) => setEnabled(id, data.checked)} /></TableCentredCell>
+            <TableCentredCell><Switch aria-label={t('models.editor.enabledFor', { name: row.config.display_name ?? id })} checked={!disabled.includes(id)} readOnly={!editableModels} onChange={(_, data) => setEnabled(id, data.checked)} /></TableCentredCell>
             <TableCell className="overflow-hidden">
               <TruncationTooltip content={row.config.display_name ?? id} relationship="label">
                 {measureRef => <RowTitleButton onClick={() => onOpenModel({ locator: row.config.upstreamModelId, manualIndex: row.manualIndex, rowKey: row.key })} ref={measureRef}>
@@ -452,10 +452,10 @@ function ModelsWorkspace({ detailSection, discovered, editableModels, modelSelec
                 </RowTitleButton>}
               </TruncationTooltip>
             </TableCell>
-            <TableCentredCell>{t(`dashboard.upstreamEditor.models.kindValue.${row.config.kind}`)}</TableCentredCell>
-            <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full"><TruncationTooltip content={id} relationship="label">{measureRef => <code className="winui-focus-rect block min-w-0 max-w-[calc(100%-36px)] truncate leading-[var(--lineHeightBase300)]" ref={measureRef} tabIndex={0}>{id}</code>}</TruncationTooltip><TooltipIconButton className="flex-none" icon={copyOutcomeIcon(outcomeFor(id))} label={copyLabel(outcomeFor(id), t('dashboard.upstreamEditor.models.copy'))} onClick={() => copy(id, id)} /></span></TableCell>
-            <TableCentredCell>{t(`dashboard.upstreamEditor.models.${row.source}`)}</TableCentredCell>
-            <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('dashboard.upstreamEditor.models.editNamed', { name: row.config.display_name ?? id })} onClick={() => onOpenModel({ locator: row.config.upstreamModelId, manualIndex: row.manualIndex, rowKey: row.key })} />{editableModels && !readOnly && row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.deleteNamed', { name: row.config.display_name ?? id })} onClick={() => deleteDialog.open(row)} />}</TableActions></TableCell>
+            <TableCentredCell>{t(`models.editor.kindValue.${row.config.kind}`)}</TableCentredCell>
+            <TableCell className="overflow-hidden"><span className="flex items-center gap-1 min-w-0 max-w-full"><TruncationTooltip content={id} relationship="label">{measureRef => <code className="winui-focus-rect block min-w-0 max-w-[calc(100%-36px)] truncate leading-[var(--lineHeightBase300)]" ref={measureRef} tabIndex={0}>{id}</code>}</TruncationTooltip><TooltipIconButton className="flex-none" icon={copyOutcomeIcon(outcomeFor(id))} label={copyLabel(outcomeFor(id), t('models.editor.copy'))} onClick={() => copy(id, id)} /></span></TableCell>
+            <TableCentredCell>{t(`models.editor.${row.source}`)}</TableCentredCell>
+            <TableCell><TableActions><TooltipIconButton icon={<EditRegular />} label={t('models.editor.editNamed', { name: row.config.display_name ?? id })} onClick={() => onOpenModel({ locator: row.config.upstreamModelId, manualIndex: row.manualIndex, rowKey: row.key })} />{editableModels && !readOnly && row.manualIndex !== null && <TooltipIconButton danger icon={<DeleteRegular />} label={t('models.editor.deleteNamed', { name: row.config.display_name ?? id })} onClick={() => deleteDialog.open(row)} />}</TableActions></TableCell>
           </TableRow>;
         })}</TableBody>
       </Table>
@@ -471,25 +471,25 @@ function ModelsCacheStatus({ cache }: { cache: UpstreamRecord['modelsCache'] }) 
   const copyLabel = useCopyLabel();
   const lastError = cache.lastError;
   const label = cache.fetchedAt === null
-    ? t('dashboard.upstreamEditor.models.cacheNever')
+    ? t('models.editor.cacheNever')
     : now - cache.fetchedAt < 10_000
-      ? t('dashboard.upstreamEditor.models.cacheFetchedNow')
-      : t('dashboard.upstreamEditor.models.cacheFetched', {
+      ? t('models.editor.cacheFetchedNow')
+      : t('models.editor.cacheFetched', {
           time: relativeTime(cache.fetchedAt, locale, { now }) ?? dateTime(cache.fetchedAt, locale),
         });
   const detail = lastError
-    ? t('dashboard.upstreamEditor.models.cacheErrorDetail', { message: modelErrorExcerpt(lastError.message, MODEL_ERROR_EDITOR_LENGTH), time: dateTime(lastError.at, locale) })
+    ? t('models.editor.cacheErrorDetail', { message: modelErrorExcerpt(lastError.message, MODEL_ERROR_EDITOR_LENGTH), time: dateTime(lastError.at, locale) })
     : cache.fetchedAt === null ? label : dateTime(cache.fetchedAt, locale);
   return <span className="inline-flex items-center gap-1">
     <Tooltip content={detail} relationship="description">
       <span className="winui-focus-rect inline-flex items-center gap-1 text-fui-fg2" tabIndex={0}>
         {lastError ? <WarningRegular /> : <CheckmarkCircleRegular />}
-        <Text size={200}>{lastError ? t('dashboard.upstreamEditor.models.cacheFailed') : label}</Text>
+        <Text size={200}>{lastError ? t('models.editor.cacheFailed') : label}</Text>
       </span>
     </Tooltip>
     {lastError && <TooltipIconButton
       icon={copyOutcomeIcon(outcomeFor('cache-error'))}
-      label={copyLabel(outcomeFor('cache-error'), t('dashboard.upstreamEditor.models.copyError'))}
+      label={copyLabel(outcomeFor('cache-error'), t('models.editor.copyError'))}
       onClick={() => copy(lastError.message, 'cache-error')}
     />}
   </span>;

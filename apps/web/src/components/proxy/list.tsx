@@ -38,24 +38,24 @@ export function ProxyList({
   const { t } = useTranslation();
 
   if (proxies.length === 0) {
-    return <ResourceListEmptyState>{t('dashboard.proxy.empty')}</ResourceListEmptyState>;
+    return <ResourceListEmptyState>{t('proxies.empty')}</ResourceListEmptyState>;
   }
 
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table aria-label={t('dashboard.proxy.listTitle')} className="min-w-[640px]">
+      <Table aria-label={t('proxies.listTitle')} className="min-w-[640px]">
         <TableColumns widths={[null, null, TABLE_ACTIONS_WIDTH]} />
         <TableHeader>
           <TableRow>
-            <TableHeaderCell>{t('dashboard.proxy.form.name')}</TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.proxy.form.address')}</TableHeaderCell>
+            <TableHeaderCell>{t('proxies.form.name')}</TableHeaderCell>
+            <TableHeaderCell>{t('proxies.form.address')}</TableHeaderCell>
             <TableActionsHeader />
           </TableRow>
         </TableHeader>
         <TableBody>
           {proxies.map(proxy => {
             const kind = kindFromUri(proxy.url);
-            const address = hostPortLabel(proxy.url) ?? t('dashboard.proxy.unknownAddress');
+            const address = hostPortLabel(proxy.url) ?? t('proxies.unknownAddress');
 
             return (
               <TableRow key={proxy.id}>
@@ -79,14 +79,14 @@ export function ProxyList({
                     <TooltipIconButton
                       disabled={disabled}
                       icon={<EditRegular />}
-                      label={t('dashboard.proxy.actions.editNamed', { name: proxy.name })}
+                      label={t('proxies.actions.editNamed', { name: proxy.name })}
                       onClick={() => onEdit(proxy)}
                     />
                     <TooltipIconButton
                       danger
                       disabled={disabled}
                       icon={<DeleteRegular />}
-                      label={t('dashboard.proxy.actions.deleteNamed', { name: proxy.name })}
+                      label={t('proxies.actions.deleteNamed', { name: proxy.name })}
                       onClick={() => onDelete(proxy)}
                     />
                   </TableActions>
@@ -104,7 +104,7 @@ export function ProxyList({
 // row inside the table's map cannot call.
 function KindChip({ kind }: { kind: ReturnType<typeof kindFromUri> }) {
   const { t } = useTranslation();
-  const labelKey: string = `dashboard.proxy.kind.${kind}`;
+  const labelKey: string = `proxies.kind.${kind}`;
   // A kind the table has no hue for is still a proxy, so it takes a mid grey
   // and is painted by the same algorithm rather than left unpainted.
   const hue = useBadgeHue(KIND_HUES[kind] ?? '#616161');

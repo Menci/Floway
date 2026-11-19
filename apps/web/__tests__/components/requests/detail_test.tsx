@@ -28,7 +28,7 @@ describe('request detail navigation', () => {
     fireEvent.click(screen.getByRole('option', { name: 'Upstream response' }));
     expect((await screen.findByTestId('body-content')).textContent).toContain('data: {broken\n');
     fireEvent.click(screen.getByRole('button', { name: 'Issues (1)' }));
-    expect(screen.getByText(i18n.t('dashboard.requests.partialCapture'))).toBeTruthy();
+    expect(screen.getByText(i18n.t('requests.partialCapture'))).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     fireEvent.click(screen.getByRole('combobox', { name: 'Request details' }));
     fireEvent.click(screen.getByRole('option', { name: 'Upstream request' }));

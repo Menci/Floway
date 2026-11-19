@@ -76,11 +76,11 @@ const renderPage = (search: string, data = overview) => {
 
 const urlSearch = (router: ReturnType<typeof renderPage>['router']) => new URLSearchParams(router.state.location.search);
 
-const chartTitle = (metric: { ttft: string } | { tail: number }) => i18n.t('dashboard.performance.chartTitle', {
-  group: i18n.t('dashboard.performance.groupBy.model'),
+const chartTitle = (metric: { ttft: string } | { tail: number }) => i18n.t('monitoring.performance.chartTitle', {
+  group: i18n.t('monitoring.performance.groupBy.model'),
   metric: 'ttft' in metric
-    ? i18n.t('dashboard.performance.tables.ttft', { percentile: metric.ttft })
-    : i18n.t('dashboard.performance.tables.speed', { tail: metric.tail }),
+    ? i18n.t('monitoring.performance.tables.ttft', { percentile: metric.ttft })
+    : i18n.t('monitoring.performance.tables.speed', { tail: metric.tail }),
 });
 
 describe('Performance table state', () => {
@@ -89,7 +89,7 @@ describe('Performance table state', () => {
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
     renderPage(`m=${metric}`, data);
-    const table = within(screen.getByRole('table', { name: i18n.t('dashboard.performance.groupBy.model') }));
+    const table = within(screen.getByRole('table', { name: i18n.t('monitoring.performance.groupBy.model') }));
     const summary = () => screen.getByText('Speed p50').parentElement!.parentElement!.textContent;
     const initialSummary = summary();
     expect(initialSummary).toContain('50.0 tok/s');
