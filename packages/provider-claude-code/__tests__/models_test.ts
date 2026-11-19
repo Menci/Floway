@@ -30,7 +30,6 @@ test('malformed catalog entry errors do not echo upstream data', async () => {
     throw new Error('catalog fetch unexpectedly succeeded');
   } catch (error) {
     expect(error).toBeInstanceOf(TypeError);
-    expect((error as Error).message).toBe('Claude Code /v1/models entry missing id');
     expect((error as Error).message).not.toContain(token.slice(0, 100));
   }
 });

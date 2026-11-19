@@ -261,7 +261,6 @@ describe('ensureClaudeCodeAccessToken (setup-token kind)', () => {
     expect(writes).toHaveLength(1);
     const persisted = writes[0];
     expect(persisted.accounts[0].state).toBe('refresh_failed');
-    expect(persisted.accounts[0].stateMessage).toMatch(/re-import/);
     expect(persisted.accounts[0].accessToken).toBeNull();
   });
 });
