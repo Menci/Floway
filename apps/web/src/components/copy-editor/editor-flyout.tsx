@@ -7,6 +7,7 @@ import {
 } from '@fluentui/react-icons';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
+import { EditorIconButton } from './editor-icon-button';
 import { useEditorTranslation } from './use-editor-t';
 import { fluentComponents } from '../../fluent';
 import type { KeyCandidate } from '../../i18n/copy-editor/dom-registry';
@@ -199,21 +200,16 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, onSa
             <span className="floway-copy-editor-header-key" title={activeKey}>
               {activeKey}
             </span>
-            <Button
-              appearance="subtle"
-              aria-label={copiedKey ? t('common.copyEditor.keyCopied') : t('common.copyEditor.copyKey')}
+            <EditorIconButton
               icon={copiedKey ? <Checkmark16Regular /> : <Copy16Regular />}
-              size="small"
-              title={copiedKey ? t('common.copyEditor.keyCopied') : t('common.copyEditor.copyKey')}
+              label={copiedKey ? t('common.copyEditor.keyCopied') : t('common.copyEditor.copyKey')}
               onClick={() => void handleCopyKey()}
             />
           </span>
         </div>
-        <Button
-          appearance="subtle"
-          aria-label={t('common.copyEditor.close')}
+        <EditorIconButton
           icon={<Dismiss16Regular />}
-          size="small"
+          label={t('common.copyEditor.close')}
           onClick={onClose}
         />
       </div>
@@ -263,12 +259,9 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, onSa
               <div className="floway-copy-editor-field-header">
                 <Label htmlFor={inputId}>{LANGUAGE_LABELS[language]}</Label>
                 {modified && (
-                  <Button
-                    appearance="subtle"
-                    aria-label={t('common.copyEditor.resetLanguage')}
+                  <EditorIconButton
                     icon={<ArrowUndo16Regular />}
-                    size="small"
-                    title={t('common.copyEditor.resetLanguage')}
+                    label={t('common.copyEditor.resetLanguage')}
                     onClick={() => handleResetLanguage(language)}
                   />
                 )}
@@ -289,7 +282,6 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, onSa
                   {original}
                 </span>
               )}
-
             </div>
           );
         })}
@@ -311,11 +303,9 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, onSa
       <div className="floway-copy-editor-footer">
         <div className="floway-copy-editor-footer-start">
           {existingEntry && (
-            <Button
-              appearance="secondary"
-              aria-label={t('common.copyEditor.revert')}
+            <EditorIconButton
               icon={<Delete16Regular />}
-              title={t('common.copyEditor.revert')}
+              label={t('common.copyEditor.revert')}
               onClick={handleRevertEntry}
             />
           )}

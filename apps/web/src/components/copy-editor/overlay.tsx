@@ -10,6 +10,7 @@ import { createPortal } from 'react-dom';
 
 import { DraftsPanel } from './drafts-panel';
 import { EditorFlyout } from './editor-flyout';
+import { CopyEditorPortalContext } from './editor-icon-button';
 import { useEditorTranslation } from './use-editor-t';
 import { fluentComponents } from '../../fluent';
 import { activateCopyEditorTracking, setLanguage } from '../../i18n';
@@ -25,7 +26,7 @@ import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages
 import { winuiLightTheme } from '../../winui/theme';
 import { copyToClipboard } from '../ui/copy-to-clipboard';
 
-const { Button, FluentProvider } = fluentComponents;
+const { Button, FluentProvider, Tooltip } = fluentComponents;
 
 const SHORT_LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
   'en': 'EN',
@@ -322,103 +323,104 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
       popover="manual"
     >
       <CopyEditorInternalContext value={true}>
-        <FluentProvider className="floway-copy-editor-provider" theme={theme}>
-          {altPressed && hoverTarget && (
-            <>
-              <div
-                className="floway-copy-editor-highlight"
-                style={{
-                  left: `${hoverTarget.rect.left - 2}px`,
-                  top: `${hoverTarget.rect.top - 2}px`,
-                  width: `${hoverTarget.rect.width + 4}px`,
-                  height: `${hoverTarget.rect.height + 4}px`,
+        <CopyEditorPortalContext value={portalRoot}>
+          <FluentProvider className="floway-copy-editor-provider" theme={theme}>
+            {altPressed && hoverTarget && (
+              <>
+                <div
+                  className="floway-copy-editor-highlight"
+                  style={{
+                    left: `${hoverTarget.rect.left - 2}px`,
+                    top: `${hoverTarget.rect.top - 2}px`,
+                    width: `${hoverTarget.rect.width + 4}px`,
+                    height: `${hoverTarget.rect.height + 4}px`,
+                  }}
+                />
+                <div
+                  className="floway-copy-editor-highlight-tag"
+                  style={{ left: `${highlightTagLeft}px`, top: `${highlightTagTop}px` }}
+                >
+                  {hoverTarget.primaryKey}
+                  {hoverTarget.candidates.length > 1 ? ` (+${hoverTarget.candidates.length - 1})` : ''}
+                </div>
+              </>
+            )}
+
+            {panelOpen && (
+              <DraftsPanel
+                dockRef={dockRef}
+                onClose={() => setPanelOpen(false)}
+                onEditKey={key => {
+                  setPanelOpen(false);
+                  setActiveFlyout({
+                    key,
+                    candidates: [{ key, baseKey: key, source: 'text' }],
+                    anchorRect: null,
+                    anchorElement: findActiveFloatingSurface() ?? null,
+                  });
                 }}
               />
+            )}
+
+            {activeFlyout && (
+              <EditorFlyout
+                key={activeFlyout.key}
+                anchorRect={activeFlyout.anchorRect}
+                candidates={activeFlyout.candidates}
+                initialKey={activeFlyout.key}
+                onClose={() => setActiveFlyout(null)}
+                onSaved={() => setPanelOpen(true)}
+              />
+            )}
+
+            {showDock && (
               <div
-                className="floway-copy-editor-highlight-tag"
-                style={{ left: `${highlightTagLeft}px`, top: `${highlightTagTop}px` }}
+                ref={dockRef}
+                aria-label={t('common.copyEditor.dockLabel')}
+                className="floway-copy-editor-dock"
+                role="region"
               >
-                {hoverTarget.primaryKey}
-                {hoverTarget.candidates.length > 1 ? ` (+${hoverTarget.candidates.length - 1})` : ''}
-              </div>
-            </>
-          )}
+                <Button
+                  appearance="subtle"
+                  icon={<Edit16Regular />}
+                  size="small"
+                  onClick={() => setPanelOpen(open => !open)}
+                >
+                  {t('common.copyEditor.editsCount', { count: activeCount })}
+                </Button>
 
-          {panelOpen && (
-            <DraftsPanel
-              dockRef={dockRef}
-              mountNode={portalRoot}
-              onClose={() => setPanelOpen(false)}
-              onEditKey={key => {
-                setPanelOpen(false);
-                setActiveFlyout({
-                  key,
-                  candidates: [{ key, baseKey: key, source: 'text' }],
-                  anchorRect: null,
-                  anchorElement: findActiveFloatingSurface() ?? null,
-                });
-              }}
-            />
-          )}
+                <span className="floway-copy-editor-dock-divider" />
 
-          {activeFlyout && (
-            <EditorFlyout
-              key={activeFlyout.key}
-              anchorRect={activeFlyout.anchorRect}
-              candidates={activeFlyout.candidates}
-              initialKey={activeFlyout.key}
-              onClose={() => setActiveFlyout(null)}
-              onSaved={() => setPanelOpen(true)}
-            />
-          )}
-
-          {showDock && (
-            <div
-              ref={dockRef}
-              aria-label={t('common.copyEditor.dockLabel')}
-              className="floway-copy-editor-dock"
-              role="region"
-            >
-              <Button
-                appearance="subtle"
-                icon={<Edit16Regular />}
-                size="small"
-                title={t('common.copyEditor.panelTitle')}
-                onClick={() => setPanelOpen(open => !open)}
-              >
-                {t('common.copyEditor.editsCount', { count: activeCount })}
-              </Button>
-
-              <span className="floway-copy-editor-dock-divider" />
-
-              <Button
-                appearance="subtle"
-                aria-label={t('common.copyEditor.previewLanguage')}
-                icon={<LocalLanguage16Regular />}
-                size="small"
-                title={t('common.copyEditor.previewLanguage')}
-                onClick={() => void handlePreviewLanguageToggle()}
-              >
-                {SHORT_LANGUAGE_LABELS[currentLang]}
-              </Button>
-
-              {(activeCount > 0 || quickCopied) && (
-                <>
-                  <span className="floway-copy-editor-dock-divider" />
+                <Tooltip content={t('common.copyEditor.previewLanguage')} mountNode={portalRoot} relationship="description">
                   <Button
-                    appearance="primary"
-                    icon={quickCopied ? <Checkmark16Regular /> : <Copy16Regular />}
+                    appearance="subtle"
+                    aria-label={t('common.copyEditor.previewLanguage')}
+                    icon={<LocalLanguage16Regular />}
                     size="small"
-                    onClick={() => void handleQuickCopy()}
+                    onClick={() => void handlePreviewLanguageToggle()}
                   >
-                    {quickCopied ? t('common.copy.copied') : t('common.copyEditor.export')}
+                    {SHORT_LANGUAGE_LABELS[currentLang]}
                   </Button>
-                </>
-              )}
-            </div>
-          )}
-          <div ref={setPortalRoot} className="floway-copy-editor-portal-host" />
-        </FluentProvider>
+                </Tooltip>
+
+                {(activeCount > 0 || quickCopied) && (
+                  <>
+                    <span className="floway-copy-editor-dock-divider" />
+                    <Button
+                      appearance="primary"
+                      icon={quickCopied ? <Checkmark16Regular /> : <Copy16Regular />}
+                      size="small"
+                      onClick={() => void handleQuickCopy()}
+                    >
+                      {quickCopied ? t('common.copy.copied') : t('common.copyEditor.export')}
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
+            <div ref={setPortalRoot} className="floway-copy-editor-portal-host" />
+          </FluentProvider>
+        </CopyEditorPortalContext>
       </CopyEditorInternalContext>
     </div>,
     document.body,

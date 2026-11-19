@@ -9,8 +9,9 @@ import {
   History16Regular,
   Warning16Regular,
 } from '@fluentui/react-icons';
-import { Fragment, useEffect, useId, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useRef, useState, type Ref } from 'react';
 
+import { EditorIconButton, useCopyEditorPortal } from './editor-icon-button';
 import { useEditorTranslation } from './use-editor-t';
 import { fluentComponents } from '../../fluent';
 import { useCopyEditorStore, type CopyDraftEntry } from '../../i18n/copy-editor/store';
@@ -86,33 +87,30 @@ function StaleSourcePopover({
   );
 }
 
-function ConfirmActionFlyout({
+function ConfirmDeleteIconFlyout({
   actionLabel,
   align = 'end',
-  appearance = 'subtle',
   cancelLabel,
   message,
   mountNode,
   onConfirm,
   position = 'below',
-  size = 'small',
   title,
   triggerLabel,
 }: {
   actionLabel: string;
   align?: 'start' | 'end';
-  appearance?: 'subtle' | 'secondary';
   cancelLabel: string;
   message: string;
   mountNode: HTMLElement | null;
   onConfirm: () => void;
   position?: 'above' | 'below';
-  size?: 'small' | 'medium';
   title: string;
   triggerLabel: string;
 }) {
   const titleId = useId();
   const [open, setOpen] = useState(false);
+  const [tooltipVisible, setTooltipVisible] = useState(false);
 
   return (
     <Popover
@@ -120,16 +118,31 @@ function ConfirmActionFlyout({
       open={open}
       positioning={{ position, align }}
       trapFocus
-      onOpenChange={(_, data) => setOpen(data.open)}
+      onOpenChange={(_, data) => {
+        setOpen(data.open);
+        setTooltipVisible(false);
+      }}
     >
       <PopoverTrigger disableButtonEnhancement>
-        <Button
-          appearance={appearance}
-          aria-label={triggerLabel}
-          icon={<Delete16Regular />}
-          size={size}
-          title={triggerLabel}
-        />
+        {props => (
+          <Tooltip
+            content={triggerLabel}
+            mountNode={mountNode}
+            relationship="label"
+            visible={!open && tooltipVisible}
+            onVisibleChange={(_, data) => setTooltipVisible(!open && data.visible)}
+          >
+            <Button
+              {...props}
+              ref={props.ref as Ref<HTMLButtonElement>}
+              appearance="subtle"
+              aria-label={triggerLabel}
+              as="button"
+              icon={<Delete16Regular />}
+              size="small"
+            />
+          </Tooltip>
+        )}
       </PopoverTrigger>
       <PopoverSurface
         aria-labelledby={titleId}
@@ -155,17 +168,17 @@ function ConfirmActionFlyout({
 }
 
 function SessionPreviewLines({
+  copiedLabel,
   copiedSegmentId,
   copyActionLabel,
-  copiedLabel,
   entries,
   moreLabel,
   onCopySegment,
   scopeKey,
 }: {
+  copiedLabel: string;
   copiedSegmentId: string | null;
   copyActionLabel: string;
-  copiedLabel: string;
   entries: CopyDraftEntry[];
   moreLabel: (count: number) => string;
   onCopySegment: (segmentId: string, text: string) => void;
@@ -218,13 +231,13 @@ function SessionPreviewLines({
 
 export interface DraftsPanelProps {
   dockRef: React.RefObject<HTMLDivElement | null>;
-  mountNode: HTMLElement | null;
   onClose: () => void;
   onEditKey: (key: string) => void;
 }
 
-export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPanelProps) {
+export function DraftsPanel({ dockRef, onClose, onEditKey }: DraftsPanelProps) {
   const { t, i18n } = useEditorTranslation();
+  const mountNode = useCopyEditorPortal();
   const now = useNow(30_000);
   const entriesMap = useCopyEditorStore(state => state.entries);
   const historySessions = useCopyEditorStore(state => state.history);
@@ -366,12 +379,10 @@ export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPa
       <div className="floway-copy-editor-header">
         <div className="floway-copy-editor-header-main">
           {showBackButton && (
-            <Button
-              appearance="subtle"
-              aria-label={t('common.errors.back')}
+            <EditorIconButton
               className="floway-copy-editor-header-back"
               icon={<ArrowLeft16Regular />}
-              size="small"
+              label={t('common.errors.back')}
               onClick={() => setShowHistory(false)}
             />
           )}
@@ -379,28 +390,22 @@ export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPa
         </div>
         <div className="floway-copy-editor-header-actions">
           {!viewingHistory && historySessions.length > 0 && (
-            <Button
-              appearance="subtle"
-              aria-label={t('common.copyEditor.historyTitle')}
+            <EditorIconButton
               icon={<History16Regular />}
-              size="small"
-              title={t('common.copyEditor.historyTitle')}
+              label={t('common.copyEditor.historyTitle')}
               onClick={() => {
                 setPasteError(null);
                 setShowHistory(true);
               }}
             />
           )}
-          <Button
-            appearance="subtle"
-            aria-label={t('common.copyEditor.pasteJson')}
+          <EditorIconButton
             icon={<ClipboardPaste16Regular />}
-            size="small"
-            title={t('common.copyEditor.pasteJson')}
+            label={t('common.copyEditor.pasteJson')}
             onClick={() => void handlePasteImport()}
           />
           {viewingHistory && historySessions.length > 0 && (
-            <ConfirmActionFlyout
+            <ConfirmDeleteIconFlyout
               actionLabel={t('common.copyEditor.deleteAllHistoryAction')}
               cancelLabel={t('common.cancel')}
               message={t('common.copyEditor.deleteAllHistoryMessage')}
@@ -413,11 +418,9 @@ export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPa
               }}
             />
           )}
-          <Button
-            appearance="subtle"
-            aria-label={t('common.copyEditor.close')}
+          <EditorIconButton
             icon={<Dismiss16Regular />}
-            size="small"
+            label={t('common.copyEditor.close')}
             onClick={onClose}
           />
         </div>
@@ -426,11 +429,9 @@ export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPa
       {pasteError && (
         <div className="floway-copy-editor-error-bar" role="alert">
           <span className="min-w-0 flex-1">{pasteError}</span>
-          <Button
-            appearance="subtle"
-            aria-label={t('common.copyEditor.close')}
+          <EditorIconButton
             icon={<Dismiss16Regular />}
-            size="small"
+            label={t('common.copyEditor.close')}
             onClick={() => setPasteError(null)}
           />
         </div>
@@ -466,12 +467,9 @@ export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPa
                       className="flex items-center gap-0.5 flex-none"
                       onClick={event => event.stopPropagation()}
                     >
-                      <Button
-                        appearance="subtle"
-                        aria-label={t('common.copyEditor.revert')}
+                      <EditorIconButton
                         icon={<Delete16Regular />}
-                        size="small"
-                        title={t('common.copyEditor.revert')}
+                        label={t('common.copyEditor.revert')}
                         onClick={() => revertEntry(entry.key)}
                       />
                     </div>
@@ -540,15 +538,13 @@ export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPa
           <div className="floway-copy-editor-footer">
             <div className="floway-copy-editor-footer-start">
               {activeEntries.length > 0 && (
-                <ConfirmActionFlyout
+                <ConfirmDeleteIconFlyout
                   actionLabel={t('common.copyEditor.discardEdits')}
                   align="start"
-                  appearance="secondary"
                   cancelLabel={t('common.cancel')}
                   message={t('common.copyEditor.discardEditsMessage')}
                   mountNode={mountNode}
                   position="above"
-                  size="medium"
                   title={t('common.copyEditor.discardEditsTitle')}
                   triggerLabel={t('common.copyEditor.discardEdits')}
                   onConfirm={clearActive}
@@ -593,15 +589,12 @@ export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPa
                   className="flex items-center gap-0.5 flex-none"
                   onClick={event => event.stopPropagation()}
                 >
-                  <Button
-                    appearance="subtle"
-                    aria-label={copyState === 'copied' ? t('common.copy.copied') : t('common.copyEditor.export')}
+                  <EditorIconButton
                     icon={copyState === 'copied' ? <Checkmark16Regular /> : <Copy16Regular />}
-                    size="small"
-                    title={copyState === 'copied' ? t('common.copy.copied') : t('common.copyEditor.export')}
+                    label={copyState === 'copied' ? t('common.copy.copied') : t('common.copyEditor.export')}
                     onClick={() => void handleExport()}
                   />
-                  <ConfirmActionFlyout
+                  <ConfirmDeleteIconFlyout
                     actionLabel={t('common.copyEditor.discardEdits')}
                     cancelLabel={t('common.cancel')}
                     message={t('common.copyEditor.discardEditsMessage')}
@@ -651,20 +644,14 @@ export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPa
                     className="flex items-center gap-0.5 flex-none"
                     onClick={event => event.stopPropagation()}
                   >
-                    <Button
-                      appearance="subtle"
-                      aria-label={copiedSessionId === session.id ? t('common.copy.copied') : t('common.copyEditor.export')}
+                    <EditorIconButton
                       icon={copiedSessionId === session.id ? <Checkmark16Regular /> : <Copy16Regular />}
-                      size="small"
-                      title={copiedSessionId === session.id ? t('common.copy.copied') : t('common.copyEditor.export')}
+                      label={copiedSessionId === session.id ? t('common.copy.copied') : t('common.copyEditor.export')}
                       onClick={() => void handleCopySession(session.id)}
                     />
-                    <Button
-                      appearance="subtle"
-                      aria-label={t('common.copyEditor.deleteHistory')}
+                    <EditorIconButton
                       icon={<Delete16Regular />}
-                      size="small"
-                      title={t('common.copyEditor.deleteHistory')}
+                      label={t('common.copyEditor.deleteHistory')}
                       onClick={() => deleteHistorySession(session.id)}
                     />
                   </div>
