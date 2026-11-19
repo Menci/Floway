@@ -35,12 +35,12 @@ it('switches absolute quota series between remaining and used while retaining th
   const remaining = resolveUpstreamMetricDisplays(samples, { quotaDisplay: 'remaining' });
   expect(remaining.map(series => series.identity.name)).toEqual(['quota.remaining', 'quota.entitlement']);
   expect(remaining[0]!.samples.map(sample => sample.value)).toEqual([213, 180]);
-  expect(remaining[0]!.display.labelKey).toBe('dashboard.upstreams.copilotQuota.chat.remaining');
+  expect(remaining[0]!.display.labelKey).toBe('monitoring.upstreams.series.copilot.chat.remaining');
 
   const used = resolveUpstreamMetricDisplays(samples, { quotaDisplay: 'used' });
   expect(used.map(series => series.identity.name)).toEqual(['quota.used', 'quota.entitlement']);
   expect(used[0]!.samples.map(sample => sample.value)).toEqual([87, 120]);
-  expect(used[0]!.display.labelKey).toBe('dashboard.upstreams.copilotQuota.chat.usage');
+  expect(used[0]!.display.labelKey).toBe('monitoring.upstreams.series.copilot.chat.usage');
   expect(used[1]!.samples.map(sample => sample.value)).toEqual([300, 300]);
 });
 

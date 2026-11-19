@@ -65,8 +65,8 @@ const SidebarProbe = ({ editLevel = 'full', record }: { editLevel?: 'off' | 'mod
 it('keeps Full-only values focusable and selectable in a models-only editor', () => {
   renderInApp(<SidebarProbe editLevel="models" record={customRecord({ enabled: true })} />);
   const baseUrl = screen.getByDisplayValue('https://api.example.com') as HTMLInputElement;
-  const name = screen.getByRole('textbox', { name: i18n.t('dashboard.upstreamEditor.fields.name') }) as HTMLInputElement;
-  const prefix = screen.getByRole('textbox', { name: i18n.t('dashboard.upstreamEditor.sections.prefix') }) as HTMLInputElement;
+  const name = screen.getByRole('textbox', { name: i18n.t('upstreams.editor.fields.name') }) as HTMLInputElement;
+  const prefix = screen.getByRole('textbox', { name: i18n.t('upstreams.editor.sections.prefix') }) as HTMLInputElement;
   expect(baseUrl.readOnly).toBe(true);
   expect(baseUrl.disabled).toBe(false);
   expect(name.readOnly).toBe(true);
@@ -74,7 +74,7 @@ it('keeps Full-only values focusable and selectable in a models-only editor', ()
   expect(prefix.readOnly).toBe(true);
   expect(prefix.disabled).toBe(false);
   expect(baseUrl.closest('[inert]')).toBeNull();
-  const catalogSwitch = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('dashboard.upstreamEditor.fields.fetchModels') });
+  const catalogSwitch = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('upstreams.editor.fields.fetchModels') });
   expect(catalogSwitch.hasAttribute('disabled')).toBe(false);
   expect(catalogSwitch.checked).toBe(true);
   expect(configReadOnly('models')).toEqual({ connection: true, modelsFetch: false });
@@ -104,7 +104,7 @@ describe('upstream editor dirtiness across an edit and its undo', () => {
 
   it('settles clean when a draft ingress header rule is typed and cleared', () => {
     renderInApp(<ConfigProbe record={customRecord({ enabled: true })} />);
-    const key = screen.getByLabelText(i18n.t('dashboard.upstreamEditor.headers.keyForRow', { number: 1 }));
+    const key = screen.getByLabelText(i18n.t('upstreams.editor.headers.keyForRow', { number: 1 }));
     fireEvent.change(key, { target: { value: 'x-route' } });
     expect(dirty()).toBe('true');
     fireEvent.change(key, { target: { value: '' } });

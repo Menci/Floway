@@ -68,7 +68,7 @@ export function ChatGPTResetCards({ onQuotaReset, record }: {
     ));
     if (signal.aborted) return;
     if (error) {
-      setLoadError(t('dashboard.upstreamEditor.chatgpt.resetCards.loadError'));
+      setLoadError(t('upstreams.editor.chatgpt.resetCards.loadError'));
       return;
     }
     setCards(data.reset_credits);
@@ -94,7 +94,7 @@ export function ChatGPTResetCards({ onQuotaReset, record }: {
         },
       }));
       if (error) {
-        setRedeemError(t('dashboard.upstreamEditor.chatgpt.resetCards.redeemError'));
+        setRedeemError(t('upstreams.editor.chatgpt.resetCards.redeemError'));
         return;
       }
       setCards(data.reset_credits);
@@ -114,13 +114,13 @@ export function ChatGPTResetCards({ onQuotaReset, record }: {
   return <section className="grid gap-3 border-0 border-t border-solid border-fui-divider pt-4">
     <SectionHeader
       level={3}
-      title={t('dashboard.upstreamEditor.chatgpt.resetCards.title')}
-      description={cards === null ? undefined : t('dashboard.upstreamEditor.chatgpt.resetCards.available', { count: cards.available_count })}
+      title={t('upstreams.editor.chatgpt.resetCards.title')}
+      description={cards === null ? undefined : t('upstreams.editor.chatgpt.resetCards.available', { count: cards.available_count })}
       actions={<ResourceListActions
         appearance="subtle"
         disabled={record.id === '' || dialog.isOpen || redeeming}
         onRefresh={() => void load()}
-        refreshLabel={t('dashboard.upstreamEditor.chatgpt.resetCards.refresh')}
+        refreshLabel={t('upstreams.editor.chatgpt.resetCards.refresh')}
         refreshing={loading}
       />}
     />
@@ -133,7 +133,7 @@ export function ChatGPTResetCards({ onQuotaReset, record }: {
       return <Panel key={credit.id}>
         <div className="flex items-center justify-between gap-3">
           <div className="grid min-w-0 gap-1">
-            <Text weight="semibold">{credit.title ?? t('dashboard.upstreamEditor.chatgpt.resetCards.defaultTitle')}</Text>
+            <Text weight="semibold">{credit.title ?? t('upstreams.editor.chatgpt.resetCards.defaultTitle')}</Text>
             {credit.description && <Text size={200} className="text-fui-fg2">{credit.description}</Text>}
           </div>
           <Button appearance={usable ? 'primary' : 'secondary'} className="shrink-0" disabled={!usable || loading || loadError !== null || redeeming} onClick={() => {
@@ -144,21 +144,21 @@ export function ChatGPTResetCards({ onQuotaReset, record }: {
             dialog.open({ credit, idempotencyKey });
           }}>
             {usable
-              ? t('dashboard.upstreamEditor.chatgpt.resetCards.useShort')
-              : knownStatus === null ? credit.status : t(`dashboard.upstreamEditor.chatgpt.resetCards.status.${knownStatus}`)}
+              ? t('upstreams.editor.chatgpt.resetCards.useShort')
+              : knownStatus === null ? credit.status : t(`upstreams.editor.chatgpt.resetCards.status.${knownStatus}`)}
           </Button>
         </div>
         <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
-          <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.chatgpt.resetCards.granted', { time: dateTime(credit.granted_at, locale) })}</Text>
+          <Text size={200} className="text-fui-fg3">{t('upstreams.editor.chatgpt.resetCards.granted', { time: dateTime(credit.granted_at, locale) })}</Text>
           <Text size={200} className="ml-auto text-right text-fui-fg3">{credit.expires_at === null
-            ? t('dashboard.upstreamEditor.chatgpt.resetCards.noExpiry')
-            : t('dashboard.upstreamEditor.chatgpt.resetCards.expires', { time: dateTime(credit.expires_at, locale) })}</Text>
+            ? t('upstreams.editor.chatgpt.resetCards.noExpiry')
+            : t('upstreams.editor.chatgpt.resetCards.expires', { time: dateTime(credit.expires_at, locale) })}</Text>
         </div>
       </Panel>;
     })}
 
     {cards !== null && cards.credits.length === 0 && !loading && !loadError && <Text size={200} className="text-fui-fg3">
-      {t('dashboard.upstreamEditor.chatgpt.resetCards.empty')}
+      {t('upstreams.editor.chatgpt.resetCards.empty')}
     </Text>}
     {loadError && <OutcomeMessageBar>{loadError}</OutcomeMessageBar>}
     {outcome && resultKey && <OutcomeMessageBar
@@ -166,24 +166,24 @@ export function ChatGPTResetCards({ onQuotaReset, record }: {
       onDismiss={() => setOutcome(null)}
     >
       <span>{resultKey === 'unknown'
-        ? t('dashboard.upstreamEditor.chatgpt.resetCards.result.unknown', { code: outcome.code })
-        : t(`dashboard.upstreamEditor.chatgpt.resetCards.result.${resultKey}`)}</span>
-      {outcome.warning && <span>{t('dashboard.upstreamEditor.chatgpt.resetCards.refreshWarning')}</span>}
+        ? t('upstreams.editor.chatgpt.resetCards.result.unknown', { code: outcome.code })
+        : t(`upstreams.editor.chatgpt.resetCards.result.${resultKey}`)}</span>
+      {outcome.warning && <span>{t('upstreams.editor.chatgpt.resetCards.refreshWarning')}</span>}
     </OutcomeMessageBar>}
 
     {dialog.invocation && selected && <ConfirmDialog
       key={dialog.invocation.key}
       actionIntent="primary"
-      actionLabel={t('dashboard.upstreamEditor.chatgpt.resetCards.use')}
+      actionLabel={t('upstreams.editor.chatgpt.resetCards.use')}
       busy={redeeming}
       error={redeemError}
-      message={t('dashboard.upstreamEditor.chatgpt.resetCards.confirmMessage', { title: selected.title ?? t('dashboard.upstreamEditor.chatgpt.resetCards.defaultTitle') })}
+      message={t('upstreams.editor.chatgpt.resetCards.confirmMessage', { title: selected.title ?? t('upstreams.editor.chatgpt.resetCards.defaultTitle') })}
       onConfirm={() => void redeem()}
       onDismissError={() => setRedeemError(null)}
       onExited={() => setRedeemError(null)}
       onOpenChange={open => { if (!open) dialog.close(); }}
       open={dialog.isOpen}
-      title={t('dashboard.upstreamEditor.chatgpt.resetCards.confirmTitle')}
+      title={t('upstreams.editor.chatgpt.resetCards.confirmTitle')}
     />}
   </section>;
 }

@@ -92,7 +92,7 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
   const deleteAlias = async (target: ModelAlias) => {
     setMutating(true);
     setDeleteError(null);
-    const handle = toasts.start(t('dashboard.modelAliases.toast.delete.pending', { name: target.name }));
+    const handle = toasts.start(t('models.aliases.toast.delete.pending', { name: target.name }));
     const result = await callApiNoContent(() => api.api.aliases[':id'].$delete({ param: { id: target.id } }));
     setMutating(false);
     if (result.error) {
@@ -101,7 +101,7 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
       return;
     }
     deleteDialog.close();
-    handle.succeed(t('dashboard.modelAliases.toast.delete.success', { name: target.name }));
+    handle.succeed(t('models.aliases.toast.delete.success', { name: target.name }));
     await refresh();
   };
 
@@ -109,27 +109,27 @@ export default function DashboardProvidersModelAliases({ loaderData }: Route.Com
     <DashboardPageHeader
       actions={<ResourceListActions
         createDisabled={aliases === null}
-        createLabel={t('dashboard.modelAliases.actions.create')}
+        createLabel={t('models.aliases.actions.create')}
         disabled={mutating}
         onCreate={() => editorDialog.open({ mode: 'create', record: null })}
         onRefresh={() => void refresh()}
-        refreshLabel={t('dashboard.modelAliases.actions.refresh')}
+        refreshLabel={t('models.aliases.actions.refresh')}
         refreshing={refreshing}
       />}
-      description={t('dashboard.modelAliases.description')}
-      title={t('dashboard.nav.modelAliases')}
+      description={t('models.aliases.description')}
+      title={t('models.aliases.title')}
     />
-    {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{t('dashboard.modelAliases.errors.message', { message: error })}</OutcomeMessageBar>}
-    {modelsError && <OutcomeMessageBar intent="warning" onDismiss={() => setModelsError(null)}>{t('dashboard.modelAliases.errors.models', { message: modelsError })}</OutcomeMessageBar>}
-    {aliases === null ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
+    {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{t('models.aliases.errors.message', { message: error })}</OutcomeMessageBar>}
+    {modelsError && <OutcomeMessageBar intent="warning" onDismiss={() => setModelsError(null)}>{t('models.aliases.errors.models', { message: modelsError })}</OutcomeMessageBar>}
+    {aliases === null ? <Panel><EmptyStateLine>{t('common.errors.viewUnavailable')}</EmptyStateLine></Panel> : <>
       <ResourceListPanel rowHeight="56px">
-        {aliases.length === 0 ? <ResourceListEmptyState>{t('dashboard.modelAliases.empty')}</ResourceListEmptyState> : <ScrollArea axes="horizontal" className="min-w-0"><Table aria-label={t('dashboard.modelAliases.listTitle')} className="min-w-[780px]"><TableColumns widths={[null, '88px', '88px', '120px', '96px', TABLE_ACTIONS_WIDTH]} /><TableHeader><TableRow><TableHeaderCell>{t('dashboard.modelAliases.columns.alias')}</TableHeaderCell><TableCentredHeader>{t('dashboard.modelAliases.columns.kind')}</TableCentredHeader><TableCentredHeader>{t('dashboard.modelAliases.columns.targets')}</TableCentredHeader><TableCentredHeader>{t('dashboard.modelAliases.columns.selection')}</TableCentredHeader><TableCentredHeader>{t('dashboard.modelAliases.columns.visibility')}</TableCentredHeader><TableActionsHeader /></TableRow></TableHeader><TableBody>{aliases.map(alias => {
+        {aliases.length === 0 ? <ResourceListEmptyState>{t('models.aliases.empty')}</ResourceListEmptyState> : <ScrollArea axes="horizontal" className="min-w-0"><Table aria-label={t('models.aliases.listTitle')} className="min-w-[780px]"><TableColumns widths={[null, '88px', '88px', '120px', '96px', TABLE_ACTIONS_WIDTH]} /><TableHeader><TableRow><TableHeaderCell>{t('models.aliases.columns.alias')}</TableHeaderCell><TableCentredHeader>{t('models.aliases.columns.kind')}</TableCentredHeader><TableCentredHeader>{t('models.aliases.columns.targets')}</TableCentredHeader><TableCentredHeader>{t('models.aliases.columns.selection')}</TableCentredHeader><TableCentredHeader>{t('models.aliases.columns.visibility')}</TableCentredHeader><TableActionsHeader /></TableRow></TableHeader><TableBody>{aliases.map(alias => {
           const warnings = computeAliasWarnings(alias, modelIndex);
-          return <TableRow key={alias.name}><TableCell className="overflow-hidden"><div className="flex items-center gap-2 min-w-0 max-w-full"><TableCellLayout description={<TruncationTooltip content={alias.name} relationship="label">{measureRef => <Text block className="winui-focus-rect font-mono" ref={measureRef} tabIndex={0} truncate wrap={false}>{alias.name}</Text>}</TruncationTooltip>} truncate><TruncationTooltip content={alias.display_name ?? alias.name} relationship="label">{measureRef => <Text block className="winui-focus-rect" ref={measureRef} truncate tabIndex={0} wrap={false}>{alias.display_name ?? alias.name}</Text>}</TruncationTooltip></TableCellLayout>{warnings.length > 0 && <Tooltip content={warnings.map(warning => modelAliasWarningText(warning, t)).join('\n')} relationship="description"><WarningRegular aria-label={t('dashboard.modelAliases.warnings.label')} className="winui-focus-rect flex-none" tabIndex={0} /></Tooltip>}</div></TableCell><TableCentredCell>{t(`dashboard.modelAliases.kind.${alias.kind}`)}</TableCentredCell><TableCentredCell className="tabular-nums">{t('dashboard.modelAliases.target.count', { count: alias.targets.length })}</TableCentredCell><TableCentredCell>{t(`dashboard.modelAliases.selection.${alias.selection === 'first-available' ? 'first' : 'random'}`)}</TableCentredCell><TableCentredCell>{alias.visible_in_models_list ? t('dashboard.modelAliases.visibility.visible') : t('dashboard.modelAliases.visibility.hidden')}</TableCentredCell><TableCell><TableActions><TooltipIconButton disabled={refreshing || mutating} icon={<EditRegular />} label={t('dashboard.modelAliases.actions.editNamed', { name: alias.name })} onClick={() => editorDialog.open({ mode: 'edit', record: alias })} /><TooltipIconButton disabled={refreshing || mutating} icon={<CopyRegular />} label={t('dashboard.modelAliases.actions.copyNamed', { name: alias.name })} onClick={() => editorDialog.open({ mode: 'copy', record: alias })} /><TooltipIconButton danger disabled={refreshing || mutating} icon={<DeleteRegular />} label={t('dashboard.modelAliases.actions.deleteNamed', { name: alias.name })} onClick={() => openDeleteDialog(alias)} /></TableActions></TableCell></TableRow>;
+          return <TableRow key={alias.name}><TableCell className="overflow-hidden"><div className="flex items-center gap-2 min-w-0 max-w-full"><TableCellLayout description={<TruncationTooltip content={alias.name} relationship="label">{measureRef => <Text block className="winui-focus-rect font-mono" ref={measureRef} tabIndex={0} truncate wrap={false}>{alias.name}</Text>}</TruncationTooltip>} truncate><TruncationTooltip content={alias.display_name ?? alias.name} relationship="label">{measureRef => <Text block className="winui-focus-rect" ref={measureRef} truncate tabIndex={0} wrap={false}>{alias.display_name ?? alias.name}</Text>}</TruncationTooltip></TableCellLayout>{warnings.length > 0 && <Tooltip content={warnings.map(warning => modelAliasWarningText(warning, t)).join('\n')} relationship="description"><WarningRegular aria-label={t('models.aliases.warnings.label')} className="winui-focus-rect flex-none" tabIndex={0} /></Tooltip>}</div></TableCell><TableCentredCell>{t(`models.aliases.kind.${alias.kind}`)}</TableCentredCell><TableCentredCell className="tabular-nums">{t('models.aliases.target.count', { count: alias.targets.length })}</TableCentredCell><TableCentredCell>{t(`models.aliases.selection.${alias.selection === 'first-available' ? 'first' : 'random'}`)}</TableCentredCell><TableCentredCell>{alias.visible_in_models_list ? t('models.aliases.visibility.visible') : t('models.aliases.visibility.hidden')}</TableCentredCell><TableCell><TableActions><TooltipIconButton disabled={refreshing || mutating} icon={<EditRegular />} label={t('models.aliases.actions.editNamed', { name: alias.name })} onClick={() => editorDialog.open({ mode: 'edit', record: alias })} /><TooltipIconButton disabled={refreshing || mutating} icon={<CopyRegular />} label={t('models.aliases.actions.copyNamed', { name: alias.name })} onClick={() => editorDialog.open({ mode: 'copy', record: alias })} /><TooltipIconButton danger disabled={refreshing || mutating} icon={<DeleteRegular />} label={t('models.aliases.actions.deleteNamed', { name: alias.name })} onClick={() => openDeleteDialog(alias)} /></TableActions></TableCell></TableRow>;
         })}</TableBody></Table></ScrollArea>}
       </ResourceListPanel>
       {editorDialog.invocation && <AliasDialog open={editorDialog.isOpen} aliases={aliases} key={editorDialog.invocation.key} mode={editorDialog.invocation.value.mode} models={models} onOpenChange={open => { if (!open) editorDialog.close(); }} onSaved={refresh} record={editorDialog.invocation.value.record} />}
-      {deleteDialog.invocation && <ConfirmDialog open={deleteDialog.isOpen} busy={mutating} error={deleteError} key={deleteDialog.invocation.key} onDismissError={() => setDeleteError(null)} onOpenChange={open => { if (!open) deleteDialog.close(); }} title={t('dashboard.modelAliases.delete.title')} message={t('dashboard.modelAliases.delete.message', { name: deleteDialog.invocation.value.name })} actionLabel={t('dashboard.modelAliases.actions.delete')} onConfirm={() => void deleteAlias(deleteDialog.invocation!.value)} />}
+      {deleteDialog.invocation && <ConfirmDialog open={deleteDialog.isOpen} busy={mutating} error={deleteError} key={deleteDialog.invocation.key} onDismissError={() => setDeleteError(null)} onOpenChange={open => { if (!open) deleteDialog.close(); }} title={t('models.aliases.delete.title')} message={t('models.aliases.delete.message', { name: deleteDialog.invocation.value.name })} actionLabel={t('models.aliases.actions.delete')} onConfirm={() => void deleteAlias(deleteDialog.invocation!.value)} />}
     </>}
   </section>;
 }

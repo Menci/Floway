@@ -85,7 +85,7 @@ function Harness({ discovered, editLevel, record }: {
 }
 
 const combobox = () =>
-  screen.getByRole<HTMLInputElement>('combobox', { name: i18n.t('dashboard.upstreamEditor.sections.disabledModels') });
+  screen.getByRole<HTMLInputElement>('combobox', { name: i18n.t('upstreams.editor.sections.disabledModels') });
 const rowSwitch = (name: string) =>
   screen.getAllByRole<HTMLInputElement>('switch').find(node => node.getAttribute('aria-label')?.includes(name))!;
 // `readOnly` on these controls is Fluent's own state, distinct from `disabled`:

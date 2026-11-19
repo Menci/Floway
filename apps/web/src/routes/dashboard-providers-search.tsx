@@ -109,8 +109,8 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
   return (
     <section className="dashboard-page max-w-[960px]">
       <DashboardPageHeader
-        description={t('dashboard.searchConfig.description')}
-        title={t('dashboard.searchConfig.heading')}
+        description={t('search.description')}
+        title={t('search.heading')}
       />
 
       {loadError && (
@@ -118,7 +118,7 @@ export default function DashboardProvidersSearch({ loaderData }: Route.Component
       )}
 
       {upstreams === null || models === null
-        ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel>
+        ? <Panel><EmptyStateLine>{t('common.errors.viewUnavailable')}</EmptyStateLine></Panel>
         : <SearchSettings config={loaderData.config} models={models} upstreams={upstreams} />}
     </section>
   );
@@ -153,7 +153,7 @@ function SearchSettings({ config, models, upstreams }: {
   };
   const activeOption = PROVIDER_OPTIONS.find(option => option.value === draft.provider);
   const activeProviderLabel = knownProviderLabel(draft.provider)
-    ?? t('dashboard.searchConfig.unavailable', { id: draft.provider });
+    ?? t('search.unavailable', { id: draft.provider });
   const eligibleUpstreams = useMemo(() => eligibleSearchUpstreams(upstreams, models), [models, upstreams]);
   const modelsForSelectedUpstream = useMemo(
     () => models.filter(model => servesChatFor(model, draft.passthroughOpenAiSearch.upstreamId)),
@@ -217,7 +217,7 @@ function SearchSettings({ config, models, upstreams }: {
   const handleSave = useCallback(async () => {
     setSaving(true);
     setSaveError(null);
-    const handle = toasts.start(t('dashboard.searchConfig.toast.save.pending'));
+    const handle = toasts.start(t('search.toast.save.pending'));
     const result = await callApi(() =>
       api.api['search-config'].$put({ json: draft }));
     setSaving(false);
@@ -226,7 +226,7 @@ function SearchSettings({ config, models, upstreams }: {
       setSaveError(result.error.message);
       return;
     }
-    handle.succeed(t('dashboard.searchConfig.toast.save.success'));
+    handle.succeed(t('search.toast.save.success'));
   }, [draft, t, toasts]);
 
   const handleTest = useCallback(async () => {
@@ -276,29 +276,29 @@ function SearchSettings({ config, models, upstreams }: {
           ))}
         </Dropdown>}
         defaultOpen={draft.provider !== 'disabled'}
-        description={t('dashboard.searchConfig.providerHint')}
-        header={t('dashboard.searchConfig.providerLabel')}
+        description={t('search.providerHint')}
+        header={t('search.providerLabel')}
         icon={<GlobeSearch24Regular />}
         toggledOn={draft.provider !== 'disabled'}
       >
         <div className="grid gap-3">
-          <Field label={t('dashboard.searchConfig.apiKeyLabel')}>
+          <Field label={t('search.apiKeyLabel')}>
             <SecretInput
               contentAfter={<TooltipIconButton
                 icon={secretVisible ? <EyeOffRegular /> : <EyeRegular />}
-                label={secretVisible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')}
+                label={secretVisible ? t('upstreams.editor.actions.hideSecret') : t('upstreams.editor.actions.showSecret')}
                 onClick={() => setSecretVisible(value => !value)}
               />}
               disabled={activeOption === undefined || draft.provider === 'disabled'}
               onChange={handleApiKeyChange}
-              placeholder={t('dashboard.searchConfig.apiKeyPlaceholder')}
+              placeholder={t('search.apiKeyPlaceholder')}
               revealed={secretVisible}
               value={activeOption?.getApiKey(draft) ?? ''}
             />
           </Field>
           {activeOption?.url && (
             <Link href={activeOption.url} target="_blank" rel="noopener noreferrer">
-              <OpenLinkLabel>{t('dashboard.searchConfig.getKeyLink')}</OpenLinkLabel>
+              <OpenLinkLabel>{t('search.getKeyLink')}</OpenLinkLabel>
             </Link>
           )}
         </div>
@@ -308,38 +308,38 @@ function SearchSettings({ config, models, upstreams }: {
         action={<SettingsSwitch
           checked={draft.passthroughOpenAiSearch.enabled}
           disabled={eligibleUpstreams.length === 0}
-          label={t('dashboard.searchConfig.passthrough.title')}
+          label={t('search.passthrough.title')}
           onChange={togglePassthrough}
         />}
         defaultOpen={draft.passthroughOpenAiSearch.enabled}
-        description={t('dashboard.searchConfig.passthrough.description')}
-        header={t('dashboard.searchConfig.passthrough.title')}
+        description={t('search.passthrough.description')}
+        header={t('search.passthrough.title')}
         icon={<ArrowRouting24Regular />}
         toggledOn={draft.passthroughOpenAiSearch.enabled}
       >
         <div className="grid gap-3">
           <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
-            <Field label={t('dashboard.searchConfig.passthrough.upstream')}>
+            <Field label={t('search.passthrough.upstream')}>
               <Dropdown
                 disabled={!draft.passthroughOpenAiSearch.enabled}
                 onOptionSelect={(_, data) => data.optionValue && setPassthroughUpstream(data.optionValue)}
                 selectedOptions={[draft.passthroughOpenAiSearch.upstreamId]}
-                value={selectedUpstream?.name ?? (unavailableUpstreamId === null ? '' : t('dashboard.searchConfig.unavailable', { id: unavailableUpstreamId }))}
+                value={selectedUpstream?.name ?? (unavailableUpstreamId === null ? '' : t('search.unavailable', { id: unavailableUpstreamId }))}
               >
                 {unavailableUpstreamId !== null && <Option disabled text={unavailableUpstreamId} value={unavailableUpstreamId}>
-                  {t('dashboard.searchConfig.unavailable', { id: unavailableUpstreamId })}
+                  {t('search.unavailable', { id: unavailableUpstreamId })}
                 </Option>}
                 {eligibleUpstreams.map(upstream => (
                   <Option key={upstream.id} text={upstream.name} value={upstream.id}>
                     <DescribedOptionLabel
-                      description={t(`dashboard.upstreams.providers.${upstream.kind}`)}
+                      description={t(`upstreams.kinds.${upstream.kind}.description`)}
                       label={upstream.name}
                     />
                   </Option>
                 ))}
               </Dropdown>
             </Field>
-            <Field label={t('dashboard.searchConfig.passthrough.model')}>
+            <Field label={t('search.passthrough.model')}>
               <Dropdown
                 // The gate belongs here and not on the upstream picker beside
                 // it: a picker closed by its own selection cannot be used to
@@ -351,10 +351,10 @@ function SearchSettings({ config, models, upstreams }: {
                   setDraft(current => ({ ...current, passthroughOpenAiSearch: { ...current.passthroughOpenAiSearch, model } }));
                 }}
                 selectedOptions={[draft.passthroughOpenAiSearch.model]}
-                value={selectedModel ? modelLabel(selectedModel) : (unavailableModelId === null ? '' : t('dashboard.searchConfig.unavailable', { id: unavailableModelId }))}
+                value={selectedModel ? modelLabel(selectedModel) : (unavailableModelId === null ? '' : t('search.unavailable', { id: unavailableModelId }))}
               >
                 {unavailableModelId !== null && <Option disabled text={unavailableModelId} value={unavailableModelId}>
-                  {t('dashboard.searchConfig.unavailable', { id: unavailableModelId })}
+                  {t('search.unavailable', { id: unavailableModelId })}
                 </Option>}
                 {modelsForSelectedUpstream.map(model => (
                   <Option key={model.id} text={modelLabel(model)} value={model.id}>
@@ -367,7 +367,7 @@ function SearchSettings({ config, models, upstreams }: {
               </Dropdown>
             </Field>
           </div>
-          {eligibleUpstreams.length === 0 && <Text size={200} className="text-fui-fg3">{t('dashboard.searchConfig.passthrough.empty')}</Text>}
+          {eligibleUpstreams.length === 0 && <Text size={200} className="text-fui-fg3">{t('search.passthrough.empty')}</Text>}
         </div>
       </SettingsExpander>
 
@@ -377,14 +377,14 @@ function SearchSettings({ config, models, upstreams }: {
           disabledFocusable={saving}
           onClick={() => void handleSave()}
         >
-          {t('dashboard.searchConfig.save')}
+          {t('search.save')}
         </Button>
         <Button
           disabled={draft.provider === 'disabled'}
           disabledFocusable={testing}
           onClick={() => void handleTest()}
         >
-          {t('dashboard.searchConfig.test')}
+          {t('search.test')}
         </Button>
       </div>
 
@@ -392,31 +392,31 @@ function SearchSettings({ config, models, upstreams }: {
         <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>
       )}
       {testError && (
-        <OutcomeMessageBar onDismiss={() => setTestError(null)} title={t('dashboard.searchConfig.testFailed')}>{testError}</OutcomeMessageBar>
+        <OutcomeMessageBar onDismiss={() => setTestError(null)} title={t('search.testFailed')}>{testError}</OutcomeMessageBar>
       )}
 
       {testResult && (
         <Panel className={PANEL_STACK_CLASS}>
-          <SectionHeader level={2} title={t('dashboard.searchConfig.testResults')} />
+          <SectionHeader level={2} title={t('search.testResults')} />
 
           <div className="flex items-center gap-2 flex-wrap">
             <StatusBadge tone={testResult.ok ? 'success' : 'danger'}>
-              {testResult.ok ? t('dashboard.searchConfig.testBadge.ok') : t('dashboard.searchConfig.testBadge.error')}
+              {testResult.ok ? t('search.testBadge.ok') : t('search.testBadge.error')}
             </StatusBadge>
             <Text size={200} className="text-fui-fg3">
-              {t('dashboard.searchConfig.testedProvider', {
+              {t('search.testedProvider', {
                 provider: knownProviderLabel(testResult.provider) ?? testResult.provider,
               })}
             </Text>
             {testResult.query && <Text size={200} className="text-fui-fg3">
-              {t('dashboard.searchConfig.testedQuery', { query: testResult.query })}
+              {t('search.testedQuery', { query: testResult.query })}
             </Text>}
           </div>
 
           {testResult.ok && testResult.results ? (
             testResult.results.length === 0 ? (
               <Text size={200} className="text-fui-fg3">
-                {t('dashboard.searchConfig.testSuccess', { count: 0 })}
+                {t('search.testSuccess', { count: 0 })}
               </Text>
             ) : (
               <ul className="m-0 p-0 list-none">
@@ -436,7 +436,7 @@ function SearchSettings({ config, models, upstreams }: {
                       </Link>
                       {r.pageAge && (
                         <Text size={100} className="text-fui-fg3">
-                          {t('dashboard.searchConfig.pageAge', {
+                          {t('search.pageAge', {
                             age: r.pageAge,
                           })}
                         </Text>

@@ -30,11 +30,11 @@ const cases = [
 
 afterEach(() => vi.useRealTimers());
 
-const rateLimited = i18n.t('dashboard.upstreams.signals.rateLimited');
+const rateLimited = i18n.t('upstreams.signals.rateLimited');
 const rateLimitedUntil = (node: Element | null) =>
-  node?.textContent?.startsWith(i18n.t('dashboard.upstreamEditor.chatgpt.rateLimitedUntil', { time: '' })) ?? false;
-const statusLabel = (key: 'active' | 'heavy', percent?: number) => i18n.t(`dashboard.upstreamEditor.chatgpt.status.${key}`, { percent });
-const remaining = (percent: number) => i18n.t('dashboard.upstreamEditor.quotaRemainingPercent', { percent });
+  node?.textContent?.startsWith(i18n.t('upstreams.editor.chatgpt.rateLimitedUntil', { time: '' })) ?? false;
+const statusLabel = (key: 'active' | 'heavy', percent?: number) => i18n.t(`upstreams.editor.chatgpt.status.${key}`, { percent });
+const remaining = (percent: number) => i18n.t('upstreams.editor.quotaRemainingPercent', { percent });
 
 beforeEach(() => { primeDefaultSession(); });
 

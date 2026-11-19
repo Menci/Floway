@@ -120,7 +120,7 @@ it('opens telemetry and the read-only editor for an audit-only row while keeping
 
   const row = await screen.findByRole('row', { name: 'Usage and metrics for First' });
   expect(screen.getByRole('link', { name: 'First' })).toBeTruthy();
-  expect(within(row).getByText(i18n.t('dashboard.upstreams.models.count', { count: 7 }))).toBeTruthy();
+  expect(within(row).getByText(i18n.t('upstreams.models.count', { count: 7 }))).toBeTruthy();
   expect(screen.getByRole('link', { name: 'Edit upstream First' }).getAttribute('aria-disabled')).toBeNull();
   expect(screen.getByRole('switch', { name: 'Toggle upstream First' }).hasAttribute('disabled')).toBe(true);
   expect(screen.queryByRole('button', { name: 'Copy upstream First' })).toBeNull();

@@ -23,7 +23,7 @@ const t = ((key: string, values?: Record<string, unknown>) => {
 const normalizeSpaces = (value: string): string => value.replace(/\u202f/g, ' ');
 
 const NOW = Date.parse('2026-07-28T12:00:00.000Z');
-const RATE_LIMITED = t('dashboard.upstreams.signals.rateLimited');
+const RATE_LIMITED = t('upstreams.signals.rateLimited');
 const readoutOf = (record: unknown, quotaDisplay: 'remaining' | 'used' = 'remaining') => upstreamReadout(record as UpstreamRecord, t, 'en', NOW, quotaDisplay);
 const rowOf = (record: unknown) => {
   const { plan, signals } = readoutOf(record);

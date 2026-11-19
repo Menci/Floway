@@ -35,7 +35,7 @@ export const includedCreditsUsed = (included: Extract<OllamaAccountUsage['includ
   included.allowanceUsd - included.balanceUsd;
 
 export const includedCreditsHint = (included: Extract<OllamaAccountUsage['included'], { kind: 'credits' }>, t: TFunction, locale: string): string =>
-  t('dashboard.upstreamEditor.ollama.usage.usedCreditsHint', { from: shortDate(included.from, locale), until: shortDate(included.until, locale) });
+  t('upstreams.editor.ollama.usage.usedCreditsHint', { from: shortDate(included.from, locale), until: shortDate(included.until, locale) });
 
 export const activityRangeDays = (range: string): number => {
   if (range === '24h') return 1;
@@ -45,7 +45,7 @@ export const activityRangeDays = (range: string): number => {
 };
 
 export const activityCostHint = (activity: OllamaAccountUsage['activity'], t: TFunction, locale: string): string =>
-  t(activity.scope === 'self' ? 'dashboard.upstreams.signals.costRangeSelf' : 'dashboard.upstreams.signals.costRange', { from: shortDate(activity.from, locale), until: shortDate(activity.until, locale) });
+  t(activity.scope === 'self' ? 'upstreams.signals.costRangeSelf' : 'upstreams.signals.costRange', { from: shortDate(activity.from, locale), until: shortDate(activity.until, locale) });
 
 export const activityCostText = (amount: number): string =>
   `${amount < 0 ? '-' : ''}${formatUsd(parseNonNegativeDecimalString(String(Math.abs(amount))))}`;

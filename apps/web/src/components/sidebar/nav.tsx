@@ -111,7 +111,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
 
   return <>
     <NavDrawer
-      aria-label={t('dashboard.nav.label')}
+      aria-label={t('app.navigation.label')}
       className="!bg-transparent !h-full !max-w-none !w-full"
       density="medium"
       onNavItemSelect={(_, data) => {
@@ -128,7 +128,7 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
       <NavDrawerHeader className="!bg-transparent !px-5 !py-4">
         <div className="flex items-center min-h-10">
           <FlowayLogo />
-          {onNavigate && <Button appearance="subtle" aria-label={t('dashboard.nav.close')} className="!ml-auto" icon={<DismissRegular />} onClick={onNavigate} />}
+          {onNavigate && <Button appearance="subtle" aria-label={t('app.navigation.close')} className="!ml-auto" icon={<DismissRegular />} onClick={onNavigate} />}
         </div>
       </NavDrawerHeader>
       <NavDrawerBody className="!bg-transparent overflow-hidden !p-0">
@@ -175,20 +175,20 @@ export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: A
             pending={pendingValue === accountPage.to}
             to={accountPage.to}
           >{user.username}</SidebarLink>
-          <NavItem className={styles.item} icon={<ShareIos20Color className={styles.signOutIcon} idPrefix={iconIdPrefix} />} value="logout">{t('dashboard.logout.label')}</NavItem>
+          <NavItem className={styles.item} icon={<ShareIos20Color className={styles.signOutIcon} idPrefix={iconIdPrefix} />} value="logout">{t('auth.logout.label')}</NavItem>
         </div>
       </NavDrawerFooter>
     </NavDrawer>
     {logoutDialog.invocation && <ConfirmDialog
       open={logoutDialog.isOpen}
-      actionLabel={t('dashboard.logout.action')}
+      actionLabel={t('auth.logout.action')}
       actionIntent="primary"
       key={logoutDialog.invocation.key}
-      message={t('dashboard.logout.message')}
+      message={t('auth.logout.message')}
       onConfirm={() => { signOutConfirmed.current = true; logoutDialog.close(); }}
       onExited={() => { if (signOutConfirmed.current) void logout(); }}
       onOpenChange={open => { if (!open) logoutDialog.close(); }}
-      title={t('dashboard.logout.title')}
+      title={t('auth.logout.title')}
     />}
   </>;
 }

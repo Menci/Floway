@@ -24,6 +24,6 @@ describe('proxy list address column', () => {
     const view = renderList([record('two', 'Broken', 'trojan://s3cretpassword@example.com:70000')]);
 
     expect(view.container.innerHTML).not.toContain('s3cretpassword');
-    expect(view.container.textContent).toContain(i18n.t('dashboard.proxy.unknownAddress'));
+    expect(view.container.textContent).toContain(i18n.t('proxies.unknownAddress'));
   });
 });

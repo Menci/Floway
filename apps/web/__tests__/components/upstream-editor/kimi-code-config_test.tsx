@@ -28,9 +28,9 @@ const Harness = ({ readOnly = false }: { readOnly?: boolean }) => {
 test('quota refresh uses the edited region and API key', async () => {
   mocks.refresh.mockResolvedValue({ data: { observation: { fetchedAt: 2000, data: currentUsage }, account: null, accountError: null }, error: null });
   renderInApp(<Harness />);
-  fireEvent.click(screen.getByRole('radio', { name: i18n.t('dashboard.upstreamEditor.kimiCode.regions.overseas') }));
-  fireEvent.change(screen.getByLabelText(i18n.t('dashboard.upstreamEditor.fields.apiKey')), { target: { value: 'sk-kimi-fake-replacement' } });
+  fireEvent.click(screen.getByRole('radio', { name: i18n.t('upstreams.editor.kimiCode.regions.overseas') }));
+  fireEvent.change(screen.getByLabelText(i18n.t('upstreams.editor.fields.apiKey')), { target: { value: 'sk-kimi-fake-replacement' } });
   expect(screen.queryAllByRole('progressbar')).toHaveLength(0);
-  fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.kimiCode.usage.load') }));
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('upstreams.editor.kimiCode.usage.load') }));
   expect(mocks.refresh).toHaveBeenCalledWith(expect.objectContaining({ json: { record: expect.objectContaining({ config: { region: 'overseas', apiKey: 'sk-kimi-fake-replacement' } }) } }), expect.anything());
 });

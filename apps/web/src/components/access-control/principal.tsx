@@ -19,10 +19,10 @@ export function PrincipalIdentity({ data, principal }: { data: ScopeExpressionDa
   const { t } = useTranslation();
   if (principal.kind === 'group') {
     const group = data.groups.find(group => group.id === principal.id);
-    return group ? <GroupIdentity group={group} /> : <span className="floway-identity text-fui-fg2"><PeopleRegular />{t('dashboard.accessControl.scope.unknown', { id: String(principal.id) })}</span>;
+    return group ? <GroupIdentity group={group} /> : <span className="floway-identity text-fui-fg2"><PeopleRegular />{t('permissions.scope.unknown', { id: String(principal.id) })}</span>;
   }
   const user = data.users.find(user => user.id === principal.id);
-  return user ? <UserIdentity isAdmin={user.isAdmin} username={user.username} /> : <span className="floway-identity text-fui-fg2"><PersonRegular />{t('dashboard.accessControl.scope.unknown', { id: String(principal.id) })}</span>;
+  return user ? <UserIdentity isAdmin={user.isAdmin} username={user.username} /> : <span className="floway-identity text-fui-fg2"><PersonRegular />{t('permissions.scope.unknown', { id: String(principal.id) })}</span>;
 }
 
 export function PrincipalPicker({ clearable = false, data, disabled = false, includeAll = false, label, onChange, value }: {
@@ -43,8 +43,8 @@ export function PrincipalPicker({ clearable = false, data, disabled = false, inc
   const groups = data.groups.filter(group => group.name.toLowerCase().includes(needle));
   const selected = value === null ? 'all' : principalKey(value);
   const present = value === null || (value.kind === 'user' ? data.users.some(user => user.id === value.id) : data.groups.some(group => group.id === value.id));
-  const selectedLabel = value === null ? includeAll ? t('dashboard.accessControl.filters.allPrincipals') : ''
-    : present ? principalName(value, data) : t('dashboard.accessControl.scope.unknown', { id: String(value.id) });
+  const selectedLabel = value === null ? includeAll ? t('permissions.filters.allPrincipals') : ''
+    : present ? principalName(value, data) : t('permissions.scope.unknown', { id: String(value.id) });
   const selectedGroup = value?.kind === 'group' ? data.groups.find(group => group.id === value.id) : undefined;
   const selectedUser = value?.kind === 'user' ? data.users.find(user => user.id === value.id) : undefined;
   const selectedAvatar = selectedGroup ? <GroupAvatar group={selectedGroup} /> : selectedUser ? <UserAvatar username={selectedUser.username} /> : null;
@@ -57,11 +57,11 @@ export function PrincipalPicker({ clearable = false, data, disabled = false, inc
     autoComplete="off"
     className="w-full floway-principal-picker"
     clearAction={clearable && value !== null ? {
-      label: t('dashboard.accessControl.filters.clearPrincipal'),
+      label: t('permissions.filters.clearPrincipal'),
       onClear: () => { onChange(null); setQuery(null); setOpen(false); inputRef.current?.focus(); },
     } : undefined}
     disabled={disabled}
-    emptyMessage={t('dashboard.accessControl.filters.noPrincipals')}
+    emptyMessage={t('permissions.filters.noPrincipals')}
     listWidth="content"
     onChange={event => { setQuery(event.target.value); setOpen(true); }}
     onOpenChange={(_, event) => { setOpen(event.open); if (!event.open) setQuery(null); }}
@@ -78,11 +78,11 @@ export function PrincipalPicker({ clearable = false, data, disabled = false, inc
     spellCheck={false}
     value={query ?? selectedLabel}
   >
-    {includeAll && !needle && <Option value="all">{t('dashboard.accessControl.filters.allPrincipals')}</Option>}
-    {users.length > 0 && <OptionGroup label={t('dashboard.users.tabs.users')}>
+    {includeAll && !needle && <Option value="all">{t('permissions.filters.allPrincipals')}</Option>}
+    {users.length > 0 && <OptionGroup label={t('directory.users.tabs.users')}>
       {users.map(user => <Option key={user.id} text={user.username} value={`user:${user.id}`}><PrincipalIdentity data={data} principal={{ kind: 'user', id: user.id }} /></Option>)}
     </OptionGroup>}
-    {groups.length > 0 && <OptionGroup label={t('dashboard.users.tabs.groups')}>
+    {groups.length > 0 && <OptionGroup label={t('directory.users.tabs.groups')}>
       {groups.map(group => <Option key={group.id} text={group.name} value={`group:${group.id}`}><PrincipalIdentity data={data} principal={{ kind: 'group', id: group.id }} /></Option>)}
     </OptionGroup>}
   </Combobox>;

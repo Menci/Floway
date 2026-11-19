@@ -71,7 +71,7 @@ export function ProviderBadge({ label, title, to, upstream }: {
   const { t } = useTranslation();
   const styles = useStyles();
   const hue = useBadgeHue(hueBadgeTone(upstream.hue));
-  const visibleLabel = label ?? t(`provider.${upstream.kind}`, providerLabel(upstream.kind));
+  const visibleLabel = label ?? t(`upstreams.kinds.${upstream.kind}.label`, providerLabel(upstream.kind));
 
   const chip = (measureRef?: RefCallback<HTMLElement>) => (
     <Chip

@@ -89,7 +89,7 @@ describe('retention field', () => {
       expect(onChange).toHaveBeenLastCalledWith('invalid');
       expect(document.activeElement).toBe(input);
     }
-    expect(screen.getByRole('alert').textContent).toBe(i18n.t('dashboard.apiKeys.retention.invalid'));
+    expect(screen.getByRole('alert').textContent).toBe(i18n.t('apiKeys.retention.invalid'));
   });
 
   it('enforces the configured range and whole-day granularity', () => {

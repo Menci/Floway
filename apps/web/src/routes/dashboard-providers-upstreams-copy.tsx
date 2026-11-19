@@ -77,7 +77,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   const source = sourceResult.data;
   const record = copyableRecord(
     source,
-    i18n.t('dashboard.upstreams.copy.nameSuffix', { name: source.name }),
+    i18n.t('upstreams.copy.nameSuffix', { name: source.name }),
     pickDistinctHue(upstreamsResult.data.map(upstream => upstream.hue)),
   );
   return {

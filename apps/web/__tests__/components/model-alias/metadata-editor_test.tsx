@@ -7,8 +7,8 @@ import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 import type { AnnouncedMetadata } from '@floway-dev/protocols/browser';
 
-const imageInputLabel = i18n.t('dashboard.upstreamEditor.models.imageInput');
-const imageDetailOriginalLabel = i18n.t('dashboard.upstreamEditor.models.imageDetailOriginal');
+const imageInputLabel = i18n.t('models.editor.imageInput');
+const imageDetailOriginalLabel = i18n.t('models.editor.imageDetailOriginal');
 
 const initialValue: AnnouncedMetadata = {
   chat: {
@@ -37,7 +37,7 @@ function DetailHarness({ initial }: { initial: AnnouncedMetadata }) {
 describe('model alias metadata editor', () => {
   it('preserves a comma while another supported effort is being entered', () => {
     renderInApp(<Harness />);
-    const input = screen.getByRole<HTMLInputElement>('textbox', { name: i18n.t('dashboard.modelAliases.metadata.efforts') });
+    const input = screen.getByRole<HTMLInputElement>('textbox', { name: i18n.t('models.aliases.metadata.efforts') });
 
     fireEvent.change(input, { target: { value: 'low,' } });
     expect(input.value).toBe('low,');
@@ -52,7 +52,7 @@ describe('model alias metadata editor', () => {
 
   it('keeps audio input enabled when changing image support', () => {
     renderInApp(<DetailHarness initial={{}} />);
-    const audio = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('dashboard.upstreamEditor.models.audioInput') });
+    const audio = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('models.editor.audioInput') });
     const image = screen.getByRole<HTMLInputElement>('switch', { name: imageInputLabel });
     fireEvent.click(audio);
     fireEvent.click(image);
@@ -63,8 +63,8 @@ describe('model alias metadata editor', () => {
 
   it('can select audio alone and cannot deselect the last input', () => {
     renderInApp(<DetailHarness initial={{}} />);
-    const text = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('dashboard.upstreamEditor.models.textInput') });
-    const audio = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('dashboard.upstreamEditor.models.audioInput') });
+    const text = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('models.editor.textInput') });
+    const audio = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('models.editor.audioInput') });
     expect(text.disabled).toBe(true);
     fireEvent.click(audio);
     fireEvent.click(text);

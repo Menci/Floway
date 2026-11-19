@@ -80,7 +80,7 @@ export function ChatGPTImportForm({ hasAccount, onImported, record }: {
   const runPreview = async () => {
     const text = json.trim();
     setError(null);
-    if (text.length === 0) { setError(t('dashboard.upstreamEditor.chatgpt.import.pasteFirst')); return; }
+    if (text.length === 0) { setError(t('upstreams.editor.chatgpt.import.pasteFirst')); return; }
     setPreviewing(true);
     let data;
     try {
@@ -96,20 +96,20 @@ export function ChatGPTImportForm({ hasAccount, onImported, record }: {
     setCandidates(data.candidates);
     const usable = data.candidates.filter(candidate => candidate.issues.length === 0);
     setSelected(usable.length === 1 ? usable[0].sourceIndex : null);
-    if (usable.length === 0) setError(t('dashboard.upstreamEditor.chatgpt.import.noValidAccounts'));
+    if (usable.length === 0) setError(t('upstreams.editor.chatgpt.import.noValidAccounts'));
   };
 
   const buildSource = (): Record<string, unknown> => {
     if (tab === 'json') {
       const text = json.trim();
-      if (text.length === 0) throw new Error(t('dashboard.upstreamEditor.chatgpt.import.pasteFirst'));
-      if (previewedJson !== text) throw new Error(t('dashboard.upstreamEditor.chatgpt.import.previewFirst'));
+      if (text.length === 0) throw new Error(t('upstreams.editor.chatgpt.import.pasteFirst'));
+      if (previewedJson !== text) throw new Error(t('upstreams.editor.chatgpt.import.previewFirst'));
       const candidate = candidates.find(entry => entry.sourceIndex === selected);
-      if (!candidate || candidate.issues.length > 0) throw new Error(t('dashboard.upstreamEditor.chatgpt.import.selectAccount'));
+      if (!candidate || candidate.issues.length > 0) throw new Error(t('upstreams.editor.chatgpt.import.selectAccount'));
       return { json: { raw_json: text, source_index: candidate.sourceIndex } };
     }
     const accessToken = manual.accessToken.trim();
-    if (accessToken.length === 0) throw new Error(t('dashboard.upstreamEditor.chatgpt.import.accessTokenRequired'));
+    if (accessToken.length === 0) throw new Error(t('upstreams.editor.chatgpt.import.accessTokenRequired'));
     return {
       manual: {
         access_token: accessToken,
@@ -142,20 +142,20 @@ export function ChatGPTImportForm({ hasAccount, onImported, record }: {
   };
 
   const candidateExpiry = (candidate: PreviewCandidate): string => candidate.expiresAt === null
-    ? t('dashboard.upstreamEditor.chatgpt.expiryUnknown')
-    : t('dashboard.upstreamEditor.chatgpt.expires', { time: dateTime(new Date(candidate.expiresAt).toISOString(), locale) });
+    ? t('upstreams.editor.chatgpt.expiryUnknown')
+    : t('upstreams.editor.chatgpt.expires', { time: dateTime(new Date(candidate.expiresAt).toISOString(), locale) });
 
   return <>
-    <TabList aria-label={t('dashboard.upstreamEditor.oauth.importMethod')} selectedValue={tab} onTabSelect={(_, data) => { setTab(String(data.value)); setError(null); }}>
-      <Tab value="json">{t('dashboard.upstreamEditor.chatgpt.import.tabJson')}</Tab>
-      <Tab value="oauth">{t('dashboard.upstreamEditor.chatgpt.import.tabOAuth')}</Tab>
-      <Tab value="manual">{t('dashboard.upstreamEditor.chatgpt.import.tabManual')}</Tab>
+    <TabList aria-label={t('upstreams.editor.oauth.importMethod')} selectedValue={tab} onTabSelect={(_, data) => { setTab(String(data.value)); setError(null); }}>
+      <Tab value="json">{t('upstreams.editor.chatgpt.import.tabJson')}</Tab>
+      <Tab value="oauth">{t('upstreams.editor.chatgpt.import.tabOAuth')}</Tab>
+      <Tab value="manual">{t('upstreams.editor.chatgpt.import.tabManual')}</Tab>
     </TabList>
 
     {tab === 'json' && <div className="grid gap-3">
-      <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.chatgpt.import.jsonHint')}</Text>
-      <OutcomeMessageBar intent="warning">{t('dashboard.upstreamEditor.chatgpt.import.jsonWarning')}</OutcomeMessageBar>
-      <Field label={t('dashboard.upstreamEditor.oauth.credentialJson')}>
+      <Text size={200} className="text-fui-fg2">{t('upstreams.editor.chatgpt.import.jsonHint')}</Text>
+      <OutcomeMessageBar intent="warning">{t('upstreams.editor.chatgpt.import.jsonWarning')}</OutcomeMessageBar>
+      <Field label={t('upstreams.editor.oauth.credentialJson')}>
         <Textarea className="font-mono" rows={8} value={json} onChange={(_, data) => editJson(data.value)} />
       </Field>
       <div>
@@ -164,10 +164,10 @@ export function ChatGPTImportForm({ hasAccount, onImported, record }: {
           icon={previewing ? <Spinner size="tiny" /> : <ScanTypeRegular />}
           onClick={() => void runPreview()}
         >
-          {t('dashboard.upstreamEditor.chatgpt.import.preview')}
+          {t('upstreams.editor.chatgpt.import.preview')}
         </Button>
       </div>
-      {candidates.length > 0 && <Field label={t('dashboard.upstreamEditor.chatgpt.import.candidates')}>
+      {candidates.length > 0 && <Field label={t('upstreams.editor.chatgpt.import.candidates')}>
         <RadioGroup value={selected === null ? '' : String(selected)} onChange={(_, data) => setSelected(Number(data.value))}>
           {candidates.map(candidate => <Radio
             disabled={candidate.issues.length > 0}
@@ -176,17 +176,17 @@ export function ChatGPTImportForm({ hasAccount, onImported, record }: {
             label={<div className="grid gap-1">
               <div className="flex flex-wrap items-center gap-2">
                 <Text weight="semibold">
-                  {candidate.name ?? candidate.email ?? t('dashboard.upstreamEditor.chatgpt.import.accountFallback', { index: candidate.sourceIndex + 1 })}
+                  {candidate.name ?? candidate.email ?? t('upstreams.editor.chatgpt.import.accountFallback', { index: candidate.sourceIndex + 1 })}
                 </Text>
                 <StatusBadge tone={candidate.renewable ? 'success' : 'warning'}>
-                  {t(candidate.renewable ? 'dashboard.upstreamEditor.chatgpt.renewable' : 'dashboard.upstreamEditor.chatgpt.accessOnly')}
+                  {t(candidate.renewable ? 'upstreams.editor.chatgpt.renewable' : 'upstreams.editor.chatgpt.accessOnly')}
                 </StatusBadge>
               </div>
               <Text size={200} className="text-fui-fg3 font-mono mono-size-xs">
-                {candidate.chatgptAccountId ?? t('dashboard.upstreamEditor.chatgpt.unknownAccountId')}
+                {candidate.chatgptAccountId ?? t('upstreams.editor.chatgpt.unknownAccountId')}
               </Text>
               <Text size={200} className="text-fui-fg3">
-                {`${candidate.planType ?? t('dashboard.upstreamEditor.chatgpt.unknownPlan')} · ${candidateExpiry(candidate)}`}
+                {`${candidate.planType ?? t('upstreams.editor.chatgpt.unknownPlan')} · ${candidateExpiry(candidate)}`}
               </Text>
               {candidate.issues.map(issue => <Text key={issue} size={200} className="text-fui-danger-fg">{issue}</Text>)}
             </div>}
@@ -207,26 +207,26 @@ export function ChatGPTImportForm({ hasAccount, onImported, record }: {
     />}
 
     {tab === 'manual' && <div className="grid gap-3">
-      <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.chatgpt.import.manualHint')}</Text>
-      <Field label={t('dashboard.upstreamEditor.chatgpt.import.accessToken')} required>
+      <Text size={200} className="text-fui-fg2">{t('upstreams.editor.chatgpt.import.manualHint')}</Text>
+      <Field label={t('upstreams.editor.chatgpt.import.accessToken')} required>
         <SecretInput value={manual.accessToken} onChange={(_, data) => setManual(draft => ({ ...draft, accessToken: data.value }))} />
       </Field>
-      <Field label={t('dashboard.upstreamEditor.chatgpt.import.refreshToken')} hint={t('dashboard.upstreamEditor.chatgpt.import.refreshTokenHint')}>
+      <Field label={t('upstreams.editor.chatgpt.import.refreshToken')} hint={t('upstreams.editor.chatgpt.import.refreshTokenHint')}>
         <SecretInput value={manual.refreshToken} onChange={(_, data) => setManual(draft => ({ ...draft, refreshToken: data.value }))} />
       </Field>
-      <Field label={t('dashboard.upstreamEditor.chatgpt.import.idToken')}>
+      <Field label={t('upstreams.editor.chatgpt.import.idToken')}>
         <SecretInput value={manual.idToken} onChange={(_, data) => setManual(draft => ({ ...draft, idToken: data.value }))} />
       </Field>
-      <Field label={t('dashboard.upstreamEditor.chatgpt.import.accountId')}>
+      <Field label={t('upstreams.editor.chatgpt.import.accountId')}>
         <Input value={manual.accountId} onChange={(_, data) => setManual(draft => ({ ...draft, accountId: data.value }))} />
       </Field>
-      <Field label={t('dashboard.upstreamEditor.chatgpt.import.email')}>
+      <Field label={t('upstreams.editor.chatgpt.import.email')}>
         <Input value={manual.email} onChange={(_, data) => setManual(draft => ({ ...draft, email: data.value }))} />
       </Field>
-      <Field label={t('dashboard.upstreamEditor.chatgpt.import.planType')}>
+      <Field label={t('upstreams.editor.chatgpt.import.planType')}>
         <Input value={manual.planType} onChange={(_, data) => setManual(draft => ({ ...draft, planType: data.value }))} />
       </Field>
-      <Field label={t('dashboard.upstreamEditor.chatgpt.import.expiresAt')} hint={t('dashboard.upstreamEditor.chatgpt.import.expiresAtHint')}>
+      <Field label={t('upstreams.editor.chatgpt.import.expiresAt')} hint={t('upstreams.editor.chatgpt.import.expiresAtHint')}>
         <Input value={manual.expiresAt} onChange={(_, data) => setManual(draft => ({ ...draft, expiresAt: data.value }))} />
       </Field>
     </div>}
@@ -234,7 +234,7 @@ export function ChatGPTImportForm({ hasAccount, onImported, record }: {
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
 
     {tab !== 'oauth' && <Button appearance="primary" disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />} onClick={() => void submit()}>
-      {hasAccount ? t('dashboard.upstreamEditor.oauth.reimport') : t('dashboard.upstreamEditor.oauth.import')}
+      {hasAccount ? t('upstreams.editor.oauth.reimport') : t('upstreams.editor.oauth.import')}
     </Button>}
   </>;
 }

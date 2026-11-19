@@ -129,10 +129,10 @@ export function ModelDetail({
     <div className="grid gap-3 min-w-0">
       <SectionHeader level={2} truncate title={row.config.display_name ?? publicModelId(row.config)} actions={
         <ChoiceGroup
-          ariaLabel={t('dashboard.upstreamEditor.models.source')}
+          ariaLabel={t('models.editor.source')}
           items={[
-            { value: 'auto', label: t('dashboard.upstreamEditor.models.auto'), disabled: readOnly || !row.hasAuto },
-            { value: 'manual', label: t('dashboard.upstreamEditor.models.manual'), disabled: readOnly },
+            { value: 'auto', label: t('models.editor.auto'), disabled: readOnly || !row.hasAuto },
+            { value: 'manual', label: t('models.editor.manual'), disabled: readOnly },
           ]}
           onChange={value => onSourceChange(value as 'auto' | 'manual')}
           value={row.source}
@@ -148,14 +148,14 @@ export function ModelDetail({
       /> : <>
         {summaryError && <MessageBar intent="error"><MessageBarBody>{t(summaryError.message)}</MessageBarBody></MessageBar>}
 
-        <EditorSection level={3} title={t('dashboard.upstreamEditor.models.identity')}>
+        <EditorSection level={3} title={t('models.editor.identity')}>
           {/* This sits beside a 380px sidebar, so the available width and the
               width a media query can see are two different numbers. */}
           <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
-            <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.displayName')}>
-              <Input className="!w-full" placeholder={t('dashboard.upstreamEditor.models.displayNamePlaceholder')} readOnly={fieldsReadOnly} value={row.config.display_name ?? ''} onChange={(_, data) => patch({ display_name: data.value || undefined })} />
+            <Field className="min-w-0" label={t('models.editor.displayName')}>
+              <Input className="!w-full" placeholder={t('models.editor.displayNamePlaceholder')} readOnly={fieldsReadOnly} value={row.config.display_name ?? ''} onChange={(_, data) => patch({ display_name: data.value || undefined })} />
             </Field>
-            <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.kind')}>
+            <Field className="min-w-0" label={t('models.editor.kind')}>
               <Dropdown readOnly={fieldsReadOnly} selectedOptions={[row.config.kind]} value={modelKindLabel(row.config.kind)} onOptionSelect={(_, data) => data.optionValue !== undefined && setKind(data.optionValue as UpstreamModelConfig['kind'])}>
                 <Option value="chat">Chat</Option><Option value="embedding">Embedding</Option><Option value="image">Image</Option><Option value="transcription">Transcription</Option>
                 {/* The gateway only accepts a rerank target on a custom upstream, so the kind is offered only where it can be saved. */}
@@ -165,11 +165,11 @@ export function ModelDetail({
                 <Option value="decision">Decision</Option>
               </Dropdown>
             </Field>
-            {record.kind !== 'kimi-code' && <Field className="min-w-0" label={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deployment') : t('dashboard.upstreamEditor.models.upstreamId')} validationMessage={upstreamIdError} validationState={upstreamIdError ? 'error' : undefined}>
-              <Input className="!w-full font-mono" placeholder={record.kind === 'azure' ? t('dashboard.upstreamEditor.models.deploymentPlaceholder') : t('dashboard.upstreamEditor.models.upstreamIdPlaceholder')} readOnly={fieldsReadOnly || row.hasAuto} ref={upstreamIdRef} value={row.config.upstreamModelId} onBlur={() => onUpstreamModelIdCommit(row.config.upstreamModelId)} onChange={(_, data) => patch({ upstreamModelId: data.value })} />
+            {record.kind !== 'kimi-code' && <Field className="min-w-0" label={record.kind === 'azure' ? t('models.editor.deployment') : t('models.editor.upstreamId')} validationMessage={upstreamIdError} validationState={upstreamIdError ? 'error' : undefined}>
+              <Input className="!w-full font-mono" placeholder={record.kind === 'azure' ? t('models.editor.deploymentPlaceholder') : t('models.editor.upstreamIdPlaceholder')} readOnly={fieldsReadOnly || row.hasAuto} ref={upstreamIdRef} value={row.config.upstreamModelId} onBlur={() => onUpstreamModelIdCommit(row.config.upstreamModelId)} onChange={(_, data) => patch({ upstreamModelId: data.value })} />
             </Field>}
-            <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.publicId')}>
-              <Input className="!w-full font-mono" placeholder={row.config.upstreamModelId || t('dashboard.upstreamEditor.models.publicIdPlaceholder')} readOnly={fieldsReadOnly} value={row.config.publicModelId ?? ''} onChange={(_, data) => patch({ publicModelId: data.value || undefined })} />
+            <Field className="min-w-0" label={t('models.editor.publicId')}>
+              <Input className="!w-full font-mono" placeholder={row.config.upstreamModelId || t('models.editor.publicIdPlaceholder')} readOnly={fieldsReadOnly} value={row.config.publicModelId ?? ''} onChange={(_, data) => patch({ publicModelId: data.value || undefined })} />
             </Field>
           </div>
         </EditorSection>
@@ -177,13 +177,13 @@ export function ModelDetail({
         {/* Opaque blobs ride a chat turn's history across models; no other kind
             carries one. */}
         {row.config.kind === 'chat' && <EditorSection
-          info={<span className="whitespace-pre-line">{t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityHint')}</span>}
+          info={<span className="whitespace-pre-line">{t('models.editor.opaqueBlobCompatibilityHint')}</span>}
           level={3}
-          title={t('dashboard.upstreamEditor.models.opaqueBlobCompatibility')}
+          title={t('models.editor.opaqueBlobCompatibility')}
         >
           <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
             <Input
-              aria-label={t('dashboard.upstreamEditor.models.opaqueBlobCompatibilityKey')}
+              aria-label={t('models.editor.opaqueBlobCompatibilityKey')}
               className="min-w-[220px] flex-1 font-mono"
               placeholder={row.config.upstreamModelId}
               readOnly={fieldsReadOnly}
@@ -193,14 +193,14 @@ export function ModelDetail({
             <Switch
               checked={bindOpaqueBlobsToUpstream}
               className="flex-none"
-              label={t('dashboard.upstreamEditor.models.bindOpaqueBlobsToUpstream')}
+              label={t('models.editor.bindOpaqueBlobsToUpstream')}
               readOnly={fieldsReadOnly}
               onChange={(_, data) => updateOpaqueBlobCompatibilityScope({ bindToUpstream: data.checked })}
             />
           </div>
         </EditorSection>}
 
-        {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <EditorSection error={validationMessage('endpoints')} level={3} title={t('dashboard.upstreamEditor.models.endpoints')}>
+        {ENDPOINT_CHOICE_KINDS.has(row.config.kind) && <EditorSection error={validationMessage('endpoints')} level={3} title={t('models.editor.endpoints')}>
           <div className={`${TWO_COLUMN_FORM_CLASS} ${CHECKBOX_LIST_CLASS}`}>
             {modelEndpointOptions(row.config.kind).map(({ key, label }) => <Checkbox
               checked={key in row.config.endpoints}
@@ -216,15 +216,15 @@ export function ModelDetail({
           </div>
         </EditorSection>}
 
-        {row.config.kind === 'rerank' && row.config.rerankTarget && <EditorSection error={validationMessage('rerankTarget')} level={3} title={t('dashboard.upstreamEditor.models.rerankTarget')}>
+        {row.config.kind === 'rerank' && row.config.rerankTarget && <EditorSection error={validationMessage('rerankTarget')} level={3} title={t('models.editor.rerankTarget')}>
           <RerankTargetEditor readOnly={fieldsReadOnly} value={row.config.rerankTarget} onChange={rerankTarget => patch({ rerankTarget })} />
         </EditorSection>}
 
-        {row.config.kind === 'decision' && record.kind === 'custom' && <EditorSection error={validationMessage('decisionTarget')} level={3} title={t('dashboard.upstreamEditor.models.decisionTarget')}>
+        {row.config.kind === 'decision' && record.kind === 'custom' && <EditorSection error={validationMessage('decisionTarget')} level={3} title={t('models.editor.decisionTarget')}>
           <DecisionTargetEditor readOnly={fieldsReadOnly} value={row.config.decisionTarget ?? { protocol: 'typesafe-systemone' }} onChange={decisionTarget => patch({ decisionTarget })} />
         </EditorSection>}
 
-        {row.config.kind !== 'image' && <EditorSection level={3} title={t('dashboard.upstreamEditor.models.capabilities')}>
+        {row.config.kind !== 'image' && <EditorSection level={3} title={t('models.editor.capabilities')}>
           <ModelLimitsFields
             columnGapClass="gap-4"
             kind={row.config.kind}
@@ -236,23 +236,23 @@ export function ModelDetail({
           {row.config.kind === 'chat' && <>
             <ModelInputFields chat={row.config.chat} readOnly={fieldsReadOnly} onChange={change => patch({ chat: cleanChat({ ...row.config.chat, ...change }) })} />
             <div aria-labelledby={reasoningLabelId} className="grid gap-3" role="group">
-              <Text id={reasoningLabelId} weight="semibold">{t('dashboard.upstreamEditor.models.reasoning')}</Text>
+              <Text id={reasoningLabelId} weight="semibold">{t('models.editor.reasoning')}</Text>
               <div className="flex flex-wrap gap-4">
-                <Switch checked={effort !== undefined} disabled={mandatory} readOnly={fieldsReadOnly} label={t('dashboard.upstreamEditor.models.effortLevels')} onChange={(_, data) => updateReasoning({ effort: data.checked ? { supported: ['low', 'medium', 'high'], default: 'medium' } : undefined })} />
-                <Switch checked={budget !== undefined} disabled={mandatory} readOnly={fieldsReadOnly} label={t('dashboard.upstreamEditor.models.budgetTokens')} onChange={(_, data) => updateReasoning({ budget_tokens: data.checked ? {} : undefined })} />
-                <Switch checked={row.config.chat?.reasoning?.adaptive === true} disabled={mandatory} readOnly={fieldsReadOnly} label={t('dashboard.upstreamEditor.models.adaptive')} onChange={(_, data) => updateReasoning({ adaptive: data.checked ? true : undefined })} />
-                <Switch checked={mandatory} disabled={controlledReasoning} readOnly={fieldsReadOnly} label={t('dashboard.upstreamEditor.models.mandatory')} onChange={(_, data) => updateReasoning(data.checked ? { mandatory: true } : { mandatory: undefined })} />
+                <Switch checked={effort !== undefined} disabled={mandatory} readOnly={fieldsReadOnly} label={t('models.editor.effortLevels')} onChange={(_, data) => updateReasoning({ effort: data.checked ? { supported: ['low', 'medium', 'high'], default: 'medium' } : undefined })} />
+                <Switch checked={budget !== undefined} disabled={mandatory} readOnly={fieldsReadOnly} label={t('models.editor.budgetTokens')} onChange={(_, data) => updateReasoning({ budget_tokens: data.checked ? {} : undefined })} />
+                <Switch checked={row.config.chat?.reasoning?.adaptive === true} disabled={mandatory} readOnly={fieldsReadOnly} label={t('models.editor.adaptive')} onChange={(_, data) => updateReasoning({ adaptive: data.checked ? true : undefined })} />
+                <Switch checked={mandatory} disabled={controlledReasoning} readOnly={fieldsReadOnly} label={t('models.editor.mandatory')} onChange={(_, data) => updateReasoning(data.checked ? { mandatory: true } : { mandatory: undefined })} />
               </div>
               {effort && <EffortEditor readOnly={fieldsReadOnly} effort={effort} onChange={next => updateReasoning({ effort: next })} t={t} />}
               {budget && <div className={`${TWO_COLUMN_FORM_CLASS} gap-4 max-w-[420px]`}>
-                <NumberField label={t('dashboard.upstreamEditor.models.minimum')} placeholder="e.g. 1024" readOnly={fieldsReadOnly} value={budget.min} onChange={raw => updateReasoning({ budget_tokens: numberRange(budget, 'min', raw) })} />
-                <NumberField label={t('dashboard.upstreamEditor.models.maximum')} placeholder="e.g. 32000" readOnly={fieldsReadOnly} value={budget.max} onChange={raw => updateReasoning({ budget_tokens: numberRange(budget, 'max', raw) })} />
+                <NumberField label={t('models.editor.minimum')} placeholder="e.g. 1024" readOnly={fieldsReadOnly} value={budget.min} onChange={raw => updateReasoning({ budget_tokens: numberRange(budget, 'min', raw) })} />
+                <NumberField label={t('models.editor.maximum')} placeholder="e.g. 32000" readOnly={fieldsReadOnly} value={budget.max} onChange={raw => updateReasoning({ budget_tokens: numberRange(budget, 'max', raw) })} />
               </div>}
             </div>
           </>}
         </EditorSection>}
 
-        <EditorSection level={3} title={t('dashboard.upstreamEditor.models.pricing')} description={t('dashboard.upstreamEditor.models.pricingHint')}>
+        <EditorSection level={3} title={t('models.editor.pricing')} description={t('models.editor.pricingHint')}>
           <PricingEditor
             readOnly={fieldsReadOnly}
             kind={row.config.kind}
@@ -262,7 +262,7 @@ export function ModelDetail({
         </EditorSection>
 
         {!fieldsReadOnly && <Button icon={<DeleteRegular />} onClick={onDelete}>
-          {t('dashboard.upstreamEditor.models.delete')}
+          {t('models.editor.delete')}
         </Button>}
       </>}
     </div>
@@ -280,19 +280,19 @@ function EffortEditor({ effort, onChange, readOnly, t }: { readOnly: boolean; ef
     default: values.includes(effort.default) ? effort.default : values[0] ?? '',
   });
   return <div className={`grid grid-cols-[minmax(0,1fr)_minmax(180px,0.45fr)] ${PANE_GAP_CLASS} max-[760px]:grid-cols-1`}>
-    <Field label={t('dashboard.upstreamEditor.models.supportedEfforts')}>
+    <Field label={t('models.editor.supportedEfforts')}>
       <MultiselectCombobox
         closedLabel={supported.join(', ')}
         freeform
         normalizeValue={level => level.trim()}
         onChange={setSupported}
         options={valuesAsOptions([...new Set([...reasoningPresets, ...supported])])}
-        placeholder={t('dashboard.upstreamEditor.models.effortPlaceholder')}
+        placeholder={t('models.editor.effortPlaceholder')}
         readOnly={readOnly}
         value={supported}
       />
     </Field>
-    <Field label={t('dashboard.upstreamEditor.models.defaultEffort')}>
+    <Field label={t('models.editor.defaultEffort')}>
       <Dropdown disabled={supported.length === 0} readOnly={readOnly} selectedOptions={[effort.default]} value={effort.default} onOptionSelect={(_, data) => data.optionValue !== undefined && onChange({ ...effort, default: data.optionValue })}>
         {supported.map(level => <Option key={level} value={level}>{level}</Option>)}
       </Dropdown>

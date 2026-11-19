@@ -16,7 +16,7 @@ export const usageDimensions = ({ usage, upstreams, currentUserId, t }: {
   t: TFunction;
 }): Array<TelemetryDimension<UsageGroupBy>> => {
   const upstreamNames = new Map(upstreams.map(upstream => [usageUpstreamDimensionValue(upstream.id), upstream.name]));
-  const unknownUpstreamLabel = t('dashboard.usage.filters.unknownUpstream');
+  const unknownUpstreamLabel = t('monitoring.usage.filters.unknownUpstream');
   for (const value of usage.dimensionValues.upstreams) {
     if (!upstreamNames.has(value)) upstreamNames.set(value, usageUpstreamFromDimensionValue(value) ?? unknownUpstreamLabel);
   }
@@ -27,19 +27,19 @@ export const usageDimensions = ({ usage, upstreams, currentUserId, t }: {
     ...usage.dimensionValues.userIds.map(String),
   ])];
   const dimensions: Array<TelemetryDimension<UsageGroupBy>> = [
-    { key: 'model', groupLabel: t('dashboard.usage.groupBy.model'), filterLabel: t('dashboard.usage.filters.model'), allLabel: t('dashboard.usage.filters.all.model'), options: usage.dimensionValues.models.map(value => ({ value, label: value })) },
-    { key: 'upstream', groupLabel: t('dashboard.usage.groupBy.upstream'), filterLabel: t('dashboard.usage.filters.upstream'), allLabel: t('dashboard.usage.filters.all.upstream'), options: usage.dimensionValues.upstreams.map(value => ({ value, label: requiredLabel(upstreamNames, value, 'upstream') })) },
+    { key: 'model', groupLabel: t('monitoring.usage.groupBy.model'), filterLabel: t('monitoring.usage.filters.model'), allLabel: t('monitoring.usage.filters.all.model'), options: usage.dimensionValues.models.map(value => ({ value, label: value })) },
+    { key: 'upstream', groupLabel: t('monitoring.usage.groupBy.upstream'), filterLabel: t('monitoring.usage.filters.upstream'), allLabel: t('monitoring.usage.filters.all.upstream'), options: usage.dimensionValues.upstreams.map(value => ({ value, label: requiredLabel(upstreamNames, value, 'upstream') })) },
     {
       key: 'userId',
-      groupLabel: t('dashboard.usage.groupBy.userId'),
-      filterLabel: t('dashboard.usage.filters.userId'),
-      allLabel: t('dashboard.usage.filters.all.userId'),
-      options: userIds.map(value => ({ value, label: Number(value) === tokenUsageUnattributedUserId ? t('dashboard.usage.filters.unknownUser') : requiredLabel(users, value, 'user') })),
+      groupLabel: t('monitoring.usage.groupBy.userId'),
+      filterLabel: t('monitoring.usage.filters.userId'),
+      allLabel: t('monitoring.usage.filters.all.userId'),
+      options: userIds.map(value => ({ value, label: Number(value) === tokenUsageUnattributedUserId ? t('monitoring.usage.filters.unknownUser') : requiredLabel(users, value, 'user') })),
       selectionLabel: values => values.length === 1 && values[0] === currentUserId
-        ? t('dashboard.telemetry.currentUserOnly')
-        : t('dashboard.usage.filters.selected', { count: values.length }),
+        ? t('monitoring.controls.currentUserOnly')
+        : t('monitoring.usage.filters.selected', { count: values.length }),
     },
-    { key: 'keyId', groupLabel: t('dashboard.usage.groupBy.keyId'), filterLabel: t('dashboard.usage.filters.keyId'), allLabel: t('dashboard.usage.filters.all.keyId'), options: usage.dimensionValues.keyIds.map(value => ({ value, label: requiredLabel(keys, value, 'API key') })) },
+    { key: 'keyId', groupLabel: t('monitoring.usage.groupBy.keyId'), filterLabel: t('monitoring.usage.filters.keyId'), allLabel: t('monitoring.usage.filters.all.keyId'), options: usage.dimensionValues.keyIds.map(value => ({ value, label: requiredLabel(keys, value, 'API key') })) },
   ];
   return dimensions;
 };

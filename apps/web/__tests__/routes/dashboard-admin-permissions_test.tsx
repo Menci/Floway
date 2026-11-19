@@ -127,7 +127,7 @@ test('a confirmed delete retires its rule and its confirmation without reading t
   expect(container.querySelector('[data-rule-id="2"]')).toBeNull();
   expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(2);
   expect(reads()).toBe(before);
-  expect(await screen.findByText(i18n.t('dashboard.accessControl.toast.delete.success'))).toBeTruthy();
+  expect(await screen.findByText(i18n.t('permissions.toast.delete.success'))).toBeTruthy();
 });
 
 test('locks all mutations while deleting and restores them after a failed write', async () => {

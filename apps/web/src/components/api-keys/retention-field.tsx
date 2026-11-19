@@ -11,10 +11,10 @@ import { SettingsCard, SettingsExpander } from '../ui/settings-card';
 const { Text } = fluentComponents;
 
 const UNIT_KEYS = {
-  s: 'dashboard.apiKeys.retention.units.second',
-  m: 'dashboard.apiKeys.retention.units.minute',
-  h: 'dashboard.apiKeys.retention.units.hour',
-  d: 'dashboard.apiKeys.retention.units.day',
+  s: 'apiKeys.retention.units.second',
+  m: 'apiKeys.retention.units.minute',
+  h: 'apiKeys.retention.units.hour',
+  d: 'apiKeys.retention.units.day',
 } as const;
 
 // `null` and `0` both mean "off" depending on the field; the gateway
@@ -110,7 +110,7 @@ export function RetentionField({
       return comboboxValueFor(next, offValue);
     }}
     onFocus={() => setRetainFocusedExpander(children !== undefined)}
-    placeholder={t('dashboard.apiKeys.retention.durationPlaceholder')}
+    placeholder={t('apiKeys.retention.durationPlaceholder')}
     presets={presets}
     value={comboboxValue}
   />;
@@ -119,6 +119,6 @@ export function RetentionField({
     {children === undefined && !retainFocusedExpander
       ? <SettingsCard action={action} description={description} header={label} icon={icon} />
       : <SettingsExpander action={action} description={description} header={label} icon={icon}>{children ?? null}</SettingsExpander>}
-    {invalid && <Text className={dangerText} id={errorId} role="alert" size={200}>{t('dashboard.apiKeys.retention.invalid')}</Text>}
+    {invalid && <Text className={dangerText} id={errorId} role="alert" size={200}>{t('apiKeys.retention.invalid')}</Text>}
   </>;
 }

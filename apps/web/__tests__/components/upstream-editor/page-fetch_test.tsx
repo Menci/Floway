@@ -96,7 +96,7 @@ test('metadata-only OAuth edits fetch the saved record and keep form changes uns
   await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(screen.getByTestId('catalog-available').textContent).toBe('true'));
   expect(apiMocks.patch).not.toHaveBeenCalled();
-  expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.fetchDirty.title'))).toBeNull();
+  expect(screen.queryByText(i18n.t('upstreams.editor.fetchDirty.title'))).toBeNull();
   expect((screen.getByRole('textbox', { name: 'Name' }) as HTMLInputElement).value).toBe('Unsaved name');
 });
 
@@ -127,7 +127,7 @@ test('saving a pending YAML edit discards an older explicit Fetch result', async
   await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
 
   fireEvent.click(screen.getByRole('button', { name: 'Edit YAML' }));
-  fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.actions.save') }));
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('upstreams.editor.actions.save') }));
   await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledTimes(1));
   await act(async () => {
     finishFetch!({ data: { kind: 'custom', data: discovered, modelsCache: customRecord.modelsCache }, error: null });
@@ -140,13 +140,13 @@ test('dirty OAuth discovery inputs save first, then make one independent Fetch r
   renderPage();
   fireEvent.click(screen.getByRole('button', { name: 'Edit discovery' }));
   fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
-  expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.fetchDirty.title'))).toBeTruthy();
+  expect(await screen.findByText(i18n.t('upstreams.editor.fetchDirty.title'))).toBeTruthy();
   expect(apiMocks.patch).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: i18n.t('common.cancel') }));
   expect(apiMocks.patch).not.toHaveBeenCalled();
 
   fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
-  fireEvent.click(await screen.findByRole('button', { name: i18n.t('dashboard.upstreamEditor.fetchDirty.saveAndFetch') }));
+  fireEvent.click(await screen.findByRole('button', { name: i18n.t('upstreams.editor.fetchDirty.saveAndFetch') }));
   await waitFor(() => expect(apiMocks.patch).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(screen.getByTestId('discovered').textContent).toBe('new-model'));
@@ -161,7 +161,7 @@ test('a pending old Fetch cannot overwrite the new Fetch after Save', async () =
   await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(1));
   fireEvent.click(screen.getByRole('button', { name: 'Edit discovery' }));
   fireEvent.click(screen.getByRole('button', { name: 'Fetch models' }));
-  fireEvent.click(await screen.findByRole('button', { name: i18n.t('dashboard.upstreamEditor.fetchDirty.saveAndFetch') }));
+  fireEvent.click(await screen.findByRole('button', { name: i18n.t('upstreams.editor.fetchDirty.saveAndFetch') }));
   await waitFor(() => expect(apiMocks.listModels).toHaveBeenCalledTimes(2));
   await act(async () => {
     finishFetches[1]!({ data: { kind: 'copilot', data: discovered, modelsCache: record.modelsCache }, error: null });

@@ -44,18 +44,18 @@ export function UsersTable({
   const locale = useLocale();
 
   if (users.length === 0) {
-    return <ResourceListEmptyState>{t('dashboard.users.empty')}</ResourceListEmptyState>;
+    return <ResourceListEmptyState>{t('directory.users.empty')}</ResourceListEmptyState>;
   }
 
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table aria-label={t('dashboard.users.table.label')} className="min-w-[820px]" style={{ tableLayout: 'auto' }}>
+      <Table aria-label={t('directory.users.table.label')} className="min-w-[820px]" style={{ tableLayout: 'auto' }}>
         <TableColumns widths={['22%', null, '50%', TABLE_ACTIONS_WIDTH]} />
         <TableHeader>
           <TableRow>
-            <TableHeaderCell>{t('dashboard.users.table.username')}</TableHeaderCell>
-            <TableHeaderCell className="whitespace-nowrap">{t('dashboard.users.table.created')}</TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.users.table.groups')}</TableHeaderCell>
+            <TableHeaderCell>{t('directory.users.table.username')}</TableHeaderCell>
+            <TableHeaderCell className="whitespace-nowrap">{t('directory.users.table.created')}</TableHeaderCell>
+            <TableHeaderCell>{t('directory.users.table.groups')}</TableHeaderCell>
             <TableActionsHeader />
           </TableRow>
         </TableHeader>
@@ -64,7 +64,7 @@ export function UsersTable({
             const protectedUser = user.id === 1 || user.id === actorId;
             return (
               <TableRow key={user.id}>
-                <TableCell><button aria-description={user.isAdmin ? t('dashboard.users.role.admin') : undefined} aria-label={user.username} className="winui-focus-rect floway-identity-action" disabled={disabled} onClick={() => onEdit(user)} type="button"><UserIdentity isAdmin={user.isAdmin} username={user.username} /></button></TableCell>
+                <TableCell><button aria-description={user.isAdmin ? t('directory.users.role.admin') : undefined} aria-label={user.username} className="winui-focus-rect floway-identity-action" disabled={disabled} onClick={() => onEdit(user)} type="button"><UserIdentity isAdmin={user.isAdmin} username={user.username} /></button></TableCell>
                 <TableCell className="whitespace-nowrap">
                   <Tooltip content={dateTime(user.createdAt, locale)} relationship="description">
                     <time className="winui-focus-rect floway-control-label whitespace-nowrap" dateTime={user.createdAt} tabIndex={0}>{shortDate(user.createdAt, locale)}</time>
@@ -76,20 +76,20 @@ export function UsersTable({
                     <TooltipIconButton
                       disabled={disabled}
                       icon={<EditRegular />}
-                      label={t('dashboard.users.actions.editNamed', { name: user.username })}
+                      label={t('directory.users.actions.editNamed', { name: user.username })}
                       onClick={() => onEdit(user)}
                     />
                     <TooltipIconButton
                       disabled={disabled}
                       icon={<KeyRegular />}
-                      label={t('dashboard.users.actions.resetPasswordNamed', { name: user.username })}
+                      label={t('directory.users.actions.resetPasswordNamed', { name: user.username })}
                       onClick={() => onResetPassword(user)}
                     />
                     <TooltipIconButton
                       danger
                       disabled={disabled || protectedUser}
                       icon={<DeleteRegular />}
-                      label={t('dashboard.users.actions.deleteNamed', { name: user.username })}
+                      label={t('directory.users.actions.deleteNamed', { name: user.username })}
                       onClick={() => onDelete(user)}
                     />
                   </TableActions>

@@ -81,7 +81,7 @@ test('keeps account dates visible and locks every editor during refresh', async 
   const name = await screen.findByRole<HTMLButtonElement>('button', { name: 'frank' });
   expect(screen.getByRole('columnheader', { name: 'Created' })).toBeTruthy();
   expect(screen.queryByRole('columnheader', { name: 'Role' })).toBeNull();
-  expect(name.getAttribute('aria-description')).toBe(i18n.t('dashboard.users.role.admin'));
+  expect(name.getAttribute('aria-description')).toBe(i18n.t('directory.users.role.admin'));
   const table = screen.getByRole('table');
   expect(screen.getAllByRole('columnheader').at(-1)?.textContent).toBe('');
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Refresh users and groups' })); });

@@ -26,11 +26,11 @@ describe('user identity settings', () => {
     /></OutcomeToastProvider>);
     if (mode === 'create') {
       await act(async () => {
-        fireEvent.change(screen.getByLabelText(i18n.t('dashboard.users.form.username')), { target: { value: 'operator' } });
-        fireEvent.change(screen.getByLabelText(i18n.t('dashboard.users.form.password')), { target: { value: 'password' } });
+        fireEvent.change(screen.getByLabelText(i18n.t('directory.users.form.username')), { target: { value: 'operator' } });
+        fireEvent.change(screen.getByLabelText(i18n.t('directory.users.form.password')), { target: { value: 'password' } });
       });
     }
-    await act(async () => { screen.getByRole('button', { name: i18n.t(mode === 'create' ? 'dashboard.users.actions.create' : 'dashboard.users.actions.save') }).click(); });
+    await act(async () => { screen.getByRole('button', { name: i18n.t(mode === 'create' ? 'directory.users.actions.create' : 'directory.users.actions.save') }).click(); });
     expect(onSaved).toHaveBeenCalledOnce();
     expect(fetch).toHaveBeenCalledOnce();
     expect(fetch).toHaveBeenCalledWith(mode === 'create' ? '/api/users' : '/api/users/2', expect.objectContaining({

@@ -19,11 +19,11 @@ function Form() {
 
 test('searches unselected groups, joins one, and removes a selected tag', async () => {
   renderInApp(<Form />);
-  const input = screen.getByRole('combobox', { name: i18n.t('dashboard.users.table.groups') });
+  const input = screen.getByRole('combobox', { name: i18n.t('directory.users.table.groups') });
   await act(async () => { fireEvent.click(input); fireEvent.change(input, { target: { value: 'Res' } }); });
   const option = await screen.findByRole('option', { name: /Research/ });
   await act(async () => { option.click(); });
   expect(screen.getByRole('status').textContent).toBe('["1","2"]');
-  await act(async () => { fireEvent.click(screen.getByLabelText(i18n.t('dashboard.groupsManagement.actions.leave', { name: 'Platform' }))); });
+  await act(async () => { fireEvent.click(screen.getByLabelText(i18n.t('directory.groups.actions.leave', { name: 'Platform' }))); });
   expect(screen.getByRole('status').textContent).toBe('["2"]');
 });

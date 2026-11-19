@@ -71,7 +71,7 @@ describe('ChatGPT credential import', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Import credential' }));
     await settle();
 
-    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.chatgpt.import.previewFirst'))).toBeTruthy();
+    expect(await screen.findByText(i18n.t('upstreams.editor.chatgpt.import.previewFirst'))).toBeTruthy();
     expect(bodyOf(EXCHANGE_PATH)).toBeNull();
   });
 
@@ -84,7 +84,7 @@ describe('ChatGPT credential import', () => {
     // Two usable candidates, so neither is chosen for the operator.
     fireEvent.click(screen.getByRole('button', { name: 'Import credential' }));
     await settle();
-    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.chatgpt.import.selectAccount'))).toBeTruthy();
+    expect(await screen.findByText(i18n.t('upstreams.editor.chatgpt.import.selectAccount'))).toBeTruthy();
 
     fireEvent.click(screen.getAllByRole('radio')[1]!);
     fireEvent.click(screen.getByRole('button', { name: 'Import credential' }));

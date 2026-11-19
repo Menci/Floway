@@ -75,7 +75,7 @@ function Harness({ discovered = [], source = record }: { discovered?: UpstreamMo
 // The subject here is the field array, not the wording. Resolving the queries
 // through the resources keeps a copy edit from failing this suite as though the
 // workspace had broken.
-const models = (key: string) => i18n.t(`dashboard.upstreamEditor.models.${key}`);
+const models = (key: string) => i18n.t(`models.editor.${key}`);
 
 describe('upstream model workspace field-array transitions', () => {
   const detailLabel = models('imageDetailOriginal');
@@ -103,7 +103,7 @@ describe('upstream model workspace field-array transitions', () => {
   it('keeps temporarily duplicate IDs attached to separate rows while swapping them', async () => {
     renderInApp(<Harness />);
 
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.models.editNamed', { name: 'model-a' }) }));
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('models.editor.editNamed', { name: 'model-a' }) }));
     const firstInput = screen.getByRole('textbox', { name: models('upstreamId') });
     fireEvent.change(firstInput, { target: { value: 'model-b' } });
     fireEvent.blur(firstInput);
@@ -111,7 +111,7 @@ describe('upstream model workspace field-array transitions', () => {
     fireEvent.click(screen.getByRole('button', { name: models('back') }));
 
     await screen.findByRole('table', { name: models('title') });
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.models.editNamed', { name: 'model-b' }) }));
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('models.editor.editNamed', { name: 'model-b' }) }));
     const secondInput = screen.getByRole('textbox', { name: models('upstreamId') });
     expect(secondInput).not.toBe(firstInput);
     fireEvent.change(secondInput, { target: { value: 'model-a' } });
@@ -120,10 +120,10 @@ describe('upstream model workspace field-array transitions', () => {
     fireEvent.click(screen.getByRole('button', { name: models('back') }));
 
     await screen.findByRole('table', { name: models('title') });
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.models.editNamed', { name: 'model-a' }) }));
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('models.editor.editNamed', { name: 'model-a' }) }));
     expect((screen.getByRole('textbox', { name: models('upstreamId') }) as HTMLInputElement).value).toBe('model-b');
     fireEvent.click(screen.getByRole('button', { name: models('back') }));
-    fireEvent.click(await screen.findByRole('button', { name: i18n.t('dashboard.upstreamEditor.models.editNamed', { name: 'model-b' }) }));
+    fireEvent.click(await screen.findByRole('button', { name: i18n.t('models.editor.editNamed', { name: 'model-b' }) }));
     expect((screen.getByRole('textbox', { name: models('upstreamId') }) as HTMLInputElement).value).toBe('model-a');
   });
 
@@ -156,20 +156,20 @@ describe('upstream model workspace field-array transitions', () => {
     });
 
     const first = renderInApp(<Harness />);
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.models.editNamed', { name: 'model-a' }) }));
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('models.editor.editNamed', { name: 'model-a' }) }));
     fireEvent.click(screen.getByRole('switch', { name: models('imageInput') }));
     expect(screen.getByRole<HTMLInputElement>('switch', { name: detailLabel }).checked).toBe(false);
     first.unmount();
 
     const second = renderInApp(<Harness source={withChat({ image_detail_original: true })} />);
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.models.editNamed', { name: 'model-a' }) }));
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('models.editor.editNamed', { name: 'model-a' }) }));
     expect(screen.queryByRole('switch', { name: detailLabel })).toBeNull();
     fireEvent.click(screen.getByRole('switch', { name: models('imageInput') }));
     expect(screen.getByRole<HTMLInputElement>('switch', { name: detailLabel }).checked).toBe(true);
     second.unmount();
 
     renderInApp(<Harness source={withChat({ modalities: { input: ['text', 'image'], output: ['text'] }, image_detail_original: true })} />);
-    fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.models.editNamed', { name: 'model-a' }) }));
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('models.editor.editNamed', { name: 'model-a' }) }));
     fireEvent.click(screen.getByRole('switch', { name: models('imageInput') }));
     expect(screen.queryByRole('switch', { name: detailLabel })).toBeNull();
     fireEvent.click(screen.getByRole('switch', { name: models('imageInput') }));

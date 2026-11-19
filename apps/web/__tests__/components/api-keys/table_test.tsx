@@ -44,9 +44,9 @@ describe('API keys table selection', () => {
     const view = renderTable(onSelect);
 
     for (const label of ['actions.editNamed', 'actions.rotateNamed', 'actions.deleteNamed'] as const) {
-      await clickButton(view, i18n.t(`dashboard.apiKeys.${label}`, { name: 'Second key' }));
+      await clickButton(view, i18n.t(`apiKeys.${label}`, { name: 'Second key' }));
     }
-    await clickButton(view, i18n.t('dashboard.apiKeys.actions.copy'));
+    await clickButton(view, i18n.t('apiKeys.actions.copy'));
 
     expect(onSelect).not.toHaveBeenCalled();
   });
@@ -62,8 +62,8 @@ describe('API keys table selection', () => {
       const onSelect = vi.fn();
       const view = renderTable(onSelect);
 
-      await clickButton(view, i18n.t('dashboard.apiKeys.table.actions'));
-      await act(async () => { view.getByRole('menuitem', { name: i18n.t('dashboard.apiKeys.actions.edit') }).click(); });
+      await clickButton(view, i18n.t('apiKeys.table.actions'));
+      await act(async () => { view.getByRole('menuitem', { name: i18n.t('apiKeys.actions.edit') }).click(); });
 
       expect(onSelect).not.toHaveBeenCalled();
     });

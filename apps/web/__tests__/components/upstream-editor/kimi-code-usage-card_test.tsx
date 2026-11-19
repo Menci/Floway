@@ -25,9 +25,9 @@ test.each([
   const record = kimiCodeRecord(usage);
   renderInApp(<KimiCodeUsageCard record={record} probeRecord={{ ...record }} />);
   expect(screen.getAllByRole('progressbar')).toHaveLength(2);
-  expect(screen.getByText(i18n.t('dashboard.upstreamEditor.kimiCode.usage.window.five_hour'))).toBeTruthy();
-  expect(screen.getByText(i18n.t(`dashboard.upstreamEditor.kimiCode.usage.window.${longWindow}`))).toBeTruthy();
-  expect(screen.queryAllByText(i18n.t('dashboard.upstreamEditor.kimiCode.usage.monthlyCodeShare', { percent: 40 })))
+  expect(screen.getByText(i18n.t('upstreams.editor.kimiCode.usage.window.five_hour'))).toBeTruthy();
+  expect(screen.getByText(i18n.t(`upstreams.editor.kimiCode.usage.window.${longWindow}`))).toBeTruthy();
+  expect(screen.queryAllByText(i18n.t('upstreams.editor.kimiCode.usage.monthlyCodeShare', { percent: 40 })))
     .toHaveLength(longWindow === 'monthly' ? 1 : 0);
 });
 
@@ -47,10 +47,10 @@ test('a successful quota refresh remains successful when account details are una
   renderInApp(<KimiCodeUsageCard record={record} probeRecord={{ ...record }} />);
   expect(screen.getByText('Old name')).toBeTruthy();
   expect(screen.getByText(/old quota failure/)).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamEditor.kimiCode.usage.refresh') }));
-  expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.kimiCode.usage.window.weekly'))).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: i18n.t('upstreams.editor.kimiCode.usage.refresh') }));
+  expect(await screen.findByText(i18n.t('upstreams.editor.kimiCode.usage.window.weekly'))).toBeTruthy();
   expect(screen.getAllByRole('progressbar')).toHaveLength(2);
   expect(screen.getByText('Old name')).toBeTruthy();
   expect(screen.queryByText(/old quota failure/)).toBeNull();
-  expect(screen.getByText(i18n.t('dashboard.upstreamEditor.kimiCode.usage.accountFailed', { message: 'account details unavailable' }))).toBeTruthy();
+  expect(screen.getByText(i18n.t('upstreams.editor.kimiCode.usage.accountFailed', { message: 'account details unavailable' }))).toBeTruthy();
 });

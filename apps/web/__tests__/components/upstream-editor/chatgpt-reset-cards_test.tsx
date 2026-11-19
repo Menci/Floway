@@ -73,7 +73,7 @@ describe('ChatGPT reset cards', () => {
     const confirm = await within(dialog).findByRole('button', { name: 'Use reset card' });
 
     fireEvent.click(confirm);
-    expect(await within(dialog).findByText(i18n.t('dashboard.upstreamEditor.chatgpt.resetCards.redeemError'))).toBeTruthy();
+    expect(await within(dialog).findByText(i18n.t('upstreams.editor.chatgpt.resetCards.redeemError'))).toBeTruthy();
     fireEvent.click(confirm);
 
     await waitFor(() => expect(onQuotaReset).toHaveBeenCalledOnce());
@@ -82,9 +82,9 @@ describe('ChatGPT reset cards', () => {
       '00000000-0000-4000-8000-000000000001',
       '00000000-0000-4000-8000-000000000001',
     ]);
-    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.chatgpt.resetCards.result.reset'))).toBeTruthy();
+    expect(await screen.findByText(i18n.t('upstreams.editor.chatgpt.resetCards.result.reset'))).toBeTruthy();
     expect(screen.queryByText('Full reset')).toBeNull();
-    expect(screen.getByText(i18n.t('dashboard.upstreamEditor.chatgpt.resetCards.refreshWarning'))).toBeTruthy();
+    expect(screen.getByText(i18n.t('upstreams.editor.chatgpt.resetCards.refreshWarning'))).toBeTruthy();
   });
 
   it('keeps the redemption key after an ambiguous failure and reopening confirmation', async () => {
@@ -95,7 +95,7 @@ describe('ChatGPT reset cards', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Use' }));
     let dialog = await screen.findByRole('dialog');
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Use reset card' }));
-    expect(await within(dialog).findByText(i18n.t('dashboard.upstreamEditor.chatgpt.resetCards.redeemError'))).toBeTruthy();
+    expect(await within(dialog).findByText(i18n.t('upstreams.editor.chatgpt.resetCards.redeemError'))).toBeTruthy();
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     fireEvent.click(await screen.findByRole('button', { name: 'Use' }));

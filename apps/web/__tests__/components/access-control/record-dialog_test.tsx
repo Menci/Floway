@@ -55,14 +55,14 @@ test('new records start at the root slash and reject an incomplete scope inline'
   vi.stubGlobal('fetch', fetch);
   await renderDialog();
 
-  expect(screen.getByRole('button', { name: i18n.t('dashboard.accessControl.scope.kind') }).querySelector('svg')).toBeTruthy();
-  expect(screen.getByRole('group', { name: i18n.t('dashboard.accessControl.fields.scope') }).textContent).toBe('/');
-  expect(screen.getByRole<HTMLInputElement>('combobox', { name: i18n.t('dashboard.accessControl.fields.principal') }).value).toBe('alice');
-  expect(screen.queryByText(i18n.t('dashboard.accessControl.scope.kinds.upstream'))).toBeNull();
+  expect(screen.getByRole('button', { name: i18n.t('permissions.scope.kind') }).querySelector('svg')).toBeTruthy();
+  expect(screen.getByRole('group', { name: i18n.t('permissions.fields.scope') }).textContent).toBe('/');
+  expect(screen.getByRole<HTMLInputElement>('combobox', { name: i18n.t('permissions.fields.principal') }).value).toBe('alice');
+  expect(screen.queryByText(i18n.t('permissions.scope.kinds.upstream'))).toBeNull();
 
-  await act(async () => { screen.getByRole('button', { name: i18n.t('dashboard.accessControl.actions.save') }).click(); });
+  await act(async () => { screen.getByRole('button', { name: i18n.t('permissions.actions.save') }).click(); });
 
-  expect(screen.getByText(i18n.t('dashboard.accessControl.validation.scopeRequired'))).toBeTruthy();
+  expect(screen.getByText(i18n.t('permissions.validation.scopeRequired'))).toBeTruthy();
   expect(fetch).not.toHaveBeenCalled();
 });
 
@@ -73,9 +73,9 @@ test('an administrator target keeps its permission fields and saves normally', a
 
   const save = screen.getByRole<HTMLButtonElement>('button', { name: 'Save rule' });
   expect(save.disabled).toBe(false);
-  const edit = screen.getByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.Upstream.Edit') });
+  const edit = screen.getByRole('radiogroup', { name: i18n.t('permissions.permissions.Upstream.Edit') });
   expect(screen.getAllByRole<HTMLInputElement>('radio').every(input => !input.disabled)).toBe(true);
-  fireEvent.click(within(edit).getByRole('radio', { name: i18n.t('dashboard.accessControl.states.off') }));
+  fireEvent.click(within(edit).getByRole('radio', { name: i18n.t('permissions.states.off') }));
   await act(async () => { fireEvent.click(save); });
   expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string)).toMatchObject({
     principal: { kind: 'user', id: 1 },
@@ -106,8 +106,8 @@ test('opening and switching scope renders final inherited permission fields imme
   observer.disconnect();
 
   expect(fields()).toEqual(['Permission.Audit']);
-  const audit = screen.getByRole('radiogroup', { name: i18n.t('dashboard.accessControl.permissions.Permission.Audit') });
-  expect(within(audit).getByRole<HTMLInputElement>('radio', { name: i18n.t('dashboard.accessControl.states.on') }).checked).toBe(true);
+  const audit = screen.getByRole('radiogroup', { name: i18n.t('permissions.permissions.Permission.Audit') });
+  expect(within(audit).getByRole<HTMLInputElement>('radio', { name: i18n.t('permissions.states.on') }).checked).toBe(true);
   expect(snapshots.every(snapshot => snapshot.endsWith('|known'))).toBe(true);
 });
 

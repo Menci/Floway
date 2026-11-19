@@ -93,11 +93,11 @@ export function KeysTable({
   const gridNavigation = useArrowNavigationGroup({ axis: 'grid' });
 
   if (keys.length === 0) {
-    return <ResourceListEmptyState>{t('dashboard.apiKeys.empty')}</ResourceListEmptyState>;
+    return <ResourceListEmptyState>{t('apiKeys.empty')}</ResourceListEmptyState>;
   }
 
   if (narrow) return <List
-    aria-label={t('dashboard.apiKeys.table.title')}
+    aria-label={t('apiKeys.table.title')}
     onSelectionChange={(_, data) => selectRow(data.selectedItems[0])}
     selectedItems={selectedItems}
     selectionMode="single"
@@ -110,8 +110,8 @@ export function KeysTable({
       // No column heads the list, so a date too far back for a relative phrase
       // has to name itself: beside the created date, two bare dates read alike.
       const lastUsed = key.last_used_at
-        ? relativeTime(key.last_used_at, locale, { now }) ?? t('dashboard.apiKeys.table.usedOn', { date: shortDate(key.last_used_at, locale) })
-        : t('dashboard.apiKeys.table.never');
+        ? relativeTime(key.last_used_at, locale, { now }) ?? t('apiKeys.table.usedOn', { date: shortDate(key.last_used_at, locale) })
+        : t('apiKeys.table.never');
       return <ListItem checkmark={null} className={s.mobileItem} disabledSelection={disabled} key={key.id} value={key.id}>
         <div className="flex items-start gap-2 min-w-0 w-full">
           <div className="grid gap-0.5 min-w-0 flex-1">
@@ -130,13 +130,13 @@ export function KeysTable({
           </div>
           <span {...stopRowSelection}><Menu>
             <MenuTrigger disableButtonEnhancement>
-              <Button appearance="subtle" aria-label={t('dashboard.apiKeys.table.actions')} disabled={disabled} icon={<MoreHorizontalRegular />} />
+              <Button appearance="subtle" aria-label={t('apiKeys.table.actions')} disabled={disabled} icon={<MoreHorizontalRegular />} />
             </MenuTrigger>
             <MenuPopover><MenuList>
-              <MenuItem icon={copyOutcomeIcon(clipboard.outcomeFor(copyTag))} onClick={() => clipboard.copy(key.key, copyTag)}>{copyLabel(clipboard.outcomeFor(copyTag), t('dashboard.apiKeys.actions.copy'))}</MenuItem>
-              <MenuItem icon={<EditRegular />} onClick={() => onEdit(key)}>{t('dashboard.apiKeys.actions.edit')}</MenuItem>
-              <MenuItem icon={<ArrowClockwiseRegular />} onClick={() => onRotate(key)}>{t('dashboard.apiKeys.actions.rotate')}</MenuItem>
-              <MenuItem className={dangerClasses.menuItem} icon={<DeleteRegular />} onClick={() => onDelete(key)}>{t('dashboard.apiKeys.actions.delete')}</MenuItem>
+              <MenuItem icon={copyOutcomeIcon(clipboard.outcomeFor(copyTag))} onClick={() => clipboard.copy(key.key, copyTag)}>{copyLabel(clipboard.outcomeFor(copyTag), t('apiKeys.actions.copy'))}</MenuItem>
+              <MenuItem icon={<EditRegular />} onClick={() => onEdit(key)}>{t('apiKeys.actions.edit')}</MenuItem>
+              <MenuItem icon={<ArrowClockwiseRegular />} onClick={() => onRotate(key)}>{t('apiKeys.actions.rotate')}</MenuItem>
+              <MenuItem className={dangerClasses.menuItem} icon={<DeleteRegular />} onClick={() => onDelete(key)}>{t('apiKeys.actions.delete')}</MenuItem>
             </MenuList></MenuPopover>
           </Menu></span>
         </div>
@@ -148,7 +148,7 @@ export function KeysTable({
     <ScrollArea axes="horizontal" className="min-w-0">
       <Table
         {...gridNavigation}
-        aria-label={t('dashboard.apiKeys.table.title')}
+        aria-label={t('apiKeys.table.title')}
         className="min-w-[920px]"
         role="grid"
       >
@@ -156,22 +156,22 @@ export function KeysTable({
         <TableHeader>
           <TableRow>
             <TableSelectionCell
-              aria-label={t('dashboard.apiKeys.table.select')}
+              aria-label={t('apiKeys.table.select')}
               checked={false}
               invisible
               radioIndicator={null}
               type="radio"
             />
             <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'name')} sortDirection={sort.getSortDirection('name')} sortable>
-              {t('dashboard.apiKeys.table.name')}
+              {t('apiKeys.table.name')}
             </TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.apiKeys.table.upstreams')}</TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.apiKeys.table.upstreamOrder')}</TableHeaderCell>
+            <TableHeaderCell>{t('apiKeys.table.upstreams')}</TableHeaderCell>
+            <TableHeaderCell>{t('apiKeys.table.upstreamOrder')}</TableHeaderCell>
             <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'created')} sortDirection={sort.getSortDirection('created')} sortable>
-              {t('dashboard.apiKeys.table.created')}
+              {t('apiKeys.table.created')}
             </TableHeaderCell>
             <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'lastUsed')} sortDirection={sort.getSortDirection('lastUsed')} sortable>
-              {t('dashboard.apiKeys.table.lastUsed')}
+              {t('apiKeys.table.lastUsed')}
             </TableHeaderCell>
             <TableActionsHeader />
           </TableRow>
@@ -195,7 +195,7 @@ export function KeysTable({
             >
               <TableSelectionCell
                 checked={selected}
-                radioIndicator={{ 'aria-label': t('dashboard.apiKeys.table.selectNamed', { name: key.name }) }}
+                radioIndicator={{ 'aria-label': t('apiKeys.table.selectNamed', { name: key.name }) }}
                 type="radio"
               />
               <TableCell className="overflow-hidden"><TableCellLayout truncate>{key.name}</TableCellLayout></TableCell>
@@ -226,18 +226,18 @@ export function KeysTable({
                         {relativeTime(key.last_used_at, locale, { now }) ?? shortDate(key.last_used_at, locale)}
                       </span>
                     </Tooltip>
-                  : <span>{t('dashboard.apiKeys.table.never')}</span>}
+                  : <span>{t('apiKeys.table.never')}</span>}
               </TableCell>
               <TableCell>
                 <TableActions leading={<TooltipIconButton
                   disabled={disabled}
                   icon={copyOutcomeIcon(clipboard.outcomeFor(copyTag))}
-                  label={copyLabel(clipboard.outcomeFor(copyTag), t('dashboard.apiKeys.actions.copy'))}
+                  label={copyLabel(clipboard.outcomeFor(copyTag), t('apiKeys.actions.copy'))}
                   onClick={() => clipboard.copy(key.key, copyTag)}
                 />}>
-                  <TooltipIconButton disabled={disabled} icon={<EditRegular />} label={t('dashboard.apiKeys.actions.editNamed', { name: key.name })} onClick={() => onEdit(key)} />
-                  <TooltipIconButton disabled={disabled} icon={<ArrowClockwiseRegular />} label={t('dashboard.apiKeys.actions.rotateNamed', { name: key.name })} onClick={() => onRotate(key)} />
-                  <TooltipIconButton danger disabled={disabled} icon={<DeleteRegular />} label={t('dashboard.apiKeys.actions.deleteNamed', { name: key.name })} onClick={() => onDelete(key)} />
+                  <TooltipIconButton disabled={disabled} icon={<EditRegular />} label={t('apiKeys.actions.editNamed', { name: key.name })} onClick={() => onEdit(key)} />
+                  <TooltipIconButton disabled={disabled} icon={<ArrowClockwiseRegular />} label={t('apiKeys.actions.rotateNamed', { name: key.name })} onClick={() => onRotate(key)} />
+                  <TooltipIconButton danger disabled={disabled} icon={<DeleteRegular />} label={t('apiKeys.actions.deleteNamed', { name: key.name })} onClick={() => onDelete(key)} />
                 </TableActions>
               </TableCell>
             </TableRow>;
@@ -253,26 +253,26 @@ const upstreamsText = (
   upstreamById: Map<string, UpstreamOption>,
   t: TFunction,
 ) => {
-  if (!key.upstream_ids) return t('dashboard.apiKeys.upstreams.all');
-  if (key.upstream_ids.length === 0) return t('dashboard.apiKeys.upstreams.none');
+  if (!key.upstream_ids) return t('apiKeys.upstreams.all');
+  if (key.upstream_ids.length === 0) return t('apiKeys.upstreams.none');
   const names = key.upstream_ids.map(id => upstreamById.get(id)?.name ?? id);
   return names.length <= 2
     ? names.join(', ')
-    : t('dashboard.apiKeys.upstreams.summary', {
+    : t('apiKeys.upstreams.summary', {
         first: names.slice(0, 2).join(', '),
         count: names.length - 2,
       });
 };
 
 const upstreamOrderText = (key: ApiKey, t: TFunction) =>
-  t(key.randomize_upstreams ? 'dashboard.apiKeys.upstreamOrder.random' : 'dashboard.apiKeys.upstreamOrder.configured');
+  t(key.randomize_upstreams ? 'apiKeys.upstreamOrder.random' : 'apiKeys.upstreamOrder.configured');
 
 const upstreamsTitle = (
   key: ApiKey,
   upstreamById: Map<string, UpstreamOption>,
   t: TFunction,
 ) => {
-  if (!key.upstream_ids) return t('dashboard.apiKeys.upstreams.inheritsTitle');
-  if (key.upstream_ids.length === 0) return t('dashboard.apiKeys.upstreams.none');
+  if (!key.upstream_ids) return t('apiKeys.upstreams.inheritsTitle');
+  if (key.upstream_ids.length === 0) return t('apiKeys.upstreams.none');
   return key.upstream_ids.map(id => upstreamById.get(id)?.name ?? id).join('\n');
 };

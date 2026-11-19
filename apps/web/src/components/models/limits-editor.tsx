@@ -10,9 +10,9 @@ const { Field, Input } = fluentComponents;
 // them. Labels are shared because both the upstream editor and the alias
 // metadata editor name the same quantity.
 const LIMIT_LABELS: Readonly<Record<ModelLimitKey, string>> = {
-  max_context_window_tokens: 'dashboard.models.limits.context',
-  max_prompt_tokens: 'dashboard.models.limits.prompt',
-  max_output_tokens: 'dashboard.models.limits.output',
+  max_context_window_tokens: 'models.limits.context',
+  max_prompt_tokens: 'models.limits.prompt',
+  max_output_tokens: 'models.limits.output',
 };
 
 const LIMIT_PLACEHOLDERS: Readonly<Record<ModelLimitKey, string>> = {

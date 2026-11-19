@@ -44,7 +44,7 @@ function Harness({ ingressHeadersRules = [] }: { ingressHeadersRules?: { key: st
 }
 
 const label = (key: 'keyForRow' | 'valueForRow' | 'remove', number: number) =>
-  i18n.t(`dashboard.upstreamEditor.headers.${key}`, { number });
+  i18n.t(`upstreams.editor.headers.${key}`, { number });
 const valueOf = (element: HTMLElement) => (element as HTMLInputElement).value;
 const placeholderOf = (element: HTMLElement) => (element as HTMLInputElement).placeholder;
 
@@ -54,19 +54,19 @@ describe('Custom ingress header rules', () => {
     let behavior = screen.getByLabelText(label('valueForRow', 1));
 
     fireEvent.click(behavior);
-    fireEvent.click(screen.getByRole('option', { name: i18n.t('dashboard.upstreamEditor.headers.passthrough') }));
+    fireEvent.click(screen.getByRole('option', { name: i18n.t('upstreams.editor.headers.passthrough') }));
     expect(screen.getByTestId('rules').textContent).toContain('"value":null');
     expect(valueOf(behavior)).toBe('');
-    expect(placeholderOf(behavior)).toBe(i18n.t('dashboard.upstreamEditor.headers.passthrough'));
+    expect(placeholderOf(behavior)).toBe(i18n.t('upstreams.editor.headers.passthrough'));
     fireEvent.keyDown(behavior, { key: 'Backspace' });
     expect(screen.getByTestId('rules').textContent).toContain('"value":null');
 
     behavior = screen.getByLabelText(label('valueForRow', 1));
     fireEvent.click(behavior);
-    fireEvent.click(screen.getByRole('option', { name: i18n.t('dashboard.upstreamEditor.headers.empty') }));
+    fireEvent.click(screen.getByRole('option', { name: i18n.t('upstreams.editor.headers.empty') }));
     expect(screen.getByTestId('rules').textContent).toContain('"value":""');
     expect(valueOf(behavior)).toBe('');
-    expect(placeholderOf(behavior)).toBe(i18n.t('dashboard.upstreamEditor.headers.empty'));
+    expect(placeholderOf(behavior)).toBe(i18n.t('upstreams.editor.headers.empty'));
 
     behavior = screen.getByLabelText(label('valueForRow', 1));
     fireEvent.change(behavior, { target: { value: '(empty)' } });
@@ -80,15 +80,15 @@ describe('Custom ingress header rules', () => {
     const second = screen.getByLabelText(label('keyForRow', 2));
     fireEvent.change(second, { target: { value: 'X-Route' } });
     fireEvent.blur(second);
-    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.duplicatePassthrough'))).toBeTruthy();
+    expect(await screen.findByText(i18n.t('upstreams.editor.headers.validation.duplicatePassthrough'))).toBeTruthy();
 
     fireEvent.change(first, { target: { value: 'Anthropic-Beta' } });
     fireEvent.blur(first);
-    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.anthropicMessagesOwned'))).toBeTruthy();
-    expect(screen.queryByText(i18n.t('dashboard.upstreamEditor.headers.validation.duplicatePassthrough'))).toBeNull();
+    expect(await screen.findByText(i18n.t('upstreams.editor.headers.validation.anthropicMessagesOwned'))).toBeTruthy();
+    expect(screen.queryByText(i18n.t('upstreams.editor.headers.validation.duplicatePassthrough'))).toBeNull();
 
     fireEvent.change(first, { target: { value: 'Authorization' } });
     fireEvent.blur(first);
-    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.headers.validation.transportOwned'))).toBeTruthy();
+    expect(await screen.findByText(i18n.t('upstreams.editor.headers.validation.transportOwned'))).toBeTruthy();
   });
 });
