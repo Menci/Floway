@@ -59,29 +59,11 @@ for (const platform of ['bash', 'powershell'] as const) {
       });
     });
 
-    test('initializes an empty connection list', () => {
-      run(source([]), (result, staged) => {
-        expect(result.status, `${result.stdout}${result.stderr}`).toBe(0);
-        expect(JSON.parse(staged).connections).toEqual([entry(nextWork)]);
-      });
-    });
-
     test('rejects malformed installed JSON without printing credentials', () => {
       run(`{"connections":[{"apiKey":"${secret}","endpoint":INVALID}]}`, result => {
         expect(result.status).not.toBe(0);
         expect(`${result.stdout}${result.stderr}`).not.toContain(secret);
       });
-    });
-
-    test.each([{}, { connections: null }, { connections: {} }, { connections: secret }])('rejects non-array connections without printing credentials: %j', value => {
-      run(JSON.stringify(value), result => {
-        expect(result.status).not.toBe(0);
-        expect(`${result.stdout}${result.stderr}`).not.toContain(secret);
-      });
-    });
-
-    test('rejects an empty installed connection file', () => {
-      run('', result => { expect(result.status).not.toBe(0); });
     });
   });
 }

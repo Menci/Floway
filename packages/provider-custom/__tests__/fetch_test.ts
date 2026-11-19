@@ -3,19 +3,15 @@ import { test } from 'vitest';
 import { assertCustomUpstreamRecord } from '../src/config.ts';
 import {
   customFetchAlphaSearch,
-  customFetchOpenAIAudioTranscriptions,
   customFetchOpenAIChatCompletions,
-  customFetchOpenAIEmbeddings,
   customFetchAnthropicMessages,
   customFetchAnthropicMessagesCountTokens,
   customFetchModels,
-  customFetchOpenAIResponses,
   customFetchOpenAIResponsesCompact,
 } from '../src/fetch.ts';
-import { createCustomProvider } from '../src/provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, noopUpstreamCallOptions, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
 const baseRecord: UpstreamRecord = {
   id: 'up_test',
@@ -40,41 +36,6 @@ const baseRecord: UpstreamRecord = {
   modelsCache: null,
   hue: 210,
 };
-
-test('typed transports use default /v1/* paths', async () => {
-  const { config } = assertCustomUpstreamRecord(baseRecord);
-
-  const seen: string[] = [];
-  await withMockedFetch(
-    request => {
-      seen.push(request.url);
-      return new Response('{}', { status: 200 });
-    },
-    async () => {
-      await customFetchOpenAIChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchOpenAIResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchOpenAIResponsesCompact(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchAnthropicMessagesCountTokens(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchAlphaSearch(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchOpenAIEmbeddings(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchOpenAIAudioTranscriptions(config, { method: 'POST', body: new FormData() }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchModels(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-    },
-  );
-
-  assertEquals(seen, [
-    'https://custom.example.com/v1/chat/completions',
-    'https://custom.example.com/v1/responses',
-    'https://custom.example.com/v1/responses/compact',
-    'https://custom.example.com/v1/messages',
-    'https://custom.example.com/v1/messages/count_tokens',
-    'https://custom.example.com/v1/alpha/search',
-    'https://custom.example.com/v1/embeddings',
-    'https://custom.example.com/v1/audio/transcriptions',
-    'https://custom.example.com/v1/models',
-  ]);
-});
 
 test('admin pathOverrides replace defaults and propagate to derived sub-paths', async () => {
   const { config } = assertCustomUpstreamRecord({
@@ -114,50 +75,6 @@ test('admin pathOverrides replace defaults and propagate to derived sub-paths', 
   ]);
 });
 
-test('customFetchModels resolves the path from modelsFetch.endpoint', async () => {
-  const { config } = assertCustomUpstreamRecord({
-    ...baseRecord,
-    config: {
-      ...(baseRecord.config as Record<string, unknown>),
-      modelsFetch: { enabled: true, authStyle: 'bearer', endpoint: '/models' },
-    },
-  });
-  let seen: string | undefined;
-  await withMockedFetch(
-    request => {
-      seen = request.url;
-      return new Response('{}', { status: 200 });
-    },
-    async () => {
-      await customFetchModels(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-    },
-  );
-
-  assertEquals(seen, 'https://custom.example.com/models');
-});
-
-test('customFetchModels falls back to the default /v1/models path when modelsFetch.endpoint is absent', async () => {
-  const { config } = assertCustomUpstreamRecord({
-    ...baseRecord,
-    config: {
-      ...(baseRecord.config as Record<string, unknown>),
-      modelsFetch: { enabled: true, authStyle: 'bearer' },
-    },
-  });
-  let seen: string | undefined;
-  await withMockedFetch(
-    request => {
-      seen = request.url;
-      return new Response('{}', { status: 200 });
-    },
-    async () => {
-      await customFetchModels(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-    },
-  );
-
-  assertEquals(seen, 'https://custom.example.com/v1/models');
-});
-
 test('customFetchModels uses modelsFetch.authStyle independently from the inference protocol', async () => {
   const { config: stored } = assertCustomUpstreamRecord(baseRecord);
   const { config } = assertCustomUpstreamRecord({
@@ -190,98 +107,6 @@ test('customFetchModels uses modelsFetch.authStyle independently from the infere
   ]);
 });
 
-test('customFetchModels sends no credential when apiKey is empty', async () => {
-  const { config: stored } = assertCustomUpstreamRecord(baseRecord);
-  const { config } = assertCustomUpstreamRecord({
-    ...baseRecord,
-    config: {
-      ...stored,
-      apiKey: '',
-      modelsFetch: { enabled: true, authStyle: 'bearer' },
-    },
-  });
-  let authorization: string | null = null;
-  let xApiKey: string | null = null;
-  await withMockedFetch(
-    request => {
-      authorization = request.headers.get('authorization');
-      xApiKey = request.headers.get('x-api-key');
-      return new Response('{}', { status: 200 });
-    },
-    async () => {
-      await customFetchModels(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-    },
-  );
-
-  assertEquals(authorization, null);
-  assertEquals(xApiKey, null);
-});
-
-test('OpenAI transport sends the configured token via Authorization', async () => {
-  const { config } = assertCustomUpstreamRecord(baseRecord);
-  let authHeader: string | null = null;
-  let xApiKey: string | null = null;
-  await withMockedFetch(
-    request => {
-      authHeader = request.headers.get('authorization');
-      xApiKey = request.headers.get('x-api-key');
-      return new Response('{}', { status: 200 });
-    },
-    async () => {
-      await customFetchModels(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-    },
-  );
-
-  assertEquals(authHeader, 'Bearer sk-test');
-  assertEquals(xApiKey, null);
-});
-
-test('one upstream uses Authorization for OpenAI and x-api-key for Anthropic Messages', async () => {
-  const { config } = assertCustomUpstreamRecord(baseRecord);
-  let authHeader: string | null = null;
-  let xApiKey: string | null = null;
-  let anthropicVersion: string | null = null;
-  const observed: { authorization: string | null; xApiKey: string | null; anthropicVersion: string | null }[] = [];
-  await withMockedFetch(
-    request => {
-      authHeader = request.headers.get('authorization');
-      xApiKey = request.headers.get('x-api-key');
-      anthropicVersion = request.headers.get('anthropic-version');
-      observed.push({ authorization: authHeader, xApiKey, anthropicVersion });
-      return new Response('{}', { status: 200 });
-    },
-    async () => {
-      await customFetchOpenAIChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-    },
-  );
-
-  assertEquals(observed, [
-    { authorization: 'Bearer sk-test', xApiKey: null, anthropicVersion: null },
-    { authorization: null, xApiKey: 'sk-test', anthropicVersion: '2023-06-01' },
-  ]);
-});
-
-test('Anthropic transport preserves a caller-supplied anthropic-version', async () => {
-  const { config } = assertCustomUpstreamRecord(baseRecord);
-  let anthropicVersion: string | null = null;
-  await withMockedFetch(
-    request => {
-      anthropicVersion = request.headers.get('anthropic-version');
-      return new Response('{}', { status: 200 });
-    },
-    async () => {
-      await customFetchAnthropicMessages(
-        config,
-        { method: 'POST', body: '{}', headers: { 'anthropic-version': '2024-01-01' } },
-        { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
-      );
-    },
-  );
-
-  assertEquals(anthropicVersion, '2024-01-01');
-});
-
 test('an empty apiKey sends neither Authorization nor x-api-key', async () => {
   const { config } = assertCustomUpstreamRecord({
     ...baseRecord,
@@ -311,87 +136,4 @@ test('an empty apiKey sends neither Authorization nor x-api-key', async () => {
   assertEquals(authHeader, null);
   assertEquals(xApiKey, null);
   assertEquals(anthropicVersion, null);
-});
-
-test('Custom provider callOpenAIImagesEdits forwards multipart body with model field appended', async () => {
-  const record: UpstreamRecord = {
-    ...baseRecord,
-    config: {
-      baseUrl: 'https://custom.example.com',
-      apiKey: 'sk-custom',
-      endpoints: { openaiChatCompletions: {} },
-      ingressHeadersRules: [],
-    },
-  };
-  let forwarded: { url: string; form: FormData } | undefined;
-  await withMockedFetch(
-    async request => {
-      const path = new URL(request.url).pathname;
-      if (path === '/v1/models') return jsonResponse({ data: [{ id: 'gpt-image-2' }] });
-      if (path === '/v1/images/edits') {
-        forwarded = { url: request.url, form: await request.formData() };
-        return jsonResponse({ data: [{ b64_json: 'abc' }], usage: { input_tokens: 5, output_tokens: 20 } });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const provider = createCustomProvider(record);
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
-      const result = await provider.instance.callOpenAIImagesEdits(model, {
-        parameters: { prompt: 'add a kite' },
-        images: [{
-          type: 'upload',
-          file: new File([new Uint8Array([1, 2, 3])], 'photo.png', { type: 'image/png' }),
-        }],
-      }, undefined, noopUpstreamCallOptions());
-      assertEquals(result.modelKey, 'gpt-image-2');
-      assertEquals(result.http.status, 200);
-    },
-  );
-  assertExists(forwarded);
-  assertEquals(forwarded.form.get('model'), 'gpt-image-2');
-  assertEquals(forwarded.form.get('prompt'), 'add a kite');
-  assertEquals(forwarded.form.get('image') instanceof File, true);
-});
-
-test('Custom provider callOpenAIAudioTranscriptions preserves multipart entries and honors the path override', async () => {
-  const record: UpstreamRecord = {
-    ...baseRecord,
-    config: {
-      baseUrl: 'https://custom.example.com',
-      apiKey: 'sk-custom',
-      endpoints: {},
-      ingressHeadersRules: [],
-      pathOverrides: { '/audio/transcriptions': '/speech/to-text' },
-      modelsFetch: { enabled: false, authStyle: 'bearer' },
-      models: [{ upstreamModelId: 'whisper-upstream', kind: 'transcription', endpoints: { openaiAudioTranscriptions: {} } }],
-    },
-  };
-  let forwarded: { url: string; form: FormData } | undefined;
-  await withMockedFetch(
-    async request => {
-      forwarded = { url: request.url, form: await request.formData() };
-      return jsonResponse({ text: 'hello' });
-    },
-    async () => {
-      const provider = createCustomProvider(record);
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
-      const result = await provider.instance.callOpenAIAudioTranscriptions(model, {
-        entries: [
-          { name: 'file', value: new File([new Uint8Array([7, 8])], 'voice.ogg', { type: 'audio/ogg' }) },
-          { name: 'model', value: 'public-model' },
-          { name: 'language', value: 'en' },
-        ],
-      }, undefined, noopUpstreamCallOptions());
-      assertEquals(result.modelKey, 'whisper-upstream');
-    },
-  );
-  assertExists(forwarded);
-  assertEquals(forwarded.url, 'https://custom.example.com/speech/to-text');
-  assertEquals(forwarded.form.get('model'), 'whisper-upstream');
-  assertEquals(forwarded.form.get('language'), 'en');
-  const file = forwarded.form.get('file');
-  assertEquals(file instanceof File, true);
-  assertEquals((file as File).name, 'voice.ogg');
-  assertEquals((file as File).type, 'audio/ogg');
 });

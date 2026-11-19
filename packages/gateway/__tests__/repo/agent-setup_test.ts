@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
-import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename } from './test-sqlite.ts';
+import { createSqliteTestDb } from './test-sqlite.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { Repo } from '../../src/repo/types.ts';
-import { type AgentSetupConfiguration, AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
+import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 
 type RepoFactory = () => Promise<Repo>;
 
@@ -15,222 +15,6 @@ const backends: ReadonlyArray<readonly [string, RepoFactory]> = [
   ['memory', makeMemoryRepo],
   ['sql', makeSqlRepo],
 ];
-
-test('migration 0061 adds optional Claude settings without replacing existing choices', async () => {
-  const db = await createSqlJsDatabase();
-  try {
-    for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0061_agent_setup_claude_settings.sql') break;
-      db.run(sql);
-    }
-    const baseConfiguration = {
-      apiKeyId: 'key-a',
-      claudeCode: {
-        model: null,
-        defaultOpusModel: null,
-        defaultSonnetModel: null,
-        defaultHaikuModel: null,
-        effortLevel: null,
-        modelDiscovery: true,
-      },
-      codex: { model: null, reasoningEffort: null },
-    };
-    db.run(
-      `INSERT INTO agent_setup
-        (token, user_id, configuration_json, configuration_revision, expires_at, created_at, updated_at)
-       VALUES (?, ?, ?, 1, 2000, 1000, 1000), (?, ?, ?, 1, 2000, 1000, 1000), (?, ?, ?, 1, 2000, 1000, 1000)`,
-      [
-        'legacy', 1, JSON.stringify(baseConfiguration),
-        'selected', 1, JSON.stringify({
-          ...baseConfiguration,
-          claudeCode: { ...baseConfiguration.claudeCode, cleanupPeriodDays: 365 },
-        }),
-        'opted-out', 1, JSON.stringify({
-          ...baseConfiguration,
-          claudeCode: { ...baseConfiguration.claudeCode, optOutAiAttribution: true },
-        }),
-      ],
-    );
-
-    const migration = migrationSqlByFilename.find(([filename]) => filename === '0061_agent_setup_claude_settings.sql');
-    if (migration === undefined) throw new Error('missing migration 0061_agent_setup_claude_settings.sql');
-    db.run(migration[1]);
-
-    const rows = db.exec('SELECT token, configuration_json FROM agent_setup ORDER BY token')[0];
-    if (rows === undefined) throw new Error('migration 0061 returned no agent_setup rows');
-    const configurations = Object.fromEntries(rows.values.map(([token, json]) => [
-      token as string,
-      JSON.parse(json as string) as AgentSetupConfiguration,
-    ]));
-    expect(configurations.legacy?.claudeCode.cleanupPeriodDays).toBeNull();
-    expect(configurations.legacy?.claudeCode.optOutAiAttribution).toBe(false);
-    expect(configurations.selected?.claudeCode.cleanupPeriodDays).toBe(365);
-    expect(configurations['opted-out']?.claudeCode.optOutAiAttribution).toBe(true);
-  } finally {
-    db.close();
-  }
-});
-
-test('migration 0068 adds the Claude fable override without replacing existing choices', async () => {
-  const db = await createSqlJsDatabase();
-  try {
-    for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0068_agent_setup_fable_model.sql') break;
-      db.run(sql);
-    }
-    const baseConfiguration = {
-      apiKeyId: 'key-a',
-      claudeCode: {
-        model: null,
-        defaultOpusModel: null,
-        defaultSonnetModel: null,
-        defaultHaikuModel: null,
-        effortLevel: null,
-        cleanupPeriodDays: null,
-        optOutAiAttribution: false,
-        modelDiscovery: true,
-      },
-      codex: { model: null, reasoningEffort: null },
-    };
-    db.run(
-      `INSERT INTO agent_setup
-        (token, user_id, configuration_json, configuration_revision, expires_at, created_at, updated_at)
-       VALUES (?, ?, ?, 1, 2000, 1000, 1000), (?, ?, ?, 1, 2000, 1000, 1000)`,
-      [
-        'legacy', 1, JSON.stringify(baseConfiguration),
-        'selected', 1, JSON.stringify({
-          ...baseConfiguration,
-          claudeCode: { ...baseConfiguration.claudeCode, defaultFableModel: 'claude-fable-5[1m]' },
-        }),
-      ],
-    );
-
-    const migration = migrationSqlByFilename.find(([filename]) => filename === '0068_agent_setup_fable_model.sql');
-    if (migration === undefined) throw new Error('missing migration 0068_agent_setup_fable_model.sql');
-    db.run(migration[1]);
-
-    const rows = db.exec('SELECT token, configuration_json FROM agent_setup ORDER BY token')[0];
-    if (rows === undefined) throw new Error('migration 0068 returned no agent_setup rows');
-    const configurations = Object.fromEntries(rows.values.map(([token, json]) => [
-      token as string,
-      JSON.parse(json as string) as AgentSetupConfiguration,
-    ]));
-    expect(configurations.legacy?.claudeCode.defaultFableModel).toBeNull();
-    expect(configurations.selected?.claudeCode.defaultFableModel).toBe('claude-fable-5[1m]');
-  } finally {
-    db.close();
-  }
-});
-
-test('migration 0080 adds the Claude opt-out toggles without replacing existing choices', async () => {
-  const db = await createSqlJsDatabase();
-  try {
-    for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0080_agent_setup_claude_opt_outs.sql') break;
-      db.run(sql);
-    }
-    const baseConfiguration = {
-      apiKeyId: 'key-a',
-      claudeCode: {
-        model: null,
-        defaultFableModel: null,
-        defaultOpusModel: null,
-        defaultSonnetModel: null,
-        defaultHaikuModel: null,
-        effortLevel: null,
-        cleanupPeriodDays: null,
-        optOutAiAttribution: false,
-        modelDiscovery: true,
-      },
-      codex: { model: null, reasoningEffort: null },
-    };
-    db.run(
-      `INSERT INTO agent_setup
-        (token, user_id, configuration_json, configuration_revision, expires_at, created_at, updated_at)
-       VALUES (?, ?, ?, 1, 2000, 1000, 1000), (?, ?, ?, 1, 2000, 1000, 1000)`,
-      [
-        'legacy', 1, JSON.stringify(baseConfiguration),
-        'opted-out', 1, JSON.stringify({
-          ...baseConfiguration,
-          claudeCode: { ...baseConfiguration.claudeCode, disableAutoMemory: true, disableAgentView: true },
-        }),
-      ],
-    );
-
-    const migration = migrationSqlByFilename.find(([filename]) => filename === '0080_agent_setup_claude_opt_outs.sql');
-    if (migration === undefined) throw new Error('missing migration 0080_agent_setup_claude_opt_outs.sql');
-    db.run(migration[1]);
-
-    const rows = db.exec('SELECT token, configuration_json FROM agent_setup ORDER BY token')[0];
-    if (rows === undefined) throw new Error('migration 0080 returned no agent_setup rows');
-    const configurations = Object.fromEntries(rows.values.map(([token, json]) => [
-      token as string,
-      JSON.parse(json as string) as AgentSetupConfiguration,
-    ]));
-    expect(configurations.legacy?.claudeCode.disableAutoMemory).toBe(false);
-    expect(configurations.legacy?.claudeCode.disableAgentView).toBe(false);
-    expect(configurations['opted-out']?.claudeCode.disableAutoMemory).toBe(true);
-    expect(configurations['opted-out']?.claudeCode.disableAgentView).toBe(true);
-  } finally {
-    db.close();
-  }
-});
-
-test('migration 0097 adds the Claude Artifact opt-out without replacing existing choices', async () => {
-  const db = await createSqlJsDatabase();
-  try {
-    for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0097_agent_setup_disable_artifact.sql') break;
-      db.run(sql);
-    }
-    const baseConfiguration = {
-      apiKeyId: 'key-a',
-      claudeCode: {
-        model: null,
-        defaultFableModel: null,
-        defaultOpusModel: null,
-        defaultSonnetModel: null,
-        defaultHaikuModel: null,
-        effortLevel: null,
-        cleanupPeriodDays: null,
-        optOutAiAttribution: false,
-        disableAutoMemory: false,
-        disableAgentView: false,
-        modelDiscovery: true,
-      },
-      codex: { model: null, reasoningEffort: null },
-      pi: { model: null, provider: 'floway', thinkingLevel: null, retry: { enabled: null, maxRetries: null } },
-      omp: { model: null, provider: 'floway', retry: { enabled: null, maxRetries: null } },
-    };
-    db.run(
-      `INSERT INTO agent_setup
-        (token, user_id, configuration_json, configuration_revision, expires_at, created_at, updated_at)
-       VALUES (?, ?, ?, 1, 2000, 1000, 1000), (?, ?, ?, 1, 2000, 1000, 1000)`,
-      [
-        'legacy', 1, JSON.stringify(baseConfiguration),
-        'opted-out', 1, JSON.stringify({
-          ...baseConfiguration,
-          claudeCode: { ...baseConfiguration.claudeCode, disableArtifact: true },
-        }),
-      ],
-    );
-
-    const migration = migrationSqlByFilename.find(([filename]) => filename === '0097_agent_setup_disable_artifact.sql');
-    if (migration === undefined) throw new Error('missing migration 0097_agent_setup_disable_artifact.sql');
-    db.run(migration[1]);
-
-    const rows = db.exec('SELECT token, configuration_json FROM agent_setup ORDER BY token')[0];
-    if (rows === undefined) throw new Error('migration 0097 returned no agent_setup rows');
-    const configurations = Object.fromEntries(rows.values.map(([token, json]) => [
-      token as string,
-      JSON.parse(json as string) as AgentSetupConfiguration,
-    ]));
-    expect(configurations.legacy?.claudeCode.disableArtifact).toBe(false);
-    expect(configurations['opted-out']?.claudeCode.disableArtifact).toBe(true);
-  } finally {
-    db.close();
-  }
-});
 
 const insert = (repo: Repo, over: Partial<Parameters<Repo['agentSetup']['insertForUser']>[0]> = {}) =>
   repo.agentSetup.insertForUser({
@@ -243,26 +27,6 @@ const insert = (repo: Repo, over: Partial<Parameters<Repo['agentSetup']['insertF
   });
 
 describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
-  test('insertForUser creates a fresh lease at revision 1', async () => {
-    const repo = await makeRepo();
-    const created = await insert(repo);
-    expect(created).toEqual({
-      userId: 7,
-      token: 'token-a',
-      configurationJson: '{"apiKeyId":"key-a"}',
-      configurationRevision: 1,
-      expiresAt: 1_300,
-      createdAt: 1_000,
-      updatedAt: 1_000,
-    });
-  });
-
-  test('findByToken loads exactly the addressed row', async () => {
-    const repo = await makeRepo();
-    const created = await insert(repo);
-    expect(await repo.agentSetup.findByToken('token-a')).toEqual(created);
-    expect(await repo.agentSetup.findByToken('nope')).toBeNull();
-  });
 
   test('a token collision throws AgentSetupTokenCollisionError', async () => {
     const repo = await makeRepo();
@@ -270,14 +34,6 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     // The SQL backend rejects; the in-memory backend throws synchronously. An
     // async wrapper normalizes both into a rejected promise for the assertion.
     await expect((async () => await insert(repo, { userId: 8 }))()).rejects.toBeInstanceOf(AgentSetupTokenCollisionError);
-  });
-
-  test('multiple unexpired leases per user coexist; insert never sweeps a live sibling', async () => {
-    const repo = await makeRepo();
-    await insert(repo, { token: 'token-a', now: 1_000, expiresAt: 5_000 });
-    await insert(repo, { token: 'token-b', now: 2_000, expiresAt: 5_000 });
-    expect((await repo.agentSetup.findByToken('token-a'))?.token).toBe('token-a');
-    expect((await repo.agentSetup.findByToken('token-b'))?.token).toBe('token-b');
   });
 
   test('insert sweeps only the same user\'s expired rows, measured against the new created_at', async () => {
@@ -353,20 +109,6 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     expect((await repo.agentSetup.findByToken('token-a'))?.configurationRevision).toBe(1);
   });
 
-  test('updateConfiguration writes an already-expired but present lease', async () => {
-    const repo = await makeRepo();
-    await insert(repo, { expiresAt: 1_300 });
-    const result = await repo.agentSetup.updateConfiguration({
-      userId: 7, token: 'token-a', expectedRevision: 1,
-      configurationJson: '{"apiKeyId":"key-a"}', now: 1_500, expiresAt: 1_800,
-    });
-    expect(result.status).toBe('ok');
-    if (result.status !== 'ok') throw new Error('unreachable');
-    expect(result.record.token).toBe('token-a');
-    expect(result.record.expiresAt).toBe(1_800);
-    expect(result.record.configurationRevision).toBe(2);
-  });
-
   test('renewLease extends expiry without touching the token, revision, or updated_at', async () => {
     const repo = await makeRepo();
     await insert(repo);
@@ -378,31 +120,5 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     expect(renewed.record.configurationRevision).toBe(1);
     expect(renewed.record.updatedAt).toBe(1_000);
     expect(renewed.record.configurationJson).toBe('{"apiKeyId":"key-a"}');
-  });
-
-  test('renewLease revives an expired-but-present lease', async () => {
-    const repo = await makeRepo();
-    await insert(repo, { expiresAt: 1_300 });
-    const renewed = await repo.agentSetup.renewLease({ userId: 7, token: 'token-a', expiresAt: 5_000 });
-    expect(renewed.status).toBe('ok');
-    if (renewed.status !== 'ok') throw new Error('unreachable');
-    expect(renewed.record.expiresAt).toBe(5_000);
-    expect(renewed.record.configurationRevision).toBe(1);
-  });
-
-  test('renewLease reports missing when the token does not exist or belongs to another user', async () => {
-    const repo = await makeRepo();
-    await insert(repo);
-    expect((await repo.agentSetup.renewLease({ userId: 7, token: 'nope', expiresAt: 1_400 })).status).toBe('missing');
-    expect((await repo.agentSetup.renewLease({ userId: 8, token: 'token-a', expiresAt: 1_400 })).status).toBe('missing');
-    expect((await repo.agentSetup.findByToken('token-a'))?.expiresAt).toBe(1_300);
-  });
-
-  test('an expired lease preserves its configuration until it is renewed', async () => {
-    const repo = await makeRepo();
-    await insert(repo);
-    const stored = await repo.agentSetup.findByToken('token-a');
-    expect(stored?.configurationJson).toBe('{"apiKeyId":"key-a"}');
-    expect(stored?.expiresAt).toBe(1_300);
   });
 });

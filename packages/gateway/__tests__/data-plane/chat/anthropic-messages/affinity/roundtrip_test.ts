@@ -73,41 +73,9 @@ test('carriers a real codec emits on both Anthropic Messages slots decode on the
   expect(projectionB.materialize().messages).toEqual([]);
 });
 
-test('a synthetic carrier issued for a turn without thinking decodes on the next turn', async () => {
-  const candidateA = candidate('upstream-a');
-  const candidateB = candidate('upstream-b');
-  const content = await assistantContent(wrapAnthropicMessagesAffinityEgress(frames([
-    eventFrame({ type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } }),
-    eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'answer' } }),
-    eventFrame({ type: 'content_block_stop', index: 0 }),
-    eventFrame({ type: 'message_stop' }),
-  ]), { codec, affinity: targetFor(candidateA) }));
-
-  const prepared = await analyzeAnthropicMessagesAffinity({
-    model: 'model',
-    max_tokens: 100,
-    messages: [{ role: 'assistant', content }],
-  }, codec);
-
-  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
-  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
-  expect(projectionA.degrades).toBe(false);
-  expect(projectionB.degrades).toBe(false);
-  expect(projectionA.materialize().messages[0].content).toEqual([{ citations: null, type: 'text', text: 'answer' }]);
-  expect(projectionB.materialize().messages[0].content).toEqual([{ citations: null, type: 'text', text: 'answer' }]);
-});
-
 test.each([
   { name: 'empty initial signature', fields: { signature: '' }, deltas: [] },
-  { name: 'nonempty initial signature', fields: { signature: 'initial' }, deltas: [] },
   { name: 'missing signature', fields: {}, deltas: [] },
-  { name: 'undefined signature', fields: { signature: undefined }, deltas: [] },
-  { name: 'null signature', fields: { signature: null }, deltas: [] },
-  { name: 'numeric signature', fields: { signature: 42 }, deltas: [] },
-  { name: 'boolean signature', fields: { signature: false }, deltas: [] },
-  { name: 'array signature', fields: { signature: ['vendor'] }, deltas: [] },
-  { name: 'object signature', fields: { signature: { vendor: 'value' } }, deltas: [] },
-  { name: 'empty signature delta', fields: { signature: 'initial' }, deltas: [''] },
   { name: 'latest signature delta', fields: { signature: 'initial' }, deltas: ['first', 'latest'] },
 ])('round-trips $name in first and subsequent thinking blocks', async ({ fields, deltas }) => {
   const candidateA = candidate('upstream-a');

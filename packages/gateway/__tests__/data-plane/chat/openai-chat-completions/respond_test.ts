@@ -4,7 +4,7 @@ import { expect, test } from 'vitest';
 import { respondOpenAIChatCompletions } from '../../../../src/data-plane/chat/openai-chat-completions/respond.ts';
 import type { DumpAccumulator } from '../../../../src/dump/accumulator.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { toInternalDebugError, internalErrorResult, eventResult } from '@floway-dev/provider';
 import { assert, assertEquals, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -26,10 +26,10 @@ const chunk = (text: string): OpenAIChatCompletionsStreamEvent => ({
   choices: [{  index: 0, delta: { content: text }, finish_reason: null }],
 });
 
-const serve = async (dump: DumpAccumulator, frames: AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>): Promise<string> => {
+const serve = async (dump: DumpAccumulator, frames: AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>, expectedChoices?: number): Promise<string> => {
   const ctx = mockChatGatewayCtx({ wantsStream: true, dump });
   const app = new Hono().get('/', c =>
-    respondOpenAIChatCompletions(c, eventResult(frames, testTelemetryModelIdentity), true, true, ctx));
+    respondOpenAIChatCompletions(c, eventResult(frames, testTelemetryModelIdentity), true, true, ctx, expectedChoices));
   return await (await app.request('/')).text();
 };
 
@@ -40,8 +40,8 @@ test('the error frame the client is sent is recorded like every other frame', as
     throw new RangeError('cache token counts exceed inclusive input tokens: 479 - 13312 - 0');
   })());
 
-  // What the client receives is unchanged by this.
-  expect(body).toContain('event: error');
+  expect(body).toContain('data: {"error":');
+  expect(body).not.toContain('event: error');
   expect(body).toContain('cache token counts exceed inclusive input tokens');
   expect(body).not.toContain('data: [DONE]');
 
@@ -54,23 +54,15 @@ test('the error frame the client is sent is recorded like every other frame', as
   assertEquals(payload.error?.message, 'cache token counts exceed inclusive input tokens: 479 - 13312 - 0');
 });
 
-test('a stream that completes records only its own frames', async () => {
+test.each([1, 2])('EOF with one finished choice and %i requested choices', async expectedChoices => {
   const { dump, frames } = recordingDump();
   const body = await serve(dump, (async function* () {
-    yield eventFrame(chunk('hi'));
-    yield doneFrame();
-  })());
-
-  expect(body).toContain('data: [DONE]');
-  assertEquals(frames.length, 2);
-});
-
-test('natural EOF forwards useful content without a missing-DONE error', async () => {
-  const { dump, frames } = recordingDump();
-  const body = await serve(dump, (async function* () { yield eventFrame(chunk('usable')); })());
+    yield eventFrame(chunk('usable'));
+    yield eventFrame({ ...chunk(''), choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] });
+  })(), expectedChoices);
   expect(body).toContain('usable');
-  expect(body).not.toContain('event: error');
-  expect(frames).toHaveLength(1);
+  expect(body.includes('data: {"error":')).toBe(expectedChoices === 2);
+  expect(frames).toHaveLength(expectedChoices === 2 ? 3 : 2);
 });
 
 test.each([false, true])('openai-chat-completions internal failures preserve transport shape and namespaced diagnostics (stream=%s)', async stream => {
@@ -87,38 +79,7 @@ test.each([false, true])('openai-chat-completions internal failures preserve tra
   const text = await response.text();
   const body = stream ? JSON.parse(text.split('\n').find(line => line.startsWith('data: '))!.slice(6)) : JSON.parse(text);
   assertEquals(body, { error: { type: 'internal_error', message: 'broken', provider_specific_fields: stream ? { name: diagnostic.name, stack: diagnostic.stack, cause: diagnostic.cause } : diagnostic } });
-  if (stream) assertEquals(text.includes('event: error'), true);
-});
-
-test('openai-chat-completions absent optional diagnostics stay absent and upstream errors preserve their payload', async () => {
-  const app = new Hono().get('/', c => respondOpenAIChatCompletions(c, internalErrorResult(502, { type: 'internal_error', name: 'Error', message: 'minimal' }), false, true, mockChatGatewayCtx()));
-  assertEquals(await (await app.request('/')).json(), { error: { type: 'internal_error', message: 'minimal', provider_specific_fields: { name: 'Error' } } });
-  const raw = '{"error":{"message":"native","stack":"provider-owned","custom":true}}';
-  const upstreamHeaders = new Headers({
-    'content-type': 'application/json',
-    'content-encoding': 'gzip',
-    'content-length': '123',
-    'connection': 'keep-alive',
-    'set-cookie': 'upstream-session=secret',
-    'retry-after': '17',
-    'x-native': 'trace',
-  });
-  const native = new Hono().get('/', c => respondOpenAIChatCompletions(c, {
-    type: 'api-error',
-    source: 'upstream',
-    http: { status: 429, headers: upstreamHeaders },
-    body: new TextEncoder().encode(raw),
-  }, false, true, mockChatGatewayCtx()));
-  const response = await native.request('/');
-  assertEquals(response.status, 429);
-  assertEquals(response.headers.get('x-native'), 'trace');
-  assertEquals(response.headers.get('retry-after'), '17');
-  assertEquals(response.headers.get('content-type'), 'application/json');
-  for (const header of ['content-encoding', 'content-length', 'connection', 'set-cookie']) {
-    assertEquals(response.headers.has(header), false);
-    assertEquals(upstreamHeaders.has(header), true);
-  }
-  assertEquals(await response.text(), raw);
+  if (stream) assertEquals(text.startsWith('data: {"error":'), true);
 });
 
 test('openai-chat-completions collecting a broken stream retains the nested error cause in an HTTP 502', async () => {

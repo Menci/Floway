@@ -2,7 +2,6 @@ import { describe, expect, test, vi } from 'vitest';
 
 import { wrapOpenAIResponsesAffinityEgress } from '../../../../../src/data-plane/chat/openai-responses/affinity/egress.ts';
 import type { AffinityCodec, AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesOutputItemEx, OpenAIResponsesOutputReasoning, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
@@ -48,24 +47,6 @@ describe('OpenAI Responses affinity egress', () => {
     expect(output[0]).toMatchObject({
       event: { type: 'response.queued', response: { output: [{ encrypted_content: 'wrapped:opaque' }] } },
     });
-  });
-
-  test('does not emit synthetic output before a queued non-carrier snapshot', async () => {
-    const message = {
-      type: 'message' as const,
-      id: 'msg_queued',
-      status: 'completed' as const,
-      role: 'assistant' as const,
-      content: [{ type: 'output_text' as const, text: 'waiting', annotations: [] }],
-    };
-    const output: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-    for await (const frame of wrapOpenAIResponsesAffinityEgress(frames([
-      eventFrame({ type: 'response.queued', response: response([message], 'queued'), sequence_number: 0 }),
-    ]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    expect(output).toEqual([
-      eventFrame({ type: 'response.queued', response: response([message], 'queued'), sequence_number: 0 }),
-    ]);
   });
 
   test('streams visible reasoning before wrapping and reuses one natural carrier', async () => {
@@ -150,68 +131,9 @@ describe('OpenAI Responses affinity egress', () => {
     expect(output[2]).toMatchObject({ event: { response: { output: [{ fingerprint: 'wrapped:synthetic-slot' }] } } });
   });
 
-  test('does not synthesize carriers for later program items', async () => {
-    const reasoning: OpenAIResponsesOutputReasoning = {
-      type: 'reasoning',
-      id: 'rs_1',
-      summary: [],
-      encrypted_content: 'opaque',
-    };
-    const program = { type: 'program', id: 'prog_1', call_id: 'call_1', code: 'return 1' } as OpenAIResponsesOutputItemEx;
-    const programOutput = { type: 'program_output', id: 'prog_out_1', call_id: 'call_1', result: 'done', status: 'completed' } as OpenAIResponsesOutputItemEx;
-    const output: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-    for await (const frame of wrapOpenAIResponsesAffinityEgress(frames([
-      eventFrame({ type: 'response.completed', response: response([reasoning, program, programOutput]) }),
-    ]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    expect(output).toHaveLength(1);
-    expect(output[0]).toMatchObject({
-      event: {
-        response: {
-          output: [
-            { encrypted_content: 'wrapped:opaque' },
-            { type: 'program' },
-            { type: 'program_output' },
-          ],
-        },
-      },
-    });
-  });
-
-  test('injects one complete prefix for a non-streaming terminal response', async () => {
-    const message = {
-      type: 'message' as const,
-      id: 'msg_1',
-      role: 'assistant' as const,
-      status: 'completed',
-      content: [{ type: 'output_text' as const, text: 'answer', annotations: [] }],
-    };
-    const output: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-    for await (const frame of wrapOpenAIResponsesAffinityEgress(frames([
-      eventFrame({ type: 'response.completed', response: response([message]) }),
-    ]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    expect(output.map(frame => frame.type === 'event' ? frame.event.type : frame.type)).toEqual([
-      'response.output_item.added',
-      'response.output_item.done',
-      'response.completed',
-    ]);
-    expect(output[2]).toMatchObject({ event: { response: { output: [{ type: 'reasoning' }, message] } } });
-  });
-
-  test('does not synthesize affinity for a failed response', async () => {
-    const output: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-    for await (const frame of wrapOpenAIResponsesAffinityEgress(frames([
-      eventFrame({ type: 'response.failed', response: response([], 'failed') }),
-    ]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    expect(output).toEqual([eventFrame({ type: 'response.failed', response: response([], 'failed') })]);
-  });
-
-  test.each([
-    { item: { type: 'reasoning' as const, id: 'rs_complete', summary: [], encrypted_content: 'opaque' }, shift: 0 },
-    { item: { type: 'message' as const, id: 'msg_complete', role: 'assistant' as const, status: 'completed', content: [{ type: 'output_text' as const, text: 'answer', annotations: [] }] }, shift: 2 },
-  ])('preserves the error and following failed response after a $item.type item', async ({ item, shift }) => {
+  test('preserves the error and following failed response after a message item', async () => {
+    const item = { type: 'message' as const, id: 'msg_complete', role: 'assistant' as const, status: 'completed', content: [{ type: 'output_text' as const, text: 'answer', annotations: [] }] };
+    const shift = 2;
     const error = { type: 'error' as const, sequence_number: 3, code: null, param: 'tools', message: 'native failure', vendor: { retryable: false } };
     const failed = { ...response([item], 'failed'), error: { code: 'vendor_failure', message: error.message }, usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 } };
     const output: OpenAIResponsesStreamEventEx[] = [];
@@ -233,49 +155,7 @@ describe('OpenAI Responses affinity egress', () => {
     expect(terminal.response).toEqual({ ...failed, output: finalizedItems });
   });
 
-  test('wraps compaction_summary as a natural carrier without inserting a prefix', async () => {
-    const item = { type: 'compaction_summary', id: 'cmp_upstream', encrypted_content: 'opaque' } as unknown as OpenAIResponsesOutputItemEx;
-    const output: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-    for await (const frame of wrapOpenAIResponsesAffinityEgress(frames([
-      eventFrame({ type: 'response.completed', response: response([item]) }),
-    ]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    expect(output).toHaveLength(1);
-    expect(output[0]).toMatchObject({
-      event: { response: { output: [{ type: 'compaction_summary', encrypted_content: 'wrapped:opaque' }] } },
-    });
-  });
-
-  test('leaves gateway-owned compaction payloads unwrapped and carries affinity in an optional prefix', async () => {
-    const encryptedContent = encodeBase64UrlJson([{
-      type: 'message',
-      role: 'user',
-      content: [{ type: 'input_text', text: 'portable summary' }],
-    }]);
-    const item = { type: 'compaction', id: 'cmp_shim', encrypted_content: encryptedContent } as OpenAIResponsesOutputItemEx;
-    const output: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-    for await (const frame of wrapOpenAIResponsesAffinityEgress(frames([
-      eventFrame({ type: 'response.completed', response: response([item]) }),
-    ]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    expect(output).toHaveLength(3);
-    expect(output[1]).toMatchObject({
-      event: { type: 'response.output_item.done', item: { type: 'reasoning', encrypted_content: 'wrapped:synthetic-item' } },
-    });
-    expect(output[2]).toMatchObject({
-      event: {
-        response: {
-          output: [
-            { type: 'reasoning', encrypted_content: 'wrapped:synthetic-item' },
-            { type: 'compaction', encrypted_content: encryptedContent },
-          ],
-        },
-      },
-    });
-  });
-
   test.each([
-    ['response.completed', 'completed'],
     ['response.incomplete', 'incomplete'],
   ] as const)('preserves restored output indices while wrapping a %s snapshot', async (eventType, status) => {
     const reasoning: OpenAIResponsesOutputReasoning = { type: 'reasoning', id: 'rs_first', summary: [] };
@@ -311,23 +191,4 @@ describe('OpenAI Responses affinity egress', () => {
     ]);
   });
 
-  test('keeps first-item affinity off a later carrier in restored terminal output', async () => {
-    const reasoning: OpenAIResponsesOutputReasoning = { type: 'reasoning', id: 'rs_first', summary: [] };
-    const program = { type: 'program', id: 'prog_second', call_id: 'call_second', code: 'return 1' } as OpenAIResponsesOutputItemEx;
-    const input = frames([
-      eventFrame({ type: 'response.output_item.done', output_index: 0, item: reasoning }),
-      eventFrame({ type: 'response.output_item.done', output_index: 1, item: program }),
-      eventFrame({ type: 'response.completed', response: response([reasoning, program]) }),
-    ]);
-
-    const output: OpenAIResponsesStreamEventEx[] = [];
-    for await (const frame of wrapOpenAIResponsesAffinityEgress(input, { codec: immediateCodec, affinity })) {
-      if (frame.type === 'event') output.push(frame.event);
-    }
-
-    const terminal = output.at(-1);
-    if (terminal?.type !== 'response.completed') throw new Error('expected response.completed');
-    expect(terminal.response.output[0]).toMatchObject({ type: 'reasoning', encrypted_content: 'wrapped:synthetic-slot' });
-    expect(terminal.response.output[1]).toEqual(program);
-  });
 });

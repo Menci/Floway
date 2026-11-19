@@ -2,16 +2,13 @@
 // bypass the chat source/target executor because they have no protocol
 // translation — the request body is forwarded to the chosen provider's
 // matching endpoint and the upstream response is passed through back to
-// the client. OpenAI Embeddings and OpenAI Images run the `json` branch
-// (single-shot body, OpenAI-shape `usage` block); /v1/completions runs the
-// `sse` branch (frame-level transformFrame closure + settleUsage).
-// Endpoint-owned response strategies handle specialized media-type state
-// machines. Usage and request-performance writes are scheduled through the
+// the client. The JSON path extracts one usage block; endpoint-owned
+// response strategies handle streaming and specialized media types.
+// Usage and request-performance writes are scheduled through the
 // runtime's background scheduler so transient repo failures cannot turn a
 // successful 200 from upstream into a 502.
 
 import type { Context } from 'hono';
-import { streamSSE } from 'hono/streaming';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import type { PassthroughServeApiName } from './api-names.ts';
@@ -19,36 +16,24 @@ import { appendFailedUpstreams } from './failed-upstreams.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
 import { iterateCandidates } from './iterate-candidates.ts';
 import { passthroughAttempt } from './passthrough-attempt.ts';
-import { type StreamCompletion, writeSSEFrames } from './sse.ts';
 import { recordFailedRequest } from './telemetry/performance.ts';
 import { settle } from './telemetry/settle.ts';
-import { forwardUpstreamHeaders, forwardUpstreamResponse, prepareSseResponse, providerModelsUnavailableResponse } from './upstream-response.ts';
+import { forwardUpstreamResponse, providerModelsUnavailableResponse } from './upstream-response.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import { enumerateModelCandidates } from '../providers/resolution.ts';
-import { doneFrame, eventFrame, type ModelKind, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import type { ModelKind } from '@floway-dev/protocols/common';
 import { toInternalDebugError } from '@floway-dev/provider';
 import type { PerformanceOperation, PerformanceTelemetryContext, InternalModel, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
 
-// `json` (OpenAI Embeddings, OpenAI Images): single-shot body,
-// `extractBilling` reads usage / metadata off the parsed root. `sse`
-// (/v1/completions): frame stream, `transformFrame` mutates or drops frames
-// (return null), then `settleUsage` reports billing once the stream ends.
-// `strategy` delegates response handling after candidate selection to the
-// owning endpoint.
 type PassthroughResponseHandling =
   | {
     readonly format: 'json';
     readonly extractBilling: (body: unknown) => TokenUsage | null;
   }
   | {
-    readonly format: 'sse';
-    readonly transformFrame: (frame: ProtocolFrame<unknown>) => ProtocolFrame<unknown> | null;
-    readonly settleUsage: () => TokenUsage | null;
-  }
-  | {
     readonly format: 'strategy';
-    readonly respond: (context: PassthroughResponseStrategyContext) => Promise<Response>;
+    readonly respond: (context: PassthroughResponseStrategyContext) => Response | Promise<Response>;
   };
 
 export interface PassthroughResponseStrategyContext {
@@ -168,80 +153,18 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       return forwardUpstreamResponse(response);
     }
 
-    if (responseHandling.format === 'json') {
-      // A 2xx body that fails to parse must not 502 a client whose
-      // upstream call already succeeded; we skip usage extraction and
-      // log so missing rows stay traceable.
-      let parsed: unknown;
-      try {
-        parsed = await response.clone().json();
-      } catch (e) {
-        console.warn(`passthrough-serve: failed to parse 2xx upstream body for ${sourceApi}; usage row will be skipped`, e instanceof Error ? e.message : String(e));
-        parsed = undefined;
-      }
-      const usage = parsed !== undefined ? responseHandling.extractBilling(parsed) : null;
-      ctx.dump?.success(identity, usage);
-      settle(ctx, performanceContext, identity, usage, false);
-      return forwardUpstreamResponse(response);
+    // A metering failure does not invalidate the upstream HTTP response.
+    let parsed: unknown;
+    try {
+      parsed = await response.clone().json();
+    } catch (e) {
+      console.warn(`passthrough-serve: failed to parse 2xx upstream body for ${sourceApi}; usage row will be skipped`, e instanceof Error ? e.message : String(e));
+      parsed = undefined;
     }
-
-    // Hono's streamSSE owns the response — forwardable upstream
-    // headers must be staged on `c` *before* the streamSSE call so
-    // they survive its internal newResponse.
-    const upstreamBody = response.body;
-    if (!upstreamBody) {
-      ctx.dump?.failed(`${sourceApi} streaming upstream returned no body`);
-      recordFailedRequest(ctx, performanceContext);
-      // Preserve upstream correlation headers (x-request-id, cf-ray, ...)
-      // on the synthesized 502 so this rare edge case is still traceable.
-      forwardUpstreamHeaders(c, response.headers);
-      return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
-    }
-    prepareSseResponse(c, response);
-    return streamSSE(c, async stream => {
-      let completion: StreamCompletion = 'error';
-      let streamError: unknown;
-      // Tracks whether the upstream's terminal (`done`) frame arrived
-      // before the writer settled. A client cancel after the terminal
-      // frame is graceful (upstream already finished its work); a
-      // mid-stream cancel or EOF without terminal is a real failure.
-      // Mirrors SourceStreamState.failedAfter on the chat endpoints.
-      let terminalFrameSeen = false;
-      try {
-        const frames = (async function* () {
-          const sseFramesIn = parseSSEStream(upstreamBody, { signal: ctx.abortSignal });
-          for await (const parsed of parseTargetStreamFrames<unknown>(sseFramesIn, { protocol: sourceApi })) {
-            const inputFrame: ProtocolFrame<unknown> = parsed.type === 'done' ? doneFrame() : eventFrame(parsed.data);
-            // Dump pre-transform, so forensics see upstream truth even
-            // when the caller drops a frame from the client-facing stream.
-            ctx.dump?.frame(inputFrame);
-            if (inputFrame.type === 'done') terminalFrameSeen = true;
-            const outputFrame = responseHandling.transformFrame(inputFrame);
-            if (outputFrame === null) continue;
-            yield outputFrame.type === 'done' ? sseFrame('[DONE]') : sseFrame(JSON.stringify(outputFrame.event));
-          }
-        })();
-        completion = await writeSSEFrames(stream, frames, {
-          keepAlive: { frame: sseCommentFrame('keepalive') },
-          downstreamAbortController: ctx.downstreamAbortController,
-        });
-      } catch (e) {
-        streamError = e;
-      } finally {
-        const usage = responseHandling.settleUsage();
-        const failed = streamError !== undefined || completion === 'error' || !terminalFrameSeen;
-        if (failed) {
-          ctx.dump?.failed(streamError ?? `${sourceApi} stream ended with completion=${completion}`);
-        } else {
-          ctx.dump?.success(identity, usage);
-        }
-        // Record any accumulated usage regardless of the failed flag —
-        // tokens already metered upstream should bill even when the
-        // downstream half of the round-trip turned out badly. The chat
-        // streaming endpoints follow the same rule.
-        settle(ctx, performanceContext, identity, usage, failed);
-      }
-    });
+    const usage = parsed !== undefined ? responseHandling.extractBilling(parsed) : null;
+    ctx.dump?.success(identity, usage);
+    settle(ctx, performanceContext, identity, usage, false);
+    return forwardUpstreamResponse(response);
   } catch (e) {
     const forwarded = providerModelsUnavailableResponse(e);
     if (forwarded) {

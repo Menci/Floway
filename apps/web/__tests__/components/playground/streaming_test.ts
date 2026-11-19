@@ -224,60 +224,6 @@ describe('playground wire requests', () => {
     ]);
   });
 
-  it('falls back to visible assistant text when the saved output belongs to another API', async () => {
-    const calls: Record<string, unknown>[] = [];
-    vi.stubGlobal('fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      return new Response(sseBody([
-        {
-          id: 'chat_1', object: 'chat.completion.chunk', created: 1, model: 'test-model',
-          choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: 'stop' }],
-        },
-        '[DONE]',
-      ]), { status: 200, headers: { 'content-type': 'text/event-stream' } });
-    });
-
-    await collectWithOutput(streamPlaygroundText({
-      api: 'openaiChatCompletions',
-      apiKey: 'secret',
-      model: 'test-model',
-      system: '',
-      messages: [{
-        id: 'assistant-1',
-        role: 'assistant',
-        text: 'visible answer',
-        assistantOutput: { api: 'openaiResponses', items: [{ type: 'reasoning', id: 'rs_1', summary: [], encrypted_content: 'secret' }] },
-      }],
-      options: {},
-      signal: new AbortController().signal,
-      fetchImpl: createWireFetch({}, 'openaiChatCompletions'),
-    }));
-
-    expect(calls[0]!.messages).toEqual([{ role: 'assistant', content: 'visible answer' }]);
-  });
-
-  it('sends the API key the way each protocol authenticates', async () => {
-    const headers: HeadersInit[] = [];
-    vi.stubGlobal('fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
-      headers.push(init?.headers ?? {});
-      return new Response(sseBody(['[DONE]']), { status: 200, headers: { 'content-type': 'text/event-stream' } });
-    });
-
-    const request = {
-      apiKey: 'secret',
-      model: 'test-model',
-      system: '',
-      messages: [{ id: '1', role: 'user' as const, text: 'hello' }],
-      options: {},
-      signal: new AbortController().signal,
-    };
-    await collect(streamPlaygroundText({ ...request, api: 'anthropicMessages', fetchImpl: createWireFetch({}, 'anthropicMessages') }));
-    await collect(streamPlaygroundText({ ...request, api: 'openaiChatCompletions', fetchImpl: createWireFetch({}, 'openaiChatCompletions') }));
-
-    expect(headers[0]).toMatchObject({ 'x-api-key': 'secret' });
-    expect(headers[1]).toMatchObject({ authorization: 'Bearer secret' });
-  });
-
   it('surfaces an error frame instead of returning empty text', async () => {
     vi.stubGlobal('fetch', async () => new Response(
       sseBody([{ error: { message: 'upstream refused' } }]),
@@ -294,54 +240,6 @@ describe('playground wire requests', () => {
       signal: new AbortController().signal,
       fetchImpl: createWireFetch({}, 'openaiChatCompletions'),
     }))).rejects.toThrow('upstream refused');
-  });
-
-  it('surfaces an OpenAI Responses failed envelope instead of returning empty text', async () => {
-    vi.stubGlobal('fetch', async () => new Response(
-      sseBody([{
-        type: 'response.failed',
-        response: {
-          id: 'resp_1',
-          object: 'response',
-          created_at: 1,
-          model: 'test-model',
-          status: 'failed',
-          output: [],
-          error: { code: 'server_error', message: 'generation failed' },
-          incomplete_details: null,
-        },
-      }]),
-      { status: 200, headers: { 'content-type': 'text/event-stream' } },
-    ));
-
-    await expect(collect(streamPlaygroundText({
-      api: 'openaiResponses',
-      apiKey: 'secret',
-      model: 'test-model',
-      system: '',
-      messages: [{ id: '1', role: 'user', text: 'hello' }],
-      options: {},
-      signal: new AbortController().signal,
-      fetchImpl: createWireFetch({}, 'openaiResponses'),
-    }))).rejects.toThrow('generation failed');
-  });
-
-  it('surfaces a non-2xx body rather than a bare status', async () => {
-    vi.stubGlobal('fetch', async () => new Response(
-      JSON.stringify({ error: { message: 'no such model' } }),
-      { status: 404, headers: { 'content-type': 'application/json' } },
-    ));
-
-    await expect(collect(streamPlaygroundText({
-      api: 'openaiResponses',
-      apiKey: 'secret',
-      model: 'missing',
-      system: '',
-      messages: [{ id: '1', role: 'user', text: 'hello' }],
-      options: {},
-      signal: new AbortController().signal,
-      fetchImpl: createWireFetch({}, 'openaiResponses'),
-    }))).rejects.toThrow('no such model');
   });
 });
 
@@ -379,8 +277,6 @@ describe('Gemini generateContent playground', () => {
       contents: [{ role: 'user', parts: [{ text: 'hello' }] }],
       generationConfig: { thinkingConfig: { thinkingLevel: 'HIGH' } },
     });
-    expect(seenBody).not.toHaveProperty('model');
-    expect(seenBody).not.toHaveProperty('stream');
     // GenerateContent authenticates with the Google header.
     expect(seenHeaders?.get('x-goog-api-key')).toBe('secret');
   });

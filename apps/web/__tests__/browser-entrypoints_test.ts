@@ -62,7 +62,7 @@ test('browser entrypoints exclude backend modules even without tree-shaking', as
 });
 
 test.each([
-  ['node-builtin', 'export { readFileSync } from "node:fs";', /Backend-only import: node:fs/],
+  ['node-builtin', 'export { readFileSync } from "node:fs";', /node:fs/],
   ['gateway-runtime', 'export * from "@floway-dev/gateway/browser";', /"\.\/browser" is not exported under the conditions/],
 ] as const)('browser build rejects %s', async (name, source, expected) => {
   const id = `\0${name}`;

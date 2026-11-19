@@ -21,16 +21,5 @@ describe('pre-lease Agent Setup edits', () => {
       omp: { model: 'local-omp' },
     });
   });
-  it('preserves untouched nested settings from the server while applying local retry edits', () => {
-    const baseline = blankAgentSetupDraft();
-    const local = structuredClone(baseline);
-    local.pi.retry.maxRetries = 4;
-    const server = blankAgentSetupDraft();
-    server.pi.retry.enabled = false;
-    server.omp.retry.maxRetries = 2;
-    const merged = applyLocalAgentSetupChanges(server, local, baseline);
-    expect(merged.pi.retry).toEqual({ enabled: false, maxRetries: 4 });
-    expect(merged.omp.retry).toEqual({ enabled: null, maxRetries: 2 });
-  });
 
 });

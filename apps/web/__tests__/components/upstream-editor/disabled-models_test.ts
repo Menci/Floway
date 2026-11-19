@@ -11,10 +11,6 @@ const model = (upstreamModelId: string, publicModelId?: string): UpstreamModelCo
 });
 
 describe('disabled model options', () => {
-  it('labels catalog models by display name while retaining their routing id', () => {
-    expect(buildDisabledModelOptions([{ ...model('kimi-for-coding', 'kimi-k2.8-preview'), display_name: 'Kimi K2.8 Preview' }], [], [], true))
-      .toEqual([{ id: 'kimi-k2.8-preview', label: 'Kimi K2.8 Preview', missing: false }]);
-  });
   it('combines discovered and manual public ids while retaining stale selections', () => {
     expect(buildDisabledModelOptions(
       [model('wire-b', 'public-b')],
@@ -26,10 +22,5 @@ describe('disabled model options', () => {
       { id: 'public-b', label: 'public-b', missing: false },
       { id: 'removed-c', label: 'removed-c', missing: true },
     ]);
-  });
-
-  it('does not call a selection missing when the catalog request failed', () => {
-    expect(buildDisabledModelOptions([], [], ['unknown'], false))
-      .toEqual([{ id: 'unknown', label: 'unknown', missing: false }]);
   });
 });

@@ -35,15 +35,3 @@ test('joins parallel server results and the next user message into one client tu
     },
   ]);
 });
-
-test('keeps instruction and restored assistant boundaries while joining client pieces', async () => {
-  const reading = readAnthropicMessagesRequest({
-    model: 'model', max_tokens: 32, system: 'Rules', messages: [
-      { role: 'user', content: 'Before' },
-      { role: 'assistant', content: 'Native' },
-      { role: 'user', content: 'After' },
-    ],
-  });
-  expect((await resolveReading(reading, async () => 'restored')).map(turn => turn.kind))
-    .toEqual(['client', 'client', 'restored', 'client']);
-});

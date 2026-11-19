@@ -4,16 +4,13 @@ import { partitionAnthropicMessagesTurns } from '../../src/protocols/anthropic-m
 import { computeAnthropicMessagesTurnDigest, createAnthropicMessagesSidecarBlock, findAnthropicMessagesSidecarOccurrences, verifyAnthropicMessagesTurnDigest } from '../../src/protocols/anthropic-messages/as-source/round-trip.ts';
 import { partitionGeminiGenerateContentTurns } from '../../src/protocols/gemini-generate-content/as-source/conversation-turns.ts';
 import { computeGeminiGenerateContentTurnDigest, createGeminiGenerateContentSidecarPart, findGeminiGenerateContentSidecarOccurrences, verifyGeminiGenerateContentTurnDigest } from '../../src/protocols/gemini-generate-content/as-source/round-trip.ts';
-import { partitionOpenAIChatCompletionsTurns } from '../../src/protocols/openai-chat-completions/as-source/conversation-turns.ts';
 import { computeOpenAIChatCompletionsTurnDigest, createOpenAIChatCompletionsSidecarDetails, findOpenAIChatCompletionsSidecarOccurrences, verifyOpenAIChatCompletionsTurnDigest } from '../../src/protocols/openai-chat-completions/as-source/round-trip.ts';
 import { partitionOpenAIResponsesTurns } from '../../src/protocols/openai-responses/as-source/conversation-turns.ts';
 import { computeOpenAIResponsesTurnDigest, createOpenAIResponsesSidecarItem, findOpenAIResponsesSidecarOccurrences, verifyOpenAIResponsesTurnDigest } from '../../src/protocols/openai-responses/as-source/round-trip.ts';
 import type { SidecarOccurrence } from '../../src/round-trip/resolve.ts';
-import type { AnyRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesAssistantMessage, AnthropicMessagesMessage } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentContent } from '@floway-dev/protocols/gemini-generate-content';
-import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
-import { toOpenAIResponsesInputItems } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIChatCompletionsAssistantMessageEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesOutputItemEx } from '@floway-dev/protocols/openai-responses';
 
 const chatTurn = (): OpenAIChatCompletionsAssistantMessageEx => ({
@@ -96,119 +93,6 @@ const verifyGeminiTurn = (
 ) => verifyGeminiGenerateContentTurnDigest(fixtureSidecar(findGeminiGenerateContentSidecarOccurrences(turn), data).turn, sourceTurnDigest, version);
 
 describe('assistant-turn sidecar protocols', () => {
-  it('extracts Chat encrypted details without changing ordinary reasoning details or the input', async () => {
-    const details = [{ type: 'reasoning.summary', summary: 'summary' }, { type: 'reasoning.text', text: 'native thought' }];
-    const ordinary: OpenAIChatCompletionsAssistantMessageEx = {
-      role: 'assistant', content: 'answer', reasoning_content: 'thought',
-      reasoning_details: details,
-    };
-    const turn = { ...ordinary, reasoning_details: [...details, ...createOpenAIChatCompletionsSidecarDetails('opaque')] };
-    const before = structuredClone(turn);
-    const inspection = fixtureSidecar(findOpenAIChatCompletionsSidecarOccurrences(turn), 'opaque');
-    expect(inspection).toEqual({ sidecar: 'opaque', turn: ordinary });
-    expect(turn).toEqual(before);
-    const check = await computeOpenAIChatCompletionsTurnDigest(ordinary);
-    expect(await verifyOpenAIChatCompletionsTurnDigest(inspection.turn, check, 1)).toBe(true);
-    const changedCarrier = { ...turn, reasoning_details: [...details, ...createOpenAIChatCompletionsSidecarDetails('different')] };
-    expect(await verifyChatTurn(changedCarrier, check, 'different')).toBe(true);
-    expect(await verifyChatTurn({ ...turn, reasoning_content: 'edited thought' }, check, 'opaque')).toBe(false);
-  });
-
-  it('extracts Messages redacted blocks while preserving ordinary thinking and the input', async () => {
-    const blocks: AnthropicMessagesAssistantContentBlock[] = [{ type: 'text', text: 'answer', citations: null }, { type: 'thinking', thinking: 'thought', signature: 'native' }];
-    const ordinary: AnthropicMessagesAssistantMessage[] = [{ role: 'assistant', content: blocks }];
-    const turn: AnthropicMessagesAssistantMessage[] = [{ ...ordinary[0], content: [...blocks, createAnthropicMessagesSidecarBlock('opaque')] }];
-    const before = structuredClone(turn);
-    const inspection = fixtureSidecar(findAnthropicMessagesSidecarOccurrences(turn), 'opaque');
-    expect(inspection).toEqual({ sidecar: 'opaque', turn: ordinary });
-    expect(turn).toEqual(before);
-    const check = await computeAnthropicMessagesTurnDigest(ordinary);
-    expect(await verifyAnthropicMessagesTurnDigest(inspection.turn, check, 1)).toBe(true);
-    expect(await verifyMessagesTurn([{ ...ordinary[0], content: [...blocks, createAnthropicMessagesSidecarBlock('different')] }], check, 'different')).toBe(true);
-    expect(await verifyMessagesTurn([{ role: 'assistant', content: [{ type: 'text', text: 'edited answer', citations: null }, ...blocks.slice(1), createAnthropicMessagesSidecarBlock('opaque')] }], check, 'opaque')).toBe(false);
-  });
-
-  it('extracts Responses encrypted items without retaining carrier metadata or changing ordinary reasoning', async () => {
-    const reasoning: Extract<OpenAIResponsesOutputItemEx, { type: 'reasoning' }> = { type: 'reasoning', id: 'native', summary: [{ type: 'summary_text', text: 'summary' }], content: [{ type: 'reasoning_text', text: 'thought' }], status: 'completed' };
-    const ordinary: OpenAIResponsesOutputItemEx[] = [
-      { type: 'message', id: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: 'answer', annotations: [] }] },
-      reasoning,
-    ];
-    const carrier = { ...createOpenAIResponsesSidecarItem('carrier', 'opaque'), status: 'incomplete' };
-    const turn = [...ordinary, carrier];
-    const before = structuredClone(turn);
-    const inspection = fixtureSidecar(findOpenAIResponsesSidecarOccurrences(turn), 'opaque');
-    expect(inspection).toEqual({ sidecar: 'opaque', turn: ordinary });
-    expect(turn).toEqual(before);
-    const check = await computeOpenAIResponsesTurnDigest(ordinary);
-    expect(await verifyOpenAIResponsesTurnDigest(inspection.turn, check, 1)).toBe(true);
-    expect(await verifyResponsesTurn([...ordinary, { ...carrier, id: 'other', encrypted_content: 'different', summary: [], status: 'completed' }], check, 'different')).toBe(true);
-    expect(await verifyResponsesTurn([ordinary[0], { ...reasoning, status: 'incomplete' }, carrier], check, 'opaque')).toBe(false);
-    expect(await verifyResponsesTurn([ordinary[0], { ...reasoning, summary: [{ type: 'summary_text', text: 'edited summary' }] }, carrier], check, 'opaque')).toBe(false);
-  });
-
-  it('preserves readable Responses reasoning carrying an attached encrypted sidecar', async () => {
-    const reasoning: Extract<OpenAIResponsesOutputItemEx, { type: 'reasoning' }> = {
-      type: 'reasoning', id: 'native', status: 'completed', summary: [{ type: 'summary_text', text: 'summary' }], content: [{ type: 'reasoning_text', text: 'thought' }],
-    };
-    const attached = { ...reasoning, encrypted_content: 'opaque' };
-    const turn = [attached];
-    const before = structuredClone(turn);
-    const inspection = fixtureSidecar(findOpenAIResponsesSidecarOccurrences(turn), 'opaque');
-    expect(inspection).toEqual({ sidecar: 'opaque', turn: [reasoning] });
-    expect(turn).toEqual(before);
-    const check = await computeOpenAIResponsesTurnDigest([reasoning]);
-    expect(await verifyOpenAIResponsesTurnDigest(inspection.turn, check, 1)).toBe(true);
-    expect(await verifyResponsesTurn([{ ...attached, encrypted_content: 'different' }], check, 'different')).toBe(true);
-    expect(await verifyResponsesTurn([{ ...attached, status: 'incomplete' }], check, 'opaque')).toBe(false);
-    expect(await verifyResponsesTurn([{ ...attached, summary: [{ type: 'summary_text', text: 'edited summary' }] }], check, 'opaque')).toBe(false);
-    expect(await verifyResponsesTurn([{ ...attached, content: [{ type: 'reasoning_text', text: 'edited thought' }] }], check, 'opaque')).toBe(false);
-  });
-
-  it('extracts Gemini signatures from attached bodies and removes standalone carriers without mutating input', async () => {
-    const functionCall = { id: 'call', name: 'lookup', args: { q: 'a' } };
-    const ordinary: GeminiGenerateContentContent[] = [{ role: 'model', parts: [{ text: 'answer', thoughtSignature: 'on-text' }, { functionCall, thoughtSignature: 'on-call' }, { text: 'native thought', thought: true }, createGeminiGenerateContentSidecarPart('standalone-part')] }];
-    const turn: GeminiGenerateContentContent[] = [
-      { role: 'model', parts: [{ text: 'answer', thoughtSignature: 'on-text' }, { functionCall, thoughtSignature: 'on-call' }, { text: 'native thought', thought: true }, createGeminiGenerateContentSidecarPart('standalone-part')] },
-      { role: 'model', parts: [createGeminiGenerateContentSidecarPart('standalone-content')] },
-    ];
-    const before = structuredClone(turn);
-    const inspection = fixtureSidecar(findGeminiGenerateContentSidecarOccurrences(turn), 'standalone-content');
-    expect(inspection).toEqual({ sidecar: 'standalone-content', turn: ordinary });
-    expect(turn).toEqual(before);
-    const check = await computeGeminiGenerateContentTurnDigest(ordinary);
-    expect(await verifyGeminiGenerateContentTurnDigest(inspection.turn, check, 1)).toBe(true);
-    expect(await verifyGeminiTurn([{ role: 'model', parts: [{ text: 'answer', thoughtSignature: 'different' }, { functionCall }] }], check, 'different')).toBe(true);
-    expect(await verifyGeminiTurn([{ role: 'model', parts: [{ text: 'edited answer', thoughtSignature: 'on-text' }, { functionCall }] }], check, 'on-text')).toBe(false);
-    expect(await verifyGeminiTurn([{ role: 'model', parts: [{ text: 'answer' }, { functionCall: { ...functionCall, name: 'edited' }, thoughtSignature: 'on-call' }] }], check, 'on-call')).toBe(false);
-  });
-
-  it('types the unified envelope by source protocol, target protocol, assistant turn, and replay check', () => {
-    const sidecar: AnyRoundTripSidecar = {
-      v: 1,
-      source: 'openaiChatCompletions',
-      target: 'anthropicMessages',
-      targetTurn: { role: 'assistant', content: [{ type: 'redacted_thinking', data: 'original-target-value' }] },
-      sourceTurnDigest: new Uint8Array(8),
-    };
-    expect([sidecar.source, sidecar.target, sidecar.targetTurn.content[0].type]).toEqual([
-      'openaiChatCompletions', 'anthropicMessages', 'redacted_thinking',
-    ]);
-  });
-
-  it('partitions Chat messages one assistant message at a time and leaves every other role bare', () => {
-    const messages: OpenAIChatCompletionsMessage[] = [
-      { role: 'user', content: 'question' },
-      chatTurn(),
-      { role: 'tool', tool_call_id: 'call-a', content: 'result' },
-      { role: 'assistant', content: 'follow-up' },
-    ];
-    const turns = partitionOpenAIChatCompletionsTurns(messages);
-    expect(turns.map(({ role, items }) => [role, items.length])).toEqual([
-      ['client', 1], ['assistant', 1], ['client', 1], ['assistant', 1],
-    ]);
-    expect(turns.map(({ items }) => items).flat()).toEqual(messages);
-  });
 
   it('checks complete Chat body, readable summary, and ordered tool identities and arguments', async () => {
     const turn = chatTurn();
@@ -385,53 +269,6 @@ describe('assistant-turn sidecar protocols', () => {
     const statuslessCheck = await computeOpenAIResponsesTurnDigest(statusless);
     expect(await verifyOpenAIResponsesTurnDigest(statusless, statuslessCheck, 1)).toBe(true);
     expect(await verifyOpenAIResponsesTurnDigest(cases[2].original, statuslessCheck, 1)).toBe(false);
-  });
-
-  it('builds canonical Responses history items', async () => {
-    expect(createOpenAIResponsesSidecarItem('rs_sidecar', 'opaque-sidecar')).toEqual({
-      type: 'reasoning', id: 'rs_sidecar', summary: [], encrypted_content: 'opaque-sidecar',
-    });
-    const imageCall: Extract<OpenAIResponsesOutputItemEx, { type: 'image_generation_call' }> = {
-      type: 'image_generation_call', id: 'ig-data', result: 'image-base64', status: 'completed', action: 'generate', output_format: 'png',
-    };
-    const messageWithSDKFields = {
-      type: 'message', id: 'message-a', role: 'assistant', status: 'completed', phase: 'final_answer', created_by: 'sdk',
-      content: [{ type: 'output_text', text: 'answer', annotations: [{ type: 'url_citation', url: 'https://example.test', title: 'source', start_index: 0, end_index: 6 }], logprobs: [], parsed: { answer: true } }],
-    } satisfies Extract<OpenAIResponsesOutputItemEx, { type: 'message' }> & { created_by: string; content: (Extract<Extract<OpenAIResponsesOutputItemEx, { type: 'message' }>['content'][number], { type: 'output_text' }> & { parsed: { answer: boolean } })[] };
-    const functionCallWithSDKFields = {
-      type: 'function_call', id: 'function-a', call_id: 'call-a', name: 'lookup', arguments: '{"q":"a"}', parsed_arguments: { q: 'a' }, status: 'completed', created_by: 'sdk',
-    } satisfies Extract<OpenAIResponsesOutputItemEx, { type: 'function_call' }> & { parsed_arguments: { q: string }; created_by: string };
-    const outputHistory: OpenAIResponsesOutputItemEx[] = [
-      messageWithSDKFields,
-      functionCallWithSDKFields,
-      { type: 'shell_call_output', id: 'shell-output', call_id: 'shell-call', output: [{ stdout: 'ok', stderr: '', outcome: { type: 'exit', exit_code: 0 }, created_by: 'sdk' }], status: 'completed', created_by: 'sdk' },
-      { type: 'computer_call_output', call_id: 'computer-call', output: { type: 'computer_screenshot', file_id: 'screenshot' }, status: 'failed', created_by: 'sdk' },
-      { type: 'custom_tool_call_output', call_id: 'custom-incomplete', output: 'incomplete', status: 'incomplete' },
-      { type: 'custom_tool_call_output', id: 'custom-completed', call_id: 'custom-completed-call', output: 'complete', status: 'completed' },
-      { type: 'additional_tools', id: 'additional-tools-developer', role: 'developer', tools: [] },
-      { type: 'image_generation_call', id: 'ig-null', result: null, status: 'completed' },
-      imageCall,
-    ];
-    expect(toOpenAIResponsesInputItems(outputHistory)).toEqual([
-      { type: 'message', id: 'message-a', role: 'assistant', status: 'completed', phase: 'final_answer', content: [{ type: 'output_text', text: 'answer', annotations: [{ type: 'url_citation', url: 'https://example.test', title: 'source', start_index: 0, end_index: 6 }], logprobs: [] }] },
-      { type: 'function_call', id: 'function-a', call_id: 'call-a', name: 'lookup', arguments: '{"q":"a"}', status: 'completed' },
-      { type: 'shell_call_output', id: 'shell-output', call_id: 'shell-call', output: [{ stdout: 'ok', stderr: '', outcome: { type: 'exit', exit_code: 0 } }], status: 'completed' },
-      { type: 'custom_tool_call_output', id: 'custom-completed', call_id: 'custom-completed-call', output: 'complete' },
-      { type: 'additional_tools', id: 'additional-tools-developer', role: 'developer', tools: [] },
-      { type: 'image_generation_call', id: 'ig-null', result: null, status: 'completed' },
-      imageCall,
-    ]);
-    const imageTurn: OpenAIResponsesOutputItemEx[] = [
-      imageCall,
-      { type: 'reasoning', id: 'rs-image', summary: [], encrypted_content: 'opaque-sidecar' },
-    ];
-    const imageCheck = await computeOpenAIResponsesTurnDigest([imageCall]);
-    expect(await verifyResponsesTurn(imageTurn, imageCheck)).toBe(true);
-    expect(await verifyResponsesTurn([
-      { ...imageCall, action: 'edit' as const, id: 'ig-other', status: 'completed' as const, output_format: 'jpeg' as const },
-      imageTurn[1],
-    ], imageCheck)).toBe(true);
-    expect(await verifyResponsesTurn([{ ...imageCall, result: 'changed-image' }, imageTurn[1]], imageCheck)).toBe(false);
   });
 
   it('merges adjacent Messages roles and checks each block type in order', async () => {

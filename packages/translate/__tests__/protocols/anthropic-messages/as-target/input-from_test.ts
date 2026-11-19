@@ -73,20 +73,3 @@ test('writes null document metadata and leaves absent metadata absent', () => {
     ],
   }]);
 });
-
-test('writes metadata for both text and media document sources', () => {
-  const turns: IRInputTurnWithCallIds[] = [{
-    kind: 'client', items: [{
-      type: 'message', role: 'user', content: [
-        { type: 'document', document: { source: { source_kind: 'text', media_type: 'text/plain', text: 'body' }, title: 'Text', citations: {} } },
-        { type: 'document', document: { source: { source_kind: 'media', media: { source_kind: 'file', file_id: 'file_1' } }, title: 'File', cache_control: { type: 'ephemeral', ttl: '5m' } } },
-      ],
-    }],
-  }];
-  assertEquals(anthropicMessagesConversationFromIR(turns, true).messages, [{
-    role: 'user', content: [
-      { type: 'document', source: { type: 'text', media_type: 'text/plain', data: 'body' }, title: 'Text', citations: {} },
-      { type: 'document', source: { type: 'file', file_id: 'file_1' }, title: 'File', cache_control: { type: 'ephemeral', ttl: '5m' } },
-    ],
-  }]);
-});

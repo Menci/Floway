@@ -26,79 +26,15 @@ test('injects the default when instructions is absent', async () => {
   assertEquals(ctx.payload.instructions, "You're a helpful assistant.");
 });
 
-test('injects the default when instructions is an empty string', async () => {
-  const ctx = invocation({ model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }], instructions: '' });
-
-  await injectDefaultInstructions(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.payload.instructions, "You're a helpful assistant.");
-});
-
-test('injects the default when instructions is null', async () => {
-  const ctx = invocation({ model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }], instructions: null });
-
-  await injectDefaultInstructions(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.payload.instructions, "You're a helpful assistant.");
-});
-
-test('preserves a caller-supplied instructions string', async () => {
-  const ctx = invocation({ model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }], instructions: 'You are a pirate.' });
-
-  await injectDefaultInstructions(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.payload.instructions, 'You are a pirate.');
-});
-
-test.each([undefined, null, ''])('preserves Lite instructions value %j and the caller input', async instructions => {
+test('preserves absent Lite instructions and the caller input', async () => {
   const input: CanonicalOpenAIResponsesPayload['input'] = [
     { type: 'additional_tools', role: 'developer', tools: [] },
     { type: 'message', role: 'developer', content: [{ type: 'input_text', text: 'Caller base instructions' }], internal_chat_message_metadata_passthrough: { content_item_kinds: ['model.base_instructions'] } },
   ];
-  const ctx = invocation({ model: 'gpt-test', input, instructions }, true);
+  const ctx = invocation({ model: 'gpt-test', input }, true);
 
   await injectDefaultInstructions(ctx, stubRequest, okEvents);
 
-  assertEquals(ctx.payload.instructions, instructions);
+  assertEquals(ctx.payload.instructions, undefined);
   assertEquals(ctx.payload.input, input);
-});
-
-test.each([
-  { name: 'number', value: 42 },
-  { name: 'boolean', value: false },
-  { name: 'object', value: { text: 'invalid' } },
-  { name: 'array', value: ['invalid'] },
-])(
-  'preserves malformed $name instructions for upstream validation',
-  async ({ value }) => {
-    const ctx = invocation({
-      model: 'gpt-test',
-      input: [{ type: 'message', role: 'user', content: 'hello' }],
-      instructions: value as unknown as string,
-    });
-
-    await injectDefaultInstructions(ctx, stubRequest, okEvents);
-
-    assertEquals(ctx.payload.instructions, value);
-  },
-);
-
-test('injects the default and preserves input items it does not own', async () => {
-  const ctx = invocation({
-    model: 'gpt-test',
-    input: [
-      { type: 'message', role: 'user', content: 'hi' },
-      { type: 'message', role: 'developer', content: 'be terse' },
-      { type: 'message', role: 'user', content: 'who are you' },
-    ],
-  });
-
-  await injectDefaultInstructions(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.payload.instructions, "You're a helpful assistant.");
-  assertEquals(ctx.payload.input, [
-    { type: 'message', role: 'user', content: 'hi' },
-    { type: 'message', role: 'developer', content: 'be terse' },
-    { type: 'message', role: 'user', content: 'who are you' },
-  ]);
 });

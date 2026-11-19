@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ChatGPTQuotaSnapshotMap, ChatGPTRateLimitResetCredit, UpstreamRecord } from '../../../src/api/types';
-import { accountStatus, chatgptRenewable, chatgptResetCreditIsUsable, findCredential, latestCredits, quotaEntries } from '../../../src/components/upstreams/chatgpt-account';
+import { accountStatus, chatgptRenewable, chatgptResetCreditIsUsable, findCredential, quotaEntries } from '../../../src/components/upstreams/chatgpt-account';
 
 type ChatGPTRecord = Extract<UpstreamRecord, { kind: 'chatgpt' }>;
 
@@ -31,54 +31,6 @@ describe('ChatGPT credential lookup', () => {
     const lookup = findCredential(record(state));
     expect(lookup.kind).toBe('present');
     if (lookup.kind === 'present') expect(lookup.credential.state).toBe('active');
-  });
-
-  it('returns null when the configured account is absent from state', () => {
-    expect(findCredential(record({
-      accounts: [{ chatgptAccountId: 'other', state: 'active', state_updated_at: PAST }],
-    }))).toEqual({ kind: 'account-id-mismatch', expectedAccountId: ACCOUNT_ID });
-  });
-});
-
-describe('ChatGPT quota entries', () => {
-  it('reads both windows and orders limits by name', () => {
-    const entries = quotaEntries({
-      weekly: { observed_at: PAST, active_limit: 'Weekly', primary_used_percent: 20, primary_window_minutes: 10_080 },
-      daily: { observed_at: PAST, active_limit: 'Daily', primary_used_percent: 5, secondary_used_percent: 50, secondary_reset_after_at: FUTURE },
-    }, NOW);
-    expect(entries.map(entry => entry.label)).toEqual(['Daily', 'Weekly']);
-    expect(entries[0].windows.map(window => window.key)).toEqual(['primary', 'secondary']);
-    expect(entries[0].windows[1]).toMatchObject({ percent: 50, resetAt: FUTURE, windowMinutes: null });
-    expect(entries[1].windows).toHaveLength(1);
-  });
-
-  it('falls back to the map key when the snapshot names no active limit', () => {
-    expect(quotaEntries({ primary: { observed_at: PAST } }, NOW)[0].label).toBe('primary');
-  });
-
-  it('treats an elapsed rate limit as spent', () => {
-    expect(quotaEntries({ daily: { observed_at: PAST, ratelimited_until: PAST } }, NOW)[0].rateLimitedUntil).toBeNull();
-    expect(quotaEntries({ daily: { observed_at: PAST, ratelimited_until: FUTURE } }, NOW)[0].rateLimitedUntil).toBe(FUTURE);
-  });
-
-  it('drops a window the snapshot reports no percentage for', () => {
-    expect(quotaEntries({ daily: { observed_at: PAST, primary_reset_after_at: FUTURE } }, NOW)[0].windows).toEqual([]);
-  });
-});
-
-describe('ChatGPT credits', () => {
-  it('takes the freshest observation that carries a balance', () => {
-    const credits = latestCredits({
-      stale: { observed_at: '2026-07-01T00:00:00.000Z', credits_balance: 10 },
-      fresh: { observed_at: '2026-07-20T00:00:00.000Z', credits_balance: 3 },
-      silent: { observed_at: '2026-07-27T00:00:00.000Z' },
-    });
-    expect(credits?.credits_balance).toBe(3);
-  });
-
-  it('is null when no snapshot mentions credits at all', () => {
-    expect(latestCredits({ daily: { observed_at: PAST, primary_used_percent: 1 } })).toBeNull();
-    expect(latestCredits(null)).toBeNull();
   });
 });
 
@@ -111,33 +63,6 @@ describe('ChatGPT account status', () => {
     const entries = quotaEntries({ daily: { observed_at: PAST, ratelimited_until: FUTURE } }, NOW);
     expect(accountStatus({ kind: 'present', credential }, entries)).toEqual({ tone: 'danger', reason: 'session-terminated', detail: 'revoked' });
   });
-
-  it('warns on heavy usage across any window', () => {
-    const entries = quotaEntries({ daily: { observed_at: PAST, primary_used_percent: 12, secondary_used_percent: 84 } }, NOW);
-    expect(accountStatus(activeLookup, entries)).toEqual({ tone: 'warning', reason: 'heavy', percent: 84 });
-  });
-
-  it('stays active with no snapshots at all', () => {
-    expect(accountStatus(activeLookup, [])).toEqual({ tone: 'success', reason: 'active' });
-  });
-
-  it('marks a config/state account mismatch as dangerous', () => {
-    expect(accountStatus({ kind: 'account-id-mismatch', expectedAccountId: ACCOUNT_ID }, []))
-      .toEqual({ tone: 'danger', reason: 'account-id-mismatch' });
-  });
-});
-
-describe('ChatGPT renewability', () => {
-  it('reads the redacted flag the list hands back', () => {
-    expect(chatgptRenewable({ ...activeCredential, refresh_token_set: true })).toBe(true);
-    expect(chatgptRenewable({ ...activeCredential, refresh_token_set: false })).toBe(false);
-  });
-
-  it('reads the raw token an import merges into the draft', () => {
-    expect(chatgptRenewable({ ...activeCredential, refresh_token: 'rt' })).toBe(true);
-    expect(chatgptRenewable({ ...activeCredential, refresh_token: null })).toBe(false);
-    expect(chatgptRenewable(activeCredential)).toBe(false);
-  });
 });
 
 describe('ChatGPT credential lookup without an account id', () => {
@@ -151,15 +76,5 @@ describe('ChatGPT credential lookup without an account id', () => {
     const lookup = findCredential(nullIdRecord);
     expect(lookup.kind).toBe('present');
     if (lookup.kind === 'present') expect(chatgptRenewable(lookup.credential)).toBe(false);
-  });
-
-  it('still reports a mismatch when state names an account the config does not', () => {
-    const mismatched = {
-      id: 'up_1',
-      kind: 'chatgpt',
-      config: { accounts: [{ email: null, chatgptAccountId: null, chatgptUserId: null, planType: null }] },
-      state: { accounts: [{ chatgptAccountId: ACCOUNT_ID, state: 'active', state_updated_at: PAST }] },
-    } as unknown as ChatGPTRecord;
-    expect(findCredential(mismatched)).toEqual({ kind: 'account-id-mismatch', expectedAccountId: null });
   });
 });

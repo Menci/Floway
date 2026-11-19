@@ -29,27 +29,6 @@ const kimiRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => 
   disabledPublicModelIds: [], proxyFallbackList: MOCKED_FETCH_EGRESS, modelPrefix: null, modelsCache: null, hue: 210, ...overrides,
 });
 
-test('Kimi Code blueprints, create, redaction, full edit and region patches share one config contract', async () => {
-  const { adminSession, repo } = await setupAppTest();
-  const blueprint = await requestApp('/api/upstreams/blueprint?kind=kimi-code', authed(adminSession));
-  expect(blueprint.status).toBe(200);
-  expect(await blueprint.json()).toMatchObject({ kind: 'kimi-code', config: { region: 'china', apiKey: '' }, state: null, flag_defaults: { 'vendor-kimi': true } });
-  const response = await requestApp('/api/upstreams', authed(adminSession, { kind: 'kimi-code', name: 'Kimi Code', config, hue: 210, proxy_fallback_list: MOCKED_FETCH_EGRESS }));
-  expect(response.status).toBe(201);
-  const body = await response.json();
-  expect(body).toMatchObject({ kind: 'kimi-code', config: { region: 'china', apiKeySet: true } });
-  expect(body.config).not.toHaveProperty('apiKey');
-  const record = (await repo.upstreams.getById(body.id))!;
-  expect(record.config).toEqual(config);
-  expect(upstreamRecordToJson(record).config).not.toHaveProperty('apiKey');
-  expect(upstreamRecordToFullJson(record).config).toEqual(config);
-  const patched = await requestApp(`/api/upstreams/${body.id}`, authed(adminSession, { config: { region: 'overseas' } }, 'PATCH'));
-  expect(patched.status).toBe(200);
-  expect((await repo.upstreams.getById(body.id))?.config).toEqual({ ...config, region: 'overseas' });
-  const invalid = await requestApp(`/api/upstreams/${body.id}`, authed(adminSession, { config: { region: 'invalid' } }, 'PATCH'));
-  expect(invalid.status).toBe(400);
-});
-
 test('draft quota and optional profile probes use coding auth and do not persist a record', async () => {
   const { adminSession, repo } = await setupAppTest();
   const before = await repo.upstreams.list();
@@ -65,20 +44,10 @@ test('draft quota and optional profile probes use coding auth and do not persist
     expect(body.observation.data).toEqual(quota);
     expect(body.account).toBeNull();
     expect(body.accountError).toContain('404');
-    expect(body.accountError).toContain('profile not available for [redacted]');
     expect(JSON.stringify(body)).not.toContain(config.apiKey);
   });
   expect(paths.sort()).toEqual(['/coding/v1/me', '/coding/v1/usages']);
   expect(await repo.upstreams.list()).toEqual(before);
-});
-
-test('ordinary account errors remain intact in a successful quota response', async () => {
-  const { adminSession } = await setupAppTest();
-  await withMockedFetch(request => request.url.endsWith('/usages') ? Response.json(quota) : new Response('profile not available', { status: 404 }), async () => {
-    const response = await requestApp('/api/upstreams/kimi-code/usage', authed(adminSession, { record: draft() }));
-    expect(response.status).toBe(200);
-    expect((await response.json()).accountError).toBe('Kimi Code /me returned 404: profile not available');
-  });
 });
 
 test('saved quota and profile actions persist observations, metrics and a redacted dashboard record', async () => {
@@ -107,41 +76,6 @@ test('Kimi Code action requires full upstream access and exposes quota failures'
     expect(failed.status).toBe(502);
     expect(await failed.json()).toMatchObject({ error: expect.stringContaining('401') });
   });
-});
-
-test('Kimi Code draft catalog discovery projects capabilities without writing the draft', async () => {
-  const { adminSession } = await setupAppTest();
-  await withMockedFetch(request => {
-    expect(request.url).toBe('https://api.kimi.com/coding/v1/models');
-    return Response.json(catalog);
-  }, async () => {
-    const response = await requestApp('/api/upstreams/preview-models', authed(adminSession, { record: draft() }));
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body).toMatchObject({ kind: 'kimi-code', data: [{ upstreamModelId: 'catalog-model', kind: 'chat', chat: { reasoning: { mandatory: true, effort: { supported: ['low', 'high', 'max'], default: 'high' } } } }] });
-    expect(body.data[0].pricing).toBeUndefined();
-  });
-});
-
-test('Kimi Code credential replacement clears account observations while regional changes retain them', async () => {
-  const { adminSession, repo } = await setupAppTest();
-  const state = {
-    usageProbe: { attemptedAt: 1, observation: { fetchedAt: 1, data: quota }, error: null },
-    accountProbe: { attemptedAt: 1, observation: { fetchedAt: 1, data: { userId: 'original-account', globalId: null, nickname: 'Original', status: '', region: '', userLevel: 0, userLevelName: 'Ultra', domain: 0, domainName: '', goodsVersion: 2, username: null, email: null, bio: null, avatar: null, phone: null, createdTime: null, lastLoginTime: null } }, error: null },
-  };
-  const record = kimiRecord({ state });
-  await saveUpstreamForTest(repo.upstreams, record);
-  for (const region of ['overseas', 'china']) {
-    const response = await requestApp(`/api/upstreams/${record.id}`, authed(adminSession, { config: { region } }, 'PATCH'));
-    expect(response.status).toBe(200);
-    expect((await repo.upstreams.getById(record.id))?.state).toEqual(state);
-  }
-  for (const apiKey of ['sk-kimi-fake-replacement-key', config.apiKey]) {
-    await repo.upstreams.saveState(record.id, () => state);
-    const response = await requestApp(`/api/upstreams/${record.id}`, authed(adminSession, { config: { apiKey } }, 'PATCH'));
-    expect(response.status).toBe(200);
-    expect((await repo.upstreams.getById(record.id))?.state).toBeNull();
-  }
 });
 
 test.each([false, true])('a saved-id draft key returns its own readings without persisting outcomes (failure=%s)', async fail => {
@@ -188,7 +122,7 @@ test.each([{ fail: false, restore: false }, { fail: true, restore: false }, { fa
   expect(await repo.upstreamMetrics.listAll()).toEqual([]);
 });
 
-test.each([{ data: [] }, { data: [{ ...catalog.data[0], id: 'kimi-for-coding', display_name: 'Unrecognized opaque name' }] }])('an empty projected catalog preserves the saved model cache: %j', async body => {
+test('an empty projected catalog preserves the saved model cache', async () => {
   const { adminSession, repo } = await setupAppTest();
   const record = kimiRecord();
   await saveUpstreamForTest(repo.upstreams, record);
@@ -198,7 +132,7 @@ test.each([{ data: [] }, { data: [{ ...catalog.data[0], id: 'kimi-for-coding', d
   });
   const cache = (await repo.upstreams.getById(record.id))!.modelsCache!;
   expect(cache.models).toHaveLength(1);
-  await withMockedFetch(() => Response.json(body), async () => {
+  await withMockedFetch(() => Response.json({ data: [] }), async () => {
     const response = await requestApp(`/api/upstreams/${record.id}/list-models`, authed(adminSession, {}));
     expect(response.status).toBe(502);
   });

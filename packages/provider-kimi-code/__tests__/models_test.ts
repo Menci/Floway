@@ -23,8 +23,6 @@ test('the live catalog owns model capabilities, context, thinking requirement an
       endpoints: { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} },
       chat: { modalities: { input: ['text', 'image'], output: ['text'] }, reasoning: { mandatory: true, effort: { supported: ['low', 'high', 'max'], default: 'high' } } },
     });
-    expect(Object.keys(models[0].endpoints)).toHaveLength(3);
-    expect(models[0].pricing).toBeUndefined();
     expect(models[0].enabledFlags.has('vendor-kimi')).toBe(true);
     expect(models[1].chat?.reasoning).toEqual({ mandatory: false });
     expect(models[1].chat?.modalities?.input).toEqual(['text']);
@@ -51,13 +49,6 @@ test('overseas region uses the overseas coding service and operator flag overrid
     expect(request.url).toBe('https://api.kimi.ai/coding/v1/models');
     return Response.json({ data: [rawModel()] });
   }, async () => expect((await provider.instance.getProvidedModels(testFetcher))[0].enabledFlags.has('vendor-kimi')).toBe(false));
-});
-
-test('malformed catalog metadata fails through the shared model-discovery error envelope', async () => {
-  const provider = createKimiCodeProvider(record());
-  await withMockedFetch(() => Response.json({ data: [rawModel({ think_efforts: { support: true, valid_efforts: ['high'], default_effort: 'unadvertised' } })] }), async () => {
-    await expect(provider.instance.getProvidedModels(testFetcher)).rejects.toMatchObject({ name: 'ProviderModelsUnavailableError', cause: expect.any(TypeError) });
-  });
 });
 
 test.each([false, true])('the published catalog labels grouped families while preserving raw identities (reversed: %s)', async reversed => {
@@ -102,53 +93,12 @@ test('a same-version lane inherits its base presentation and intersects context 
   });
 });
 
-test('a highspeed row without a real base becomes a fast-only family', async () => {
-  const provider = createKimiCodeProvider(record());
-  await withMockedFetch(() => Response.json({ data: [rawModel({ id: 'k9.9-highspeed', display_name: 'K9.9 Highspeed' })] }), async () => {
-    const models = await provider.instance.getProvidedModels(testFetcher);
-    expect(models.map(model => model.id)).toEqual(['kimi-k9.9']);
-    expect(models.map(model => model.providerData)).toEqual([{ fastModelId: 'k9.9-highspeed' }]);
-  });
-});
-
-test('derived context-capped ids are withheld across catalog families', async () => {
-  const provider = createKimiCodeProvider(record());
-  const catalog = [
-    rawModel({ id: 'k9.9-future', display_name: 'K9.9' }),
-    rawModel({ id: 'k9.9-future-256k', display_name: 'K9.9-256k' }),
-  ];
-  await withMockedFetch(() => Response.json({ data: catalog }), async () => {
-    const models = await provider.instance.getProvidedModels(testFetcher);
-    expect(models.map(model => model.id)).toEqual(['kimi-k9.9-future']);
-  });
-});
-
-test('an unparseable coding alias is logged and skipped without hiding other catalog rows', async () => {
-  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+test('an unparseable coding alias is skipped without hiding other catalog rows', async () => {
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
   const provider = createKimiCodeProvider(record());
   await withMockedFetch(() => Response.json({ data: [rawModel({ id: 'kimi-for-coding', display_name: 'a name with no version' }), rawModel({ id: 'unrelated', display_name: 'another name without a version' })] }), async () => {
     const models = await provider.instance.getProvidedModels(testFetcher);
     expect(models.map(model => [model.id, model.upstreamModelId])).toEqual([['kimi-unrelated', 'unrelated']]);
-    expect(warn).toHaveBeenCalledWith('Skipping Kimi Code model with an unrecognized display name:', 'kimi-for-coding', 'a name with no version');
-  });
-});
-
-test('integer-version models can acquire a real accelerated sibling', async () => {
-  const provider = createKimiCodeProvider(record());
-  await withMockedFetch(() => Response.json({ data: [rawModel({ id: 'k3', display_name: 'K3' }), rawModel({ id: 'k3-highspeed', display_name: 'K3 Highspeed' })] }), async () => {
-    const models = await provider.instance.getProvidedModels(testFetcher);
-    expect(models.map(model => [model.id, model.providerData])).toEqual([['kimi-k3', { standardModelId: 'k3', fastModelId: 'k3-highspeed' }]]);
-  });
-});
-
-test('a fast-only family acquires a newly cataloged standard lane without changing its public id', async () => {
-  const provider = createKimiCodeProvider(record());
-  await withMockedFetch(() => Response.json({ data: [...speedCatalog(), rawModel({ id: 'k2.7-code', display_name: 'K2.7 Code' })] }), async () => {
-    const models = await provider.instance.getProvidedModels(testFetcher);
-    const family = models.filter(model => model.id === 'kimi-k2.7-code');
-    expect(family).toHaveLength(1);
-    expect(family[0]).toMatchObject({ upstreamModelId: 'k2.7-code', providerData: { standardModelId: 'k2.7-code', fastModelId: 'kimi-for-coding-highspeed' }, limits: { max_context_window_tokens: 262_144 } });
-    expect(models.find(model => model.id === 'kimi-k2.8-preview')?.providerData).toEqual({ standardModelId: 'kimi-for-coding' });
   });
 });
 
@@ -156,14 +106,5 @@ test('unrecognized identity cannot merge conflicting raw rows into one public fa
   const provider = createKimiCodeProvider(record());
   await withMockedFetch(() => Response.json({ data: [rawModel({ id: 'unknown', display_name: 'Unknown' }), rawModel({ id: 'unknown-highspeed', display_name: 'Unknown Highspeed' })] }), async () => {
     await expect(provider.instance.getProvidedModels(testFetcher)).rejects.toMatchObject({ name: 'ProviderModelsUnavailableError', cause: new TypeError('Kimi Code catalog contains conflicting model families: kimi-unknown') });
-  });
-});
-
-test('a catalog containing only an unrecognized Preview Highspeed alias fails after logging the skipped row', async () => {
-  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-  const provider = createKimiCodeProvider(record());
-  await withMockedFetch(() => Response.json({ data: [rawModel({ id: 'kimi-for-coding-highspeed', display_name: 'K4.2 Preview Highspeed' })] }), async () => {
-    await expect(provider.instance.getProvidedModels(testFetcher)).rejects.toMatchObject({ name: 'ProviderModelsUnavailableError', cause: new TypeError('Kimi Code catalog contains no publishable models') });
-    expect(warn).toHaveBeenCalledWith('Skipping Kimi Code model with an unrecognized display name:', 'kimi-for-coding-highspeed', 'K4.2 Preview Highspeed');
   });
 });

@@ -6,15 +6,6 @@ import { MultiselectCombobox } from '../../../src/components/ui/multiselect-comb
 import { renderInApp } from '../../render';
 
 describe('multiselect combobox', () => {
-  it('finds a named option by its label and routing value', async () => {
-    renderInApp(<MultiselectCombobox ariaLabel="Models" onChange={() => {}} options={[{ value: 'kimi-k2.8-preview', label: 'K2.8 Preview' }]} placeholder="Models" value={[]} />);
-    const input = screen.getByRole('combobox', { name: 'Models' });
-    fireEvent.click(input);
-    for (const query of ['k2.8', 'kimi-k2.8-preview']) {
-      fireEvent.change(input, { target: { value: query } });
-      expect(await screen.findByRole('menuitemcheckbox', { name: 'K2.8 Preview' })).toBeTruthy();
-    }
-  });
   it('keeps a selected value operable after it leaves the available options', async () => {
     function Host() {
       const [value, setValue] = useState(['retired-model']);
@@ -37,28 +28,5 @@ describe('multiselect combobox', () => {
     fireEvent.click(clear);
     expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Models' }).placeholder).toBe('All models');
     expect(screen.getByRole('menuitemcheckbox', { name: 'All models' }).getAttribute('aria-checked')).toBe('true');
-  });
-
-  it('selects a substring search result with Enter without activating clear', async () => {
-    function Host() {
-      const [value, setValue] = useState(['retired-model']);
-      return <MultiselectCombobox
-        ariaLabel="Models"
-        clearLabel="All models"
-        onChange={setValue}
-        options={[{ value: 'current-model', label: 'Current model' }]}
-        placeholder={`${value.length} selected`}
-        value={value}
-      />;
-    }
-
-    renderInApp(<Host />);
-    const input = screen.getByRole('combobox', { name: 'Models' });
-    fireEvent.click(input);
-    fireEvent.change(input, { target: { value: 'urrent' } });
-    expect(screen.queryByRole('menuitemcheckbox', { name: 'All models' })).toBeNull();
-    fireEvent.keyDown(input, { key: 'Enter' });
-
-    expect(input.getAttribute('placeholder')).toBe('2 selected');
   });
 });

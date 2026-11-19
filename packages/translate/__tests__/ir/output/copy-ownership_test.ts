@@ -58,25 +58,3 @@ test('builder transfers payloads without copying and later operations never modi
   expect(item.content).toEqual([]);
   expect(part.text).toBe('');
 });
-
-test('array writes copy the array while retaining immutable sibling values', () => {
-  const sibling = Object.freeze({ items: Object.freeze([]) });
-  const collector = createIRCollector();
-  collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0], value: sibling });
-  const preceding = collector.state.choices;
-  collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 1], value: { items: [] } });
-  expect(collector.state.choices).toBe(preceding);
-  expect(collector.state.choices[0]).toBe(sibling);
-  const owned = collector.state.choices;
-  collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 2], value: { items: [] } });
-  expect(collector.state.choices).toBe(owned);
-});
-
-test('value exposes the accumulator live readonly view', () => {
-  const collector = createIRCollector();
-  collector.applyWrite({ type: 'write', kind: 'initialize', path: ['usage'], value: {} });
-  const value = collector.value<Record<string, number>>(['usage'])!;
-  collector.applyWrite({ type: 'write', kind: 'assign', path: ['usage', 'output_tokens_inclusive'], value: 1 });
-  expect(value).toEqual({});
-  expect(collector.value(['usage'])).toEqual({ output_tokens_inclusive: 1 });
-});

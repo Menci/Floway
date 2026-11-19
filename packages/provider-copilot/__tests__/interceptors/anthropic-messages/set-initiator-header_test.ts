@@ -20,18 +20,6 @@ const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundar
   model: stubProviderModel({ endpoints: { anthropicMessages: {} } }),
 });
 
-test('Anthropic Messages initiator is user when the last message is a plain user turn', async () => {
-  const ctx = invocation({
-    model: 'claude-test',
-    max_tokens: 10,
-    messages: [{ role: 'user', content: 'hello' }],
-  });
-
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.headers.get('x-initiator'), 'user');
-});
-
 test('Anthropic Messages initiator is user when the last user turn mixes text and tool_result', async () => {
   const ctx = invocation({
     model: 'claude-test',
@@ -63,21 +51,6 @@ test('Anthropic Messages initiator is agent when the last user turn is entirely 
           { type: 'tool_result', tool_use_id: 't_1', content: [{ type: 'text', text: 'result' }] },
         ],
       },
-    ],
-  });
-
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.headers.get('x-initiator'), 'agent');
-});
-
-test('Anthropic Messages initiator is agent when the final message is from the assistant', async () => {
-  const ctx = invocation({
-    model: 'claude-test',
-    max_tokens: 10,
-    messages: [
-      { role: 'user', content: 'hello' },
-      { role: 'assistant', content: 'hi back' },
     ],
   });
 

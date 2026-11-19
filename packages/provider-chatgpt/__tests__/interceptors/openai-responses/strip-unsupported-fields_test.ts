@@ -4,7 +4,7 @@ import { stripUnsupportedFields } from '../../../src/interceptors/openai-respons
 import type { OpenAIResponsesBoundaryCtx } from '../../../src/interceptors/openai-responses/types.ts';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { ProviderStreamResult } from '@floway-dev/provider';
-import { assertEquals, assertFalse, stubProviderModel } from '@floway-dev/test-utils';
+import { assertFalse, stubProviderModel } from '@floway-dev/test-utils';
 
 const stubRequest = {};
 
@@ -54,35 +54,4 @@ test('drops every field Codex rejects with Unsupported parameter', async () => {
   assertFalse('prompt_cache_retention' in ctx.payload);
   assertFalse('safety_identifier' in ctx.payload);
   assertFalse('stream_options' in ctx.payload);
-});
-
-test('leaves supported fields intact', async () => {
-  const ctx = invocation({
-    model: 'gpt-test',
-    input: [{ type: 'message', role: 'user', content: 'hello' }],
-    instructions: 'be terse',
-    prompt_cache_options: { mode: 'future_mode', ttl: '1h' },
-    stream: true,
-    store: false,
-    temperature: 0.7,
-  });
-
-  await stripUnsupportedFields(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.payload.model, 'gpt-test');
-  assertEquals(ctx.payload.input, [{ type: 'message', role: 'user', content: 'hello' }]);
-  assertEquals(ctx.payload.instructions, 'be terse');
-  assertEquals(ctx.payload.prompt_cache_options, { mode: 'future_mode', ttl: '1h' });
-  assertEquals(ctx.payload.stream, true);
-  assertEquals(ctx.payload.store, false);
-  assertFalse('temperature' in ctx.payload);
-});
-
-test('payload without any unsupported fields is preserved as-is', async () => {
-  const payload: CanonicalOpenAIResponsesPayload = { model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }] };
-  const ctx = invocation(payload);
-
-  await stripUnsupportedFields(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.payload, { model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }] });
 });

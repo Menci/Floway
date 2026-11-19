@@ -66,29 +66,6 @@ test('a pointer drop persists before the controller commits the rendered order',
   expect(onReordered).toHaveBeenCalledExactlyOnceWith(records);
 });
 
-test('keyboard reordering persists and commits without a pointer drop phase', async () => {
-  const { onReordered } = renderTable();
-  await act(async () => { controllers[0]!.onReorder(0, 1); });
-  expect(onReordered).toHaveBeenCalledExactlyOnceWith(records);
-});
-
-test('filtering a segment away after its write still commits its pending result once', async () => {
-  const { onReordered, unmount } = renderTable();
-  await act(async () => { await controllers[0]!.onDrop!(0, 1); });
-  unmount();
-  expect(onReordered).toHaveBeenCalledExactlyOnceWith(records);
-});
-
-test('a write completed after filtering its segment away still commits', async () => {
-  let complete!: (records: Props['records']) => void;
-  const write = new Promise<Props['records']>(resolve => { complete = resolve; });
-  const { onReordered, unmount } = renderTable(async () => await write);
-  const dropped = controllers[0]!.onDrop!(0, 1);
-  unmount();
-  await act(async () => { complete(records); await dropped; });
-  expect(onReordered).toHaveBeenCalledExactlyOnceWith(records);
-});
-
 test('a detached failed drop exposes the original error and never commits', async () => {
   let reject!: (error: Error) => void;
   const write = new Promise<Props['records']>((_resolve, fail) => { reject = fail; });

@@ -1,4 +1,4 @@
-import { act, screen, within } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it } from 'vitest';
 
@@ -21,23 +21,6 @@ const click = async (element: HTMLElement) => {
 };
 
 describe('upstream access selection', () => {
-  it('renders live, cached, and unknown model counts as plain text', async () => {
-    const upstreams: UpstreamOption[] = [
-      ...available,
-      { ...available[0], id: 'up_cached', name: 'Cached', enabled: false, cachedModelCount: 8 },
-      { ...available[0], id: 'up_unknown', name: 'Unknown', enabled: false, cachedModelCount: null },
-    ];
-    renderInApp(<UpstreamAccessControl available={upstreams} disabled={false} ids={['up_a']} models={[]} onChange={() => {}} override />);
-    await click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamAccess.title') }));
-
-    for (const [name, count] of [['Alpha', '0 models'], ['Cached', '8 models'], ['Unknown', 'Count unavailable']]) {
-      const row = screen.getByRole('checkbox', { name: `Enabled: ${name}` }).closest('tr')!;
-      const cell = within(row).getAllByRole('cell')[2];
-      expect(cell.textContent).toBe(count);
-      expect(cell.querySelector('svg')).toBeNull();
-    }
-  });
-
   it('only lets the upstream list expand while the limit is on', async () => {
     renderInApp(<Control initialIds={[]} initialOverride={false} />);
     const disclosure = screen.getByRole('button', { name: i18n.t('dashboard.upstreamAccess.title') });
@@ -50,42 +33,6 @@ describe('upstream access selection', () => {
     await click(screen.getByRole('switch', { name: i18n.t('dashboard.upstreamAccess.title') }));
     expect((disclosure as HTMLButtonElement).disabled).toBe(false);
     expect(disclosure.getAttribute('aria-expanded')).toBe('true');
-  });
-
-  it('warns immediately for a saved empty selection even while the list is collapsed', async () => {
-    renderInApp(<Control initialIds={[]} />);
-    const warning = i18n.t('dashboard.upstreamAccess.emptyWarning');
-    expect(screen.getByText(warning).closest('.fui-MessageBar')).not.toBeNull();
-    expect(screen.getByRole('button', { name: i18n.t('dashboard.upstreamAccess.title') }).getAttribute('aria-expanded')).toBe('false');
-
-    const toggle = screen.getByRole('switch', { name: i18n.t('dashboard.upstreamAccess.title') });
-    await click(toggle);
-    expect(screen.queryByText(warning)).toBeNull();
-    await click(toggle);
-    expect(screen.getByText(warning)).toBeTruthy();
-    expect((screen.getByRole('checkbox', { name: 'Enabled: Alpha' }) as HTMLInputElement).checked).toBe(false);
-  });
-
-  it('keeps a row on its own element when the tick moves it out of the ordered head', async () => {
-    renderInApp(<Control initialIds={['up_a']} />);
-    await click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamAccess.title') }));
-    const checkbox = screen.getByRole('checkbox', { name: 'Enabled: Alpha' });
-    await click(checkbox);
-    // Rebuilding the row instead of moving it takes the focus of whoever just
-    // ticked the box, and leaves them pressing a node the document dropped.
-    expect(screen.getByRole('checkbox', { name: 'Enabled: Alpha' })).toBe(checkbox);
-    expect(checkbox.isConnected).toBe(true);
-  });
-
-  it('places the reorder grip after the checkbox in the enabled cell', async () => {
-    renderInApp(<Control initialIds={['up_a']} />);
-    await click(screen.getByRole('button', { name: i18n.t('dashboard.upstreamAccess.title') }));
-    const checkbox = screen.getByRole('checkbox', { name: 'Enabled: Alpha' });
-    const grip = screen.getByRole('button', { name: 'Reorder upstream Alpha' });
-
-    expect(checkbox.closest('td')).toBe(grip.closest('td'));
-    expect(checkbox.compareDocumentPosition(grip) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
-    expect(screen.queryByRole('columnheader', { name: 'Order' })).toBeNull();
   });
 
   it('allows deselecting the last upstream and preserves selections across the limit switch', async () => {

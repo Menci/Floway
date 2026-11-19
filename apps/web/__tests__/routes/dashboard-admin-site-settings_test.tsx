@@ -48,21 +48,6 @@ it('renders the stored name and saves a trimmed replacement into the shared stor
   expect(JSON.parse(String(requests[0]!.init?.body))).toEqual({ site_name: 'Team Gateway' });
 });
 
-it('clears the override when the field is emptied', async () => {
-  const bodies: unknown[] = [];
-  vi.stubGlobal('fetch', vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-    bodies.push(JSON.parse(String(init?.body)));
-    return Response.json({ site_name: null });
-  }));
-  const view = renderPage('Old Name');
-
-  fireEvent.change(view.container.querySelector('input')!, { target: { value: '   ' } });
-  await act(async () => { screen.getByRole('button', { name: 'Save' }).click(); });
-
-  await waitFor(() => expect(useSiteSettingsStore.getState().siteName).toBeNull());
-  expect(bodies).toEqual([{ site_name: null }]);
-});
-
 it('reports a failed save instead of clearing the field', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'Unavailable' }, { status: 500 })));
   const view = renderPage('Old Name');

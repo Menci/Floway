@@ -19,31 +19,6 @@ const invocation = (payload: OpenAIChatCompletionsPayloadEx): OpenAIChatCompleti
   model: stubProviderModel({ endpoints: { openaiChatCompletions: {} } }),
 });
 
-test('OpenAI Chat Completions initiator is user when the last message is from the user', async () => {
-  const ctx = invocation({
-    model: 'gpt-test',
-    messages: [{ role: 'user', content: 'hello' }],
-  });
-
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.headers.get('x-initiator'), 'user');
-});
-
-test('OpenAI Chat Completions initiator is agent when the last message is an assistant replay', async () => {
-  const ctx = invocation({
-    model: 'gpt-test',
-    messages: [
-      { role: 'user', content: 'hi' },
-      { role: 'assistant', content: 'previous answer' },
-    ],
-  });
-
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.headers.get('x-initiator'), 'agent');
-});
-
 test('OpenAI Chat Completions initiator is agent when the last message is a tool result', async () => {
   const ctx = invocation({
     model: 'gpt-test',

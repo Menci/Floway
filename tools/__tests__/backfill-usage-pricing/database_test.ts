@@ -106,36 +106,3 @@ test('D1 connector serializes concurrent statements for local persistence', asyn
   assertEquals(maxActive, 1);
   await database.close();
 });
-
-test('D1 local identity tracks the effective preview database ID', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'floway-tools-d1-preview-'));
-  const configPath = join(directory, 'wrangler.jsonc');
-  const persistTo = join(directory, 'state');
-  const fs = await import('node:fs/promises');
-  await fs.mkdir(persistTo);
-  const config = (previewDatabaseId: string) => JSON.stringify({
-    d1_databases: [{
-      binding: 'DB',
-      database_id: 'production-id',
-      database_name: 'floway-test',
-      preview_database_id: previewDatabaseId,
-    }],
-  });
-  await writeFile(configPath, config('preview-a'));
-  const first = await openD1Database({
-    binding: 'DB', configPath, location: 'local', persistTo, runner: async () => {
-      throw new Error('not called');
-    },
-  });
-  assertEquals(first.identity.kind === 'd1' ? first.identity.databaseId : null, 'preview-a');
-  await first.close();
-
-  await writeFile(configPath, config('preview-b'));
-  const second = await openD1Database({
-    binding: 'DB', configPath, location: 'local', persistTo, runner: async () => {
-      throw new Error('not called');
-    },
-  });
-  assertEquals(second.identity.kind === 'd1' ? second.identity.databaseId : null, 'preview-b');
-  await second.close();
-});

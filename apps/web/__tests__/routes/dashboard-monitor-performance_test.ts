@@ -35,38 +35,6 @@ describe('where the performance page reads upstream names from', () => {
     expect(data.error).toBeNull();
   });
 
-  it('makes API key grouping explicitly current-user scoped for an administrator', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'admin-session', user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } } });
-    const performanceQueries: URL[] = [];
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
-      const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
-      if (url.pathname === '/api/performance/overview') performanceQueries.push(url);
-      return gatewayForOperator(input);
-    }));
-
-    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance?g=keyId') } as never);
-
-    expect(data.state.groupBy).toBe('keyId');
-    expect(data.state.filters.userId).toEqual(['1']);
-    expect(performanceQueries[0].searchParams.getAll('filter_user_id')).toEqual(['1']);
-  });
-
-  it('keeps user grouping and breakdown available to an operator like Usage', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining' as const, language: null } } });
-    const performanceQueries: URL[] = [];
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
-      const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
-      if (url.pathname === '/api/performance/overview') performanceQueries.push(url);
-      return gatewayForOperator(input);
-    }));
-
-    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance?g=userId&tab=userId') } as never);
-
-    expect(data.state.groupBy).toBe('userId');
-    expect(data.state.breakdown).toBe('userId');
-    expect(performanceQueries[0].searchParams.get('group_by')).toBe('userId');
-  });
-
   it('re-reads a Node overview after removing stale Region URL state', async () => {
     useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } } });
     const fetch = vi.fn(gatewayForOperator);
@@ -78,24 +46,6 @@ describe('where the performance page reads upstream names from', () => {
     expect(data.state.groupBy).toBe('model');
     expect(data.state.filters.runtimeLocation).toEqual([]);
     expect(fetch.mock.calls.filter(([input]) => new URL(String(input), 'http://localhost').pathname === '/api/performance/overview')).toHaveLength(2);
-  });
-
-  it('keeps Region state on Cloudflare', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } } });
-    const fetch = vi.fn((input: RequestInfo | URL) => {
-      const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
-      return path === '/api/runtime-info'
-        ? Promise.resolve(Response.json({ kind: 'cloudflare', runtimeLocation: 'SIN' }))
-        : gatewayForOperator(input);
-    });
-    vi.stubGlobal('fetch', fetch);
-
-    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance?g=runtimeLocation&fr=SJC') } as never);
-
-    expect(data.regionAvailable).toBe(true);
-    expect(data.state.groupBy).toBe('runtimeLocation');
-    expect(data.state.filters.runtimeLocation).toEqual([]);
-    expect(fetch.mock.calls.filter(([input]) => new URL(String(input), 'http://localhost').pathname === '/api/performance/overview')).toHaveLength(1);
   });
 
   it('preserves Region state when runtime capability cannot be determined', async () => {

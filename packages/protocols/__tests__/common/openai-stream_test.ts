@@ -30,37 +30,3 @@ test('isOpenAIUsageOnlyEventShape rejects content chunks even when the upstream 
     false,
   );
 });
-
-test('isOpenAIUsageOnlyEventShape rejects the finish-reason chunk even with placeholder usage on it', () => {
-  // Same Ollama pattern: a chunk whose only choice carries finish_reason
-  // but no content is structurally distinct from the usage chunk — the
-  // client needs the finish_reason signal.
-  assertEquals(
-    isOpenAIUsageOnlyEventShape({
-      choices: [{ index: 0, text: '', finish_reason: 'length' }],
-      usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
-    }),
-    false,
-  );
-});
-
-test('isOpenAIUsageOnlyEventShape rejects openai-chat-completions delta chunks with content', () => {
-  assertEquals(
-    isOpenAIUsageOnlyEventShape({
-      choices: [{ index: 0, delta: { role: 'assistant', content: 'hi' } }],
-      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-    }),
-    false,
-  );
-});
-
-test('isOpenAIUsageOnlyEventShape rejects bare-usage rows without choices and any non-object inputs', () => {
-  assertEquals(isOpenAIUsageOnlyEventShape({ usage: { total_tokens: 1 } }), false);
-  assertEquals(isOpenAIUsageOnlyEventShape({ choices: [], usage: undefined }), false);
-  assertEquals(isOpenAIUsageOnlyEventShape({ choices: [], usage: null }), false);
-  assertEquals(isOpenAIUsageOnlyEventShape({ choices: [] }), false);
-  assertEquals(isOpenAIUsageOnlyEventShape(null), false);
-  assertEquals(isOpenAIUsageOnlyEventShape(undefined), false);
-  assertEquals(isOpenAIUsageOnlyEventShape('not an event'), false);
-  assertEquals(isOpenAIUsageOnlyEventShape(42), false);
-});

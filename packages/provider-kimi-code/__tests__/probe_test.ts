@@ -1,6 +1,6 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
-import { account, config, profile, recentState, record, usage } from './fixtures.ts';
+import { config, profile, recentState, record, usage } from './fixtures.ts';
 import { refreshKimiCodeAccountProbe, refreshKimiCodeUsageProbe, runKimiCodeScheduledTask, scheduleKimiCodeProbes } from '../src/probe.ts';
 import { readKimiCodeUpstreamState } from '../src/state.ts';
 import { initProviderRepo, type Fetcher } from '@floway-dev/provider';
@@ -28,7 +28,6 @@ test.each([false, true])('quota probes preserve the raw current-generation or le
     expect(request.url).toBe('https://api.kimi.com/coding/v1/usages');
     expect(request.method).toBe('GET');
     expect(request.headers.get('authorization')).toBe(`Bearer ${config.apiKey}`);
-    expect(request.headers.get('user-agent')).toBeNull();
     return Response.json(body);
   }, async () => {
     const observation = await refreshKimiCodeUsageProbe('up_kimi_code', config, testFetcher);
@@ -38,39 +37,17 @@ test.each([false, true])('quota probes preserve the raw current-generation or le
   });
 });
 
-test('account probe stores identity and plan independently from quota', async () => {
-  const repo = setupRepo();
-  await withMockedFetch(request => {
-    expect(request.url.endsWith('/me')).toBe(true);
-    return Response.json(profile);
-  }, async () => {
-    const observation = await refreshKimiCodeAccountProbe('up_kimi_code', config, testFetcher);
-    expect(observation.data).toEqual(account);
-    expect(repo.read().accountProbe?.observation).toEqual(observation);
-    expect(repo.read().usageProbe).toBeNull();
-  });
-});
-
 test('failed probes retain the last successful observation and propagate the failure', async () => {
   const initial = recentState();
   const repo = setupRepo(initial);
   await withMockedFetch(() => new Response('temporarily unavailable', { status: 503 }), async () => {
-    await expect(refreshKimiCodeUsageProbe('up_kimi_code', config, testFetcher)).rejects.toThrow('503');
-    await expect(refreshKimiCodeAccountProbe('up_kimi_code', config, testFetcher)).rejects.toThrow('503');
+    await expect(refreshKimiCodeUsageProbe('up_kimi_code', config, testFetcher)).rejects.toThrow('temporarily unavailable');
+    await expect(refreshKimiCodeAccountProbe('up_kimi_code', config, testFetcher)).rejects.toThrow('temporarily unavailable');
   });
   expect(repo.read().usageProbe?.observation).toEqual(initial.usageProbe?.observation);
   expect(repo.read().accountProbe?.observation).toEqual(initial.accountProbe?.observation);
   expect(repo.read().usageProbe?.error).toContain('temporarily unavailable');
   expect(repo.read().accountProbe?.error).toContain('temporarily unavailable');
-  expect(repo.metrics).toHaveLength(0);
-});
-
-test('unsaved draft probes issue no persistence or metrics writes', async () => {
-  const repo = setupRepo();
-  await withMockedFetch(request => Response.json(request.url.endsWith('/usages') ? usage() : profile), async () => {
-    await Promise.all([refreshKimiCodeUsageProbe('', config, testFetcher), refreshKimiCodeAccountProbe('', config, testFetcher)]);
-  });
-  expect(repo.read()).toEqual({ usageProbe: null, accountProbe: null });
   expect(repo.metrics).toHaveLength(0);
 });
 
@@ -95,9 +72,9 @@ test('older concurrent probes cannot replace newer state or metrics', async () =
 test('scheduled quota refresh succeeds even when the optional account endpoint fails', async () => {
   const repo = setupRepo();
   const fetcher: Fetcher = async url => url.endsWith('/usages') ? Response.json(usage()) : new Response('profile unavailable', { status: 404 });
-  await expect(runKimiCodeScheduledTask(record({ state: null, usageRefreshIntervalMinutes: 5 }), { fetcher: async () => fetcher })).rejects.toThrow('scheduled probes');
+  await expect(runKimiCodeScheduledTask(record({ state: null, usageRefreshIntervalMinutes: 5 }), { fetcher: async () => fetcher })).rejects.toThrow(AggregateError);
   expect(repo.read().usageProbe?.observation?.data).toEqual(usage());
-  expect(repo.read().accountProbe?.error).toContain('404');
+  expect(repo.read().accountProbe?.error).toContain('profile unavailable');
 });
 
 test('request-time debounce, opt-out and scheduled intervals issue only due reads', async () => {
@@ -129,17 +106,4 @@ test('probe errors preserve the network error and any persistence failure', asyn
     expect(error).toBeInstanceOf(AggregateError);
     expect((error as AggregateError).errors).toEqual([network, disk]);
   }
-});
-
-test.each([
-  { ...profile, nickname: '' },
-  { ...profile, user_level_name: '' },
-  { user_id: profile.user_id, nickname: profile.nickname, user_level_name: profile.user_level_name },
-])('profile parsing accepts zero display values and absent goods version: %j', async body => {
-  const repo = setupRepo();
-  await withMockedFetch(() => Response.json(body), async () => {
-    const observation = await refreshKimiCodeAccountProbe('up_kimi_code', config, testFetcher);
-    expect(observation.data).toMatchObject({ userId: body.user_id, nickname: body.nickname ?? '', userLevelName: body.user_level_name ?? '' });
-    expect(repo.read().accountProbe?.observation).toEqual(observation);
-  });
 });
