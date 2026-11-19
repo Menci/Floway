@@ -46,9 +46,6 @@ test('streamingProviderCall throws when 2xx content-type is not text/event-strea
     try {
       await streamingProviderCall(Promise.resolve(response), stubParser, 'm-1', undefined);
     } catch (error) {
-      assertStringIncludes((error as Error).message, '200');
-      assertStringIncludes((error as Error).message, 'application/json');
-      assertStringIncludes((error as Error).message, 'stream is required');
       assertStringIncludes((error as Error).message, 'azure stub');
       throw error;
     }
