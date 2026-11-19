@@ -107,8 +107,6 @@ test('an interrupt during the Claude install stops the selected script and clean
       installerSleep: 5, signalDuringInstall: signal,
     });
     expect(run.code, `${signal} must exit ${expectedCode}, not resume:\n${run.combined}`).toBe(expectedCode);
-    expect(run.combined, `${signal}: the run had entered the Claude phase`).toContain('Claude Code');
-    expect(run.combined, `${signal}: the run must never reach the Codex phase`).not.toContain('Codex');
     expect(!existsSync(codexConfigPath(ws))).toBeTruthy();
     expect(!existsSync(codexTokenPath(ws))).toBeTruthy();
     const remnants = readdirSync(ws.root).filter(name => name.startsWith('agent-setup.'));

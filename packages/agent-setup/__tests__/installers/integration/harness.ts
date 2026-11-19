@@ -766,11 +766,6 @@ interface RunOptions {
   // Forces the existing-file branch through File.Replace on non-Windows hosts,
   // exercising PowerShell's real-null interop without a production test hook.
   forcePowerShellWindowsReplacement?: boolean;
-  // Output-contract knobs. `forceColor` sets AGENT_SETUP_TEST_FORCE_COLOR so
-  // the palette is emitted even though the harness captures (never a TTY);
-  // `noColor` sets NO_COLOR.
-  forceColor?: boolean;
-  noColor?: boolean;
 }
 
 const targetAgent = (configuration: InstallerTestConfiguration, agent?: ScriptAgent): ScriptAgent =>
@@ -902,8 +897,6 @@ _prune_managed_backups() {
   if (options.timeoutSeconds !== undefined) env.AGENT_SETUP_TEST_TIMEOUT_SECONDS = String(options.timeoutSeconds);
   if (options.excludeTimeoutTools) env.AGENT_SETUP_TEST_TRACE_TIMEOUT = '1';
   if (options.disableJqDownload) env.AGENT_SETUP_TEST_NO_JQ_DOWNLOAD = '1';
-  if (options.forceColor) env.AGENT_SETUP_TEST_FORCE_COLOR = '1';
-  if (options.noColor) env.NO_COLOR = '1';
 
   if (options.fakeRestoreFailure) {
     // A `mv` shim (binDir precedes SHIM_BIN on PATH) that refuses only the
@@ -1167,8 +1160,6 @@ function Remove-SetupOlderBackups {
   env.AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT = FAKE_INSTALLER_SCRIPT;
   if (options.timeoutSeconds !== undefined) env.AGENT_SETUP_TEST_TIMEOUT_SECONDS = String(options.timeoutSeconds);
   if (options.ambientApiKey) env.SETUP_API_KEY = SENTINEL_KEY;
-  if (options.forceColor) env.AGENT_SETUP_TEST_FORCE_COLOR = '1';
-  if (options.noColor) env.NO_COLOR = '1';
 
   return new Promise<RunResult>(resolve => {
     const child = spawn(hostPwsh!, ['-NoProfile', '-File', invocationPath], { env });

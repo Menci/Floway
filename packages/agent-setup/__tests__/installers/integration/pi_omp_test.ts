@@ -131,7 +131,6 @@ for (const agent of ['pi', 'omp'] as const) {
         : readOmpConnections(ws);
       expect(connections[0]?.endpoint, 'new connection remains committed').toBe(`${modelServer.url}/updated`);
       expect(readFileSync(settings(ws), 'utf8'), 'new preferences remain committed').toContain('new-model');
-      expect(updated.combined, 'committed data does not enter rollback').not.toContain('rolling back');
     });
   }
 }

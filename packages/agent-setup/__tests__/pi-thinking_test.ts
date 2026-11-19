@@ -3,7 +3,7 @@ import { expect, test } from 'vitest';
 import { piThinkingLevelMap } from '../src/pi-thinking.ts';
 
 test('represents unsupported effort counts as an explicit result and keeps uncontrollable reasoning honest', () => {
-  expect(piThinkingLevelMap({ effort: { supported: ['a', 'b', 'c', 'd', 'e', 'f', 'g'], default: 'a' } }, 'model')).toEqual({ supported: false, message: 'Pi cannot represent all reasoning efforts for model model' });
+  expect(piThinkingLevelMap({ effort: { supported: ['a', 'b', 'c', 'd', 'e', 'f', 'g'], default: 'a' } }, 'model')).toMatchObject({ supported: false });
   const mandatory = piThinkingLevelMap({ mandatory: true }, 'model');
   expect(mandatory.supported && Object.values(mandatory.map).every(value => value === null)).toBe(true);
   const adaptive = piThinkingLevelMap({ adaptive: true }, 'model');

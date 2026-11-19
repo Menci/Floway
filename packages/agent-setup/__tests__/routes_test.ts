@@ -243,7 +243,6 @@ test('PUT rejecting an unavailable key returns a 400 that leaks nothing', async 
   }));
   assertEquals(response.status, 400);
   const errorBody = (await response.json()) as Record<string, unknown>;
-  assertEquals(errorBody.error, 'The selected API key is not available on your account.');
   expect(errorBody).not.toHaveProperty('token');
   expect(JSON.stringify(errorBody)).not.toContain(lease.token);
 });

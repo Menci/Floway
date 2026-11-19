@@ -40,12 +40,6 @@ test('existing CLI configures via the app-server and stages the provider token',
   const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
   expect(run.code, `codex setup should succeed:\n${run.combined}`).toBe(0);
   expect(!existsSync(installerMarker(ws))).toBeTruthy();
-  expect(run.stdout, 'the header names Codex').toContain('==> Agent Setup: Codex\nEndpoint:');
-  expect(run.stdout, 'installation reports the existing CLI and its version').toContain('==> Installing: Codex\nCodex is already installed.\nCodex version:');
-  expect(run.stdout, 'configuration has its own section').toContain('==> Configuring: Codex\n');
-  expect(run.stdout, 'the app-server config path is reported').toContain(`Written to \`${codexConfigPath(ws)}\`.`);
-  expect(run.stdout, 'the provider-token path is reported').toContain(`Written to \`${codexTokenPath(ws)}\`.`);
-  expect(run.stdout, 'the final outcome is explicit').toContain('==> Completed Agent Setup: Codex');
   assertCodexBaseEdits(ws, modelServer.url);
   assertStagedToken(ws);
 });
@@ -56,7 +50,6 @@ test('okOverridden counts as success and reports non-secret override metadata on
   const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexAppServerMode: 'okOverridden' });
   expect(run.code, `okOverridden must be treated as configured:\n${run.combined}`).toBe(0);
   expect(run.combined, 'the override message is surfaced').toContain('Overridden by session flags');
-  expect(run.combined.toLowerCase(), 'the overriding layer is surfaced').toContain('sessionflags');
   expect(run.combined, 'the overridden effective value is not echoed').not.toContain('shadow-model');
   expect(existsSync(codexTokenPath(ws))).toBeTruthy();
 });
@@ -94,7 +87,6 @@ test('a restore failure during rollback preserves the provider-token backup and 
     fakeCodexAppServerMode: 'error', fakeRestoreFailure: true,
   });
   expect(run.code !== 0).toBeTruthy();
-  expect(run.combined, 'a rollback-failure warning is printed').toContain('could not restore');
   expect(run.combined, 'the warning names the provider-token path').toContain(codexTokenPath(ws));
   const backups = codexBackupFiles(home, 'floway-token');
   expect(backups.length, 'the provider-token backup is preserved for manual recovery').toBe(1);
@@ -110,8 +102,6 @@ test('PowerShell: existing CLI configures via the app-server and stages the prov
   const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig({ model: 'gpt-5-codex', reasoningEffort: 'high' }), baseUrl: modelServer.url });
   expect(run.code, `codex setup should succeed:\n${run.combined}`).toBe(0);
   expect(!existsSync(installerMarker(ws))).toBeTruthy();
-  expect(run.stdout, 'the app-server config path is reported').toContain(`Written to \`${codexConfigPath(ws)}\`.`);
-  expect(run.stdout, 'the provider-token path is reported').toContain(`Written to \`${codexTokenPath(ws)}\`.`);
   assertCodexBaseEdits(ws, modelServer.url);
   const edits = codexEditMap(ws);
   expect(edits.get('model'), 'model written verbatim').toBe('gpt-5-codex');

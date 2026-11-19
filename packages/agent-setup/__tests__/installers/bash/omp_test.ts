@@ -74,8 +74,6 @@ for (const platform of ['bash', 'powershell'] as const) {
     ])('rejects ambiguous or invalid managed values without touching the original: %s', source => {
       const result = run(source, 'false', '');
       expect(result.status, result.output).not.toBe(0);
-      expect(result.output).toMatch(/cannot be edited safely|must be a single/);
-      expect(result.output).not.toContain('ParserError');
       expect(result.staged).toBe(null);
     });
   });

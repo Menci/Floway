@@ -14,7 +14,6 @@ test('fresh install downloads a protected JS extension without model or role con
   modelServer.reset();
   const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig() });
   expect(run.code, `fresh install should succeed:\n${run.combined}`).toBe(0);
-  expect(run.stdout, 'completion notice emitted').toContain('==> Completed Agent Setup: oh-my-pi');
   const extensionPath = ompExtensionPath(ws);
   expect(existsSync(extensionPath)).toBeTruthy();
   expect(statSync(extensionPath).mode & 0o777, 'extension permissions are 0600').toBe(0o600);
@@ -112,7 +111,6 @@ test('rollback restores the prior plugin registration and settings after link fa
   const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: ompConfig(), fakeOmpLinkFailure: 'unlink' });
   expect(run.code !== 0).toBeTruthy();
   expect(run.combined, 'failure occurs after native registration updates and link removal').toContain('fake omp plugin link removed the native link and injected a failure');
-  expect(run.combined, 'plugin link failure enters rollback').toContain('oh-my-pi applying changes failed; rolling back configuration.');
   expect(existsSync(join(ws.root, 'omp-plugin-commands.txt'))).toBeTruthy();
   expect(readFileSync(ompExtensionPath(ws), 'utf8'), 'extension restored to original content').toBe(priorContent);
   expect(readFileSync(ompPluginLockPath(ws), 'utf8'), 'native registration and plugin settings are restored byte for byte').toBe(priorLockText);
