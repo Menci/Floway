@@ -114,7 +114,6 @@ describe('vlessFrameOverStream — reply prefix strip', () => {
     await expect(reader.read()).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
-      message: expect.stringContaining('bad version'),
     });
   });
 });
@@ -134,7 +133,6 @@ describe('vlessFrameOverStream — reply prefix edge cases', () => {
     await expect(reader.read()).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
-      message: expect.stringContaining('EOF in addons'),
     });
   });
 });

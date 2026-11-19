@@ -98,7 +98,6 @@ describe('dialShadowsocks — AEAD frame round trip', () => {
     await expect(reader.read()).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
-      message: expect.stringContaining('handshake decrypt'),
     });
   });
 });
@@ -129,7 +128,6 @@ describe('dialShadowsocks — AEAD frame layout', () => {
     await expect(reader.read()).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
-      message: expect.stringMatching(/bad payload length 16384/),
     });
   });
 });

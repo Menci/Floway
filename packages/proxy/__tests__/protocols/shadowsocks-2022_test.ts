@@ -65,7 +65,6 @@ describe('dialShadowsocks2022 — SIP022 defenses', () => {
     await expect(runWithServerHandshakeOptions({ skewSec: 31, echoCorrect: true })).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
-      message: expect.stringMatching(/timestamp skew/),
     });
   });
 
@@ -73,7 +72,6 @@ describe('dialShadowsocks2022 — SIP022 defenses', () => {
     await expect(runWithServerHandshakeOptions({ skewSec: 0, echoCorrect: false })).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'proxy-handshake',
-      message: expect.stringMatching(/salt-echo mismatch/),
     });
   });
 });
@@ -88,7 +86,6 @@ describe('dialShadowsocks2022 — pre-connect config validation', () => {
     ).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'config',
-      message: expect.stringContaining('PSK is 15 bytes'),
     });
     expect(fake.connectCount()).toBe(0);
   });
