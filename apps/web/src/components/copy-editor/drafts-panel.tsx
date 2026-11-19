@@ -14,6 +14,7 @@ import { Fragment, useEffect, useId, useRef, useState, type Ref } from 'react';
 import { EditorIconButton, useCopyEditorPortal } from './editor-icon-button';
 import { useEditorTranslation } from './use-editor-t';
 import { fluentComponents } from '../../fluent';
+import { COPY_EDITOR_ROOT_ATTR } from '../../i18n/copy-editor/dom-registry';
 import { useCopyEditorStore, type CopyDraftEntry } from '../../i18n/copy-editor/store';
 import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
@@ -235,13 +236,22 @@ function SessionPreviewLines({
   );
 }
 
+const isInsideCopyEditor = (target: EventTarget | null): boolean => {
+  if (!(target instanceof Node)) return false;
+  let current: Node | null = target;
+  while (current) {
+    if (current instanceof Element && current.hasAttribute(COPY_EDITOR_ROOT_ATTR)) return true;
+    current = current.parentNode;
+  }
+  return false;
+};
+
 export interface DraftsPanelProps {
-  dockRef: React.RefObject<HTMLDivElement | null>;
   onClose: () => void;
   onEditKey: (key: string) => void;
 }
 
-export function DraftsPanel({ dockRef, onClose, onEditKey }: DraftsPanelProps) {
+export function DraftsPanel({ onClose, onEditKey }: DraftsPanelProps) {
   const { t, i18n } = useEditorTranslation();
   const mountNode = useCopyEditorPortal();
   const now = useNow(30_000);
@@ -272,20 +282,26 @@ export function DraftsPanel({ dockRef, onClose, onEditKey }: DraftsPanelProps) {
     }
   }, []);
 
-  // Close the panel when clicking anywhere outside the panel, its internal
-  // popovers/flyouts, and the floating dock.
+  // Dismiss the panel only when pointer or focus returns to the host page
+  // outside the copy editor (keeping it open while focusing EditorFlyout,
+  // internal popovers, the dock, or Alt+clicking page text).
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) return;
-      if (panelRef.current?.contains(target)) return;
-      if (mountNode?.contains(target)) return;
-      if (dockRef.current?.contains(target)) return;
+      if (event.altKey) return;
+      if (isInsideCopyEditor(event.target)) return;
+      onClose();
+    };
+    const onFocusIn = (event: FocusEvent) => {
+      if (isInsideCopyEditor(event.target)) return;
       onClose();
     };
     window.addEventListener('pointerdown', onPointerDown, true);
-    return () => window.removeEventListener('pointerdown', onPointerDown, true);
-  }, [dockRef, mountNode, onClose]);
+    window.addEventListener('focusin', onFocusIn, true);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('focusin', onFocusIn, true);
+    };
+  }, [onClose]);
 
   const activeEntries = Object.values(entriesMap).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const locale = i18n.language;

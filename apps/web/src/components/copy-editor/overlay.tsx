@@ -94,7 +94,6 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
   const archiveActiveAsExport = useCopyEditorStore(state => state.archiveActiveAsExport);
 
   const layerRef = useRef<HTMLDivElement | null>(null);
-  const dockRef = useRef<HTMLDivElement | null>(null);
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const quickCopyTimerRef = useRef<number | null>(null);
 
@@ -355,10 +354,8 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
 
             {panelOpen && (
               <DraftsPanel
-                dockRef={dockRef}
                 onClose={() => setPanelOpen(false)}
                 onEditKey={key => {
-                  setPanelOpen(false);
                   setActiveFlyout({
                     key,
                     candidates: [{ key, baseKey: key, source: 'text' }],
@@ -382,7 +379,6 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
 
             {showDock && (
               <div
-                ref={dockRef}
                 aria-label={t('common.copyEditor.dockLabel')}
                 className="floway-copy-editor-dock"
                 role="region"
