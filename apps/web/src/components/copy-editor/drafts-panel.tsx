@@ -89,6 +89,7 @@ function StaleSourcePopover({
 function ConfirmActionFlyout({
   actionLabel,
   align = 'end',
+  appearance = 'subtle',
   cancelLabel,
   label,
   message,
@@ -101,6 +102,7 @@ function ConfirmActionFlyout({
 }: {
   actionLabel: string;
   align?: 'start' | 'end';
+  appearance?: 'subtle' | 'secondary';
   cancelLabel: string;
   label?: string;
   message: string;
@@ -124,7 +126,7 @@ function ConfirmActionFlyout({
     >
       <PopoverTrigger disableButtonEnhancement>
         <Button
-          appearance="subtle"
+          appearance={appearance}
           aria-label={triggerLabel}
           icon={<Delete16Regular />}
           size={size}
@@ -529,6 +531,7 @@ export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPa
                 <ConfirmActionFlyout
                   actionLabel={t('common.copyEditor.discardEdits', { count: activeEntries.length })}
                   align="start"
+                  appearance="secondary"
                   cancelLabel={t('common.cancel')}
                   label={t('common.copyEditor.discardEdits', { count: activeEntries.length })}
                   message={t('common.copyEditor.discardEditsMessage')}
@@ -559,7 +562,8 @@ export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPa
         <div className="floway-copy-editor-body floway-copy-editor-body--list">
           {activeEntries.length > 0 && (
             <div
-              className="floway-copy-editor-draft-item floway-copy-editor-interactive-item floway-copy-editor-current-session winui-focus-rect"
+              className="floway-copy-editor-draft-item floway-copy-editor-interactive-item winui-focus-rect"
+              data-current-session="true"
               role="button"
               tabIndex={0}
               onClick={() => setShowHistory(false)}
@@ -571,9 +575,31 @@ export function DraftsPanel({ dockRef, mountNode, onClose, onEditKey }: DraftsPa
               }}
             >
               <div className="floway-copy-editor-draft-head">
-                <span className="floway-copy-editor-current-label">
+                <span className="floway-copy-editor-batch-time">
                   {t('common.copyEditor.currentEdits')}
                 </span>
+                <div
+                  className="flex items-center gap-0.5 flex-none"
+                  onClick={event => event.stopPropagation()}
+                >
+                  <Button
+                    appearance="subtle"
+                    aria-label={copyState === 'copied' ? t('common.copy.copied') : t('common.copyEditor.export')}
+                    icon={copyState === 'copied' ? <Checkmark16Regular /> : <Copy16Regular />}
+                    size="small"
+                    title={copyState === 'copied' ? t('common.copy.copied') : t('common.copyEditor.export')}
+                    onClick={() => void handleExport()}
+                  />
+                  <ConfirmActionFlyout
+                    actionLabel={t('common.copyEditor.discardEdits', { count: activeEntries.length })}
+                    cancelLabel={t('common.cancel')}
+                    message={t('common.copyEditor.discardEditsMessage')}
+                    mountNode={mountNode}
+                    title={t('common.copyEditor.discardEditsTitle')}
+                    triggerLabel={t('common.copyEditor.discardEdits', { count: activeEntries.length })}
+                    onConfirm={clearActive}
+                  />
+                </div>
               </div>
               <SessionPreviewLines
                 copiedLabel={t('common.copy.copied')}

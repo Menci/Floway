@@ -324,7 +324,7 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, onSa
         <div className="floway-copy-editor-footer-start">
           {existingEntry && (
             <Button
-              appearance="subtle"
+              appearance="secondary"
               aria-label={t('common.copyEditor.revert')}
               icon={<Delete16Regular />}
               title={t('common.copyEditor.revert')}

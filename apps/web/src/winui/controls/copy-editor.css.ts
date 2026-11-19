@@ -364,14 +364,6 @@ export const copyEditorCss = `
   background-color: var(--winui-subtle-fill-tertiary);
 }
 
-.floway-copy-editor-current-session {
-  background-color: var(--winui-subtle-fill-secondary);
-}
-
-.floway-copy-editor-current-session:hover {
-  background-color: var(--winui-subtle-fill-tertiary);
-}
-
 .floway-copy-editor-draft-head {
   display: flex;
   align-items: center;
@@ -395,13 +387,6 @@ export const copyEditorCss = `
   line-height: 18px;
   font-weight: 500;
   color: var(--winui-text-fill-primary);
-}
-
-.floway-copy-editor-current-label {
-  font-size: 13px;
-  line-height: 18px;
-  font-weight: 600;
-  color: var(--winui-accent-text-fill-primary);
 }
 
 .floway-copy-editor-batch-lines {
