@@ -106,6 +106,7 @@ export const copyEditorCss = `
 .floway-copy-editor-flyout {
   width: min(460px, calc(100vw - 24px));
   max-height: min(640px, calc(100vh - 24px));
+  overflow: visible;
 }
 
 .floway-copy-editor-panel {
@@ -163,6 +164,37 @@ export const copyEditorCss = `
   flex: 0 1 auto;
 }
 
+.floway-copy-editor-flyout-header {
+  position: relative;
+}
+
+.floway-copy-editor-header-key-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  margin-inline-start: -6px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: var(--winui-control-corner-radius);
+  background: transparent;
+  color: var(--winui-text-fill-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 83ms linear;
+}
+
+.floway-copy-editor-header-key-trigger:hover {
+  background-color: var(--winui-subtle-fill-secondary);
+}
+
+.floway-copy-editor-header-key-trigger:active,
+.floway-copy-editor-header-key-trigger[data-open="true"] {
+  background-color: var(--winui-subtle-fill-tertiary);
+}
+
 .floway-copy-editor-header-key {
   font-family: var(--fontFamilyMonospace);
   font-size: calc(var(--fontSizeBase300) - 1px);
@@ -172,7 +204,89 @@ export const copyEditorCss = `
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  direction: rtl;
+  text-align: left;
   min-width: 0;
+}
+
+.floway-copy-editor-header-key-chevron {
+  flex: none;
+  color: var(--winui-text-fill-secondary);
+  transition: transform 120ms cubic-bezier(0.1, 0.9, 0.2, 1);
+}
+
+.floway-copy-editor-header-key-chevron[data-open="true"] {
+  transform: rotate(180deg);
+}
+
+.floway-copy-editor-key-listbox {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 8px;
+  right: 8px;
+  z-index: 20;
+  max-height: min(280px, 50vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--winui-surface-stroke-flyout);
+  box-shadow: 0 8px 24px var(--winui-tooltip-shadow-color);
+  backdrop-filter: blur(24px) saturate(125%);
+}
+
+.floway-copy-editor-key-option {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.floway-copy-editor-key-option[data-highlighted="true"]:not([aria-selected="true"]) {
+  background-color: var(--winui-subtle-fill-secondary);
+}
+
+.floway-copy-editor-key-option-value {
+  width: 100%;
+  font-size: var(--fontSizeBase300);
+  line-height: var(--lineHeightBase300);
+  color: var(--winui-text-fill-primary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.floway-copy-editor-key-option-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+  width: 100%;
+  min-width: 0;
+}
+
+.floway-copy-editor-key-option-key {
+  font-family: var(--fontFamilyMonospace);
+  font-size: calc(var(--fontSizeBase200) - 1px);
+  line-height: 16px;
+  color: var(--winui-text-fill-secondary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.floway-copy-editor-key-option-attr {
+  font-family: var(--fontFamilyMonospace);
+  font-size: calc(var(--fontSizeBase200) - 1px);
+  line-height: 16px;
+  color: var(--winui-text-fill-tertiary);
+  flex: none;
 }
 
 .floway-copy-editor-body {
@@ -198,6 +312,8 @@ export const copyEditorCss = `
   gap: 8px;
   padding: 12px 16px;
   border-top: 1px solid var(--winui-divider-stroke-default);
+  border-bottom-left-radius: var(--winui-overlay-corner-radius);
+  border-bottom-right-radius: var(--winui-overlay-corner-radius);
   background-color: var(--winui-layer-fill-default);
   flex: none;
 }
@@ -231,41 +347,6 @@ export const copyEditorCss = `
   margin-inline-end: -4px;
 }
 
-.floway-copy-editor-candidates {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.floway-copy-editor-candidate {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  padding: 3px 8px;
-  border-radius: var(--winui-control-corner-radius);
-  border: 1px solid var(--winui-control-stroke-default);
-  background-color: var(--winui-control-fill-default);
-  color: var(--winui-text-fill-primary);
-  font-family: var(--fontFamilyMonospace);
-  font-size: calc(var(--fontSizeBase200) - 1px);
-  line-height: 16px;
-  cursor: pointer;
-}
-
-.floway-copy-editor-candidate:hover {
-  background-color: var(--winui-control-fill-secondary);
-}
-
-.floway-copy-editor-candidate[data-active="true"] {
-  border-color: var(--winui-accent-tint-stroke);
-  background-color: var(--winui-accent-tint-fill-default);
-  color: var(--winui-accent-text-fill-primary);
-}
-
-.floway-copy-editor-candidate-attr {
-  color: var(--winui-text-fill-secondary);
-}
 
 .floway-copy-editor-meta {
   font-size: 12px;

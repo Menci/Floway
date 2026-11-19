@@ -7,12 +7,10 @@ const MONITORED_ATTRIBUTES = ['aria-label', 'placeholder', 'alt', 'value'] as co
 export interface AttributeKeyRecord {
   attribute: string;
   key: string;
-  baseKey: string;
 }
 
 export interface KeyCandidate {
   key: string;
-  baseKey: string;
   source: 'text' | 'attribute';
   attribute?: string;
 }
@@ -230,7 +228,7 @@ export class CopyEditorDomRegistry {
     const existing = this.elementAttrs.get(element) ?? [];
     const filtered = existing.filter(entry => entry.attribute !== attribute);
     for (const seg of segments) {
-      filtered.push({ attribute, key: seg.key, baseKey: seg.baseKey });
+      filtered.push({ attribute, key: seg.key });
     }
     this.elementAttrs.set(element, filtered);
   }
@@ -247,7 +245,7 @@ export class CopyEditorDomRegistry {
         const segments = this.textSegments.get(textNode);
         if (!segments) continue;
         for (const seg of segments) {
-          out.push({ key: seg.key, baseKey: seg.baseKey, source: 'text' });
+          out.push({ key: seg.key, source: 'text' });
         }
       }
     }
@@ -259,7 +257,6 @@ export class CopyEditorDomRegistry {
     if (!attrs) return [];
     return attrs.map(entry => ({
       key: entry.key,
-      baseKey: entry.baseKey,
       source: 'attribute',
       attribute: entry.attribute,
     }));
@@ -310,8 +307,8 @@ export class CopyEditorDomRegistry {
           // can edit either the exact segment clicked or any adjacent key.
           const container = parent.closest('p, li, td, th, button, a, label, h1, h2, h3, h4, h5, h6, [role="tooltip"], [role="menuitem"], [role="option"]') ?? parent;
           const allCandidates = dedupeCandidates([
-            { key: hitSegment.key, baseKey: hitSegment.baseKey, source: 'text' },
-            ...segments.map(seg => ({ key: seg.key, baseKey: seg.baseKey, source: 'text' as const })),
+            { key: hitSegment.key, source: 'text' },
+            ...segments.map(seg => ({ key: seg.key, source: 'text' as const })),
             ...this.collectSubtreeCandidates(container),
           ]);
           return {

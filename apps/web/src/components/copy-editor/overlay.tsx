@@ -95,6 +95,7 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
 
   const layerRef = useRef<HTMLDivElement | null>(null);
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
+  const flyoutEscapeRef = useRef<(() => boolean) | null>(null);
   const quickCopyTimerRef = useRef<number | null>(null);
 
   const [altPressed, setAltPressed] = useState(false);
@@ -194,6 +195,7 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
       if (event.key === 'Escape' && uiOpenRef.current) {
         event.preventDefault();
         event.stopImmediatePropagation();
+        if (flyoutEscapeRef.current?.()) return;
         setActiveFlyout(prev => {
           if (prev !== null) return null;
           setPanelOpen(false);
@@ -367,7 +369,7 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
                 onEditKey={key => {
                   setActiveFlyout({
                     key,
-                    candidates: [{ key, baseKey: key, source: 'text' }],
+                    candidates: [{ key, source: 'text' }],
                     anchorRect: null,
                     anchorElement: findActiveFloatingSurface() ?? null,
                   });
@@ -380,6 +382,7 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
                 key={activeFlyout.key}
                 anchorRect={activeFlyout.anchorRect}
                 candidates={activeFlyout.candidates}
+                escapeHandlerRef={flyoutEscapeRef}
                 initialKey={activeFlyout.key}
                 onClose={() => setActiveFlyout(null)}
                 onSaved={() => { setExportedNotice(false); setPanelOpen(true); }}

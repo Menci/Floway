@@ -6,7 +6,6 @@ import { loadLocale } from '../resources';
 
 const STORAGE_KEY = 'floway.copyEditorState.v4';
 export const MAX_HISTORY_SESSIONS = 200;
-const PLURAL_SUFFIX_RE = /_(zero|one|two|few|many|other)$/;
 
 export interface LanguageChange {
   before: string;
@@ -69,8 +68,6 @@ const flattenLeaves = (value: object, prefix = ''): Map<string, string> => {
   walk(value, prefix);
   return map;
 };
-
-export const pluralBaseOf = (key: string): string => key.replace(PLURAL_SUFFIX_RE, '');
 
 const isSupportedLanguage = (value: string): value is SupportedLanguage =>
   (supportedLanguages as readonly string[]).includes(value);
@@ -287,7 +284,6 @@ export interface CopyEditorStore {
   ensureInitialized: () => Promise<void>;
   getOriginal: (language: SupportedLanguage, key: string) => string | undefined;
   getCurrent: (language: SupportedLanguage, key: string) => string | undefined;
-  getRelatedKeys: (key: string) => string[];
   stageEntry: (input: StageEntryInput) => void;
   revertEntry: (key: string) => void;
   revertLanguage: (key: string, language: SupportedLanguage) => void;
@@ -362,25 +358,6 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
   getCurrent: (language, key) => {
     const { originals, entries, history } = get();
     return resolveEffectiveValue(language, key, originals, entries, history);
-  },
-
-  getRelatedKeys: key => {
-    const { originals } = get();
-    const base = pluralBaseOf(key);
-    const found = new Set<string>();
-    for (const language of supportedLanguages) {
-      for (const leaf of originals[language].keys()) {
-        if (leaf === key || pluralBaseOf(leaf) === base) {
-          found.add(leaf);
-        }
-      }
-    }
-    if (found.size === 0) return [key];
-    return [...found].sort((a, b) => {
-      if (a === key) return -1;
-      if (b === key) return 1;
-      return a.localeCompare(b);
-    });
   },
 
   stageEntry: ({ key, values, note }) => {

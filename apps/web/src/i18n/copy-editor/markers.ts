@@ -70,14 +70,8 @@ const decodeFramedRun = (run: string): Array<{ kind: 'start' | 'end'; id: number
   return tokens.length > 0 ? tokens : null;
 };
 
-export interface RegisteredKeyEntry {
-  key: string;
-  baseKey: string;
-}
-
 export interface TextKeySegment {
   key: string;
-  baseKey: string;
   start: number;
   end: number;
 }
@@ -88,23 +82,22 @@ export interface ExtractedText {
   hadMarkers: boolean;
 }
 
-const entries: RegisteredKeyEntry[] = [];
+const entries: string[] = [];
 const keyToId = new Map<string, number>();
 
-export const registerKey = (key: string, baseKey: string): number => {
-  const signature = `${key}\0${baseKey}`;
-  const existing = keyToId.get(signature);
+export const registerKey = (key: string): number => {
+  const existing = keyToId.get(key);
   if (existing !== undefined) return existing;
   const id = entries.length;
-  entries.push({ key, baseKey });
-  keyToId.set(signature, id);
+  entries.push(key);
+  keyToId.set(key, id);
   return id;
 };
 
-export const lookupKey = (id: number): RegisteredKeyEntry | undefined => entries[id];
+export const lookupKey = (id: number): string | undefined => entries[id];
 
-export const wrapWithKeyMarkers = (text: string, key: string, baseKey: string): string => {
-  const id = registerKey(key, baseKey);
+export const wrapWithKeyMarkers = (text: string, key: string): string => {
+  const id = registerKey(key);
   return `${encodeToken(START_TAG, id)}${text}${encodeToken(END_TAG, id)}`;
 };
 
@@ -141,11 +134,10 @@ export const extractKeySegments = (input: string): ExtractedText => {
         for (let i = openStack.length - 1; i >= 0; i -= 1) {
           if (openStack[i]!.id === token.id) {
             const opened = openStack.splice(i, 1)[0]!;
-            const meta = entries[token.id];
-            if (meta) {
+            const key = entries[token.id];
+            if (key) {
               segments.push({
-                key: meta.key,
-                baseKey: meta.baseKey,
+                key,
                 start: opened.start,
                 end: offset,
               });
@@ -157,11 +149,10 @@ export const extractKeySegments = (input: string): ExtractedText => {
         // <Trans> splits a single marked translation across elements, leaving
         // trailing text nodes with only the closing marker.
         if (!matched) {
-          const meta = entries[token.id];
-          if (meta) {
+          const key = entries[token.id];
+          if (key) {
             segments.push({
-              key: meta.key,
-              baseKey: meta.baseKey,
+              key,
               start: 0,
               end: offset,
             });
@@ -179,11 +170,10 @@ export const extractKeySegments = (input: string): ExtractedText => {
   clean += input.slice(lastIndex);
   // Any unclosed marker (e.g. truncated text) spans to the end of the text.
   for (const opened of openStack) {
-    const meta = entries[opened.id];
-    if (meta) {
+    const key = entries[opened.id];
+    if (key) {
       segments.push({
-        key: meta.key,
-        baseKey: meta.baseKey,
+        key,
         start: opened.start,
         end: clean.length,
       });
@@ -240,9 +230,8 @@ export const copyEditorPostProcessor: PostProcessorModule = {
     if (typeof value !== 'string' || value.length === 0) return value;
     const opt = options as { i18nResolved?: ResolvedInfo; copyEditorSkip?: boolean } | undefined;
     if (opt?.copyEditorSkip) return value;
-    const baseKey = opt?.i18nResolved?.usedKey ?? (Array.isArray(key) ? key[0] : key);
-    const exactKey = opt?.i18nResolved?.exactUsedKey ?? baseKey;
-    if (!exactKey || !baseKey) return value;
-    return wrapWithKeyMarkers(value, exactKey, baseKey);
+    const exactKey = opt?.i18nResolved?.exactUsedKey ?? opt?.i18nResolved?.usedKey ?? (Array.isArray(key) ? key[0] : key);
+    if (!exactKey) return value;
+    return wrapWithKeyMarkers(value, exactKey);
   },
 };
