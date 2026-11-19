@@ -140,23 +140,20 @@ export const copyEditorCss = `
   flex: 1 1 auto;
 }
 
-.floway-copy-editor-header-title {
-  flex: none;
-}
-
 .floway-copy-editor-header-key-group {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
   flex: 0 1 auto;
 }
 
 .floway-copy-editor-header-key {
   font-family: var(--fontFamilyMonospace);
-  font-size: 12px;
-  line-height: 18px;
-  color: var(--winui-text-fill-secondary);
+  font-size: calc(var(--fontSizeBase400) - 1px);
+  line-height: var(--lineHeightBase400);
+  font-weight: 600;
+  color: var(--winui-text-fill-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -15,7 +15,7 @@ import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages
 import { copyToClipboard } from '../ui/copy-to-clipboard';
 import { Textarea } from '../ui/fluent-form-controls';
 
-const { Button, Label, Text } = fluentComponents;
+const { Button, Label } = fluentComponents;
 
 const LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
   'en': 'English',
@@ -197,9 +197,6 @@ export function EditorFlyout({ anchorRect, candidates, initialKey, onClose, rout
         }}
       >
         <div className="floway-copy-editor-header-main">
-          <Text className="floway-copy-editor-header-title" size={400} weight="semibold">
-            {t('common.copyEditor.flyoutTitle')}
-          </Text>
           <span className="floway-copy-editor-header-key-group">
             <span className="floway-copy-editor-header-key" title={activeKey}>
               {activeKey}
