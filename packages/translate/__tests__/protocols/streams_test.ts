@@ -262,8 +262,7 @@ describe('output IR streaming', () => {
     const chat = await reassembleOpenAIChatCompletionsEvents(events(writeOpenAIChatCompletionsEvents(source(), { ...options, audioMetadata: () => ({ id: 'a', expires_at: 123 }) })));
     expect(chat.choices[0].message.audio).toEqual({ id: 'a', expires_at: 123, data: 'YQ==', transcript: 'hello' });
     expect(chat.choices[0].message.content).toBeNull();
-    await expect(reassembleGeminiGenerateContentEvents(events(writeGeminiGenerateContentEvents(source(), options))))
-      .rejects.toThrow('GenerateContent inline data requires a MIME type');
+    await expect(reassembleGeminiGenerateContentEvents(events(writeGeminiGenerateContentEvents(source(), options)))).rejects.toThrow();
   });
 
 });

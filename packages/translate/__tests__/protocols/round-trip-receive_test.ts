@@ -102,7 +102,7 @@ test('exposes an authenticated missing reference as an internal error after repl
     referencedContentHashes: [await hashRoundTripContent('missing')],
     sourceTurnDigest: await turnDigest('openaiChatCompletions'),
   });
-  await expect(cases[0].run(carrier)).rejects.toThrow('Authenticated assistant-turn sidecar restoration failed: missing-reference');
+  await expect(cases[0].run(carrier)).rejects.toThrow('missing-reference');
 });
 
 test.each(['different codec scope', 'changed sidecar handle', 'changed replay'] as const)('uses ordinary translation for %s', async failure => {

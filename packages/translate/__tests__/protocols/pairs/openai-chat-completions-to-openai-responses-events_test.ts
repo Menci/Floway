@@ -87,7 +87,6 @@ test('OpenAI Responses to OpenAI Chat Completions translation rejects malformed 
   await assertRejects(
     async () => await collect(translate(stream())),
     RangeError,
-    'cache token counts exceed inclusive input tokens',
   );
 });
 

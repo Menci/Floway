@@ -22,5 +22,5 @@ test('rejects a payload whose top-level wire version this build does not know', 
   // One wire version covers every subsystem; an unknown value must fail here
   // rather than reach a turn-digest mapping that happens to accept it.
   const future = await codec.encode({ ...envelope, v: 2 });
-  await expect(decodeRoundTripSidecar(codec, 'openaiResponses', future)).rejects.toThrow('sidecar version is unsupported');
+  await expect(decodeRoundTripSidecar(codec, 'openaiResponses', future)).rejects.toThrow(TypeError);
 });

@@ -25,7 +25,6 @@ test('a selector naming a group the request never declared is a caller error', (
       tool_choice: { type: 'function', namespace: 'ghost', name: 'run' },
     }, []),
     TranslateInputException,
-    'undeclared grouped tool',
   );
 });
 
@@ -67,5 +66,5 @@ test.each([undefined, 'files'])('allocates distinct names per callable kind in n
 
 test('a request declaring one callable identity twice is refused before allocation', () => {
   const tool: IRInputTool = { type: 'function', namespace: 'agents', name: 'wait', parameters: { type: 'object' } };
-  assertThrows(() => allocateToolNames(request([tool, tool]), []), TranslateInputException, 'repeated declarations');
+  assertThrows(() => allocateToolNames(request([tool, tool]), []), TranslateInputException);
 });

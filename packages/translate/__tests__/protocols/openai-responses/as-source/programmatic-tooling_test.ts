@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { rejectProgramCaller, rejectProgrammaticOpenAIResponsesPayload } from '../../../../src/protocols/openai-responses/as-source/programmatic-tooling.ts';
+import { TranslateInputException } from '../../../../src/shared/input-error.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesPayloadEx, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
 
 const programCallerItems = [
@@ -9,7 +10,7 @@ const programCallerItems = [
 ] as const satisfies readonly CanonicalOpenAIResponsesInputItem[];
 
 test.each(programCallerItems)('rejectProgramCaller rejects $type program caller metadata', item => {
-  expect(() => rejectProgramCaller(item)).toThrow('program caller');
+  expect(() => rejectProgramCaller(item)).toThrow(TranslateInputException);
 });
 
 const payloadCases: Array<{

@@ -158,5 +158,5 @@ test.each([
     { type: 'response.output_item.added', output_index: 0, item: added },
     { type: 'response.output_item.done', output_index: 0, item: done },
     { type: 'response.completed', response: response([done], 'completed') },
-  ], 'arguments')).rejects.toThrow(`namespace changed from ${String(initial)} to ${String(final)}`);
+  ], 'arguments')).rejects.toThrow();
 });

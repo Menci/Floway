@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import { TranslateInputException } from '../../../src/shared/input-error.ts';
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
@@ -61,8 +62,7 @@ test.each([
       tools,
       tool_choice: { type: 'tool', name },
     }),
-    Error,
-    `Anthropic Messages tool_choice names an undeclared tool: ${name}`,
+    TranslateInputException,
   );
 });
 

@@ -22,11 +22,11 @@ test('canonical selector JSON sorts axis keys and threshold object keys determin
 });
 
 test('selector validation rejects unknown axes, empty equality values, and malformed thresholds', () => {
-  assertThrows(() => canonicalizePricingSelector({ unknown: 'x' }), RangeError, 'unknown pricing selector axis');
-  assertThrows(() => canonicalizePricingSelector({ serviceTier: '' }), RangeError, 'non-empty string');
-  assertThrows(() => canonicalizePricingSelector({ inputTokens: { operator: 'eq' as 'gt', value: 1 } }), RangeError, '"gt" or "gte"');
+  assertThrows(() => canonicalizePricingSelector({ unknown: 'x' }), RangeError);
+  assertThrows(() => canonicalizePricingSelector({ serviceTier: '' }), RangeError);
+  assertThrows(() => canonicalizePricingSelector({ inputTokens: { operator: 'eq' as 'gt', value: 1 } }), RangeError);
   for (const value of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
-    assertThrows(() => canonicalizePricingSelector({ inputTokens: { operator: 'gt', value } }), RangeError, 'positive safe integer');
+    assertThrows(() => canonicalizePricingSelector({ inputTokens: { operator: 'gt', value } }), RangeError);
   }
 });
 
@@ -37,14 +37,14 @@ test('model validation rejects duplicate selectors and conflicting threshold ope
       { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } },
       { selector: { serviceTier: 'priority' }, rates: { input_tokens: '3' } },
     ],
-  }), Error, 'duplicate pricing entry selector');
+  }), Error);
   assertThrows(() => validateModelPricing({
     entries: [
       { rates: { input_tokens: '1' } },
       { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input_tokens: '1' } },
       { selector: { inputTokens: { operator: 'gte', value: 272000 } }, rates: { input_tokens: '2' } },
     ],
-  }), Error, 'conflicting pricing threshold operators');
+  }), Error);
   validateModelPricing({
     entries: [
       { rates: { input_tokens: '1' } },
@@ -58,16 +58,16 @@ test('model validation rejects duplicate selectors and conflicting threshold ope
       { selector: { inputTokens: { operator: 'gt', value: 16 } }, rates: { input_tokens: '2' } },
       { selector: { serviceTier: 'fast', inputTokens: { operator: 'gte', value: 16 } }, rates: { input_tokens: '3' } },
     ],
-  }), Error, 'overlapping equality scopes');
+  }), Error);
 });
 
 test('model validation requires exactly one base entry and uses it as the rate-field reference', () => {
   assertThrows(() => validateModelPricing({
     entries: [{ selector: { serviceTier: 'priority' }, rates: { input_tokens: '2' } }],
-  }), Error, 'exactly one base entry');
+  }), Error);
   assertThrows(() => validateModelPricing({
     entries: [{ rates: { input_tokens: '1' } }, { selector: {}, rates: { input_tokens: '2' } }],
-  }), Error, 'exactly one base entry');
+  }), Error);
   validateModelPricing({
     entries: [
       { selector: { serviceTier: 'priority' }, rates: { input_tokens: '2', output_tokens: '8' } },

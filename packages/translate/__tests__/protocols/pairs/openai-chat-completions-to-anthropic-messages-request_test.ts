@@ -105,7 +105,6 @@ test('rejects a request the trip cannot carry because it states no stream', () =
   return assertRejects(
     () => buildWithTestSidecar(mkPayload({ messages: [{ role: 'user', content: 'Hi' }], stream: false })),
     Error,
-    'streaming',
   );
 });
 

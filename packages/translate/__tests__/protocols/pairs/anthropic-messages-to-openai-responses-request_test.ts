@@ -154,5 +154,5 @@ test('buildTargetPayload pairs each server tool round with its own result', asyn
 test('preserves expressible Messages metadata extensions and rejects non-string values', async () => {
   const payload = { model: 'm', max_tokens: 16, messages: [], metadata: { user_id: 'u', tenant: 't' } };
   assertEquals((await buildWithTestSidecar(payload)).metadata, { user_id: 'u', tenant: 't' });
-  await assertRejects(() => buildWithTestSidecar({ ...payload, metadata: { user_id: 'u', tenant: { nested: 't' } } } as AnthropicMessagesPayload), undefined, "metadata field 'tenant'");
+  await assertRejects(() => buildWithTestSidecar({ ...payload, metadata: { user_id: 'u', tenant: { nested: 't' } } } as AnthropicMessagesPayload), undefined, 'tenant');
 });

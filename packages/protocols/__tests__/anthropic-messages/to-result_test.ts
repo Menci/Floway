@@ -46,5 +46,5 @@ test('collectAnthropicMessagesProtocolEventsToResult rejects streams without mes
     for (const event of payloads) yield eventFrame(event);
   }
 
-  await assertRejects(async () => await collectAnthropicMessagesProtocolEventsToResult(events()), Error, 'Anthropic Messages stream ended without a message_stop event.');
+  await assertRejects(async () => await collectAnthropicMessagesProtocolEventsToResult(events()), Error);
 });

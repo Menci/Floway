@@ -56,7 +56,7 @@ describe('restoreAssistantTurn', () => {
       role: 'assistant',
       content: new ContentReference('text', [0]),
     };
-    await expect(restoreAssistantTurn('openaiChatCompletions', ['answer'], turn)).rejects.toThrow('Thin reference requires referenced contents');
+    await expect(restoreAssistantTurn('openaiChatCompletions', ['answer'], turn)).rejects.toThrow(TypeError);
   });
 
   it('fails the whole turn when a referenced candidate is missing', async () => {

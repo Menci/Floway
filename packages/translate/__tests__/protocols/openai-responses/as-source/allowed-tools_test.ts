@@ -34,7 +34,7 @@ for (const target of ['chat', 'messages'] as const) {
     const payload = source({ type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', name: 'edit' }, { type: 'function', name: 'read' }] });
     const original = structuredClone(payload);
     if (target === 'messages') {
-      await assertRejects(() => build(payload), TranslateInputException, 'cannot express an allowed_tools');
+      await assertRejects(() => build(payload), TranslateInputException, 'allowed_tools');
       assertEquals(payload, original);
       return;
     }

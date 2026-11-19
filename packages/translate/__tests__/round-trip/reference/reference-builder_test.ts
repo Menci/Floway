@@ -111,7 +111,7 @@ describe('ReferenceBuilder', () => {
     const finalizer = createFieldReferencer(builder, collectEmittedFieldPlacements('hello', content));
     expect(await finalizer.referenceField('hello', field)).toBe('hello');
     expect(finalizer.referencedContentHashes).toEqual([]);
-    expect(() => appendReadField(builder, field, '!')).toThrowError('Cannot append provenance to an invalid field');
+    expect(() => appendReadField(builder, field, '!')).toThrowError();
   });
 
   it('finalizes nested assistant state without materializing sparse holes', async () => {

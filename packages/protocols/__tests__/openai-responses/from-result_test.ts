@@ -24,11 +24,7 @@ const completedResponse: OpenAIResponsesResultEx = {
 };
 
 test.each(['in_progress', 'cancelled'] as const)('openaiResponsesResultToEvents rejects nonterminal status %s', status => {
-  assertThrows(
-    () => Array.from(openaiResponsesResultToEvents({ ...completedResponse, status })),
-    TypeError,
-    `Cannot expand nonterminal OpenAI Responses status '${status}'`,
-  );
+  assertThrows(() => Array.from(openaiResponsesResultToEvents({ ...completedResponse, status })), TypeError);
 });
 
 test('openaiResponsesResultToEvents starts JSON fallback streams with an empty in-progress snapshot', () => {

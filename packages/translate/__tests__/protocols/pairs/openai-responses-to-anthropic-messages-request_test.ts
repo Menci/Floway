@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import { TranslateInputException } from '../../../src/shared/input-error.ts';
 import { buildTargetPayloadFor, pairs } from '../../composition/helpers.ts';
 import { createTestSidecarCodec } from '../../round-trip/sidecar-codec.ts';
 import type { OpenAIResponsesTool, OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
@@ -53,13 +54,11 @@ test('buildTargetPayload wires OpenAI Responses tooling guards', async () => {
       ...minimalPayload,
       input: [{ type: 'function_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } }],
     }),
-    Error,
-    'program caller',
+    TranslateInputException,
   );
   await assertRejects(
     () => buildWithTestSidecar({ ...minimalPayload, tools: [{ type: 'programmatic_tool_calling' }] }),
-    Error,
-    'Programmatic',
+    TranslateInputException,
   );
 });
 

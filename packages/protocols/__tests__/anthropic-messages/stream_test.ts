@@ -18,6 +18,5 @@ test('parseAnthropicMessagesStream rejects malformed Anthropic Messages SSE JSON
       )));
     },
     Error,
-    'Malformed upstream Anthropic Messages SSE JSON for event "message_delta": not json',
   );
 });

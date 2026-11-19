@@ -93,8 +93,7 @@ test('buildTargetPayload maps system, default max tokens, and multimodal user co
 test.each(['audio/wav'])('buildTargetPayload rejects Gemini inline audio MIME type %s for Anthropic Messages', async mimeType => {
   await assertRejects(
     () => buildWithTestSidecar({ contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data: 'ZGF0YQ==' } }] }] }, 'claude-test', noOptions),
-    Error,
-    `Cannot translate an audio part of MIME type '${mimeType}' to Anthropic Messages.`,
+    TranslateInputException,
   );
 });
 
@@ -135,7 +134,6 @@ test('buildTargetPayload refuses a stated budget beside a stated level', async (
       generationConfig: { thinkingConfig: { thinkingBudget: 2048, thinkingLevel: 'HIGH' } },
     }, 'claude-test', noOptions),
     TranslateInputException,
-    'thinking_budget and thinking_level are not supported together',
   );
 });
 

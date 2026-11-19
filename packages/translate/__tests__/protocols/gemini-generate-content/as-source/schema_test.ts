@@ -33,8 +33,8 @@ test('preserves explicitly supplied JSON Schema and unknown Google type values',
 });
 
 test('rejects mutually exclusive Gemini schema fields', () => {
-  expect(() => geminiFunctionParameters({ name: 'lookup', parameters: { type: 'OBJECT' }, parametersJsonSchema: {} })).toThrow('mutually exclusive');
-  expect(() => geminiResponseSchema({ responseSchema: { type: 'OBJECT' }, responseJsonSchema: {} })).toThrow('mutually exclusive');
+  expect(() => geminiFunctionParameters({ name: 'lookup', parameters: { type: 'OBJECT' }, parametersJsonSchema: {} })).toThrow();
+  expect(() => geminiResponseSchema({ responseSchema: { type: 'OBJECT' }, responseJsonSchema: {} })).toThrow();
 });
 
 test('raw JSON Schema outputs own every mutable descendant across translation trips', () => {

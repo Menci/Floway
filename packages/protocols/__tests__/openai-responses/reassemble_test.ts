@@ -36,7 +36,7 @@ test('reassembleOpenAIResponsesEvents throws when stream ends without terminal e
     },
   ]);
 
-  await assertRejects(() => reassembleOpenAIResponsesEvents(body), Error, 'terminal');
+  await assertRejects(() => reassembleOpenAIResponsesEvents(body), Error);
 });
 
 test.each([

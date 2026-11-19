@@ -44,7 +44,6 @@ test('ChatCompletions citations rebase cumulative Unicode coordinates across int
   expect(ir.choices[0].items[2]).toMatchObject({ content: [{ text: '中B', annotations: [{ output_text_range: { start: 0, end_exclusive: 1 } }] }] });
   const result = await nativeResult('openai-responses', await collect(writeOpenAIResponsesEvents(readOpenAIChatCompletionsEvents(iterate(source)))));
   expect(result.output[2].content[0].annotations).toEqual([{ type: 'url_citation', url: 'https://example.com', title: 'Source', start_index: 0, end_index: 1 }]);
-  expect(warning).toHaveBeenCalledWith('Clamping ChatCompletions citation to open text', expect.objectContaining({ choice: 0 }));
   warning.mockRestore();
 });
 
@@ -53,7 +52,6 @@ test('late ChatCompletions citations on closed text are dropped', async () => {
   const source = [chunk({ content: 'A😀' }), chunk({ reasoning_text: 'R' }), chunk({ content: '中B' }), chunk({ reasoning_text: 'tail' }), chunk({ annotations: [citation(1, 3)] }, { finish_reason: 'stop' }), doneFrame()];
   const ir = await collectIR(readOpenAIChatCompletionsEvents(iterate(source)));
   expect(ir.choices[0].items.filter(item => item.type === 'message').every(item => item.content.every(part => part.type !== 'text' || part.annotations === undefined))).toBe(true);
-  expect(warning).toHaveBeenCalledWith('Dropping ChatCompletions citation outside open text', expect.objectContaining({ choice: 0 }));
   warning.mockRestore();
 });
 

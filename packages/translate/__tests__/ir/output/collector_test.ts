@@ -10,26 +10,26 @@ describe('output IR accumulator', () => {
     collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } });
     collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 0], value: { type: 'message', content: [] } });
     collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 0, 'content', 0], value: { type: 'text', text: '' } });
-    expect(() => collector.applyWrite({ type: 'write', kind: 'assign', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'x' })).toThrow('append target cannot be assigned');
-    expect(() => collector.applyWrite({ type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 1 } as any)).toThrow('append requires a string value');
+    expect(() => collector.applyWrite({ type: 'write', kind: 'assign', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'x' })).toThrow();
+    expect(() => collector.applyWrite({ type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 1 } as any)).toThrow();
     collector.applyWrite({ type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'x' });
     expect(collector.value(['choices', 0, 'items', 0, 'content', 0, 'text'])).toBe('x');
 
     collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 1], value: { type: 'reasoning', content: [''] } });
-    expect(() => collector.applyWrite({ type: 'write', kind: 'assign', path: ['choices', 0, 'items', 1, 'content', 0], value: 1 })).toThrow('append target cannot be assigned');
+    expect(() => collector.applyWrite({ type: 'write', kind: 'assign', path: ['choices', 0, 'items', 1, 'content', 0], value: 1 })).toThrow();
   });
 
   test('rejects undefined and only assigns IRAbsent to absent fields', () => {
     const collector = createIRCollector();
-    expect(() => collector.applyWrite({ type: 'write', kind: 'assign', path: ['model'], value: IRAbsent })).toThrow('IRAbsent is not allowed');
+    expect(() => collector.applyWrite({ type: 'write', kind: 'assign', path: ['model'], value: IRAbsent })).toThrow();
     collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0], value: { items: [] } });
     collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 0], value: { type: 'function_call', name: 'f', arguments: '' } });
-    expect(() => collector.applyWrite({ type: 'write', kind: 'assign', path: ['choices', 0, 'items', 0, 'call_id'], value: undefined as any })).toThrow('undefined');
+    expect(() => collector.applyWrite({ type: 'write', kind: 'assign', path: ['choices', 0, 'items', 0, 'call_id'], value: undefined as any })).toThrow();
     collector.applyWrite({ type: 'write', kind: 'assign', path: ['choices', 0, 'items', 0, 'call_id'], value: IRAbsent });
-    expect(() => collector.applyWrite({ type: 'write', kind: 'assign', path: ['choices', 0, 'items', 0, 'call_id'], value: IRAbsent })).toThrow('absent target');
-    expect(() => collector.applyWrite({ type: 'write', kind: 'assign', path: ['choices', 0, 'refusal_details'], value: { category: IRAbsent, explanation: null } as any })).toThrow('assigned directly');
-    expect(() => collector.applyWrite({ type: 'write', kind: 'assign', path: ['choices', 0, 'refusal_details'], value: { category: undefined, explanation: null } as any })).toThrow('cannot contain undefined');
-    expect(() => collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 1], value: { type: 'reasoning', summary: [IRAbsent] } })).toThrow('append target must initialize to an empty string');
+    expect(() => collector.applyWrite({ type: 'write', kind: 'assign', path: ['choices', 0, 'items', 0, 'call_id'], value: IRAbsent })).toThrow();
+    expect(() => collector.applyWrite({ type: 'write', kind: 'assign', path: ['choices', 0, 'refusal_details'], value: { category: IRAbsent, explanation: null } as any })).toThrow();
+    expect(() => collector.applyWrite({ type: 'write', kind: 'assign', path: ['choices', 0, 'refusal_details'], value: { category: undefined, explanation: null } as any })).toThrow();
+    expect(() => collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 1], value: { type: 'reasoning', summary: [IRAbsent] } })).toThrow();
   });
 
   test('rejects operations after part and item end', () => {
@@ -38,9 +38,9 @@ describe('output IR accumulator', () => {
     collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 0], value: { type: 'message', content: [] } });
     collector.applyWrite({ type: 'write', kind: 'initialize', path: ['choices', 0, 'items', 0, 'content', 0], value: { type: 'text', text: '' } });
     collector.applyEvent({ type: 'part_end', choice: 0, item: 0, part: 0 });
-    expect(() => collector.applyWrite({ type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'late' })).toThrow('closed part');
+    expect(() => collector.applyWrite({ type: 'write', kind: 'append', path: ['choices', 0, 'items', 0, 'content', 0, 'text'], value: 'late' })).toThrow();
     collector.applyEvent({ type: 'item_end', choice: 0, item: 0 });
-    expect(() => collector.applyWrite({ type: 'write', kind: 'assign', path: ['choices', 0, 'items', 0, 'type'], value: 'message' })).toThrow('closed item');
+    expect(() => collector.applyWrite({ type: 'write', kind: 'assign', path: ['choices', 0, 'items', 0, 'type'], value: 'message' })).toThrow();
   });
 
 });

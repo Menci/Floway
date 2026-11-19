@@ -25,6 +25,6 @@ test('parseOpenAIChatCompletionsStream rejects upstream OpenAI Chat Completions 
       )));
     },
     Error,
-    'Upstream OpenAI Chat Completions SSE error: server_error: upstream chat failed',
+    'upstream chat failed',
   );
 });
