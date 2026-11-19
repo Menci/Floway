@@ -150,9 +150,9 @@ export const copyEditorCss = `
 
 .floway-copy-editor-header-key {
   font-family: var(--fontFamilyMonospace);
-  font-size: calc(var(--fontSizeBase400) - 1px);
-  line-height: var(--lineHeightBase400);
-  font-weight: 600;
+  font-size: var(--fontSizeBase300);
+  line-height: var(--lineHeightBase300);
+  font-weight: 500;
   color: var(--winui-text-fill-primary);
   overflow: hidden;
   text-overflow: ellipsis;
