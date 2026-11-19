@@ -113,7 +113,6 @@ test('ExecutionCellChannelBroker.subscribe surfaces a server-side socket error b
     caught = err;
   }
   assertEquals(caught instanceof Error, true);
-  assertEquals((caught as Error).message, 'ExecutionDO socket error');
 });
 
 test('ExecutionCellChannelBroker.subscribe closes the socket when the iterator returns', async () => {

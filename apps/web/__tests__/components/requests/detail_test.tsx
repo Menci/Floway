@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { RequestDetailPanel } from '../../../src/components/requests/detail';
+import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 import type { DumpRecord } from '@floway-dev/gateway/browser';
 
@@ -27,7 +28,7 @@ describe('request detail navigation', () => {
     fireEvent.click(screen.getByRole('option', { name: 'Upstream response' }));
     expect((await screen.findByTestId('body-content')).textContent).toContain('data: {broken\n');
     fireEvent.click(screen.getByRole('button', { name: 'Issues (1)' }));
-    expect(screen.getByText('Capture ended before EOF. These are the bytes received so far.')).toBeTruthy();
+    expect(screen.getByText(i18n.t('dashboard.requests.partialCapture'))).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
     fireEvent.click(screen.getByRole('combobox', { name: 'Request details' }));
     fireEvent.click(screen.getByRole('option', { name: 'Upstream request' }));

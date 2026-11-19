@@ -2,6 +2,7 @@ import { fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { EventList } from '../../../src/components/requests/events';
+import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
 import type { DumpStreamEvent } from '@floway-dev/gateway/browser';
 
@@ -29,9 +30,9 @@ describe('per-event view', () => {
     expect(view.container.querySelector('script')).toBeNull();
     expect(view.container.querySelector('code')?.textContent).toContain('<script>alert(1)</script>');
     fireEvent.change(screen.getByRole('textbox', { name: 'Search events' }), { target: { value: 'unmatched' } });
-    expect(screen.getByText('No matching events')).toBeTruthy();
+    expect(screen.getByText(i18n.t('dashboard.requests.noEventMatches'))).toBeTruthy();
     fireEvent.change(screen.getByRole('textbox', { name: 'Search events' }), { target: { value: '[DONE]' } });
     expect(screen.getByRole('button', { name: '#121 [DONE]' })).toBeTruthy();
-    expect(screen.queryByText('Invalid JSON')).toBeNull();
+    expect(screen.queryByText(i18n.t('dashboard.requests.eventParseError'))).toBeNull();
   });
 });

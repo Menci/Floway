@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import type { ListedUpstreamRecord, UpstreamRecord } from '../../src/api/types';
 import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
+import { i18n } from '../../src/i18n';
 import DashboardProvidersUpstreams from '../../src/routes/dashboard-providers-upstreams';
 import { upstreamRecord } from '../api/upstream-fixture';
 import { stubLocalStorage } from '../local-storage-stub';
@@ -119,7 +120,7 @@ it('opens telemetry and the read-only editor for an audit-only row while keeping
 
   const row = await screen.findByRole('row', { name: 'Usage and metrics for First' });
   expect(screen.getByRole('link', { name: 'First' })).toBeTruthy();
-  expect(within(row).getByText('7 models')).toBeTruthy();
+  expect(within(row).getByText(i18n.t('dashboard.upstreams.models.count', { count: 7 }))).toBeTruthy();
   expect(screen.getByRole('link', { name: 'Edit upstream First' }).getAttribute('aria-disabled')).toBeNull();
   expect(screen.getByRole('switch', { name: 'Toggle upstream First' }).hasAttribute('disabled')).toBe(true);
   expect(screen.queryByRole('button', { name: 'Copy upstream First' })).toBeNull();

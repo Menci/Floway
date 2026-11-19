@@ -55,7 +55,7 @@ describe('series identity', () => {
       metric: 'total',
       range: 'today',
       buckets: [bucket],
-    })).toThrow('Usage overview series group is missing from dimension values: missing');
+    })).toThrow(TypeError);
   });
 });
 

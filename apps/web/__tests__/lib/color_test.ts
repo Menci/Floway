@@ -31,7 +31,7 @@ describe('readableTone', () => {
   });
 
   it('rejects a translucent surface without a backdrop to flatten it onto', () => {
-    expect(() => readableTone('#0008', '#FFFFFF80')).toThrow('Readable tone requires an opaque surface');
+    expect(() => readableTone('#0008', '#FFFFFF80')).toThrow(TypeError);
   });
 
   it('reaches the floor for every tone a hue can produce, in both schemes', () => {

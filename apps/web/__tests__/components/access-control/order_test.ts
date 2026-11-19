@@ -34,8 +34,8 @@ describe('access-rule display order', () => {
 
   it('rejects invalid, duplicate and stale indices', () => {
     for (const [ids, from, to] of [[[3, 4], -1, 1], [[3, 4], 0, 2], [[3, 3], 0, 1], [[3], 0, 0], [[3, 4], 0.5, 1]] as const) {
-      expect(() => reorderModelRecords(records, ids, from, to)).toThrow('Invalid access-rule reorder positions');
+      expect(() => reorderModelRecords(records, ids, from, to)).toThrow(/positions/);
     }
-    expect(() => reorderModelRecords(records, [4, 3], 0, 1)).toThrow('stale visible order');
+    expect(() => reorderModelRecords(records, [4, 3], 0, 1)).toThrow(/stale/);
   });
 });

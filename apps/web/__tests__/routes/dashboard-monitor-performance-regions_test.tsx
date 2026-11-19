@@ -3,6 +3,7 @@ import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { PerformanceOverviewResponse } from '../../src/components/performance/overview';
+import { i18n } from '../../src/i18n';
 import DashboardMonitorPerformance from '../../src/routes/dashboard-monitor-performance';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
@@ -96,7 +97,7 @@ describe('Performance Region dimensions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Refresh performance' }));
 
     await waitFor(() => expect(screen.getByText('Corrected overview failed')).toBeTruthy());
-    expect(screen.getByText('This view could not be loaded')).toBeTruthy();
+    expect(screen.getByText(i18n.t('dashboard.pages.unavailable'))).toBeTruthy();
     expect(screen.queryByRole('combobox', { name: 'Group by' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Refresh performance' }));

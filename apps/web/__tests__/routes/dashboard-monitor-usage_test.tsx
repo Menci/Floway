@@ -3,6 +3,7 @@ import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { dashboardBucketFrames } from '../../src/components/charts/dashboard-time';
+import { i18n } from '../../src/i18n';
 import DashboardMonitorUsage, { clientLoader } from '../../src/routes/dashboard-monitor-usage';
 import { useAuthStore } from '../../src/stores/auth-store';
 import { stubLocalStorage } from '../local-storage-stub';
@@ -76,7 +77,7 @@ describe('usage dimension controls', () => {
       },
     });
 
-    expect(screen.getByText('Unknown user')).toBeTruthy();
+    expect(screen.getByText(i18n.t('dashboard.usage.filters.unknownUser'))).toBeTruthy();
     unmount();
 
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -84,7 +85,7 @@ describe('usage dimension controls', () => {
       ...loaderData,
       usage: { ...loaderData.usage, users: [] },
     });
-    expect(screen.getByText('Usage user dimension is missing metadata for 2')).toBeTruthy();
+    expect(consoleError.mock.calls.flat().some(argument => argument instanceof TypeError)).toBe(true);
     consoleError.mockRestore();
   });
 

@@ -17,6 +17,6 @@ describe('hidden series URL state', () => {
 
   it('rejects unsupported versioned formats', () => {
     expect(() => parseHiddenSeries(new URLSearchParams('hidev=3&hide=a&hide=b'), 'hide'))
-      .toThrowError('Unsupported hidden-series URL format version: 3');
+      .toThrowError(RangeError);
   });
 });

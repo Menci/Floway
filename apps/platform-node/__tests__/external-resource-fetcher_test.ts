@@ -37,10 +37,12 @@ test.each([
   async url => {
     const fetcher = createNodeExternalResourceFetcher();
     const error = await assertRejects(() => fetcher(new URL(url), new AbortController().signal), Error);
-    const messages: string[] = [];
+    // Nothing listens on these targets, so ECONNREFUSED would also reject;
+    // the lookup guard's own code is what proves no connection was attempted.
+    const codes: unknown[] = [];
     for (let current: unknown = error; current instanceof Error; current = current.cause) {
-      messages.push(current.message);
+      codes.push((current as NodeJS.ErrnoException).code);
     }
-    assertEquals(messages.includes('External resource target did not resolve exclusively to public IP addresses'), true);
+    assertEquals(codes.includes('ENETUNREACH'), true);
   },
 );

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import type { PermissionsData } from '../../src/components/access-control/data';
 import { PermissionsWorkspace } from '../../src/components/access-control/workspace';
 import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
+import { i18n } from '../../src/i18n';
 import DashboardAdminPermissions, { clientLoader, shouldRevalidate } from '../../src/routes/dashboard-admin-permissions';
 import { useAuthStore } from '../../src/stores/auth-store';
 import { renderInApp } from '../render';
@@ -143,7 +144,7 @@ test('a confirmed delete retires its rule and its confirmation without reading t
   expect(container.querySelector('[data-rule-id="2"]')).toBeNull();
   expect(container.querySelectorAll('[data-rule-id]')).toHaveLength(2);
   expect(reads()).toBe(before);
-  expect(await screen.findByText('Deleted rule')).toBeTruthy();
+  expect(await screen.findByText(i18n.t('dashboard.accessControl.toast.delete.success'))).toBeTruthy();
 });
 
 test('locks all mutations while deleting and restores them after a failed write', async () => {

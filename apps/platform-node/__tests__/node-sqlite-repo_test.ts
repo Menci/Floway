@@ -51,7 +51,8 @@ test('group restores and directory snapshots use native SQLite transactions and 
   await expect(repo.groups.restore([
     { ...first, name: 'Duplicate', memberIds: [] },
     { ...second, name: 'duplicate', memberIds: [1] },
-  ])).rejects.toThrow('UNIQUE constraint failed');
+  // https://www.sqlite.org/rescode.html#constraint_unique
+  ])).rejects.toMatchObject({ errcode: 2067 });
   expect(await repo.readUserDirectory()).toEqual(before);
   await repo.groups.create('\u00c4', 120);
   await repo.groups.create('\u00e4', 120);

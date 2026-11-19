@@ -91,7 +91,7 @@ describe('startNodeTls — handshake', () => {
         await expect(startNodeTls(await dialRaw(server.port), {
           host: 'localhost',
           verifyHost: 'other.example.test',
-        })).rejects.toThrow(/not in the cert's altnames|does not match/i);
+        })).rejects.toMatchObject({ code: 'ERR_TLS_CERT_ALTNAME_INVALID' });
       } finally {
         await server.close();
       }

@@ -2,6 +2,7 @@ import { fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProviderConfigHarness } from './provider-config-harness';
+import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
 import { settle } from '../../settle';
@@ -70,7 +71,7 @@ describe('ChatGPT credential import', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Import credential' }));
     await settle();
 
-    expect(await screen.findByText('Preview the current JSON before importing.')).toBeTruthy();
+    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.chatgpt.import.previewFirst'))).toBeTruthy();
     expect(bodyOf(EXCHANGE_PATH)).toBeNull();
   });
 
@@ -83,7 +84,7 @@ describe('ChatGPT credential import', () => {
     // Two usable candidates, so neither is chosen for the operator.
     fireEvent.click(screen.getByRole('button', { name: 'Import credential' }));
     await settle();
-    expect(await screen.findByText('Select one importable account.')).toBeTruthy();
+    expect(await screen.findByText(i18n.t('dashboard.upstreamEditor.chatgpt.import.selectAccount'))).toBeTruthy();
 
     fireEvent.click(screen.getAllByRole('radio')[1]!);
     fireEvent.click(screen.getByRole('button', { name: 'Import credential' }));

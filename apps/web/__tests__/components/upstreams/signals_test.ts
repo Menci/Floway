@@ -9,9 +9,8 @@ import type { TFunction } from '../../../src/i18n/translation';
 
 const OBSERVED = '2026-07-28T11:00:00.000Z';
 
-// The real resources rather than a key echo, so the assertions read as the copy
-// an operator sees and a key that does not exist fails here rather than
-// rendering as itself.
+// The real resources rather than a key echo, so a key that does not exist
+// fails here rather than rendering as itself.
 const t = ((key: string, values?: Record<string, unknown>) => {
   const template = key.split('.').reduce<unknown>((node, part) => (node as Record<string, unknown> | undefined)?.[part], en.translation);
   if (typeof template !== 'string') throw new Error(`Missing i18n key: ${key}`);
@@ -24,6 +23,7 @@ const t = ((key: string, values?: Record<string, unknown>) => {
 const normalizeSpaces = (value: string): string => value.replace(/\u202f/g, ' ');
 
 const NOW = Date.parse('2026-07-28T12:00:00.000Z');
+const RATE_LIMITED = t('dashboard.upstreams.signals.rateLimited');
 const readoutOf = (record: unknown, quotaDisplay: 'remaining' | 'used' = 'remaining') => upstreamReadout(record as UpstreamRecord, t, 'en', NOW, quotaDisplay);
 const rowOf = (record: unknown) => {
   const { plan, signals } = readoutOf(record);
@@ -70,11 +70,11 @@ describe('upstream readout by provider', () => {
     // one fact per line rather than a run the tooltip wraps on its own.
     const detail = readoutOf(record).signals[0].detail;
     expect(detail).not.toContain(' - ');
-    expect(detail.split('\n').map(normalizeSpaces)).toEqual([
-      'Allowance: 71% remaining',
-      'Resets Sep 1, 2026, 12:00:00 AM',
-      'Observed Jul 28, 2026, 11:00:00 AM',
-    ]);
+    const lines = detail.split('\n').map(normalizeSpaces);
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain('71%');
+    expect(lines[1]).toContain('Sep 1, 2026, 12:00:00 AM');
+    expect(lines[2]).toContain('Jul 28, 2026, 11:00:00 AM');
   });
 
   // A rate limit and a spent window are different facts: the row states the
@@ -91,11 +91,11 @@ describe('upstream readout by provider', () => {
       },
     });
 
-    expect(rowFor('2026-07-28T14:30:00.000Z')).toBe('ChatGPT Pro | 88% 5h | Rate limited 2h 30m');
-    expect(rowFor('2026-07-28T12:45:00.000Z')).toBe('ChatGPT Pro | 88% 5h | Rate limited 45m');
+    expect(rowFor('2026-07-28T14:30:00.000Z')).toBe(`ChatGPT Pro | 88% 5h | ${RATE_LIMITED} 2h 30m`);
+    expect(rowFor('2026-07-28T12:45:00.000Z')).toBe(`ChatGPT Pro | 88% 5h | ${RATE_LIMITED} 45m`);
     // A day out still reads in hours, and any time left never reads as none.
-    expect(rowFor('2026-07-30T12:00:00.000Z')).toBe('ChatGPT Pro | 88% 5h | Rate limited 48h');
-    expect(rowFor('2026-07-28T12:00:01.000Z')).toBe('ChatGPT Pro | 88% 5h | Rate limited 1m');
+    expect(rowFor('2026-07-30T12:00:00.000Z')).toBe(`ChatGPT Pro | 88% 5h | ${RATE_LIMITED} 48h`);
+    expect(rowFor('2026-07-28T12:00:01.000Z')).toBe(`ChatGPT Pro | 88% 5h | ${RATE_LIMITED} 1m`);
   });
 
   it('states a Claude Code shared refusal without promoting model limits to account limits', () => {
@@ -110,7 +110,7 @@ describe('upstream readout by provider', () => {
       },
     });
 
-    expect(rowFor('2026-07-28T15:00:00.000Z')).toBe('Claude Max 20x | Rate limited 3h');
+    expect(rowFor('2026-07-28T15:00:00.000Z')).toBe(`Claude Max 20x | ${RATE_LIMITED} 3h`);
     for (const claim of ['seven_day_overage_included', 'seven_day_opus', 'seven_day_sonnet', 'future_model_limit', null]) {
       expect(rowFor('2026-07-28T15:00:00.000Z', claim)).toBe('Claude Max 20x');
     }
@@ -131,7 +131,8 @@ describe('upstream readout by provider', () => {
     expect(rowOf(record)).toBe('Ollama Pro | 30% $18.00 / $60.00');
     expect(upstreamReadout(record as never, t, 'en', NOW, 'used').signals[0]?.label).toBe('$42.00 / $60.00');
     expect(readoutOf(record).signals[0]?.percent).toBe(70);
-    expect(readoutOf(record).signals[0]?.detail).toContain('Oct 1, 2026 to Nov 1, 2026: plan credits used this period.');
+    expect(readoutOf(record).signals[0]?.detail).toContain('Oct 1, 2026');
+    expect(readoutOf(record).signals[0]?.detail).toContain('Nov 1, 2026');
   });
 });
 

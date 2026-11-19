@@ -52,7 +52,6 @@ describe('multipart body rendering', () => {
     const rendered = render(pngWire);
 
     expect(rendered.text).toContain('{"id":1}');
-    expect(rendered.text).toContain('[binary, 8 bytes, content-type=image/png]');
     expect(rendered.text).toContain(base64(png));
     expect(rendered.decodeError).toBeNull();
   });

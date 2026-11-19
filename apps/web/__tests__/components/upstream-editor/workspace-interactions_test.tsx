@@ -4,6 +4,7 @@ import type { PropsWithChildren } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
+import { parse } from 'yaml';
 
 import type { UpstreamRecord } from '../../../src/api/types';
 import type { UpstreamEditorValues } from '../../../src/components/upstream-editor/data';
@@ -142,8 +143,10 @@ describe('upstream model workspace field-array transitions', () => {
     expect(screen.getByRole('table', { name: models('title') })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: models('editAsYaml') }));
     const yaml = (await screen.findByLabelText('YAML models') as HTMLTextAreaElement).value;
-    expect(yaml).toContain('upstreamModelId: model-new');
-    expect(yaml).toContain('opaqueBlobCompatibilityScope:\n    bindToUpstream: true');
+    expect(parse(yaml)).toContainEqual(expect.objectContaining({
+      upstreamModelId: 'model-new',
+      opaqueBlobCompatibilityScope: { bindToUpstream: true },
+    }));
   });
 
   it('initializes, preserves, and clears original-detail support with image input', () => {

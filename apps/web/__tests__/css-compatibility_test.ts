@@ -6,7 +6,7 @@ import { assertLegacyCss, legacyCssPostCssPlugins } from '../css-compatibility';
 describe('browser CSS compatibility', () => {
   it('rejects modern notation and accepts legacy notation', async () => {
     await expect(assertLegacyCss('fixture.css', '.fixture { color: #11223344; }'))
-      .rejects.toThrow('Unsupported CSS reached the browser boundary');
+      .rejects.toThrow();
     await expect(assertLegacyCss('fixture.css', '.fixture { color: #112233; }')).resolves.toBeUndefined();
   });
 

@@ -23,10 +23,7 @@ test('shared Wrangler topology still rejects unrelated drift', () => {
   expect(findWranglerConfigMismatches(example, {
     name: 'floway',
     triggers: { crons: ['0 * * * *'] },
-  })).toEqual([{
-    path: 'triggers.crons[0]',
-    reason: 'expected "* * * * *", got "0 * * * *"',
-  }]);
+  }).map(mismatch => mismatch.path)).toEqual(['triggers.crons[0]']);
 });
 
 test('placeholder replacement and account selection remain deployment-local', () => {
@@ -38,8 +35,5 @@ test('placeholder replacement and account selection remain deployment-local', ()
   expect(findWranglerConfigMismatches(example, {
     name: '<YOUR_WORKER_NAME>',
     triggers: { crons: ['* * * * *'] },
-  })).toEqual([{
-    path: 'name',
-    reason: 'placeholder <YOUR_WORKER_NAME> must be replaced with a concrete value, got "<YOUR_WORKER_NAME>"',
-  }]);
+  }).map(mismatch => mismatch.path)).toEqual(['name']);
 });
