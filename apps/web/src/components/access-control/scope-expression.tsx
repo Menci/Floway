@@ -213,8 +213,8 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
     regex={active === 'model' && value?.kind === 'upstreamModel' && value.model.kind === 'regex'}
   />;
   const hasInstance = instanceMatchesKind(kind, value);
-  const showInstance = kind !== null && kind !== 'self' && (active === 'instance' || hasInstance || !readOnly);
-  const showModel = kind === 'upstream' && hasUpstreamInstance(value) && (active === 'model' || value.kind === 'upstreamModel' || !readOnly);
+  const showInstance = kind !== null && kind !== 'self' && (active === 'instance' || hasInstance || (!readOnly && active === null));
+  const showModel = kind === 'upstream' && hasUpstreamInstance(value) && (active === 'model' || value.kind === 'upstreamModel' || (!readOnly && active === null));
   const lastPart = showModel ? 'model' : showInstance ? 'instance' : 'kind';
   const editable = !readOnly && !onNavigate;
   const deepestPart: Part | null = value?.kind === 'upstreamModel' || active === 'model'

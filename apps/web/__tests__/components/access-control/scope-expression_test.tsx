@@ -162,14 +162,14 @@ test.each([
   expect(part.querySelector('.floway-scope-expression-part-preview')).toBeNull();
 });
 
-test('removing a group keeps the Group prefix focused', () => {
+test('removing a group keeps the Group prefix focused without a trailing append button while editing', () => {
   const { changed } = renderEditor({ kind: 'group', groupId: 3 });
   fireEvent.click(screen.getByRole('button', { name: 'Remove last scope segment' }));
   expect(changed).toHaveBeenLastCalledWith({ kind: 'groups' });
   const kindInput = screen.getByRole<HTMLInputElement>('combobox', { name: 'Resource type' });
   expect(kindInput.value).toBe('Group');
   expect(document.activeElement).toBe(kindInput);
-  expect(screen.getByRole('button', { name: 'Resource' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Resource' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Remove last scope segment' }));
   expect(changed).toHaveBeenLastCalledWith(null);
   expect(screen.queryByRole('combobox')).toBeNull();
@@ -666,4 +666,24 @@ test('Backspace on an empty append trigger discards it and focuses the previous 
   const kindInput = screen.getByRole<HTMLInputElement>('combobox', { name: 'Resource type' });
   expect(kindInput.value).toBe('Upstream');
   expect(document.activeElement).toBe(kindInput);
+});
+
+test('hides trailing append triggers while editing an earlier segment and restores them after closing', () => {
+  renderEditor({ kind: 'upstreams' });
+  expect(screen.getByRole('button', { name: 'Resource' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Upstream' }));
+  const kindInput = screen.getByRole<HTMLInputElement>('combobox', { name: 'Resource type' });
+  fireEvent.change(kindInput, { target: { value: 'Whatever' } });
+  expect(screen.queryByRole('button', { name: 'Resource' })).toBeNull();
+  fireEvent.keyDown(kindInput, { key: 'Escape' });
+  expect(screen.getByRole('button', { name: 'Resource' })).toBeTruthy();
+});
+
+test('hides the trailing model append trigger while editing the upstream segment', () => {
+  renderEditor({ kind: 'upstream', upstreamId: 'up_a' });
+  expect(screen.getByRole('button', { name: 'Model' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Copilot' }));
+  expect(screen.queryByRole('button', { name: 'Model' })).toBeNull();
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Resource' }), { key: 'Escape' });
+  expect(screen.getByRole('button', { name: 'Model' })).toBeTruthy();
 });
