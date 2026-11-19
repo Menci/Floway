@@ -140,7 +140,7 @@ test.each([false, true])('anthropic-messages internal failures preserve transpor
   assertEquals(response.status, stream ? 200 : 503);
   const text = await response.text();
   const body = stream ? JSON.parse(text.split('\n').find(line => line.startsWith('data: '))!.slice(6)) : JSON.parse(text);
-  assertEquals(body, { type: 'error', error: { type: 'internal_error', message: 'broken', provider_specific_fields: stream ? { name: diagnostic.name, stack: diagnostic.stack, cause: diagnostic.cause } : diagnostic } });
+  assertEquals(body, { type: 'error', error: { type: stream ? 'api_error' : 'internal_error', message: 'broken', provider_specific_fields: stream ? { name: diagnostic.name, stack: diagnostic.stack, cause: diagnostic.cause } : diagnostic } });
   if (stream) assertEquals(text.includes('event: error'), true);
 });
 

@@ -330,7 +330,7 @@ test('/v1/audio/transcriptions preserves token usage unpriced when the model is 
   ]);
 });
 
-test('/v1/audio/transcriptions streams through transcript.text.done without adding Chat termination', async () => {
+test('/v1/audio/transcriptions opens SSE with 200 and streams through transcript.text.done', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo, {
     entries: [{ rates: { input_audio_tokens: '0.000001', output_tokens: '0.000001' } }],
@@ -341,7 +341,7 @@ test('/v1/audio/transcriptions streams through transcript.text.done without addi
       '',
       'data: {"type":"transcript.text.done","text":"hello","usage":{"type":"tokens","input_tokens":3,"output_tokens":1,"total_tokens":4}}',
       '',
-    ].join('\n'), { headers: { 'content-type': 'Text/Event-Stream; charset=utf-8', 'x-stream-trace': 'trace-sse' } }),
+    ].join('\n'), { status: 201, headers: { 'content-type': 'Text/Event-Stream; charset=utf-8', 'x-stream-trace': 'trace-sse' } }),
     async () => {
       const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),
@@ -422,19 +422,36 @@ test('/v1/audio/transcriptions completes and cancels an upstream kept open after
   assertEquals(upstreamCancelled, true);
 });
 
-test('/v1/audio/transcriptions treats EOF without transcript.text.done as a failed request', async () => {
+test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/audio/transcriptions sends a data-only failure after partial output on %s', async mode => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo);
+  const partial = 'data: {"type":"transcript.text.delta","delta":"partial"}\n\n';
+  let upstream!: ReadableStreamDefaultController<Uint8Array>;
   await withMockedFetch(
-    () => new Response('data: {"type":"transcript.text.delta","delta":"partial"}\n\n', {
-      headers: { 'content-type': 'text/event-stream' },
-    }),
+    () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        upstream = controller;
+        controller.enqueue(new TextEncoder().encode(partial));
+      },
+    }), { headers: { 'content-type': 'text/event-stream' } }),
     async () => {
       const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),
       });
       assertEquals(response.status, 200);
-      await response.text();
+      const reader = response.body!.getReader();
+      const decode = new TextDecoder();
+      assertEquals(decode.decode((await reader.read()).value), partial);
+      const message = mode === 'premature EOF' ? 'OpenAI Transcriptions stream ended without a transcript.text.done event.' : 'upstream transcription read failed';
+      const native = `data: ${JSON.stringify({ error: { code: 'vendor_failure', message } })}\n\n`;
+      if (mode === 'read error') upstream.error(new Error(message));
+      else if (mode === 'premature EOF') upstream.close();
+      else upstream.enqueue(new TextEncoder().encode(native));
+      const failure = decode.decode((await reader.read()).value);
+      assertEquals(failure.startsWith('data: {"error":'), true);
+      assertEquals(JSON.parse(failure.slice('data: '.length)).error.message, message);
+      if (mode === 'native error') assertEquals(failure, native);
+      assertEquals((await reader.read()).done, true);
     },
   );
   await flushAsyncWork();

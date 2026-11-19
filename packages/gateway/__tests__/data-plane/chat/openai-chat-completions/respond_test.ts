@@ -26,10 +26,10 @@ const chunk = (text: string): OpenAIChatCompletionsStreamEvent => ({
   choices: [{  index: 0, delta: { content: text }, finish_reason: null }],
 });
 
-const serve = async (dump: DumpAccumulator, frames: AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>): Promise<string> => {
+const serve = async (dump: DumpAccumulator, frames: AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>, expectedChoices?: number): Promise<string> => {
   const ctx = mockChatGatewayCtx({ wantsStream: true, dump });
   const app = new Hono().get('/', c =>
-    respondOpenAIChatCompletions(c, eventResult(frames, testTelemetryModelIdentity), true, true, ctx));
+    respondOpenAIChatCompletions(c, eventResult(frames, testTelemetryModelIdentity), true, true, ctx, expectedChoices));
   return await (await app.request('/')).text();
 };
 
@@ -40,8 +40,8 @@ test('the error frame the client is sent is recorded like every other frame', as
     throw new RangeError('cache token counts exceed inclusive input tokens: 479 - 13312 - 0');
   })());
 
-  // What the client receives is unchanged by this.
-  expect(body).toContain('event: error');
+  expect(body).toContain('data: {"error":');
+  expect(body).not.toContain('event: error');
   expect(body).toContain('cache token counts exceed inclusive input tokens');
   expect(body).not.toContain('data: [DONE]');
 
@@ -65,12 +65,15 @@ test('a stream that completes records only its own frames', async () => {
   assertEquals(frames.length, 2);
 });
 
-test('natural EOF forwards useful content without a missing-DONE error', async () => {
+test.each([1, 2])('EOF with one finished choice and %i requested choices', async expectedChoices => {
   const { dump, frames } = recordingDump();
-  const body = await serve(dump, (async function* () { yield eventFrame(chunk('usable')); })());
+  const body = await serve(dump, (async function* () {
+    yield eventFrame(chunk('usable'));
+    yield eventFrame({ ...chunk(''), choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] });
+  })(), expectedChoices);
   expect(body).toContain('usable');
-  expect(body).not.toContain('event: error');
-  expect(frames).toHaveLength(1);
+  expect(body.includes('data: {"error":')).toBe(expectedChoices === 2);
+  expect(frames).toHaveLength(expectedChoices === 2 ? 3 : 2);
 });
 
 test.each([false, true])('openai-chat-completions internal failures preserve transport shape and namespaced diagnostics (stream=%s)', async stream => {
@@ -87,7 +90,7 @@ test.each([false, true])('openai-chat-completions internal failures preserve tra
   const text = await response.text();
   const body = stream ? JSON.parse(text.split('\n').find(line => line.startsWith('data: '))!.slice(6)) : JSON.parse(text);
   assertEquals(body, { error: { type: 'internal_error', message: 'broken', provider_specific_fields: stream ? { name: diagnostic.name, stack: diagnostic.stack, cause: diagnostic.cause } : diagnostic } });
-  if (stream) assertEquals(text.includes('event: error'), true);
+  if (stream) assertEquals(text.startsWith('data: {"error":'), true);
 });
 
 test('openai-chat-completions absent optional diagnostics stay absent and upstream errors preserve their payload', async () => {

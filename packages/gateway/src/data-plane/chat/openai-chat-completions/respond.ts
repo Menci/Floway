@@ -1,19 +1,19 @@
 import type { Context } from 'hono';
-import { streamSSE } from 'hono/streaming';
 
 import { wrapOpenAIChatCompletionsAffinityEgress } from './affinity/egress.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
-import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
+import { openaiInternalErrorPayload, openaiSseFailure } from '../../shared/openai-errors.ts';
+import { serializeSseFrame, serveSse } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
-import { forwardBufferedUpstreamResponse, prepareSseResponse } from '../../shared/upstream-response.ts';
+import { forwardBufferedUpstreamResponse } from '../../shared/upstream-response.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
-import { SourceStreamState, eventResultMetadata, jsonResponseInit } from '../shared/respond.ts';
-import { eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import { eventResultMetadata, jsonResponseInit, observeChatFrames, settleChatSse } from '../shared/respond.ts';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { openaiChatCompletionsProtocolFrameToSSEFrame, collectOpenAIChatCompletionsProtocolEventsToResult, openaiChatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/openai-chat-completions';
-import { type ExecuteResult, type PlainResult, type InternalDebugError, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
+import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 
 export const respondOpenAIChatCompletions = async (
   c: Context,
@@ -21,6 +21,7 @@ export const respondOpenAIChatCompletions = async (
   wantsStream: boolean,
   includeUsageChunk: boolean,
   ctx: GatewayCtx,
+  expectedChoices = 1,
 ): Promise<Response> => {
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
@@ -41,9 +42,7 @@ export const respondOpenAIChatCompletions = async (
     return forwardBufferedUpstreamResponse(result);
   }
 
-  const state = new SourceStreamState();
-  const observed = observeOpenAIChatCompletionsFrames(result.events, state, ctx);
-  const frames = wrapOpenAIChatCompletionsAffinityEgress(observed, affinityEgressOptions(ctx));
+  const frames = wrapOpenAIChatCompletionsAffinityEgress(observeChatFrames(result.events, ctx), affinityEgressOptions(ctx));
 
   if (!wantsStream) {
     try {
@@ -51,7 +50,7 @@ export const respondOpenAIChatCompletions = async (
       const metadata = await eventResultMetadata(result);
       const usage = tokenUsageFromBillableUsage(metadata.billableUsage);
       ctx.dump?.success(metadata.modelIdentity, usage);
-      settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed);
+      settle(ctx, metadata.performance, metadata.modelIdentity, usage, false);
       return Response.json(response, jsonResponseInit(result.http));
     } catch (error) {
       recordFailedRequest(ctx, result.performance);
@@ -60,67 +59,29 @@ export const respondOpenAIChatCompletions = async (
     }
   }
 
-  prepareSseResponse(c, result.http);
-  return streamSSE(c, async stream => {
-    let completion: StreamCompletion = 'error';
-    try {
-      completion = await writeSSEFrames(stream, openaiChatCompletionsSseFrames(frames, includeUsageChunk, state, ctx), {
-        keepAlive: { frame: sseCommentFrame('keepalive') },
-        ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
-      });
-    } finally {
-      const metadata = await eventResultMetadata(result);
-      const failed = state.failedAfter(completion);
-      if (failed) {
-        ctx.dump?.failed(`openai-chat-completions stream failed (completion=${completion}, source-failed=${state.failed})`);
-      } else {
-        ctx.dump?.success(metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage));
-      }
-      settle(ctx, metadata.performance, metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage), failed);
-    }
+  const finishedChoices = new Set<number>();
+  return serveSse(c, {
+    http: result.http,
+    events: frames,
+    downstreamAbortController: ctx.downstreamAbortController,
+    protocol: {
+      encode: frame => {
+        const output = openaiChatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk });
+        const wire = output === null ? null : serializeSseFrame(output);
+        if (frame.type === 'done') return { wire, end: { type: 'completed' } };
+        if (openaiChatCompletionsErrorPayloadMessage(frame.event) !== null) return { wire, end: { type: 'protocol-error' } };
+        for (const { index, finish_reason: reason } of frame.event.choices) {
+          if (reason != null && Number.isInteger(index) && index >= 0 && index < expectedChoices) finishedChoices.add(index);
+        }
+        return { wire };
+      },
+      eof: () => finishedChoices.size === expectedChoices
+        ? { type: 'completed' }
+        : { type: 'premature-eof', error: new Error('OpenAI Chat Completions stream ended before all choices finished.') },
+      failure: error => openaiSseFailure(ctx, error),
+    },
+    settle: outcome => settleChatSse(ctx, result, outcome),
   });
 };
 
-// --- error rendering ---
-
-const internalOpenAIChatCompletionsErrorPayload = (error: InternalDebugError) => ({
-  error: {
-    type: error.type,
-    message: error.message,
-    provider_specific_fields: internalDebugErrorFields(error),
-  },
-});
-
-const internalOpenAIChatCompletionsErrorResponse = (http: ResponseInit, error: InternalDebugError): Response => Response.json(internalOpenAIChatCompletionsErrorPayload(error), http);
-
-// --- frame observation ---
-
-const isOpenAIChatCompletionsFailureFrame = (frame: ProtocolFrame<OpenAIChatCompletionsStreamEvent>) => frame.type === 'event' && openaiChatCompletionsErrorPayloadMessage(frame.event) !== null;
-
-const isOpenAIChatCompletionsTerminalFrame = (frame: ProtocolFrame<OpenAIChatCompletionsStreamEvent>) => frame.type === 'done' || isOpenAIChatCompletionsFailureFrame(frame);
-
-const observeOpenAIChatCompletionsFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>, state: SourceStreamState, ctx: GatewayCtx) {
-  for await (const frame of frames) {
-    ctx.dump?.frame(frame);
-    const failed = isOpenAIChatCompletionsFailureFrame(frame);
-    if (failed) state.failed = true;
-    if (isOpenAIChatCompletionsTerminalFrame(frame) && !failed) state.completed = true;
-    yield frame;
-    if (isOpenAIChatCompletionsTerminalFrame(frame)) return;
-  }
-  state.completed = true;
-};
-
-const openaiChatCompletionsSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>, includeUsageChunk: boolean, state: SourceStreamState, ctx: GatewayCtx) {
-  try {
-    for await (const frame of frames) {
-      const sse = openaiChatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk });
-      if (sse) yield sse;
-    }
-  } catch (error) {
-    state.failed = true;
-    const event = internalOpenAIChatCompletionsErrorPayload(toInternalDebugError(error)) as unknown as OpenAIChatCompletionsStreamEvent;
-    ctx.dump?.frame(eventFrame(event));
-    yield sseFrame(JSON.stringify(event), 'error');
-  }
-};
+const internalOpenAIChatCompletionsErrorResponse = (http: ResponseInit, error: InternalDebugError): Response => Response.json(openaiInternalErrorPayload(error), http);

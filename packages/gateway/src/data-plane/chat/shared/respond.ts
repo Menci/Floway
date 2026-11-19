@@ -1,4 +1,7 @@
-import type { StreamCompletion } from '../../shared/sse.ts';
+import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
+import type { SseOutcome } from '../../shared/sse.ts';
+import { recordSseOutcome, settle } from '../../shared/telemetry/settle.ts';
+import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { plainResult, readResponseBody } from '@floway-dev/provider';
@@ -17,9 +20,8 @@ export const jsonResponseInit = (http: HttpHead | undefined) => ({
   headers: mergeForwardedUpstreamHeaders(undefined, http?.headers),
 });
 
-// Per-stream observation accumulated by each source's frame observer and read
-// back when the response settles: did the stream fail, did it reach its
-// terminal frame, and the last frame-level usage worth billing.
+export type StreamCompletion = 'eof' | 'error' | 'cancel';
+
 export class SourceStreamState {
   failed = false;
   completed = false;
@@ -34,3 +36,21 @@ export const eventResultMetadata = async <TEvent>(result: Extract<ExecuteResult<
     modelIdentity: result.modelIdentity,
     ...(result.performance ? { performance: result.performance } : {}),
   });
+
+export const observeChatFrames = async function* <TEvent>(frames: AsyncIterable<ProtocolFrame<TEvent>>, ctx: GatewayCtx): AsyncGenerator<ProtocolFrame<TEvent>> {
+  for await (const frame of frames) {
+    ctx.dump?.frame(frame);
+    yield frame;
+  }
+};
+
+export const settleChatSse = async <TEvent>(
+  ctx: GatewayCtx,
+  result: Extract<ExecuteResult<ProtocolFrame<TEvent>>, { type: 'events' }>,
+  outcome: SseOutcome,
+): Promise<void> => {
+  const metadata = await eventResultMetadata(result);
+  const usage = tokenUsageFromBillableUsage(metadata.billableUsage);
+  const failed = recordSseOutcome(ctx, outcome, metadata.modelIdentity, usage);
+  settle(ctx, metadata.performance, metadata.modelIdentity, usage, failed);
+};
