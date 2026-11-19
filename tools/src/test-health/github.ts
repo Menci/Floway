@@ -68,6 +68,7 @@ export interface Annotation {
   path: string;
   title: string;
   annotation_level: string;
+  message: string;
 }
 
 // The runs listing caps pagination at 1,000 results per query, so the full

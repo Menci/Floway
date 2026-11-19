@@ -8,34 +8,48 @@ export interface CurrentTest {
   name: string;
 }
 
+export type Evidence =
+  /** The reporter named this test as failed. */
+  | 'failed'
+  /** The file failed outside any test, so this test never ran. */
+  | 'file-error'
+  /** The file finished with every test passing and none skipped. */
+  | 'file-passed';
+
 export interface Outcome {
   runId: number;
   attempt: number;
-  /** The tree under test: the merge commit for pull requests, the head otherwise. */
+  /** The commit the job checked out: the merge commit for pull requests, the head otherwise. */
   commit: string;
   branch: string;
   createdAt: string;
-  passed: boolean;
+  source: JobObservation['source'];
+  evidence: Evidence;
+  error: string | undefined;
 }
 
 export interface TestHealth {
   key: string;
-  runs: number;
-  failures: number;
-  /** Commits on which the test both passed and failed. */
-  splitCommits: string[];
-  /** Distinct branches the failures came from. */
-  failingBranches: string[];
   outcomes: Outcome[];
+  /** Source trees on which the test both failed and passed. */
+  splitTrees: string[];
 }
 
 /**
- * Folds job observations into one outcome per test per run attempt. A test
- * counts as run in a job when its file finished there; it failed when the
- * reporter named it, or its file failed outside any test. Annotation-only
- * observations predate log retention and record failures alone.
+ * Names the exact source a commit carries. Undefined means the commit is not
+ * available locally, in which case the commit stands for itself and only a
+ * rerun of the same checkout can match it.
  */
-export const analyze = (tests: readonly CurrentTest[], observations: readonly JobObservation[]): TestHealth[] => {
+export type TreeOf = (commit: string) => string | undefined;
+
+/**
+ * Folds job observations into one outcome per test per run attempt, keeping
+ * the strongest evidence a job gave. Logs never name a passing test, so a pass
+ * is inferred from its file finishing clean; a test added or renamed later
+ * inherits its file's earlier passes, which can only overstate health.
+ * Failures are exact. Annotation-only observations record failures alone.
+ */
+export const analyze = (tests: readonly CurrentTest[], observations: readonly JobObservation[], treeOf: TreeOf): TestHealth[] => {
   const byFile = new Map<string, string[]>();
   for (const test of tests) {
     const file = fileKey(test.project, test.file);
@@ -43,38 +57,40 @@ export const analyze = (tests: readonly CurrentTest[], observations: readonly Jo
   }
   const current = new Set(byFile.values().flatMap(keys => keys));
   const outcomes = new Map<string, Map<string, Outcome>>();
-  const record = (key: string, observation: JobObservation, passed: boolean): void => {
+  const rank: Record<Evidence, number> = { 'failed': 2, 'file-error': 1, 'file-passed': 0 };
+  const record = (key: string, observation: JobObservation, evidence: Evidence, error?: string): void => {
     const attemptKey = `${observation.runId}/${observation.attempt}`;
     const perTest = outcomes.get(key) ?? new Map<string, Outcome>();
     outcomes.set(key, perTest);
     const previous = perTest.get(attemptKey);
+    if (previous !== undefined && rank[previous.evidence] >= rank[evidence]) return;
     perTest.set(attemptKey, {
       runId: observation.runId,
       attempt: observation.attempt,
       commit: observation.testedCommit ?? observation.headSha,
       branch: observation.branch,
       createdAt: observation.createdAt,
-      passed: passed && (previous?.passed ?? true),
+      source: observation.source,
+      evidence,
+      error,
     });
   };
   for (const observation of observations) {
-    const failed = new Set(observation.failedTests);
-    for (const key of failed) if (current.has(key)) record(key, observation, false);
-    for (const file of observation.failedFiles) for (const key of byFile.get(file) ?? []) record(key, observation, false);
-    for (const file of observation.finishedFiles) {
-      for (const key of byFile.get(file) ?? []) if (!failed.has(key)) record(key, observation, true);
+    for (const { key, error } of observation.failures) {
+      if (current.has(key)) record(key, observation, 'failed', error);
+      for (const test of byFile.get(key) ?? []) record(test, observation, 'file-error', error);
     }
+    for (const file of observation.cleanFiles) for (const key of byFile.get(file) ?? []) record(key, observation, 'file-passed');
   }
   return [...outcomes].map(([key, perTest]) => {
     const list = [...perTest.values()].toSorted((a, b) => a.createdAt.localeCompare(b.createdAt) || a.attempt - b.attempt);
-    const byCommit = Map.groupBy(list, outcome => outcome.commit);
+    const byTree = Map.groupBy(list, outcome => treeOf(outcome.commit) ?? outcome.commit);
     return {
       key,
-      runs: list.length,
-      failures: list.filter(outcome => !outcome.passed).length,
-      splitCommits: [...byCommit].filter(([, group]) => group.some(o => o.passed) && group.some(o => !o.passed)).map(([commit]) => commit),
-      failingBranches: [...new Set(list.filter(outcome => !outcome.passed).map(outcome => outcome.branch))],
       outcomes: list,
+      splitTrees: [...byTree]
+        .filter(([, group]) => group.some(o => o.evidence === 'failed') && group.some(o => o.evidence === 'file-passed'))
+        .map(([tree]) => tree),
     };
   });
 };
