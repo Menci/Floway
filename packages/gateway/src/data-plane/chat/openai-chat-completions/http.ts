@@ -58,9 +58,10 @@ export const openaiChatCompletionsHttp = {
       // slots — the value lives in this http-entry closure for the duration of
       // the request.
       const includeUsageChunk = payload.stream_options?.include_usage === true;
+      const expectedChoices = payload.n ?? undefined;
       ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonOpenAIResponsesSourceStore(apiKey.id));
       const result = await openaiChatCompletionsServe.generate({ payload, ctx, headers: inboundHeaders(c) });
-      const response = await respondOpenAIChatCompletions(c, result, wantsStream, includeUsageChunk, ctx);
+      const response = await respondOpenAIChatCompletions(c, result, wantsStream, includeUsageChunk, ctx, expectedChoices);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {
       return await respondWithInternalError(c, error, requestBody, ctx);

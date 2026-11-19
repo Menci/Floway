@@ -1,13 +1,14 @@
 import { Hono } from 'hono';
-import { beforeEach, test } from 'vitest';
+import { beforeEach, expect, test } from 'vitest';
 
 import { respondGeminiGenerateContent } from '../../../../src/data-plane/chat/gemini-generate-content/respond.ts';
+import type { DumpAccumulator } from '../../../../src/dump/accumulator.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventFrame } from '@floway-dev/protocols/common';
-import type { GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
+import type { GeminiGenerateContentErrorResponse, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -29,6 +30,54 @@ const requestGeminiGenerateContentResponse = async (result: ExecuteResult<Protoc
   app.get('/', async c => await respondGeminiGenerateContent(c, result, false, ctx()));
   return await app.request('/');
 };
+
+test.each([
+  {
+    name: 'all candidates finished',
+    next: { usageMetadata: { promptTokenCount: 2, candidatesTokenCount: 1, totalTokenCount: 3 } },
+    outcome: 'completed',
+  },
+  {
+    name: 'another candidate is still generating',
+    next: { candidates: [{ index: 1, content: { role: 'model', parts: [{ text: 'partial' }] } }] },
+    outcome: 'failed',
+  },
+] satisfies { name: string; next: GeminiGenerateContentStreamEvent; outcome: string }[])('Gemini SSE settles cancellation when $name', async ({ next, outcome }) => {
+  const downstream = new AbortController();
+  const waiting = Promise.withResolvers<void>();
+  const settled = Promise.withResolvers<string>();
+  const dump = {
+    frame: () => {},
+    failed: () => settled.resolve('failed'),
+    success: () => settled.resolve('completed'),
+  } as unknown as DumpAccumulator;
+  const events = (async function* () {
+    yield eventFrame<GeminiGenerateContentStreamEvent>({
+      candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'done' }] }, finishReason: 'STOP' }],
+    });
+    yield eventFrame(next);
+    if (!downstream.signal.aborted) {
+      await new Promise<void>(resolve => {
+        downstream.signal.addEventListener('abort', () => resolve(), { once: true });
+        waiting.resolve();
+      });
+    }
+  })();
+  const app = new Hono().get('/', c => respondGeminiGenerateContent(c, {
+    type: 'events', events, modelIdentity: testTelemetryModelIdentity,
+  }, true, mockChatGatewayCtx({ dump, abortSignal: downstream.signal, downstreamAbortController: downstream })));
+  const reader = (await app.request('/')).body!.getReader();
+  try {
+    const first = await reader.read();
+    expect(new TextDecoder().decode(first.value)).toContain('"finishReason":"STOP"');
+    await waiting.promise;
+    expect(downstream.signal.aborted).toBe(false);
+  } finally {
+    await reader.cancel();
+  }
+  expect(downstream.signal.aborted).toBe(true);
+  expect(await settled.promise).toBe(outcome);
+});
 
 test.each([false, true])('Gemini response terminates immediately on an error (stream=%s)', async stream => {
   const error = { error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'quota exceeded' } };
