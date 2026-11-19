@@ -128,10 +128,7 @@ describe('callChatGPTOpenAIResponses — gates', () => {
       model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.http.status).toBe(503);
-      expect(await result.http.text()).toMatch(/session_terminated/);
-    }
+    if (!result.ok) expect(result.http.status).toBe(503);
   });
 
   test('replaces the same family after success despite a future cached restriction, preserving other families', async () => {

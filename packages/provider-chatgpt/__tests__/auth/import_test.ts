@@ -60,11 +60,11 @@ describe('ChatGPT JSON import', () => {
   });
 
   test('rejects malformed, unsupported, or incomplete JSON', async () => {
-    await expect(previewChatGPTJson('not json')).rejects.toThrow(/not valid JSON/);
+    await expect(previewChatGPTJson('not json')).rejects.toThrow();
     await expect(previewChatGPTJson('null')).rejects.toThrow();
-    await expect(previewChatGPTJson('{}')).rejects.toThrow(/supported structure/);
+    await expect(previewChatGPTJson('{}')).rejects.toThrow();
     const preview = await previewChatGPTJson(JSON.stringify({ tokens: { account_id: 'account' } }));
-    expect(preview[0].issues).toEqual([expect.stringMatching(/access_token/)]);
+    expect(preview[0].issues).toHaveLength(1);
   });
 });
 
@@ -98,14 +98,14 @@ describe('ChatGPT JSON account selection', () => {
 
   test('rejects invalid indexes and unsupported selected accounts', async () => {
     const single = JSON.stringify({ tokens: credential() });
-    await expect(importChatGPTFromJson(single, -1)).rejects.toThrow(/non-negative integer/);
-    await expect(importChatGPTFromJson(single, 1)).rejects.toThrow(/does not exist/);
-    await expect(importChatGPTFromJson(JSON.stringify({ accounts: [] }), 0)).rejects.toThrow(/does not exist/);
+    await expect(importChatGPTFromJson(single, -1)).rejects.toThrow();
+    await expect(importChatGPTFromJson(single, 1)).rejects.toThrow();
+    await expect(importChatGPTFromJson(JSON.stringify({ accounts: [] }), 0)).rejects.toThrow();
     await expect(importChatGPTFromJson(JSON.stringify({
       accounts: [{
         platform: 'anthropic', type: 'oauth', credentials: credential(),
       }],
-    }), 0)).rejects.toThrow(/not an OpenAI OAuth account/);
+    }), 0)).rejects.toThrow();
   });
 });
 

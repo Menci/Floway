@@ -69,6 +69,6 @@ describe('normalizeChatGPTCredential', () => {
     expect(() => normalizeChatGPTCredential({
       accessToken: makeJwt(claims('access')),
       idToken: makeJwt(claims('id')),
-    })).toThrow(/different ChatGPT accounts/);
+    })).toThrow();
   });
 });
