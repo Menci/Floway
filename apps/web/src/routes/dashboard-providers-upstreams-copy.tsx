@@ -8,6 +8,7 @@ import type { UpstreamRecord } from '../api/types';
 import { loadEditorAux } from '../components/upstream-editor/data';
 import { UpstreamEditorPage } from '../components/upstream-editor/page';
 import { i18n } from '../i18n';
+import { withoutCopyEditorMarkers } from '../i18n/copy-editor/markers';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 import { pickDistinctHue } from '../lib/hue';
 
@@ -77,7 +78,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   const source = sourceResult.data;
   const record = copyableRecord(
     source,
-    i18n.t('dashboard.upstreams.copy.nameSuffix', { name: source.name }),
+    withoutCopyEditorMarkers(() => i18n.t('dashboard.upstreams.copy.nameSuffix', { name: source.name })),
     pickDistinctHue(upstreamsResult.data.map(upstream => upstream.hue)),
   );
   return {

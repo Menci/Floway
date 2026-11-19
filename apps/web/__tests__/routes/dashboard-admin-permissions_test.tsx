@@ -15,7 +15,7 @@ vi.mock('../../src/components/ui/json-editor', () => ({ JsonEditor: () => null }
 const scope = { kind: 'upstream', upstreamId: 'a' } as const;
 const initial: PermissionsData = {
   directory: {
-    users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null }, groupIds: [1] }],
+    users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null, copyEditor: false }, groupIds: [1] }],
     groups: [{ id: 1, name: 'Platform', hue: 210, memberIds: [2], createdAt: '', deletedAt: null }],
     principalUserIds: [2],
     principalGroupIds: [1],
@@ -99,7 +99,7 @@ test('target-only identities render in rules without entering the principal pick
   const data: PermissionsData = {
     ...initial,
     directory: {
-      users: [...initial.directory!.users, { id: 3, username: 'bob', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null }, groupIds: [] }],
+      users: [...initial.directory!.users, { id: 3, username: 'bob', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null, copyEditor: false }, groupIds: [] }],
       groups: [...initial.directory!.groups, { id: 2, name: 'Review Subjects', hue: 180, memberIds: [3], createdAt: '', deletedAt: null }],
       principalUserIds: [2],
       principalGroupIds: [1],
@@ -126,7 +126,7 @@ test('an audited user sees membership-group rules and can pick those groups in A
   const data: PermissionsData = {
     ...initial,
     directory: {
-      users: [{ id: 3, username: 'bob', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null }, groupIds: [2] }],
+      users: [{ id: 3, username: 'bob', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null, copyEditor: false }, groupIds: [2] }],
       groups: [{ id: 2, name: 'Review Subjects', hue: 180, memberIds: [3], createdAt: '', deletedAt: null }],
       principalUserIds: [3],
       principalGroupIds: [2],
@@ -165,7 +165,7 @@ test('an audited user sees membership-group rules and can pick those groups in A
 test('the permissions loader stays on the page for an authorized operator and requests one permission snapshot', async () => {
   useAuthStore.getState().primeFromLogin({
     token: 'operator-session',
-    user: { id: 2, username: 'alice', isAdmin: false, canViewPermissions: true, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining' as const, language: null } },
+    user: { id: 2, username: 'alice', isAdmin: false, canViewPermissions: true, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining' as const, language: null, copyEditor: false } },
   });
   const data = await clientLoader();
   expect(data.admin).toBe(false);
@@ -178,7 +178,7 @@ test('the permissions loader stays on the page for an authorized operator and re
 test('the permissions loader redirects an operator without Permission.Audit', async () => {
   useAuthStore.getState().primeFromLogin({
     token: 'operator-session',
-    user: { id: 2, username: 'alice', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining' as const, language: null } },
+    user: { id: 2, username: 'alice', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining' as const, language: null, copyEditor: false } },
   });
   await expect(clientLoader()).rejects.toMatchObject({ status: 302 });
 });

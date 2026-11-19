@@ -307,8 +307,9 @@ export const changeOwnPasswordBody = z.object({
 export const updateOwnPreferencesBody = z.object({
   quotaDisplay: z.enum(QUOTA_DISPLAYS).optional(),
   language: z.enum(SUPPORTED_LANGUAGES).nullable().optional(),
-}).refine(body => body.quotaDisplay !== undefined || body.language !== undefined, {
-  error: 'Provide quotaDisplay or language',
+  copyEditor: z.boolean().optional(),
+}).refine(body => body.quotaDisplay !== undefined || body.language !== undefined || body.copyEditor !== undefined, {
+  error: 'Provide quotaDisplay, language, or copyEditor',
 });
 
 // --- api keys ---

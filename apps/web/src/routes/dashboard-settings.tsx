@@ -1,4 +1,4 @@
-import { DataUsage24Regular, LocalLanguage24Regular, LockClosed24Regular } from '@fluentui/react-icons';
+import { DataUsage24Regular, Edit24Regular, LocalLanguage24Regular, LockClosed24Regular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -6,13 +6,14 @@ import { useFetcher } from 'react-router';
 import { z } from 'zod';
 
 import { setLanguage } from '../i18n';
+import { syncCopyEditorPreference } from '../i18n/copy-editor/mirror';
 import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-settings';
 import { requireDashboardSession } from './guards';
 import { changeOwnPassword, updateOwnPreferences } from '../api/auth';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { DialogShell } from '../components/ui/dialog-shell';
-import { Dropdown, Input } from '../components/ui/fluent-form-controls';
+import { Dropdown, Input, Switch } from '../components/ui/fluent-form-controls';
 import { SETTINGS_PAGE_CLASS, SETTINGS_SECTION_HEADER_CLASS } from '../components/ui/layout';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
@@ -123,7 +124,9 @@ function PreferencesSection() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const dirty = draft.quotaDisplay !== saved.quotaDisplay || draft.language !== saved.language;
+  const dirty = draft.quotaDisplay !== saved.quotaDisplay
+    || draft.language !== saved.language
+    || draft.copyEditor !== saved.copyEditor;
 
   const save = async () => {
     // Nothing to send, so the button answers a press without a request rather
@@ -141,6 +144,7 @@ function PreferencesSection() {
     const next = result.data.preferences;
     replacePreferences(next);
     setDraft(next);
+    if (syncCopyEditorPreference(next.copyEditor)) return;
     if (next.language !== null) await setLanguage(next.language);
     else await setLanguage(browserLanguage());
     toasts.succeed(t('dashboard.settings.preferences.saved'));
@@ -193,6 +197,17 @@ function PreferencesSection() {
         description={t('dashboard.settings.preferences.language.description')}
         header={t('common.language')}
         icon={<LocalLanguage24Regular />}
+      />
+
+      <SettingsCard
+        action={<Switch
+          aria-label={t('dashboard.settings.preferences.copyEditor.title')}
+          checked={draft.copyEditor}
+          onChange={(_, data) => setDraft(current => ({ ...current, copyEditor: data.checked }))}
+        />}
+        description={t('dashboard.settings.preferences.copyEditor.description')}
+        header={t('dashboard.settings.preferences.copyEditor.title')}
+        icon={<Edit24Regular />}
       />
     </div>
 

@@ -2,6 +2,12 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
 import {
+  COPY_EDITOR_POST_PROCESSOR_NAME,
+  copyEditorPostProcessor,
+  setCopyEditorTrackingActive,
+} from './copy-editor/markers';
+import { isCopyEditorEnabled } from './copy-editor/mirror';
+import {
   browserLanguage,
   defaultLanguage,
   htmlLanguageFor,
@@ -28,11 +34,22 @@ import { shellResources } from './shell';
 // and carries the bundle loaded here. Every key outside the shell resolves
 // through that fallback, which puts whatever renders between hydration and
 // LanguageSync in the visitor's language rather than briefly in English.
+const cloneResource = <T>(value: T): T => structuredClone(value);
+
 const language = browserLanguage();
 const loaded = new Set<SupportedLanguage>([language]);
+const copyEditorActive = isCopyEditorEnabled();
 
-void i18n.use(numberFormatter).use(initReactI18next).init({
-  resources: { [defaultLanguage]: shellResources, [language]: await loadLocale(language) },
+const instance = i18n.use(numberFormatter).use(initReactI18next);
+if (copyEditorActive) {
+  instance.use(copyEditorPostProcessor);
+}
+
+void instance.init({
+  resources: {
+    [defaultLanguage]: cloneResource(shellResources),
+    [language]: cloneResource(await loadLocale(language)),
+  },
   lng: defaultLanguage,
   fallbackLng: language,
   supportedLngs: [...supportedLanguages],
@@ -40,6 +57,16 @@ void i18n.use(numberFormatter).use(initReactI18next).init({
     escapeValue: false,
     alwaysFormat: true,
   },
+  ...(copyEditorActive
+    ? {
+        postProcess: [COPY_EDITOR_POST_PROCESSOR_NAME],
+        postProcessPassResolved: true,
+        react: {
+          bindI18n: 'languageChanged',
+          bindI18nStore: 'added',
+        },
+      }
+    : {}),
 });
 
 i18n.on('languageChanged', language => {
@@ -55,10 +82,23 @@ i18n.on('languageChanged', language => {
 // in-page choice.
 export const setLanguage = async (next: SupportedLanguage): Promise<void> => {
   if (!loaded.has(next)) {
-    i18n.addResourceBundle(next, 'translation', (await loadLocale(next)).translation);
+    const bundle = await loadLocale(next);
+    // Keep any live copy-editor overrides intact if the store already merged
+    // them into this language's resource bundle.
+    i18n.addResourceBundle(next, 'translation', cloneResource(bundle.translation), true, false);
     loaded.add(next);
   }
   await i18n.changeLanguage(next);
+};
+
+// Called once after client hydration when copy-editor mode is active so that
+// markers never enter the prerendered HydrateFallback frame. Emitting the
+// store `added` event refreshes every mounted `useTranslation` consumer with
+// markers attached.
+export const activateCopyEditorTracking = (): void => {
+  if (!copyEditorActive) return;
+  setCopyEditorTrackingActive(true);
+  i18n.addResources(i18n.language, 'translation', {});
 };
 
 export { i18n };

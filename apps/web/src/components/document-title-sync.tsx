@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router';
 
+import { withoutCopyEditorMarkers } from '../i18n/copy-editor/markers';
 import { useTranslation } from '../i18n/translation';
 import { pageLabelKeys } from './sidebar/pages';
 import { useSiteSettingsStore } from '../stores/site-settings-store';
@@ -31,8 +32,10 @@ export function DocumentTitleSync() {
   const siteName = useSiteSettingsStore(state => state.siteName);
 
   useEffect(() => {
-    const title = t(titleKeyForPathname(location.pathname));
-    window.document.title = t('app.documentTitle', { title, siteName: siteName ?? t('app.title') });
+    withoutCopyEditorMarkers(() => {
+      const title = t(titleKeyForPathname(location.pathname));
+      window.document.title = t('app.documentTitle', { title, siteName: siteName ?? t('app.title') });
+    });
   }, [i18n.language, location.pathname, siteName, t]);
 
   return null;

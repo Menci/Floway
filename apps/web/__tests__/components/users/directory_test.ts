@@ -5,8 +5,8 @@ import { indexUserDirectory } from '../../../src/components/users/directory';
 
 const directory: ControlPlaneUserDirectory = {
   users: [
-    { id: 1, username: 'alice', isAdmin: true, createdAt: '2026-01-01T00:00:00Z', preferences: { quotaDisplay: 'remaining', language: null } },
-    { id: 2, username: 'bob', isAdmin: false, createdAt: '2026-01-02T00:00:00Z', preferences: { quotaDisplay: 'remaining', language: null } },
+    { id: 1, username: 'alice', isAdmin: true, createdAt: '2026-01-01T00:00:00Z', preferences: { quotaDisplay: 'remaining', language: null, copyEditor: false } },
+    { id: 2, username: 'bob', isAdmin: false, createdAt: '2026-01-02T00:00:00Z', preferences: { quotaDisplay: 'remaining', language: null, copyEditor: false } },
   ],
   groups: [
     { id: 1, name: 'Platform', hue: 210, createdAt: '2026-01-01T00:00:00Z', deletedAt: null },

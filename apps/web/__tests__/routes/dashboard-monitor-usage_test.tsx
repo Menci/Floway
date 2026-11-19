@@ -50,7 +50,7 @@ const loaderData = {
 };
 
 const renderPage = (data: Parameters<typeof DashboardMonitorUsage>[0]['loaderData']) => {
-  const user = { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } };
+  const user = { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null, copyEditor: false } };
   const router = createMemoryRouter([{
     path: '/',
     Component: () => <Outlet context={{ user }} />,
@@ -206,7 +206,7 @@ describe('usage dimension controls', () => {
   it('loads the overview contract and derives Search scope from the actor', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'admin-session',
-      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } },
+      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null, copyEditor: false } },
     });
     stubUsageGateway();
 
@@ -220,7 +220,7 @@ describe('usage dimension controls', () => {
   it('reads upstream labels from the overview response', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'admin-session',
-      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } },
+      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null, copyEditor: false } },
     });
     stubUsageGateway();
 
@@ -234,7 +234,7 @@ describe('usage dimension controls', () => {
   it('keeps self-only Search usage grouped by API key', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'operator-session',
-      user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining', language: null } },
+      user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining', language: null, copyEditor: false } },
     });
     let requestedView: string | null = null;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
