@@ -226,7 +226,7 @@ test('/v1/audio/transcriptions completes and cancels an upstream kept open after
   assertEquals(upstreamCancelled, true);
 });
 
-test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/audio/transcriptions sends a data-only failure after partial output on %s', async mode => {
+test.each(['read error', 'premature EOF', 'native error', 'raw native error'] as const)('/v1/audio/transcriptions closes after sending a failure on %s', async mode => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo);
   const partial = 'data: {"type":"transcript.text.delta","delta":"partial"}\n\n';
@@ -247,14 +247,21 @@ test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/audio/t
       const decode = new TextDecoder();
       assertEquals(decode.decode((await reader.read()).value), partial);
       const message = 'upstream transcription read failed';
-      const native = `data: ${JSON.stringify({ error: { code: 'vendor_failure', message } })}\n\n`;
+      const raw = JSON.stringify({ error: { code: 'vendor_failure', message } });
+      const native = `data: ${raw}\n\n`;
       if (mode === 'read error') upstream.error(new Error(message));
       else if (mode === 'premature EOF') upstream.close();
-      else upstream.enqueue(new TextEncoder().encode(native));
+      else if (mode === 'raw native error') {
+        upstream.enqueue(new TextEncoder().encode(raw));
+        upstream.close();
+      } else upstream.enqueue(new TextEncoder().encode(native));
       const failure = decode.decode((await reader.read()).value);
-      assertEquals(failure.startsWith('data: {"error":'), true);
-      if (mode !== 'premature EOF') assertEquals(JSON.parse(failure.slice('data: '.length)).error.message, message);
-      if (mode === 'native error') assertEquals(failure, native);
+      if (mode === 'raw native error') assertEquals(failure, raw);
+      else {
+        assertEquals(failure.startsWith('data: {"error":'), true);
+        if (mode !== 'premature EOF') assertEquals(JSON.parse(failure.slice('data: '.length)).error.message, message);
+        if (mode === 'native error') assertEquals(failure, native);
+      }
       assertEquals((await reader.read()).done, true);
     },
   );
