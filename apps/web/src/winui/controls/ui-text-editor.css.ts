@@ -54,6 +54,19 @@ export const uiTextEditorCss = `
   overflow: visible;
 }
 
+/* When CSS Anchor Positioning is available, tether the highlight to the hovered
+   element so ancestor scrolling moves it on the compositor thread with zero lag.
+   The inline left/top values stay mathematically identical as the fallback. */
+@supports (anchor-name: --x) and (left: calc(anchor(left) + 1px)) {
+  .floway-ui-text-editor-highlight[data-anchored="true"],
+  .floway-ui-text-editor-highlight-svg[data-anchored="true"] {
+    position-anchor: --floway-ute-hover-anchor;
+    position-visibility: anchors-visible;
+    left: calc(anchor(left) + var(--floway-ute-offset-x, 0px)) !important;
+    top: calc(anchor(top) + var(--floway-ute-offset-y, 0px)) !important;
+  }
+}
+
 .floway-ui-text-editor-highlight-tag {
   position: fixed;
   pointer-events: none;

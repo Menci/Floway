@@ -4,7 +4,7 @@ import {
   Copy16Regular,
   Edit16Regular,
 } from '@fluentui/react-icons';
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 
 import { EditorFlyout } from './editor-flyout';
@@ -19,8 +19,11 @@ import {
   HIGHLIGHT_INNER_RADIUS,
   HIGHLIGHT_PAD,
   HIGHLIGHT_RADIUS,
+  attachCssAnchor,
+  canAttachCssAnchor,
   computeHighlightContour,
   computeHighlightTagPosition,
+  supportsCssAnchorPositioning,
 } from '../../i18n/ui-text-editor/core/geometry';
 import {
   UI_TEXT_EDITOR_ROOT_ATTR,
@@ -77,21 +80,45 @@ interface ActiveFlyoutState {
 }
 
 const FREEZE_EVENTS = ['pointerout', 'pointerleave', 'mouseout', 'mouseleave', 'blur', 'focusout'] as const;
+const HOVER_ANCHOR_NAME = '--floway-ute-hover-anchor';
 
-function HighlightShape({ boundingRect, rects }: { boundingRect: DOMRect; rects: DOMRect[] }) {
+function HighlightShape({
+  anchorElement,
+  anchored,
+  boundingRect,
+  rects,
+}: {
+  anchorElement: Element;
+  anchored: boolean;
+  boundingRect: DOMRect;
+  rects: DOMRect[];
+}) {
   const maskPrefix = useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  const anchorBox = anchored ? anchorElement.getBoundingClientRect() : null;
+
+  const positionedStyle = (left: number, top: number, extra?: CSSProperties): CSSProperties => {
+    const style: Record<string, string | number | undefined> = {
+      left: `${left}px`,
+      top: `${top}px`,
+      ...extra,
+    };
+    if (anchorBox) {
+      style['--floway-ute-offset-x'] = `${left - anchorBox.left}px`;
+      style['--floway-ute-offset-y'] = `${top - anchorBox.top}px`;
+    }
+    return style as CSSProperties;
+  };
 
   if (rects.length <= 1) {
     const r = rects[0] ?? boundingRect;
     return (
       <div
         className="floway-ui-text-editor-highlight"
-        style={{
-          left: `${r.left - HIGHLIGHT_PAD}px`,
-          top: `${r.top - HIGHLIGHT_PAD}px`,
+        data-anchored={anchorBox ? 'true' : undefined}
+        style={positionedStyle(r.left - HIGHLIGHT_PAD, r.top - HIGHLIGHT_PAD, {
           width: `${r.width + HIGHLIGHT_PAD * 2}px`,
           height: `${r.height + HIGHLIGHT_PAD * 2}px`,
-        }}
+        })}
       />
     );
   }
@@ -105,8 +132,9 @@ function HighlightShape({ boundingRect, rects }: { boundingRect: DOMRect; rects:
     <svg
       aria-hidden="true"
       className="floway-ui-text-editor-highlight-svg"
+      data-anchored={anchorBox ? 'true' : undefined}
       height={height}
-      style={{ left: `${minX}px`, top: `${minY}px` }}
+      style={positionedStyle(minX, minY)}
       viewBox={`0 0 ${width} ${height}`}
       width={width}
     >
@@ -343,10 +371,15 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
       }
     };
 
+    let scrollRafId: number | null = null;
     const onScroll = () => {
-      if (altPressedRef.current && pointerRef.current) {
-        updateHover(pointerRef.current.x, pointerRef.current.y);
-      }
+      if (!altPressedRef.current || !pointerRef.current || scrollRafId !== null) return;
+      scrollRafId = window.requestAnimationFrame(() => {
+        scrollRafId = null;
+        if (altPressedRef.current && pointerRef.current) {
+          updateHover(pointerRef.current.x, pointerRef.current.y);
+        }
+      });
     };
 
     // Native disabled controls (such as disabled buttons/dropdowns) suppress
@@ -409,6 +442,9 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
     }
 
     return () => {
+      if (scrollRafId !== null) {
+        window.cancelAnimationFrame(scrollRafId);
+      }
       window.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener('keyup', onKeyUp, true);
       window.removeEventListener('blur', onWindowBlur);
@@ -460,6 +496,16 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
   const highlightTagKey = hoverTarget
     ? `${hoverTarget.primaryKey}|${hoverTarget.primaryInvisible ? 'invisible' : ''}|${hoverTarget.candidates.length}`
     : '';
+  const canAnchorHighlight = Boolean(
+    altPressed && hoverTarget && supportsCssAnchorPositioning() && canAttachCssAnchor(hoverTarget.element),
+  );
+
+  useLayoutEffect(() => {
+    if (!canAnchorHighlight || !hoverTarget) return;
+    const detach = attachCssAnchor(hoverTarget.element, HOVER_ANCHOR_NAME);
+    if (!detach) return;
+    return detach;
+  }, [canAnchorHighlight, hoverTarget]);
 
   useLayoutEffect(() => {
     const el = highlightTagRef.current;
@@ -496,7 +542,12 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
           <FluentProvider className="floway-ui-text-editor-provider" theme={theme}>
             {altPressed && hoverTarget && (
               <>
-                <HighlightShape boundingRect={hoverTarget.rect} rects={hoverTarget.rects} />
+                <HighlightShape
+                  anchorElement={hoverTarget.element}
+                  anchored={canAnchorHighlight}
+                  boundingRect={hoverTarget.rect}
+                  rects={hoverTarget.rects}
+                />
                 <div
                   ref={highlightTagRef}
                   className="floway-ui-text-editor-highlight-tag"

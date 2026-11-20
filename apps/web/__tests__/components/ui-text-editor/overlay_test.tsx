@@ -304,4 +304,61 @@ describe('UiTextEditorOverlay', () => {
       Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: originalElementsFromPoint });
     }
   });
+  it('attaches and restores CSS anchor-name with relative highlight offsets when anchor positioning is supported', async () => {
+    const originalCss = globalThis.CSS;
+    Object.defineProperty(globalThis, 'CSS', {
+      configurable: true,
+      value: { supports: () => true },
+    });
+
+    const { container } = renderInApp(
+      <>
+        <button data-testid="anchored-btn" type="button">
+          {wrapWithKeyMarkers('Cancel', 'common.cancel')}
+        </button>
+        <UiTextEditorOverlay />
+      </>,
+    );
+
+    const button = screen.getByTestId('anchored-btn');
+    button.style.setProperty('anchor-name', '--existing-anchor');
+    vi.spyOn(button, 'getBoundingClientRect').mockReturnValue(new DOMRect(40, 60, 120, 32));
+    const textRect = new DOMRect(64, 67, 46, 18);
+    vi.spyOn(Range.prototype, 'getClientRects').mockReturnValue([textRect] as unknown as DOMRectList);
+    vi.spyOn(Range.prototype, 'getBoundingClientRect').mockReturnValue(textRect);
+    const originalElementsFromPoint = (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;
+    Object.defineProperty(document, 'elementsFromPoint', {
+      configurable: true,
+      value: () => [button, container, document.body],
+    });
+
+    try {
+      await waitFor(() => {
+        expect(button.textContent).toBe('Cancel');
+        expect(useUiTextEditorStore.getState().initialized).toBe(true);
+      });
+
+      fireEvent.pointerMove(window, { altKey: true, clientX: 80, clientY: 75 });
+
+      const highlight = await waitFor(() => {
+        const el = document.querySelector<HTMLElement>('.floway-ui-text-editor-highlight');
+        expect(el).not.toBeNull();
+        return el!;
+      });
+      expect(highlight.getAttribute('data-anchored')).toBe('true');
+      expect(highlight.style.getPropertyValue('--floway-ute-offset-x')).toBe('22px');
+      expect(highlight.style.getPropertyValue('--floway-ute-offset-y')).toBe('5px');
+      expect(button.style.getPropertyValue('anchor-name')).toContain('--floway-ute-hover-anchor');
+
+      fireEvent.keyUp(window, { key: 'Alt', altKey: false });
+      await waitFor(() => expect(button.style.getPropertyValue('anchor-name')).toBe('--existing-anchor'));
+    } finally {
+      Object.defineProperty(globalThis, 'CSS', { configurable: true, value: originalCss });
+      if (originalElementsFromPoint === undefined) {
+        delete (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;
+      } else {
+        Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: originalElementsFromPoint });
+      }
+    }
+  });
 });

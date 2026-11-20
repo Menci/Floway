@@ -31,6 +31,50 @@ export const HIGHLIGHT_RADIUS = 4;
 export const HIGHLIGHT_INNER_RADIUS = Math.max(0, HIGHLIGHT_RADIUS - HIGHLIGHT_BORDER);
 const HIGHLIGHT_MAX_LINE_GAP = 8;
 
+export const supportsCssAnchorPositioning = (): boolean =>
+  typeof CSS !== 'undefined'
+  && typeof CSS.supports === 'function'
+  && CSS.supports('anchor-name', '--x')
+  && CSS.supports('left', 'calc(anchor(left) + 1px)');
+
+export const canAttachCssAnchor = (element: Element | null): boolean =>
+  Boolean(
+    element?.isConnected
+    && element !== element.ownerDocument.body
+    && element !== element.ownerDocument.documentElement
+    && 'style' in element,
+  );
+
+// Temporarily registers `anchorName` on `element` so a top-layer `position: fixed`
+// highlight tracks ancestor scrolling on the compositor thread with zero lag.
+// Preserves and restores any pre-existing inline `anchor-name` value on cleanup.
+export const attachCssAnchor = (element: Element | null, anchorName: string): (() => void) | null => {
+  if (!canAttachCssAnchor(element) || !element) return null;
+  const style = (element as HTMLElement | SVGElement).style;
+  const previousInline = style.getPropertyValue('anchor-name');
+  const previousPriority = style.getPropertyPriority('anchor-name');
+  const view = element.ownerDocument.defaultView;
+  const computed = view && typeof view.getComputedStyle === 'function'
+    ? view.getComputedStyle(element).getPropertyValue('anchor-name').trim()
+    : '';
+  const existingNames = computed && computed !== 'none'
+    ? computed.split(',').map(part => part.trim()).filter(Boolean)
+    : [];
+  const nextValue = existingNames.includes(anchorName)
+    ? existingNames.join(', ')
+    : [...existingNames, anchorName].join(', ');
+
+  style.setProperty('anchor-name', nextValue);
+
+  return () => {
+    if (previousInline) {
+      style.setProperty('anchor-name', previousInline, previousPriority);
+    } else {
+      style.removeProperty('anchor-name');
+    }
+  };
+};
+
 export const getViewportSize = (doc: Document = document, win: Window = window): Size => ({
   width: doc.documentElement.clientWidth || win.innerWidth,
   height: doc.documentElement.clientHeight || win.innerHeight,
