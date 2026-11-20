@@ -151,7 +151,7 @@ export type Rendered =
      *  client, but a protocol that defines its own idle event is read by clients that expect
      *  one — Anthropic's `ping` is a frame Claude Code sees — so the family names it. */
     readonly keepAlive?: SseWritableFrame;
-    readonly failure?: (error: unknown) => readonly string[];
+    readonly failure?: (error: unknown) => readonly string[] | Promise<readonly string[]>;
   };
 
 /** Which of the two an answer turned out to be. A family's rendered fact carries whichever
