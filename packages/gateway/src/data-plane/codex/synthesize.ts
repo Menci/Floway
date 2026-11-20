@@ -141,9 +141,10 @@ export const synthesizeCatalogEntry = (
     max_context_window: maxContextWindow,
   };
 
-  // The caller supplies Ultra capability only from an exact Codex catalog;
-  // a model advertising Max alone does not establish v2 orchestration support.
-  if (shouldEnableUltra && entry.multi_agent_version === undefined) entry.multi_agent_version = 'v2';
+  // Codex uses the advertised version to select the local agent tools for a new thread.
+  // https://github.com/openai/codex/blob/29eb79e9866b3262a777fdf8195c1b9e63684c91/codex-rs/core/src/session/mod.rs#L5046-L5057
+  const isPurelySynthesized = base === undefined && codexMetadata === undefined;
+  if ((isPurelySynthesized || shouldEnableUltra) && entry.multi_agent_version === undefined) entry.multi_agent_version = 'v2';
 
   // Codex resolves Ultra through this field before sending the wire effort.
   // Keep a valid model-owned mapping, falling back to the last non-Ultra preset.

@@ -48,6 +48,7 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.input_modalities).toEqual(['text']);
     expect(entry.supports_image_detail_original).toBe(false);
     expect(entry.web_search_tool_type).toBe('text');
+    expect(entry.multi_agent_version).toBe('v2');
     expect(entry.supported_reasoning_levels).toEqual([]);
     expect(entry.service_tiers).toEqual([]);
     // Synthesized models get a vendored Codex-CLI agent prompt (adapted from
