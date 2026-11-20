@@ -1,4 +1,4 @@
-import type { DumpEvent } from '@floway-dev/pipeline';
+import type { DumpEvent, Event } from '@floway-dev/pipeline';
 
 const SENSITIVE_HEADERS = new Set([
   'api-key',
@@ -83,4 +83,49 @@ export const redactRunCredentials = (ndjson: string): string => {
     }
   }
   return events.map(event => `${JSON.stringify(event)}\n`).join('');
+};
+
+/** Redact before encoding so neither durable nor live object batches contain upstream
+ *  credential strings. Cached replacements preserve sharing across observations. */
+export const createRunEventRedactor = (): ((event: Event) => Event) => {
+  type Headers = readonly (readonly [string, unknown])[];
+  const headerCache = new WeakMap<Headers, Headers>();
+  const exchangeCache = new WeakMap<object, object>();
+  const redactHeaders = (headers: Headers): Headers => {
+    const cached = headerCache.get(headers);
+    if (cached !== undefined) return cached;
+    let changed = false;
+    const entries = headers.map(entry => {
+      const [name, value] = entry;
+      if (!isSensitiveHeader(name) || typeof value !== 'string' || value === REDACTED_HEADER_VALUE) return entry;
+      changed = true;
+      return [name, REDACTED_HEADER_VALUE] as const;
+    });
+    const redacted = changed ? entries : headers;
+    headerCache.set(headers, redacted);
+    return redacted;
+  };
+  const redactFact = (key: string, value: unknown): unknown => {
+    if (key === 'ingress.http.headers') return value;
+    if (key.endsWith('.http.headers')) return redactHeaders(value as Headers);
+    if (key !== 'response.http.exchange') return value;
+    const exchange = value as object;
+    if (!('headers' in exchange)) return value;
+    const cached = exchangeCache.get(exchange);
+    if (cached !== undefined) return cached;
+    const headers = redactHeaders(exchange.headers as Headers);
+    const redacted = headers === exchange.headers ? exchange : { ...exchange, headers };
+    exchangeCache.set(exchange, redacted);
+    return redacted;
+  };
+  return event => {
+    if (event.type !== 'stage.entered' && event.type !== 'stage.leaved') return event;
+    let changed = false;
+    const entries = Object.entries(event.facts).map(([key, value]) => {
+      const redacted = redactFact(key, value);
+      changed ||= redacted !== value;
+      return [key, redacted];
+    });
+    return changed ? { ...event, facts: Object.fromEntries(entries) } : event;
+  };
 };

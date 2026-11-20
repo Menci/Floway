@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
-import { eventsOf, metadata } from './fixtures.ts';
-import { createRunRecorder, recordStream, streamReferenceOf, type StoredDumpRecord, type StreamRecorder } from '../src/index.ts';
+import { eventsOf, metadata, recordingFixture } from './fixtures.ts';
+import { recordStream, streamReferenceOf, type StreamRecorder } from '../src/index.ts';
 import { isStreamFact, streamFact } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
@@ -11,8 +11,7 @@ const frames = [
 ] as const;
 
 const fixture = () => {
-  const records: StoredDumpRecord[] = [];
-  const recorder = createRunRecorder({ write: async record => { records.push(record); }, publish: async () => {} });
+  const { recorder, records } = recordingFixture();
   return { recorder, records };
 };
 
@@ -26,7 +25,7 @@ test('natural source EOF records the same values and its completion marker', asy
   expect(values[1]).toBe(frames[1]);
   expect(isStreamFact(recorded)).toBe(true);
   expect(isStreamFact(streamReferenceOf(recorded))).toBe(true);
-  await recorder.finish(metadata());
+  await recorder.finish(async () => metadata());
   const events = eventsOf(records[0]!);
   expect(events.filter(event => event.type === 'stream.frame')).toHaveLength(2);
   expect(events.filter(event => event.type === 'stream.end').map(event => event.streamId)).toEqual([1]);
@@ -40,7 +39,7 @@ test('an early return closes the actual source and leaves its recording incomple
   expect((await iterator.next()).value).toBe(frames[0]);
   await iterator.return?.();
   expect(closed).toBe(true);
-  await recorder.finish(metadata());
+  await recorder.finish(async () => metadata());
   const events = eventsOf(records[0]!);
   expect(events.filter(event => event.type === 'stream.frame')).toHaveLength(1);
   expect(events.some(event => event.type === 'stream.end')).toBe(false);
@@ -57,7 +56,7 @@ test('a source failure preserves its original error and omits clean completion',
   expect((await iterator.next()).value).toBe(frames[0]);
   await expect(iterator.next()).rejects.toBe(original);
   expect(closed).toBe(true);
-  await recorder.finish(metadata());
+  await recorder.finish(async () => metadata());
   const events = eventsOf(records[0]!);
   expect(events.filter(event => event.type === 'stream.frame')).toHaveLength(1);
   expect(events.some(event => event.type === 'stream.end')).toBe(false);
@@ -73,7 +72,7 @@ test('projection can skip recording a value while forwarding every source value 
   for await (const value of recordStream(source, recorder, value => value.kind === 'heartbeat' ? null : projected)) values.push(value);
   expect(values[0]).toBe(skipped);
   expect(values[1]).toBe(content);
-  await recorder.finish(metadata());
+  await recorder.finish(async () => metadata());
   const events = eventsOf(records[0]!);
   expect(events.filter(event => event.type === 'stream.frame')).toHaveLength(1);
   expect(events.filter(event => event.type === 'stream.end')).toHaveLength(1);
