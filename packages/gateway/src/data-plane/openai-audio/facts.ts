@@ -1,6 +1,6 @@
 import type { BillableEntity, GatewayFacts, Failure } from '../pipeline/facts.ts';
 import type { Deferred } from '@floway-dev/pipeline';
-import type { SseFrame } from '@floway-dev/protocols/common';
+import type { SseReadableFrame } from '@floway-dev/protocols/common';
 import type { OpenAIAudioTranscriptionResponseFormat, CanonicalOpenAIAudioTranscription } from '@floway-dev/protocols/openai-audio';
 
 export interface AudioUpload {
@@ -22,7 +22,7 @@ export interface AudioFormEntry {
  *  A view is a wrapper around the generator rather than the generator itself, which is what
  *  says where the resource is: the upstream's body at `response.http.body`, claimed with
  *  `own()`, and nothing else here. */
-export type OpenAIAudioTranscriptionEvents = AsyncIterable<SseFrame>;
+export type OpenAIAudioTranscriptionEvents = AsyncIterable<SseReadableFrame>;
 
 /** What settling this run will be told once the events run out: what the upstream metered,
  *  and whether the transcript ever finished. */
@@ -66,7 +66,7 @@ export interface OpenAIAudioTranscriptionFacts extends GatewayFacts {
   /** What the client is actually sent — a JSON object, the upstream's own document, or the
    *  SSE frames of a stream. The edge provides it, so a dump shows what the client received
    *  rather than the gateway's own reading of it. */
-  'response.openaiAudioTranscription.rendered': Record<string, unknown> | Uint8Array | AsyncIterable<SseFrame>;
+  'response.openaiAudioTranscription.rendered': Record<string, unknown> | Uint8Array | OpenAIAudioTranscriptionEvents;
 }
 
 export type Fields<K extends keyof OpenAIAudioTranscriptionFacts> = { [P in K]: OpenAIAudioTranscriptionFacts[P] };

@@ -23,7 +23,7 @@ import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/re
 import { serializeSseFrame, serveSse } from '../shared/sse.ts';
 import { recordStream } from '@floway-dev/dump';
 import { run, getFailureFacts, type Pipeline } from '@floway-dev/pipeline';
-import type { SseFrame } from '@floway-dev/protocols/common';
+import type { SseReadableFrame } from '@floway-dev/protocols/common';
 
 type Slice<K extends keyof GatewayFacts> = { [P in K]: GatewayFacts[P] };
 
@@ -136,13 +136,13 @@ export type Rendered =
   | {
     /** An answer that *is* a stream. The frames go out as they arrive, which is why nothing
      *  above waits for them and why what they billed is settled afterwards. */
-    readonly frames: AsyncIterable<SseFrame>;
+    readonly frames: AsyncIterable<SseReadableFrame>;
     readonly failure?: (error: unknown) => readonly string[] | Promise<readonly string[]>;
   };
 
 /** Which of the two an answer turned out to be. A family's rendered fact carries whichever
  *  shape its run produced, and only the family knows the key it is under. */
-export const isFrames = (rendered: unknown): rendered is AsyncIterable<SseFrame> =>
+export const isFrames = (rendered: unknown): rendered is AsyncIterable<SseReadableFrame> =>
   typeof rendered === 'object' && rendered !== null && Symbol.asyncIterator in rendered;
 
 /** How a streaming turn ended, once its frames ran out. Both halves arrive together because
