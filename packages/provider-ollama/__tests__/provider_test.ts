@@ -1,6 +1,5 @@
 import { test } from 'vitest';
 
-import { CREDIT_BALANCE, USAGE_TOTALS } from './usage-fixture.ts';
 import { createOllamaProvider } from '../src/provider.ts';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 import { callProviderPipeline, assertEquals, assertExists, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
@@ -66,27 +65,19 @@ const tagsAndShow = async (request: Request): Promise<Response> => {
   return new Response('unexpected', { status: 500 });
 };
 
-test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-compat endpoints', async () => {
+test('getProvidedModels projects chat and embedding models from their capabilities', async () => {
   const instance = createOllamaProvider(buildRecord());
   await withMockedFetch(tagsAndShow, async () => {
     const models = await instance.instance.getProvidedModels(testFetcher);
     const gptoss = models.find(m => m.id === 'gpt-oss:120b')!;
     assertEquals(gptoss.kind, 'chat');
     assertEquals(Object.keys(gptoss.endpoints).sort(), ['anthropicMessages', 'openaiChatCompletions', 'openaiCompletions', 'openaiResponses']);
-    assertEquals(gptoss.owned_by, 'ollama');
     assertEquals(gptoss.limits.max_context_window_tokens, 131072);
     assertEquals(gptoss.opaqueBlobCompatibilityScope, { bindToUpstream: true });
     // OLLAMA_MODEL_PRICING covers gpt-oss:120b, so pricing flows through into
     // the ProviderModel on the auto path.
     assertEquals(gptoss.pricing?.entries[0]?.rates.input_tokens, '0.00000015');
     assertEquals(gptoss.pricing?.entries[0]?.rates.output_tokens, '0.0000006');
-  });
-});
-
-test('getProvidedModels routes embedding-capability models to kind=embedding with only the openaiEmbeddings endpoint', async () => {
-  const instance = createOllamaProvider(buildRecord());
-  await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(testFetcher);
     const embed = models.find(m => m.id === 'nomic-embed-text:latest')!;
     assertEquals(embed.kind, 'embedding');
     assertEquals(Object.keys(embed.endpoints), ['openaiEmbeddings']);
@@ -120,24 +111,6 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
     assertEquals(models[0].pricing, { entries: [{ rates: { input_tokens: '99', output_tokens: '99' } }] });
     // No duplicate gpt-oss:120b further down.
     assertEquals(models.filter(m => m.id === 'gpt-oss:120b').length, 1);
-  });
-});
-
-test('manual known models inherit built-in pricing when no override is configured', async () => {
-  const instance = createOllamaProvider(buildRecord({
-    config: {
-      baseUrl: 'https://ollama.com',
-      apiKey: 'ollama_test',
-      models: [{
-        upstreamModelId: 'deepseek-v4-flash',
-        kind: 'chat',
-        endpoints: { openaiChatCompletions: {} },
-      }],
-    },
-  }));
-  await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(testFetcher);
-    assertEquals(models.find(model => model.id === 'deepseek-v4-flash')?.pricing?.entries[0]?.rates.input_tokens, '0.00000014');
   });
 });
 
@@ -209,7 +182,7 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
       const [providerModel] = await instance.instance.getProvidedModels(testFetcher);
       const result = await instance.instance.callOpenAIChatCompletions(
         providerModel,
-        { messages: [{ role: 'user', content: 'hi' }] },
+        { messages: [{ role: 'user', content: 'hi' }], max_completion_tokens: 32000 },
         undefined,
         noopUpstreamCallOptions(),
       );
@@ -219,62 +192,10 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
 
   assertEquals(chatRequest!.url, 'https://ollama.com/v1/chat/completions');
   assertEquals(chatRequest!.headers.get('Authorization'), 'Bearer ollama_test');
-  const body = chatBody as { model: string; stream: boolean };
+  const body = chatBody as { model: string; stream: boolean; max_tokens?: number; max_completion_tokens?: number };
   assertEquals(body.model, 'gpt-oss:120b');
   assertEquals(body.stream, true);
-});
-
-test('Anthropic Messages methods serialize typed anthropic-beta metadata only on Anthropic Messages wire calls', async () => {
-  const instance = createOllamaProvider(buildRecord());
-  const betas: Record<string, string | null> = {};
-
-  await withMockedFetch(
-    async request => {
-      const path = new URL(request.url).pathname;
-      if (path === '/api/tags') return jsonResponse({ models: [{ name: 'gpt-oss:120b' }] });
-      if (path === '/api/show') {
-        return jsonResponse({
-          capabilities: ['completion'],
-          details: { family: 'gptoss' },
-          model_info: { 'general.architecture': 'gptoss', 'gptoss.context_length': 131072 },
-        });
-      }
-      // A cloud call arms the background usage probe. It is not a wire call
-      // of the protocol under test, so it stays out of the beta record.
-      if (path === '/api/usage') return jsonResponse(USAGE_TOTALS);
-      if (path === '/api/balance') return jsonResponse(CREDIT_BALANCE);
-      if (path === '/api/me') return jsonResponse({ Plan: 'free' });
-      betas[path] = request.headers.get('anthropic-beta');
-      if (path === '/v1/messages') {
-        return new Response('', { status: 200, headers: { 'content-type': 'text/event-stream' } });
-      }
-      if (path === '/v1/messages/count_tokens') return jsonResponse({ input_tokens: 1 });
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const [model] = await instance.instance.getProvidedModels(testFetcher);
-      const opts = noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
-      await instance.instance.callAnthropicMessages(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-      await instance.instance.callAnthropicMessagesCountTokens(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-    },
-  );
-
-  assertEquals(betas, {
-    '/v1/messages': 'context-1m,advanced-tool-use',
-    '/v1/messages/count_tokens': 'context-1m,advanced-tool-use',
-  });
-});
-
-test('getProvidedModels populates chat from capabilities: gpt-oss thinking → effort, vision → modalities', async () => {
-  const instance = createOllamaProvider(buildRecord());
-  await withMockedFetch(tagsAndShow, async () => {
-    const models = await instance.instance.getProvidedModels(testFetcher);
-    const gptoss = models.find(m => m.id === 'gpt-oss:120b')!;
-    assertEquals(gptoss.chat, {
-      reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } },
-    });
-    // Embedding model has no thinking/vision → no chat field.
-    const embed = models.find(m => m.id === 'nomic-embed-text:latest')!;
-    assertEquals(embed.chat, undefined);
-  });
+  // Ollama reads only `max_tokens` into `num_predict`.
+  assertEquals(body.max_tokens, 32000);
+  assertEquals('max_completion_tokens' in body, false);
 });

@@ -30,10 +30,13 @@ import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.
 import { OLLAMA_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchOllamaCatalog, type OllamaCatalog } from './fetch-models.ts';
 import { ollamaFetchOpenAIAudioTranscriptions, ollamaFetchOpenAIChatCompletions, ollamaFetchOpenAICompletions, ollamaFetchOpenAIEmbeddings, ollamaFetchAnthropicMessages, ollamaFetchAnthropicMessagesCountTokens, ollamaFetchOpenAIResponses, ollamaFetchOpenAIResponsesCompact } from './fetch.ts';
+import { OLLAMA_OPENAI_CHAT_COMPLETIONS_BOUNDARY } from './interceptors/openai-chat-completions/index.ts';
+import type { OpenAIChatCompletionsBoundaryCtx } from './interceptors/openai-chat-completions/types.ts';
 import { createOllamaPipelines } from './pipelines.ts';
 import { pricingForOllamaModelKey } from './pricing.ts';
 import { readOllamaUpstreamState } from './state.ts';
 import { scheduleOllamaUsageProbe, runOllamaScheduledTask } from './usage-probe.ts';
+import { runInterceptors } from '@floway-dev/interceptor';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
@@ -144,7 +147,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       config,
       { method: 'POST', body: jsonRequestBody({ ...body, model: rawModelId }), signal },
       { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
-    ).then(response => ({ response, modelKey: rawModelId }));
+    ).then(response => ({ http: response, modelKey: rawModelId }));
   };
 
   const callStreaming = <TEvent>(
@@ -175,6 +178,8 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
   const instance: ProviderInstance = {
     runScheduledTask: options => runOllamaScheduledTask(record, options),
     callAlphaSearch: rejectUnsupported('callAlphaSearch'),
+    callGeminiGenerateContent: rejectUnsupported('callGeminiGenerateContent'),
+    callGeminiGenerateContentCountTokens: rejectUnsupported('callGeminiGenerateContentCountTokens'),
     getProvidedModels: async fetcher => {
       const catalog = await fetchOllamaCatalog(config, fetcher);
       const auto = finalizeOllamaModels(
@@ -184,14 +189,18 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       return [...manualModels, ...auto];
     },
     callOpenAICompletions: (model, body, signal, opts) => withProbes(opts, call(ollamaFetchOpenAICompletions, model, body, signal, [...opts.headers], opts)),
-    callOpenAIChatCompletions: (model, body, signal, opts) => withProbes(opts, callStreaming(ollamaFetchOpenAIChatCompletions, model, body, signal, [...opts.headers], parseOpenAIChatCompletionsStream, opts)),
+    callOpenAIChatCompletions: async (model, body, signal, opts) => {
+      const ctx: OpenAIChatCompletionsBoundaryCtx = { payload: body, model };
+      return await withProbes(opts, runInterceptors(
+        ctx, {}, OLLAMA_OPENAI_CHAT_COMPLETIONS_BOUNDARY,
+        async () => await callStreaming(ollamaFetchOpenAIChatCompletions, model, ctx.payload, signal, [...opts.headers], parseOpenAIChatCompletionsStream, opts),
+      ));
+    },
     callOpenAIResponses: async (model, body, action, signal, opts) => {
       switch (action) {
       case 'generate': {
         const stream = await withProbes(opts, callStreaming(ollamaFetchOpenAIResponses, model, body, signal, [...opts.headers], parseOpenAIResponsesStream, opts));
-        return stream.ok
-          ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
-          : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
+        return { action: 'generate', ...stream };
       }
       case 'compact': {
         const rawModelId = rawModelIdOf(model);
@@ -201,8 +210,8 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
           { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         ));
         return response.ok
-          ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResultEx, modelKey: rawModelId }
-          : { action: 'compact', ok: false, response, modelKey: rawModelId };
+          ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResultEx, modelKey: rawModelId, http: { status: response.status, headers: response.headers } }
+          : { action: 'compact', ok: false, http: response, modelKey: rawModelId };
       }
       default:
         action satisfies never;
@@ -220,7 +229,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       const rawModelId = rawModelIdOf(model);
       const body = serializeModelFieldOpenAIAudioTranscriptionRequest(request, rawModelId);
       const response = await withProbes(opts, ollamaFetchOpenAIAudioTranscriptions(config, { method: 'POST', body, signal }, { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall }));
-      return { response, modelKey: rawModelId };
+      return { http: response, modelKey: rawModelId };
     },
     callRerank: rejectUnsupported('callRerank'),
   };

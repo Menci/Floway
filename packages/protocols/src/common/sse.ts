@@ -4,7 +4,10 @@ export interface SseFrame {
   data: string;
 }
 
-// Bytes written to the stream as they are, without SSE field framing.
+// Bytes written to the stream as they are, without SSE field framing, or read
+// back from an upstream that wrote such a line. Some upstreams finish a stream
+// with a bare JSON error body, which the SSE grammar does not claim; a reader
+// that expects that body needs to see that it arrived unframed.
 export interface SseRawFrame {
   type: 'sse-raw';
   data: string;
@@ -25,6 +28,10 @@ export interface DoneFrame {
 }
 
 export type SseWritableFrame = SseFrame | SseCommentFrame | SseRawFrame;
+
+// What a reader yields: the framed events, and any payload the stream carried
+// without SSE framing.
+export type SseReadableFrame = SseFrame | SseRawFrame;
 
 export type ProtocolFrame<TEvent> = EventFrame<TEvent> | DoneFrame;
 

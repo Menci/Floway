@@ -128,7 +128,7 @@ describe('the OpenAI Completions pipeline', () => {
     let sent: Record<string, unknown> | undefined;
     resolves([candidate('up_a', async (_model, body) => {
       sent = body as Record<string, unknown>;
-      return { response: sse(chunk('he'), chunk('llo'), usageChunk, '[DONE]'), modelKey: 'text-model-key' };
+      return { http: sse(chunk('he'), chunk('llo'), usageChunk, '[DONE]'), modelKey: 'text-model-key' };
     })]);
 
     const { facts, drain } = await serve(entryFacts());
@@ -148,7 +148,7 @@ describe('the OpenAI Completions pipeline', () => {
   });
 
   it('says the upstream was called and reported nothing until the frames run out', async () => {
-    resolves([candidate('up_a', async () => ({ response: sse(chunk('hi'), usageChunk, '[DONE]'), modelKey: 'text-model-key' }))]);
+    resolves([candidate('up_a', async () => ({ http: sse(chunk('hi'), usageChunk, '[DONE]'), modelKey: 'text-model-key' }))]);
 
     const { facts, drain } = await serve(entryFacts());
 
@@ -175,7 +175,7 @@ describe('the OpenAI Completions pipeline', () => {
   });
 
   it('shows the usage chunk to a client that asked for it', async () => {
-    resolves([candidate('up_a', async () => ({ response: sse(chunk('hi'), usageChunk, '[DONE]'), modelKey: 'text-model-key' }))]);
+    resolves([candidate('up_a', async () => ({ http: sse(chunk('hi'), usageChunk, '[DONE]'), modelKey: 'text-model-key' }))]);
 
     const { facts, drain } = await serve(entryFacts({ 'ingress.openaiCompletions.wantsUsageChunk': true }));
 
@@ -185,7 +185,7 @@ describe('the OpenAI Completions pipeline', () => {
 
   it('serializes a non-streaming answer from the value it parsed, and bills what it read', async () => {
     const body = { id: 'cmpl_1', object: 'text_completion', created: 1, model: 'text-model', choices: [{ index: 0, text: 'hi', finish_reason: 'stop' }], usage: { prompt_tokens: 5, completion_tokens: 7, total_tokens: 12 } };
-    resolves([candidate('up_a', async () => ({ response: Response.json(body), modelKey: 'text-model-key' }))]);
+    resolves([candidate('up_a', async () => ({ http: Response.json(body), modelKey: 'text-model-key' }))]);
 
     const { facts, drain } = await serve(entryFacts({
       'ingress.openaiCompletions.wantsStream': false,
@@ -222,11 +222,11 @@ describe('the OpenAI Completions pipeline', () => {
     };
     resolves([
       candidate('up_a', async () => ({
-        response: new Response(body('loser', []), { status: 429, headers: { 'content-type': 'application/json' } }),
+        http: new Response(body('loser', []), { status: 429, headers: { 'content-type': 'application/json' } }),
         modelKey: 'k',
       })),
       candidate('up_b', async () => ({
-        response: new Response(body('winner', [`data: ${chunk('hi')}\n\n`, 'data: [DONE]\n\n']), {
+        http: new Response(body('winner', [`data: ${chunk('hi')}\n\n`, 'data: [DONE]\n\n']), {
           status: 200, headers: { 'content-type': 'text/event-stream' },
         }),
         modelKey: 'k',
@@ -242,7 +242,7 @@ describe('the OpenAI Completions pipeline', () => {
 
   it.each([false, true])('includes the provider retry observation for stream=%s', async streaming => {
     const upstream = candidate('up_a', async () => ({
-      response: streaming ? sse(chunk('hi'), usageChunk, '[DONE]') : Response.json({
+      http: streaming ? sse(chunk('hi'), usageChunk, '[DONE]') : Response.json({
         id: 'cmpl_1', choices: [], service_tier: 'flex', usage: { prompt_tokens: 0, completion_tokens: 0 },
       }),
       modelKey: 'final-model',
@@ -285,7 +285,7 @@ describe('the OpenAI Completions pipeline', () => {
   });
 
   it('finishes metering after an early consumer return', async () => {
-    resolves([candidate('up_a', async () => ({ response: sse(chunk('hi'), usageChunk, '[DONE]'), modelKey: 'k' }))]);
+    resolves([candidate('up_a', async () => ({ http: sse(chunk('hi'), usageChunk, '[DONE]'), modelKey: 'k' }))]);
     const { facts, drain } = await serve(entryFacts());
     const reader = (facts['response.openaiCompletions.rendered'] as AsyncIterable<SseFrame>)[Symbol.asyncIterator]();
     expect((await reader.next()).done).toBe(false);
@@ -302,7 +302,7 @@ describe('the OpenAI Completions pipeline', () => {
         prompt_tokens_details: { cached_tokens: 8 },
       },
     });
-    resolves([candidate('up_a', async () => ({ response: sse(chunk('hi'), invalidUsage, '[DONE]'), modelKey: 'k' }))]);
+    resolves([candidate('up_a', async () => ({ http: sse(chunk('hi'), invalidUsage, '[DONE]'), modelKey: 'k' }))]);
     const work: Promise<unknown>[] = [];
     const { facts, drain } = await run(openaiCompletionsServePipeline, move(entryFacts()), {
       gateway: mockGatewayCtx({ wantsStream: true }),
@@ -318,9 +318,9 @@ describe('the OpenAI Completions pipeline', () => {
   it('settles completed attempts when a later refusal body throws, preserving the original exception', async () => {
     const original = new Error('response socket reset', { cause: new Error('connection closed') });
     resolves([
-      candidate('up_a', async () => ({ response: Response.json({ error: 'retry' }, { status: 429 }), modelKey: 'first' })),
+      candidate('up_a', async () => ({ http: Response.json({ error: 'retry' }, { status: 429 }), modelKey: 'first' })),
       candidate('up_b', async () => ({
-        response: new Response(new ReadableStream({ start: controller => { controller.error(original); } }), { status: 429 }),
+        http: new Response(new ReadableStream({ start: controller => { controller.error(original); } }), { status: 429 }),
         modelKey: 'second',
       })),
     ]);
@@ -331,9 +331,9 @@ describe('the OpenAI Completions pipeline', () => {
 
   it('settles each upstream observation across failed-over attempts', async () => {
     resolves([
-      candidate('up_a', async () => ({ response: Response.json({ error: 'nope' }, { status: 429 }), modelKey: 'k' })),
+      candidate('up_a', async () => ({ http: Response.json({ error: 'nope' }, { status: 429 }), modelKey: 'k' })),
       candidate('up_b', async () => ({
-        response: Response.json({ id: 'c', choices: [], usage: { prompt_tokens: 7, completion_tokens: 2 } }),
+        http: Response.json({ id: 'c', choices: [], usage: { prompt_tokens: 7, completion_tokens: 2 } }),
         modelKey: 'k',
       })),
     ]);
@@ -351,7 +351,7 @@ describe('the OpenAI Completions pipeline', () => {
   // reported nothing, once for what the stream turned out to say — so the pipeline hands the
   // numbers up as a promise and the epilogue is what writes them.
   it('defers a stream-s settlement to the promise it hands up', async () => {
-    resolves([candidate('up_b', async () => ({ response: sse(chunk('hi'), usageChunk, '[DONE]'), modelKey: 'k' }))]);
+    resolves([candidate('up_b', async () => ({ http: sse(chunk('hi'), usageChunk, '[DONE]'), modelKey: 'k' }))]);
 
     const { facts, drain } = await serve(entryFacts());
     expect(recorded.usage).toHaveLength(0);
@@ -382,11 +382,11 @@ describe('the OpenAI Completions pipeline', () => {
     resolves([
       candidate('up_a', async () => {
         tried.push('up_a');
-        return { response: Response.json({ error: { message: 'slow down' } }, { status: 429 }), modelKey: 'text-model-key' };
+        return { http: Response.json({ error: { message: 'slow down' } }, { status: 429 }), modelKey: 'text-model-key' };
       }),
       candidate('up_b', async () => {
         tried.push('up_b');
-        return { response: Response.json({ error: { message: 'no' } }, { status: 400 }), modelKey: 'text-model-key' };
+        return { http: Response.json({ error: { message: 'no' } }, { status: 400 }), modelKey: 'text-model-key' };
       }),
     ]);
 
@@ -413,7 +413,7 @@ describe('the OpenAI Completions pipeline', () => {
   // record without being in the pipeline's exit type, because the path that refuses before
   // any upstream is dialed has no body to hand up.
   it('hands the upstream body up, because failover declares it provides one', async () => {
-    resolves([candidate('up_a', async () => ({ response: sse(chunk('hi'), '[DONE]'), modelKey: 'text-model-key' }))]);
+    resolves([candidate('up_a', async () => ({ http: sse(chunk('hi'), '[DONE]'), modelKey: 'text-model-key' }))]);
 
     const { facts, drain } = await serve(entryFacts());
 

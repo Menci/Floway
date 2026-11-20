@@ -9,7 +9,7 @@ import { fetchPageAndRecordUsage } from './fetch-page.ts';
 import { runWebSearchAndRecordUsage } from './search.ts';
 import type { ConfiguredWebSearchProvider, WebSearchProvider, WebSearchProviderName } from './types.ts';
 import { truncatePreservingCodePoints } from '../../shared/text.ts';
-import type { OpenAIResponsesWebSearchAction, OpenAIResponsesWebSearchResult } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesWebSearchAction, OpenAIResponsesWebSearchTextResult } from '@floway-dev/protocols/openai-responses';
 import { isAbortError } from '@floway-dev/provider';
 
 // Search-context-size → result-count mapping. Approximates the ~40 results
@@ -353,13 +353,13 @@ export interface WebSearchExecutionSession {
 // live on the caller's slot, not in here.
 export interface WebSearchCallIR {
   action: OpenAIResponsesWebSearchAction;
-  results: OpenAIResponsesWebSearchResult[];
+  results: OpenAIResponsesWebSearchTextResult[];
   outputText?: string;
 }
 
 const searchIr = (
   query: string,
-  results: OpenAIResponsesWebSearchResult[],
+  results: OpenAIResponsesWebSearchTextResult[],
   sources?: { type: 'url'; url: string }[],
 ): WebSearchCallIR => searchIrFromQueries([query], results, sources);
 
@@ -369,7 +369,7 @@ const searchIr = (
 // single-string shape — see `actionSearchQueries`.
 const searchIrFromQueries = (
   queries: string[],
-  results: OpenAIResponsesWebSearchResult[],
+  results: OpenAIResponsesWebSearchTextResult[],
   sources?: { type: 'url'; url: string }[],
 ): WebSearchCallIR => ({
   action: {
@@ -383,7 +383,7 @@ const searchIrFromQueries = (
 
 const openPageIr = (
   url: string | undefined,
-  results: OpenAIResponsesWebSearchResult[],
+  results: OpenAIResponsesWebSearchTextResult[],
 ): WebSearchCallIR => ({
   // Omit `url` when undefined to match native's soft-failure shape;
   // never emit `url: ''`.
@@ -396,7 +396,7 @@ const openPageIr = (
 const findInPageIr = (
   url: string,
   pattern: string,
-  results: OpenAIResponsesWebSearchResult[],
+  results: OpenAIResponsesWebSearchTextResult[],
 ): WebSearchCallIR => ({
   action: { type: 'find_in_page', url, pattern },
   results,
@@ -447,7 +447,7 @@ const unsupportedOperationError = (subProperty: string): UnsupportedLocalWebSear
 const wrongTypeOperationText = (subProperty: string, actualType: string): string =>
   `Error: the \`${subProperty}\` sub-property must be an array of objects; got ${actualType}.`;
 
-const errorSnippet = (title: string, snippet: string): OpenAIResponsesWebSearchResult => ({
+const errorSnippet = (title: string, snippet: string): OpenAIResponsesWebSearchTextResult => ({
   type: 'text_result',
   url: '',
   title,
@@ -469,14 +469,14 @@ export const actionSearchQueries = (action: Extract<OpenAIResponsesWebSearchActi
 // search hits in its final answer. Empty results emit `(no results)` rather
 // than a bare header so the model recognizes the call ran successfully but
 // returned nothing.
-const formatSearchResultsText = (query: string, results: readonly OpenAIResponsesWebSearchResult[]): string => {
+const formatSearchResultsText = (query: string, results: readonly OpenAIResponsesWebSearchTextResult[]): string => {
   const header = `Search results for "${query}":`;
   if (results.length === 0) return `${header}\n\n(no results)`;
   const sections = results.map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`);
   return `${header}\n\n${sections.join('\n\n')}`;
 };
 
-const renderOperationOutputText = (action: OpenAIResponsesWebSearchAction, results: OpenAIResponsesWebSearchResult[]): string => {
+const renderOperationOutputText = (action: OpenAIResponsesWebSearchAction, results: OpenAIResponsesWebSearchTextResult[]): string => {
   switch (action.type) {
   case 'search': {
     const queryLabel = actionSearchQueries(action).join(' | ');
@@ -601,7 +601,7 @@ const resolveActiveProvider = async (
 // ── search ──
 
 interface SearchQueryOutcome {
-  results: OpenAIResponsesWebSearchResult[];
+  results: OpenAIResponsesWebSearchTextResult[];
   sources?: { type: 'url'; url: string }[];
 }
 
@@ -655,7 +655,7 @@ const runOneSearchQuery = async (
       return { results: [errorSnippet('Search error', searchFailedText(msg))] };
     }
 
-    const results: OpenAIResponsesWebSearchResult[] = result.results.map(r => ({
+    const results: OpenAIResponsesWebSearchTextResult[] = result.results.map(r => ({
       type: 'text_result' as const,
       url: r.source,
       title: r.title,

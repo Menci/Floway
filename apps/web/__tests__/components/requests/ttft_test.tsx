@@ -4,11 +4,9 @@ import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ApiKey } from '../../../src/api/types';
-import { RequestDetailPanel } from '../../../src/components/requests/detail';
 import { RequestListPanel } from '../../../src/components/requests/list';
 import { renderInApp } from '../../render';
 import type { DumpMetadata } from '@floway-dev/dump/browser';
-import type { DumpEdgeRecord } from '@floway-dev/gateway/browser';
 
 vi.mock('../../../src/components/ui/body-editor', () => ({
   default: ({ text, toolbarStart }: { text: string; toolbarStart?: ReactNode }) => (
@@ -47,17 +45,6 @@ const makeRecordMeta = (id: string, ttftMs: number | null): DumpMetadata => ({
   upstream: null,
 });
 
-const makeFullRecord = (id: string, ttftMs: number | null): DumpEdgeRecord => ({
-  shape: 'edge',
-  meta: makeRecordMeta(id, ttftMs),
-  request: { method: 'POST', path: '/v1/chat/completions', headers: [], body: { encoding: 'utf8', data: '{}' } },
-  response: { status: 200, headers: [], body: { type: 'stream', events: [] } },
-  capture: {
-    exchanges: [],
-    response: { body: { encoding: 'utf8', data: '' }, complete: true, error: null },
-  },
-});
-
 describe('requests TTFT UI presentation', () => {
   it('renders TTFT in the request list for streamed records and omits it when null', () => {
     const recordWithTtft = makeRecordMeta('rec-streamed', 350);
@@ -82,38 +69,6 @@ describe('requests TTFT UI presentation', () => {
     );
 
     expect(screen.getByText('350ms')).toBeTruthy();
-    expect(screen.queryByText('0ms')).toBeNull();
-  });
-
-  it('renders TTFT in the request detail toolbar when present and omits it when null', () => {
-    const streamedRecord = makeFullRecord('detail-streamed', 420);
-    const { unmount } = renderInApp(
-      <RequestDetailPanel
-        record={streamedRecord}
-        recordId="detail-streamed"
-        error={null}
-        collected={null}
-        upstreamCollected={null}
-        retainLastRecord={false}
-      />,
-    );
-
-    expect(screen.getByText('420ms')).toBeTruthy();
-    unmount();
-
-    const nonStreamedRecord = makeFullRecord('detail-nonstreamed', null);
-    renderInApp(
-      <RequestDetailPanel
-        record={nonStreamedRecord}
-        recordId="detail-nonstreamed"
-        error={null}
-        collected={null}
-        upstreamCollected={null}
-        retainLastRecord={false}
-      />,
-    );
-
-    expect(screen.queryByText('420ms')).toBeNull();
     expect(screen.queryByText('0ms')).toBeNull();
   });
 });

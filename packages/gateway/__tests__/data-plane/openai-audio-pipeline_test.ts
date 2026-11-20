@@ -103,7 +103,7 @@ describe('the OpenAI Audio Transcriptions pipeline', () => {
   // resource: the upstream body at `response.http.body`, and nothing else here.
   it('renders a transcription the upstream answered with, as a 200', async () => {
     resolves([candidate(async () => ({
-      response: Response.json({ text: 'hello there' }),
+      http: Response.json({ text: 'hello there' }),
       modelKey: 'whisper-key',
     } as ProviderCallResult))]);
 
@@ -117,7 +117,7 @@ describe('the OpenAI Audio Transcriptions pipeline', () => {
   // upstream used — the same statement every other family makes.
   it('answers an upstream refusal with its own status and words', async () => {
     resolves([candidate(async () => ({
-      response: new Response(JSON.stringify({ error: { message: 'too large' } }), {
+      http: new Response(JSON.stringify({ error: { message: 'too large' } }), {
         status: 413, headers: { 'content-type': 'application/json' },
       }),
       modelKey: 'whisper-key',
@@ -136,7 +136,7 @@ describe('the OpenAI Audio Transcriptions pipeline', () => {
     const done = JSON.stringify({ type: 'transcript.text.done', text: 'hi', usage: { type: 'tokens', input_tokens: 3, output_tokens: 1 } });
     const after = JSON.stringify({ type: 'transcript.text.delta', delta: 'never read' });
     resolves([candidate(async () => ({
-      response: sse(JSON.stringify({ type: 'transcript.text.delta', delta: 'hi' }), done, after),
+      http: sse(JSON.stringify({ type: 'transcript.text.delta', delta: 'hi' }), done, after),
       modelKey: 'whisper-key',
     } as ProviderCallResult))]);
 
@@ -155,7 +155,7 @@ describe('the OpenAI Audio Transcriptions pipeline', () => {
     const extension = '{ "vendor_extension": "no type discriminator" }';
     const done = '{ "type": "transcript.text.done", "text": "hi", "usage": { "type": "tokens", "input_tokens": 3, "output_tokens": 1 } }';
     resolves([candidate(async () => ({
-      response: new Response(`event: transcript.delta\ndata: ${delta}\n\nevent: vendor.extension\ndata: ${extension}\n\nevent: transcript.completed\ndata: ${done}\n\n`, {
+      http: new Response(`event: transcript.delta\ndata: ${delta}\n\nevent: vendor.extension\ndata: ${extension}\n\nevent: transcript.completed\ndata: ${done}\n\n`, {
         headers: { 'content-type': 'text/event-stream' },
       }),
       modelKey: 'whisper-key',

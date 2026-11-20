@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { StrictMode, useCallback, useRef, useState } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { NavSelectionIndicator } from '../../src/components/sidebar/nav-selection-indicator';
 import { fluentComponents } from '../../src/fluent';
@@ -117,29 +117,34 @@ describe('nav selection indicator', () => {
   });
 });
 
-describe('winui presence motion', () => {
+describe('winui popover surface reachability', () => {
   stubMatchMedia(() => false);
 
-  const { Button, Dialog, DialogBody, DialogSurface, DialogTitle } = fluentComponents;
+  const { Button, Input, Popover, PopoverSurface, PopoverTrigger } = fluentComponents;
 
-  it('renders the dialog through the motion slot and keeps a caller-supplied motion callback', async () => {
-    const onMotionFinish = vi.fn();
-    const DialogHarness = () => {
-      const [open, setOpen] = useState(true);
-      return <Dialog open={open} surfaceMotion={{ onMotionFinish }}>
-        <DialogSurface>
-          <DialogBody>
-            <DialogTitle>Delete the key</DialogTitle>
-            <Button onClick={() => setOpen(false)}>Cancel</Button>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>;
-    };
+  // happy-dom lays nothing out, and tabster treats a body that measures zero as
+  // hidden -- the same answer it gives inside a hidden iframe -- so nothing is
+  // focusable until the body has a box.
+  const originalRect = Element.prototype.getBoundingClientRect;
+  beforeEach(() => {
+    Element.prototype.getBoundingClientRect = () => ({ bottom: 800, height: 800, left: 0, right: 1200, top: 0, width: 1200, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+  });
+  afterEach(() => { Element.prototype.getBoundingClientRect = originalRect; });
 
-    renderInApp(<DialogHarness />);
-    await screen.findByRole('dialog', { name: 'Delete the key' });
+  const Harness = ({ open }: { open: boolean }) => <Popover open={open} onOpenChange={() => {}} trapFocus>
+    <PopoverTrigger disableButtonEnhancement><Button>Open</Button></PopoverTrigger>
+    <PopoverSurface><Input aria-label="Surface field" /></PopoverSurface>
+  </Popover>;
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    await waitFor(() => expect(onMotionFinish).toHaveBeenCalled());
+  // Opening must reach the surface, not merely end up there: Fluent focuses the
+  // first focusable inside the surface in the commit that mounts it, and a
+  // surface that says it is hidden in that commit is skipped, leaving focus on
+  // the trigger where tabster's restore can move it out and dismiss the popover
+  // while a slider inside it is being dragged.
+  it('moves focus into the surface when it opens', async () => {
+    const view = renderInApp(<Harness open={false} />);
+    view.rerender(<Harness open />);
+    const field = await screen.findByRole('textbox', { name: 'Surface field' });
+    await waitFor(() => expect(document.activeElement).toBe(field));
   });
 });

@@ -33,11 +33,7 @@ import { isEventStreamMediaType } from '@floway-dev/protocols/common';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResultEx, CanonicalOpenAIResponsesInputItem, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { parseOpenAIResponsesStream, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
-import { jsonRequestBody, serializeOpenAIImagesEditsJsonPayload, type OpenAIImagesEditsRequest, type ProviderCallResult, type ProviderModel, type ProviderStreamResult, type ReplayableBody, streamingProviderCall, type UpstreamCallOptions } from '@floway-dev/provider';
-
-export type ProviderCompactionResult =
-  | { ok: true; result: OpenAIResponsesCompactionResultEx; modelKey: string }
-  | { ok: false; response: Response; modelKey: string };
+import { jsonRequestBody, serializeOpenAIImagesEditsJsonPayload, type OpenAIImagesEditsRequest, type ProviderCallResult, type ProviderCompactionResult, type ProviderModel, type ProviderStreamResult, type ReplayableBody, streamingProviderCall, type UpstreamCallOptions } from '@floway-dev/provider';
 
 // Hooks for repo-side state transitions. Refresh-token rotations and
 // terminal-state transitions go through the repo; access-token and quota
@@ -90,14 +86,14 @@ type ChatGPTOpenAIResponsesBody = ChatGPTResponsesBody;
 export const callChatGPTOpenAIResponses = async (opts: CallChatGPTOpenAIResponsesOptions): Promise<ProviderStreamResult<OpenAIResponsesStreamEventEx>> => {
   const prepared = prepareChatGPTResponsesRequest(opts, 'generate');
   const ready = await prepareChatGPTCall(opts);
-  if (!ready.ok) return { ok: false, modelKey: opts.model.id, response: ready.response };
+  if (!ready.ok) return { ok: false, modelKey: opts.model.id, http: ready.response };
   return await performStreamingOpenAIResponsesCall(opts, prepared, ready.accessToken, false);
 };
 
 export const callChatGPTOpenAIResponsesCompact = async (opts: CallChatGPTOpenAIResponsesCompactOptions): Promise<ProviderCompactionResult> => {
   const prepared = prepareChatGPTResponsesRequest(opts, 'compact');
   const ready = await prepareChatGPTCall(opts);
-  if (!ready.ok) return { ok: false, modelKey: opts.model.id, response: ready.response };
+  if (!ready.ok) return { ok: false, modelKey: opts.model.id, http: ready.response };
   return await performUnaryCompactCall(opts, prepared, ready.accessToken, false);
 };
 
@@ -105,7 +101,7 @@ export const callChatGPTAlphaSearch = async (opts: CallChatGPTAlphaSearchOptions
   const requestId = stringField(opts.body, 'id') ?? uuidV7();
   const normalized = { ...opts, body: { ...opts.body, id: requestId } };
   const ready = await prepareChatGPTCall(normalized);
-  if (!ready.ok) return { modelKey: normalized.model.id, response: ready.response };
+  if (!ready.ok) return { modelKey: normalized.model.id, http: ready.response };
   return await performAlphaSearchCall(normalized, ready.accessToken, false);
 };
 
@@ -116,14 +112,14 @@ const prepareChatGPTImageCall = async (opts: ChatGPTBackendCallBase & { fallback
   // upstream gate only withholds images from an explicitly `free` plan.
   const effectivePlan = chatgptPlanObservation(ready.accessToken)
     ?? (opts.fallbackPlanType === undefined ? { planType: '' } : { planType: opts.fallbackPlanType });
-  if (!chatgptPlanSupportsImages(effectivePlan.planType)) return { ok: false, response: imageUnavailableResult(opts.model.id).response };
+  if (!chatgptPlanSupportsImages(effectivePlan.planType)) return { ok: false, response: imageUnavailableResult(opts.model.id).http };
   const turnId = trimHeader(opts.headers, 'x-codex-image-turn-id') ?? uuidV7();
   return { ok: true, accessToken: ready.accessToken, effectivePlan, turnId };
 };
 
 export const callChatGPTOpenAIImagesGenerations = async (opts: CallChatGPTOpenAIImagesGenerationsOptions): Promise<ProviderCallResult> => {
   const prepared = await prepareChatGPTImageCall(opts);
-  if (!prepared.ok) return { modelKey: opts.model.id, response: prepared.response };
+  if (!prepared.ok) return { modelKey: opts.model.id, http: prepared.response };
   const body = { ...opts.body, model: opts.model.id };
   const request: ChatGPTImageCallRequest = { path: CHATGPT_OPENAI_IMAGES_GENERATIONS_PATH, body, turnId: prepared.turnId };
   return await performImageCall(opts, request, prepared.accessToken, prepared.effectivePlan, false);
@@ -131,7 +127,7 @@ export const callChatGPTOpenAIImagesGenerations = async (opts: CallChatGPTOpenAI
 
 export const callChatGPTOpenAIImagesEdits = async (opts: CallChatGPTOpenAIImagesEditsOptions): Promise<ProviderCallResult> => {
   const prepared = await prepareChatGPTImageCall(opts);
-  if (!prepared.ok) return { modelKey: opts.model.id, response: prepared.response };
+  if (!prepared.ok) return { modelKey: opts.model.id, http: prepared.response };
   const body = await serializeOpenAIImagesEditsJsonPayload(opts.request, opts.model.id);
   const request: ChatGPTImageCallRequest = { path: CHATGPT_OPENAI_IMAGES_EDITS_PATH, body, turnId: prepared.turnId };
   return await performImageCall(opts, request, prepared.accessToken, prepared.effectivePlan, false);
@@ -705,10 +701,10 @@ const performStreamingOpenAIResponsesCall = async (
     opts,
     {
       accessToken,
-      response: result.ok ? null : result.response,
+      response: result.ok ? null : result.http,
       alreadyRetried,
       run: fresh => performStreamingOpenAIResponsesCall(opts, prepared, fresh, true),
-      onRefreshFailure: resp => ({ ok: false as const, modelKey: opts.model.id, response: resp }),
+      onRefreshFailure: resp => ({ ok: false as const, modelKey: opts.model.id, http: resp }),
     },
   );
   if (attempt.retried) return attempt.value;
@@ -739,17 +735,18 @@ const performUnaryCompactCall = async (
       response,
       alreadyRetried,
       run: fresh => performUnaryCompactCall(opts, prepared, fresh, true),
-      onRefreshFailure: resp => ({ ok: false as const, modelKey: opts.model.id, response: resp }),
+      onRefreshFailure: resp => ({ ok: false as const, modelKey: opts.model.id, http: resp }),
     },
   );
   if (attempt.retried) return attempt.value;
 
-  if (!response.ok) return { ok: false, modelKey: opts.model.id, response };
+  if (!response.ok) return { ok: false, modelKey: opts.model.id, http: response };
 
   const result = await response.json() as OpenAIResponsesCompactionResultEx;
   return {
     ok: true,
     modelKey: opts.model.id,
+    http: { status: response.status, headers: response.headers },
     result,
   };
 };
@@ -787,11 +784,11 @@ const performAlphaSearchCall = async (
       response,
       alreadyRetried,
       run: fresh => performAlphaSearchCall(opts, fresh, true),
-      onRefreshFailure: resp => ({ modelKey: opts.model.id, response: resp }),
+      onRefreshFailure: resp => ({ modelKey: opts.model.id, http: resp }),
     },
   );
   if (attempt.retried) return attempt.value;
-  return { modelKey: opts.model.id, response };
+  return { modelKey: opts.model.id, http: response };
 };
 
 // The fixed per-request inputs for one ChatGPT image call. The path, body, and
@@ -829,12 +826,12 @@ const performImageCall = async (
         if (!chatgptPlanSupportsImages(refreshedPlan.planType)) return imageUnavailableResult(opts.model.id);
         return await performImageCall(opts, request, entry, refreshedPlan, true);
       },
-      onRefreshFailure: resp => ({ modelKey: opts.model.id, response: resp }),
+      onRefreshFailure: resp => ({ modelKey: opts.model.id, http: resp }),
       fallbackPlan: effectivePlan,
     },
   );
   if (attempt.retried) return attempt.value;
-  return { modelKey: opts.model.id, response };
+  return { modelKey: opts.model.id, http: response };
 };
 
 export interface ChatGPTUpstreamError {
@@ -880,7 +877,7 @@ export const classifyChatGPTUnauthorizedResponse = async (opts: ChatGPTBackendCa
 
 const imageUnavailableResult = (modelKey: string): ProviderCallResult => ({
   modelKey,
-  response: new Response(JSON.stringify({
+  http: new Response(JSON.stringify({
     error: {
       type: 'image_tools_unavailable',
       message: 'ChatGPT Free accounts do not provide Codex image tools.',

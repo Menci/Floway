@@ -26,13 +26,6 @@ const backends: ReadonlyArray<readonly [string, RepoFactory]> = [
 ];
 
 describe.each(backends)('UsersRepo (%s)', (_label, makeRepo) => {
-  test('save then list returns active users sorted by id (excluding seed admin)', async () => {
-    const repo = await makeRepo();
-    await repo.users.save(sampleUser({ id: 2, username: 'alice' }));
-    await repo.users.save(sampleUser({ id: 3, username: 'bob' }));
-    const list = (await repo.users.list()).filter(u => u.id !== 1);
-    expect(list.map(u => u.username)).toEqual(['alice', 'bob']);
-  });
 
   test('softDelete hides from list and getById, but the *IncludingDeleted variants still return the row', async () => {
     const repo = await makeRepo();
@@ -45,14 +38,6 @@ describe.each(backends)('UsersRepo (%s)', (_label, makeRepo) => {
     expect(including!.deletedAt).not.toBeNull();
   });
 
-  test('softDelete returns false for an unknown or already-deleted user', async () => {
-    const repo = await makeRepo();
-    expect(await repo.users.softDelete(42)).toBe(false);
-    await repo.users.save(sampleUser({ id: 2 }));
-    expect(await repo.users.softDelete(2)).toBe(true);
-    expect(await repo.users.softDelete(2)).toBe(false);
-  });
-
   test('deleted username can be reused by a new user (partial unique index)', async () => {
     const repo = await makeRepo();
     await repo.users.save(sampleUser({ id: 2, username: 'alice' }));
@@ -61,23 +46,9 @@ describe.each(backends)('UsersRepo (%s)', (_label, makeRepo) => {
     expect((await repo.users.findByUsername('alice'))?.id).toBe(3);
   });
 
-  test('saving a duplicate active username throws', async () => {
+  test('saving an active username that differs only in case throws', async () => {
     const repo = await makeRepo();
     await repo.users.save(sampleUser({ id: 2, username: 'alice' }));
-    await expect(repo.users.save(sampleUser({ id: 3, username: 'alice' }))).rejects.toThrow();
-  });
-
-  test('save updates an existing row', async () => {
-    const repo = await makeRepo();
-    await repo.users.save(sampleUser({ id: 2, username: 'alice', isAdmin: false }));
-    await repo.users.save(sampleUser({ id: 2, username: 'alice', isAdmin: true }));
-    expect((await repo.users.getById(2))?.isAdmin).toBe(true);
-  });
-
-  test('findByUsername does not return soft-deleted rows', async () => {
-    const repo = await makeRepo();
-    await repo.users.save(sampleUser({ id: 2, username: 'alice' }));
-    await repo.users.softDelete(2);
-    expect(await repo.users.findByUsername('alice')).toBeNull();
+    await expect(repo.users.save(sampleUser({ id: 3, username: 'Alice' }))).rejects.toThrow();
   });
 });

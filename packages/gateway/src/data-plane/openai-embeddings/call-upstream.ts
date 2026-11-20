@@ -42,7 +42,7 @@ export const callOpenAIEmbeddingsUpstream = defineStage<
     if (exchange.type === 'transportFailure') {
       return move({
         ...rest,
-        'response.openaiEmbeddings.canonical': dialFailure(exchange.error),
+        'response.openaiEmbeddings.canonical': dialFailure(exchange.error, use.gateway.abortSignal),
         'response.http.status': 502,
         'response.http.headers': [],
         'response.usage.billable': providerUsage(candidate, back, []),

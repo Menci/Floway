@@ -7,6 +7,7 @@ import { providerUsage } from '../pipeline/provider-usage.ts';
 import type { StreamOutcome } from '../pipeline/serve.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { dialFailure, spentBody, retainReader } from '../pipeline/upstream-body.ts';
+import { isOpenAIErrorPayload } from '../shared/openai-errors.ts';
 import { upstreamPerformanceContext, telemetryModelIdentity } from '../shared/telemetry/attribution.ts';
 import { tokenUsageMeasurement } from '../shared/telemetry/usage.ts';
 import { recordStream } from '@floway-dev/dump';
@@ -61,7 +62,7 @@ export const callOpenAICompletionsUpstream = defineStage<
     if (exchange.type === 'transportFailure') {
       return move({
         ...rest,
-        'response.openaiCompletions.payload': dialFailure(exchange.error),
+        'response.openaiCompletions.payload': dialFailure(exchange.error, use.gateway.abortSignal),
         'response.openaiCompletions.streamedUsage': null,
         'response.usage.billable': providerUsage(candidate, back, []),
         'response.http.status': 502,
@@ -151,7 +152,7 @@ const readUpstream = async (
   // the frames as they pass — so the reading costs one pass and the client's own stream is
   // what drives it. What it finds arrives with the last frame, long after this stage has
   // handed up, which is why the entity above carries no quantities.
-  const metered = meterFrames(parseOpenAICompletionsStream(response.body, { signal }), identity, candidate);
+  const metered = meterFrames(parseOpenAICompletionsStream(response.body, { signal }), identity, candidate, signal);
   setRelease(ownedBody!, async () => { for await (const _frame of metered.frames) { /* drain */ } });
   return {
     payload: recordStream(metered.frames, dump),
@@ -194,6 +195,7 @@ const meterFrames = (
   source: AsyncIterable<ProtocolFrame<OpenAICompletionsStreamEvent>>,
   identity: TelemetryModelIdentity,
   candidate: ModelCandidate,
+  signal: AbortSignal | undefined,
 ): MeteredFrames => {
   const settlement = Promise.withResolvers<StreamOutcome>();
   // Declared as this run's own unfinished work, so the runner waits for it at teardown where
@@ -208,16 +210,24 @@ const meterFrames = (
     try {
       for await (const frame of source) {
         if (frame.type === 'event') {
+          if (isOpenAIErrorPayload(frame.event)) {
+            yield frame;
+            return;
+          }
           // `service_tier` can ride on any chunk's root while the totals only land on the
           // usage-only one, so the two are tracked apart and settled together.
           const root = frame.event as { service_tier?: string | null; usage?: unknown };
           if (root.service_tier !== undefined) tier = root.service_tier;
           if (isOpenAIUsageOnlyEventShape(frame.event)) usage = root.usage;
         }
-        // The transport's own terminator is this protocol's end-of-turn.
-        if (frame.type === 'done') sawTerminal = true;
+        if (frame.type === 'done') {
+          sawTerminal = true;
+          yield frame;
+          return;
+        }
         yield frame;
       }
+      if (!signal?.aborted) throw new Error('OpenAI Completions stream ended without a [DONE] sentinel.');
     } finally {
       // Reached however the frames ended — the terminal chunk, a client that stopped
       // reading, or a broken upstream — because tokens the upstream already metered are

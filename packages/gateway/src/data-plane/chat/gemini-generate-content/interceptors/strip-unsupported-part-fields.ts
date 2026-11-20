@@ -1,10 +1,10 @@
-import type { GeminiGenerateContentInterceptor } from './types.ts';
+import type { GeminiGenerateContentShapeCleanup } from './types.ts';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentPart } from '@floway-dev/protocols/gemini-generate-content';
 
 /**
- * Gemini generateContent file/code parts have no current equivalent in the upstream target
- * graph. Drop them at source so every Gemini generateContent route target sees translatable
- * parts.
+ * A translated target has no slot for Gemini's file/code parts, so drop them at
+ * source to keep every translated route seeing parts it can express. A native
+ * Gemini upstream receives the payload as the client shaped it, parts included.
  */
 const stripPartFields = (parts: GeminiGenerateContentPart[]): GeminiGenerateContentPart[] =>
   parts.filter(part => {
@@ -23,7 +23,7 @@ export const stripUnsupportedPartFieldsFromPayload = (payload: GeminiGenerateCon
   }
 };
 
-export const stripUnsupportedPartFields: GeminiGenerateContentInterceptor = (ctx, _gatewayCtx, run) => {
-  stripUnsupportedPartFieldsFromPayload(ctx.payload);
+export const stripUnsupportedPartFields: GeminiGenerateContentShapeCleanup = (ctx, _gatewayCtx, run) => {
+  if (ctx.targetApi !== 'geminiGenerateContent') stripUnsupportedPartFieldsFromPayload(ctx.payload);
   return run();
 };

@@ -48,7 +48,7 @@ export function RotateKeyDialog({
     setSaving(true);
     setError(null);
     try {
-      const handle = toasts.start(t('dashboard.apiKeys.toast.rotate.pending', { name: snapName }));
+      const handle = toasts.start(t('apiKeys.toast.rotate.pending', { name: snapName }));
       const result = await callApi(() => api.api.keys[':id'].rotate.$post({
         param: { id: apiKey.id },
         json: keyWriteBody(values.keySource, values.customKey),
@@ -59,7 +59,7 @@ export function RotateKeyDialog({
         return;
       }
       onOpenChange(false);
-      handle.succeed(t('dashboard.apiKeys.toast.rotate.success', { name: snapName }));
+      handle.succeed(t('apiKeys.toast.rotate.success', { name: snapName }));
       await onSaved();
     } finally {
       setSaving(false);
@@ -71,20 +71,20 @@ export function RotateKeyDialog({
       open={open}
       onOpenChange={(_, data) => { if (!data.open && !saving) requestClose(); }}
       onSubmit={() => void handleSubmit(rotate)()}
-      title={<DialogTitle>{t('dashboard.apiKeys.rotate.title')}</DialogTitle>}
+      title={<DialogTitle>{t('apiKeys.rotate.title')}</DialogTitle>}
       actions={
         <DialogActions>
           <Button disabled={saving} onClick={requestClose}>
             {t('common.cancel')}
           </Button>
           <Button appearance="primary" disabledFocusable={saving} type="submit">
-            {t('dashboard.apiKeys.actions.rotate')}
+            {t('apiKeys.actions.rotate')}
           </Button>
         </DialogActions>
       }
     >
       <Text size={200} className="text-fui-fg2">
-        {t('dashboard.apiKeys.rotate.message', { name: snapName })}
+        {t('apiKeys.rotate.message', { name: snapName })}
       </Text>
       <KeySourceControl
         customKey={values.customKey}

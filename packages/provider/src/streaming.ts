@@ -1,4 +1,5 @@
 import type { ProviderStreamResult } from './provider.ts';
+import type { HttpHead } from './result.ts';
 import { isEventStreamMediaType, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 export type ProviderStreamParser<TEvent> = (
@@ -29,15 +30,15 @@ export const streamingProviderCall = async <TEvent>(
   parser: ProviderStreamParser<TEvent>,
   modelKey: string,
   signal: AbortSignal | undefined,
-): Promise<ProviderStreamResult<TEvent>> => {
+): Promise<ProviderStreamResult<TEvent> & { http: HttpHead }> => {
   const response = await upstreamFetch;
   if (!response.ok) {
-    return { ok: false, response, modelKey };
+    return { ok: false, http: response, modelKey };
   }
   const contentType = response.headers.get('content-type') ?? '';
   if (!response.body || !isEventStreamMediaType(contentType)) {
     const snippet = await readBodySnippet(response);
     throw new Error(`Upstream returned ${response.status} with content-type "${contentType || 'unknown'}" but stream is required (provider must force stream=true and return text/event-stream when response.ok). Body: ${snippet}`);
   }
-  return { ok: true, events: parser(response.body, { signal }), modelKey, headers: response.headers };
+  return { ok: true, events: parser(response.body, { signal }), modelKey, http: { status: response.status, headers: response.headers } };
 };

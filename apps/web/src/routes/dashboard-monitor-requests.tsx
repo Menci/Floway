@@ -168,20 +168,20 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
 
   return (
     <section className="h-full min-h-0 grid grid-rows-[auto_minmax(0,1fr)] gap-[18px] min-w-0">
-      <DashboardPageHeader description={t('dashboard.pages.requests')} title={t('dashboard.nav.requests')} />
+      <DashboardPageHeader description={t('requests.description')} title={t('requests.title')} />
       {keysError && (keys === null || keys.length === 0) ? (
         <OutcomeMessageBar onDismiss={() => setReplacement({ ...shown, keysError: null })}>{keysError}</OutcomeMessageBar>
       ) : keys === null ? (
-        <Panel className="!grid"><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel>
+        <Panel className="!grid"><EmptyStateLine>{t('common.errors.viewUnavailable')}</EmptyStateLine></Panel>
       ) : keys.length === 0 ? (
         <Panel className="!grid">
           <EmptyState
             action={<RouteLink to="/dashboard/services/api-keys">
-              <OpenLinkLabel>{t('dashboard.requests.apiKeysLink')}</OpenLinkLabel>
+              <OpenLinkLabel>{t('requests.apiKeysLink')}</OpenLinkLabel>
             </RouteLink>}
             align="start"
-            description={t('dashboard.requests.noKeysDescription')}
-            title={t('dashboard.requests.noKeys')}
+            description={t('requests.noKeysDescription')}
+            title={t('requests.noKeys')}
           />
         </Panel>
       ) : selectedKeyId ? narrow ? <>
@@ -210,8 +210,8 @@ export default function DashboardMonitorRequests({ loaderData }: Route.Component
             slot's DOM node. */}
         <OverlayDrawer onOpenChange={(_, data) => { if (!data.open) updateSelection(selectedKeyId); }} open={selectedRecordId !== null} position="end" size="full">
           <DrawerHeader>
-            <DrawerHeaderTitle action={<Button appearance="subtle" aria-label={t('dashboard.requests.closeDetails')} icon={<DismissRegular />} onClick={() => updateSelection(selectedKeyId)} />}>
-              {t('dashboard.requests.detailTitle')}
+            <DrawerHeaderTitle action={<Button appearance="subtle" aria-label={t('requests.closeDetails')} icon={<DismissRegular />} onClick={() => updateSelection(selectedKeyId)} />}>
+              {t('requests.detailTitle')}
             </DrawerHeaderTitle>
           </DrawerHeader>
           <DrawerBody className="!p-0 min-h-0">

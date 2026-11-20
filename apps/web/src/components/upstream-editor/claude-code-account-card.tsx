@@ -53,8 +53,8 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, readOnly = fals
   const probeExtraEntries = rawEntries(probe?.extras);
   const accessTokenExpiresAt = credential?.accessToken?.expiresAt ?? null;
   const statusLabel = status.reason === 'heavy'
-    ? t('dashboard.upstreamEditor.claudeCode.status.heavy', { percent: status.percent })
-    : t(`dashboard.upstreamEditor.claudeCode.status.${status.reason}`);
+    ? t('upstreams.editor.claudeCode.status.heavy', { percent: status.percent })
+    : t(`upstreams.editor.claudeCode.status.${status.reason}`);
 
   return <section className="grid gap-4">
     <div className="flex items-start gap-3">
@@ -62,9 +62,9 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, readOnly = fals
       <div className="grid gap-1 min-w-0 flex-1">
         <Text block weight="semibold" truncate wrap={false}>{account.email ?? accountUuidShort}</Text>
         <div className="flex flex-wrap items-center gap-2">
-          {credential?.tokenKind === 'setup-token' && <Tooltip content={t('dashboard.upstreamEditor.claudeCode.setupTokenHint')} relationship="description">
+          {credential?.tokenKind === 'setup-token' && <Tooltip content={t('upstreams.editor.claudeCode.setupTokenHint')} relationship="description">
             <span className="winui-focus-rect inline-flex" tabIndex={0}>
-              <StatusBadge tone="neutral">{t('dashboard.upstreamEditor.claudeCode.setupToken')}</StatusBadge>
+              <StatusBadge tone="neutral">{t('upstreams.editor.claudeCode.setupToken')}</StatusBadge>
             </span>
           </Tooltip>}
           {subscription && <StatusBadge tone="accent">{subscription}</StatusBadge>}
@@ -72,8 +72,8 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, readOnly = fals
           <TruncationTooltip content={account.accountUuid} relationship="description">
             {measureRef => <Text size={200} className="winui-focus-rect text-fui-fg3 font-mono mono-size-xs" ref={measureRef} tabIndex={0}>{accountUuidShort}</Text>}
           </TruncationTooltip>
-          {account.email === null && <Tooltip content={t('dashboard.upstreamEditor.claudeCode.noEmailScopeHint')} relationship="description">
-            <Text size={200} className="winui-focus-rect text-fui-fg3" tabIndex={0}>{t('dashboard.upstreamEditor.claudeCode.noEmailScope')}</Text>
+          {account.email === null && <Tooltip content={t('upstreams.editor.claudeCode.noEmailScopeHint')} relationship="description">
+            <Text size={200} className="winui-focus-rect text-fui-fg3" tabIndex={0}>{t('upstreams.editor.claudeCode.noEmailScope')}</Text>
           </Tooltip>}
         </div>
       </div>
@@ -83,15 +83,15 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, readOnly = fals
     {status.tone === 'danger' && status.detail && <Text size={200} className="text-fui-fg2">{status.detail}</Text>}
 
     {lookup.kind === 'uuid-mismatch' && <MessageBar intent="error"><MessageBarBody>
-      {t('dashboard.upstreamEditor.claudeCode.uuidMismatch', { accountUuid: lookup.expectedAccountUuid })}
+      {t('upstreams.editor.claudeCode.uuidMismatch', { accountUuid: lookup.expectedAccountUuid })}
     </MessageBarBody></MessageBar>}
 
     <div className="flex flex-wrap items-center justify-between gap-2">
       <Text size={200} className="text-fui-fg2">
-        {windows.length ? t('dashboard.upstreamEditor.claudeCode.windows') : t('dashboard.upstreamEditor.claudeCode.noSnapshot')}
+        {windows.length ? t('upstreams.editor.claudeCode.windows') : t('upstreams.editor.claudeCode.noSnapshot')}
       </Text>
       {!readOnly && <Button appearance="subtle" disabledFocusable={probing} icon={probing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={onRefreshQuota} size="small">
-        {t('dashboard.upstreamEditor.claudeCode.refreshQuota')}
+        {t('upstreams.editor.claudeCode.refreshQuota')}
       </Button>}
     </div>
 
@@ -99,16 +99,16 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, readOnly = fals
       {windows.map(row => {
         return <QuotaProgressRow
           key={row.key}
-          label={t(`dashboard.upstreamEditor.claudeCode.window.${row.key}`)}
+          label={t(`upstreams.editor.claudeCode.window.${row.key}`)}
           percent={row.percent}
           quotaDisplay={preferences.quotaDisplay}
           right={row.status && <Text size={200} className="text-fui-fg3">{row.status}</Text>}
           footer={<div className="flex flex-wrap items-baseline justify-between gap-x-3">
             {row.resetAt && <Text size={200} className="text-fui-fg3">
-              {t('dashboard.upstreamEditor.claudeCode.resetsAt', { time: dateTime(row.resetAt, locale) })}
+              {t('upstreams.editor.claudeCode.resetsAt', { time: dateTime(row.resetAt, locale) })}
             </Text>}
             <Text size={200} className="text-fui-fg3">
-              {t('dashboard.upstreamEditor.claudeCode.observed', { time: dateTime(row.fetchedAt, locale) })}
+              {t('upstreams.editor.claudeCode.observed', { time: dateTime(row.fetchedAt, locale) })}
             </Text>
           </div>}
         />;
@@ -117,36 +117,36 @@ export function ClaudeCodeAccountCard({ onRefreshQuota, probing, readOnly = fals
 
     <div className="flex flex-wrap items-center gap-2 empty:hidden">
       {quota?.representativeClaim && <Badge appearance="outline" size="large">
-        {t('dashboard.upstreamEditor.claudeCode.representative', { claim: quota.representativeClaim })}
+        {t('upstreams.editor.claudeCode.representative', { claim: quota.representativeClaim })}
       </Badge>}
       {quota?.overage?.status === 'allowed' && <StatusBadge tone="success">
-        {t('dashboard.upstreamEditor.claudeCode.overageAllowed')}
+        {t('upstreams.editor.claudeCode.overageAllowed')}
       </StatusBadge>}
       {disabledReason && <StatusBadge tone="danger">
-        {t('dashboard.upstreamEditor.claudeCode.disabledReason', { reason: disabledReason })}
+        {t('upstreams.editor.claudeCode.disabledReason', { reason: disabledReason })}
       </StatusBadge>}
       {quota?.fallbackAvailable === false && <StatusBadge tone="warning">
-        {t('dashboard.upstreamEditor.claudeCode.fallbackUnavailable')}
+        {t('upstreams.editor.claudeCode.fallbackUnavailable')}
       </StatusBadge>}
     </div>
 
     {(headerRawEntries.length > 0 || probeExtraEntries.length > 0) && <Accordion collapsible>
       {headerRawEntries.length > 0 && <AccordionItem value="rate-limit">
-        <AccordionHeader>{t('dashboard.upstreamEditor.claudeCode.rawRateLimit', { count: headerRawEntries.length })}</AccordionHeader>
+        <AccordionHeader>{t('upstreams.editor.claudeCode.rawRateLimit', { count: headerRawEntries.length })}</AccordionHeader>
         <AccordionPanel><EntryList entries={headerRawEntries} /></AccordionPanel>
       </AccordionItem>}
       {probeExtraEntries.length > 0 && <AccordionItem value="usage">
-        <AccordionHeader>{t('dashboard.upstreamEditor.claudeCode.rawUsage', { count: probeExtraEntries.length })}</AccordionHeader>
+        <AccordionHeader>{t('upstreams.editor.claudeCode.rawUsage', { count: probeExtraEntries.length })}</AccordionHeader>
         <AccordionPanel><EntryList entries={probeExtraEntries} /></AccordionPanel>
       </AccordionItem>}
     </Accordion>}
 
     <div className="flex flex-wrap gap-x-4 gap-y-1 border-0 border-t border-solid border-fui-divider pt-3">
       {credential?.stateUpdatedAt && <Text size={200} className="text-fui-fg3">
-        {t('dashboard.upstreamEditor.claudeCode.stateUpdated', { time: dateTime(credential.stateUpdatedAt, locale) })}
+        {t('upstreams.editor.claudeCode.stateUpdated', { time: dateTime(credential.stateUpdatedAt, locale) })}
       </Text>}
       {accessTokenExpiresAt !== null && <Text size={200} className="text-fui-fg3">
-        {t('dashboard.upstreamEditor.claudeCode.tokenExpires', { time: relativeTime(accessTokenExpiresAt, locale, { now }) ?? dateTime(accessTokenExpiresAt, locale) })}
+        {t('upstreams.editor.claudeCode.tokenExpires', { time: relativeTime(accessTokenExpiresAt, locale, { now }) ?? dateTime(accessTokenExpiresAt, locale) })}
       </Text>}
     </div>
   </section>;

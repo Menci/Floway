@@ -33,6 +33,7 @@ import { type ChatGPTQuotaSnapshotMap, type ChatGPTUpstreamConfig, assertChatGPT
 import { assertClaudeCodeUpstreamRecord, readClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { parseCopilotUpstreamConfig, readCopilotUpstreamState } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
+import { assertKimiCodeUpstreamRecord, kimiCodeStateSurvivesConfigChange, type KimiCodeUpstreamConfig } from '@floway-dev/provider-kimi-code';
 import { assertOllamaUpstreamRecord } from '@floway-dev/provider-ollama';
 
 type ChatGPTQuotaProjection = { chatgpt_quota?: ChatGPTQuotaSnapshotMap | null };
@@ -132,6 +133,7 @@ const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
   try {
     if (record.kind === 'custom') return { ok: true, value: assertCustomUpstreamRecord(record).config };
     if (record.kind === 'azure') return { ok: true, value: assertAzureUpstreamRecord(record).config };
+    if (record.kind === 'kimi-code') return { ok: true, value: assertKimiCodeUpstreamRecord(record).config };
     if (record.kind === 'ollama') return { ok: true, value: assertOllamaUpstreamRecord(record).config };
     if (record.kind === 'chatgpt') {
       assertChatGPTUpstreamRecord(record);
@@ -162,12 +164,6 @@ const mergeConfigPatch = (provider: UpstreamProviderKind, existing: unknown, pat
 
   if (provider === 'custom') {
     if (patch.pathOverrides === null) delete next.pathOverrides;
-    // Dead-field guard: a 'none' upstream must not carry a stale apiKey
-    // from a previous authStyle. Always strip apiKey when the merged style
-    // is 'none' so the persisted shape stays one branch of the discriminated
-    // union. The reverse (switching away from 'none') is left to the
-    // runtime parser, which rejects a missing apiKey when one is required.
-    if (next.authStyle === 'none') delete next.apiKey;
   }
   return { ok: true, value: next };
 };
@@ -488,6 +484,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   const config = normalizeConfig(next);
   if (!config.ok) return c.json({ error: config.error }, 400);
   next = { ...next, config: config.value };
+  if (next.kind === 'kimi-code' && !kimiCodeStateSurvivesConfigChange(existing.config, next.config as KimiCodeUpstreamConfig)) next = { ...next, state: null };
 
   const saved = await saveUpstream({ previous: existing, next });
   const access = (await resolveUpstreamAccesses(subject, [id])).get(id)!;
@@ -503,7 +500,5 @@ export const deleteUpstream = async (c: AuthedContext<'/:id'>) => {
   const repo = getRepo();
   const deleted = await repo.upstreams.delete(id);
   if (!deleted) return c.json({ error: 'Upstream not found' }, 404);
-  // No FK from proxy_upstream_backoffs to upstreams; clean up explicitly.
-  await repo.proxyBackoffs.resetForUpstream(id);
   return c.json({ ok: true });
 };

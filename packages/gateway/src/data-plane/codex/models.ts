@@ -17,9 +17,12 @@
 import { resolveCodexCatalog, type CatalogModel, type CodexCatalog, type CodexCatalogCapabilities, type CodexServiceTier } from './catalog.ts';
 import { synthesizeCatalogEntry } from './synthesize.ts';
 import type { ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
+import { getRepo } from '../../repo/index.ts';
 import type { User } from '../../repo/types.ts';
-import { enumerateAddressableModelIds, type AddressableIdEntry } from '../shared/listing/addressable.ts';
-import { chatgptModelContextWindow } from '@floway-dev/provider-chatgpt';
+import { loadModelListingCatalog } from '../models/load.ts';
+import type { AddressableIdEntry } from '../shared/listing/addressable.ts';
+import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
+import { chatgptCodexModelMetadata } from '@floway-dev/provider-chatgpt';
 
 // Pure transformation: client catalog + addressable entries →
 // codex-shaped catalog (drops unlisted alternates and non-chat kinds).
@@ -56,17 +59,25 @@ export const assembleCodexCatalog = (
     // request time but never surface as their own picker row.
     if (entry.unlisted !== undefined) continue;
     if (entry.model.kind !== 'chat') continue;
-    // Limits follow the registry's first-provider metadata policy. Only that
-    // provider can supply Codex's private default; a same-named model from a
-    // different provider must use its own advertised input budget.
-    const primaryUpstream = entry.upstreams[0];
-    let codexContextWindow;
-    if (primaryUpstream?.kind === 'chatgpt') {
-      const providerModel = entry.model.providerModels?.[primaryUpstream.upstreamId];
-      if (providerModel === undefined) throw new Error(`Codex catalog model ${entry.id} has no primary provider model`);
-      codexContextWindow = chatgptModelContextWindow(providerModel);
+    if (entry.model.aliasedFrom !== undefined) {
+      const model = synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities, catalogServiceTiers);
+      if ((model.input_modalities?.length ?? 0) > 0) models.push(model);
+      continue;
     }
-    models.push(synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities, catalogServiceTiers, codexContextWindow));
+    const candidates = entry.upstreams.map(upstream => {
+      const providerModel = entry.model.providerModels?.[upstream.upstreamId];
+      if (providerModel === undefined) throw new Error(`Codex catalog model ${entry.id} has no provider model for ${upstream.upstreamId}`);
+      return { providerModel, metadata: upstream.kind === 'chatgpt' ? chatgptCodexModelMetadata(providerModel) : undefined };
+    });
+    // A ChatGPT rate is not an entitlement. Only advertise tiers usable on every fallback.
+    const chatgpt = candidates.find(candidate => candidate.metadata !== undefined)?.metadata;
+    const serviceTiers = chatgpt === undefined ? undefined : (chatgpt.service_tiers ?? []).filter(tier => candidates.every(({ providerModel, metadata }) => {
+      if (metadata !== undefined) return metadata.service_tiers?.some(other => other.id === tier.id);
+      return providerModel.endpoints.openaiResponses !== undefined && providerModel.pricing?.entries.some(rate => rate.selector?.serviceTier === tier.id);
+    }));
+    const model = synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities, catalogServiceTiers, { metadata: candidates[0]?.metadata, serviceTiers });
+    if (model.input_modalities?.length === 0) continue;
+    models.push(model);
   }
   return { models };
 };
@@ -77,9 +88,27 @@ export const loadCodexCatalog = async (
   upstreamIds: readonly string[] | null,
   scheduleRefresh: ModelsRefreshScheduler,
 ): Promise<CodexCatalog> => {
-  const [resolution, addressable] = await Promise.all([
+  const [resolution, listing] = await Promise.all([
     resolveCodexCatalog(userAgent),
-    enumerateAddressableModelIds(subject, upstreamIds, scheduleRefresh),
+    loadModelListingCatalog(subject, upstreamIds, scheduleRefresh, getRepo().modelAliases),
   ]);
+  const merged = mergeAliasesIntoModels({
+    realModels: listing.realModels,
+    gatewayAddressableModelIds: listing.gatewayAddressable,
+    callerAddressableModelIds: listing.callerAddressable,
+    aliases: listing.aliases,
+    narrowTargets: true,
+  });
+  const listedRealById = new Map(listing.callerAddressable
+    .filter(entry => entry.unlisted === undefined)
+    .map(entry => [entry.model.id, entry] as const));
+  const addressable = merged.map((model): AddressableIdEntry => {
+    if (model.aliasedFrom !== undefined) {
+      return { id: model.id, model, unlisted: undefined, upstreams: [] };
+    }
+    const entry = listedRealById.get(model.id);
+    if (entry === undefined) throw new Error(`Codex catalog model ${model.id} has no listed addressable entry`);
+    return entry;
+  });
   return assembleCodexCatalog(resolution.catalog, addressable, resolution.capabilities);
 };

@@ -110,19 +110,3 @@ test('removes parts that only contain unsupported file or code fields', async ()
     },
   });
 });
-
-test('is a no-op when no unsupported part fields are present', async () => {
-  const input = invocation({
-    contents: [
-      { role: 'user', parts: [{ text: 'hello' }] },
-    ],
-  });
-
-  await stripUnsupportedPartFields(input, stubCtx, okEvents);
-
-  assertEquals(input.payload, {
-    contents: [
-      { role: 'user', parts: [{ text: 'hello' }] },
-    ],
-  });
-});

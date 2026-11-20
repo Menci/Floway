@@ -23,9 +23,9 @@ import type { CopilotRawModel } from './types.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { parseAnthropicMessagesStream, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type ModelEndpoints, type ProtocolFrame, isFastServiceTier, kindForEndpoints } from '@floway-dev/protocols/common';
-import { parseOpenAIChatCompletionsStream, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { parseOpenAIChatCompletionsStream, type OpenAIChatCompletionsPayloadEx, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
-import { eventResult, getProviderRepo, headersForAnthropicMessagesCall, jsonRequestBody, serializeOpenAIImagesEditsRequest, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FetchInit, type FlagOverrides, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { eventResult, getProviderRepo, headersForAnthropicMessagesCall, jsonRequestBody, serializeOpenAIImagesEditsRequest, readUpstreamApiError, streamingProviderCall, bufferedResultToResponse, resolveEffectiveFlags, type ExecuteResult, type FetchInit, type FlagOverrides, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -86,7 +86,7 @@ const copilotModelEndpoints = (rawModels: readonly CopilotRawModel[]): ModelEndp
   return rawModels.some(model => rawModelSupportsEndpoint(model, 'decision')) ? { decision: {} } : {};
 };
 
-const chatReasoningEffort = (body: Omit<OpenAIChatCompletionsPayload, 'model'>): string | undefined => (body.reasoning_effort && body.reasoning_effort !== 'none' ? body.reasoning_effort : undefined);
+const chatReasoningEffort = (body: Omit<OpenAIChatCompletionsPayloadEx, 'model'>): string | undefined => (body.reasoning_effort && body.reasoning_effort !== 'none' ? body.reasoning_effort : undefined);
 
 const anthropicMessagesReasoningEffort = (body: Omit<AnthropicMessagesPayload, 'model'>): string | undefined => body.output_config?.effort ?? undefined;
 
@@ -177,7 +177,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       },
       { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall, waitUntil: opts.waitUntil },
     );
-    return { response, modelKey: rawModel.id };
+    return { http: response, modelKey: rawModel.id };
   };
 
   const callStreaming = <TEvent>(
@@ -226,10 +226,10 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       return eventResult(
         stream.events as AsyncIterable<ProtocolFrame<TEvent>>,
         placeholderIdentity(stream.modelKey),
-        { headers: stream.headers },
+        { http: stream.http },
       );
     }
-    return await readUpstreamApiError(stream.response);
+    return await readUpstreamApiError(stream.http);
   };
 
   // Lowering rebuilds a ProviderStreamResult so callers continue to relay
@@ -246,11 +246,11 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
         ok: true,
         events: result.events as AsyncIterable<ProtocolFrame<TEvent>>,
         modelKey,
-        ...(result.headers ? { headers: result.headers } : {}),
+        ...(result.http === undefined ? {} : { http: result.http }),
       };
     }
     if (result.type === 'api-error') {
-      return { ok: false, response: apiErrorToResponse(result), modelKey };
+      return { ok: false, http: bufferedResultToResponse(result), modelKey };
     }
     throw new Error(`Copilot boundary chain produced unexpected ExecuteResult shape '${result.type}'`);
   };
@@ -258,6 +258,8 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
   const instance: ProviderInstance = {
     runScheduledTask: options => runCopilotScheduledTask(record, options),
     callAlphaSearch: rejectUnsupported('callAlphaSearch'),
+    callGeminiGenerateContent: rejectUnsupported('callGeminiGenerateContent'),
+    callGeminiGenerateContentCountTokens: rejectUnsupported('callGeminiGenerateContentCountTokens'),
     getProvidedModels: async fetcher => {
       const fresh = await getProviderRepo().upstreams.getById(copilot.id);
       if (!fresh) throw new Error(`Copilot upstream ${copilot.id} disappeared mid-request`);
@@ -348,9 +350,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
           switch (ctx.action) {
           case 'generate': {
             const stream = await callStreaming(copilotFetchOpenAIResponses, wireBody, signal, rawModel, [...ctx.headers], parseOpenAIResponsesStream, opts);
-            return stream.ok
-              ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
-              : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
+            return { action: 'generate', ...stream };
           }
           case 'compact': {
             const input = wireBody.input;
@@ -360,9 +360,9 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
               { method: 'POST', body: jsonRequestBody(triggered), signal },
               { extraHeaders: [...ctx.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall, waitUntil: opts.waitUntil },
             );
-            if (!response.ok) return { action: 'compact', ok: false, response, modelKey: rawModel.id };
+            if (!response.ok) return { action: 'compact', ok: false, http: response, modelKey: rawModel.id };
             const generated = (await response.json()) as OpenAIResponsesResultEx;
-            return { action: 'compact', ok: true, result: compactionResponse(input, generated), modelKey: rawModel.id };
+            return { action: 'compact', ok: true, result: compactionResponse(input, generated), modelKey: rawModel.id, http: { status: response.status, headers: response.headers } };
           }
           default:
             ctx.action satisfies never;
@@ -391,7 +391,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
         if (!copilotModelSupportsFastVariant(providerData.rawModels)) {
           return {
             ok: false,
-            response: Response.json(
+            http: Response.json(
               {
                 type: 'error',
                 error: {
@@ -431,11 +431,11 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       const response = await runInterceptors<AnthropicMessagesBoundaryCtx, object, Response>(
         ctx, {}, COPILOT_ANTHROPIC_MESSAGES_COUNT_TOKENS_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
-          const { response } = await call(copilotFetchAnthropicMessagesCountTokens, wireBody, signal, rawModel, headersForAnthropicMessagesCall([...ctx.headers], ctx.anthropicBeta), opts);
+          const { http: response } = await call(copilotFetchAnthropicMessagesCountTokens, wireBody, signal, rawModel, headersForAnthropicMessagesCall([...ctx.headers], ctx.anthropicBeta), opts);
           return response;
         },
       );
-      return { response, modelKey: rawModel.id };
+      return { http: response, modelKey: rawModel.id };
     },
     callOpenAIEmbeddings: (model, body, signal, opts) => call(copilotFetchOpenAIEmbeddings, copilotOpenAIEmbeddingsBody(body), signal, rawModelFor(model, 'openaiEmbeddings'), [...opts.headers], opts),
     callOpenAIImagesGenerations: (model, body, signal, opts) =>
@@ -454,7 +454,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
         { method: 'POST', body, signal },
         { extraHeaders: [...opts.headers], fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall, waitUntil: opts.waitUntil },
       );
-      return { response, modelKey: rawModel.id };
+      return { http: response, modelKey: rawModel.id };
     },
     callOpenAIAudioTranscriptions: rejectUnsupported('callOpenAIAudioTranscriptions'),
     callRerank: rejectUnsupported('callRerank'),

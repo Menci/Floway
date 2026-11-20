@@ -5,7 +5,7 @@ import { defineStage, isSecret, move, secret, type Secret } from '@floway-dev/pi
 import type { RerankTarget } from '@floway-dev/protocols/common';
 import { DEFAULT_DECISION_PATHS, serializeDecisionRequest } from '@floway-dev/protocols/decision';
 import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
-import { joinBaseAndPath, mergeHttpHeaders, prepareOpenAIImagesEditsBody, replaceHttpHeader, withHttpContentType, type ProviderOperation, type ProviderOperationPayloads, type ProviderRequest, type ProviderResponse, type ProviderServices } from '@floway-dev/provider';
+import { joinBaseAndPath, mergeHttpHeaders, prepareOpenAIImagesEditsBody, withHttpContentType, type ProviderOperation, type ProviderOperationPayloads, type ProviderRequest, type ProviderResponse, type ProviderServices } from '@floway-dev/provider';
 
 interface CustomHttpFacts extends HttpRequestFacts {
   'request.custom.modelKey': string;
@@ -96,14 +96,10 @@ export const prepareCustomRequest = <O extends ProviderOperation>(config: Custom
         body = { ...payload, model: modelKey };
       }
       }
-      let base: HttpHeaders = [];
-      if (config.authStyle === 'anthropic') {
-      // https://docs.anthropic.com/en/api/versioning
-        base = [['x-api-key', secret(config.apiKey)], ['anthropic-version', '2023-06-01']];
-      } else if (config.authStyle === 'bearer') {
-        base = replaceHttpHeader(base, 'Authorization', secret(`Bearer ${config.apiKey}`));
-      }
-      base = withHttpContentType(base, body, encoding);
+      // Every operation here speaks an OpenAI-compatible wire, which authenticates with a
+      // bearer token; an empty key sends no credential.
+      const credential: HttpHeaders = config.apiKey === '' ? [] : [['Authorization', secret(`Bearer ${config.apiKey}`)]];
+      const base = withHttpContentType(credential, body, encoding);
       const headers = mergeHttpHeaders(base, resolvedHeaders(config, facts['request.http.headers']));
       const back = await next(move({
         ...rest,

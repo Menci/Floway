@@ -5,6 +5,7 @@ import { assertUpstreamProviderKind, isRecord, modelsField, pricingField, type U
 import { pricingForChatGPTModelKey } from '@floway-dev/provider-chatgpt';
 import { pricingForClaudeCodeModelKey } from '@floway-dev/provider-claude-code';
 import { pricingForCopilotPublicModelId } from '@floway-dev/provider-copilot';
+import { pricingForKimiCodePublicModelId } from '@floway-dev/provider-kimi-code';
 import { pricingForOllamaModelKey } from '@floway-dev/provider-ollama';
 
 const CATALOG_HARD_TTL_MS = 24 * 60 * 60 * 1000;
@@ -101,6 +102,8 @@ export const resolveUsagePricing = (
   case 'ollama':
     if (manual?.pricing !== undefined) return staticResolution(manual.pricing, `upstream:${upstream.id}:config`);
     return staticResolution(pricingForOllamaModelKey(identity.modelKey), 'provider:ollama');
+  case 'kimi-code':
+    return staticResolution(pricingForKimiCodePublicModelId(identity.model), 'provider:kimi-code');
   case 'copilot':
     return staticResolution(pricingForCopilotPublicModelId(identity.model), 'provider:copilot');
   case 'chatgpt':

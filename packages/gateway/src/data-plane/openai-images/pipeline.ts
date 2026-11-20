@@ -2,7 +2,6 @@ import { callOpenAIImagesUpstream } from './call-upstream.ts';
 import { emitOpenAIImages } from './emit.ts';
 import type { OpenAIImagesServeEntry, OpenAIImagesServeExit } from './facts.ts';
 import { narrowing } from './target.ts';
-import { isFailure } from '../pipeline/facts.ts';
 import { failover } from '../pipeline/failover.ts';
 import { resolveCandidates } from '../pipeline/resolve-candidates.ts';
 import { serializeClientJson } from '../pipeline/serialize-client-json.ts';
@@ -17,7 +16,7 @@ export const openaiImagesServePipeline = (request: CanonicalOpenAIImagesRequest)
     emitOpenAIImages,
     resolveCandidates(narrowing(request)),
     failover({
-      failed: handedUp => isFailure((handedUp as { 'response.openaiImages.canonical'?: unknown })['response.openaiImages.canonical']),
+      answer: handedUp => handedUp['response.openaiImages.canonical'],
       owns: ['response.http.body'],
       pendingUsage: 'response.openaiImages.streamedUsage',
     }),

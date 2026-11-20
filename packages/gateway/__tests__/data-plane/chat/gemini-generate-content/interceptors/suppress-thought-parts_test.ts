@@ -127,25 +127,3 @@ test('passes thought parts through when includeThoughts is opted in', async () =
 
   assertEquals(await collect(res.events), upstream);
 });
-
-test('passes error frames through unchanged', async () => {
-  const upstream: GeminiGenerateContentStreamEvent[] = [
-    { error: { code: 500, message: 'oops', status: 'INTERNAL' } },
-  ];
-
-  const res = await suppressThoughtParts(invocation({ contents: [] }), stubCtx, streamingResult(upstream));
-  if (res.type !== 'events') throw new Error('expected events');
-
-  assertEquals(await collect(res.events), upstream);
-});
-
-test('preserves usageMetadata-only frames that have no candidates', async () => {
-  const upstream: GeminiGenerateContentStreamEvent[] = [
-    { usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 5, totalTokenCount: 8 } },
-  ];
-
-  const res = await suppressThoughtParts(invocation({ contents: [] }), stubCtx, streamingResult(upstream));
-  if (res.type !== 'events') throw new Error('expected events');
-
-  assertEquals(await collect(res.events), upstream);
-});

@@ -116,9 +116,6 @@ export const deleteProxy = async (c: Context) => {
     }
     return c.json({ error: 'Proxy not found' }, 404);
   }
-
-  // Sweep orphaned backoff rows; proxy_upstream_backoffs has no FK to proxies, so the cleanup is unconditional.
-  await repo.proxyBackoffs.resetForProxy(id);
   return c.body(null, 204);
 };
 

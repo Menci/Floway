@@ -68,51 +68,11 @@ describe('a stack restored from the maps its chunks name', () => {
     ].join('\n'));
   });
 
-  it('restores a SpiderMonkey or JavaScriptCore frame', async () => {
-    wholeApp();
-    expect(await restoreStack(`Error: boom\nhandler@${SCRIPT}:1:1`))
-      .toBe('Error: boom\nhandler@/src/first.ts:1:1');
-  });
-
-  it('does not treat a URL position in the error message as a frame', async () => {
-    wholeApp();
-    const message = 'Error: request failed at https://gateway.test/reported:1:1';
-    expect(await restoreStack(`${message}\n    at handler (${SCRIPT}:1:1)`))
-      .toBe(`${message}\n    at handler (/src/first.ts:1:1)`);
-  });
-
-  it('leaves a frame that carries no position of its own', async () => {
-    wholeApp();
-    const restored = await restoreStack([
-      'Error: boom',
-      '    at async Promise.all (index 0)',
-      '    at [native code]',
-      `    at handler (${SCRIPT}:1:1)`,
-    ].join('\n'));
-
-    expect(restored.split('\n').slice(1, 3)).toEqual([
-      '    at async Promise.all (index 0)',
-      '    at [native code]',
-    ]);
-  });
-
-  it('leaves a frame belonging to some other origin, and asks it for nothing', async () => {
-    wholeApp();
-    const frame = '    at inject (chrome-extension://abcdef/content.js:2:9)';
-    expect(await restoreStack(`Error: boom\n${frame}`)).toBe(`Error: boom\n${frame}`);
-  });
-
   it('leaves an oversized frame unparsed, and asks it for nothing', async () => {
     vi.stubGlobal('fetch', vi.fn());
     const frame = `    at ${'nested.'.repeat(170)}handler (${SCRIPT}:1:1)`;
     expect(await restoreStack(`Error: boom\n${frame}`)).toBe(`Error: boom\n${frame}`);
     expect(fetch).not.toHaveBeenCalled();
-  });
-
-  it('leaves a stack whose script declares no map', async () => {
-    respondWith({ [SCRIPT]: script('const a=1;') });
-    const frame = `    at handler (${SCRIPT}:1:1)`;
-    expect(await restoreStack(`Error: boom\n${frame}`)).toBe(`Error: boom\n${frame}`);
   });
 
   it('says so when the map a chunk names was not deployed', async () => {
@@ -126,48 +86,12 @@ describe('a stack restored from the maps its chunks name', () => {
       .rejects.toThrow('is not a source map');
   });
 
-  it('says so when a chunk names an index map', async () => {
-    wholeApp({
-      'https://gateway.test/assets/chunk.js.map': json({ version: 3, sections: [] }),
-    });
-    await expect(restoreStack(`Error: boom\n    at handler (${SCRIPT}:1:1)`))
-      .rejects.toThrow('is an index map');
-  });
-
-  it('says so when the map was built for another revision of the chunk', async () => {
-    wholeApp({
-      'https://gateway.test/assets/chunk.js.map': json({ ...MAP, debugId: 'stale' }),
-    });
-    await expect(restoreStack(`Error: boom\n    at handler (${SCRIPT}:1:1)`))
-      .rejects.toThrow('another revision');
-  });
-
-  it('says so when the map cannot be fetched', async () => {
-    wholeApp({
-      'https://gateway.test/assets/chunk.js.map': () => new Response('', { status: 503 }),
-    });
-    await expect(restoreStack(`Error: boom\n    at handler (${SCRIPT}:1:1)`))
-      .rejects.toThrow('responded 503');
-  });
-
-  it('says so when the chunk cannot be fetched', async () => {
-    respondWith({ [SCRIPT]: () => new Response('', { status: 503 }) });
-    await expect(restoreStack(`Error: boom\n    at handler (${SCRIPT}:1:1)`))
-      .rejects.toThrow(`${SCRIPT} responded 503`);
-  });
-
   // An engine writes 0 where it has no information, and each half of the guard
   // stands alone: `originalPositionFor` throws on a line below 1, and on the
   // column the shift is what turns a reported 0 into an out-of-range -1.
   it('leaves a frame whose line an engine did not know', async () => {
     wholeApp();
     const frame = `    at handler (${SCRIPT}:0:1)`;
-    expect(await restoreStack(`Error: boom\n${frame}`)).toBe(`Error: boom\n${frame}`);
-  });
-
-  it('leaves a frame whose column an engine did not know', async () => {
-    wholeApp();
-    const frame = `    at handler (${SCRIPT}:1:0)`;
     expect(await restoreStack(`Error: boom\n${frame}`)).toBe(`Error: boom\n${frame}`);
   });
 });

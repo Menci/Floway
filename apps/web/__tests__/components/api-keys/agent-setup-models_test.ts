@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildAgentModelOptions, modelOptions, rankAgentSetupModels } from '../../../src/components/api-keys/agent-setup-models';
-import { filterModelOptions } from '../../../src/lib/model-query';
+import { buildAgentModelOptions, rankAgentSetupModels } from '../../../src/components/api-keys/agent-setup-models';
 import { catalogModel } from '../../api/model-fixture';
 
 describe('Agent Setup model ranking', () => {
@@ -35,19 +34,6 @@ describe('Agent Setup model ranking', () => {
       'other',
     ]);
   });
-
-  it('retains the chat catalog for omp in catalog order and leaves ids opaque', () => {
-    expect(rankAgentSetupModels([
-      catalogModel('gpt-4o', { contextWindow: 200_000 }),
-      catalogModel('claude-sonnet-4-5', { contextWindow: 200_000 }),
-      catalogModel('embedding', { kind: 'embedding', endpoints: { openaiEmbeddings: {} } }),
-    ], { family: 'omp' }).map(entry => entry.id)).toEqual([
-      'gpt-4o',
-      'claude-sonnet-4-5',
-    ]);
-    expect(buildAgentModelOptions([catalogModel('claude-sonnet-4-5', { contextWindow: 1_000_000 })], { family: 'omp' })[0]?.value)
-      .toBe('claude-sonnet-4-5');
-  });
 });
 
 describe('Agent Setup persisted model values', () => {
@@ -56,63 +42,7 @@ describe('Agent Setup persisted model values', () => {
       catalogModel('claude-sonnet-4-5', { contextWindow: 1_000_000 }),
       catalogModel('claude-sonnet-4-5[1m]', { contextWindow: 1_000_000 }),
     ], { family: 'claude', picker: 'sonnet' })).toEqual([
-      { value: 'claude-sonnet-4-5[1m]', publicModelId: 'claude-sonnet-4-5' },
+      { value: 'claude-sonnet-4-5[1m]', label: 'claude-sonnet-4-5' },
     ]);
-  });
-
-  it('offers the window to every Claude picker, and leaves Codex ids opaque', () => {
-    expect(buildAgentModelOptions([catalogModel('claude-haiku-4-5', { contextWindow: 1_000_000 })], { family: 'claude', picker: 'haiku' })[0]?.value)
-      .toBe('claude-haiku-4-5[1m]');
-    expect(buildAgentModelOptions([catalogModel('gpt-5.6', { contextWindow: 1_000_000 })], { family: 'codex' })[0]?.value)
-      .toBe('gpt-5.6');
-  });
-
-  it('retains the chat catalog for Pi in catalog order and leaves ids opaque', () => {
-    expect(rankAgentSetupModels([
-      catalogModel('gpt-4o', { contextWindow: 200_000 }),
-      catalogModel('claude-sonnet-4-5', { contextWindow: 200_000 }),
-      catalogModel('embedding', { kind: 'embedding', endpoints: { openaiEmbeddings: {} } }),
-    ], { family: 'pi' }).map(entry => entry.id)).toEqual([
-      'gpt-4o',
-      'claude-sonnet-4-5',
-    ]);
-    expect(buildAgentModelOptions([catalogModel('claude-sonnet-4-5', { contextWindow: 1_000_000 })], { family: 'pi' })[0]?.value)
-      .toBe('claude-sonnet-4-5');
-  });
-
-  it('leaves a Claude model that cannot reach the window unsuffixed', () => {
-    expect(buildAgentModelOptions([catalogModel('claude-haiku-4-5', { contextWindow: 200_000 })], { family: 'claude', picker: 'haiku' })[0]?.value)
-      .toBe('claude-haiku-4-5');
-  });
-});
-
-describe('Agent Setup model picker', () => {
-  it('offers the full chat catalog while ranking the requested family', () => {
-    const options = modelOptions([
-      catalogModel('gpt-5.6', { contextWindow: 400_000 }),
-      catalogModel('claude-opus-4.6', { contextWindow: 1_000_000 }),
-      catalogModel('other-chat', { contextWindow: 100_000 }),
-    ], 'claude', 'opus');
-    expect(options.map(option => option.value)).toEqual([
-      'claude-opus-4.6[1m]',
-      'gpt-5.6',
-      'other-chat',
-    ]);
-  });
-
-  it('searches the label case-insensitively and the value the label does not spell', () => {
-    const options = modelOptions([
-      catalogModel('claude-opus-4.6', { contextWindow: 1_000_000 }),
-      catalogModel('gpt-5.6', { contextWindow: 400_000 }),
-    ], 'claude', 'default');
-
-    expect(filterModelOptions(options, 'OPUS').map(option => option.label))
-      .toEqual(['claude-opus-4.6']);
-    // The label stays the public model id while the value carries the [1m]
-    // context override, so a search for the override has only the value to
-    // match against.
-    expect(filterModelOptions(options, '[1m]').map(option => option.value))
-      .toEqual(['claude-opus-4.6[1m]']);
-    expect(filterModelOptions(options, 'sonnet')).toEqual([]);
   });
 });

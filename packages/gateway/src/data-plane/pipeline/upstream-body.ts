@@ -7,7 +7,9 @@
 // upstream answered with something the protocol does not admit.
 
 import type { Failure } from './facts.ts';
+import { isUpstreamTransportError } from '../../dial/transport-error.ts';
 import { setRelease, type Owned } from '@floway-dev/pipeline';
+import { isAbortError } from '@floway-dev/provider';
 
 export interface UpstreamBody {
   readonly text: string;
@@ -50,10 +52,10 @@ export const unreadableBody = (response: Response, body: UpstreamBody, protocolN
  * The status says what happened rather than what the error was: the gateway reached no
  * upstream at all, which is what 502 states.
  */
-export const dialFailure = (error: unknown): Failure => ({
-  status: 502,
-  message: error instanceof Error ? error.message : String(error),
-});
+export const dialFailure = (error: unknown, signal: AbortSignal | undefined): Failure => {
+  if (signal?.aborted || isAbortError(error) || !isUpstreamTransportError(error)) throw error;
+  return { status: 502, message: error.message, transportError: error };
+};
 
 export const spentBody = (body: (ReadableStream<Uint8Array> & Owned) | null): typeof body => {
   if (body !== null) setRelease(body, async () => {});

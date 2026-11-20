@@ -58,7 +58,7 @@ export const callOpenAIImagesUpstream = defineStage<
     if (exchange.type === 'transportFailure') {
       return move({
         ...rest,
-        'response.openaiImages.canonical': dialFailure(exchange.error),
+        'response.openaiImages.canonical': dialFailure(exchange.error, use.gateway.abortSignal),
         'response.openaiImages.streamedUsage': null,
         'response.http.status': 502,
         'response.http.headers': [],

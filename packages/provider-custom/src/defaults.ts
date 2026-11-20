@@ -12,6 +12,7 @@ export const CUSTOM_DEFAULT_FLAGS: FlagDefaults = {
   'openai-responses-compact-decrypt': false,
   'openai-responses-collaboration-shim': true,
   'openai-responses-agent-message-shim': false,
+  'openai-responses-standalone-tool-output-shim': false,
   'serialize-stream-items': false,
   'disable-reasoning-on-forced-tool-choice': false,
   'empty-tools-tool-choice-none': false,

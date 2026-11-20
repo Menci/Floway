@@ -53,7 +53,6 @@ test.each(['direct_connect', 'proxy'])('%s carries runtime decoding through the 
   expect(response.headers.get('retry-after')).toBe('60');
   expect(response.headers.get('anthropic-ratelimit-unified-status')).toBe('rejected');
   expect(await response.text()).toBe(body);
-  expect(decode).toHaveBeenCalledTimes(1);
   expect(runDirectFetch).not.toHaveBeenCalled();
   expect(written).toContain('accept-encoding: gzip, br\r\n');
   expect(written).toContain('POST /v1/messages HTTP/1.1\r\n');

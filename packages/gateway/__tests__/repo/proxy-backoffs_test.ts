@@ -2,8 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
+import { saveUpstreamForTest } from './upstreams.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { Repo } from '../../src/repo/types.ts';
+import { buildCustomUpstreamRecord } from '../test-utils/app.ts';
 
 // The geometric backoff schedule and the per-(proxy, upstream) row state
 // are spec'd identically across both backends — but the SQL impl reaches
@@ -16,8 +18,16 @@ const REPO_BACKENDS: Array<readonly [string, () => Promise<Repo>]> = [
   ['sql', async () => new SqlRepo(await createSqliteTestDb())],
 ];
 
-for (const [backend, makeRepo] of REPO_BACKENDS) {
+const seedPair = async (repo: Repo, proxyId: string, upstreamId: string): Promise<void> => {
+  if (await repo.proxies.getById(proxyId) === null) {
+    await repo.proxies.insert({ id: proxyId, name: proxyId, url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
+  }
+  if (await repo.upstreams.getById(upstreamId) === null) {
+    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: upstreamId, proxyFallbackList: [] }));
+  }
+};
 
+for (const [backend, makeRepo] of REPO_BACKENDS) {
   describe(`[${backend}] proxy_upstream_backoffs repo`, () => {
     beforeEach(() => {
       vi.useFakeTimers();
@@ -27,24 +37,9 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
 
     const baseUnix = Math.floor(Date.UTC(2026, 5, 1) / 1000);
 
-    it('records first failure with 60s expiry', async () => {
-      const repo = await makeRepo();
-      await repo.proxyBackoffs.recordDialFailure('p', 'u', 'tcp refused');
-      const rows = await repo.proxyBackoffs.listForUpstream('u');
-      expect(rows).toEqual([
-        {
-          proxyId: 'p',
-          upstreamId: 'u',
-          failCount: 1,
-          expiresAt: baseUnix + 60,
-          lastError: 'tcp refused',
-          lastErrorAt: baseUnix,
-        },
-      ]);
-    });
-
     it('exponentially backs off and caps at 1h', async () => {
       const repo = await makeRepo();
+      await seedPair(repo, 'p', 'u');
       const expected = [60, 120, 240, 480, 960, 1920, 3600, 3600];
       for (let n = 0; n < expected.length; n++) {
         await repo.proxyBackoffs.recordDialFailure('p', 'u', `failure ${n + 1}`);
@@ -54,66 +49,33 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
       }
     });
 
-    it('saturates at 3600s once fail_count climbs past the exponent clamp (no JS shift overflow)', async () => {
-      const repo = await makeRepo();
-      // Push fail_count well past the exponent clamp at 6 — both backends
-      // saturate the schedule at 3600s regardless of how high fail_count
-      // climbs, with no JS 32-bit shift surprise creeping back in.
-      for (let n = 0; n < 50; n++) {
-        await repo.proxyBackoffs.recordDialFailure('p', 'u', `failure ${n + 1}`);
-      }
-      const [row] = await repo.proxyBackoffs.listForUpstream('u');
-      expect(row!.failCount).toBe(50);
-      expect(row!.expiresAt - baseUnix).toBe(3600);
-    });
-
     it('clears the row on dial success', async () => {
       const repo = await makeRepo();
+      await seedPair(repo, 'p', 'u');
       await repo.proxyBackoffs.recordDialFailure('p', 'u', 'x');
       await repo.proxyBackoffs.recordDialSuccess('p', 'u');
       expect(await repo.proxyBackoffs.listForUpstream('u')).toEqual([]);
     });
 
-    it('isolates state between upstreams', async () => {
+    it('rejects a row whose proxy or upstream does not exist', async () => {
       const repo = await makeRepo();
-      await repo.proxyBackoffs.recordDialFailure('p', 'uA', 'x');
-      expect(await repo.proxyBackoffs.listForUpstream('uB')).toEqual([]);
-      expect(await repo.proxyBackoffs.listForUpstream('uA')).toHaveLength(1);
+      await seedPair(repo, 'p', 'u');
+      await expect(repo.proxyBackoffs.recordDialFailure('p', 'u_missing', 'x')).rejects.toThrow(/FOREIGN KEY constraint failed/);
+      await expect(repo.proxyBackoffs.recordDialFailure('p_missing', 'u', 'x')).rejects.toThrow(/FOREIGN KEY constraint failed/);
+      expect(await repo.proxyBackoffs.listAll()).toEqual([]);
     });
 
-    it('reset removes all rows for the proxy', async () => {
+    it('drops rows with the proxy or upstream they reference', async () => {
       const repo = await makeRepo();
-      await repo.proxyBackoffs.recordDialFailure('p', 'u1', 'x');
-      await repo.proxyBackoffs.recordDialFailure('p', 'u2', 'x');
-      await repo.proxyBackoffs.resetForProxy('p');
-      expect(await repo.proxyBackoffs.listForProxy('p')).toEqual([]);
-    });
+      for (const [proxyId, upstreamId] of [['p1', 'u1'], ['p1', 'u2'], ['p2', 'u1'], ['p2', 'u2']] as const) {
+        await seedPair(repo, proxyId, upstreamId);
+        await repo.proxyBackoffs.recordDialFailure(proxyId, upstreamId, 'x');
+      }
 
-    it('reset for a single (proxy, upstream)', async () => {
-      const repo = await makeRepo();
-      await repo.proxyBackoffs.recordDialFailure('p', 'u1', 'x');
-      await repo.proxyBackoffs.recordDialFailure('p', 'u2', 'x');
-      await repo.proxyBackoffs.reset('p', 'u1');
-      const ids = (await repo.proxyBackoffs.listForProxy('p')).map(r => r.upstreamId);
-      expect(ids).toEqual(['u2']);
-    });
+      await repo.upstreams.delete('u1');
+      await repo.proxies.delete('p1');
 
-    it('resetForUpstream removes every row scoped to the upstream', async () => {
-      const repo = await makeRepo();
-      await repo.proxyBackoffs.recordDialFailure('pA', 'u1', 'x');
-      await repo.proxyBackoffs.recordDialFailure('pB', 'u1', 'x');
-      await repo.proxyBackoffs.recordDialFailure('pA', 'u2', 'x');
-      await repo.proxyBackoffs.resetForUpstream('u1');
-      expect(await repo.proxyBackoffs.listForUpstream('u1')).toEqual([]);
-      expect((await repo.proxyBackoffs.listForUpstream('u2')).length).toBe(1);
-    });
-
-    it('listAll returns every row', async () => {
-      const repo = await makeRepo();
-      await repo.proxyBackoffs.recordDialFailure('p1', 'u1', 'x');
-      await repo.proxyBackoffs.recordDialFailure('p2', 'u2', 'x');
-      expect(await repo.proxyBackoffs.listAll()).toHaveLength(2);
+      expect((await repo.proxyBackoffs.listAll()).map(row => `${row.proxyId}/${row.upstreamId}`)).toEqual(['p2/u2']);
     });
   });
-
 }

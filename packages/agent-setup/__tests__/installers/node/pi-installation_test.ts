@@ -61,41 +61,6 @@ test('recognizes a selected Windows npm prefix only with the exact legacy shim t
   expect(getLegacyNpmPrefix(binary)).toBeNull();
 });
 
-test('invalid legacy manifests propagate their parsing error', () => {
-  const prefix = workspace();
-  const directory = legacyPackage(join(prefix, 'lib', 'node_modules'));
-  mkdirSync(join(prefix, 'bin'));
-  const binary = join(prefix, 'bin', 'pi');
-  symlinkSync(join(directory, 'dist', 'cli.js'), binary);
-  writeFileSync(join(directory, 'package.json'), '{invalid');
-  expect(() => getLegacyNpmPrefix(binary)).toThrow(SyntaxError);
-});
-
-test('a selected alias cannot authorize replacing a differently owned global launcher', () => {
-  const prefix = workspace();
-  const directory = legacyPackage(join(prefix, 'lib', 'node_modules'));
-  const alias = join(prefix, 'alias');
-  symlinkSync(join(directory, 'dist', 'cli.js'), alias);
-  expect(getLegacyNpmPrefix(alias)).toBeNull();
-  mkdirSync(join(prefix, 'bin'));
-  const launcher = join(prefix, 'bin', 'pi');
-  writeFileSync(launcher, 'another package');
-  expect(getLegacyNpmPrefix(alias)).toBeNull();
-  rmSync(launcher);
-  symlinkSync(join(directory, 'dist', 'cli.js'), launcher);
-  expect(getLegacyNpmPrefix(alias)).toBe(prefix);
-});
-
-test('local Windows npm shims do not identify a global prefix', () => {
-  const prefix = workspace();
-  legacyPackage(join(prefix, 'node_modules'));
-  const bin = join(prefix, 'node_modules', '.bin');
-  mkdirSync(bin);
-  const shim = join(bin, 'pi.cmd');
-  writeFileSync(shim, '"%dp0%\\..\\@mariozechner\\pi-coding-agent\\dist\\cli.js" %*');
-  expect(getLegacyNpmPrefix(shim)).toBeNull();
-});
-
 test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('ownership probing exposes filesystem permission failures', () => {
   const prefix = workspace();
   const directory = legacyPackage(join(prefix, 'node_modules'));

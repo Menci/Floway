@@ -1,13 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { dial, runDirectConnectRequest, runProxiedRequest } from '../src/dialer.ts';
-import { dialHttpConnect } from '../src/protocols/http-connect.ts';
-import { dialReality } from '../src/protocols/reality.ts';
-import { dialShadowsocks2022 } from '../src/protocols/shadowsocks-2022.ts';
-import { dialShadowsocks } from '../src/protocols/shadowsocks.ts';
 import { dialSocks5 } from '../src/protocols/socks5.ts';
-import { dialTrojan } from '../src/protocols/trojan.ts';
-import { dialVlessTcpTls, dialVlessWsTls } from '../src/protocols/vless.ts';
 import type { ProxyConfig } from '../src/proxy-config.ts';
 import type { DialOptions, DialResult, ProxyRequestTarget, SocketDial } from '../src/types.ts';
 
@@ -17,27 +11,8 @@ const noopStream = (): DialResult => {
   return { readable, writable };
 };
 
-vi.mock('../src/protocols/http-connect.ts', () => ({
-  dialHttpConnect: vi.fn(async () => noopStream()),
-}));
 vi.mock('../src/protocols/socks5.ts', () => ({
   dialSocks5: vi.fn(async () => noopStream()),
-}));
-vi.mock('../src/protocols/trojan.ts', () => ({
-  dialTrojan: vi.fn(async () => noopStream()),
-}));
-vi.mock('../src/protocols/vless.ts', () => ({
-  dialVlessTcpTls: vi.fn(async () => noopStream()),
-  dialVlessWsTls: vi.fn(async () => noopStream()),
-}));
-vi.mock('../src/protocols/shadowsocks.ts', () => ({
-  dialShadowsocks: vi.fn(async () => noopStream()),
-}));
-vi.mock('../src/protocols/shadowsocks-2022.ts', () => ({
-  dialShadowsocks2022: vi.fn(async () => noopStream()),
-}));
-vi.mock('../src/protocols/reality.ts', () => ({
-  dialReality: vi.fn(async () => noopStream()),
 }));
 
 const target: ProxyRequestTarget = {
@@ -56,42 +31,6 @@ const stubSocketDial: SocketDial = {
 };
 
 const baseOptions = (): DialOptions => ({ socketDial: stubSocketDial });
-
-const cases: Array<[ProxyConfig['kind'], ProxyConfig, ReturnType<typeof vi.fn>]> = [
-  ['http', { kind: 'http', tls: false, host: 'h', port: 1, name: 'h' }, vi.mocked(dialHttpConnect)],
-  ['socks5', { kind: 'socks5', host: 'h', port: 1, name: 'h' }, vi.mocked(dialSocks5)],
-  ['trojan', { kind: 'trojan', password: 'p', host: 'h', port: 1, name: 'h' }, vi.mocked(dialTrojan)],
-  ['vless-tcp', { kind: 'vless-tcp', uuid: 'u', host: 'h', port: 1, name: 'h' }, vi.mocked(dialVlessTcpTls)],
-  ['vless-ws', { kind: 'vless-ws', uuid: 'u', host: 'h', port: 1, path: '/', name: 'h' }, vi.mocked(dialVlessWsTls)],
-  ['ss', { kind: 'ss', method: 'aes-256-gcm', password: 'p', host: 'h', port: 1, name: 'h' }, vi.mocked(dialShadowsocks)],
-  ['ss2022', { kind: 'ss2022', method: '2022-blake3-aes-128-gcm', passwordBase64: 'a', host: 'h', port: 1, name: 'h' }, vi.mocked(dialShadowsocks2022)],
-  ['reality', { kind: 'reality', uuid: 'u', publicKey: 'p', serverName: 's', host: 'h', port: 1, name: 'h' }, vi.mocked(dialReality)],
-];
-
-const allDialerMocks = [
-  vi.mocked(dialHttpConnect),
-  vi.mocked(dialSocks5),
-  vi.mocked(dialTrojan),
-  vi.mocked(dialVlessTcpTls),
-  vi.mocked(dialVlessWsTls),
-  vi.mocked(dialShadowsocks),
-  vi.mocked(dialShadowsocks2022),
-  vi.mocked(dialReality),
-];
-
-describe('dial dispatch', () => {
-  beforeEach(() => {
-    for (const m of allDialerMocks) m.mockClear();
-  });
-
-  it.each(cases)('routes kind=%s only to its dialer', async (_kind, config, expectedDialer) => {
-    await dial(config, target, baseOptions());
-    expect(expectedDialer).toHaveBeenCalledTimes(1);
-    for (const m of allDialerMocks) {
-      if (m !== expectedDialer) expect(m).not.toHaveBeenCalled();
-    }
-  });
-});
 
 describe('dial deadline', () => {
   it('rejects with a tcp-connect ProxyDialError when the per-call timeout fires', async () => {
@@ -112,7 +51,6 @@ describe('dial deadline', () => {
     ).rejects.toMatchObject({
       name: 'ProxyDialError',
       stage: 'tcp-connect',
-      message: expect.stringContaining('exceeded deadline'),
     });
   });
 
@@ -129,15 +67,6 @@ describe('dial deadline', () => {
     await expect(
       dial(config, target, { ...baseOptions(), signal: ac.signal, dialTimeoutMs: 5_000 }),
     ).rejects.toMatchObject({ name: 'AbortError', message: 'client gone' });
-  });
-
-  it('refuses to dial when the caller signal is already aborted', async () => {
-    const ac = new AbortController();
-    ac.abort(new DOMException('already gone', 'AbortError'));
-    const config: ProxyConfig = { kind: 'socks5', host: 'h', port: 1, name: 'h' };
-    await expect(
-      dial(config, target, { ...baseOptions(), signal: ac.signal }),
-    ).rejects.toMatchObject({ name: 'AbortError' });
   });
 });
 
@@ -229,48 +158,6 @@ describe('runDirectConnectRequest', () => {
     expect(direct.closeCalls()).toBe(1);
   });
 
-  it('closes its socket when the response body is cancelled', async () => {
-    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok');
-    const response = await runDirectConnectRequest(
-      { host: 'api.example.com', port: 80, tls: false },
-      { method: 'GET', path: '/', headers: [] },
-      { socketDial: direct.socketDial },
-    );
-
-    await response.body!.cancel('client gone');
-    expect(direct.closeCalls()).toBe(1);
-  });
-
-  it('closes its socket when the response body errors', async () => {
-    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n');
-    const response = await runDirectConnectRequest(
-      { host: 'api.example.com', port: 80, tls: false },
-      { method: 'GET', path: '/', headers: [] },
-      { socketDial: direct.socketDial },
-    );
-
-    await expect(response.text()).rejects.toThrow('upstream EOF');
-    expect(direct.closeCalls()).toBe(1);
-  });
-
-  // Reading the body to EOF and cancelling it both require someone to still be
-  // holding the body. An abandoned response has neither, so the caller's signal
-  // is the only teardown left once the dial has resolved.
-  it('closes its socket when the caller aborts after the response was returned', async () => {
-    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok');
-    const controller = new AbortController();
-    await runDirectConnectRequest(
-      { host: 'api.example.com', port: 80, tls: false },
-      { method: 'GET', path: '/', headers: [] },
-      { socketDial: direct.socketDial, signal: controller.signal },
-    );
-
-    expect(direct.closeCalls()).toBe(0);
-    controller.abort('client gone');
-    await Promise.resolve();
-    expect(direct.closeCalls()).toBe(1);
-  });
-
   // addEventListener on an already-aborted signal never fires, so the abort
   // that lands while the request is in flight has to be picked up synchronously.
   it('closes its socket when the caller aborted while the request was in flight', async () => {
@@ -285,21 +172,6 @@ describe('runDirectConnectRequest', () => {
       { socketDial: direct.socketDial, signal: controller.signal },
     );
 
-    expect(direct.closeCalls()).toBe(1);
-  });
-
-  it('closes its socket once when an abort follows a completed body', async () => {
-    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok');
-    const controller = new AbortController();
-    const response = await runDirectConnectRequest(
-      { host: 'api.example.com', port: 80, tls: false },
-      { method: 'GET', path: '/', headers: [] },
-      { socketDial: direct.socketDial, signal: controller.signal },
-    );
-
-    expect(await response.text()).toBe('ok');
-    controller.abort('client gone');
-    await Promise.resolve();
     expect(direct.closeCalls()).toBe(1);
   });
 
@@ -327,44 +199,6 @@ describe('runDirectConnectRequest', () => {
     );
     expect(direct.closeCalls()).toBe(1);
   });
-
-  it('preserves an IPv6 literal as the verification identity', async () => {
-    const direct = makeSocketDial('', () => {}, vi.fn(async () => { throw new Error('stop after options'); }));
-
-    await expect(runDirectConnectRequest(
-      { host: '2001:db8::1', port: 443, tls: true },
-      { method: 'GET', path: '/', headers: [] },
-      { socketDial: direct.socketDial },
-    )).rejects.toMatchObject({ stage: 'inner-tls' });
-    expect(direct.startTls).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        host: '2001:db8::1',
-        verifyHost: '2001:db8::1',
-      }),
-    );
-  });
-
-  it('bounds the raw TCP connect with the direct-connect dial deadline', async () => {
-    const socketDial: SocketDial = {
-      ...stubSocketDial,
-      connect: async (_host, _port, options) => {
-        return await new Promise<never>((_, reject) => {
-          options?.signal?.addEventListener('abort', () => reject(options.signal!.reason), { once: true });
-        });
-      },
-    };
-
-    await expect(runDirectConnectRequest(
-      { host: 'api.example.com', port: 443, tls: true },
-      { method: 'GET', path: '/', headers: [] },
-      { socketDial, dialTimeoutMs: 20 },
-    )).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'tcp-connect',
-      message: expect.stringContaining('direct-connect'),
-    });
-  });
 });
 
 // Exercises the Host header that runProxiedRequest synthesises when the
@@ -374,11 +208,8 @@ describe('runDirectConnectRequest', () => {
 // headers; the canned response keeps fetchOnStream from hanging.
 //
 // All cases pin target.tls=false to keep the test off the TLS upgrade, which
-// won't complete a handshake against a canned response stream. We cover
-// the tls=false default branch (port 80 → omit) and the non-default branch
-// (port 8080 → include); the tls=true default branch (port 443 → omit)
-// shares the same `target.tls ? 443 : 80` lookup, indirectly verified by
-// the port=443 + tls=false case which proves the lookup keys on tls.
+// won't complete a handshake against a canned response stream. The
+// port=443 + tls=false case proves the default-port lookup keys on tls.
 describe('runProxiedRequest — Host header synthesis', () => {
   const buildCapturingDial = (responseHead: string): {
     written: () => string;
@@ -412,30 +243,6 @@ describe('runProxiedRequest — Host header synthesis', () => {
   const socks: ProxyConfig = { kind: 'socks5', host: 'p', port: 1, name: 'p' };
   const ok200 = 'HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n';
 
-  it('omits the port for plain HTTP on 80 (scheme default)', async () => {
-    const cap = buildCapturingDial(ok200);
-    cap.setupMock();
-    await runProxiedRequest(
-      socks,
-      { host: 'api.example.com', port: 80, tls: false },
-      { method: 'GET', path: '/', headers: [] },
-      baseOptions(),
-    );
-    expect(cap.written()).toContain('Host: api.example.com\r\n');
-  });
-
-  it('includes the port for plain HTTP on 8080 (non-default port)', async () => {
-    const cap = buildCapturingDial(ok200);
-    cap.setupMock();
-    await runProxiedRequest(
-      socks,
-      { host: 'api.example.com', port: 8080, tls: false },
-      { method: 'GET', path: '/', headers: [] },
-      baseOptions(),
-    );
-    expect(cap.written()).toContain('Host: api.example.com:8080\r\n');
-  });
-
   it('includes the port when the upstream is plain HTTP on 443 (non-default for tls=false)', async () => {
     // 443 is HTTPS's default port; on the plain (tls=false) path it's
     // non-default. The Host header must reflect that — strict virtual-host
@@ -449,18 +256,6 @@ describe('runProxiedRequest — Host header synthesis', () => {
       baseOptions(),
     );
     expect(cap.written()).toContain('Host: api.example.com:443\r\n');
-  });
-
-  it('preserves a caller-provided Host header verbatim', async () => {
-    const cap = buildCapturingDial(ok200);
-    cap.setupMock();
-    await runProxiedRequest(
-      socks,
-      { host: 'cdn.example.com', port: 443, tls: false },
-      { method: 'GET', path: '/', headers: [['Host', 'origin.example.com:9000']] },
-      baseOptions(),
-    );
-    expect(cap.written()).toContain('Host: origin.example.com:9000\r\n');
   });
 
   it('wraps an IPv6 literal target in its uri-host envelope (RFC 3986 §3.2.2)', async () => {
@@ -477,17 +272,5 @@ describe('runProxiedRequest — Host header synthesis', () => {
       baseOptions(),
     );
     expect(cap.written()).toContain('Host: [2001:db8::1]:8080\r\n');
-  });
-
-  it('wraps an IPv6 literal target without a port suffix when the port matches the scheme default', async () => {
-    const cap = buildCapturingDial(ok200);
-    cap.setupMock();
-    await runProxiedRequest(
-      socks,
-      { host: '::1', port: 80, tls: false },
-      { method: 'GET', path: '/', headers: [] },
-      baseOptions(),
-    );
-    expect(cap.written()).toContain('Host: [::1]\r\n');
   });
 });

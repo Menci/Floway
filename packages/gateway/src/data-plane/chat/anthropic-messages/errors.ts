@@ -19,8 +19,7 @@ const anthropicErrorResult = (
 ): ApiErrorResult => ({
   type: 'api-error',
   source: 'gateway',
-  status,
-  headers: new Headers({ 'content-type': 'application/json' }),
+  http: { status, headers: new Headers({ 'content-type': 'application/json' }) },
   body: new TextEncoder().encode(JSON.stringify({
     type: 'error',
     error: { type, message, ...(extension === undefined ? {} : { provider_specific_fields: extension }) },

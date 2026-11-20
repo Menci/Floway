@@ -70,29 +70,31 @@ test.each([
   { groupBy: 'keyId', isAdmin: false },
 ] as const)('D1 statistics compile and retain exact results for $groupBy (admin: $isAdmin)', async ({ groupBy, isAdmin }) => {
   const options = {
-    actorUserId: 1, isAdmin, groupBy, visibleUserIds: [1], visibleUpstreams: ['statistics-upstream'],
+    actorUserId: 1, isAdmin, visibleUserIds: [1], visibleUpstreams: ['statistics-upstream'],
     start: '2026-11-01T00', end: '2026-11-01T01', bucketForHour: (hour: string) => hour,
   };
   const filters = { models: [], upstreams: [], userIds: [], keyIds: [] };
-  const usage = await repo.usage.queryOverview({ ...options, filters });
-  expect(usage.axes.none[0]).toEqual({
-    bucket: 'all', group: 'all', requests: 3,
+  const usageOptions = { ...options, ownedKeysOnly: groupBy === 'keyId' };
+  const [usage] = await repo.usage.queryOverview({ ...usageOptions, filters });
+  expect(usage!.axes.none[0]).toEqual({
+    group: 'all', requests: 3,
     metrics: [{ metric: 'input_tokens', quantity: '9007199254740992.5' }], cost: '1801439850948198.5',
   });
-  expect(usage.dimensionValues.keyIds).toEqual(['statistics-key']);
+  expect(usage!.dimensionValues.keyIds).toEqual(['statistics-key']);
   expect(await repo.usage.queryOverview({
-    ...options,
-    filters: { models: ['statistics-model'], upstreams: usage.dimensionValues.upstreams, userIds: [1], keyIds: ['statistics-key'] },
-  })).toEqual(usage);
+    ...usageOptions,
+    filters: { models: ['statistics-model'], upstreams: usage!.dimensionValues.upstreams, userIds: [1], keyIds: ['statistics-key'] },
+  })).toEqual([usage]);
 
-  const performance = await repo.performance.queryOverview({ ...options, filters: { ...filters, operations: [], runtimeLocations: [] } });
+  const performanceOptions = { ...options, groupBy };
+  const performance = await repo.performance.queryOverview({ ...performanceOptions, filters: { ...filters, operations: [], runtimeLocations: [] } });
   expect(performance.axes.none[0]).toMatchObject({
     bucket: 'all', group: 'all', requests: 3, errors: 1, ttftSamples: 2, tpotSamples: 2,
     ttftMsP50: 100 / 3, ttftMsP95: 200 / 3, tpotUsP50: 500 / 3, tpotUsP95: 1000 / 3,
   });
   expect(performance.dimensionValues.keyIds).toEqual(['statistics-key']);
   expect(await repo.performance.queryOverview({
-    ...options,
+    ...performanceOptions,
     filters: {
       models: ['statistics-model'], upstreams: ['statistics-upstream'], userIds: [1], keyIds: ['statistics-key'],
       operations: ['chat'], runtimeLocations: ['HKG'],

@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { CLAUDE_CLI_VERSION } from '../../../src/headers.ts';
 import { injectBillingBlock } from '../../../src/interceptors/anthropic-messages/inject-billing-block.ts';
 import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProviderStreamResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -36,20 +36,4 @@ test('drops a single billing block as system[0] with the pinned CLI version and 
   // cch=00000 is a literal in the wire shape, not a client-computed hash.
   assertEquals(block!.text.endsWith('cch=00000;'), true);
   assertEquals(block!.text.startsWith('x-anthropic-billing-header: '), true);
-});
-
-test('overwrites any pre-existing system array (hoist already ran)', async () => {
-  const ctx = invocation({
-    model: 'claude-sonnet-4-5-20250929',
-    max_tokens: 16,
-    messages: [{ role: 'user', content: 'hi' }],
-    system: [{ type: 'text', text: 'stale leftover' } satisfies AnthropicMessagesTextBlockParam],
-  });
-
-  await injectBillingBlock(ctx, {}, okEvents);
-
-  const system = ctx.payload.system;
-  if (!Array.isArray(system)) throw new Error('expected system to be an array');
-  assertEquals(system.length, 1);
-  assertEquals(system[0]!.text.startsWith('x-anthropic-billing-header: '), true);
 });

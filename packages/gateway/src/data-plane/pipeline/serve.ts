@@ -7,7 +7,6 @@
 // resolving a dump sink, not a flag anywhere below it.
 
 import type { Context } from 'hono';
-import { streamSSE } from 'hono/streaming';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import { createCandidateRegistry } from './candidates.ts';
@@ -21,10 +20,10 @@ import { consoleLogSink } from '../../runtime/log.ts';
 import { stampUpstreamCallStart } from '../shared/attempt-timing.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type AttemptState } from '../shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
-import { writeSSEFrames } from '../shared/sse.ts';
+import { serializeSseFrame, serveSse } from '../shared/sse.ts';
 import { recordStream } from '@floway-dev/dump';
 import { run, getFailureFacts, type Pipeline } from '@floway-dev/pipeline';
-import { sseCommentFrame, type SseFrame } from '@floway-dev/protocols/common';
+import type { SseFrame } from '@floway-dev/protocols/common';
 
 type Slice<K extends keyof GatewayFacts> = { [P in K]: GatewayFacts[P] };
 
@@ -138,6 +137,7 @@ export type Rendered =
     /** An answer that *is* a stream. The frames go out as they arrive, which is why nothing
      *  above waits for them and why what they billed is settled afterwards. */
     readonly frames: AsyncIterable<SseFrame>;
+    readonly failure?: (error: unknown) => readonly string[];
   };
 
 /** Which of the two an answer turned out to be. A family's rendered fact carries whichever
@@ -213,38 +213,34 @@ const serveRun = async <
   try { answer = render(facts); } catch (error) { await drain(); throw error; }
 
   const status = facts['response.http.status'] as ContentfulStatusCode;
+  const headers = new Headers(facts['response.http.headers'].map(([name, value]): [string, string] => [name, value]));
   if ('frames' in answer) {
-    // Hono's streamSSE builds the response itself, so what the client is to see has to be
-    // staged on the context before it is called rather than passed to a constructor.
-    for (const [name, value] of facts['response.http.headers']) c.header(name, value);
-    c.status(status);
-    // The dump is closed the same way on both paths. Hono builds the streaming response
-    // itself, so what is finalized is what it returned rather than one constructed here.
-    return finalizeGatewayResponse(prologue.gateway, streamSSE(c, async stream => {
-      try {
-        await writeSSEFrames(stream, answer.frames, {
-          keepAlive: { frame: sseCommentFrame('keepalive') },
-          ...(prologue.gateway.downstreamAbortController === undefined
-            ? {}
-            : { downstreamAbortController: prologue.gateway.downstreamAbortController }),
-        });
-      } catch (error) {
-        prologue.gateway.dump?.failed(error);
-        throw error;
-      } finally {
-        // Reading the frames to the client *is* releasing the body they came from, so the
-        // drain waits for that to finish. Draining alongside it would take frames out of the
-        // client's own stream — one connection has one reader. A client that stopped reading
-        // still gets here, which is what leaves nothing open behind it.
-        await drain();
-      }
+    return finalizeGatewayResponse(prologue.gateway, serveSse(c, {
+      http: { status, headers },
+      events: answer.frames,
+      downstreamAbortController: prologue.gateway.downstreamAbortController,
+      protocol: {
+        encode: frame => ({ wire: serializeSseFrame(frame) }),
+        eof: () => ({ type: 'completed' }),
+        failure: answer.failure ?? (error => {
+          console.error('SSE source failed:', error);
+          return [];
+        }),
+      },
+      settle: async outcome => {
+        try {
+          if ('error' in outcome) prologue.gateway.dump?.failed(outcome.error);
+        } finally {
+          // Both paths share the upstream reader. Wait until SSE egress is done before draining it.
+          await drain();
+        }
+      },
     }));
   }
 
   // Nothing is left to read either: what the client is sent was serialized from facts the run
   // already held, so releasing can start at once.
   prologue.services.background(drain());
-  const headers = new Headers(facts['response.http.headers'].map(([name, value]): [string, string] => [name, value]));
   // An upstream that declared no media type is answered without one, rather than having one
   // invented for bytes nobody described.
   if (answer.contentType !== null) headers.set('content-type', answer.contentType);

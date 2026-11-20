@@ -92,7 +92,7 @@ export function OAuthCallbackImport(props: OAuthCallbackImportProps) {
     try {
       parsed = parseCallbackPaste(callback);
       const found = recallPkce(kind, flowKind, parsed.state);
-      if (!found) throw new Error(t('dashboard.upstreamEditor.oauth.unrecognized'));
+      if (!found) throw new Error(t('upstreams.editor.oauth.unrecognized'));
       recalled = found;
     } catch (err) {
       setBusy(false); setError(errorMessage(err)); return;
@@ -117,19 +117,19 @@ export function OAuthCallbackImport(props: OAuthCallbackImportProps) {
   };
 
   return <div className="grid gap-3">
-    {kind === 'chatgpt' && <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.chatgpt.import.oauthHint')}</Text>}
+    {kind === 'chatgpt' && <Text size={200} className="text-fui-fg2">{t('upstreams.editor.chatgpt.import.oauthHint')}</Text>}
     {busy && !authorizeUrl
-      ? <Spinner label={t('dashboard.upstreamEditor.oauth.preparing')} />
+      ? <Spinner label={t('upstreams.editor.oauth.preparing')} />
       : authorizeUrl && <div className="flex items-center gap-2 min-w-0">
-        <Link href={authorizeUrl} target="_blank" rel="noopener noreferrer"><OpenLinkLabel>{t('dashboard.upstreamEditor.oauth.openAuthorize')}</OpenLinkLabel></Link>
-        <TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('dashboard.upstreamEditor.oauth.copy'))} onClick={() => copy(authorizeUrl)} />
+        <Link href={authorizeUrl} target="_blank" rel="noopener noreferrer"><OpenLinkLabel>{t('upstreams.editor.oauth.openAuthorize')}</OpenLinkLabel></Link>
+        <TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('upstreams.editor.oauth.copy'))} onClick={() => copy(authorizeUrl)} />
       </div>}
-    <Field label={t('dashboard.upstreamEditor.oauth.callback')}>
+    <Field label={t('upstreams.editor.oauth.callback')}>
       <Textarea className="font-mono" rows={3} value={callback} onChange={(_, data) => setCallback(data.value)} />
     </Field>
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
     <Button appearance="primary" disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />} onClick={() => void submit()}>
-      {hasAccount ? t('dashboard.upstreamEditor.oauth.reimport') : t('dashboard.upstreamEditor.oauth.import')}
+      {hasAccount ? t('upstreams.editor.oauth.reimport') : t('upstreams.editor.oauth.import')}
     </Button>
   </div>;
 }

@@ -2,7 +2,6 @@ import { callOpenAIEmbeddingsUpstream } from './call-upstream.ts';
 import { emitOpenAIEmbeddings } from './emit.ts';
 import type { Fields } from './facts.ts';
 import { narrowing } from './target.ts';
-import { isFailure } from '../pipeline/facts.ts';
 import { failover } from '../pipeline/failover.ts';
 import { resolveCandidates } from '../pipeline/resolve-candidates.ts';
 import { serializeClientJson } from '../pipeline/serialize-client-json.ts';
@@ -18,7 +17,7 @@ export const openaiEmbeddingsServePipeline: Pipeline<
   emitOpenAIEmbeddings,
   resolveCandidates(narrowing),
   failover({
-    failed: handedUp => isFailure((handedUp as { 'response.openaiEmbeddings.canonical'?: unknown })['response.openaiEmbeddings.canonical']),
+    answer: handedUp => handedUp['response.openaiEmbeddings.canonical'],
     owns: ['response.http.body'],
   }),
   callOpenAIEmbeddingsUpstream,

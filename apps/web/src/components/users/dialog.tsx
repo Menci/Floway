@@ -55,13 +55,13 @@ export function UserDialog(props: UserDialogProps) {
   const [error, setError] = useState<string | null>(null);
   const schema = useMemo(
     () => z.object({
-      username: z.string().regex(/^[a-zA-Z0-9_.-]{1,64}$/, 'dashboard.users.validation.username'),
-      password: z.string().max(1024, 'dashboard.users.validation.passwordMax'),
+      username: z.string().regex(/^[a-zA-Z0-9_.-]{1,64}$/, 'directory.users.validation.username'),
+      password: z.string().max(1024, 'directory.users.validation.passwordMax'),
       isAdmin: z.boolean(),
       groupIds: z.array(z.string()),
     }).superRefine((value, ctx) => {
       if (mode === 'create' && !value.password) {
-        ctx.addIssue({ code: 'custom', message: 'dashboard.users.validation.passwordRequired', path: ['password'] });
+        ctx.addIssue({ code: 'custom', message: 'directory.users.validation.passwordRequired', path: ['password'] });
       }
     }),
     [mode],
@@ -83,7 +83,7 @@ export function UserDialog(props: UserDialogProps) {
     setError(null);
     try {
       const username = form.username.trim();
-      const handle = toasts.start(t(`dashboard.users.toast.${mode}.pending`, { username }));
+      const handle = toasts.start(t(`directory.users.toast.${mode}.pending`, { username }));
       const result = props.mode === 'create'
         ? await callApi(() => api.api.users.$post({
             json: {
@@ -106,7 +106,7 @@ export function UserDialog(props: UserDialogProps) {
         return;
       }
       onOpenChange(false);
-      handle.succeed(t(`dashboard.users.toast.${mode}.success`, { username }));
+      handle.succeed(t(`directory.users.toast.${mode}.success`, { username }));
       await onSaved(props.mode === 'edit' ? props.user.id : undefined);
     } finally {
       setSaving(false);
@@ -121,23 +121,23 @@ export function UserDialog(props: UserDialogProps) {
         <DialogActions>
           <Button disabled={saving} onClick={requestClose}>{t('common.cancel')}</Button>
           <Button appearance="primary" disabledFocusable={saving} type="submit">
-            {mode === 'create' ? t('dashboard.users.actions.create') : t('dashboard.users.actions.save')}
+            {mode === 'create' ? t('directory.users.actions.create') : t('directory.users.actions.save')}
           </Button>
         </DialogActions>
       }
       onOpenChange={(_, data) => { if (!data.open && !saving) requestClose(); }}
       onSubmit={() => void handleSubmit(save)()}
       title={<DialogTitle>{props.mode === 'create'
-        ? t('dashboard.users.dialog.createTitle')
-        : t('dashboard.users.dialog.editTitle', { username: props.user.username })}</DialogTitle>}
+        ? t('directory.users.dialog.createTitle')
+        : t('directory.users.dialog.editTitle', { username: props.user.username })}</DialogTitle>}
     >
       <Controller
         control={control}
         name="username"
         render={({ field }) => (
           <Field
-            hint={t('dashboard.users.form.usernameHint')}
-            label={t('dashboard.users.form.username')}
+            hint={t('directory.users.form.usernameHint')}
+            label={t('directory.users.form.username')}
             validationMessage={errors.username?.message ? t(errors.username.message) : undefined}
             validationState={errors.username ? 'error' : undefined}
           >
@@ -152,7 +152,7 @@ export function UserDialog(props: UserDialogProps) {
           name="password"
           render={({ field }) => (
             <Field
-              label={t('dashboard.users.form.password')}
+              label={t('directory.users.form.password')}
               validationMessage={errors.password?.message ? t(errors.password.message) : undefined}
               validationState={errors.password ? 'error' : undefined}
             >
@@ -165,17 +165,17 @@ export function UserDialog(props: UserDialogProps) {
         action={<SettingsSwitch
           checked={values.isAdmin}
           disabled={saving || adminLocked}
-          label={t('dashboard.users.form.administrator')}
+          label={t('directory.users.form.administrator')}
           onChange={checked => setValue('isAdmin', checked, { shouldValidate: true })}
         />}
         description={adminLocked
-          ? t(props.mode === 'edit' && props.user.id === 1 ? 'dashboard.users.form.userOneLocked' : 'dashboard.users.form.selfLocked')
-          : t('dashboard.users.form.administratorDescription')}
-        header={t('dashboard.users.form.administrator')}
+          ? t(props.mode === 'edit' && props.user.id === 1 ? 'directory.users.form.userOneLocked' : 'directory.users.form.selfLocked')
+          : t('directory.users.form.administratorDescription')}
+        header={t('directory.users.form.administrator')}
         icon={<PersonRibbon24Regular />}
       />
       {mode === 'create' && (
-        <MessageBar intent="info"><MessageBarBody>{t('dashboard.users.createdDefaultKey')}</MessageBarBody></MessageBar>
+        <MessageBar intent="info"><MessageBarBody>{t('directory.users.createdDefaultKey')}</MessageBarBody></MessageBar>
       )}
       {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
     </DialogShell></>

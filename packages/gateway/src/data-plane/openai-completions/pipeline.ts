@@ -2,7 +2,6 @@ import { callOpenAICompletionsUpstream } from './call-upstream.ts';
 import { emitOpenAICompletions } from './emit.ts';
 import type { Fields } from './facts.ts';
 import { narrowing } from './target.ts';
-import { isFailure } from '../pipeline/facts.ts';
 import { failover } from '../pipeline/failover.ts';
 import { resolveCandidates } from '../pipeline/resolve-candidates.ts';
 import { serializeClientJson } from '../pipeline/serialize-client-json.ts';
@@ -18,7 +17,7 @@ export const openaiCompletionsServePipeline: Pipeline<
   emitOpenAICompletions,
   resolveCandidates(narrowing),
   failover({
-    failed: handedUp => isFailure((handedUp as { 'response.openaiCompletions.payload'?: unknown })['response.openaiCompletions.payload']),
+    answer: handedUp => handedUp['response.openaiCompletions.payload'],
     owns: ['response.http.body'],
     pendingUsage: 'response.openaiCompletions.streamedUsage',
   }),

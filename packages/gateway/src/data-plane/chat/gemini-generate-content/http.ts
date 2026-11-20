@@ -1,3 +1,4 @@
+import { normalizeGeminiGenerateContentFailure } from './errors.ts';
 import { geminiGenerateContentInternalRpcErrorResponse, geminiGenerateContentRpcErrorResponse, respondGeminiGenerateContent } from './respond.ts';
 import { geminiGenerateContentServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
@@ -64,13 +65,12 @@ const respondWithGeminiGenerateContentError = async (
 ): Promise<Response> => {
   if (error instanceof ProviderModelsUnavailableError && error.httpResponse) {
     const { status, headers, body } = error.httpResponse;
-    const apiErrorResult = {
+    const apiErrorResult = normalizeGeminiGenerateContentFailure({
       type: 'api-error' as const,
       source: 'upstream' as const,
-      status,
-      headers: new Headers(headers),
+      http: { status, headers: new Headers(headers) },
       body: new TextEncoder().encode(body),
-    };
+    });
     const response = await respondGeminiGenerateContent(c, apiErrorResult, wantsStream, ctx);
     return finalizeGatewayResponse(ctx, response);
   }

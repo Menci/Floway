@@ -59,7 +59,7 @@ export const callSearchUpstream = defineStage<
     const back = await next(providerEntry(facts, candidate, request, [...turnMetadataHeaders(facts['ingress.http.headers'])]), pipeline);
     const { 'response.http.exchange': exchange, 'response.provider.modelKey': modelKey, 'response.provider.called': wasCalled, 'response.provider.previousCalls': _previousCalls, ...rest } = back;
     if (exchange.type === 'transportFailure') {
-      return move({ ...rest, 'response.search.alphaSearch': dialFailure(exchange.error), 'response.usage.billable': providerUsage(candidate, back, []), 'response.http.headers': [], 'response.http.status': 502 });
+      return move({ ...rest, 'response.search.alphaSearch': dialFailure(exchange.error, use.gateway.abortSignal), 'response.usage.billable': providerUsage(candidate, back, []), 'response.http.headers': [], 'response.http.status': 502 });
     }
     const result = { response: exchangeResponse(exchange), modelKey };
     // The alpha-search protocol reports no usage at all, so the entity is present with no

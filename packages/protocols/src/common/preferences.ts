@@ -19,11 +19,13 @@ export interface UserPreferences {
    * account that has never chosen a language reads.
    */
   language: SupportedLanguage | null;
+  uiTextEditor: boolean;
 }
 
 export const defaultUserPreferences: UserPreferences = {
   quotaDisplay: 'remaining',
   language: null,
+  uiTextEditor: false,
 };
 
 const isQuotaDisplay = (value: unknown): value is QuotaDisplay =>
@@ -52,7 +54,12 @@ export const parseUserPreferences = (value: unknown): UserPreferences => {
     throw new TypeError(`preferences.language is not one of ${[...SUPPORTED_LANGUAGES, 'null'].join(', ')}`);
   }
 
-  return { quotaDisplay, language };
+  const uiTextEditor = record.uiTextEditor === undefined ? defaultUserPreferences.uiTextEditor : record.uiTextEditor;
+  if (typeof uiTextEditor !== 'boolean') {
+    throw new TypeError('preferences.uiTextEditor must be a boolean');
+  }
+
+  return { quotaDisplay, language, uiTextEditor };
 };
 
 export const serializeUserPreferences = (preferences: UserPreferences): string => JSON.stringify(preferences);

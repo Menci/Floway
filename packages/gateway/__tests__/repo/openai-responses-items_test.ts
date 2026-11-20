@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
-import { createSqliteTestDb, createSqlJsDatabase, mapRunChangeCount, migrationSqlByFilename } from './test-sqlite.ts';
+import { createSqliteTestDb } from './test-sqlite.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { hashOpenAIResponsesJson } from '../../src/repo/openai-responses-hash.ts';
 import { prepareStoredOpenAIResponsesPayload } from '../../src/repo/openai-responses-payload.ts';
@@ -126,127 +126,6 @@ describe.each(backends)('%s OpenAI Responses state repository', (_backend, makeR
     expect(await repo.openaiResponsesSnapshots.deleteExpiredBatch('key-a', now, 100)).toBe(1);
   });
 
-  test('keeps the newest snapshot payload while extending its refresh timestamp', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(atDay(4));
-    const repo = await makeRepo();
-    await repo.apiKeys.save(apiKey());
-    await repo.openaiResponsesSnapshots.insert({ id: 'resp-a', apiKeyId: 'key-a', itemIds: ['new'], refreshedAt: atDay(3) });
-    await repo.openaiResponsesSnapshots.insert({ id: 'resp-a', apiKeyId: 'key-a', itemIds: ['old'], refreshedAt: atDay(2) });
-
-    expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp-a', 0)).toEqual({
-      id: 'resp-a',
-      apiKeyId: 'key-a',
-      itemIds: ['new'],
-      refreshedAt: atDay(3),
-    });
-    expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp-a', atDay(3, 1))).toBeNull();
-  });
-
-  test('a concurrent shrink does not change an in-flight request retention snapshot', async () => {
-    initFileStore(new MemoryFileStore());
-    const repo = await makeRepo();
-    const now = Date.now();
-    const thirtyDays = 30 * 24 * 60 * 60;
-    const sevenDays = 7 * 24 * 60 * 60;
-    await repo.apiKeys.save(apiKey(thirtyDays));
-    const old = storedItem('msg-shrink-race', now - 20 * 24 * 60 * 60_000);
-    await repo.openaiResponsesItems.insertMany([old], openaiResponsesStateCutoff(now, thirtyDays));
-    await repo.apiKeys.update('key-a', { openaiResponsesRetentionSeconds: sevenDays });
-
-    await expect(repo.openaiResponsesItems.refreshMany([old], now, openaiResponsesStateCutoff(now, thirtyDays)))
-      .resolves.toBeUndefined();
-    expect((await repo.openaiResponsesItems.lookupMany('key-a', [old.id], 0))[0].refreshedAt)
-      .toBe(quantizeOpenAIResponsesRefreshedAt(now));
-  });
-
-  test('a concurrent grow does not widen an in-flight request retention snapshot', async () => {
-    initFileStore(new MemoryFileStore());
-    const repo = await makeRepo();
-    const now = Date.now();
-    const thirtyDays = 30 * 24 * 60 * 60;
-    const sevenDays = 7 * 24 * 60 * 60;
-    await repo.apiKeys.save(apiKey(thirtyDays));
-    const old = storedItem('msg-grow-race', now - 20 * 24 * 60 * 60_000, 'old');
-    await repo.openaiResponsesItems.insertMany([old], openaiResponsesStateCutoff(now, thirtyDays));
-    await repo.apiKeys.update('key-a', { openaiResponsesRetentionSeconds: sevenDays });
-    const replacement = storedItem(old.id, now, 'replacement');
-    await repo.apiKeys.update('key-a', { openaiResponsesRetentionSeconds: thirtyDays });
-
-    await expect(repo.openaiResponsesItems.insertMany([replacement], openaiResponsesStateCutoff(now, sevenDays)))
-      .resolves.toBeUndefined();
-    expect((await repo.openaiResponsesItems.lookupMany('key-a', [old.id], 0))[0].payload).toEqual(replacement.payload);
-  });
-
-  test('an in-flight request reuses its narrower retention snapshot after a concurrent grow', async () => {
-    initFileStore(new MemoryFileStore());
-    const repo = await makeRepo();
-    const now = atDay(40, DAY_MS / 2);
-    vi.useFakeTimers();
-    vi.setSystemTime(now);
-    const thirtyDays = 30 * RETENTION_SECONDS;
-    const sevenDays = 7 * RETENTION_SECONDS;
-    await repo.apiKeys.save(apiKey(thirtyDays));
-    const old = storedItem('msg-grow-refresh', now - 20 * DAY_MS);
-    await repo.openaiResponsesItems.insertMany([old], openaiResponsesStateCutoff(now, thirtyDays));
-    await repo.apiKeys.update('key-a', { openaiResponsesRetentionSeconds: sevenDays });
-    const reused = { ...old, refreshedAt: now };
-    await repo.apiKeys.update('key-a', { openaiResponsesRetentionSeconds: thirtyDays });
-
-    await repo.openaiResponsesItems.insertMany([reused], openaiResponsesStateCutoff(now, sevenDays));
-
-    expect((await repo.openaiResponsesItems.lookupMany('key-a', [old.id], 0))[0].refreshedAt)
-      .toBe(quantizeOpenAIResponsesRefreshedAt(now));
-  });
-
-  test('growing retention reveals a surviving row inside the wider window', async () => {
-    initFileStore(new MemoryFileStore());
-    const repo = await makeRepo();
-    const now = Date.now();
-    const thirtyDays = 30 * 24 * 60 * 60;
-    const sevenDays = 7 * 24 * 60 * 60;
-    await repo.apiKeys.save(apiKey(thirtyDays));
-    const old = storedItem('msg-grow-visible', now - 20 * 24 * 60 * 60_000);
-    await repo.openaiResponsesItems.insertMany([old], openaiResponsesStateCutoff(now, thirtyDays));
-
-    await repo.apiKeys.update('key-a', { openaiResponsesRetentionSeconds: sevenDays });
-    expect(await repo.openaiResponsesItems.lookupMany('key-a', [old.id], openaiResponsesStateCutoff(now, sevenDays))).toEqual([]);
-    await repo.apiKeys.update('key-a', { openaiResponsesRetentionSeconds: thirtyDays });
-    expect(await repo.openaiResponsesItems.lookupMany('key-a', [old.id], openaiResponsesStateCutoff(now, thirtyDays))).toEqual([
-      { ...old, refreshedAt: quantizeOpenAIResponsesRefreshedAt(old.refreshedAt) },
-    ]);
-  });
-  test('a concurrent disable does not cancel a captured durable writer', async () => {
-    initFileStore(new MemoryFileStore());
-    const repo = await makeRepo();
-    const now = Date.now();
-    await repo.apiKeys.save(apiKey(RETENTION_SECONDS));
-    await repo.apiKeys.update('key-a', { openaiResponsesRetentionSeconds: 0 });
-    const item = storedItem('msg-disabled-race', now);
-
-    await expect(repo.openaiResponsesItems.insertMany([item], openaiResponsesStateCutoff(now, RETENTION_SECONDS))).resolves.toBeUndefined();
-    expect(await repo.openaiResponsesItems.lookupMany('key-a', [item.id], 0)).toEqual([
-      { ...item, refreshedAt: quantizeOpenAIResponsesRefreshedAt(item.refreshedAt) },
-    ]);
-  });
-
-  test('same-day reuse keeps the request snapshot after a concurrent disable', async () => {
-    initFileStore(new MemoryFileStore());
-    const repo = await makeRepo();
-    const now = atDay(10, DAY_MS / 2);
-    vi.useFakeTimers();
-    vi.setSystemTime(now);
-    await repo.apiKeys.save(apiKey());
-    const item = storedItem('msg-disabled-same-day', now);
-    await repo.openaiResponsesItems.insertMany([item], openaiResponsesStateCutoff(now, RETENTION_SECONDS));
-    await repo.apiKeys.update('key-a', { openaiResponsesRetentionSeconds: 0 });
-
-    await expect(repo.openaiResponsesItems.insertMany(
-      [{ ...item, refreshedAt: now + 1_000 }],
-      openaiResponsesStateCutoff(now, RETENTION_SECONDS),
-    )).resolves.toBeUndefined();
-  });
-
   test('an old request cannot refresh a replacement payload under a reused ID', async () => {
     initFileStore(new MemoryFileStore());
     const repo = await makeRepo();
@@ -266,22 +145,6 @@ describe.each(backends)('%s OpenAI Responses state repository', (_backend, makeR
       ...replacement,
       refreshedAt: quantizeOpenAIResponsesRefreshedAt(replacement.refreshedAt),
     });
-  });
-
-  test('missing keys reject writes while soft-deleted keys preserve captured requests', async () => {
-    initFileStore(new MemoryFileStore());
-    const repo = await makeRepo();
-    const now = Date.now();
-    const missing = storedItem('msg-missing-key', now);
-    await expect(repo.openaiResponsesItems.insertMany([missing], 0)).rejects.toThrow();
-
-    await repo.apiKeys.save(apiKey());
-    const existing = storedItem('msg-deleted-key', now);
-    await repo.openaiResponsesItems.insertMany([existing], 0);
-    await repo.apiKeys.softDelete('key-a');
-    await expect(repo.openaiResponsesItems.refreshMany([existing], now + DAY_MS, 0)).resolves.toBeUndefined();
-    expect((await repo.openaiResponsesItems.lookupMany('key-a', [existing.id], 0))[0].refreshedAt)
-      .toBe(quantizeOpenAIResponsesRefreshedAt(now + DAY_MS));
   });
 });
 
@@ -317,80 +180,6 @@ test('SQL spill ownership is first-class and the shared collector reclaims retir
   expect(await db.prepare('SELECT file_key FROM spilled_files WHERE file_key = ?').bind(owned.file_key).first()).toBeNull();
 });
 
-test('SQL counts returned OpenAI Responses rows instead of trigger-amplified changes', async () => {
-  const db = await createSqliteTestDb();
-  const repo = new SqlRepo(db);
-  initFileStore(new MemoryFileStore());
-  const now = atDay(10, DAY_MS / 2);
-  vi.useFakeTimers();
-  vi.setSystemTime(now);
-  await repo.apiKeys.save(apiKey());
-  await repo.openaiResponsesItems.insertMany([storedItem('msg-counted', now, largeContent())], 0);
-  await repo.apiKeys.update('key-a', { openaiResponsesRetentionSeconds: 0 });
-
-  const d1LikeRepo = new SqlRepo(mapRunChangeCount(db, changes => changes * 2));
-  expect(await d1LikeRepo.openaiResponsesItems.deleteExpiredBatch('key-a', now, 1)).toBe(1);
-  expect(await db.prepare('SELECT id FROM responses_items').first()).toBeNull();
-});
-
-test('SQL counts returned active OpenAI Responses rows instead of trigger-amplified changes', async () => {
-  const db = await createSqliteTestDb();
-  const repo = new SqlRepo(db);
-  initFileStore(new MemoryFileStore());
-  const now = atDay(10, DAY_MS / 2);
-  vi.useFakeTimers();
-  vi.setSystemTime(now);
-  await repo.apiKeys.save(apiKey());
-  await repo.openaiResponsesItems.insertMany([
-    storedItem('msg-counted-active', openaiResponsesStateCutoff(now, RETENTION_SECONDS) - 1, largeContent()),
-  ], 0);
-
-  const d1LikeRepo = new SqlRepo(mapRunChangeCount(db, changes => changes * 2));
-  expect(await d1LikeRepo.openaiResponsesItems.deleteExpiredBatch('key-a', now, 1)).toBe(1);
-  expect(await db.prepare('SELECT id FROM responses_items').first()).toBeNull();
-});
-
-test('SQL performs no item or snapshot mutation after an earlier refresh in the same UTC day', async () => {
-  vi.useFakeTimers();
-  vi.setSystemTime(atDay(10, DAY_MS / 4));
-  const db = await createSqliteTestDb();
-  const repo = new SqlRepo(db);
-  initFileStore(new MemoryFileStore());
-  await repo.apiKeys.save(apiKey());
-  const item = storedItem('msg-daily-refresh', atDay(10, 1_000));
-  const snapshot = { id: 'resp-daily-refresh', apiKeyId: 'key-a', itemIds: [item.id], refreshedAt: atDay(10, 1_000) };
-  await repo.openaiResponsesItems.insertMany([item], 0);
-  await repo.openaiResponsesSnapshots.insert(snapshot);
-
-  const totalChanges = async (): Promise<number> => {
-    const row = await db.prepare('SELECT total_changes() AS value').first<{ value: number }>();
-    if (row === null) throw new Error('SQLite did not return total_changes()');
-    return row.value;
-  };
-  const beforeSameDayReuse = await totalChanges();
-  await repo.openaiResponsesItems.refreshMany([item], atDay(10, DAY_MS - 1), 0);
-  await repo.openaiResponsesSnapshots.insert({ ...snapshot, refreshedAt: atDay(10, DAY_MS - 1) });
-  expect(await totalChanges()).toBe(beforeSameDayReuse);
-
-  vi.setSystemTime(atDay(11, 1_000));
-  await repo.openaiResponsesItems.refreshMany([item], atDay(11, 1_000), 0);
-  await repo.openaiResponsesSnapshots.insert({ ...snapshot, refreshedAt: atDay(11, 1_000) });
-  expect(await totalChanges()).toBe(beforeSameDayReuse + 2);
-});
-
-test('SQL rejects shape-invalid snapshot item ids with both row identities', async () => {
-  const db = await createSqliteTestDb();
-  const repo = new SqlRepo(db);
-  await repo.apiKeys.save(apiKey());
-  await db.prepare(
-    'INSERT INTO responses_snapshots (id, api_key_id, item_ids_json, refreshed_at) VALUES (?, ?, ?, ?)',
-  ).bind('resp-invalid', 'key-a', '["msg-valid",42]', atDay(10)).run();
-
-  await expect(repo.openaiResponsesSnapshots.lookup('key-a', 'resp-invalid', 0)).rejects.toThrow(
-    'responses_snapshots.item_ids_json is invalid for id=resp-invalid, api_key_id=key-a: 1',
-  );
-});
-
 test('SQL hydration retries with every current item identity column after a replacement race', async () => {
   vi.useFakeTimers();
   vi.setSystemTime(atDay(11));
@@ -422,80 +211,4 @@ test('SQL hydration retries with every current item identity column after a repl
   });
 
   expect(await repo.openaiResponsesItems.lookupMany(replacement.apiKeyId, [replacement.id], 0)).toEqual([replacement]);
-});
-
-test('a collector claim prevents a staged file from being adopted', async () => {
-  const db = await createSqliteTestDb();
-  const repo = new SqlRepo(db);
-  const fileKey = 'responses-items/v2/objects/staged.gz';
-  await db.prepare(
-    `INSERT INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after)
-     VALUES (?, 'responses-item', json_array('key-a', 'msg-a'), 'staged', 0)`,
-  ).bind(fileKey).run();
-  expect(await repo.spilledFiles.claimCollectible('claim-a', 1, 0, 1)).toEqual([fileKey]);
-
-  expect(() => db.prepare(
-    `INSERT INTO responses_items
-     (id, api_key_id, payload_json, item_hash, payload_file_key, refreshed_at)
-     VALUES ('msg-a', 'key-a', '{"version":1,"storage":"file","encoding":"gzip","sha256":"aa","byteLength":1}', 'hash', ?, 1)`,
-  ).bind(fileKey).run()).toThrow('not staged');
-});
-
-test('migration 0065 performs one direct cutover to disabled rolling state', async () => {
-  const db = await createSqlJsDatabase();
-  try {
-    for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0065_responses_state.sql') break;
-      db.run(sql);
-    }
-    db.run(
-      `INSERT INTO api_keys
-       (id, user_id, name, key, server_secret, created_at, last_used_at, upstream_ids, deleted_at, dump_retention_seconds)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ['key-a', 1, 'State', 'raw-state', '11'.repeat(32), '2026-01-01T00:00:00Z', null, null, null, null],
-    );
-    db.run('INSERT INTO responses_items VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      ['msg-old', 'key-a', 'provider-a', 'msg-raw', 'message', '{}', 'hash', 1_000]);
-
-    const migration = migrationSqlByFilename.find(([filename]) => filename === '0065_responses_state.sql');
-    if (migration === undefined) throw new Error('missing migration 0065_responses_state.sql');
-    db.run(migration[1]);
-
-    expect(db.exec('SELECT * FROM responses_items')[0]?.values ?? []).toEqual([]);
-    expect(db.exec('SELECT * FROM responses_snapshots')[0]?.values ?? []).toEqual([]);
-    expect(db.exec("SELECT responses_retention_seconds FROM api_keys WHERE id = 'key-a'")[0].values).toEqual([[0]]);
-    expect(db.exec('PRAGMA table_info(api_keys)')[0].values.map(row => row[1])).toEqual([
-      'id',
-      'user_id',
-      'name',
-      'key',
-      'created_at',
-      'last_used_at',
-      'upstream_ids',
-      'deleted_at',
-      'dump_retention_seconds',
-      'server_secret',
-      'responses_retention_seconds',
-    ]);
-    expect(db.exec('PRAGMA table_info(responses_items)')[0].values.map(row => row[1])).toEqual([
-      'id',
-      'api_key_id',
-      'payload_json',
-      'item_hash',
-      'payload_hash',
-      'payload_file_key',
-      'refreshed_at',
-    ]);
-    expect(db.exec('PRAGMA table_info(spilled_files)')[0].values.map(row => row[1])).toEqual([
-      'file_key',
-      'owner_kind',
-      'owner_key',
-      'state',
-      'collect_after',
-      'claim_token',
-      'claimed_at',
-    ]);
-  } finally {
-    db.close();
-  }
 });

@@ -108,7 +108,7 @@ export class DumpAccumulator {
   // via `executeTranslation`'s capture hook; stays empty on native turns.
   private readonly upstreamEvents: DumpStreamEvent[] = [];
   private upstreamTargetApi: ChatTargetApi | null = null;
-  private upstreamApiErrorEnvelope: { status: number; headers: Array<[string, string]>; body: Uint8Array } | null = null;
+  private upstreamApiErrorEnvelope: { status: number; headers: Array<[string, string]>; body: Uint8Array | null } | null = null;
 
   constructor(
     private readonly apiKey: ApiKey,
@@ -172,7 +172,7 @@ export class DumpAccumulator {
   // Captures the verbatim upstream api-error envelope (status/headers/body)
   // BEFORE the optional `trip.apiError` rewrite. The bytes variant of the
   // upstream body; the dashboard renders it like any non-stream response body.
-  upstreamApiError(error: { status: number; headers: Headers; body: Uint8Array }): void {
+  upstreamApiError(error: { status: number; headers: Headers; body: Uint8Array | null }): void {
     this.upstreamApiErrorEnvelope = { status: error.status, headers: headerPairs(error.headers), body: error.body };
   }
 
@@ -318,9 +318,11 @@ export class DumpAccumulator {
     const upstream = !hasUpstream ? undefined : {
       status: this.upstreamApiErrorEnvelope?.status ?? null,
       headers: this.upstreamApiErrorEnvelope?.headers ?? [],
-      body: (this.upstreamApiErrorEnvelope !== null
-        ? { type: 'bytes' as const, body: this.upstreamApiErrorEnvelope.body }
-        : { type: 'stream' as const, events: this.upstreamEvents }) satisfies StoredDumpResponseBody,
+      body: (this.upstreamApiErrorEnvelope === null
+        ? { type: 'stream' as const, events: this.upstreamEvents }
+        : this.upstreamApiErrorEnvelope.body === null
+          ? { type: 'none' as const }
+          : { type: 'bytes' as const, body: this.upstreamApiErrorEnvelope.body }) satisfies StoredDumpResponseBody,
     };
 
     // Commit the row before publishing so subscribers fetching detail off the meta frame find it.

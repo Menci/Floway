@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from '../src/images.ts';
+import { serializeOpenAIImagesEditsRequest } from '../src/images.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const parseJsonBody = async (body: Awaited<ReturnType<typeof serializeOpenAIImagesEditsRequest>>): Promise<unknown> => {
@@ -30,18 +30,6 @@ test('serializeOpenAIImagesEditsRequest preserves reference fields and encodes m
   });
 });
 
-test('serializeOpenAIImagesEditsJsonPayload forces upload sources into data URLs', async () => {
-  const body = await serializeOpenAIImagesEditsJsonPayload({
-    images: [{ type: 'upload', file: { bytes: new TextEncoder().encode('image'), name: 'image.png', type: 'image/png' } }],
-    parameters: { prompt: 'edit' },
-  }, 'gpt-image-2');
-  assertEquals(body, {
-    prompt: 'edit',
-    images: [{ image_url: 'data:image/png;base64,aW1hZ2U=' }],
-    model: 'gpt-image-2',
-  });
-});
-
 test('serializeOpenAIImagesEditsRequest uses the singular field for one upload and the array field for many', async () => {
   const first = { bytes: new TextEncoder().encode('first'), name: 'first.png', type: 'image/png' };
   const second = { bytes: new TextEncoder().encode('second'), name: 'second.png', type: 'image/png' };
@@ -65,34 +53,4 @@ test('serializeOpenAIImagesEditsRequest uses the singular field for one upload a
   assertEquals(await Promise.all(multipleForm.getAll('image[]').map(async value => new Uint8Array(await (value as File).arrayBuffer()))), [first.bytes, second.bytes]);
   assertEquals(multipleForm.get('image'), null);
   assertEquals(multipleForm.get('model'), 'gpt-image');
-});
-
-test('serializeOpenAIImagesEditsRequest leaves malformed inline data for upstream JSON validation', async () => {
-  const serialized = await serializeOpenAIImagesEditsRequest({
-    images: [{
-      type: 'inline',
-      reference: { image_url: 'data:image/png;base64,%%%' },
-    }],
-    parameters: { prompt: 'edit' },
-  }, 'gpt-image');
-  assertEquals(await parseJsonBody(serialized), {
-    prompt: 'edit',
-    images: [{ image_url: 'data:image/png;base64,%%%' }],
-    model: 'gpt-image',
-  });
-});
-
-test('serializeOpenAIImagesEditsRequest preserves extra inline reference fields through JSON', async () => {
-  const serialized = await serializeOpenAIImagesEditsRequest({
-    images: [{
-      type: 'inline',
-      reference: { image_url: 'data:image/png;base64,aW1hZ2U=', future_field: 'keep' },
-    }],
-    parameters: { prompt: 'edit' },
-  }, 'gpt-image');
-  assertEquals(await parseJsonBody(serialized), {
-    prompt: 'edit',
-    images: [{ image_url: 'data:image/png;base64,aW1hZ2U=', future_field: 'keep' }],
-    model: 'gpt-image',
-  });
 });

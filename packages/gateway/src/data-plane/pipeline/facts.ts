@@ -35,6 +35,7 @@ export interface BillableEntity {
 export interface Failure {
   readonly status: number;
   readonly message: string;
+  readonly transportError?: Error;
   /** Complete parsed upstream error content when available. */
   readonly body?: unknown;
 }

@@ -24,7 +24,7 @@ export const stubProviderPipeline = <O extends ProviderOperation>(
           'response.provider.modelKey': facts['request.provider.model'].id, 'response.provider.called': false, 'response.provider.previousCalls': [],
         });
       }
-      const exchange = takeHttpResponse(result.response);
+      const exchange = takeHttpResponse(result.http);
       return move({
         ...facts, 'response.http.exchange': exchange, 'response.http.body': exchange.body,
         'response.provider.modelKey': result.modelKey, 'response.provider.called': true, 'response.provider.previousCalls': [],

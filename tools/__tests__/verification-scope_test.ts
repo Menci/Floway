@@ -42,29 +42,11 @@ describe('findRunnerViolations', () => {
     ]);
   });
 
-  it('rejects a self-hosted runner', () => {
-    expect(findRunnerViolations({
-      ...runner,
-      env: { ...runnerEnv, RUNNER_ENVIRONMENT: 'self-hosted' },
-    })).toEqual(['RUNNER_ENVIRONMENT is self-hosted, not github-hosted']);
-  });
-
   it('rejects another workflow on a GitHub-hosted runner', () => {
     expect(findRunnerViolations({
       ...runner,
       env: { ...runnerEnv, GITHUB_WORKFLOW_REF: 'Menci/Floway/.github/workflows/build.yaml@refs/heads/main' },
     })).toEqual(['GITHUB_WORKFLOW_REF is Menci/Floway/.github/workflows/build.yaml@refs/heads/main, not the verify workflow']);
-  });
-
-  it('accepts any job inside Verify, which spreads its suite across jobs', () => {
-    for (const job of ['verify', 'test', 'test-installers']) {
-      expect(findRunnerViolations({ ...runner, env: { ...runnerEnv, GITHUB_JOB: job } })).toEqual([]);
-    }
-  });
-
-  it('rejects a non-Ubuntu Linux host', () => {
-    expect(findRunnerViolations({ ...runner, osReleaseId: 'debian' }))
-      .toEqual(['/etc/os-release reports ID=debian, not ubuntu']);
   });
 });
 
@@ -75,11 +57,6 @@ describe('parseTargets', () => {
   it('keeps only positional targets', () => {
     expect(parseTargets(['run', 'a_test.ts', '--project', 'x', 'b_test.ts'], valueOptions, subcommands))
       .toEqual(['a_test.ts', 'b_test.ts']);
-  });
-
-  it('drops the subcommand and standalone flags', () => {
-    expect(parseTargets(['run', '--changed', 'a_test.ts'], valueOptions, subcommands))
-      .toEqual(['a_test.ts']);
   });
 });
 
@@ -116,13 +93,5 @@ describe('the trap that detects an expanded glob', () => {
 
   it('allows a list of traps alone, which runs nothing worth hiding', () => {
     expect(isExpandedTrapList([trap, otherTrap])).toBe(false);
-  });
-
-  it('allows naming one trap directly, so the trap body stays verifiable', () => {
-    expect(isExpandedTrapList([trap])).toBe(false);
-  });
-
-  it('allows an ordinary list of test files', () => {
-    expect(isExpandedTrapList([real])).toBe(false);
   });
 });

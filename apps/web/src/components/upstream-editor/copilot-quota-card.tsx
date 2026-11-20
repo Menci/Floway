@@ -51,11 +51,11 @@ export function CopilotQuotaCard({ readOnly = false, record }: { readOnly?: bool
   const resets = quota?.reset_at == null ? null : shortDate(quota.reset_at, locale);
 
   return <section className={SECTION_STACK_CLASS}>
-    <SectionHeader level={3} title={t('dashboard.upstreamEditor.copilot.quota.title')} actions={!readOnly &&
+    <SectionHeader level={3} title={t('upstreams.editor.copilot.quota.title')} actions={!readOnly &&
       <ResourceListActions
         appearance="subtle"
         onRefresh={() => void load()}
-        refreshLabel={t(`dashboard.upstreamEditor.copilot.quota.${quota ? 'refresh' : 'load'}`)}
+        refreshLabel={t(`upstreams.editor.copilot.quota.${quota ? 'refresh' : 'load'}`)}
         refreshing={loading}
       />
     } />
@@ -67,7 +67,7 @@ export function CopilotQuotaCard({ readOnly = false, record }: { readOnly?: bool
           percent={bucket.usedPercent}
           quotaDisplay={preferences.quotaDisplay}
           right={<Text size={200} className="text-fui-fg3 tabular-nums">
-            {t('dashboard.upstreamEditor.copilot.quota.amount', {
+            {t('upstreams.editor.copilot.quota.amount', {
               amount: formatBucketAmount(bucket, preferences.quotaDisplay === 'used' ? bucket.used : bucket.remaining, locale),
               entitlement: formatBucketAmount(bucket, bucket.entitlement, locale),
             })}
@@ -76,7 +76,7 @@ export function CopilotQuotaCard({ readOnly = false, record }: { readOnly?: bool
       : <div className="grid gap-1" key={bucket.id}>
           <div className="flex items-baseline justify-between gap-3">
             <Text size={300}>{copilotQuotaName(t, bucket.id, 'allowance')}</Text>
-            <Text size={200} className="text-fui-fg3">{t(`dashboard.upstreamEditor.copilot.quota.${bucket.kind}`)}</Text>
+            <Text size={200} className="text-fui-fg3">{t(`upstreams.editor.copilot.quota.${bucket.kind}`)}</Text>
           </div>
         </div>)}
 
@@ -84,14 +84,14 @@ export function CopilotQuotaCard({ readOnly = false, record }: { readOnly?: bool
         a line it is the one worth reading first. */}
     {quota && <div className="flex flex-wrap items-baseline justify-between gap-x-3">
       {resets !== null && <Text size={200} className="text-fui-fg3">
-        {t('dashboard.upstreamEditor.copilot.quota.resets', { date: resets })}
+        {t('upstreams.editor.copilot.quota.resets', { date: resets })}
       </Text>}
       <Text size={200} className="text-fui-fg3">
-        {t('dashboard.upstreamEditor.copilot.quota.observed', { time: dateTime(quota.observed_at, locale) })}
+        {t('upstreams.editor.copilot.quota.observed', { time: dateTime(quota.observed_at, locale) })}
       </Text>
     </div>}
 
-    {!quota && !loading && <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.copilot.quota.empty')}</Text>}
+    {!quota && !loading && <Text size={200} className="text-fui-fg3">{t('upstreams.editor.copilot.quota.empty')}</Text>}
 
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
   </section>;

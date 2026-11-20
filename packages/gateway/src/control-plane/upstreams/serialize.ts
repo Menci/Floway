@@ -10,6 +10,7 @@ import { assertChatGPTUpstreamRecord, assertChatGPTUpstreamState } from '@floway
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { assertCopilotUpstreamRecord, assertCopilotUpstreamState } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
+import { assertKimiCodeUpstreamRecord, readKimiCodeUpstreamState } from '@floway-dev/provider-kimi-code';
 import { assertOllamaUpstreamRecord, readOllamaUpstreamState } from '@floway-dev/provider-ollama';
 
 export type { FullSerializedUpstreamRecord } from './types.ts';
@@ -52,13 +53,12 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
       kind: 'custom',
       config: {
         baseUrl: config.baseUrl,
-        authStyle: config.authStyle,
         endpoints: clone(config.endpoints),
         ...(config.pathOverrides !== undefined ? { pathOverrides: clone(config.pathOverrides) } : {}),
         ingressHeadersRules: clone(config.ingressHeadersRules),
         modelsFetch: clone(config.modelsFetch),
         models: clone(config.models),
-        apiKeySet: config.authStyle !== 'none' && hasSecret(config.apiKey),
+        apiKeySet: hasSecret(config.apiKey),
       },
       state: stateless(upstream),
     };
@@ -134,6 +134,10 @@ export const upstreamRecordToJson = (upstream: UpstreamRecord): RedactedSerializ
     };
     return { ...base, kind: 'claude-code', config: clone(upstream.config), state };
   }
+  case 'kimi-code': {
+    const { config } = assertKimiCodeUpstreamRecord(upstream);
+    return { ...base, kind: 'kimi-code', config: { region: config.region, apiKeySet: hasSecret(config.apiKey) }, state: upstream.state === null ? null : readKimiCodeUpstreamState(upstream.state) };
+  }
   case 'ollama': {
     const { config } = assertOllamaUpstreamRecord(upstream);
     return {
@@ -174,6 +178,10 @@ export const upstreamRecordToFullJson = (upstream: UpstreamRecord): FullSerializ
     assertClaudeCodeUpstreamState(upstream.state);
     return { ...base, kind: 'claude-code', config: clone(upstream.config), state: clone(upstream.state) };
   }
+  case 'kimi-code': {
+    const { config } = assertKimiCodeUpstreamRecord(upstream);
+    return { ...base, kind: 'kimi-code', config: clone(config), state: upstream.state === null ? null : readKimiCodeUpstreamState(upstream.state) };
+  }
   case 'ollama': {
     const record = assertOllamaUpstreamRecord(upstream);
     return { ...base, kind: 'ollama', config: clone(record.config), state: upstream.state === null ? null : readOllamaUpstreamState(upstream.state) };
@@ -206,13 +214,15 @@ export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): BlueprintSe
     // OpenAI-compatible chat endpoint whose model catalog the upstream itself
     // publishes. The blueprint is the create form's opening record, so this is
     // the only place a new upstream's starting values are decided.
-    return { ...base, kind, config: { baseUrl: '', authStyle: 'bearer', apiKey: '', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [], modelsFetch: { enabled: true }, models: [] }, state: null };
+    return { ...base, kind, config: { baseUrl: '', apiKey: '', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [], modelsFetch: { enabled: true, authStyle: 'bearer' }, models: [] }, state: null };
   case 'azure':
     return { ...base, kind, config: { endpoint: '', apiKey: '', models: [] }, state: null };
   case 'chatgpt':
     return { ...base, kind, config: { accounts: [] }, state: { accounts: [] } };
   case 'claude-code':
     return { ...base, kind, config: { accounts: [] }, state: { accounts: [] } };
+  case 'kimi-code':
+    return { ...base, kind, config: { region: 'china', apiKey: '' }, state: null };
   case 'ollama':
     return { ...base, kind, config: { baseUrl: '', apiKey: '', cloudUsage: false, models: [] }, state: null };
   }

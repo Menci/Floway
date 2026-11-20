@@ -1,5 +1,5 @@
 import { createPreviewProvider } from '../data-plane/providers/registry.ts';
-import { createPerRequestFetcher, createValidatedPerRequestFetcher, InvalidProxyConfigurationError } from '../dial/per-request.ts';
+import { createDetachedFetcher, createPerRequestFetcher, createValidatedPerRequestFetcher, InvalidProxyConfigurationError } from '../dial/per-request.ts';
 import { getRepo } from '../repo/index.ts';
 import { MODEL_CATALOG_REVISION, shouldScheduleModelsRefresh } from '../repo/models-cache-contract.ts';
 import { modelsRefreshRetryAt } from '../repo/models-refresh-backoff.ts';
@@ -158,8 +158,8 @@ const discoverModels = async (record: UpstreamRecord, fetcher: Fetcher, fetchCus
 export const executeModelsRefresh = async (input: ModelsRefreshExecutionInput): Promise<ModelsRefreshExecutionResult> => {
   const repo = getRepo().upstreams;
   if (input.kind === 'draft') {
-    if (input.record.kind !== 'custom' && input.record.kind !== 'ollama') throw new TypeError('Draft model discovery requires custom or ollama');
-    const fetcher = (await createValidatedPerRequestFetcher(input.runtimeLocation, [input.record]))(input.record.id);
+    if (input.record.kind !== 'custom' && input.record.kind !== 'ollama' && input.record.kind !== 'kimi-code') throw new TypeError('Draft model discovery requires custom, ollama or kimi-code');
+    const fetcher = await createDetachedFetcher(input.record.proxyFallbackList, input.runtimeLocation);
     return { kind: 'discovered', ...await discoverModels(input.record, fetcher, true), publication: 'draft' };
   }
 

@@ -6,17 +6,11 @@
 
 import { test } from 'vitest';
 
-import { applyRulesToUpstreamOpenAIChatCompletions, applyRulesToUpstreamAnthropicMessages, applyRulesToUpstreamOpenAIResponses } from '../../../../src/data-plane/chat/shared/alias-rules.ts';
+import { applyRulesToUpstreamGeminiGenerateContent, applyRulesToUpstreamAnthropicMessages, applyRulesToUpstreamOpenAIResponses } from '../../../../src/data-plane/chat/shared/alias-rules.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { assertEquals } from '@floway-dev/test-utils';
-
-const ccPayload = (overrides: Partial<OpenAIChatCompletionsPayload> = {}): OpenAIChatCompletionsPayload => ({
-  model: 'gpt-5.4',
-  messages: [{ role: 'user', content: 'hi' }],
-  ...overrides,
-});
 
 const resPayload = (overrides: Partial<OpenAIResponsesPayloadEx> = {}): OpenAIResponsesPayloadEx => ({
   model: 'gpt-5.4',
@@ -29,86 +23,6 @@ const msgPayload = (overrides: Partial<AnthropicMessagesPayload> = {}): Anthropi
   max_tokens: 32,
   messages: [{ role: 'user', content: 'hi' }],
   ...overrides,
-});
-
-// ── OpenAI Chat Completions target ──
-
-test('openai-chat-completions: empty rules leave the payload unchanged', () => {
-  const body = ccPayload({ reasoning_effort: 'high', verbosity: 'low', service_tier: 'priority' });
-  applyRulesToUpstreamOpenAIChatCompletions(body, {});
-  assertEquals(body.reasoning_effort, 'high');
-  assertEquals(body.verbosity, 'low');
-  assertEquals(body.service_tier, 'priority');
-});
-
-test('openai-chat-completions: rules stamp every supported native field onto the IR', () => {
-  const body = ccPayload();
-  applyRulesToUpstreamOpenAIChatCompletions(body, {
-    reasoning: { effort: 'high' },
-    verbosity: 'low',
-    serviceTier: 'priority',
-  });
-  assertEquals(body.reasoning_effort, 'high');
-  assertEquals(body.verbosity, 'low');
-  assertEquals(body.service_tier, 'priority');
-});
-
-test('openai-chat-completions: budget_tokens / adaptive / summary have no native slot — silently dropped', () => {
-  const body = ccPayload();
-  applyRulesToUpstreamOpenAIChatCompletions(body, {
-    reasoning: { budget_tokens: 1024, adaptive: true, summary: 'detailed' },
-  });
-  assertEquals(body.reasoning_effort, undefined);
-  // Nothing surfaces on the CC IR because none of those rules map to
-  // OpenAI Chat Completions' native fields.
-  assertEquals('thinking_budget' in body, false);
-  assertEquals('adaptive_thinking' in body, false);
-  assertEquals('reasoning_summary' in body, false);
-});
-
-test('openai-chat-completions: alias rules overwrite existing IR fields', () => {
-  const body = ccPayload({ reasoning_effort: 'low', verbosity: 'high', service_tier: 'default' });
-  applyRulesToUpstreamOpenAIChatCompletions(body, {
-    reasoning: { effort: 'xhigh' },
-    verbosity: 'low',
-    serviceTier: 'priority',
-  });
-  assertEquals(body.reasoning_effort, 'xhigh');
-  assertEquals(body.verbosity, 'low');
-  assertEquals(body.service_tier, 'priority');
-});
-
-// ── OpenAI Responses target ──
-
-test('responses: empty rules leave the payload unchanged', () => {
-  const body = resPayload({ reasoning: { effort: 'high' }, text: { verbosity: 'low' }, service_tier: 'priority' });
-  applyRulesToUpstreamOpenAIResponses(body, {});
-  assertEquals(body.reasoning?.effort, 'high');
-  assertEquals(body.text?.verbosity, 'low');
-  assertEquals(body.service_tier, 'priority');
-});
-
-test('responses: rules stamp every supported native field onto the IR', () => {
-  const body = resPayload();
-  applyRulesToUpstreamOpenAIResponses(body, {
-    reasoning: { effort: 'high', summary: 'concise' },
-    verbosity: 'medium',
-    serviceTier: 'flex',
-  });
-  assertEquals(body.reasoning?.effort, 'high');
-  assertEquals(body.reasoning?.summary, 'concise');
-  assertEquals(body.text?.verbosity, 'medium');
-  assertEquals(body.service_tier, 'flex');
-});
-
-test('responses: budget_tokens / adaptive have no native slot — silently dropped', () => {
-  const body = resPayload();
-  applyRulesToUpstreamOpenAIResponses(body, {
-    reasoning: { budget_tokens: 1024, adaptive: true },
-  });
-  assertEquals(body.reasoning, undefined);
-  assertEquals('thinking_budget' in body, false);
-  assertEquals('adaptive_thinking' in body, false);
 });
 
 test('responses: alias rules overwrite owned fields while preserving reasoning.context', () => {
@@ -127,63 +41,11 @@ test('responses: alias rules overwrite owned fields while preserving reasoning.c
   assertEquals(body.service_tier, 'priority');
 });
 
-// ── Anthropic Messages target ──
-
-test('messages: empty rules leave the payload unchanged', () => {
-  const body = msgPayload({ output_config: { effort: 'high' }, thinking: { type: 'enabled', budget_tokens: 512 }, speed: 'fast' });
-  applyRulesToUpstreamAnthropicMessages(body, {});
-  assertEquals(body.output_config?.effort, 'high');
-  assertEquals((body.thinking !== undefined && 'budget_tokens' in body.thinking ? body.thinking.budget_tokens : undefined), 512);
-  assertEquals(body.speed, 'fast');
-});
-
-test('messages: effort lands on output_config, budget+adaptive land on thinking', () => {
-  const body = msgPayload();
-  applyRulesToUpstreamAnthropicMessages(body, {
-    reasoning: { effort: 'high', budget_tokens: 2048 },
-  });
-  assertEquals(body.output_config?.effort, 'high');
-  assertEquals(body.thinking?.type, 'enabled');
-  assertEquals((body.thinking !== undefined && 'budget_tokens' in body.thinking ? body.thinking.budget_tokens : undefined), 2048);
-});
-
-test('messages: verbosity has no Anthropic-shaped slot — silently dropped', () => {
-  const body = msgPayload();
-  applyRulesToUpstreamAnthropicMessages(body, { verbosity: 'low' });
-  assertEquals('verbosity' in body, false);
-});
-
 test('messages: summary updates display without changing enabled thinking', () => {
   const body = msgPayload();
   body.thinking = { type: 'enabled', budget_tokens: 2048 };
   applyRulesToUpstreamAnthropicMessages(body, { reasoning: { summary: 'concise' } });
   assertEquals(body.thinking, { type: 'enabled', budget_tokens: 2048, display: 'summarized' });
-});
-
-test('messages: summary=omitted collapses onto thinking.display=omitted', () => {
-  const body = msgPayload();
-  body.thinking = { type: 'adaptive' };
-  applyRulesToUpstreamAnthropicMessages(body, { reasoning: { summary: 'omitted' } });
-  assertEquals(body.thinking, { type: 'adaptive', display: 'omitted' });
-});
-
-test.each([undefined, { type: 'disabled' }, { type: 'between_tools' }] as const)('messages: display-only rules preserve inactive thinking %j', thinking => {
-  const body = msgPayload();
-  if (thinking !== undefined) body.thinking = thinking;
-  applyRulesToUpstreamAnthropicMessages(body, { reasoning: { summary: 'detailed' } });
-  assertEquals(body.thinking, thinking);
-});
-
-test('messages: summary=auto is a no-op (Anthropic default takes over)', () => {
-  const body = msgPayload();
-  applyRulesToUpstreamAnthropicMessages(body, { reasoning: { summary: 'auto' } });
-  assertEquals(body.thinking, undefined);
-});
-
-test('messages: adaptive=true sets thinking.type=adaptive and ignores budget_tokens', () => {
-  const body = msgPayload();
-  applyRulesToUpstreamAnthropicMessages(body, { reasoning: { adaptive: true, budget_tokens: 4096 } });
-  assertEquals(body.thinking?.type, 'adaptive');
 });
 
 test('messages: adaptive=true strips a client-set budget_tokens from body.thinking', () => {
@@ -197,27 +59,6 @@ test('messages: adaptive=true strips a client-set budget_tokens from body.thinki
   assertEquals((body.thinking as { budget_tokens?: number }).budget_tokens, undefined);
 });
 
-test('messages: serviceTier=fast maps to speed=fast (cross-protocol bridge)', () => {
-  const body = msgPayload();
-  applyRulesToUpstreamAnthropicMessages(body, { serviceTier: 'fast' });
-  assertEquals(body.speed, 'fast');
-  assertEquals(body.service_tier, undefined);
-});
-
-test('messages: serviceTier=priority maps to speed=fast (OpenAI renamed the lane, both spellings reach it)', () => {
-  const body = msgPayload();
-  applyRulesToUpstreamAnthropicMessages(body, { serviceTier: 'priority' });
-  assertEquals(body.speed, 'fast');
-  assertEquals(body.service_tier, undefined);
-});
-
-test('messages: non-accelerated serviceTier lands on service_tier directly', () => {
-  const body = msgPayload();
-  applyRulesToUpstreamAnthropicMessages(body, { serviceTier: 'flex' });
-  assertEquals(body.service_tier, 'flex');
-  assertEquals(body.speed, undefined);
-});
-
 test('messages: serviceTier=fast clears a pre-existing body.service_tier on the same payload', () => {
   // Upstream must never see both `speed` and `service_tier` set on the
   // same request — Anthropic treats them as alternates and the wire
@@ -229,16 +70,37 @@ test('messages: serviceTier=fast clears a pre-existing body.service_tier on the 
   assertEquals(body.service_tier, undefined);
 });
 
-test('messages: non-accelerated serviceTier clears a pre-existing body.speed on the same payload', () => {
-  const body = msgPayload({ speed: 'fast' });
-  applyRulesToUpstreamAnthropicMessages(body, { serviceTier: 'flex' });
-  assertEquals(body.service_tier, 'flex');
-  assertEquals(body.speed, undefined);
+const geminiPayload = (overrides: Partial<GeminiGenerateContentPayload> = {}): GeminiGenerateContentPayload => ({
+  contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+  ...overrides,
 });
 
-test('messages: alias rules overwrite existing thinking + output_config fields', () => {
-  const body = msgPayload({ output_config: { effort: 'low' }, thinking: { type: 'enabled', budget_tokens: 100 } });
-  applyRulesToUpstreamAnthropicMessages(body, { reasoning: { effort: 'xhigh', budget_tokens: 9999 } });
-  assertEquals(body.output_config?.effort, 'xhigh');
-  assertEquals((body.thinking !== undefined && 'budget_tokens' in body.thinking ? body.thinking.budget_tokens : undefined), 9999);
+test('gemini: none disables thinking through a zero budget because there is no level for it', () => {
+  const body = geminiPayload({ generationConfig: { thinkingConfig: { thinkingLevel: 'HIGH' } } });
+  applyRulesToUpstreamGeminiGenerateContent(body, { reasoning: { effort: 'none' } });
+  assertEquals(body.generationConfig?.thinkingConfig, { thinkingBudget: 0 });
+});
+
+test('gemini: a budget replaces a client-stated level rather than joining it', () => {
+  const body = geminiPayload({ generationConfig: { thinkingConfig: { thinkingLevel: 'LOW', includeThoughts: true } } });
+  applyRulesToUpstreamGeminiGenerateContent(body, { reasoning: { budget_tokens: 2048 } });
+  assertEquals(body.generationConfig?.thinkingConfig, { includeThoughts: true, thinkingBudget: 2048 });
+});
+
+test('gemini: a known effort takes the uppercase wire level while a vendor-specific one travels verbatim', () => {
+  const known = geminiPayload();
+  applyRulesToUpstreamGeminiGenerateContent(known, { reasoning: { effort: 'xhigh' } });
+  assertEquals(known.generationConfig?.thinkingConfig, { thinkingLevel: 'XHIGH' });
+  const body = geminiPayload();
+  applyRulesToUpstreamGeminiGenerateContent(body, {
+    reasoning: { effort: 'turbo', adaptive: true, summary: 'detailed' },
+    verbosity: 'low',
+  });
+  assertEquals(body.generationConfig?.thinkingConfig, { thinkingLevel: 'turbo' });
+});
+
+test('gemini: the fast serviceTier alias takes the priority spelling the wire accepts', () => {
+  const body = geminiPayload();
+  applyRulesToUpstreamGeminiGenerateContent(body, { serviceTier: 'fast' });
+  assertEquals(body.serviceTier, 'priority');
 });

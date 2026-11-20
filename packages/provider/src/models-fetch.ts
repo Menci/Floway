@@ -36,17 +36,6 @@ export class ProviderModelsUnavailableError extends Error {
   }
 }
 
-// Reconstruct a Response from the captured upstream HTTP frame, or null
-// when none was captured (e.g. network errors or malformed bodies) — that
-// null lets callers choose their own fallback shape.
-export const httpResponseToResponse = (httpResponse: ProviderModelsUnavailableError['httpResponse']): Response | null => {
-  if (!httpResponse) return null;
-  return new Response(httpResponse.body, {
-    status: httpResponse.status,
-    headers: new Headers(httpResponse.headers),
-  });
-};
-
 // Shared scaffold for "fetch the upstream's /models, decode JSON, validate
 // shape" — error envelope identical across providers (network / JSON-parse
 // / shape-invalid ⇒ ProviderModelsUnavailableError(null, cause); non-2xx

@@ -5,6 +5,7 @@ import { providerEntry } from '../pipeline/provider-entry.ts';
 import { providerUsage } from '../pipeline/provider-usage.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { dialFailure, spentBody, retainReader } from '../pipeline/upstream-body.ts';
+import { isOpenAIErrorPayload } from '../shared/openai-errors.ts';
 import { upstreamPerformanceContext, telemetryModelIdentity } from '../shared/telemetry/attribution.ts';
 import { recordStream } from '@floway-dev/dump';
 import { exchangeResponse } from '@floway-dev/http/pipeline';
@@ -49,7 +50,7 @@ export const callOpenAIAudioTranscriptionUpstream = defineStage<
     if (exchange.type === 'transportFailure') {
       return move({
         ...rest,
-        'response.openaiAudioTranscription.canonical': dialFailure(exchange.error),
+        'response.openaiAudioTranscription.canonical': dialFailure(exchange.error, use.gateway.abortSignal),
         'response.openaiAudioTranscription.mediaType': null,
         'response.openaiAudioTranscription.streamedOutcome': null,
         'response.usage.billable': providerUsage(candidate, back, []),
@@ -213,7 +214,17 @@ const meterEvents = (
     let completed = false;
     try {
       for await (const frame of parseSSEStream(body, { signal })) {
-        const event: unknown = JSON.parse(frame.data);
+        if (frame.type === 'sse-raw') continue;
+        let event: unknown;
+        try {
+          event = JSON.parse(frame.data);
+        } catch (error) {
+          throw new Error(`Malformed upstream OpenAI Transcriptions SSE JSON: ${frame.data}`, { cause: error });
+        }
+        if (isOpenAIErrorPayload(event)) {
+          yield frame;
+          return;
+        }
         if (isOpenAIAudioTranscriptionDoneEvent(event)) {
           usage = await readUsage(() => parseOpenAIAudioTranscriptionStreamUsage(event), log);
           completed = true;
@@ -225,6 +236,7 @@ const meterEvents = (
         }
         yield frame;
       }
+      if (!signal?.aborted) throw new Error('OpenAI Transcriptions stream ended without a transcript.text.done event.');
     } finally {
       // Reached however the events ended — the terminal one, a client that stopped reading,
       // or a broken upstream — because what the upstream already metered is billable

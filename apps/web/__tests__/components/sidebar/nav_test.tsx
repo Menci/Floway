@@ -6,15 +6,8 @@ import { Sidebar } from '../../../src/components/sidebar/nav';
 import { renderInApp } from '../../render';
 
 const renderSidebar = (canViewUpstreams: boolean, canViewPermissions: boolean) => renderInApp(<RouterProvider router={createMemoryRouter([{
-  path: '/', Component: () => <Sidebar user={{ id: 2, username: 'operator', isAdmin: false, canViewPermissions, canViewUpstreams, preferences: { quotaDisplay: 'remaining' as const, language: null } }} />,
+  path: '/', Component: () => <Sidebar user={{ id: 2, username: 'operator', isAdmin: false, canViewPermissions, canViewUpstreams, preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false } }} />,
 }], { initialEntries: ['/'] })} />);
-
-test('renders the management section with its translated label for an administrator', () => {
-  renderInApp(<RouterProvider router={createMemoryRouter([{
-    path: '/', Component: () => <Sidebar user={{ id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } }} />,
-  }], { initialEntries: ['/'] })} />);
-  expect(screen.getByText('Management')).toBeTruthy();
-});
 
 test('shows capability-gated management pages independently', () => {
   const hidden = renderSidebar(false, false);

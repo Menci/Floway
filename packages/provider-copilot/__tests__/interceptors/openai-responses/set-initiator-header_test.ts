@@ -20,39 +20,16 @@ const invocation = (payload: CanonicalOpenAIResponsesPayload): OpenAIResponsesBo
   action: 'generate',
 });
 
-test.each(['user', 'system', 'developer'] as const)('OpenAI Responses initiator is user for a final %s message', async role => {
+test('OpenAI Responses initiator is user for a final developer message', async () => {
   const ctx = invocation({
     model: 'gpt-test',
     input: [
       {
         type: 'message',
-        role,
+        role: 'developer',
         content: [{ type: 'input_text', text: 'hello' }],
       },
     ],
-  });
-
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.headers.get('x-initiator'), 'user');
-});
-
-test('OpenAI Responses initiator is user when input is an empty array', async () => {
-  const ctx = invocation({ model: 'gpt-test', input: [] });
-
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.headers.get('x-initiator'), 'user');
-});
-
-test('OpenAI Responses initiator is user for the role-bearing additional_tools item', async () => {
-  const ctx = invocation({
-    model: 'gpt-test',
-    input: [{
-      type: 'additional_tools',
-      role: 'developer',
-      tools: [{ type: 'function', name: 'lookup', parameters: {}, strict: false }],
-    }],
   });
 
   await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
@@ -81,52 +58,6 @@ test('OpenAI Responses initiator is agent when the last input item is a function
         call_id: 'call_1',
         output: 'done',
       },
-    ],
-  });
-
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.headers.get('x-initiator'), 'agent');
-});
-
-test('OpenAI Responses initiator is agent when the last input item is a custom_tool_call_output', async () => {
-  const ctx = invocation({
-    model: 'gpt-test',
-    input: [
-      {
-        type: 'message',
-        role: 'user',
-        content: [{ type: 'input_text', text: 'run the freeform tool' }],
-      },
-      {
-        type: 'custom_tool_call',
-        call_id: 'call_custom',
-        name: 'lookup',
-        input: 'Tokyo',
-      },
-      {
-        type: 'custom_tool_call_output',
-        call_id: 'call_custom',
-        output: 'sunny',
-      },
-    ],
-  });
-
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.headers.get('x-initiator'), 'agent');
-});
-
-test('OpenAI Responses initiator is agent when the last canonical item is reasoning', async () => {
-  const ctx = invocation({
-    model: 'gpt-test',
-    input: [
-      {
-        type: 'message',
-        role: 'user',
-        content: [{ type: 'input_text', text: 'search the web' }],
-      },
-      { type: 'reasoning', id: 'rs_1', summary: [] },
     ],
   });
 

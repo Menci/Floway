@@ -24,13 +24,13 @@ export const RunStages = ({ ndjson }: { ndjson: string }) => {
   const [descent, setDescent] = useState(0);
   const [streamIndex, setStreamIndex] = useState(0);
   const labels = {
-    request: t('dashboard.requests.requestFacts'), response: t('dashboard.requests.responseFacts'),
-    down: t('dashboard.requests.requestChanges'), up: t('dashboard.requests.responseChanges'),
-    logs: t('dashboard.requests.stageLogs'), error: t('dashboard.requests.stageError'),
-    frames: t('dashboard.requests.protocolFrames'),
+    request: t('requests.requestFacts'), response: t('requests.responseFacts'),
+    down: t('requests.requestChanges'), up: t('requests.responseChanges'),
+    logs: t('requests.stageLogs'), error: t('requests.stageError'),
+    frames: t('requests.protocolFrames'),
   };
   const current = model.stages.find(stage => stage.id === selected);
-  if (current === undefined) return <EmptyStateLine className="p-4">{t('dashboard.requests.noRunEvents')}</EmptyStateLine>;
+  if (current === undefined) return <EmptyStateLine className="p-4">{t('requests.noRunEvents')}</EmptyStateLine>;
   const child = current.children[descent];
   const streams = view === 'frames' ? model.referencedStreams(current.request, ...current.response === null ? [] : [current.response]) : [];
   const stream = streams[streamIndex];
@@ -47,30 +47,30 @@ export const RunStages = ({ ndjson }: { ndjson: string }) => {
           : child?.response === null || child === undefined || current.response === null ? [] : model.diff(child.response, current.response);
   const select = (id: number) => { setSelected(id); setDescent(0); setStreamIndex(0); };
   const toolbar = <div className="flex flex-wrap items-center gap-2 min-w-0">
-    <Dropdown clearable={false} size="small" aria-label={t('dashboard.requests.stageView')} value={labels[view as keyof typeof labels]} selectedOptions={[view]} onOptionSelect={(_, data) => setView(data.optionValue!)}>
+    <Dropdown clearable={false} size="small" aria-label={t('requests.stageView')} value={labels[view as keyof typeof labels]} selectedOptions={[view]} onOptionSelect={(_, data) => setView(data.optionValue!)}>
       {Object.entries(labels).map(([value, label]) => <Option key={value} value={value}>{label}</Option>)}
     </Dropdown>
-    {view === 'frames' && stream !== undefined && <><Dropdown clearable={false} size="small" aria-label={t('dashboard.requests.protocolStream')} selectedOptions={[String(streamIndex)]} value={`#${stream.id}`} onOptionSelect={(_, data) => setStreamIndex(Number(data.optionValue))}>
+    {view === 'frames' && stream !== undefined && <><Dropdown clearable={false} size="small" aria-label={t('requests.protocolStream')} selectedOptions={[String(streamIndex)]} value={`#${stream.id}`} onOptionSelect={(_, data) => setStreamIndex(Number(data.optionValue))}>
       {streams.map((recorded, index) => <Option key={recorded.id} value={String(index)}>{`#${recorded.id}`}</Option>)}
-    </Dropdown><Text size={200}>{t(stream.ended ? 'dashboard.requests.recordingComplete' : 'dashboard.requests.recordingIncomplete')}</Text></>}
-    {(view === 'down' || view === 'up') && current.children.length > 0 && <Dropdown clearable={false} size="small" aria-label={t('dashboard.requests.descent')} selectedOptions={[String(descent)]} value={`#${child!.id} ${child!.name}`} onOptionSelect={(_, data) => setDescent(Number(data.optionValue))}>
+    </Dropdown><Text size={200}>{t(stream.ended ? 'requests.recordingComplete' : 'requests.recordingIncomplete')}</Text></>}
+    {(view === 'down' || view === 'up') && current.children.length > 0 && <Dropdown clearable={false} size="small" aria-label={t('requests.descent')} selectedOptions={[String(descent)]} value={`#${child!.id} ${child!.name}`} onOptionSelect={(_, data) => setDescent(Number(data.optionValue))}>
       {current.children.map((stage, index) => <Option key={stage.id} value={String(index)} text={`#${stage.id} ${stage.name}`}>#{stage.id} {stage.name}</Option>)}
     </Dropdown>}
   </div>;
   return <div className="h-full min-h-0 flex flex-col lg:flex-row">
     <ScrollArea axes="both" className="min-h-0 h-1/3 lg:h-full lg:w-1/3 shrink-0 border-b lg:border-b-0 lg:border-r border-[var(--winui-divider-stroke-default)]">
-      <Tree aria-label={t('dashboard.requests.stages')} selectionMode="single" checkedItems={selected === null ? [] : [selected]} defaultOpenItems={model.stages.map(stage => stage.id)} onNavigation={(_, data) => {
+      <Tree aria-label={t('requests.stages')} selectionMode="single" checkedItems={selected === null ? [] : [selected]} defaultOpenItems={model.stages.map(stage => stage.id)} onNavigation={(_, data) => {
         if (data.type === 'Click') select(Number(data.value));
       }}>
         {model.roots.map(stage => <StageBranch key={stage.id} stage={stage} select={select} />)}
       </Tree>
     </ScrollArea>
     <div className="flex-1 min-w-0 min-h-0">
-      {view === 'frames' ? <RenderedEventList events={frames} copyText={frames.map(frame => frame.text).join('\n')} toolbarStart={toolbar} emptyText={t(stream === undefined ? 'dashboard.requests.noProtocolStreams' : 'dashboard.requests.noProtocolFrames')} /> : view === 'response' && current.failure !== null ? <div className="p-4">{toolbar}<EmptyStateLine className="mt-4">{t('dashboard.requests.stageFailed')}</EmptyStateLine></div> : view === 'logs' ? <RenderedEventList
+      {view === 'frames' ? <RenderedEventList events={frames} copyText={frames.map(frame => frame.text).join('\n')} toolbarStart={toolbar} emptyText={t(stream === undefined ? 'requests.noProtocolStreams' : 'requests.noProtocolFrames')} /> : view === 'response' && current.failure !== null ? <div className="p-4">{toolbar}<EmptyStateLine className="mt-4">{t('requests.stageFailed')}</EmptyStateLine></div> : view === 'logs' ? <RenderedEventList
         events={current.logs.map(log => ({ event: log.level, text: JSON.stringify({ ...log, ...(log.fields === undefined ? {} : { fields: model.state(log.fields) }) }, null, 2), parseError: null }))}
         copyText={current.logs.map(log => JSON.stringify({ ...log, ...(log.fields === undefined ? {} : { fields: model.state(log.fields) }) })).join('\n')}
         toolbarStart={toolbar}
-      /> : <Suspense fallback={<Spinner />}><BodyEditor text={JSON.stringify(text, null, 2)} json label={current.name} toolbarStart={toolbar} emptyText={t('dashboard.requests.noRunEvents')} /></Suspense>}
+      /> : <Suspense fallback={<Spinner />}><BodyEditor text={JSON.stringify(text, null, 2)} json label={current.name} toolbarStart={toolbar} emptyText={t('requests.noRunEvents')} /></Suspense>}
     </div>
   </div>;
 };

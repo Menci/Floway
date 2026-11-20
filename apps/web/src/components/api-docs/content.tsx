@@ -47,38 +47,38 @@ export function ApiDocsContent() {
       <SectionHeader
         description={<Trans
           components={[<RouteLink key="api-keys" to="/dashboard/services/api-keys" />]}
-          i18nKey="dashboard.apiDocs.authentication.description"
+          i18nKey="apiDocs.authentication.description"
         />}
         level={2}
-        title={t('dashboard.apiDocs.authentication.title')}
+        title={t('apiDocs.authentication.title')}
       />
       <div className="grid gap-2 text-sm">
-        <Text><strong>{t('dashboard.apiDocs.authentication.baseUrl')}:</strong> <code>{window.location.origin}</code></Text>
+        <Text><strong>{t('apiDocs.authentication.baseUrl')}:</strong> <code>{window.location.origin}</code></Text>
       </div>
-      <MessageBar intent="warning"><MessageBarBody>{t('dashboard.apiDocs.authentication.warning')}</MessageBarBody></MessageBar>
+      <MessageBar intent="warning"><MessageBarBody>{t('apiDocs.authentication.warning')}</MessageBarBody></MessageBar>
       <CodeBlock code={authExample} copyOutcome={outcomeFor('auth')} language="bash" onCopy={() => copy(authExample, 'auth')} />
     </Panel>
 
     <Panel className={PANEL_SECTION_STACK_CLASS}>
-      <SectionHeader description={t('dashboard.apiDocs.endpointsDescription')} level={2} title={t('dashboard.apiDocs.endpointsTitle')} />
+      <SectionHeader description={t('apiDocs.endpointsDescription')} level={2} title={t('apiDocs.endpointsTitle')} />
       <div className={ENDPOINT_GROUP_GAP}>{apiDocsGroups.map(group => {
         const endpoints = apiDocsEndpoints.filter(endpoint => endpoint.group === group);
         return <section className={SECTION_STACK_CLASS} key={group}>
-          <SectionHeader level={3} title={t(`dashboard.apiDocs.groups.${group}`)} />
+          <SectionHeader level={3} title={t(`apiDocs.groups.${group}`)} />
           <ScrollArea axes="horizontal" className="min-w-0">
-            <Table aria-label={t(`dashboard.apiDocs.groups.${group}`)} className="min-w-[780px]" size="small">
+            <Table aria-label={t(`apiDocs.groups.${group}`)} className="min-w-[780px]" size="small">
               <TableColumns widths={['72px', null, '300px', '144px']} />
               <TableHeader><TableRow>
-                <TableHeaderCell>{t('dashboard.apiDocs.columns.method')}</TableHeaderCell>
-                <TableHeaderCell>{t('dashboard.apiDocs.columns.endpoint')}</TableHeaderCell>
-                <TableHeaderCell>{t('dashboard.apiDocs.columns.description')}</TableHeaderCell>
-                <TableTrailingHeader>{t('dashboard.apiDocs.columns.docs')}</TableTrailingHeader>
+                <TableHeaderCell>{t('apiDocs.columns.method')}</TableHeaderCell>
+                <TableHeaderCell>{t('apiDocs.columns.endpoint')}</TableHeaderCell>
+                <TableHeaderCell>{t('apiDocs.columns.description')}</TableHeaderCell>
+                <TableTrailingHeader>{t('apiDocs.columns.docs')}</TableTrailingHeader>
               </TableRow></TableHeader>
               <TableBody>{endpoints.map(endpoint => <TableRow key={`${endpoint.method} ${endpoint.path}`}>
                 <TableCell><HttpMethodBadge method={endpoint.method} /></TableCell>
                 <TableCell><code translate="no">{endpoint.path}</code></TableCell>
-                <TableCell>{t(`dashboard.apiDocs.endpointNames.${endpoint.name}`)}</TableCell>
-                <TableTrailingCell><Link href={endpoint.docs} target="_blank" rel="noopener noreferrer"><OpenLinkLabel>{t('dashboard.apiDocs.docsLink')}</OpenLinkLabel></Link></TableTrailingCell>
+                <TableCell>{t(`apiDocs.endpointNames.${endpoint.name}`)}</TableCell>
+                <TableTrailingCell><Link href={endpoint.docs} target="_blank" rel="noopener noreferrer"><OpenLinkLabel>{t('apiDocs.docsLink')}</OpenLinkLabel></Link></TableTrailingCell>
               </TableRow>)}</TableBody>
             </Table>
           </ScrollArea>

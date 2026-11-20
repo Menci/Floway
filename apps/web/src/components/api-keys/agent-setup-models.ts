@@ -9,7 +9,7 @@ export type AgentModelRanking =
 
 export interface AgentModelOption {
   value: string;
-  publicModelId: string;
+  label: string;
 }
 
 const CLAUDE_DEFAULT_ORDER: readonly ClaudeTier[] = ['fable', 'opus', 'sonnet', 'haiku', 'other'];
@@ -101,11 +101,11 @@ export const buildAgentModelOptions = (
       : model.id;
     if (values.has(value)) continue;
     values.add(value);
-    options.push({ value, publicModelId: model.id });
+    options.push({ value, label: model.display_name });
   }
   return options;
 };
 
-export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'codex' | 'pi' | 'omp', picker: ClaudePicker) =>
-  buildAgentModelOptions(models, family === 'claude' ? { family, picker } : { family })
-    .map(option => ({ value: option.value, label: option.publicModelId }));
+export const modelOptions = (models: ControlPlaneModel[], family: 'claude' | 'codex' | 'pi' | 'omp', picker: ClaudePicker) => {
+  return buildAgentModelOptions(models, family === 'claude' ? { family, picker } : { family });
+};

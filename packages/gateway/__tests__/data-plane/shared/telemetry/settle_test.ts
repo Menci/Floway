@@ -2,7 +2,6 @@ import { beforeEach, expect, test } from 'vitest';
 
 import { settle } from '../../../../src/data-plane/shared/telemetry/settle.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
-import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
@@ -37,39 +36,6 @@ beforeEach(() => {
   repo = new InMemoryRepo();
   initRepo(repo);
   background = [];
-});
-
-// ── settle ──
-
-test('settle records a usage row when the figure carries a billable metric', async () => {
-  settle(ctx(), testPerformanceContext, testTelemetryModelIdentity, { input: 10, output: 5 }, false);
-  await Promise.all(background);
-
-  const rows = await repo.usage.listAll();
-  assertEquals(rows.length, 1);
-  assertEquals(rows[0].keyId, 'key_a');
-  assertEquals(tokenCountsFromUsage(rows[0]), { input: 10, output: 5 });
-  assertEquals(rows[0].requests, 1);
-});
-
-test('settle records the request without metrics when usage is null', async () => {
-  settle(ctx(), testPerformanceContext, testTelemetryModelIdentity, null, false);
-  await Promise.all(background);
-
-  const rows = await repo.usage.listAll();
-  assertEquals(rows.length, 1);
-  assertEquals(rows[0].requests, 1);
-  assertEquals(rows[0].metrics, []);
-});
-
-test('settle records the request when usage carries no billable metric', async () => {
-  settle(ctx(), testPerformanceContext, testTelemetryModelIdentity, {}, false);
-  await Promise.all(background);
-
-  const rows = await repo.usage.listAll();
-  assertEquals(rows.length, 1);
-  assertEquals(rows[0].requests, 1);
-  assertEquals(rows[0].metrics, []);
 });
 
 // TPOT reflects the token stream, not the D1 write that follows it.

@@ -40,7 +40,7 @@ export const callProviderPipeline = async <O extends ProviderOperation>(
     await executed.drain();
   }
   const result = {
-    response: new Response(exchange.body === null ? null : bytes, { status: exchange.status, statusText: exchange.statusText, headers: response.headers }),
+    http: new Response(exchange.body === null ? null : bytes, { status: exchange.status, statusText: exchange.statusText, headers: response.headers }),
     modelKey: facts['response.provider.modelKey'],
     called: facts['response.provider.called'],
     previousCalls: facts['response.provider.previousCalls'],

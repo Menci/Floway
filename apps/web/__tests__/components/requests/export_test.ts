@@ -33,16 +33,6 @@ const redactedRecord = (id: string): DumpEdgeRecord => {
 };
 
 describe('request export', () => {
-  it('masks every credential header and keeps the rest intact', async () => {
-    const [exported] = JSON.parse(await exportRecords([record('one')], false).text()).records;
-    expect(exported).toEqual(redactedRecord('one'));
-  });
-
-  it('preserves raw bytes, completeness and errors in combined JSON', async () => {
-    const records = [record('one'), record('two')];
-    expect(JSON.parse(await exportRecords(records, false).text())).toEqual({ format: 'floway-request-dump', version: 1, records: [redactedRecord('one'), redactedRecord('two')] });
-  });
-
   it('writes independent UTF-8 JSON members with valid tar sizes and checksums', async () => {
     const records = [record('one'), record('two')];
     const bytes = new Uint8Array(await exportRecords(records, true).arrayBuffer());

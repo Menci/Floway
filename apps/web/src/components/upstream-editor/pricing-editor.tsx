@@ -119,7 +119,7 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
   const issues = useMemo(() => collectDraftIssues(drafts, value), [drafts, value]);
   const baseIndex = drafts.findIndex(isBaseEntry);
 
-  const metricName = (metric: BillingMetric): string => t(`dashboard.upstreamEditor.models.pricingMetrics.${metric}`);
+  const metricName = (metric: BillingMetric): string => t(`models.editor.pricingMetrics.${metric}`);
 
   const commit = (next: PricingEntryDraft[]) => {
     if (readOnly) return;
@@ -145,7 +145,7 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
   };
 
   const issueMessage = (issue: ModelPricingIssue): string => {
-    const key = 'dashboard.upstreamEditor.models.pricingIssue.';
+    const key = 'models.editor.pricingIssue.';
     switch (issue.code) {
     case 'empty-catalog': return t(`${key}emptyCatalog`);
     case 'empty-rates': return t(`${key}emptyRates`);
@@ -161,20 +161,20 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
   if (drafts.length === 0) {
     return <EmptyState
       action={!readOnly && <Button appearance="primary" icon={<AddRegular />} onClick={addEntry}>
-        {t('dashboard.upstreamEditor.models.setupPricing')}
+        {t('models.editor.setupPricing')}
       </Button>}
       align="start"
-      description={t('dashboard.upstreamEditor.models.pricingEmptyHint')}
-      title={t('dashboard.upstreamEditor.models.noPricingEntries')}
+      description={t('models.editor.pricingEmptyHint')}
+      title={t('models.editor.noPricingEntries')}
     />;
   }
 
   const activeIssues = issues.filter(issue => issueAffectsEntry(issue, selectedIndex));
 
   return <div className={`grid min-w-0 grid-cols-[240px_minmax(0,1fr)] items-stretch ${PANE_GAP_CLASS} max-[760px]:grid-cols-1`}>
-    <aside className="grid h-full min-w-0 content-start gap-2 border-0 border-r border-solid border-fui-divider pr-4 max-[760px]:border-b max-[760px]:border-r-0 max-[760px]:pb-4" aria-label={t('dashboard.upstreamEditor.models.pricingRules')}>
+    <aside className="grid h-full min-w-0 content-start gap-2 border-0 border-r border-solid border-fui-divider pr-4 max-[760px]:border-b max-[760px]:border-r-0 max-[760px]:pb-4" aria-label={t('models.editor.pricingRules')}>
       <List
-        aria-label={t('dashboard.upstreamEditor.models.pricingRules')}
+        aria-label={t('models.editor.pricingRules')}
         onSelectionChange={(_, data) => {
           const next = data.selectedItems[0];
           if (typeof next === 'number') setSelectedId(next);
@@ -184,48 +184,48 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
       >
         {drafts.map((draft, index) => {
           const label = pricingEntryCoordinateLabel(draft);
-          const displayLabel = index === baseIndex ? t('dashboard.upstreamEditor.models.pricingBase') : label;
+          const displayLabel = index === baseIndex ? t('models.editor.pricingBase') : label;
           return <ListItem checkmark={null} className={styles.rule} key={draft.id} value={draft.id}>
             <span className="grid min-w-0 gap-0.5 text-left">
               <span className="flex min-w-0 items-center gap-2">
                 <TruncationTooltip content={displayLabel} relationship="label">
                   {measureRef => <Text block className="winui-focus-rect" ref={measureRef} truncate size={300} weight="semibold" tabIndex={0} wrap={false}>{displayLabel}</Text>}
                 </TruncationTooltip>
-                {issues.some(issue => issueAffectsEntry(issue, index)) && <WarningRegular aria-label={t('dashboard.upstreamEditor.models.pricingErrors')} fontSize={16} />}
+                {issues.some(issue => issueAffectsEntry(issue, index)) && <WarningRegular aria-label={t('models.editor.pricingErrors')} fontSize={16} />}
               </span>
               <Text block truncate size={200} className="text-fui-fg2" wrap={false}>
                 {index === baseIndex
-                  ? t('dashboard.upstreamEditor.models.basePricingSummary')
-                  : t('dashboard.upstreamEditor.models.overridePricingSummary')}
+                  ? t('models.editor.basePricingSummary')
+                  : t('models.editor.overridePricingSummary')}
               </Text>
             </span>
           </ListItem>;
         })}
       </List>
       {!readOnly && <Button appearance="subtle" className="!justify-start !px-0" icon={<AddRegular />} onClick={addEntry} size="small">
-        {t('dashboard.upstreamEditor.models.addPricingOverride')}
+        {t('models.editor.addPricingOverride')}
       </Button>}
     </aside>
 
     {active && <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-4">
       <section className="grid min-w-0 gap-3" aria-labelledby={conditionsHeadingId}>
         <SectionHeader
-          description={t('dashboard.upstreamEditor.models.pricingConditionsHint')}
+          description={t('models.editor.pricingConditionsHint')}
           level={4}
-          title={t('dashboard.upstreamEditor.models.pricingConditions')}
+          title={t('models.editor.pricingConditions')}
           titleId={conditionsHeadingId}
           actions={!readOnly && selectedIndex !== baseIndex
-            ? <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.models.removePricingEntry')} onClick={removeActive} />
+            ? <TooltipIconButton danger icon={<DeleteRegular />} label={t('models.editor.removePricingEntry')} onClick={removeActive} />
             : undefined}
         />
         <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
           {PRICING_AXES.map(axis => {
             if (axis.kind === 'equality') {
               const current = active.selector[axis.id];
-              return <Field className="min-w-0" key={axis.id} label={t('dashboard.upstreamEditor.models.serviceTierName')}>
+              return <Field className="min-w-0" key={axis.id} label={t('models.editor.serviceTierName')}>
                 <Input
                   className="!w-full"
-                  placeholder={t('dashboard.upstreamEditor.models.serviceTierPlaceholder')}
+                  placeholder={t('models.editor.serviceTierPlaceholder')}
                   readOnly={readOnly}
                   value={typeof current === 'string' ? current : ''}
                   onChange={(_, data) => patchActive(draft => withEqualityCoordinate(draft, axis.id, data.value))}
@@ -237,10 +237,10 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
             // Two field-aware controls under one Field would both take its
             // generated control id; the label names the one that carries the
             // value, and the operator select speaks for itself.
-            return <Field className="min-w-0" key={axis.id} label={{ children: t('dashboard.upstreamEditor.models.inputTokens'), htmlFor: thresholdId }}>
+            return <Field className="min-w-0" key={axis.id} label={{ children: t('models.editor.inputTokens'), htmlFor: thresholdId }}>
               <div className="flex min-w-0 items-center gap-2">
                 <Dropdown
-                  aria-label={t('dashboard.upstreamEditor.models.operator')}
+                  aria-label={t('models.editor.operator')}
                   readOnly={readOnly}
                   className="!w-[76px] flex-none"
                   selectedOptions={[threshold?.operator ?? 'gt']}
@@ -270,9 +270,9 @@ export function PricingEditor({ kind, onChange, readOnly, value }: {
 
       <section className="grid min-w-0 gap-3" aria-labelledby={ratesHeadingId}>
         <SectionHeader
-          description={t('dashboard.upstreamEditor.models.pricingRatesHint')}
+          description={t('models.editor.pricingRatesHint')}
           level={4}
-          title={t('dashboard.upstreamEditor.models.pricingRates')}
+          title={t('models.editor.pricingRates')}
           titleId={ratesHeadingId}
         />
         <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(180px,1fr))]">

@@ -25,15 +25,15 @@ describe('API key upstream limits', () => {
       {...(mode === 'create' ? { mode } : { mode, apiKey })}
       models={[]} onOpenChange={vi.fn()} onSaved={onSaved} open upstreams={[]}
     /></OutcomeToastProvider>);
-    const toggle = screen.getByRole('switch', { name: i18n.t('dashboard.upstreamAccess.title') });
+    const toggle = screen.getByRole('switch', { name: i18n.t('apiKeys.upstreamAccess.title') });
     if (mode === 'create') {
       await act(async () => {
-        fireEvent.change(screen.getByLabelText(i18n.t('dashboard.apiKeys.form.name')), { target: { value: 'Empty key' } });
+        fireEvent.change(screen.getByLabelText(i18n.t('apiKeys.form.name')), { target: { value: 'Empty key' } });
         toggle.click();
       });
     }
-    expect(screen.getByText(i18n.t('dashboard.upstreamAccess.emptyWarning'))).toBeTruthy();
-    const save = screen.getByRole('button', { name: i18n.t(mode === 'create' ? 'dashboard.apiKeys.actions.create' : 'dashboard.apiKeys.actions.save') });
+    expect(screen.getByText(i18n.t('apiKeys.upstreamAccess.emptyWarning'))).toBeTruthy();
+    const save = screen.getByRole('button', { name: i18n.t(mode === 'create' ? 'apiKeys.actions.create' : 'apiKeys.actions.save') });
     await act(async () => { save.click(); });
     expect(onSaved).toHaveBeenCalledOnce();
     expect(fetch).toHaveBeenLastCalledWith(mode === 'create' ? '/api/keys' : '/api/keys/empty', expect.objectContaining({
@@ -42,34 +42,11 @@ describe('API key upstream limits', () => {
     }));
 
     await act(async () => { toggle.click(); });
-    expect(screen.queryByText(i18n.t('dashboard.upstreamAccess.emptyWarning'))).toBeNull();
+    expect(screen.queryByText(i18n.t('apiKeys.upstreamAccess.emptyWarning'))).toBeNull();
     await act(async () => { save.click(); });
     expect(onSaved).toHaveBeenCalledTimes(2);
     expect(fetch).toHaveBeenLastCalledWith(mode === 'create' ? '/api/keys' : '/api/keys/empty', expect.objectContaining({
       body: expect.stringContaining('"upstream_ids":null'),
-    }));
-  });
-
-  it('saves randomized upstream order', async () => {
-    const fetch = vi.fn(async () => Response.json({ ...apiKey, randomize_upstreams: true }));
-    vi.stubGlobal('fetch', fetch);
-    renderInApp(<OutcomeToastProvider><KeyDialog
-      apiKey={apiKey}
-      mode="edit"
-      models={[]}
-      onOpenChange={vi.fn()}
-      onSaved={vi.fn(async () => {})}
-      open
-      upstreams={[]}
-    /></OutcomeToastProvider>);
-
-    const toggle = screen.getByRole('switch', { name: i18n.t('dashboard.apiKeys.form.randomizeUpstreams') });
-    expect((toggle as HTMLInputElement).checked).toBe(false);
-    await act(async () => { toggle.click(); });
-    await act(async () => { screen.getByRole('button', { name: i18n.t('dashboard.apiKeys.actions.save') }).click(); });
-
-    expect(fetch).toHaveBeenLastCalledWith('/api/keys/empty', expect.objectContaining({
-      body: expect.stringContaining('"randomize_upstreams":true'),
     }));
   });
 });

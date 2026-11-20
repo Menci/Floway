@@ -10,12 +10,9 @@ import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 const cases: Array<{ name: string; access: 'all' | 'none' | 'up_a' | 'up_b'; keyCap: string[] | null; models: string[] }> = [
   { name: 'all Model.Use grants and an inheriting key', access: 'all', keyCap: null, models: ['model_a', 'model_b'] },
   { name: 'an empty key restriction', access: 'all', keyCap: [], models: [] },
-  { name: 'an empty key under a single-upstream grant', access: 'up_a', keyCap: [], models: [] },
   { name: 'no Model.Use grants with an inheriting key', access: 'none', keyCap: null, models: [] },
-  { name: 'no Model.Use grants and an empty key', access: 'none', keyCap: [], models: [] },
-  { name: 'a key cannot add an upstream absent from Model.Use', access: 'none', keyCap: ['up_a'], models: [] },
   { name: 'a single-upstream grant with an inheriting key', access: 'up_a', keyCap: null, models: ['model_a'] },
-  { name: 'disjoint Model.Use and key restrictions', access: 'up_b', keyCap: ['up_a'], models: [] },
+  { name: 'a key cannot add an upstream absent from Model.Use', access: 'up_b', keyCap: ['up_a'], models: [] },
 ];
 
 test.each(cases)('$name controls model visibility and upstream dispatch', async ({ access, keyCap, models }) => {
@@ -27,11 +24,10 @@ test.each(cases)('$name controls model visibility and upstream dispatch', async 
       name: `Upstream ${suffix}`,
       config: {
         baseUrl: `https://${suffix}.example.com`,
-        authStyle: 'bearer',
         ingressHeadersRules: [],
         apiKey: 'upstream-key',
         endpoints: { openaiChatCompletions: {} },
-        modelsFetch: { enabled: false },
+        modelsFetch: { enabled: false, authStyle: 'bearer' },
         models: [{ upstreamModelId: `model_${suffix}`, kind: 'chat', endpoints: { openaiChatCompletions: {} } }],
       },
     });

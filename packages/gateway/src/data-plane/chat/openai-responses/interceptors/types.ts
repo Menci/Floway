@@ -3,7 +3,7 @@ import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { Interceptor } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import type { EventResultMetadata, ExecuteResult, OpenAIResponsesInvocation, TelemetryModelIdentity } from '@floway-dev/provider';
+import type { EventResultMetadata, ExecuteResult, HttpHead, OpenAIResponsesInvocation, TelemetryModelIdentity } from '@floway-dev/provider';
 
 export type { OpenAIResponsesInvocation };
 
@@ -20,6 +20,7 @@ export type OpenAIResponsesAttemptResult<Result = OpenAIResponsesResultEx> =
   | ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>
   | {
     readonly type: 'result';
+    readonly http?: HttpHead;
     readonly result: Result;
     readonly modelIdentity: TelemetryModelIdentity;
     readonly usage: TokenUsage | null;

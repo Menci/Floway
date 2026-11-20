@@ -4,6 +4,7 @@ import { resolveUpstreamMetricDisplaySeries, type UpstreamMetricDisplay, type Up
 import { resolveUpstreamMetricDisplays as chatgptDisplays } from '@floway-dev/provider-chatgpt/browser';
 import { resolveUpstreamMetricDisplays as claudeCodeDisplays } from '@floway-dev/provider-claude-code/browser';
 import { resolveUpstreamMetricDisplays as copilotDisplays } from '@floway-dev/provider-copilot/browser';
+import { resolveUpstreamMetricDisplays as kimiCodeDisplays } from '@floway-dev/provider-kimi-code/browser';
 import { resolveUpstreamMetricDisplays as ollamaDisplays } from '@floway-dev/provider-ollama/browser';
 
 export type ResolvedUpstreamMetricDisplay = UpstreamMetricDisplay;
@@ -16,32 +17,34 @@ export interface ResolvedUpstreamMetricDisplaySeries extends Omit<UpstreamMetric
 // suite see them, and the annotation is what proves each one exists in the
 // English catalogue.
 const providerLabelKeys: ReadonlyArray<UpstreamMetricLabelKey> = [
-  'dashboard.upstreams.copilotQuota.chat.allowance',
-  'dashboard.upstreams.copilotQuota.chat.remaining',
-  'dashboard.upstreams.copilotQuota.chat.usage',
-  'dashboard.upstreams.copilotQuota.completions.allowance',
-  'dashboard.upstreams.copilotQuota.completions.remaining',
-  'dashboard.upstreams.copilotQuota.completions.usage',
-  'dashboard.upstreams.copilotQuota.other.allowance',
-  'dashboard.upstreams.copilotQuota.other.remaining',
-  'dashboard.upstreams.copilotQuota.other.usage',
-  'dashboard.upstreams.copilotQuota.premiumInteractions.allowance',
-  'dashboard.upstreams.copilotQuota.premiumInteractions.remaining',
-  'dashboard.upstreams.copilotQuota.premiumInteractions.usage',
-  'dashboard.upstreamMetrics.metrics.credits',
-  'dashboard.upstreamMetrics.metrics.extraUsage',
-  'dashboard.upstreamMetrics.metrics.includedAllowance',
-  'dashboard.upstreamMetrics.metrics.includedBalance',
-  'dashboard.upstreamMetrics.metrics.namedRemaining',
-  'dashboard.upstreamMetrics.metrics.namedUsage',
-  'dashboard.upstreamMetrics.metrics.past24HoursCost',
-  'dashboard.upstreamMetrics.metrics.past30DaysCost',
-  'dashboard.upstreamMetrics.metrics.past7DaysCost',
-  'dashboard.upstreamMetrics.metrics.purchasedBalance',
-  'dashboard.upstreamMetrics.metrics.remaining',
-  'dashboard.upstreamMetrics.metrics.sessionRemaining',
-  'dashboard.upstreamMetrics.metrics.sessionUsage',
-  'dashboard.upstreamMetrics.metrics.usage',
+  'monitoring.upstreams.series.copilot.chat.allowance',
+  'monitoring.upstreams.series.copilot.chat.remaining',
+  'monitoring.upstreams.series.copilot.chat.usage',
+  'monitoring.upstreams.series.copilot.completions.allowance',
+  'monitoring.upstreams.series.copilot.completions.remaining',
+  'monitoring.upstreams.series.copilot.completions.usage',
+  'monitoring.upstreams.series.copilot.other.allowance',
+  'monitoring.upstreams.series.copilot.other.remaining',
+  'monitoring.upstreams.series.copilot.other.usage',
+  'monitoring.upstreams.series.copilot.premiumInteractions.allowance',
+  'monitoring.upstreams.series.copilot.premiumInteractions.remaining',
+  'monitoring.upstreams.series.copilot.premiumInteractions.usage',
+  'monitoring.upstreams.series.credits',
+  'monitoring.upstreams.series.extraUsage',
+  'monitoring.upstreams.series.includedAllowance',
+  'monitoring.upstreams.series.includedBalance',
+  'monitoring.upstreams.series.monthlyRemaining',
+  'monitoring.upstreams.series.monthlyUsage',
+  'monitoring.upstreams.series.namedRemaining',
+  'monitoring.upstreams.series.namedUsage',
+  'monitoring.upstreams.series.past24HoursCost',
+  'monitoring.upstreams.series.past30DaysCost',
+  'monitoring.upstreams.series.past7DaysCost',
+  'monitoring.upstreams.series.purchasedBalance',
+  'monitoring.upstreams.series.remaining',
+  'monitoring.upstreams.series.sessionRemaining',
+  'monitoring.upstreams.series.sessionUsage',
+  'monitoring.upstreams.series.usage',
 ];
 
 // The provider chooses the key; this boundary is where that open string enters
@@ -61,6 +64,7 @@ const decodeProviderMetrics = (
   case 'chatgpt': return chatgptDisplays(samples, options);
   case 'copilot': return copilotDisplays(samples, options);
   case 'claude-code': return claudeCodeDisplays(samples, options);
+  case 'kimi-code': return kimiCodeDisplays(samples, options);
   case 'ollama': return ollamaDisplays(samples, options);
   default: return resolveUpstreamMetricDisplaySeries(samples, options, () => null);
   }
@@ -75,12 +79,12 @@ const localizeDisplay = (
     return { ...display, name };
   }
   const seconds = display.windowSeconds;
-  const window = seconds % 86_400 === 0 ? t('dashboard.upstreamMetrics.windows.days', { count: seconds / 86_400 })
-    : seconds % 3_600 === 0 ? t('dashboard.upstreamMetrics.windows.hours', { count: seconds / 3_600 })
-      : seconds % 60 === 0 ? t('dashboard.upstreamMetrics.windows.minutes', { count: seconds / 60 })
-        : t('dashboard.upstreamMetrics.windows.seconds', { count: seconds });
+  const window = seconds % 86_400 === 0 ? t('monitoring.upstreams.windows.days', { count: seconds / 86_400 })
+    : seconds % 3_600 === 0 ? t('monitoring.upstreams.windows.hours', { count: seconds / 3_600 })
+      : seconds % 60 === 0 ? t('monitoring.upstreams.windows.minutes', { count: seconds / 60 })
+        : t('monitoring.upstreams.windows.seconds', { count: seconds });
   const name = display.labelKey === null
-    ? display.name === '' ? window : t('dashboard.upstreamMetrics.metrics.window', { name: display.name, window })
+    ? display.name === '' ? window : t('monitoring.upstreams.series.window', { name: display.name, window })
     : t(translatedKey(display.labelKey), { ...display.labelValues, window });
   return { ...display, name };
 };

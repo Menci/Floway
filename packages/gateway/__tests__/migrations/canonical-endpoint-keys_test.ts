@@ -12,14 +12,11 @@ const MIGRATION = '0083_canonical_protocol_names.sql';
 
 // The shape an operator's row carried before the rename: the endpoint map keyed
 // by the abbreviated protocol names, per model and once at the upstream level.
-// One row per family so the negative control can name a key from each — the
-// validator throws on the first key it does not know, so a single row would
-// only ever witness one of them. `rerank` is seeded unrenamed: it is a model
-// kind rather than one vendor's protocol, so the migration must leave it alone.
+// `rerank` is seeded unrenamed: it is a model kind rather than one vendor's
+// protocol, so the migration must leave it alone.
 const LEGACY_CONFIGS = {
   up_legacy_chat: {
     baseUrl: 'https://upstream.example/v1',
-    authStyle: 'bearer',
     apiKey: 'sk-legacy',
     ingressHeadersRules: [],
     endpoints: { chatCompletions: {} },
@@ -31,7 +28,6 @@ const LEGACY_CONFIGS = {
   },
   up_legacy_media: {
     baseUrl: 'https://media.example/v1',
-    authStyle: 'bearer',
     apiKey: 'sk-media',
     ingressHeadersRules: [],
     endpoints: { audioTranscriptions: {} },
@@ -44,7 +40,7 @@ const LEGACY_CONFIGS = {
   },
 };
 
-const seededConfigs = (options: { runMigration: boolean }): Record<string, unknown> => {
+const migratedConfigs = (): Record<string, unknown> => {
   const db = new DatabaseSync(':memory:');
   for (const [filename, sql] of migrationSqlByFilename) {
     if (filename === MIGRATION) {
@@ -54,7 +50,6 @@ const seededConfigs = (options: { runMigration: boolean }): Record<string, unkno
           VALUES (?, 'custom', 'Legacy', '', '', ?, 210)
         `).run(id, JSON.stringify(config));
       }
-      if (!options.runMigration) continue;
     }
     db.exec(sql);
   }
@@ -74,7 +69,7 @@ const servedEndpoints = (id: string, config: unknown): { upstream: string[]; mod
 };
 
 test('the canonical endpoint-key migration keeps every configured endpoint routable', () => {
-  const configs = seededConfigs({ runMigration: true });
+  const configs = migratedConfigs();
 
   const chat = servedEndpoints('up_legacy_chat', configs.up_legacy_chat);
   expect(chat.upstream).toEqual(['openaiChatCompletions']);
@@ -96,14 +91,4 @@ test('the canonical endpoint-key migration keeps every configured endpoint routa
   const picker = chatTargetPicker(['openaiResponses', 'anthropicMessages', 'openaiChatCompletions']);
   expect(picker.canServe({ openaiResponses: {} })).toBe(true);
   expect(picker.pick({ openaiResponses: {} })).toBe('openaiResponses');
-});
-
-test('without the migration the same rows stop declaring any endpoint the new code understands', () => {
-  // The negative control. `endpointsSchema` is a passthrough object of optional
-  // keys, so the stale rows still decode at the repository boundary; the
-  // rejection lands one layer in, where the provider validates the map, and it
-  // takes the whole upstream with it.
-  const stale = seededConfigs({ runMigration: false });
-  expect(() => servedEndpoints('up_legacy_chat', stale.up_legacy_chat)).toThrow(/unsupported endpoint chatCompletions/);
-  expect(() => servedEndpoints('up_legacy_media', stale.up_legacy_media)).toThrow(/unsupported endpoint audioTranscriptions/);
 });

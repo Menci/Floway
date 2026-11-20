@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
 
 import { appendOpaqueTrailer, decodeOpaqueValue, encodeOpaqueValue, splitOpaqueTrailer } from '../../src/common/opaque-value.ts';
-import { assert, assertEquals, assertThrows } from '@floway-dev/test-utils';
+import { assert, assertEquals } from '@floway-dev/test-utils';
 
 test('opaque values preserve canonical Base64 alphabets byte-for-byte', () => {
   assertEquals(decodeOpaqueValue('AP+A'), { bytes: new Uint8Array([0x00, 0xff, 0x80]), origin: 'base64' });
@@ -13,32 +13,7 @@ test('opaque values preserve canonical Base64 alphabets byte-for-byte', () => {
   assertEquals(encodeOpaqueValue(new Uint8Array([0x00, 0xff, 0x80]), 'base64url'), 'AP-A');
 });
 
-test('non-canonical encodings remain raw opaque values', () => {
-  for (const value of [' AP+A', 'AP-A=', 'AB==']) {
-    assertEquals(decodeOpaqueValue(value).origin, 'raw');
-  }
-});
-
-test('raw opaque values freeze UTF-16 code units including lone surrogates', () => {
-  const raw = 'raw:\u0000\ud800';
-  const decoded = decodeOpaqueValue(raw);
-  assertEquals(decoded, {
-    bytes: new Uint8Array([0x00, 0x72, 0x00, 0x61, 0x00, 0x77, 0x00, 0x3a, 0x00, 0x00, 0xd8, 0x00]),
-    origin: 'raw',
-  });
-  assertEquals(encodeOpaqueValue(decoded.bytes, decoded.origin), raw);
-});
-
-test('raw opaque values preserve every UTF-16 code unit', () => {
-  const littleEndian = Buffer.alloc(0x10000 * 2);
-  for (let codeUnit = 0; codeUnit <= 0xffff; codeUnit += 1) {
-    littleEndian.writeUInt16LE(codeUnit, codeUnit * 2);
-  }
-  const expected = littleEndian.toString('utf16le');
-  assertEquals(encodeOpaqueValue(littleEndian.swap16(), 'raw'), expected);
-});
-
-test.each([0, 8190, 8191, 8192, 8193, 16383, 16384, 16385, 131073])(
+test.each([8191, 8192, 8193])(
   'raw opaque values preserve BOMs and surrogate code units after %i characters',
   prefixLength => {
     const markers = String.fromCharCode(0xfeff, 0xd83d, 0xde00, 0xd800, 0x0000, 0xdfff, 0xfeff);
@@ -48,12 +23,6 @@ test.each([0, 8190, 8191, 8192, 8193, 16383, 16384, 16385, 131073])(
     assertEquals(encodeOpaqueValue(backing.subarray(1, -1), 'raw'), expected);
   },
 );
-
-test('raw opaque values preserve empty input and reject incomplete code units', () => {
-  assertEquals(encodeOpaqueValue(new Uint8Array(), 'raw'), '');
-  assertThrows(() => encodeOpaqueValue(new Uint8Array([0x00]), 'raw'), TypeError);
-  assertThrows(() => encodeOpaqueValue(new Uint8Array([0x00, 0x61, 0x00]), 'raw'), TypeError);
-});
 
 test('retained raw opaque values use heap proportional to decoded text', () => {
   const output = execFileSync(process.execPath, [

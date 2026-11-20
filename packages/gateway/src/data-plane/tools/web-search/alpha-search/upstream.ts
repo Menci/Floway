@@ -70,6 +70,6 @@ export const resolveAlphaSearchDispatcher = async (resolution: AlphaSearchResolu
         wrapUpstreamCall: identityWrapUpstreamCall,
       },
     );
-    return result.response;
+    return result.http;
   };
 };

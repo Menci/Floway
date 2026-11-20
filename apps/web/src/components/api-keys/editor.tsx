@@ -65,7 +65,7 @@ export function KeyDialog(props: KeyDialogProps) {
     () =>
       z
         .object({
-          name: z.string().trim().min(1, 'dashboard.apiKeys.validation.nameRequired'),
+          name: z.string().trim().min(1, 'apiKeys.validation.nameRequired'),
           ...keySourceFields,
           upstreamOverride: z.boolean(),
           upstreamIds: z.array(z.string()),
@@ -81,7 +81,7 @@ export function KeyDialog(props: KeyDialogProps) {
             if (value[field] === 'invalid') {
               ctx.addIssue({
                 code: 'custom',
-                message: 'dashboard.apiKeys.retention.invalid',
+                message: 'apiKeys.retention.invalid',
                 path: [field],
               });
             }
@@ -105,13 +105,13 @@ export function KeyDialog(props: KeyDialogProps) {
   const retentionWarning = retentionWarningText(
     apiKey?.dump_retention_seconds ?? null,
     values.dumpRetention,
-    'dashboard.apiKeys.retention.warning',
+    'apiKeys.retention.warning',
     t,
   );
   const openaiResponsesRetentionWarning = retentionWarningText(
     apiKey?.responses_retention_seconds ?? null,
     values.openaiResponsesRetention,
-    'dashboard.apiKeys.retention.openaiResponsesWarning',
+    'apiKeys.retention.openaiResponsesWarning',
     t,
   );
 
@@ -130,7 +130,7 @@ export function KeyDialog(props: KeyDialogProps) {
         responses_retention_seconds: parsedRetention(values.openaiResponsesRetention),
       };
       const mutationKind = isCreate ? 'create' : 'edit';
-      const handle = toasts.start(t(`dashboard.apiKeys.toast.${mutationKind}.pending`, { name: common.name }));
+      const handle = toasts.start(t(`apiKeys.toast.${mutationKind}.pending`, { name: common.name }));
       const result = props.mode === 'create'
         ? await callApi(() => api.api.keys.$post({
             json: { ...common, ...keyWriteBody(values.keySource, values.customKey) },
@@ -145,7 +145,7 @@ export function KeyDialog(props: KeyDialogProps) {
         return;
       }
       onOpenChange(false);
-      handle.succeed(t(`dashboard.apiKeys.toast.${mutationKind}.success`, { name: common.name }));
+      handle.succeed(t(`apiKeys.toast.${mutationKind}.success`, { name: common.name }));
       await onSaved(result.data);
     } finally {
       setSaving(false);
@@ -161,8 +161,8 @@ export function KeyDialog(props: KeyDialogProps) {
       title={
         <DialogTitle>
           {isCreate
-            ? t('dashboard.apiKeys.dialog.createTitle')
-            : t('dashboard.apiKeys.dialog.editTitle')}
+            ? t('apiKeys.dialog.createTitle')
+            : t('apiKeys.dialog.editTitle')}
         </DialogTitle>
       }
       actions={
@@ -171,7 +171,7 @@ export function KeyDialog(props: KeyDialogProps) {
             {t('common.cancel')}
           </Button>
           <Button appearance="primary" disabledFocusable={saving} type="submit">
-            {isCreate ? t('dashboard.apiKeys.actions.create') : t('dashboard.apiKeys.actions.save')}
+            {isCreate ? t('apiKeys.actions.create') : t('apiKeys.actions.save')}
           </Button>
         </DialogActions>
       }
@@ -181,7 +181,7 @@ export function KeyDialog(props: KeyDialogProps) {
         name="name"
         render={({ field }) => (
           <Field
-            label={t('dashboard.apiKeys.form.name')}
+            label={t('apiKeys.form.name')}
             validationMessage={errors.name?.message ? t(errors.name.message) : undefined}
             validationState={errors.name ? 'error' : undefined}
           >
@@ -206,11 +206,11 @@ export function KeyDialog(props: KeyDialogProps) {
         action={<SettingsSwitch
           checked={values.randomizeUpstreams}
           disabled={saving}
-          label={t('dashboard.apiKeys.form.randomizeUpstreams')}
+          label={t('apiKeys.form.randomizeUpstreams')}
           onChange={checked => setValue('randomizeUpstreams', checked)}
         />}
-        description={t('dashboard.apiKeys.form.randomizeUpstreamsHint')}
-        header={t('dashboard.apiKeys.form.randomizeUpstreams')}
+        description={t('apiKeys.form.randomizeUpstreamsHint')}
+        header={t('apiKeys.form.randomizeUpstreams')}
         icon={<ArrowShuffle24Regular />}
       />
 
@@ -231,11 +231,11 @@ export function KeyDialog(props: KeyDialogProps) {
         render={({ field }) => (
           <>
             <RetentionField
-              description={t('dashboard.apiKeys.form.retentionHint')}
+              description={t('apiKeys.form.retentionHint')}
               disabled={saving}
               icon={<History24Regular />}
-              label={t('dashboard.apiKeys.form.retention')}
-              offLabel={t('dashboard.apiKeys.retention.offCapture')}
+              label={t('apiKeys.form.retention')}
+              offLabel={t('apiKeys.retention.offCapture')}
               offValue={null}
               presets={DUMP_RETENTION_PRESETS}
               value={field.value}
@@ -243,7 +243,7 @@ export function KeyDialog(props: KeyDialogProps) {
             >
               {apiKey !== null && field.value !== null && field.value !== 'invalid'
                 ? <RouteLink to={`/dashboard/monitor/requests?key=${encodeURIComponent(apiKey.id)}`}>
-                    <OpenLinkLabel>{t('dashboard.apiKeys.form.viewCapturedRequests')}</OpenLinkLabel>
+                    <OpenLinkLabel>{t('apiKeys.form.viewCapturedRequests')}</OpenLinkLabel>
                   </RouteLink>
                 : undefined}
             </RetentionField>
@@ -263,14 +263,14 @@ export function KeyDialog(props: KeyDialogProps) {
           <>
             <RetentionField
               defaultUnit="d"
-              description={t('dashboard.apiKeys.form.openaiResponsesRetentionHint')}
+              description={t('apiKeys.form.openaiResponsesRetentionHint')}
               disabled={saving}
               icon={<Database24Regular />}
-              label={t('dashboard.apiKeys.form.openaiResponsesRetention')}
+              label={t('apiKeys.form.openaiResponsesRetention')}
               maximumSeconds={OPENAI_RESPONSES_RETENTION_MAX_SECONDS}
               minimumSeconds={86400}
               multipleOfSeconds={86400}
-              offLabel={t('dashboard.apiKeys.retention.offPersist')}
+              offLabel={t('apiKeys.retention.offPersist')}
               offValue={0}
               presets={OPENAI_RESPONSES_RETENTION_PRESETS}
               value={field.value}
@@ -308,7 +308,7 @@ const keyFormDefaults = (apiKey: ApiKey | null): KeyFormValues => {
 const retentionWarningText = (
   previous: number | null,
   next: number | null | 'invalid',
-  prefix: 'dashboard.apiKeys.retention.warning' | 'dashboard.apiKeys.retention.openaiResponsesWarning',
+  prefix: 'apiKeys.retention.warning' | 'apiKeys.retention.openaiResponsesWarning',
   t: TFunction,
 ) => {
   if (previous === null || previous === 0 || next === 'invalid') return null;
