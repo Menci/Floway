@@ -539,7 +539,7 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
   };
 
   const highlightTagKey = hoverTarget
-    ? `${hoverTarget.primaryKey}|${hoverTarget.primaryAttribute ?? ''}|${hoverTarget.candidates.length}`
+    ? `${hoverTarget.primaryKey}|${hoverTarget.primaryInvisible ? 'invisible' : ''}|${hoverTarget.candidates.length}`
     : '';
 
   useLayoutEffect(() => {
@@ -557,8 +557,8 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
     : { left: 0, top: 0 };
 
   const highlightMetaParts: string[] = [];
-  if (hoverTarget?.primaryAttribute) {
-    highlightMetaParts.push(hoverTarget.primaryAttribute);
+  if (hoverTarget?.primaryInvisible) {
+    highlightMetaParts.push('invisible');
   }
   if (hoverTarget && hoverTarget.candidates.length > 1) {
     highlightMetaParts.push(`+${hoverTarget.candidates.length - 1}`);

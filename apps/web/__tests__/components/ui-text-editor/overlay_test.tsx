@@ -135,7 +135,7 @@ describe('UiTextEditorOverlay', () => {
       Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: originalElementsFromPoint });
     }
   });
-  it('anchors the hover tag inside the viewport with an aria-label suffix for full-height targets', async () => {
+  it('anchors the hover tag inside the viewport with an invisible suffix for full-height targets', async () => {
     const { container } = renderInApp(
       <>
         <nav
@@ -167,7 +167,7 @@ describe('UiTextEditorOverlay', () => {
       return el!;
     });
 
-    expect(tag.textContent).toBe('app.navigation.label (aria-label)');
+    expect(tag.textContent).toBe('app.navigation.label (invisible)');
     const top = Number.parseFloat(tag.style.top);
     expect(top).toBeGreaterThanOrEqual(8);
     expect(top).toBeLessThanOrEqual(window.innerHeight - 32);

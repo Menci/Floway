@@ -89,21 +89,21 @@ describe('UiTextEditorDomRegistry', () => {
       const descHit = registry.resolveAtPoint(document, 80, 42);
       expect(descHit?.element).toBe(description);
       expect(descHit?.primaryKey).toBe('settings.account.password.description');
-      expect(descHit?.primaryAttribute).toBeUndefined();
+      expect(descHit?.primaryInvisible).toBeUndefined();
       expect(descHit?.candidates).toEqual(['settings.account.password.description']);
 
       stack = [disclosure, container, document.body];
       const ariaOnlyHit = registry.resolveAtPoint(document, 260, 20);
       expect(ariaOnlyHit?.element).toBe(disclosure);
       expect(ariaOnlyHit?.primaryKey).toBe('settings.account.password.title');
-      expect(ariaOnlyHit?.primaryAttribute).toBe('aria-label');
+      expect(ariaOnlyHit?.primaryInvisible).toBe(true);
       expect(ariaOnlyHit?.candidates).toEqual(['settings.account.password.title']);
 
       stack = [input, container, document.body];
       const inputHit = registry.resolveAtPoint(document, 40, 110);
       expect(inputHit?.element).toBe(input);
       expect(inputHit?.primaryKey).toBe('permissions.filters.allPrincipals');
-      expect(inputHit?.primaryAttribute).toBeUndefined();
+      expect(inputHit?.primaryInvisible).toBeUndefined();
       expect(inputHit?.candidates).toEqual([
         'permissions.filters.allPrincipals',
         'permissions.fields.principal',
@@ -233,6 +233,76 @@ describe('UiTextEditorDomRegistry', () => {
 
       // Empty space to the right of the shorter second line does not fall back to the bounding box.
       expect(registry.resolveAtPoint(document, 180, 228)).toBeNull();
+    } finally {
+      if (originalElementsFromPoint === undefined) {
+        delete (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;
+      } else {
+        Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: originalElementsFromPoint });
+      }
+    }
+  });
+  it('treats visually hidden text as invisible like aria-label, keeping visible text priority and dimensions', () => {
+    container = document.createElement('div');
+
+    const badge = document.createElement('span');
+    const visibleText = document.createTextNode(wrapWithKeyMarkers('Use models', 'permissions.columns.Model.Use'));
+    const srState = document.createElement('span');
+    srState.style.position = 'absolute';
+    srState.style.width = '1px';
+    srState.style.height = '1px';
+    srState.style.overflow = 'hidden';
+    srState.style.clipPath = 'inset(50%)';
+    srState.textContent = wrapWithKeyMarkers('On', 'permissions.states.on');
+    badge.append(visibleText, srState);
+
+    const srOnlyHeader = document.createElement('th');
+    const srHeaderLabel = document.createElement('span');
+    srHeaderLabel.style.clip = 'rect(0px, 0px, 0px, 0px)';
+    srHeaderLabel.textContent = wrapWithKeyMarkers('Actions', 'permissions.actions.column');
+    srOnlyHeader.append(srHeaderLabel);
+
+    container.append(badge, srOnlyHeader);
+    document.body.append(container);
+
+    const badgeRect = new DOMRect(40, 20, 90, 24);
+    const visibleTextRect = new DOMRect(56, 23, 66, 18);
+    const headerRect = new DOMRect(200, 20, 48, 28);
+    vi.spyOn(badge, 'getBoundingClientRect').mockReturnValue(badgeRect);
+    vi.spyOn(srOnlyHeader, 'getBoundingClientRect').mockReturnValue(headerRect);
+    vi.spyOn(Range.prototype, 'getClientRects').mockImplementation(function (this: Range) {
+      return (this.startContainer === visibleText ? [visibleTextRect] : []) as unknown as DOMRectList;
+    });
+    vi.spyOn(Range.prototype, 'getBoundingClientRect').mockImplementation(function (this: Range) {
+      return this.startContainer === visibleText ? visibleTextRect : new DOMRect(0, 0, 0, 0);
+    });
+
+    const originalElementsFromPoint = (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;
+    let stack: Element[] = [badge, container, document.body];
+    Object.defineProperty(document, 'elementsFromPoint', {
+      configurable: true,
+      value: () => stack,
+    });
+
+    try {
+      registry.start(container);
+
+      // Hovering visible text inside a badge with an sr-only sibling prioritizes visible text and its rect.
+      const visibleHit = registry.resolveAtPoint(document, 70, 30);
+      expect(visibleHit?.primaryKey).toBe('permissions.columns.Model.Use');
+      expect(visibleHit?.primaryInvisible).toBeUndefined();
+      expect(visibleHit?.rect).toEqual(visibleTextRect);
+      expect(visibleHit?.candidates).toEqual(['permissions.columns.Model.Use', 'permissions.states.on']);
+
+      // Hovering an element whose only tracked text is sr-only hits as invisible.
+      stack = [srOnlyHeader, container, document.body];
+      const srOnlyHit = registry.resolveAtPoint(document, 210, 30);
+      expect(srOnlyHit?.primaryKey).toBe('permissions.actions.column');
+      expect(srOnlyHit?.primaryInvisible).toBe(true);
+      expect(srOnlyHit?.rect).toEqual(headerRect);
+
+      // Outer wrapper with no direct aria-label/sr-only child does not claim nested invisible labels.
+      stack = [container, document.body];
+      expect(registry.resolveAtPoint(document, 10, 10)).toBeNull();
     } finally {
       if (originalElementsFromPoint === undefined) {
         delete (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;

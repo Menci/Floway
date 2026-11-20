@@ -15,7 +15,7 @@ export interface HitTarget {
   rect: DOMRect;
   rects: DOMRect[];
   primaryKey: string;
-  primaryAttribute?: string;
+  primaryInvisible?: boolean;
   candidates: string[];
 }
 
@@ -34,6 +34,72 @@ const isRestrictedElement = (element: Element | null): boolean => {
   if (!element) return false;
   const tag = element.tagName;
   return tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT';
+};
+
+const isCollapsedClipRect = (clip: string): boolean => {
+  const match = /^rect\(([^)]+)\)$/i.exec(clip.trim());
+  if (!match) return false;
+  const parts = match[1]!.trim().split(/[\s,]+/);
+  if (parts.length !== 4) return false;
+  const values = parts.map(part => Number.parseFloat(part));
+  if (values.some(value => Number.isNaN(value))) return false;
+  const [top, right, bottom, left] = values as [number, number, number, number];
+  return right <= left || bottom <= top;
+};
+
+const isCollapsedInsetClipPath = (clipPath: string): boolean => {
+  const match = /^inset\(([^)]+)\)$/i.exec(clipPath.trim());
+  if (!match) return false;
+  const parts = match[1]!.split(/\s+round\b/i)[0]!.trim().split(/\s+/);
+  if (parts.length < 1 || parts.length > 4) return false;
+  const toPercent = (token: string): number | null => {
+    if (token === '0') return 0;
+    if (!token.endsWith('%')) return null;
+    const value = Number.parseFloat(token);
+    return Number.isNaN(value) ? null : value;
+  };
+  const percents = parts.map(toPercent);
+  if (percents.some(value => value === null)) return false;
+  const nums = percents as number[];
+  const top = nums[0]!;
+  const right = nums[1] ?? top;
+  const bottom = nums[2] ?? top;
+  const left = nums[3] ?? right;
+  return top + bottom >= 100 || left + right >= 100;
+};
+
+// Determines from computed styles whether an element is visually hidden (e.g.
+// display/visibility/opacity, zero-area clip/clip-path, or overflow-clipped
+// <=1px boxes) without relying on specific CSS class names.
+const isVisuallyHiddenElement = (element: Element | null): boolean => {
+  let current: Element | null = element;
+  while (current && current !== current.ownerDocument.body && current !== current.ownerDocument.documentElement) {
+    const view = current.ownerDocument.defaultView;
+    if (view && typeof view.getComputedStyle === 'function') {
+      const style = view.getComputedStyle(current);
+      if (
+        style.display === 'none'
+        || style.visibility === 'hidden'
+        || style.visibility === 'collapse'
+        || style.opacity === '0'
+        || style.contentVisibility === 'hidden'
+      ) {
+        return true;
+      }
+      if (isCollapsedClipRect(style.clip) || isCollapsedInsetClipPath(style.clipPath)) return true;
+      const clipsOverflow = style.overflow === 'hidden' || style.overflow === 'clip'
+        || (style.overflowX === 'hidden' && style.overflowY === 'hidden');
+      if (clipsOverflow) {
+        const width = Number.parseFloat(style.width);
+        const height = Number.parseFloat(style.height);
+        if ((Number.isFinite(width) && width <= 1) || (Number.isFinite(height) && height <= 1)) {
+          return true;
+        }
+      }
+    }
+    current = current.parentElement;
+  }
+  return false;
 };
 
 const pointInsideRect = (rect: DOMRect, x: number, y: number, pad = 4): boolean =>
@@ -442,18 +508,24 @@ export class UiTextEditorDomRegistry {
     return attrs.filter(entry => entry.attribute === 'aria-label').map(entry => entry.key);
   }
 
-  private collectAttributeKeys(element: Element): string[] {
-    return [
-      ...this.collectVisibleAttributeKeys(element),
-      ...this.collectAriaLabelKeys(element),
-    ];
+  // Collects invisible keys owned directly by `element`: its own `aria-label`
+  // plus any direct visually hidden children (e.g. `.sr-only` spans). Scoping
+  // to direct children prevents outer layout wrappers from claiming invisible
+  // labels that belong to nested controls.
+  private collectOwnInvisibleKeys(element: Element): string[] {
+    const collected: string[] = [...this.collectAriaLabelKeys(element)];
+    for (const child of Array.from(element.children)) {
+      if (child.hasAttribute(UI_TEXT_EDITOR_ROOT_ATTR)) continue;
+      if (isVisuallyHiddenElement(child)) {
+        collected.push(...this.collectSubtreeKeys(child));
+      }
+    }
+    return dedupeKeys(collected);
   }
 
   private collectSubtreeKeys(element: Element): string[] {
-    const collected: string[] = [
-      ...this.collectTextKeys(element),
-      ...this.collectAttributeKeys(element),
-    ];
+    const visible: string[] = [];
+    const invisible: string[] = [];
     const walker = element.ownerDocument.createTreeWalker(
       element,
       NodeFilter.SHOW_ELEMENT,
@@ -465,12 +537,14 @@ export class UiTextEditorDomRegistry {
         },
       },
     );
-    let child = walker.nextNode() as Element | null;
-    while (child) {
-      collected.push(...this.collectTextKeys(child), ...this.collectAttributeKeys(child));
-      child = walker.nextNode() as Element | null;
+    let current: Element | null = element;
+    while (current) {
+      const target = isVisuallyHiddenElement(current) ? invisible : visible;
+      target.push(...this.collectTextKeys(current), ...this.collectVisibleAttributeKeys(current));
+      invisible.push(...this.collectAriaLabelKeys(current));
+      current = walker.nextNode() as Element | null;
     }
-    return dedupeKeys(collected);
+    return dedupeKeys([...visible, ...invisible]);
   }
 
   // When hovering an interactive container's padding or icon area, resolve to
@@ -494,31 +568,33 @@ export class UiTextEditorDomRegistry {
 
     let el: Element | null = container;
     while (el) {
-      const textNodes = this.elementTexts.get(el);
-      if (textNodes) {
-        for (const textNode of textNodes) {
-          if (!textNode.isConnected || textNode.parentElement !== el) {
-            textNodes.delete(textNode);
-            continue;
-          }
-          const segments = this.textSegments.get(textNode);
-          if (!segments) continue;
-          for (const seg of segments) {
-            visibleKeys.add(seg.key);
-            if (visibleKeys.size > 1) return null;
-            target ??= { element: el, metrics: getTextSegmentMetrics(textNode, seg.start, seg.end) };
+      if (!isVisuallyHiddenElement(el)) {
+        const textNodes = this.elementTexts.get(el);
+        if (textNodes) {
+          for (const textNode of textNodes) {
+            if (!textNode.isConnected || textNode.parentElement !== el) {
+              textNodes.delete(textNode);
+              continue;
+            }
+            const segments = this.textSegments.get(textNode);
+            if (!segments) continue;
+            for (const seg of segments) {
+              visibleKeys.add(seg.key);
+              if (visibleKeys.size > 1) return null;
+              target ??= { element: el, metrics: getTextSegmentMetrics(textNode, seg.start, seg.end) };
+            }
           }
         }
-      }
-      for (const key of this.collectVisibleAttributeKeys(el)) {
-        visibleKeys.add(key);
-        if (visibleKeys.size > 1) return null;
-        if (!target) {
-          const rect = el.getBoundingClientRect();
-          target = {
-            element: el,
-            metrics: isNonZeroRect(rect) ? { lineRects: [rect], boundingRect: rect } : null,
-          };
+        for (const key of this.collectVisibleAttributeKeys(el)) {
+          visibleKeys.add(key);
+          if (visibleKeys.size > 1) return null;
+          if (!target) {
+            const rect = el.getBoundingClientRect();
+            target = {
+              element: el,
+              metrics: isNonZeroRect(rect) ? { lineRects: [rect], boundingRect: rect } : null,
+            };
+          }
         }
       }
       el = walker.nextNode() as Element | null;
@@ -543,7 +619,7 @@ export class UiTextEditorDomRegistry {
     if (caret && caret.node instanceof Text && !isInsideUiTextEditor(caret.node)) {
       const segments = this.textSegments.get(caret.node);
       const parent = caret.node.parentElement;
-      if (segments && segments.length > 0 && parent) {
+      if (segments && segments.length > 0 && parent && !isVisuallyHiddenElement(parent)) {
         const hitSegment = findSegmentAtOffset(segments, caret.offset);
         if (hitSegment) {
           const metrics = matchTextSegmentAtPoint(
@@ -587,13 +663,14 @@ export class UiTextEditorDomRegistry {
     }
 
     for (const element of stack) {
+      if (isVisuallyHiddenElement(element)) continue;
       const textHit = this.findTextSegmentHitInElement(element, clientX, clientY);
       if (textHit) {
         const candidates = dedupeKeys([
           textHit.key,
           ...textHit.allKeys,
           ...this.collectVisibleAttributeKeys(element),
-          ...this.collectAriaLabelKeys(element),
+          ...this.collectOwnInvisibleKeys(element),
         ]);
         return {
           element,
@@ -611,7 +688,7 @@ export class UiTextEditorDomRegistry {
           const candidates = dedupeKeys([
             ...visibleAttrs,
             ...this.collectTextKeys(element),
-            ...this.collectAriaLabelKeys(element),
+            ...this.collectOwnInvisibleKeys(element),
           ]);
           return {
             element,
@@ -628,6 +705,7 @@ export class UiTextEditorDomRegistry {
     // or elements whose direct text node has zero-sized range rects: match the
     // element box directly when it carries tracked text.
     for (const element of stack) {
+      if (isVisuallyHiddenElement(element)) continue;
       const textKeys = dedupeKeys(this.collectTextKeys(element));
       if (textKeys.length > 0) {
         const textNodes = this.elementTexts.get(element);
@@ -655,7 +733,7 @@ export class UiTextEditorDomRegistry {
           const candidates = dedupeKeys([
             ...textKeys,
             ...this.collectVisibleAttributeKeys(element),
-            ...this.collectAriaLabelKeys(element),
+            ...this.collectOwnInvisibleKeys(element),
           ]);
           return {
             element,
@@ -669,6 +747,7 @@ export class UiTextEditorDomRegistry {
     }
 
     for (const element of stack) {
+      if (isVisuallyHiddenElement(element)) continue;
       if (element.matches(INTERACTIVE_CONTAINER_SELECTOR)) {
         const uniqueTarget = this.resolveUniqueSubtreeVisibleTarget(element);
         if (uniqueTarget) {
@@ -676,17 +755,17 @@ export class UiTextEditorDomRegistry {
         }
       }
 
-      const aria = dedupeKeys(this.collectAriaLabelKeys(element));
-      if (aria.length > 0) {
+      const invisibleKeys = this.collectOwnInvisibleKeys(element);
+      if (invisibleKeys.length > 0) {
         const rect = element.getBoundingClientRect();
         if (rect.width > 0 || rect.height > 0) {
           return {
             element,
             rect,
             rects: [rect],
-            primaryKey: aria[0]!,
-            primaryAttribute: 'aria-label',
-            candidates: aria,
+            primaryKey: invisibleKeys[0]!,
+            primaryInvisible: true,
+            candidates: invisibleKeys,
           };
         }
       }
