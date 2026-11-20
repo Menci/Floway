@@ -134,7 +134,7 @@ const internalOpenAIResponsesErrorResponse = (http: ResponseInit, error: Interna
 
 const observeOpenAIResponsesFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>, state: SourceStreamState, ctx: GatewayCtx) {
   for await (const frame of frames) {
-    ctx.dump?.frame(frame);
+    await ctx.dump?.frame(frame);
     if (frame.type === 'done') continue;
     const failed = frame.event.type === 'error' || frame.event.type === 'response.failed';
     if (failed) state.failed = true;
@@ -152,29 +152,29 @@ const openaiResponsesSseProtocol = (ctx: GatewayCtx): SseProtocol<ProtocolFrame<
   const completedItems = new Map<number, ClientResponseResource['output'][number]>();
   // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L82-L86
   const done = serializeSseFrame(sseFrame('[DONE]'));
-  const emit = (event: ClientOpenAIResponsesStreamEvent) => {
+  const emit = async (event: ClientOpenAIResponsesStreamEvent) => {
     const frame = eventFrame(event);
     const wire = serializeSseFrame(openaiResponsesProtocolFrameToSSEFrame(frame));
-    ctx.dump?.frame(frame);
+    await ctx.dump?.frame(frame);
     return wire;
   };
-  const failedTrailer = (failure: OpenAIResponsesErrorEx) => {
+  const failedTrailer = async (failure: OpenAIResponsesErrorEx) => {
     if (announced === undefined) return [done] as const;
     // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L419-L444
     const output = [...completedItems].sort(([left], [right]) => left - right).map(([, item]) => item);
-    return [emit({
+    return [await emit({
       type: 'response.failed',
       sequence_number: nextSequence++,
       response: { ...announced, status: 'failed', output, incomplete_details: null, error: failure },
     }), done] as const;
   };
-  const eof: SseProtocol<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>['eof'] = () => upstreamFailure
-    ? { type: 'protocol-error', trailer: failedTrailer(upstreamFailure) }
+  const eof: SseProtocol<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>['eof'] = async () => upstreamFailure
+    ? { type: 'protocol-error', trailer: await failedTrailer(upstreamFailure) }
     : { type: 'premature-eof', error: new Error(OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE) };
 
   return {
-    encode: frame => {
-      if (frame.type === 'done') return { wire: null, end: eof() };
+    encode: async frame => {
+      if (frame.type === 'done') return { wire: null, end: await eof() };
       const event = { ...frame.event, sequence_number: frame.event.sequence_number ?? nextSequence };
       const wire = serializeSseFrame(openaiResponsesProtocolFrameToSSEFrame(eventFrame(event)));
       nextSequence = Math.max(nextSequence, event.sequence_number + 1);
@@ -192,16 +192,16 @@ const openaiResponsesSseProtocol = (ctx: GatewayCtx): SseProtocol<ProtocolFrame<
         : { wire };
     },
     eof,
-    failure: error => {
-      if (upstreamFailure) return failedTrailer(upstreamFailure);
+    failure: async error => {
+      if (upstreamFailure) return await failedTrailer(upstreamFailure);
       const debug = toInternalDebugError(error);
       const failure: OpenAIResponsesErrorEx = { code: debug.type, message: debug.message, provider_specific_fields: internalDebugErrorFields(debug) };
       // SDKs raise on the nested payload; the Responses event also has native top-level fields.
       // https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/core/streaming.ts#L69-L71
-      return [emit({
+      return [await emit({
         type: 'error', sequence_number: nextSequence++,
         code: failure.code, message: failure.message, param: null, error: failure,
-      }), ...failedTrailer(failure)];
+      }), ...await failedTrailer(failure)];
     },
   };
 };

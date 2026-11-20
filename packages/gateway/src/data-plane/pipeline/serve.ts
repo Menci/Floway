@@ -137,7 +137,7 @@ export type Rendered =
     /** An answer that *is* a stream. The frames go out as they arrive, which is why nothing
      *  above waits for them and why what they billed is settled afterwards. */
     readonly frames: AsyncIterable<SseFrame>;
-    readonly failure?: (error: unknown) => readonly string[];
+    readonly failure?: (error: unknown) => readonly string[] | Promise<readonly string[]>;
   };
 
 /** Which of the two an answer turned out to be. A family's rendered fact carries whichever

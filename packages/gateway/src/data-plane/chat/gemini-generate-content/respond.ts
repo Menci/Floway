@@ -90,9 +90,9 @@ export const respondGeminiGenerateContent = async (
       eof: () => upstreamCompleted()
         ? { type: 'completed' }
         : { type: 'premature-eof', error: new Error(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE) },
-      failure: error => {
+      failure: async error => {
         const frame = eventFrame(caughtGeminiGenerateContentErrorEvent(error) ?? geminiGenerateContentInternalRpcErrorPayload(500, error));
-        ctx.dump?.frame(frame);
+        await ctx.dump?.frame(frame);
         return [serializeSseFrame(geminiGenerateContentProtocolFrameToSSEFrame(frame)!)];
       },
     },
