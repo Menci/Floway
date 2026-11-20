@@ -28,7 +28,7 @@ export interface TokenUsageByUserResponse {
   users: UsageUserMetadata[];
 }
 
-export interface TokenUsageOverviewBucket extends UsageOverviewResult {
+export interface TokenUsageOverviewBucket extends Omit<UsageOverviewResult, 'firstHour' | 'lastHour'> {
   start: string;
   end: string;
 }
@@ -39,6 +39,8 @@ export interface TokenUsageOverviewResponse {
   start: string;
   end: string;
   buckets: TokenUsageOverviewBucket[];
+  actorId: number;
+  isAdmin: boolean;
   visibleUserIds: number[];
   visibleUpstreamIds: string[];
   users: UsageUserMetadata[];

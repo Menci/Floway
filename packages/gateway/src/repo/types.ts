@@ -103,6 +103,8 @@ export interface UsageOverviewQueryOptions {
 
 export interface UsageOverviewResult {
   bucket: string;
+  firstHour: string;
+  lastHour: string;
   axes: Record<UsageOverviewAxis, UsageOverviewRecord[]>;
   dimensionValues: {
     keyIds: string[];

@@ -44,17 +44,48 @@ export type UsageOverviewLoader = (
   signal: AbortSignal,
 ) => Promise<ApiResult<UsageOverviewResponse>>;
 
+type UsageOverviewQuery = ReturnType<typeof buildUsageOverviewQuery>;
+
+const sameMembers = <T>(left: readonly T[], right: readonly T[]): boolean => {
+  const members = new Set(left);
+  return members.size === new Set(right).size && right.every(value => members.has(value));
+};
+
+const sameUsageQuery = (left: UsageOverviewQuery, right: UsageOverviewQuery): boolean =>
+  left.bucket === right.bucket && left.timezone === right.timezone
+  && (!left.bucket.endsWith('d') || left.start === right.start)
+  && (left.group_by === 'keyId') === (right.group_by === 'keyId')
+  && sameMembers(left.filter_model, right.filter_model)
+  && sameMembers(left.filter_upstream, right.filter_upstream)
+  && sameMembers(left.filter_user_id, right.filter_user_id)
+  && sameMembers(left.filter_key_id, right.filter_key_id);
+
+const sameUsageAccess = (left: TokenUsageOverviewResponse, right: TokenUsageOverviewResponse, ownedKeysOnly: boolean): boolean => {
+  if (left.actorId !== right.actorId || !sameMembers(left.keys.map(key => key.id), right.keys.map(key => key.id))) return false;
+  return ownedKeysOnly || (left.isAdmin === right.isAdmin && (left.isAdmin || (
+    sameMembers(left.visibleUserIds, right.visibleUserIds)
+    && sameMembers(left.visibleUpstreamIds, right.visibleUpstreamIds)
+  )));
+};
+
 export const createUsageOverviewLoader = (): UsageOverviewLoader => {
-  let latest: TokenUsageOverviewResponse | undefined;
+  let latest: { query: UsageOverviewQuery; snapshot: TokenUsageOverviewResponse } | undefined;
   return async (range, groupBy, filters, loadedAt, signal) => {
-    const previous = latest;
     const query = buildUsageOverviewQuery(range, groupBy, filters, loadedAt);
+    let previous = latest && sameUsageQuery(latest.query, query) ? latest.snapshot : undefined;
     const cursor = usageOverviewCursor(previous, query.start, query.end);
-    const result = await callApi(() => api.api['token-usage'].overview.$get({ query: { ...query, cursor } }, { init: { signal } }));
+    const load = (cursor: string | undefined) => callApi(() => api.api['token-usage'].overview.$get({ query: { ...query, cursor } }, { init: { signal } }));
+    let result = await load(cursor);
     if (result.error) return result;
+    if (previous && !result.data.reset && !sameUsageAccess(previous, result.data, groupBy === 'keyId')) {
+      previous = undefined;
+      if (!signal.aborted) latest = undefined;
+      result = await load(undefined);
+      if (result.error) return result;
+    }
     const snapshot = mergeUsageOverview(previous, result.data, query.start);
     const data = usageOverviewForDisplay(snapshot, groupBy);
-    if (!signal.aborted) latest = snapshot;
+    if (!signal.aborted) latest = { query, snapshot };
     return { data };
   };
 };

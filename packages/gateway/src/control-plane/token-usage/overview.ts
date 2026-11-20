@@ -2,7 +2,7 @@ import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { UsageOverviewGroupBy } from '../../repo/types.ts';
 import type { tokenUsageOverviewQuery } from '../schemas.ts';
-import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata, telemetryUpstreamMetadata, type TelemetryOverviewIdentity } from '../shared/telemetry-overview.ts';
+import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata, telemetryUpstreamMetadata } from '../shared/telemetry-overview.ts';
 import type { TokenUsageOverviewResponse } from '../usage-types.ts';
 import { createTelemetryBucket, parseTelemetryHour, TELEMETRY_HOUR_MS, telemetryHourKey, type TelemetryBucketGranularity, usageUpstreamFromDimensionValue } from '@floway-dev/protocols/common';
 
@@ -51,33 +51,14 @@ const readUsageOverviewQuery = (
 const shiftHour = (hour: string, count: number): string =>
   telemetryHourKey(parseTelemetryHour(hour) + count * TELEMETRY_HOUR_MS);
 
-const sorted = <T extends number | string>(values: Iterable<T>): T[] => [...values].sort();
-
-const overviewScope = async (params: UsageOverviewParams, identity: TelemetryOverviewIdentity): Promise<string> => {
-  const { bucket, groupBy, filters, timeZone, timezoneOffsetMinutes } = params;
-  const fingerprint = JSON.stringify([
-    bucket, groupBy, timeZone ?? timezoneOffsetMinutes, bucket.endsWith('d') ? params.start : null,
-    sorted(filters.keyId), sorted(filters.userId), sorted(filters.model), sorted(filters.upstream),
-    identity.actor.id, identity.actor.isAdmin, sorted(identity.ownedKeyIds),
-    sorted(identity.visibleUserIds), sorted(identity.visibleUpstreams),
-    identity.users.map(({ id, username }) => [id, username]),
-    identity.upstreams.map(({ id, name, hue }) => [id, name, hue]),
-  ]);
-  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(fingerprint)));
-  return Array.from(hash, byte => byte.toString(16).padStart(2, '0')).join('');
-};
-
-const readCursor = (cursor: string | undefined, scope: string) => {
-  if (cursor === undefined) return null;
-  const [cursorScope, start, end, resumeFromHour, ...extra] = cursor.split('/');
-  if (cursorScope !== scope || !start || !end || !resumeFromHour || extra.length > 0) return null;
+const readCursor = (cursor: string | undefined): string | undefined => {
+  if (cursor === undefined) return undefined;
   try {
-    if (parseTelemetryHour(start) > parseTelemetryHour(end)) return null;
-    parseTelemetryHour(resumeFromHour);
-    return { start, end, resumeFromHour };
+    parseTelemetryHour(cursor);
+    return cursor;
   } catch (error) {
     if (!(error instanceof RangeError)) throw error;
-    return null;
+    return undefined;
   }
 };
 
@@ -91,24 +72,20 @@ export const tokenUsageOverview = async (c: Ctx) => {
   const identityError = telemetryIdentityError(identity, filters.keyId);
   if (identityError !== null) return c.json({ error: identityError.error }, identityError.status);
 
-  const scope = await overviewScope(params.value, identity);
-  const previous = readCursor(params.value.cursor, scope);
+  const previous = readCursor(params.value.cursor);
   const resumeFromHour = shiftHour(nowHour, -1);
   const nextHour = shiftHour(nowHour, 1);
   const coveredEnd = end < nextHour ? end : nextHour;
   const windowEnd = coveredEnd < start ? start : coveredEnd;
-  const resume = previous !== null && start >= previous.start && windowEnd >= previous.end && resumeFromHour >= previous.resumeFromHour;
-  let scanStart = start;
-  if (resume) {
-    const boundary = previous.resumeFromHour < previous.end ? previous.resumeFromHour : previous.end;
-    if (boundary > scanStart) scanStart = boundary;
-  }
+  const cursor = windowEnd < resumeFromHour ? windowEnd : resumeFromHour;
+  const resume = previous !== undefined && previous <= cursor;
+  const scanStart = resume && previous > start ? previous : start;
   const chartBucketForHour = createTelemetryBucket({
     bucket, start, timeZone: params.value.timeZone, timezoneOffsetMinutes,
   });
-  const hourlyBuckets = new Set([chartBucketForHour(resumeFromHour), chartBucketForHour(nowHour)]);
-  if (resume && scanStart < windowEnd) hourlyBuckets.add(chartBucketForHour(scanStart));
-  const boundaries = new Map<string, { bucket: string; start: string; end: string }>();
+  const hourlyBoundaries = resume ? [resumeFromHour, nowHour, scanStart] : [resumeFromHour, nowHour];
+  const hourlyHours = hourlyBoundaries.filter(hour => hour >= scanStart && hour < windowEnd);
+  let hourlyBuckets: Set<string> | undefined;
   const buckets = scanStart >= windowEnd ? [] : (await repo.usage.queryOverview({
     actorUserId: identity.actor.id,
     isAdmin: identity.actor.isAdmin,
@@ -124,22 +101,18 @@ export const tokenUsageOverview = async (c: Ctx) => {
       upstreams: [...filters.upstream],
     },
     bucketForHour: hour => {
+      if (bucket === 'hour') return `hour:${hour}`;
+      hourlyBuckets ??= new Set(hourlyHours.map(chartBucketForHour));
       const chartBucket = chartBucketForHour(hour);
-      const key = bucket === 'hour' || hourlyBuckets.has(chartBucket) ? `hour:${hour}` : `bucket:${chartBucket}`;
-      const end = shiftHour(hour, 1);
-      const bounds = boundaries.get(key);
-      if (bounds === undefined) boundaries.set(key, { bucket: chartBucket, start: hour, end });
-      else {
-        if (hour < bounds.start) bounds.start = hour;
-        if (end > bounds.end) bounds.end = end;
-      }
-      return key;
+      return hourlyBuckets.has(chartBucket) ? `hour:${hour}` : `bucket:${chartBucket}`;
     },
-  })).map(({ bucket: partitionKey, ...subtotal }) => {
-    const bounds = boundaries.get(partitionKey);
-    if (!bounds) throw new Error('Usage overview bucket has no time bounds');
-    return { bucket: bounds.bucket, ...subtotal, start: bounds.start, end: bounds.end };
-  })
+  })).map(({ firstHour, lastHour, axes, dimensionValues }) => ({
+    bucket: chartBucketForHour(firstHour),
+    start: firstHour,
+    end: shiftHour(lastHour, 1),
+    axes,
+    dimensionValues,
+  }))
     .sort((left, right) => left.start.localeCompare(right.start));
   const metadata = telemetryIdentityMetadata(identity, buckets.flatMap(value => value.dimensionValues.userIds));
   const revealedUpstreamIds = buckets.flatMap(value => value.dimensionValues.upstreams).flatMap(value => {
@@ -148,12 +121,14 @@ export const tokenUsageOverview = async (c: Ctx) => {
   });
 
   return c.json({
-    cursor: [scope, start, windowEnd, resumeFromHour].join('/'),
+    cursor,
     reset: !resume,
     start: scanStart,
     end: windowEnd,
     buckets,
     ...metadata,
+    actorId: identity.actor.id,
+    isAdmin: identity.actor.isAdmin,
     visibleUserIds: [...identity.visibleUserIds],
     visibleUpstreamIds: [...identity.visibleUpstreams],
     upstreams: telemetryUpstreamMetadata(identity, revealedUpstreamIds),

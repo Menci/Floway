@@ -902,7 +902,7 @@ export const tokenUsageOverviewQuery = z.object({
   // the synthetic user bucket.
   filter_user_id: filterValues(filterTokenUsageOverviewUserId),
   group_by: z.enum(['keyId', 'userId', 'model', 'upstream']).optional(),
-  cursor: z.string().max(160).optional(),
+  cursor: z.string().max(13).optional(),
 });
 
 export const performanceQuery = z.object({

@@ -30,6 +30,8 @@ interface UsageOverviewSqlRow {
   unit_price: string | null;
   occurrences_text: string | null;
   metric_order: number | null;
+  first_hour: string | null;
+  last_hour: string | null;
 }
 
 const overviewAxes = new Set<UsageOverviewAxis>(['none', 'keyId', 'userId', 'model', 'upstream']);
@@ -165,7 +167,8 @@ facet_rows AS (
       WHEN 'upstream' THEN authorized.upstream_value
     END AS facet_value,
     NULL AS requests_text,
-    NULL AS metric, NULL AS quantity, NULL AS unit_price, NULL AS occurrences_text, NULL AS metric_order
+    NULL AS metric, NULL AS quantity, NULL AS unit_price, NULL AS occurrences_text, NULL AS metric_order,
+    MIN(authorized.hour) AS first_hour, MAX(authorized.hour) AS last_hour
   FROM authorized
   CROSS JOIN axes
   JOIN bucket_map ON bucket_map.hour = authorized.hour
@@ -176,7 +179,8 @@ facet_rows AS (
 request_rows AS (
   SELECT 'request' AS row_kind, axis, bucket, group_value, NULL AS dimension, NULL AS facet_value,
     CAST(SUM(requests) AS TEXT) AS requests_text,
-    NULL AS metric, NULL AS quantity, NULL AS unit_price, NULL AS occurrences_text, NULL AS metric_order
+    NULL AS metric, NULL AS quantity, NULL AS unit_price, NULL AS occurrences_text, NULL AS metric_order,
+    NULL AS first_hour, NULL AS last_hour
   FROM projected
   WHERE fact_kind = 'request'
   GROUP BY axis, bucket, group_value
@@ -208,7 +212,7 @@ metric_rows AS (
     )) AS quantity,
     NULL AS unit_price,
     NULL AS occurrences_text,
-    MIN(metric_order) AS metric_order
+    MIN(metric_order) AS metric_order, NULL AS first_hour, NULL AS last_hour
   FROM metric_numbered
   GROUP BY axis, bucket, group_value, metric, term_chunk
 ),
@@ -231,7 +235,8 @@ validation_rows AS (
       'quantity', quantity,
       'unitPrice', unit_price
     )) AS quantity,
-    NULL AS unit_price, NULL AS occurrences_text, NULL AS metric_order
+    NULL AS unit_price, NULL AS occurrences_text, NULL AS metric_order,
+    NULL AS first_hour, NULL AS last_hour
   FROM validation_numbered
   GROUP BY term_chunk
 ),
@@ -239,7 +244,8 @@ missing_hour_rows AS (
   SELECT 'missing_hour' AS row_kind,
     NULL AS axis, NULL AS bucket, NULL AS group_value, NULL AS dimension, hour AS facet_value,
     NULL AS requests_text, NULL AS metric, NULL AS quantity, NULL AS unit_price,
-    NULL AS occurrences_text, NULL AS metric_order
+    NULL AS occurrences_text, NULL AS metric_order,
+    NULL AS first_hour, NULL AS last_hour
   FROM authorized
   WHERE NOT EXISTS (SELECT 1 FROM bucket_map WHERE bucket_map.hour = authorized.hour)
   GROUP BY hour
@@ -281,6 +287,8 @@ const parseStoredMetric = (
 };
 
 const finishBucket = (bucket: string, rows: readonly UsageOverviewSqlRow[]): UsageOverviewResult => {
+  let firstHour: string | undefined;
+  let lastHour: string | undefined;
   const records = new Map<UsageOverviewAxis, Map<string, MutableOverviewRecord>>(
     [...overviewAxes].map(axis => [axis, new Map()]),
   );
@@ -299,9 +307,11 @@ const finishBucket = (bucket: string, rows: readonly UsageOverviewSqlRow[]): Usa
 
   for (const row of rows) {
     if (row.row_kind === 'facet') {
-      if (row.dimension === null || row.facet_value === null || !overviewDimensions.has(row.dimension)) {
+      if (row.dimension === null || row.facet_value === null || row.first_hour === null || row.last_hour === null || !overviewDimensions.has(row.dimension)) {
         throw new TypeError('Stored Usage overview returned an invalid facet row');
       }
+      if (firstHour === undefined || row.first_hour < firstHour) firstHour = row.first_hour;
+      if (lastHour === undefined || row.last_hour > lastHour) lastHour = row.last_hour;
       facets.get(row.dimension)!.add(row.facet_value);
       continue;
     }
@@ -355,8 +365,11 @@ const finishBucket = (bucket: string, rows: readonly UsageOverviewSqlRow[]): Usa
     }))
     .sort((left, right) => left.group.localeCompare(right.group));
 
+  if (firstHour === undefined || lastHour === undefined) throw new Error('Usage overview bucket has no authorized hours');
   return {
     bucket,
+    firstHour,
+    lastHour,
     axes: {
       none: finished('none'),
       keyId: finished('keyId'),

@@ -63,7 +63,7 @@ const overview = (url: URL) => {
       axes: { none: [], model: [{ ...row, group: 'gpt-5' }], upstream: [], userId: [], keyId: [] },
       dimensionValues: { models: ['gpt-5'], upstreams: ['upstream:first'], userIds: [1], keyIds: [] },
     }],
-    users: [{ id: 1, username: 'admin' }], visibleUserIds: [1], visibleUpstreamIds: ['first'],
+    actorId: 1, isAdmin: true, users: [{ id: 1, username: 'admin' }], visibleUserIds: [1], visibleUpstreamIds: ['first'],
     upstreams: [{ id: 'first', name: 'First', hue: 210 }], keys: [],
   };
 };

@@ -196,6 +196,8 @@ test('SQL usage overview matches the in-memory oracle across filters, facets, ax
     metrics: [{ metric: 'input_tokens', quantity: '9007199254740992.1' }],
     cost: '900719925.4940992',
   });
+  const [limited] = await sql.usage.queryOverview({ ...allHours, actorUserId: 2, isAdmin: false, visibleUserIds: [2] });
+  assertEquals([limited!.firstHour, limited!.lastHour], ['2026-11-01T06', '2026-11-01T06']);
 });
 
 test('SQL usage overview stays within the D1 compound-select limit and returns grouped term cardinality', async () => {

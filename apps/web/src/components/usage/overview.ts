@@ -27,8 +27,8 @@ export const mergeUsageOverview = (
       ...previous.buckets.filter(bucket => bucket.start >= start && bucket.end <= response.start),
       ...response.buckets,
     ],
-    users: mergeMetadata(previous.users, response.users, user => user.id),
-    upstreams: mergeMetadata(previous.upstreams, response.upstreams, upstream => upstream.id),
+    users: response.isAdmin ? response.users : mergeMetadata(previous.users, response.users, user => user.id),
+    upstreams: response.isAdmin ? response.upstreams : mergeMetadata(previous.upstreams, response.upstreams, upstream => upstream.id),
   };
 };
 

@@ -749,8 +749,11 @@ class MemoryUsageRepo implements UsageRepo {
         upstream: new Set(opts.filters.upstreams),
       });
       const aggregates = aggregateMemoryOverview(partitioned.filtered, keyToUser, visibleKeyIds);
+      const hours = bucketRecords.map(record => record.hour).sort();
       return {
         bucket,
+        firstHour: hours[0]!,
+        lastHour: hours.at(-1)!,
         axes: {
           none: aggregates.get('none')!,
           keyId: aggregates.get('keyId')!,

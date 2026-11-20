@@ -124,6 +124,7 @@ test('a cursor resumes one hour before the previous read and splits only the bou
   for (const hour of ['2026-04-01T00', '2026-04-30T12', '2026-04-30T13', '2026-04-30T14', '2026-05-03T00']) await seed(hour);
   const initial = await read();
   expect(initial.reset).toBe(true);
+  expect(initial.cursor).toBe('2026-04-30T13');
   expect(initial.buckets.map(bucket => bucket.start)).toEqual(['2026-04-01T00', '2026-04-30T12', '2026-04-30T13', '2026-04-30T14']);
   expect(initial.end).toBe('2026-04-30T15');
 
@@ -142,4 +143,13 @@ test('a cursor resumes one hour before the previous read and splits only the bou
     ['2026-05-02T09', '2026-05-02T10', 1],
   ]);
   expect((await read(delta.cursor)).start).toBe('2026-05-02T08');
+});
+
+test('an empty historical overview does not evaluate out-of-window bucket labels', async () => {
+  const { adminSession } = await setupAppTest();
+  const response = await requestApp('/api/token-usage/overview?start=0000-01-01T00&end=0000-01-02T00&bucket=2d&timezone_offset_minutes=60', {
+    headers: { 'x-floway-session': adminSession },
+  });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ buckets: [], cursor: '0000-01-02T00' });
 });
