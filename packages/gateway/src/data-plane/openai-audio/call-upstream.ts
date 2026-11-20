@@ -214,7 +214,6 @@ const meterEvents = (
     let completed = false;
     try {
       for await (const frame of parseSSEStream(body, { signal })) {
-        if (frame.type === 'sse-raw') continue;
         let event: unknown;
         try {
           event = JSON.parse(frame.data);

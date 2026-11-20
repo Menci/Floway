@@ -23,7 +23,7 @@ import { serializeSseFrame, serveSse } from '../shared/sse.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-response.ts';
 import { recordStream } from '@floway-dev/dump';
 import { run, getFailureFacts, type Pipeline } from '@floway-dev/pipeline';
-import type { SseFrame, SseWritableFrame, SseRawFrame } from '@floway-dev/protocols/common';
+import type { SseReadableFrame, SseWritableFrame } from '@floway-dev/protocols/common';
 
 type Slice<K extends keyof GatewayFacts> = { [P in K]: GatewayFacts[P] };
 
@@ -146,7 +146,7 @@ export type Rendered =
   | {
     /** An answer that *is* a stream. The frames go out as they arrive, which is why nothing
      *  above waits for them and why what they billed is settled afterwards. */
-    readonly frames: AsyncIterable<SseFrame | SseRawFrame>;
+    readonly frames: AsyncIterable<SseReadableFrame>;
     /** What is written on an idle connection to keep it open. A comment is invisible to any
      *  client, but a protocol that defines its own idle event is read by clients that expect
      *  one — Anthropic's `ping` is a frame Claude Code sees — so the family names it. */
@@ -156,7 +156,7 @@ export type Rendered =
 
 /** Which of the two an answer turned out to be. A family's rendered fact carries whichever
  *  shape its run produced, and only the family knows the key it is under. */
-export const isFrames = (rendered: unknown): rendered is AsyncIterable<SseFrame | SseRawFrame> =>
+export const isFrames = (rendered: unknown): rendered is AsyncIterable<SseReadableFrame> =>
   typeof rendered === 'object' && rendered !== null && Symbol.asyncIterator in rendered;
 
 /** How a streaming turn ended, once its frames ran out. Both halves arrive together because
