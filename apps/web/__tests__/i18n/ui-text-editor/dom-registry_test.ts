@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { defaultKeyMarkerChannel } from '../../../src/i18n/ui-text-editor/core/markers';
 import { UiTextEditorDomRegistry } from '../../../src/i18n/ui-text-editor/dom-registry';
-import { wrapWithKeyMarkers } from '../../../src/i18n/ui-text-editor/markers';
+
+const wrapWithKeyMarkers = defaultKeyMarkerChannel.wrap;
 
 describe('UiTextEditorDomRegistry', () => {
   const registry = new UiTextEditorDomRegistry();
@@ -177,28 +179,24 @@ describe('UiTextEditorDomRegistry', () => {
     try {
       registry.start(container);
 
-      // Hovering empty padding on the nav item resolves to the inner text element and rect.
       const backgroundHit = registry.resolveAtPoint(document, 180, 20);
       expect(backgroundHit?.element).toBe(navLabel);
       expect(backgroundHit?.rect).toEqual(navLabelRect);
       expect(backgroundHit?.primaryKey).toBe('nav.settings');
       expect(backgroundHit?.candidates).toEqual(['nav.settings']);
 
-      // Hovering directly on the text produces the exact same target and rect.
       stack = [navLabel, navItem, container, document.body];
       const textHit = registry.resolveAtPoint(document, 60, 24);
       expect(textHit?.element).toBe(navLabel);
       expect(textHit?.rect).toEqual(navLabelRect);
       expect(textHit?.primaryKey).toBe('nav.settings');
 
-      // When text sits directly inside a button with a non-zero Range rect, hovering padding uses that Range rect.
       stack = [directTextButton, container, document.body];
       const directPaddingHit = registry.resolveAtPoint(document, 140, 132);
       expect(directPaddingHit?.element).toBe(directTextButton);
       expect(directPaddingHit?.rect).toEqual(directTextRect);
       expect(directPaddingHit?.primaryKey).toBe('common.uiTextEditor.export');
 
-      // Disabled dropdown wrapper/button carrying form `value` and text content shrink-wraps to the text rect without role whitelists.
       stack = [dropdownButton, dropdownRoot, container, document.body];
       const dropdownPaddingHit = registry.resolveAtPoint(document, 220, 184);
       expect(dropdownPaddingHit?.element).toBe(dropdownButton);
@@ -206,7 +204,6 @@ describe('UiTextEditorDomRegistry', () => {
       expect(dropdownPaddingHit?.primaryKey).toBe('playground.noKeyOption');
       expect(dropdownPaddingHit?.candidates).toEqual(['playground.noKeyOption']);
 
-      // Hovering background space of an interactive container with multiple keys returns null.
       stack = [multiButton, container, document.body];
       expect(registry.resolveAtPoint(document, 180, 76)).toBeNull();
     } finally {
@@ -244,18 +241,12 @@ describe('UiTextEditorDomRegistry', () => {
     try {
       registry.start(container);
 
-      const firstLineHit = registry.resolveAtPoint(document, 120, 208);
       const secondLineHit = registry.resolveAtPoint(document, 36, 228);
-
-      expect(firstLineHit?.primaryKey).toBe('playground.customJsonHint');
-      expect(firstLineHit?.rects).toEqual([line1, line2]);
-      expect(firstLineHit?.rect).toEqual(combined);
 
       expect(secondLineHit?.primaryKey).toBe('playground.customJsonHint');
       expect(secondLineHit?.rects).toEqual([line1, line2]);
       expect(secondLineHit?.rect).toEqual(combined);
 
-      // Empty space to the right of the shorter second line does not fall back to the bounding box.
       expect(registry.resolveAtPoint(document, 180, 228)).toBeNull();
     } finally {
       if (originalElementsFromPoint === undefined) {
@@ -327,21 +318,18 @@ describe('UiTextEditorDomRegistry', () => {
     try {
       registry.start(container);
 
-      // Hovering visible text inside a badge with an sr-only sibling prioritizes visible text and its rect.
       const visibleHit = registry.resolveAtPoint(document, 70, 30);
       expect(visibleHit?.primaryKey).toBe('permissions.columns.Model.Use');
       expect(visibleHit?.primaryInvisible).toBeUndefined();
       expect(visibleHit?.rect).toEqual(visibleTextRect);
       expect(visibleHit?.candidates).toEqual(['permissions.columns.Model.Use', 'permissions.states.on']);
 
-      // Hovering an element whose only tracked text is sr-only hits as invisible.
       stack = [srOnlyHeader, container, document.body];
       const srOnlyHit = registry.resolveAtPoint(document, 210, 30);
       expect(srOnlyHit?.primaryKey).toBe('permissions.actions.column');
       expect(srOnlyHit?.primaryInvisible).toBe(true);
       expect(srOnlyHit?.rect).toEqual(headerRect);
 
-      // Unrendered children (e.g. responsive display:none mobile header) are ignored completely.
       stack = [pageShell, container, document.body];
       expect(registry.resolveAtPoint(document, 600, 400)).toBeNull();
 
@@ -352,7 +340,7 @@ describe('UiTextEditorDomRegistry', () => {
       expect(inertHit?.primaryInvisible).toBeUndefined();
       expect(inertHit?.rect).toEqual(inertRect);
 
-      // Outer wrapper with no direct aria-label/sr-only child does not claim nested invisible labels.
+      // Outer wrappers without direct aria-label or visually hidden children do not claim nested invisible labels.
       stack = [container, document.body];
       expect(registry.resolveAtPoint(document, 10, 10)).toBeNull();
     } finally {

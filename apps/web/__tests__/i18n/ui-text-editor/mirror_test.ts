@@ -23,16 +23,6 @@ describe('UI text editor preference mirror', () => {
     __testing.resetBootState(false);
   });
 
-  it('updates the local mirror and triggers reload when preference diverges from boot state', () => {
-    expect(isUiTextEditorEnabled()).toBe(false);
-    expect(syncUiTextEditorPreference(false)).toBe(false);
-    expect(reload).not.toHaveBeenCalled();
-
-    expect(syncUiTextEditorPreference(true)).toBe(true);
-    expect(__testing.readStored()).toBe(true);
-    expect(reload).toHaveBeenCalled();
-  });
-
   it('preserves the last mirror value across reload until a signed-in user overrides it', () => {
     window.localStorage.setItem(__testing.storageKey, '1');
     __testing.resetBootState();

@@ -43,9 +43,10 @@ const { Button, FluentProvider, Tooltip } = fluentComponents;
 // across portals, so attaching the top-layer overlay to the clicked element or
 // active floating surface keeps open dialogs, flyouts, and menus from treating
 // editor interactions as outside clicks or focus escapes.
-// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-utilities/src/virtualParent/setVirtualParent.ts#L1-L15
-const setFluentVirtualParent = (child: HTMLElement | null, parent: Element | undefined): void => {
-  if (!child) return;
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-utilities/src/virtualParent/setVirtualParent.ts#L8-L18
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-utilities/src/virtualParent/getParent.ts#L15-L34
+// https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-tabster/src/hooks/useTabster.ts#L25-L40
+const setFluentVirtualParent = (child: HTMLElement, parent: Element | undefined): void => {
   Object.assign(child, { _virtual: { parent } });
 };
 
@@ -54,8 +55,7 @@ const findActiveFloatingSurface = (): Element | undefined => {
   return surfaces.length > 0 ? surfaces[surfaces.length - 1] : undefined;
 };
 
-const promoteTopLayer = (element: HTMLElement | null): void => {
-  if (!element) return;
+const promoteTopLayer = (element: HTMLElement): void => {
   const withPopover = element as HTMLElement & {
     showPopover?: () => void;
     hidePopover?: () => void;
@@ -68,7 +68,7 @@ const promoteTopLayer = (element: HTMLElement | null): void => {
     }
     withPopover.showPopover();
   } catch {
-    // Fallback to fixed positioning when the environment lacks top-layer popovers.
+    // The fixed-position layer remains usable when top-layer promotion is rejected.
   }
 };
 
@@ -85,12 +85,10 @@ const HOVER_ANCHOR_NAME = '--floway-ute-hover-anchor';
 function HighlightShape({
   anchorElement,
   anchored,
-  boundingRect,
   rects,
 }: {
   anchorElement: Element;
   anchored: boolean;
-  boundingRect: DOMRect;
   rects: DOMRect[];
 }) {
   const maskPrefix = useId().replace(/[^a-zA-Z0-9_-]/g, '');
@@ -110,7 +108,7 @@ function HighlightShape({
   };
 
   if (rects.length <= 1) {
-    const r = rects[0] ?? boundingRect;
+    const r = rects[0]!;
     return (
       <div
         className="floway-ui-text-editor-highlight"
@@ -289,17 +287,17 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
   // opening a surface (never on close, so an outside drag-select that closes
   // the panel is not interrupted by toggling top-layer state).
   useEffect(() => {
-    promoteTopLayer(layerRef.current);
+    promoteTopLayer(layerRef.current!);
   }, []);
 
   useEffect(() => {
     if (activeFlyout !== null || panelOpen) {
-      promoteTopLayer(layerRef.current);
+      promoteTopLayer(layerRef.current!);
     }
   }, [activeFlyout, panelOpen]);
 
   useEffect(() => {
-    const layer = layerRef.current;
+    const layer = layerRef.current!;
     const virtualParent = activeFlyout?.anchorElement ?? (uiOpen ? findActiveFloatingSurface() : undefined);
     setFluentVirtualParent(layer, virtualParent);
     return () => setFluentVirtualParent(layer, undefined);
@@ -340,12 +338,13 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
         }
         event.preventDefault();
         event.stopImmediatePropagation();
-        if (flyoutEscapeRef.current?.()) return;
-        setActiveFlyout(prev => {
-          if (prev !== null) return null;
+        const flyoutEscape = flyoutEscapeRef.current;
+        if (flyoutEscape) {
+          if (flyoutEscape()) return;
+          setActiveFlyout(null);
+        } else {
           setPanelOpen(false);
-          return null;
-        });
+        }
       }
     };
 
@@ -382,10 +381,8 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
       });
     };
 
-    // Native disabled controls (such as disabled buttons/dropdowns) suppress
-    // `click` events in browsers, while `pointerdown` / `mousedown` still
-    // reach window capture listeners. Open the flyout on press so disabled
-    // controls remain inspectable, and deduplicate the trailing `click`.
+    // Disabled controls suppress click events, so open the flyout on
+    // pointerdown and deduplicate the trailing click.
     let handledPressAt = -Infinity;
 
     const openFlyoutAtEvent = (event: MouseEvent | PointerEvent) => {
@@ -559,7 +556,6 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
                 <HighlightShape
                   anchorElement={hoverTarget.element}
                   anchored={canAnchorHighlight}
-                  boundingRect={hoverTarget.rect}
                   rects={hoverTarget.rects}
                 />
                 <div

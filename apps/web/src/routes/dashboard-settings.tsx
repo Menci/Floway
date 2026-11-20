@@ -20,11 +20,11 @@ import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { SectionHeader } from '../components/ui/section-header';
 import { SettingsCard } from '../components/ui/settings-card';
 import { fluentComponents } from '../fluent';
-import { browserLanguage, normalizeLanguage, supportedLanguages } from '../i18n/languages';
+import { browserLanguage, languageNames, normalizeLanguage, supportedLanguages } from '../i18n/languages';
 import { getAltKeyLabel, syncUiTextEditorPreference } from '../i18n/ui-text-editor/mirror';
 import { useUserPreferences } from '../lib/use-preferences';
 import { useAuthStore } from '../stores/auth-store';
-import { QUOTA_DISPLAYS, type QuotaDisplay, type SupportedLanguage, type UserPreferences } from '@floway-dev/protocols/browser';
+import { QUOTA_DISPLAYS, type QuotaDisplay, type UserPreferences } from '@floway-dev/protocols/browser';
 
 const {
   Button,
@@ -107,11 +107,6 @@ export default function DashboardSettings() {
     </section>
   );
 }
-
-const languageNames: Record<SupportedLanguage, string> = {
-  'en': 'English',
-  'zh-Hans': '简体中文',
-};
 
 // SettingsCard rows carry the choice; the save is one action for the group, as
 // WinUI's SettingsPage does, and its outcome is reported through the toast that

@@ -27,9 +27,9 @@ export interface EditorFlyoutProps {
   initialKey: string;
   candidates: string[];
   anchorRect: DOMRect | null;
-  escapeHandlerRef?: MutableRefObject<(() => boolean) | null>;
+  escapeHandlerRef: MutableRefObject<(() => boolean) | null>;
   onClose: () => void;
-  onSaved?: () => void;
+  onSaved: () => void;
 }
 
 export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initialKey, onClose, onSaved }: EditorFlyoutProps) {
@@ -43,11 +43,17 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
   const revertEntry = useUiTextEditorStore(state => state.revertEntry);
   const revertLanguage = useUiTextEditorStore(state => state.revertLanguage);
 
+  const indexOfCandidate = (key: string): number => {
+    const idx = candidates.indexOf(key);
+    if (idx < 0) throw new Error(`Key "${key}" is not present in candidates.`);
+    return idx;
+  };
+
   const hasMultipleCandidates = candidates.length > 1;
   const [activeKey, setActiveKey] = useState(initialKey);
   const [copiedKey, setCopiedKey] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(hasMultipleCandidates);
-  const [highlightedIndex, setHighlightedIndex] = useState(() => Math.max(0, candidates.indexOf(initialKey)));
+  const [highlightedIndex, setHighlightedIndex] = useState(() => indexOfCandidate(initialKey));
 
   const fallbackLanguage = supportedLanguages[0]!;
 
@@ -102,7 +108,6 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
   }, [hasMultipleCandidates]);
 
   useEffect(() => {
-    if (!escapeHandlerRef) return;
     escapeHandlerRef.current = () => {
       if (!dropdownOpen) return false;
       setDropdownOpen(false);
@@ -153,24 +158,22 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
     };
   }, []);
 
-  const switchKey = (nextKey: string, focusInput = false) => {
+  const switchKey = (nextKey: string) => {
     setActiveKey(nextKey);
     setValues(buildInitialValues(nextKey));
     setDirtyLanguages({});
     setNote(useUiTextEditorStore.getState().entries[nextKey]?.note ?? '');
     setCopiedKey(false);
     setDropdownOpen(false);
-    setHighlightedIndex(Math.max(0, candidates.indexOf(nextKey)));
-    if (focusInput) {
-      window.setTimeout(() => firstInputRef.current?.focus(), 0);
-    }
+    setHighlightedIndex(indexOfCandidate(nextKey));
+    window.setTimeout(() => firstInputRef.current?.focus(), 0);
   };
 
   const handleTriggerKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       if (!dropdownOpen) {
-        setHighlightedIndex(Math.max(0, candidates.indexOf(activeKey)));
+        setHighlightedIndex(indexOfCandidate(activeKey));
         setDropdownOpen(true);
       } else {
         setHighlightedIndex(prev => (prev + 1) % candidates.length);
@@ -178,7 +181,7 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
       if (!dropdownOpen) {
-        setHighlightedIndex(Math.max(0, candidates.indexOf(activeKey)));
+        setHighlightedIndex(indexOfCandidate(activeKey));
         setDropdownOpen(true);
       } else {
         setHighlightedIndex(prev => (prev - 1 + candidates.length) % candidates.length);
@@ -186,7 +189,7 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
     } else if (event.key === 'Enter' || event.key === ' ') {
       if (dropdownOpen) {
         event.preventDefault();
-        switchKey(candidates[highlightedIndex]!, true);
+        switchKey(candidates[highlightedIndex]!);
       }
     }
   };
@@ -225,7 +228,7 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
       values: submittedValues,
       note,
     });
-    onSaved?.();
+    onSaved();
     onClose();
   };
 
@@ -305,7 +308,7 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
                   setDropdownOpen(prev => {
                     const next = !prev;
                     if (next) {
-                      setHighlightedIndex(Math.max(0, candidates.indexOf(activeKey)));
+                      setHighlightedIndex(indexOfCandidate(activeKey));
                     }
                     return next;
                   });
@@ -363,7 +366,7 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
                     id={optionIdFor(index)}
                     role="option"
                     type="button"
-                    onClick={() => switchKey(candidateKey, true)}
+                    onClick={() => switchKey(candidateKey)}
                     onMouseEnter={() => setHighlightedIndex(index)}
                   >
                     <span className="floway-ui-text-editor-key-option-value">

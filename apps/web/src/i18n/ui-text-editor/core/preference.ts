@@ -34,7 +34,7 @@ export const createBootToggleMirror = (storageKey: string): BootToggleMirror => 
 
   let bootEnabled = readStored();
   let reloadHandler = (): void => {
-    if (typeof window !== 'undefined') window.location.reload();
+    window.location.reload();
   };
 
   return {

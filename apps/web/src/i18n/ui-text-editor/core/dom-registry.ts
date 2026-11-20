@@ -203,9 +203,9 @@ const getTextSegmentMetrics = (textNode: Text, start: number, end: number): Text
   return isNonZeroRect(rect) ? { lineRects: [rect], boundingRect: rect } : null;
 };
 
-// Hit-test against each wrapped line's own rect without falling back to the
-// outer bounding box, and return the full segment metrics so every line of a
-// multi-line key highlights consistently regardless of which line is hovered.
+// Hit-test against each line rect (or the range bounding rect when no client
+// rects exist) and return the full segment metrics so every line of a wrapped
+// key highlights consistently regardless of which line is hovered.
 const matchTextSegmentAtPoint = (
   textNode: Text,
   start: number,
@@ -228,9 +228,8 @@ const hasVisiblePaint = (color: string): boolean => {
     && normalized !== 'rgba(0,0,0,0)';
 };
 
-// Identifies elements that visually or interactively bound a control surface
-// (focusable/disabled controls, pointer-cursor targets, or boxes with visible
-// fill, border, or shadow) without enumerating tag names or ARIA roles.
+// Treat interaction and painted-box cues as control boundaries so custom
+// elements need no tag or ARIA role whitelist.
 const isBoundedControlElement = (element: Element): boolean => {
   if (element === element.ownerDocument.body || element === element.ownerDocument.documentElement) {
     return false;
@@ -434,8 +433,8 @@ export class UiTextEditorDomRegistry {
     const raw = textNode.data;
 
     if (!this.channel.mayContain(raw)) {
-      // Skip observer callbacks matching the value we just stripped; invalidate
-      // mappings when a node changes to any other plain text.
+      // Preserve mappings for the MutationObserver echo of the stripped value;
+      // invalidate them when plain text changes.
       if (this.strippedTextValue.get(textNode) !== raw) {
         this.textSegments.delete(textNode);
         this.strippedTextValue.delete(textNode);
@@ -767,12 +766,10 @@ export class UiTextEditorDomRegistry {
       }
     }
 
-    // 2. Two-pass elementsFromPoint scan: prefer elements carrying visible text
-    // or visible attributes (value/placeholder/alt) first so transparent
-    // full-row aria-label overlays (such as SettingsCard) do not shadow the
-    // visible header/description beneath them; include aria-label as secondary
-    // candidates on the matched element, and fall back to aria-label-only or
-    // interactive containers in the second pass.
+    // Walk elementsFromPoint in three priority passes: exact visible text and
+    // painted attributes first (so transparent full-row aria-label overlays do
+    // not shadow visible text beneath them), then direct text without Range
+    // metrics, then bounded unique-key controls and direct invisible labels.
     const rawStack = typeof doc.elementsFromPoint === 'function' ? doc.elementsFromPoint(clientX, clientY) : [];
     const stack: Element[] = [];
     for (const element of rawStack) {
@@ -820,9 +817,8 @@ export class UiTextEditorDomRegistry {
       }
     }
 
-    // Fallback for environments without Range layout metrics (e.g. Happy DOM)
-    // or elements whose direct text node has zero-sized range rects: match the
-    // element box directly when it carries tracked text.
+    // Match the element box directly when tracked text has no non-zero Range
+    // metrics.
     for (const element of stack) {
       if (classifyElementVisibility(element) !== 'visible') continue;
       const textKeys = dedupeKeys(this.collectTextKeys(element));

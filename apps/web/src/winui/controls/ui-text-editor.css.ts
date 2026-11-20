@@ -54,9 +54,8 @@ export const uiTextEditorCss = `
   overflow: visible;
 }
 
-/* When CSS Anchor Positioning is available, tether the highlight to the hovered
-   element so ancestor scrolling moves it on the compositor thread with zero lag.
-   The inline left/top values stay mathematically identical as the fallback. */
+/* Tether the highlight shapes and label tag to the hovered element when CSS
+   Anchor Positioning is supported, preserving the inline left/top fallback. */
 @supports (anchor-name: --x) and (left: calc(anchor(left) + 1px)) {
   .floway-ui-text-editor-highlight[data-anchored="true"],
   .floway-ui-text-editor-highlight-svg[data-anchored="true"],
@@ -368,20 +367,25 @@ export const uiTextEditorCss = `
   word-break: break-word;
 }
 
-.floway-ui-text-editor-stale-trigger {
+.floway-ui-text-editor-stale-trigger,
+.floway-ui-text-editor-applied-icon,
+.floway-ui-text-editor-missing-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 18px;
   height: 18px;
+  flex: none;
+  vertical-align: middle;
+}
+
+.floway-ui-text-editor-stale-trigger {
   padding: 0;
   border: 0;
   border-radius: var(--winui-control-corner-radius);
   background: transparent;
   color: var(--winui-system-fill-caution);
   cursor: pointer;
-  flex: none;
-  vertical-align: middle;
 }
 
 .floway-ui-text-editor-stale-trigger:hover {
@@ -389,25 +393,11 @@ export const uiTextEditorCss = `
 }
 
 .floway-ui-text-editor-applied-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
   color: var(--winui-system-fill-success);
-  flex: none;
-  vertical-align: middle;
 }
 
 .floway-ui-text-editor-missing-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
   color: var(--winui-system-fill-critical);
-  flex: none;
-  vertical-align: middle;
 }
 
 .floway-ui-text-editor-stale-popover {
@@ -596,8 +586,6 @@ export const uiTextEditorCss = `
 }
 
 .floway-ui-text-editor-diff-lang {
-  font-size: 12px;
-  line-height: 17px;
   color: var(--winui-text-fill-tertiary);
   flex: none;
 }

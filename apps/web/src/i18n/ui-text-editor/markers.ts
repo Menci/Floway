@@ -1,10 +1,6 @@
 import { createI18nextKeyMarkerPostProcessor } from './adapters/i18next';
-import { defaultKeyMarkerChannel, mayContainKeyMarkers, type TextKeySegment } from './core/markers';
+import { defaultKeyMarkerChannel } from './core/markers';
 
-export { mayContainKeyMarkers, type TextKeySegment };
-export const wrapWithKeyMarkers = defaultKeyMarkerChannel.wrap;
-export const extractKeySegments = defaultKeyMarkerChannel.extract;
-export const stripKeyMarkers = defaultKeyMarkerChannel.strip;
 export const setUiTextEditorTrackingActive = defaultKeyMarkerChannel.setTrackingActive;
 export const withoutUiTextEditorMarkers = defaultKeyMarkerChannel.withoutMarkers;
 

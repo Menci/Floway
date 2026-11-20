@@ -34,7 +34,6 @@ const encodeToken = (tag: number, id: number): string => {
   return encodeBytes(bytes);
 };
 
-// Matches one or more 9-char framed bytes where each frame ends with BIT_0.
 const FRAMED_RUN_RE = new RegExp(`(?:[${BIT_0}${BIT_1}]{8}${BIT_0})+`, 'g');
 
 const decodeFramedRun = (run: string): Array<{ kind: 'start' | 'end'; id: number }> | null => {

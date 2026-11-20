@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
+import { defaultKeyMarkerChannel } from '../../../src/i18n/ui-text-editor/core/markers';
 import {
-  extractKeySegments,
   setUiTextEditorTrackingActive,
-  stripKeyMarkers,
   uiTextEditorPostProcessor,
   withoutUiTextEditorMarkers,
-  wrapWithKeyMarkers,
 } from '../../../src/i18n/ui-text-editor/markers';
+
+const {
+  extract: extractKeySegments,
+  strip: stripKeyMarkers,
+  wrap: wrapWithKeyMarkers,
+} = defaultKeyMarkerChannel;
 
 describe('UI text editor markers', () => {
   it('wraps and extracts exact offsets for concatenated strings', () => {

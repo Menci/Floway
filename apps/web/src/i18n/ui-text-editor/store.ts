@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
 import { ensureLocaleLoaded, i18n } from '../index';
-import { supportedLanguages, type SupportedLanguage } from '../languages';
+import { languageNames, supportedLanguages, type SupportedLanguage } from '../languages';
 import { numberFormats } from '../number-format';
 import { loadLocale } from '../resources';
 import {
@@ -13,10 +13,7 @@ import {
 
 export type UiTextEditEntry = GenericUiTextEditEntry<SupportedLanguage>;
 
-export const LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
-  'en': 'English',
-  'zh-Hans': '简体中文',
-};
+export const LANGUAGE_LABELS = languageNames;
 
 export const SHORT_LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
   'en': 'EN',
@@ -60,10 +57,12 @@ const engine = createUiTextEditorEngine<SupportedLanguage>({
   maxHistorySessions: 200,
   loadLanguageCatalog: async language => {
     const resource = await loadLocale(language);
-    const translation = (resource.translation ?? {}) as object;
-    // Ensure every supported language's full bundle is loaded in i18next
-    // (not just shellResources for defaultLanguage) so edits to any
-    // language can be applied and previewed immediately.
+    const translation = resource.translation;
+    if (typeof translation !== 'object' || translation === null) {
+      throw new TypeError(`Locale "${language}" is missing a translation catalog object.`);
+    }
+    // Boot may contain only shell strings; load the full i18next bundle before
+    // applying and previewing edits in each locale.
     await ensureLocaleLoaded(language);
     return flattenCatalogLeaves(translation);
   },

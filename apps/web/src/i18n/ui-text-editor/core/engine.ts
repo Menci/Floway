@@ -91,19 +91,21 @@ interface PersistedState<Lang extends string> {
   history: UiTextHistorySession<Lang>[];
 }
 
-export const flattenCatalogLeaves = (value: object, prefix = ''): Map<string, string> => {
+export const flattenCatalogLeaves = (value: object): Map<string, string> => {
   const map = new Map<string, string>();
   const walk = (node: object, pathPrefix: string): void => {
     for (const [k, child] of Object.entries(node)) {
       const path = pathPrefix ? `${pathPrefix}.${k}` : k;
       if (typeof child === 'object' && child !== null) {
         walk(child, path);
+      } else if (typeof child === 'string') {
+        map.set(path, child);
       } else {
-        map.set(path, String(child));
+        throw new TypeError(`Catalog leaf "${path}" must be a string.`);
       }
     }
   };
-  walk(value, prefix);
+  walk(value, '');
   return map;
 };
 
@@ -130,7 +132,10 @@ export const createUiTextEditorEngine = <Lang extends string>(
     return out;
   };
 
-  const parseEntry = (raw: unknown, fallbackKey?: string): UiTextEditEntry<Lang> | null => {
+  const parseEntry = (
+    raw: unknown,
+    { fallbackKey, overrideUpdatedAt }: { fallbackKey?: string; overrideUpdatedAt?: string } = {},
+  ): UiTextEditEntry<Lang> | null => {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
     const rec = raw as Record<string, unknown>;
     const key = typeof rec.key === 'string' && rec.key.trim().length > 0 ? rec.key.trim() : fallbackKey;
@@ -149,7 +154,7 @@ export const createUiTextEditorEngine = <Lang extends string>(
     const note = typeof rec.note === 'string' ? rec.note : '';
     if (Object.keys(changes).length === 0 && note.trim().length === 0) return null;
 
-    const updatedAt = typeof rec.updatedAt === 'string' ? rec.updatedAt : new Date().toISOString();
+    const updatedAt = overrideUpdatedAt ?? (typeof rec.updatedAt === 'string' ? rec.updatedAt : new Date().toISOString());
     return { key, changes, note, updatedAt };
   };
 
@@ -167,7 +172,7 @@ export const createUiTextEditorEngine = <Lang extends string>(
       const entries: Record<string, UiTextEditEntry<Lang>> = {};
       if (rec.entries && typeof rec.entries === 'object' && !Array.isArray(rec.entries)) {
         for (const [k, rawEntry] of Object.entries(rec.entries as Record<string, unknown>)) {
-          const entry = parseEntry(rawEntry, k);
+          const entry = parseEntry(rawEntry, { fallbackKey: k });
           if (entry) entries[entry.key] = entry;
         }
       }
@@ -494,7 +499,7 @@ export const createUiTextEditorEngine = <Lang extends string>(
       const session = buildHistorySession(exportSnapshot.entries, exportSnapshot.payload.exportedAt);
       if (!session) return null;
 
-      // Only clear entries that have not been modified since the snapshot was taken.
+      // Clear active entries that still equal the captured snapshot; preserve concurrent differences.
       const nextEntries = { ...state.entries };
       const touchedKeys = new Set<string>();
       for (const [key, snapEntry] of Object.entries(exportSnapshot.entries)) {
@@ -573,25 +578,9 @@ export const createUiTextEditorEngine = <Lang extends string>(
       const now = new Date().toISOString();
 
       for (const item of rawItems) {
-        if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
-        const rec = item as Record<string, unknown>;
-        if (typeof rec.key !== 'string' || rec.key.trim().length === 0) continue;
-        const key = rec.key.trim();
-        const note = typeof rec.note === 'string' ? rec.note : '';
-        const changes: Partial<Record<Lang, LanguageChange>> = {};
-
-        if (rec.changes && typeof rec.changes === 'object' && !Array.isArray(rec.changes)) {
-          for (const [lang, rawChange] of Object.entries(rec.changes as Record<string, unknown>)) {
-            if (!isSupportedLanguage(lang) || !rawChange || typeof rawChange !== 'object' || Array.isArray(rawChange)) continue;
-            const ch = rawChange as Record<string, unknown>;
-            if (typeof ch.before !== 'string' || typeof ch.after !== 'string') continue;
-            changes[lang] = { before: ch.before, after: ch.after };
-          }
-        }
-
-        if (Object.keys(changes).length === 0 && note.trim().length === 0) continue;
-
-        importedEntries[key] = { key, changes, note, updatedAt: now };
+        const entry = parseEntry(item, { overrideUpdatedAt: now });
+        if (!entry) continue;
+        importedEntries[entry.key] = entry;
         imported += 1;
       }
 

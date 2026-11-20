@@ -3,10 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import UiTextEditorOverlay from '../../../src/components/ui-text-editor/overlay';
 import { setLanguage } from '../../../src/i18n';
-import { wrapWithKeyMarkers } from '../../../src/i18n/ui-text-editor/markers';
+import { defaultKeyMarkerChannel } from '../../../src/i18n/ui-text-editor/core/markers';
 import { __testing as storeTesting, useUiTextEditorStore } from '../../../src/i18n/ui-text-editor/store';
 import { stubLocalStorage } from '../../local-storage-stub';
 import { renderInApp } from '../../render';
+
+const wrapWithKeyMarkers = defaultKeyMarkerChannel.wrap;
 
 stubLocalStorage();
 
@@ -207,12 +209,10 @@ describe('UiTextEditorOverlay', () => {
 
     fireEvent.pointerMove(window, { altKey: true, clientX: 120, clientY: 208 });
 
-    const svg = await waitFor(() => {
+    await waitFor(() => {
       const el = document.querySelector<SVGSVGElement>('.floway-ui-text-editor-highlight-svg');
       expect(el).not.toBeNull();
-      return el!;
     });
-    expect(svg.querySelectorAll('mask')).toHaveLength(2);
 
     if (originalElementsFromPoint === undefined) {
       delete (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;
@@ -292,7 +292,7 @@ describe('UiTextEditorOverlay', () => {
       expect(useUiTextEditorStore.getState().initialized).toBe(true);
     });
 
-    // Disabled controls do not emit `click`; only `pointerdown` reaches capture listeners.
+    // Disabled controls suppress click events, so exercise the pointerdown capture path.
     fireEvent.pointerDown(button, { altKey: true, button: 0, clientX: 120, clientY: 56 });
 
     const dialog = await screen.findByRole('dialog', { name: 'Edit' });

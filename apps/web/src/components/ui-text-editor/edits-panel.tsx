@@ -26,6 +26,7 @@ import {
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 import { useNow } from '../../lib/use-now';
 import { copyToClipboard } from '../ui/copy-to-clipboard';
+import { useCopyToClipboard } from '../ui/use-copy-to-clipboard';
 
 const { Button, Popover, PopoverSurface, PopoverTrigger, Text, Tooltip } = fluentComponents;
 
@@ -270,21 +271,16 @@ export function EditsPanel({
   const [showHistory, setShowHistory] = useState(false);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
-  const [copiedSessionId, setCopiedSessionId] = useState<string | null>(null);
+  const sessionCopy = useCopyToClipboard();
   const [copiedSegmentId, setCopiedSegmentId] = useState<string | null>(null);
   const copyTimerRef = useRef<number | null>(null);
-  const sessionTimerRef = useRef<number | null>(null);
   const segmentTimerRef = useRef<number | null>(null);
 
   useEffect(() => () => {
     if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
-    if (sessionTimerRef.current !== null) window.clearTimeout(sessionTimerRef.current);
     if (segmentTimerRef.current !== null) window.clearTimeout(segmentTimerRef.current);
   }, []);
 
-  // Dismiss the panel only when pointer or focus returns to the host page
-  // outside the UI text editor (keeping it open while focusing EditorFlyout,
-  // internal popovers, the dock, or Alt+clicking page text).
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
       if (event.altKey) return;
@@ -335,16 +331,10 @@ export function EditsPanel({
     copyTimerRef.current = window.setTimeout(() => setCopyState('idle'), 1600);
   };
 
-  const handleCopySession = async (sessionId: string) => {
+  const handleCopySession = (sessionId: string) => {
     const payload = buildHistoryExportPayload(sessionId);
     if (!payload) return;
-    const ok = await copyToClipboard(JSON.stringify(payload, null, 2));
-    if (!ok) return;
-    setCopiedSessionId(sessionId);
-    if (sessionTimerRef.current !== null) window.clearTimeout(sessionTimerRef.current);
-    sessionTimerRef.current = window.setTimeout(() => {
-      setCopiedSessionId(current => (current === sessionId ? null : current));
-    }, 1500);
+    sessionCopy.copy(JSON.stringify(payload, null, 2), sessionId);
   };
 
   const handleCopySegment = (segmentId: string, text: string) => {
@@ -682,10 +672,12 @@ export function EditsPanel({
 
           {historySessions.map(session => {
             const archivedMs = Date.parse(session.archivedAt);
-            const rel = Number.isNaN(archivedMs)
-              ? session.archivedAt
-              : relativeTime(session.archivedAt, locale, { now: Math.max(now, archivedMs) });
+            const validDate = !Number.isNaN(archivedMs);
+            const rel = validDate
+              ? relativeTime(session.archivedAt, locale, { now: Math.max(now, archivedMs) })
+              : session.archivedAt;
             const timeLabel = rel ?? shortDate(session.archivedAt, locale);
+            const titleText = validDate ? dateTime(session.archivedAt, locale) : session.archivedAt;
             return (
               <div
                 key={session.id}
@@ -704,7 +696,7 @@ export function EditsPanel({
                 <div className="floway-ui-text-editor-entry-head">
                   <span
                     className="floway-ui-text-editor-session-time"
-                    title={dateTime(session.archivedAt, locale)}
+                    title={titleText}
                   >
                     {timeLabel}
                   </span>
@@ -713,9 +705,9 @@ export function EditsPanel({
                     onClick={event => event.stopPropagation()}
                   >
                     <EditorIconButton
-                      icon={copiedSessionId === session.id ? <Checkmark16Regular /> : <Copy16Regular />}
-                      label={copiedSessionId === session.id ? t('common.copy.copied') : t('common.uiTextEditor.export')}
-                      onClick={() => void handleCopySession(session.id)}
+                      icon={sessionCopy.outcomeFor(session.id) === 'copied' ? <Checkmark16Regular /> : <Copy16Regular />}
+                      label={sessionCopy.outcomeFor(session.id) === 'copied' ? t('common.copy.copied') : t('common.uiTextEditor.export')}
+                      onClick={() => handleCopySession(session.id)}
                     />
                     <EditorIconButton
                       icon={<Delete16Regular />}

@@ -129,7 +129,7 @@ describe('UI text editor store', () => {
     // The live projection uses the latest matching history entry ('Abort'); the stale active entry remains available for display.
     expect(i18n.t('common.cancel', { lng: 'en' })).toBe('Abort');
 
-    // Deleting history reverts keys no longer overridden by valid active entries.
+    // Deleting history reverts keys that have no valid active override.
     useUiTextEditorStore.getState().clearHistory();
     expect(useUiTextEditorStore.getState().history).toHaveLength(0);
     expect(i18n.t('common.cancel', { lng: 'en' })).toBe('Cancel');
@@ -208,7 +208,7 @@ describe('UI text editor store', () => {
       note: '',
     });
 
-    // Stored and exported intact, yet skipped from live i18next projection so formatting never throws.
+    // Format-invalid edits remain stored but are excluded from the live i18next projection.
     expect(useUiTextEditorStore.getState().entries['common.uiTextEditor.editsCount_other']?.changes.en?.after).toBe('{{count}} edits');
     expect(i18n.t('common.uiTextEditor.editsCount', { count: 3, lng: 'en' })).toBe('3 edits');
   });
