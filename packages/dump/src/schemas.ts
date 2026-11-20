@@ -36,7 +36,7 @@ export const dumpMetadataSchema = z.object({
   // The target protocol a translated turn spoke to its upstream. Null on
   // native turns (no translation) and on records written before this field.
   // `.nullish()` so old `meta_json` rows missing the key still parse.
-  targetApi: z.enum(['anthropicMessages', 'openaiResponses', 'openaiChatCompletions']).nullish(),
+  targetApi: z.enum(['anthropicMessages', 'geminiGenerateContent', 'openaiResponses', 'openaiChatCompletions']).nullish(),
 }).strict();
 
 export const dumpBrokerFrameSchema = z.object({

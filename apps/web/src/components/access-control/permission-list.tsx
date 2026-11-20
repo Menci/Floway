@@ -87,7 +87,7 @@ function PresentedPermission({ context, permission, value }: { context: Permissi
           rule: <PermissionToken emphasis="effective" permission={permission} value={by.values[permission]!} />,
           scope: <ScopeExpression data={context.data} readOnly value={by.scope} />,
         }}
-        i18nKey={scopeKey(context.record.scope) === scopeKey(by.scope) ? 'dashboard.accessControl.overridden.sameScope' : 'dashboard.accessControl.overridden.otherScope'}
+        i18nKey={scopeKey(context.record.scope) === scopeKey(by.scope) ? 'permissions.overridden.sameScope' : 'permissions.overridden.otherScope'}
       />,
     }}
     relationship="description"
@@ -99,9 +99,9 @@ function PermissionToken({ emphasis = 'normal', permission, value }: { emphasis?
   const styles = useStyles();
   const state = permissionState(value);
   const hue = useStatusHue(permissionTone(value));
-  const label = t(`dashboard.accessControl.columns.${permission}`);
+  const label = t(`permissions.columns.${permission}`);
   const content = state === 'models' || state === 'full'
-    ? t('dashboard.accessControl.permissionWithLevel', { permission: label, level: permissionValueLabel(value, t) })
+    ? t('permissions.permissionWithLevel', { permission: label, level: permissionValueLabel(value, t) })
     : label;
   const Icon = state === 'off' ? Dismiss12Regular : Checkmark24Regular;
   const off = state === 'off';
@@ -132,7 +132,7 @@ function PermissionToken({ emphasis = 'normal', permission, value }: { emphasis?
       ...(emphasis === 'overridden' ? { opacity: 0.5 } : {}),
     }}
   >{content}{state === 'on' || state === 'off' ? <span className="sr-only"> {permissionValueLabel(value, t)}</span> : null}
-    {emphasis !== 'normal' && <span className="sr-only"> {t(emphasis === 'effective' ? 'dashboard.accessControl.effective.activeAssignment' : 'dashboard.accessControl.overridden.label')}</span>}
+    {emphasis !== 'normal' && <span className="sr-only"> {t(emphasis === 'effective' ? 'permissions.effective.activeAssignment' : 'permissions.overridden.label')}</span>}
     {emphasis === 'overridden' && <span aria-hidden className="absolute inset-0 overflow-hidden pointer-events-none" data-permission-strike="" style={{ borderRadius: webLightTheme.borderRadiusLarge }}>
       <svg className="block w-full h-full" preserveAspectRatio="none" viewBox="0 0 100 100">
         <line stroke="currentColor" strokeOpacity={0.6} style={{ strokeWidth: 'var(--strokeWidthThin)' }} vectorEffect="non-scaling-stroke" x1="0" x2="100" y1="0" y2="100" />

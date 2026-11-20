@@ -39,7 +39,7 @@ test('a client JSON formatting fault is inside the run settlement boundary', asy
   ]);
   const app = new Hono();
   app.post('/v1/chat/completions', c => serveThrough(c, prologueFor(gateway, { body: { bytes: new Uint8Array(), streamError: null }, headers: [] }), pipeline,
-    move({ 'ingress.chat.openaiChatCompletions.wantsStream': false, 'ingress.chat.openaiChatCompletions.wantsUsageChunk': false }),
+    move({ 'ingress.chat.openaiChatCompletions.wantsStream': false, 'request.chat.openaiChatCompletions': { model: 'm', messages: [] }, 'ingress.chat.openaiChatCompletions.wantsUsageChunk': false }),
     facts => ({ body: facts['response.http.jsonBody'] as Uint8Array<ArrayBuffer>, contentType: 'application/json' })));
   const response = await app.request('/v1/chat/completions', { method: 'POST' });
   expect(response.status).toBe(500);

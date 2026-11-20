@@ -1,6 +1,6 @@
 import type { Chat } from '../facts.ts';
 import { defineStage, transform, move } from '@floway-dev/pipeline';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 
 /** The reasoning sentinel a forced tool choice needs. Gated by its flag, and the sentinel
  *  is the gateway's canonical form — putting it on the wire in a vendor's shape is the
@@ -38,5 +38,5 @@ export const disableReasoningOnForcedToolChoiceForOpenAIChatCompletions = define
 });
 
 /** `required`, or a named function. `auto` and `none` leave the model free to reason. */
-const isForcedToolChoice = (choice: OpenAIChatCompletionsPayload['tool_choice']): boolean =>
+const isForcedToolChoice = (choice: OpenAIChatCompletionsPayloadEx['tool_choice']): boolean =>
   choice === 'required' || (typeof choice === 'object' && choice !== null);

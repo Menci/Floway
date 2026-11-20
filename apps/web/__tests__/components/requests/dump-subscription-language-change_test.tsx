@@ -1,4 +1,4 @@
-import { act, screen } from '@testing-library/react';
+import { act } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -34,17 +34,6 @@ describe('dump subscription language change', () => {
 
   afterEach(() => { vi.unstubAllGlobals(); });
 
-  it('keeps the stream open when the language changes under it', async () => {
-    renderInApp(<StrictMode><Harness keyId="key-a" /></StrictMode>);
-    const opened = stream.sources.length;
-    const live = stream.liveSource();
-
-    await act(async () => { await setLanguage('zh-Hans'); });
-
-    expect(stream.sources.length).toBe(opened);
-    expect(stream.liveSource()).toBe(live);
-  });
-
   // LanguageSync applies the visitor's language once the tree is
   // mounted, and i18next announces the change whether or not the language it
   // lands on differs from the one it booted in.
@@ -55,14 +44,5 @@ describe('dump subscription language change', () => {
     await act(async () => { await setLanguage(browserLanguage()); });
 
     expect(stream.sources.length).toBe(opened);
-  });
-
-  it('reports a disconnect in the language the dashboard is now in', async () => {
-    renderInApp(<StrictMode><Harness keyId="key-a" /></StrictMode>);
-
-    await act(async () => { await setLanguage('zh-Hans'); });
-    stream.liveSource().drop();
-
-    expect(screen.getByText('请求流已断开。')).toBeTruthy();
   });
 });

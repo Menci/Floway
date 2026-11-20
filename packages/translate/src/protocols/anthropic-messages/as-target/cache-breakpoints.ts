@@ -11,7 +11,7 @@ import type {
   AnthropicMessagesTool,
 } from '@floway-dev/protocols/anthropic-messages';
 
-const EPHEMERAL_CACHE_CONTROL: AnthropicMessagesCacheControl = { type: 'ephemeral' };
+const EPHEMERAL_CACHE_CONTROL = { type: 'ephemeral' } as const satisfies AnthropicMessagesCacheControl;
 
 const replaceAt = <T>(values: readonly T[], index: number, value: T): T[] =>
   values.map((existing, at) => at === index ? value : existing);

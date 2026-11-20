@@ -7,9 +7,9 @@ import type { ChatServices } from '../services.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
 import { bindClientRelease, collectClientFrames, framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
 import { recordStream } from '@floway-dev/dump';
-import { defineStage, move } from '@floway-dev/pipeline';
-import { eventFrame, type EventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectGeminiGenerateContentProtocolEventsToResult, geminiGenerateContentProtocolFrameToSSEFrame, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
+import { defer, defineStage, move } from '@floway-dev/pipeline';
+import { eventFrame, isJsonObject, type EventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { collectGeminiGenerateContentProtocolEventsToResult, createGeminiGenerateContentCandidateCompletion, geminiGenerateContentProtocolFrameToSSEFrame, isGeminiGenerateContentErrorEvent, isGeminiGenerateContentTerminalEvent, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { toInternalDebugError } from '@floway-dev/provider';
 
 /**
@@ -74,21 +74,47 @@ export const emitGeminiGenerateContent = defineStage<
     // carrying it comes back to the upstream that issued it. This is the other half of the
     // affinity the resolver read on the way down, and it has to sit here because it rewrites
     // the frames — below the fold, and there would be nothing left to rewrite.
-    const egress = wrapGeminiGenerateContentAffinityEgress(
-      answer.frames as AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>,
-      affinityEgressOptions(use.gateway),
-    );
+    const source = answer.frames as AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>;
+    const completion = createGeminiGenerateContentCandidateCompletion();
+    let terminal: 'completed' | 'failed' | undefined;
+    const observed = (async function* () {
+      for await (const frame of source) {
+        if (frame.type === 'done') terminal = 'completed';
+        else if (isGeminiGenerateContentErrorEvent(frame.event)) terminal = 'failed';
+        else if (isGeminiGenerateContentTerminalEvent(frame.event)) terminal = 'completed';
+        else completion.observe(frame.event);
+        yield frame;
+        if (terminal !== undefined) return;
+      }
+    })();
+    const egress = wrapGeminiGenerateContentAffinityEgress(observed, affinityEgressOptions(use.gateway));
     if (!back['ingress.chat.geminiGenerateContent.wantsStream']) {
       const frames = recordStream(egress, use.gateway.dump);
-      return {
-        ...rest,
-        'response.chat.clientFrames': move(frames),
-        'response.http.headers': forClient,
-        'response.chat.geminiGenerateContent.rendered': move(
-          await collectClientFrames(frames, collectGeminiGenerateContentProtocolEventsToResult) as unknown as Record<string, unknown>,
-        ),
-        'response.http.status': back['response.http.status'],
-      };
+      try {
+        return {
+          ...rest,
+          'response.chat.clientFrames': move(frames),
+          'response.http.headers': forClient,
+          'response.chat.geminiGenerateContent.rendered': move(
+            await collectClientFrames(frames, collectGeminiGenerateContentProtocolEventsToResult) as unknown as Record<string, unknown>,
+          ),
+          'response.http.status': back['response.http.status'],
+        };
+      } catch (error) {
+        use.gateway.dump?.failed(error);
+        const cause = error instanceof Error ? error.cause : undefined;
+        const failure = isJsonObject(cause) && isJsonObject(cause.error)
+          ? renderGeminiGenerateContentFailure({ status: 502, message: error instanceof Error ? error.message : String(error), body: cause })
+          : mintGeminiGenerateContentInternalFailure(502, toInternalDebugError(error, 'geminiGenerateContent'));
+        return {
+          ...rest,
+          'response.chat.clientFrames': move(frames),
+          'response.http.headers': forClient,
+          'response.chat.geminiGenerateContent.rendered': move(failure.body),
+          'response.http.status': failure.status,
+          'response.chat.geminiGenerateContent.streamedUsage': move(withClientVerdict(back['response.chat.geminiGenerateContent.streamedUsage'], Promise.resolve(true))),
+        };
+      }
     }
     const completed = framedClientStream(
       clientFrames(egress),
@@ -97,12 +123,20 @@ export const emitGeminiGenerateContent = defineStage<
       use.gateway.dump,
     );
     bindClientRelease(back, completed.release);
+    // Affinity can hold a final frame while the client cancels. Settlement
+    // follows the upstream completion already observed before that buffer.
+    const metered = back['response.chat.geminiGenerateContent.streamedUsage'];
+    const reading = metered === null ? null : defer(Promise.all([metered, completed.failed]).then(([outcome, failed]) => {
+      const completedBeforeAbort = use.gateway.abortSignal?.aborted === true
+        && (terminal === 'completed' || (terminal === undefined && completion.isComplete()));
+      return { ...outcome, failed: (outcome.failed || failed) && !completedBeforeAbort };
+    }));
     return {
       ...rest,
       'response.chat.clientFrames': move(completed.frames),
       'response.http.headers': forClient,
       'response.chat.geminiGenerateContent.rendered': move(completed.rendered),
-      'response.chat.geminiGenerateContent.streamedUsage': move(withClientVerdict(back['response.chat.geminiGenerateContent.streamedUsage'], completed.failed)),
+      'response.chat.geminiGenerateContent.streamedUsage': move(reading),
       'response.http.status': back['response.http.status'],
     };
   },

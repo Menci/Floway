@@ -14,15 +14,16 @@
 // it writes to, which is the shape of failure that reached a client as a 502 once already.
 
 import type { AnthropicMessagesPayload, AnthropicMessagesThinkingDisplay } from '@floway-dev/protocols/anthropic-messages';
-import { isFastServiceTier, type AliasRules } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import { FAST_SERVICE_TIER, isFastServiceTier, type AliasRules } from '@floway-dev/protocols/common';
+import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesPayloadEx } from '@floway-dev/protocols/openai-responses';
 
 type Reasoning = NonNullable<AliasRules['reasoning']>;
 
 const reasoningOf = (rules: AliasRules): Reasoning => rules.reasoning ?? {};
 
-export const applyRulesToUpstreamOpenAIChatCompletions = <T extends OpenAIChatCompletionsPayload>(body: T, rules: AliasRules): T => {
+export const applyRulesToUpstreamOpenAIChatCompletions = <T extends OpenAIChatCompletionsPayloadEx>(body: T, rules: AliasRules): T => {
   // `budget_tokens`, `adaptive`, and `summary` have no native OpenAI Chat Completions slot;
   // drop silently.
   const { effort } = reasoningOf(rules);
@@ -93,6 +94,48 @@ const anthropicMessagesThinking = (
   // A display hint applies to a thinking mode the request already set.
   if (display !== undefined && (prior?.type === 'enabled' || prior?.type === 'adaptive')) return { ...prior, ...displayPart };
   return undefined;
+};
+
+// Gemini names its reasoning levels on `thinkingConfig.thinkingLevel` in the
+// uppercase spelling its wire uses, and the inbound translator reads the same
+// casing. `none` has no level spelling — Gemini disables thinking with a zero
+// budget, which that translator reads back as the same preset. An
+// operator-typed preset outside this list travels verbatim, since the upstream
+// owns the open string.
+// https://ai.google.dev/api/generate-content#ThinkingConfig
+const GEMINI_GENERATE_CONTENT_THINKING_LEVELS = new Map<string, string>([
+  ['minimal', 'MINIMAL'],
+  ['low', 'LOW'],
+  ['medium', 'MEDIUM'],
+  ['high', 'HIGH'],
+  ['xhigh', 'XHIGH'],
+]);
+
+export const applyRulesToUpstreamGeminiGenerateContent = (body: GeminiGenerateContentPayload, rules: AliasRules): GeminiGenerateContentPayload => {
+  const { effort, budget_tokens } = reasoningOf(rules);
+  const budget = budget_tokens ?? (effort?.toLowerCase() === 'none' ? 0 : undefined);
+  const level = budget === undefined && effort !== undefined
+    ? GEMINI_GENERATE_CONTENT_THINKING_LEVELS.get(effort.toLowerCase()) ?? effort
+    : undefined;
+  // https://ai.google.dev/api/generate-content#ServiceTier
+  const serviceTier = isFastServiceTier(rules.serviceTier) ? FAST_SERVICE_TIER : rules.serviceTier;
+  const prior = body.generationConfig?.thinkingConfig;
+  if (budget === undefined && level === undefined) {
+    return serviceTier === undefined || serviceTier === body.serviceTier ? body : { ...body, serviceTier };
+  }
+  // The wire accepts either a level or a budget.
+  const { thinkingBudget: _budget, thinkingLevel: _level, ...thinking } = prior ?? {};
+  return {
+    ...body,
+    ...(serviceTier === undefined ? {} : { serviceTier }),
+    generationConfig: {
+      ...body.generationConfig,
+      thinkingConfig: {
+        ...thinking,
+        ...(budget === undefined ? { thinkingLevel: level } : { thinkingBudget: budget }),
+      },
+    },
+  };
 };
 
 // Collapse OpenAI-style summary presets onto Anthropic's structured

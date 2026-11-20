@@ -3,7 +3,7 @@ import type { OpenAIResponsesCompactionResultEx, OpenAIResponsesStreamEventEx } 
 import type { InternalDebugError, PerformanceTelemetryContext, TelemetryModelIdentity } from '@floway-dev/provider';
 
 export interface ProviderCallResult {
-  response: Response;
+  http: Response;
   modelKey: string;
 }
 export interface ProviderRerankCallResult extends ProviderCallResult { target: RerankTarget }

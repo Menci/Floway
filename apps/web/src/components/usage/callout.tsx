@@ -34,7 +34,7 @@ export function UsageChartCallout({ chart, labelByTime, point, valueFormatter }:
     <ScrollArea axes="horizontal" className="max-w-[min(650px,calc(100vw-48px))] min-w-[220px]" contentClassName="grid gap-1">
       {chart.kind === 'token' && bucketDetails ? (
         <ChartCalloutTable
-          columns={(['requests', 'cost', 'total', 'cached', 'cachedRate', 'prefill', 'output'] as const).map(key => ({ key, label: t(`dashboard.usage.callout.${key}`) }))}
+          columns={(['requests', 'cost', 'total', 'cached', 'cachedRate', 'prefill', 'output'] as const).map(key => ({ key, label: t(`monitoring.usage.callout.${key}`) }))}
           rows={rows.flatMap(item => {
             const counters = bucketDetails.get(item.id);
             if (!counters) return [];
@@ -50,7 +50,7 @@ export function UsageChartCallout({ chart, labelByTime, point, valueFormatter }:
         />
       ) : (
         <ChartCalloutTable
-          columns={[{ key: 'requests', label: t('dashboard.usage.callout.requests') }]}
+          columns={[{ key: 'requests', label: t('monitoring.usage.callout.requests') }]}
           rows={rows.map(item => ({ color: item.color, key: item.id, label: item.label, values: [valueFormatter(item.value)] }))}
           title={title}
         />

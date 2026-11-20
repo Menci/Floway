@@ -220,7 +220,7 @@ test('POST /v1/messages rejects body anthropic_beta with a 400 before routing', 
 test('POST /v1/messages/count_tokens proxies the upstream measurement body', async () => {
   const repo = installRepo();
   const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
-    response: new Response(JSON.stringify({ input_tokens: 99 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
+    http: new Response(JSON.stringify({ input_tokens: 99 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
     modelKey: 'k',
   }));
   queueCandidates([makeCandidate({ callAnthropicMessagesCountTokens })]);
@@ -245,7 +245,7 @@ test('POST /v1/messages/count_tokens preserves a body read failure without charg
   const repo = installRepo();
   const fault = new Error('native count body read failed');
   const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
-    response: new Response(new ReadableStream<Uint8Array>({ pull(controller) { controller.error(fault); } }), { headers: { 'content-type': 'application/json' } }),
+    http: new Response(new ReadableStream<Uint8Array>({ pull(controller) { controller.error(fault); } }), { headers: { 'content-type': 'application/json' } }),
     modelKey: 'count-model',
   }));
   queueCandidates([makeCandidate({ callAnthropicMessagesCountTokens })]);
@@ -339,4 +339,59 @@ test('POST /v1/messages renders the Anthropic-shaped model-unsupported 400 when 
   assertEquals(body.type, 'error');
   assertEquals(body.error.type, 'invalid_request_error');
   assert(body.error.message.includes('does not support'));
+});
+
+test('POST /v1/messages/count_tokens forwards an upstream rate limit and retry hint unchanged', async () => {
+  installRepo();
+  const body = '{"error":{"type":"rate_limit_error","message":"wait"}}';
+  const callAnthropicMessagesCountTokens = vi.fn(async () => ({
+    http: new Response(body, {
+      status: 429,
+      headers: { 'content-type': 'application/json', 'retry-after': '17', 'request-id': 'req-count', 'set-cookie': 'private=1' },
+    }),
+    modelKey: 'k',
+  }));
+  queueCandidates([makeCandidate({ callAnthropicMessagesCountTokens })]);
+  const response = await makeApp().request('/v1/messages/count_tokens', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }] }),
+  });
+  assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
+  assertEquals(response.status, 429);
+  assertEquals(response.headers.get('retry-after'), '17');
+  assertEquals(response.headers.get('request-id'), 'req-count');
+  assertEquals(response.headers.get('set-cookie'), null);
+  assertEquals(await response.text(), body);
+});
+
+test('POST /v1/messages does not switch upstreams after the response stream opens and breaks', async () => {
+  installRepo();
+  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
+    ok: true,
+    events: (async function* () {
+      yield eventFrame(makeAnthropicMessagesEvents()[0]!);
+      throw new Error('connection reset after message_start');
+    })(),
+    modelKey: 'k',
+  }));
+  const secondCall = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
+    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'second',
+  }));
+  queueCandidates([
+    makeCandidate({ upstream: 'first', callAnthropicMessages }),
+    makeCandidate({ upstream: 'second', callAnthropicMessages: secondCall }),
+  ]);
+  const response = await makeApp().request('/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'test-model', max_tokens: 32, stream: true, messages: [{ role: 'user', content: 'hello' }] }),
+  });
+  const body = await response.text();
+  assertEquals(response.status, 200);
+  assert(body.includes('event: message_start'));
+  assert(body.includes('event: error'));
+  assert(body.includes('connection reset after message_start'));
+  assertEquals(secondCall.mock.calls.length, 0);
+  await flushBackground();
 });

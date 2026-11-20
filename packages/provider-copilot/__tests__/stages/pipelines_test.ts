@@ -12,7 +12,7 @@ const auth = { id: 'up_pipeline', githubHost: 'github.com', githubToken: 'test-t
 const setup = (): void => {
   clearInProcessCopilotTokenCache();
   const upstream: UpstreamRecord = { id: auth.id, kind: 'copilot', name: 'Test', enabled: true, usageRefreshIntervalMinutes: 0, sortOrder: 0, createdAt: '', updatedAt: '', config: {}, state: { ...emptyCopilotUpstreamState(), copilotToken: { token: 'access-token', expiresAt: 4102444800, baseUrl: 'https://copilot.example' } }, flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [], modelPrefix: null, modelsCache: null, hue: 210 };
-  initProviderRepo(() => ({ upstreams: { getById: async () => upstream, saveState: async () => {} }, recordUpstreamMetric: async () => {} }));
+  initProviderRepo(() => ({ upstreams: { getById: async () => ({ ...upstream, configVersion: 1 }), saveState: async () => {} }, recordUpstreamMetric: async () => {} }));
 };
 const services: ProviderChatServices = { httpCall: () => ({ ...noopUpstreamCallOptions(), signal: undefined }), recordProtocolFrames: frames => frames };
 

@@ -80,7 +80,7 @@ beforeEach(() => {
 describe('a rerank answer carries its status', () => {
   it('serves a success as 200', async () => {
     resolves([candidate('up_a', async () => ({
-      response: Response.json({ results: [{ index: 0, relevance_score: 0.9 }], meta: { billed_units: { search_units: 1 } } }),
+      http: Response.json({ results: [{ index: 0, relevance_score: 0.9 }], meta: { billed_units: { search_units: 1 } } }),
       modelKey: 'rr-key',
       target: { protocol: 'cohere-v2' },
     } as ProviderRerankCallResult))]);
@@ -92,7 +92,7 @@ describe('a rerank answer carries its status', () => {
   // to act on, and a retry-after only means something alongside the status that implies it.
   it('serves an upstream refusal with the upstream-s own status', async () => {
     resolves([candidate('up_a', async () => ({
-      response: new Response('slow down', { status: 429 }),
+      http: new Response('slow down', { status: 429 }),
       modelKey: 'rr-key',
       target: { protocol: 'cohere-v2' },
     } as ProviderRerankCallResult))]);

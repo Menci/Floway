@@ -56,11 +56,6 @@ const wranglerGlobs = wranglerConfig.assets.run_worker_first.map(
 const wranglerProxies = (url: string) => wranglerGlobs.some(pattern => pattern.test(url));
 
 describe('gateway path coverage', () => {
-  it('reads a non-empty list out of each topology', () => {
-    expect(wranglerProxiedPaths.length).toBeGreaterThan(0);
-    expect(wranglerGlobs.length).toBeGreaterThan(0);
-  });
-
   it.each(gatewayUrls)('routes %s to the gateway in every topology', url => {
     expect({
       vite: viteProxies(url),

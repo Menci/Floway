@@ -66,7 +66,7 @@ for (const fixture of fixtures) for (const failureAt of ['read', 'render'] as co
     const pipeline = compose<Record<string, unknown>, Exit>('clientError', [fixture.emit, ...(fixture.meter === null ? [] : [fixture.meter(usageKey)]), dial]);
     const app = new Hono();
     app.post('/v1/chat', c => serveThrough(c, prologueFor(gateway, { body: { bytes: new Uint8Array(), streamError: null }, headers: [] }, dump), pipeline,
-      move({ [`ingress.chat.${fixture.protocol}.wantsStream`]: true, 'ingress.chat.openaiChatCompletions.wantsUsageChunk': false }),
+      move({ [`ingress.chat.${fixture.protocol}.wantsStream`]: true, 'request.chat.openaiChatCompletions': { model: 'm', messages: [] }, 'ingress.chat.openaiChatCompletions.wantsUsageChunk': false }),
       facts => ({ frames: facts[`${responseKey}.rendered`] as AsyncIterable<SseFrame> })));
     const response = await app.request('/v1/chat', { method: 'POST' });
     const body = await response.text();

@@ -31,7 +31,7 @@ import {
 import { wrapFluent } from './wrap';
 import type { FluentComponents, PropCarrier } from './wrap';
 
-interface MotionSlotProps { children?: unknown }
+interface MotionSlotProps { children?: unknown; visible?: boolean }
 
 // One rule for every motion slot this layer fills: ours is the base, a caller's
 // object is merged over it -- onMotionFinish above all -- and a caller's null
@@ -88,6 +88,34 @@ export const createToastPresence = (components: FluentComponents) => components.
   ],
   exit: { keyframes: [{ opacity: 1 }, { opacity: 0 }], duration: POPUP_HIDE_MS, easing: 'linear', fill: 'both' },
 });
+
+// Whether the surface a flyout paints belongs to an open popover, as of the
+// render that painted it.
+//
+// The surface cannot ask the popover. The family keeps its state in a store
+// whose provider publishes on a layout effect, so the render that mounts a
+// surface on open still selects the previous, closed value. That render is also
+// the one Fluent's autofocus runs against, and a surface that answers with
+// `aria-hidden` is invisible to it: the first focusable inside is rejected,
+// focus stays on the trigger, and the surface's modalizer never activates.
+// Tabster then reads the pointer pressing the hue rail as a focus move outside
+// that modalizer and restores focus to the page's first input, which Fluent
+// takes as focus leaving the popover -- dismissing it mid-drag.
+//
+// The motion slot carries `visible`, the very `open` the popover rendered with,
+// in the props of that render, so it is the one statement available in time.
+// https://github.com/microsoft/fluentui/blob/a4b871ca80c1f16f35ab4229def4fe02be7f30ea/packages/react-components/react-popover/library/src/components/Popover/renderPopover.tsx#L14-L21
+// https://github.com/microsoft/fluentui/blob/a4b871ca80c1f16f35ab4229def4fe02be7f30ea/packages/react-components/react-popover/library/src/components/Popover/usePopover.ts#L161-L183
+// https://github.com/microsoft/fluentui/blob/a4b871ca80c1f16f35ab4229def4fe02be7f30ea/packages/react-components/react-context-selector/src/createContext.ts#L20-L32
+const PopoverSurfaceOpen = React.createContext<boolean | undefined>(undefined);
+
+// A dismissed surface still paints its exit motion for another frame or two,
+// and leaves the accessibility tree at the dismissal rather than at the unmount
+// that follows.
+const dismissedSurfaceProps = (open: boolean | undefined, props: PropCarrier): PropCarrier =>
+  open === false ? { ...props, 'aria-hidden': true } : props;
+
+const useDismissedSurface = (props: PropCarrier) => dismissedSurfaceProps(React.useContext(PopoverSurfaceOpen), props);
 
 // Popover's placement variables preserve the positioning engine transform.
 // Only the complete attached flyout enters; its descendants remain static.
@@ -199,6 +227,19 @@ export const withWinuiMotion = (components: FluentComponents): FluentComponents 
       children: (_: unknown, motionProps: MotionSlotProps) => React.createElement(Motion, motionProps),
     });
 
+  // The surface reads the flyout's own `visible` in the same frame; asking the
+  // popover answers a layout effect late, after autofocus has already looked.
+  // The presence component is built once, because a fresh component type on
+  // each render would remount the surface and drop its exit motion.
+  const FlyoutPresence = createFlyoutPresence(components);
+  const flyoutMotion = {
+    children: (_: unknown, { children, ...motionProps }: MotionSlotProps & { children: React.ReactElement }) => React.createElement(
+      PopoverSurfaceOpen.Provider,
+      { value: motionProps.visible === true },
+      React.createElement(FlyoutPresence, { ...motionProps, children }),
+    ),
+  };
+
   // WinUI's Expander slides its content region open and never touches its
   // opacity: all four expand storyboards animate ExpanderContent's Visibility
   // and TranslateY alone, and the template carries no opacity animation at all.
@@ -230,11 +271,8 @@ export const withWinuiMotion = (components: FluentComponents): FluentComponents 
     Dialog: runMotion(components.Dialog, 'surfaceMotion', DialogSurfaceMotion),
     DialogSurface: runMotion(components.DialogSurface, 'backdropMotion', DialogBackdropMotion),
     Menu: runMotion(components.Menu, 'surfaceMotion', MenuSurfaceMotion),
-    Popover: runMotion(components.Popover, 'surfaceMotion', createFlyoutPresence(components)),
-    PopoverSurface: wrapFluent(components.PopoverSurface, props => {
-      const open = components.usePopoverContext_unstable(context => context.open);
-      return open ? props : { ...props, 'aria-hidden': true, inert: true };
-    }),
+    Popover: motionSlot(components.Popover, 'surfaceMotion', flyoutMotion),
+    PopoverSurface: wrapFluent(components.PopoverSurface, useDismissedSurface),
     NavCategoryItem: runMotion(components.NavCategoryItem, 'expandIconMotion', ChevronTurnMotion),
     OverlayDrawer: runMotion(components.OverlayDrawer, 'surfaceMotion', DrawerSurfaceMotion),
     // Fluent runs the indeterminate ProgressBar from the Web Animations API

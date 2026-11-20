@@ -42,7 +42,7 @@ const dispatcherFor = async (kind: 'chatgpt' | 'custom', inboundHeaderAllowlist:
     pipelines: {
       alphaSearch: stubProviderPipeline('alphaSearch', async (_model, _body, _signal, opts) => {
         observedHeaders = opts.headers;
-        return { response: new Response('{}'), modelKey: 'search-model' };
+        return { http: new Response('{}'), modelKey: 'search-model' };
       }),
     },
     instance: stubProvider(),

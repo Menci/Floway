@@ -4,6 +4,11 @@ export const supportedLanguages = ['en', 'zh-Hans'] as const;
 
 export type SupportedLanguage = (typeof supportedLanguages)[number];
 
+export const languageNames: Record<SupportedLanguage, string> = {
+  'en': 'English',
+  'zh-Hans': '简体中文',
+};
+
 // The supported language keys are BCP-47 tags in their own right, so the
 // document language is the language; a locale is separate because number and
 // date formatting needs a region the tag does not carry.

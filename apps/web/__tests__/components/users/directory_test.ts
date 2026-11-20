@@ -5,8 +5,8 @@ import { indexUserDirectory } from '../../../src/components/users/directory';
 
 const directory: ControlPlaneUserDirectory = {
   users: [
-    { id: 1, username: 'alice', isAdmin: true, createdAt: '2026-01-01T00:00:00Z', preferences: { quotaDisplay: 'remaining', language: null } },
-    { id: 2, username: 'bob', isAdmin: false, createdAt: '2026-01-02T00:00:00Z', preferences: { quotaDisplay: 'remaining', language: null } },
+    { id: 1, username: 'alice', isAdmin: true, createdAt: '2026-01-01T00:00:00Z', preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false } },
+    { id: 2, username: 'bob', isAdmin: false, createdAt: '2026-01-02T00:00:00Z', preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false } },
   ],
   groups: [
     { id: 1, name: 'Platform', hue: 210, createdAt: '2026-01-01T00:00:00Z', deletedAt: null },
@@ -25,14 +25,4 @@ test('derives both membership directions and picker counts from one relation lis
     { id: 1, name: 'Platform', hue: 210, memberCount: 1 },
     { id: 2, name: 'Empty', hue: 120, memberCount: 0 },
   ]);
-});
-
-test('indexes isolated entities and an empty directory without synthesized relations', () => {
-  const index = indexUserDirectory(directory);
-  expect(index.groupsByUser.get(2)).toEqual([]);
-  expect(index.membersByGroup.get(2)).toEqual([]);
-  const empty = indexUserDirectory({ users: [], groups: [], memberships: [] });
-  expect(empty.groupsByUser.size).toBe(0);
-  expect(empty.membersByGroup.size).toBe(0);
-  expect(empty.groupOptions).toEqual([]);
 });

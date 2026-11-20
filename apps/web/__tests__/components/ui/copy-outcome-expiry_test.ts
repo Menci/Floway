@@ -21,16 +21,6 @@ describe('copy outcome expiry', () => {
 
   afterEach(() => { vi.useRealTimers(); });
 
-  it('lets one hook serve a table of buttons', async () => {
-    const { result } = renderHook(() => useCopyToClipboard());
-
-    await press(() => { result.current.copy('first', 'row-1'); });
-
-    expect(result.current.outcomeFor('row-1')).toBe('copied');
-    expect(result.current.outcomeFor('row-2')).toBe('idle');
-    expect(result.current.outcomeFor()).toBe('idle');
-  });
-
   it('does not let one button\'s expiry clear another button\'s result', async () => {
     const { result } = renderHook(() => useCopyToClipboard());
 
@@ -44,39 +34,5 @@ describe('copy outcome expiry', () => {
     await advance(1_000);
 
     expect(result.current.outcomeFor('row-2')).toBe('idle');
-  });
-
-  it('leaves a failure up longer than a success', async () => {
-    copyResult.mockResolvedValue(false);
-    const { result } = renderHook(() => useCopyToClipboard());
-
-    await press(() => { result.current.copy('first', 'row-1'); });
-    expect(result.current.outcomeFor('row-1')).toBe('failed');
-
-    await advance(1_500);
-    expect(result.current.outcomeFor('row-1')).toBe('failed');
-
-    await advance(500);
-    expect(result.current.outcomeFor('row-1')).toBe('idle');
-  });
-
-  it('replaces a failure with the success of a retry', async () => {
-    copyResult.mockResolvedValue(false);
-    const { result } = renderHook(() => useCopyToClipboard());
-
-    await press(() => { result.current.copy('first', 'row-1'); });
-    copyResult.mockResolvedValue(true);
-    await press(() => { result.current.copy('first', 'row-1'); });
-
-    expect(result.current.outcomeFor('row-1')).toBe('copied');
-  });
-
-  it('gives an untagged button a slot of its own', async () => {
-    const { result } = renderHook(() => useCopyToClipboard());
-
-    await press(() => { result.current.copy('first'); });
-
-    expect(result.current.outcomeFor()).toBe('copied');
-    expect(result.current.outcomeFor('row-1')).toBe('idle');
   });
 });

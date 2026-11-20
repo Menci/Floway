@@ -1,7 +1,7 @@
 import type { Failure, GatewayFacts } from '../pipeline/facts.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 /** The four protocols a client can speak here. Gemini generateContent is source-only: nothing translates
@@ -25,7 +25,7 @@ export interface ChatFacts extends GatewayFacts {
 
   'request.chat.candidatePayloads': Readonly<Record<number, unknown>>;
 
-  'request.chat.openaiChatCompletions': OpenAIChatCompletionsPayload;
+  'request.chat.openaiChatCompletions': OpenAIChatCompletionsPayloadEx;
   'request.chat.anthropicMessages': AnthropicMessagesPayload;
   'request.chat.openaiResponses': CanonicalOpenAIResponsesPayload;
   'request.chat.geminiGenerateContent': GeminiGenerateContentPayload;

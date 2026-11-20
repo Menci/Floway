@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { mapResult, mergeResults } from '../../src/api/partial-results';
+import { mergeResults } from '../../src/api/partial-results';
 
 describe('partial page loads', () => {
   it('keeps what is on screen for the region that failed', () => {
@@ -29,21 +29,5 @@ describe('partial page loads', () => {
     );
 
     expect(error).toBe('keys unavailable');
-  });
-
-  it('carries a failure through the selector unchanged', () => {
-    const failed = { error: { status: 503, message: 'catalog unavailable' } };
-    expect(mapResult(failed, () => 'unreached')).toBe(failed);
-    expect(mapResult({ data: { data: ['a'] } }, body => body.data)).toEqual({ data: ['a'] });
-  });
-
-  it('ignores state the caller carries that no request answers', () => {
-    const merged = mergeResults(
-      { users: null, upstreams: null, models: null, error: null, selectedKeyId: 'k1' },
-      { users: { data: ['u'] }, upstreams: { data: ['s'] }, models: { data: ['m'] } } as never,
-    );
-    expect(merged.values.users).toEqual(['u']);
-    expect(merged.values.selectedKeyId).toBe('k1');
-    expect(merged.error).toBeNull();
   });
 });

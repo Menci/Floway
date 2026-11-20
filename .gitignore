@@ -7,6 +7,8 @@ docs/superpowers
 .superpowers
 apps/web/dist/
 apps/web/.react-router/
+.tmp/run-local-demo/
+.tmp/test-health/
 *.tsbuildinfo
 .dev.vars
 .env

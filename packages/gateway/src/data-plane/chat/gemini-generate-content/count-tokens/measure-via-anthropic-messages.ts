@@ -88,6 +88,7 @@ const asGeminiGenerateContentTokenCount = (counted: TokenCountAnswer): TokenCoun
       message: counted.message === '' ? 'Upstream token counting request failed.' : counted.message,
     };
   }
+  if (counted.body === null) return counted;
   const body = asJsonObject(counted.body);
   const totalTokens = readJsonNumber(body?.input_tokens) ?? readJsonNumber(body?.total_tokens);
   if (totalTokens === null) return { status: 502, message: 'Invalid upstream token counting response.' };

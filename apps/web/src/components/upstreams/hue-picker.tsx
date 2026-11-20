@@ -26,7 +26,7 @@ export function HuePicker({ hue, kind, onChange, readOnly = false }: {
       <PopoverTrigger disableButtonEnhancement>
         <Button
           appearance="transparent"
-          aria-label={`${t('dashboard.upstreamEditor.hue.label')}: ${hue}`}
+          aria-label={`${t('upstreams.editor.hue.label')}: ${hue}`}
           className="!min-w-0 !p-0"
           disabled={readOnly}
         >
@@ -35,7 +35,7 @@ export function HuePicker({ hue, kind, onChange, readOnly = false }: {
       </PopoverTrigger>
       <PopoverSurface className="w-[min(360px,calc(100vw-32px))]">
         <ColorSlider
-          aria-label={t('dashboard.upstreamEditor.hue.label')}
+          aria-label={t('upstreams.editor.hue.label')}
           channel="hue"
           className={styles.slider}
           color={{ h: hue, s: 1, v: 1 }}

@@ -25,6 +25,16 @@ const PATHS: Record<Exclude<OllamaOperation, 'decision'>, string> = {
   openaiAudioTranscriptions: '/v1/audio/transcriptions',
 };
 
+// Ollama maps only max_tokens to num_predict. Preserve an explicit max_tokens,
+// including null, when both fields are present.
+// https://github.com/ollama/ollama/blob/9a4b136efefecb51b428d22e79b0f3d15769a1f8/openai/openai.go#L110-L125
+// https://github.com/ollama/ollama/blob/9a4b136efefecb51b428d22e79b0f3d15769a1f8/openai/openai.go#L753-L755
+const chatCompletionsForOllama = (payload: ProviderOperationPayloads['openaiChatCompletions']) => {
+  if (payload.max_tokens !== undefined || payload.max_completion_tokens === undefined) return payload;
+  const { max_completion_tokens: maxTokens, ...rest } = payload;
+  return { ...rest, max_tokens: maxTokens };
+};
+
 export const prepareOllamaRequest = <O extends OllamaOperation>(config: OllamaUpstreamConfig, operation: O) => {
   const prepare = defineStage<ProviderRequest<ProviderOperationPayloads[O]> & { 'request.provider.anthropicBeta'?: readonly string[]; 'request.provider.responsesAction': 'generate' | 'compact' }, OllamaHttpFacts, ProviderResponse, ProviderResponse, ProviderServices>({
     name: `prepareOllama${operation.replace(/^openai/, 'OpenAI').replace(/^alpha/, 'Alpha').replace(/^rerank/, 'Rerank').replace(/^decision/, 'Decision')}`,
@@ -55,7 +65,11 @@ export const prepareOllamaRequest = <O extends OllamaOperation>(config: OllamaUp
           ? multipartBody((payload as ProviderOperationPayloads['openaiAudioTranscriptions']).entries.map(entry => entry.name === 'model' ? { ...entry, value: modelKey } : entry))
           : compact
             ? { ...toCompactPayloadShape(payload as ProviderOperationPayloads['openaiResponsesCompact']), model: modelKey }
-            : { ...payload, ...(operation === 'openaiChatCompletions' || operation === 'openaiResponses' || operation === 'openaiResponsesCompact' || operation === 'anthropicMessages' ? { stream: true } : {}), model: modelKey };
+            : {
+                ...(operation === 'openaiChatCompletions' ? chatCompletionsForOllama(payload as ProviderOperationPayloads['openaiChatCompletions']) : payload),
+                ...(operation === 'openaiChatCompletions' || operation === 'openaiResponses' || operation === 'openaiResponsesCompact' || operation === 'anthropicMessages' ? { stream: true } : {}),
+                model: modelKey,
+              };
       }
       const base = config.apiKey ? [['Authorization', secret(`Bearer ${config.apiKey}`)] as const] : [];
       let headers = mergeHttpHeaders(withHttpContentType(base, body, encoding), facts['request.http.headers']);

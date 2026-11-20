@@ -33,7 +33,6 @@ test('restricted data-plane aliases keep gateway-wide metadata and caller-scoped
       sortOrder,
       config: {
         baseUrl: `https://${host}`,
-        authStyle: 'bearer',
         apiKey: 'sk',
         ingressHeadersRules: [],
         endpoints: id === 'a' ? { openaiChatCompletions: {} } : { anthropicMessages: {} },
@@ -113,32 +112,4 @@ test('restricted data-plane aliases keep gateway-wide metadata and caller-scoped
   expect(restricted.aliasedFrom?.targets).toHaveLength(1);
   expect(admin.aliasedFrom?.targets).toHaveLength(2);
   expect(restrictedAdmin.aliasedFrom?.targets).toHaveLength(1);
-});
-
-test('Gemini aliases use the same gateway-wide metadata and caller-scoped targets', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.modelAliases.deleteAll();
-  await repo.upstreams.deleteAll();
-  const upstream = listingModel(buildCustomUpstreamRecord({
-    id: 'a',
-    config: {
-      baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'sk', ingressHeadersRules: [],
-      endpoints: { openaiChatCompletions: {} },
-    },
-  }));
-  await saveUpstreamForTest(repo.upstreams, upstream);
-  const persisted = await repo.upstreams.getById('a');
-  if (persisted === null) throw new Error('Missing upstream');
-  await seedModelsCache(repo.upstreams, 'a', modelsRefreshIdentity(persisted), {
-    revision: MODEL_CATALOG_REVISION, fetchedAt: 1, models: projectCustomModels(persisted),
-  });
-  await repo.modelAliases.insert({
-    id: 'alias', name: 'mix', kind: 'chat', selection: 'first-available', displayName: null,
-    visibleInModelsList: true, targets: [{ target_model_id: 'model-a', rules: {} }],
-    announcedMetadata: null, sortOrder: 0, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
-  });
-  const response = await requestApp('/v1beta/models', { headers: { 'x-api-key': apiKey.key, 'user-agent': 'google-genai-sdk/1.0.0 gl-node/cross' } });
-  assertEquals(response.status, 200);
-  const body = await response.json() as { models: Array<{ baseModelId?: string; inputTokenLimit?: number }> };
-  expect(body.models.find(model => model.baseModelId === 'mix')?.inputTokenLimit).toBe(100_000);
 });

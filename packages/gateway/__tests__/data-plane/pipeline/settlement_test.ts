@@ -60,7 +60,7 @@ describe('pipeline settlement', () => {
     const work: Promise<unknown>[] = [];
     const original = new Error('post-reading stage failure');
     type Entry = Pick<GatewayFacts, 'route.attempt' | 'serve.usage.prior'>;
-    type Reply = Entry & Pick<GatewayFacts, 'response.usage.billable' | 'response.http.status'>;
+    type Reply = Entry & Pick<GatewayFacts, 'response.usage.billable' | 'response.http.status' | 'response.http.headers'>;
     const afterReading = defineStage<Entry, Entry, Reply, Reply>({
       name: 'afterReading',
       through: { request: { needs: ['route.attempt'], consumes: [], provides: [] }, response: { needs: ['response.usage.billable'], consumes: [], provides: [] } },
@@ -71,9 +71,10 @@ describe('pipeline settlement', () => {
       },
     });
     const source = defineStage<Entry, Reply>({
-      name: 'observe', return: { provides: ['response.usage.billable', 'response.http.status'] },
+      name: 'observe', return: { provides: ['response.usage.billable', 'response.http.status', 'response.http.headers'] },
       execute: async facts => move({
         ...facts, 'response.http.status': facts['route.attempt'].upstreamId === 'first' ? 429 : 200,
+        'response.http.headers': [],
         'response.usage.billable': [{
           identity: {
             model: 'm', upstream: facts['route.attempt'].upstreamId, modelKey: 'm', pricing: null,
@@ -83,7 +84,10 @@ describe('pipeline settlement', () => {
     });
     const pipeline = compose('failedAfterReading', [
       writeSettlement(facts => Number(facts['response.http.status']) >= 400),
-      failover({ failed: facts => Number(facts['response.http.status']) >= 400, owns: [] }), afterReading, source,
+      failover({
+        answer: facts => facts['response.http.status'] === 429 ? { status: 429, message: 'rate limited' } : {},
+        owns: [],
+      }), afterReading, source,
     ]);
     await expect(run(pipeline, move({
       'serve.candidates': ['first', 'second'].map((upstreamId, candidateId) => ({

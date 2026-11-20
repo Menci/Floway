@@ -13,6 +13,7 @@ import {
   createRandomOpenAIResponsesItemId,
   type OpenAIResponsesFunctionTool,
   type OpenAIResponsesHostedTool,
+  type OpenAIResponsesImageGenerationTool,
   type OpenAIResponsesInputImage,
   type OpenAIResponsesInputImageGenerationCall,
   type CanonicalOpenAIResponsesInputItem,
@@ -58,7 +59,7 @@ const KNOWN_TOOL_FIELDS = new Set([
   'input_image_mask', 'action',
 ]);
 
-export const isHostedImageGenerationTool = (tool: OpenAIResponsesTool): tool is OpenAIResponsesHostedTool =>
+export const isHostedImageGenerationTool = (tool: OpenAIResponsesTool): tool is OpenAIResponsesImageGenerationTool =>
   tool.type === 'image_generation';
 
 // Identity canonicalization for image_generation: the dispatcher doesn't
@@ -67,7 +68,7 @@ export const isHostedImageGenerationTool = (tool: OpenAIResponsesTool): tool is 
 // (all `'auto'`) signal "backend decides" rather than concrete values
 // the model needs. Preserving the client's raw shape keeps the echo
 // round-trip minimal — anything the client didn't send stays absent.
-export const recognizeImageGenerationTool = (raw: OpenAIResponsesTool): OpenAIResponsesHostedTool | undefined =>
+export const recognizeImageGenerationTool = (raw: OpenAIResponsesTool): OpenAIResponsesImageGenerationTool | undefined =>
   isHostedImageGenerationTool(raw) ? raw : undefined;
 
 interface ImageSource {
@@ -216,7 +217,7 @@ const integerInRange = (value: unknown, param: string, min: number, max: number)
 // fails. toolPath identifies its source carrier in the error.
 // https://developers.openai.com/api/docs/guides/tools-image-generation
 const validateHostedImageGenerationEntry = (
-  tool: OpenAIResponsesHostedTool,
+  tool: OpenAIResponsesImageGenerationTool,
   toolPath: string,
 ): { ok: true; config: ImageGenerationConfig } | { ok: false; error: PrepareConfigError } => {
   const path = (field: string): string => `${toolPath}.${field}`;

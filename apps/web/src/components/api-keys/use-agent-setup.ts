@@ -139,7 +139,7 @@ export const useAgentSetup = (
       // Our own deadline is a request timeout, and it is described in our own
       // words; the abort we raised to enforce it says nothing an operator can use.
       if (result.error && timedOut && isAbortError(result.error.cause)) {
-        return { error: { status: 408, message: t('dashboard.apiKeys.agentSetup.timedOut'), cause: result.error.cause } };
+        return { error: { status: 408, message: t('apiKeys.agentSetup.timedOut'), cause: result.error.cause } };
       }
       return result;
     } finally {

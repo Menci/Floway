@@ -55,7 +55,7 @@ export default function DashboardAdminBackupRestore() {
     setExporting(true);
     setExportError(null);
 
-    const handle = toasts.start(t('dashboard.backupRestore.export.pending'));
+    const handle = toasts.start(t('backupRestore.export.pending'));
     const result = await callApi(() => api.api.export.$get({
       query: includePerformance ? { include_performance: '1' } : {},
     }));
@@ -80,7 +80,7 @@ export default function DashboardAdminBackupRestore() {
     URL.revokeObjectURL(url);
 
     setExporting(false);
-    handle.succeed(t('dashboard.backupRestore.export.success', { name: anchor.download }));
+    handle.succeed(t('backupRestore.export.success', { name: anchor.download }));
   }, [includePerformance, t, toasts]);
 
   // Without aborting, a second file dropped mid-read leaves two reads racing and
@@ -100,7 +100,7 @@ export default function DashboardAdminBackupRestore() {
         readerRef.current = null;
         const result = parseBackupFile(reader.result as string);
         if (!result.ok) {
-          setImportError(t('dashboard.backupRestore.import.errorInvalidFile', { message: result.message }));
+          setImportError(t('backupRestore.import.errorInvalidFile', { message: result.message }));
           setImportFile(null);
           setImportParsedData(null);
           return;
@@ -110,7 +110,7 @@ export default function DashboardAdminBackupRestore() {
       };
       reader.onerror = () => {
         readerRef.current = null;
-        setImportError(t('dashboard.backupRestore.import.errorReadFile'));
+        setImportError(t('backupRestore.import.errorReadFile'));
       };
       reader.readAsText(file);
     },
@@ -163,7 +163,7 @@ export default function DashboardAdminBackupRestore() {
     setImporting(true);
     setImportError(null);
 
-    const handle = toasts.start(t('dashboard.backupRestore.import.pending'));
+    const handle = toasts.start(t('backupRestore.import.pending'));
     const result = await callApi(() => api.api.import.$post({
       json: {
         version: BACKUP_FILE_VERSION,
@@ -184,8 +184,8 @@ export default function DashboardAdminBackupRestore() {
     setImporting(false);
     const summary = recordSummary(result.data.imported, t, locale);
     handle.succeed(summary
-      ? t('dashboard.backupRestore.import.success', { summary })
-      : t('dashboard.backupRestore.import.successEmpty'));
+      ? t('backupRestore.import.success', { summary })
+      : t('backupRestore.import.successEmpty'));
   }, [importParsedData, locale, replaceExisting, t, toasts]);
 
   const handleImportClick = useCallback(() => {
@@ -199,19 +199,19 @@ export default function DashboardAdminBackupRestore() {
 
   return (
     <section className="dashboard-page max-w-[960px]">
-      <DashboardPageHeader description={t('dashboard.pages.backupRestore')} title={t('dashboard.nav.backupRestore')} />
+      <DashboardPageHeader description={t('backupRestore.description')} title={t('backupRestore.title')} />
 
       <Panel className={PANEL_STACK_CLASS}>
-        <SectionHeader description={t('dashboard.backupRestore.export.description')} level={2} title={t('dashboard.backupRestore.export.heading')} />
+        <SectionHeader description={t('backupRestore.export.description')} level={2} title={t('backupRestore.export.heading')} />
 
         {/* A check box rather than a switch, because nothing is exported until
             the command below is pressed: "Use a checkbox when the user has to
             perform extra steps for changes to be effective."
             https://github.com/MicrosoftDocs/windows-dev-docs/blob/d084ff89ad3d6da237a8737e325a6407ddb0ee41/hub/apps/develop/ui/controls/toggles.md#L41 */}
-        <Field hint={t('dashboard.backupRestore.export.includePerformanceHint')}>
+        <Field hint={t('backupRestore.export.includePerformanceHint')}>
           <Checkbox
             checked={includePerformance}
-            label={t('dashboard.backupRestore.export.includePerformance')}
+            label={t('backupRestore.export.includePerformance')}
             onChange={(_, data) => setIncludePerformance(!!data.checked)}
           />
         </Field>
@@ -227,13 +227,13 @@ export default function DashboardAdminBackupRestore() {
             icon={exporting ? <Spinner size="tiny" /> : <ArrowDownloadRegular />}
             onClick={() => void handleExport()}
           >
-            {t('dashboard.backupRestore.export.button')}
+            {t('backupRestore.export.button')}
           </Button>
         </div>
       </Panel>
 
       <Panel className={PANEL_STACK_CLASS}>
-        <SectionHeader description={t('dashboard.backupRestore.import.description')} level={2} title={t('dashboard.backupRestore.import.heading')} />
+        <SectionHeader description={t('backupRestore.import.description')} level={2} title={t('backupRestore.import.heading')} />
 
         <input
           ref={fileInputRef}
@@ -247,10 +247,10 @@ export default function DashboardAdminBackupRestore() {
           ? <BackupFileSummary
               accepting={dragOver}
               action={<Button disabled={importing} onClick={handleChangeFile}>
-                {t('dashboard.backupRestore.import.change')}
+                {t('backupRestore.import.change')}
               </Button>}
               drop={dropHandlers}
-              name={t('dashboard.backupRestore.import.fileSelected', {
+              name={t('backupRestore.import.fileSelected', {
                 name: importFile.name,
                 size: importFile.size,
               })}
@@ -261,35 +261,35 @@ export default function DashboardAdminBackupRestore() {
               glyph={<ArrowUploadRegular fontSize={28} />}
               onClick={openFilePicker}
               prompt={dragOver
-                ? t('dashboard.backupRestore.import.dropzoneActive')
-                : t('dashboard.backupRestore.import.dropzone')}
+                ? t('backupRestore.import.dropzoneActive')
+                : t('backupRestore.import.dropzone')}
             />}
 
         {importParsedData && <BackupFileStats items={PREVIEW_LABEL_KEYS.map(key => ({
           key,
-          label: t(`dashboard.backupRestore.import.previewLabel.${key}`),
+          label: t(`backupRestore.import.previewLabel.${key}`),
           value: formatCount(countRecords(importParsedData.data)[key], locale),
         }))} />}
 
-        {importParsedData && <Field hint={t('dashboard.backupRestore.import.replaceHint')}>
+        {importParsedData && <Field hint={t('backupRestore.import.replaceHint')}>
           <Checkbox
             checked={replaceExisting}
             disabled={importing}
-            label={t('dashboard.backupRestore.import.replace')}
+            label={t('backupRestore.import.replace')}
             onChange={(_, data) => setReplaceExisting(!!data.checked)}
           />
         </Field>}
 
         {importParsedData && replaceExisting && (
           <OutcomeMessageBar intent="warning">
-            {t('dashboard.backupRestore.import.replaceWarning')}
+            {t('backupRestore.import.replaceWarning')}
           </OutcomeMessageBar>
         )}
 
         {importError && (
           <OutcomeMessageBar
             onDismiss={() => setImportError(null)}
-            title={t('dashboard.backupRestore.import.error')}
+            title={t('backupRestore.import.error')}
           >
             {importError}
           </OutcomeMessageBar>
@@ -303,24 +303,24 @@ export default function DashboardAdminBackupRestore() {
             icon={importing ? <Spinner size="tiny" /> : <ArrowUploadRegular />}
             onClick={handleImportClick}
           >
-            {t('dashboard.backupRestore.import.button')}
+            {t('backupRestore.import.button')}
           </Button>
         </div>
       </Panel>
 
       {confirmDialog.invocation && <ConfirmDialog
         open={confirmDialog.isOpen}
-        actionLabel={t('dashboard.backupRestore.import.button')}
+        actionLabel={t('backupRestore.import.button')}
         actionIntent="primary"
         busy={importing}
         key={confirmDialog.invocation.key}
-        message={t('dashboard.backupRestore.confirmMessage')}
+        message={t('backupRestore.confirmMessage')}
         onConfirm={() => {
           confirmDialog.close();
           void doImport();
         }}
         onOpenChange={open => { if (!open) confirmDialog.close(); }}
-        title={t('dashboard.backupRestore.confirmTitle')}
+        title={t('backupRestore.confirmTitle')}
       />}
     </section>
   );

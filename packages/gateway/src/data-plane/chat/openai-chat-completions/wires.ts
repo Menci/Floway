@@ -15,7 +15,7 @@ import { routeOpenAIChatCompletionsViaAnthropicMessages, routeOpenAIChatCompleti
 
 /** The three wires `/v1/chat/completions` can be served on. Its own is the bare wire; each
  *  translated one is a handoff and then the target protocol's own wire. */
-export const openaiChatCompletionsWireFor = (target: ChatTargetApi, candidate: ModelCandidate, use: Use<ChatServices>): ChatWire => {
+export const openaiChatCompletionsWireFor = (target: Exclude<ChatTargetApi, 'geminiGenerateContent'>, candidate: ModelCandidate, use: Use<ChatServices>): ChatWire => {
   switch (target) {
   case 'openaiChatCompletions':
     return compose('openaiChatCompletionsNative', openaiChatCompletionsWire(STREAMED_USAGE));

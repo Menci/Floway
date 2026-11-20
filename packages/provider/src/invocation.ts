@@ -4,7 +4,7 @@ import type { Provider, OpenAIResponsesAction } from './provider.ts';
 import type { AliasRules } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
-export type ChatTargetApi = 'anthropicMessages' | 'openaiResponses' | 'openaiChatCompletions';
+export type ChatTargetApi = 'anthropicMessages' | 'geminiGenerateContent' | 'openaiResponses' | 'openaiChatCompletions';
 
 // A resolver's live candidate belongs to services. Pipeline facts retain its identifier and
 // portable model/rule content; the selected operation hands off into provider.pipelines.

@@ -8,6 +8,7 @@ import { latestCredits, latestQuotaEntry, planLabel as chatgptPlanLabel, quotaEn
 import { findCredential, planLabel as claudeCodePlanLabel, quotaWindows, rateLimitedUntil, WINDOW_MINUTES } from './claude-code-account';
 import { copilotQuota, copilotQuotaName, readBuckets } from './copilot-quota';
 import { planLabel as copilotPlanLabel } from './copilot-seat';
+import { kimiCodePlanLabel, readKimiCodeWindows, type KimiCodeRecord } from './kimi-code-account';
 import { planLabel as ollamaPlanLabel } from './ollama-account';
 import { activityCostHint, activityCostText, includedCreditsHint, includedCreditsUsed, readWindows } from './ollama-usage';
 import { providerLabel } from './provider-badge';
@@ -22,6 +23,7 @@ import { useNow } from '../../lib/use-now';
 import { useUserPreferences } from '../../lib/use-preferences';
 import { ProgressRing } from '../ui/progress-ring';
 import type { QuotaDisplay } from '@floway-dev/protocols/browser';
+import { KIMI_CODE_WINDOW_SECONDS, readKimiCodeUsage } from '@floway-dev/provider-kimi-code/browser';
 import { readOllamaAccountUsage } from '@floway-dev/provider-ollama/browser';
 
 const { Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
@@ -91,16 +93,16 @@ const detailText = (parts: (string | null)[]): string =>
   parts.filter(part => part !== null).join('\n');
 
 const shownPercent = (t: TFunction, usedPercent: number, quotaDisplay: QuotaDisplay): string =>
-  t('dashboard.upstreams.signals.percent', { percent: quotaDisplay === 'used' ? Math.round(usedPercent) : 100 - Math.round(usedPercent) });
+  t('upstreams.signals.percent', { percent: quotaDisplay === 'used' ? Math.round(usedPercent) : 100 - Math.round(usedPercent) });
 
 const meterDetail = (t: TFunction, label: string, usedPercent: number, quotaDisplay: QuotaDisplay, resetAt: string | null, observedAt: string | number | null, locale: string): string =>
   detailText([
-    t(quotaDisplay === 'used' ? 'dashboard.upstreams.signals.used' : 'dashboard.upstreams.signals.remaining', {
+    t(quotaDisplay === 'used' ? 'upstreams.signals.used' : 'upstreams.signals.remaining', {
       label,
       percent: quotaDisplay === 'used' ? Math.round(usedPercent) : 100 - Math.round(usedPercent),
     }),
-    resetAt === null ? null : t('dashboard.upstreams.signals.resets', { time: dateTime(resetAt, locale) }),
-    observedAt === null ? null : t('dashboard.upstreams.signals.observed', { time: dateTime(observedAt, locale) }),
+    resetAt === null ? null : t('upstreams.signals.resets', { time: dateTime(resetAt, locale) }),
+    observedAt === null ? null : t('upstreams.signals.observed', { time: dateTime(observedAt, locale) }),
   ]);
 
 // Last on the line: the windows are what an operator reads at a glance, and this
@@ -112,9 +114,9 @@ const meterDetail = (t: TFunction, label: string, usedPercent: number, quotaDisp
 const blockedSignal = (until: string, t: TFunction, locale: string, now: number): UpstreamSignal => ({
   key: 'rate-limited',
   percent: null,
-  value: t('dashboard.upstreams.signals.rateLimited'),
+  value: t('upstreams.signals.rateLimited'),
   label: formatRemaining(Date.parse(until) - now, locale),
-  detail: t('dashboard.upstreams.signals.rateLimitedDetail', { time: dateTime(until, locale) }),
+  detail: t('upstreams.signals.rateLimitedDetail', { time: dateTime(until, locale) }),
   blocked: true,
 });
 
@@ -132,7 +134,7 @@ const copilotSignals = (record: Extract<UpstreamRecord, { kind: 'copilot' }>, t:
       key: bucket.id,
       percent: bucket.usedPercent,
       value: shownPercent(t, bucket.usedPercent, quotaDisplay),
-      label: quota.reset_at == null ? null : t('dashboard.upstreams.signals.until', { date: shortDate(quota.reset_at, locale) }),
+      label: quota.reset_at == null ? null : t('upstreams.signals.until', { date: shortDate(quota.reset_at, locale) }),
       detail: meterDetail(t, copilotQuotaName(t, bucket.id, 'allowance'), bucket.usedPercent, quotaDisplay, quota.reset_at ?? null, quota.observed_at, locale),
     }));
 };
@@ -144,7 +146,7 @@ const chatgptSignals = (record: Extract<UpstreamRecord, { kind: 'chatgpt' }>, t:
     // Codex states each window's length in minutes and nothing else names it,
     // so an unlabelled window falls back to the position it arrived in.
     const label = item.windowMinutes === null
-      ? t(`dashboard.upstreams.signals.window.${item.key}`)
+      ? t(`upstreams.signals.window.${item.key}`)
       : windowLengthLabel(item.windowMinutes, locale);
     return {
       key: item.key,
@@ -164,9 +166,9 @@ const chatgptSignals = (record: Extract<UpstreamRecord, { kind: 'chatgpt' }>, t:
     signals.push({
       key: 'credits',
       percent: null,
-      value: t('dashboard.upstreams.signals.credits', { balance }),
+      value: t('upstreams.signals.credits', { balance }),
       label: null,
-      detail: t('dashboard.upstreams.signals.creditsDetail'),
+      detail: t('upstreams.signals.creditsDetail'),
     });
   }
   // The windows beside it can read low while it holds: a 429 names the limit
@@ -223,7 +225,7 @@ const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: T
       percent,
       value: shownPercent(t, percent, quotaDisplay),
       label: `${activityCostText(quotaDisplay === 'used' ? used : included.balanceUsd)} / ${activityCostText(included.allowanceUsd)}`,
-      detail: detailText([includedCreditsHint(included, t, locale), t('dashboard.upstreamEditor.ollama.usage.resets', { time: dateTime(included.until, locale) })]),
+      detail: detailText([includedCreditsHint(included, t, locale), t('upstreams.editor.ollama.usage.resets', { time: dateTime(included.until, locale) })]),
     });
     return signals;
   }
@@ -241,6 +243,25 @@ const ollamaSignals = (record: Extract<UpstreamRecord, { kind: 'ollama' }>, t: T
   return signals;
 };
 
+const kimiCodeSignals = (record: KimiCodeRecord, t: TFunction, locale: string, quotaDisplay: QuotaDisplay): UpstreamSignal[] => {
+  const observation = record.state?.usageProbe?.observation ?? null;
+  if (observation === null) return [];
+  return readKimiCodeWindows(readKimiCodeUsage(observation.data)).map(window => {
+    // The monthly window reports a reset time but not its duration, so display
+    // its end date without inventing a length.
+    const label = window.id === 'monthly'
+      ? t('upstreams.signals.until', { date: shortDate(window.resetsAt, locale) })
+      : windowLengthLabel(KIMI_CODE_WINDOW_SECONDS[window.id] / 60, locale);
+    return {
+      key: window.id,
+      percent: window.percent,
+      value: shownPercent(t, window.percent, quotaDisplay),
+      label,
+      detail: meterDetail(t, label, window.percent, quotaDisplay, window.resetsAt, observation.fetchedAt, locale),
+    };
+  });
+};
+
 const upstreamSignals = (record: UpstreamRecord, t: TFunction, locale: string, now: number, quotaDisplay: QuotaDisplay): UpstreamSignal[] => {
   switch (record.kind) {
   // An operator-configured endpoint publishes no account of its own to report on.
@@ -251,6 +272,7 @@ const upstreamSignals = (record: UpstreamRecord, t: TFunction, locale: string, n
   case 'chatgpt': return chatgptSignals(record, t, locale, now, quotaDisplay);
   case 'claude-code': return claudeCodeSignals(record, t, locale, now, quotaDisplay);
   case 'ollama': return ollamaSignals(record, t, locale, quotaDisplay);
+  case 'kimi-code': return kimiCodeSignals(record, t, locale, quotaDisplay);
   }
 };
 
@@ -265,13 +287,14 @@ const upstreamPlan = (record: UpstreamRecord): string | null => {
     return null;
   case 'copilot': return copilotPlanLabel(record);
   case 'ollama': return ollamaPlanLabel(record);
+  case 'kimi-code': return kimiCodePlanLabel(record);
   case 'chatgpt': return chatgptPlanLabel(record.config.accounts[0]);
   case 'claude-code': return claudeCodePlanLabel(record.config.accounts[0]);
   }
 };
 
 export const upstreamReadout = (record: UpstreamRecord, t: TFunction, locale: string, now: number, quotaDisplay: QuotaDisplay): UpstreamReadout => ({
-  plan: upstreamPlan(record) ?? t(`provider.${record.kind}`, providerLabel(record.kind)),
+  plan: upstreamPlan(record) ?? t(`upstreams.kinds.${record.kind}.label`, providerLabel(record.kind)),
   signals: upstreamSignals(record, t, locale, now, quotaDisplay),
 });
 
@@ -287,7 +310,7 @@ export function UpstreamSignals({ record }: { record: UpstreamRecord }) {
 
   return <div className="flex items-baseline gap-x-1.5 min-w-0">
     <Text size={200} className="text-fui-fg3 flex-none" weight="medium" wrap={false}>
-      {signals.length === 0 ? plan : t('dashboard.upstreams.signals.plan', { plan })}
+      {signals.length === 0 ? plan : t('upstreams.signals.plan', { plan })}
     </Text>
     <div className="flex items-baseline gap-x-3 min-w-0">
       {signals.map(signal => <Tooltip content={signal.detail} key={signal.key} relationship="description">

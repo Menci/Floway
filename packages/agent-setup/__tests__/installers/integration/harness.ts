@@ -11,20 +11,7 @@ import { afterAll, beforeAll, beforeEach } from 'vitest';
 
 import type { AgentSetupConfiguration } from '../../../src/configuration.ts';
 import { type RenderPrefixInput, renderPowerShellPrefix, renderShellPrefix } from '../../../src/render.ts';
-import {
-  SETUP_NODE_OMP_EXTENSION,
-  SETUP_NODE_PI_EXTENSION,
-  SETUP_BASH_CLAUDE,
-  SETUP_BASH_CODEX,
-  SETUP_BASH_COMMON,
-  SETUP_BASH_PI,
-  SETUP_POWERSHELL_CLAUDE,
-  SETUP_POWERSHELL_CODEX,
-  SETUP_POWERSHELL_COMMON,
-  SETUP_POWERSHELL_PI,
-  SETUP_BASH_OMP,
-  SETUP_POWERSHELL_OMP,
-} from '../../../src/script-assets.generated.ts';
+import { SETUP_NODE_OMP_EXTENSION, SETUP_NODE_PI_EXTENSION } from '../../../src/script-assets.generated.ts';
 import { type ScriptAgent, SETUP_SCRIPT_BODIES } from '../../../src/script-assets.ts';
 
 const prefixInput = (agent: ScriptAgent, configuration: AgentSetupConfiguration): RenderPrefixInput => {
@@ -32,15 +19,13 @@ const prefixInput = (agent: ScriptAgent, configuration: AgentSetupConfiguration)
   return agent === 'pi' || agent === 'omp' ? { ...base, agent, extensionPath: agent === 'pi' ? '/api/setup/test-lease-token/pi.js' : '/omp.js' } : { ...base, agent };
 };
 export const shellLiteral = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
-export const powerShellLiteral = (value: string): string => `'${value.replace(/'/g, "''")}'`;
+const powerShellLiteral = (value: string): string => `'${value.replace(/'/g, "''")}'`;
 
 const AGENT_NAMES: Record<ScriptAgent, string> = { claude: 'Claude Code', codex: 'Codex', pi: 'Pi', omp: 'oh-my-pi' };
 export const shellEntry = (agent: ScriptAgent): string => `main '${AGENT_NAMES[agent]}' "$@"`;
-export const powerShellEntry = (agent: ScriptAgent): string => `$global:LASTEXITCODE = Main '${AGENT_NAMES[agent]}'`;
+const powerShellEntry = (agent: ScriptAgent): string => `$global:LASTEXITCODE = Main '${AGENT_NAMES[agent]}'`;
 export const shellBody = (agent: ScriptAgent): string => SETUP_SCRIPT_BODIES[agent].sh;
-export const powerShellBody = (agent: ScriptAgent): string => SETUP_SCRIPT_BODIES[agent].ps1;
-export const ALL_BASH_FRAGMENTS = SETUP_BASH_COMMON + SETUP_BASH_CLAUDE + SETUP_BASH_CODEX + SETUP_BASH_PI + SETUP_BASH_OMP;
-export const ALL_POWERSHELL_FRAGMENTS = SETUP_POWERSHELL_COMMON + SETUP_POWERSHELL_CLAUDE + SETUP_POWERSHELL_CODEX + SETUP_POWERSHELL_PI + SETUP_POWERSHELL_OMP;
+const powerShellBody = (agent: ScriptAgent): string => SETUP_SCRIPT_BODIES[agent].ps1;
 
 // A fixed, highly greppable fake credential. Dedicated secrecy tests assert
 // that it never reaches installer output.
@@ -48,7 +33,7 @@ export const SENTINEL_KEY = 'sk-floway-SENTINEL-Do-Not-Log-9f3c1a7b2e4d6058';
 
 // --- shared fixtures --------------------------------------------------------
 
-export const HARNESS_ROOT = mkdtempSync(join(tmpdir(), 'floway-installer-harness.'));
+const HARNESS_ROOT = mkdtempSync(join(tmpdir(), 'floway-installer-harness.'));
 const cleanupPaths: string[] = [HARNESS_ROOT];
 export let modelServer: ModelServer;
 let modelServerStarted = false;
@@ -123,8 +108,7 @@ if [ "\${SETUP_API_KEY+x}" = x ] || [ "\${SetupApiKey+x}" = x ]; then
 fi
 case "$1" in
   --version)
-    if [ "\${FAKE_CLAUDE_VERSION_SLEEP:-0}" -gt 0 ]; then sleep "$FAKE_CLAUDE_VERSION_SLEEP"; fi
-    printf '%s\\n' "\${FAKE_CLAUDE_VERSION:-9.9.9 (Claude Code)}"
+    printf '%s\\n' '9.9.9 (Claude Code)'
     ;;
   *)
     printf 'fake claude: unhandled args: %s\\n' "$*" >&2
@@ -184,23 +168,18 @@ if (process.env.SETUP_API_KEY !== undefined || process.env.SetupApiKey !== undef
   process.stderr.write('fake codex inherited the setup API key environment variable' + NL);
   process.exit(91);
 }
-const expectedNonInteractive = process.env.FAKE_CODEX_EXPECT_NON_INTERACTIVE;
-const actualNonInteractive = process.env.CODEX_NON_INTERACTIVE;
-if ((expectedNonInteractive === undefined && actualNonInteractive !== undefined)
-    || (expectedNonInteractive !== undefined && actualNonInteractive !== expectedNonInteractive)) {
+if (process.env.CODEX_NON_INTERACTIVE !== undefined) {
   process.stderr.write('fake codex observed unexpected CODEX_NON_INTERACTIVE after installation' + NL);
   process.exit(92);
 }
 const argv = process.argv.slice(2);
 const cmd = argv[0];
 if (cmd === '--version') {
-  const sleep = Number(process.env.FAKE_CODEX_VERSION_SLEEP || 0);
-  const emit = () => { process.stdout.write((process.env.FAKE_CODEX_VERSION || 'codex-cli 9.9.9') + NL); process.exit(0); };
-  if (sleep > 0) setTimeout(emit, sleep * 1000); else emit();
+  process.stdout.write('codex-cli 9.9.9' + NL);
+  process.exit(0);
 } else if (cmd === 'app-server') {
   const mode = process.env.FAKE_CODEX_APP_SERVER_MODE || 'ok';
   const batchDelay = Number(process.env.FAKE_CODEX_BATCH_DELAY || 0);
-  if (process.env.FAKE_CODEX_LARGE_STDERR) process.stderr.write('E'.repeat(300000) + NL);
   const send = (o) => process.stdout.write(JSON.stringify(o) + NL);
   const home = process.env.CODEX_HOME || path.join(process.env.HOME || '', '.codex');
   let buf = '';
@@ -293,16 +272,15 @@ chmod 755 "$target/codex"
 : > "$FAKE_INSTALLER_MARKER"
 `;
 
-export const FAKE_OMP = `#!/bin/bash
+const FAKE_OMP = `#!/bin/bash
 if [ "\${SETUP_API_KEY+x}" = x ] || [ "\${SetupApiKey+x}" = x ]; then
   printf 'fake omp inherited the setup API key environment variable\\n' >&2
   exit 91
 fi
 case "$1" in
   --version)
-    if [ "\${FAKE_OMP_VERSION_SLEEP:-0}" -gt 0 ]; then sleep "$FAKE_OMP_VERSION_SLEEP"; fi
     if [ -f "$FAKE_OMP_UPDATE_MARKER" ]; then
-      printf '%s\\n' "\${FAKE_OMP_UPDATED_VERSION:-omp/18.8.4}"
+      printf '%s\\n' 'omp/18.8.4'
     else
       printf '%s\\n' "\${FAKE_OMP_VERSION:-omp/18.8.4}"
     fi
@@ -314,7 +292,6 @@ case "$1" in
     printf '%s\\n' "$resolved" > "$FAKE_OMP_UPDATE_MARKER.resolved"
     case "\${FAKE_OMP_UPDATE_MODE:-ok}" in
       fail) exit 73 ;;
-      sleep) sleep 10 ;;
       noop) exit 0 ;;
     esac
     : > "$FAKE_OMP_UPDATE_MARKER"
@@ -334,8 +311,8 @@ case "$1" in
     [ -s "$probe" ] || { printf 'fake omp: missing path probe file: %s\\n' "$probe" >&2; exit 66; }
     [ -n "\${FLOWAY_SETUP_PATHS_FILE:-}" ] || { printf 'fake omp: missing FLOWAY_SETUP_PATHS_FILE\\n' >&2; exit 65; }
     printf '%s\\n' "$*" >> "$FAKE_OMP_PROBE_RECORD"
-    agent_dir="\${FAKE_OMP_AGENT_DIR:-$HOME/.omp/agent}"
-    plugins_dir="\${FAKE_OMP_PLUGINS_PATH:-$HOME/.omp/plugins}"
+    agent_dir="$HOME/.omp/agent"
+    plugins_dir="$HOME/.omp/plugins"
     "$FAKE_OMP_PATHS_SCRIPT" "$agent_dir" "$plugins_dir" "$FLOWAY_SETUP_PATHS_FILE" "$probe" "$1"
     ;;
   plugin)
@@ -384,7 +361,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const name = '@floway-dev/omp';
 const sourceDir = path.resolve(process.argv[2]);
-const pluginsDir = process.env.FAKE_OMP_PLUGINS_PATH || path.join(process.env.HOME || '', '.omp', 'plugins');
+const pluginsDir = path.join(process.env.HOME || '', '.omp', 'plugins');
 const packageManifest = JSON.parse(fs.readFileSync(path.join(sourceDir, 'package.json'), 'utf8'));
 if (packageManifest.name !== name) throw new Error('fake omp plugin link received an unexpected package');
 const lockPath = path.join(pluginsDir, 'omp-plugins.lock.json');
@@ -438,9 +415,8 @@ if [ "\${SETUP_API_KEY+x}" = x ] || [ "\${SetupApiKey+x}" = x ]; then
 fi
 case "$1" in
   --version)
-    if [ "\${FAKE_PI_VERSION_SLEEP:-0}" -gt 0 ]; then sleep "$FAKE_PI_VERSION_SLEEP"; fi
     if [ -f "$FAKE_PI_UPDATE_MARKER" ]; then
-      printf '%s\\n' "\${FAKE_PI_UPDATED_VERSION:-1.1.0}"
+      printf '%s\\n' '1.1.0'
     else
       printf '%s\\n' "\${FAKE_PI_VERSION:-1.1.0}"
     fi
@@ -453,7 +429,6 @@ case "$1" in
     [ "$2" = "--self" ] || exit 64
     case "\${FAKE_PI_UPDATE_MODE:-ok}" in
       fail) exit 73 ;;
-      sleep) sleep 10 ;;
       noop) exit 0 ;;
     esac
     : > "$FAKE_PI_UPDATE_MARKER"
@@ -486,11 +461,7 @@ writeFileSync(FAKE_PI_INSTALLER_SCRIPT, FAKE_PI_INSTALLER, { mode: 0o755 });
 
 // --- local HTTP fixtures ----------------------------------------------------
 
-type ModelServerMode =
-  | 'ok' | 'empty-extension' | 'adaptive'
-  | 'installer-sh' | 'installer-ps1' | 'installer-html'
-  | 'installer-codex-sh' | 'installer-codex-ps1'
-  | 'installer-omp-sh' | 'installer-omp-ps1' | 'installer-pi-sh' | 'installer-pi-ps1';
+type ModelServerMode = 'ok' | 'adaptive' | 'installer-html' | 'installer-codex-ps1';
 interface ModelServerRequest {
   method: string;
   path: string;
@@ -568,59 +539,15 @@ const startModelServer = async (): Promise<ModelServer> => {
       res.end('Write-Output "PROBE_BASE_URL=[$(if ($null -eq $SetupEndpoint) { \'UNSET\' } else { $SetupEndpoint })]"\n');
       return;
     }
-    if (pathname === '/install.sh' || pathname === '/install-codex.sh' || pathname === '/install-pi.sh' || pathname === '/install-omp.sh') {
-      if (state.mode === 'installer-html') {
-        res.writeHead(200, { 'content-type': 'text/html' });
-        res.end(HTML_BODY);
-        return;
-      }
-      if (state.mode === 'installer-sh') {
-        res.writeHead(200, { 'content-type': 'text/x-shellscript' });
-        res.end(FAKE_INSTALLER);
-        return;
-      }
-      if (state.mode === 'installer-codex-sh') {
-        res.writeHead(200, { 'content-type': 'text/x-shellscript' });
-        res.end(FAKE_CODEX_INSTALLER);
-        return;
-      }
-      if (state.mode === 'installer-pi-sh') {
-        res.writeHead(200, { 'content-type': 'text/x-shellscript' });
-        res.end(FAKE_PI_INSTALLER);
-        return;
-      }
-      if (state.mode === 'installer-omp-sh') {
-        res.writeHead(200, { 'content-type': 'text/x-shellscript' });
-        res.end(FAKE_OMP_INSTALLER);
-        return;
-      }
+    if (pathname === '/install-pi.sh' && state.mode === 'installer-html') {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end(HTML_BODY);
+      return;
     }
-    if (pathname === '/install.ps1' || pathname === '/install-codex.ps1' || pathname === '/install-omp.ps1' || pathname === '/install-pi.ps1') {
-      if (state.mode === 'installer-html') {
-        res.writeHead(200, { 'content-type': 'text/html' });
-        res.end(HTML_BODY);
-        return;
-      }
-      if (state.mode === 'installer-ps1') {
-        res.writeHead(200, { 'content-type': 'text/plain' });
-        res.end(PS1_FAKE_INSTALLER_BODY('claude', 'FAKE_CLAUDE_SRC'));
-        return;
-      }
-      if (state.mode === 'installer-codex-ps1') {
-        res.writeHead(200, { 'content-type': 'text/plain' });
-        res.end(PS1_FAKE_INSTALLER_BODY('codex', 'FAKE_CODEX_SRC'));
-        return;
-      }
-      if (state.mode === 'installer-pi-ps1') {
-        res.writeHead(200, { 'content-type': 'text/plain' });
-        res.end(PS1_FAKE_INSTALLER_BODY('pi', 'FAKE_PI_SRC'));
-        return;
-      }
-      if (state.mode === 'installer-omp-ps1') {
-        res.writeHead(200, { 'content-type': 'text/plain' });
-        res.end(PS1_FAKE_INSTALLER_BODY('omp', 'FAKE_OMP_SRC'));
-        return;
-      }
+    if (pathname === '/install-codex.ps1' && state.mode === 'installer-codex-ps1') {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end(PS1_FAKE_INSTALLER_BODY('codex', 'FAKE_CODEX_SRC'));
+      return;
     }
     if (pathname === '/invalid-extension.js' || pathname === '/empty-extension.js') {
       res.writeHead(200, { 'content-type': 'text/plain' });
@@ -651,7 +578,6 @@ const startModelServer = async (): Promise<ModelServer> => {
     }
     if (pathname === '/omp.js') {
       res.writeHead(200, { 'content-type': 'text/plain' });
-      if (state.mode === 'empty-extension') { res.end(''); return; }
       res.end(SETUP_NODE_OMP_EXTENSION);
       return;
     }
@@ -718,39 +644,6 @@ export const placeFakeCodex = (dir: string): void => {
 export const placeFakePi = (dir: string): void => {
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'pi'), FAKE_PI, { mode: 0o755 });
-};
-
-export const placeFakeNpm = (workspace: Workspace): void => {
-  writeFileSync(join(workspace.binDir, 'npm'), `#!/bin/bash
-if [ "\${SETUP_API_KEY+x}" = x ] || [ "\${SetupApiKey+x}" = x ]; then
-  printf 'fake npm inherited the setup API key environment variable\\n' >&2
-  exit 91
-fi
-printf '%s\\n' "$*" > "$FAKE_NPM_RECORD"
-case "$*" in
-  *'@anthropic-ai/claude-code'*)
-    mkdir -p "$HOME/.local/bin"
-    cp "$FAKE_CLAUDE_SRC" "$HOME/.local/bin/claude"
-    chmod 755 "$HOME/.local/bin/claude"
-    ;;
-  *'@openai/codex'*)
-    mkdir -p "$HOME/.local/bin"
-    cp "$FAKE_CODEX_SRC" "$HOME/.local/bin/codex"
-    chmod 755 "$HOME/.local/bin/codex"
-    ;;
-  *'@earendil-works/pi-coding-agent'*)
-    mkdir -p "$HOME/.local/bin"
-    cp "$FAKE_PI_SRC" "$HOME/.local/bin/pi"
-    chmod 755 "$HOME/.local/bin/pi"
-    ;;
-  *'@oh-my-pi/pi-coding-agent'*)
-    mkdir -p "$HOME/.local/bin"
-    cp "$FAKE_OMP_SRC" "$HOME/.local/bin/omp"
-    chmod 755 "$HOME/.local/bin/omp"
-    ;;
-  *) exit 64 ;;
-esac
-`, { mode: 0o755 });
 };
 
 export const placeFakeOmp = (dir: string): void => {
@@ -832,19 +725,13 @@ interface RunOptions {
   baseUrl: string;
   // The wrapping one-line command injects the gateway origin into the executing
   // shell (Bash exports SETUP_ENDPOINT; PowerShell assigns $SetupEndpoint in the
-  // iex runspace); the harness mirrors that. `baseUrlOverride` injects a
-  // different value than the model-server URL (used for the invalid-origin
-  // guard); `omitBaseUrl` injects nothing at all (the missing-origin guard).
-  baseUrlOverride?: string;
+  // iex runspace); the harness mirrors that. `omitBaseUrl` injects nothing at
+  // all (the missing-origin guard).
   omitBaseUrl?: boolean;
   configDir?: string;
   includeJq?: boolean;
   disableJqDownload?: boolean;
-  fakeClaudeVersion?: string;
-  fakeClaudeVersionSleep?: number;
-  withInstallHook?: boolean;
   installerSleep?: number;
-  installerUrl?: string;
   timeoutSeconds?: number;
   ambientApiKey?: boolean;
   excludeTimeoutTools?: boolean;
@@ -855,18 +742,12 @@ interface RunOptions {
   // installer's child-pid file has appeared), to exercise the INT/TERM traps.
   signalDuringInstall?: 'SIGINT' | 'SIGTERM';
   codexHome?: string;
-  fakeCodexVersion?: string;
-  fakeCodexVersionSleep?: number;
   fakeCodexAppServerMode?: string;
   fakeCodexBatchDelay?: number;
-  fakeCodexLargeStderr?: boolean;
   withCodexInstallHook?: boolean;
-  fakeAgentUpdateMode?: 'ok' | 'fail' | 'noop' | 'sleep';
+  fakeAgentUpdateMode?: 'ok' | 'fail' | 'noop';
   fakePiSupportsSelf?: boolean;
-  fakePiUpdatedVersion?: string;
-  fakeOmpUpdatedVersion?: string;
   fakePiVersion?: string;
-  fakePiVersionSleep?: number;
   withPiInstallHook?: boolean;
   piInstallerUrl?: string;
   piAgentDir?: string;
@@ -875,31 +756,16 @@ interface RunOptions {
   omitNode?: boolean;
   fakeNodeVersion?: string;
   codexInstallerUrl?: string;
-  ambientCodexNonInteractive?: string;
   fakeOmpVersion?: string;
-  fakeOmpVersionSleep?: number;
-  fakeOmpAgentDir?: string;
-  fakeOmpPluginsDir?: string;
   fakeOmpLinkFailure?: 'after' | 'unlink';
   fakeOmpProbeFailure?: boolean;
   withOmpInstallHook?: boolean;
-  ompInstallerUrl?: string;
   piCodingAgentDir?: string;
-  piConfigDir?: string;
-  ompProfile?: string;
   fakeOmpFailConfig?: boolean;
   powerShellTimeSeparator?: string;
   // Forces the existing-file branch through File.Replace on non-Windows hosts,
   // exercising PowerShell's real-null interop without a production test hook.
   forcePowerShellWindowsReplacement?: boolean;
-  // Output-contract knobs. `forceColor` sets AGENT_SETUP_TEST_FORCE_COLOR so
-  // the palette is emitted even though the harness captures (never a TTY);
-  // `noColor` sets NO_COLOR; `failRestore` sets AGENT_SETUP_TEST_FAIL_RESTORE
-  // so the PowerShell rollback restore rename fails, exercising its recovery
-  // guidance the way the Bash `mv` shim does for Bash.
-  forceColor?: boolean;
-  noColor?: boolean;
-  failRestore?: boolean;
 }
 
 const targetAgent = (configuration: InstallerTestConfiguration, agent?: ScriptAgent): ScriptAgent =>
@@ -914,18 +780,11 @@ const codexEnv = (options: RunOptions): Record<string, string> => {
     FAKE_CODEX_SRC,
     FAKE_CODEX_SENTINEL: SENTINEL_KEY,
     FAKE_CODEX_RECORD: codexRecordPath(options.workspace),
-    FAKE_CODEX_VERSION_SLEEP: String(options.fakeCodexVersionSleep ?? 0),
     FAKE_CODEX_APP_SERVER_MODE: options.fakeCodexAppServerMode ?? 'ok',
     FAKE_CODEX_BATCH_DELAY: String(options.fakeCodexBatchDelay ?? 0),
     FAKE_INSTALLER_OBSERVED_NON_INTERACTIVE: join(options.workspace.root, 'installer-non-interactive.txt'),
     FAKE_INSTALLER_OBSERVED_COMMAND_LINE: join(options.workspace.root, 'installer-command-line.txt'),
   };
-  if (options.ambientCodexNonInteractive !== undefined) {
-    env.CODEX_NON_INTERACTIVE = options.ambientCodexNonInteractive;
-    env.FAKE_CODEX_EXPECT_NON_INTERACTIVE = options.ambientCodexNonInteractive;
-  }
-  if (options.fakeCodexVersion) env.FAKE_CODEX_VERSION = options.fakeCodexVersion;
-  if (options.fakeCodexLargeStderr) env.FAKE_CODEX_LARGE_STDERR = '1';
   if (options.codexHome) env.CODEX_HOME = options.codexHome;
   if (options.withCodexInstallHook !== false) env.AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT = FAKE_CODEX_INSTALLER_SCRIPT;
   if (options.codexInstallerUrl) env.AGENT_SETUP_TEST_CODEX_URL = options.codexInstallerUrl;
@@ -937,11 +796,9 @@ const piEnv = (options: RunOptions): Record<string, string> => {
     FAKE_PI_SRC,
     FAKE_PI_UPDATE_MODE: options.fakeAgentUpdateMode ?? 'ok',
     FAKE_PI_UPDATE_MARKER: join(options.workspace.root, 'updated-pi'),
-    FAKE_PI_UPDATED_VERSION: options.fakePiUpdatedVersion ?? '1.1.0',
     FAKE_PI_SUPPORTS_SELF: options.fakePiSupportsSelf === false ? '0' : '1',
   };
   if (options.fakePiVersion) env.FAKE_PI_VERSION = options.fakePiVersion;
-  if (options.fakePiVersionSleep !== undefined) env.FAKE_PI_VERSION_SLEEP = String(options.fakePiVersionSleep);
   if (options.withPiInstallHook !== false) env.AGENT_SETUP_TEST_INSTALL_PI_SCRIPT = FAKE_PI_INSTALLER_SCRIPT;
   if (options.piInstallerUrl) env.AGENT_SETUP_TEST_PI_URL = options.piInstallerUrl;
   if (options.piAgentDir) env.PI_CODING_AGENT_DIR = options.piAgentDir;
@@ -963,36 +820,27 @@ const ompEnv = (options: RunOptions): Record<string, string> => {
     FLOWAY_SETUP_PATHS_FILE: join(options.workspace.root, 'omp-setup-paths.json'),
     FAKE_OMP_UPDATE_MODE: options.fakeAgentUpdateMode ?? 'ok',
     FAKE_OMP_UPDATE_MARKER: join(options.workspace.root, 'updated-omp'),
-    FAKE_OMP_UPDATED_VERSION: options.fakeOmpUpdatedVersion ?? 'omp/18.8.4',
   };
   if (options.fakeOmpVersion) env.FAKE_OMP_VERSION = options.fakeOmpVersion;
-  if (options.fakeOmpVersionSleep !== undefined) env.FAKE_OMP_VERSION_SLEEP = String(options.fakeOmpVersionSleep);
-  if (options.fakeOmpAgentDir) env.FAKE_OMP_AGENT_DIR = options.fakeOmpAgentDir;
-  if (options.fakeOmpPluginsDir) env.FAKE_OMP_PLUGINS_PATH = options.fakeOmpPluginsDir;
   if (options.fakeOmpLinkFailure) env.FAKE_OMP_LINK_FAILURE = options.fakeOmpLinkFailure;
   if (options.fakeOmpProbeFailure) env.FAKE_OMP_PROBE_FAILURE = '1';
   if (options.withOmpInstallHook !== false) env.AGENT_SETUP_TEST_INSTALL_OMP_SCRIPT = FAKE_OMP_INSTALLER_SCRIPT;
-  if (options.ompInstallerUrl) env.AGENT_SETUP_TEST_OMP_URL = options.ompInstallerUrl;
   if (options.piCodingAgentDir) env.PI_CODING_AGENT_DIR = options.piCodingAgentDir;
-  if (options.piConfigDir) env.PI_CONFIG_DIR = options.piConfigDir;
-  if (options.ompProfile) env.OMP_PROFILE = options.ompProfile;
   if (options.fakeOmpFailConfig) env.AGENT_SETUP_TEST_FAIL_CONFIG = '1';
   return env;
 };
-
-const injectedBaseUrlValue = (options: RunOptions): string => options.baseUrlOverride ?? options.baseUrl;
 
 // Bash's downstream `bash` is a child process, so the origin crosses the
 // boundary through the exported environment — mirror the `export SETUP_ENDPOINT`
 // the copyable command performs. Omitted entirely for the missing-origin guard.
 const injectedBaseUrlEnv = (options: RunOptions): Record<string, string> =>
-  options.omitBaseUrl ? {} : { SETUP_ENDPOINT: injectedBaseUrlValue(options) };
+  options.omitBaseUrl ? {} : { SETUP_ENDPOINT: options.baseUrl };
 
 // PowerShell's `iex` runs in the caller's runspace, so the origin is a plain
 // in-process variable assigned ahead of the served body — mirror the
 // `$SetupEndpoint = '...'` the copyable command performs.
 const powerShellBaseUrlPrelude = (options: RunOptions): string =>
-  options.omitBaseUrl ? '' : `$SetupEndpoint = ${powerShellLiteral(injectedBaseUrlValue(options))}\n`;
+  options.omitBaseUrl ? '' : `$SetupEndpoint = ${powerShellLiteral(options.baseUrl)}\n`;
 
 // Runs asynchronously via `spawn` (not `spawnSync`) so local installer downloads
 // can be served by this process's event loop without deadlocking.
@@ -1036,25 +884,19 @@ _prune_managed_backups() {
     PATH: pathParts.join(':'),
     TMPDIR: workspace.root,
     ...injectedBaseUrlEnv(options),
-    FAKE_CLAUDE_VERSION_SLEEP: String(options.fakeClaudeVersionSleep ?? 0),
     FAKE_INSTALLER_SLEEP: String(options.installerSleep ?? 0),
     FAKE_CLAUDE_SRC,
     FAKE_INSTALLER_MARKER: join(workspace.root, 'installer-ran'),
     FAKE_INSTALLER_CHILD_PID_FILE: join(workspace.root, 'installer-child.pid'),
-    FAKE_NPM_RECORD: join(workspace.root, 'npm-record.txt'),
     ...codexEnv(options),
     ...piEnv(options),
     ...ompEnv(options),
   };
   if (options.configDir) env.CLAUDE_CONFIG_DIR = options.configDir;
-  if (options.fakeClaudeVersion) env.FAKE_CLAUDE_VERSION = options.fakeClaudeVersion;
-  if (options.withInstallHook !== false) env.AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT = FAKE_INSTALLER_SCRIPT;
-  if (options.installerUrl) env.AGENT_SETUP_TEST_CLAUDE_URL = options.installerUrl;
+  env.AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT = FAKE_INSTALLER_SCRIPT;
   if (options.timeoutSeconds !== undefined) env.AGENT_SETUP_TEST_TIMEOUT_SECONDS = String(options.timeoutSeconds);
   if (options.excludeTimeoutTools) env.AGENT_SETUP_TEST_TRACE_TIMEOUT = '1';
   if (options.disableJqDownload) env.AGENT_SETUP_TEST_NO_JQ_DOWNLOAD = '1';
-  if (options.forceColor) env.AGENT_SETUP_TEST_FORCE_COLOR = '1';
-  if (options.noColor) env.NO_COLOR = '1';
 
   if (options.fakeRestoreFailure) {
     // A `mv` shim (binDir precedes SHIM_BIN on PATH) that refuses only the
@@ -1110,7 +952,6 @@ export const runShellInstallerWithAmbientKey = (options: RunOptions): Promise<Ru
     FAKE_CLAUDE_SRC,
     FAKE_INSTALLER_MARKER: join(workspace.root, 'installer-ran'),
     FAKE_INSTALLER_CHILD_PID_FILE: join(workspace.root, 'installer-child.pid'),
-    FAKE_NPM_RECORD: join(workspace.root, 'npm-record.txt'),
     ...piEnv(options),
     ...codexEnv(options),
     ...ompEnv(options),
@@ -1155,7 +996,7 @@ export const codexConfigPath = (workspace: Workspace, codexHome?: string): strin
 export const codexAuthPath = (workspace: Workspace, codexHome?: string): string => join(codexHomeFor(workspace, codexHome), 'auth.json');
 export const codexTokenPath = (workspace: Workspace, codexHome?: string): string => join(codexHomeFor(workspace, codexHome), 'floway-token');
 interface CodexRecord { received?: { method?: string; id?: number; params?: unknown }; marker?: string; edits?: unknown; line?: string; method?: string }
-export const readCodexRecord = (workspace: Workspace): CodexRecord[] => {
+const readCodexRecord = (workspace: Workspace): CodexRecord[] => {
   const path = codexRecordPath(workspace);
   if (!existsSync(path)) return [];
   return readFileSync(path, 'utf8').split('\n').filter(l => l.trim() !== '').map(l => JSON.parse(l) as CodexRecord);
@@ -1251,11 +1092,6 @@ export const readOmpConnections = (workspace: Workspace, subPath = '.omp/plugins
 
 export const hostOmpBin = hostAgentBinary('omp');
 
-export const networkReachable = (): boolean => {
-  const probe = spawnSync('/usr/bin/curl', ['-fsSL', '-o', '/dev/null', '--max-time', '8', 'https://github.com/jqlang/jq/releases/download/jq-1.8.2/sha256sum.txt'], { encoding: 'utf8' });
-  return probe.status === 0;
-};
-
 // Runs the PowerShell body under a real interpreter, mirroring runShellInstaller
 // but rendering the PowerShell prefix. Model-directory traffic is in-process, so
 // this too must be async to keep the event loop free.
@@ -1312,25 +1148,18 @@ function Remove-SetupOlderBackups {
   const env: Record<string, string> = {
     HOME: workspace.home,
     PATH: [workspace.binDir, shimBin].join(':'),
-    FAKE_CLAUDE_VERSION_SLEEP: String(options.fakeClaudeVersionSleep ?? 0),
     FAKE_INSTALLER_SLEEP: String(options.installerSleep ?? 0),
     FAKE_CLAUDE_SRC,
     FAKE_INSTALLER_MARKER: join(workspace.root, 'installer-ran'),
     FAKE_INSTALLER_CHILD_PID_FILE: join(workspace.root, 'installer-child.pid'),
-    FAKE_NPM_RECORD: join(workspace.root, 'npm-record.txt'),
     ...codexEnv(options),
     ...piEnv(options),
     ...ompEnv(options),
   };
   if (options.configDir) env.CLAUDE_CONFIG_DIR = options.configDir;
-  if (options.fakeClaudeVersion) env.FAKE_CLAUDE_VERSION = options.fakeClaudeVersion;
-  if (options.withInstallHook !== false) env.AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT = FAKE_INSTALLER_SCRIPT;
-  if (options.installerUrl) env.AGENT_SETUP_TEST_CLAUDE_URL = options.installerUrl;
+  env.AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT = FAKE_INSTALLER_SCRIPT;
   if (options.timeoutSeconds !== undefined) env.AGENT_SETUP_TEST_TIMEOUT_SECONDS = String(options.timeoutSeconds);
   if (options.ambientApiKey) env.SETUP_API_KEY = SENTINEL_KEY;
-  if (options.forceColor) env.AGENT_SETUP_TEST_FORCE_COLOR = '1';
-  if (options.noColor) env.NO_COLOR = '1';
-  if (options.failRestore) env.AGENT_SETUP_TEST_FAIL_RESTORE = '1';
 
   return new Promise<RunResult>(resolve => {
     const child = spawn(hostPwsh!, ['-NoProfile', '-File', invocationPath], { env });

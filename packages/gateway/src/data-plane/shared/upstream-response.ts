@@ -1,4 +1,9 @@
 import type { Context } from 'hono';
+import type { StatusCode } from 'hono/utils/http-status';
+
+import { ProviderModelsUnavailableError } from '@floway-dev/provider';
+
+export type HttpHead = Pick<Response, 'status' | 'headers'>;
 
 // Upstream response headers are propagated through a blocklist so vendor
 // traces, quota state, and future end-to-end metadata remain visible. Only
@@ -32,6 +37,12 @@ export const forwardUpstreamHeaders = (c: Context, headers: Headers | undefined)
   }
 };
 
+export const prepareSseResponse = (c: Context, http: HttpHead | undefined): void => {
+  if (http === undefined) return;
+  c.status(http.status as StatusCode);
+  forwardUpstreamHeaders(c, http.headers);
+};
+
 export const mergeForwardedUpstreamHeaders = (base: HeadersInit | undefined, upstream: Headers | undefined): Headers => {
   const merged = new Headers(base);
   if (upstream) {
@@ -40,6 +51,17 @@ export const mergeForwardedUpstreamHeaders = (base: HeadersInit | undefined, ups
     }
   }
   return merged;
+};
+
+const forwardedResponseHeaders = (upstream: Headers, defaultContentType: string | null): Headers => {
+  const contentType = upstream.get('content-type') ?? defaultContentType;
+  return mergeForwardedUpstreamHeaders(contentType === null ? undefined : { 'content-type': contentType }, upstream);
+};
+
+export const providerModelsUnavailableResponse = (error: unknown): Response | null => {
+  if (!(error instanceof ProviderModelsUnavailableError) || !error.httpResponse) return null;
+  const { status, headers, body } = error.httpResponse;
+  return new Response(body, { status, headers: forwardedResponseHeaders(headers, null) });
 };
 
 export interface ForwardUpstreamResponseOptions {
@@ -55,11 +77,6 @@ export const forwardUpstreamResponse = (
   options: ForwardUpstreamResponseOptions = {},
 ): Response => {
   const { body = response.body, defaultContentType = 'application/json' } = options;
-  const headers = new Headers();
-  const contentType = response.headers.get('content-type') ?? defaultContentType;
-  if (contentType !== null) headers.set('content-type', contentType);
-  for (const [name, value] of response.headers) {
-    if (isForwardableUpstreamHeader(name)) headers.set(name, value);
-  }
+  const headers = forwardedResponseHeaders(response.headers, defaultContentType);
   return new Response(body, { status: response.status, headers });
 };

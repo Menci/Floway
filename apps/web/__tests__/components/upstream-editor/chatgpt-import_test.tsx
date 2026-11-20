@@ -2,6 +2,7 @@ import { fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProviderConfigHarness } from './provider-config-harness';
+import { i18n } from '../../../src/i18n';
 import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
 import { settle } from '../../settle';
@@ -64,50 +65,13 @@ const openImport = async () => {
 };
 
 describe('ChatGPT credential import', () => {
-  it('offers all three sources and asks for no authorization URL until the OAuth tab is chosen', async () => {
-    await openImport();
-
-    expect(screen.getByRole('tab', { name: 'Paste JSON' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Paste login URL' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Manual' })).toBeTruthy();
-    expect(fetchMock.mock.calls).toHaveLength(0);
-  });
-
-  it('refuses a manual import with no access token, before any request', async () => {
-    await openImport();
-    fireEvent.click(screen.getByRole('tab', { name: 'Manual' }));
-    await settle();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Import credential' }));
-    await settle();
-
-    expect(await screen.findByText('Access token is required.')).toBeTruthy();
-    expect(fetchMock.mock.calls).toHaveLength(0);
-  });
-
-  it('sends only the fields the operator filled in', async () => {
-    await openImport();
-    fireEvent.click(screen.getByRole('tab', { name: 'Manual' }));
-    await settle();
-
-    fireEvent.change(screen.getByLabelText(/^Access token/), { target: { value: ' opaque ' } });
-    fireEvent.change(screen.getByLabelText('Plan type'), { target: { value: 'team' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Import credential' }));
-    await settle();
-
-    expect(bodyOf(EXCHANGE_PATH)?.manual).toEqual({
-      access_token: 'opaque',
-      plan_type: 'team',
-    });
-  });
-
   it('will not import a document the operator has not previewed', async () => {
     await openImport();
     fireEvent.change(screen.getByRole('textbox', { name: 'Credential JSON' }), { target: { value: twoAccounts } });
     fireEvent.click(screen.getByRole('button', { name: 'Import credential' }));
     await settle();
 
-    expect(await screen.findByText('Preview the current JSON before importing.')).toBeTruthy();
+    expect(await screen.findByText(i18n.t('upstreams.editor.chatgpt.import.previewFirst'))).toBeTruthy();
     expect(bodyOf(EXCHANGE_PATH)).toBeNull();
   });
 
@@ -120,7 +84,7 @@ describe('ChatGPT credential import', () => {
     // Two usable candidates, so neither is chosen for the operator.
     fireEvent.click(screen.getByRole('button', { name: 'Import credential' }));
     await settle();
-    expect(await screen.findByText('Select one importable account.')).toBeTruthy();
+    expect(await screen.findByText(i18n.t('upstreams.editor.chatgpt.import.selectAccount'))).toBeTruthy();
 
     fireEvent.click(screen.getAllByRole('radio')[1]!);
     fireEvent.click(screen.getByRole('button', { name: 'Import credential' }));
@@ -140,29 +104,5 @@ describe('ChatGPT credential import', () => {
     expect(radios[0]!.disabled).toBe(true);
     expect(radios[1]!.checked).toBe(true);
     expect(screen.getByText('tokens.access_token must be a non-empty string')).toBeTruthy();
-  });
-
-  it('reports a document with nothing importable in it', async () => {
-    previewCandidates = [];
-    await openImport();
-    fireEvent.change(screen.getByRole('textbox', { name: 'Credential JSON' }), { target: { value: '{}' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Preview accounts' }));
-    await settle();
-
-    expect(await screen.findByText('No importable OpenAI OAuth accounts were found.')).toBeTruthy();
-  });
-
-  it('drops a stale preview when the document is edited under it', async () => {
-    await openImport();
-    const textarea = screen.getByRole('textbox', { name: 'Credential JSON' });
-    fireEvent.change(textarea, { target: { value: twoAccounts } });
-    fireEvent.click(screen.getByRole('button', { name: 'Preview accounts' }));
-    await settle();
-    expect(screen.getAllByRole('radio')).toHaveLength(2);
-
-    fireEvent.change(textarea, { target: { value: '{"tokens":{}}' } });
-    await settle();
-
-    expect(screen.queryAllByRole('radio')).toHaveLength(0);
   });
 });

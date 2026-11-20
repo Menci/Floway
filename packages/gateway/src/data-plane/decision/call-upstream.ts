@@ -60,7 +60,7 @@ export const callDecisionUpstream = defineStage<
     if (exchange.type === 'transportFailure') {
       return move({
         ...rest,
-        'response.decision.answer': dialFailure(exchange.error),
+        'response.decision.answer': dialFailure(exchange.error, use.gateway.abortSignal),
         'response.decision.targetProtocol': target.protocol,
         'response.http.status': 502,
         'response.http.headers': [],

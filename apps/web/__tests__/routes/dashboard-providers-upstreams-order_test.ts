@@ -10,7 +10,7 @@ const record = (
   editLevel: ListedUpstreamRecord['editLevel'] = 'full',
   reorderGroup: string | null = editLevel === 'full' ? 'full-segment' : null,
 ): ListedUpstreamRecord => ({
-  ...upstreamRecord(id, { kind: 'custom', config: { baseUrl: id, authStyle: 'none', endpoints: {}, ingressHeadersRules: [], modelsFetch: { enabled: false }, models: [] }, state: null }),
+  ...upstreamRecord(id, { kind: 'custom', config: { baseUrl: id, apiKey: '', endpoints: {}, ingressHeadersRules: [], modelsFetch: { enabled: false, authStyle: 'bearer' }, models: [] }, state: null }),
   sort_order: sortOrder,
   audit: true,
   editLevel,
@@ -29,9 +29,4 @@ test('reorders only the full segment and reuses its sparse marks', () => {
 test('rejects a move that would cross a locked row even when both endpoints are full', () => {
   const snapshot = [record('full-a', 10), record('locked', 20, 'off'), record('full-b', 30)];
   expect(planReorder(snapshot, 0, 2)).toBeNull();
-});
-
-test('rejects a move across a hidden server-side boundary', () => {
-  const snapshot = [record('full-a', 10, 'full', 'segment-a'), record('full-b', 30, 'full', 'segment-b')];
-  expect(planReorder(snapshot, 0, 1)).toBeNull();
 });

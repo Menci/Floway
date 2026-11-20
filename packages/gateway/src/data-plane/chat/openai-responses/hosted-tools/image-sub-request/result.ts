@@ -1,6 +1,6 @@
 import type { HostedToolOutputItem, HostedToolSlotResult } from '../types.ts';
 import type { OpenAIImagesStreamEvent } from '@floway-dev/protocols/openai-images';
-import type { OpenAIResponsesInputImageGenerationCall, OpenAIResponsesOutputImageGenerationCallEx } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesInputImageGenerationCall, OpenAIResponsesOutputImageGenerationCall } from '@floway-dev/protocols/openai-responses';
 
 export type ImageError = { type: string; code: string; message: string; retryable: boolean };
 
@@ -85,17 +85,17 @@ export const imageTerminal = (
   outcome: ImageOutcome,
 ): HostedToolSlotResult => {
   if (!outcome.ok) {
-    const item: HostedToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCallEx, 'id'> = {
+    const item: HostedToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCall, 'id'> = {
       type: 'image_generation_call',
       status: 'failed',
       result: null,
       revised_prompt: prompt,
-      error: { message: outcome.error.message, code: outcome.error.code, type: outcome.error.type },
+      error: { message: outcome.error.message, code: outcome.error.code, param: null, type: outcome.error.type },
     };
     return { item, endEvents: [], replayData: imageReplayInputs(item) };
   }
 
-  const item: HostedToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCallEx, 'id'> = {
+  const item: HostedToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCall, 'id'> = {
     type: 'image_generation_call',
     status: 'completed',
     action,

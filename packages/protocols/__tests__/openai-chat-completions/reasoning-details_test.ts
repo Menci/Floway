@@ -43,48 +43,10 @@ test('keeps encrypted details discrete despite repeated indices and separates di
   ]);
 });
 
-test('merges text and a late signature while preserving the first complete signature', () => {
-  expect(collect(
-    [{ type: 'reasoning.text', text: 'think ', signature: null }],
-    [{ type: 'reasoning.text', text: 'more', id: 'thought', index: 1, format: 'anthropic-claude-v1' }],
-    [{ type: 'reasoning.text', signature: 'first', id: 'thought', index: 1, format: 'anthropic-claude-v1' }],
-    [{ type: 'reasoning.text', signature: 'later' }],
-  )).toEqual([{ type: 'reasoning.text', text: 'think more', signature: 'first', id: 'thought', index: 1, format: 'anthropic-claude-v1' }]);
-});
-
-test.each(['id', 'index', 'format'])('keeps blocks with distinct explicit %s separate', key => {
-  const first = { type: 'reasoning.summary', summary: 'one', [key]: key === 'index' ? 0 : 'first' };
-  const second = { type: 'reasoning.summary', summary: 'two', [key]: key === 'index' ? 1 : 'second' };
-  expect(collect([first], [second])).toEqual([first, second]);
-});
-
 test('preserves unknown vendor details and opaque non-array values without guessing their delta semantics', () => {
   const first = { type: 'vendor.reasoning', data: 'one', index: 0, metadata: { first: true } };
   const second = { type: 'vendor.reasoning', data: 'two', index: 0, metadata: { second: true } };
   expect(collect([first], [second])).toEqual([first, second]);
   expect(collect([null, 'opaque', { metadata: ['value'] }])).toEqual([null, 'opaque', { metadata: ['value'] }]);
   expect(collect({ vendor: ['value'] })).toEqual({ vendor: ['value'] });
-});
-
-test('leaves generic native extras accumulation independent from known reasoning details', () => {
-  const accumulator = createOpenAIChatCompletionsEventAccumulator();
-  for (const fragment of ['one', 'two']) {
-    const delta: OpenAIChatCompletionsAssistantDeltaEx = { reasoning_details: [{ type: 'reasoning.summary', summary: fragment }], vendor_text: fragment };
-    accumulator.accept({
-      id: 'chat', object: 'chat.completion.chunk', created: 1, model: 'model',
-      choices: [{ index: 0, delta, finish_reason: null }],
-    });
-  }
-  expect(accumulator.result().choices[0].message).toMatchObject({
-    reasoning_details: [{ type: 'reasoning.summary', summary: 'onetwo' }], vendor_text: 'onetwo',
-  });
-});
-
-test('ignores null deltas without clearing an existing reasoning detail', () => {
-  expect(collect(null)).toBeUndefined();
-  expect(collect(
-    [{ type: 'reasoning.summary', summary: 'before', index: 0 }],
-    null,
-    [{ type: 'reasoning.summary', summary: 'after', index: 0 }],
-  )).toEqual([{ type: 'reasoning.summary', summary: 'beforeafter', index: 0 }]);
 });

@@ -7,7 +7,8 @@ import type { Pipeline } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
 import type { CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
+import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAICompletionsPayload } from '@floway-dev/protocols/openai-completions';
 import type { OpenAIEmbeddingsPayload } from '@floway-dev/protocols/openai-embeddings';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
@@ -15,11 +16,13 @@ import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResultEx
 import type { CanonicalRerankRequest } from '@floway-dev/protocols/rerank';
 
 export interface ProviderOperationPayloads {
-  openaiChatCompletions: Omit<OpenAIChatCompletionsPayload, 'model'>;
+  openaiChatCompletions: Omit<OpenAIChatCompletionsPayloadEx, 'model'>;
   openaiResponses: Omit<CanonicalOpenAIResponsesPayload, 'model'>;
   openaiResponsesCompact: Omit<CanonicalOpenAIResponsesPayload, 'model'>;
   anthropicMessages: Omit<AnthropicMessagesPayload, 'model'>;
   anthropicMessagesCountTokens: Omit<AnthropicMessagesPayload, 'model'>;
+  geminiGenerateContent: GeminiGenerateContentPayload;
+  geminiGenerateContentCountTokens: GeminiGenerateContentPayload;
   alphaSearch: Record<string, unknown>;
   openaiCompletions: Omit<OpenAICompletionsPayload, 'model'>;
   openaiEmbeddings: Omit<OpenAIEmbeddingsPayload, 'model'>;
@@ -31,7 +34,8 @@ export interface ProviderOperationPayloads {
 }
 
 export type ProviderOperation = keyof ProviderOperationPayloads;
-export type ChatProviderOperation = 'openaiChatCompletions' | 'openaiResponses' | 'openaiResponsesCompact' | 'anthropicMessages' | 'anthropicMessagesCountTokens';
+export type ChatProviderOperation = 'openaiChatCompletions' | 'openaiResponses' | 'openaiResponsesCompact' | 'anthropicMessages' | 'anthropicMessagesCountTokens'
+  | 'geminiGenerateContent' | 'geminiGenerateContentCountTokens';
 export type NonChatProviderOperation = Exclude<ProviderOperation, ChatProviderOperation>;
 
 export type ProviderModelFacts = Omit<ProviderModel, 'enabledFlags'> & { readonly enabledFlags: readonly FlagId[] };
@@ -81,7 +85,9 @@ export interface ProviderOperationOutputs {
   openaiResponses: ProviderStreamOutput<OpenAIResponsesStreamEventEx> | ProviderValueOutput<OpenAIResponsesCompactionResultEx>;
   openaiResponsesCompact: ProviderStreamOutput<OpenAIResponsesStreamEventEx> | ProviderValueOutput<OpenAIResponsesCompactionResultEx>;
   anthropicMessages: ProviderStreamOutput<AnthropicMessagesStreamEventEx>;
-  anthropicMessagesCountTokens: ProviderValueOutput<AnthropicMessagesCountTokensBody>;
+  anthropicMessagesCountTokens: ProviderValueOutput<AnthropicMessagesCountTokensBody | null>;
+  geminiGenerateContent: ProviderStreamOutput<GeminiGenerateContentStreamEvent>;
+  geminiGenerateContentCountTokens: ProviderValueOutput<{ readonly totalTokens: number } | null>;
 }
 
 export interface ProviderChatResponse<O extends ChatProviderOperation> extends ProviderResponse {

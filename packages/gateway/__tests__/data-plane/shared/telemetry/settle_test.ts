@@ -1,8 +1,7 @@
 import { beforeEach, expect, test } from 'vitest';
 
-import { settle } from '../../../../src/data-plane/shared/telemetry/settle.ts';
+import { settleBillable } from '../../../../src/data-plane/pipeline/settlement.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
-import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
@@ -30,46 +29,13 @@ const ctx = ({ firstOutputTokenAt = null, upstreamCallStartedAt = null }: {
 } = {}) => mockGatewayCtx({
   apiKeyId: 'key_a',
   backgroundScheduler: promise => { background.push(promise); },
-  attempt: { timing: { firstOutputTokenAt, upstreamCallStartedAt }, telemetry: undefined },
+  attempt: { timing: { firstOutputTokenAt, upstreamCallStartedAt }, telemetry: testPerformanceContext },
 });
 
 beforeEach(() => {
   repo = new InMemoryRepo();
   initRepo(repo);
   background = [];
-});
-
-// ── settle ──
-
-test('settle records a usage row when the figure carries a billable metric', async () => {
-  settle(ctx(), testPerformanceContext, testTelemetryModelIdentity, { input: 10, output: 5 }, false);
-  await Promise.all(background);
-
-  const rows = await repo.usage.listAll();
-  assertEquals(rows.length, 1);
-  assertEquals(rows[0].keyId, 'key_a');
-  assertEquals(tokenCountsFromUsage(rows[0]), { input: 10, output: 5 });
-  assertEquals(rows[0].requests, 1);
-});
-
-test('settle records the request without metrics when usage is null', async () => {
-  settle(ctx(), testPerformanceContext, testTelemetryModelIdentity, null, false);
-  await Promise.all(background);
-
-  const rows = await repo.usage.listAll();
-  assertEquals(rows.length, 1);
-  assertEquals(rows[0].requests, 1);
-  assertEquals(rows[0].metrics, []);
-});
-
-test('settle records the request when usage carries no billable metric', async () => {
-  settle(ctx(), testPerformanceContext, testTelemetryModelIdentity, {}, false);
-  await Promise.all(background);
-
-  const rows = await repo.usage.listAll();
-  assertEquals(rows.length, 1);
-  assertEquals(rows[0].requests, 1);
-  assertEquals(rows[0].metrics, []);
 });
 
 // TPOT reflects the token stream, not the D1 write that follows it.
@@ -90,7 +56,11 @@ test('settle records the perf sample without waiting on the usage write', async 
   const beforeSettle = performance.now();
   const gatewayCtx = ctx({ upstreamCallStartedAt: beforeSettle - 10, firstOutputTokenAt: beforeSettle });
 
-  settle(gatewayCtx, testPerformanceContext, testTelemetryModelIdentity, { input: 5, output: 3 }, false);
+  settleBillable({
+    gateway: gatewayCtx,
+    background: promise => { background.push(promise); },
+    log: console,
+  }, [{ identity: testTelemetryModelIdentity, quantities: { input_tokens: '5', output_tokens: '3' } }], false);
   await Promise.all(background);
 
   const rows = await repo.performance.listAll();

@@ -52,7 +52,7 @@ export const callRerankUpstream = defineStage<
     if (exchange.type === 'transportFailure') {
       return move({
         ...rest,
-        'response.rerank.canonical': dialFailure(exchange.error),
+        'response.rerank.canonical': dialFailure(exchange.error, use.gateway.abortSignal),
         'response.rerank.targetProtocol': configuredTarget.protocol,
         'response.http.status': 502,
         'response.http.headers': [],

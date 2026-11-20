@@ -31,7 +31,7 @@ export const recordSummary = (
 ): string => {
   const parts = PREVIEW_LABEL_KEYS
     .filter(key => counts[key] > 0)
-    .map(key => t(`dashboard.backupRestore.import.imported.${key}`, {
+    .map(key => t(`backupRestore.import.imported.${key}`, {
       count: counts[key],
     }));
   return new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(parts);

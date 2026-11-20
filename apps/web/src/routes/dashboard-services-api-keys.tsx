@@ -118,7 +118,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
   const deleteKey = async (key: ApiKey) => {
     setDeleteError(null);
     setDeletingKey(true);
-    const handle = toasts.start(t('dashboard.apiKeys.toast.delete.pending', { name: key.name }));
+    const handle = toasts.start(t('apiKeys.toast.delete.pending', { name: key.name }));
     const result = await callApi(() => api.api.keys[':id'].$delete({ param: { id: key.id } }));
     setDeletingKey(false);
     if (result.error) {
@@ -127,7 +127,7 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
       return;
     }
     deleteDialog.close();
-    handle.succeed(t('dashboard.apiKeys.toast.delete.success', { name: key.name }));
+    handle.succeed(t('apiKeys.toast.delete.success', { name: key.name }));
     await refresh();
   };
 
@@ -139,22 +139,22 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
       <DashboardPageHeader
         actions={<ResourceListActions
           createDisabled={!loaded}
-          createLabel={t('dashboard.apiKeys.actions.create')}
+          createLabel={t('apiKeys.actions.create')}
           disabled={deletingKey}
           onCreate={() => editorDialog.open({ kind: 'create' })}
           onRefresh={() => void refresh()}
-          refreshLabel={t('dashboard.apiKeys.actions.refresh')}
+          refreshLabel={t('apiKeys.actions.refresh')}
           refreshing={refreshing}
         />}
-        description={t('dashboard.pages.apiKeys')}
-        title={t('dashboard.nav.apiKeys')}
+        description={t('apiKeys.description')}
+        title={t('apiKeys.title')}
       />
 
       {pageError && (
         <OutcomeMessageBar onDismiss={() => setPageError(null)}>{pageError}</OutcomeMessageBar>
       )}
 
-      {!loaded ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
+      {!loaded ? <Panel><EmptyStateLine>{t('common.errors.viewUnavailable')}</EmptyStateLine></Panel> : <>
         <ResourceListPanel>
           <KeysTable
             disabled={refreshing || deletingKey}
@@ -208,17 +208,17 @@ export default function DashboardServicesApiKeys({ loaderData }: Route.Component
         />}
         {deleteDialog.invocation && <ConfirmDialog
           open={deleteDialog.isOpen}
-          actionLabel={t('dashboard.apiKeys.actions.delete')}
+          actionLabel={t('apiKeys.actions.delete')}
           busy={deletingKey}
           error={deleteError}
           key={deleteDialog.invocation.key}
-          message={t('dashboard.apiKeys.delete.message', {
+          message={t('apiKeys.delete.message', {
             name: deleteDialog.invocation.value.name,
           })}
           onConfirm={() => void deleteKey(deleteDialog.invocation!.value)}
           onDismissError={() => setDeleteError(null)}
           onOpenChange={open => { if (!open) deleteDialog.close(); }}
-          title={t('dashboard.apiKeys.delete.title')}
+          title={t('apiKeys.delete.title')}
         />}
       </>}
     </section>

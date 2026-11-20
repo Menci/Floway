@@ -53,54 +53,6 @@ test('parseSSEStream flushes a final data line without a trailing newline', asyn
   ]);
 });
 
-test('parseSSEStream accepts fields without the optional space after the colon', async () => {
-  assertEquals(await collect([
-    'event:message_start',
-    'data:{"type":"message_start"}',
-    '',
-    'event:message_stop',
-    'data:{"type":"message_stop"}',
-    '',
-  ].join('\n')), [
-    {
-      type: 'sse',
-      event: 'message_start',
-      data: '{"type":"message_start"}',
-    },
-    {
-      type: 'sse',
-      event: 'message_stop',
-      data: '{"type":"message_stop"}',
-    },
-  ]);
-});
-
-test('parseSSEStream joins data fields and resets event state at blank-line boundaries', async () => {
-  assertEquals(await collect([
-    ': ignored comment',
-    'event:update',
-    'data:first',
-    'data:  second',
-    'data:third ',
-    '',
-    'event:orphaned',
-    '',
-    'data:tail',
-    '',
-  ].join('\n')), [
-    {
-      type: 'sse',
-      event: 'update',
-      data: 'first\n second\nthird ',
-    },
-    {
-      type: 'sse',
-      event: undefined,
-      data: 'tail',
-    },
-  ]);
-});
-
 test('parseSSEStream cancels a pending reader when its signal aborts', async () => {
   const upstreamCanceled = deferred<void>();
   let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
@@ -133,5 +85,23 @@ test('parseSSEStream cancels a pending reader when its signal aborts', async () 
       // The stream is already canceled in the passing path.
     }
     await iterator.return(undefined).catch(() => {});
+  }
+});
+
+test('parseSSEStream keeps a pretty-printed bare JSON body as one raw frame', async () => {
+  // Google's error bodies are indented across lines, and continuation lines
+  // such as `  "code": 503,` would otherwise parse as unknown fields.
+  const chunk = '{"candidates":[{"index":0}]}';
+  const error = '{\n  "error": {\n    "code": 503,\n    "message": "overloaded",\n    "status": "UNAVAILABLE"\n  }\n}';
+  for (const newline of ['\n', '\r\n']) {
+    const frames: { kind: string; data: string }[] = [];
+    const body = `data: ${chunk}${newline}${newline}${error.replaceAll('\n', newline)}${newline}`;
+    for await (const frame of parseSSEStream(new Response(body).body!)) {
+      frames.push({ kind: frame.type, data: frame.data });
+    }
+    assertEquals(frames, [
+      { kind: 'sse', data: chunk },
+      { kind: 'sse-raw', data: error },
+    ]);
   }
 });

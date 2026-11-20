@@ -123,5 +123,7 @@ type TransProps<K extends TranslationKey> = {
   components?: ComponentProps<typeof I18nextTrans>['components'];
 } & TransCount<K> & TransValues<K>;
 
-export const Trans = <const K extends TranslationKey>(props: TransProps<K>): ReactElement =>
-  <I18nextTrans {...props as ComponentProps<typeof I18nextTrans>} />;
+export const Trans = <const K extends TranslationKey>(props: TransProps<K>): ReactElement => {
+  const { t } = useI18nextTranslation();
+  return <I18nextTrans t={t} {...props as ComponentProps<typeof I18nextTrans>} />;
+};

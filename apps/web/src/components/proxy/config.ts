@@ -25,8 +25,8 @@ export const FORM_KINDS: FormKind[] = [
   'reality',
 ];
 
-export const formKindLabelKey = <K extends FormKind>(kind: K): `dashboard.proxy.form.protocolOptions.${K}` =>
-  `dashboard.proxy.form.protocolOptions.${kind}`;
+export const formKindLabelKey = <K extends FormKind>(kind: K): `proxies.form.protocolOptions.${K}` =>
+  `proxies.form.protocolOptions.${kind}`;
 
 export const SS_METHOD_OPTIONS = [
   { value: 'aes-128-gcm' as const, label: 'aes-128-gcm' },
@@ -117,36 +117,36 @@ export interface ProxyDraftIssues {
 
 export const proxyDraftIssues = (values: ProxyFormValues): ProxyDraftIssues => {
   const { config } = values;
-  const required = 'dashboard.proxy.validation.required';
+  const required = 'proxies.validation.required';
   const issues: ProxyDraftIssues = { config: {} };
   const url = proxyDraftUrl(values).trim();
-  if (!values.name.trim()) issues.name = 'dashboard.proxy.validation.nameRequired';
+  if (!values.name.trim()) issues.name = 'proxies.validation.nameRequired';
   // A parse failure outranks the draft's "still empty": there is text in the
   // field, and what is wrong is the text.
-  if (!url) issues.url = 'dashboard.proxy.validation.urlRequired';
+  if (!url) issues.url = 'proxies.validation.urlRequired';
   else issues.url = parseProxyInput(url).error ?? undefined;
-  if (!config.host.trim()) issues.config.host = 'dashboard.proxy.validation.hostRequired';
-  if (!isValidPort(config.port)) issues.config.port = 'dashboard.proxy.validation.portInvalid';
+  if (!config.host.trim()) issues.config.host = 'proxies.validation.hostRequired';
+  if (!isValidPort(config.port)) issues.config.port = 'proxies.validation.portInvalid';
   switch (config.kind) {
   case 'http': case 'socks5': break;
   case 'ss': if (config.password === '') issues.config.password = required; break;
   case 'ss2022': if (config.passwordBase64 === '') issues.config.passwordBase64 = required; break;
   case 'trojan': if (config.password === '') issues.config.password = required; break;
   case 'vless-tcp':
-    if (!isValidUuid(config.uuid)) issues.config.uuid = 'dashboard.proxy.validation.uuidInvalid';
+    if (!isValidUuid(config.uuid)) issues.config.uuid = 'proxies.validation.uuidInvalid';
     break;
   case 'vless-ws':
-    if (!isValidUuid(config.uuid)) issues.config.uuid = 'dashboard.proxy.validation.uuidInvalid';
+    if (!isValidUuid(config.uuid)) issues.config.uuid = 'proxies.validation.uuidInvalid';
     if (config.path === '') issues.config.path = required;
     break;
   case 'reality':
-    if (!isValidUuid(config.uuid)) issues.config.uuid = 'dashboard.proxy.validation.uuidInvalid';
+    if (!isValidUuid(config.uuid)) issues.config.uuid = 'proxies.validation.uuidInvalid';
     if (config.serverName === '') issues.config.serverName = required;
     if (config.publicKey === '') issues.config.publicKey = required;
     break;
   }
   const timeout = parseDialTimeoutInput(values.dialTimeout);
-  if (timeout.error) issues.dialTimeout = `dashboard.proxy.validation.timeout.${timeout.error}`;
+  if (timeout.error) issues.dialTimeout = `proxies.validation.timeout.${timeout.error}`;
   return issues;
 };
 

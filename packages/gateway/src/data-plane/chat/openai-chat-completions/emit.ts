@@ -9,7 +9,7 @@ import { bindClientRelease, collectClientFrames, framedClientStream, withClientV
 import { recordStream } from '@floway-dev/dump';
 import { defineStage, move } from '@floway-dev/pipeline';
 import { eventFrame, isOpenAIUsageOnlyEventShape, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectOpenAIChatCompletionsProtocolEventsToResult, openaiChatCompletionsProtocolFrameToSSEFrame, type OpenAIChatCompletionsStreamEvent, type ClientOpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { collectOpenAIChatCompletionsProtocolEventsToResult, openaiChatCompletionsErrorPayloadMessage, openaiChatCompletionsProtocolFrameToSSEFrame, type OpenAIChatCompletionsStreamEvent, type ClientOpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 /**
  * The outermost edge. A chat answer is always a stream by the time it reaches here — the
@@ -20,8 +20,8 @@ import { collectOpenAIChatCompletionsProtocolEventsToResult, openaiChatCompletio
  * same frames that would have gone out are folded here instead.
  */
 export const emitOpenAIChatCompletions = defineStage<
-  Fields<'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'>,
-  Fields<'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'>,
+  Fields<'request.chat.openaiChatCompletions' | 'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'>,
+  Fields<'request.chat.openaiChatCompletions' | 'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'>,
   Fields<'ingress.chat.openaiChatCompletions.wantsStream' | 'ingress.chat.openaiChatCompletions.wantsUsageChunk'
     | 'response.chat.openaiChatCompletions' | 'response.http.headers' | 'response.http.status' | 'response.chat.openaiChatCompletions.streamedUsage'>,
   Fields<'response.chat.openaiChatCompletions.rendered' | 'response.http.status' | 'response.http.headers' | 'response.chat.clientFrames' | 'response.chat.openaiChatCompletions.streamedUsage'>,
@@ -30,7 +30,7 @@ export const emitOpenAIChatCompletions = defineStage<
   name: 'emitOpenAIChatCompletions',
   through: {
     request: {
-      needs: ['ingress.chat.openaiChatCompletions.wantsStream', 'ingress.chat.openaiChatCompletions.wantsUsageChunk'],
+      needs: ['request.chat.openaiChatCompletions', 'ingress.chat.openaiChatCompletions.wantsStream', 'ingress.chat.openaiChatCompletions.wantsUsageChunk'],
       consumes: [],
       provides: [],
     },
@@ -90,7 +90,7 @@ export const emitOpenAIChatCompletions = defineStage<
       };
     }
     const completed = framedClientStream<ProtocolFrame<ClientOpenAIChatCompletionsStreamEvent>>(
-      clientFrames(egress, back['ingress.chat.openaiChatCompletions.wantsUsageChunk']),
+      clientFrames(egress, back['ingress.chat.openaiChatCompletions.wantsUsageChunk'], facts['request.chat.openaiChatCompletions'].n ?? 1),
       frame => openaiChatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk: true }),
       error => [eventFrame(internalOpenAIChatCompletionsError(error))],
       use.gateway.dump,
@@ -109,11 +109,23 @@ export const emitOpenAIChatCompletions = defineStage<
 
 // Metering reads every usage chunk below this edge. A streaming client opts into seeing it,
 // so that protocol selection precedes the record of what the client is served.
-const clientFrames = (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>, includeUsageChunk: boolean): AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> => includeUsageChunk ? frames : ({
-  [Symbol.asyncIterator]: () => (async function* () {
+const clientFrames = (
+  frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
+  includeUsageChunk: boolean,
+  expectedChoices: number,
+): AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> => ({
+  async *[Symbol.asyncIterator]() {
+    const finished = new Set<number>();
     for await (const frame of frames) {
-      if (frame.type === 'event' && isOpenAIUsageOnlyEventShape(frame.event)) continue;
-      yield frame;
+      if (frame.type === 'done' || openaiChatCompletionsErrorPayloadMessage(frame.event) !== null) {
+        yield frame;
+        return;
+      }
+      for (const { index, finish_reason: reason } of frame.event.choices) {
+        if (reason != null && Number.isInteger(index) && index >= 0 && index < expectedChoices) finished.add(index);
+      }
+      if (includeUsageChunk || !isOpenAIUsageOnlyEventShape(frame.event)) yield frame;
     }
-  })(),
+    if (finished.size !== expectedChoices) throw new Error('OpenAI Chat Completions stream ended before all choices finished.');
+  },
 });

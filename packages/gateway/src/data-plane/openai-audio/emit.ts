@@ -56,11 +56,12 @@ export const emitOpenAIAudioTranscription = defineStage<
         'response.openaiAudioTranscription.rendered': move(renderFailure(answer, mintedErrorEnvelope).body),
       };
     }
+    const streaming = isEvents(answer);
     return {
       ...rest,
       'response.http.headers': forClient,
-      'response.http.status': back['response.http.status'],
-      'response.openaiAudioTranscription.rendered': move(isEvents(answer)
+      'response.http.status': streaming ? 200 : back['response.http.status'],
+      'response.openaiAudioTranscription.rendered': move(streaming
         ? answer
         : renderOpenAIAudioTranscription(back['ingress.openaiAudioTranscription.responseFormat'], answer)),
     };

@@ -1,11 +1,11 @@
 // Configurable custom upstream — any third-party provider that serves one or
 // more supported generation, embedding, image, or rerank protocols under a
-// single base URL with a static credential. `authStyle` decides the credential header:
-//   - 'bearer'    -> Authorization: Bearer <key>     (OpenAI, OpenRouter, ...)
-//   - 'anthropic' -> x-api-key: <key> + anthropic-version: 2023-06-01
-//                                                    (api.anthropic.com)
-//   - 'none'      -> no auth header (local or internal upstreams that
-//                                                    accept anonymous requests)
+// single base URL with a static credential. The outbound protocol chooses the
+// credential header: OpenAI-compatible calls use
+// `Authorization: Bearer <key>`, Anthropic Messages calls use
+// `x-api-key: <key>` plus `anthropic-version`, and Gemini generateContent calls
+// use `x-goog-api-key`. An empty key sends no credential and lets local or
+// internal upstreams accept anonymous requests.
 //
 // The base URL is stored without an API prefix and joined to the selected
 // protocol's path. Generation-family path overrides remain upstream-wide;
@@ -24,8 +24,6 @@ import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { endpointsField, modelsField, validateUpstreamPath } from '@floway-dev/provider';
 
-export type CustomAuthStyle = 'bearer' | 'anthropic' | 'none';
-
 // Logical endpoints the admin may override. Sub-paths (the messages
 // count-tokens endpoint, the responses compact endpoint) and the catalog
 // (`/models` — owned by modelsFetch.endpoint) are intentionally absent:
@@ -39,6 +37,7 @@ const CUSTOM_PATH_OVERRIDE_KEYS = [
   '/chat/completions',
   '/responses',
   '/messages',
+  '/v1beta/models',
   '/embeddings',
   '/alpha/search',
   '/images/generations',
@@ -48,8 +47,11 @@ const CUSTOM_PATH_OVERRIDE_KEYS = [
 
 export type CustomPathOverrideKey = typeof CUSTOM_PATH_OVERRIDE_KEYS[number];
 
+export type CustomAuthStyle = 'bearer' | 'x-api-key' | 'x-goog-api-key';
+
 export interface CustomModelsFetch {
   enabled: boolean;
+  authStyle: CustomAuthStyle;
   endpoint?: string;
 }
 
@@ -79,10 +81,8 @@ export interface CustomIngressHeaderRule {
   value: string | null;
 }
 
-// Fields shared by every auth style. The discriminated branches below add
-// `apiKey` only on the styles that actually send one, so consumers cannot
-// reach for `config.apiKey` on a 'none' upstream.
-interface CustomUpstreamConfigBase {
+export interface CustomUpstreamConfig {
+  apiKey: string;
   baseUrl: string;
   endpoints: ModelEndpoints;
   pathOverrides?: Partial<Record<CustomPathOverrideKey, string>>;
@@ -91,22 +91,9 @@ interface CustomUpstreamConfigBase {
   models: UpstreamModelConfig[];
 }
 
-export type CustomUpstreamConfig =
-  | (CustomUpstreamConfigBase & { authStyle: 'none' })
-  | (CustomUpstreamConfigBase & { authStyle: 'bearer' | 'anthropic'; apiKey: string });
-
 export type CustomUpstreamRecord = UpstreamRecord & {
   kind: 'custom';
   config: CustomUpstreamConfig;
-};
-
-const AUTH_STYLES: ReadonlySet<CustomAuthStyle> = new Set<CustomAuthStyle>(['bearer', 'anthropic', 'none']);
-
-const authStyleField = (value: unknown): CustomAuthStyle => {
-  if (typeof value !== 'string' || !AUTH_STYLES.has(value as CustomAuthStyle)) {
-    throw new Error('Malformed custom upstream config: authStyle must be "bearer", "anthropic", or "none"');
-  }
-  return value as CustomAuthStyle;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -169,13 +156,18 @@ const baseUrlField = (value: unknown): string => {
   return baseUrl;
 };
 
+const apiKeyField = (value: unknown): string => {
+  if (typeof value !== 'string') throw new Error('Malformed custom upstream config: apiKey must be a string');
+  return value.trim();
+};
+
 const PATH_OVERRIDE_KEYS: ReadonlySet<string> = new Set(CUSTOM_PATH_OVERRIDE_KEYS);
 
-const pathOverridesField = (value: unknown): CustomUpstreamConfigBase['pathOverrides'] => {
+const pathOverridesField = (value: unknown): CustomUpstreamConfig['pathOverrides'] => {
   if (value === undefined) return undefined;
   if (!isRecord(value)) throw new Error('Malformed custom upstream config: pathOverrides must be an object');
 
-  const pathOverrides: NonNullable<CustomUpstreamConfigBase['pathOverrides']> = {};
+  const pathOverrides: NonNullable<CustomUpstreamConfig['pathOverrides']> = {};
   for (const [key, path] of Object.entries(value)) {
     if (!PATH_OVERRIDE_KEYS.has(key)) {
       throw new Error(`Malformed custom upstream config: unsupported pathOverrides key ${key}`);
@@ -187,22 +179,32 @@ const pathOverridesField = (value: unknown): CustomUpstreamConfigBase['pathOverr
   return pathOverrides;
 };
 
-// The /models fetch toggle. Absent defaults to enabled: existing upstreams
-// fetched their model list before this toggle existed, and the migration
-// backfills `{ enabled: true }`. `endpoint` is the optional `/models` path
-// override; the migration writes `endpoint: null` where there was no
-// override, so null/empty must parse cleanly as "no override".
+const CUSTOM_AUTH_STYLES: ReadonlySet<CustomAuthStyle> = new Set<CustomAuthStyle>(['bearer', 'x-api-key', 'x-goog-api-key']);
+
+const customAuthStyleField = (value: unknown): CustomAuthStyle => {
+  if (typeof value !== 'string' || !CUSTOM_AUTH_STYLES.has(value as CustomAuthStyle)) {
+    throw new Error('Malformed custom upstream config: modelsFetch.authStyle must be "bearer", "x-api-key", or "x-goog-api-key"');
+  }
+  return value as CustomAuthStyle;
+};
+
+// The /models fetch toggle. The catalog endpoint has no request protocol to
+// infer from, so it carries its own authentication scheme: the header name the
+// upstream expects (`bearer` means an Authorization header). Absent defaults to
+// enabled bearer fetches for configs that predate the toggle. `endpoint` is
+// the optional `/models` path override; null/empty parse as "no override".
 const modelsFetchField = (value: unknown): CustomModelsFetch => {
-  if (value === undefined) return { enabled: true };
+  if (value === undefined) return { enabled: true, authStyle: 'bearer' };
   if (!isRecord(value)) throw new Error('Malformed custom upstream config: modelsFetch must be an object');
   if (typeof value.enabled !== 'boolean') throw new Error('Malformed custom upstream config: modelsFetch.enabled must be a boolean');
+  const authStyle = customAuthStyleField(value.authStyle);
 
   if (value.endpoint === undefined || value.endpoint === null || value.endpoint === '') {
-    return { enabled: value.enabled };
+    return { enabled: value.enabled, authStyle };
   }
   const validPath = validateUpstreamPath(value.endpoint, 'modelsFetch.endpoint');
   if (!validPath.ok) throw new Error(`Malformed custom upstream config: ${validPath.error}`);
-  return { enabled: value.enabled, endpoint: validPath.value };
+  return { enabled: value.enabled, authStyle, endpoint: validPath.value };
 };
 
 export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstreamRecord => {
@@ -210,8 +212,8 @@ export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstre
   if (!isRecord(record.config)) throw new Error('Malformed custom upstream config: config must be an object');
 
   const raw = record.config;
-  const authStyle = authStyleField(raw.authStyle);
   const base = {
+    apiKey: apiKeyField(raw.apiKey),
     baseUrl: baseUrlField(raw.baseUrl),
     endpoints: endpointsField(raw.endpoints, 'custom upstream config: endpoints', { allowEmpty: true }),
     ...(raw.pathOverrides !== undefined ? { pathOverrides: pathOverridesField(raw.pathOverrides) } : {}),
@@ -220,17 +222,5 @@ export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstre
     models: modelsField(raw.models ?? [], 'custom'),
   };
 
-  if (authStyle === 'none') {
-    // Reject dead fields: a stored 'none' row must not carry a stale apiKey
-    // from an earlier auth style. mergeConfigPatch enforces this on PATCH
-    // and the migration leaves no such rows, so any presence here signals
-    // bad input.
-    if (raw.apiKey !== undefined) {
-      throw new Error('Malformed custom upstream config: apiKey must not be present when authStyle is "none"');
-    }
-    return { ...record, kind: 'custom', config: { ...base, authStyle } };
-  }
-
-  const apiKey = nonEmptyStringField(raw.apiKey, 'apiKey');
-  return { ...record, kind: 'custom', config: { ...base, authStyle, apiKey } };
+  return { ...record, kind: 'custom', config: base };
 };

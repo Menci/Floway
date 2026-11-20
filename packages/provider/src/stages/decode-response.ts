@@ -3,6 +3,7 @@ import { exchangeResponse, type HttpRequestFacts, type HttpResponseFacts, type H
 import { defineStage, move, setRelease } from '@floway-dev/pipeline';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import { isEventStreamMediaType } from '@floway-dev/protocols/common';
+import { parseGeminiGenerateContentStream } from '@floway-dev/protocols/gemini-generate-content';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream } from '@floway-dev/protocols/openai-responses';
 
@@ -25,7 +26,7 @@ const protocolFailure = (exchange: HttpResponseExchange, text: string): Provider
 };
 
 export const decodeProviderResponse = <O extends ChatProviderOperation>(operation: O) => defineStage<Request, Request, Up, Answer<O>, ProviderChatServices>({
-  name: `decodeProvider${operation.replace(/^openai/, 'OpenAI').replace(/^anthropic/, 'Anthropic')}`,
+  name: `decodeProvider${operation.replace(/^openai/, 'OpenAI').replace(/^anthropic/, 'Anthropic').replace(/^gemini/, 'Gemini')}`,
   through: {
     request: { needs: ['request.http.callId'], consumes: [], provides: [] },
     response: { needs: ['response.http.exchange', 'response.http.body', ...(operation === 'openaiResponses' || operation === 'openaiResponsesCompact' ? ['response.provider.responsesAction' as const] : [])], consumes: ['response.http.body'], provides: ['response.http.body', 'response.provider.output'] },
@@ -35,7 +36,11 @@ export const decodeProviderResponse = <O extends ChatProviderOperation>(operatio
     const exchange = back['response.http.exchange'];
     const output = (answer: ProviderOperationOutputs[O] | ProviderProtocolFailure | null) => move({ ...back, 'response.provider.output': answer });
     if (exchange.type === 'transportFailure' || exchange.status < 200 || exchange.status >= 300) return output(null);
-    if ((operation === 'openaiResponses' || operation === 'openaiResponsesCompact') && back['response.provider.responsesAction'] === 'compact' || operation === 'anthropicMessagesCountTokens') {
+    const counting = operation === 'anthropicMessagesCountTokens' || operation === 'geminiGenerateContentCountTokens';
+    if (counting && exchange.body === null && (exchange.status === 204 || exchange.status === 205)) {
+      return output({ kind: 'value', body: null } as ProviderOperationOutputs[O]);
+    }
+    if ((operation === 'openaiResponses' || operation === 'openaiResponsesCompact') && back['response.provider.responsesAction'] === 'compact' || counting) {
       const response = exchangeResponse(exchange);
       if (exchange.body !== null) setRelease(exchange.body, async () => {});
       const text = await response.text();
@@ -56,6 +61,7 @@ export const decodeProviderResponse = <O extends ChatProviderOperation>(operatio
     const signal = use.httpCall(facts['request.http.callId']).signal;
     if (operation === 'anthropicMessages') return output({ kind: 'stream', frames: use.recordProtocolFrames(parseAnthropicMessagesStream(exchange.body, { signal })) } as ProviderOperationOutputs[O]);
     if (operation === 'openaiChatCompletions') return output({ kind: 'stream', frames: use.recordProtocolFrames(parseOpenAIChatCompletionsStream(exchange.body, { signal })) } as ProviderOperationOutputs[O]);
+    if (operation === 'geminiGenerateContent') return output({ kind: 'stream', frames: use.recordProtocolFrames(parseGeminiGenerateContentStream(exchange.body, { signal })) } as ProviderOperationOutputs[O]);
     return output({ kind: 'stream', frames: use.recordProtocolFrames(parseOpenAIResponsesStream(exchange.body, { signal })) } as ProviderOperationOutputs[O]);
   },
 });

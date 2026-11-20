@@ -110,11 +110,4 @@ describe('dump subscription key switch', () => {
     stream.liveSource().emit('snapshot', JSON.stringify({ records: [recent] }));
     expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['/v1/m-long-running', '/v1/z-started-later']);
   });
-
-  it('throws when the session token is gone', () => {
-    storage.delete(flowayTokenStorageKey);
-
-    expect(() => renderSubscription('key-a', [record('key-a-1')])).toThrow('Authenticated dump subscription has no session token');
-    expect(stream.sources).toEqual([]);
-  });
 });

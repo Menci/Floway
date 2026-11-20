@@ -472,7 +472,7 @@ test('createAzureProvider exposes image models and routes generations with api-v
       assertEquals(models[0].endpoints, { openaiImagesGenerations: {}, openaiImagesEdits: {} });
       const result = await callProviderPipeline(provider, 'openaiImagesGenerations', models[0], { prompt: 'hello' }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
-      assertEquals(result.response!.status, 200);
+      assertEquals(result.http!.status, 200);
     },
   );
   assertEquals(observedUrl, 'https://example.openai.azure.com/openai/v1/images/generations?api-version=preview');
@@ -526,7 +526,7 @@ test('createAzureProvider openaiImagesEdits pipeline posts multipart with model 
         }],
       }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
-      assertEquals(result.response!.status, 200);
+      assertEquals(result.http!.status, 200);
     },
   );
   assertEquals(observedUrl, 'https://example.openai.azure.com/openai/v1/images/edits?api-version=preview');

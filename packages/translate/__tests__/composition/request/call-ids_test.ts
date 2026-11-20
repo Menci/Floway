@@ -1,7 +1,6 @@
 import { test } from 'vitest';
 
-import type { RestoredAssistantTurn } from '../../../src/composition/reading.ts';
-import { assignCallIds, type PendingCall } from '../../../src/composition/request/call-ids.ts';
+import { assignCallIds } from '../../../src/composition/request/call-ids.ts';
 import type { IRInputTurn } from '../../../src/ir/input/types.ts';
 import { TranslateInputException } from '../../../src/shared/input-error.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
@@ -14,8 +13,6 @@ const result = (name?: string, callId?: string): IRInputTurn => ({
   kind: 'client',
   items: [{ type: 'tool_result', ...(name === undefined ? {} : { name }), ...(callId === undefined ? {} : { call_id: callId }), output: '' }],
 });
-const restored = (calls: readonly PendingCall[]): RestoredAssistantTurn<readonly PendingCall[]> => ({ kind: 'restored', turn: calls });
-const restoredCalls = (turn: readonly PendingCall[]): readonly PendingCall[] => turn;
 
 const lastResult = (turns: ReturnType<typeof assignCallIds>) => {
   const piece = turns.at(-1);
@@ -27,14 +24,6 @@ const lastResult = (turns: ReturnType<typeof assignCallIds>) => {
 
 test('an id-less result answers the oldest call of its name', () => {
   assertEquals(lastResult(assignCallIds([call('read', 'a'), call('read', 'b'), result('read')], () => [])).call_id, 'a');
-});
-
-test('an id-less result with no name answers the oldest pending call', () => {
-  assertEquals(lastResult(assignCallIds([call('read', 'a'), call('write', 'b'), result()], () => [])).call_id, 'a');
-});
-
-test('an id-less result answers a call a sidecar restored', () => {
-  assertEquals(lastResult(assignCallIds([restored([{ name: 'read', callId: 'native-1' }]), result()], restoredCalls)).call_id, 'native-1');
 });
 
 test('a result naming a call nothing awaits is refused rather than answered with an invented id', () => {

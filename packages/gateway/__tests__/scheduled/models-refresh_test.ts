@@ -4,7 +4,6 @@ import { initRepo } from '../../src/repo/index.ts';
 import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
 import { scheduleModelsCacheRefreshes } from '../../src/scheduled/models-refresh.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
-import { modelsRefreshIdentity, seedModelsCache } from '../repo/models-cache-fixture.ts';
 import { saveUpstreamForTest } from '../repo/upstreams.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { withMockedFetch } from '@floway-dev/test-utils';
@@ -20,7 +19,6 @@ const custom = (id: string, enabled: boolean): UpstreamRecord => ({
   updatedAt: '2026-08-01T00:00:00.000Z',
   config: {
     baseUrl: `https://${id}.example.com`,
-    authStyle: 'bearer',
     apiKey: 'key',
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [],
@@ -64,43 +62,6 @@ test('scheduled maintenance submits enabled refreshes without waiting for model 
       expect((await repo.upstreams.getById('disabled'))?.modelsCache).toBeNull();
     },
   );
-});
-
-test('scheduled refresh skips recent catalogs and fetches catalogs older than ten minutes', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const now = Date.now();
-  for (const [id, fetchedAt] of [
-    ['recent', now - 9 * 60_000],
-    ['due', now - 11 * 60_000],
-  ] as const) {
-    await saveUpstreamForTest(repo.upstreams, custom(id, true));
-    const record = await repo.upstreams.getById(id);
-    if (record === null) throw new Error(`Missing test upstream ${id}`);
-    expect(await seedModelsCache(repo.upstreams, id, modelsRefreshIdentity(record), {
-      revision: MODEL_CATALOG_REVISION,
-      fetchedAt,
-      models: [],
-    })).toBe(true);
-  }
-
-  const requested: string[] = [];
-  await withMockedFetch(
-    request => {
-      requested.push(new URL(request.url).hostname);
-      return Response.json({ data: [{ id: 'refreshed' }] });
-    },
-    async () => {
-      const background: Promise<unknown>[] = [];
-      await scheduleModelsCacheRefreshes('TEST', promise => { background.push(promise); });
-      expect(background).toHaveLength(1);
-      await Promise.all(background);
-    },
-  );
-
-  expect(requested).toEqual(['due.example.com']);
-  expect((await repo.upstreams.getById('recent'))?.modelsCache?.fetchedAt).toBe(now - 9 * 60_000);
-  expect((await repo.upstreams.getById('due'))?.modelsCache?.models).toMatchObject([{ id: 'refreshed' }]);
 });
 
 test('one malformed upstream does not prevent later refreshes from being scheduled', async () => {

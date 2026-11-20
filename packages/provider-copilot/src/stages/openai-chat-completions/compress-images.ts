@@ -2,13 +2,13 @@ import type { ChatCompletionsFacts } from '../../chat-facts.ts';
 import { memoizedDataUrlCompressor } from '../../image-compression.ts';
 import { targetSizeForOpenAIResponsesChat } from '../../image-size.ts';
 import { defineStage, move } from '@floway-dev/pipeline';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 import { type ProviderModelFacts } from '@floway-dev/provider';
 import { isBase64ImageDataUrl } from '@floway-dev/provider';
 
 type OpenAIChatCompletionsImagePart = Extract<OpenAIChatCompletionsUserContentPart, { type: 'image_url' }>;
 
-const compressInlineImages = async (payload: OpenAIChatCompletionsPayload, model: ProviderModelFacts): Promise<OpenAIChatCompletionsPayload> => {
+const compressInlineImages = async (payload: OpenAIChatCompletionsPayloadEx, model: ProviderModelFacts): Promise<OpenAIChatCompletionsPayloadEx> => {
   const targets: OpenAIChatCompletionsImagePart[] = [];
   for (const message of payload.messages) {
     if (message.role !== 'user' || !Array.isArray(message.content)) continue;

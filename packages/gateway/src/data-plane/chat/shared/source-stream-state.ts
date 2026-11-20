@@ -4,7 +4,7 @@
 // decide, when the socket closes, whether what it wrote was a finished turn. Every HTTP
 // family answers the same question from its own metered reading instead.
 
-import type { StreamCompletion } from '../../shared/sse.ts';
+export type StreamCompletion = 'eof' | 'error' | 'cancel';
 
 export class SourceStreamState {
   failed = false;

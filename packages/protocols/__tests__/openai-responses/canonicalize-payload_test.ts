@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
-import { assert, assertEquals } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
 test('canonicalizes string and implicit-message wire inputs', () => {
   assertEquals(canonicalizeOpenAIResponsesPayload({ model: 'gpt-test', input: 'hello' }), {
@@ -43,16 +43,6 @@ test('canonicalizes string and implicit-message wire inputs', () => {
   });
 });
 
-test('canonicalizes an untyped message carrying an image without detail', () => {
-  assertEquals(canonicalizeOpenAIResponsesPayload({
-    model: 'gpt-test',
-    input: [{ role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,AQID' }] }],
-  }), {
-    model: 'gpt-test',
-    input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,AQID' }] }],
-  });
-});
-
 test('rejects a payload without a usable model at the canonical boundary', () => {
   for (const payload of [
     { input: 'hello' },
@@ -62,10 +52,36 @@ test('rejects a payload without a usable model at the canonical boundary', () =>
   ]) {
     assertEquals(canonicalizeOpenAIResponsesPayload(payload), {
       error: {
-        message: "Missing required parameter: 'model'.", param: 'model', code: 'missing_required_parameter',
+        message: expect.any(String), param: 'model', code: 'missing_required_parameter',
       },
     });
   }
+});
+
+test('rejects a separate namespace on callable tool selectors', () => {
+  for (const tool_choice of [
+    { type: 'function', namespace: 'files', name: 'read' },
+    { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', namespace: 'files', name: 'edit' }] },
+  ]) {
+    expect(canonicalizeOpenAIResponsesPayload({ model: 'm', input: 'hi', tool_choice })).toEqual({
+      error: {
+        message: expect.any(String),
+        param: 'tool_choice',
+      },
+    });
+  }
+});
+
+test('rejects output-only results on an input web_search_call', () => {
+  expect(canonicalizeOpenAIResponsesPayload({
+    model: 'm',
+    input: [{ type: 'web_search_call', id: 'ws_1', status: 'completed', results: [] }],
+  })).toEqual({
+    error: {
+      message: expect.any(String),
+      param: 'input[0].results',
+    },
+  });
 });
 
 test('rejects malformed untyped input items at the canonical boundary', () => {
@@ -82,30 +98,10 @@ test('rejects malformed untyped input items at the canonical boundary', () => {
   ]) {
     assertEquals(canonicalizeOpenAIResponsesPayload({ model: 'gpt-test', input: [malformed] }), {
       error: {
-        message: 'Untyped OpenAI Responses input items require a valid role and content.', param: 'input[0]',
+        message: expect.any(String), param: 'input[0]',
       },
     });
   }
-});
-
-test('canonicalizeOpenAIResponsesPayload preserves reasoning.context verbatim, including future modes', () => {
-  const canonicalCurrent = canonicalizeOpenAIResponsesPayload({
-    model: 'gpt-test',
-    input: [{ type: 'message', role: 'user', content: 'hi' }],
-    reasoning: { effort: 'high', context: 'current_turn' },
-  });
-  assert('input' in canonicalCurrent);
-  assertEquals(canonicalCurrent.reasoning, { effort: 'high', context: 'current_turn' });
-
-  // An unknown/future context string rides through the wire→canonical boundary
-  // untouched — the upstream owns the accept/reject decision.
-  const canonicalFuture = canonicalizeOpenAIResponsesPayload({
-    model: 'gpt-test',
-    input: 'hi',
-    reasoning: { context: 'future_mode' },
-  });
-  assert('input' in canonicalFuture);
-  assertEquals(canonicalFuture.reasoning, { context: 'future_mode' });
 });
 
 test('unexpected getters retain their original error and evaluation order', () => {

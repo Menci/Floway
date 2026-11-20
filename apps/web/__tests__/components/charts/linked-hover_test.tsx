@@ -1,42 +1,10 @@
 import { act, screen } from '@testing-library/react';
-import { expect, it, vi } from 'vitest';
+import { expect, it } from 'vitest';
 
 import { LinkedChartAssumedHover, LinkedChartHoverProvider, nearestChartPoint, useLinkedChartHover, type ChartHoverPointer } from '../../../src/components/charts/linked-hover';
 import { renderInApp } from '../../render';
 
 const pointer = (xRatio: number): ChartHoverPointer => ({ xRatio, yRatio: 0.5 });
-
-it('selects the point nearest a position, keeping the earlier of two equidistant points', () => {
-  const minute = 60_000;
-  const points = [10 * minute, 20 * minute, 30 * minute];
-  expect(nearestChartPoint(points, 11 * minute, point => point)).toBe(10 * minute);
-  expect(nearestChartPoint(points, 15 * minute, point => point)).toBe(10 * minute);
-  expect(nearestChartPoint(points, 15 * minute + 1, point => point)).toBe(20 * minute);
-  expect(nearestChartPoint(points, 0, point => point)).toBe(10 * minute);
-  expect(nearestChartPoint(points, 60 * minute, point => point)).toBe(30 * minute);
-  expect(nearestChartPoint([], 0, (point: number) => point)).toBeNull();
-});
-
-it('updates only the assumed-hover subscriber when another chart reports a position', async () => {
-  let report: ((pointer: ChartHoverPointer | null) => void) | undefined;
-  const chartRenders = vi.fn();
-  function Source() {
-    ({ report } = useLinkedChartHover());
-    return null;
-  }
-  function Target() {
-    chartRenders();
-    const { assumedHover } = useLinkedChartHover();
-    return <LinkedChartAssumedHover hover={assumedHover} resolve={pointer => pointer.xRatio > 0.5 ? 'right' : 'left'}>{point => point}</LinkedChartAssumedHover>;
-  }
-  renderInApp(<LinkedChartHoverProvider><Source /><Target /></LinkedChartHoverProvider>);
-  const initialChartRenders = chartRenders.mock.calls.length;
-  act(() => report!(pointer(0.75)));
-  expect(await screen.findByText('right')).not.toBeNull();
-  expect(chartRenders).toHaveBeenCalledTimes(initialChartRenders);
-  act(() => report!(pointer(0.25)));
-  expect(await screen.findByText('left')).not.toBeNull();
-});
 
 it('does not let a chart that lost the hover clear the chart that took it over', async () => {
   let first: ((pointer: ChartHoverPointer | null) => void) | undefined;

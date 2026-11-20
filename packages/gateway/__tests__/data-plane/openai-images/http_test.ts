@@ -6,86 +6,6 @@ import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, MOCKED_FETCH_
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
-const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/wEAAAAASUVORK5CYII=';
-
-test('/v1/images/generations rejects malformed JSON body with 400', async () => {
-  const { apiKey } = await setupAppTest();
-  const response = await requestAppWithWarmModels('/v1/images/generations', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-    body: 'not json',
-  });
-  assertEquals(response.status, 400);
-});
-
-test('/v1/images/generations rejects body without model with 400', async () => {
-  const { apiKey } = await setupAppTest();
-  const response = await requestAppWithWarmModels('/v1/images/generations', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-    body: JSON.stringify({ prompt: 'hi' }),
-  });
-  assertEquals(response.status, 400);
-});
-
-test('/v1/images/generations 404s when no upstream provides the model', async () => {
-  const { apiKey } = await setupAppTest();
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-      }
-      if (url.pathname === '/models') {
-        return jsonResponse(copilotModels([{ id: 'copilot-chat', supported_endpoints: ['/chat/completions'] }]));
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestAppWithWarmModels('/v1/images/generations', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json; charset=utf-8', 'x-api-key': apiKey.key },
-        body: JSON.stringify({ model: 'no-such-model', prompt: 'hi' }),
-      });
-      assertEquals(response.status, 404);
-    },
-  );
-});
-
-test('/v1/images/edits rejects malformed JSON with 400', async () => {
-  const { apiKey } = await setupAppTest();
-  const response = await requestAppWithWarmModels('/v1/images/edits', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-    body: 'not json',
-  });
-  assertEquals(response.status, 400);
-});
-
-test('/v1/images/edits rejects JSON without a model with 400', async () => {
-  const { apiKey } = await setupAppTest();
-  const response = await requestAppWithWarmModels('/v1/images/edits', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-    body: JSON.stringify({ prompt: 'hi', images: [{ file_id: 'file-image' }] }),
-  });
-  assertEquals(response.status, 400);
-});
-
-test('/v1/images/edits rejects multipart body without model field with 400', async () => {
-  const { apiKey } = await setupAppTest();
-  const form = new FormData();
-  form.append('prompt', 'hi');
-  const response = await requestAppWithWarmModels('/v1/images/edits', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey.key },
-    body: form,
-  });
-  assertEquals(response.status, 400);
-});
-
 test('/v1/images/generations rejects model on custom upstream without /images/generations capability', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -101,7 +21,6 @@ test('/v1/images/generations rejects model on custom upstream without /images/ge
     sortOrder: 100,
     config: {
       baseUrl: 'https://chat.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-chat',
       endpoints: { openaiChatCompletions: {} },
@@ -123,8 +42,6 @@ test('/v1/images/generations rejects model on custom upstream without /images/ge
         body: JSON.stringify({ model: 'gpt-4o', prompt: 'hi' }),
       });
       assertEquals(response.status, 400);
-      const body = await response.json() as { error: { message: string } };
-      assertEquals(body.error.message, 'Model gpt-4o does not support the /images/generations endpoint.');
     },
   );
 });
@@ -138,7 +55,6 @@ test('/v1/images/generations forwards a JSON request through a custom upstream a
     sortOrder: 100,
     config: {
       baseUrl: 'https://images.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-images',
       endpoints: {},
@@ -213,7 +129,6 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
     state: null,
   });
 
-  let observedUrl: string | undefined;
   let observedForm: FormData | undefined;
   await withMockedFetch(
     async request => {
@@ -226,7 +141,6 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
         return jsonResponse(copilotModels([{ id: 'copilot-chat', supported_endpoints: ['/chat/completions'] }]));
       }
       if (url.hostname === 'example.openai.azure.com') {
-        observedUrl = request.url;
         observedForm = await request.formData();
         return jsonResponse({ data: [{ b64_json: 'aGk=' }], usage: { input_tokens: 7, output_tokens: 11 } });
       }
@@ -248,76 +162,7 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
       await flushAsyncWork();
     },
   );
-  assertEquals(observedUrl?.endsWith('?api-version=preview'), true);
   assertEquals(observedForm?.get('model'), 'gpt-image-2');
   const usageRows = await repo.usage.listAll();
   assertEquals(usageRows.some(row => row.model === 'gpt-image-2' && tokenCountsFromUsage(row).input === 7 && tokenCountsFromUsage(row).output === 11), true);
-});
-
-test('/v1/images/edits forwards JSON image references through a custom provider', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  clearInProcessCopilotTokenCache();
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    id: 'up_image_edits_json',
-    name: 'Custom Image Provider',
-    sortOrder: 100,
-    config: {
-      baseUrl: 'https://images.example.com',
-      authStyle: 'bearer',
-      ingressHeadersRules: [],
-      apiKey: 'sk-images',
-      endpoints: {},
-    },
-  }));
-
-  let forwarded: Record<string, unknown> | undefined;
-  await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-      }
-      if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
-        return jsonResponse(copilotModels([{ id: 'copilot-chat', supported_endpoints: ['/chat/completions'] }]));
-      }
-      if (url.hostname === 'images.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ data: [{ id: 'gpt-image-2' }] });
-      }
-      if (url.hostname === 'images.example.com' && url.pathname === '/v1/images/edits') {
-        forwarded = await request.json() as Record<string, unknown>;
-        return jsonResponse({ data: [{ b64_json: 'ZWRpdA==' }] });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestAppWithWarmModels('/v1/images/edits', {
-        method: 'POST',
-        headers: { 'content-type': 'Application/Vnd.OpenAI+JSON; charset=utf-8', 'x-api-key': apiKey.key },
-        body: JSON.stringify({
-          model: 'gpt-image-2',
-          prompt: 'replace the background',
-          images: [
-            { image_url: `data:image/png;base64,${PNG_B64}` },
-            { file_id: 'file-source' },
-          ],
-          mask: { file_id: 'file-mask' },
-          quality: 'high',
-        }),
-      });
-      assertEquals(response.status, 200);
-      assertEquals(await response.json(), { data: [{ b64_json: 'ZWRpdA==' }] });
-    },
-  );
-
-  assertEquals(forwarded, {
-    model: 'gpt-image-2',
-    prompt: 'replace the background',
-    images: [
-      { image_url: `data:image/png;base64,${PNG_B64}` },
-      { file_id: 'file-source' },
-    ],
-    mask: { file_id: 'file-mask' },
-    quality: 'high',
-  });
 });

@@ -2,7 +2,7 @@ import type { Chat } from '../facts.ts';
 import { rolesFor, roleRewriter, type RoleRewrite } from '../shared/role-compatibility.ts';
 import { mapKeepingIdentity } from '../shared/structural.ts';
 import { defineStage, transform, move } from '@floway-dev/pipeline';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 
 /** Role rewrites, in the fixed order `system → developer → system → user`. Later rewrites
  *  are authoritative when flags overlap, and the last step affects only a system message
@@ -45,7 +45,7 @@ export const applyRoleCompatibilityToOpenAIChatCompletions = defineStage<
   })),
 });
 
-type OpenAIChatCompletionsMessages = OpenAIChatCompletionsPayload['messages'];
+type OpenAIChatCompletionsMessages = OpenAIChatCompletionsPayloadEx['messages'];
 
 const rewriteOpenAIChatCompletionsRoles = (messages: OpenAIChatCompletionsMessages, rewrite: RoleRewrite): OpenAIChatCompletionsMessages => {
   const nextRole = roleRewriter(rewrite);

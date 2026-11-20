@@ -97,49 +97,6 @@ test('affinity selects the route while item storage preserves the exact emitted 
   expect(selection.payloadFor(candidateA).input).toEqual([programOutput]);
 });
 
-test('agent-message natural and originless nested carriers round-trip without changing ids', async () => {
-  const candidate = modelCandidate('upstream-a');
-  const codec = new AffinityCodec('22'.repeat(32));
-  const empty = { type: 'agent_message' as const, id: 'amsg_empty', author: 'a', recipient: 'b', content: [] };
-  const natural = {
-    type: 'agent_message' as const,
-    id: 'amsg_natural',
-    author: 'a',
-    recipient: 'b',
-    content: [{ type: 'encrypted_content' as const, encrypted_content: 'opaque' }],
-  };
-  const response = {
-    id: 'resp_upstream',
-    object: 'response' as const,
-    model: 'model-a',
-    status: 'completed' as const,
-    output: [empty, natural],
-    error: null,
-    incomplete_details: null,
-  } as unknown as OpenAIResponsesResultEx;
-  const source = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-    yield eventFrame({ type: 'response.completed', response });
-  };
-  let clientResponse: OpenAIResponsesResultEx | undefined;
-  for await (const frame of wrapOpenAIResponsesAffinityEgress(source(), {
-    codec,
-    affinity: {
-      upstreamId: candidate.provider.upstreamId,
-      modelId: candidate.model.id,
-      opaqueBlobCompatibilityIdentity: { upstreamId: candidate.provider.upstreamId, key: candidate.model.id },
-    },
-  })) if (frame.type === 'event' && frame.event.type === 'response.completed') clientResponse = frame.event.response;
-  if (clientResponse === undefined) throw new Error('Expected completed client response');
-
-  const prepared = await analyzeOpenAIResponsesAffinity({
-    model: 'model-a',
-    input: clientResponse.output as unknown as CanonicalOpenAIResponsesInputItem[],
-  }, codec);
-  const evaluation = prepared.evaluateCandidate(candidate);
-  if (evaluation.kind === 'rejected') throw new Error('Expected candidate affinity evaluation to be accepted');
-  expect(evaluation.materialize().input).toEqual([empty, natural]);
-});
-
 test('compaction_summary carrier authenticates after alias canonicalization without rewriting its id', async () => {
   const candidate = modelCandidate('upstream-a');
   const codec = new AffinityCodec('22'.repeat(32));

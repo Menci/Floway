@@ -73,9 +73,10 @@ export const parseOpenAIResponsesStream = (
     // never has to name it; an upstream carries the name either in the JSON
     // body or only in the SSE `event:` header.
     // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L459
-    if (((frame.data as { type?: string }).type ?? frame.frame.event) === 'ping') continue;
+    const frameEvent = frame.frame.type === 'sse' ? frame.frame.event : undefined;
+    if (((frame.data as { type?: string }).type ?? frameEvent) === 'ping') continue;
 
-    const event = projectSseJsonEvent(frame.data, frame.frame.event);
+    const event = projectSseJsonEvent(frame.data, frameEvent);
     const structured = isStructuredOpenAIResponsesEvent(event);
     const terminal = isOpenAIResponsesTerminalEvent(event);
 

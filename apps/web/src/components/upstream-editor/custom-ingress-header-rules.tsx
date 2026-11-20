@@ -29,14 +29,14 @@ export function CustomIngressHeaderRules({ readOnly = false }: { readOnly?: bool
   const { append, fields, remove } = useFieldArray({ control, name: 'config.ingressHeadersRules' });
 
   return <EditorSection
-    hint={t('dashboard.upstreamEditor.headers.description')}
+    hint={t('upstreams.editor.headers.description')}
     level={3}
-    title={t('dashboard.upstreamEditor.headers.title')}
+    title={t('upstreams.editor.headers.title')}
   >
     <div className="grid gap-2">
       <div aria-hidden="true" className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_32px] gap-2 px-1">
-        <Text size={200} weight="semibold">{t('dashboard.upstreamEditor.headers.key')}</Text>
-        <Text size={200} weight="semibold">{t('dashboard.upstreamEditor.headers.value')}</Text>
+        <Text size={200} weight="semibold">{t('upstreams.editor.headers.key')}</Text>
+        <Text size={200} weight="semibold">{t('upstreams.editor.headers.value')}</Text>
         <span />
       </div>
       {fields.map((field, index) => <IngressHeaderRuleRow
@@ -83,7 +83,7 @@ function IngressHeaderRuleRow({
     : undefined;
 
   return <div aria-labelledby={labelId} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_32px] items-start gap-2" role="group">
-    <span className="sr-only" id={labelId}>{t('dashboard.upstreamEditor.headers.row', { number: rowNumber })}</span>
+    <span className="sr-only" id={labelId}>{t('upstreams.editor.headers.row', { number: rowNumber })}</span>
     <Controller
       control={control}
       name={keyName}
@@ -93,7 +93,7 @@ function IngressHeaderRuleRow({
         validationState={ruleErrors?.key ? 'error' : undefined}
       >
         <Input
-          aria-label={t('dashboard.upstreamEditor.headers.keyForRow', { number: rowNumber })}
+          aria-label={t('upstreams.editor.headers.keyForRow', { number: rowNumber })}
           autoComplete="off"
           className="font-mono"
           name={field.name}
@@ -122,9 +122,9 @@ function IngressHeaderRuleRow({
       render={({ field }) => {
         const custom = field.value !== null && field.value !== '';
         const placeholder = field.value === null
-          ? t('dashboard.upstreamEditor.headers.passthrough')
+          ? t('upstreams.editor.headers.passthrough')
           : field.value === ''
-            ? t('dashboard.upstreamEditor.headers.empty')
+            ? t('upstreams.editor.headers.empty')
             : undefined;
         return <Field
           className="min-w-0"
@@ -132,7 +132,7 @@ function IngressHeaderRuleRow({
           validationState={ruleErrors?.value ? 'error' : undefined}
         >
           <Combobox
-            aria-label={t('dashboard.upstreamEditor.headers.valueForRow', { number: rowNumber })}
+            aria-label={t('upstreams.editor.headers.valueForRow', { number: rowNumber })}
             autoComplete="off"
             className={custom ? 'font-mono' : undefined}
             disabled={valueDisabled}
@@ -150,8 +150,8 @@ function IngressHeaderRuleRow({
             spellCheck={false}
             value={field.value ?? ''}
           >
-            <Option value={PASSTHROUGH_OPTION}>{t('dashboard.upstreamEditor.headers.passthrough')}</Option>
-            <Option value={EMPTY_OPTION}>{t('dashboard.upstreamEditor.headers.empty')}</Option>
+            <Option value={PASSTHROUGH_OPTION}>{t('upstreams.editor.headers.passthrough')}</Option>
+            <Option value={EMPTY_OPTION}>{t('upstreams.editor.headers.empty')}</Option>
           </Combobox>
         </Field>;
       }}
@@ -160,7 +160,7 @@ function IngressHeaderRuleRow({
       danger
       disabled={isBlankRow}
       icon={<DeleteRegular />}
-      label={t('dashboard.upstreamEditor.headers.remove', { number: rowNumber })}
+      label={t('upstreams.editor.headers.remove', { number: rowNumber })}
       onClick={onRemove}
     />}
   </div>;

@@ -30,13 +30,13 @@ describe('the rerank pipeline', () => {
       const prior = move([]);
       const answer = defineStage<Record<string, unknown>, Record<string, unknown>>({
         name: 'answer',
-        return: { provides: ['response.usage.billable', ...streaming ? ['response.http.body'] : []] },
+        return: { provides: ['response.usage.billable', 'response.http.headers', ...streaming ? ['response.http.body'] : []] },
         execute: async facts => move({
-          ...facts, 'response.usage.billable': [], ...body === null ? {} : { 'response.http.body': body },
+          ...facts, 'response.usage.billable': [], 'response.http.headers': [], ...body === null ? {} : { 'response.http.body': body },
         }),
       });
       const pipeline = compose<Record<string, unknown>, Record<string, unknown>>('readOrStream', [
-        failover({ failed: () => false, owns: streaming ? ['response.http.body'] : [] }), answer,
+        failover({ answer: () => ({}), owns: streaming ? ['response.http.body'] : [] }), answer,
       ]);
       const { facts, drain } = await run(pipeline, move({
         'serve.candidates': [{ upstreamId: 'upstream', modelId: 'rerank', flags: [] }],

@@ -22,6 +22,7 @@ const flagGroupById = {
   'openai-responses-compact-decrypt': 'shims',
   'openai-responses-collaboration-shim': 'shims',
   'openai-responses-agent-message-shim': 'shims',
+  'openai-responses-standalone-tool-output-shim': 'shims',
   'serialize-stream-items': 'apiCompatibility',
   'disable-reasoning-on-forced-tool-choice': 'apiCompatibility',
   'empty-tools-tool-choice-none': 'apiCompatibility',
@@ -68,12 +69,12 @@ export function FeatureFlagsEditor({
     const state = flagId in value ? (value[flagId] ? 'on' : 'off') : 'inherit';
     const inheritedState = inheritedValue(flagId) ? 'on' : 'off';
     const stateLabel = state === 'inherit'
-      ? t('dashboard.upstreamEditor.flags.inheritResolved', {
-          state: t(`dashboard.upstreamEditor.flags.${inheritedState}`),
+      ? t('upstreams.editor.flags.inheritResolved', {
+          state: t(`upstreams.editor.flags.${inheritedState}`),
         })
-      : t(`dashboard.upstreamEditor.flags.${state}`);
-    const label = t(`dashboard.upstreamEditor.flags.entries.${flagId}.label`);
-    const description = t(`dashboard.upstreamEditor.flags.entries.${flagId}.description`);
+      : t(`upstreams.editor.flags.${state}`);
+    const label = t(`upstreams.editor.flags.entries.${flagId}.label`);
+    const description = t(`upstreams.editor.flags.entries.${flagId}.description`);
     return <section className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-0 border-t border-solid border-fui-divider py-3 first:border-t-0" key={flagId}>
       <div className="grid gap-1 min-w-0">
         <Text weight="semibold">
@@ -101,19 +102,19 @@ export function FeatureFlagsEditor({
         }}
       >
         <Option value="inherit">
-          {t('dashboard.upstreamEditor.flags.inheritResolved', {
-            state: t(`dashboard.upstreamEditor.flags.${inheritedState}`),
+          {t('upstreams.editor.flags.inheritResolved', {
+            state: t(`upstreams.editor.flags.${inheritedState}`),
           })}
         </Option>
-        <Option value="on">{t('dashboard.upstreamEditor.flags.on')}</Option>
-        <Option value="off">{t('dashboard.upstreamEditor.flags.off')}</Option>
+        <Option value="on">{t('upstreams.editor.flags.on')}</Option>
+        <Option value="off">{t('upstreams.editor.flags.off')}</Option>
       </Dropdown>
     </section>;
   };
 
   return <div className="grid gap-5 min-w-0">
     {groupedFlags.map(group => (
-      <EditorSection key={group.id} level={3} title={t(`dashboard.upstreamEditor.flags.groups.${group.id}`)}>
+      <EditorSection key={group.id} level={3} title={t(`upstreams.editor.flags.groups.${group.id}`)}>
         <div>
           {group.flags.map(renderFlag)}
         </div>

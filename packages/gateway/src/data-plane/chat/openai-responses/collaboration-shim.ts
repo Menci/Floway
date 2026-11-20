@@ -125,6 +125,7 @@ const rewriteToolChoice = (
   const rewrite = (value: Record<string, unknown>): Record<string, unknown> => {
     if (value.type === 'namespace' && value.name === fromNamespace) return { ...value, name: toNamespace };
     if (value.type !== 'function' && value.type !== 'custom') return value;
+    if ('namespace' in value) return value;
     // A qualified selector stays qualified, preserving its original wire shape.
     const identity = rewriteIdentity(value, fromNamespace, toNamespace, names, flatNames);
     if (identity !== value && value.namespace === undefined && typeof value.name === 'string') {

@@ -124,7 +124,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
   const deleteUser = async (target: ControlPlaneUser) => {
     setDeleting(true);
     setDeleteError(null);
-    const handle = toasts.start(t('dashboard.users.toast.delete.pending', { username: target.username }));
+    const handle = toasts.start(t('directory.users.toast.delete.pending', { username: target.username }));
     const result = await callApi(() =>
       api.api.users[':id'].$delete({ param: { id: String(target.id) } }));
     setDeleting(false);
@@ -134,14 +134,14 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
       return;
     }
     deleteDialog.close();
-    handle.succeed(t('dashboard.users.toast.delete.success', { username: target.username }));
+    handle.succeed(t('directory.users.toast.delete.success', { username: target.username }));
     await refresh();
   };
 
   const deleteGroup = async (target: ControlPlaneGroup) => {
     setDeletingGroup(true);
     setDeleteGroupError(null);
-    const handle = toasts.start(t('dashboard.groupsManagement.toast.delete.pending', { name: target.name }));
+    const handle = toasts.start(t('directory.groups.toast.delete.pending', { name: target.name }));
     const result = await callApi(() => api.api.groups[':id'].$delete({ param: { id: String(target.id) } }));
     setDeletingGroup(false);
     if (result.error) {
@@ -150,7 +150,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
       return;
     }
     deleteGroupDialog.close();
-    handle.succeed(t('dashboard.groupsManagement.toast.delete.success', { name: target.name }));
+    handle.succeed(t('directory.groups.toast.delete.success', { name: target.name }));
     await refresh();
   };
 
@@ -198,27 +198,27 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
         actions={<ResourceListActions
           disabled={deleting || deletingGroup || changingMember}
           onRefresh={() => void refresh()}
-          refreshLabel={t('dashboard.users.actions.refresh')}
+          refreshLabel={t('directory.users.actions.refresh')}
           refreshing={refreshing}
         />}
-        description={t('dashboard.pages.users')}
-        title={t('dashboard.nav.users')}
+        description={t('directory.description')}
+        title={t('directory.title')}
       />
 
       <div className="flex items-center justify-between gap-3 flex-wrap -mb-1">
-        <TabList aria-label={t('dashboard.nav.users')} onTabSelect={(_, event) => { setTab(event.value === 'groups' ? 'groups' : 'users'); setQuery(''); }} selectedValue={tab}>
-          <Tab value="users"><span className="inline-flex items-baseline gap-1.5"><span className="floway-control-label">{t('dashboard.users.tabs.users')}</span>{users && <Text className="floway-control-label text-fui-fg3 proportional-nums">{users.length}</Text>}</span></Tab>
-          <Tab value="groups"><span className="inline-flex items-baseline gap-1.5"><span className="floway-control-label">{t('dashboard.users.tabs.groups')}</span>{groups && <Text className="floway-control-label text-fui-fg3 proportional-nums">{groups.length}</Text>}</span></Tab>
+        <TabList aria-label={t('directory.title')} onTabSelect={(_, event) => { setTab(event.value === 'groups' ? 'groups' : 'users'); setQuery(''); }} selectedValue={tab}>
+          <Tab value="users"><span className="inline-flex items-baseline gap-1.5"><span className="floway-control-label">{t('directory.users.tabs.users')}</span>{users && <Text className="floway-control-label text-fui-fg3 proportional-nums">{users.length}</Text>}</span></Tab>
+          <Tab value="groups"><span className="inline-flex items-baseline gap-1.5"><span className="floway-control-label">{t('directory.users.tabs.groups')}</span>{groups && <Text className="floway-control-label text-fui-fg3 proportional-nums">{groups.length}</Text>}</span></Tab>
         </TabList>
         <div className="flex items-center gap-2 max-w-full">
-          <Input aria-label={t(tab === 'users' ? 'dashboard.users.search' : 'dashboard.groupsManagement.search')} autoComplete="off" className="w-[260px]" contentBefore={<SearchRegular />} onChange={(_, value) => setQuery(value.value)} placeholder={t(tab === 'users' ? 'dashboard.users.search' : 'dashboard.groupsManagement.search')} spellCheck={false} value={query} />
+          <Input aria-label={t(tab === 'users' ? 'directory.users.search' : 'directory.groups.search')} autoComplete="off" className="w-[260px]" contentBefore={<SearchRegular />} onChange={(_, value) => setQuery(value.value)} placeholder={t(tab === 'users' ? 'directory.users.search' : 'directory.groups.search')} spellCheck={false} value={query} />
           <Button
             appearance="primary"
             className="flex-none whitespace-nowrap"
             disabled={!loaded || busy}
             icon={<AddRegular />}
             onClick={() => tab === 'users' ? editorDialog.open({ kind: 'create', groups: directoryIndex!.groupOptions }) : groupDialog.open({})}
-          >{t(tab === 'users' ? 'dashboard.users.actions.create' : 'dashboard.groupsManagement.actions.create')}</Button>
+          >{t(tab === 'users' ? 'directory.users.actions.create' : 'directory.groups.actions.create')}</Button>
         </div>
       </div>
 
@@ -228,7 +228,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
         </OutcomeMessageBar>
       )}
 
-      {!loaded ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
+      {!loaded ? <Panel><EmptyStateLine>{t('common.errors.viewUnavailable')}</EmptyStateLine></Panel> : <>
         {tab === 'users' ? <ResourceListPanel><UsersTable
           actorId={actor.id}
           disabled={busy}
@@ -237,7 +237,7 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
           onResetPassword={passwordDialog.open}
           users={visibleUsers!}
           groupsByUser={directoryIndex!.groupsByUser}
-        /></ResourceListPanel> : needle && visibleGroups!.length === 0 ? <Panel><EmptyStateLine>{t('dashboard.groupsManagement.noMatches')}</EmptyStateLine></Panel> : <GroupsMasterDetail
+        /></ResourceListPanel> : needle && visibleGroups!.length === 0 ? <Panel><EmptyStateLine>{t('directory.groups.noMatches')}</EmptyStateLine></Panel> : <GroupsMasterDetail
           disabled={busy}
           groups={visibleGroups!}
           membersByGroup={directoryIndex!.membersByGroup}
@@ -287,28 +287,28 @@ export default function DashboardAdminUsers({ loaderData }: Route.ComponentProps
         />}
         {deleteDialog.invocation && <ConfirmDialog
           open={deleteDialog.isOpen}
-          actionLabel={t('dashboard.users.actions.delete')}
+          actionLabel={t('directory.users.actions.delete')}
           busy={deleting}
           error={deleteError}
           key={deleteDialog.invocation.key}
-          message={t('dashboard.users.delete.message', {
+          message={t('directory.users.delete.message', {
             username: deleteDialog.invocation.value.username,
           })}
           onConfirm={() => void deleteUser(deleteDialog.invocation!.value)}
           onDismissError={() => setDeleteError(null)}
           onOpenChange={open => { if (!open) deleteDialog.close(); }}
-          title={t('dashboard.users.delete.title')}
+          title={t('directory.users.delete.title')}
         />}
         {deleteGroupDialog.invocation && <ConfirmDialog
-          actionLabel={t('dashboard.groupsManagement.actions.delete')}
+          actionLabel={t('directory.groups.actions.delete')}
           busy={deletingGroup}
           error={deleteGroupError}
-          message={t('dashboard.groupsManagement.delete.message', { name: deleteGroupDialog.invocation.value.name })}
+          message={t('directory.groups.delete.message', { name: deleteGroupDialog.invocation.value.name })}
           onConfirm={() => void deleteGroup(deleteGroupDialog.invocation!.value)}
           onDismissError={() => setDeleteGroupError(null)}
           onOpenChange={open => { if (!open) deleteGroupDialog.close(); }}
           open={deleteGroupDialog.isOpen}
-          title={t('dashboard.groupsManagement.delete.title')}
+          title={t('directory.groups.delete.title')}
         />}
       </>}
     </section>

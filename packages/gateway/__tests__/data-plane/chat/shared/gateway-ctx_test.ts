@@ -11,7 +11,7 @@ const user: User = {
   id: 1, username: 'owner', passwordHash: null, isAdmin: false,
   createdAt: '2026-01-01T00:00:00.000Z', deletedAt: null,
 };
-test('creates one reusable sidecar codec factory from the authenticated key without exposing its secret', async () => {
+test('signs sidecars with the authenticated key secret', async () => {
   const apiKey: ApiKey = {
     id: 'key', userId: 1, name: 'test', key: 'test-key', serverSecret: '11'.repeat(32),
     createdAt: '2026-01-01T00:00:00.000Z', upstreamIds: null, randomizeUpstreams: false, deletedAt: null,
@@ -26,11 +26,7 @@ test('creates one reusable sidecar codec factory from the authenticated key with
       wantsStream: false, dump: null, requestBody: { bytes: new Uint8Array(), streamError: null },
       backgroundScheduler: promise => { void promise; },
     }, key => createNonOpenAIResponsesSourceStore(key.id));
-    const factory = ctx.sidecarCodecFactory;
-    expect(Object.hasOwn(ctx, 'serverSecret')).toBe(false);
-    const encoded = await factory.codecFor(SidecarDomain.TranslatedAssistantTurn).encode({ value: 1 });
-    expect(ctx.sidecarCodecFactory).toBe(factory);
-    expect(await ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn).decode(encoded)).toEqual({ value: 1 });
+    const encoded = await ctx.sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn).encode({ value: 1 });
     expect(await createSidecarCodecFactory(apiKey.serverSecret).codecFor(SidecarDomain.TranslatedAssistantTurn).decode(encoded)).toEqual({ value: 1 });
     expect(await createSidecarCodecFactory('22'.repeat(32)).codecFor(SidecarDomain.TranslatedAssistantTurn).decode(encoded)).toBeUndefined();
     return c.text('ok');

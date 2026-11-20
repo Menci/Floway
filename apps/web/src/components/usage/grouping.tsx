@@ -19,10 +19,10 @@ export function UsageGrouping({ disabled, dimensions, groupBy, onChange }: {
     disabled={disabled}
     dimensions={dimensions}
     groupBy={groupBy}
-    groupByAdornment={groupBy === 'keyId' && <Tooltip content={t('dashboard.usage.apiKeyScopeInfo')} relationship="description">
-      <Button appearance="subtle" aria-label={t('dashboard.usage.apiKeyScopeLabel')} className={CONTROL_ROW_CLASS} icon={<InfoRegular />} />
+    groupByAdornment={groupBy === 'keyId' && <Tooltip content={t('monitoring.usage.apiKeyScopeInfo')} relationship="description">
+      <Button appearance="subtle" aria-label={t('monitoring.usage.apiKeyScopeLabel')} className={CONTROL_ROW_CLASS} icon={<InfoRegular />} />
     </Tooltip>}
-    groupByLabel={t('dashboard.usage.groupBy.label')}
+    groupByLabel={t('monitoring.usage.groupBy.label')}
     onGroupByChange={onChange}
   />;
 }

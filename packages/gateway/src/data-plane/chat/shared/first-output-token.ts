@@ -1,6 +1,7 @@
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesContentBlockDeltaEvent, AnthropicMessagesContentBlockStartEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { GeminiGenerateContentPart, GeminiGenerateContentResult } from '@floway-dev/protocols/gemini-generate-content';
+import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsReasoningItemEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesOutputItemEx } from '@floway-dev/protocols/openai-responses';
 import type { ChatTargetApi } from '@floway-dev/provider';
 
@@ -15,6 +16,7 @@ export const firstOutputTokenSignal = <T>(frame: ProtocolFrame<T>, targetApi: Ch
 
   const event = frame.event as Record<string, unknown>;
   if (targetApi === 'anthropicMessages') return anthropicMessagesTimingSignal(event);
+  if (targetApi === 'geminiGenerateContent') return geminiGenerateContentTimingSignal(event);
   if (targetApi === 'openaiResponses') return responsesTimingSignal(event);
   return decodeSignal(isOpenAIChatCompletionsOutputEvent(event));
 };
@@ -92,6 +94,21 @@ const ANTHROPIC_DELTA_OUTPUT_FIELDS = {
   signature_delta: null,
   compaction_delta: null,
 } satisfies Record<AnthropicMessagesContentBlockDeltaEvent['delta']['type'], string | null>;
+
+// Gemini streams content as Parts. Answer text, thought summaries, function
+// calls, inline data, and generated code all follow decoding; the
+// signature-only trailer carries no output of its own.
+// https://ai.google.dev/api/generate-content#Part
+const hasGeminiGenerateContentPartOutput = (part: GeminiGenerateContentPart): boolean =>
+  nonEmptyString(part.text)
+  || (part.functionCall !== undefined && nonEmptyString(part.functionCall.name))
+  || part.inlineData !== undefined
+  || part.executableCode !== undefined;
+
+const geminiGenerateContentTimingSignal = (event: Record<string, unknown>): FirstOutputTokenSignal | null => {
+  const result = event as GeminiGenerateContentResult;
+  return decodeSignal((result.candidates ?? []).some(candidate => (candidate.content?.parts ?? []).some(hasGeminiGenerateContentPartOutput)));
+};
 
 const hasResponsesText = (part: unknown): boolean => {
   const content = part as { text?: unknown; refusal?: unknown };
@@ -253,7 +270,7 @@ const hasReasoningDetailsOutput = (details: unknown): boolean => Array.isArray(d
   (detail.type === 'reasoning.text' && nonEmptyString(detail.text))
   || (detail.type === 'reasoning.summary' && nonEmptyString(detail.summary)));
 
-const hasReasoningItemsOutput = (items: unknown): boolean => Array.isArray(items) && items.some((item: OpenAIChatCompletionsReasoningItem) =>
+const hasReasoningItemsOutput = (items: unknown): boolean => Array.isArray(items) && items.some((item: OpenAIChatCompletionsReasoningItemEx) =>
   item.type === 'reasoning' && item.summary?.some(part => nonEmptyString(part.text)) === true);
 
 const isOpenAIChatCompletionsOutputEvent = (event: Record<string, unknown>): boolean => {

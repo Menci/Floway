@@ -14,7 +14,7 @@ export const parseAnthropicMessagesStream = (
 ): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> => (async function* () {
   const rawFrames = (async function* () {
     for await (const frame of parseSSEStream(body, options)) {
-      options.onSseFrame?.(frame);
+      if (frame.type === 'sse') options.onSseFrame?.(frame);
       yield frame;
     }
   })();

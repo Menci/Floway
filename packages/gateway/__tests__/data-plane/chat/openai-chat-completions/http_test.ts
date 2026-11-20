@@ -534,3 +534,20 @@ test('actual HTTP cancellation before the first client frame releases the called
   expect(await repo.usage.listAll()).toMatchObject([{ modelKey: 'called-model', requests: 1 }]);
   expect(await repo.performance.listAll()).toMatchObject([{ requests: 1, errorsNoOutput: 1, errorsWithOutput: 0 }]);
 });
+
+test.each(['prompt_cache_options', 'user'] as const)('POST /v1/chat/completions rejects a null %s', async field => {
+  installRepo();
+  const response = await makeApp().request('/v1/chat/completions', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }], [field]: null }),
+  });
+
+  assertEquals(response.status, 400);
+  assertEquals((await response.json() as { error: { param: string; type: string; code: null } }).error, {
+    message: `Invalid '${field}': expected ${field === 'user' ? 'a string' : 'an object'} when present.`,
+    type: 'invalid_request_error',
+    param: field,
+    code: null,
+  });
+});

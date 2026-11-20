@@ -25,6 +25,12 @@ export const wrapOpenAIResponsesClientOutput = async function* (
   const finalizedOutputIds = new Map<number, string>();
   let sawCompactionItem = false;
 
+  const requireMessageId = (item: OpenAIResponsesOutputItemEx): void => {
+    if (item.type === 'message' && (typeof item.id !== 'string' || item.id.length === 0)) {
+      throw new TypeError('OpenAI Responses message output has no id');
+    }
+  };
+
   const finalizedRow = async (item: OpenAIResponsesOutputItemEx): Promise<StoredOpenAIResponsesItem> => {
     const id = openaiResponsesItemId(item);
     if (id === null) throw new TypeError(`OpenAI Responses ${item.type} output has no id`);
@@ -62,7 +68,14 @@ export const wrapOpenAIResponsesClientOutput = async function* (
       continue;
     }
 
+    if (event.type === 'response.output_item.added') {
+      requireMessageId(event.item);
+      yield frame;
+      continue;
+    }
+
     if (event.type === 'response.output_item.done') {
+      requireMessageId(event.item);
       if (store.writesState) {
         if (isOpenAIResponsesCompactionItem(event.item)) sawCompactionItem = true;
         await persistFinalizedItem(event.item, event.output_index);
@@ -72,6 +85,7 @@ export const wrapOpenAIResponsesClientOutput = async function* (
     }
 
     if (event.type === 'response.completed' || event.type === 'response.incomplete') {
+      event.response.output.forEach(requireMessageId);
       if (store.writesState) {
         // Persisted snapshots require the lifecycle that made each item
         // reusable. A terminal-only item has not reached that boundary.

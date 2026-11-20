@@ -4,7 +4,7 @@ import type { UsageOverviewGroupBy } from '../../repo/types.ts';
 import type { tokenUsageOverviewQuery } from '../schemas.ts';
 import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata, telemetryUpstreamMetadata } from '../shared/telemetry-overview.ts';
 import type { TokenUsageOverviewResponse } from '../usage-types.ts';
-import { createTelemetryBucket, type TelemetryBucketGranularity, usageUpstreamFromDimensionValue } from '@floway-dev/protocols/common';
+import { createTelemetryBucket, parseTelemetryHour, TELEMETRY_HOUR_MS, telemetryHourKey, type TelemetryBucketGranularity, usageUpstreamFromDimensionValue } from '@floway-dev/protocols/common';
 
 type Ctx = CtxWithQuery<typeof tokenUsageOverviewQuery>;
 
@@ -23,6 +23,7 @@ interface UsageOverviewParams {
   timeZone?: string;
   timezoneOffsetMinutes: number;
   filters: UsageFilters;
+  cursor: string | undefined;
 }
 
 const readUsageOverviewQuery = (
@@ -36,6 +37,7 @@ const readUsageOverviewQuery = (
     value: {
       ...window.value,
       groupBy: query.group_by ?? 'model',
+      cursor: query.cursor,
       filters: {
         keyId: new Set(query.filter_key_id),
         userId: new Set(query.filter_user_id),
@@ -46,7 +48,22 @@ const readUsageOverviewQuery = (
   };
 };
 
+const shiftHour = (hour: string, count: number): string =>
+  telemetryHourKey(parseTelemetryHour(hour) + count * TELEMETRY_HOUR_MS);
+
+const readCursor = (cursor: string | undefined): string | undefined => {
+  if (cursor === undefined) return undefined;
+  try {
+    parseTelemetryHour(cursor);
+    return cursor;
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    return undefined;
+  }
+};
+
 export const tokenUsageOverview = async (c: Ctx) => {
+  const nowHour = new Date().toISOString().slice(0, 13);
   const params = readUsageOverviewQuery(c);
   if (params.type === 'error') return c.json({ error: params.error }, 400);
   const { start, end, groupBy, bucket, timezoneOffsetMinutes, filters } = params.value;
@@ -54,41 +71,72 @@ export const tokenUsageOverview = async (c: Ctx) => {
   const identity = await loadTelemetryOverviewIdentity(c);
   const identityError = telemetryIdentityError(identity, filters.keyId);
   if (identityError !== null) return c.json({ error: identityError.error }, identityError.status);
+  const ownedKeysOnly = groupBy === 'keyId';
+  // The dashboard compares the serialized scope across reads, so set order is canonical.
+  const userIds = [...identity.visibleUserIds].sort((left, right) => left - right);
+  const upstreamIds = [...identity.visibleUpstreams].sort();
 
-  const overview = await repo.usage.queryOverview({
+  const previous = readCursor(params.value.cursor);
+  const resumeFromHour = shiftHour(nowHour, -1);
+  const nextHour = shiftHour(nowHour, 1);
+  const coveredEnd = end < nextHour ? end : nextHour;
+  const windowEnd = coveredEnd < start ? start : coveredEnd;
+  const cursor = windowEnd < resumeFromHour ? windowEnd : resumeFromHour;
+  const resume = previous !== undefined && previous <= cursor;
+  const scanStart = resume && previous > start ? previous : start;
+  const chartBucketForHour = createTelemetryBucket({
+    bucket, start, timeZone: params.value.timeZone, timezoneOffsetMinutes,
+  });
+  const hourlyBoundaries = resume ? [resumeFromHour, nowHour, scanStart] : [resumeFromHour, nowHour];
+  const hourlyHours = hourlyBoundaries.filter(hour => hour >= scanStart && hour < windowEnd);
+  let hourlyBuckets: Set<string> | undefined;
+  const buckets = scanStart >= windowEnd ? [] : (await repo.usage.queryOverview({
     actorUserId: identity.actor.id,
     isAdmin: identity.actor.isAdmin,
-    visibleUserIds: [...identity.visibleUserIds],
-    visibleUpstreams: [...identity.visibleUpstreams],
-    start,
-    end,
-    groupBy,
+    visibleUserIds: userIds,
+    visibleUpstreams: upstreamIds,
+    start: scanStart,
+    end: windowEnd,
+    ownedKeysOnly,
     filters: {
       keyIds: [...filters.keyId],
       userIds: [...filters.userId].map(Number),
       models: [...filters.model],
       upstreams: [...filters.upstream],
     },
-    bucketForHour: createTelemetryBucket({
-      bucket,
-      start,
-      timeZone: params.value.timeZone,
-      timezoneOffsetMinutes,
-    }),
-  });
-  const metadata = telemetryIdentityMetadata(identity, overview.dimensionValues.userIds);
-  const revealedUpstreamIds = overview.dimensionValues.upstreams.flatMap(value => {
+    bucketForHour: hour => {
+      if (bucket === 'hour') return `hour:${hour}`;
+      hourlyBuckets ??= new Set(hourlyHours.map(chartBucketForHour));
+      const chartBucket = chartBucketForHour(hour);
+      return hourlyBuckets.has(chartBucket) ? `hour:${hour}` : `bucket:${chartBucket}`;
+    },
+  })).map(({ firstHour, lastHour, axes, dimensionValues }) => ({
+    bucket: chartBucketForHour(firstHour),
+    start: firstHour,
+    end: shiftHour(lastHour, 1),
+    axes,
+    dimensionValues,
+  }))
+    .sort((left, right) => left.start.localeCompare(right.start));
+  const metadata = telemetryIdentityMetadata(identity, buckets.flatMap(value => value.dimensionValues.userIds));
+  const revealedUpstreamIds = buckets.flatMap(value => value.dimensionValues.upstreams).flatMap(value => {
     const upstreamId = usageUpstreamFromDimensionValue(value);
     return upstreamId === null ? [] : [upstreamId];
   });
 
   return c.json({
-    ...overview,
+    cursor,
+    reset: !resume,
+    start: scanStart,
+    end: windowEnd,
+    buckets,
     ...metadata,
-    // The same user set the response already names: User.Audit targets plus
-    // users revealed by visible upstream rows. The dashboard uses this to
-    // choose the search-usage view, so it must not disagree with `users`.
-    auditableUserIds: metadata.users.map(user => user.id),
+    scope: {
+      actorId: identity.actor.id,
+      ownedKeyIds: [...identity.ownedKeyIds].sort(),
+      visibility: ownedKeysOnly ? 'owned-keys' : identity.actor.isAdmin ? 'all' : { userIds, upstreamIds },
+    },
+    metadataVisibility: { complete: identity.actor.isAdmin, userIds, upstreamIds },
     upstreams: telemetryUpstreamMetadata(identity, revealedUpstreamIds),
   } satisfies TokenUsageOverviewResponse);
 };

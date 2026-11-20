@@ -15,7 +15,7 @@ import { UpstreamMetricsChartSection } from '../upstream-metrics/chart';
 import { loadUpstreamMetrics } from '../upstream-metrics/data';
 import { resolveUpstreamMetricDisplays } from '../upstream-metrics/display-name';
 import { buildUpstreamMetricsChart } from '../upstream-metrics/plot';
-import { loadUsageOverview } from '../usage/data';
+import type { UsageOverviewLoader } from '../usage/data';
 import { usageDimensions } from '../usage/dimensions';
 import { UsageGrouping } from '../usage/grouping';
 import { TokenUsageCharts } from '../usage/token-charts';
@@ -28,7 +28,7 @@ export type UpstreamTelemetryQuery = {
   filters: UsageFilters;
 };
 
-export const loadUpstreamTelemetry = async (query: UpstreamTelemetryQuery, loadedAt: number, signal: AbortSignal): Promise<ApiResult<UpstreamTelemetryData>> => {
+export const loadUpstreamTelemetry = async (query: UpstreamTelemetryQuery, loadedAt: number, signal: AbortSignal, loadUsageOverview: UsageOverviewLoader): Promise<ApiResult<UpstreamTelemetryData>> => {
   if (query.upstreamId === null) throw new TypeError('Upstream telemetry requires an upstream ID');
   const [usage, metrics] = await Promise.all([
     loadUsageOverview(query.range, query.groupBy, query.filters, loadedAt, signal),
@@ -86,7 +86,7 @@ function UpstreamTelemetryPanel({ data, record, busy, currentUserId, onQueryChan
       ...buildUpstreamMetricsChart(
         resolveUpstreamMetricDisplays(record, data.metrics.records, t, { quotaDisplay: preferences.quotaDisplay }),
         record,
-      ), title: t('dashboard.upstreamTelemetry.metrics'),
+      ), title: t('monitoring.upstreams.tabs.metrics'),
     };
   }, [data.metrics, preferences.quotaDisplay, record, t]);
   return <LinkedChartHoverProvider><div className={`${PANEL_INSET_CLASS} ${PANEL_STACK_CLASS} min-w-0`} id={`upstream-telemetry-${encodeURIComponent(record.id)}`}>
@@ -94,12 +94,12 @@ function UpstreamTelemetryPanel({ data, record, busy, currentUserId, onQueryChan
       <UsageGrouping disabled={busy} dimensions={dimensions} groupBy={query.groupBy} onChange={groupBy => onQueryChange({ ...query, ...changeTelemetryGroupBy(query, groupBy, identityContext) })} />
       <TelemetryFilterFields disabled={busy} dimensions={dimensions} filters={query.filters} groupBy={query.groupBy}
         onFilterChange={(key, values) => onQueryChange({ ...query, ...changeTelemetryFilter(query, key, values, identityContext) })}
-        selectedLabel={count => t('dashboard.usage.filters.selected', { count })} />
-      <div className="ml-auto flex-none" inert={busy}><TelemetryTimeRange addressOf={null} ariaLabel={t('dashboard.usage.range.label')} loadedAt={loadedAt}
+        selectedLabel={count => t('monitoring.usage.filters.selected', { count })} />
+      <div className="ml-auto flex-none" inert={busy}><TelemetryTimeRange addressOf={null} ariaLabel={t('monitoring.usage.range.label')} loadedAt={loadedAt}
         onChange={range => onQueryChange({ ...query, range })} onEditingChange={onRangeEditingChange} range={query.range} /></div>
     </div>
     <TokenUsageCharts usage={data.usage} dimensions={dimensions} upstreams={upstreams} groupBy={query.groupBy} range={query.range} loadedAt={loadedAt}
-      metric={metric} onMetricChange={setMetric} hidden={hidden} onHiddenChange={setHidden} title={t('dashboard.upstreamTelemetry.usage')} />
+      metric={metric} onMetricChange={setMetric} hidden={hidden} onHiddenChange={setHidden} title={t('monitoring.upstreams.tabs.usage')} />
     <UpstreamMetricsChartSection key={record.id} chart={chart} start={data.metrics.start} end={Math.min(data.metrics.end, loadedAt)} />
   </div></LinkedChartHoverProvider>;
 }

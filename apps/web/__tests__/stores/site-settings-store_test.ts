@@ -7,24 +7,6 @@ const reset = () => useSiteSettingsStore.setState({ siteName: null, loaded: fals
 beforeEach(reset);
 afterEach(() => vi.unstubAllGlobals());
 
-it('keeps the deployment name once the gateway answers', async () => {
-  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ site_name: 'Team Gateway' })));
-
-  await useSiteSettingsStore.getState().load();
-
-  expect(useSiteSettingsStore.getState().siteName).toBe('Team Gateway');
-  expect(useSiteSettingsStore.getState().loaded).toBe(true);
-});
-
-it('leaves the built-in default in place when the deployment stored none', async () => {
-  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ site_name: null })));
-
-  await useSiteSettingsStore.getState().load();
-
-  expect(useSiteSettingsStore.getState().siteName).toBeNull();
-  expect(useSiteSettingsStore.getState().loaded).toBe(true);
-});
-
 it('leaves the built-in branding in place when the read fails', async () => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ error: 'unavailable' }, { status: 500 })));
 

@@ -15,7 +15,7 @@ import { routeAnthropicMessagesViaOpenAIResponses, routeAnthropicMessagesViaOpen
 
 /** The three wires `/v1/messages` can be served on. Its own is the bare wire; each translated
  *  one is a handoff and then the target protocol's own wire. */
-export const anthropicMessagesWireFor = (target: ChatTargetApi, _candidate: ModelCandidate, use: Use<ChatServices>): ChatWire => {
+export const anthropicMessagesWireFor = (target: Exclude<ChatTargetApi, 'geminiGenerateContent'>, _candidate: ModelCandidate, use: Use<ChatServices>): ChatWire => {
   switch (target) {
   case 'anthropicMessages':
     return compose('anthropicMessagesNative', anthropicMessagesWire(STREAMED_USAGE));

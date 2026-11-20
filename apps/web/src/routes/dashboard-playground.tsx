@@ -174,7 +174,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const selectedKey = loaderData.keys?.find(key => key.id === keyId) ?? null;
   const cap = selectedKey?.upstream_ids ?? null;
   const catalog = useMemo(() => indexCatalog(loaderData.models), [loaderData.models]);
-  const models = reachableModels(loaderData.models ?? [], cap, model => model.kind === 'chat' && playgroundApisFor(model).length > 0);
+  const models = reachableModels(loaderData.models ?? [], cap, model => playgroundApisFor(model).length > 0);
   const selectedModel = models.find(model => model.id === publicModelId) ?? models[0] ?? null;
   const imageEnabled = supportsImageInput(selectedModel);
   const effortOptions = selectedModel?.chat?.reasoning?.effort?.supported ?? [];
@@ -220,22 +220,22 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
     const image = imageUrl.trim();
     if (sending || !sendTarget) return;
     if (image && !imageEnabled) {
-      setRequestError(t('dashboard.playground.errors.imageUnsupported'));
+      setRequestError(t('playground.errors.imageUnsupported'));
       return;
     }
     if (image) {
       try { new URL(image); } catch {
-        setRequestError(t('dashboard.playground.errors.imageUrl'));
+        setRequestError(t('playground.errors.imageUrl'));
         return;
       }
     }
     const customResult = parseCustomJson(playgroundApi, customDraft);
     if (customResult.error) {
       const message = customResult.error === 'reserved'
-        ? t('dashboard.playground.errors.customReserved', { fields: customResult.fields.join(', ') })
+        ? t('playground.errors.customReserved', { fields: customResult.fields.join(', ') })
         : t(customResult.error === 'invalid'
-            ? 'dashboard.playground.errors.customInvalid'
-            : 'dashboard.playground.errors.customObject');
+            ? 'playground.errors.customInvalid'
+            : 'playground.errors.customObject');
       setCustomError(message);
       return;
     }
@@ -289,7 +289,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
       }
       if (renderFrame !== null) cancelAnimationFrame(renderFrame);
       if (!controller.signal.aborted) {
-        const text = assistantText || t('dashboard.playground.emptyResponse');
+        const text = assistantText || t('playground.emptyResponse');
         setMessages(current => {
           const existing = current.findIndex(message => message.id === assistantId);
           const assistantMessage: PlaygroundMessage = { id: assistantId, role: 'assistant', text, ...(assistantOutput && { assistantOutput }) };
@@ -341,31 +341,31 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
   const lastMessageId = messages.length === 0 ? null : messages[messages.length - 1]!.id;
 
   const settingsContent = <ScrollArea axes="vertical" className="h-full min-h-0" contentClassName="p-4 grid content-start gap-5" noTabIndex>
-    <SettingsSection title={t('dashboard.playground.settings.connection')}>
+    <SettingsSection title={t('playground.settings.connection')}>
       <Field
-        hint={loaderData.keys?.length === 0 ? t('dashboard.playground.noKey') : undefined}
-        label={t('dashboard.playground.key')}
+        hint={loaderData.keys?.length === 0 ? t('playground.noKey') : undefined}
+        label={t('playground.key')}
       >
         <Dropdown
           disabled={!loaderData.keys?.length}
           selectedOptions={[keyId]}
-          value={selectedKey ? `${selectedKey.name} (${selectedKey.key.slice(-4)})` : t('dashboard.playground.noKeyOption')}
+          value={selectedKey ? `${selectedKey.name} (${selectedKey.key.slice(-4)})` : t('playground.noKeyOption')}
           onOptionSelect={(_, data) => data.optionValue !== undefined && changeContext(() => setKeyId(data.optionValue!))}
         >
           {loaderData.keys?.map(key => <Option key={key.id} text={`${key.name} (${key.key.slice(-4)})`} value={key.id}>{key.name} ({key.key.slice(-4)})</Option>)}
         </Dropdown>
       </Field>
-      <Field label={t('dashboard.playground.api')}>
+      <Field label={t('playground.api')}>
         <Dropdown
           selectedOptions={[playgroundApi]}
-          value={t(`dashboard.playground.apis.${playgroundApi}`)}
+          value={t(`playground.apis.${playgroundApi}`)}
           onOptionSelect={(_, data) => data.optionValue !== undefined && changeContext(() => setPlaygroundApi(data.optionValue as PlaygroundApi))}
         >
-          {playgroundApis.map(value => <Option key={value} value={value}>{t(`dashboard.playground.apis.${value}`)}</Option>)}
+          {playgroundApis.map(value => <Option key={value} value={value}>{t(`playground.apis.${value}`)}</Option>)}
         </Dropdown>
       </Field>
-      <Field label={t('dashboard.playground.model')}>
-        <Combobox value={modelQuery ?? selectedModel?.display_name ?? ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('dashboard.playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
+      <Field label={t('playground.model')}>
+        <Combobox value={modelQuery ?? selectedModel?.display_name ?? ''} selectedOptions={selectedModel ? [selectedModel.id] : []} placeholder={t('playground.modelPlaceholder')} onChange={event => setModelQuery(event.target.value)} onOptionSelect={(_, data) => {
           if (!data.optionValue) return;
           changeContext(() => {
             setPublicModelId(data.optionValue!);
@@ -379,16 +379,16 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
       </Field>
       {selectedModel && <ModelInfoBadges cap={cap} catalog={catalog} model={selectedModel} />}
     </SettingsSection>
-    <SettingsSection title={t('dashboard.playground.settings.generation')}>
-      <Field label={t('dashboard.playground.generation.reasoningEffort')}>
-        <Combobox freeform placeholder={t('dashboard.playground.generation.providerDefault')} value={reasoningEffort} onChange={event => setReasoningEffort(event.target.value)} onOptionSelect={(_, data) => setReasoningEffort(data.optionText ?? '')}>
+    <SettingsSection title={t('playground.settings.generation')}>
+      <Field label={t('playground.generation.reasoningEffort')}>
+        <Combobox freeform placeholder={t('playground.generation.providerDefault')} value={reasoningEffort} onChange={event => setReasoningEffort(event.target.value)} onOptionSelect={(_, data) => setReasoningEffort(data.optionText ?? '')}>
           {effortOptions.map(effort => <Option key={effort}>{effort}</Option>)}
         </Combobox>
       </Field>
     </SettingsSection>
-    <SettingsSection title={t('dashboard.playground.settings.customJson')}>
-      <Field validationState={customError ? 'error' : 'none'} validationMessage={customError ?? undefined} hint={t('dashboard.playground.customJsonHint')}>
-        <Textarea aria-label={t('dashboard.playground.settings.customJson')} className="font-mono" rows={9} value={customDraft} onChange={(_, data) => {
+    <SettingsSection title={t('playground.settings.customJson')}>
+      <Field validationState={customError ? 'error' : 'none'} validationMessage={customError ?? undefined} hint={t('playground.customJsonHint')}>
+        <Textarea aria-label={t('playground.settings.customJson')} className="font-mono" rows={9} value={customDraft} onChange={(_, data) => {
           setCustomDraft(data.value);
           setCustomError(null);
         }} />
@@ -401,10 +401,10 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
       <section className={`h-full min-h-[560px] min-w-0 grid grid-cols-[minmax(0,1fr)_320px] ${PANE_GAP_CLASS} max-[1100px]:grid-cols-1`}>
         <div className="min-h-0 min-w-0 grid grid-rows-[auto_auto_minmax(0,1fr)_auto] gap-3">
           <DashboardPageHeader
-            actions={narrow ? <Button appearance="subtle" aria-label={t('dashboard.playground.settings.title')} icon={<SettingsRegular />} onClick={() => setSettingsOpen(true)} /> : undefined}
+            actions={narrow ? <Button appearance="subtle" aria-label={t('playground.settings.title')} icon={<SettingsRegular />} onClick={() => setSettingsOpen(true)} /> : undefined}
             className={`pb-3 ${s.toolbar}`}
-            description={t('dashboard.pages.playground')}
-            title={t('dashboard.nav.playground')}
+            description={t('playground.description')}
+            title={t('playground.title')}
           />
           <div className="grid gap-2">
             <Button
@@ -415,14 +415,14 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
               iconPosition="after"
               onClick={() => setShowSystem(value => !value)}
             >
-              {t('dashboard.playground.system')}
+              {t('playground.system')}
             </Button>
             {showSystem && (
               <Textarea
-                aria-label={t('dashboard.playground.system')}
+                aria-label={t('playground.system')}
                 rows={2}
                 value={system}
-                placeholder={t('dashboard.playground.systemPlaceholder')}
+                placeholder={t('playground.systemPlaceholder')}
                 onChange={(_, data) => setSystem(data.value)}
               />
             )}
@@ -431,9 +431,9 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
             {loadError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setLoadError(null)}>{loadError}</OutcomeMessageBar>}
             {requestError && <OutcomeMessageBar className="!mb-3" onDismiss={() => setRequestError(null)}>{requestError}</OutcomeMessageBar>}
             {loaderData.keys === null || loaderData.models === null
-              ? <EmptyState className="flex-1 px-6" title={t('dashboard.pages.unavailable')} />
+              ? <EmptyState className="flex-1 px-6" title={t('common.errors.viewUnavailable')} />
               : messages.length === 0 && !sending
-                ? <div className="flex flex-1 items-center justify-center px-6"><EmptyStateLine>{t('dashboard.playground.empty')}</EmptyStateLine></div>
+                ? <div className="flex flex-1 items-center justify-center px-6"><EmptyStateLine>{t('playground.empty')}</EmptyStateLine></div>
                 : null}
             <div className="mt-auto grid gap-3">
               {messages.map(message => (
@@ -446,8 +446,8 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
                         : <span className="whitespace-pre-wrap break-words">{message.text}</span>}
                     </PlaygroundMessageBubble>
                     <div className={`playground-message-actions flex justify-end gap-1 mt-1 ${s.messageActions}`}>
-                      <TooltipIconButton className={s.brandIconAction} label={t('dashboard.playground.actions.edit')} icon={<EditRegular />} onClick={() => beginEdit(message)} />
-                      <TooltipIconButton className={s.brandIconAction} label={t('dashboard.playground.actions.delete')} icon={<DeleteRegular />} onClick={() => removeMessage(message.id)} />
+                      <TooltipIconButton className={s.brandIconAction} label={t('playground.actions.edit')} icon={<EditRegular />} onClick={() => beginEdit(message)} />
+                      <TooltipIconButton className={s.brandIconAction} label={t('playground.actions.delete')} icon={<DeleteRegular />} onClick={() => removeMessage(message.id)} />
                     </div>
                   </div>
                 </div>
@@ -459,17 +459,17 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
             cancelLabel={t('common.cancel')}
             draft={draft}
             imageEnabled={imageEnabled}
-            imageLabel={t('dashboard.playground.actions.image')}
-            imagePlaceholder={t('dashboard.playground.imagePlaceholder')}
-            imageUnsupportedLabel={t('dashboard.playground.errors.imageUnsupported')}
+            imageLabel={t('playground.actions.image')}
+            imagePlaceholder={t('playground.imagePlaceholder')}
+            imageUnsupportedLabel={t('playground.errors.imageUnsupported')}
             imageUrl={imageUrl}
             newTopicDisabled={!messages.length && !sending}
-            newTopicLabel={t('dashboard.playground.actions.newTopic')}
-            placeholder={t('dashboard.playground.messagePlaceholder')}
-            sendLabel={t('dashboard.playground.actions.send')}
+            newTopicLabel={t('playground.actions.newTopic')}
+            placeholder={t('playground.messagePlaceholder')}
+            sendLabel={t('playground.actions.send')}
             sending={sending}
             showImage={showImage}
-            stopLabel={t('dashboard.playground.actions.stop')}
+            stopLabel={t('playground.actions.stop')}
             onDraftChange={setDraft}
             onImageUrlChange={setImageUrl}
             onNewTopic={clearMessages}
@@ -483,7 +483,7 @@ export default function DashboardPlayground({ loaderData }: Route.ComponentProps
         </div>
 
         {narrow ? <OverlayDrawer onOpenChange={(_, data) => setSettingsOpen(data.open)} open={settingsOpen} position="end" size="medium">
-          <DrawerHeader><DrawerHeaderTitle action={<Button appearance="subtle" aria-label={t('dashboard.playground.settings.close')} icon={<DismissRegular />} onClick={() => setSettingsOpen(false)} />}>{t('dashboard.playground.settings.title')}</DrawerHeaderTitle></DrawerHeader>
+          <DrawerHeader><DrawerHeaderTitle action={<Button appearance="subtle" aria-label={t('playground.settings.close')} icon={<DismissRegular />} onClick={() => setSettingsOpen(false)} />}>{t('playground.settings.title')}</DrawerHeaderTitle></DrawerHeader>
           <DrawerBody className="!p-0 min-h-0">{settingsContent}</DrawerBody>
         </OverlayDrawer> : <Panel className="min-h-0 min-w-0 overflow-hidden" padding="flush">{settingsContent}</Panel>}
       </section>

@@ -16,7 +16,7 @@ import { routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAI
 
 /** The three wires `/v1/responses` can be served on. Its own is the bare wire; each translated
  *  one is a handoff and then the target protocol's own wire. */
-export const openaiResponsesWireFor = (target: ChatTargetApi, candidate: ModelCandidate, use: Use<ChatServices>): ChatWire => {
+export const openaiResponsesWireFor = (target: Exclude<ChatTargetApi, 'geminiGenerateContent'>, candidate: ModelCandidate, use: Use<ChatServices>): ChatWire => {
   switch (target) {
   case 'openaiResponses':
   {

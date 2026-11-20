@@ -42,7 +42,7 @@ export function GroupDialog({ group, groups, onOpenChange, onSaved, open }: {
     setSaving(true);
     setError(null);
     const name = form.name.trim();
-    const handle = toasts.start(t(`dashboard.groupsManagement.toast.${group ? 'edit' : 'create'}.pending`, { name }));
+    const handle = toasts.start(t(`directory.groups.toast.${group ? 'edit' : 'create'}.pending`, { name }));
     const body = { name, hue: form.hue };
     const result = group
       ? await callApi(() => api.api.groups[':id'].$patch({ param: { id: String(group.id) }, json: body }))
@@ -53,7 +53,7 @@ export function GroupDialog({ group, groups, onOpenChange, onSaved, open }: {
       setError(result.error.message);
       return;
     }
-    handle.succeed(t(`dashboard.groupsManagement.toast.${group ? 'edit' : 'create'}.success`, { name }));
+    handle.succeed(t(`directory.groups.toast.${group ? 'edit' : 'create'}.success`, { name }));
     onOpenChange(false);
     await onSaved(result.data.id);
   };
@@ -61,17 +61,17 @@ export function GroupDialog({ group, groups, onOpenChange, onSaved, open }: {
   return <>{discardConfirmation}<DialogShell
     actions={<DialogActions>
       <Button disabled={saving} onClick={requestClose}>{t('common.cancel')}</Button>
-      <Button appearance="primary" disabledFocusable={saving} type="submit">{t(group ? 'dashboard.groupsManagement.actions.save' : 'dashboard.groupsManagement.actions.create')}</Button>
+      <Button appearance="primary" disabledFocusable={saving} type="submit">{t(group ? 'directory.groups.actions.save' : 'directory.groups.actions.create')}</Button>
     </DialogActions>}
     onOpenChange={(_, event) => !event.open && !saving && requestClose()}
     onSubmit={() => void handleSubmit(save)()}
     open={open}
-    title={<DialogTitle>{t(group ? 'dashboard.groupsManagement.dialog.editTitle' : 'dashboard.groupsManagement.dialog.createTitle', { name: group?.name ?? '' })}</DialogTitle>}
+    title={<DialogTitle>{t(group ? 'directory.groups.dialog.editTitle' : 'directory.groups.dialog.createTitle', { name: group?.name ?? '' })}</DialogTitle>}
   >
-    <Controller control={control} name="name" render={({ field }) => <Field label={t('dashboard.groupsManagement.fields.name')} validationState={errors.name ? 'error' : undefined} validationMessage={errors.name ? t('dashboard.groupsManagement.invalidName') : undefined}><Input {...field} autoComplete="off" disabled={saving} maxLength={64} spellCheck={false} /></Field>} />
-    <Controller control={control} name="hue" render={({ field }) => <Field label={t('dashboard.groupsManagement.fields.hue')}>
+    <Controller control={control} name="name" render={({ field }) => <Field label={t('directory.groups.fields.name')} validationState={errors.name ? 'error' : undefined} validationMessage={errors.name ? t('directory.groups.invalidName') : undefined}><Input {...field} autoComplete="off" disabled={saving} maxLength={64} spellCheck={false} /></Field>} />
+    <Controller control={control} name="hue" render={({ field }) => <Field label={t('directory.groups.fields.hue')}>
       <ColorSlider
-        aria-label={t('dashboard.groupsManagement.fields.hue')}
+        aria-label={t('directory.groups.fields.hue')}
         channel="hue"
         className="!w-full"
         color={{ h: field.value, s: 1, v: 1 }}
@@ -79,7 +79,7 @@ export function GroupDialog({ group, groups, onOpenChange, onSaved, open }: {
         onChange={(_, data) => field.onChange(Math.round(data.color.h) % 360)}
         rail={{ style: { backgroundImage: HUE_RAIL_GRADIENT } }}
       />
-      <div className="inline-flex min-w-0 mt-2"><GroupIdentity group={{ name: values.name.trim() || t('dashboard.groupsManagement.dialog.createTitle'), hue: values.hue }} /></div>
+      <div className="inline-flex min-w-0 mt-2"><GroupIdentity group={{ name: values.name.trim() || t('directory.groups.dialog.createTitle'), hue: values.hue }} /></div>
     </Field>} />
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
   </DialogShell></>;

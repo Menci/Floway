@@ -53,6 +53,7 @@ const modelEndpointsSchema = z.object({
   openaiChatCompletions: z.object({}).optional(),
   openaiResponses: z.object({}).optional(),
   anthropicMessages: z.object({}).optional(),
+  geminiGenerateContent: z.object({}).optional(),
   openaiEmbeddings: z.object({}).optional(),
   openaiImagesGenerations: z.object({}).optional(),
   openaiImagesEdits: z.object({}).optional(),
@@ -82,16 +83,12 @@ const pricingMetricShape = {
   rerank_searches: priceSchema.optional(),
 };
 
-// Modality arrays: both input and output require at least one entry and
-// deduplicate via transform. Input additionally requires 'text' to be present
-// (a multimodal model must accept text); output has no such constraint (an
-// image-generation model may emit only images).
 const modalityArraySchema = z.array(z.enum(['text', 'image']))
   .min(1)
   .transform(arr => Array.from(new Set(arr)));
 
-const inputModalityArraySchema = modalityArraySchema
-  .refine(arr => arr.includes('text'), { message: "must include 'text'" });
+const inputModalityArraySchema = z.array(z.enum(['text', 'image', 'audio']))
+  .min(1).transform(arr => Array.from(new Set(arr)));
 
 const modalitiesSchema = z.object({
   input: inputModalityArraySchema,
@@ -184,13 +181,11 @@ const upstreamModelSchema = z.object({
 
 const customConfigSchema = z.object({
   baseUrl: z.string().min(1),
-  authStyle: z.enum(['bearer', 'anthropic', 'none']),
   // Structured capability map — the runtime parser permits an empty map for
   // an upstream serving only kind-derived models.
   endpoints: modelEndpointsSchema,
-  // Optional because edit-mode PATCH omits it to keep the stored secret;
-  // the runtime parser enforces presence vs. authStyle invariants.
-  apiKey: z.string().optional(),
+  // Empty means anonymous upstream access.
+  apiKey: z.string(),
   // PATCH passes `null` to explicitly clear pathOverrides; nullable() keeps
   // that escape hatch.
   pathOverrides: z.record(z.string(), z.string()).nullable().optional(),
@@ -198,8 +193,14 @@ const customConfigSchema = z.object({
     key: z.string(),
     value: z.string().nullable(),
   }).strict()),
-  // Live upstream /models fetch. `endpoint` parsing happens in the runtime.
-  modelsFetch: z.object({ enabled: z.boolean(), endpoint: z.string().optional() }).optional(),
+  // Live upstream /models fetch. The catalog endpoint has no request protocol
+  // to infer authentication from, so it carries its own scheme. `endpoint`
+  // parsing happens in the runtime.
+  modelsFetch: z.object({
+    enabled: z.boolean(),
+    authStyle: z.enum(['bearer', 'x-api-key', 'x-goog-api-key']),
+    endpoint: z.string().optional(),
+  }).optional(),
   // Statically configured per-model overrides merged with the live fetch.
   models: z.array(upstreamModelSchema).optional(),
 });
@@ -211,6 +212,11 @@ const azureConfigSchema = z.object({
 }).refine(config => config.models.every(model => model.kind !== 'rerank'), {
   message: 'rerank models require a custom upstream',
   path: ['models'],
+});
+
+const kimiCodeConfigSchema = z.object({
+  region: z.enum(['china', 'overseas']),
+  apiKey: z.string().min(1),
 });
 
 const ollamaConfigSchema = z.object({
@@ -301,8 +307,9 @@ export const changeOwnPasswordBody = z.object({
 export const updateOwnPreferencesBody = z.object({
   quotaDisplay: z.enum(QUOTA_DISPLAYS).optional(),
   language: z.enum(SUPPORTED_LANGUAGES).nullable().optional(),
-}).refine(body => body.quotaDisplay !== undefined || body.language !== undefined, {
-  error: 'Provide quotaDisplay or language',
+  uiTextEditor: z.boolean().optional(),
+}).refine(body => body.quotaDisplay !== undefined || body.language !== undefined || body.uiTextEditor !== undefined, {
+  error: 'Provide quotaDisplay, language, or uiTextEditor',
 });
 
 // --- api keys ---
@@ -410,6 +417,7 @@ export const createUpstreamBody = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('copilot'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().optional() }),
   z.object({ kind: z.literal('chatgpt'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().optional() }),
   z.object({ kind: z.literal('claude-code'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().optional() }),
+  z.object({ kind: z.literal('kimi-code'), ...upstreamBaseFields, config: kimiCodeConfigSchema }),
   z.object({ kind: z.literal('ollama'), ...upstreamBaseFields, config: ollamaConfigSchema }),
 ]);
 
@@ -423,7 +431,7 @@ export const createUpstreamBody = z.discriminatedUnion('kind', [
 // without this field the schema would silently strip it and the API would
 // look like it had accepted the change.
 export const updateUpstreamBody = z.object({
-  kind: z.enum(['custom', 'azure', 'copilot', 'chatgpt', 'claude-code', 'ollama']).optional(),
+  kind: z.enum(['custom', 'azure', 'copilot', 'chatgpt', 'claude-code', 'kimi-code', 'ollama']).optional(),
   name: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   usage_refresh_interval_minutes: z.number().int().nonnegative().optional(),
@@ -581,6 +589,10 @@ export const previewModelsBody = z.object({
     model_prefix: modelPrefixSchema.optional(),
   }),
 });
+// --- kimi-code ---
+
+export const kimiCodeUsageBody = recordOnlyBody;
+
 // --- ollama ---
 
 export const ollamaUsageBody = recordOnlyBody;
@@ -887,10 +899,12 @@ const telemetryOverviewQuery = {
 
 export const tokenUsageOverviewQuery = z.object({
   ...telemetryOverviewQuery,
+  format: z.literal('buckets'),
   // Token Usage overview exposes unattributed hard-deleted-key records through
   // the synthetic user bucket.
   filter_user_id: filterValues(filterTokenUsageOverviewUserId),
   group_by: z.enum(['keyId', 'userId', 'model', 'upstream']).optional(),
+  cursor: z.string().max(13).optional(),
 });
 
 export const performanceQuery = z.object({

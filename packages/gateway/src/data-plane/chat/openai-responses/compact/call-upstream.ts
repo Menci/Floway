@@ -30,7 +30,7 @@ export const callOpenAIResponsesCompactUpstream = defineStage<
     if (pipeline === undefined) throw new Error(`Provider ${candidate.provider.kind} has no openaiResponsesCompact pipeline`);
     const back = await next(providerEntry(facts, candidate, body), pipeline);
     const { 'response.http.exchange': _exchange, 'response.provider.output': _output, 'response.provider.modelKey': _modelKey, 'response.provider.called': _called, 'response.provider.previousCalls': _previousCalls, ...rest } = back;
-    const reply = await providerChatAnswer(candidate, back);
+    const reply = await providerChatAnswer(candidate, back, use.gateway.abortSignal);
     const answer = 'kind' in reply.answer && reply.answer.kind === 'value'
       ? { kind: 'stream' as const, frames: use.recordProtocolFrames(syntheticEventsFromCompaction(reply.answer.body as Parameters<typeof syntheticEventsFromCompaction>[0])) }
       : reply.answer;

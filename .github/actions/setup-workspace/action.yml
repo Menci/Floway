@@ -1,0 +1,29 @@
+name: Set up workspace
+description: Install the Node.js release the server image ships and the locked dependencies.
+
+runs:
+  using: composite
+  steps:
+    - name: Enable Corepack
+      shell: bash
+      run: corepack enable
+    # The server image pins an exact release, and CI runs that same release. A
+    # major-only spec resolves to whatever patch the runner image caches, and
+    # Node patches bump the bundled SQLite: 22.23.5 moved it from 3.53.4 to
+    # 3.54.1, so jobs on different runner images disagreed on the same SQL.
+    # https://github.com/nodejs/node/blob/7f419acfafbd284978a13f7d65487ed3f98f523f/doc/changelogs/CHANGELOG_V22.md#L111
+    - name: Read the Node.js version from the server image
+      id: node
+      shell: bash
+      run: |
+        version="$(sed -n 's/^ARG NODE_VERSION=//p' docker/Dockerfile)"
+        test -n "$version"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+    - name: Set up Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version: ${{ steps.node.outputs.version }}
+        cache: pnpm
+    - name: Install
+      shell: bash
+      run: pnpm install --frozen-lockfile

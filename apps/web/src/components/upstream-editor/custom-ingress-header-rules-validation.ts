@@ -8,9 +8,9 @@ interface CustomIngressHeaderRuleDraft {
 }
 
 const nameMessages = {
-  invalid: 'dashboard.upstreamEditor.headers.validation.invalidName',
-  'anthropic-messages-owned': 'dashboard.upstreamEditor.headers.validation.anthropicMessagesOwned',
-  'transport-owned': 'dashboard.upstreamEditor.headers.validation.transportOwned',
+  invalid: 'upstreams.editor.headers.validation.invalidName',
+  'anthropic-messages-owned': 'upstreams.editor.headers.validation.anthropicMessagesOwned',
+  'transport-owned': 'upstreams.editor.headers.validation.transportOwned',
 } as const;
 
 export const refineCustomIngressHeaderRules = (
@@ -30,14 +30,14 @@ export const refineCustomIngressHeaderRules = (
       // Several rules may share a name to send several values, but the
       // client's own values enter the request once.
       if (passthroughKeys.has(key)) {
-        context.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.headers.validation.duplicatePassthrough', path: ['config', 'ingressHeadersRules', index, 'value'] });
+        context.addIssue({ code: 'custom', message: 'upstreams.editor.headers.validation.duplicatePassthrough', path: ['config', 'ingressHeadersRules', index, 'value'] });
       } else {
         passthroughKeys.add(key);
       }
     }
 
     if (rule.value !== null && !isCustomIngressHeaderValue(rule.value)) {
-      context.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.headers.validation.invalidValue', path: ['config', 'ingressHeadersRules', index, 'value'] });
+      context.addIssue({ code: 'custom', message: 'upstreams.editor.headers.validation.invalidValue', path: ['config', 'ingressHeadersRules', index, 'value'] });
     }
   }
 };

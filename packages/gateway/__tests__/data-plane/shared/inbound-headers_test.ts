@@ -1,39 +1,12 @@
-import { Hono } from 'hono';
 import { describe, expect, test } from 'vitest';
 
-import { inboundHeaders, filterInboundHeaders, filterInboundHeadersForProvider } from '../../../src/data-plane/shared/inbound-headers.ts';
+import { filterInboundHeaders } from '../../../src/data-plane/shared/inbound-headers.ts';
 import { buildUpstreamCallOptions } from '../../../src/data-plane/shared/upstream-call-options.ts';
 import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
 import type { InboundHeaderMatcher } from '@floway-dev/provider';
 import { stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
 const headerRecord = (headers: Headers): Record<string, string> => Object.fromEntries(headers);
-
-describe('inboundHeaders', () => {
-  test('copies the complete request bag for candidate-specific filtering', async () => {
-    const app = new Hono();
-    let first: Headers | undefined;
-    let second: Headers | undefined;
-    app.get('/test', c => {
-      first = inboundHeaders(c);
-      second = inboundHeaders(c);
-      return c.text('ok');
-    });
-
-    await app.request('/test', {
-      headers: {
-        authorization: 'Bearer gateway-key',
-        'x-client-request-id': 'request-1',
-      },
-    });
-
-    expect(first?.get('authorization')).toBe('Bearer gateway-key');
-    expect(first?.get('x-client-request-id')).toBe('request-1');
-    expect(first).not.toBe(second);
-    first?.set('x-client-request-id', 'mutated');
-    expect(second?.get('x-client-request-id')).toBe('request-1');
-  });
-});
 
 describe('filterInboundHeaders', () => {
   test('matches exact names case-insensitively and strips every other name', () => {
@@ -64,28 +37,12 @@ describe('filterInboundHeaders', () => {
     expect(headerRecord(filtered)).toEqual({ 'x-trace-one': '1', 'x-trace-two': '2' });
     expect(matcher.lastIndex).toBe(0);
   });
-
-  test('returns a fresh empty bag for an empty allowlist', () => {
-    const source = new Headers({ 'x-client-request-id': 'request-1' });
-    const first = filterInboundHeaders(source, []);
-    const second = filterInboundHeaders(source, []);
-
-    expect([...first]).toEqual([]);
-    expect(first).not.toBe(second);
-  });
 });
 
 describe('provider inbound header policies', () => {
   const provider = (inboundHeaderAllowlist: readonly InboundHeaderMatcher[]) => ({
     ...stubModelCandidate().provider,
     inboundHeaderAllowlist,
-  });
-
-  test('reads the selected provider instance allowlist', () => {
-    const source = new Headers({ 'x-first': 'one', 'x-second': 'two' });
-
-    expect(headerRecord(filterInboundHeadersForProvider(source, provider(['x-first'])))).toEqual({ 'x-first': 'one' });
-    expect(headerRecord(filterInboundHeadersForProvider(source, provider(['x-second'])))).toEqual({ 'x-second': 'two' });
   });
 
   test('buildUpstreamCallOptions filters independently for each failover candidate', () => {

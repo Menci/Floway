@@ -60,7 +60,7 @@ export const optionalStringField = (value: unknown, label: string): string | und
 };
 
 const MODEL_ENDPOINT_KEYS: ReadonlySet<ModelEndpointKey> = new Set<ModelEndpointKey>([
-  'openaiCompletions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages', 'openaiEmbeddings', 'openaiImagesGenerations', 'openaiImagesEdits', 'rerank', 'openaiAudioTranscriptions', 'decision',
+  'openaiCompletions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages', 'geminiGenerateContent', 'openaiEmbeddings', 'openaiImagesGenerations', 'openaiImagesEdits', 'rerank', 'openaiAudioTranscriptions', 'decision',
 ]);
 
 // The structured per-model capability map. A present key declares the model is
@@ -152,25 +152,17 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
 const RERANK_PROTOCOL_SET: ReadonlySet<RerankProtocol> = new Set(RERANK_PROTOCOLS);
 const DECISION_PROTOCOL_SET: ReadonlySet<DecisionProtocol> = new Set(DECISION_PROTOCOLS);
 
-const MODALITY_VALUES: ReadonlySet<Modality> = new Set<Modality>(['text', 'image']);
-
-const modalityArrayField = (value: unknown, label: string): readonly Modality[] => {
+const modalityArrayField = <M extends string>(value: unknown, label: string, allowed: readonly M[]): readonly M[] => {
   if (!Array.isArray(value)) throw new Error(`Malformed ${label}: must be an array`);
-  const out: Modality[] = [];
+  const out: M[] = [];
   for (const entry of value) {
-    if (typeof entry !== 'string' || !MODALITY_VALUES.has(entry as Modality)) {
+    if (typeof entry !== 'string' || !allowed.includes(entry as M)) {
       throw new Error(`Malformed ${label}: unknown modality ${JSON.stringify(entry)}`);
     }
-    if (!out.includes(entry as Modality)) out.push(entry as Modality);
+    if (!out.includes(entry as M)) out.push(entry as M);
   }
   if (out.length === 0) throw new Error(`Malformed ${label}: must have at least one modality`);
   return out;
-};
-
-const inputModalitiesField = (value: unknown, label: string): readonly Modality[] => {
-  const modalities = modalityArrayField(value, label);
-  if (!modalities.includes('text')) throw new Error(`Malformed ${label}: must include 'text'`);
-  return modalities;
 };
 
 const optionalNonNegativeIntField = (value: unknown, label: string): number | undefined => {
@@ -240,8 +232,8 @@ export const chatField = (value: unknown, label: string): UpstreamChatModelConfi
   if (value.modalities !== undefined) {
     if (!isRecord(value.modalities)) throw new Error(`Malformed ${label}.modalities: must be an object`);
     out.modalities = {
-      input: inputModalitiesField(value.modalities.input, `${label}.modalities.input`),
-      output: modalityArrayField(value.modalities.output, `${label}.modalities.output`),
+      input: modalityArrayField(value.modalities.input, `${label}.modalities.input`, ['text', 'image', 'audio'] as const),
+      output: modalityArrayField<Modality>(value.modalities.output, `${label}.modalities.output`, ['text', 'image']),
     };
   }
   if (value.image_detail_original !== undefined) {

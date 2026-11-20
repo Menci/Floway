@@ -22,8 +22,8 @@ export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIde
     return quotaPercentDisplay(options, 'remaining', {
       name: labels.window,
       labelKey: session
-        ? options.quotaDisplay === 'used' ? 'dashboard.upstreamMetrics.metrics.sessionUsage' : 'dashboard.upstreamMetrics.metrics.sessionRemaining'
-        : options.quotaDisplay === 'used' ? 'dashboard.upstreamMetrics.metrics.usage' : 'dashboard.upstreamMetrics.metrics.remaining',
+        ? options.quotaDisplay === 'used' ? 'monitoring.upstreams.series.sessionUsage' : 'monitoring.upstreams.series.sessionRemaining'
+        : options.quotaDisplay === 'used' ? 'monitoring.upstreams.series.usage' : 'monitoring.upstreams.series.remaining',
       axisPriority: upstreamMetricAxisPriority.subscriptionQuota,
       windowSeconds: session ? null : 604_800,
       emptyValue: null,
@@ -39,15 +39,15 @@ export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIde
   let axisPriority: number;
   if (name === 'activity.cost_usd' && typeof range === 'string') {
     metricName = `cost_${range}`;
-    labelKey = range === '24h' ? 'dashboard.upstreamMetrics.metrics.past24HoursCost' : range === '7d' ? 'dashboard.upstreamMetrics.metrics.past7DaysCost' : 'dashboard.upstreamMetrics.metrics.past30DaysCost';
+    labelKey = range === '24h' ? 'monitoring.upstreams.series.past24HoursCost' : range === '7d' ? 'monitoring.upstreams.series.past7DaysCost' : 'monitoring.upstreams.series.past30DaysCost';
     axisPriority = upstreamMetricAxisPriority.activityCost;
   } else if (balance && (labels.source === 'included' || labels.source === 'purchased')) {
     metricName = labels.source;
-    labelKey = labels.source === 'included' ? 'dashboard.upstreamMetrics.metrics.includedBalance' : 'dashboard.upstreamMetrics.metrics.purchasedBalance';
+    labelKey = labels.source === 'included' ? 'monitoring.upstreams.series.includedBalance' : 'monitoring.upstreams.series.purchasedBalance';
     axisPriority = labels.source === 'included' ? upstreamMetricAxisPriority.includedBalance : upstreamMetricAxisPriority.purchasedBalance;
   } else if (allowance && labels.source === 'included') {
     metricName = 'included_allowance';
-    labelKey = 'dashboard.upstreamMetrics.metrics.includedAllowance';
+    labelKey = 'monitoring.upstreams.series.includedAllowance';
     axisPriority = upstreamMetricAxisPriority.entitlement;
   } else return null;
 

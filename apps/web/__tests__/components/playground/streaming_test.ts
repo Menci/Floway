@@ -224,60 +224,6 @@ describe('playground wire requests', () => {
     ]);
   });
 
-  it('falls back to visible assistant text when the saved output belongs to another API', async () => {
-    const calls: Record<string, unknown>[] = [];
-    vi.stubGlobal('fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
-      return new Response(sseBody([
-        {
-          id: 'chat_1', object: 'chat.completion.chunk', created: 1, model: 'test-model',
-          choices: [{ index: 0, delta: { content: 'ok' }, finish_reason: 'stop' }],
-        },
-        '[DONE]',
-      ]), { status: 200, headers: { 'content-type': 'text/event-stream' } });
-    });
-
-    await collectWithOutput(streamPlaygroundText({
-      api: 'openaiChatCompletions',
-      apiKey: 'secret',
-      model: 'test-model',
-      system: '',
-      messages: [{
-        id: 'assistant-1',
-        role: 'assistant',
-        text: 'visible answer',
-        assistantOutput: { api: 'openaiResponses', items: [{ type: 'reasoning', id: 'rs_1', summary: [], encrypted_content: 'secret' }] },
-      }],
-      options: {},
-      signal: new AbortController().signal,
-      fetchImpl: createWireFetch({}, 'openaiChatCompletions'),
-    }));
-
-    expect(calls[0]!.messages).toEqual([{ role: 'assistant', content: 'visible answer' }]);
-  });
-
-  it('sends the API key the way each protocol authenticates', async () => {
-    const headers: HeadersInit[] = [];
-    vi.stubGlobal('fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
-      headers.push(init?.headers ?? {});
-      return new Response(sseBody(['[DONE]']), { status: 200, headers: { 'content-type': 'text/event-stream' } });
-    });
-
-    const request = {
-      apiKey: 'secret',
-      model: 'test-model',
-      system: '',
-      messages: [{ id: '1', role: 'user' as const, text: 'hello' }],
-      options: {},
-      signal: new AbortController().signal,
-    };
-    await collect(streamPlaygroundText({ ...request, api: 'anthropicMessages', fetchImpl: createWireFetch({}, 'anthropicMessages') }));
-    await collect(streamPlaygroundText({ ...request, api: 'openaiChatCompletions', fetchImpl: createWireFetch({}, 'openaiChatCompletions') }));
-
-    expect(headers[0]).toMatchObject({ 'x-api-key': 'secret' });
-    expect(headers[1]).toMatchObject({ authorization: 'Bearer secret' });
-  });
-
   it('surfaces an error frame instead of returning empty text', async () => {
     vi.stubGlobal('fetch', async () => new Response(
       sseBody([{ error: { message: 'upstream refused' } }]),
@@ -295,52 +241,67 @@ describe('playground wire requests', () => {
       fetchImpl: createWireFetch({}, 'openaiChatCompletions'),
     }))).rejects.toThrow('upstream refused');
   });
+});
 
-  it('surfaces an OpenAI Responses failed envelope instead of returning empty text', async () => {
-    vi.stubGlobal('fetch', async () => new Response(
-      sseBody([{
-        type: 'response.failed',
-        response: {
-          id: 'resp_1',
-          object: 'response',
-          created_at: 1,
-          model: 'test-model',
-          status: 'failed',
-          output: [],
-          error: { code: 'server_error', message: 'generation failed' },
-          incomplete_details: null,
-        },
-      }]),
-      { status: 200, headers: { 'content-type': 'text/event-stream' } },
-    ));
+describe('Gemini generateContent playground', () => {
+  it('builds a contents body, puts the model in the path, and reads text deltas', async () => {
+    const chunk = { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'ok' }] } }] };
+    const terminal = { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: '' }] }, finishReason: 'STOP' }] };
+    let seenUrl = '';
+    let seenBody: Record<string, unknown> = {};
+    let seenHeaders: Headers | undefined;
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      seenUrl = String(input);
+      seenHeaders = new Headers(init?.headers);
+      seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(sseBody([chunk, terminal]), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    });
 
-    await expect(collect(streamPlaygroundText({
-      api: 'openaiResponses',
+    const api: PlaygroundApi = 'geminiGenerateContent';
+    const { text } = await collectWithOutput(streamPlaygroundText({
+      api,
       apiKey: 'secret',
-      model: 'test-model',
-      system: '',
-      messages: [{ id: '1', role: 'user', text: 'hello' }],
-      options: {},
+      model: 'gemini-4-argon',
+      system: 'be brief',
+      messages: [{ id: 'u1', role: 'user', text: 'hello' }],
+      options: generationOptions(api, 'high'),
       signal: new AbortController().signal,
-      fetchImpl: createWireFetch({}, 'openaiResponses'),
-    }))).rejects.toThrow('generation failed');
+      fetchImpl: fetch,
+    }));
+
+    expect(text).toBe('ok');
+    // The model and the streaming action ride the path; the body carries the turns.
+    expect(seenUrl).toBe('/v1beta/models/gemini-4-argon:streamGenerateContent?alt=sse');
+    expect(seenBody).toEqual({
+      systemInstruction: { parts: [{ text: 'be brief' }] },
+      contents: [{ role: 'user', parts: [{ text: 'hello' }] }],
+      generationConfig: { thinkingConfig: { thinkingLevel: 'HIGH' } },
+    });
+    // GenerateContent authenticates with the Google header.
+    expect(seenHeaders?.get('x-goog-api-key')).toBe('secret');
   });
 
-  it('surfaces a non-2xx body rather than a bare status', async () => {
-    vi.stubGlobal('fetch', async () => new Response(
-      JSON.stringify({ error: { message: 'no such model' } }),
-      { status: 404, headers: { 'content-type': 'application/json' } },
-    ));
+  it.each([
+    ['a base64 data URL as inline bytes', 'data:image/jpeg;base64,/9j/4AAQ', { inlineData: { mimeType: 'image/jpeg', data: '/9j/4AAQ' } }],
+    ['any other URL as file data the upstream fetches', 'https://example.com/cat.jpg', { fileData: { fileUri: 'https://example.com/cat.jpg' } }],
+  ])('sends %s', async (_label, imageUrl, part) => {
+    let seenBody: Record<string, unknown> = {};
+    vi.stubGlobal('fetch', async (_input: RequestInfo | URL, init?: RequestInit) => {
+      seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(sseBody([{ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'ok' }] }, finishReason: 'STOP' }] }]), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    });
 
-    await expect(collect(streamPlaygroundText({
-      api: 'openaiResponses',
+    await collectWithOutput(streamPlaygroundText({
+      api: 'geminiGenerateContent',
       apiKey: 'secret',
-      model: 'missing',
+      model: 'gemini-4-argon',
       system: '',
-      messages: [{ id: '1', role: 'user', text: 'hello' }],
+      messages: [{ id: 'u1', role: 'user', text: 'what is this', imageUrl }],
       options: {},
       signal: new AbortController().signal,
-      fetchImpl: createWireFetch({}, 'openaiResponses'),
-    }))).rejects.toThrow('no such model');
+      fetchImpl: fetch,
+    }));
+
+    expect(seenBody.contents).toEqual([{ role: 'user', parts: [{ text: 'what is this' }, part] }]);
   });
 });

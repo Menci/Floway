@@ -6,7 +6,7 @@ import { takeHttpResponse } from '@floway-dev/http/pipeline';
 import { defineStage, move, type Handed } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { isFastServiceTier } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import type { ChatProviderOperation, ProviderChatResponse, ProviderOperationRequest, ProviderRequest, ProviderOperationPayloads } from '@floway-dev/provider';
 
@@ -35,7 +35,7 @@ export const selectCopilotChatModel = <O extends ChatProviderOperation>(operatio
         fast: operation === 'anthropicMessages' && body.speed === 'fast',
       }).id;
     } else if (operation === 'openaiChatCompletions') {
-      const body = payload as Omit<OpenAIChatCompletionsPayload, 'model'>;
+      const body = payload as Omit<OpenAIChatCompletionsPayloadEx, 'model'>;
       modelKey = rawModelFor(model, 'openaiChatCompletions', { reasoningEffort: body.reasoning_effort && body.reasoning_effort !== 'none' ? body.reasoning_effort : undefined }).id;
     } else {
       const body = payload as Omit<CanonicalOpenAIResponsesPayload, 'model'>;

@@ -2,6 +2,7 @@ import { CubeRegular, MoreHorizontal16Regular, PeopleRegular, PersonRegular, Tex
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentProps, ReactNode, Ref, RefObject } from 'react';
 
+import { scopeKind, scopeResourceId, scopeResourceName, type ScopeKind } from './scope';
 import type { ControlPlaneModel, PermissionsGroup, PermissionsUser, UpstreamOption } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { type TFunction, useTranslation } from '../../i18n/translation';
@@ -17,7 +18,6 @@ import type { AccessScope } from '@floway-dev/gateway/browser';
 const { Option, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 
 type Part = 'kind' | 'instance' | 'model';
-type ScopeKind = 'self' | 'upstream' | 'user' | 'group';
 
 interface SegmentContextValue {
   onActivate: () => void;
@@ -54,7 +54,10 @@ function ScopeEditorSurface({ children, className, expressionRef, onActivate, on
   const isWhitespace = (target: EventTarget, root: HTMLElement) => target === root || target === expressionRef.current;
   return <div aria-disabled={readOnly ? true : undefined} className={mergeClasses('floway-scope-editor', className)}
     onMouseDown={event => {
-      if (!readOnly && isWhitespace(event.target, event.currentTarget)) event.preventDefault();
+      if (!readOnly && (isWhitespace(event.target, event.currentTarget)
+        || (event.target instanceof Element && !expressionRef.current?.contains(event.target)))) {
+        event.preventDefault();
+      }
     }}
     onClick={event => {
       if (!readOnly && isWhitespace(event.target, event.currentTarget)) {
@@ -63,7 +66,7 @@ function ScopeEditorSurface({ children, className, expressionRef, onActivate, on
     }}
   >
     {children}
-    {onRemove && <TooltipIconButton disabled={readOnly} icon={<FieldClearIcon />} label={t('dashboard.accessControl.actions.removeScopeSegment')} onClick={onRemove} />}
+    {onRemove && <TooltipIconButton disabled={readOnly} icon={<FieldClearIcon />} label={t('permissions.actions.removeScopeSegment')} onClick={onRemove} />}
   </div>;
 }
 
@@ -86,18 +89,22 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
   const [dirty, setDirty] = useState(false);
   const [pendingKind, setPendingKind] = useState<ScopeKind | null>(null);
   const editRevision = useRef(0);
+  const activePartRef = useRef<Part | null>(null);
+  const keyboardNavigatedRef = useRef(false);
   // A deferred blur must not commit after replacement or a read-only transition.
-  useEffect(() => () => { editRevision.current++; }, [readOnly]);
+  useEffect(() => () => { editRevision.current++; activePartRef.current = null; keyboardNavigatedRef.current = false; }, [readOnly]);
   if (readOnly && editingPart !== null) {
     setActive(null);
     setQuery('');
     setDirty(false);
   }
-  const kind = (purpose === 'scope' ? pendingKind : null) ?? kindFor(value);
+  const kind = (purpose === 'scope' ? pendingKind : null) ?? scopeKind(value);
   const interactive = !readOnly || onNavigate !== undefined;
 
   const resetInput = (nextActive: Part | null, nextQuery = '') => {
     editRevision.current++;
+    activePartRef.current = nextActive;
+    keyboardNavigatedRef.current = false;
     setActive(nextActive);
     setQuery(nextQuery);
     setDirty(false);
@@ -120,11 +127,11 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
     }
     resetInput(part, partValue(part, kind, value, data, t));
   };
-  const commitKind = (nextKind: ScopeKind) => {
-    if (nextKind !== kindFor(value) || purpose === 'filter') {
+  const commitKind = (nextKind: ScopeKind, advance = true) => {
+    if (nextKind !== scopeKind(value) || purpose === 'filter') {
       onChange?.(collectionScope(nextKind));
     }
-    if (nextKind === 'self') {
+    if (!advance || nextKind === 'self') {
       setPendingKind(null);
       resetInput(null);
       return;
@@ -132,14 +139,15 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
     setPendingKind(nextKind);
     resetInput('instance');
   };
-  const commitInstance = (id: string) => {
+  const commitInstance = (id: string, advance = true) => {
     if (kind === 'upstream') {
       const next = value?.kind === 'upstreamModel' && purpose !== 'filter'
         ? { ...value, upstreamId: id }
         : { kind: 'upstream' as const, upstreamId: id };
       onChange?.(next);
       setPendingKind(null);
-      resetInput('model');
+      if (advance) resetInput('model');
+      else resetInput(null);
       return;
     }
     if (kind === 'user') onChange?.({ kind: 'user', userId: Number(id) });
@@ -155,21 +163,30 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
     onChange?.({ kind: 'upstreamModel', upstreamId: value.upstreamId, model: { kind: patternKind, value: pattern } });
     closeInput();
   };
-  const commitOption = (part: Part, option: string) => {
-    if (part === 'kind') commitKind(option as ScopeKind);
-    else if (part === 'instance') commitInstance(option);
+  const commitOption = (part: Part, option: string, advance = true) => {
+    if (part === 'kind') commitKind(option as ScopeKind, advance);
+    else if (part === 'instance') commitInstance(option, advance);
     else commitModel(option);
   };
+  const options = useMemo(
+    () => optionsFor(active, kind, query, value, data, t),
+    [active, data, kind, query, t, value],
+  );
+  const defaultOption = options.find(option => option.matched) ?? null;
   const commitBlur = () => {
-    if (!dirty) {
+    if (!dirty || active === null) {
       closeInput();
       return;
     }
     const trimmed = query.trim();
-    if (active === 'model' && trimmed) commitModel(`exact:${trimmed}`);
-    else closeInput();
+    if (!trimmed || defaultOption === null || defaultOption.value === currentOptionValue(active, kind, value)) {
+      closeInput();
+      return;
+    }
+    commitOption(active, defaultOption.value, false);
   };
-  const onInputBlur: NonNullable<ComponentProps<typeof InlineCombobox>['onBlur']> = event => {
+  const onInputBlur = (part: Part, event: Parameters<NonNullable<ComponentProps<typeof InlineCombobox>['onBlur']>>[0]) => {
+    if (activePartRef.current !== part) return;
     const next = event.relatedTarget;
     // A submit click reads the parent's scope after focus leaves this editor.
     // Internal focus and option selection must still be able to replace a draft.
@@ -180,21 +197,24 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
     }
     const revision = editRevision.current;
     window.setTimeout(() => {
-      if (editRevision.current === revision) commitBlur();
+      if (editRevision.current === revision && activePartRef.current === part) commitBlur();
     });
   };
 
-  const options = useMemo(
-    () => optionsFor(active, kind, query, value, data, t),
-    [active, data, kind, query, t, value],
-  );
+  const commitEnter = () => {
+    if (active === null) return;
+    const candidate = query.trim() === '' ? (options[0] ?? null) : defaultOption;
+    if (candidate !== null) commitOption(active, candidate.value);
+    else closeInput();
+  };
   const input = active === null ? null : <PartInput
-    ariaLabel={t(`dashboard.accessControl.scope.${active === 'kind' ? 'kind' : active === 'instance' ? 'instance' : 'model'}`)}
-    emptyMessage={t('dashboard.accessControl.scope.noMatches')}
+    ariaLabel={t(`permissions.scope.${active === 'kind' ? 'kind' : active === 'instance' ? 'instance' : 'model'}`)}
+    emptyMessage={t('permissions.scope.noMatches')}
     inputRef={inputRef}
     name={`scope-${active}`}
-    onBlur={onInputBlur}
+    onBlur={event => onInputBlur(active, event)}
     onChange={next => {
+      keyboardNavigatedRef.current = false;
       setDirty(true);
       setQuery(active === 'model' && purpose === 'scope' ? next.replace(/^\//, '').replace(/\/$/, '') : next);
     }}
@@ -205,50 +225,72 @@ export function ScopeExpression({ className, data, framed = false, onChange, onN
     regex={active === 'model' && value?.kind === 'upstreamModel' && value.model.kind === 'regex'}
   />;
   const hasInstance = instanceMatchesKind(kind, value);
-  const showInstance = kind !== null && kind !== 'self' && (active === 'instance' || hasInstance || !readOnly);
-  const showModel = kind === 'upstream' && hasUpstreamInstance(value) && (active === 'model' || value.kind === 'upstreamModel' || !readOnly);
+  const showInstance = kind !== null && kind !== 'self' && (active === 'instance' || hasInstance || (!readOnly && active === null));
+  const showModel = kind === 'upstream' && hasUpstreamInstance(value) && (active === 'model' || value.kind === 'upstreamModel' || (!readOnly && active === null));
   const lastPart = showModel ? 'model' : showInstance ? 'instance' : 'kind';
-  const removeLast = () => {
-    resetInput(null);
-    if (value?.kind === 'upstreamModel') onChange?.({ kind: 'upstream', upstreamId: value.upstreamId });
-    else if (value?.kind === 'upstream') onChange?.({ kind: 'upstreams' });
-    else if (value?.kind === 'user') onChange?.({ kind: 'users' });
-    else if (value?.kind === 'group') onChange?.({ kind: 'groups' });
-    else onChange?.(null);
+  const editable = !readOnly && !onNavigate;
+  const deepestPart: Part | null = value?.kind === 'upstreamModel' || active === 'model'
+    ? 'model'
+    : hasInstance || active === 'instance'
+      ? 'instance'
+      : kind !== null || active === 'kind'
+        ? 'kind'
+        : null;
+  const discardSegment = (part: Part, reason: 'remove' | 'backspace') => {
     setPendingKind(null);
+    if (part === 'model') {
+      const next = value?.kind === 'upstreamModel' ? { kind: 'upstream' as const, upstreamId: value.upstreamId } : value;
+      resetInput('instance', partValue('instance', kind, next, data, t));
+      if (next !== value) onChange?.(next);
+      inputRef.current?.focus();
+    } else if (part === 'instance') {
+      const next = hasInstance ? collectionScope(kind) : value;
+      resetInput('kind', partValue('kind', kind, next, data, t));
+      if (next !== value) onChange?.(next);
+      inputRef.current?.focus();
+    } else {
+      resetInput(reason === 'backspace' ? 'kind' : null);
+      if (value !== null) onChange?.(null);
+    }
+  };
+  const removeLast = () => {
+    if (deepestPart !== null) discardSegment(deepestPart, 'remove');
   };
 
-  const expression = <div aria-label={interactive ? t('dashboard.accessControl.fields.scope') : undefined} className={mergeClasses('floway-scope-expression', !framed && className)} ref={expressionRef} role={interactive ? 'group' : undefined}
+  const expression = <div aria-label={interactive ? t('permissions.fields.scope') : undefined} className={mergeClasses('floway-scope-expression', !framed && className)} ref={expressionRef} role={interactive ? 'group' : undefined}
     onMouseDown={event => {
       if (onNavigate) event.preventDefault();
     }}
   >
-    <Segment active={active === 'kind'} dirty={dirty} input={input} interactive={interactive} onActivate={() => activate('kind')} onCancel={closeInput} part="kind">{kind === null
-      ? !readOnly && <AppendTrigger label={t('dashboard.accessControl.scope.kind')} />
+    <Segment active={active === 'kind'} dirty={dirty} input={input} interactive={interactive} keyboardNavigatedRef={keyboardNavigatedRef} onActivate={() => activate('kind')} onBackspace={editable && active === 'kind' && query === '' && value !== null ? () => discardSegment('kind', 'backspace') : undefined} onCancel={closeInput} onEnter={commitEnter} part="kind">{kind === null
+      ? !readOnly && <AppendTrigger label={t('permissions.scope.kind')} />
       : <PartToken className="floway-scope-expression-kind">{kindLabel(kind, t)}</PartToken>}
     </Segment>
 
-    {showInstance && <Segment active={active === 'instance'} dirty={dirty} input={input} interactive={interactive} onActivate={() => activate('instance')} onCancel={closeInput} part="instance">{hasInstance
+    {showInstance && <Segment active={active === 'instance'} dirty={dirty} input={input} interactive={interactive} keyboardNavigatedRef={keyboardNavigatedRef} onActivate={() => activate('instance')} onBackspace={editable && (active === 'instance' ? query === '' : !hasInstance) ? () => discardSegment('instance', 'backspace') : undefined} onCancel={closeInput} onEnter={commitEnter} part="instance">{hasInstance
       ? <InstancePart data={data} kind={kind} t={t} value={value} />
-      : <AppendTrigger label={t('dashboard.accessControl.scope.instance')} />}
+      : <AppendTrigger label={t('permissions.scope.instance')} />}
     </Segment>}
 
-    {showModel && <Segment active={active === 'model'} dirty={dirty} input={input} interactive={interactive} onActivate={() => activate('model')} onCancel={closeInput} part="model">{value.kind === 'upstreamModel'
+    {showModel && <Segment active={active === 'model'} dirty={dirty} input={input} interactive={interactive} keyboardNavigatedRef={keyboardNavigatedRef} onActivate={() => activate('model')} onBackspace={editable && (active === 'model' ? query === '' : value.kind !== 'upstreamModel') ? () => discardSegment('model', 'backspace') : undefined} onCancel={closeInput} onEnter={commitEnter} part="model">{value.kind === 'upstreamModel'
       ? <ModelPart scope={value} />
-      : <AppendTrigger label={t('dashboard.accessControl.scope.model')} />}
+      : <AppendTrigger label={t('permissions.scope.model')} />}
     </Segment>}
   </div>;
   return framed ? <ScopeEditorSurface className={className} expressionRef={expressionRef} onActivate={() => activate(lastPart)} onRemove={kind === null ? undefined : removeLast} readOnly={readOnly}>{expression}</ScopeEditorSurface> : expression;
 }
 
-function Segment({ active, children, dirty, input, interactive, onActivate, onCancel, part }: {
+function Segment({ active, children, dirty, input, interactive, keyboardNavigatedRef, onActivate, onBackspace, onCancel, onEnter, part }: {
   active: boolean;
   children: ReactNode;
   dirty: boolean;
   input: ReactNode;
   interactive: boolean;
+  keyboardNavigatedRef: RefObject<boolean>;
   onActivate: () => void;
+  onBackspace?: () => void;
   onCancel: () => void;
+  onEnter: () => void;
   part: Part;
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -260,11 +302,33 @@ function Segment({ active, children, dirty, input, interactive, onActivate, onCa
     }
   }, [active]);
   return <SegmentContext value={{ onActivate, readOnly: active || !interactive, triggerRef }}><span className="floway-scope-expression-segment" data-scope-part={part} onKeyDownCapture={event => {
+    if (active && !event.nativeEvent.isComposing) {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Home' || event.key === 'End' || event.key === 'PageDown' || event.key === 'PageUp') {
+        keyboardNavigatedRef.current = true;
+        return;
+      }
+      if (event.key === 'Enter' && !event.altKey && !event.ctrlKey && !event.metaKey) {
+        const navigatedOption = keyboardNavigatedRef.current
+          && event.target instanceof HTMLElement
+          && Boolean(event.target.getAttribute('aria-activedescendant'));
+        if (!navigatedOption) {
+          event.preventDefault();
+          event.stopPropagation();
+          onEnter();
+          return;
+        }
+      }
+    }
     if (active && event.key === 'Escape' && !event.nativeEvent.isComposing) {
       event.preventDefault();
       event.stopPropagation();
       restoreFocus.current = true;
       onCancel();
+    } else if (onBackspace && event.key === 'Backspace' && !event.nativeEvent.isComposing
+      && !event.altKey && !event.ctrlKey && !event.metaKey) {
+      event.preventDefault();
+      event.stopPropagation();
+      onBackspace();
     }
   }}><Slash onActivate={interactive ? onActivate : undefined} />{active
       ? <span className="floway-scope-expression-part-editor" data-pristine={!dirty ? true : undefined}>
@@ -344,7 +408,18 @@ function PartToken({ children, className }: {
     : <button className={classes} onClick={onActivate} ref={triggerRef} type="button">{content}</button>;
 }
 
-interface ScopeOption { key: string; value: string; text: string; content: ReactNode; dimmed?: boolean }
+interface ScopeOption { key: string; value: string; text: string; content: ReactNode; dimmed?: boolean; matched: boolean }
+
+const currentOptionValue = (part: Part | null, kind: ScopeKind | null, value: AccessScope | null): string | null => {
+  if (part === 'kind') return kind;
+  if (part === 'instance') {
+    if (hasUpstreamInstance(value)) return value.upstreamId;
+    if (value?.kind === 'user') return String(value.userId);
+    if (value?.kind === 'group') return String(value.groupId);
+  }
+  if (part === 'model' && value?.kind === 'upstreamModel') return `${value.model.kind}:${value.model.value}`;
+  return null;
+};
 
 const optionsFor = (
   active: Part | null,
@@ -354,11 +429,14 @@ const optionsFor = (
   data: ScopeExpressionData,
   t: TFunction,
 ): ScopeOption[] => {
-  const needle = query.toLowerCase();
+  const trimmed = query.trim();
+  const needle = trimmed.toLowerCase();
   const matching: ScopeOption[] = [];
   const unmatched: ScopeOption[] = [];
   const custom: ScopeOption[] = [];
-  const add = (option: ScopeOption, matches: boolean) => (matches ? matching : unmatched).push(option);
+  const preferred: ScopeOption[] = [];
+  const add = (option: Omit<ScopeOption, 'matched'>, matches: boolean) =>
+    (matches ? matching : unmatched).push({ ...option, matched: matches });
   if (active === 'kind') {
     for (const candidate of ['self', 'user', 'upstream', 'group'] as const) {
       const label = kindLabel(candidate, t);
@@ -379,19 +457,39 @@ const optionsFor = (
   } else if (active === 'model' && hasUpstreamInstance(value)) {
     const ids = [...new Set(data.models.filter(model => model.upstreams.some(upstream => upstream.id === value.upstreamId)).map(model => model.id))]
       .sort((a, b) => a.localeCompare(b));
-    const pattern = query ? draftPattern(query) : null;
+    const editingRegex = value.kind === 'upstreamModel' && value.model.kind === 'regex';
+    const pattern = trimmed ? draftPattern(trimmed) : null;
     for (const id of ids) {
       add({ key: id, value: `exact:${id}`, text: id, content: <><CubeRegular className="floway-scope-expression-model-icon" /><span className="floway-control-label font-mono" translate="no">{id}</span></> }, id.toLowerCase().includes(needle) || pattern?.test(id) === true);
     }
-    if (query && !ids.includes(query)) {
-      custom.push({ key: `literal:${query}`, value: `exact:${query}`, text: query, content: <><CubeRegular className="floway-scope-expression-model-icon" /><span className="floway-control-label font-mono" translate="no">{query}</span></>, dimmed: true });
+    if (trimmed && !ids.includes(trimmed)) {
+      custom.push({ key: `literal:${trimmed}`, value: `exact:${trimmed}`, text: trimmed, content: <><CubeRegular className="floway-scope-expression-model-icon" /><span className="floway-control-label font-mono" translate="no">{trimmed}</span></>, dimmed: true, matched: true });
     }
     if (pattern !== null) {
-      custom.push({ key: `regex:${query}`, value: `regex:${query}`, text: `/${query}/`, content: <><TextAsteriskRegular className="floway-scope-expression-model-icon" /><RegexPattern pattern={query} /></> });
+      const regexOption: ScopeOption = { key: `regex:${trimmed}`, value: `regex:${trimmed}`, text: `/${trimmed}/`, content: <><TextAsteriskRegular className="floway-scope-expression-model-icon" /><RegexPattern pattern={trimmed} /></>, matched: true };
+      if (editingRegex) preferred.push(regexOption);
+      else custom.push(regexOption);
     }
   }
 
-  return [...matching, ...custom, ...unmatched];
+  const ordered = [...preferred, ...matching, ...custom, ...unmatched];
+  // Exact text matches (preferring the current selection when names collide)
+  // sit at the top so Enter, clicking the first candidate, and blur resolve
+  // identically.
+  if (trimmed !== '' && preferred.length === 0) {
+    const current = currentOptionValue(active, kind, value);
+    const exactCurrent = current === null
+      ? -1
+      : ordered.findIndex(option => option.matched && option.value === current && option.text.toLowerCase() === needle);
+    const promotedIndex = exactCurrent >= 0
+      ? exactCurrent
+      : ordered.findIndex(option => option.matched && !option.dimmed && option.text.toLowerCase() === needle);
+    if (promotedIndex > 0) {
+      const [promoted] = ordered.splice(promotedIndex, 1);
+      ordered.unshift(promoted!);
+    }
+  }
+  return ordered;
 };
 
 const draftPattern = (query: string): RegExp | null => {
@@ -411,19 +509,19 @@ function InstancePart({ data, kind, t, value }: {
     const upstream = data.upstreams.find(candidate => candidate.id === value.upstreamId);
     return upstream
       ? <PartToken><ProviderBadge label={upstream.name} upstream={upstream} /></PartToken>
-      : <UnknownPart description={t('dashboard.accessControl.scope.unknownUpstreamId', { id: value.upstreamId })} />;
+      : <UnknownPart description={t('permissions.scope.unknownUpstreamId', { id: value.upstreamId })} />;
   }
   if (kind === 'user' && value?.kind === 'user') {
     const user = data.users.find(candidate => candidate.id === value.userId);
     return user
       ? <PartToken><UserIdentity isAdmin={user.isAdmin} username={user.username} /></PartToken>
-      : <UnknownPart description={t('dashboard.accessControl.scope.unknownUserId', { id: String(value.userId) })} icon={<PersonRegular />} />;
+      : <UnknownPart description={t('permissions.scope.unknownUserId', { id: String(value.userId) })} icon={<PersonRegular />} />;
   }
   if (kind === 'group' && value?.kind === 'group') {
     const group = data.groups.find(candidate => candidate.id === value.groupId);
     return group
       ? <PartToken><GroupIdentity group={group} /></PartToken>
-      : <UnknownPart description={t('dashboard.accessControl.scope.unknownGroupId', { id: String(value.groupId) })} icon={<PeopleRegular />} />;
+      : <UnknownPart description={t('permissions.scope.unknownGroupId', { id: String(value.groupId) })} icon={<PeopleRegular />} />;
   }
   return null;
 }
@@ -452,25 +550,12 @@ function UnknownPart({ description, icon }: {
   return <Tooltip content={description} relationship="description">
     <span className="winui-focus-rect inline-flex max-w-full" tabIndex={readOnly ? 0 : undefined}>
       <PartToken className="floway-scope-expression-dimmed">{icon}
-        <span className="floway-control-label">{t('dashboard.accessControl.scope.unknownLabel')}</span>
+        <span className="floway-control-label">{t('permissions.scope.unknownLabel')}</span>
       </PartToken>
     </span>
   </Tooltip>;
 }
 
-const kindFor = (scope: AccessScope | null): ScopeKind | null => {
-  if (scope === null) return null;
-  switch (scope.kind) {
-  case 'upstreams':
-  case 'upstream':
-  case 'upstreamModel': return 'upstream';
-  case 'users':
-  case 'user': return 'user';
-  case 'groups':
-  case 'group': return 'group';
-  case 'self': return 'self';
-  }
-};
 const collectionScope = (kind: ScopeKind | null): AccessScope | null => {
   switch (kind) {
   case 'upstream': return { kind: 'upstreams' };
@@ -480,7 +565,7 @@ const collectionScope = (kind: ScopeKind | null): AccessScope | null => {
   case null: return null;
   }
 };
-const kindLabel = (kind: ScopeKind, t: TFunction) => t(`dashboard.accessControl.scope.kinds.${kind}`);
+const kindLabel = (kind: ScopeKind, t: TFunction) => t(`permissions.scope.kinds.${kind}`);
 const hasUpstreamInstance = (scope: AccessScope | null): scope is Extract<AccessScope, { kind: 'upstream' | 'upstreamModel' }> => scope?.kind === 'upstream' || scope?.kind === 'upstreamModel';
 const instanceMatchesKind = (kind: ScopeKind | null, scope: AccessScope | null) => kind === 'upstream'
   ? hasUpstreamInstance(scope)
@@ -488,10 +573,6 @@ const instanceMatchesKind = (kind: ScopeKind | null, scope: AccessScope | null) 
 const partValue = (part: Part, kind: ScopeKind | null, value: AccessScope | null, data: ScopeExpressionData, t: TFunction): string => {
   if (part === 'kind' && kind !== null) return kindLabel(kind, t);
   if (part === 'model' && value?.kind === 'upstreamModel') return value.model.value;
-  if (part === 'instance') {
-    if (hasUpstreamInstance(value)) return data.upstreams.find(upstream => upstream.id === value.upstreamId)?.name ?? value.upstreamId;
-    if (value?.kind === 'user') return data.users.find(user => user.id === value.userId)?.username ?? String(value.userId);
-    if (value?.kind === 'group') return data.groups.find(group => group.id === value.groupId)?.name ?? String(value.groupId);
-  }
+  if (part === 'instance' && value !== null) return scopeResourceName(value, data) ?? scopeResourceId(value);
   return '';
 };

@@ -49,11 +49,11 @@ export function AliasDialog({ aliases, mode, models, onOpenChange, open, onSaved
   const copySource = mode === 'copy' ? record : null;
   const initialValues = useMemo(() => {
     const defaults = aliasDefaults(record);
-    if (copySource) defaults.name = t('dashboard.modelAliases.copy.nameSuffix', { name: copySource.name });
+    if (copySource) defaults.name = t('models.aliases.copy.nameSuffix', { name: copySource.name });
     return defaults;
   }, [copySource, record, t]);
   const schema = useMemo(() => z.object({
-    name: z.string().trim().min(1, 'dashboard.modelAliases.validation.nameRequired'),
+    name: z.string().trim().min(1, 'models.aliases.validation.nameRequired'),
     displayName: z.string(),
     kind: z.enum(MODEL_KINDS),
     selection: z.enum(['first-available', 'random']),
@@ -62,7 +62,7 @@ export function AliasDialog({ aliases, mode, models, onOpenChange, open, onSaved
     manualMetadata: z.boolean(),
     announcedMetadata: z.any().refine(value => value !== undefined),
   }).superRefine((values, ctx) => {
-    if (aliases.some(alias => alias.name === values.name.trim() && alias.name !== editingRecord?.name)) ctx.addIssue({ code: 'custom', message: 'dashboard.modelAliases.validation.duplicate', path: ['name'] });
+    if (aliases.some(alias => alias.name === values.name.trim() && alias.name !== editingRecord?.name)) ctx.addIssue({ code: 'custom', message: 'models.aliases.validation.duplicate', path: ['name'] });
     values.targets.forEach((target, index) => {
       const issue = targetIssue(target);
       if (issue) ctx.addIssue({ code: 'custom', message: issue, path: ['targets', index, 'target_model_id'] });
@@ -102,13 +102,13 @@ export function AliasDialog({ aliases, mode, models, onOpenChange, open, onSaved
     try {
       const name = form.name.trim();
       const body = aliasBody(form);
-      const handle = toasts.start(t('dashboard.modelAliases.toast.save.pending', { name }));
+      const handle = toasts.start(t('models.aliases.toast.save.pending', { name }));
       const result = editingRecord
         ? await callApi(() => api.api.aliases[':id'].$put({ param: { id: editingRecord.id }, json: body }))
         : await callApi(() => api.api.aliases.$post({ json: body }));
       if (result.error) { handle.settle(); setServerError(result.error.message); return; }
       onOpenChange(false);
-      handle.succeed(t('dashboard.modelAliases.toast.save.success', { name }));
+      handle.succeed(t('models.aliases.toast.save.success', { name }));
       await onSaved();
     } finally {
       setSaving(false);
@@ -121,34 +121,34 @@ export function AliasDialog({ aliases, mode, models, onOpenChange, open, onSaved
     onOpenChange={(_, data) => { if (!data.open && !saving) requestClose(); }}
     onSubmit={() => void handleSubmit(save)()}
     title={<DialogTitle>{editingRecord
-      ? t('dashboard.modelAliases.dialog.editTitle', { name: editingRecord.name })
+      ? t('models.aliases.dialog.editTitle', { name: editingRecord.name })
       : copySource
-        ? t('dashboard.modelAliases.dialog.copyTitle', { name: copySource.name })
-        : t('dashboard.modelAliases.dialog.createTitle')}</DialogTitle>}
-    actions={<DialogActions><Button disabled={saving} onClick={requestClose}>{t('common.cancel')}</Button><Button appearance="primary" disabledFocusable={saving} type="submit">{t('dashboard.modelAliases.actions.save')}</Button></DialogActions>}
+        ? t('models.aliases.dialog.copyTitle', { name: copySource.name })
+        : t('models.aliases.dialog.createTitle')}</DialogTitle>}
+    actions={<DialogActions><Button disabled={saving} onClick={requestClose}>{t('common.cancel')}</Button><Button appearance="primary" disabledFocusable={saving} type="submit">{t('models.aliases.actions.save')}</Button></DialogActions>}
   >
     <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
-      <Controller control={control} name="name" render={({ field }) => <Field label={t('dashboard.modelAliases.form.name')} validationMessage={errors.name?.message ? t(errors.name.message) : undefined} validationState={errors.name ? 'error' : undefined}><Input {...field} className="font-mono" disabled={saving} placeholder={t('dashboard.modelAliases.form.namePlaceholder')} /></Field>} />
-      <Controller control={control} name="displayName" render={({ field }) => <Field label={t('dashboard.modelAliases.form.displayName')}><Input {...field} disabled={saving} placeholder={values.name || t('dashboard.modelAliases.form.displayPlaceholder')} /></Field>} />
-      <Controller control={control} name="kind" render={({ field }) => <Field label={t('dashboard.modelAliases.form.kind')}><Dropdown disabled={saving} selectedOptions={[field.value]} value={t(`dashboard.modelAliases.kind.${field.value}`)} onOptionSelect={(_, data) => data.optionValue !== undefined && changeKind(data.optionValue as ModelKind)}>{MODEL_KINDS.map(modelKind => <Option key={modelKind} value={modelKind}>{t(`dashboard.modelAliases.kind.${modelKind}`)}</Option>)}</Dropdown></Field>} />
-      <Field label={t('dashboard.modelAliases.form.selection')}><ChoiceGroup ariaLabel={t('dashboard.modelAliases.form.selection')} value={values.selection} onChange={value => setValue('selection', value as AliasFormValues['selection'])} items={[{ value: 'first-available', label: t('dashboard.modelAliases.selection.first') }, { value: 'random', label: t('dashboard.modelAliases.selection.random') }]} /></Field>
+      <Controller control={control} name="name" render={({ field }) => <Field label={t('models.aliases.form.name')} validationMessage={errors.name?.message ? t(errors.name.message) : undefined} validationState={errors.name ? 'error' : undefined}><Input {...field} className="font-mono" disabled={saving} placeholder={t('models.aliases.form.namePlaceholder')} /></Field>} />
+      <Controller control={control} name="displayName" render={({ field }) => <Field label={t('models.aliases.form.displayName')}><Input {...field} disabled={saving} placeholder={values.name || t('models.aliases.form.displayPlaceholder')} /></Field>} />
+      <Controller control={control} name="kind" render={({ field }) => <Field label={t('models.aliases.form.kind')}><Dropdown disabled={saving} selectedOptions={[field.value]} value={t(`models.aliases.kind.${field.value}`)} onOptionSelect={(_, data) => data.optionValue !== undefined && changeKind(data.optionValue as ModelKind)}>{MODEL_KINDS.map(modelKind => <Option key={modelKind} value={modelKind}>{t(`models.aliases.kind.${modelKind}`)}</Option>)}</Dropdown></Field>} />
+      <Field label={t('models.aliases.form.selection')}><ChoiceGroup ariaLabel={t('models.aliases.form.selection')} value={values.selection} onChange={value => setValue('selection', value as AliasFormValues['selection'])} items={[{ value: 'first-available', label: t('models.aliases.selection.first') }, { value: 'random', label: t('models.aliases.selection.random') }]} /></Field>
     </div>
     <section {...reorder.listProps('grid gap-2')} role="group" aria-labelledby="alias-targets-heading">
       <SectionHeader
-        description={t('dashboard.modelAliases.target.description')}
+        description={t('models.aliases.target.description')}
         level={3}
-        title={t('dashboard.modelAliases.target.heading')}
+        title={t('models.aliases.target.heading')}
         titleId="alias-targets-heading"
-        actions={<Button className="!whitespace-nowrap" disabled={saving} icon={<AddRegular />} onClick={() => append(blankTarget())}>{t('dashboard.modelAliases.actions.addTarget')}</Button>}
+        actions={<Button className="!whitespace-nowrap" disabled={saving} icon={<AddRegular />} onClick={() => append(blankTarget())}>{t('models.aliases.actions.addTarget')}</Button>}
       />
       {fields.map((field, index) => <AliasTargetRow key={field.id} disabled={saving} error={errors.targets?.[index]?.target_model_id?.message ? t(errors.targets[index].target_model_id.message) : undefined} handleProps={reorder.handleProps(index)} index={index} isSole={fields.length === 1} itemProps={reorder.itemProps(index)} catalog={catalog} kind={kind} target={targets[index] ?? field} targetIds={targetIds} onChange={target => setValue(`targets.${index}`, target, { shouldDirty: true, shouldValidate: true })} onRemove={() => remove(index)} />)}
       {errors.targets?.message && <Text className={dangerText} role="alert" size={200}>{t(errors.targets.message)}</Text>}
     </section>
     {kindAnnouncesMetadata(kind) && <SettingsExpander
-      action={<SettingsSwitch checked={values.manualMetadata} disabled={saving} label={t('dashboard.modelAliases.metadata.manual')} onChange={setManual} />}
-      description={t('dashboard.modelAliases.metadata.description')}
+      action={<SettingsSwitch checked={values.manualMetadata} disabled={saving} label={t('models.aliases.metadata.manual')} onChange={setManual} />}
+      description={t('models.aliases.metadata.description')}
       icon={<Info24Regular />}
-      header={t('dashboard.modelAliases.metadata.heading')}
+      header={t('models.aliases.metadata.heading')}
       revealOn={errors.announcedMetadata !== undefined}
       toggledOn={values.manualMetadata}
     >
@@ -156,9 +156,9 @@ export function AliasDialog({ aliases, mode, models, onOpenChange, open, onSaved
     </SettingsExpander>}
     {aliasWarnings.length > 0 && <OutcomeMessageBar intent="warning">{aliasWarnings.map(warning => <Text key={warning.type}>{modelAliasWarningText(warning, t)}</Text>)}</OutcomeMessageBar>}
     <SettingsCard
-      action={<SettingsSwitch checked={values.visible} disabled={saving} label={t('dashboard.modelAliases.form.visible')} onChange={checked => setValue('visible', checked)} />}
-      description={t('dashboard.modelAliases.form.visibleHint')}
-      header={t('dashboard.modelAliases.form.visible')}
+      action={<SettingsSwitch checked={values.visible} disabled={saving} label={t('models.aliases.form.visible')} onChange={checked => setValue('visible', checked)} />}
+      description={t('models.aliases.form.visibleHint')}
+      header={t('models.aliases.form.visible')}
       icon={<Eye24Regular />}
     />
     {serverError && <OutcomeMessageBar onDismiss={() => setServerError(null)}>{serverError}</OutcomeMessageBar>}

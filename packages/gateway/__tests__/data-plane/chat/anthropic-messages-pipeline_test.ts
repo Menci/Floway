@@ -8,6 +8,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { UpstreamTransportError } from '../../../src/dial/transport-error.ts';
 import { anthropicMessagesServePipeline } from '../../../src/data-plane/chat/anthropic-messages/pipeline.ts';
 import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
@@ -303,7 +304,7 @@ describe('the messages chain', () => {
   it('fails a dial that never connected over to the next candidate', async () => {
     const tried: string[] = [];
     resolves([
-      candidate(async () => { tried.push('dead'); return { type: 'transportFailure' as const, error: new Error('ECONNREFUSED') }; }, 'up_dead'),
+      candidate(async () => { tried.push('dead'); return { type: 'transportFailure' as const, error: new UpstreamTransportError(new Error('ECONNREFUSED')) }; }, 'up_dead'),
       candidate(async () => { tried.push('alive'); return stream(turn('hi')); }, 'up_alive'),
     ]);
 

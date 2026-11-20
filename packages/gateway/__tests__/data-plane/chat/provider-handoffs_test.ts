@@ -12,8 +12,8 @@ import type { ModelCandidate } from '@floway-dev/provider';
 import { createCustomPipelines } from '@floway-dev/provider-custom';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
-const config = { baseUrl: 'https://custom.example', authStyle: 'none' as const, endpoints: {}, ingressHeadersRules: [], modelsFetch: { enabled: false }, models: [] };
-const first = { id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'wire-model', choices: [{ index: 0, delta: { content: 'partial' }, finish_reason: null }] };
+const config = { baseUrl: 'https://custom.example', apiKey: '', endpoints: {}, ingressHeadersRules: [], modelsFetch: { enabled: false, authStyle: 'bearer' as const }, models: [] };
+const first = { id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'wire-model', choices: [{ index: 0, delta: { content: 'partial' }, finish_reason: 'stop' }] };
 const usage = { id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'wire-model', choices: [], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } };
 
 const runWire = async (response: Response) => {
@@ -62,7 +62,9 @@ for (const client of ['unread', 'partial', 'complete'] as const) test(`typed pro
   } else if (client === 'complete') {
     const sent: SseFrame[] = [];
     for await (const frame of frames) sent.push(frame);
-    expect(sent).toHaveLength(1);
+    const choices = sent.flatMap(frame => (JSON.parse(frame.data) as { choices: { delta: { content?: string }; finish_reason: string | null }[] }).choices);
+    expect(choices.map(choice => choice.delta.content ?? '').join('')).toBe('partial');
+    expect(choices.flatMap(choice => choice.finish_reason === null ? [] : [choice.finish_reason])).toEqual(['stop']);
   }
   await executed.drain();
   const outcome = await (executed.facts['response.chat.openaiChatCompletions.streamedUsage'] as Deferred<StreamOutcome>);

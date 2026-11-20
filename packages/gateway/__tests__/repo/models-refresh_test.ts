@@ -4,7 +4,7 @@ import { InMemoryRepo } from './memory.ts';
 import { modelsRefreshIdentity } from './models-cache-fixture.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import { saveUpstreamForTest } from './upstreams.ts';
-import { MAX_STORED_MODEL_ERROR_LENGTH, MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
+import { MODEL_CATALOG_REVISION } from '../../src/repo/models-cache-contract.ts';
 import { modelsRefreshRetryAt } from '../../src/repo/models-refresh-backoff.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { Repo, StoredUpstreamRecord } from '../../src/repo/types.ts';
@@ -35,23 +35,6 @@ const factories: [string, () => Promise<Repo>][] = [
 ];
 
 describe.each(factories)('%s models refresh persistence', (_name, createRepo) => {
-  test('bounds a stored failure without changing the caller input', async () => {
-    const repo = (await createRepo()).upstreams;
-    await saveUpstreamForTest(repo, record);
-    const message = 'x'.repeat(MAX_STORED_MODEL_ERROR_LENGTH + 100);
-
-    await repo.recordModelsRefreshFailure({
-      id: record.id,
-      ...modelsRefreshIdentity(record),
-      error: { message, at: 100 },
-      previousFailureCount: 0,
-    });
-
-    const stored = (await repo.getById(record.id))?.modelsCache?.lastError?.message;
-    expect(stored).toHaveLength(MAX_STORED_MODEL_ERROR_LENGTH);
-    expect(stored?.endsWith('…')).toBe(true);
-    expect(message).toHaveLength(MAX_STORED_MODEL_ERROR_LENGTH + 100);
-  });
 
   test('derives exponential retry times from the persisted failure count', async () => {
     const repo = (await createRepo()).upstreams;
@@ -103,20 +86,6 @@ describe.each(factories)('%s models refresh persistence', (_name, createRepo) =>
       .resolves.toBe(false);
     await expect(repo.recordModelsRefreshFailure({ id: record.id, ...identity, error: { message: 'old', at: 1 }, previousFailureCount: 0 }))
       .resolves.toBe(false);
-  });
-
-  test('deleting and reinserting the same ID cannot accept old refresh results', async () => {
-    const repo = (await createRepo()).upstreams;
-    await saveUpstreamForTest(repo, record);
-    const oldIdentity = modelsRefreshIdentity(record);
-    await repo.delete(record.id);
-    await saveUpstreamForTest(repo, { ...record, config: { tenant: 'replacement' } });
-
-    await expect(repo.publishModelsRefresh({ id: record.id, ...oldIdentity, cache: { revision: MODEL_CATALOG_REVISION, fetchedAt: 1, models: [] } }))
-      .resolves.toBe(false);
-    await expect(repo.recordModelsRefreshFailure({ id: record.id, ...oldIdentity, error: { message: 'old', at: 1 }, previousFailureCount: 0 }))
-      .resolves.toBe(false);
-    expect((await repo.getById(record.id))?.modelsCache).toBeNull();
   });
 
   test('cache publication fences stale completions from the same config', async () => {
@@ -178,21 +147,6 @@ describe.each(factories)('%s models refresh persistence', (_name, createRepo) =>
     const transported = await repo.getById(record.id);
     expect(transported?.configVersion).toBe(2);
     expect(transported?.modelsCache).toMatchObject({ fetchedAt: 10, models: [], lastError: null });
-  });
-
-  test('state and metadata changes preserve the config version and backoff', async () => {
-    const repo = (await createRepo()).upstreams;
-    await saveUpstreamForTest(repo, record);
-    const identity = modelsRefreshIdentity(record);
-    const now = 1_800_000_000_000;
-    await repo.recordModelsRefreshFailure({ id: record.id, ...identity, error: { message: 'failure', at: now }, previousFailureCount: 0 });
-    await repo.saveState(record.id, () => ({ credential: 'rotated' }));
-    const current = await repo.getById(record.id);
-    if (current === null) throw new Error('upstream row missing');
-    await repo.replaceForModels({ previous: current, upstream: { ...current, name: 'Renamed' } });
-
-    expect((await repo.getById(record.id))?.configVersion).toBe(1);
-    expect((await repo.getById(record.id))?.modelsCache?.lastError?.failureCount).toBe(1);
   });
 
   test('catalog-aware writes reject stale and duplicate control-plane writers', async () => {

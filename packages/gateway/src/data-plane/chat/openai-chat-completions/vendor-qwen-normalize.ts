@@ -1,7 +1,7 @@
 import type { Chat } from '../facts.ts';
 import { withoutKeys } from '../shared/structural.ts';
 import { defineStage, transform, move } from '@floway-dev/pipeline';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 
 /** Qwen says "no reasoning" with a top-level `enable_thinking: false` rather than with the
  *  canonical sentinel. Its response shape matches OpenAI for the fields the gateway reads, so
@@ -41,4 +41,4 @@ export const vendorQwenNormalizeForOpenAIChatCompletions = defineStage<
   })),
 });
 
-type OpenAIChatCompletionsPayloadWithQwenThinking = Omit<OpenAIChatCompletionsPayload, 'reasoning_effort'> & { enable_thinking: false };
+type OpenAIChatCompletionsPayloadWithQwenThinking = Omit<OpenAIChatCompletionsPayloadEx, 'reasoning_effort'> & { enable_thinking: false };

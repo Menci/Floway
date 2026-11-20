@@ -73,10 +73,9 @@ export interface UsageRecord {
 }
 
 export type UsageOverviewGroupBy = 'keyId' | 'userId' | 'model' | 'upstream';
-export type UsageOverviewAxis = UsageOverviewGroupBy | 'none' | 'series';
+export type UsageOverviewAxis = UsageOverviewGroupBy | 'none';
 
 export interface UsageOverviewRecord {
-  bucket: string;
   group: string;
   requests: number;
   metrics: Array<{ metric: BillingMetric; quantity: DecimalString }>;
@@ -97,14 +96,16 @@ export interface UsageOverviewQueryOptions {
   visibleUpstreams: readonly string[];
   start: string;
   end: string;
-  groupBy: UsageOverviewGroupBy;
+  ownedKeysOnly: boolean;
   filters: UsageOverviewFilters;
   bucketForHour: (hour: string) => string;
 }
 
 export interface UsageOverviewResult {
-  series: UsageOverviewRecord[];
-  axes: Record<UsageOverviewGroupBy | 'none', UsageOverviewRecord[]>;
+  bucket: string;
+  firstHour: string;
+  lastHour: string;
+  axes: Record<UsageOverviewAxis, UsageOverviewRecord[]>;
   dimensionValues: {
     keyIds: string[];
     userIds: number[];
@@ -365,7 +366,7 @@ export interface UsageRepo {
   // snapshot; later writes that share the row keep it unchanged.
   record(record: UsageRecord): Promise<void>;
   query(opts: { keyIds?: readonly string[]; start: string; end: string }): Promise<UsageRecord[]>;
-  queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult>;
+  queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult[]>;
   listAll(): Promise<UsageRecord[]>;
   // Replacement upsert: quantities and unit prices are overwritten from the record.
   set(record: UsageRecord): Promise<void>;
@@ -441,7 +442,7 @@ export interface UpstreamRepo {
   // a CAS, retrying against the winner when it loses; exhausting the retries
   // throws. See UpstreamsRepoSlim in @floway-dev/provider for why the change
   // is a function.
-  saveState(id: string, mutate: (current: unknown) => unknown): Promise<void>;
+  saveState(id: string, mutate: (current: unknown, configVersion: number) => unknown): Promise<void>;
   publishModelsRefresh(input: ModelsRefreshSuccessInput): Promise<boolean>;
   recordModelsRefreshFailure(input: ModelsRefreshFailureInput): Promise<boolean>;
 }
@@ -512,9 +513,7 @@ export interface ProxyBackoffRepo {
   listForProxy(proxyId: string): Promise<BackoffRow[]>;
   listAll(): Promise<BackoffRow[]>;
   resetForProxy(proxyId: string): Promise<void>;
-  resetForUpstream(upstreamId: string): Promise<void>;
   reset(proxyId: string, upstreamId: string): Promise<void>;
-  deleteAll(): Promise<void>;
 }
 
 // One alias row. The wire DTO (`ModelAlias` in @floway-dev/protocols/common)

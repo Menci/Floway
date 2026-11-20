@@ -62,16 +62,16 @@ export function ProxyForm({
   const dialTimeoutMessage = issueText(errors.dialTimeout?.message);
   return (
     <div className="grid gap-4 min-w-0">
-      <Field label={t('dashboard.proxy.form.name')} validationMessage={nameMessage} validationState={nameMessage ? 'error' : undefined}>
+      <Field label={t('proxies.form.name')} validationMessage={nameMessage} validationState={nameMessage ? 'error' : undefined}>
         <Input
           onChange={(_, d) => onNameChange(d.value)}
-          placeholder={t('dashboard.proxy.form.namePlaceholder')}
+          placeholder={t('proxies.form.namePlaceholder')}
           value={formName}
         />
       </Field>
 
       <Field
-        label={t('dashboard.proxy.form.url')}
+        label={t('proxies.form.url')}
         validationMessage={urlMessage}
         validationState={urlMessage ? 'error' : undefined}
       >
@@ -83,7 +83,7 @@ export function ProxyForm({
         />
       </Field>
 
-      <Field label={t('dashboard.proxy.form.protocol')}>
+      <Field label={t('proxies.form.protocol')}>
         <Dropdown
           onOptionSelect={onKindChange}
           selectedOptions={[formKind]}
@@ -99,18 +99,18 @@ export function ProxyForm({
 
       <div className="grid grid-cols-1 items-start gap-[12px] sm:grid-cols-[1fr_8rem]">
         <Field
-          label={t('dashboard.proxy.form.host')}
+          label={t('proxies.form.host')}
           validationMessage={message('host')}
           validationState={state('host')}
         >
           <Input
             onChange={(_, d) => setConfig(prev => ({ ...prev, host: d.value } as ProxyConfig))}
-            placeholder={t('dashboard.proxy.form.hostPlaceholder')}
+            placeholder={t('proxies.form.hostPlaceholder')}
             value={config.host}
           />
         </Field>
         <Field
-          label={t('dashboard.proxy.form.port')}
+          label={t('proxies.form.port')}
           validationMessage={message('port')}
           validationState={state('port')}
         >
@@ -126,7 +126,7 @@ export function ProxyForm({
 
       {config.kind === 'http' && (
         <div className="grid grid-cols-1 gap-[12px]">
-          <Field label={t('dashboard.proxy.form.username')}>
+          <Field label={t('proxies.form.username')}>
             <Input
               onChange={(_, d) =>
                 setConfig(prev => ({
@@ -137,7 +137,7 @@ export function ProxyForm({
               value={(config as HttpProxyConfig).username ?? ''}
             />
           </Field>
-          <Field label={t('dashboard.proxy.form.password')}>
+          <Field label={t('proxies.form.password')}>
             <SecretInput
               onChange={(_, d) =>
                 setConfig(prev => ({
@@ -153,7 +153,7 @@ export function ProxyForm({
 
       {config.kind === 'socks5' && (
         <div className="grid grid-cols-1 gap-[12px]">
-          <Field label={t('dashboard.proxy.form.username')}>
+          <Field label={t('proxies.form.username')}>
             <Input
               onChange={(_, d) =>
                 setConfig(prev => ({
@@ -164,7 +164,7 @@ export function ProxyForm({
               value={(config as Socks5ProxyConfig).username ?? ''}
             />
           </Field>
-          <Field label={t('dashboard.proxy.form.password')}>
+          <Field label={t('proxies.form.password')}>
             <SecretInput
               onChange={(_, d) =>
                 setConfig(prev => ({
@@ -180,7 +180,7 @@ export function ProxyForm({
 
       {config.kind === 'ss' && (
         <div className="grid grid-cols-1 gap-[12px]">
-          <Field label={t('dashboard.proxy.form.method')}>
+          <Field label={t('proxies.form.method')}>
             <Dropdown
               onOptionSelect={(_, d) =>
                 d.optionValue !== undefined && setConfig(prev => ({
@@ -199,7 +199,7 @@ export function ProxyForm({
             </Dropdown>
           </Field>
           <Field
-            label={t('dashboard.proxy.form.passwordLabel')}
+            label={t('proxies.form.passwordLabel')}
             validationMessage={message('password')}
             validationState={state('password')}
           >
@@ -218,7 +218,7 @@ export function ProxyForm({
 
       {config.kind === 'ss2022' && (
         <div className="grid grid-cols-1 gap-[12px]">
-          <Field label={t('dashboard.proxy.form.method')}>
+          <Field label={t('proxies.form.method')}>
             <Dropdown
               onOptionSelect={(_, d) =>
                 d.optionValue !== undefined && setConfig(prev => ({
@@ -239,7 +239,7 @@ export function ProxyForm({
             </Dropdown>
           </Field>
           <Field
-            label={t('dashboard.proxy.form.psk')}
+            label={t('proxies.form.psk')}
             validationMessage={message('passwordBase64')}
             validationState={state('passwordBase64')}
           >
@@ -261,7 +261,7 @@ export function ProxyForm({
       {config.kind === 'trojan' && (
         <div className="grid grid-cols-1 gap-[12px]">
           <Field
-            label={t('dashboard.proxy.form.passwordLabel')}
+            label={t('proxies.form.passwordLabel')}
             validationMessage={message('password')}
             validationState={state('password')}
           >
@@ -275,7 +275,7 @@ export function ProxyForm({
               value={(config as TrojanProxyConfig).password}
             />
           </Field>
-          <Field label={t('dashboard.proxy.form.sni')}>
+          <Field label={t('proxies.form.sni')}>
             <Input
               onChange={(_, d) =>
                 setConfig(prev => ({
@@ -283,7 +283,7 @@ export function ProxyForm({
                   sni: orUndef(d.value),
                 } as TrojanProxyConfig))
               }
-              placeholder={t('dashboard.proxy.form.sniPlaceholder')}
+              placeholder={t('proxies.form.sniPlaceholder')}
               value={(config as TrojanProxyConfig).sni ?? ''}
             />
           </Field>
@@ -291,7 +291,7 @@ export function ProxyForm({
             checked={
               (config as TrojanProxyConfig).allowInsecure ?? false
             }
-            label={t('dashboard.proxy.form.allowInsecure')}
+            label={t('proxies.form.allowInsecure')}
             onChange={(_, d) =>
               setConfig(prev => ({
                 ...prev,
@@ -304,7 +304,7 @@ export function ProxyForm({
 
       {config.kind === 'vless-tcp' && (
         <Field
-          label={t('dashboard.proxy.form.uuid')}
+          label={t('proxies.form.uuid')}
           validationMessage={message('uuid')}
           validationState={state('uuid')}
         >
@@ -315,7 +315,7 @@ export function ProxyForm({
                 uuid: d.value,
               } as VlessTcpTlsProxyConfig))
             }
-            placeholder={t('dashboard.proxy.form.uuidPlaceholder')}
+            placeholder={t('proxies.form.uuidPlaceholder')}
             value={(config as VlessTcpTlsProxyConfig).uuid}
           />
         </Field>
@@ -324,7 +324,7 @@ export function ProxyForm({
       {config.kind === 'vless-ws' && (
         <div className="grid grid-cols-1 gap-[12px]">
           <Field
-            label={t('dashboard.proxy.form.uuid')}
+            label={t('proxies.form.uuid')}
             validationMessage={message('uuid')}
             validationState={state('uuid')}
           >
@@ -335,12 +335,12 @@ export function ProxyForm({
                   uuid: d.value,
                 } as VlessWsTlsProxyConfig))
               }
-              placeholder={t('dashboard.proxy.form.uuidPlaceholder')}
+              placeholder={t('proxies.form.uuidPlaceholder')}
               value={(config as VlessWsTlsProxyConfig).uuid}
             />
           </Field>
           <Field
-            label={t('dashboard.proxy.form.wsPath')}
+            label={t('proxies.form.wsPath')}
             validationMessage={message('path')}
             validationState={state('path')}
           >
@@ -351,11 +351,11 @@ export function ProxyForm({
                   path: d.value,
                 } as VlessWsTlsProxyConfig))
               }
-              placeholder={t('dashboard.proxy.form.wsPathPlaceholder')}
+              placeholder={t('proxies.form.wsPathPlaceholder')}
               value={(config as VlessWsTlsProxyConfig).path}
             />
           </Field>
-          <Field label={t('dashboard.proxy.form.wsHost')}>
+          <Field label={t('proxies.form.wsHost')}>
             <Input
               onChange={(_, d) =>
                 setConfig(prev => ({
@@ -363,7 +363,7 @@ export function ProxyForm({
                   wsHost: orUndef(d.value),
                 } as VlessWsTlsProxyConfig))
               }
-              placeholder={t('dashboard.proxy.form.wsHostPlaceholder')}
+              placeholder={t('proxies.form.wsHostPlaceholder')}
               value={(config as VlessWsTlsProxyConfig).wsHost ?? ''}
             />
           </Field>
@@ -373,7 +373,7 @@ export function ProxyForm({
       {config.kind === 'reality' && (
         <div className="grid grid-cols-1 gap-[12px]">
           <Field
-            label={t('dashboard.proxy.form.uuid')}
+            label={t('proxies.form.uuid')}
             validationMessage={message('uuid')}
             validationState={state('uuid')}
           >
@@ -384,12 +384,12 @@ export function ProxyForm({
                   uuid: d.value,
                 } as RealityProxyConfig))
               }
-              placeholder={t('dashboard.proxy.form.uuidPlaceholder')}
+              placeholder={t('proxies.form.uuidPlaceholder')}
               value={(config as RealityProxyConfig).uuid}
             />
           </Field>
           <Field
-            label={t('dashboard.proxy.form.serverName')}
+            label={t('proxies.form.serverName')}
             validationMessage={message('serverName')}
             validationState={state('serverName')}
           >
@@ -400,12 +400,12 @@ export function ProxyForm({
                   serverName: d.value,
                 } as RealityProxyConfig))
               }
-              placeholder={t('dashboard.proxy.form.serverNamePlaceholder')}
+              placeholder={t('proxies.form.serverNamePlaceholder')}
               value={(config as RealityProxyConfig).serverName}
             />
           </Field>
           <Field
-            label={t('dashboard.proxy.form.publicKey')}
+            label={t('proxies.form.publicKey')}
             validationMessage={message('publicKey')}
             validationState={state('publicKey')}
           >
@@ -416,11 +416,11 @@ export function ProxyForm({
                   publicKey: d.value,
                 } as RealityProxyConfig))
               }
-              placeholder={t('dashboard.proxy.form.publicKeyPlaceholder')}
+              placeholder={t('proxies.form.publicKeyPlaceholder')}
               value={(config as RealityProxyConfig).publicKey}
             />
           </Field>
-          <Field label={t('dashboard.proxy.form.shortId')}>
+          <Field label={t('proxies.form.shortId')}>
             <Input
               onChange={(_, d) =>
                 setConfig(prev => ({
@@ -428,7 +428,7 @@ export function ProxyForm({
                   shortId: orUndef(d.value),
                 } as RealityProxyConfig))
               }
-              placeholder={t('dashboard.proxy.form.shortIdPlaceholder')}
+              placeholder={t('proxies.form.shortIdPlaceholder')}
               value={(config as RealityProxyConfig).shortId ?? ''}
             />
           </Field>
@@ -436,8 +436,8 @@ export function ProxyForm({
       )}
 
       <Field
-        hint={t('dashboard.proxy.form.timeoutHint')}
-        label={t('dashboard.proxy.form.timeout')}
+        hint={t('proxies.form.timeoutHint')}
+        label={t('proxies.form.timeout')}
         validationMessage={dialTimeoutMessage}
         validationState={dialTimeoutMessage ? 'error' : undefined}
       >
@@ -445,7 +445,7 @@ export function ProxyForm({
           inputMode="numeric"
           min={1}
           onChange={(_, d) => onDialTimeoutChange(d.value)}
-          placeholder={t('dashboard.proxy.form.timeoutPlaceholder', { seconds: DEFAULT_DIAL_TIMEOUT_SECONDS })}
+          placeholder={t('proxies.form.timeoutPlaceholder', { seconds: DEFAULT_DIAL_TIMEOUT_SECONDS })}
           type="number"
           value={dialTimeoutInput}
         />

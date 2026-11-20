@@ -3,19 +3,20 @@ import { useLocation } from 'react-router';
 
 import { useTranslation } from '../i18n/translation';
 import { pageLabelKeys } from './sidebar/pages';
+import { withoutUiTextEditorMarkers } from '../i18n/ui-text-editor/markers';
 import { useSiteSettingsStore } from '../stores/site-settings-store';
 
 const titleKeyForPathname = (pathname: string) => {
   if (pathname === '/') return 'auth.login.title';
-  if (pathname === '/dashboard') return 'dashboard.title';
+  if (pathname === '/dashboard') return 'app.consoleTitle';
   if (/^\/dashboard\/providers\/upstreams\/new\/[^/]+$/.test(pathname)) {
-    return 'dashboard.upstreamEditor.documentTitleNew';
+    return 'upstreams.editor.documentTitleNew';
   }
   if (/^\/dashboard\/providers\/upstreams\/[^/]+\/copy$/.test(pathname)) {
-    return 'dashboard.upstreamEditor.documentTitleCopy';
+    return 'upstreams.editor.documentTitleCopy';
   }
   if (/^\/dashboard\/providers\/upstreams\/[^/]+$/.test(pathname)) {
-    return 'dashboard.upstreamEditor.documentTitleEdit';
+    return 'upstreams.editor.documentTitleEdit';
   }
 
   return pageLabelKeys.get(pathname) ?? 'app.title';
@@ -31,8 +32,10 @@ export function DocumentTitleSync() {
   const siteName = useSiteSettingsStore(state => state.siteName);
 
   useEffect(() => {
-    const title = t(titleKeyForPathname(location.pathname));
-    window.document.title = t('app.documentTitle', { title, siteName: siteName ?? t('app.title') });
+    withoutUiTextEditorMarkers(() => {
+      const title = t(titleKeyForPathname(location.pathname));
+      window.document.title = t('app.documentTitle', { title, siteName: siteName ?? t('app.title') });
+    });
   }, [i18n.language, location.pathname, siteName, t]);
 
   return null;

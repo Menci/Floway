@@ -3,9 +3,7 @@ import { analyzeGeminiGenerateContentAffinity } from './affinity/ingress.ts';
 import type { Fields } from './facts.ts';
 import { chatTargetPicker } from '../shared/target-picker.ts';
 
-/** `:generateContent` has no wire of its own, so the whole preference list is translated:
- *  OpenAI Chat Completions first, then Anthropic Messages, then OpenAI Responses. */
-export const geminiGenerateContentTarget = chatTargetPicker(['openaiChatCompletions', 'anthropicMessages', 'openaiResponses']);
+export const geminiGenerateContentTarget = chatTargetPicker(['geminiGenerateContent', 'openaiChatCompletions', 'anthropicMessages', 'openaiResponses']);
 
 export const narrowing: ChatNarrowing<Fields<'response.chat.geminiGenerateContent' | 'response.chat.geminiGenerateContent.streamedUsage'>, 'request.chat.geminiGenerateContent'> = ({
   requestKey: 'request.chat.geminiGenerateContent',

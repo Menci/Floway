@@ -9,7 +9,7 @@ export const stubAlphaSearchCandidate = (dispatch: AlphaSearchDispatcher): Model
     ...base, provider: {
       ...base.provider, pipelines: {
         alphaSearch: stubProviderPipeline('alphaSearch', async (_model, payload, signal, options) => ({
-          response: await dispatch(payload, signal, options.headers), modelKey: 'search-model',
+          http: await dispatch(payload, signal, options.headers), modelKey: 'search-model',
         })),
       },
     },

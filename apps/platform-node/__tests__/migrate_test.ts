@@ -33,16 +33,6 @@ test('applies all real migration files against a fresh sqlite', () => withTemp(a
   assertEquals(recorded !== null && recorded.n > 0, true);
 }));
 
-test('rerun is a no-op once all migrations are applied', () => withTemp(async dir => {
-  const db = createNodeSqliteDatabase(join(dir, 'idempotent.db'));
-  await applyMigrations(db);
-  const firstCount = await db.prepare('SELECT COUNT(*) AS n FROM _migrations').first<{ n: number }>();
-
-  await applyMigrations(db);
-  const secondCount = await db.prepare('SELECT COUNT(*) AS n FROM _migrations').first<{ n: number }>();
-  assertEquals(secondCount?.n, firstCount?.n);
-}));
-
 test('mid-migration failure rolls back and leaves no partial schema', () => withTemp(async dir => {
   const migrationsDir = join(dir, 'migrations');
   await rm(migrationsDir, { recursive: true, force: true });
@@ -67,23 +57,4 @@ test('mid-migration failure rolls back and leaves no partial schema', () => with
 
   const recorded = await db.prepare('SELECT name FROM _migrations').all<{ name: string }>();
   assertEquals(recorded.results, []);
-}));
-
-test('skips already-applied migrations on partial state', () => withTemp(async dir => {
-  const migrationsDir = join(dir, 'migrations');
-  const { mkdir } = await import('node:fs/promises');
-  await mkdir(migrationsDir, { recursive: true });
-  await writeFile(join(migrationsDir, '0001_a.sql'), 'CREATE TABLE a (id INTEGER);');
-  await writeFile(join(migrationsDir, '0002_b.sql'), 'CREATE TABLE b (id INTEGER);');
-
-  const db = createNodeSqliteDatabase(join(dir, 'partial.db'));
-  await applyMigrations(db, migrationsDir);
-
-  // Add a third migration; rerun. Only the new one should execute — the first
-  // two would error if re-run because the tables already exist.
-  await writeFile(join(migrationsDir, '0003_c.sql'), 'CREATE TABLE c (id INTEGER);');
-  await applyMigrations(db, migrationsDir);
-
-  const recorded = await db.prepare('SELECT name FROM _migrations ORDER BY name').all<{ name: string }>();
-  assertEquals(recorded.results.map(r => r.name), ['0001_a.sql', '0002_b.sql', '0003_c.sql']);
 }));

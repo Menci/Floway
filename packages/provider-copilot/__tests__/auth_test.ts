@@ -39,9 +39,9 @@ const installRepoAndClearCache = async () => {
   initProviderRepo(() => ({
     recordUpstreamMetric: async () => {},
     upstreams: {
-      getById: async () => ({ ...stub, state }),
+      getById: async () => ({ ...stub, state, configVersion: 1 }),
       saveState: async (_id, mutate) => {
-        state = mutate(state);
+        state = mutate(state, 1);
       },
     },
   }));
@@ -479,9 +479,9 @@ test('copilotAuthedFetch persists a minted token even when the row changed durin
   initProviderRepo(() => ({
     recordUpstreamMetric: async () => {},
     upstreams: {
-      getById: async () => ({ ...stub, state }),
+      getById: async () => ({ ...stub, state, configVersion: 1 }),
       saveState: async (_id, mutate) => {
-        state = mutate(state);
+        state = mutate(state, 1);
       },
     },
   }));

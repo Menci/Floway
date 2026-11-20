@@ -33,8 +33,8 @@ for (const action of ['generate', 'edit'] as const) for (const consume of [false
       { type: `${prefix}.partial_image`, partial_image_index: 0, b64_json: 'preview' },
       { type: `${prefix}.completed`, b64_json: 'pixels', usage: { input_tokens: 7, output_tokens: 3 } },
     ].map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), { headers: { 'content-type': 'text/event-stream' } });
-    const generate = vi.fn(async () => ({ response: response(), modelKey: 'backend-image' }));
-    const edit = vi.fn(async () => ({ response: response(), modelKey: 'backend-image' }));
+    const generate = vi.fn(async () => ({ http: response(), modelKey: 'backend-image' }));
+    const edit = vi.fn(async () => ({ http: response(), modelKey: 'backend-image' }));
     const candidate = {
       ...plainCandidate, provider: {
         ...plainCandidate.provider, pipelines: {
@@ -117,7 +117,7 @@ const openGeneration = async (stream: boolean, signal?: AbortSignal) => {
     { type: 'image_generation.completed', b64_json: 'pixels', usage: { input_tokens: 7, output_tokens: 3 } },
   ].map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), { headers: { 'content-type': 'text/event-stream' } })
     : Response.json({ data: [{ b64_json: 'pixels' }], usage: { input_tokens: 7, output_tokens: 3 } });
-  const dial = vi.fn(async () => ({ response: body, modelKey: 'backend-image' }));
+  const dial = vi.fn(async () => ({ http: body, modelKey: 'backend-image' }));
   const plain = stubModelCandidate({ model: { id: 'image-model', kind: 'image', endpoints: { openaiImagesGenerations: {} } } });
   const candidate = { ...plain, provider: { ...plain.provider, pipelines: { openaiImagesGenerations: stubProviderPipeline('openaiImagesGenerations', dial) } } };
   vi.spyOn(resolution, 'enumerateModelCandidates').mockResolvedValue({ candidates: [candidate], sawModel: true, failedUpstreams: [] });

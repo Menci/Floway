@@ -27,7 +27,7 @@ export const openaiResponsesCompactPipeline = (): Pipeline<OpenAIResponsesCompac
     hydrateStoredItems,
     resolveChatCandidates(openaiResponsesNarrowing),
     failover({
-      failed: handedUp => isFailure((handedUp as { 'response.chat.openaiResponses'?: unknown })['response.chat.openaiResponses']),
+      answer: handedUp => handedUp['response.chat.openaiResponses'],
       owns: ['response.http.body'],
       pendingUsage: OPENAI_RESPONSES_STREAMED_USAGE,
     }),

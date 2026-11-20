@@ -277,7 +277,7 @@ export const openaiResponsesSettingsFromIR = (settings: IRInputSettings): Partia
     ...(settings.prompt_cache_retention === undefined ? {} : { prompt_cache_retention: settings.prompt_cache_retention }),
     ...(settings.prompt_cache_options == null ? {} : { prompt_cache_options: settings.prompt_cache_options }),
     ...(settings.safety_identifier === undefined ? {} : { safety_identifier: settings.safety_identifier }),
-    ...(settings.user == null ? {} : { user: settings.user }),
+    ...(settings.user === undefined ? {} : { user: settings.user }),
     // Responses requests token probabilities through its includable output data.
     // https://github.com/openai/openai-node/blob/7423ac3e9351c46300cd094479cded5551a72eb4/src/resources/responses/responses.ts
     ...(settings.logprobs === undefined ? {} : { include: settings.logprobs === null ? null : settings.logprobs ? ['message.output_text.logprobs'] : [] }),

@@ -31,11 +31,10 @@ const buildCustomUpstream = (options: BuildOptions = {}): UpstreamRecord => ({
   hue: 210,
   config: {
     baseUrl: 'https://custom.example.com',
-    authStyle: 'bearer',
     apiKey: 'sk-test',
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: options.ingressHeadersRules ?? [],
-    modelsFetch: { enabled: options.modelsFetchEnabled ?? true },
+    modelsFetch: { enabled: options.modelsFetchEnabled ?? true, authStyle: 'bearer' },
     models: options.models ?? [],
   },
 });
@@ -496,7 +495,7 @@ test('Custom provider openaiImagesGenerations pipeline posts JSON with model re-
       const [model] = await provider.instance.getProvidedModels(directFetcher);
       const result = await callProviderPipeline(provider, 'openaiImagesGenerations', model, { prompt: 'hi' }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
-      assertEquals(result.response!.status, 200);
+      assertEquals(result.http!.status, 200);
     },
   );
   assertExists(forwarded);
@@ -524,7 +523,7 @@ test('Custom provider callAlphaSearch posts JSON to /v1/alpha/search with the up
         { id: 'search-session', commands: { search_query: [{ q: 'Floway' }] } },
         undefined,
         noopUpstreamCallOptions());
-      assertEquals(result.response!.status, 200);
+      assertEquals(result.http!.status, 200);
       assertEquals(result.modelKey, 'gpt-search');
     },
   );

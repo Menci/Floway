@@ -10,7 +10,7 @@ import { collectHttpPipeline, noopUpstreamCallOptions, stubProviderModel } from 
 test('audio prepare preserves ordered fields and file metadata while replacing the selected model', async () => {
   const file = { bytes: new Uint8Array([1, 2, 3, 4]), name: 'meeting.wav', type: 'audio/wav', lastModified: 1_700_000_000_000 };
   const entries = [{ name: 'file', value: file }, { name: 'language', value: 'en' }, { name: 'model', value: 'public-model' }, { name: 'timestamp_granularities[]', value: 'word' }, { name: 'timestamp_granularities[]', value: 'segment' }];
-  const prepare = prepareCustomRequest({ baseUrl: 'https://custom.example', authStyle: 'none', endpoints: {}, ingressHeadersRules: [], modelsFetch: { enabled: false }, models: [] }, 'openaiAudioTranscriptions');
+  const prepare = prepareCustomRequest({ baseUrl: 'https://custom.example', apiKey: '', endpoints: {}, ingressHeadersRules: [], modelsFetch: { enabled: false, authStyle: 'bearer' }, models: [] }, 'openaiAudioTranscriptions');
   const pipeline = compose<ProviderRequest<{ entries: typeof entries }>, ProviderResponse & Record<string, unknown>>('audio.metadata', [prepare, observeProviderCall, http]);
   const executed = await collectHttpPipeline(pipeline, { 'request.provider.model': providerModelFacts(stubProviderModel({ providerData: 'upstream-model' })), 'request.provider.payload': { entries }, 'request.http.callId': 0, 'request.http.headers': [] }, { httpCall: () => ({ ...noopUpstreamCallOptions(), fetcher: async () => new Response('{}'), signal: undefined }) });
   const body = executed.facts['request.http.body'] as HttpMultipartBody;

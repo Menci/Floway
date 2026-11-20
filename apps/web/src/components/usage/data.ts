@@ -1,5 +1,5 @@
+import { mergeUsageOverview, usageOverviewCursor, usageOverviewForDisplay } from './overview';
 import type {
-  DisplayUsageRecord,
   SearchUsageResponse,
   SearchUsageView,
   UsageFilters,
@@ -17,25 +17,6 @@ import type {
 
 const userBucketId = (userId: number) => `user-${userId}`;
 
-export const metricsFromWire = (
-  metrics: TokenUsageOverviewResponse['series'][number]['metrics'],
-): DisplayUsageRecord['metrics'] => Object.fromEntries(
-  metrics.map(({ metric, quantity }) => [metric, quantity]),
-);
-
-const usageRecordForDisplay = (
-  record: TokenUsageOverviewResponse['series'][number],
-): DisplayUsageRecord => ({ ...record, metrics: metricsFromWire(record.metrics) });
-
-const usageOverviewForDisplay = (data: TokenUsageOverviewResponse): UsageOverviewResponse => ({
-  ...data,
-  series: data.series.map(usageRecordForDisplay),
-  axes: Object.fromEntries(Object.entries(data.axes).map(([key, records]) => [
-    key,
-    records.map(usageRecordForDisplay),
-  ])) as UsageOverviewResponse['axes'],
-});
-
 const searchUsageForDisplay = (data: SearchUsageByKeyResponse | SearchUsageByUserResponse): SearchUsageResponse =>
   data.view === 'all-by-user'
     ? {
@@ -49,8 +30,9 @@ export const buildUsageOverviewQuery = (
   groupBy: UsageGroupBy,
   filters: UsageFilters,
   nowMs: number,
-): Record<string, string | string[]> => ({
+) => ({
   ...dashboardRangeQuery(range, nowMs),
+  format: 'buckets' as const,
   group_by: groupBy,
   filter_model: filters.model,
   filter_upstream: filters.upstream,
@@ -58,19 +40,57 @@ export const buildUsageOverviewQuery = (
   filter_key_id: filters.keyId,
 });
 
-export const loadUsageOverview = async (range: UsageRange, groupBy: UsageGroupBy, filters: UsageFilters, loadedAt: number, signal?: AbortSignal): Promise<ApiResult<UsageOverviewResponse>> => {
-  const query = buildUsageOverviewQuery(range, groupBy, filters, loadedAt);
-  const result = await callApi(() => api.api['token-usage'].overview.$get({ query }, { init: { signal } }));
-  return result.error ? result : { data: usageOverviewForDisplay(result.data) };
+export type UsageOverviewLoader = (
+  range: UsageRange, groupBy: UsageGroupBy, filters: UsageFilters, loadedAt: number,
+  signal: AbortSignal,
+) => Promise<ApiResult<UsageOverviewResponse>>;
+
+type UsageOverviewQuery = ReturnType<typeof buildUsageOverviewQuery>;
+
+const sameMembers = <T>(left: readonly T[], right: readonly T[]): boolean => {
+  const members = new Set(left);
+  return members.size === new Set(right).size && right.every(value => members.has(value));
+};
+
+const sameUsageQuery = (left: UsageOverviewQuery, right: UsageOverviewQuery): boolean =>
+  left.bucket === right.bucket && left.timezone === right.timezone
+  && (!left.bucket.endsWith('d') || left.start === right.start)
+  && (left.group_by === 'keyId') === (right.group_by === 'keyId')
+  && sameMembers(left.filter_model, right.filter_model)
+  && sameMembers(left.filter_upstream, right.filter_upstream)
+  && sameMembers(left.filter_user_id, right.filter_user_id)
+  && sameMembers(left.filter_key_id, right.filter_key_id);
+
+export const createUsageOverviewLoader = (): UsageOverviewLoader => {
+  let latest: { query: UsageOverviewQuery; snapshot: TokenUsageOverviewResponse } | undefined;
+  return async (range, groupBy, filters, loadedAt, signal) => {
+    const query = buildUsageOverviewQuery(range, groupBy, filters, loadedAt);
+    let previous = latest && sameUsageQuery(latest.query, query) ? latest.snapshot : undefined;
+    const cursor = usageOverviewCursor(previous, query.start, query.end);
+    const load = (cursor: string | undefined) => callApi(() => api.api['token-usage'].overview.$get({ query: { ...query, cursor } }, { init: { signal } }));
+    let result = await load(cursor);
+    if (result.error) return result;
+    if (previous && !result.data.reset && JSON.stringify(previous.scope) !== JSON.stringify(result.data.scope)) {
+      previous = undefined;
+      if (!signal.aborted) latest = undefined;
+      result = await load(undefined);
+      if (result.error) return result;
+    }
+    const snapshot = mergeUsageOverview(previous, result.data, query.start);
+    const data = usageOverviewForDisplay(snapshot, groupBy);
+    if (!signal.aborted) latest = { query, snapshot };
+    return { data };
+  };
 };
 
 export const loadUsagePageData = async (
+  loadUsageOverview: UsageOverviewLoader,
   currentUserId: string,
   range: UsageRange,
   groupBy: UsageGroupBy,
   filters: UsageFilters,
   loadedAt: number,
-  signal?: AbortSignal,
+  signal: AbortSignal,
   knownAuditableUserIds?: readonly number[],
 ) => {
   const { start, end } = dashboardRangeQuery(range, loadedAt);
@@ -95,7 +115,7 @@ export const loadUsagePageData = async (
       loadSearch(searchView),
     ]);
     const currentSearchView = usageResult.data === undefined ? searchView : searchViewFor(usageResult.data.auditableUserIds);
-    if (!signal?.aborted && currentSearchView !== searchView) {
+    if (!signal.aborted && currentSearchView !== searchView) {
       searchView = currentSearchView;
       searchResult = await loadSearch(searchView);
     }

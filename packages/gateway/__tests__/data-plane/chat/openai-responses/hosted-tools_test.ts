@@ -120,7 +120,7 @@ test.each([
   { change: 'search results', original: boundSearchItem, changed: { ...boundSearchItem, results: [] } },
   { change: 'search status', original: boundSearchItem, changed: { ...boundSearchItem, status: 'failed' as const } },
   { change: 'image bytes', original: boundImageItem, changed: { ...boundImageItem, result: 'b3RoZXI=' } },
-  { change: 'image error', original: boundImageItem, changed: { ...boundImageItem, status: 'failed' as const, result: null, error: { message: 'different', code: 'server_error' } } },
+  { change: 'image error', original: boundImageItem, changed: { ...boundImageItem, status: 'failed' as const, result: null, error: { message: 'different', code: 'server_error', param: null, type: 'server_error' } } },
 ])('dispatcher retains replay when only call outputs change: $change', async ({ original, changed }) => {
   const ctx = makeGatewayCtx();
   const [carrier] = await searchHistory(ctx, 'signed_original', original);
@@ -592,7 +592,7 @@ const mkMessageAdded = (outputIndex: number): ProtocolFrame<OpenAIResponsesStrea
       role: 'assistant',
       content: [{ type: 'output_text', text: '', annotations: [] }],
     },
-  });
+  }) as unknown as ProtocolFrame<OpenAIResponsesStreamEventEx>;
 
 const mkMessageDone = (outputIndex: number, text: string): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
@@ -604,7 +604,7 @@ const mkMessageDone = (outputIndex: number, text: string): ProtocolFrame<OpenAIR
       role: 'assistant',
       content: [{ type: 'output_text', text, annotations: [] }],
     },
-  });
+  }) as unknown as ProtocolFrame<OpenAIResponsesStreamEventEx>;
 
 const mkReasoningAdded = (outputIndex: number, reasoningId: string): ProtocolFrame<OpenAIResponsesStreamEventEx> =>
   eventFrame({
@@ -1402,8 +1402,8 @@ const assertAmbiguousCallRejection = async (args: string, backend: { calls: unkn
   const item = wsCallDone[0].item as OpenAIResponsesOutputWebSearchCall;
   assertEquals(item.action?.type, 'search');
   assert(Array.isArray(item.results));
-  assert(item.results![0].snippet.includes('ambiguous'));
-  assert(item.results![0].snippet.includes('one web_search_call'));
+  assert(typeof item.results![0].snippet === 'string' && item.results![0].snippet.includes('ambiguous'));
+  assert(typeof item.results![0].snippet === 'string' && item.results![0].snippet.includes('one web_search_call'));
 };
 
 test('multi-kind dispatcher call (search_query + open) is rejected as ambiguous before any backend dispatch', async () => {
@@ -3403,7 +3403,7 @@ test('upstream-emitted `output_text` on in-progress envelopes flows through verb
       object: 'response',
       model: 'test-model',
       output: [
-        { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'real result', annotations: [] }] },
+        { type: 'message', id: 'msg_real_result', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'real result', annotations: [] }] },
       ],
       status: 'completed',
       error: null,
@@ -3615,7 +3615,7 @@ test('open with valid URL whose fetch fails: done frame carries action.type="ope
   assertEquals(doneItem.action, { type: 'open_page', url: failingUrl });
   // Error explanation lives on the results snippet, not the action.
   assertEquals(doneItem.results?.length, 1);
-  assert(doneItem.results?.[0].snippet.includes('404 Not Found'));
+  assert(typeof doneItem.results?.[0].snippet === 'string' && doneItem.results?.[0].snippet.includes('404 Not Found'));
 });
 
 test('include: ["web_search_call.action.sources"] populates action.sources with search-result URLs', async () => {
@@ -4151,7 +4151,7 @@ test('disabled search provider: dispatched op surfaces explanation snippet (no 5
     .filter((i): i is OpenAIResponsesOutputWebSearchCall => i.type === 'web_search_call');
   assertEquals(done.length, 1);
   const snippet = done[0].results![0].snippet;
-  assert(snippet.includes('not configured'));
+  assert(typeof snippet === 'string' && snippet.includes('not configured'));
 });
 
 test('missing-credential search provider: dispatched op surfaces explanation snippet naming the provider (no 500 internal-error)', async () => {
@@ -4171,7 +4171,7 @@ test('missing-credential search provider: dispatched op surfaces explanation sni
     .filter((i): i is OpenAIResponsesOutputWebSearchCall => i.type === 'web_search_call');
   assertEquals(done.length, 1);
   const snippet = done[0].results![0].snippet;
-  assert(snippet.includes('tavily'));
+  assert(typeof snippet === 'string' && snippet.includes('tavily'));
 });
 
 // ── Streaming-specific behavior ───────────────────────────────────────────
@@ -5231,7 +5231,7 @@ test('wrong-typed supported sub-property (search_query as object) synthesizes a 
   assertEquals(item.action?.type, 'search');
   assert(item.results !== undefined);
   assert(item.results.length > 0);
-  assert(item.results[0].snippet.includes('search_query'));
+  assert(typeof item.results[0].snippet === 'string' && item.results[0].snippet.includes('search_query'));
   // No backend search fired — schema errors short-circuit before dispatch.
   assertEquals(backend.calls.length, 0);
 });
@@ -6594,9 +6594,9 @@ test('createMergeState starts with empty sparse usage accumulator and a synthesi
 
 test('materializeAccumulatedOutput returns items in output_index order regardless of insertion order', () => {
   const s = createMergeState();
-  const itemA: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'A', annotations: [] }] };
-  const itemB: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
-  const itemC: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'C', annotations: [] }] };
+  const itemA: OpenAIResponsesOutputItemEx = { type: 'message', id: 'msg_A', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'A', annotations: [] }] };
+  const itemB: OpenAIResponsesOutputItemEx = { type: 'message', id: 'msg_B', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
+  const itemC: OpenAIResponsesOutputItemEx = { type: 'message', id: 'msg_C', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'C', annotations: [] }] };
   s.accumulatedOutput.set(2, itemC);
   s.accumulatedOutput.set(0, itemA);
   s.accumulatedOutput.set(1, itemB);
@@ -6609,7 +6609,7 @@ test('materializeAccumulatedOutput returns items in output_index order regardles
 
 test('materializeAccumulatedOutput drops holes in the index sequence (defensive)', () => {
   const s = createMergeState();
-  const itemB: OpenAIResponsesOutputItemEx = { type: 'message', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
+  const itemB: OpenAIResponsesOutputItemEx = { type: 'message', id: 'msg_B', status: 'completed', role: 'assistant', content: [{ type: 'output_text', text: 'B', annotations: [] }] };
   s.accumulatedOutput.set(1, itemB);
   const out = materializeAccumulatedOutput(s);
   assertEquals(out.length, 1);
@@ -7107,7 +7107,7 @@ test('helper allocation reserves names across callable scopes, history and searc
     { type: 'namespace', name: 'functions', description: '', tools: [{ type: 'function', name: 'web_search' }] },
     { type: 'namespace', name: 'client', description: '', tools: [{ type: 'custom', name: 'web_search_2' }] },
     { type: 'function', name: 'web_search_3' },
-    { type: 'web_search', name: 'web_search_8' },
+    { type: 'web_search', name: 'web_search_8' } as OpenAIResponsesTool,
   ];
   const input: CanonicalOpenAIResponsesInputItem[] = [
     { type: 'function_call', namespace: 'history', name: 'web_search_4', call_id: 'old', arguments: '{}', status: 'completed' },
