@@ -17,8 +17,11 @@
 import { resolveCodexCatalog, type CatalogModel, type CodexCatalog, type CodexCatalogCapabilities, type CodexServiceTier } from './catalog.ts';
 import { synthesizeCatalogEntry } from './synthesize.ts';
 import type { ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
+import { getRepo } from '../../repo/index.ts';
 import type { User } from '../../repo/types.ts';
-import { enumerateAddressableModelIds, type AddressableIdEntry } from '../shared/listing/addressable.ts';
+import { loadModelListingCatalog } from '../models/load.ts';
+import type { AddressableIdEntry } from '../shared/listing/addressable.ts';
+import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
 import { chatgptCodexModelMetadata } from '@floway-dev/provider-chatgpt';
 
 // Pure transformation: client catalog + addressable entries →
@@ -56,6 +59,11 @@ export const assembleCodexCatalog = (
     // request time but never surface as their own picker row.
     if (entry.unlisted !== undefined) continue;
     if (entry.model.kind !== 'chat') continue;
+    if (entry.model.aliasedFrom !== undefined) {
+      const model = synthesizeCatalogEntry(entry.model, matchCatalog(entry.model.id), capabilities, catalogServiceTiers);
+      if ((model.input_modalities?.length ?? 0) > 0) models.push(model);
+      continue;
+    }
     const candidates = entry.upstreams.map(upstream => {
       const providerModel = entry.model.providerModels?.[upstream.upstreamId];
       if (providerModel === undefined) throw new Error(`Codex catalog model ${entry.id} has no provider model for ${upstream.upstreamId}`);
@@ -80,9 +88,27 @@ export const loadCodexCatalog = async (
   upstreamIds: readonly string[] | null,
   scheduleRefresh: ModelsRefreshScheduler,
 ): Promise<CodexCatalog> => {
-  const [resolution, addressable] = await Promise.all([
+  const [resolution, listing] = await Promise.all([
     resolveCodexCatalog(userAgent),
-    enumerateAddressableModelIds(subject, upstreamIds, scheduleRefresh),
+    loadModelListingCatalog(subject, upstreamIds, scheduleRefresh, getRepo().modelAliases),
   ]);
+  const merged = mergeAliasesIntoModels({
+    realModels: listing.realModels,
+    gatewayAddressableModelIds: listing.gatewayAddressable,
+    callerAddressableModelIds: listing.callerAddressable,
+    aliases: listing.aliases,
+    narrowTargets: true,
+  });
+  const listedRealById = new Map(listing.callerAddressable
+    .filter(entry => entry.unlisted === undefined)
+    .map(entry => [entry.model.id, entry] as const));
+  const addressable = merged.map((model): AddressableIdEntry => {
+    if (model.aliasedFrom !== undefined) {
+      return { id: model.id, model, unlisted: undefined, upstreams: [] };
+    }
+    const entry = listedRealById.get(model.id);
+    if (entry === undefined) throw new Error(`Codex catalog model ${model.id} has no listed addressable entry`);
+    return entry;
+  });
   return assembleCodexCatalog(resolution.catalog, addressable, resolution.capabilities);
 };
