@@ -12,36 +12,16 @@ import { EditorIconButton, useUiTextEditorPortal } from './editor-icon-button';
 import { useEditorTranslation } from './use-editor-t';
 import { fluentComponents } from '../../fluent';
 import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages';
+import {
+  clampPositionToViewport,
+  computeAnchoredSurfacePosition,
+  getViewportSize,
+} from '../../i18n/ui-text-editor/core/geometry';
 import { LANGUAGE_LABELS, useUiTextEditorStore } from '../../i18n/ui-text-editor/store';
 import { copyToClipboard } from '../ui/copy-to-clipboard';
 import { Textarea } from '../ui/fluent-form-controls';
 
 const { Button, Label, Tooltip } = fluentComponents;
-
-const clampPosition = (left: number, top: number, width: number, height: number): { left: number; top: number } => {
-  const margin = 12;
-  const maxLeft = Math.max(margin, window.innerWidth - width - margin);
-  const maxTop = Math.max(margin, window.innerHeight - height - margin);
-  return {
-    left: Math.round(Math.max(margin, Math.min(left, maxLeft))),
-    top: Math.round(Math.max(margin, Math.min(top, maxTop))),
-  };
-};
-
-const computeInitialPosition = (anchorRect: DOMRect | null, width: number, height: number): { left: number; top: number } => {
-  if (!anchorRect) {
-    return clampPosition((window.innerWidth - width) / 2, (window.innerHeight - height) / 2, width, height);
-  }
-  const margin = 12;
-  const gap = 8;
-  const preferredBelow = anchorRect.bottom + gap;
-  const top = preferredBelow + height <= window.innerHeight - margin
-    ? preferredBelow
-    : anchorRect.top - height - gap >= margin
-      ? anchorRect.top - height - gap
-      : window.innerHeight - height - margin;
-  return clampPosition(anchorRect.left, top, width, height);
-};
 
 export interface EditorFlyoutProps {
   initialKey: string;
@@ -69,12 +49,15 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
   const [dropdownOpen, setDropdownOpen] = useState(hasMultipleCandidates);
   const [highlightedIndex, setHighlightedIndex] = useState(() => Math.max(0, candidates.indexOf(initialKey)));
 
+  const fallbackLanguage = supportedLanguages[0]!;
+
   const buildInitialValues = (key: string): Record<SupportedLanguage, string> => {
     const active = useUiTextEditorStore.getState().entries[key];
-    return {
-      'en': active?.changes.en?.after ?? getCurrent('en', key) ?? '',
-      'zh-Hans': active?.changes['zh-Hans']?.after ?? getCurrent('zh-Hans', key) ?? '',
-    };
+    const next = {} as Record<SupportedLanguage, string>;
+    for (const lang of supportedLanguages) {
+      next[lang] = active?.changes[lang]?.after ?? getCurrent(lang, key) ?? '';
+    }
+    return next;
   };
 
   const [values, setValues] = useState<Record<SupportedLanguage, string>>(() => buildInitialValues(initialKey));
@@ -89,13 +72,13 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
   const copyTimerRef = useRef<number | null>(null);
 
   const [position, setPosition] = useState(() =>
-    computeInitialPosition(anchorRect, Math.min(460, window.innerWidth - 24), 440));
+    computeAnchoredSurfacePosition(anchorRect, Math.min(460, getViewportSize().width - 24), 440));
 
   useLayoutEffect(() => {
     const el = surfaceRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    setPosition(computeInitialPosition(anchorRect, rect.width || 460, rect.height || 440));
+    setPosition(computeAnchoredSurfacePosition(anchorRect, rect.width || 460, rect.height || 440));
   }, [anchorRect]);
 
   useEffect(() => () => {
@@ -157,7 +140,7 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
       const el = surfaceRef.current;
       if (!drag || !el) return;
       const rect = el.getBoundingClientRect();
-      setPosition(clampPosition(event.clientX - drag.dx, event.clientY - drag.dy, rect.width, rect.height));
+      setPosition(clampPositionToViewport(event.clientX - drag.dx, event.clientY - drag.dy, rect.width, rect.height));
     };
     const onPointerUp = () => {
       dragOffsetRef.current = null;
@@ -215,8 +198,8 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
     const active = entries[key];
     return active?.changes[previewLanguage]?.after
       ?? getCurrent(previewLanguage, key)
-      ?? active?.changes.en?.after
-      ?? getCurrent('en', key)
+      ?? active?.changes[fallbackLanguage]?.after
+      ?? getCurrent(fallbackLanguage, key)
       ?? '';
   };
 
@@ -268,10 +251,11 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
 
   const handleRevertEntry = () => {
     revertEntry(activeKey);
-    setValues({
-      'en': getOriginal('en', activeKey) ?? '',
-      'zh-Hans': getOriginal('zh-Hans', activeKey) ?? '',
-    });
+    const resetValues = {} as Record<SupportedLanguage, string>;
+    for (const lang of supportedLanguages) {
+      resetValues[lang] = getOriginal(lang, activeKey) ?? '';
+    }
+    setValues(resetValues);
     setDirtyLanguages({});
     setNote('');
   };
