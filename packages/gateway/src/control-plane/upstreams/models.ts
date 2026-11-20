@@ -6,6 +6,7 @@ import { type AuthedContext, userFromContext } from '../../middleware/auth.ts';
 import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
+import { DRAFT_UPSTREAM_ID } from '../../shared/draft-upstream.ts';
 import type { previewModelsBody } from '../schemas.ts';
 import { ProviderModelsUnavailableError, type UpstreamRecord } from '@floway-dev/provider';
 
@@ -26,7 +27,7 @@ export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) =>
     return c.json({ error: { message: `Draft model discovery requires custom, ollama or kimi-code: ${kind}`, type: 'invalid_request_error' } }, 400);
   }
   const synthRecord: UpstreamRecord = {
-    id: record.id || 'draft',
+    id: record.id || DRAFT_UPSTREAM_ID,
     kind,
     name: record.name ?? 'draft',
     enabled: record.enabled ?? true,

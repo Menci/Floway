@@ -3,6 +3,7 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { loadProxyCatalog } from '../../dial/proxy-catalog.ts';
 import { getRepo } from '../../repo/index.ts';
 import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import { DRAFT_UPSTREAM_ID } from '../../shared/draft-upstream.ts';
 import { getFetch, getHttpContentDecoders, getSocketDial } from '@floway-dev/platform';
 import type { Fetcher, ProxyFallbackEntry } from '@floway-dev/provider';
 import { runDirectConnectRequest, runProxiedRequest } from '@floway-dev/proxy';
@@ -18,7 +19,7 @@ export const resolveControlPlaneFetcher = async (opts: {
   runtimeLocation: string;
 }): Promise<Fetcher> => {
   if (opts.override !== undefined) {
-    return await buildOverrideFetcher(opts.override, opts.upstreamId ?? 'draft', opts.runtimeLocation);
+    return await buildOverrideFetcher(opts.override, opts.upstreamId ?? DRAFT_UPSTREAM_ID, opts.runtimeLocation);
   }
   if (opts.upstreamId !== undefined) {
     return (await createPerRequestFetcher(opts.runtimeLocation))(opts.upstreamId);
@@ -26,7 +27,7 @@ export const resolveControlPlaneFetcher = async (opts: {
   // Neither an in-progress edit nor a persisted row to read a policy from.
   // That is the same "no policy" state an empty list expresses, so route it
   // through the same builder instead of hard-coding a transport here.
-  return await buildOverrideFetcher([], 'draft', opts.runtimeLocation);
+  return await buildOverrideFetcher([], DRAFT_UPSTREAM_ID, opts.runtimeLocation);
 };
 
 const buildOverrideFetcher = async (

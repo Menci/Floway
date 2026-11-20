@@ -58,9 +58,13 @@ export const backoffRowsToJson = (
   upstreams: readonly Pick<UpstreamRecord, 'id' | 'name' | 'kind' | 'hue'>[],
 ): SerializedBackoffRow[] => {
   const upstreamById = new Map(upstreams.map(upstream => [upstream.id, upstream]));
-  return rows.map(row => {
+  // A row can outlive its upstream when an older build recorded a draft probe
+  // under the synthetic 'draft' id, or when a delete races an in-flight dial.
+  // Such a row is invisible to the dial layer too (it can never be matched to
+  // a saved upstream), so it carries no state an operator can act on. Dropping
+  // it here keeps one orphan from taking down the whole backoff listing.
+  return rows.flatMap(row => {
     const upstream = upstreamById.get(row.upstreamId);
-    if (upstream === undefined) throw new Error(`Proxy backoff references missing upstream ${row.upstreamId}`);
-    return backoffRowToJson(row, upstream);
+    return upstream === undefined ? [] : [backoffRowToJson(row, upstream)];
   });
 };

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, test } from 'vitest';
 
 import type { SerializedBackoffRow } from '../../../src/control-plane/proxies/serialize.ts';
+import { DRAFT_UPSTREAM_ID } from '../../../src/shared/draft-upstream.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { requestApp, setupAppTest } from '../../test-utils/app.ts';
 import { initSocketDial, resetSocketDialForTesting, type SocketDial } from '@floway-dev/platform';
@@ -105,12 +106,19 @@ test('GET /api/proxies/backoffs returns every backoff row regardless of proxy', 
   assertEquals(rows.map(row => row.upstream.name).sort(), ['Backup Copilot', 'Primary Copilot']);
 });
 
-test('GET /api/proxies/backoffs fails when a row references a missing upstream', async () => {
-  const { repo, adminSession } = await setupAppTest();
-  await repo.proxyBackoffs.recordDialFailure('p_a', 'up_missing', 'boom');
+test('GET /api/proxies/backoffs skips rows whose upstream no longer exists', async () => {
+  const { repo, adminSession, copilotUpstream } = await setupAppTest();
+  await saveUpstreamForTest(repo.upstreams, { ...copilotUpstream, id: 'up_a', name: 'Primary Copilot', hue: 210 });
+  await repo.proxyBackoffs.recordDialFailure('p_a', 'up_a', 'boom');
+  // Rows written by older builds under the synthetic draft id, and rows whose
+  // upstream was deleted concurrently, must not take down the dashboard.
+  await repo.proxyBackoffs.recordDialFailure('p_b', DRAFT_UPSTREAM_ID, 'boom');
+  await repo.proxyBackoffs.recordDialFailure('p_c', 'up_deleted', 'boom');
 
   const resp = await requestApp('/api/proxies/backoffs', authed(adminSession));
-  assertEquals(resp.status, 500);
+  assertEquals(resp.status, 200);
+  const rows = (await resp.json()) as SerializedBackoffRow[];
+  assertEquals(rows.map(row => `${row.proxy_id}/${row.upstream_id}`), ['p_a/up_a']);
 });
 
 test('POST /api/proxies/:id/backoffs/reset with no body clears every row for the proxy', async () => {
