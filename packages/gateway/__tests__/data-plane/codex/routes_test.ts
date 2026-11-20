@@ -19,9 +19,14 @@ const CODEX_USER_AGENT = 'codex_cli_rs/0.169.0';
 interface CodexModelsResponse {
   models: Array<{
     slug: string;
+    display_name?: string;
     context_window?: number;
     max_context_window?: number;
     auto_compact_token_limit?: number | null;
+    input_modalities?: string[];
+    supports_image_detail_original?: boolean;
+    supported_reasoning_levels?: Array<{ effort: string }>;
+    default_reasoning_level?: string;
   }>;
 }
 
@@ -37,6 +42,32 @@ describe('Codex model-provider routes', () => {
     const { apiKey, repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
     await saveUpstreamForTest(repo.upstreams, buildChatGPTUpstreamRecord());
+    await repo.modelAliases.deleteAll();
+    await repo.modelAliases.insert({
+      id: 'alias_codex-auto-review', name: 'codex-auto-review', kind: 'chat', selection: 'first-available',
+      displayName: 'Codex Auto Review', visibleInModelsList: true,
+      targets: [{ target_model_id: 'gpt-6.1-sol', rules: {} }],
+      announcedMetadata: {
+        limits: { max_context_window_tokens: 256000, max_prompt_tokens: 200000, max_output_tokens: 56000 },
+        chat: { modalities: { input: ['text', 'image'], output: ['text'] }, reasoning: { effort: { supported: ['low', 'medium', 'high'], default: 'medium' } } },
+      },
+      sortOrder: 0, createdAt: '2026-11-20T00:00:00.000Z', updatedAt: '2026-11-20T00:00:00.000Z',
+    });
+    await repo.modelAliases.insert({
+      id: 'alias_gpt-5.6-luna', name: 'gpt-5.6-luna', kind: 'chat', selection: 'first-available',
+      displayName: 'Review gpt-5.6-luna', visibleInModelsList: true,
+      targets: [{ target_model_id: 'gpt-6.1-sol', rules: {} }],
+      announcedMetadata: {
+        limits: { max_context_window_tokens: 262144, max_prompt_tokens: 200000, max_output_tokens: 60000 },
+        chat: { modalities: { input: ['text', 'image'], output: ['text'] }, image_detail_original: false },
+      },
+      sortOrder: 1, createdAt: '2026-11-20T00:00:00.000Z', updatedAt: '2026-11-20T00:00:00.000Z',
+    });
+    await repo.modelAliases.insert({
+      id: 'alias_hidden-codex', name: 'hidden-codex', kind: 'chat', selection: 'first-available',
+      displayName: null, visibleInModelsList: false, targets: [{ target_model_id: 'gpt-6.1-sol', rules: {} }],
+      announcedMetadata: null, sortOrder: 2, createdAt: '2026-11-20T00:00:00.000Z', updatedAt: '2026-11-20T00:00:00.000Z',
+    });
     const body = await withMockedFetch(
       (request: Request): Response => {
         const url = new URL(request.url);
@@ -93,6 +124,16 @@ describe('Codex model-provider routes', () => {
     expect(bySlug['future-model']).toMatchObject({ context_window: 80000, max_context_window: 600000, auto_compact_token_limit: null });
     expect(bySlug['uncapped-model']).toMatchObject({ context_window: 64000 });
     expect(bySlug['uncapped-model']).not.toHaveProperty('max_context_window');
+    expect(bySlug['codex-auto-review']).toMatchObject({
+      display_name: 'Codex Auto Review', context_window: 200000, max_context_window: 200000,
+      input_modalities: ['text', 'image'], default_reasoning_level: 'medium',
+    });
+    expect(bySlug['codex-auto-review'].supported_reasoning_levels?.map(level => level.effort)).toEqual(['low', 'medium', 'high']);
+    expect(bySlug['gpt-5.6-luna']).toMatchObject({
+      display_name: 'Review gpt-5.6-luna', context_window: 200000, max_context_window: 200000,
+      input_modalities: ['text', 'image'], supports_image_detail_original: false,
+    });
+    expect(bySlug).not.toHaveProperty('hidden-codex');
     const stored = await repo.upstreams.getById('up_chatgpt');
     expect(stored?.modelsCache?.models.find(model => model.id === 'gpt-6.1-sol')?.limits.max_context_window_tokens).toBe(872000);
   });
