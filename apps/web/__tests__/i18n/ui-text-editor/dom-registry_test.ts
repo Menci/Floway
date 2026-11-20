@@ -271,15 +271,21 @@ describe('UiTextEditorDomRegistry', () => {
     hiddenMobileHeader.append(openNavBtn, brand);
     pageShell.append(hiddenMobileHeader);
 
-    container.append(badge, srOnlyHeader, pageShell);
+    const inertSection = document.createElement('div');
+    inertSection.setAttribute('inert', '');
+    inertSection.textContent = wrapWithKeyMarkers('Background label', 'common.save');
+
+    container.append(badge, srOnlyHeader, pageShell, inertSection);
     document.body.append(container);
 
     const badgeRect = new DOMRect(40, 20, 90, 24);
     const visibleTextRect = new DOMRect(56, 23, 66, 18);
     const headerRect = new DOMRect(200, 20, 48, 28);
+    const inertRect = new DOMRect(40, 120, 120, 20);
     vi.spyOn(badge, 'getBoundingClientRect').mockReturnValue(badgeRect);
     vi.spyOn(srOnlyHeader, 'getBoundingClientRect').mockReturnValue(headerRect);
     vi.spyOn(pageShell, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1280, 800));
+    vi.spyOn(inertSection, 'getBoundingClientRect').mockReturnValue(inertRect);
     vi.spyOn(Range.prototype, 'getClientRects').mockImplementation(function (this: Range) {
       return (this.startContainer === visibleText ? [visibleTextRect] : []) as unknown as DOMRectList;
     });
@@ -314,6 +320,13 @@ describe('UiTextEditorDomRegistry', () => {
       // Unrendered children (e.g. responsive display:none mobile header) are ignored completely.
       stack = [pageShell, container, document.body];
       expect(registry.resolveAtPoint(document, 600, 400)).toBeNull();
+
+      // Inert elements are non-interactive but still visually rendered, so they stay inspectable.
+      stack = [inertSection, container, document.body];
+      const inertHit = registry.resolveAtPoint(document, 80, 128);
+      expect(inertHit?.primaryKey).toBe('common.save');
+      expect(inertHit?.primaryInvisible).toBeUndefined();
+      expect(inertHit?.rect).toEqual(inertRect);
 
       // Outer wrapper with no direct aria-label/sr-only child does not claim nested invisible labels.
       stack = [container, document.body];

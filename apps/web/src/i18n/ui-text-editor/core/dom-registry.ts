@@ -72,27 +72,20 @@ const isCollapsedInsetClipPath = (clipPath: string): boolean => {
   return top + bottom >= 100 || left + right >= 100;
 };
 
-type ElementVisibility = 'visible' | 'sr-only' | 'unrendered';
+type ElementVisibility = 'visible' | 'visually-hidden' | 'unrendered';
 
 // Classifies an element from computed styles without relying on class names:
-// - `unrendered`: removed from both visual layout and the accessibility tree
-//   (display: none, visibility: hidden/collapse, content-visibility: hidden,
-//   inert, or aria-hidden="true"), such as responsive breakpoints or closed
-//   panels. Ignored completely during hit-testing and candidate collection.
-// - `sr-only`: rendered for assistive tech but visually clipped/collapsed
-//   (zero-area clip/clip-path or overflow-clipped <=1px box). Grouped with
-//   `aria-label` as lower-priority `invisible` targets.
+// - `unrendered`: not painted in layout (HTML `hidden`, `display: none`,
+//   `visibility: hidden/collapse`, `content-visibility: hidden`), such as
+//   responsive breakpoints or closed panels. Ignored completely.
+// - `visually-hidden`: painted in layout but clipped/collapsed out of sight
+//   (zero-area `clip`/`clip-path` or overflow-clipped `<= 1px` box). Grouped
+//   with `aria-label` as lower-priority `invisible` targets.
 const classifyElementVisibility = (element: Element | null): ElementVisibility => {
-  let srOnly = false;
+  let visuallyHidden = false;
   let current: Element | null = element;
   while (current && current !== current.ownerDocument.body && current !== current.ownerDocument.documentElement) {
-    if (
-      current.hasAttribute('hidden')
-      || current.hasAttribute('inert')
-      || current.getAttribute('aria-hidden') === 'true'
-    ) {
-      return 'unrendered';
-    }
+    if (current.hasAttribute('hidden')) return 'unrendered';
     const view = current.ownerDocument.defaultView;
     if (view && typeof view.getComputedStyle === 'function') {
       const style = view.getComputedStyle(current);
@@ -104,9 +97,9 @@ const classifyElementVisibility = (element: Element | null): ElementVisibility =
       ) {
         return 'unrendered';
       }
-      if (!srOnly) {
+      if (!visuallyHidden) {
         if (isCollapsedClipRect(style.clip) || isCollapsedInsetClipPath(style.clipPath)) {
-          srOnly = true;
+          visuallyHidden = true;
         } else {
           const clipsOverflow = style.overflow === 'hidden' || style.overflow === 'clip'
             || (style.overflowX === 'hidden' && style.overflowY === 'hidden');
@@ -114,7 +107,7 @@ const classifyElementVisibility = (element: Element | null): ElementVisibility =
             const width = Number.parseFloat(style.width);
             const height = Number.parseFloat(style.height);
             if ((Number.isFinite(width) && width <= 1) || (Number.isFinite(height) && height <= 1)) {
-              srOnly = true;
+              visuallyHidden = true;
             }
           }
         }
@@ -122,7 +115,7 @@ const classifyElementVisibility = (element: Element | null): ElementVisibility =
     }
     current = current.parentElement;
   }
-  return srOnly ? 'sr-only' : 'visible';
+  return visuallyHidden ? 'visually-hidden' : 'visible';
 };
 
 const pointInsideRect = (rect: DOMRect, x: number, y: number, pad = 4): boolean =>
@@ -545,14 +538,14 @@ export class UiTextEditorDomRegistry {
   }
 
   // Collects invisible keys owned directly by `element`: its own `aria-label`
-  // plus any direct screen-reader-only children (visually clipped/collapsed
+  // plus any direct visually hidden children (clipped/collapsed out of sight
   // but still rendered). Unrendered children (`display: none`, `hidden`, etc.)
   // are ignored completely.
   private collectOwnInvisibleKeys(element: Element): string[] {
     const collected: string[] = [...this.collectAriaLabelKeys(element)];
     for (const child of Array.from(element.children)) {
       if (child.hasAttribute(this.rootAttr)) continue;
-      if (classifyElementVisibility(child) === 'sr-only') {
+      if (classifyElementVisibility(child) === 'visually-hidden') {
         collected.push(...this.collectSubtreeKeys(child));
       }
     }
@@ -581,7 +574,7 @@ export class UiTextEditorDomRegistry {
     while (current) {
       const visibility = classifyElementVisibility(current);
       if (visibility === 'unrendered') break;
-      const target = visibility === 'sr-only' ? invisible : visible;
+      const target = visibility === 'visually-hidden' ? invisible : visible;
       target.push(...this.collectTextKeys(current), ...this.collectVisibleAttributeKeys(current));
       invisible.push(...this.collectAriaLabelKeys(current));
       current = walker.nextNode() as Element | null;
