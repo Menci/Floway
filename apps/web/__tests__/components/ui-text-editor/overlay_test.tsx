@@ -269,4 +269,39 @@ describe('UiTextEditorOverlay', () => {
       Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: originalElementsFromPoint });
     }
   });
+  it('opens the flyout on Alt+pointerdown so disabled buttons without click events remain editable', async () => {
+    const { container } = renderInApp(
+      <>
+        <button data-testid="disabled-dropdown" disabled role="combobox" type="button">
+          {wrapWithKeyMarkers('No API Keys', 'playground.noKeyOption')}
+        </button>
+        <UiTextEditorOverlay />
+      </>,
+    );
+
+    const button = screen.getByTestId('disabled-dropdown');
+    vi.spyOn(button, 'getBoundingClientRect').mockReturnValue(new DOMRect(40, 40, 240, 34));
+    const originalElementsFromPoint = (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;
+    Object.defineProperty(document, 'elementsFromPoint', {
+      configurable: true,
+      value: () => [button, container, document.body],
+    });
+
+    await waitFor(() => {
+      expect(button.textContent).toBe('No API Keys');
+      expect(useUiTextEditorStore.getState().initialized).toBe(true);
+    });
+
+    // Disabled controls do not emit `click`; only `pointerdown` reaches capture listeners.
+    fireEvent.pointerDown(button, { altKey: true, button: 0, clientX: 120, clientY: 56 });
+
+    const dialog = await screen.findByRole('dialog', { name: 'Edit' });
+    expect(dialog.querySelector('.floway-ui-text-editor-header-key')?.textContent).toBe('playground.noKeyOption');
+
+    if (originalElementsFromPoint === undefined) {
+      delete (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;
+    } else {
+      Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: originalElementsFromPoint });
+    }
+  });
 });

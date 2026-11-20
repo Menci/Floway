@@ -120,6 +120,7 @@ describe('UiTextEditorDomRegistry', () => {
     container = document.createElement('div');
 
     const navItem = document.createElement('a');
+    navItem.href = '/settings';
     const navIcon = document.createElement('span');
     const navLabel = document.createElement('span');
     navLabel.textContent = wrapWithKeyMarkers('Settings', 'nav.settings');
@@ -136,16 +137,31 @@ describe('UiTextEditorDomRegistry', () => {
     const directIcon = document.createElement('span');
     directTextButton.append(directIcon, document.createTextNode(wrapWithKeyMarkers('Export', 'common.uiTextEditor.export')));
 
-    container.append(navItem, multiButton, directTextButton);
+    const dropdownRoot = document.createElement('div');
+    dropdownRoot.style.border = '1px solid rgb(200, 200, 200)';
+    dropdownRoot.style.backgroundColor = 'rgb(245, 245, 245)';
+    const dropdownButton = document.createElement('button');
+    dropdownButton.setAttribute('value', wrapWithKeyMarkers('No API Keys', 'playground.noKeyOption'));
+    dropdownButton.disabled = true;
+    const dropdownText = document.createTextNode(wrapWithKeyMarkers('No API Keys', 'playground.noKeyOption'));
+    dropdownButton.append(dropdownText);
+    dropdownRoot.append(dropdownButton);
+
+    container.append(navItem, multiButton, directTextButton, dropdownRoot);
     document.body.append(container);
 
     const navLabelRect = new DOMRect(44, 16, 62, 20);
     const directTextRect = new DOMRect(50, 126, 48, 18);
+    const dropdownTextRect = new DOMRect(20, 176, 84, 18);
     vi.spyOn(navItem, 'getBoundingClientRect').mockReturnValue(new DOMRect(8, 8, 220, 36));
     vi.spyOn(navLabel, 'getBoundingClientRect').mockReturnValue(navLabelRect);
     vi.spyOn(directTextButton, 'getBoundingClientRect').mockReturnValue(new DOMRect(8, 120, 160, 32));
+    vi.spyOn(dropdownRoot, 'getBoundingClientRect').mockReturnValue(new DOMRect(8, 170, 280, 34));
+    vi.spyOn(dropdownButton, 'getBoundingClientRect').mockReturnValue(new DOMRect(8, 170, 280, 34));
     vi.spyOn(Range.prototype, 'getBoundingClientRect').mockImplementation(function (this: Range) {
-      return this.startContainer.parentElement === directTextButton ? directTextRect : new DOMRect(0, 0, 0, 0);
+      if (this.startContainer.parentElement === directTextButton) return directTextRect;
+      if (this.startContainer === dropdownText) return dropdownTextRect;
+      return new DOMRect(0, 0, 0, 0);
     });
     vi.spyOn(multiButton, 'getBoundingClientRect').mockReturnValue(new DOMRect(8, 60, 220, 48));
     vi.spyOn(firstLabel, 'getBoundingClientRect').mockReturnValue(new DOMRect(16, 68, 40, 20));
@@ -181,6 +197,14 @@ describe('UiTextEditorDomRegistry', () => {
       expect(directPaddingHit?.element).toBe(directTextButton);
       expect(directPaddingHit?.rect).toEqual(directTextRect);
       expect(directPaddingHit?.primaryKey).toBe('common.uiTextEditor.export');
+
+      // Disabled dropdown wrapper/button carrying form `value` and text content shrink-wraps to the text rect without role whitelists.
+      stack = [dropdownButton, dropdownRoot, container, document.body];
+      const dropdownPaddingHit = registry.resolveAtPoint(document, 220, 184);
+      expect(dropdownPaddingHit?.element).toBe(dropdownButton);
+      expect(dropdownPaddingHit?.rect).toEqual(dropdownTextRect);
+      expect(dropdownPaddingHit?.primaryKey).toBe('playground.noKeyOption');
+      expect(dropdownPaddingHit?.candidates).toEqual(['playground.noKeyOption']);
 
       // Hovering background space of an interactive container with multiple keys returns null.
       stack = [multiButton, container, document.body];

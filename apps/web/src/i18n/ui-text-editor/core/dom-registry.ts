@@ -5,6 +5,21 @@ export const DEFAULT_EDITOR_ROOT_ATTR = 'data-ui-text-editor-root';
 const VISIBLE_ATTRIBUTES = ['value', 'placeholder', 'alt'] as const;
 const MONITORED_ATTRIBUTES = [...VISIBLE_ATTRIBUTES, 'aria-label'] as const;
 
+// HTML attributes like `value` on `<button>` or `<option>` are form submission
+// data rather than rendered text (their visible label is their text content).
+// Only treat an attribute as visible on elements that actually paint it.
+const isVisibleAttributeOnElement = (element: Element, attr: (typeof VISIBLE_ATTRIBUTES)[number]): boolean => {
+  if (attr === 'value') {
+    return (element instanceof HTMLInputElement && element.type !== 'hidden')
+      || element instanceof HTMLTextAreaElement;
+  }
+  if (attr === 'placeholder') {
+    return element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement;
+  }
+  return element instanceof HTMLImageElement || element instanceof HTMLAreaElement
+    || (element instanceof HTMLInputElement && element.type === 'image');
+};
+
 interface AttributeKeyRecord {
   attribute: string;
   key: string;
@@ -205,7 +220,61 @@ const matchTextSegmentAtPoint = (
     : null;
 };
 
-const INTERACTIVE_CONTAINER_SELECTOR = 'button, a, label, [role="button"], [role="menuitem"], [role="option"], [role="tab"], [role="tooltip"]';
+const hasVisiblePaint = (color: string): boolean => {
+  const normalized = color.trim().toLowerCase();
+  return normalized.length > 0
+    && normalized !== 'transparent'
+    && normalized !== 'rgba(0, 0, 0, 0)'
+    && normalized !== 'rgba(0,0,0,0)';
+};
+
+// Identifies elements that visually or interactively bound a control surface
+// (focusable/disabled controls, pointer-cursor targets, or boxes with visible
+// fill, border, or shadow) without enumerating tag names or ARIA roles.
+const isBoundedControlElement = (element: Element): boolean => {
+  if (element === element.ownerDocument.body || element === element.ownerDocument.documentElement) {
+    return false;
+  }
+  if (element instanceof HTMLElement && element.tabIndex >= 0) return true;
+  if (element.hasAttribute('disabled') || element.getAttribute('aria-disabled') === 'true') return true;
+  const view = element.ownerDocument.defaultView;
+  if (!view || typeof view.getComputedStyle !== 'function') return false;
+  const style = view.getComputedStyle(element);
+  if (style.cursor === 'pointer') return true;
+  if (hasVisiblePaint(style.backgroundColor)) return true;
+  if (style.boxShadow && style.boxShadow !== 'none') return true;
+  const sides = [
+    [style.borderTopStyle, style.borderTopWidth, style.borderTopColor],
+    [style.borderRightStyle, style.borderRightWidth, style.borderRightColor],
+    [style.borderBottomStyle, style.borderBottomWidth, style.borderBottomColor],
+    [style.borderLeftStyle, style.borderLeftWidth, style.borderLeftColor],
+  ] as const;
+  for (const [borderStyle, width, color] of sides) {
+    if (borderStyle !== 'none' && borderStyle !== 'hidden' && Number.parseFloat(width) > 0 && hasVisiblePaint(color)) {
+      return true;
+    }
+  }
+  return false;
+};
+
+// Climbs past pure inline / `display: contents` wrappers to the nearest
+// formatting container so sibling keys within the same sentence or control
+// stay grouped as secondary candidates without relying on a tag whitelist.
+const findTextContextContainer = (element: Element): Element => {
+  let current: Element = element;
+  const view = element.ownerDocument.defaultView;
+  if (!view || typeof view.getComputedStyle !== 'function') return current;
+  while (
+    current.parentElement
+    && current.parentElement !== current.ownerDocument.body
+    && current.parentElement !== current.ownerDocument.documentElement
+  ) {
+    const display = view.getComputedStyle(current).display;
+    if (display !== 'inline' && display !== 'contents') break;
+    current = current.parentElement;
+  }
+  return current;
+};
 
 interface CaretHit {
   node: Node;
@@ -524,6 +593,7 @@ export class UiTextEditorDomRegistry {
     if (!attrs) return [];
     const out: string[] = [];
     for (const attr of VISIBLE_ATTRIBUTES) {
+      if (!isVisibleAttributeOnElement(element, attr)) continue;
       for (const entry of attrs) {
         if (entry.attribute === attr) out.push(entry.key);
       }
@@ -645,6 +715,15 @@ export class UiTextEditorDomRegistry {
     const fallbackRect = target.element.getBoundingClientRect();
     const rect = target.metrics?.boundingRect ?? (isNonZeroRect(fallbackRect) ? fallbackRect : null);
     if (!rect) return null;
+
+    const containerRect = container.getBoundingClientRect();
+    if (isNonZeroRect(containerRect)) {
+      const extraHeight = containerRect.height - rect.height;
+      const extraWidth = containerRect.width - rect.width;
+      if (extraHeight > 48 || (containerRect.width > 480 && extraWidth > 240)) {
+        return null;
+      }
+    }
     const rects = target.metrics?.lineRects ?? [rect];
     const candidates = dedupeKeys([primaryKey, ...this.collectSubtreeKeys(container)]);
     return { element: target.element, rect, rects, primaryKey, candidates };
@@ -670,7 +749,7 @@ export class UiTextEditorDomRegistry {
             clientY,
           );
           if (metrics) {
-            const container = parent.closest('p, li, td, th, button, a, label, h1, h2, h3, h4, h5, h6, [role="tooltip"], [role="menuitem"], [role="option"]') ?? parent;
+            const container = findTextContextContainer(parent);
             const allCandidates = dedupeKeys([
               hitSegment.key,
               ...segments.map(seg => seg.key),
@@ -788,7 +867,7 @@ export class UiTextEditorDomRegistry {
 
     for (const element of stack) {
       if (classifyElementVisibility(element) !== 'visible') continue;
-      if (element.matches(INTERACTIVE_CONTAINER_SELECTOR)) {
+      if (isBoundedControlElement(element)) {
         const uniqueTarget = this.resolveUniqueSubtreeVisibleTarget(element);
         if (uniqueTarget) {
           return uniqueTarget;

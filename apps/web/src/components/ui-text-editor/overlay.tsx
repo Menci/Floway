@@ -349,15 +349,18 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
       }
     };
 
-    const swallowAltPress = (event: MouseEvent | PointerEvent) => {
-      if (!event.altKey || event.button !== 0) return;
-      if (isInsideUiTextEditor(event.target, layerRef.current)) return;
+    // Native disabled controls (such as disabled buttons/dropdowns) suppress
+    // `click` events in browsers, while `pointerdown` / `mousedown` still
+    // reach window capture listeners. Open the flyout on press so disabled
+    // controls remain inspectable, and deduplicate the trailing `click`.
+    let handledPressAt = -Infinity;
 
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-
-      if (event.type !== 'click' || !useUiTextEditorStore.getState().initialized) return;
+    const openFlyoutAtEvent = (event: MouseEvent | PointerEvent) => {
+      if (!useUiTextEditorStore.getState().initialized) return;
+      if (event.type === 'click' && performance.now() - handledPressAt < 400) return;
+      if (event.type === 'pointerdown') {
+        handledPressAt = performance.now();
+      }
 
       const hit = sharedUiTextEditorRegistry.resolveAtPoint(document, event.clientX, event.clientY);
       if (hit) {
@@ -368,6 +371,19 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
           anchorRect: hit.rect,
           anchorElement: hit.element,
         });
+      }
+    };
+
+    const swallowAltPress = (event: MouseEvent | PointerEvent) => {
+      if (!event.altKey || event.button !== 0) return;
+      if (isInsideUiTextEditor(event.target, layerRef.current)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      if (event.type === 'pointerdown' || event.type === 'click') {
+        openFlyoutAtEvent(event);
       }
     };
 
