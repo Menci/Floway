@@ -23,6 +23,7 @@ import bundledCatalog from './catalog/bundled.json' with { type: 'json' };
 export interface CatalogModel {
   slug: string;
   context_window?: number | null;
+  input_modalities?: string[];
   max_context_window?: number | null;
   model_messages?: { instructions_template?: string | null; [key: string]: unknown } | null;
   multi_agent_version?: string | null;
@@ -47,6 +48,7 @@ export interface CodexCatalog {
 }
 
 export interface CodexCatalogCapabilities {
+  audioInput?: true;
   ultraReasoningLevel?: CodexReasoningLevel;
 }
 
@@ -67,9 +69,8 @@ const inMemoryCache = new Map<string, CodexCatalogResolution>();
 
 const bundled = bundledCatalog as unknown as CodexCatalog;
 
-// Floway may extend Ultra to other Max-capable models only after the exact
-// client-version catalog proves that this Codex build supports the v2 Ultra
-// semantics. A bundled fallback cannot prove anything about the caller.
+// The exact client-version catalog establishes support for v2 Ultra semantics.
+// The bundled catalog is shared across client versions and leaves this capability unset.
 // https://github.com/openai/codex/blob/2deed3fb9c00c74dac3d177ea700d6fb7a94539d/codex-rs/models-manager/models.json#L19-L58
 // https://github.com/openai/codex/blob/2deed3fb9c00c74dac3d177ea700d6fb7a94539d/codex-rs/core/src/session/multi_agents.rs#L39-L54
 // https://github.com/openai/codex/blob/2deed3fb9c00c74dac3d177ea700d6fb7a94539d/codex-rs/core/src/client.rs#L175-L180
@@ -108,6 +109,11 @@ export const resolveCodexCatalog = async (userAgent: string | undefined): Promis
   const resolved = fetched === null
     ? bundledFallback()
     : { catalog: fetched, capabilities: capabilitiesFromExactCatalog(fetched) };
+  // Older releases reject the whole catalog on an unknown InputModality.
+  // https://github.com/openai/codex/compare/rust-v0.144.0...rust-v0.145.0
+  const [major, minor, patch] = version.split(/[.-]/, 3).map(Number);
+  if (major > 0 || minor > 145 || (minor === 145 && (patch > 0 || !version.includes('-')))
+    || fetched?.models.some(model => model.input_modalities?.includes('audio'))) resolved.capabilities.audioInput = true;
   inMemoryCache.set(version, resolved);
   return resolved;
 };

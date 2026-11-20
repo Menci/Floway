@@ -36,10 +36,12 @@ import { usePollWhileVisible } from '../components/ui/use-poll-while-visible';
 import { useRefresh } from '../components/ui/use-refresh';
 import { shortAccountId } from '../components/upstreams/account-id';
 import { planLabel } from '../components/upstreams/chatgpt-account';
+import { kimiCodeAccountName } from '../components/upstreams/kimi-code-account';
 import { MODEL_ERROR_TOOLTIP_LENGTH, modelErrorExcerpt } from '../components/upstreams/model-error';
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { UpstreamSignals } from '../components/upstreams/signals';
 import { UpstreamTelemetryRow, loadUpstreamTelemetry, type UpstreamTelemetryData, type UpstreamTelemetryQuery } from '../components/upstreams/telemetry';
+import { createUsageOverviewLoader } from '../components/usage/data';
 import { fluentComponents } from '../fluent';
 import { dateTime } from '../lib/format-time';
 import { useEntryRewrite } from '../lib/page-navigation';
@@ -94,6 +96,7 @@ const PROVIDER_MENU_ORDER: readonly UpstreamProviderKind[] = [
   'copilot',
   'chatgpt',
   'claude-code',
+  'kimi-code',
   'ollama',
 ];
 
@@ -141,6 +144,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   const queryRef = useRef(initialQuery);
   const loadedQueryRef = useRef(initialQuery);
   const [telemetry, setTelemetry] = useState<UpstreamTelemetryData | null>(null);
+  const [loadUsageOverview] = useState(createUsageOverviewLoader);
   const [editingRange, setEditingRange] = useState(false);
   const [immediateCollapse, setImmediateCollapse] = useState(false);
   const navigate = useNavigate();
@@ -185,7 +189,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     if (search.get('missing') !== '1' || announcedMissing.current) return;
 
     announcedMissing.current = true;
-    setPageError(t('dashboard.upstreams.errors.missing'));
+    setPageError(t('upstreams.errors.missing'));
     void navigate(location.pathname, rewrite);
   }, [location.pathname, location.search, navigate, rewrite, t]);
 
@@ -194,7 +198,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   const mutationKind = mutation?.kind ?? null;
   useEffect(() => {
     if (!mutationKind || mutationKind === 'delete') return;
-    const handle = toasts.start(t(`dashboard.upstreams.toast.${mutationKind}.pending`));
+    const handle = toasts.start(t(`upstreams.toast.${mutationKind}.pending`));
     return () => handle.settle();
   }, [mutationKind, t, toasts]);
 
@@ -202,7 +206,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     const requested = queryRef.current;
     const [next, readings] = await Promise.all([
       loadPageData(signal),
-      requested.upstreamId === null ? Promise.resolve(null) : loadUpstreamTelemetry(requested, Date.now(), signal),
+      requested.upstreamId === null ? Promise.resolve(null) : loadUpstreamTelemetry(requested, Date.now(), signal, loadUsageOverview),
     ]);
     if (signal.aborted) return;
     setData(current => ({
@@ -223,7 +227,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
       setTelemetry(readings.data);
     }
     loadedQueryRef.current = requested;
-  }, []));
+  }, [loadUsageOverview]));
 
   const reorderBusy = mutation !== null || refreshing;
   const surfaceBusy = refreshing;
@@ -254,7 +258,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 
   const handleRefresh = async () => {
     setPageError(null);
-    const handle = toasts.start(t('dashboard.upstreams.toast.reload.pending'));
+    const handle = toasts.start(t('upstreams.toast.reload.pending'));
     await reload();
     handle.settle();
   };
@@ -267,7 +271,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 
     const result = await patchUpstream(record.id, { enabled });
     if (result.error) {
-      setPageError(t('dashboard.upstreams.errors.toggle', { message: result.error.message }));
+      setPageError(t('upstreams.errors.toggle', { message: result.error.message }));
       setPendingEnabled(null);
       setMutation(null);
       return;
@@ -294,9 +298,9 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     if (result.error) {
       setData(current => ({ ...current, upstreams: snapshot }));
       await reload();
-      setPageError(t('dashboard.upstreams.errors.reorder', {
+      setPageError(t('upstreams.errors.reorder', {
         message: result.error.message,
-        sync: lastLoadError.current !== null ? t('dashboard.upstreams.errors.syncFailed') : '',
+        sync: lastLoadError.current !== null ? t('upstreams.errors.syncFailed') : '',
       }));
       setMutation(null);
       return;
@@ -339,9 +343,9 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     const failure = error instanceof Error ? error : new Error('The upstream reorder failed.', { cause: error });
     pendingReorder.current = null;
     await reload();
-    setPageError(t('dashboard.upstreams.errors.reorder', {
+    setPageError(t('upstreams.errors.reorder', {
       message: failure.message,
-      sync: lastLoadError.current !== null ? t('dashboard.upstreams.errors.syncFailed') : '',
+      sync: lastLoadError.current !== null ? t('upstreams.errors.syncFailed') : '',
     }));
     setMutation(null);
   };
@@ -349,26 +353,26 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   const deleteUpstream = async (record: ListedUpstreamRecord) => {
     setMutation({ kind: 'delete', id: record.id });
     setDeleteError(null);
-    const handle = toasts.start(t('dashboard.upstreams.toast.delete.pending', { name: record.name }));
+    const handle = toasts.start(t('upstreams.toast.delete.pending', { name: record.name }));
     const result = await callApi(() =>
       api.api.upstreams[':id'].$delete({ param: { id: record.id } }));
     if (result.error) {
       handle.settle();
-      setDeleteError(t('dashboard.upstreams.errors.delete', { message: result.error.message }));
+      setDeleteError(t('upstreams.errors.delete', { message: result.error.message }));
       setMutation(null);
       return;
     }
     deleteDialog.close();
     await reload();
     setMutation(null);
-    handle.succeed(t('dashboard.upstreams.toast.delete.success', { name: record.name }));
+    handle.succeed(t('upstreams.toast.delete.success', { name: record.name }));
   };
 
   return (
     <section aria-busy={surfaceBusy} className="dashboard-page">
       <DashboardPageHeader
         actions={user.isAdmin ? <ResourceListActions
-          createLabel={t('dashboard.upstreams.actions.create')}
+          createLabel={t('upstreams.actions.create')}
           createTrailingIcon={<ChevronDownRegular className="ml-1.5" />}
           createTrigger={button => (
             <Menu positioning={{ autoSize: true }}>
@@ -382,10 +386,10 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
                         className: 'self-center',
                       }}
                       key={kind}
-                      subText={t(`dashboard.upstreams.providers.${kind}`)}
+                      subText={t(`upstreams.kinds.${kind}.description`)}
                       to={`/dashboard/providers/upstreams/new/${kind}`}
                     >
-                      {t(`provider.${kind}`)}
+                      {t(`upstreams.kinds.${kind}.label`)}
                     </RouteMenuItem>
                   ))}
                 </MenuList>
@@ -394,16 +398,16 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
           )}
           disabled={surfaceBusy}
           onRefresh={() => void handleRefresh()}
-          refreshLabel={t('dashboard.upstreams.actions.refresh')}
+          refreshLabel={t('upstreams.actions.refresh')}
           refreshing={refreshing}
         /> : <ResourceListActions
           disabled={surfaceBusy}
           onRefresh={() => void handleRefresh()}
-          refreshLabel={t('dashboard.upstreams.actions.refresh')}
+          refreshLabel={t('upstreams.actions.refresh')}
           refreshing={refreshing}
         />}
-        description={t('dashboard.pages.upstreams')}
-        title={t('dashboard.nav.upstreams')}
+        description={t('upstreams.description')}
+        title={t('upstreams.title')}
       />
 
       {pageError && (
@@ -418,7 +422,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 
       {data.modelsError && (
         <OutcomeMessageBar intent="warning" onDismiss={() => setData(current => ({ ...current, modelsError: null }))}>
-          {t('dashboard.upstreams.errors.models', { message: data.modelsError })}
+          {t('upstreams.errors.models', { message: data.modelsError })}
         </OutcomeMessageBar>
       )}
 
@@ -448,15 +452,15 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
 
       {deleteDialog.invocation && <ConfirmDialog
         open={deleteDialog.isOpen}
-        actionLabel={t('dashboard.upstreams.actions.delete')}
+        actionLabel={t('upstreams.actions.delete')}
         busy={mutation?.kind === 'delete'}
         error={deleteError}
         key={deleteDialog.invocation.key}
-        message={t('dashboard.upstreams.delete.message', { name: deleteDialog.invocation.value.name })}
+        message={t('upstreams.delete.message', { name: deleteDialog.invocation.value.name })}
         onConfirm={() => void deleteUpstream(deleteDialog.invocation!.value)}
         onDismissError={() => setDeleteError(null)}
         onOpenChange={open => { if (!open) deleteDialog.close(); }}
-        title={t('dashboard.upstreams.delete.title')}
+        title={t('upstreams.delete.title')}
       />}
     </section>
   );
@@ -530,20 +534,20 @@ function UpstreamsTable({
   // A failed fetch is not an empty list: the message bar carries the reason.
   if (upstreams === null) return null;
   if (upstreams.length === 0) {
-    return <ResourceListEmptyState>{t('dashboard.upstreams.empty')}</ResourceListEmptyState>;
+    return <ResourceListEmptyState>{t('upstreams.empty')}</ResourceListEmptyState>;
   }
 
   return (
     <ScrollArea axes="horizontal" className="min-w-0">
-      <Table aria-label={t('dashboard.upstreams.table.title')} className="min-w-[900px]">
+      <Table aria-label={t('upstreams.table.title')} className="min-w-[900px]">
         <TableColumns widths={['96px', '200px', null, '140px', '90px', TABLE_ACTIONS_WITH_LEADING_WIDTH]} />
         <TableHeader>
           <TableRow>
-            <TableHeaderCell>{t('dashboard.upstreams.table.priority')}</TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.upstreams.table.upstream')}</TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.upstreams.table.details')}</TableHeaderCell>
-            <TableHeaderCell>{t('dashboard.upstreams.table.models')}</TableHeaderCell>
-            <TableCentredHeader>{t('dashboard.upstreams.table.enabled')}</TableCentredHeader>
+            <TableHeaderCell>{t('upstreams.table.priority')}</TableHeaderCell>
+            <TableHeaderCell>{t('upstreams.table.upstream')}</TableHeaderCell>
+            <TableHeaderCell>{t('upstreams.table.details')}</TableHeaderCell>
+            <TableHeaderCell>{t('upstreams.table.models')}</TableHeaderCell>
+            <TableCentredHeader>{t('upstreams.table.enabled')}</TableCentredHeader>
             <TableActionsHeader />
           </TableRow>
         </TableHeader>
@@ -638,7 +642,7 @@ function UpstreamSegment({
       const canFullEdit = administrator || record.editLevel === 'full';
       return <Fragment key={record.id}><TableRow {...reorder.itemProps(index)}
         aria-controls={canAudit ? `upstream-telemetry-${encodeURIComponent(record.id)}` : undefined} aria-expanded={canAudit ? expandedId === record.id : undefined}
-        aria-label={canAudit ? t('dashboard.upstreams.actions.metricsNamed', { name: record.name }) : undefined} tabIndex={canAudit && !busy ? 0 : undefined}
+        aria-label={canAudit ? t('upstreams.actions.metricsNamed', { name: record.name }) : undefined} tabIndex={canAudit && !busy ? 0 : undefined}
         onClickCapture={event => {
           const target = event.target as Element;
           if (!canAudit || busy || !event.currentTarget.contains(target) || target.closest(`a, button, .${switchClassNames.root}`) || !window.getSelection()!.isCollapsed) return;
@@ -650,7 +654,7 @@ function UpstreamSegment({
         <TableCell>
           <div className="inline-flex items-center gap-1">
             <Text className="text-fui-fg3 min-w-[22px] text-center">{segment.rankBase + reorder.position(index) + 1}</Text>
-            <ReorderHandle {...reorder.handleProps(segment.movable ? index : -1)} label={t('dashboard.upstreams.actions.reorder', { name: record.name })} />
+            <ReorderHandle {...reorder.handleProps(segment.movable ? index : -1)} label={t('upstreams.actions.reorder', { name: record.name })} />
           </div>
         </TableCell>
         <TableCell className="overflow-hidden">
@@ -659,16 +663,16 @@ function UpstreamSegment({
         <TableCell className="overflow-hidden"><UpstreamDetailsCell record={record} /></TableCell>
         <TableCell><ModelStatus count={modelCounts.get(record.id)!} record={record} /></TableCell>
         <TableCentredCell>
-          <Switch aria-label={t('dashboard.upstreams.actions.toggle', { name: record.name })} checked={pendingEnabled?.id === record.id ? pendingEnabled.enabled : record.enabled}
+          <Switch aria-label={t('upstreams.actions.toggle', { name: record.name })} checked={pendingEnabled?.id === record.id ? pendingEnabled.enabled : record.enabled}
             disabled={busy || !canFullEdit} onChange={(_, detail) => onToggle(record, detail.checked)} />
         </TableCentredCell>
         <TableCell>
           <TableActions leading={<TooltipIconButton aria-controls={canAudit ? `upstream-telemetry-${encodeURIComponent(record.id)}` : undefined} aria-expanded={canAudit ? expandedId === record.id : undefined}
-            disabled={reorderBusy || !canAudit} icon={<DataTrendingRegular />} label={t('dashboard.upstreams.actions.metricsNamed', { name: record.name })} onClick={() => onTelemetry(record)} />}>
-            <TooltipIconButton disabled={busy} icon={<EditRegular />} label={t('dashboard.upstreams.actions.editNamed', { name: record.name })} to={upstreamEditorPath(record)} />
-            {administrator && <TooltipIconButton disabled={busy} icon={<CopyRegular />} label={t('dashboard.upstreams.actions.copyNamed', { name: record.name })} to={upstreamCopyPath(record)} />}
+            disabled={reorderBusy || !canAudit} icon={<DataTrendingRegular />} label={t('upstreams.actions.metricsNamed', { name: record.name })} onClick={() => onTelemetry(record)} />}>
+            <TooltipIconButton disabled={busy} icon={<EditRegular />} label={t('upstreams.actions.editNamed', { name: record.name })} to={upstreamEditorPath(record)} />
+            {administrator && <TooltipIconButton disabled={busy} icon={<CopyRegular />} label={t('upstreams.actions.copyNamed', { name: record.name })} to={upstreamCopyPath(record)} />}
             {administrator && <TooltipIconButton danger disabled={busy && !deleting} disabledFocusable={deleting} icon={deleting ? <Spinner size="tiny" /> : <DeleteRegular />}
-              label={t('dashboard.upstreams.actions.deleteNamed', { name: record.name })} onClick={() => onDelete(record)} />}
+              label={t('upstreams.actions.deleteNamed', { name: record.name })} onClick={() => onDelete(record)} />}
           </TableActions>
         </TableCell>
       </TableRow>
@@ -693,29 +697,29 @@ function ModelStatus({
     : record.modelsCache.fetchedAt === null ? 'empty' : 'ready';
   const healthy = count !== null && count > 0 && !record.modelsCache.lastError;
   const cacheDetail = record.modelsCache.lastError
-    ? t('dashboard.upstreams.cache.failedDetail', {
+    ? t('upstreams.cache.failedDetail', {
         message: modelErrorExcerpt(record.modelsCache.lastError.message, MODEL_ERROR_TOOLTIP_LENGTH),
         time: dateTime(record.modelsCache.lastError.at, locale),
       })
     : record.modelsCache.fetchedAt !== null
-      ? t('dashboard.upstreams.cache.readyDetail', { time: dateTime(record.modelsCache.fetchedAt, locale) })
-      : t('dashboard.upstreams.cache.emptyDetail');
+      ? t('upstreams.cache.readyDetail', { time: dateTime(record.modelsCache.fetchedAt, locale) })
+      : t('upstreams.cache.emptyDetail');
   // A disabled upstream's cache freshness is a statement about the past, so the
   // tooltip says the upstream is off before it says when it last refreshed.
-  const detail = record.enabled ? cacheDetail : t('dashboard.upstreams.cache.disabledDetail', { detail: cacheDetail });
+  const detail = record.enabled ? cacheDetail : t('upstreams.cache.disabledDetail', { detail: cacheDetail });
 
   return (
     <Tooltip content={detail} relationship="description">
       <span className="winui-focus-rect inline-flex items-center gap-1.5 min-w-0 w-fit max-w-full" tabIndex={0}>
         {!record.enabled
-          ? <ProhibitedRegular className="block flex-none text-fui-fg2" fontSize={18} aria-label={t('dashboard.upstreams.cache.disabled')} />
+          ? <ProhibitedRegular className="block flex-none text-fui-fg2" fontSize={18} aria-label={t('upstreams.cache.disabled')} />
           : healthy
-            ? <CheckmarkCircleRegular className="block flex-none text-[var(--colorPaletteGreenForeground1)]" fontSize={18} aria-label={t('dashboard.upstreams.cache.ready')} />
-            : <WarningRegular className="block flex-none text-[var(--colorPaletteDarkOrangeForeground1)]" fontSize={18} aria-label={t(`dashboard.upstreams.cache.${cacheStatus}`)} />}
+            ? <CheckmarkCircleRegular className="block flex-none text-[var(--colorPaletteGreenForeground1)]" fontSize={18} aria-label={t('upstreams.cache.ready')} />
+            : <WarningRegular className="block flex-none text-[var(--colorPaletteDarkOrangeForeground1)]" fontSize={18} aria-label={t(`upstreams.cache.${cacheStatus}`)} />}
         <Text size={300} className="tabular-nums" wrap={false}>
           {count === null
-            ? t('dashboard.upstreams.models.unavailable')
-            : t('dashboard.upstreams.models.count', { count })}
+            ? t('upstreams.models.unavailable')
+            : t('upstreams.models.count', { count })}
         </Text>
       </span>
     </Tooltip>
@@ -797,19 +801,23 @@ const upstreamSummary = (record: ListedUpstreamRecord, t: TFunction): string => 
   // A cloud key belongs to an account, and that account says more than the one
   // endpoint every cloud upstream shares. A self-hosted daemon has no account,
   // so its address is the whole identity.
-  case 'ollama': return record.state?.account?.email ?? (record.config.baseUrl || t('dashboard.upstreams.summary.ollama'));
-  case 'copilot': return record.config.user.login ? `${record.config.githubHost}/${record.config.user.login}` : t('dashboard.upstreams.summary.copilot');
+  case 'ollama': return record.state?.account?.email ?? (record.config.baseUrl || t('upstreams.summary.ollama'));
+  case 'kimi-code': {
+    const account = record.state?.accountProbe?.observation?.data;
+    return account ? kimiCodeAccountName(account) : t(`upstreams.editor.kimiCode.regions.${record.config.region}`);
+  }
+  case 'copilot': return record.config.user.login ? `${record.config.githubHost}/${record.config.user.login}` : t('upstreams.summary.copilot');
   case 'chatgpt': {
     const account = record.config.accounts[0];
-    if (!account) return t('dashboard.upstreams.summary.noAccount');
+    if (!account) return t('upstreams.summary.noAccount');
     const identity = account.email
       ?? (account.chatgptAccountId === null ? null : shortAccountId(account.chatgptAccountId));
     return [identity, planLabel(account)].filter(Boolean).join(' - ')
-      || t('dashboard.upstreams.summary.noAccount');
+      || t('upstreams.summary.noAccount');
   }
   case 'claude-code': {
     const account = record.config.accounts[0];
-    if (!account) return t('dashboard.upstreams.summary.noAccount');
+    if (!account) return t('upstreams.summary.noAccount');
     return account.email ?? shortAccountId(account.accountUuid);
   }
   }

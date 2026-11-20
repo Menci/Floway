@@ -19,7 +19,7 @@ export function DecisionTargetEditor({ onChange, readOnly, value }: {
   const { t } = useTranslation();
   return <div className="grid gap-3">
     <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
-      <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.decisionProtocol')}>
+      <Field className="min-w-0" label={t('models.editor.decisionProtocol')}>
         <Dropdown
           readOnly={readOnly}
           selectedOptions={[value.protocol]}
@@ -32,7 +32,7 @@ export function DecisionTargetEditor({ onChange, readOnly, value }: {
         </Dropdown>
       </Field>
 
-      <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.decisionPath')} hint={t('dashboard.upstreamEditor.models.decisionPathHint')}>
+      <Field className="min-w-0" label={t('models.editor.decisionPath')} hint={t('models.editor.decisionPathHint')}>
         <Input
           className="!w-full font-mono"
           readOnly={readOnly}

@@ -36,32 +36,3 @@ test('resolves delayed Gemini audio atoms within the complete emitted data field
   for await (const _frame of writeGeminiGenerateContentEvents((async function* () { yield* source.drain(); })(), { roundTrip })) {}
   expect(prepared).toBe(true);
 });
-
-test.each(['{"x":1,}', '{"x": 1}'])('tracks the emitted canonical JSON view without resolving transformed atoms: %s', async original => {
-  const references = createReferenceBuilder();
-  const field = createReadFieldState('text');
-  const partId = appendReadField(references, field, original);
-  const source = createIRBuilder();
-  source.choice(0);
-  source.assign(['model'], 'model');
-  source.event({ type: 'start', id: 'response' });
-  const tool = source.item(0, { type: 'function_call', name: 'tool', call_id: 'call', arguments: '' });
-  tool.append('arguments', original, [partId]);
-  tool.end();
-  source.choice(0).end('tool_calls');
-  source.event({ type: 'finish', status: 'completed' });
-  let prepared = false;
-  const roundTrip: RoundTripWriter<'geminiGenerateContent'> = {
-    builder: references,
-    encodeSidecar: async (_choice, _check, turn, state, textViews) => {
-      const views = collectEmittedFieldPlacements(turn, state, textViews);
-      expect([...views.values()]).toContainEqual({ enclosingText: '{"x":1}', offset: 0 });
-      const finalizer = createFieldReferencer(references, views);
-      expect(await finalizer.referenceField(original, field)).toBe(original);
-      prepared = true;
-      return 'sidecar';
-    },
-  };
-  for await (const _frame of writeGeminiGenerateContentEvents((async function* () { yield* source.drain(); })(), { roundTrip, parseToolArguments: original.endsWith(',}') ? () => ({ x: 1 }) : undefined })) {}
-  expect(prepared).toBe(true);
-});

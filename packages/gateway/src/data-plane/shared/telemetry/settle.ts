@@ -2,7 +2,17 @@ import { recordPerformance, type PerformanceTelemetryContext } from './performan
 import { recordTokenUsage, recordUsage, type UsageMeasurement } from './usage.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
 import type { GatewayCtx } from '../gateway-ctx.ts';
+import type { SseOutcome } from '../sse.ts';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
+
+export const recordSseOutcome = (ctx: GatewayCtx, outcome: SseOutcome, identity: TelemetryModelIdentity, usage: TokenUsage | null): boolean => {
+  if (outcome.type === 'completed') {
+    ctx.dump?.success(identity, usage);
+    return false;
+  }
+  ctx.dump?.failed('error' in outcome ? outcome.error : outcome.type === 'protocol-error' ? 'Upstream SSE reported an error' : 'Downstream cancelled the SSE response');
+  return true;
+};
 
 // Terminal settle for a successful upstream call (or a partial-output
 // failure where tokens were metered): schedule the usage row and record

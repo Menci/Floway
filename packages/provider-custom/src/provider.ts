@@ -1,11 +1,12 @@
 import { assertCustomUpstreamRecord, type CustomUpstreamConfig } from './config.ts';
 import { CUSTOM_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchCustomModels, type CustomModelsResponse, type CustomRawModel } from './fetch-models.ts';
-import { customFetchAlphaSearch, customFetchOpenAIAudioTranscriptions, customFetchOpenAIChatCompletions, customFetchOpenAICompletions, customFetchDecision, customFetchOpenAIEmbeddings, customFetchOpenAIImagesEdits, customFetchOpenAIImagesGenerations, customFetchAnthropicMessages, customFetchAnthropicMessagesCountTokens, customFetchRerank, customFetchOpenAIResponses, customFetchOpenAIResponsesCompact } from './fetch.ts';
+import { customFetchAlphaSearch, customFetchOpenAIAudioTranscriptions, customFetchOpenAIChatCompletions, customFetchOpenAICompletions, customFetchDecision, customFetchOpenAIEmbeddings, customFetchOpenAIImagesEdits, customFetchOpenAIImagesGenerations, customFetchAnthropicMessages, customFetchAnthropicMessagesCountTokens, customFetchGeminiGenerateContent, customFetchGeminiGenerateContentCountTokens, customFetchRerank, customFetchOpenAIResponses, customFetchOpenAIResponsesCompact } from './fetch.ts';
 import { inferEndpointsFromModelId } from './infer-endpoints.ts';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { DEFAULT_DECISION_PATHS, serializeDecisionRequest, type CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
+import { parseGeminiGenerateContentStream, type GeminiCountTokensPayload } from '@floway-dev/protocols/gemini-generate-content';
 import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type OpenAIResponsesCompactionResultEx, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
@@ -188,7 +189,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     const rawModelId = rawModelIdOf(model);
     return transport(config, { method: 'POST', body: jsonRequestBody({ ...body, model: rawModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall })
       .then(response => ({
-        response,
+        http: response,
         modelKey: rawModelId,
       }));
   };
@@ -215,6 +216,10 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     );
   };
 
+  // A catalog may name a model `models/{id}`, as Google's does; the action path
+  // takes the bare id.
+  const geminiModelIdOf = (model: ProviderModel): string => rawModelIdOf(model).replace(/^models\//, '');
+
   const instance: ProviderInstance = {
     runScheduledTask: async () => {},
     getProvidedModels: async fetcher => {
@@ -229,9 +234,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
       switch (action) {
       case 'generate': {
         const stream = await callStreaming(customFetchOpenAIResponses, model, body, signal, headersForCall(opts.headers), parseOpenAIResponsesStream, opts);
-        return stream.ok
-          ? { action: 'generate', ok: true, events: stream.events, modelKey: stream.modelKey, ...(stream.headers ? { headers: stream.headers } : {}) }
-          : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
+        return { action: 'generate', ...stream };
       }
       case 'compact': {
         const rawModelId = rawModelIdOf(model);
@@ -241,8 +244,8 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
           { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         );
         return response.ok
-          ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResultEx, modelKey: rawModelId }
-          : { action: 'compact', ok: false, response, modelKey: rawModelId };
+          ? { action: 'compact', ok: true, result: (await response.json()) as OpenAIResponsesCompactionResultEx, modelKey: rawModelId, http: { status: response.status, headers: response.headers } }
+          : { action: 'compact', ok: false, http: response, modelKey: rawModelId };
       }
       default:
         action satisfies never;
@@ -251,19 +254,43 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     },
     callAnthropicMessages: (model, body, signal, opts) => callStreaming(customFetchAnthropicMessages, model, body, signal, headersForAnthropicMessagesCall(headersForCall(opts.headers), opts.anthropicBeta), parseAnthropicMessagesStream, opts),
     callAnthropicMessagesCountTokens: (model, body, signal, opts) => call(customFetchAnthropicMessagesCountTokens, model, body, signal, headersForAnthropicMessagesCall(headersForCall(opts.headers), opts.anthropicBeta), opts),
+    callGeminiGenerateContent: (model, body, signal, opts) => {
+      const modelId = geminiModelIdOf(model);
+      return streamingProviderCall(
+        customFetchGeminiGenerateContent(config, modelId, { method: 'POST', body: jsonRequestBody(body), signal }, { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall }),
+        parseGeminiGenerateContentStream,
+        modelId,
+        signal,
+      );
+    },
+    callGeminiGenerateContentCountTokens: async (model, body, signal, opts) => {
+      const modelId = geminiModelIdOf(model);
+      // countTokens reads only `contents` or a whole `generateContentRequest`,
+      // and rejects generate fields at its top level. The envelope counts the
+      // system instruction, tools, and config too, and requires the model name.
+      // https://ai.google.dev/api/tokens#method:-models.counttokens
+      const request: GeminiCountTokensPayload = { generateContentRequest: { ...body, model: `models/${modelId}` } };
+      const response = await customFetchGeminiGenerateContentCountTokens(
+        config,
+        modelId,
+        { method: 'POST', body: jsonRequestBody(request), signal },
+        { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
+      );
+      return { http: response, modelKey: modelId };
+    },
     callOpenAIEmbeddings: (model, body, signal, opts) => call(customFetchOpenAIEmbeddings, model, body, signal, headersForCall(opts.headers), opts),
     callOpenAIImagesGenerations: (model, body, signal, opts) => call(customFetchOpenAIImagesGenerations, model, body, signal, headersForCall(opts.headers), opts),
     callOpenAIImagesEdits: async (model, request, signal, opts) => {
       const rawModelId = rawModelIdOf(model);
       const body = await serializeOpenAIImagesEditsRequest(request, rawModelId);
       const response = await customFetchOpenAIImagesEdits(config, { method: 'POST', body, signal }, { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
-      return { response, modelKey: rawModelId };
+      return { http: response, modelKey: rawModelId };
     },
     callOpenAIAudioTranscriptions: async (model, request, signal, opts) => {
       const rawModelId = rawModelIdOf(model);
       const body = serializeModelFieldOpenAIAudioTranscriptionRequest(request, rawModelId);
       const response = await customFetchOpenAIAudioTranscriptions(config, { method: 'POST', body, signal }, { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
-      return { response, modelKey: rawModelId };
+      return { http: response, modelKey: rawModelId };
     },
     callRerank: async (model, request, signal, opts) => {
       const target = model.rerankTarget;
@@ -276,7 +303,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
         { method: 'POST', body: jsonRequestBody(body), signal },
         { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       );
-      return { response, modelKey: rawModelId, target };
+      return { http: response, modelKey: rawModelId, target };
     },
     callDecision: async (model: ProviderModel, request: CanonicalDecisionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => {
       const target = model.decisionTarget;
@@ -289,7 +316,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
         { method: 'POST', body: jsonRequestBody(body), signal },
         { extraHeaders: headersForCall(opts.headers), fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       );
-      return { response, modelKey: rawModelId, target };
+      return { http: response, modelKey: rawModelId, target };
     },
   };
 

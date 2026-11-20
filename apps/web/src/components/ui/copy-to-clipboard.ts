@@ -30,10 +30,13 @@ const copyWithExecCommand = (text: string): boolean => {
   textArea.style.outline = 'none';
   textArea.style.boxShadow = 'none';
   textArea.style.background = 'transparent';
+  textArea.dataset.flowayClipboardHelper = '';
   textArea.value = text;
 
+  const host = previousFocus instanceof Element ? (previousFocus.closest('[popover]') ?? document.body) : document.body;
+
   try {
-    document.body.append(textArea);
+    host.append(textArea);
     textArea.focus();
     textArea.select();
     return document.execCommand('copy');

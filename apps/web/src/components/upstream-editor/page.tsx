@@ -12,6 +12,7 @@ import {
   fetchSavedModelCatalog,
   hasUnsavedDiscoveryInputs,
   isPersisted,
+  isOAuthUpstream,
   modelPrefixIsValid,
   previewDraftModelCatalog,
   updateBody,
@@ -77,9 +78,9 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const [createdUpstreamId, setCreatedUpstreamId] = useState<string | null>(null);
   const [initialValues] = useState(() => valuesFromRecord(data.record));
   const schema = useMemo(() => z.object({
-    name: z.string().trim().min(1, 'dashboard.upstreamEditor.validation.name'),
+    name: z.string().trim().min(1, 'upstreams.editor.validation.name'),
     enabled: z.boolean(),
-    usageRefreshIntervalMinutes: z.number({ error: 'dashboard.upstreamEditor.usageRefresh.invalid' }).int('dashboard.upstreamEditor.usageRefresh.invalid').nonnegative('dashboard.upstreamEditor.usageRefresh.invalid'),
+    usageRefreshIntervalMinutes: z.number({ error: 'upstreams.editor.usageRefresh.invalid' }).int('upstreams.editor.usageRefresh.invalid').nonnegative('upstreams.editor.usageRefresh.invalid'),
     hue: z.number(),
     proxyFallbackList: z.any(),
     modelPrefix: z.any(),
@@ -89,9 +90,9 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     state: z.any(),
     manualModels: z.any(),
   }).superRefine((values, ctx) => {
-    if (values.modelPrefix && !modelPrefixIsValid(values.modelPrefix.prefix)) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.prefixInvalid', path: ['modelPrefix'] });
-    if (values.modelPrefix?.addressable.length === 0) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.prefix', path: ['modelPrefix'] });
-    if (!modelsAreValid(values.manualModels)) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.models', path: ['manualModels'] });
+    if (values.modelPrefix && !modelPrefixIsValid(values.modelPrefix.prefix)) ctx.addIssue({ code: 'custom', message: 'upstreams.editor.prefixInvalid', path: ['modelPrefix'] });
+    if (values.modelPrefix?.addressable.length === 0) ctx.addIssue({ code: 'custom', message: 'upstreams.editor.validation.prefix', path: ['modelPrefix'] });
+    if (!modelsAreValid(values.manualModels)) ctx.addIssue({ code: 'custom', message: 'upstreams.editor.validation.models', path: ['manualModels'] });
     if (record.kind === 'custom') {
       const config = values.config as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
       refineCustomIngressHeaderRules(config.ingressHeadersRules, ctx);
@@ -99,8 +100,8 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     // An upstream that already exists keeps the credential it was created
     // with, and the editor never sends it back.
     if (data.mode !== 'create') return;
-    if (record.kind === 'copilot' && !values.config.githubToken) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.copilot', path: ['config'] });
-    if ((record.kind === 'chatgpt' || record.kind === 'claude-code') && values.config.accounts.length === 0) ctx.addIssue({ code: 'custom', message: 'dashboard.upstreamEditor.validation.credential', path: ['config'] });
+    if (record.kind === 'copilot' && !values.config.githubToken) ctx.addIssue({ code: 'custom', message: 'upstreams.editor.validation.copilot', path: ['config'] });
+    if ((record.kind === 'chatgpt' || record.kind === 'claude-code') && values.config.accounts.length === 0) ctx.addIssue({ code: 'custom', message: 'upstreams.editor.validation.credential', path: ['config'] });
   }), [data.mode, record.kind]);
   const form = useForm<UpstreamEditorValues>({
     defaultValues: initialValues,
@@ -153,7 +154,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
   const manualModelsDirty = Boolean(formState.dirtyFields.manualModels);
   const discoveryInputsDirty = hasUnsavedDiscoveryInputs(formState.dirtyFields)
     || (record.kind === 'ollama' && manualModelsDirty);
-  const oauth = record.kind === 'copilot' || record.kind === 'chatgpt' || record.kind === 'claude-code';
+  const oauth = isOAuthUpstream(record);
   const fetchDialog = useDialogInvocation<void>();
   // Save resets the form and record in one commit. The immediately following
   // Fetch must use that saved record even before React commits the new render.
@@ -210,7 +211,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
 
   const submitForm = async (): Promise<UpstreamRecord | null> => {
     if (oauth && isPersisted(record) && (formState.dirtyFields.config || formState.dirtyFields.state)) {
-      setSaveError(t('dashboard.upstreamEditor.fetchDirty.unsavedCredential'));
+      setSaveError(t('upstreams.editor.fetchDirty.unsavedCredential'));
       return null;
     }
     let yamlModelsChanged = false;
@@ -231,7 +232,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       setSaving(true); setSaveError(null);
       // The dashboard's toaster sits above the outlet, so
       // the create branch's toast outlives the navigation that follows it.
-      const handle = toasts.start(t('dashboard.upstreamEditor.toast.saving', { name: values.name }));
+      const handle = toasts.start(t('upstreams.editor.toast.saving', { name: values.name }));
       const result = data.mode === 'create'
         ? await callApi(() => api.api.upstreams.$post({ json: createBody(record, values) }))
         : await callApi(() => api.api.upstreams[':id'].$patch({ param: { id: record.id }, json: updateBody(record, values, editLevel === 'full' ? 'full' : 'models') }));
@@ -241,7 +242,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       updateRecord(saved);
       reset(valuesFromRecord(saved));
       if (invalidatesDiscovered) { setModelsError(null); setDiscovered(null); }
-      handle.succeed(t('dashboard.upstreamEditor.toast.saved'));
+      handle.succeed(t('upstreams.editor.toast.saved'));
       savedRecord = saved;
       // `saving` stays set during the route handoff; the old form is still
       // mounted until navigation commits, and another Save would create twice.
@@ -262,8 +263,8 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
         is not. */}
     <div className="flex flex-col gap-[14px] h-full min-h-0">
       <header className="flex items-center gap-3 min-w-0">
-        <BackNavigationButton to="/dashboard/providers/upstreams">{t('dashboard.upstreamEditor.actions.back')}</BackNavigationButton>
-        {hasUnsavedChanges && <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.unsaved')}</Text>}
+        <BackNavigationButton to="/dashboard/providers/upstreams">{t('upstreams.editor.actions.back')}</BackNavigationButton>
+        {hasUnsavedChanges && <Text size={200} className="text-fui-fg2">{t('upstreams.editor.unsaved')}</Text>}
         {/* Disabled on a clean form only in edit mode: a create form opens on a
             prefilled blueprint and is clean at first render, yet still has
             something to send, and its credential gates are submit-time schema
@@ -271,7 +272,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
             change, keeping the button live for the press that surfaces the
             field's own error. */}
         <div className="ml-auto flex items-center gap-2">
-          {!readOnly && <Button appearance="primary" disabled={data.mode === 'edit' && !hasUnsavedChanges} disabledFocusable={saving} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} onClick={() => void submitForm()}>{t('dashboard.upstreamEditor.actions.save')}</Button>}
+          {!readOnly && <Button appearance="primary" disabled={data.mode === 'edit' && !hasUnsavedChanges} disabledFocusable={saving} icon={saving ? <Spinner size="tiny" /> : <SaveRegular />} onClick={() => void submitForm()}>{t('upstreams.editor.actions.save')}</Button>}
         </div>
       </header>
       {saveError && <OutcomeMessageBar onDismiss={() => setSaveError(null)}>{saveError}</OutcomeMessageBar>}
@@ -295,21 +296,21 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     </div>
     {leaveDialog.invocation && <ConfirmDialog
       open={leaveDialog.isOpen}
-      actionLabel={t('dashboard.upstreamEditor.leave.leave')}
-      cancelLabel={t('dashboard.upstreamEditor.leave.stay')}
+      actionLabel={t('upstreams.editor.leave.leave')}
+      cancelLabel={t('upstreams.editor.leave.stay')}
       key={leaveDialog.invocation.key}
-      message={t('dashboard.upstreamEditor.leave.message')}
+      message={t('upstreams.editor.leave.message')}
       onCancel={() => blocker.state === 'blocked' && blocker.reset()}
       onConfirm={() => leaveDialog.close()}
       onExited={() => { if (blocker.state === 'blocked') blocker.proceed(); }}
       onOpenChange={open => { if (!open && blocker.state === 'blocked') blocker.reset(); }}
-      title={t('dashboard.upstreamEditor.leave.title')}
+      title={t('upstreams.editor.leave.title')}
     />}
     {fetchDialog.invocation && <ConfirmDialog
       actionIntent="primary"
-      actionLabel={t('dashboard.upstreamEditor.fetchDirty.saveAndFetch')}
+      actionLabel={t('upstreams.editor.fetchDirty.saveAndFetch')}
       key={fetchDialog.invocation.key}
-      message={t('dashboard.upstreamEditor.fetchDirty.message')}
+      message={t('upstreams.editor.fetchDirty.message')}
       onConfirm={() => {
         fetchDialog.close();
         void (async () => {
@@ -321,7 +322,7 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
       }}
       onOpenChange={open => { if (!open) fetchDialog.close(); }}
       open={fetchDialog.isOpen}
-      title={t('dashboard.upstreamEditor.fetchDirty.title')}
+      title={t('upstreams.editor.fetchDirty.title')}
     />}
   </FormProvider>;
 }

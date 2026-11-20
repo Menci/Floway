@@ -1,25 +1,28 @@
 import { createParser } from 'eventsource-parser';
 
-import { type SseFrame, sseFrame } from './sse.ts';
+import { type SseReadableFrame, sseFrame, sseRawFrame } from './sse.ts';
 
 interface ParseSSEStreamOptions {
   signal?: AbortSignal;
 }
 
-export const parseSSEStream = async function* (body: ReadableStream<Uint8Array>, options: ParseSSEStreamOptions = {}): AsyncGenerator<SseFrame> {
+export const parseSSEStream = async function* (body: ReadableStream<Uint8Array>, options: ParseSSEStreamOptions = {}): AsyncGenerator<SseReadableFrame> {
   const reader = body.getReader();
   const { signal } = options;
   const decoder = new TextDecoder();
-  let pendingFrames: SseFrame[] = [];
+  let pendingFrames: SseReadableFrame[] = [];
   let cancelPromise: Promise<void> | undefined;
 
   const parser = createParser({
     onEvent: event => {
-      pendingFrames.push(sseFrame(event.data, event.event));
+      // `bare` marks a payload the SSE grammar never claimed — an unframed
+      // body some upstreams write for a late error. Forwarding it as a raw
+      // frame keeps the framing visible to callers that act on it.
+      pendingFrames.push(event.bare === true ? sseRawFrame(event.data) : sseFrame(event.data, event.event));
     },
   });
 
-  const takePendingFrames = (): SseFrame[] => {
+  const takePendingFrames = (): SseReadableFrame[] => {
     const frames = pendingFrames;
     pendingFrames = [];
     return frames;

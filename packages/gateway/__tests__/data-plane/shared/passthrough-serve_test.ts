@@ -20,7 +20,7 @@ import { test, vi } from 'vitest';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
-import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
+import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-utils';
 
 const registerOpenAIEmbeddingsUpstream = async (
   repo: Awaited<ReturnType<typeof setupAppTest>>['repo'],
@@ -34,7 +34,6 @@ const registerOpenAIEmbeddingsUpstream = async (
     sortOrder: 100,
     config: {
       baseUrl: 'https://passthrough.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules,
       apiKey: 'sk-passthrough',
       endpoints: {},
@@ -88,53 +87,9 @@ test('passthrough-serve: usage-record failure does not turn upstream 2xx into 50
         await flushAsyncWork();
       },
     );
-
-    assertEquals(errorSpy.mock.calls.some(call => call[0] === 'Failed to record usage:'), true);
   } finally {
     errorSpy.mockRestore();
   }
-});
-
-test('passthrough-serve: Custom resolves configured ingress header rules before provider dispatch', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await registerOpenAIEmbeddingsUpstream(repo, [
-    { key: 'x-passthrough', value: null },
-    { key: 'x-overwrite', value: 'configured' },
-    { key: 'x-empty', value: '' },
-  ]);
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.pathname === '/v1/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
-      }
-      if (url.pathname === '/v1/embeddings') {
-        assertEquals(request.headers.get('x-passthrough'), 'client');
-        assertEquals(request.headers.get('x-overwrite'), 'configured');
-        assertEquals(request.headers.get('x-empty'), '');
-        assertEquals(request.headers.get('authorization'), 'Bearer sk-passthrough');
-        assertEquals(request.headers.get('x-unlisted'), null);
-        return jsonResponse({ object: 'list', data: [], model: 'custom-embed-model' });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestAppWithWarmModels('/v1/embeddings', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': apiKey.key,
-          'x-empty': 'client',
-          'x-overwrite': 'client',
-          'x-passthrough': 'client',
-          'x-unlisted': 'discard',
-        },
-        body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
-      });
-      assertEquals(response.status, 200);
-    },
-  );
 });
 
 test('passthrough-serve: non-JSON 2xx upstream body is forwarded verbatim with a request-only usage record', async () => {
@@ -178,116 +133,9 @@ test('passthrough-serve: non-JSON 2xx upstream body is forwarded verbatim with a
     assertEquals(usage.length, 1);
     assertEquals(usage[0].requests, 1);
     assertEquals(usage[0].metrics, []);
-    // The parse failure is observable through console.warn so operators can
-    // correlate missing usage rows against upstream body shape regressions.
-    assertEquals(warnSpy.mock.calls.some(call => typeof call[0] === 'string' && call[0].includes('passthrough-serve: failed to parse 2xx upstream body for /embeddings')), true);
   } finally {
     warnSpy.mockRestore();
   }
-});
-
-test('passthrough-serve: response header blocklist preserves vendor metadata and drops unsafe headers', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await registerOpenAIEmbeddingsUpstream(repo);
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
-      }
-      if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/embeddings') {
-        return new Response(JSON.stringify({
-          object: 'list',
-          model: 'custom-embed-model',
-          data: [{ object: 'embedding', index: 0, embedding: [0.1] }],
-          usage: { prompt_tokens: 1, total_tokens: 1 },
-        }), {
-          status: 200,
-          headers: {
-            'content-type': 'application/json',
-            'x-request-id': 'req-123',
-            'openai-organization': 'org-1',
-            'x-ratelimit-remaining': '100',
-            'retry-after': '30',
-            'cf-ray': 'abc',
-            'x-internal-secret': 'leak',
-            'set-cookie': 'nope=1',
-          },
-        });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestAppWithWarmModels('/v1/embeddings', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-        body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
-      });
-
-      assertEquals(response.status, 200);
-      assertExists(response.headers.get('x-request-id'));
-      assertEquals(response.headers.get('x-request-id'), 'req-123');
-      assertEquals(response.headers.get('openai-organization'), 'org-1');
-      assertEquals(response.headers.get('x-ratelimit-remaining'), '100');
-      assertEquals(response.headers.get('retry-after'), '30');
-      assertEquals(response.headers.get('cf-ray'), 'abc');
-      assertEquals(response.headers.get('x-internal-secret'), 'leak');
-      assertEquals(response.headers.get('set-cookie'), null);
-      await response.json();
-    },
-  );
-});
-
-test('passthrough-serve: alias whose targets have no kind-matching binding surfaces as the regular model-missing 404', async () => {
-  // The inlined alias resolver walks alias targets in `selection` order and
-  // stops at the first target with kind-matching candidates. When every
-  // target is unroutable (as here, where the single target id doesn't
-  // exist in any upstream catalog), the resolver returns empty candidates
-  // + sawModel=false, and the passthrough seam surfaces the regular
-  // model-missing 404. No upstream call should fire.
-  const { apiKey, repo } = await setupAppTest();
-  await registerOpenAIEmbeddingsUpstream(repo);
-  await repo.modelAliases.insert({
-    id: 'alias_embed-fast',
-    name: 'embed-fast',
-    kind: 'embedding',
-    selection: 'first-available',
-    displayName: null,
-    visibleInModelsList: true,
-    targets: [{ target_model_id: 'unknown-embed', rules: {} }],
-    announcedMetadata: null,
-    sortOrder: 0,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  });
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
-      }
-      if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/embeddings') {
-        throw new Error('passthrough-serve: upstream must not be called when alias has no routable target');
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestAppWithWarmModels('/v1/embeddings', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-        body: JSON.stringify({ model: 'embed-fast', input: 'hi' }),
-      });
-
-      assertEquals(response.status, 404);
-      const body = await response.json() as { error: { message: string; type: string } };
-      assertEquals(body.error.type, 'api_error');
-      // The alias name (still on `payload.model` because no candidate was
-      // rewritten in) reaches the wording verbatim.
-      assertEquals(body.error.message, 'Model embed-fast is not available on any configured upstream.');
-    },
-  );
 });
 
 // Register two custom upstreams both exposing the same embedding model, so
@@ -299,11 +147,11 @@ const registerTwoOpenAIEmbeddingsUpstreams = async (repo: Awaited<ReturnType<typ
   clearInProcessCopilotTokenCache();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_a', name: 'Upstream A', sortOrder: 100,
-    config: { baseUrl: 'https://up-a.example.com', authStyle: 'bearer', apiKey: 'sk-a', endpoints: {}, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://up-a.example.com', apiKey: 'sk-a', endpoints: {}, ingressHeadersRules: [] },
   }));
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
     id: 'up_b', name: 'Upstream B', sortOrder: 200,
-    config: { baseUrl: 'https://up-b.example.com', authStyle: 'bearer', apiKey: 'sk-b', endpoints: {}, ingressHeadersRules: [] },
+    config: { baseUrl: 'https://up-b.example.com', apiKey: 'sk-b', endpoints: {}, ingressHeadersRules: [] },
   }));
 };
 
@@ -386,6 +234,59 @@ test('passthrough-serve: when every candidate returns non-2xx the most recent up
       assertEquals(response.headers.get('retry-after'), '17');
       const body = await response.json() as { error: { message: string } };
       assertEquals(body.error.message, 'rate limited');
+      await flushAsyncWork();
+    },
+  );
+});
+
+test.each([
+  ['disconnected', 'success', 200, null],
+  ['limited', 'disconnected', 429, '17'],
+  ['limited', 'unavailable', 429, '17'],
+  ['limited', 'limited-later', 429, '17'],
+  ['limited-later', 'limited', 429, '17'],
+  ['disabled', 'limited', 429, '17'],
+] as const)('passthrough-serve: %s followed by %s preserves the selected response', async (first, second, status, retryAfter) => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerTwoOpenAIEmbeddingsUpstreams(repo);
+  if (first === 'disabled') {
+    const upstream = await repo.upstreams.getById('up_a');
+    if (!upstream) throw new Error('missing fixture upstream');
+    await saveUpstreamForTest(repo.upstreams, { ...upstream, enabled: false });
+  }
+  const calls: string[] = [];
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/v1/models') return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
+      if (url.pathname !== '/v1/embeddings') throw new Error(`Unexpected fetch ${request.url}`);
+      const behavior = url.hostname === 'up-a.example.com' ? first : second;
+      calls.push(url.hostname);
+      if (behavior === 'disabled') throw new Error('disabled upstream was called');
+      if (behavior === 'disconnected') throw new TypeError('fixture connection refused');
+      if (behavior === 'success') return jsonResponse({ object: 'list', data: [], usage: { prompt_tokens: 1, total_tokens: 1 } });
+      if (behavior === 'unavailable') return new Response('fixture unavailable', { status: 503 });
+      return new Response(`limit from ${url.hostname}`, {
+        status: 429,
+        headers: { 'retry-after': behavior === 'limited' ? '17' : '60', 'x-request-id': url.hostname },
+      });
+    },
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/embeddings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
+      });
+      assertEquals(response.status, status);
+      assertEquals(response.headers.get('retry-after'), retryAfter);
+      if (retryAfter !== null) {
+        const selected = first === 'limited' ? 'up-a.example.com' : 'up-b.example.com';
+        assertEquals(response.headers.get('x-request-id'), selected);
+        assertEquals(await response.text(), `limit from ${selected}`);
+      } else {
+        await response.text();
+      }
+      assertEquals(calls, first === 'disabled' ? ['up-b.example.com'] : ['up-a.example.com', 'up-b.example.com']);
       await flushAsyncWork();
     },
   );

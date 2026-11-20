@@ -3,6 +3,8 @@ import { z } from 'zod';
 import type { ScopeExpressionData } from './scope-expression';
 import type { AccessScope } from '@floway-dev/gateway/browser';
 
+export type ScopeKind = 'self' | 'upstream' | 'user' | 'group';
+
 const modelPatternSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('exact'), value: z.string().min(1) }),
   z.object({ kind: z.literal('regex'), value: z.string().min(1) }).superRefine((value, context) => {
@@ -21,6 +23,19 @@ export const scopeSchema = z.discriminatedUnion('kind', [
 ]);
 
 export const parseScope = (value: string | null): AccessScope | null => value === null ? null : scopeSchema.parse(JSON.parse(value));
+export const scopeKind = (scope: AccessScope | null): ScopeKind | null => {
+  if (scope === null) return null;
+  switch (scope.kind) {
+  case 'upstreams':
+  case 'upstream':
+  case 'upstreamModel': return 'upstream';
+  case 'users':
+  case 'user': return 'user';
+  case 'groups':
+  case 'group': return 'group';
+  case 'self': return 'self';
+  }
+};
 export const scopeDepth = (scope: AccessScope) => scope.kind === 'self' ? 4 : scope.kind === 'upstreamModel' ? 3
   : scope.kind === 'upstreams' || scope.kind === 'users' || scope.kind === 'groups' ? 1 : 2;
 export const scopeKey = (scope: AccessScope): string => {
@@ -35,15 +50,38 @@ export const scopeKey = (scope: AccessScope): string => {
   case 'groups': return scope.kind;
   }
 };
+export const scopeResourceId = (scope: AccessScope): string => {
+  switch (scope.kind) {
+  case 'upstreamModel':
+  case 'upstream': return scope.upstreamId;
+  case 'user': return String(scope.userId);
+  case 'group': return String(scope.groupId);
+  case 'self':
+  case 'upstreams':
+  case 'users':
+  case 'groups': return '';
+  }
+};
+export const scopeResourceName = (scope: AccessScope, data: Pick<ScopeExpressionData, 'groups' | 'upstreams' | 'users'>): string | undefined => {
+  if (scope.kind === 'upstream' || scope.kind === 'upstreamModel') return data.upstreams.find(upstream => upstream.id === scope.upstreamId)?.name;
+  if (scope.kind === 'user') return data.users.find(user => user.id === scope.userId)?.username;
+  if (scope.kind === 'group') return data.groups.find(group => group.id === scope.groupId)?.name;
+  return undefined;
+};
 
-export const scopeContains = (outer: AccessScope | null, inner: AccessScope, data: Pick<ScopeExpressionData, 'groups'>): boolean => {
-  if (outer === null || scopeKey(outer) === scopeKey(inner)) return true;
+export const scopeCoversTarget = (outer: AccessScope, inner: AccessScope): boolean => {
+  if (scopeKey(outer) === scopeKey(inner)) return true;
   if (outer.kind === 'upstreams') return inner.kind === 'upstream' || inner.kind === 'upstreamModel';
   if (outer.kind === 'upstream') return inner.kind === 'upstreamModel' && outer.upstreamId === inner.upstreamId;
   if (outer.kind === 'upstreamModel') return outer.model.kind === 'regex' && inner.kind === 'upstreamModel'
     && inner.model.kind === 'exact' && inner.upstreamId === outer.upstreamId && new RegExp(outer.model.value).test(inner.model.value);
   if (outer.kind === 'users') return inner.kind === 'user';
   if (outer.kind === 'groups') return inner.kind === 'group';
+  return false;
+};
+
+export const scopeContains = (outer: AccessScope | null, inner: AccessScope, data: Pick<ScopeExpressionData, 'groups'>): boolean => {
+  if (outer === null || scopeCoversTarget(outer, inner)) return true;
   if (outer.kind === 'group' && inner.kind === 'user') return data.groups.some(group => group.id === outer.groupId && group.memberIds.includes(inner.userId));
   return false;
 };

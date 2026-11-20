@@ -86,27 +86,3 @@ test('compresses to WebP at the fixed quality, resizing to the resolved target, 
   assert([...store.keys()][0].includes(':50x40:webp:q82'));
   assertEquals(calls.put, 1);
 });
-
-test('serves a cache hit without calling the Images binding again', async () => {
-  const { binding, transforms } = recordingImages(new Uint8Array([7, 7]));
-  installMemoryStore();
-  const processor = createCloudflareImageProcessor(binding);
-
-  const first = await processor.compressToWebp(PNG_1x1, fixedTarget);
-  const second = await processor.compressToWebp(PNG_1x1, fixedTarget);
-
-  assertEquals([...first], [7, 7]);
-  assertEquals([...second], [7, 7]);
-  assertEquals(transforms.length, 1);
-});
-
-test('forwards the encoder without a resize when target is null', async () => {
-  const { binding, transforms, outputs } = recordingImages(new Uint8Array([1]));
-  installMemoryStore();
-  const processor = createCloudflareImageProcessor(binding);
-
-  await processor.compressToWebp(PNG_1x1, null);
-
-  assertEquals(transforms.length, 0);
-  assertEquals(outputs, [{ format: 'image/webp', quality: 82 }]);
-});

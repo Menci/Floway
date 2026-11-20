@@ -1,38 +1,54 @@
 import type { DecisionTarget, ModelEndpoints, ModelKind, RerankTarget } from '@floway-dev/protocols/browser';
 import type { UpstreamProviderKind } from '@floway-dev/provider/browser';
 
-// The path each endpoint is addressed by, unversioned: the editor labels its
-// checkboxes and its per-path overrides with the public route rather than with
-// the key the config stores.
-export const ENDPOINT_PATHS = {
-  openaiCompletions: '/completions',
-  openaiChatCompletions: '/chat/completions',
-  openaiResponses: '/responses',
-  anthropicMessages: '/messages',
-  openaiEmbeddings: '/embeddings',
-  rerank: '/alpha/search',
-  openaiImagesGenerations: '/images/generations',
-  openaiImagesEdits: '/images/edits',
-  openaiAudioTranscriptions: '/audio/transcriptions',
-  decision: '/decisions',
-} as const satisfies Record<keyof ModelEndpoints, string>;
+// Every override the custom provider accepts, in the order the editor lists it:
+// the key the config stores it under, the protocol name shown beside it, and
+// the path it resolves to when unset. This is not a projection of the endpoint
+// keys: `rerank` and `decision` pick their path per model, and OpenAI Search is
+// the one overridable surface with no `ModelEndpoints` key of its own.
+export const PATH_OVERRIDE_OPTIONS = [
+  { path: '/completions', label: 'OpenAI Completions', defaultPath: '/v1/completions' },
+  { path: '/chat/completions', label: 'OpenAI Chat Completions', defaultPath: '/v1/chat/completions' },
+  { path: '/responses', label: 'OpenAI Responses', defaultPath: '/v1/responses' },
+  { path: '/messages', label: 'Anthropic Messages', defaultPath: '/v1/messages' },
+  { path: '/v1beta/models', label: 'Gemini Models', defaultPath: '/v1beta/models' },
+  { path: '/embeddings', label: 'OpenAI Embeddings', defaultPath: '/v1/embeddings' },
+  { path: '/alpha/search', label: 'OpenAI Search', defaultPath: '/v1/alpha/search' },
+  { path: '/images/generations', label: 'OpenAI Images Generations', defaultPath: '/v1/images/generations' },
+  { path: '/images/edits', label: 'OpenAI Images Edits', defaultPath: '/v1/images/edits' },
+] as const;
 
-export const CHAT_ENDPOINT_KEYS = ['openaiCompletions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages'] as const satisfies readonly (keyof ModelEndpoints)[];
+export const CHAT_ENDPOINT_KEYS = ['openaiCompletions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages', 'geminiGenerateContent'] as const satisfies readonly (keyof ModelEndpoints)[];
 export const IMAGE_ENDPOINT_KEYS = ['openaiImagesGenerations', 'openaiImagesEdits'] as const satisfies readonly (keyof ModelEndpoints)[];
 
-// Every path the custom provider accepts an override for, in the order the
-// editor lists them. OpenAI Audio Transcriptions is deliberately absent from
-// the form yet kept in the value, so an override stored for it survives a save.
-export const PATH_OVERRIDE_PATHS = ([...CHAT_ENDPOINT_KEYS, 'openaiEmbeddings', 'rerank', ...IMAGE_ENDPOINT_KEYS] as const)
-  .map(key => ENDPOINT_PATHS[key]);
+// The endpoints the editor lets an operator pick. Rerank and decision rows
+// carry their wire on the target instead, and embeddings and audio
+// transcription have no picker, so none of them appear here.
+type SelectableEndpointKey = (typeof CHAT_ENDPOINT_KEYS)[number] | (typeof IMAGE_ENDPOINT_KEYS)[number];
+
+// How the editor names an endpoint.
+const ENDPOINT_LABELS = {
+  openaiCompletions: 'OpenAI Completions',
+  openaiChatCompletions: 'OpenAI Chat Completions',
+  openaiResponses: 'OpenAI Responses',
+  anthropicMessages: 'Anthropic Messages',
+  geminiGenerateContent: 'Gemini GenerateContent',
+  openaiImagesGenerations: 'OpenAI Images Generations',
+  openaiImagesEdits: 'OpenAI Images Edits',
+} as const satisfies Record<SelectableEndpointKey, string>;
+
+export interface EndpointOption {
+  readonly key: SelectableEndpointKey;
+  readonly label: string;
+}
 
 export const endpointOptionsFor = (
-  keys: readonly (keyof ModelEndpoints)[],
-): [keyof ModelEndpoints, string][] => keys.map(key => [key, ENDPOINT_PATHS[key]]);
+  keys: readonly SelectableEndpointKey[],
+): EndpointOption[] => keys.map(key => ({ key, label: ENDPOINT_LABELS[key] }));
 
-// The rerank dialect a row starts on. `/alpha/search` speaks six mutually
-// incompatible dialects and no upstream catalog names the one it implements,
-// so a rerank row the gateway will accept has to start on some target and the
+// The rerank dialect a row starts on. Six mutually incompatible dialects share
+// the `rerank` endpoint and no upstream catalog names the one it implements, so
+// a rerank row the gateway will accept has to start on some target and the
 // operator confirms or changes it.
 const INITIAL_RERANK_TARGET: RerankTarget = { protocol: 'cohere-v2' };
 

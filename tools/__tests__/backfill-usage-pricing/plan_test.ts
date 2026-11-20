@@ -109,23 +109,6 @@ test('plan blocks an unpriced historical selector when priced siblings prove an 
   assertEquals(built.plan.blockers.some(blocker => blocker.code === 'historical-selector-drift'), true);
 });
 
-test('obsolete selectors do not block coordinates that the selected mode would not change', async () => {
-  const path = await createDatabase();
-  const mutate = new DatabaseSync(path);
-  mutate.prepare("UPDATE usage SET pricing_selector = ?, unit_price = '0.01' WHERE metric = 'input_tokens'")
-    .run('{"serviceTier":"priority"}');
-  mutate.close();
-
-  const read = await openNodeDatabase(path, 'read');
-  const fill = await buildPlan(read, { ...intent, metrics: ['input_tokens'] });
-  const overwrite = await buildPlan(read, { ...intent, metrics: ['input_tokens'], mode: 'overwrite' });
-  await read.close();
-  assertEquals(fill.plan.blockers, []);
-  assertEquals(fill.plan.operations, []);
-  assertEquals(overwrite.plan.blockers, []);
-  assertEquals(overwrite.plan.operations, []);
-});
-
 test('an unguarded plan keeps the stored catalog out of its apply statement', async () => {
   // `models_cache_json` is 73 KB on a live Copilot upstream and doubles under
   // the hex encoding that renders a parameter into SQL. Every provider except

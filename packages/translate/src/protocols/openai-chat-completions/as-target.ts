@@ -5,7 +5,7 @@ import type { TargetProtocol } from '../../composition/index.ts';
 import { assignCallIds, type PendingCall } from '../../composition/request/call-ids.ts';
 import { allocateToolNames, type ToolNameContext } from '../../composition/request/tool-names.ts';
 import type { InputAssistantTurnFor } from '../../round-trip/input-assistant-turn.ts';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 type ChatRestoredAssistantTurn = InputAssistantTurnFor<'openaiChatCompletions'>;
 
@@ -28,7 +28,7 @@ const callsOf = (
 
 /** Request name allocation records custom-call kinds and original logical identities for the event reader. */
 export const openaiChatCompletionsTargetProtocol: TargetProtocol<
-  'openaiChatCompletions', OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent, ToolNameContext
+  'openaiChatCompletions', OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent, ToolNameContext
 > = {
   name: 'openaiChatCompletions',
   // This wire addresses a callable by one bare name, so every grouped

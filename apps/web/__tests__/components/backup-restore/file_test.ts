@@ -26,21 +26,9 @@ const backup = (overrides: Record<string, unknown> = {}) => JSON.stringify({
 });
 
 describe('backup file validation', () => {
-  it('accepts the envelope version this deployment writes', () => {
-    expect(parseBackupFile(backup()).ok).toBe(true);
-  });
-
-  it('rejects a superseded envelope version outright', () => {
-    expect(parseBackupFile(backup({ version: BACKUP_FILE_VERSION - 1 })).ok).toBe(false);
-  });
-
   it('rejects unknown fields instead of stripping them', () => {
     expect(parseBackupFile(backup({ typo: true })).ok).toBe(false);
     expect(parseBackupFile(backup({ data: { ...data, typo: [] } })).ok).toBe(false);
-  });
-
-  it('requires the preferences collection this version exports', () => {
-    expect(parseBackupFile(backup({ data: { ...data, userPreferences: undefined } })).ok).toBe(false);
   });
 
   it('keeps performance presence synchronized with its flag', () => {

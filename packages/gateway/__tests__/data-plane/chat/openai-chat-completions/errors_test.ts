@@ -1,14 +1,14 @@
 import { test } from 'vitest';
 
 import { inputErrorResult } from '../../../../src/data-plane/chat/openai-chat-completions/errors.ts';
-import type { ApiErrorResult } from '@floway-dev/provider';
+import { decodeResponseBody, type ApiErrorResult } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const apiErrorOf = (result: ReturnType<typeof inputErrorResult>): ApiErrorResult => result as ApiErrorResult;
 const bodyOf = (result: ReturnType<typeof inputErrorResult>): unknown =>
-  JSON.parse(new TextDecoder().decode(apiErrorOf(result).body));
+  JSON.parse(decodeResponseBody(apiErrorOf(result).body));
 
-test('inputErrorResult renders an OpenAI 400 invalid_request_error envelope with default `messages` param', () => {
+test('inputErrorResult renders an OpenAI 400 invalid_request_error envelope that defaults param to `messages`', () => {
   const result = inputErrorResult(
     { message: "Missing required field 'tool_call_id' on a 'tool' role message." },
   );
@@ -16,7 +16,7 @@ test('inputErrorResult renders an OpenAI 400 invalid_request_error envelope with
 
   assertEquals(apiError.type, 'api-error');
   assertEquals(apiError.source, 'gateway');
-  assertEquals(apiError.status, 400);
+  assertEquals(apiError.http.status, 400);
   assertEquals(bodyOf(result), {
     error: {
       message: "Missing required field 'tool_call_id' on a 'tool' role message.",
@@ -25,19 +25,7 @@ test('inputErrorResult renders an OpenAI 400 invalid_request_error envelope with
       code: null,
     },
   });
-});
-
-test('inputErrorResult honors an explicit param from the translator', () => {
-  const result = inputErrorResult(
-    { message: 'content part not supported', param: 'messages[2].content[1]' },
-  );
-
-  assertEquals(bodyOf(result), {
-    error: {
-      message: 'content part not supported',
-      type: 'invalid_request_error',
-      param: 'messages[2].content[1]',
-      code: null,
-    },
+  assertEquals(bodyOf(inputErrorResult({ message: 'unsupported', param: 'messages[2].content[1]' })), {
+    error: { message: 'unsupported', type: 'invalid_request_error', param: 'messages[2].content[1]', code: null },
   });
 });

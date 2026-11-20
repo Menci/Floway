@@ -789,6 +789,10 @@ export interface ResponseFunctionWebSearch {
   action: ResponseFunctionWebSearch.Search | ResponseFunctionWebSearch.OpenPage | ResponseFunctionWebSearch.Find;
   status: 'in_progress' | 'searching' | 'completed' | 'failed' | 'incomplete';
   type: 'web_search_call';
+  // Output-only. Codex keeps entries opaque so future result variants remain
+  // forward-compatible.
+  // https://github.com/openai/codex/blob/2f19a57704fb7b1db032bc38cf995034254eaebb/codex-rs/codex-api/src/search.rs#L297-L305
+  results?: Array<Record<string, unknown>>;
 }
 
 export namespace ResponseFunctionWebSearch {
@@ -881,7 +885,7 @@ export namespace ResponseInputImageContent {
   }
 }
 
-export type ResponseInputItem = EasyInputMessage | ResponseInputItem.Message | ResponseOutputMessage | ResponseFileSearchToolCall | ResponseComputerToolCall | ResponseInputItem.ComputerCallOutput | ResponseFunctionWebSearch | ResponseFunctionToolCall | ResponseInputItem.FunctionCallOutput | ResponseInputItem.ToolSearchCall | ResponseToolSearchOutputItemParam | ResponseInputItem.AdditionalTools | ResponseConfigurationUpdateItemParam | ResponseReasoningItem | ResponseCompactionItemParam | ResponseInputItem.ImageGenerationCall | ResponseCodeInterpreterToolCall | ResponseInputItem.LocalShellCall | ResponseInputItem.LocalShellCallOutput | ResponseInputItem.ShellCall | ResponseInputItem.ShellCallOutput | ResponseInputItem.ApplyPatchCall | ResponseInputItem.ApplyPatchCallOutput | ResponseInputItem.McpListTools | ResponseInputItem.McpApprovalRequest | ResponseInputItem.McpApprovalResponse | ResponseInputItem.McpCall | ResponseCustomToolCallOutput | ResponseCustomToolCall | ResponseInputItem.CompactionTrigger | ResponseInputItem.ItemReference | ResponseInputItem.Program | ResponseInputItem.ProgramOutput;
+export type ResponseInputItem = EasyInputMessage | ResponseInputItem.Message | ResponseOutputMessage | ResponseFileSearchToolCall | ResponseComputerToolCall | ResponseInputItem.ComputerCallOutput | Omit<ResponseFunctionWebSearch, 'results'> | ResponseFunctionToolCall | ResponseInputItem.FunctionCallOutput | ResponseInputItem.ToolSearchCall | ResponseToolSearchOutputItemParam | ResponseInputItem.AdditionalTools | ResponseConfigurationUpdateItemParam | ResponseReasoningItem | ResponseCompactionItemParam | ResponseInputItem.ImageGenerationCall | ResponseCodeInterpreterToolCall | ResponseInputItem.LocalShellCall | ResponseInputItem.LocalShellCallOutput | ResponseInputItem.ShellCall | ResponseInputItem.ShellCallOutput | ResponseInputItem.ApplyPatchCall | ResponseInputItem.ApplyPatchCallOutput | ResponseInputItem.McpListTools | ResponseInputItem.McpApprovalRequest | ResponseInputItem.McpApprovalResponse | ResponseInputItem.McpCall | ResponseCustomToolCallOutput | ResponseCustomToolCall | ResponseInputItem.CompactionTrigger | ResponseInputItem.ItemReference | ResponseInputItem.Program | ResponseInputItem.ProgramOutput;
 
 export namespace ResponseInputItem {
   export interface Message {
@@ -945,10 +949,26 @@ export namespace ResponseInputItem {
     type: 'image_generation_call';
     action?: 'generate' | 'edit' | 'auto' | null;
     background?: 'transparent' | 'opaque' | 'auto' | null;
+    error?: ImageGenerationCall.Error;
     output_format?: 'png' | 'webp' | 'jpeg' | null;
     quality?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto' | null;
     revised_prompt?: string | null;
     size?: (string & {}) | '1024x1024' | '1024x1536' | '1536x1024' | null;
+  }
+  export namespace ImageGenerationCall {
+    export interface Error {
+      code: string | null;
+      message: string;
+      param: string | null;
+      type: string;
+      moderation_details?: Error.ModerationDetails;
+    }
+    export namespace Error {
+      export interface ModerationDetails {
+        categories: Array<string>;
+        moderation_stage: 'input' | 'output' | 'unknown';
+      }
+    }
   }
   export interface LocalShellCall {
     id: string;
@@ -1187,10 +1207,26 @@ export namespace ResponseOutputItem {
     type: 'image_generation_call';
     action?: 'generate' | 'edit' | 'auto' | null;
     background?: 'transparent' | 'opaque' | 'auto' | null;
+    error?: ImageGenerationCall.Error;
     output_format?: 'png' | 'webp' | 'jpeg' | null;
     quality?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'auto' | null;
     revised_prompt?: string | null;
     size?: (string & {}) | '1024x1024' | '1024x1536' | '1536x1024' | null;
+  }
+  export namespace ImageGenerationCall {
+    export interface Error {
+      code: string | null;
+      message: string;
+      param: string | null;
+      type: string;
+      moderation_details?: Error.ModerationDetails;
+    }
+    export namespace Error {
+      export interface ModerationDetails {
+        categories: Array<string>;
+        moderation_stage: 'input' | 'output' | 'unknown';
+      }
+    }
   }
   export interface LocalShellCall {
     id: string;

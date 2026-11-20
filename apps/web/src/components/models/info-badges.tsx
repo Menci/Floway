@@ -26,25 +26,25 @@ const ruleBadgeContent = (
 ): ReactNode => {
   if (badge.varies) {
     switch (badge.field) {
-    case 'reasoning.effort': return t('dashboard.models.badges.ruleVaries.reasoningEffort');
-    case 'reasoning.budget_tokens': return t('dashboard.models.badges.ruleVaries.reasoningBudget');
-    case 'reasoning.adaptive': return t('dashboard.models.badges.ruleVaries.reasoningAdaptive');
-    case 'reasoning.summary': return t('dashboard.models.badges.ruleVaries.reasoningSummary');
-    case 'verbosity': return t('dashboard.models.badges.ruleVaries.verbosity');
-    case 'serviceTier': return t('dashboard.models.badges.ruleVaries.serviceTier');
+    case 'reasoning.effort': return t('models.badges.ruleVaries.reasoningEffort');
+    case 'reasoning.budget_tokens': return t('models.badges.ruleVaries.reasoningBudget');
+    case 'reasoning.adaptive': return t('models.badges.ruleVaries.reasoningAdaptive');
+    case 'reasoning.summary': return t('models.badges.ruleVaries.reasoningSummary');
+    case 'verbosity': return t('models.badges.ruleVaries.verbosity');
+    case 'serviceTier': return t('models.badges.ruleVaries.serviceTier');
     }
   }
   const components = { strong: <strong /> };
   switch (badge.field) {
-  case 'reasoning.effort': return <Trans components={components} i18nKey="dashboard.models.badges.rules.reasoningEffort" values={{ value: String(badge.value) }} />;
-  case 'reasoning.budget_tokens': return <Trans components={components} i18nKey="dashboard.models.badges.rules.reasoningBudget" values={{ value: budgetTokens(badge.value) }} />;
+  case 'reasoning.effort': return <Trans components={components} i18nKey="models.badges.rules.reasoningEffort" values={{ value: String(badge.value) }} />;
+  case 'reasoning.budget_tokens': return <Trans components={components} i18nKey="models.badges.rules.reasoningBudget" values={{ value: budgetTokens(badge.value) }} />;
   case 'reasoning.adaptive':
     return badge.value === true
-      ? t('dashboard.models.badges.rules.adaptive')
-      : t('dashboard.models.badges.rules.nonAdaptive');
-  case 'reasoning.summary': return <Trans components={components} i18nKey="dashboard.models.badges.rules.reasoningSummary" values={{ value: String(badge.value) }} />;
-  case 'verbosity': return <Trans components={components} i18nKey="dashboard.models.badges.rules.verbosity" values={{ value: String(badge.value) }} />;
-  case 'serviceTier': return <Trans components={components} i18nKey="dashboard.models.badges.rules.serviceTier" values={{ value: String(badge.value) }} />;
+      ? t('models.badges.rules.adaptive')
+      : t('models.badges.rules.nonAdaptive');
+  case 'reasoning.summary': return <Trans components={components} i18nKey="models.badges.rules.reasoningSummary" values={{ value: String(badge.value) }} />;
+  case 'verbosity': return <Trans components={components} i18nKey="models.badges.rules.verbosity" values={{ value: String(badge.value) }} />;
+  case 'serviceTier': return <Trans components={components} i18nKey="models.badges.rules.serviceTier" values={{ value: String(badge.value) }} />;
   }
 };
 
@@ -55,21 +55,21 @@ const badgeContent = (
   const strong = { strong: <strong /> };
   switch (badge.kind) {
   case 'aliasOfModel':
-    return <Trans components={{ model: <strong className={modelValueClassName} /> }} i18nKey="dashboard.models.badges.aliasOfModel" values={{ target: badge.target }} />;
+    return <Trans components={{ model: <strong className={modelValueClassName} /> }} i18nKey="models.badges.aliasOfModel" values={{ target: badge.target }} />;
   case 'aliasOfCount':
     return badge.reachable === badge.total ? (
-      <Trans components={strong} count={badge.total} i18nKey="dashboard.models.badges.aliasOfCount" />
+      <Trans components={strong} count={badge.total} i18nKey="models.badges.aliasOfCount" />
     ) : (
-      <Trans components={strong} i18nKey="dashboard.models.badges.aliasOfPartial" values={{ reachable: badge.reachable, total: badge.total }} />
+      <Trans components={strong} i18nKey="models.badges.aliasOfPartial" values={{ reachable: badge.reachable, total: badge.total }} />
     );
   case 'selection':
     return <Trans
       components={strong}
-      i18nKey="dashboard.models.badges.selection"
+      i18nKey="models.badges.selection"
       values={{
         selection: t(badge.selection === 'first-available'
-          ? 'dashboard.models.badges.selectionValues.firstAvailable'
-          : 'dashboard.models.badges.selectionValues.random'),
+          ? 'models.badges.selectionValues.firstAvailable'
+          : 'models.badges.selectionValues.random'),
       }}
     />;
   case 'rule':
@@ -94,7 +94,7 @@ export function ModelInfoBadges({ cap, catalog, model }: {
           {badge.kind === 'limit'
             ? <Trans
                 components={{ strong: <strong /> }}
-                i18nKey={`dashboard.models.badges.${badge.limit}`}
+                i18nKey={`models.badges.${badge.limit}`}
                 values={{ value: badge.value }}
               />
             : badgeContent(badge, t)}

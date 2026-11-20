@@ -148,6 +148,8 @@ export const createChatGPTProvider = (record: UpstreamRecord): Provider => {
     // a stray dispatch must still surface as a structured 405.
     callAnthropicMessages: () => unsupportedStreamResult(),
     callAnthropicMessagesCountTokens: () => unsupportedCallResult(),
+    callGeminiGenerateContent: () => unsupportedStreamResult(),
+    callGeminiGenerateContentCountTokens: () => unsupportedCallResult(),
     callOpenAICompletions: () => unsupportedCallResult(),
     callOpenAIChatCompletions: () => unsupportedStreamResult(),
     callOpenAIEmbeddings: () => unsupportedCallResult(),
@@ -182,7 +184,7 @@ const synthetic405 = (): Response => new Response(
 );
 
 const unsupportedStreamResult = <TEvent>(): Promise<ProviderStreamResult<TEvent>> =>
-  Promise.resolve({ ok: false, modelKey: '', response: synthetic405() });
+  Promise.resolve({ ok: false, modelKey: '', http: synthetic405() });
 
 const unsupportedCallResult = (): Promise<ProviderCallResult> =>
-  Promise.resolve({ modelKey: '', response: synthetic405() });
+  Promise.resolve({ modelKey: '', http: synthetic405() });

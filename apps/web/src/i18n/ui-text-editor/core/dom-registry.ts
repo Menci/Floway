@@ -1,0 +1,891 @@
+import { defaultKeyMarkerChannel, type KeyMarkerChannel, type TextKeySegment } from './markers';
+
+export const DEFAULT_EDITOR_ROOT_ATTR = 'data-ui-text-editor-root';
+
+const VISIBLE_ATTRIBUTES = ['value', 'placeholder', 'alt'] as const;
+const MONITORED_ATTRIBUTES = [...VISIBLE_ATTRIBUTES, 'aria-label'] as const;
+
+// HTML attributes like `value` on `<button>` or `<option>` are form submission
+// data rather than rendered text (their visible label is their text content).
+// Only treat an attribute as visible on elements that actually paint it.
+const isVisibleAttributeOnElement = (element: Element, attr: (typeof VISIBLE_ATTRIBUTES)[number]): boolean => {
+  if (attr === 'value') {
+    return (element instanceof HTMLInputElement && element.type !== 'hidden')
+      || element instanceof HTMLTextAreaElement;
+  }
+  if (attr === 'placeholder') {
+    return element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement;
+  }
+  return element instanceof HTMLImageElement || element instanceof HTMLAreaElement
+    || (element instanceof HTMLInputElement && element.type === 'image');
+};
+
+interface AttributeKeyRecord {
+  attribute: string;
+  key: string;
+}
+
+export interface HitTarget {
+  element: Element;
+  rect: DOMRect;
+  rects: DOMRect[];
+  primaryKey: string;
+  primaryInvisible?: boolean;
+  candidates: string[];
+}
+
+export const isInsideEditorRoot = (
+  target: EventTarget | Node | null,
+  host?: HTMLElement | null,
+  rootAttr = DEFAULT_EDITOR_ROOT_ATTR,
+): boolean => {
+  if (!(target instanceof Node)) return false;
+  if (host?.contains(target)) return true;
+  let current: Node | null = target;
+  while (current) {
+    if (current instanceof Element && current.hasAttribute(rootAttr)) return true;
+    current = current.parentNode;
+  }
+  return false;
+};
+
+const isRestrictedElement = (element: Element | null): boolean => {
+  if (!element) return false;
+  const tag = element.tagName;
+  return tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT';
+};
+
+const isCollapsedClipRect = (clip: string): boolean => {
+  const match = /^rect\(([^)]+)\)$/i.exec(clip.trim());
+  if (!match) return false;
+  const parts = match[1]!.trim().split(/[\s,]+/);
+  if (parts.length !== 4) return false;
+  const values = parts.map(part => Number.parseFloat(part));
+  if (values.some(value => Number.isNaN(value))) return false;
+  const [top, right, bottom, left] = values as [number, number, number, number];
+  return right <= left || bottom <= top;
+};
+
+const isCollapsedInsetClipPath = (clipPath: string): boolean => {
+  const match = /^inset\(([^)]+)\)$/i.exec(clipPath.trim());
+  if (!match) return false;
+  const parts = match[1]!.split(/\s+round\b/i)[0]!.trim().split(/\s+/);
+  if (parts.length < 1 || parts.length > 4) return false;
+  const toPercent = (token: string): number | null => {
+    if (token === '0') return 0;
+    if (!token.endsWith('%')) return null;
+    const value = Number.parseFloat(token);
+    return Number.isNaN(value) ? null : value;
+  };
+  const percents = parts.map(toPercent);
+  if (percents.some(value => value === null)) return false;
+  const nums = percents as number[];
+  const top = nums[0]!;
+  const right = nums[1] ?? top;
+  const bottom = nums[2] ?? top;
+  const left = nums[3] ?? right;
+  return top + bottom >= 100 || left + right >= 100;
+};
+
+type ElementVisibility = 'visible' | 'visually-hidden' | 'unrendered';
+
+// Classifies an element from computed styles without relying on class names:
+// - `unrendered`: not painted in layout (HTML `hidden`, `display: none`,
+//   `visibility: hidden/collapse`, `content-visibility: hidden`), such as
+//   responsive breakpoints or closed panels. Ignored completely.
+// - `visually-hidden`: painted in layout but clipped/collapsed out of sight
+//   (zero-area `clip`/`clip-path` or overflow-clipped `<= 1px` box). Grouped
+//   with `aria-label` as lower-priority `invisible` targets.
+const classifyElementVisibility = (element: Element | null): ElementVisibility => {
+  let visuallyHidden = false;
+  let current: Element | null = element;
+  while (current && current !== current.ownerDocument.body && current !== current.ownerDocument.documentElement) {
+    if (current.hasAttribute('hidden')) return 'unrendered';
+    const view = current.ownerDocument.defaultView;
+    if (view && typeof view.getComputedStyle === 'function') {
+      const style = view.getComputedStyle(current);
+      if (
+        style.display === 'none'
+        || style.visibility === 'hidden'
+        || style.visibility === 'collapse'
+        || style.contentVisibility === 'hidden'
+      ) {
+        return 'unrendered';
+      }
+      if (!visuallyHidden) {
+        if (isCollapsedClipRect(style.clip) || isCollapsedInsetClipPath(style.clipPath)) {
+          visuallyHidden = true;
+        } else {
+          const clipsOverflow = style.overflow === 'hidden' || style.overflow === 'clip'
+            || (style.overflowX === 'hidden' && style.overflowY === 'hidden');
+          if (clipsOverflow) {
+            const width = Number.parseFloat(style.width);
+            const height = Number.parseFloat(style.height);
+            if ((Number.isFinite(width) && width <= 1) || (Number.isFinite(height) && height <= 1)) {
+              visuallyHidden = true;
+            }
+          }
+        }
+      }
+    }
+    current = current.parentElement;
+  }
+  return visuallyHidden ? 'visually-hidden' : 'visible';
+};
+
+const pointInsideRect = (rect: DOMRect, x: number, y: number, pad = 4): boolean =>
+  x >= rect.left - pad && x <= rect.right + pad && y >= rect.top - pad && y <= rect.bottom + pad;
+
+const isNonZeroRect = (rect: DOMRect): boolean => rect.width > 0 || rect.height > 0;
+
+const unionRects = (rects: DOMRect[]): DOMRect | null => {
+  if (rects.length === 0) return null;
+  let left = Infinity;
+  let top = Infinity;
+  let right = -Infinity;
+  let bottom = -Infinity;
+  for (const r of rects) {
+    if (r.left < left) left = r.left;
+    if (r.top < top) top = r.top;
+    if (r.right > right) right = r.right;
+    if (r.bottom > bottom) bottom = r.bottom;
+  }
+  return new DOMRect(left, top, right - left, bottom - top);
+};
+
+// Merge adjacent client rects produced on the same visual line (e.g. mixed
+// CJK/Latin font runs) into one clean rect per line.
+const normalizeLineRects = (rawRects: DOMRect[]): DOMRect[] => {
+  const sorted = rawRects.filter(isNonZeroRect).sort((a, b) => (a.top - b.top) || (a.left - b.left));
+  const merged: DOMRect[] = [];
+  for (const r of sorted) {
+    const prev = merged[merged.length - 1];
+    if (
+      prev
+      && Math.abs(r.top - prev.top) <= 4
+      && Math.abs(r.bottom - prev.bottom) <= 4
+      && r.left <= prev.right + 4
+    ) {
+      const left = Math.min(prev.left, r.left);
+      const top = Math.min(prev.top, r.top);
+      const right = Math.max(prev.right, r.right);
+      const bottom = Math.max(prev.bottom, r.bottom);
+      merged[merged.length - 1] = new DOMRect(left, top, right - left, bottom - top);
+    } else {
+      merged.push(new DOMRect(r.left, r.top, r.width, r.height));
+    }
+  }
+  return merged;
+};
+
+interface TextSegmentMetrics {
+  lineRects: DOMRect[];
+  boundingRect: DOMRect;
+}
+
+const getTextSegmentMetrics = (textNode: Text, start: number, end: number): TextSegmentMetrics | null => {
+  if (start >= end || end > textNode.data.length) return null;
+  const range = textNode.ownerDocument.createRange();
+  range.setStart(textNode, start);
+  range.setEnd(textNode, end);
+
+  if (typeof range.getClientRects === 'function') {
+    const lineRects = normalizeLineRects(Array.from(range.getClientRects()));
+    if (lineRects.length > 0) {
+      const boundingRect = unionRects(lineRects);
+      if (boundingRect && isNonZeroRect(boundingRect)) {
+        return { lineRects, boundingRect };
+      }
+    }
+  }
+
+  const rect = range.getBoundingClientRect();
+  return isNonZeroRect(rect) ? { lineRects: [rect], boundingRect: rect } : null;
+};
+
+// Hit-test against each line rect (or the range bounding rect when no client
+// rects exist) and return the full segment metrics so every line of a wrapped
+// key highlights consistently regardless of which line is hovered.
+const matchTextSegmentAtPoint = (
+  textNode: Text,
+  start: number,
+  end: number,
+  clientX: number,
+  clientY: number,
+): TextSegmentMetrics | null => {
+  const metrics = getTextSegmentMetrics(textNode, start, end);
+  if (!metrics) return null;
+  return metrics.lineRects.some(lineRect => pointInsideRect(lineRect, clientX, clientY, 3))
+    ? metrics
+    : null;
+};
+
+const hasVisiblePaint = (color: string): boolean => {
+  const normalized = color.trim().toLowerCase();
+  return normalized.length > 0
+    && normalized !== 'transparent'
+    && normalized !== 'rgba(0, 0, 0, 0)'
+    && normalized !== 'rgba(0,0,0,0)';
+};
+
+// Treat interaction and painted-box cues as control boundaries so custom
+// elements need no tag or ARIA role whitelist.
+const isBoundedControlElement = (element: Element): boolean => {
+  if (element === element.ownerDocument.body || element === element.ownerDocument.documentElement) {
+    return false;
+  }
+  if (element instanceof HTMLElement && element.tabIndex >= 0) return true;
+  if (element.hasAttribute('disabled') || element.getAttribute('aria-disabled') === 'true') return true;
+  const view = element.ownerDocument.defaultView;
+  if (!view || typeof view.getComputedStyle !== 'function') return false;
+  const style = view.getComputedStyle(element);
+  if (style.cursor === 'pointer') return true;
+  if (hasVisiblePaint(style.backgroundColor)) return true;
+  if (style.boxShadow && style.boxShadow !== 'none') return true;
+  const sides = [
+    [style.borderTopStyle, style.borderTopWidth, style.borderTopColor],
+    [style.borderRightStyle, style.borderRightWidth, style.borderRightColor],
+    [style.borderBottomStyle, style.borderBottomWidth, style.borderBottomColor],
+    [style.borderLeftStyle, style.borderLeftWidth, style.borderLeftColor],
+  ] as const;
+  for (const [borderStyle, width, color] of sides) {
+    if (borderStyle !== 'none' && borderStyle !== 'hidden' && Number.parseFloat(width) > 0 && hasVisiblePaint(color)) {
+      return true;
+    }
+  }
+  return false;
+};
+
+// Climbs past pure inline / `display: contents` wrappers to the nearest
+// formatting container so sibling keys within the same sentence or control
+// stay grouped as secondary candidates without relying on a tag whitelist.
+const findTextContextContainer = (element: Element): Element => {
+  let current: Element = element;
+  const view = element.ownerDocument.defaultView;
+  if (!view || typeof view.getComputedStyle !== 'function') return current;
+  while (
+    current.parentElement
+    && current.parentElement !== current.ownerDocument.body
+    && current.parentElement !== current.ownerDocument.documentElement
+  ) {
+    const display = view.getComputedStyle(current).display;
+    if (display !== 'inline' && display !== 'contents') break;
+    current = current.parentElement;
+  }
+  return current;
+};
+
+interface CaretHit {
+  node: Node;
+  offset: number;
+}
+
+const caretAtPoint = (doc: Document, x: number, y: number): CaretHit | null => {
+  const withCaretPosition = doc as Document & {
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node | null; offset: number } | null;
+    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+  };
+  if (typeof withCaretPosition.caretPositionFromPoint === 'function') {
+    const pos = withCaretPosition.caretPositionFromPoint(x, y);
+    if (pos?.offsetNode) return { node: pos.offsetNode, offset: pos.offset };
+  }
+  if (typeof withCaretPosition.caretRangeFromPoint === 'function') {
+    const range = withCaretPosition.caretRangeFromPoint(x, y);
+    if (range) return { node: range.startContainer, offset: range.startOffset };
+  }
+  return null;
+};
+
+const findSegmentAtOffset = (segments: TextKeySegment[], offset: number): TextKeySegment | null => {
+  for (const seg of segments) {
+    if (offset >= seg.start && offset < seg.end) return seg;
+  }
+  // Caret at the trailing edge of a segment (e.g. clicking right of the last character).
+  for (const seg of segments) {
+    if (offset === seg.end && seg.end > seg.start) return seg;
+  }
+  return null;
+};
+
+const dedupeKeys = (items: string[]): string[] => [...new Set(items)];
+
+export interface DomRegistryOptions {
+  rootAttr?: string;
+  channel?: KeyMarkerChannel;
+}
+
+export class UiTextEditorDomRegistry {
+  private readonly textSegments = new WeakMap<Text, TextKeySegment[]>();
+  private readonly strippedTextValue = new WeakMap<Text, string>();
+  private readonly elementTexts = new WeakMap<Element, Set<Text>>();
+  private readonly elementAttrs = new WeakMap<Element, AttributeKeyRecord[]>();
+  private readonly strippedAttrValues = new WeakMap<Element, Map<string, string>>();
+  private observer: MutationObserver | null = null;
+  private root: HTMLElement | null = null;
+  readonly rootAttr: string;
+  private readonly channel: KeyMarkerChannel;
+
+  constructor(options: DomRegistryOptions = {}) {
+    this.rootAttr = options.rootAttr ?? DEFAULT_EDITOR_ROOT_ATTR;
+    this.channel = options.channel ?? defaultKeyMarkerChannel;
+  }
+
+  start(root: HTMLElement): void {
+    if (this.observer && this.root === root) return;
+    this.stop();
+    this.root = root;
+    this.scanSubtree(root);
+    this.observer = new MutationObserver(records => this.handleRecords(records));
+    this.observer.observe(root, {
+      subtree: true,
+      childList: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: [...MONITORED_ATTRIBUTES],
+    });
+  }
+
+  stop(): void {
+    this.observer?.disconnect();
+    this.observer = null;
+    this.root = null;
+  }
+
+  scanNow(): void {
+    if (this.root) this.scanSubtree(this.root);
+  }
+
+  // Drain any queued MutationObserver records synchronously before hit-testing
+  // without re-walking the entire document tree on every pointermove.
+  flushMutations(): void {
+    if (!this.observer) return;
+    const pending = this.observer.takeRecords();
+    if (pending.length > 0) this.handleRecords(pending);
+  }
+
+  private handleRecords(records: MutationRecord[]): void {
+    for (const record of records) {
+      if (record.type === 'characterData') {
+        if (record.target instanceof Text) this.processTextNode(record.target);
+      } else if (record.type === 'attributes') {
+        if (record.target instanceof Element && record.attributeName) {
+          this.processAttribute(record.target, record.attributeName);
+        }
+      } else if (record.type === 'childList') {
+        if (record.target instanceof Element && record.removedNodes.length > 0) {
+          const textSet = this.elementTexts.get(record.target);
+          if (textSet) {
+            for (const removed of record.removedNodes) {
+              if (removed instanceof Text) textSet.delete(removed);
+            }
+          }
+        }
+        for (const added of record.addedNodes) {
+          this.scanSubtree(added);
+        }
+      }
+    }
+  }
+
+  private scanSubtree(node: Node): void {
+    if (isInsideEditorRoot(node, null, this.rootAttr)) return;
+    if (node instanceof Text) {
+      this.processTextNode(node);
+      return;
+    }
+    if (!(node instanceof Element)) return;
+    if (isRestrictedElement(node)) return;
+
+    this.processElementAttributes(node);
+
+    const rootAttr = this.rootAttr;
+    // FILTER_REJECT prunes a subtree while allowing TreeWalker to continue at
+    // following siblings and ancestors.
+    const walker = node.ownerDocument.createTreeWalker(
+      node,
+      NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
+      {
+        acceptNode(candidate) {
+          if (candidate instanceof Element) {
+            if (candidate.hasAttribute(rootAttr) || isRestrictedElement(candidate)) {
+              return NodeFilter.FILTER_REJECT;
+            }
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        },
+      },
+    );
+    let current: Node | null = walker.nextNode();
+    while (current) {
+      if (current instanceof Element) {
+        this.processElementAttributes(current);
+      } else if (current instanceof Text) {
+        this.processTextNode(current);
+      }
+      current = walker.nextNode();
+    }
+  }
+
+  private processTextNode(textNode: Text): void {
+    if (isInsideEditorRoot(textNode, null, this.rootAttr)) return;
+    const parent = textNode.parentElement;
+    if (isRestrictedElement(parent)) return;
+    const raw = textNode.data;
+
+    if (!this.channel.mayContain(raw)) {
+      // Preserve mappings for the MutationObserver echo of the stripped value;
+      // invalidate them when plain text changes.
+      if (this.strippedTextValue.get(textNode) !== raw) {
+        this.textSegments.delete(textNode);
+        this.strippedTextValue.delete(textNode);
+        if (parent) this.elementTexts.get(parent)?.delete(textNode);
+      }
+      return;
+    }
+
+    const extracted = this.channel.extract(raw);
+    if (!extracted.hadMarkers) return;
+
+    // Strip invisible markers immediately so selection, copy, and layout see
+    // plain text while the registry retains exact segment offsets.
+    this.strippedTextValue.set(textNode, extracted.text);
+    textNode.data = extracted.text;
+    this.textSegments.set(textNode, extracted.segments);
+
+    if (parent) {
+      let set = this.elementTexts.get(parent);
+      if (!set) {
+        set = new Set<Text>();
+        this.elementTexts.set(parent, set);
+      }
+      set.add(textNode);
+    }
+  }
+
+  private processElementAttributes(element: Element): void {
+    const isFormValueHost = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement;
+    for (const attr of MONITORED_ATTRIBUTES) {
+      if (attr === 'value' && isFormValueHost) continue;
+      if (element.hasAttribute(attr) || this.strippedAttrValues.get(element)?.has(attr)) {
+        this.processAttribute(element, attr);
+      }
+    }
+    // Inputs and textareas carry controlled text on their DOM `value` property
+    // without necessarily mirroring it onto the HTML `value` attribute.
+    if (isFormValueHost) {
+      if (element.type !== 'password') {
+        const val = element.value;
+        if (this.channel.mayContain(val)) {
+          const extracted = this.channel.extract(val);
+          if (extracted.hadMarkers) {
+            this.recordStrippedAttr(element, 'value', extracted.text);
+            element.value = extracted.text;
+            this.recordAttributeKeys(element, 'value', extracted.segments);
+          }
+        } else if (this.strippedAttrValues.get(element)?.get('value') !== val) {
+          this.clearAttributeKeys(element, 'value');
+        }
+      }
+    }
+  }
+
+  private processAttribute(element: Element, attr: string): void {
+    if (isInsideEditorRoot(element, null, this.rootAttr) || isRestrictedElement(element)) return;
+    const raw = element.getAttribute(attr);
+    if (raw === null) {
+      this.clearAttributeKeys(element, attr);
+      return;
+    }
+    if (!this.channel.mayContain(raw)) {
+      if (this.strippedAttrValues.get(element)?.get(attr) !== raw) {
+        this.clearAttributeKeys(element, attr);
+      }
+      return;
+    }
+
+    const extracted = this.channel.extract(raw);
+    if (!extracted.hadMarkers) return;
+
+    this.recordStrippedAttr(element, attr, extracted.text);
+    element.setAttribute(attr, extracted.text);
+    this.recordAttributeKeys(element, attr, extracted.segments);
+  }
+
+  private recordStrippedAttr(element: Element, attr: string, value: string): void {
+    let map = this.strippedAttrValues.get(element);
+    if (!map) {
+      map = new Map<string, string>();
+      this.strippedAttrValues.set(element, map);
+    }
+    map.set(attr, value);
+  }
+
+  private recordAttributeKeys(element: Element, attribute: string, segments: TextKeySegment[]): void {
+    const existing = this.elementAttrs.get(element) ?? [];
+    const filtered = existing.filter(entry => entry.attribute !== attribute);
+    for (const seg of segments) {
+      filtered.push({ attribute, key: seg.key });
+    }
+    this.elementAttrs.set(element, filtered);
+  }
+
+  private clearAttributeKeys(element: Element, attribute: string): void {
+    this.strippedAttrValues.get(element)?.delete(attribute);
+    const existing = this.elementAttrs.get(element);
+    if (!existing) return;
+    const filtered = existing.filter(entry => entry.attribute !== attribute);
+    if (filtered.length === 0) {
+      this.elementAttrs.delete(element);
+    } else {
+      this.elementAttrs.set(element, filtered);
+    }
+  }
+
+  private findTextSegmentHitInElement(
+    element: Element,
+    clientX: number,
+    clientY: number,
+  ): { key: string; rect: DOMRect; rects: DOMRect[]; allKeys: string[] } | null {
+    const textNodes = this.elementTexts.get(element);
+    if (!textNodes) return null;
+    const allKeys: string[] = [];
+    let matched: { key: string; rect: DOMRect; rects: DOMRect[] } | null = null;
+    for (const textNode of textNodes) {
+      if (!textNode.isConnected || textNode.parentElement !== element) {
+        textNodes.delete(textNode);
+        continue;
+      }
+      const segments = this.textSegments.get(textNode);
+      if (!segments) continue;
+      for (const seg of segments) {
+        allKeys.push(seg.key);
+        if (!matched) {
+          const metrics = matchTextSegmentAtPoint(textNode, seg.start, seg.end, clientX, clientY);
+          if (metrics) matched = { key: seg.key, rect: metrics.boundingRect, rects: metrics.lineRects };
+        }
+      }
+    }
+    return matched ? { ...matched, allKeys } : null;
+  }
+
+  private collectTextKeys(element: Element): string[] {
+    const out: string[] = [];
+    const textNodes = this.elementTexts.get(element);
+    if (textNodes) {
+      for (const textNode of textNodes) {
+        if (!textNode.isConnected || textNode.parentElement !== element) {
+          textNodes.delete(textNode);
+          continue;
+        }
+        const segments = this.textSegments.get(textNode);
+        if (!segments) continue;
+        for (const seg of segments) {
+          out.push(seg.key);
+        }
+      }
+    }
+    return out;
+  }
+
+  private collectVisibleAttributeKeys(element: Element): string[] {
+    const attrs = this.elementAttrs.get(element);
+    if (!attrs) return [];
+    const out: string[] = [];
+    for (const attr of VISIBLE_ATTRIBUTES) {
+      if (!isVisibleAttributeOnElement(element, attr)) continue;
+      for (const entry of attrs) {
+        if (entry.attribute === attr) out.push(entry.key);
+      }
+    }
+    return out;
+  }
+
+  private collectAriaLabelKeys(element: Element): string[] {
+    const attrs = this.elementAttrs.get(element);
+    if (!attrs) return [];
+    return attrs.filter(entry => entry.attribute === 'aria-label').map(entry => entry.key);
+  }
+
+  // Collects invisible keys owned directly by `element`: its own `aria-label`
+  // plus any direct visually hidden children (clipped/collapsed out of sight
+  // but still rendered). Unrendered children (`display: none`, `hidden`, etc.)
+  // are ignored completely.
+  private collectOwnInvisibleKeys(element: Element): string[] {
+    const collected: string[] = [...this.collectAriaLabelKeys(element)];
+    for (const child of Array.from(element.children)) {
+      if (child.hasAttribute(this.rootAttr)) continue;
+      if (classifyElementVisibility(child) === 'visually-hidden') {
+        collected.push(...this.collectSubtreeKeys(child));
+      }
+    }
+    return dedupeKeys(collected);
+  }
+
+  private collectSubtreeKeys(element: Element): string[] {
+    const visible: string[] = [];
+    const invisible: string[] = [];
+    const rootAttr = this.rootAttr;
+    const walker = element.ownerDocument.createTreeWalker(
+      element,
+      NodeFilter.SHOW_ELEMENT,
+      {
+        acceptNode(candidate) {
+          if (candidate instanceof Element) {
+            if (candidate.hasAttribute(rootAttr) || classifyElementVisibility(candidate) === 'unrendered') {
+              return NodeFilter.FILTER_REJECT;
+            }
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        },
+      },
+    );
+    let current: Element | null = element;
+    while (current) {
+      const visibility = classifyElementVisibility(current);
+      if (visibility === 'unrendered') break;
+      const target = visibility === 'visually-hidden' ? invisible : visible;
+      target.push(...this.collectTextKeys(current), ...this.collectVisibleAttributeKeys(current));
+      invisible.push(...this.collectAriaLabelKeys(current));
+      current = walker.nextNode() as Element | null;
+    }
+    return dedupeKeys([...visible, ...invisible]);
+  }
+
+  // When hovering an interactive container's padding or icon area, resolve to
+  // the inner text/visible-attribute source if the container maps to one
+  // unique key so the highlight box stays identical across text and background.
+  // Containers with multiple distinct keys do not claim empty background space.
+  private resolveUniqueSubtreeVisibleTarget(container: Element): HitTarget | null {
+    const visibleKeys = new Set<string>();
+    let target: { element: Element; metrics: TextSegmentMetrics | null } | null = null;
+    const rootAttr = this.rootAttr;
+    const walker = container.ownerDocument.createTreeWalker(
+      container,
+      NodeFilter.SHOW_ELEMENT,
+      {
+        acceptNode(candidate) {
+          if (candidate instanceof Element) {
+            if (candidate.hasAttribute(rootAttr) || classifyElementVisibility(candidate) === 'unrendered') {
+              return NodeFilter.FILTER_REJECT;
+            }
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        },
+      },
+    );
+
+    let el: Element | null = container;
+    while (el) {
+      const visibility = classifyElementVisibility(el);
+      if (visibility === 'visible') {
+        const textNodes = this.elementTexts.get(el);
+        if (textNodes) {
+          for (const textNode of textNodes) {
+            if (!textNode.isConnected || textNode.parentElement !== el) {
+              textNodes.delete(textNode);
+              continue;
+            }
+            const segments = this.textSegments.get(textNode);
+            if (!segments) continue;
+            for (const seg of segments) {
+              visibleKeys.add(seg.key);
+              if (visibleKeys.size > 1) return null;
+              target ??= { element: el, metrics: getTextSegmentMetrics(textNode, seg.start, seg.end) };
+            }
+          }
+        }
+        for (const key of this.collectVisibleAttributeKeys(el)) {
+          visibleKeys.add(key);
+          if (visibleKeys.size > 1) return null;
+          if (!target) {
+            const rect = el.getBoundingClientRect();
+            target = {
+              element: el,
+              metrics: isNonZeroRect(rect) ? { lineRects: [rect], boundingRect: rect } : null,
+            };
+          }
+        }
+      }
+      el = walker.nextNode() as Element | null;
+    }
+
+    if (visibleKeys.size !== 1 || !target) return null;
+    const primaryKey = [...visibleKeys][0]!;
+    const fallbackRect = target.element.getBoundingClientRect();
+    const rect = target.metrics?.boundingRect ?? (isNonZeroRect(fallbackRect) ? fallbackRect : null);
+    if (!rect) return null;
+
+    const containerRect = container.getBoundingClientRect();
+    if (isNonZeroRect(containerRect)) {
+      const extraHeight = containerRect.height - rect.height;
+      const extraWidth = containerRect.width - rect.width;
+      if (extraHeight > 48 || (containerRect.width > 480 && extraWidth > 240)) {
+        return null;
+      }
+    }
+    const rects = target.metrics?.lineRects ?? [rect];
+    const candidates = dedupeKeys([primaryKey, ...this.collectSubtreeKeys(container)]);
+    return { element: target.element, rect, rects, primaryKey, candidates };
+  }
+
+  resolveAtPoint(doc: Document, clientX: number, clientY: number): HitTarget | null {
+    this.flushMutations();
+
+    // Resolve caret-level matches first so multi-key text returns the exact
+    // segment under the pointer.
+    const caret = caretAtPoint(doc, clientX, clientY);
+    if (caret && caret.node instanceof Text && !isInsideEditorRoot(caret.node, null, this.rootAttr)) {
+      const segments = this.textSegments.get(caret.node);
+      const parent = caret.node.parentElement;
+      if (segments && segments.length > 0 && parent && classifyElementVisibility(parent) === 'visible') {
+        const hitSegment = findSegmentAtOffset(segments, caret.offset);
+        if (hitSegment) {
+          const metrics = matchTextSegmentAtPoint(
+            caret.node,
+            hitSegment.start,
+            hitSegment.end,
+            clientX,
+            clientY,
+          );
+          if (metrics) {
+            const container = findTextContextContainer(parent);
+            const allCandidates = dedupeKeys([
+              hitSegment.key,
+              ...segments.map(seg => seg.key),
+              ...this.collectSubtreeKeys(container),
+            ]);
+            return {
+              element: parent,
+              rect: metrics.boundingRect,
+              rects: metrics.lineRects,
+              primaryKey: hitSegment.key,
+              candidates: allCandidates,
+            };
+          }
+        }
+      }
+    }
+
+    // Walk elementsFromPoint in three priority passes: exact visible text and
+    // painted attributes first (so transparent full-row aria-label overlays do
+    // not shadow visible text beneath them), then direct text without Range
+    // metrics, then bounded unique-key controls and direct invisible labels.
+    const rawStack = typeof doc.elementsFromPoint === 'function' ? doc.elementsFromPoint(clientX, clientY) : [];
+    const stack: Element[] = [];
+    for (const element of rawStack) {
+      if (isInsideEditorRoot(element, null, this.rootAttr)) return null;
+      this.processElementAttributes(element);
+      stack.push(element);
+    }
+
+    for (const element of stack) {
+      if (classifyElementVisibility(element) !== 'visible') continue;
+      const textHit = this.findTextSegmentHitInElement(element, clientX, clientY);
+      if (textHit) {
+        const candidates = dedupeKeys([
+          textHit.key,
+          ...textHit.allKeys,
+          ...this.collectVisibleAttributeKeys(element),
+          ...this.collectOwnInvisibleKeys(element),
+        ]);
+        return {
+          element,
+          rect: textHit.rect,
+          rects: textHit.rects,
+          primaryKey: textHit.key,
+          candidates,
+        };
+      }
+
+      const visibleAttrs = dedupeKeys(this.collectVisibleAttributeKeys(element));
+      if (visibleAttrs.length > 0) {
+        const rect = element.getBoundingClientRect();
+        if (rect.width > 0 || rect.height > 0) {
+          const candidates = dedupeKeys([
+            ...visibleAttrs,
+            ...this.collectTextKeys(element),
+            ...this.collectOwnInvisibleKeys(element),
+          ]);
+          return {
+            element,
+            rect,
+            rects: [rect],
+            primaryKey: candidates[0]!,
+            candidates,
+          };
+        }
+      }
+    }
+
+    // Match the element box directly when tracked text has no non-zero Range
+    // metrics.
+    for (const element of stack) {
+      if (classifyElementVisibility(element) !== 'visible') continue;
+      const textKeys = dedupeKeys(this.collectTextKeys(element));
+      if (textKeys.length > 0) {
+        const textNodes = this.elementTexts.get(element);
+        let hasNonZeroTextRect = false;
+        if (textNodes) {
+          for (const textNode of textNodes) {
+            const segments = this.textSegments.get(textNode);
+            if (!segments) continue;
+            for (const seg of segments) {
+              if (getTextSegmentMetrics(textNode, seg.start, seg.end)) {
+                hasNonZeroTextRect = true;
+                break;
+              }
+            }
+            if (hasNonZeroTextRect) break;
+          }
+        }
+        // When real text rects exist but the pointer missed them (for instance,
+        // hovering empty space to the right of a block-level label), let the
+        // next pass resolve an enclosing overlay/button instead.
+        if (hasNonZeroTextRect) continue;
+
+        const rect = element.getBoundingClientRect();
+        if (rect.width > 0 || rect.height > 0) {
+          const candidates = dedupeKeys([
+            ...textKeys,
+            ...this.collectVisibleAttributeKeys(element),
+            ...this.collectOwnInvisibleKeys(element),
+          ]);
+          return {
+            element,
+            rect,
+            rects: [rect],
+            primaryKey: candidates[0]!,
+            candidates,
+          };
+        }
+      }
+    }
+
+    for (const element of stack) {
+      if (classifyElementVisibility(element) !== 'visible') continue;
+      if (isBoundedControlElement(element)) {
+        const uniqueTarget = this.resolveUniqueSubtreeVisibleTarget(element);
+        if (uniqueTarget) {
+          return uniqueTarget;
+        }
+      }
+
+      const invisibleKeys = this.collectOwnInvisibleKeys(element);
+      if (invisibleKeys.length > 0) {
+        const rect = element.getBoundingClientRect();
+        if (rect.width > 0 || rect.height > 0) {
+          return {
+            element,
+            rect,
+            rects: [rect],
+            primaryKey: invisibleKeys[0]!,
+            primaryInvisible: true,
+            candidates: invisibleKeys,
+          };
+        }
+      }
+    }
+
+    return null;
+  }
+}

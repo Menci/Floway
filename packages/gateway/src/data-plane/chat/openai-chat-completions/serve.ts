@@ -7,11 +7,11 @@ import { selectAffinityCandidates } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { ExecuteResult } from '@floway-dev/provider';
 
 export interface OpenAIChatCompletionsServeGenerateArgs {
-  readonly payload: OpenAIChatCompletionsPayload;
+  readonly payload: OpenAIChatCompletionsPayloadEx;
   readonly ctx: ChatGatewayCtx;
   readonly headers: Headers;
 }
@@ -37,9 +37,9 @@ export const openaiChatCompletionsServe = {
     // Try each affinity-selected candidate in order. A successful attempt (SSE
     // stream opened) is the final answer; an api-error or internal-error
     // from one candidate falls through to the next so the gateway absorbs
-    // transient 5xx/429/network failures. When the list is exhausted, the
-    // most recent failure is forwarded verbatim so the client still sees
-    // real upstream telemetry rather than a synthetic envelope. Each attempt
+    // transient 5xx/429/network failures. On exhaustion, the selected failure
+    // is forwarded verbatim, preferring the earliest retry hint, so the client
+    // still sees real upstream telemetry rather than a synthetic envelope. Each attempt
     // stamps its private payload clone with the candidate's canonical model id
     // so aliases and prefixed ids resolve without mutating the caller payload.
     return await iterateCandidates(

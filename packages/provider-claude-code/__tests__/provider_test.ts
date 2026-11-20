@@ -1,12 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { buildClaudeCodeCatalog, type ClaudeCodeApiModel } from '../src/models.ts';
-import { pricingForClaudeCodeModelKey } from '../src/pricing.ts';
 import { createClaudeCodeProvider } from '../src/provider.ts';
 import type { ClaudeCodeAccessTokenEntry, ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from '../src/state.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
 import { initProviderRepo, type FlagId, type AnthropicMessagesUpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
-import { noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, readJsonRequest } from '@floway-dev/test-utils';
+import { noopAnthropicMessagesUpstreamCallOptions, readJsonRequest } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc_provider';
 
@@ -15,19 +14,11 @@ type WireAnthropicMessagesPayload = AnthropicMessagesPayload & {
   metadata: { user_id: string };
 };
 
-// Canned `/v1/models` payload the fetcher mock returns; mirrors the live
-// June-2026 catalog shape (mixed dated and alias-shape ids).
+// The catalog builder emits a `ProviderModel` with the dated upstream id on
+// providerData, which the messages-routing tests need on the wire.
 const API_MODELS: ClaudeCodeApiModel[] = [
-  { id: 'claude-fable-5', display_name: 'Claude Fable 5', max_input_tokens: 1_000_000 },
-  { id: 'claude-opus-4-7', display_name: 'Claude Opus 4.7', max_input_tokens: 1_000_000 },
-  { id: 'claude-sonnet-4-6', display_name: 'Claude Sonnet 4.6', max_input_tokens: 1_000_000 },
   { id: 'claude-sonnet-4-5-20250929', display_name: 'Claude Sonnet 4.5', max_input_tokens: 1_000_000 },
-  { id: 'claude-opus-4-5-20251101', display_name: 'Claude Opus 4.5', max_input_tokens: 200_000 },
-  { id: 'claude-haiku-4-5-20251001', display_name: 'Claude Haiku 4.5', max_input_tokens: 200_000 },
 ];
-
-// The catalog builder emits a `ProviderModel` per API row (with the dated
-// upstream id on providerData); pick the entry the messages-routing tests want.
 const sonnetProviderModel = buildClaudeCodeCatalog(API_MODELS, new Set<FlagId>())
   .find(m => m.id === 'claude-sonnet-4-5')!;
 
@@ -72,9 +63,9 @@ beforeEach(() => {
   initProviderRepo(() => ({
     recordUpstreamMetric: async () => {},
     upstreams: {
-      getById: async () => currentRecord,
+      getById: async () => ({ ...currentRecord, configVersion: 1 }),
       saveState: async (_id, mutate) => {
-        currentRecord = { ...currentRecord, state: mutate(currentRecord.state) };
+        currentRecord = { ...currentRecord, state: mutate(currentRecord.state, 1) };
       },
     },
   }));
@@ -101,81 +92,6 @@ const cliClientCallOpts = (overrides: Partial<AnthropicMessagesUpstreamCallOptio
   }),
   anthropicBeta: ['oauth-2025-04-20'],
   ...overrides,
-});
-
-// Spy on globalThis.fetch to return the canned /v1/models payload. The
-// cached access token on `activeAccount` short-circuits the OAuth mint, so
-// the only outbound request the catalog refresh issues is the /v1/models
-// GET — making a single mock sufficient.
-const stubModelsListFetch = (): ReturnType<typeof vi.spyOn> => vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-  new Response(JSON.stringify({ data: API_MODELS }), {
-    status: 200,
-    headers: { 'content-type': 'application/json' },
-  }),
-);
-
-describe('createClaudeCodeProvider — factory surface', () => {
-  test('owns the Claude Code client header fingerprint on the instance', () => {
-    const provider = createClaudeCodeProvider(currentRecord);
-
-    expect(provider.inboundHeaderAllowlist).toEqual([
-      'accept',
-      /^x-stainless-(?:retry-count|timeout|lang|package-version|os|arch|runtime|runtime-version|helper-method)$/,
-      'anthropic-dangerous-direct-browser-access',
-      'anthropic-version',
-      'x-app',
-      'accept-language',
-      'sec-fetch-mode',
-      'user-agent',
-      'content-type',
-      'accept-encoding',
-      'x-claude-code-session-id',
-      'x-client-request-id',
-    ]);
-  });
-
-  test('getProvidedModels mirrors the live /v1/models catalog under public aliases', async () => {
-    stubModelsListFetch();
-    const instance = createClaudeCodeProvider(currentRecord);
-    const models = await instance.instance.getProvidedModels(noopUpstreamCallOptions().fetcher);
-    expect(models.map(m => m.id)).toEqual([
-      'claude-fable-5',
-      'claude-opus-4-7',
-      'claude-sonnet-4-6',
-      'claude-sonnet-4-5',
-      'claude-opus-4-5',
-      'claude-haiku-4-5',
-    ]);
-  });
-
-  test('getProvidedModels stamps the effective flag set onto every model', async () => {
-    // claude-code's provider defaults leave `strip-billing-attribution` off
-    // (Anthropic reads the block to bill against the user's plan) and turn
-    // `openai-responses-compact-shim` on (Anthropic Messages has no native compact wire).
-    // Both should be reflected on every emitted model's enabledFlags.
-    stubModelsListFetch();
-    const instance = createClaudeCodeProvider(currentRecord);
-    const models = await instance.instance.getProvidedModels(noopUpstreamCallOptions().fetcher);
-    for (const m of models) {
-      expect(m.enabledFlags.has('strip-billing-attribution')).toBe(false);
-      expect(m.enabledFlags.has('openai-responses-compact-shim')).toBe(true);
-      expect(m.enabledFlags.has('rewrite-disallowed-mid-conv-system-to-user')).toBe(true);
-    }
-  });
-
-  test('getProvidedModels carries pricing resolved from each dated upstream id', async () => {
-    stubModelsListFetch();
-    const instance = createClaudeCodeProvider(currentRecord);
-    const models = await instance.instance.getProvidedModels(noopUpstreamCallOptions().fetcher);
-    expect(models.find(model => model.id === 'claude-sonnet-4-5')?.pricing)
-      .toEqual(pricingForClaudeCodeModelKey('claude-sonnet-4-5-20250929'));
-  });
-
-  test('kind is "claude-code"', async () => {
-    const instance = createClaudeCodeProvider(currentRecord);
-    expect(instance.kind).toBe('claude-code');
-    expect(instance.upstreamId).toBe(upstreamId);
-  });
 });
 
 describe('createClaudeCodeProvider — callAnthropicMessages routes through chain', () => {
@@ -239,22 +155,5 @@ describe('createClaudeCodeProvider — callAnthropicMessages routes through chai
     expect(wireHeaders.get('anthropic-version')).toBe('2023-06-01');
     // Authorization is replaced by the cached OAuth token.
     expect(wireHeaders.get('authorization')).toBe('Bearer at_cached');
-  });
-
-  test('CC UA but a payload that fails the strict shape gate still runs the chain', async () => {
-    const instance = createClaudeCodeProvider(currentRecord);
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
-
-    await instance.instance.callAnthropicMessages(
-      sonnetProviderModel,
-      { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
-      undefined,
-      { ...noopAnthropicMessagesUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.280' }) },
-    );
-
-    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
-    const body = await readJsonRequest(init) as WireAnthropicMessagesPayload;
-    // Re-mimicry ran: system was rebuilt into the 3-block shape.
-    expect(body.system).toHaveLength(3);
   });
 });

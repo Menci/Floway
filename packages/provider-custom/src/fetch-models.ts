@@ -1,13 +1,18 @@
-// Custom-upstream /models response parser. Permissively accepts the three
-// shapes our `custom` provider needs to interoperate with:
+// Custom-upstream /models response parser. Permissively accepts the shapes our
+// `custom` provider needs to interoperate with:
 //   1. OpenAI:       { object: 'list', data: [{ id, object?, owned_by?, created? }] }
 //   2. Anthropic:    { data: [{ type: 'model', id, display_name?, created_at? }],
 //                      has_more, first_id, last_id }     (no top-level `object`)
 //   3. OpenAI/Anthropic superset with optional display_name, created_at,
 //      limits, pricing, kind on the model and a `data` array on the container.
+//   4. Gemini:       { models: [{ name: 'models/{id}', displayName?,
+//                      supportedGenerationMethods?, inputTokenLimit?,
+//                      outputTokenLimit? }], nextPageToken? }
 //
-// A model is admitted if it has a string `id`; everything else is best-
-// effort metadata. The container is admitted if `data` is an array.
+// A model is admitted if it has a string `id` (Gemini spells it inside
+// `name`); everything else is best-effort metadata. The container is admitted
+// if `data` or `models` is an array. Gemini pages its listing, so the fetch
+// follows `nextPageToken` until the catalog is complete.
 
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
@@ -130,8 +135,49 @@ const parseRawModel = (value: unknown): CustomRawModel | null => {
   return model;
 };
 
-const parseCustomModelsResponse = (value: unknown): CustomModelsResponse | null => {
-  if (!isRecord(value) || !Array.isArray(value.data)) return null;
+// Gemini's catalog names a model `models/{id}` and publishes its context
+// window as separate input/output limits rather than a context size.
+// https://ai.google.dev/api/models#Model
+const parseGeminiModel = (value: unknown): CustomRawModel | null => {
+  if (!isRecord(value) || typeof value.name !== 'string') return null;
+  const id = value.name.replace(/^models\//, '');
+  if (id === '') return null;
+  const model: CustomRawModel = { id };
+  const displayName = optionalStringField(value.displayName);
+  if (displayName !== undefined) model.display_name = displayName;
+  const inputTokenLimit = optionalNumberField(value.inputTokenLimit);
+  const outputTokenLimit = optionalNumberField(value.outputTokenLimit);
+  if (inputTokenLimit !== undefined || outputTokenLimit !== undefined) {
+    model.limits = {
+      ...(inputTokenLimit !== undefined ? { max_prompt_tokens: inputTokenLimit, max_context_window_tokens: inputTokenLimit } : {}),
+      ...(outputTokenLimit !== undefined ? { max_output_tokens: outputTokenLimit } : {}),
+    };
+  }
+  // Only models that advertise generateContent can serve our chat routes.
+  if (Array.isArray(value.supportedGenerationMethods)
+    && !value.supportedGenerationMethods.includes('generateContent')) return null;
+  return model;
+};
+
+interface CustomModelsPage extends CustomModelsResponse {
+  nextPageToken?: string;
+}
+
+const parseCustomModelsPage = (value: unknown): CustomModelsPage | null => {
+  if (!isRecord(value)) return null;
+  if (Array.isArray(value.models)) {
+    const data: CustomRawModel[] = [];
+    for (const item of value.models) {
+      const model = parseGeminiModel(item);
+      if (model) data.push(model);
+    }
+    // `models.list` returns 50 models per page unless asked otherwise and
+    // marks a continuation with `nextPageToken`.
+    // https://ai.google.dev/api/models#method:-models.list
+    const nextPageToken = optionalStringField(value.nextPageToken);
+    return nextPageToken === undefined ? { data } : { data, nextPageToken };
+  }
+  if (!Array.isArray(value.data)) return null;
   const data: CustomRawModel[] = [];
   for (const item of value.data) {
     const model = parseRawModel(item);
@@ -140,8 +186,16 @@ const parseCustomModelsResponse = (value: unknown): CustomModelsResponse | null 
   return { data };
 };
 
-export const fetchCustomModels = (config: CustomUpstreamConfig, fetcher: Fetcher): Promise<CustomModelsResponse> =>
-  fetchUpstreamModels(
-    () => customFetchModels(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
-    parseCustomModelsResponse,
-  );
+export const fetchCustomModels = async (config: CustomUpstreamConfig, fetcher: Fetcher): Promise<CustomModelsResponse> => {
+  const data: CustomRawModel[] = [];
+  let pageToken: string | undefined;
+  do {
+    const page = await fetchUpstreamModels(
+      () => customFetchModels(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }, pageToken),
+      parseCustomModelsPage,
+    );
+    data.push(...page.data);
+    pageToken = page.nextPageToken;
+  } while (pageToken !== undefined);
+  return { data };
+};

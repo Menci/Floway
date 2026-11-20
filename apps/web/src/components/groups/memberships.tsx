@@ -49,9 +49,9 @@ export function GroupMemberships({ groups }: { groups: readonly ControlPlaneGrou
     {groups.slice(0, count).map(group => <span className="inline-flex flex-none min-w-0" data-visible-group key={group.id}><GroupIdentityLink group={group} /></span>)}
     {hidden.length > 0 && <Popover onOpenChange={(_, data) => { setOverflowOpen(data.open); setTooltipVisible(false); }} open={overflowOpen} positioning={{ position: 'below', align: 'start' }}>
       <Tooltip content={<div className="grid gap-2">{hidden.map(group => <GroupIdentity group={group} key={group.id} />)}</div>} onVisibleChange={(_, data) => setTooltipVisible(data.visible)} relationship="description" visible={!overflowOpen && tooltipVisible}>
-        <PopoverTrigger disableButtonEnhancement><button aria-label={t('dashboard.groupsManagement.more', { count: hidden.length })} className="winui-focus-rect floway-identity-action flex-none" type="button"><OverflowAvatar count={hidden.length} /></button></PopoverTrigger>
+        <PopoverTrigger disableButtonEnhancement><button aria-label={t('directory.groups.more', { count: hidden.length })} className="winui-focus-rect floway-identity-action flex-none" type="button"><OverflowAvatar count={hidden.length} /></button></PopoverTrigger>
       </Tooltip>
-      <PopoverSurface aria-label={t('dashboard.users.table.groups')} className="grid justify-items-start gap-2 max-w-[calc(100vw-32px)] !p-3">
+      <PopoverSurface aria-label={t('directory.users.table.groups')} className="grid justify-items-start gap-2 max-w-[calc(100vw-32px)] !p-3">
         {hidden.map(group => <GroupIdentityLink group={group} key={group.id} />)}
       </PopoverSurface>
     </Popover>}

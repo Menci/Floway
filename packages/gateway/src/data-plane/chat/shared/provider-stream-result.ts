@@ -16,7 +16,7 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
 ): Promise<ExecuteResult<ProtocolFrame<TEvent>>> => {
   const context = upstreamPerformanceContext(ctx, candidate, 'chat');
   if (!providerResult.ok) {
-    return { ...(await readUpstreamApiError(providerResult.response, candidate.provider.upstreamId)), performance: context };
+    return { ...(await readUpstreamApiError(providerResult.http, candidate.provider.upstreamId)), performance: context };
   }
   const identity = telemetryModelIdentity(candidate, providerResult.modelKey);
   let resolveFinal!: (metadata: EventResultMetadata) => void;
@@ -69,7 +69,7 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
     }
   })();
   return {
-    ...eventResult(stampedEvents, identity, { performance: context, headers: providerResult.headers }),
+    ...eventResult(stampedEvents, identity, { performance: context, http: providerResult.http }),
     finalMetadata,
   };
 };

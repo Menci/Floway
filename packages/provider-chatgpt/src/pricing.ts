@@ -34,6 +34,41 @@ export const GPT_IMAGE_2_PRICING = modelPricing(
 );
 
 const CHATGPT_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: ModelPricing])[] = [
+  // GPT-6.2 Astra and Sol launched on 2026-11-17 in Codex and the API; this
+  // account's `/codex/models` catalog was not probed before they were priced.
+  // OpenAI's cards fix every lane a Codex request can name: Standard, Fast
+  // mode at 2x (recorded under `priority`, the id the Codex catalog selects
+  // on), and Ultrafast, which Codex sends as `service_tier: "ultrafast"` and
+  // which the Pro plans can use on these models. Each lane reprices the whole
+  // request above 272k input tokens. Ultrafast is at its promotional 3x of
+  // Standard through 2027-02-28 and becomes 6x on 2027-03-01 (Pacific time);
+  // recheck both entries then. OpenAI publishes no Flex rate for either
+  // model, so a `flex` selector resolves to Base. Cache writes use the
+  // 30-minute retention rate; the 12-hour write has no billing metric.
+  // https://developers.openai.com/api/docs/models/gpt-6.2-astra
+  // https://developers.openai.com/api/docs/models/gpt-6.2-sol
+  // https://developers.openai.com/api/docs/pricing
+  // https://developers.openai.com/api/docs/guides/ultrafast-mode
+  // https://learn.chatgpt.com/docs/whats-new/gpt-62-astra-sol
+  // https://github.com/openai/codex/blob/c08843a5bd16de5524129b2f4270490447991984/codex-rs/core/src/session/model_catalog_settings.rs#L65-L70
+  // https://github.com/anomalyco/models.dev/blob/2dbda9a2febeb5f62e116729ea0288ca75230129/providers/openai/models/gpt-6.2-astra.toml
+  // https://github.com/anomalyco/models.dev/blob/2dbda9a2febeb5f62e116729ea0288ca75230129/providers/openai/models/gpt-6.2-sol.toml
+  ['gpt-6.2-astra', modelPricing(
+    tokenPricingEntry({ input_tokens: '8', input_cache_read_tokens: '0.4', input_cache_write_tokens: '10', output_tokens: '40' }),
+    tokenPricingEntry({ input_tokens: '16', input_cache_read_tokens: '0.8', input_cache_write_tokens: '20', output_tokens: '60' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '16', input_cache_read_tokens: '0.8', input_cache_write_tokens: '20', output_tokens: '80' }, { serviceTier: 'priority' }),
+    tokenPricingEntry({ input_tokens: '32', input_cache_read_tokens: '1.6', input_cache_write_tokens: '40', output_tokens: '120' }, { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '24', input_cache_read_tokens: '1.2', input_cache_write_tokens: '30', output_tokens: '120' }, { serviceTier: 'ultrafast' }),
+    tokenPricingEntry({ input_tokens: '48', input_cache_read_tokens: '2.4', input_cache_write_tokens: '60', output_tokens: '180' }, { serviceTier: 'ultrafast', inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
+  ['gpt-6.2-sol', modelPricing(
+    tokenPricingEntry({ input_tokens: '2', input_cache_read_tokens: '0.1', input_cache_write_tokens: '2.5', output_tokens: '10' }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '15' }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '4', input_cache_read_tokens: '0.2', input_cache_write_tokens: '5', output_tokens: '20' }, { serviceTier: 'priority' }),
+    tokenPricingEntry({ input_tokens: '8', input_cache_read_tokens: '0.4', input_cache_write_tokens: '10', output_tokens: '30' }, { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } }),
+    tokenPricingEntry({ input_tokens: '6', input_cache_read_tokens: '0.3', input_cache_write_tokens: '7.5', output_tokens: '30' }, { serviceTier: 'ultrafast' }),
+    tokenPricingEntry({ input_tokens: '12', input_cache_read_tokens: '0.6', input_cache_write_tokens: '15', output_tokens: '45' }, { serviceTier: 'ultrafast', inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
   // Codex exposes this slug through its own model catalog. Its notional API
   // rate has a lower cached-input price than GPT-6 Sol, including in the
   // whole-request long-context band. Fast mode uses the `priority` wire tier.

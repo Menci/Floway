@@ -8,6 +8,7 @@ import type { UpstreamRecord } from '../api/types';
 import { loadEditorAux } from '../components/upstream-editor/data';
 import { UpstreamEditorPage } from '../components/upstream-editor/page';
 import { i18n } from '../i18n';
+import { withoutUiTextEditorMarkers } from '../i18n/ui-text-editor/markers';
 import { dashboardWorkspaceHandle } from '../lib/dashboard-route-handle';
 import { pickDistinctHue } from '../lib/hue';
 
@@ -42,6 +43,8 @@ const copyableRecord = (source: UpstreamRecord, name: string, hue: number): Upst
     return { ...base, kind: 'azure', config: structuredClone(source.config), state: null };
   case 'ollama':
     return { ...base, kind: 'ollama', config: structuredClone(source.config), state: null };
+  case 'kimi-code':
+    return { ...base, kind: 'kimi-code', config: structuredClone(source.config), state: null };
   case 'copilot':
     return {
       ...base,
@@ -75,7 +78,7 @@ export async function clientLoader({ params }: Route.ClientLoaderArgs) {
   const source = sourceResult.data;
   const record = copyableRecord(
     source,
-    i18n.t('dashboard.upstreams.copy.nameSuffix', { name: source.name }),
+    withoutUiTextEditorMarkers(() => i18n.t('upstreams.copy.nameSuffix', { name: source.name })),
     pickDistinctHue(upstreamsResult.data.map(upstream => upstream.hue)),
   );
   return {

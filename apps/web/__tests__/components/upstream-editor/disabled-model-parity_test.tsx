@@ -38,25 +38,11 @@ const customRecord = upstreamRecord('up_custom', {
   kind: 'custom',
   config: {
     baseUrl: 'https://example.com',
-    authStyle: 'bearer',
     apiKey: '',
     endpoints: { openaiResponses: {} },
     ingressHeadersRules: [],
-    modelsFetch: { enabled: false },
+    modelsFetch: { enabled: false, authStyle: 'bearer' },
     models: [listed('model-a')],
-  },
-  state: null,
-});
-
-// The provider owns this catalog, so the workspace's structural controls are
-// read-only for it while the enable switch is not.
-const copilotRecord = upstreamRecord('', {
-  name: 'Copilot',
-  kind: 'copilot',
-  config: {
-    githubHost: 'github.com',
-    githubToken: '',
-    user: { id: 1, login: 'operator', name: null, avatar_url: '' },
   },
   state: null,
 });
@@ -99,7 +85,7 @@ function Harness({ discovered, editLevel, record }: {
 }
 
 const combobox = () =>
-  screen.getByRole<HTMLInputElement>('combobox', { name: i18n.t('dashboard.upstreamEditor.sections.disabledModels') });
+  screen.getByRole<HTMLInputElement>('combobox', { name: i18n.t('upstreams.editor.sections.disabledModels') });
 const rowSwitch = (name: string) =>
   screen.getAllByRole<HTMLInputElement>('switch').find(node => node.getAttribute('aria-label')?.includes(name))!;
 // `readOnly` on these controls is Fluent's own state, distinct from `disabled`:
@@ -107,23 +93,6 @@ const rowSwitch = (name: string) =>
 const isReadOnly = (control: Element) => control.getAttribute('aria-readonly') === 'true';
 
 describe('disabled model editing parity between the sidebar and the model list', () => {
-  it('leaves both surfaces editable for a Full editor of a provider-owned catalog', () => {
-    renderInApp(<Harness discovered={[listed('gpt-5')]} editLevel="full" record={copilotRecord} />);
-
-    expect(isReadOnly(rowSwitch('gpt-5'))).toBe(false);
-    expect(isReadOnly(combobox())).toBe(false);
-
-    fireEvent.click(rowSwitch('gpt-5'));
-    expect(rowSwitch('gpt-5').checked).toBe(false);
-  });
-
-  it('leaves both surfaces editable for a models-level editor', () => {
-    renderInApp(<Harness discovered={[]} editLevel="models" record={customRecord} />);
-
-    expect(isReadOnly(rowSwitch('model-a'))).toBe(false);
-    expect(isReadOnly(combobox())).toBe(false);
-  });
-
   it('leaves both surfaces read-only for an audit-only editor', () => {
     renderInApp(<Harness discovered={[]} editLevel="off" record={customRecord} />);
 

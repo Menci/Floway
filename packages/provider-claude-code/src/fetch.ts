@@ -322,7 +322,7 @@ const syntheticReturn = (
 ): ProviderStreamResult<AnthropicMessagesStreamEventEx> => ({
   ok: false,
   modelKey: upstreamModelId,
-  response,
+  http: response,
 });
 
 // Either ensures a usable access token or returns a 503 wrap for terminal
@@ -391,7 +391,6 @@ const performUpstreamCall = async (
   accessToken: EnsuredAccessToken,
   alreadyRetried: boolean,
 ): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
-  let responseHeaders: Headers | undefined;
   let rawSseFrameCount = 0;
   const rawSseFrames: StreamDiagnosticFrame[] = [];
   const observeRawSseFrame = (frame: SseFrame): void => {
@@ -433,7 +432,6 @@ const performUpstreamCall = async (
     body: jsonRequestBody(wireBody),
     signal: opts.signal,
   })).then(response => {
-    responseHeaders = response.headers;
     // `opts.call.waitUntil` is set by the gateway on Workers so the
     // runtime keeps the worker alive past the response (without it, the
     // persist promise gets cancelled the moment the response returns).
@@ -460,7 +458,7 @@ const performUpstreamCall = async (
     opts.signal,
   );
 
-  if (!result.ok && result.response.status === 401 && !accessToken.freshlyMinted && !alreadyRetried) {
+  if (!result.ok && result.http.status === 401 && !accessToken.freshlyMinted && !alreadyRetried) {
     // Cached token rejected; invalidate so the next mint reads stale=null,
     // then re-enter with a fresh-minted token. A second 401 (alreadyRetried
     // == true) means the refresh_token itself is the problem and the
@@ -481,7 +479,7 @@ const performUpstreamCall = async (
     events: observedClaudeCodeMessagesStream(result.events, {
       upstreamId: opts.upstreamId,
       model: upstreamModelId,
-      headers: responseHeaders ?? result.headers ?? new Headers(),
+      headers: result.http.headers,
       signal: opts.signal,
       frames: rawSseFrames,
       rawFrameCount: () => rawSseFrameCount,

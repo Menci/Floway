@@ -23,7 +23,7 @@ import {
   type OpenAIResponsesTool,
   type OpenAIResponsesToolChoice,
 } from '@floway-dev/protocols/openai-responses';
-import { internalDebugErrorFields, toInternalDebugError, type EventResultMetadata, type ExecuteResult } from '@floway-dev/provider';
+import { decodeResponseBody, internalDebugErrorFields, toInternalDebugError, type EventResultMetadata, type ExecuteResult } from '@floway-dev/provider';
 import type { SidecarCodec } from '@floway-dev/translate';
 
 export interface MergeUsage {
@@ -115,10 +115,13 @@ export type ServerToolDispatcher = (args: {
 
 // Keep hosted matching, function injection, and dispatch atomic so a
 // registration cannot silently omit part of a server-tool family.
+// The builder receives the declaration its own family recognized, so each
+// family states its declaration type; method members keep that per-family
+// parameter assignable to the shared registration.
 export interface ServerToolHostedDispatch {
   hostedTypes: readonly string[];
-  recognizeHostedTool: (raw: OpenAIResponsesTool) => OpenAIResponsesHostedTool | undefined;
-  buildFunctionTool: (canonical: OpenAIResponsesHostedTool, toolName: string) => OpenAIResponsesFunctionTool;
+  recognizeHostedTool(raw: OpenAIResponsesTool): OpenAIResponsesHostedTool | undefined;
+  buildFunctionTool(canonical: OpenAIResponsesHostedTool, toolName: string): OpenAIResponsesFunctionTool;
   dispatcher: ServerToolDispatcher;
 }
 
@@ -283,7 +286,7 @@ const isForcedServerToolChoice = (
 ): boolean => {
   if (choice === 'required') return true;
   if (typeof choice !== 'object' || choice === null) return false;
-  if (choice.type === 'function') return choice.namespace === undefined && dispatchers.has(choice.name);
+  if (choice.type === 'function') return dispatchers.has(choice.name);
   if (choice.type !== 'allowed_tools' || choice.mode !== 'required' || !Array.isArray(choice.tools)) return false;
   return choice.tools.some(selector => selector?.type === 'function' && selector.namespace === undefined
     && typeof selector.name === 'string' && dispatchers.has(selector.name));
@@ -961,7 +964,7 @@ const errorEventFromResult = (
     type: 'error', code: 'server_error', message: result.error.message, param: null,
     provider_specific_fields: internalDebugErrorFields(result.error),
   };
-  const body = parseJSONWithRawNumbers(new TextDecoder().decode(result.body)) as Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>;
+  const body = parseJSONWithRawNumbers(decodeResponseBody(result.body)) as Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>;
   return { ...body, type: 'error' };
 };
 
@@ -990,8 +993,7 @@ const invalidRequestEnvelope = (
   return {
     type: 'api-error',
     source: 'gateway',
-    status: 400,
-    headers: new Headers({ 'content-type': 'application/json' }),
+    http: { status: 400, headers: new Headers({ 'content-type': 'application/json' }) },
     body: new TextEncoder().encode(body),
   };
 };

@@ -4,11 +4,13 @@ import type { OpenAIImagesEditsRequest } from './images.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { ProviderModel, UpstreamModelsCache, UpstreamProviderKind, UpstreamRecord } from './model.ts';
 import type { Fetcher } from './options.ts';
+import type { HttpHead } from './result.ts';
 import type { ProviderScheduledOptions } from './scheduled.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { DecisionTarget, ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
 import type { CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
-import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
+import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAICompletionsPayload } from '@floway-dev/protocols/openai-completions';
 import type { OpenAIEmbeddingsPayload } from '@floway-dev/protocols/openai-embeddings';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
@@ -48,7 +50,7 @@ export interface Provider {
 }
 
 export interface ProviderCallResult {
-  response: Response;
+  http: Response;
   modelKey: string;
 }
 
@@ -65,18 +67,12 @@ export interface ProviderDecisionCallResult extends ProviderCallResult {
 // Streaming endpoints (Anthropic Messages / OpenAI Responses / OpenAI Chat Completions) return decoded
 // protocol frames directly — the provider drives the upstream fetch, parses
 // the SSE wire via @floway-dev/protocols, and emits the typed event stream.
-// `ok: true` optionally carries the raw upstream `Headers` so the source-side
-// `respond` layer can forward them to the downstream client (blocklist in
-// gateway `shared/respond.ts` — hop-by-hop, body framing, cookies). Absent
-// on lifted/synthesized streams that have no upstream Response behind them,
-// matching the same shape on `EventResult`.
-// `ok: false` carries the raw upstream Response verbatim so the gateway
-// boundary can relay status + body + headers unchanged. Non-2xx-but-not-SSE
-// responses throw from the provider as a contract violation (provider always
-// forces stream=true on streaming endpoints).
+// A successful stream carries the head of the HTTP response that opened it.
+// A locally synthesized stream can omit it. A failed call retains the raw
+// response so the gateway can consume and relay its body.
 export type ProviderStreamResult<TEvent> =
-  | { ok: true; events: AsyncIterable<ProtocolFrame<TEvent>>; modelKey: string; headers?: Headers }
-  | { ok: false; response: Response; modelKey: string };
+  | { ok: true; events: AsyncIterable<ProtocolFrame<TEvent>>; modelKey: string; http?: HttpHead }
+  | ({ ok: false } & ProviderCallResult);
 
 // `action: 'generate'` is a normal streaming /responses turn — its frames
 // flow through the per-frame event stream like every other streaming endpoint.
@@ -89,11 +85,13 @@ export type ProviderStreamResult<TEvent> =
 // and value-envelope arms; snapshot mode itself reads `invocation.action` (the
 // post-chain caller intent), not the result tag.
 // The `ok: false` contract is identical to ProviderStreamResult above.
+export type ProviderCompactionResult =
+  | { ok: true; result: OpenAIResponsesCompactionResultEx; modelKey: string; http: HttpHead }
+  | ({ ok: false } & ProviderCallResult);
+
 export type ProviderOpenAIResponsesResult =
-  | { action: 'generate'; ok: true; events: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>; modelKey: string; headers?: Headers }
-  | { action: 'generate'; ok: false; response: Response; modelKey: string }
-  | { action: 'compact'; ok: true; result: OpenAIResponsesCompactionResultEx; modelKey: string }
-  | { action: 'compact'; ok: false; response: Response; modelKey: string };
+  | ({ action: 'generate' } & ProviderStreamResult<OpenAIResponsesStreamEventEx>)
+  | ({ action: 'compact' } & ProviderCompactionResult);
 
 // Per-call options the gateway threads through to the provider.
 //
@@ -150,9 +148,18 @@ export interface ProviderInstance {
   // those upstreams; the rejecting stubs in those providers are pure
   // defense-in-depth.
   callOpenAICompletions(model: ProviderModel, body: Omit<OpenAICompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
-  callOpenAIChatCompletions(model: ProviderModel, body: Omit<OpenAIChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
+  callOpenAIChatCompletions(model: ProviderModel, body: Omit<OpenAIChatCompletionsPayloadEx, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>>;
   callOpenAIResponses(model: ProviderModel, body: Omit<CanonicalOpenAIResponsesPayload, 'model'>, action: OpenAIResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderOpenAIResponsesResult>;
   callAnthropicMessages(model: ProviderModel, body: Omit<AnthropicMessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: AnthropicMessagesUpstreamCallOptions): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
+  // Gemini's native REST surface carries the model id and the action in the
+  // URL path (`models/{model}:streamGenerateContent?alt=sse`) rather than in
+  // the body, so the call takes the payload exactly as the client shaped it.
+  // The gateway always asks for the streaming action; a non-streaming client
+  // is collected from those frames. countTokens answers one JSON body and is
+  // relayed verbatim; the provider wraps the payload in the envelope its
+  // upstream expects.
+  callGeminiGenerateContent(model: ProviderModel, body: GeminiGenerateContentPayload, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>>;
+  callGeminiGenerateContentCountTokens(model: ProviderModel, body: GeminiGenerateContentPayload, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   // count_tokens is non-streaming JSON; the gateway relays the upstream
   // Response verbatim.
   callAnthropicMessagesCountTokens(model: ProviderModel, body: Omit<AnthropicMessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: AnthropicMessagesUpstreamCallOptions): Promise<ProviderCallResult>;

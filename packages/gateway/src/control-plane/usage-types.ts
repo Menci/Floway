@@ -1,6 +1,6 @@
 import type { DisplayWebSearchUsageByKeyRecord, DisplayWebSearchUsageByUserRecord } from './search-usage/aggregate.ts';
 import type { DisplayUsageByUserRecord, DisplayUsageRecord } from './token-usage/aggregate.ts';
-import type { UsageOverviewGroupBy, UsageOverviewRecord } from '../repo/types.ts';
+import type { UsageOverviewResult } from '../repo/types.ts';
 
 export interface UsageKeyMetadata {
   id: string;
@@ -28,17 +28,26 @@ export interface TokenUsageByUserResponse {
   users: UsageUserMetadata[];
 }
 
+export interface TokenUsageOverviewBucket extends Omit<UsageOverviewResult, 'firstHour' | 'lastHour'> {
+  start: string;
+  end: string;
+}
+
+export interface TokenUsageOverviewScope {
+  actorId: number;
+  ownedKeyIds: string[];
+  visibility: 'owned-keys' | 'all' | { userIds: number[]; upstreamIds: string[] };
+}
+
 export interface TokenUsageOverviewResponse {
-  series: UsageOverviewRecord[];
-  axes: Record<UsageOverviewGroupBy | 'none', UsageOverviewRecord[]>;
-  dimensionValues: {
-    keyIds: string[];
-    userIds: number[];
-    models: string[];
-    upstreams: string[];
-  };
+  cursor: string;
+  reset: boolean;
+  start: string;
+  end: string;
+  buckets: TokenUsageOverviewBucket[];
+  scope: TokenUsageOverviewScope;
+  metadataVisibility: { complete: boolean; userIds: number[]; upstreamIds: string[] };
   users: UsageUserMetadata[];
-  auditableUserIds: number[];
   upstreams: Array<{ id: string; name: string; hue: number }>;
   keys: UsageKeyMetadata[];
 }

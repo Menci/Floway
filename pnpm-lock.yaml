@@ -24,6 +24,9 @@ patchedDependencies:
   cbor-x@1.6.6:
     hash: fe60080adce8d75e0431840c40fc8086df2ac5625589179e5ddab432216c33a7
     path: patches/cbor-x@1.6.6.patch
+  eventsource-parser@3.1.0:
+    hash: 86168a3936fdfb1a4487d8d4d76c438e545ed6c2b45bd72410df3e5cc0baed78
+    path: patches/eventsource-parser@3.1.0.patch
   klona@2.0.6:
     hash: 86c99277c7bbba3650a877ecb839518955a3fdb068579ba6ec957d107e310dd2
     path: patches/klona@2.0.6.patch
@@ -181,6 +184,9 @@ importers:
       '@floway-dev/provider-custom':
         specifier: workspace:*
         version: link:../../packages/provider-custom
+      '@floway-dev/provider-kimi-code':
+        specifier: workspace:*
+        version: link:../../packages/provider-kimi-code
       '@floway-dev/provider-ollama':
         specifier: workspace:*
         version: link:../../packages/provider-ollama
@@ -423,6 +429,9 @@ importers:
       '@floway-dev/provider-custom':
         specifier: workspace:*
         version: link:../provider-custom
+      '@floway-dev/provider-kimi-code':
+        specifier: workspace:*
+        version: link:../provider-kimi-code
       '@floway-dev/provider-ollama':
         specifier: workspace:*
         version: link:../provider-ollama
@@ -444,6 +453,9 @@ importers:
       hono:
         specifier: ^4
         version: 4.12.22
+      http-dates:
+        specifier: 1.2.0
+        version: 1.2.0
       jsonrepair:
         specifier: ^3.14.0
         version: 3.14.0
@@ -533,7 +545,7 @@ importers:
         version: 2.0.0
       eventsource-parser:
         specifier: ^3.1.0
-        version: 3.1.0
+        version: 3.1.0(patch_hash=86168a3936fdfb1a4487d8d4d76c438e545ed6c2b45bd72410df3e5cc0baed78)
     devDependencies:
       '@floway-dev/test-utils':
         specifier: workspace:*
@@ -662,8 +674,24 @@ importers:
         specifier: workspace:*
         version: link:../test-utils
 
+  packages/provider-kimi-code:
+    dependencies:
+      '@floway-dev/protocols':
+        specifier: workspace:*
+        version: link:../protocols
+      '@floway-dev/provider':
+        specifier: workspace:*
+        version: link:../provider
+    devDependencies:
+      '@floway-dev/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
+
   packages/provider-ollama:
     dependencies:
+      '@floway-dev/interceptor':
+        specifier: workspace:*
+        version: link:../interceptor
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -735,9 +763,15 @@ importers:
       '@floway-dev/provider-copilot':
         specifier: workspace:*
         version: link:../packages/provider-copilot
+      '@floway-dev/provider-kimi-code':
+        specifier: workspace:*
+        version: link:../packages/provider-kimi-code
       '@floway-dev/provider-ollama':
         specifier: workspace:*
         version: link:../packages/provider-ollama
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
       jsonc-parser:
         specifier: ^3.3.1
         version: 3.3.1
@@ -3948,6 +3982,9 @@ packages:
       picomatch:
         optional: true
 
+  fflate@0.8.3:
+    resolution: {integrity: sha512-tbZNuJrLwGUp3zshBtdy4W+ORxZuIh8a5ilyIEQDC5rY1f3U20JMry0Ll3WBzU58EZKsEuJFXhb5gwv8CsPvgA==}
+
   file-entry-cache@11.1.5:
     resolution: {integrity: sha512-+PFTHITI08JIGhnNpGNI8T8inUpgZfk3GNEqfT9R2zZV2iFXg3CvqzSl/uEhs7TSGujYRELEANyDvS8Fj7+S7Q==}
 
@@ -4135,6 +4172,9 @@ packages:
 
   html-url-attributes@3.0.1:
     resolution: {integrity: sha512-ol6UPyBWqsrO6EJySPz2O7ZSr856WDrEzM5zMqp+FJJLGMW35cLYmmZnl0vztAZxRUoNZJFTCohfjuIJ8I4QBQ==}
+
+  http-dates@1.2.0:
+    resolution: {integrity: sha512-y5SJalyaaJZRkc6BR7c0Ci9K+5IeUJDp7NbAdOCSgcomvmyvdL2W+eQcvPurqsD0NCfDI9mDWMJzUjEHxFkzWw==}
 
   husky@9.1.7:
     resolution: {integrity: sha512-5gs5ytaNjBrh5Ow3zrvdUUY+0VxIuWVL4i9irt6friV+BqdCfmV11CQTWMiBYWHbXhco+J1kHfTOUkePhCDvMA==}
@@ -9599,7 +9639,7 @@ snapshots:
 
   eventemitter3@5.0.4: {}
 
-  eventsource-parser@3.1.0: {}
+  eventsource-parser@3.1.0(patch_hash=86168a3936fdfb1a4487d8d4d76c438e545ed6c2b45bd72410df3e5cc0baed78): {}
 
   exit-hook@5.1.0: {}
 
@@ -9638,6 +9678,8 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.5):
     optionalDependencies:
       picomatch: 4.0.5
+
+  fflate@0.8.3: {}
 
   file-entry-cache@11.1.5:
     dependencies:
@@ -9852,6 +9894,8 @@ snapshots:
   html-tags@5.1.0: {}
 
   html-url-attributes@3.0.1: {}
+
+  http-dates@1.2.0: {}
 
   husky@9.1.7: {}
 

@@ -9,8 +9,9 @@ import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } fr
 import { inboundHeaders } from '../../shared/inbound-headers.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
+import { providerModelsUnavailableResponse } from '../../shared/upstream-response.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
+import { jsonResponseInit } from '../shared/respond.ts';
 import type { OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
@@ -115,7 +116,7 @@ export const openaiResponsesHttp = {
           result.usage,
           failed,
         );
-        const compactResponse = Response.json(result.result);
+        const compactResponse = Response.json(result.result, jsonResponseInit(result.http));
         return finalizeGatewayResponse(ctx, compactResponse);
       }
       const response = await respondOpenAIResponses(c, result, false, ctx, payload);

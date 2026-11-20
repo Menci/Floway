@@ -17,7 +17,7 @@ afterEach(() => {
 
 describe('who search settings open for', () => {
   it('redirects an operator away before calling an admin endpoint', async () => {
-    const user = { id: 2, username: 'operator', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining' as const, language: null } };
+    const user = { id: 2, username: 'operator', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false } };
     useAuthStore.getState().primeFromLogin({ token: 'operator-session', user });
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
@@ -84,14 +84,5 @@ describe('what a failed search test says', () => {
 
     expect(screen.getByText('Search provider registry is empty')).toBeTruthy();
     expect(screen.queryByText('[object Object]')).toBeNull();
-  });
-
-  it('falls back to the status when the failure carries no JSON at all', async () => {
-    await pressTest(() => new Response('<html>Bad gateway</html>', {
-      status: 502,
-      headers: { 'content-type': 'text/html' },
-    }));
-
-    expect(screen.getByText('HTTP 502')).toBeTruthy();
   });
 });

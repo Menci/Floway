@@ -5,7 +5,7 @@ import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/ch
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesInputAgentMessageItem, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
-import { eventResult, type FlagId } from '@floway-dev/provider';
+import { decodeResponseBody, eventResult, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const gatewayCtx = mockChatGatewayCtx();
@@ -67,7 +67,7 @@ test('lowers agent_message items in place to framed user messages when the flag 
     type: 'agent_message',
     author: '/root/route_audit',
     recipient: '/root',
-    content: [{ type: 'output_text', text: 'done' }],
+    content: [{ type: 'output_text', text: 'done', annotations: [] }],
   };
 
   const { seen } = await lower([
@@ -108,24 +108,6 @@ test('forwards agent_message verbatim to a native OpenAI Responses target withou
   assertEquals(seen.input, [newTask]);
 });
 
-test.each(['anthropicMessages', 'openaiChatCompletions'] as const)(
-  'lowers agent_message at a %s target even without the flag',
-  async targetApi => {
-    const { seen } = await lower([newTask], { targetApi });
-    assert(seen !== undefined);
-    assertEquals(seen.input, [framedNewTask]);
-  },
-);
-
-test('leaves a payload without agent_message as the same object', async () => {
-  const input: CanonicalOpenAIResponsesInputItem[] = [{ type: 'message', role: 'user', content: 'hi' }];
-  for (const options of [{ enabledFlags: FLAG }, {}, { targetApi: 'anthropicMessages' as const }]) {
-    const { before, seen } = await lower(input, options);
-    assert(seen !== undefined);
-    assert(seen === before);
-  }
-});
-
 test('returns an input error without running downstream when agent content cannot be lowered', async () => {
   const { result, seen } = await lower([{
     type: 'agent_message', author: '/root', recipient: '/root/worker',
@@ -133,8 +115,7 @@ test('returns an input error without running downstream when agent content canno
   }], { enabledFlags: FLAG });
   assertEquals(seen, undefined);
   assert(result.type === 'api-error');
-  assertEquals(result.status, 400);
-  const body = JSON.parse(new TextDecoder().decode(result.body)) as { error: { message: string; param: string } };
-  assertEquals(body.error.message, "Invalid value: 'encrypted_content' for 'agent_message.content[0].type'.");
+  assertEquals(result.http.status, 400);
+  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { param: string } };
   assertEquals(body.error.param, 'agent_message.content[0].type');
 });

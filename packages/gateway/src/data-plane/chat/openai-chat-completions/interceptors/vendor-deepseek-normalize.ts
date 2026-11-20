@@ -40,10 +40,10 @@
 import type { OpenAIChatCompletionsInterceptor } from './types.ts';
 import { asJsonObject, type JsonObject, readJsonNumber } from '../../../../shared/json-helpers.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload, OpenAIChatCompletionsReasoningItem, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsReasoningItemEx, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 import { providerModelOf } from '@floway-dev/provider';
 
-const synthesizeFromItems = (items: OpenAIChatCompletionsReasoningItem[] | null | undefined): string | undefined => {
+const synthesizeFromItems = (items: OpenAIChatCompletionsReasoningItemEx[] | null | undefined): string | undefined => {
   if (!items?.length) return undefined;
   const parts = items.flatMap(item => item.summary?.map(s => s.text) ?? []);
   return parts.length > 0 ? parts.join('') : undefined;
@@ -55,24 +55,24 @@ const rewriteOutboundMessage = (message: OpenAIChatCompletionsMessage): OpenAICh
   // floor when we project assistant messages onto `reasoning_content`.
   if (message.role !== 'assistant') return message;
   const { reasoning_text, reasoning_opaque: _opaque, reasoning_items, ...rest } = message as OpenAIChatCompletionsAssistantMessageEx;
-  const text = typeof reasoning_text === 'string' ? reasoning_text : synthesizeFromItems(reasoning_items as OpenAIChatCompletionsReasoningItem[] | null | undefined);
+  const text = typeof reasoning_text === 'string' ? reasoning_text : synthesizeFromItems(reasoning_items as OpenAIChatCompletionsReasoningItemEx[] | null | undefined);
   if (text === undefined) return rest as OpenAIChatCompletionsMessage;
   return { ...rest, reasoning_content: text } as OpenAIChatCompletionsMessage;
 };
 
-const stripCanonicalReasoningSentinel = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsPayload => {
+const stripCanonicalReasoningSentinel = (payload: OpenAIChatCompletionsPayloadEx): OpenAIChatCompletionsPayloadEx => {
   if (payload.reasoning_effort !== 'none') return payload;
   const { reasoning_effort: _stripped, ...rest } = payload;
-  return { ...rest, thinking: { type: 'disabled' as const } } as OpenAIChatCompletionsPayload;
+  return { ...rest, thinking: { type: 'disabled' as const } } as OpenAIChatCompletionsPayloadEx;
 };
 
-const downgradeJsonSchemaResponseFormat = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsPayload => {
+const downgradeJsonSchemaResponseFormat = (payload: OpenAIChatCompletionsPayloadEx): OpenAIChatCompletionsPayloadEx => {
   const rf = payload.response_format;
   if (rf?.type !== 'json_schema') return payload;
   return { ...payload, response_format: { type: 'json_object' } };
 };
 
-const rewriteOutboundPayload = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsPayload => {
+const rewriteOutboundPayload = (payload: OpenAIChatCompletionsPayloadEx): OpenAIChatCompletionsPayloadEx => {
   const withDisable = stripCanonicalReasoningSentinel(payload);
   const withResponseFormat = downgradeJsonSchemaResponseFormat(withDisable);
   return {

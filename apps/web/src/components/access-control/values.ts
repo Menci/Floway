@@ -8,8 +8,8 @@ export const permissionState = (value: NonNullable<AccessValues[AccessPermission
 export const permissionTone = (value: NonNullable<AccessValues[AccessPermission]>): BadgeTone => value === 'models'
   ? 'accent' : value === true || value === 'full' ? 'success' : 'neutral';
 export const permissionValueLabel = (value: NonNullable<AccessValues[AccessPermission]>, t: TFunction): string => typeof value === 'boolean'
-  ? t(value ? 'dashboard.accessControl.states.on' : 'dashboard.accessControl.states.off')
-  : t(`dashboard.accessControl.states.${value}`);
+  ? t(value ? 'permissions.states.on' : 'permissions.states.off')
+  : t(`permissions.states.${value}`);
 export const scopePermissions = (scope: AccessScope | null): readonly AccessPermission[] => {
   if (scope === null) return [];
   switch (scope.kind) {
@@ -22,4 +22,8 @@ export const scopePermissions = (scope: AccessScope | null): readonly AccessPerm
   case 'user':
   case 'group': return ['User.Audit', 'Permission.Audit'];
   }
+};
+export const filterScopeValues = (scope: AccessScope | null, values: AccessValues): AccessValues => {
+  const allowed = scopePermissions(scope);
+  return Object.fromEntries(Object.entries(values).filter(([permission]) => allowed.includes(permission as AccessPermission))) as AccessValues;
 };

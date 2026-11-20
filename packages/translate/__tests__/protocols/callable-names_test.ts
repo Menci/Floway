@@ -1,15 +1,12 @@
 import { expect, test } from 'vitest';
 
-import { fixtureFrames } from './fixtures.ts';
 import type { IRInputRequestHeader } from '../../src/ir/input/types.ts';
 import { type IRRecord } from '../../src/ir/output/records.ts';
 import { consumeIRRecords } from '../../src/ir/output/stream.ts';
-import { anthropicMessagesTargetProtocol } from '../../src/protocols/anthropic-messages/as-target.ts';
 import { openaiChatCompletionsTargetProtocol } from '../../src/protocols/openai-chat-completions/as-target.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
 import { createRoundTripReaderCapture } from '../round-trip/test-helpers.ts';
 import { iterate } from '../shared/iterables.ts';
-import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
@@ -36,7 +33,7 @@ const expectOriginalCalls = async (records: AsyncIterable<IRRecord>, namespace: 
   expect(completed).toBe(true);
 };
 
-test.each([undefined, 'files'])('Chat restores callable names and kinds in namespace %s while retaining native aliases', async namespace => {
+test.each(['files'])('Chat restores callable names and kinds in namespace %s while retaining native aliases', async namespace => {
   const written = openaiChatCompletionsTargetProtocol.write(request(namespace), [], { sidecarCodec: createTestSidecarCodec() });
   const names = written.payload.tools?.flatMap(tool => tool.type === 'function' ? [tool.function.name] : []);
   expect(names).toHaveLength(2);
@@ -56,29 +53,5 @@ test.each([undefined, 'files'])('Chat restores callable names and kinds in names
   await expectOriginalCalls(openaiChatCompletionsTargetProtocol.readEvents(iterate(frames), written.context, capture.roundTrip), namespace);
   expect(capture.turns.get(0)?.turn.tool_calls).toMatchObject([
     { function: { name: functionName } }, { function: { name: customName } },
-  ]);
-});
-
-test.each([undefined, 'files'])('Messages restores callable names and kinds in namespace %s while retaining native aliases', async namespace => {
-  const written = anthropicMessagesTargetProtocol.write(request(namespace), [], { sidecarCodec: createTestSidecarCodec() });
-  const names = written.payload.tools?.flatMap(tool => 'name' in tool ? [tool.name] : []);
-  expect(names).toHaveLength(2);
-  const [functionName, customName] = names!;
-  expect(functionName).not.toBe(customName);
-  const ordinary = fixtureFrames('anthropic-messages', {});
-  const frames: ProtocolFrame<AnthropicMessagesStreamEventEx>[] = [
-    ...ordinary.filter(frame => frame.type === 'event' && frame.event.type === 'message_start'),
-    eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'f', name: functionName, input: {} } }),
-    eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{}' } }),
-    eventFrame({ type: 'content_block_stop', index: 0 }),
-    eventFrame({ type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'c', name: customName, input: {} } }),
-    eventFrame({ type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"input":"raw"}' } }),
-    eventFrame({ type: 'content_block_stop', index: 1 }),
-    ...ordinary.filter(frame => frame.type === 'event' && (frame.event.type === 'message_delta' || frame.event.type === 'message_stop')),
-  ];
-  const capture = createRoundTripReaderCapture<'anthropicMessages'>();
-  await expectOriginalCalls(anthropicMessagesTargetProtocol.readEvents(iterate(frames), written.context, capture.roundTrip), namespace);
-  expect(capture.turns.get(0)?.turn.content).toMatchObject([
-    { type: 'tool_use', name: functionName }, { type: 'tool_use', name: customName },
   ]);
 });

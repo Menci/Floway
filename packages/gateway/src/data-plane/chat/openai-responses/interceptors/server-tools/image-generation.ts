@@ -16,14 +16,14 @@ import {
   collectOpenAIResponsesToolEntries,
   createRandomOpenAIResponsesItemId,
   type OpenAIResponsesFunctionTool,
-  type OpenAIResponsesHostedTool,
+  type OpenAIResponsesImageGenerationTool,
   type OpenAIResponsesInputImage,
   type OpenAIResponsesInputImageGenerationCall,
   type CanonicalOpenAIResponsesInputItem,
-  type OpenAIResponsesOutputImageGenerationCallEx,
+  type OpenAIResponsesOutputImageGenerationCall,
   type OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
-import { providerModelOf, type Fetcher, type OpenAIImagesEditsRequest, type Provider, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
+import { providerModelOf, type Fetcher, type OpenAIImagesEditsRequest, type Provider, type ProviderCallResult, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
 
 export const SHIM_TOOL_NAME = 'image_generation';
 
@@ -87,7 +87,7 @@ const KNOWN_TOOL_FIELDS = new Set([
   'input_image_mask', 'action',
 ]);
 
-export const isHostedImageGenerationTool = (tool: OpenAIResponsesTool): tool is OpenAIResponsesHostedTool =>
+export const isHostedImageGenerationTool = (tool: OpenAIResponsesTool): tool is OpenAIResponsesImageGenerationTool =>
   tool.type === 'image_generation';
 
 // Identity canonicalization for image_generation: the shim doesn't
@@ -96,7 +96,7 @@ export const isHostedImageGenerationTool = (tool: OpenAIResponsesTool): tool is 
 // (all `'auto'`) signal "backend decides" rather than concrete values
 // the model needs. Preserving the client's raw shape keeps the echo
 // round-trip minimal — anything the client didn't send stays absent.
-export const recognizeImageGenerationTool = (raw: OpenAIResponsesTool): OpenAIResponsesHostedTool | undefined =>
+export const recognizeImageGenerationTool = (raw: OpenAIResponsesTool): OpenAIResponsesImageGenerationTool | undefined =>
   isHostedImageGenerationTool(raw) ? raw : undefined;
 
 // A base64-data-URL or bare-base64 image source bound for an edit call.
@@ -325,7 +325,7 @@ const integerInRange = (value: unknown, param: string, min: number, max: number)
 // fails. toolPath identifies its source carrier in the error.
 // https://developers.openai.com/api/docs/guides/tools-image-generation
 const validateHostedImageGenerationEntry = (
-  tool: OpenAIResponsesHostedTool,
+  tool: OpenAIResponsesImageGenerationTool,
   toolPath: string,
 ): { ok: true; config: ImageGenerationConfig } | { ok: false; error: PrepareConfigError } => {
   const path = (field: string): string => `${toolPath}.${field}`;
@@ -465,7 +465,7 @@ export const prepareImageGenerationConfig = (
 // on from the client config, exactly like Azure). A minimal description
 // elicits native-quality refined prompts while costing ~50 input tokens vs
 // the native hosted tool's ~2300.
-export const buildImageGenerationFunctionTool = (_canonical: OpenAIResponsesHostedTool, name: string): OpenAIResponsesFunctionTool => ({
+export const buildImageGenerationFunctionTool = (_canonical: OpenAIResponsesImageGenerationTool, name: string): OpenAIResponsesFunctionTool => ({
   type: 'function',
   name,
   description:
@@ -1089,7 +1089,7 @@ const issueImageCall = async (
   state: ShimState,
   stream: boolean,
   attempt: AttemptState,
-): Promise<{ response: Response; modelKey: string }> => {
+): Promise<ProviderCallResult> => {
   for (let retry = 0; ; retry++) {
     const opts = {
       fetcher,
@@ -1102,10 +1102,11 @@ const issueImageCall = async (
       // retry so it reflects the dispatch that actually returned.
       wrapUpstreamCall: stampUpstreamCallStart(attempt.timing),
     };
-    const { response, modelKey } = await (editRequest === null
+    const result = await (editRequest === null
       ? provider.instance.callOpenAIImagesGenerations(model, buildGenerationsBody(prompt, config, stream), state.downstreamAbortSignal, opts)
       : provider.instance.callOpenAIImagesEdits(model, editRequest, state.downstreamAbortSignal, opts));
-    if (response.status !== 429 || retry >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
+    const { http: response } = result;
+    if (response.status !== 429 || retry >= MAX_RATE_LIMIT_RETRIES) return result;
 
     // 25% jitter desynchronizes parallel callers so a burst of orchestrator
     // turns doesn't all re-issue at the same instant.
@@ -1178,17 +1179,17 @@ export const imageTerminal = (
   outcome: ImageOutcome,
 ): ServerToolSlotResult => {
   if (!outcome.ok) {
-    const item: ServerToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCallEx, 'id'> = {
+    const item: ServerToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCall, 'id'> = {
       type: 'image_generation_call',
       status: 'failed',
       result: null,
       revised_prompt: prompt,
-      error: { message: outcome.error.message, code: outcome.error.code, type: outcome.error.type },
+      error: { message: outcome.error.message, code: outcome.error.code, type: outcome.error.type, param: null },
     };
     return { item, endEvents: [], replayData: imageReplayInputs(item) };
   }
 
-  const item: ServerToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCallEx, 'id'> = {
+  const item: ServerToolOutputItem & Omit<OpenAIResponsesOutputImageGenerationCall, 'id'> = {
     type: 'image_generation_call',
     status: 'completed',
     action,
@@ -1285,7 +1286,7 @@ const streamImageGeneration = (
       const prepared = await prepareEditRequest(sources, state.config);
       editRequest = buildEditsRequest(prompt, state.config, prepared.sources, prepared.mask, wantsPartials);
     }
-    ({ response, modelKey } = await issueImageCall(
+    ({ http: response, modelKey } = await issueImageCall(
       provider,
       model,
       fetcher,

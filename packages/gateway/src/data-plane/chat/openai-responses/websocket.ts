@@ -11,17 +11,17 @@ import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../..
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeaders } from '../../shared/inbound-headers.ts';
 import { takeRequestBody } from '../../shared/request-body.ts';
-import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../../shared/sse.ts';
+import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, type StreamCompletion } from '../shared/respond.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { eventFrame, isJsonMediaType, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, canonicalizeOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesOutputItemEx, type OpenAIResponsesRequestPayloadEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { type ExecuteResult, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
+import { type ExecuteResult, decodeResponseBody, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
 
 interface WorkerWebSocket extends WebSocket {
   accept(): void;
@@ -282,7 +282,7 @@ const handleInterruptMessage = async (
 
 interface OpenAIResponsesWsTurnFailure {
   evict(): void;
-  fail(status: number, error: Record<string, unknown>): void;
+  fail(status: number, error: Record<string, unknown>, retryAfter?: string): void;
 }
 
 const handleClientMessage = async (
@@ -320,9 +320,9 @@ const handleClientMessage = async (
       if (ctx === undefined || previousResponseId === undefined) return;
       session.evictSnapshot(ctx.store.apiKeyId, previousResponseId);
     },
-    fail: (status, error) => {
+    fail: (status, error, retryAfter) => {
       turnFailure.evict();
-      sendError(socket, status, error, eventId, ctx?.dump);
+      sendError(socket, status, error, eventId, ctx?.dump, retryAfter);
     },
   };
 
@@ -458,16 +458,18 @@ const respondOpenAIResponsesWebSocket = async (input: {
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstreamId);
-    turnFailure.fail(result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status));
-    ctx.dump?.finalize(result.status, []);
+    const { status, headers } = result.http;
+    const error = normalizeErrorBody(parseMaybeJson(result.body, headers), status);
+    turnFailure.fail(status, error, headers.get('retry-after') ?? undefined);
+    ctx.dump?.finalize(status, []);
     return;
   }
 
   if (result.type === 'internal-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
-    turnFailure.fail(result.status, internalErrorEnvelope(result.error));
-    ctx.dump?.finalize(result.status, []);
+    turnFailure.fail(result.http.status, internalErrorEnvelope(result.error));
+    ctx.dump?.finalize(result.http.status, []);
     return;
   }
 
@@ -834,8 +836,8 @@ const createDownstreamSequence = (): DownstreamSequence => {
   };
 };
 
-const parseMaybeJson = (body: Uint8Array, headers: Headers): unknown => {
-  const text = new TextDecoder().decode(body);
+const parseMaybeJson = (body: Uint8Array | null, headers: Headers): unknown => {
+  const text = decodeResponseBody(body);
   if (!isJsonMediaType(headers.get('content-type'))) return { message: text };
   try {
     return JSON.parse(text) as unknown;
@@ -885,8 +887,12 @@ const sendError = (
   error: Record<string, unknown>,
   eventId?: string,
   dump?: DumpAccumulator | null,
+  retryAfter?: string,
 ): void => {
-  sendJson(socket, { type: 'error', status, error }, eventId, dump);
+  // Codex reads retry hints from the WS envelope after the HTTP upgrade.
+  // https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/codex-api/src/endpoint/responses_websocket.rs#L756-L768
+  const headers = retryAfter === undefined ? undefined : { 'retry-after': retryAfter };
+  sendJson(socket, { type: 'error', status, error, headers }, eventId, dump);
 };
 
 // A turn's own frames go out through this entry, which accepts only a stream

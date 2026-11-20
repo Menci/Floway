@@ -89,16 +89,16 @@ export const modelAliasWarningText = (
   t: TFunction,
 ): string => {
   switch (warning.key) {
-  case 'shadow': return t('dashboard.modelAliases.warnings.shadow', warning.values);
-  case 'noTarget': return t('dashboard.modelAliases.warnings.noTarget');
-  case 'unknownTarget': return t('dashboard.modelAliases.warnings.unknownTarget', warning.values);
-  case 'wrongKind': return t('dashboard.modelAliases.warnings.wrongKind', warning.values);
-  case 'notAdvertisedEffort': return t('dashboard.modelAliases.warnings.notAdvertisedEffort');
-  case 'unsupportedEffort': return t('dashboard.modelAliases.warnings.unsupportedEffort', warning.values);
-  case 'adaptiveBudgetConflict': return t('dashboard.modelAliases.warnings.adaptiveBudgetConflict');
-  case 'notAdvertisedBudget': return t('dashboard.modelAliases.warnings.notAdvertisedBudget');
-  case 'budgetBelow': return t('dashboard.modelAliases.warnings.budgetBelow', warning.values);
-  case 'budgetAbove': return t('dashboard.modelAliases.warnings.budgetAbove', warning.values);
-  case 'notAdvertisedAdaptive': return t('dashboard.modelAliases.warnings.notAdvertisedAdaptive');
+  case 'shadow': return t('models.aliases.warnings.shadow', warning.values);
+  case 'noTarget': return t('models.aliases.warnings.noTarget');
+  case 'unknownTarget': return t('models.aliases.warnings.unknownTarget', warning.values);
+  case 'wrongKind': return t('models.aliases.warnings.wrongKind', warning.values);
+  case 'notAdvertisedEffort': return t('models.aliases.warnings.notAdvertisedEffort');
+  case 'unsupportedEffort': return t('models.aliases.warnings.unsupportedEffort', warning.values);
+  case 'adaptiveBudgetConflict': return t('models.aliases.warnings.adaptiveBudgetConflict');
+  case 'notAdvertisedBudget': return t('models.aliases.warnings.notAdvertisedBudget');
+  case 'budgetBelow': return t('models.aliases.warnings.budgetBelow', warning.values);
+  case 'budgetAbove': return t('models.aliases.warnings.budgetAbove', warning.values);
+  case 'notAdvertisedAdaptive': return t('models.aliases.warnings.notAdvertisedAdaptive');
   }
 };

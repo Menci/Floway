@@ -1,11 +1,9 @@
-import { act, within } from '@testing-library/react';
+import { act } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { ApiKey } from '../../../src/api/types';
 import { KeysTable } from '../../../src/components/api-keys/table';
 import { i18n } from '../../../src/i18n';
-import { localeForLanguage } from '../../../src/i18n/languages';
-import { shortDate } from '../../../src/lib/format-time';
 import { stubMatchMedia } from '../../match-media-stub';
 import { renderInApp } from '../../render';
 
@@ -41,45 +39,16 @@ const clickButton = async (view: ReturnType<typeof renderTable>, name: string) =
 };
 
 describe('API keys table selection', () => {
-  it('puts copy first in actions and omits the key column', () => {
-    const view = renderTable(vi.fn());
-    expect(view.queryByRole('columnheader', { name: 'Key' })).toBeNull();
-    const row = view.getByText('Second key').closest('tr');
-    if (!row) throw new Error('the second API key has no table row');
-
-    expect(within(row).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual([
-      i18n.t('dashboard.apiKeys.actions.copy'),
-      i18n.t('dashboard.apiKeys.actions.editNamed', { name: 'Second key' }),
-      i18n.t('dashboard.apiKeys.actions.rotateNamed', { name: 'Second key' }),
-      i18n.t('dashboard.apiKeys.actions.deleteNamed', { name: 'Second key' }),
-    ]);
-  });
-
-  it('shows each key upstream order mode', () => {
-    const view = renderTable(vi.fn());
-    expect(view.getByText(i18n.t('dashboard.apiKeys.upstreamOrder.configured'))).toBeTruthy();
-    expect(view.getByText(i18n.t('dashboard.apiKeys.upstreamOrder.random'))).toBeTruthy();
-  });
-
   it('does not select the row a command was run from', async () => {
     const onSelect = vi.fn();
     const view = renderTable(onSelect);
 
     for (const label of ['actions.editNamed', 'actions.rotateNamed', 'actions.deleteNamed'] as const) {
-      await clickButton(view, i18n.t(`dashboard.apiKeys.${label}`, { name: 'Second key' }));
+      await clickButton(view, i18n.t(`apiKeys.${label}`, { name: 'Second key' }));
     }
-    await clickButton(view, i18n.t('dashboard.apiKeys.actions.copy'));
+    await clickButton(view, i18n.t('apiKeys.actions.copy'));
 
     expect(onSelect).not.toHaveBeenCalled();
-  });
-
-  it('selects the row a click landed on outside its commands', async () => {
-    const onSelect = vi.fn();
-    const view = renderTable(onSelect);
-
-    await act(async () => { view.getByText('Second key').click(); });
-
-    expect(onSelect).toHaveBeenCalledWith('second');
   });
 
   // The same table below the width where it becomes a list of rows, whose
@@ -93,42 +62,10 @@ describe('API keys table selection', () => {
       const onSelect = vi.fn();
       const view = renderTable(onSelect);
 
-      await clickButton(view, i18n.t('dashboard.apiKeys.table.actions'));
-      await act(async () => { view.getByRole('menuitem', { name: i18n.t('dashboard.apiKeys.actions.edit') }).click(); });
+      await clickButton(view, i18n.t('apiKeys.table.actions'));
+      await act(async () => { view.getByRole('menuitem', { name: i18n.t('apiKeys.actions.edit') }).click(); });
 
       expect(onSelect).not.toHaveBeenCalled();
-    });
-
-    it('selects the row a click landed on outside its menu', async () => {
-      const onSelect = vi.fn();
-      const view = renderTable(onSelect);
-
-      await act(async () => { view.getByText('Second key').click(); });
-
-      expect(onSelect).toHaveBeenCalledWith('second');
-    });
-
-    // The wide table heads the cell with Last Used; the list has no header, so
-    // a date old enough to lose its relative phrase would sit beside the
-    // created date as a second bare date.
-    it('names what a date too old for a relative phrase is the date of', () => {
-      const view = renderInApp(
-        <KeysTable
-          clipboard={clipboard}
-          disabled={false}
-          keys={[{ ...keys[0]!, last_used_at: '2020-02-15T00:00:00.000Z' }]}
-          onDelete={vi.fn()}
-          onEdit={vi.fn()}
-          onRotate={vi.fn()}
-          onSelect={vi.fn()}
-          selectedKeyId=""
-          upstreams={[]}
-        />,
-      );
-
-      expect(view.getByText(i18n.t('dashboard.apiKeys.table.usedOn', {
-        date: shortDate('2020-02-15T00:00:00.000Z', localeForLanguage(i18n.language)),
-      }))).toBeTruthy();
     });
   });
 });

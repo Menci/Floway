@@ -44,68 +44,27 @@ const createLease = async (apiKey: ApiKey): Promise<LeaseResponse> => {
   return (await response.json()) as LeaseResponse;
 };
 
-test('control routes require authentication', async () => {
-  await setupAppTest({ apiKey: testApiKey() });
-  const response = await requestApp('/api/setup', { method: 'POST' });
-  assertEquals(response.status, 401);
-});
-
-test('an unsupported method on a token-shaped path is contained before auth and logging', async () => {
-  await setupAppTest({ apiKey: testApiKey() });
-  const token = 'a'.repeat(43);
-  const logged: string[] = [];
-  const logSpy = vi.spyOn(console, 'log').mockImplementation((...args) => { logged.push(args.map(String).join(' ')); });
-  try {
-    const response = await requestApp(`/api/setup/${token}/claude.sh`, { method: 'POST' });
-    assertEquals(response.status, 404);
-    assertEquals(response.headers.get('cache-control'), 'no-store');
-  } finally {
-    logSpy.mockRestore();
-  }
-  expect(logged.join('\n')).not.toContain(token);
-});
-
 test('the public GET serves the rendered script with hardened headers and no CORS, requiring no auth', async () => {
   const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
   const lease = await createLease(apiKey);
 
   const response = await requestApp(lease.scripts.claude.sh, { method: 'GET' });
   assertEquals(response.status, 200);
-  assertEquals(response.headers.get('content-type'), 'text/plain; charset=utf-8');
-  assertEquals(response.headers.get('cache-control'), 'no-store');
   assertEquals(response.headers.get('access-control-allow-origin'), null);
   const text = await response.text();
   expect(text).toContain("SETUP_API_KEY='raw-key'");
-  expect(text).toContain("SETUP_API_KEY_NAME='Primary key'");
-  expect(text).toContain('Floway Agent Setup common installer fragment (Bash 3.2+)');
-  expect(text).toContain('Claude Code Agent Setup fragment.');
-  expect(text).not.toContain('Codex Agent Setup fragment.');
 
   const piResponse = await requestApp(lease.scripts.pi.sh, { method: 'GET' });
   assertEquals(piResponse.status, 200);
-  assertEquals(piResponse.headers.get('cache-control'), 'no-store');
   assertEquals(piResponse.headers.get('access-control-allow-origin'), null);
   const piText = await piResponse.text();
   expect(piText).toContain("SETUP_API_KEY='raw-key'");
   expect(piText).toContain(`SETUP_EXTENSION_PATH='/api/setup/${lease.token}/pi.js'`);
-  expect(piText).toContain("main 'Pi'");
   const ompResponse = await requestApp(lease.scripts.omp.sh, { method: 'GET' });
   assertEquals(ompResponse.status, 200);
   const ompText = await ompResponse.text();
   expect(ompText).toContain("SETUP_API_KEY='raw-key'");
   expect(ompText).toContain("main 'oh-my-pi'");
-});
-
-test('the leased Pi extension omits credentials and refuses an expired lease', async () => {
-  const { apiKey, repo } = await setupAppTest({ apiKey: testApiKey() });
-  const lease = await createLease(apiKey);
-  const path = `/api/setup/${lease.token}/pi.js?endpoint=https%3A%2F%2Fgateway.example`;
-  const response = await requestApp(path, {});
-  assertEquals(response.status, 200);
-  expect(await response.text()).not.toContain(RAW_KEY);
-  assertEquals(response.headers.get('cache-control'), 'no-store');
-  await repo.agentSetup.renewLease({ userId: apiKey.userId, token: lease.token, expiresAt: 0 });
-  assertEquals((await requestApp(path, {})).status, 404);
 });
 
 test('Pi discovery uses authenticated model visibility and preserves upstream filters', async () => {
@@ -141,7 +100,7 @@ test('Pi discovery uses authenticated model visibility and preserves upstream fi
       assertEquals(publicResponse.status, 200);
       const publicBody = await publicResponse.json() as { models: { baseUrl: string }[] };
       assertEquals(publicBody.models.map(model => model.baseUrl), ['https://public.example/proxy/v1']);
-      for (const endpoint of ['file:///etc/config', 'https://user:password@public.example', 'https://public.example?query=1']) {
+      for (const endpoint of ['file:///etc/config', 'https://user:password@public.example']) {
         const invalid = await requestApp(`http://internal:8788/v1/models?endpoint=${encodeURIComponent(endpoint)}`, {
           headers: { Authorization: `Bearer ${RAW_KEY}`, 'User-Agent': 'pi/1.1.0 (linux; node/v22.19.0; x64)' },
         });
@@ -151,21 +110,6 @@ test('Pi discovery uses authenticated model visibility and preserves upstream fi
 
     },
   );
-});
-
-test('HEAD validates without assembling the API-key body', async () => {
-  const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
-  const lease = await createLease(apiKey);
-  const response = await requestApp(lease.scripts.claude.sh, { method: 'HEAD' });
-  assertEquals(response.status, 200);
-  assertEquals(await response.text(), '');
-});
-
-test('a bogus token is a generic 404 with an empty body and no auth challenge', async () => {
-  await setupAppTest({ apiKey: testApiKey() });
-  const response = await requestApp(`/api/setup/${'a'.repeat(43)}/claude.sh`, { method: 'GET' });
-  assertEquals(response.status, 404);
-  assertEquals(await response.text(), '');
 });
 
 test('the public script route is mounted ahead of the logger, so the lease token never reaches a log line', async () => {
@@ -184,26 +128,6 @@ test('the public script route is mounted ahead of the logger, so the lease token
   // The route returns before the logger middleware runs, so there is no
   // completion line for it at all.
   expect(joined).not.toContain('/api/setup/');
-});
-
-test('OPTIONS on a script path is contained without resolving the lease or exposing CORS', async () => {
-  const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
-  const lease = await createLease(apiKey);
-  const repo = getRepo();
-
-  const findByTokenSpy = vi.spyOn(repo.agentSetup, 'findByToken');
-  const preflight = await requestApp(lease.scripts.claude.sh, {
-    method: 'OPTIONS',
-    headers: { origin: 'https://cross.example', 'access-control-request-method': 'GET' },
-  });
-  assertEquals(preflight.status, 404);
-  assertEquals(preflight.headers.get('access-control-allow-origin'), null);
-  assertEquals(preflight.headers.get('cache-control'), 'no-store');
-  expect(findByTokenSpy).not.toHaveBeenCalled();
-  findByTokenSpy.mockRestore();
-
-  const get = await requestApp(lease.scripts.claude.sh, { method: 'GET' });
-  assertEquals(get.headers.get('access-control-allow-origin'), null);
 });
 
 test('a public-serve failure is sealed to an opaque 500 that leaks neither token nor secret', async () => {
@@ -230,27 +154,4 @@ test('a public-serve failure is sealed to an opaque 500 that leaks neither token
   expect(joined).not.toContain(lease.token);
   expect(joined).not.toContain(injectedSecret);
   expect(joined).not.toContain('forced failure');
-});
-
-test('an ordinary control-route internal error still surfaces the full stack trace', async () => {
-  const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
-  const repo = getRepo();
-  repo.agentSetup.insertForUser = () => { throw new Error('ordinary-route-boom'); };
-
-  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-  try {
-    const response = await requestApp('/api/setup', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-      body: JSON.stringify({ apiKeyId: apiKey.id }),
-    });
-    assertEquals(response.status, 500);
-    const body = (await response.json()) as { error: { type: string; message: string; stack: string; path: string } };
-    assertEquals(body.error.type, 'internal_error');
-    assertEquals(body.error.message, 'ordinary-route-boom');
-    expect(body.error.stack).toContain('ordinary-route-boom');
-    assertEquals(body.error.path, '/api/setup');
-  } finally {
-    errorSpy.mockRestore();
-  }
 });

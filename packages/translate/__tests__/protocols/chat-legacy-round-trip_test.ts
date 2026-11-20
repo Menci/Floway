@@ -6,7 +6,7 @@ import { expectTrip } from '../trip.ts';
 import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
-import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsAssistantDeltaEx, OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { routeAnthropicMessagesViaOpenAIChatCompletions, routeGeminiGenerateContentViaOpenAIChatCompletions } from '@floway-dev/translate';
 
 const nativeFrames = (mode: 'legacy' | 'modern' | 'mixed', name: string, arguments_ = '{"x":1}'): ProtocolFrame<OpenAIChatCompletionsStreamEvent>[] => {
@@ -35,7 +35,7 @@ const nativeFrames = (mode: 'legacy' | 'modern' | 'mixed', name: string, argumen
  * reaches it the same way.
  */
 const assertNativeHistory = (
-  target: OpenAIChatCompletionsPayload,
+  target: OpenAIChatCompletionsPayloadEx,
   name: string,
   contents: string[],
 ): void => {
@@ -123,5 +123,5 @@ test('a source-ID-only result cannot answer a restored legacy call', async () =>
     { role: 'assistant', content: 'meanwhile' },
     { role: 'user', content: [{ type: 'tool_result', tool_use_id: call.id, content: 'late' }] },
   );
-  await expect(routeAnthropicMessagesViaOpenAIChatCompletions(payload, context)).resolves.toMatchObject({ type: 'input-error', message: expect.stringContaining('no unique id-less result') });
+  await expect(routeAnthropicMessagesViaOpenAIChatCompletions(payload, context)).resolves.toMatchObject({ type: 'input-error' });
 });

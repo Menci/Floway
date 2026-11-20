@@ -3,10 +3,10 @@
   Floway
 </h1>
 
-Floway is a self-hosted LLM API gateway for coding agents and API clients, with
-a web dashboard. It connects GitHub Copilot, ChatGPT, Claude.ai, Azure AI,
-custom HTTP providers, and Ollama through OpenAI, Anthropic, and
-Gemini-compatible APIs.
+Floway is a self-hosted LLM API gateway for coding agents and API clients,
+with a web dashboard. It connects GitHub Copilot, ChatGPT, Claude.ai,
+Moonshot AI, Azure AI, custom HTTP providers, and Ollama through OpenAI,
+Anthropic, and Gemini-compatible APIs.
 
 ## Deployment
 
@@ -48,3 +48,12 @@ pnpm run dev:node
 ## License
 
 MIT
+
+## Sponsors
+
+<a href="https://memoh.net/">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/sponsor-memoh-dark.svg">
+    <img alt="Memoh — give your agent a cloud computer" src=".github/assets/sponsor-memoh-light.svg" width="100%">
+  </picture>
+</a>

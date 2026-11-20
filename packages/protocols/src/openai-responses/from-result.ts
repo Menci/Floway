@@ -1,5 +1,5 @@
 import { imageGenerationCallLifecycleEvents } from './image-generation-lifecycle.ts';
-import type { OpenAIResponsesOutputCustomToolCall, OpenAIResponsesOutputFunctionCallEx, OpenAIResponsesOutputImageGenerationCallEx, OpenAIResponsesOutputItemEx, OpenAIResponsesOutputMessageEx, OpenAIResponsesOutputReasoning, OpenAIResponsesOutputWebSearchCall, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from './index.ts';
+import type { OpenAIResponsesOutputCustomToolCall, OpenAIResponsesOutputFunctionCallEx, OpenAIResponsesOutputImageGenerationCall, OpenAIResponsesOutputItemEx, OpenAIResponsesOutputMessageEx, OpenAIResponsesOutputReasoning, OpenAIResponsesOutputWebSearchCall, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from './index.ts';
 import { webSearchCallLifecycleEvents } from './web-search-lifecycle.ts';
 import { type EventFrame, eventFrame } from '../common/index.ts';
 
@@ -50,7 +50,7 @@ const requireItemId = (item: { type: string; id?: string }): string => {
 };
 
 const openaiResponsesMessageEvents = (item: OpenAIResponsesOutputMessageEx, outputIndex: number): OpenAIResponsesStreamEventEx[] => {
-  const itemId = requireItemId(item);
+  const itemId = item.id;
   const events: OpenAIResponsesStreamEventEx[] = [
     {
       type: 'response.output_item.added',
@@ -281,7 +281,7 @@ const openaiResponsesWebSearchCallEvents = (item: OpenAIResponsesOutputWebSearch
   return [...startFrames, ...endFrames];
 };
 
-const openaiResponsesImageGenerationCallEvents = (item: OpenAIResponsesOutputImageGenerationCallEx, outputIndex: number): OpenAIResponsesStreamEventEx[] => {
+const openaiResponsesImageGenerationCallEvents = (item: OpenAIResponsesOutputImageGenerationCall, outputIndex: number): OpenAIResponsesStreamEventEx[] => {
   const { startFrames, endFrames } = imageGenerationCallLifecycleEvents(item, outputIndex);
   return [...startFrames, ...endFrames];
 };

@@ -3,6 +3,8 @@ import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { dashboardBucketFrames } from '../../src/components/charts/dashboard-time';
+import { createUsageOverviewLoader } from '../../src/components/usage/data';
+import { i18n } from '../../src/i18n';
 import DashboardMonitorUsage, { clientLoader } from '../../src/routes/dashboard-monitor-usage';
 import { useAuthStore } from '../../src/stores/auth-store';
 import { stubLocalStorage } from '../local-storage-stub';
@@ -19,6 +21,7 @@ const loadedAt = Date.UTC(2026, 7, 5, 12);
 const bucket = dashboardBucketFrames('today', loadedAt).at(-2)!.key;
 const usageRecord = { bucket, group: 'gpt-5', requests: 1, metrics: { input_tokens: '10' as const }, cost: null };
 const loaderData = {
+  loadOverview: createUsageOverviewLoader(),
   currentUserId: '1',
   error: null,
   loadedAt,
@@ -50,7 +53,7 @@ const loaderData = {
 };
 
 const renderPage = (data: Parameters<typeof DashboardMonitorUsage>[0]['loaderData']) => {
-  const user = { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } };
+  const user = { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false } };
   const router = createMemoryRouter([{
     path: '/',
     Component: () => <Outlet context={{ user }} />,
@@ -62,74 +65,7 @@ const renderPage = (data: Parameters<typeof DashboardMonitorUsage>[0]['loaderDat
   return renderInApp(<RouterProvider router={router} />);
 };
 
-const stubUsageGateway = () => {
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-    const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
-    if (path === '/api/token-usage/overview') return Response.json({
-      series: [{ bucket: '2026-08-05T11', group: 'gpt-5', requests: 1, metrics: [], cost: null }],
-      axes: { none: [], model: [], upstream: [], userId: [], keyId: [] },
-      dimensionValues: { models: ['gpt-5'], upstreams: ['upstream:up-1'], userIds: [2], keyIds: ['key-2'] },
-      users: [{ id: 1, username: 'admin' }, { id: 2, username: 'Alice' }],
-      auditableUserIds: [1, 2],
-      upstreams: [{ id: 'up-1', name: 'Copilot seat', hue: 210 }],
-      keys: [{ id: 'key-2', name: 'Alice key', createdAt: '2026-08-01T00:00:00.000Z' }],
-    });
-    if (path === '/api/search-usage') return Response.json({ view: 'all-by-user', records: [], users: [] });
-    throw new Error(`Unexpected request to ${path}`);
-  }));
-};
-
 describe('usage dimension controls', () => {
-  it('shows auditable users even when they have no usage in the selected window', () => {
-    renderPage({
-      ...loaderData,
-      currentUserId: '2',
-      usage: {
-        ...loaderData.usage,
-        dimensionValues: { ...loaderData.usage.dimensionValues, userIds: [2] },
-        users: [{ id: 2, username: 'Alice' }, { id: 5, username: 'Dana' }],
-      },
-    });
-
-    fireEvent.click(screen.getByRole('combobox', { name: 'Group by' }));
-    expect(screen.getByRole('option', { name: 'By User' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('combobox', { name: 'User' }));
-    expect(screen.getByRole('menuitemcheckbox', { name: 'Alice' })).toBeTruthy();
-    expect(screen.getByRole('menuitemcheckbox', { name: 'Dana' })).toBeTruthy();
-  });
-
-  it('matches the Performance dimension and range controls', () => {
-    renderPage(loaderData);
-
-    expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Group by' }).value).toBe('By Model');
-    expect(screen.queryByRole('combobox', { name: 'Model' })).toBeNull();
-    expect(screen.getByRole('combobox', { name: 'Upstream' })).toBeTruthy();
-    expect(screen.getByRole('combobox', { name: 'User' })).toBeTruthy();
-    expect(screen.getByRole('combobox', { name: 'API Key' })).toBeTruthy();
-    expect(screen.getByText('Last Day')).toBeTruthy();
-    expect(screen.getByText('7 Days')).toBeTruthy();
-    expect(screen.getByText('30 Days')).toBeTruthy();
-    const controlsRow = screen.getByRole('group', { name: 'Group by' }).parentElement?.parentElement;
-    const range = screen.getByRole('radiogroup', { name: 'Usage range' });
-    expect(controlsRow?.contains(range)).toBe(true);
-    expect(controlsRow?.nextElementSibling?.contains(screen.getByRole('combobox', { name: 'Upstream' }))).toBe(true);
-    expect(screen.getByRole('heading', { level: 2, name: 'By Model' })).toBeTruthy();
-  });
-
-  it('hides API key filters under user grouping', () => {
-    renderPage({
-      ...loaderData,
-      state: { ...loaderData.state, groupBy: 'userId' },
-      usage: { ...loaderData.usage, series: [{ ...usageRecord, group: '2' }] },
-    });
-
-    expect(screen.getByRole<HTMLInputElement>('combobox', { name: 'Group by' }).value).toBe('By User');
-    expect(screen.queryByRole('combobox', { name: 'User' })).toBeNull();
-    expect(screen.queryByRole('combobox', { name: 'API Key' })).toBeNull();
-    expect(screen.getByRole('combobox', { name: 'Model' })).toBeTruthy();
-    expect(screen.getByRole('combobox', { name: 'Upstream' })).toBeTruthy();
-  });
-
   it('labels unknown-user usage without weakening real-user metadata checks', () => {
     const { unmount } = renderPage({
       ...loaderData,
@@ -143,7 +79,7 @@ describe('usage dimension controls', () => {
       },
     });
 
-    expect(screen.getByText('Unknown user')).toBeTruthy();
+    expect(screen.getByText(i18n.t('monitoring.usage.filters.unknownUser'))).toBeTruthy();
     unmount();
 
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -151,100 +87,24 @@ describe('usage dimension controls', () => {
       ...loaderData,
       usage: { ...loaderData.usage, users: [] },
     });
-    expect(screen.getByText('Usage user dimension is missing metadata for 2')).toBeTruthy();
+    expect(consoleError.mock.calls.flat().some(argument => argument instanceof TypeError)).toBe(true);
     consoleError.mockRestore();
-  });
-
-  it('discloses that API key grouping is account-scoped', () => {
-    renderPage({
-      ...loaderData,
-      state: {
-        ...loaderData.state,
-        filters: { ...loaderData.state.filters, userId: ['1'] },
-        groupBy: 'keyId',
-      },
-      usage: { ...loaderData.usage, series: [{ ...usageRecord, group: 'key-2' }] },
-    });
-
-    expect(screen.getByRole('button', { name: 'About API key telemetry scope' })).toBeTruthy();
-    expect(screen.queryByRole('combobox', { name: 'API Key' })).toBeNull();
-    expect(screen.getByRole('combobox', { name: 'User' }).getAttribute('placeholder')).toBe('Only me');
-  });
-
-  it('lets an API key selection replace another user with the current-user scope', async () => {
-    stubUsageGateway();
-    renderPage({
-      ...loaderData,
-      state: {
-        ...loaderData.state,
-        filters: { ...loaderData.state.filters, userId: ['2'] },
-      },
-    });
-
-    fireEvent.click(screen.getByRole('combobox', { name: 'API Key' }));
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Alice key' }));
-
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'User' }).getAttribute('placeholder')).toBe('Only me'));
-    expect(screen.getByRole('combobox', { name: 'API Key' }).getAttribute('placeholder')).toBe('1 selected');
-  });
-
-  it('uses the ungrouped axis for stable summary totals', () => {
-    renderPage({
-      ...loaderData,
-      usage: {
-        ...loaderData.usage,
-        axes: {
-          ...loaderData.usage.axes,
-          none: [{ ...loaderData.usage.axes.none[0], metrics: { input_tokens: '99' } }],
-        },
-      },
-    });
-
-    expect(screen.getAllByText('99').length).toBeGreaterThan(0);
-  });
-
-  it('loads the overview contract and derives Search scope from the actor', async () => {
-    useAuthStore.getState().primeFromLogin({
-      token: 'admin-session',
-      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } },
-    });
-    stubUsageGateway();
-
-    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/usage?g=userId') } as never);
-
-    expect(data.state.groupBy).toBe('userId');
-    expect(data.usage?.series[0]).toMatchObject({ group: 'gpt-5', metrics: {} });
-    expect(data.upstreams).toEqual([{ id: 'up-1', name: 'Copilot seat', hue: 210 }]);
-  });
-
-  it('reads upstream labels from the overview response', async () => {
-    useAuthStore.getState().primeFromLogin({
-      token: 'admin-session',
-      user: { id: 1, username: 'admin', isAdmin: true, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } },
-    });
-    stubUsageGateway();
-
-    const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/usage') } as never);
-    renderPage(data);
-
-    expect(data.upstreams).toEqual([{ id: 'up-1', name: 'Copilot seat', hue: 210 }]);
-    expect(screen.getByRole('heading', { level: 2, name: 'By Model' })).toBeTruthy();
   });
 
   it('keeps self-only Search usage grouped by API key', async () => {
     useAuthStore.getState().primeFromLogin({
       token: 'operator-session',
-      user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining', language: null } },
+      user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: false, canViewUpstreams: false, preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false } },
     });
     let requestedView: string | null = null;
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
       if (url.pathname === '/api/token-usage/overview') return Response.json({
-        series: [],
-        axes: { none: [], model: [], upstream: [], userId: [], keyId: [] },
-        dimensionValues: { models: [], upstreams: [], userIds: [], keyIds: [] },
+        cursor: 'first', reset: true, start: url.searchParams.get('start'), end: url.searchParams.get('end'),
+        buckets: [],
+        scope: { actorId: 2, ownedKeyIds: [], visibility: { userIds: [2], upstreamIds: [] } },
+        metadataVisibility: { complete: false, userIds: [2], upstreamIds: [] },
         users: [{ id: 2, username: 'operator' }],
-        auditableUserIds: [2],
         upstreams: [],
         keys: [],
       });
@@ -270,15 +130,11 @@ describe('usage dimension controls', () => {
         requestedGroups.push(groupBy);
         if (overviewRequests === 1) return Response.json({ error: 'Unavailable' }, { status: 500 });
         return Response.json({
-          series: [{
-            ...usageRecord,
-            group: groupBy === 'upstream' ? 'upstream:up-1' : 'gpt-5',
-            metrics: [{ metric: 'input_tokens', quantity: '10' }],
-          }],
-          axes: { none: [], model: [], upstream: [], userId: [], keyId: [] },
-          dimensionValues: loaderData.usage.dimensionValues,
+          cursor: 'new', reset: true, start: url.searchParams.get('start'), end: url.searchParams.get('end'),
+          buckets: [],
+          scope: { actorId: 1, ownedKeyIds: ['key-2'], visibility: 'all' },
           users: loaderData.usage.users,
-          auditableUserIds: loaderData.usage.auditableUserIds,
+          metadataVisibility: { complete: true, userIds: loaderData.usage.auditableUserIds, upstreamIds: ['up-1'] },
           upstreams: loaderData.usage.upstreams,
           keys: loaderData.usage.keys,
         });

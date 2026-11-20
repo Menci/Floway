@@ -1,6 +1,7 @@
 import {
   ArrowClockwiseRegular,
   CheckmarkCircleRegular,
+  ChevronDown12Regular,
   EyeOffRegular,
   EyeRegular,
   PlugConnectedRegular,
@@ -15,8 +16,8 @@ import { CopilotQuotaCard } from './copilot-quota-card';
 import { CustomIngressHeaderRules } from './custom-ingress-header-rules';
 import type { UpstreamEditorValues } from './data';
 import { isPersisted, previewRecord } from './data';
-import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, PATH_OVERRIDE_PATHS } from './endpoints';
-import { useMonoLabelClass } from './mono-label';
+import { CHAT_ENDPOINT_KEYS, endpointOptionsFor, PATH_OVERRIDE_OPTIONS } from './endpoints';
+import { KimiCodeUsageCard } from './kimi-code-usage-card';
 import { OAuthCallbackImport } from './oauth-callback-import';
 import { OllamaUsageCard } from './ollama-usage-card';
 import { clearPkce } from './pkce';
@@ -26,7 +27,8 @@ import type { DeviceFlowStart, UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { errorMessage } from '../../lib/error-message';
-import { Dropdown, Input, Textarea } from '../ui/fluent-form-controls';
+import { ChoiceGroup } from '../ui/choice-group';
+import { Input, Textarea } from '../ui/fluent-form-controls';
 import { infoLabelSlot } from '../ui/info-label';
 import { CHECKBOX_LIST_CLASS, TWO_COLUMN_FORM_CLASS } from '../ui/layout';
 import { OutcomeMessageBar } from '../ui/outcome-message-bar';
@@ -42,7 +44,11 @@ const {
   Checkbox,
   Field,
   Link,
-  Option,
+  Menu,
+  MenuItemRadio,
+  MenuList,
+  MenuPopover,
+  MenuTrigger,
   Spinner,
   Switch,
   Tab,
@@ -79,6 +85,7 @@ export function ProviderConfigSection({
   if (record.kind === 'custom') return <CustomConfig modelsFetchReadOnly={modelsFetchReadOnly} onRefreshModels={onRefreshModels} readOnly={readOnly} />;
   if (record.kind === 'azure') return <AzureConfig readOnly={readOnly} />;
   if (record.kind === 'ollama') return <OllamaConfig readOnly={readOnly} record={record} />;
+  if (record.kind === 'kimi-code') return <KimiCodeConfig readOnly={readOnly} record={record} />;
   if (record.kind === 'copilot') return <CopilotConfig onPatch={onPatch} readOnly={readOnly} record={record} />;
   return <OAuthConfig onPatch={onPatch} readOnly={readOnly} record={record} />;
 }
@@ -90,19 +97,19 @@ export function ApiPathsSection({ readOnly, record }: { readOnly: boolean; recor
 
 function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { modelsFetchReadOnly: boolean; onRefreshModels: () => void; readOnly: boolean }) {
   const { t } = useTranslation();
-  const { control, setValue } = useFormContext<ValuesForKind<'custom'>>();
-  const authStyle = useWatch({ control, name: 'config.authStyle' });
+  const { control } = useFormContext<ValuesForKind<'custom'>>();
   const fetchesCatalog = useWatch({ control, name: 'config.modelsFetch.enabled' });
-  const authStyleLabel = (value: typeof authStyle) => {
+  const modelsFetchAuthStyleLabel = (value: Extract<UpstreamRecord, { kind: 'custom' }>['config']['modelsFetch']['authStyle']) => {
     switch (value) {
-    case 'bearer': return 'Bearer';
-    case 'anthropic': return 'Anthropic';
-    case 'none': return t('dashboard.upstreamEditor.auth.none');
+    case 'bearer': return t('upstreams.editor.auth.bearer');
+    case 'x-api-key': return 'x-api-key';
+    case 'x-goog-api-key': return 'x-goog-api-key';
     }
   };
+  const modelsFetchAuthStyle = useWatch({ control, name: 'config.modelsFetch.authStyle' });
   return (
     <div className="grid gap-4">
-      <Field label={t('dashboard.upstreamEditor.fields.baseUrl')}>
+      <Field label={t('upstreams.editor.fields.baseUrl')}>
         <Controller
           control={control}
           name="config.baseUrl"
@@ -120,23 +127,11 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
           )}
         />
       </Field>
-      <Controller control={control} name="config.authStyle" render={({ field }) => (
-        <Field label={t('dashboard.upstreamEditor.fields.authStyle')}>
-          <Dropdown readOnly={readOnly} value={authStyleLabel(field.value)} selectedOptions={[field.value]} onOptionSelect={(_, data) => {
-            field.onChange(data.optionValue);
-            if (data.optionValue === 'none') setValue('config.apiKey', '', { shouldDirty: true });
-          }}>
-            <Option value="bearer">Bearer</Option>
-            <Option value="anthropic">Anthropic</Option>
-            <Option value="none">{t('dashboard.upstreamEditor.auth.none')}</Option>
-          </Dropdown>
-        </Field>
-      )} />
-      {authStyle !== 'none' && <SecretField readOnly={readOnly} />}
+      <SecretField readOnly={readOnly} />
       <Controller control={control} name="config.modelsFetch.enabled" render={({ field }) => (
         <Switch
           checked={field.value}
-          label={t('dashboard.upstreamEditor.fields.fetchModels')}
+          label={t('upstreams.editor.fields.fetchModels')}
           readOnly={modelsFetchReadOnly}
           onChange={(_, data) => {
             field.onChange(data.checked);
@@ -145,8 +140,43 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
         />
       )} />
       {fetchesCatalog && (
-        <Field label={t('dashboard.upstreamEditor.fields.catalogPath')}>
-          <Controller control={control} name="config.modelsFetch.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="/v1/models" readOnly={readOnly} ref={field.ref} value={field.value ?? ''} />} />
+        <Field label={{
+          className: '!w-full !max-w-full',
+          children: <span className="flex w-full min-w-0 items-center justify-between gap-3">
+            <span className="floway-control-label truncate">{t('upstreams.editor.fields.catalogPath')}</span>
+            <Controller control={control} name="config.modelsFetch.authStyle" render={({ field }) => (
+              <Menu
+                // The trigger sits at the right edge of the field's label row,
+                // so the menu opens from that edge rather than the left one.
+                positioning={{ position: 'below', align: 'end' }}
+                checkedValues={{ authStyle: [field.value] }}
+                onCheckedValueChange={(_, data) => {
+                  if (!modelsFetchReadOnly && data.checkedItems[0] !== undefined) field.onChange(data.checkedItems[0]);
+                }}
+              >
+                <MenuTrigger disableButtonEnhancement>
+                  <button
+                    aria-label={t('upstreams.editor.fields.fetchModelsAuthStyle')}
+                    className="winui-focus-rect floway-control-label inline-flex flex-none items-center gap-1.5 border-0 bg-transparent p-0 text-fui-fg1"
+                    disabled={modelsFetchReadOnly}
+                    type="button"
+                  >
+                    <span>{modelsFetchAuthStyleLabel(field.value)}</span>
+                    <ChevronDown12Regular aria-hidden className="block flex-none" />
+                  </button>
+                </MenuTrigger>
+                <MenuPopover>
+                  <MenuList>
+                    <MenuItemRadio name="authStyle" value="bearer">{t('upstreams.editor.auth.bearer')}</MenuItemRadio>
+                    <MenuItemRadio name="authStyle" value="x-api-key">x-api-key</MenuItemRadio>
+                    <MenuItemRadio name="authStyle" value="x-goog-api-key">x-goog-api-key</MenuItemRadio>
+                  </MenuList>
+                </MenuPopover>
+              </Menu>
+            )} />
+          </span>,
+        }}>
+          <Controller control={control} name="config.modelsFetch.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder={modelsFetchAuthStyle === 'x-goog-api-key' ? '/v1beta/models' : '/v1/models'} readOnly={modelsFetchReadOnly} ref={field.ref} value={field.value ?? ''} />} />
         </Field>
       )}
       <CustomIngressHeaderRules readOnly={readOnly} />
@@ -156,30 +186,29 @@ function CustomConfig({ modelsFetchReadOnly, onRefreshModels, readOnly }: { mode
 
 function CustomApiPaths({ readOnly }: { readOnly: boolean }) {
   const { t } = useTranslation();
-  const monoLabel = useMonoLabelClass();
   const { control } = useFormContext<ValuesForKind<'custom'>>();
   return (
     <div className="grid gap-4">
       <EndpointPicker readOnly={readOnly} />
       <EditorSection
-        hint={t('dashboard.upstreamEditor.pathOverridesHint')}
+        hint={t('upstreams.editor.pathOverridesHint')}
         level={3}
-        title={t('dashboard.upstreamEditor.fields.pathOverrides')}
+        title={t('upstreams.editor.fields.pathOverrides')}
       >
         <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
-          {PATH_OVERRIDE_PATHS.map(path => (
+          {PATH_OVERRIDE_OPTIONS.map(({ label, path, defaultPath }) => (
             <Controller
               control={control}
               key={path}
               name={`config.pathOverrides.${path}`}
               render={({ field }) => (
-                <Field className="min-w-0" label={{ children: path, className: monoLabel }}>
+                <Field className="min-w-0" label={{ children: <span className="block truncate" title={label}>{label}</span> }}>
                   <Input
                     className="!w-full font-mono"
                     name={field.name}
                     onBlur={field.onBlur}
                     onChange={(_, data) => field.onChange(data.value)}
-                    placeholder={`/v1${path}`}
+                    placeholder={defaultPath}
                     readOnly={readOnly}
                     ref={field.ref}
                     value={field.value ?? ''}
@@ -198,7 +227,7 @@ function AzureConfig({ readOnly }: { readOnly: boolean }) {
   const { t } = useTranslation();
   const { control } = useFormContext<ValuesForKind<'azure'>>();
   return <div className="grid gap-4">
-    <Field label={t('dashboard.upstreamEditor.fields.endpoint')}>
+    <Field label={t('upstreams.editor.fields.endpoint')}>
       <Controller control={control} name="config.endpoint" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://resource.openai.azure.com/openai/v1" readOnly={readOnly} ref={field.ref} value={field.value} />} />
     </Field>
     <SecretField readOnly={readOnly} />
@@ -231,16 +260,16 @@ function OllamaConfig({ readOnly, record }: { readOnly: boolean; record: Extract
   // is the only answer.
   const keySet = Boolean(config.apiKey);
   return <div className="grid gap-4">
-    <Field label={t('dashboard.upstreamEditor.fields.baseUrl')}>
+    <Field label={t('upstreams.editor.fields.baseUrl')}>
       <Controller control={control} name="config.baseUrl" render={({ field }) => <Input className="font-mono" name={field.name} onBlur={field.onBlur} onChange={(_, data) => field.onChange(data.value)} placeholder="https://ollama.com" readOnly={readOnly} ref={field.ref} value={field.value} />} />
     </Field>
-    <SecretField optional readOnly={readOnly} />
+    <SecretField readOnly={readOnly} />
     <Controller control={control} name="config.cloudUsage" render={({ field }) => (
       <SwitchSetting
         checked={field.value === true}
-        description={t('dashboard.upstreamEditor.ollama.cloudUsageHint')}
+        description={t('upstreams.editor.ollama.cloudUsageHint')}
         disabled={readOnly}
-        label={t('dashboard.upstreamEditor.ollama.cloudUsage')}
+        label={t('upstreams.editor.ollama.cloudUsage')}
         onChange={checked => {
           chosenByOperator.current = true;
           field.onChange(checked);
@@ -251,13 +280,43 @@ function OllamaConfig({ readOnly, record }: { readOnly: boolean; record: Extract
   </div>;
 }
 
-function SecretField({ optional, readOnly }: { optional?: boolean; readOnly: boolean }) {
+function KimiCodeConfig({ readOnly, record }: { readOnly: boolean; record: Extract<UpstreamRecord, { kind: 'kimi-code' }> }) {
   const { t } = useTranslation();
-  const { control } = useFormContext<ValuesForKind<'custom' | 'azure' | 'ollama'>>();
+  const { control } = useFormContext<ValuesForKind<'kimi-code'>>();
+  const values = useWatch<UpstreamEditorValues>() as UpstreamEditorValues;
+  const config = values.config as typeof record.config;
+  const matchesStoredConnection = config.region === record.config.region && config.apiKey === record.config.apiKey;
+  return <div className="grid gap-4">
+    <Controller control={control} name="config.region" render={({ field }) => (
+      <div className="flex items-center justify-between gap-3">
+        <Text>{t('upstreams.editor.kimiCode.region')}</Text>
+        <ChoiceGroup
+          ariaLabel={t('upstreams.editor.kimiCode.region')}
+          items={[
+            { value: 'china', label: t('upstreams.editor.kimiCode.regions.china') },
+            { value: 'overseas', label: t('upstreams.editor.kimiCode.regions.overseas') },
+          ]}
+          onChange={field.onChange}
+          readOnly={readOnly}
+          value={field.value}
+        />
+      </div>
+    )} />
+    <SecretField readOnly={readOnly} />
+    {(readOnly || Boolean(config.apiKey?.trim())) && <KimiCodeUsageCard
+      key={`${config.region}:${config.apiKey}`}
+      readOnly={readOnly}
+      record={readOnly || matchesStoredConnection ? record : { ...record, state: null }}
+      probeRecord={previewRecord(record, values)}
+    />}
+  </div>;
+}
+
+function SecretField({ readOnly }: { readOnly: boolean }) {
+  const { t } = useTranslation();
+  const { control } = useFormContext<ValuesForKind<'custom' | 'azure' | 'ollama' | 'kimi-code'>>();
   const [visible, setVisible] = useState(false);
-  return <Field
-    label={`${t('dashboard.upstreamEditor.fields.apiKey')}${optional ? ` (${t('dashboard.upstreamEditor.optional')})` : ''}`}
-  >
+  return <Field label={t('upstreams.editor.fields.apiKey')}>
     <Controller
       control={control}
       name="config.apiKey"
@@ -272,7 +331,7 @@ function SecretField({ optional, readOnly }: { optional?: boolean; readOnly: boo
           contentAfter={
             <TooltipIconButton
               icon={visible ? <EyeOffRegular /> : <EyeRegular />}
-              label={visible ? t('dashboard.upstreamEditor.actions.hideSecret') : t('dashboard.upstreamEditor.actions.showSecret')}
+              label={visible ? t('upstreams.editor.actions.hideSecret') : t('upstreams.editor.actions.showSecret')}
               onClick={() => setVisible(value => !value)}
             />
           }
@@ -286,19 +345,18 @@ const endpointOptions = endpointOptionsFor(CHAT_ENDPOINT_KEYS);
 
 function EndpointPicker({ readOnly }: { readOnly: boolean }) {
   const { t } = useTranslation();
-  const monoLabel = useMonoLabelClass();
   const { control, getValues, setValue } = useFormContext<UpstreamEditorValues>();
   const config = useWatch({ control, name: 'config' });
   const customConfig = config as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
   const value = customConfig.endpoints;
-  return <EditorSection level={3} title={t('dashboard.upstreamEditor.fields.defaultEndpoints')}>
+  return <EditorSection level={3} title={t('upstreams.editor.fields.defaultEndpoints')}>
     <div className={`grid ${CHECKBOX_LIST_CLASS}`}>
-      {endpointOptions.map(([key, label]) => {
+      {endpointOptions.map(({ key, label }) => {
         const selected = value[key] !== undefined;
         return <Checkbox
           key={key}
           checked={selected}
-          label={{ children: label, className: monoLabel }}
+          label={label}
           readOnly={readOnly}
           onChange={(_, data) => {
             const latestConfig = getValues('config') as Extract<UpstreamRecord, { kind: 'custom' }>['config'];
@@ -313,8 +371,8 @@ function EndpointPicker({ readOnly }: { readOnly: boolean }) {
 
 function ReadyToSaveHint({ kind }: { kind: UpstreamProviderKind }) {
   const { t } = useTranslation();
-  return <OutcomeMessageBar intent="info" title={t('dashboard.upstreamEditor.readyToSave.title')}>
-    {t('dashboard.upstreamEditor.readyToSave.description', { provider: providerLabel(kind) })}
+  return <OutcomeMessageBar intent="info" title={t('upstreams.editor.readyToSave.title')}>
+    {t('upstreams.editor.readyToSave.description', { provider: providerLabel(kind) })}
   </OutcomeMessageBar>;
 }
 
@@ -388,7 +446,7 @@ function CopilotConfig({ onPatch, readOnly, record }: {
   };
 
   return <div className="grid gap-3">
-    <Field label={{ children: infoLabelSlot(t('dashboard.upstreamEditor.copilot.githubHost'), t('dashboard.upstreamEditor.copilot.githubHostHint')) }}>
+    <Field label={{ children: infoLabelSlot(t('upstreams.editor.copilot.githubHost'), t('upstreams.editor.copilot.githubHostHint')) }}>
       <Controller
         control={control}
         name="config.githubHost"
@@ -411,11 +469,11 @@ function CopilotConfig({ onPatch, readOnly, record }: {
         </>
       : <>
           {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
-          {!readOnly && (!flow ? <Button appearance="primary" disabled={githubHostEmpty} disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <PlugConnectedRegular />} onClick={() => void start()}>{t('dashboard.upstreamEditor.copilot.connect')}</Button> : <>
-            <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.copilot.deviceCode')}</Text>
+          {!readOnly && (!flow ? <Button appearance="primary" disabled={githubHostEmpty} disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <PlugConnectedRegular />} onClick={() => void start()}>{t('upstreams.editor.copilot.connect')}</Button> : <>
+            <Text size={200} className="text-fui-fg2">{t('upstreams.editor.copilot.deviceCode')}</Text>
             <code className="mono-display tracking-[0.25em] text-fui-fg1">{flow.user_code}</code>
             <Link href={flow.verification_uri} target="_blank" rel="noopener noreferrer">{flow.verification_uri}</Link>
-            <Spinner className="justify-self-start" label={t('dashboard.upstreamEditor.copilot.waiting')} labelPosition="after" size="tiny" />
+            <Spinner className="justify-self-start" label={t('upstreams.editor.copilot.waiting')} labelPosition="after" size="tiny" />
           </>)}
         </>}
   </div>;
@@ -498,9 +556,9 @@ function OAuthConfig({ onPatch, readOnly, record }: {
     {hasAccount && !readOnly && !isPersisted(record) && <ReadyToSaveHint kind={record.kind} />}
     {hasAccount && !readOnly && <div className="flex flex-wrap items-center gap-2">
       <Button appearance="primary" disabledFocusable={refreshing} icon={refreshing ? <Spinner size="tiny" /> : <ArrowClockwiseRegular />} onClick={() => void refreshCredential()}>
-        {t('dashboard.upstreamEditor.oauth.refresh')}
+        {t('upstreams.editor.oauth.refresh')}
       </Button>
-      <Button onClick={() => setOpen(value => !value)}>{open ? t('common.cancel') : t('dashboard.upstreamEditor.oauth.reimport')}</Button>
+      <Button onClick={() => setOpen(value => !value)}>{open ? t('common.cancel') : t('upstreams.editor.oauth.reimport')}</Button>
     </div>}
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}
     {open && !readOnly && (record.kind === 'chatgpt'
@@ -510,14 +568,14 @@ function OAuthConfig({ onPatch, readOnly, record }: {
           record={{ ...record, kind: 'chatgpt', config: config as Extract<UpstreamRecord, { kind: 'chatgpt' }>['config'], state: values.state as Extract<UpstreamRecord, { kind: 'chatgpt' }>['state'] }}
         />
       : <>
-          <TabList aria-label={t('dashboard.upstreamEditor.oauth.importMethod')} selectedValue={tab} onTabSelect={(_, data) => setTab(String(data.value))}>
+          <TabList aria-label={t('upstreams.editor.oauth.importMethod')} selectedValue={tab} onTabSelect={(_, data) => setTab(String(data.value))}>
             <Tab value="oauth">OAuth</Tab><Tab value="setup">Setup Token</Tab><Tab value="json">credentials.json</Tab>
           </TabList>
           {tab === 'json'
             ? <div className="grid gap-3">
-                <Field label={t('dashboard.upstreamEditor.oauth.credentialJson')}><Textarea className="font-mono" rows={8} value={json} onChange={(_, data) => setJson(data.value)} /></Field>
+                <Field label={t('upstreams.editor.oauth.credentialJson')}><Textarea className="font-mono" rows={8} value={json} onChange={(_, data) => setJson(data.value)} /></Field>
                 <Button appearance="primary" disabledFocusable={busy} icon={busy ? <Spinner size="tiny" /> : <CheckmarkCircleRegular />} onClick={() => void submitJson()}>
-                  {hasAccount ? t('dashboard.upstreamEditor.oauth.reimport') : t('dashboard.upstreamEditor.oauth.import')}
+                  {hasAccount ? t('upstreams.editor.oauth.reimport') : t('upstreams.editor.oauth.import')}
                 </Button>
               </div>
             : <OAuthCallbackImport

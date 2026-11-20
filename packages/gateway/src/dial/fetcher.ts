@@ -1,5 +1,6 @@
 import type { ProxyEntry } from './proxy-catalog.ts';
 import { createReplayableRequest, type ReplayableRequest } from './replayable-request.ts';
+import { runUpstreamTransport } from './transport-error.ts';
 import { DIRECT_CONNECT_ID, DIRECT_FETCH_ID, entryMatchesColo, isDirectFallbackId } from '../repo/proxy-fallback-list.ts';
 import type { Repo } from '../repo/types.ts';
 import type { HttpContentDecoders, HttpRequest } from '@floway-dev/http';
@@ -10,7 +11,10 @@ import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type RunDire
 
 interface CreateFetcherInput {
   repo: Pick<Repo, 'proxyBackoffs'>;
-  upstreamId: string;
+  // Backoff rows belong to a persisted (proxy, upstream) pair. Null marks a
+  // fetcher with no saved policy behind it, such as an edit-form probe, which
+  // neither consults nor records backoff state.
+  upstreamId: string | null;
   fallbackList: ProxyFallbackEntry[];
   proxyById: Map<string, ProxyEntry>;
   // Location tag the request landed in, used to apply each entry's optional
@@ -126,7 +130,7 @@ const runFallbacks = async (
   // keeps the direct-only path — which is what an unset policy resolves to —
   // free of a per-request store round-trip.
   const skip = new Set<string>();
-  if (list.some(id => !isDirectFallbackId(id))) {
+  if (input.upstreamId !== null && list.some(id => !isDirectFallbackId(id))) {
     const active = await input.repo.proxyBackoffs.listForUpstream(input.upstreamId);
     const now = Math.floor(Date.now() / 1000);
     for (const b of active) if (b.expiresAt > now) skip.add(b.proxyId);
@@ -166,21 +170,25 @@ const tryOne = async (
   errors: unknown[],
   hasDirectFetch: boolean,
 ): Promise<Response | null> => {
+  const { upstreamId } = input;
   let directSocketDial: SocketDial | undefined;
   try {
     if (id === DIRECT_FETCH_ID) {
       // Direct egress is the runtime's fetch — it never raises ProxyDialError,
       // so we don't touch the backoff table for this entry.
-      return await input.runDirectFetch(url, request.fetchInit());
+      const init = request.fetchInit();
+      return await runUpstreamTransport(() => input.runDirectFetch(url, init));
     }
     if (id === DIRECT_CONNECT_ID) {
       const prepared = await request.prepared();
-      directSocketDial = input.socketDial();
-      return await input.runDirectConnect(
+      const socketDial = input.socketDial();
+      directSocketDial = socketDial;
+      const options = { socketDial, signal: request.signal, contentDecoders: input.contentDecoders?.() };
+      return await runUpstreamTransport(() => input.runDirectConnect(
         prepared.target,
         prepared.request,
-        { socketDial: directSocketDial, signal: request.signal, contentDecoders: input.contentDecoders?.() },
-      );
+        options,
+      ));
     }
     const config = input.proxyById.get(id);
     if (!config) {
@@ -203,22 +211,24 @@ const tryOne = async (
       signal: request.signal,
     };
     if (config.dialTimeoutMs !== null) options.dialTimeoutMs = config.dialTimeoutMs;
-    const response = await input.runProxied(
+    const response = await runUpstreamTransport(() => input.runProxied(
       config.config,
       prepared.target,
       prepared.request,
       options,
-    );
+    ));
     // A successful dial after a previous failure must clear the backoff so
     // the next failure restarts at n=1 instead of resuming the geometric
     // schedule from where it left off. Mirror the failure-path policy: a
     // transient backoff-store write must not shadow the actual outcome —
     // here that means a bookkeeping rejection cannot discard a healthy
     // upstream Response we already hold.
-    try {
-      await input.repo.proxyBackoffs.recordDialSuccess(id, input.upstreamId);
-    } catch (recordErr) {
-      console.warn(`failed to clear proxy backoff for ${id}/${input.upstreamId}:`, recordErr);
+    if (upstreamId !== null) {
+      try {
+        await input.repo.proxyBackoffs.recordDialSuccess(id, upstreamId);
+      } catch (recordErr) {
+        console.warn(`failed to clear proxy backoff for ${id}/${upstreamId}:`, recordErr);
+      }
     }
     return response;
   } catch (err) {
@@ -244,7 +254,8 @@ const tryOne = async (
         // The Cloudflare socket adapter tags only a rejected socket.opened.
         // Fetch owns the outcome here, including an HTTP error or rejection.
         if (!hasDirectFetch && err.stage === 'tcp-connect' && directSocketDial?.shouldConnectErrorFallbackToFetch?.(err.cause)) {
-          return await input.runDirectFetch(url, request.fetchInit());
+          const init = request.fetchInit();
+          return await runUpstreamTransport(() => input.runDirectFetch(url, init));
         }
         errors.push(err);
         return null;
@@ -258,10 +269,12 @@ const tryOne = async (
       // without cracking the proxy library open. A transient backoff-store
       // failure must not shadow the real dial error — log and swallow so
       // `errors[]` carries the original cause up to the caller.
-      try {
-        await input.repo.proxyBackoffs.recordDialFailure(id, input.upstreamId, `[${err.stage}] ${err.message}`);
-      } catch (recordErr) {
-        console.warn(`failed to persist proxy backoff for ${id}/${input.upstreamId}:`, recordErr);
+      if (upstreamId !== null) {
+        try {
+          await input.repo.proxyBackoffs.recordDialFailure(id, upstreamId, `[${err.stage}] ${err.message}`);
+        } catch (recordErr) {
+          console.warn(`failed to persist proxy backoff for ${id}/${upstreamId}:`, recordErr);
+        }
       }
       return null;
     }

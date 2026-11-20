@@ -10,6 +10,7 @@ import { withExclusiveCachedTokensNormalized } from './normalize-exclusive-cache
 import { withOpenAIResponsesServerToolShim } from './server-tool-shim.ts';
 import { imageGenerationServerTool } from './server-tools/image-generation.ts';
 import { webSearchServerTool } from './server-tools/web-search.ts';
+import { withOpenAIResponsesStandaloneToolOutputShim } from './standalone-tool-output-shim.ts';
 import { withPromptCacheKeyStripped } from './strip-prompt-cache-key.ts';
 import type { OpenAIResponsesInterceptor } from './types.ts';
 import { withVendorDeepSeekOpenAIResponsesNormalize } from './vendor-deepseek-normalize.ts';
@@ -31,6 +32,11 @@ import { withVendorQwenOpenAIResponsesNormalize } from './vendor-qwen-normalize.
 //     translators do not know the item) or `openai-responses-agent-message-shim`
 //     is enabled. Runs before every other entry so none of them, nor the
 //     translation performed by the terminal dispatch, sees the item.
+//   - withOpenAIResponsesStandaloneToolOutputShim: lowers `function_call_output`
+//     items without `call_id` to `<external_{name}>` user messages when the
+//     target is not OpenAI Responses (a translated tool result must answer a
+//     call) or `openai-responses-standalone-tool-output-shim` is enabled. Runs
+//     before the remaining entries for the same reason as the agent-message shim.
 //   - withOpenAIResponsesCompactShim: wraps the remaining shims so the action pivot
 //     ('compact' → 'generate' for the inner summarization turn) is visible
 //     to every downstream interceptor + the provider terminal. Also
@@ -68,6 +74,7 @@ import { withVendorQwenOpenAIResponsesNormalize } from './vendor-qwen-normalize.
 export const openaiResponsesInterceptors: readonly OpenAIResponsesInterceptor[] = [
   answerWebSocketWarmup,
   withOpenAIResponsesAgentMessageShim,
+  withOpenAIResponsesStandaloneToolOutputShim,
   withOpenAIResponsesCompactShim,
   withOpenAIResponsesCollaborationShim,
   withOpenAIResponsesServerToolShim([

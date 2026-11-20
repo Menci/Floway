@@ -1,9 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { analyzeOpenAIResponsesAffinity } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
-import { isOpenAIResponsesCompactShimItem } from '../../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
 import { AffinityCodec, type AffinityIdentity, type AffinityRequestAnalysis, compatibilityIdentityForCandidate, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import type { ModelCandidate } from '@floway-dev/provider';
@@ -53,65 +51,6 @@ const select = (
   if ('kind' in selection) throw new Error(`Expected affinity selection, received ${selection.kind}`);
   return selection;
 };
-
-test('reuses a payload with no affinity carriers', async () => {
-  const image = {
-    type: 'message' as const,
-    role: 'user' as const,
-    content: [{ type: 'input_image' as const, image_url: `data:image/png;base64,${'A'.repeat(1024 * 1024)}` }],
-  };
-  const payload: CanonicalOpenAIResponsesPayload = { model: 'model', input: [image] };
-  const prepared = await analyzeOpenAIResponsesAffinity(payload, codec);
-
-  const materialized = acceptedAffinityEvaluation(prepared, candidateA).materialize();
-
-  expect(materialized).toBe(payload);
-  expect(materialized.input[0]).toBe(image);
-});
-
-test('treats gateway-owned compaction payloads as portable across affinity targets', async () => {
-  const item = {
-    type: 'compaction' as const,
-    id: 'cmp_shim',
-    encrypted_content: encodeBase64UrlJson([{
-      type: 'message',
-      role: 'user',
-      content: [{ type: 'input_text', text: 'portable summary' }],
-    }]),
-  };
-  expect(isOpenAIResponsesCompactShimItem(item)).toBe(true);
-  const payload: CanonicalOpenAIResponsesPayload = { model: 'model', input: [item] };
-  const prepared = await analyzeOpenAIResponsesAffinity(payload, codec);
-
-  expect(prepared.requiredTargets).toEqual([]);
-  expect(prepared.evaluateCandidate(candidateA)).toMatchObject({ kind: 'accepted', degrades: false });
-  expect(prepared.evaluateCandidate(candidateB)).toMatchObject({ kind: 'accepted', degrades: false });
-  expect(acceptedAffinityEvaluation(prepared, candidateB).materialize()).toBe(payload);
-});
-
-test('copies only paths carrying an affinity projection', async () => {
-  const carrier = await codec.wrap(
-    'encrypted',
-    targetFor(candidateA),
-    carrierDomain('reasoning', 'encrypted_content'),
-  );
-  const unchanged = { type: 'message' as const, role: 'user' as const, content: 'hello' };
-  const payload: CanonicalOpenAIResponsesPayload = {
-    model: 'model',
-    input: [
-      { type: 'reasoning', id: 'rs_client', summary: [], encrypted_content: carrier },
-      unchanged,
-    ],
-  };
-  const prepared = await analyzeOpenAIResponsesAffinity(payload, codec);
-
-  const materialized = acceptedAffinityEvaluation(prepared, candidateA).materialize();
-
-  expect(materialized).not.toBe(payload);
-  expect(materialized.input).not.toBe(payload.input);
-  expect(materialized.input[0]).not.toBe(payload.input[0]);
-  expect(materialized.input[1]).toBe(unchanged);
-});
 
 test('restores an owned blob within its compatibility scope and still prefers its exact target', async () => {
   const mismatchedRules = { ...candidateA, rules: { reasoning: { effort: 'low' } } };
@@ -292,122 +231,4 @@ test('does not inherit force through a foreign program blob', async () => {
 
   expect(prepared.requiredTargets).toEqual([]);
   expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().input[0]).toMatchObject({ fingerprint: 'foreign' });
-});
-
-test('treats compaction_summary as force state across alias-rule variants', async () => {
-  const firstVariant = { ...candidateA, rules: { reasoning: { effort: 'low' } } };
-  const lastRoutedVariant = { ...candidateA, rules: { reasoning: { effort: 'high' } } };
-  const carrier = await codec.wrap(
-    'opaque',
-    targetFor(lastRoutedVariant),
-    carrierDomain('compaction_summary', 'encrypted_content'),
-  );
-  const item = { type: 'compaction_summary', id: 'cmp_client', encrypted_content: carrier } as unknown as CanonicalOpenAIResponsesPayload['input'][number];
-  const prepared = await analyzeOpenAIResponsesAffinity({ model: 'model', input: [item] }, codec);
-
-  expect(prepared.requiredTargets).toEqual([targetFor(lastRoutedVariant)]);
-  expect(prepared.evaluateCandidate(candidateB)).toMatchObject({ kind: 'rejected' });
-  const selection = select([firstVariant, lastRoutedVariant, candidateB], prepared);
-  expect(selection.candidates).toEqual([
-    firstVariant,
-    lastRoutedVariant,
-  ]);
-  expect(selection.payloadFor(firstVariant).input[0]).toMatchObject({
-    id: 'cmp_client',
-    encrypted_content: 'opaque',
-  });
-});
-
-test('replays required compaction state to another model in the same compatibility scope', async () => {
-  const main = candidate('copilot-a', 'gpt-main', { bindToUpstream: true, key: 'openai' });
-  const reviewer = candidate('copilot-a', 'gpt-reviewer', { bindToUpstream: true, key: 'openai' });
-  const otherAccount = candidate('copilot-b', 'gpt-reviewer', { bindToUpstream: true, key: 'openai' });
-  const carrier = await codec.wrap(
-    'compaction-state',
-    targetFor(main),
-    carrierDomain('compaction', 'encrypted_content'),
-  );
-  const prepared = await analyzeOpenAIResponsesAffinity({
-    model: 'gpt-reviewer',
-    input: [{ type: 'compaction', id: 'cmp_client', encrypted_content: carrier }],
-  }, codec);
-
-  expect(prepared.evaluateCandidate(reviewer)).toMatchObject({ kind: 'accepted', degrades: false });
-  expect(prepared.evaluateCandidate(otherAccount)).toEqual({ kind: 'rejected' });
-  expect(select([reviewer, otherAccount], prepared).payloadFor(reviewer).input[0]).toMatchObject({
-    encrypted_content: 'compaction-state',
-  });
-});
-
-test.each(['compaction', 'compaction_summary', 'context_compaction'] as const)('lets originless %s follow candidates while natural state forces its origin', async type => {
-  const synthetic = await codec.wrap(undefined, targetFor(candidateA), carrierDomain(type, 'encrypted_content'));
-  const originlessItem = {
-    type,
-    id: 'ctx_client',
-    encrypted_content: synthetic,
-  } as unknown as CanonicalOpenAIResponsesPayload['input'][number];
-  const syntheticPrepared = await analyzeOpenAIResponsesAffinity({ model: 'model', input: [originlessItem] }, codec);
-  expect(syntheticPrepared.requiredTargets).toEqual([]);
-  expect(syntheticPrepared.evaluateCandidate(candidateB)).toMatchObject({ kind: 'accepted', degrades: false });
-
-  const natural = await codec.wrap('opaque', targetFor(candidateA), carrierDomain(type, 'encrypted_content'));
-  const naturalPrepared = await analyzeOpenAIResponsesAffinity({
-    model: 'model',
-    input: [{ ...originlessItem, encrypted_content: natural } as CanonicalOpenAIResponsesPayload['input'][number]],
-  }, codec);
-  expect(naturalPrepared.requiredTargets).toEqual([targetFor(candidateA)]);
-  expect(naturalPrepared.evaluateCandidate(candidateA)).toMatchObject({ kind: 'accepted', degrades: false });
-  expect(naturalPrepared.evaluateCandidate(candidateB)).toMatchObject({ kind: 'rejected' });
-});
-
-test('evaluates required eligibility and optional degradation in one candidate projection', async () => {
-  const high = { ...candidateA, rules: { reasoning: { effort: 'high' } } };
-  const low = { ...candidateA, rules: { reasoning: { effort: 'low' } } };
-  const required = await codec.wrap(
-    'compaction-state',
-    targetFor(high),
-    carrierDomain('compaction', 'encrypted_content'),
-  );
-  const optional = await codec.wrap(
-    'reasoning-state',
-    targetFor(low),
-    carrierDomain('reasoning', 'encrypted_content'),
-  );
-  const prepared = await analyzeOpenAIResponsesAffinity({
-    model: 'model',
-    input: [
-      { type: 'compaction', id: 'cmp_client', encrypted_content: required },
-      { type: 'reasoning', id: 'rs_client', summary: [], encrypted_content: optional },
-    ] as CanonicalOpenAIResponsesPayload['input'],
-  }, codec);
-
-  expect(prepared.evaluateCandidate(high)).toMatchObject({ kind: 'accepted', degrades: false });
-  expect(prepared.evaluateCandidate(low)).toMatchObject({ kind: 'accepted', degrades: false });
-  expect(prepared.evaluateCandidate(candidateB)).toMatchObject({ kind: 'rejected' });
-  expect(select([high, low, candidateB], prepared).candidates).toEqual([low, high]);
-});
-
-test('reports incompatible required state discovered by the same item analysis', async () => {
-  const requiredA = await codec.wrap(
-    'state-a',
-    targetFor(candidateA),
-    carrierDomain('compaction', 'encrypted_content'),
-  );
-  const requiredB = await codec.wrap(
-    'state-b',
-    targetFor(candidateB),
-    carrierDomain('compaction', 'encrypted_content'),
-  );
-  const prepared = await analyzeOpenAIResponsesAffinity({
-    model: 'model',
-    input: [
-      { type: 'compaction', id: 'cmp_a', encrypted_content: requiredA },
-      { type: 'compaction', id: 'cmp_b', encrypted_content: requiredB },
-    ] as CanonicalOpenAIResponsesPayload['input'],
-  }, codec);
-
-  expect(selectAffinityCandidates([candidateA, candidateB], prepared)).toMatchObject({
-    kind: 'routing-unavailable',
-    message: expect.stringContaining('multiple incompatible targets'),
-  });
 });

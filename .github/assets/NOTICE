@@ -1,0 +1,22 @@
+Sponsor artwork for the README
+==============================
+
+sponsor-memoh-light.svg
+sponsor-memoh-dark.svg
+
+The Memoh mark is from felinics/landing at commit
+206108fde8647f0493fb6f5c98073f909606ae91 (MIT):
+
+- https://github.com/felinics/landing/blob/206108fde8647f0493fb6f5c98073f909606ae91/demo-app/apps/web/public/logo.svg
+
+The tagline, wordmark, and "by Felinic" lockup are set in Geist and Source
+Serif 4. Geist comes from vercel/geist-font v1.9.2 and Source Serif 4 from
+Google Fonts; both are licensed under the SIL Open Font License 1.1. The
+outlines were converted to paths, so neither banner needs a host font.
+
+The Felinic mark is traced from the organisation avatar at
+https://github.com/felinics and reduced to a single tone: at the 24px the
+lockup uses, the avatar's two-tone split blurs the lobes together.
+
+Both files share one geometry: only the palette and the glow opacity differ,
+so the hand-tuned layout stays in sync between themes.

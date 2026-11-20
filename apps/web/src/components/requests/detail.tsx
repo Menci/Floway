@@ -43,7 +43,7 @@ function HeaderTable({ headers, revealable }: { headers: Array<[string, string]>
         {isSensitiveHeader(name) && !revealed.has(index) ? value === REDACTED_HEADER_VALUE ? value : redactHeaderValue(value) : value}
         {isSensitiveHeader(name) && value !== REDACTED_HEADER_VALUE && revealable && <TooltipIconButton
           icon={revealed.has(index) ? <EyeOffRegular /> : <EyeRegular />}
-          label={revealed.has(index) ? t('dashboard.requests.hideValue') : t('dashboard.requests.revealValue')}
+          label={revealed.has(index) ? t('requests.hideValue') : t('requests.revealValue')}
           onClick={() => setRevealed(current => { const next = new Set(current); if (next.has(index)) next.delete(index); else next.add(index); return next; })}
         />}
       </td>
@@ -63,7 +63,7 @@ export function RequestDetailPanel({ collected, upstreamCollected, error, record
   const incoming = retainLastRecord && recordId === null ? shown : { collected, upstreamCollected, error, record, recordId };
   if (shown.record !== incoming.record || shown.error !== incoming.error || shown.recordId !== incoming.recordId) setShown(incoming);
   const { t } = useTranslation();
-  if (!shown.recordId) return <EmptyStateLine className="p-4">{t('dashboard.requests.selectPrompt')}</EmptyStateLine>;
+  if (!shown.recordId) return <EmptyStateLine className="p-4">{t('requests.selectPrompt')}</EmptyStateLine>;
   if (shown.error) return <OutcomeMessageBar className="!m-4">{shown.error}</OutcomeMessageBar>;
   if (!shown.record) return null;
   return <RecordDetail key={shown.record.meta.id} record={shown.record} collected={shown.collected} upstreamCollected={shown.upstreamCollected} />;
@@ -100,17 +100,17 @@ function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRe
   }, [body, headers, raw, result, view]);
   const diagnostics = [...new Set([
     errorLabel(record.meta.error), exchange?.error, raw?.error, result?.error,
-    raw && !raw.complete ? t('dashboard.requests.partialCapture') : null,
-    result?.truncated && !result.error ? t('dashboard.requests.truncatedStream') : null,
-    displayed.decodeError ? t('dashboard.requests.decodeError', { error: displayed.decodeError }) : null,
+    raw && !raw.complete ? t('requests.partialCapture') : null,
+    result?.truncated && !result.error ? t('requests.truncatedStream') : null,
+    displayed.decodeError ? t('requests.decodeError', { error: displayed.decodeError }) : null,
   ].filter((value): value is string => Boolean(value)))];
   const labels: Record<Source, string> = {
-    request: t('dashboard.requests.clientRequest'), upstreamRequest: t('dashboard.requests.upstreamRequest'),
-    upstreamResponse: t('dashboard.requests.upstreamResponse'), response: t('dashboard.requests.clientResponse'),
+    request: t('requests.clientRequest'), upstreamRequest: t('requests.upstreamRequest'),
+    upstreamResponse: t('requests.upstreamResponse'), response: t('requests.clientResponse'),
   };
   const viewLabels: Record<string, string> = {
-    collected: t(body.type === 'stream' ? 'dashboard.requests.collected' : 'dashboard.requests.formattedBody'), events: t('dashboard.requests.events', { count: body.type === 'stream' ? body.events.length : 0 }),
-    raw: raw?.body.encoding === 'base64' ? t('dashboard.requests.base64') : t('dashboard.requests.raw'),
+    collected: t(body.type === 'stream' ? 'requests.collected' : 'requests.formattedBody'), events: t('requests.events', { count: body.type === 'stream' ? body.events.length : 0 }),
+    raw: raw?.body.encoding === 'base64' ? t('requests.base64') : t('requests.raw'),
   };
   const chooseSource = (value: string | undefined) => {
     if (value === undefined) return;
@@ -118,52 +118,52 @@ function RecordDetail({ record, collected, upstreamCollected }: { record: DumpRe
     setView('collected');
   };
   const toolbar = <div className="flex items-center gap-2 min-w-0">
-    {upstream && exchanges.length > 1 && <Dropdown size="small" aria-label={t('dashboard.requests.upstreamCall')} selectedOptions={[String(index)]} value={`${index + 1} / ${exchanges.length}`} onOptionSelect={(_, data) => { setIndex(Number(data.optionValue)); setView('collected'); }}>
-      {exchanges.map((item, i) => <Option key={i} value={String(i)} text={String(i + 1)}>{t('dashboard.requests.callNumber', { number: String(i + 1), count: String(exchanges.length) })}. {item.request.method} {item.response?.status ?? '—'}</Option>)}
+    {upstream && exchanges.length > 1 && <Dropdown size="small" aria-label={t('requests.upstreamCall')} selectedOptions={[String(index)]} value={`${index + 1} / ${exchanges.length}`} onOptionSelect={(_, data) => { setIndex(Number(data.optionValue)); setView('collected'); }}>
+      {exchanges.map((item, i) => <Option key={i} value={String(i)} text={String(i + 1)}>{t('requests.callNumber', { number: String(i + 1), count: String(exchanges.length) })}. {item.request.method} {item.response?.status ?? '—'}</Option>)}
     </Dropdown>}
-    {(body.type === 'stream' || raw) ? <Dropdown size="small" aria-label={t('dashboard.requests.streamView')} selectedOptions={[view]} value={viewLabels[view]} onOptionSelect={(_, data) => { if (data.optionValue) setView(data.optionValue); }}>
+    {(body.type === 'stream' || raw) ? <Dropdown size="small" aria-label={t('requests.streamView')} selectedOptions={[view]} value={viewLabels[view]} onOptionSelect={(_, data) => { if (data.optionValue) setView(data.optionValue); }}>
       <Option value="collected">{viewLabels.collected}</Option>
       {body.type === 'stream' && <Option value="events">{viewLabels.events}</Option>}
       {raw && <Option value="raw">{viewLabels.raw}</Option>}
-    </Dropdown> : <Text size={200} className="text-fui-fg3">{t(request ? 'dashboard.requests.requestBody' : 'dashboard.requests.responseBody')}</Text>}
+    </Dropdown> : <Text size={200} className="text-fui-fg3">{t(request ? 'requests.requestBody' : 'requests.responseBody')}</Text>}
   </div>;
   return <div className="h-full min-h-0 flex flex-col">
     <div className={`${PANEL_BAND_CLASS} flex items-center gap-2 min-w-0 shrink-0 border-b border-[var(--winui-divider-stroke-default)]`}>
-      <Dropdown size="small" className="flex-1" aria-label={t('dashboard.requests.detailTitle')} selectedOptions={[source]} value={labels[source]} onOptionSelect={(_, data) => chooseSource(data.optionValue)}>
+      <Dropdown size="small" className="flex-1" aria-label={t('requests.detailTitle')} selectedOptions={[source]} value={labels[source]} onOptionSelect={(_, data) => chooseSource(data.optionValue)}>
         {Object.entries(labels).map(([value, label]) => <Option key={value} value={value}>{label}</Option>)}
       </Dropdown>
-      <HttpStatusBadge severity={requestSeverity(status, record.meta.error)}>{status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>
-      <Tooltip content={t('dashboard.requests.duration', { value: formatDuration(record.meta.durationMs, locale) })} relationship="description">
+      <HttpStatusBadge severity={requestSeverity(status, record.meta.error)}>{status ?? t('requests.noStatus')}</HttpStatusBadge>
+      <Tooltip content={t('requests.duration', { value: formatDuration(record.meta.durationMs, locale) })} relationship="description">
         <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
           <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.meta.durationMs, locale)}</Text>
         </span>
       </Tooltip>
       {record.meta.ttftMs != null && (
-        <Tooltip content={t('dashboard.requests.ttft', { value: formatDuration(record.meta.ttftMs, locale) })} relationship="description">
+        <Tooltip content={t('requests.ttft', { value: formatDuration(record.meta.ttftMs, locale) })} relationship="description">
           <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
             <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.meta.ttftMs, locale)}</Text>
           </span>
         </Tooltip>
       )}
       <Button size="small" appearance="subtle" icon={diagnostics.length ? <WarningRegular /> : <InfoRegular />} onClick={() => setDetailsOpen(true)}>
-        {diagnostics.length ? t('dashboard.requests.diagnostics', { count: String(diagnostics.length) }) : t('dashboard.requests.metadata')}
+        {diagnostics.length ? t('requests.diagnostics', { count: String(diagnostics.length) }) : t('requests.metadata')}
       </Button>
-      <TooltipIconButton icon={<ArrowDownloadRegular />} label={t('dashboard.requests.exportRecord')} onClick={() => downloadRecords([record])} />
+      <TooltipIconButton icon={<ArrowDownloadRegular />} label={t('requests.exportRecord')} onClick={() => downloadRecords([record])} />
     </div>
     <div className="flex-1 min-h-0">
       {view === 'events' && body.type === 'stream'
         ? <EventList key={`${source}-${index}`} events={body.events} kind={kind} toolbarStart={toolbar} />
         : <Suspense fallback={<Spinner />}><BodyEditor
             text={displayed.text} json={displayed.isJson} label={labels[source]}
-            emptyText={upstream && !exchange && !legacy ? t('dashboard.requests.noUpstreamCapture') : t('dashboard.requests.emptyBody')}
+            emptyText={upstream && !exchange && !legacy ? t('requests.noUpstreamCapture') : t('requests.emptyBody')}
             toolbarStart={toolbar}
           /></Suspense>}
     </div>
     <DialogShell width="editor" open={detailsOpen} onOpenChange={(_, data) => setDetailsOpen(data.open)} title={<DialogTitle>{labels[source]}</DialogTitle>} actions={<DialogActions><Button onClick={() => setDetailsOpen(false)}>{t('common.dismiss')}</Button></DialogActions>}>
       <div className="flex items-center gap-2"><HttpMethodBadge method={method ?? record.request.method} /><Text className="font-mono break-all">{endpoint ?? record.request.path}</Text><CopyButton text={endpoint ?? record.request.path} /></div>
       {diagnostics.map((message, i) => <OutcomeMessageBar key={i} intent="warning">{message}</OutcomeMessageBar>)}
-      {upstream && !exchange && !legacy && <EmptyStateLine>{t('dashboard.requests.noUpstreamCapture')}</EmptyStateLine>}
-      <div className="flex items-center justify-between gap-2"><Text weight="semibold">{t('dashboard.requests.headers', { count: String(headers.length) })}</Text><CopyButton text={redactHeaderPairs(headers).map(([name, value]) => `${name}: ${value}`).join('\n')} /></div>
+      {upstream && !exchange && !legacy && <EmptyStateLine>{t('requests.noUpstreamCapture')}</EmptyStateLine>}
+      <div className="flex items-center justify-between gap-2"><Text weight="semibold">{t('requests.headers', { count: String(headers.length) })}</Text><CopyButton text={redactHeaderPairs(headers).map(([name, value]) => `${name}: ${value}`).join('\n')} /></div>
       <HeaderTable key={`${source}-${index}`} headers={headers} revealable={!upstream} />
     </DialogShell>
   </div>;

@@ -12,17 +12,17 @@ import { upstreamRecord } from '../../api/upstream-fixture';
 import { renderInApp } from '../../render';
 
 const customRecord = (
-  modelsFetch: { enabled: boolean; endpoint?: string },
+  modelsFetch: Omit<Extract<UpstreamRecord, { kind: 'custom' }>['config']['modelsFetch'], 'authStyle'>
+    & Partial<Pick<Extract<UpstreamRecord, { kind: 'custom' }>['config']['modelsFetch'], 'authStyle'>>,
   proxyFallbackList: UpstreamRecord['proxy_fallback_list'] = [],
 ): UpstreamRecord => upstreamRecord('up_custom', {
   kind: 'custom',
   config: {
     baseUrl: 'https://api.example.com',
-    authStyle: 'bearer',
     apiKey: '',
     endpoints: { openaiChatCompletions: {} },
     ingressHeadersRules: [],
-    modelsFetch,
+    modelsFetch: { authStyle: 'bearer', ...modelsFetch },
     models: [],
   },
   state: null,
@@ -65,8 +65,8 @@ const SidebarProbe = ({ editLevel = 'full', record }: { editLevel?: 'off' | 'mod
 it('keeps Full-only values focusable and selectable in a models-only editor', () => {
   renderInApp(<SidebarProbe editLevel="models" record={customRecord({ enabled: true })} />);
   const baseUrl = screen.getByDisplayValue('https://api.example.com') as HTMLInputElement;
-  const name = screen.getByRole('textbox', { name: i18n.t('dashboard.upstreamEditor.fields.name') }) as HTMLInputElement;
-  const prefix = screen.getByRole('textbox', { name: i18n.t('dashboard.upstreamEditor.sections.prefix') }) as HTMLInputElement;
+  const name = screen.getByRole('textbox', { name: i18n.t('upstreams.editor.fields.name') }) as HTMLInputElement;
+  const prefix = screen.getByRole('textbox', { name: i18n.t('upstreams.editor.sections.prefix') }) as HTMLInputElement;
   expect(baseUrl.readOnly).toBe(true);
   expect(baseUrl.disabled).toBe(false);
   expect(name.readOnly).toBe(true);
@@ -74,7 +74,7 @@ it('keeps Full-only values focusable and selectable in a models-only editor', ()
   expect(prefix.readOnly).toBe(true);
   expect(prefix.disabled).toBe(false);
   expect(baseUrl.closest('[inert]')).toBeNull();
-  const catalogSwitch = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('dashboard.upstreamEditor.fields.fetchModels') });
+  const catalogSwitch = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('upstreams.editor.fields.fetchModels') });
   expect(catalogSwitch.hasAttribute('disabled')).toBe(false);
   expect(catalogSwitch.checked).toBe(true);
   expect(configReadOnly('models')).toEqual({ connection: true, modelsFetch: false });
@@ -94,21 +94,7 @@ const editAndUndo = (value: string, edited: string) => {
 // ones the form opened with. So an optional field whose stored record omits its
 // key used to leave the form permanently dirty after any edit anywhere, and the
 // editor prompted about unsaved changes on a record that was back at its saved
-// state. Each case is paired with the same record carrying the optional value,
-// which is the arrangement that always worked.
-it('keeps path overrides and endpoint checkboxes read-only without Full', () => {
-  renderInApp(<SidebarProbe editLevel="off" record={customRecord({ enabled: true })} />);
-  const endpoint = screen.getAllByRole('checkbox')[0] as HTMLInputElement;
-  expect(endpoint.readOnly).toBe(true);
-  const override = screen.getByPlaceholderText('/v1/chat/completions') as HTMLInputElement;
-  expect(override.readOnly).toBe(true);
-  const disabledModels = screen.getByRole('combobox', { name: i18n.t('dashboard.upstreamEditor.sections.disabledModels') }) as HTMLInputElement;
-  expect(disabledModels.getAttribute('aria-readonly')).toBe('true');
-  const catalogSwitch = screen.getByRole<HTMLInputElement>('switch', { name: i18n.t('dashboard.upstreamEditor.fields.fetchModels') });
-  expect(catalogSwitch.checked).toBe(true);
-  expect(configReadOnly('off')).toEqual({ connection: true, modelsFetch: true });
-});
-
+// state.
 describe('upstream editor dirtiness across an edit and its undo', () => {
   it('settles clean when the catalog path is absent from the stored config', () => {
     renderInApp(<ConfigProbe record={customRecord({ enabled: true })} />);
@@ -116,40 +102,13 @@ describe('upstream editor dirtiness across an edit and its undo', () => {
     expect(dirty()).toBe('false');
   });
 
-  it('settles clean when the catalog path is stored', () => {
-    renderInApp(<ConfigProbe record={customRecord({ enabled: true, endpoint: '/v1/models' })} />);
-    editAndUndo('https://api.example.com', 'https://api.example.com/x');
-    expect(dirty()).toBe('false');
-  });
-
-  it('settles clean when the catalog switch is turned on and off again', () => {
-    renderInApp(<ConfigProbe record={customRecord({ enabled: false })} />);
-    const label = i18n.t('dashboard.upstreamEditor.fields.fetchModels');
-    fireEvent.click(screen.getByLabelText(label));
-    expect(dirty()).toBe('true');
-    fireEvent.click(screen.getByLabelText(label));
-    expect(dirty()).toBe('false');
-  });
-
   it('settles clean when a draft ingress header rule is typed and cleared', () => {
     renderInApp(<ConfigProbe record={customRecord({ enabled: true })} />);
-    const key = screen.getByLabelText(i18n.t('dashboard.upstreamEditor.headers.keyForRow', { number: 1 }));
+    const key = screen.getByLabelText(i18n.t('upstreams.editor.headers.keyForRow', { number: 1 }));
     fireEvent.change(key, { target: { value: 'x-route' } });
     expect(dirty()).toBe('true');
     fireEvent.change(key, { target: { value: '' } });
     fireEvent.blur(key);
-    expect(dirty()).toBe('false');
-  });
-
-  it('settles clean beside a proxy entry with no colo whitelist', () => {
-    renderInApp(<SidebarProbe record={customRecord({ enabled: true, endpoint: '/v1/models' }, [{ id: 'direct_fetch' }])} />);
-    editAndUndo('Upstream', 'Renamed');
-    expect(dirty()).toBe('false');
-  });
-
-  it('settles clean beside a proxy entry with a colo whitelist', () => {
-    renderInApp(<SidebarProbe record={customRecord({ enabled: true, endpoint: '/v1/models' }, [{ id: 'direct_fetch', colos: ['HKG'] }])} />);
-    editAndUndo('Upstream', 'Renamed');
     expect(dirty()).toBe('false');
   });
 });

@@ -64,13 +64,13 @@ export function UpstreamConfigSidebar({
   const usageRefreshDisabled = record.kind === 'claude-code'
     ? !(state as Extract<UpstreamRecord, { kind: 'claude-code' }>['state']).accounts.some(account => account.tokenKind === 'oauth')
     : record.kind === 'ollama' && (config as Extract<UpstreamRecord, { kind: 'ollama' }>['config']).cloudUsage !== true;
-  const usageRefreshInfo = [t('dashboard.upstreamEditor.usageRefresh.description'),
-    record.kind === 'claude-code' ? t('dashboard.upstreamEditor.usageRefresh.claudeCodeRequirement') : record.kind === 'ollama' ? t('dashboard.upstreamEditor.usageRefresh.ollamaRequirement') : ''].filter(Boolean).join(' ');
+  const usageRefreshInfo = [t('upstreams.editor.usageRefresh.description'),
+    record.kind === 'claude-code' ? t('upstreams.editor.usageRefresh.claudeCodeRequirement') : record.kind === 'ollama' ? t('upstreams.editor.usageRefresh.ollamaRequirement') : ''].filter(Boolean).join(' ');
   return <ScrollArea axes="vertical" className="h-full min-h-0 max-[1050px]:h-auto" noTabIndex viewportClassName="scroll-py-1">
     <div className={PANEL_INSET_CLASS}>
       <aside className="grid gap-7">
         <div className="contents">
-          <EditorSection title={t('dashboard.upstreamEditor.fields.name')}>
+          <EditorSection title={t('upstreams.editor.fields.name')}>
             <Controller
               control={control}
               name="name"
@@ -80,7 +80,7 @@ export function UpstreamConfigSidebar({
                   validationState={errors.name ? 'error' : undefined}
                 >
                   <Input
-                    aria-label={t('dashboard.upstreamEditor.fields.name')}
+                    aria-label={t('upstreams.editor.fields.name')}
                     name={field.name}
                     onBlur={field.onBlur}
                     onChange={(_, data) => field.onChange(data.value)}
@@ -95,17 +95,17 @@ export function UpstreamConfigSidebar({
           </EditorSection>
           <EditorSection
             inline
-            title={t('dashboard.upstreamEditor.sections.hue')}
-            description={t('dashboard.upstreamEditor.hue.description')}
+            title={t('upstreams.editor.sections.hue')}
+            description={t('upstreams.editor.hue.description')}
           >
             <UpstreamHueEditor kind={record.kind} readOnly={immutable} />
           </EditorSection>
-          <EditorSection title={t('dashboard.upstreamEditor.sections.proxy')} description={t('dashboard.upstreamEditor.proxy.description')}>
+          <EditorSection title={t('upstreams.editor.sections.proxy')} description={t('upstreams.editor.proxy.description')}>
             <ProxyFallbackEditor proxies={proxies} readOnly={immutable} runtime={runtime} />
           </EditorSection>
           <EditorSection
             error={errors.config?.message ? t(errors.config.message) : undefined}
-            title={t('dashboard.upstreamEditor.sections.connection')}
+            title={t('upstreams.editor.sections.connection')}
           >
             <ProviderConfigSection
               modelsFetchReadOnly={readOnly.modelsFetch}
@@ -115,12 +115,12 @@ export function UpstreamConfigSidebar({
               onRefreshModels={onRefreshModels}
             />
           </EditorSection>
-          {(record.kind === 'copilot' || record.kind === 'chatgpt' || record.kind === 'claude-code' || record.kind === 'ollama') && <EditorSection
-            title={t('dashboard.upstreamEditor.usageRefresh.title')}
+          {(record.kind === 'copilot' || record.kind === 'chatgpt' || record.kind === 'claude-code' || record.kind === 'ollama' || record.kind === 'kimi-code') && <EditorSection
+            title={t('upstreams.editor.usageRefresh.title')}
           >
             <Controller control={control} name="usageRefreshIntervalMinutes" render={({ field }) => (
               <Field
-                label={{ children: infoLabelSlot(t('dashboard.upstreamEditor.usageRefresh.interval'), usageRefreshInfo) }}
+                label={{ children: infoLabelSlot(t('upstreams.editor.usageRefresh.interval'), usageRefreshInfo) }}
                 validationMessage={errors.usageRefreshIntervalMinutes?.message ? t(errors.usageRefreshIntervalMinutes.message) : undefined}
                 validationState={errors.usageRefreshIntervalMinutes ? 'error' : undefined}
               >
@@ -141,18 +141,18 @@ export function UpstreamConfigSidebar({
             )} />
           </EditorSection>}
           {record.kind === 'custom' && (
-            <EditorSection title={t('dashboard.upstreamEditor.sections.apiPaths')}>
+            <EditorSection title={t('upstreams.editor.sections.apiPaths')}>
               <ApiPathsSection readOnly={immutable} record={record} />
             </EditorSection>
           )}
         </div>
         <EditorSection
-          title={t('dashboard.upstreamEditor.sections.prefix')}
-          description={t('dashboard.upstreamEditor.prefixDescription')}
+          title={t('upstreams.editor.sections.prefix')}
+          description={t('upstreams.editor.prefixDescription')}
         >
           <ModelPrefixEditor readOnly={immutable} />
         </EditorSection>
-        <EditorSection title={t('dashboard.upstreamEditor.sections.disabledModels')} description={t('dashboard.upstreamEditor.disabledModelsHint')}>
+        <EditorSection title={t('upstreams.editor.sections.disabledModels')} description={t('upstreams.editor.disabledModelsHint')}>
           <DisabledModelsCombobox catalogAvailable={catalogAvailable} discovered={discovered} readOnly={!modelsEditable(editLevel)} />
         </EditorSection>
       </aside>
@@ -177,10 +177,11 @@ export const buildDisabledModelOptions = (
   catalogAvailable: boolean,
 ) => {
   const availableIds = new Set([...discovered, ...manual].map(publicModelId).filter(Boolean));
+  const names = new Map([...discovered, ...manual].map(model => [publicModelId(model), model.display_name]));
   const missingIds = catalogAvailable ? new Set(disabled.filter(id => !availableIds.has(id))) : new Set<string>();
   return [...new Set([...availableIds, ...disabled])]
     .toSorted((left, right) => left.localeCompare(right))
-    .map(id => ({ id, missing: missingIds.has(id) }));
+    .map(id => ({ id, label: names.get(id) ?? id, missing: missingIds.has(id) }));
 };
 
 function DisabledModelsCombobox({ catalogAvailable, discovered, readOnly }: { catalogAvailable: boolean; discovered: UpstreamModelConfig[]; readOnly: boolean }) {
@@ -195,21 +196,24 @@ function DisabledModelsCombobox({ catalogAvailable, discovered, readOnly }: { ca
   const missing = options.filter(option => option.missing).map(option => option.id);
   return <div className="grid gap-3">
     <MultiselectCombobox
-      ariaLabel={t('dashboard.upstreamEditor.sections.disabledModels')}
+      ariaLabel={t('upstreams.editor.sections.disabledModels')}
       onChange={next => setValue('disabledPublicModelIds', next, { shouldDirty: true })}
-      options={valuesAsOptions(options.map(option => option.id))}
+      options={options.map(option => ({ value: option.id, label: option.label }))}
       readOnly={readOnly}
       placeholder={disabled.length === 0
-        ? t('dashboard.upstreamEditor.disabledModelsPlaceholder')
-        : t('dashboard.upstreamEditor.disabledModelsSelected', { count: disabled.length })}
-      renderOption={({ value }) => <span className="flex items-center justify-between gap-3 min-w-0 w-full">
-        <span className="font-mono min-w-0 truncate">{value}</span>
-        {missing.includes(value) && <StatusBadge tone="warning">{t('dashboard.upstreamEditor.disabledModelsUnavailable')}</StatusBadge>}
+        ? t('upstreams.editor.disabledModelsPlaceholder')
+        : t('upstreams.editor.disabledModelsSelected', { count: disabled.length })}
+      renderOption={({ value, label }) => <span className="flex items-center justify-between gap-3 min-w-0 w-full">
+        <span className="grid min-w-0">
+          <span className="truncate">{label}</span>
+          {label !== value && <span className="font-mono text-fui-fg2 truncate">{value}</span>}
+        </span>
+        {missing.includes(value) && <StatusBadge tone="warning">{t('upstreams.editor.disabledModelsUnavailable')}</StatusBadge>}
       </span>}
       value={disabled}
     />
     {missing.length > 0 && <MessageBar intent="warning" layout="multiline">
-      <MessageBarBody>{t('dashboard.upstreamEditor.disabledModelsMissing', { models: missing.join(', ') })}</MessageBarBody>
+      <MessageBarBody>{t('upstreams.editor.disabledModelsMissing', { models: missing.join(', ') })}</MessageBarBody>
     </MessageBar>}
   </div>;
 }
@@ -222,33 +226,33 @@ function ProxyFallbackEditor({ proxies, readOnly, runtime }: { proxies: EditorAu
   const { fields, append, move, remove } = useFieldArray({ control, name: 'proxyFallbackList' });
   const reorder = useReorderList({ length: fields.length, onReorder: move });
   const available = [
-    { id: 'direct_connect', name: t('dashboard.upstreamEditor.proxy.directConnect') },
-    { id: 'direct_fetch', name: t('dashboard.upstreamEditor.proxy.directFetch') },
+    { id: 'direct_connect', name: t('upstreams.editor.proxy.directConnect') },
+    { id: 'direct_fetch', name: t('upstreams.editor.proxy.directFetch') },
     ...proxies,
   ];
   const hasUnmatchedColos = entries.length > 0 && !entries.some(entry => entry.colos === undefined);
   const hasLocationHint = runtime.kind === 'cloudflare';
-  const hint = runtime.kind === 'cloudflare' ? t('dashboard.upstreamEditor.proxy.colo', { colo: runtime.runtimeLocation }) : null;
+  const hint = runtime.kind === 'cloudflare' ? t('upstreams.editor.proxy.colo', { colo: runtime.runtimeLocation }) : null;
   return <div
     aria-describedby={hint ? `${idPrefix}-hint` : undefined}
     {...reorder.listProps('grid gap-2')}
   >
     {fields.map((field, index) => <div {...reorder.itemProps(index, `grid gap-2 ${hasLocationHint ? `border-0 border-solid border-fui-divider py-2 ${reorder.position(index) === 0 ? 'pt-0' : 'border-t'}` : ''}`)} key={field.id}>
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-        <Controller control={control} name={`proxyFallbackList.${index}.id`} render={({ field: item }) => <Dropdown aria-label={t('dashboard.upstreamEditor.sections.proxy')} readOnly={readOnly} selectedOptions={[item.value]} value={available.find(proxy => proxy.id === item.value)?.name ?? item.value} onOptionSelect={(_, data) => data.optionValue !== undefined && item.onChange(data.optionValue)}>{available.map(proxy => <Option key={proxy.id} value={proxy.id}>{proxy.name}</Option>)}</Dropdown>} />
+        <Controller control={control} name={`proxyFallbackList.${index}.id`} render={({ field: item }) => <Dropdown aria-label={t('upstreams.editor.sections.proxy')} readOnly={readOnly} selectedOptions={[item.value]} value={available.find(proxy => proxy.id === item.value)?.name ?? item.value} onOptionSelect={(_, data) => data.optionValue !== undefined && item.onChange(data.optionValue)}>{available.map(proxy => <Option key={proxy.id} value={proxy.id}>{proxy.name}</Option>)}</Dropdown>} />
         <div className="inline-flex">
-          {!readOnly && <ReorderHandle {...reorder.handleProps(index)} label={t('dashboard.upstreamEditor.actions.reorder')} />}
-          {!readOnly && <TooltipIconButton danger icon={<DeleteRegular />} label={t('dashboard.upstreamEditor.actions.remove')} onClick={() => remove(index)} />}
+          {!readOnly && <ReorderHandle {...reorder.handleProps(index)} label={t('upstreams.editor.actions.reorder')} />}
+          {!readOnly && <TooltipIconButton danger icon={<DeleteRegular />} label={t('upstreams.editor.actions.remove')} onClick={() => remove(index)} />}
         </div>
       </div>
       {runtime.kind === 'cloudflare' && <Controller control={control} name={`proxyFallbackList.${index}.colos`} render={({ field: item }) => <ColoCombobox current={runtime.runtimeLocation} onChange={item.onChange} readOnly={readOnly} value={item.value ?? []} />} />}
     </div>)}
     <Text size={200} className="text-fui-fg2">{t(entries.length === 0
-      ? 'dashboard.upstreamEditor.proxy.empty'
-      : hasLocationHint ? 'dashboard.upstreamEditor.proxy.orderColo' : 'dashboard.upstreamEditor.proxy.order')}</Text>
-    {!readOnly && <Button onClick={() => append({ id: 'direct_connect' })}>{t('dashboard.upstreamEditor.proxy.add')}</Button>}
+      ? 'upstreams.editor.proxy.empty'
+      : hasLocationHint ? 'upstreams.editor.proxy.orderColo' : 'upstreams.editor.proxy.order')}</Text>
+    {!readOnly && <Button onClick={() => append({ id: 'direct_connect' })}>{t('upstreams.editor.proxy.add')}</Button>}
     {(hasLocationHint || hasUnmatchedColos) && <div className="grid">
-      {hasUnmatchedColos && <Text size={200} className="text-fui-fg2">{t('dashboard.upstreamEditor.proxy.unmatched')}</Text>}
+      {hasUnmatchedColos && <Text size={200} className="text-fui-fg2">{t('upstreams.editor.proxy.unmatched')}</Text>}
       {hint && <Text id={`${idPrefix}-hint`} size={200} className="text-fui-fg2">{hint}</Text>}
     </div>}
   </div>;
@@ -257,17 +261,17 @@ function ProxyFallbackEditor({ proxies, readOnly, runtime }: { proxies: EditorAu
 function ColoCombobox({ current, onChange, readOnly, value }: { current: string; onChange: (value: string[] | undefined) => void; readOnly: boolean; value: string[] }) {
   const { t } = useTranslation();
   return <MultiselectCombobox
-    ariaLabel={t('dashboard.upstreamEditor.proxy.colos')}
+    ariaLabel={t('upstreams.editor.proxy.colos')}
     freeform
     normalizeValue={location => location.trim().toUpperCase()}
     // An empty whitelist is the absence of the field, not a field holding none.
     onChange={next => onChange(next.length === 0 ? undefined : next)}
     options={valuesAsOptions([...new Set([current, ...COMMON_COLO_LOCATIONS, ...value])])}
     placeholder={value.length === 0
-      ? t('dashboard.upstreamEditor.proxy.allColos')
-      : t('dashboard.upstreamEditor.proxy.colosSelected', { count: value.length })}
+      ? t('upstreams.editor.proxy.allColos')
+      : t('upstreams.editor.proxy.colosSelected', { count: value.length })}
     readOnly={readOnly}
-    renderOption={({ value: location }) => <span className="flex items-center justify-between gap-2 w-full"><span className="font-mono">{location}</span>{location === current && <StatusBadge tone="neutral">{t('dashboard.upstreamEditor.proxy.currentColo')}</StatusBadge>}</span>}
+    renderOption={({ value: location }) => <span className="flex items-center justify-between gap-2 w-full"><span className="font-mono">{location}</span>{location === current && <StatusBadge tone="neutral">{t('upstreams.editor.proxy.currentColo')}</StatusBadge>}</span>}
     value={value}
   />;
 }
@@ -288,17 +292,17 @@ function ModelPrefixEditor({ readOnly }: { readOnly: boolean }) {
         validationState={errors.modelPrefix ? 'error' : undefined}
         validationMessage={errors.modelPrefix?.message ? t(errors.modelPrefix.message, { max: MODEL_PREFIX_MAX_LENGTH }) : undefined}
       >
-        <Input aria-label={t('dashboard.upstreamEditor.sections.prefix')} value={prefix} onChange={(_, data) => update(data.value)} className="font-mono" placeholder="openrouter/" readOnly={readOnly} />
+        <Input aria-label={t('upstreams.editor.sections.prefix')} value={prefix} onChange={(_, data) => update(data.value)} className="font-mono" placeholder="openrouter/" readOnly={readOnly} />
       </Field>
       {value && !invalid && <div className="grid gap-2">
         {(['unprefixed', 'prefixed'] as const).map(form => <div aria-labelledby={`${idPrefix}-${form}`} className="flex items-center justify-between gap-3" key={form} role="group">
-          <Text id={`${idPrefix}-${form}`} size={200}>{t(`dashboard.upstreamEditor.prefix.${form}`)}</Text>
+          <Text id={`${idPrefix}-${form}`} size={200}>{t(`upstreams.editor.prefix.${form}`)}</Text>
           <div className="flex gap-2">
-            <Checkbox label={t('dashboard.upstreamEditor.prefix.addressable')} checked={value.addressable.includes(form)} readOnly={readOnly} onChange={(_, data) => {
+            <Checkbox label={t('upstreams.editor.prefix.addressable')} checked={value.addressable.includes(form)} readOnly={readOnly} onChange={(_, data) => {
               const set = new Set(value.addressable); if (data.checked) set.add(form); else if (set.size > 1) set.delete(form);
               commit({ ...value, addressable: [...set], listed: value.listed.filter(item => set.has(item)) });
             }} />
-            <Checkbox label={t('dashboard.upstreamEditor.prefix.listed')} disabled={!value.addressable.includes(form)} checked={value.listed.includes(form)} readOnly={readOnly} onChange={(_, data) => {
+            <Checkbox label={t('upstreams.editor.prefix.listed')} disabled={!value.addressable.includes(form)} checked={value.listed.includes(form)} readOnly={readOnly} onChange={(_, data) => {
               const set = new Set(value.listed); if (data.checked) set.add(form); else set.delete(form);
               commit({ ...value, listed: [...set] });
             }} />

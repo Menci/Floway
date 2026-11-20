@@ -31,10 +31,10 @@ export function PasswordDialog({ onOpenChange, open, onSaved, user }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const schema = useMemo(() => z.object({
-    password: z.string().min(1, 'dashboard.users.validation.passwordRequired').max(1024, 'dashboard.users.validation.passwordMax'),
+    password: z.string().min(1, 'directory.users.validation.passwordRequired').max(1024, 'directory.users.validation.passwordMax'),
     confirmation: z.string(),
   }).refine(value => value.password === value.confirmation, {
-    message: 'dashboard.users.validation.passwordMismatch',
+    message: 'directory.users.validation.passwordMismatch',
     path: ['confirmation'],
   }), []);
   const { control, handleSubmit, formState: { errors } } = useForm<PasswordFormValues>({
@@ -51,7 +51,7 @@ export function PasswordDialog({ onOpenChange, open, onSaved, user }: {
     setSaving(true);
     setError(null);
     try {
-      const handle = toasts.start(t('dashboard.users.toast.password.pending', { username: user.username }));
+      const handle = toasts.start(t('directory.users.toast.password.pending', { username: user.username }));
       const result = await callApi(() => api.api.users[':id'].$patch({
         param: { id: String(user.id) },
         json: { password: form.password },
@@ -62,7 +62,7 @@ export function PasswordDialog({ onOpenChange, open, onSaved, user }: {
         return;
       }
       onOpenChange(false);
-      handle.succeed(t('dashboard.users.toast.password.success', { username: user.username }));
+      handle.succeed(t('directory.users.toast.password.success', { username: user.username }));
       await onSaved();
     } finally {
       setSaving(false);
@@ -75,16 +75,16 @@ export function PasswordDialog({ onOpenChange, open, onSaved, user }: {
       actions={<DialogActions>
         <Button disabled={saving} onClick={requestClose}>{t('common.cancel')}</Button>
         <Button appearance="primary" disabledFocusable={saving} type="submit">
-          {t('dashboard.users.actions.save')}
+          {t('directory.users.actions.save')}
         </Button>
       </DialogActions>}
       onOpenChange={(_, data) => { if (!data.open && !saving) requestClose(); }}
       onSubmit={() => void handleSubmit(save)()}
-      title={<DialogTitle>{t('dashboard.users.dialog.passwordTitle', { username: user.username })}</DialogTitle>}
+      title={<DialogTitle>{t('directory.users.dialog.passwordTitle', { username: user.username })}</DialogTitle>}
     >
       <Controller control={control} name="password" render={({ field }) => (
         <Field
-          label={t('dashboard.users.form.newPassword')}
+          label={t('directory.users.form.newPassword')}
           validationMessage={errors.password?.message ? t(errors.password.message) : undefined}
           validationState={errors.password ? 'error' : undefined}
         >
@@ -93,7 +93,7 @@ export function PasswordDialog({ onOpenChange, open, onSaved, user }: {
       )} />
       <Controller control={control} name="confirmation" render={({ field }) => (
         <Field
-          label={t('dashboard.users.form.confirmPassword')}
+          label={t('directory.users.form.confirmPassword')}
           validationMessage={errors.confirmation?.message ? t(errors.confirmation.message) : undefined}
           validationState={errors.confirmation ? 'error' : undefined}
         >

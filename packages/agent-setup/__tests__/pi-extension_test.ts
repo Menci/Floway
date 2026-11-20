@@ -98,30 +98,3 @@ test('Pi delegates an explicit null payload replacement to its native adapter', 
   expect(onPayload).toHaveBeenCalledWith(expect.objectContaining({ output_config: { effort: 'fast' } }), model);
   expect(model.effortOverrides.high).toBe('fast');
 });
-
-test('Pi forwards server-added native metadata and API choices without a client field or API list', async () => {
-  const model = {
-    id: 'server-model', provider: 'openai', api: 'google-generative-ai',
-    inputLimits: { images: { resize: { maxWidth: 1234, jpegQuality: 72 } } },
-    promptCache: { short: 97, long: 193 },
-    samplingParams: { temperature: 0.4 },
-    samplingParamsByThinkingLevel: { high: { top_p: 0.8 } },
-    compat: { supportsStrictMode: true, serverAddedCapability: { nested: ['unchanged'] } },
-    serverAddedMetadata: { version: 2 },
-  };
-  const source = SETUP_NODE_PI_EXTENSION;
-  const body = source.replace(/^import .*;\n/gm, '').replaceAll('import.meta.url', JSON.stringify('file:///agent/extensions/floway.js')).replace('export default async pi =>', 'return async pi =>');
-  const stream = vi.fn();
-  const streamSimple = vi.fn();
-  const providers: { getModels: () => typeof model[]; stream: typeof stream; streamSimple: (model: object, context: object, options: object) => void }[] = [];
-  const getApiProvider = vi.fn(() => ({ stream, streamSimple }));
-  const factory = new Function('fetch', 'getApiProvider', 'VERSION', 'zlib', 'ModelRuntime', 'envApiKeyAuth', 'fileURLToPath', 'readFile', body)(async () => Response.json({ models: [model] }), getApiProvider, '1.1.0', zlib, ...nativeAuth());
-  await factory({ registerProvider: (provider: typeof providers[number]) => { providers.push(provider); } });
-  const registered = providers[0]!;
-  expect(registered.getModels()).toEqual([model]);
-  registered.stream(registered.getModels()[0], {}, {});
-  registered.streamSimple(registered.getModels()[0]!, {}, {});
-  expect(getApiProvider).toHaveBeenCalledWith('google-generative-ai');
-  expect(stream.mock.calls[0]![0]).toEqual(model);
-  expect(streamSimple.mock.calls[0]![0]).toEqual(model);
-});

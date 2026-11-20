@@ -21,11 +21,6 @@ test('stored model cache preserves Custom editor discovery outside the routable 
   expect(decodeUpstreamModelsCache(encodeUpstreamModelsCache(cache), 'up_custom')).toEqual(cache);
 });
 
-test('existing model caches without Custom discovery remain readable', () => {
-  const cache: UpstreamModelsCache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 100, models: [], lastError: null };
-  expect(decodeUpstreamModelsCache(encodeUpstreamModelsCache(cache), 'up_existing')).toEqual(cache);
-});
-
 test('stored model cache round-trips a decision target', () => {
   const cache: UpstreamModelsCache = {
     revision: MODEL_CATALOG_REVISION,

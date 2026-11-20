@@ -5,10 +5,10 @@ import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { inboundHeaders } from '../../shared/inbound-headers.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
+import { providerModelsUnavailableResponse } from '../../shared/upstream-response.ts';
 import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/store.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 
 // Surfaces a pre-stream throw (malformed JSON body, an interceptor crash,
@@ -35,17 +35,33 @@ export const openaiChatCompletionsHttp = {
     const requestBody = await readRequestBody(c);
     let ctx: ChatGatewayCtx | undefined;
     try {
-      const payload = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as OpenAIChatCompletionsPayload;
+      const payload = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as OpenAIChatCompletionsPayloadEx;
       const wantsStream = payload.stream === true;
+      const nullableField = payload.prompt_cache_options === null
+        ? 'prompt_cache_options'
+        : payload.user === null
+          ? 'user'
+          : undefined;
+      if (nullableField !== undefined) {
+        return c.json({
+          error: {
+            message: `Invalid '${nullableField}': expected ${nullableField === 'user' ? 'a string' : 'an object'} when present.`,
+            type: 'invalid_request_error',
+            param: nullableField,
+            code: null,
+          },
+        }, 400);
+      }
       // Read the caller's intent BEFORE any interceptor mutates
       // `payload.stream_options.include_usage`. Capturing it here means the
       // downstream renderer never needs to consult per-request Hono context
       // slots — the value lives in this http-entry closure for the duration of
       // the request.
       const includeUsageChunk = payload.stream_options?.include_usage === true;
+      const expectedChoices = payload.n ?? undefined;
       ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonOpenAIResponsesSourceStore(apiKey.id));
       const result = await openaiChatCompletionsServe.generate({ payload, ctx, headers: inboundHeaders(c) });
-      const response = await respondOpenAIChatCompletions(c, result, wantsStream, includeUsageChunk, ctx);
+      const response = await respondOpenAIChatCompletions(c, result, wantsStream, includeUsageChunk, ctx, expectedChoices);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {
       return await respondWithInternalError(c, error, requestBody, ctx);

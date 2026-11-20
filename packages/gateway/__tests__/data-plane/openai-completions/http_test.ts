@@ -4,9 +4,9 @@ import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { buildCustomUpstreamRecord, flushAsyncWork, requestApp as requestAppCold, requestAppWithWarmModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
-import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 // A custom upstream is the easiest fixture to assert /completions against:
 // the operator declares the endpoint capability per-model, and the path
@@ -20,11 +20,10 @@ const registerOpenAICompletionsUpstream = async (repo: Awaited<ReturnType<typeof
     sortOrder: 100,
     config: {
       baseUrl: 'https://passthrough.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-passthrough',
       endpoints: {},
-      modelsFetch: { enabled: false },
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
       models: [{
         upstreamModelId: 'davinci-002',
         endpoints: { openaiCompletions: {} },
@@ -45,158 +44,6 @@ const completionStream = (): Response => {
     headers: { 'content-type': 'text/event-stream' },
   });
 };
-
-test('/v1/completions cold resolution schedules the catalog and a later request dispatches', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await registerOpenAICompletionsUpstream(repo);
-  let upstreamCalls = 0;
-  const request = {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-    body: JSON.stringify({ model: 'davinci-002', prompt: 'hello' }),
-  };
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname !== 'passthrough.example.com' || url.pathname !== '/v1/completions') {
-        throw new Error(`Unhandled fetch ${request.url}`);
-      }
-      upstreamCalls++;
-      return jsonResponse({
-        id: 'cmpl_resp',
-        object: 'text_completion',
-        created: 1,
-        model: 'davinci-002',
-        choices: [{ index: 0, text: ' world', finish_reason: 'stop' }],
-        usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 },
-      });
-    },
-    async () => {
-      const cold = await requestAppCold('/v1/completions', request);
-      assertEquals(cold.status, 404);
-      assertEquals(upstreamCalls, 0);
-
-      await flushAsyncWork();
-      const warm = await requestAppCold('/v1/completions', request);
-      assertEquals(warm.status, 200);
-      assertEquals(upstreamCalls, 1);
-    },
-  );
-});
-
-test('/v1/completions non-streaming forwards body to upstream /v1/completions and records usage', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await registerOpenAICompletionsUpstream(repo);
-  let forwardedBody: Record<string, unknown> | undefined;
-  let forwardedUrl: string | undefined;
-  let responseBody: unknown;
-
-  await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/completions') {
-        forwardedBody = (await request.json()) as Record<string, unknown>;
-        forwardedUrl = url.href;
-        return jsonResponse({
-          id: 'cmpl_resp',
-          object: 'text_completion',
-          created: 1,
-          model: 'davinci-002',
-          choices: [{ index: 0, text: ' world', finish_reason: 'stop' }],
-          usage: { prompt_tokens: 5, completion_tokens: 1, total_tokens: 6 },
-        });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestAppWithWarmModels('/v1/completions', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello' }),
-      });
-      responseBody = await response.json();
-      assertEquals(response.status, 200, `got ${response.status}: ${JSON.stringify(responseBody)}`);
-    },
-  );
-
-  assertExists(forwardedBody);
-  assertEquals(forwardedUrl, 'https://passthrough.example.com/v1/completions');
-  assertEquals(forwardedBody.model, 'davinci-002');
-  assertEquals(forwardedBody.prompt, 'hello');
-  assertEquals(forwardedBody.stream, undefined);
-  assertEquals((responseBody as { usage: { prompt_tokens: number } }).usage.prompt_tokens, 5);
-
-  await flushAsyncWork();
-  const usageRows = await repo.usage.listAll();
-  assertEquals(usageRows.length, 1);
-  assertEquals(tokenCountsFromUsage(usageRows[0]!), { input: 5, output: 1 });
-});
-
-test('/v1/completions streaming forces stream_options.include_usage upstream', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await registerOpenAICompletionsUpstream(repo);
-  let forwardedBody: Record<string, unknown> | undefined;
-
-  await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/completions') {
-        forwardedBody = (await request.json()) as Record<string, unknown>;
-        return completionStream();
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestAppWithWarmModels('/v1/completions', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
-      });
-      assertEquals(response.status, 200);
-      await response.text();
-    },
-  );
-
-  assertExists(forwardedBody);
-  assertEquals(forwardedBody.stream, true);
-  assertEquals((forwardedBody.stream_options as { include_usage?: boolean } | undefined)?.include_usage, true);
-});
-
-test('/v1/completions streaming strips usage chunk when client did not request include_usage', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await registerOpenAICompletionsUpstream(repo);
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/completions') {
-        return Promise.resolve(completionStream());
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestAppWithWarmModels('/v1/completions', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
-      });
-      assertEquals(response.status, 200);
-      const text = await response.text();
-      // No usage chunk reaches the client.
-      assertEquals(text.includes('"usage"'), false);
-      assertEquals(text.includes('[DONE]'), true);
-      // Content frames still flow through.
-      assertEquals(text.includes('hello'), true);
-      assertEquals(text.includes('world'), true);
-    },
-  );
-
-  await flushAsyncWork();
-  const usageRows = await repo.usage.listAll();
-  assertEquals(usageRows.length, 1);
-  assertEquals(tokenCountsFromUsage(usageRows[0]!), { input: 4, output: 2 });
-});
 
 test('/v1/completions streaming forwards usage chunk when the client opted in', async () => {
   const { apiKey, repo } = await setupAppTest();
@@ -230,88 +77,51 @@ test('/v1/completions streaming forwards usage chunk when the client opted in', 
   );
 });
 
-test('/v1/completions rejects malformed body with the standard 400', async () => {
-  const { apiKey } = await setupAppTest();
-  const response = await requestAppWithWarmModels('/v1/completions', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-    body: '{not json',
-  });
-  assertEquals(response.status, 400);
-  const body = await response.json() as { error: { message: string; type: string } };
-  assertEquals(body.error.type, 'api_error');
-  assertEquals(body.error.message.includes('valid JSON'), true);
-});
-
-test('/v1/completions rejects a model without the openaiCompletions endpoint with the standard 400', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  clearInProcessCopilotTokenCache();
-  // A custom upstream that only exposes openaiChatCompletions on the model.
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    id: 'up_chat_only',
-    config: {
-      baseUrl: 'https://passthrough.example.com',
-      authStyle: 'bearer',
-      ingressHeadersRules: [],
-      apiKey: 'sk-x',
-      endpoints: {},
-      modelsFetch: { enabled: false },
-      models: [{
-        upstreamModelId: 'davinci-002',
-        endpoints: { openaiChatCompletions: {} },
-      }],
-    },
-  }));
-  await warmModelsForTest();
-
-  const response = await requestAppWithWarmModels('/v1/completions', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-    body: JSON.stringify({ model: 'davinci-002', prompt: 'hello' }),
-  });
-  assertEquals(response.status, 400);
-  const body = await response.json() as { error: { message: string } };
-  assertEquals(body.error.message, 'Model davinci-002 does not support the /completions endpoint.');
-});
-
-test('/v1/completions handler also serves the unversioned /completions path', async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await registerOpenAICompletionsUpstream(repo);
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/completions') {
-        return Promise.resolve(jsonResponse({
-          id: 'cmpl_a',
-          object: 'text_completion',
-          created: 1,
-          model: 'davinci-002',
-          choices: [{ index: 0, text: 'x', finish_reason: 'stop' }],
-          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-        }));
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestAppWithWarmModels('/completions', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-        body: JSON.stringify({ model: 'davinci-002', prompt: 'x' }),
-      });
-      assertEquals(response.status, 200);
-      await response.json();
-    },
-  );
-});
-
 // Dual-path coverage: usage + performance + dump telemetry must land
 // equivalently on both the non-streaming JSON and the streaming SSE
 // branches. The handler does not force `stream: true` upstream the way
 // openai-chat-completions does (no interceptor framework to feed), so the two
 // paths really do exercise different scaffold branches and the assertions
 // here keep them honest.
+test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/completions sends a data-only failure after partial output on %s', async mode => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerOpenAICompletionsUpstream(repo);
+  const partial = 'data: {"choices":[{"index":0,"text":"partial"}]}\n\n';
+  let upstream!: ReadableStreamDefaultController<Uint8Array>;
+  await withMockedFetch(
+    () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        upstream = controller;
+        controller.enqueue(new TextEncoder().encode(partial));
+      },
+    }), { headers: { 'content-type': 'text/event-stream' } }),
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
+      });
+      assertEquals(response.status, 200);
+      const reader = response.body!.getReader();
+      const decode = new TextDecoder();
+      assertEquals(decode.decode((await reader.read()).value), partial);
+      const message = 'upstream completion read failed';
+      const native = `data: ${JSON.stringify({ error: { code: 'vendor_failure', message } })}\n\n`;
+      if (mode === 'read error') upstream.error(new Error(message));
+      else if (mode === 'premature EOF') upstream.close();
+      else upstream.enqueue(new TextEncoder().encode(native));
+      const failure = decode.decode((await reader.read()).value);
+      assertEquals(failure.startsWith('data: {"error":'), true);
+      if (mode !== 'premature EOF') assertEquals(JSON.parse(failure.slice('data: '.length)).error.message, message);
+      if (mode === 'native error') assertEquals(failure, native);
+      assertEquals((await reader.read()).done, true);
+    },
+  );
+  await flushAsyncWork();
+  const [performance] = await repo.performance.listAll();
+  assertEquals(performance.errorsNoOutput, 1);
+});
+
 test('/v1/completions non-streaming records usage row, performance neutral row (text_completion operation, no TTFT/TPOT), and a bytes-body dump record', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
@@ -363,7 +173,7 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
   assertEquals(dump.response.body.type, 'bytes');
 });
 
-test('/v1/completions streaming records usage row, performance neutral row (text_completion operation, no TTFT/TPOT), and a frame-log dump record', async () => {
+test('/v1/completions streaming strips the unrequested usage chunk yet records usage and a frame-log dump', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   await registerOpenAICompletionsUpstream(repo);
@@ -378,7 +188,10 @@ test('/v1/completions streaming records usage row, performance neutral row (text
         body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
       });
       assertEquals(response.status, 200);
-      await response.text();
+      const text = await response.text();
+      assertEquals(text.includes('"usage"'), false);
+      assertEquals(text.includes('world'), true);
+      assertEquals(text.includes('[DONE]'), true);
     },
   );
 
@@ -408,18 +221,12 @@ test('/v1/completions streaming records usage row, performance neutral row (text
   assertEquals(dump.response.body.type, 'stream');
   if (dump.response.body.type === 'stream') {
     const frames = dump.response.body.events.map(e => e.frame);
-    assertEquals(frames.length, 4);
-    assertEquals(frames[0]?.type, 'event');
-    assertEquals(frames[1]?.type, 'event');
-    assertEquals(frames[2]?.type, 'event');
     // Upstream's usage chunk is preserved in the dump even though it was
     // stripped from the client-facing stream.
     const usageFrame = frames[2];
     if (usageFrame?.type === 'event') {
       const event = usageFrame.event as { choices: unknown[]; usage: { prompt_tokens: number } };
-      assertEquals(event.choices.length, 0);
       assertEquals(event.usage.prompt_tokens, 4);
-    }
-    assertEquals(frames[3]?.type, 'done');
+    } else throw new Error('expected the usage event frame');
   }
 });

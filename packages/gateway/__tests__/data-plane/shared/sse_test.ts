@@ -1,8 +1,7 @@
 import { Hono } from 'hono';
-import { streamSSE } from 'hono/streaming';
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
-import { writeSSEFrames } from '../../../src/data-plane/shared/sse.ts';
+import { serializeSseFrame, serveSse, type SseOutcome } from '../../../src/data-plane/shared/sse.ts';
 import { FakeTime } from '../../test-time.ts';
 import { parseSSEStream } from '@floway-dev/protocols/common';
 import { sseCommentFrame, type SseFrame, type SseWritableFrame, sseFrame, sseRawFrame } from '@floway-dev/protocols/common';
@@ -76,11 +75,21 @@ const waitForIteratorReturn = async (events: ReturnType<typeof createIdleSSEEven
   throw new Error('SSE iterator was not stopped');
 };
 
-const requestSSE = async (events: AsyncIterable<SseWritableFrame>, options: NonNullable<Parameters<typeof writeSSEFrames>[2]>): Promise<Response> => {
+type TestOptions = Omit<Parameters<typeof serveSse<SseWritableFrame>>[1], 'events'>;
+
+const requestSSE = async (events: AsyncIterable<SseWritableFrame>, options: Partial<TestOptions>): Promise<Response> => {
   const app = new Hono();
   app.get('/', c =>
-    streamSSE(c, async stream => {
-      await writeSSEFrames(stream, events, options);
+    serveSse(c, {
+      events,
+      downstreamAbortController: undefined,
+      protocol: {
+        encode: frame => ({ wire: serializeSseFrame(frame) }),
+        eof: () => ({ type: 'completed' }),
+        failure: () => [serializeSseFrame(sseFrame('failure'))],
+      },
+      settle: () => {},
+      ...options,
     }));
   return await app.request('/');
 };
@@ -105,7 +114,7 @@ const cancelStateWithin = async (promise: Promise<void>, timeoutMs: number): Pro
   }
 };
 
-test('writeSSEFrames emits SSE comment keepalive frames while idle', async () => {
+test('SSE egress emits comment keepalive frames while idle', async () => {
   const time = new FakeTime();
   const idle = createIdleSSEEvents();
 
@@ -128,68 +137,13 @@ test('writeSSEFrames emits SSE comment keepalive frames while idle', async () =>
   }
 });
 
-test('writeSSEFrames emits Anthropic Messages ping keepalive frames while idle', async () => {
-  const time = new FakeTime();
+test('SSE egress settles cancellation once without rendering a racing iterator error', async () => {
   const idle = createIdleSSEEvents();
-
-  try {
-    const response = await requestSSE(idle.events, {
-      keepAlive: {
-        intervalMs: 1_000,
-        frame: sseFrame(JSON.stringify({ type: 'ping' }), 'ping'),
-      },
-    });
-    const reader = response.body!.getReader();
-
-    await waitForIteratorStart(idle);
-    const read = reader.read();
-    await time.tickAsync(1_000);
-
-    const chunk = await read;
-    assertEquals(decodeChunk(chunk.value), 'event: ping\ndata: {"type":"ping"}\n\n');
-
-    await reader.cancel();
-  } finally {
-    time.restore();
-  }
-});
-
-test('writeSSEFrames does not emit keepalive before ready events', async () => {
-  const response = await requestSSE(
-    (async function* () {
-      yield sseFrame('{}', 'response.completed');
-    })(),
-    { keepAlive: { intervalMs: 1_000, frame: sseCommentFrame('keepalive') } },
-  );
-
-  assertEquals(await response.text(), 'event: response.completed\ndata: {}\n\n');
-});
-
-test('writeSSEFrames stops idle iterator and timer when the response is canceled', async () => {
-  const time = new FakeTime();
-  const idle = createIdleSSEEvents();
-
-  try {
-    const response = await requestSSE(idle.events, {
-      keepAlive: { intervalMs: 1_000, frame: sseCommentFrame('keepalive') },
-    });
-    const reader = response.body!.getReader();
-
-    await waitForIteratorStart(idle);
-    await reader.cancel();
-    await waitForIteratorReturn(idle);
-
-    assertEquals(idle.returnCalled(), true);
-    await time.tickAsync(5_000);
-  } finally {
-    time.restore();
-  }
-});
-
-test('writeSSEFrames handles pending iterator errors after the response is canceled', async () => {
-  const idle = createIdleSSEEvents();
+  const settle = vi.fn<(outcome: SseOutcome) => void>();
+  const failure = vi.fn<TestOptions['protocol']['failure']>(() => [serializeSseFrame(sseFrame('unexpected failure'))]);
   const response = await requestSSE(idle.events, {
-    keepAlive: { intervalMs: 1_000, frame: sseCommentFrame('keepalive') },
+    protocol: { encode: frame => ({ wire: serializeSseFrame(frame) }), eof: () => ({ type: 'completed' }), failure },
+    settle,
   });
   const reader = response.body!.getReader();
 
@@ -199,9 +153,11 @@ test('writeSSEFrames handles pending iterator errors after the response is cance
   await waitForIteratorReturn(idle);
 
   assertEquals(idle.returnCalled(), true);
+  await vi.waitFor(() => expect(settle.mock.calls).toEqual([[{ type: 'cancelled' }]]));
+  expect(failure).not.toHaveBeenCalled();
 });
 
-test('writeSSEFrames aborts a pending upstream SSE reader when the downstream response is canceled', async () => {
+test('SSE egress aborts a pending upstream SSE reader when the downstream response is canceled', async () => {
   const upstreamCanceled = deferred<void>();
   let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
   const downstreamAbortController = new AbortController();
@@ -244,7 +200,7 @@ test('writeSSEFrames aborts a pending upstream SSE reader when the downstream re
   }
 });
 
-test('writeSSEFrames writes a raw frame without SSE field framing', async () => {
+test('SSE egress writes a raw frame without SSE field framing', async () => {
   const data = JSON.stringify({ error: { code: 500, status: 'INTERNAL', message: 'failure' } });
   const frames = async function* () {
     yield sseFrame('{"candidates":[]}');
@@ -252,4 +208,61 @@ test('writeSSEFrames writes a raw frame without SSE field framing', async () => 
   };
   const response = await requestSSE(frames(), {});
   assertEquals(await response.text(), `data: {"candidates":[]}\n\n${data}`);
+});
+
+test('SSE serialization emits a data field for every line of a named event', () => {
+  const wire = serializeSseFrame(sseFrame('first\r\nsecond\r\n\nlast', 'message'));
+  expect(wire).toBe('event: message\ndata: first\ndata: second\ndata: \ndata: last\n\n');
+});
+
+test.each(['read', 'encode', 'eof'] as const)('SSE egress renders and settles a %s failure after earlier output', async failureAt => {
+  const error = new Error(`failed at ${failureAt}`);
+  const settle = vi.fn<(outcome: SseOutcome) => void>();
+  const failure = vi.fn<TestOptions['protocol']['failure']>(() => [serializeSseFrame(sseFrame('protocol failure'))]);
+  const frames = async function* () {
+    yield sseFrame('partial');
+    if (failureAt === 'read') throw error;
+    if (failureAt === 'encode') yield sseFrame('unencodable');
+  };
+  const response = await requestSSE(frames(), {
+    protocol: {
+      encode: frame => {
+        if (frame.type === 'sse' && frame.data === 'unencodable') throw error;
+        return { wire: serializeSseFrame(frame) };
+      },
+      eof: () => ({ type: 'premature-eof', error }),
+      failure,
+    },
+    settle,
+  });
+  expect(await response.text()).toBe('data: partial\n\ndata: protocol failure\n\n');
+  expect(failure.mock.calls).toEqual([[error]]);
+  expect(settle.mock.calls).toEqual([[{ type: failureAt === 'eof' ? 'premature-eof' : 'source-error', error }]]);
+});
+
+test('SSE egress closes the iterator at a protocol terminal without pulling another frame', async () => {
+  const closed = vi.fn();
+  const settle = vi.fn<(outcome: SseOutcome) => void>();
+  const frames = async function* () {
+    try {
+      yield sseFrame('terminal');
+      throw new Error('trailing read');
+    } finally {
+      closed();
+    }
+  };
+  const response = await requestSSE(frames(), {
+    protocol: {
+      encode: frame => ({
+        wire: serializeSseFrame(frame),
+        end: { type: 'protocol-error', trailer: [serializeSseFrame(sseFrame('trailer'))] },
+      }),
+      eof: () => { throw new Error('unexpected EOF'); },
+      failure: () => [serializeSseFrame(sseFrame('unexpected failure'))],
+    },
+    settle,
+  });
+  expect(await response.text()).toBe('data: terminal\n\ndata: trailer\n\n');
+  expect(closed).toHaveBeenCalledOnce();
+  expect(settle.mock.calls).toEqual([[{ type: 'protocol-error' }]]);
 });

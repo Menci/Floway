@@ -23,7 +23,7 @@ export function UsageChartSection({
   return (
     <ChartSection
       controlsLabel={detailsLabel}
-      emptyText={t('dashboard.usage.empty')}
+      emptyText={t('monitoring.usage.empty')}
       entries={chart.entries}
       hidden={hidden}
       onHiddenChange={onHiddenChange}

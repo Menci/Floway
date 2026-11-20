@@ -73,7 +73,7 @@ const compactJsonResponse = (): Response => new Response(
   { status: 200, headers: { 'content-type': 'application/json' } },
 );
 
-test.each([true, false])('ChatGPT projects a post-chain compact pivot after catalog-selected encoding (Lite=%s)', async useResponsesLite => {
+test('ChatGPT projects a post-chain compact pivot after catalog-selected Lite encoding', async () => {
   let compactUrl: string | undefined;
   let compactBody: Record<string, unknown> | undefined;
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -89,7 +89,7 @@ test.each([true, false])('ChatGPT projects a post-chain compact pivot after cata
 
   const instance = createChatGPTProvider(baseRecord);
   const result = await instance.instance.callOpenAIResponses(
-    stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite } }),
+    stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite: true } }),
     {
       input: [{ type: 'message', role: 'user', content: 'hi' }],
       tools: [{ type: 'function', name: 'noop', description: 'noop', parameters: { type: 'object' }, strict: false }],
@@ -116,20 +116,14 @@ test.each([true, false])('ChatGPT projects a post-chain compact pivot after cata
     { type: 'function', name: 'noop', description: 'noop', parameters: { type: 'object' }, strict: false },
     { type: 'custom', name: 'late_tool' },
   ];
-  if (useResponsesLite) {
-    expect(compactBody).not.toHaveProperty('tools');
-    expect(compactBody).not.toHaveProperty('instructions');
-    expect(compactBody.input).toEqual([
-      { type: 'additional_tools', role: 'developer', id: expect.stringMatching(/^at_/), tools: [{ type: 'namespace', name: 'functions', description: '', tools }] },
-      { type: 'message', role: 'developer', id: expect.stringMatching(/^msg_/), content: [{ type: 'input_text', text: 'Late instructions' }], internal_chat_message_metadata_passthrough: { content_item_kinds: ['model.base_instructions'] } },
-      { type: 'message', role: 'user', content: 'hi' },
-    ]);
-    expect(compactBody.reasoning).toEqual({ effort: 'medium', context: 'all_turns' });
-  } else {
-    expect(compactBody.tools).toEqual(tools);
-    expect(compactBody.instructions).toBe('Late instructions');
-    expect(compactBody.reasoning).toEqual({ effort: 'medium' });
-  }
+  expect(compactBody).not.toHaveProperty('tools');
+  expect(compactBody).not.toHaveProperty('instructions');
+  expect(compactBody.input).toEqual([
+    { type: 'additional_tools', role: 'developer', id: expect.stringMatching(/^at_/), tools: [{ type: 'namespace', name: 'functions', description: '', tools }] },
+    { type: 'message', role: 'developer', id: expect.stringMatching(/^msg_/), content: [{ type: 'input_text', text: 'Late instructions' }], internal_chat_message_metadata_passthrough: { content_item_kinds: ['model.base_instructions'] } },
+    { type: 'message', role: 'user', content: 'hi' },
+  ]);
+  expect(compactBody.reasoning).toEqual({ effort: 'medium', context: 'all_turns' });
   expect(compactBody.parallel_tool_calls).toBe(false);
   for (const banned of ['temperature', 'max_output_tokens', 'stream']) {
     assertEquals(banned in compactBody, false, `compact wire body must not carry unsupported field "${banned}"`);

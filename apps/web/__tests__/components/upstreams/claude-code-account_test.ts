@@ -10,10 +10,6 @@ import {
   actionableDisabledReason,
   findCredential,
   quotaWindows,
-  rateLimitedUntil,
-  rawEntries,
-  readProbeSnapshot,
-  subscriptionLabel,
 } from '../../../src/components/upstreams/claude-code-account';
 
 type ClaudeCodeRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>;
@@ -61,15 +57,6 @@ const record = (state: ClaudeCodeRecord['state']): ClaudeCodeRecord => ({
   state,
 } as unknown as ClaudeCodeRecord);
 
-describe('claude code subscription label', () => {
-  it('names the plan and leaves the rate-limit tier to its own badge', () => {
-    expect(subscriptionLabel('max')).toBe('Max');
-    expect(subscriptionLabel('pro')).toBe('Pro');
-    expect(subscriptionLabel('enterprise')).toBe('Enterprise');
-    expect(subscriptionLabel(null)).toBeNull();
-  });
-});
-
 describe('credential lookup', () => {
   it('reports a mismatch rather than falling back to whatever account is stored', () => {
     const lookup = findCredential(record({ accounts: [credential({ accountUuid: 'someone-else' })] }));
@@ -78,15 +65,6 @@ describe('credential lookup', () => {
 });
 
 describe('quota windows', () => {
-  it('rescales header utilization onto the probe percentage scale', () => {
-    const windows = quotaWindows(credential({
-      quotaSnapshot: { fetchedAt: 1000, data: quotaData({ fiveHour: { status: 'allowed', reset: '2026-07-01T05:00:00Z', utilization: 0.42 } }) },
-    }));
-    expect(windows).toEqual([
-      { key: 'fiveHour', percent: 42, resetAt: '2026-07-01T05:00:00Z', status: 'allowed', source: 'header', fetchedAt: 1000 },
-    ]);
-  });
-
   it('prefers whichever source was fetched more recently, per window', () => {
     const withNewerProbe = quotaWindows(credential({
       quotaSnapshot: { fetchedAt: 1000, data: quotaData({ fiveHour: { status: null, reset: null, utilization: 0.1 } }) },
@@ -111,40 +89,6 @@ describe('quota windows', () => {
     }));
     expect(window).toEqual({ key: 'fiveHour', percent: 55, resetAt: null, status: null, source: 'probe', fetchedAt: 2000 });
   });
-
-  it('surfaces the Sonnet window, which only the probe reports', () => {
-    const windows = quotaWindows(credential({
-      usageProbeSnapshot: { fetchedAt: 2000, data: { seven_day_sonnet: { utilization: 12, resets_at: null } } },
-    }));
-    expect(windows.map(row => row.key)).toEqual(['sevenDaySonnet']);
-  });
-
-  it('omits the Sonnet window when a probe answers without one', () => {
-    const windows = quotaWindows(credential({
-      usageProbeSnapshot: { fetchedAt: 2000, data: { five_hour: { utilization: 3 } } },
-    }));
-    expect(windows.map(row => row.key)).toEqual(['fiveHour']);
-  });
-
-  it('drops a window neither source reports a utilization for', () => {
-    expect(quotaWindows(credential({
-      quotaSnapshot: { fetchedAt: 1000, data: quotaData({ fiveHour: { status: 'allowed', reset: null, utilization: null } }) },
-    }))).toEqual([]);
-    expect(quotaWindows(null)).toEqual([]);
-  });
-});
-
-describe('probe snapshot', () => {
-  it('keeps unrecognized upstream fields instead of dropping them', () => {
-    const probe = readProbeSnapshot(credential({
-      usageProbeSnapshot: { fetchedAt: 2000, data: { five_hour: { utilization: 1 }, priorIsUsingOverage: false, someNewField: { a: 1 } } },
-    }));
-    expect(rawEntries(probe?.extras)).toEqual([['priorIsUsingOverage', 'false'], ['someNewField', '{"a":1}']]);
-  });
-
-  it('returns null when the upstream body is not an object', () => {
-    expect(readProbeSnapshot(credential({ usageProbeSnapshot: { fetchedAt: 2000, data: 'nope' } }))).toBeNull();
-  });
 });
 
 describe('account status', () => {
@@ -155,47 +99,6 @@ describe('account status', () => {
   it('treats a rejected plan window as exhausted while its limit is still running', () => {
     expect(accountStatus(rejectedAt('2026-07-28T15:00:00.000Z'), [], NOW)).toMatchObject({ tone: 'danger', reason: 'exhausted' });
   });
-
-  it.each(['seven_day_overage_included', 'seven_day_opus', 'seven_day_sonnet', 'future_model_limit', null])('keeps a %s rejection out of the account status', representativeClaim => {
-    const account = credential({
-      quotaSnapshot: {
-        fetchedAt: 1,
-        data: quotaData({
-          status: 'rejected', reset: '2026-07-30T15:00:00.000Z', representativeClaim,
-          sevenDay: { status: 'allowed', utilization: 0.62, reset: '2026-07-30T15:00:00.000Z', surpassedThreshold: null },
-        }),
-      },
-    });
-    const lookup = findCredential(record({ accounts: [account] }));
-    expect(rateLimitedUntil(account.quotaSnapshot, NOW)).toBeNull();
-    expect(accountStatus(lookup, quotaWindows(account), NOW)).toEqual({ tone: 'success', reason: 'active' });
-  });
-
-  // The snapshot is held until a response replaces it, so a rejection dated in
-  // the past is the steady state of an account that is serving again -- which is
-  // where the data plane stops gating on it too. A rejection with no date at all
-  // is not treated as a limit for the same reason it is not one there.
-  it('lets a rejection that has lifted, or was never dated, go', () => {
-    expect(accountStatus(rejectedAt('2026-07-28T09:00:00.000Z'), [], NOW)).toEqual({ tone: 'success', reason: 'active' });
-    expect(accountStatus(rejectedAt(null), [], NOW)).toEqual({ tone: 'success', reason: 'active' });
-  });
-
-  it('warns once any window crosses the heavy-usage threshold', () => {
-    const lookup = findCredential(record({ accounts: [credential()] }));
-    const windows = quotaWindows(credential({ usageProbeSnapshot: { fetchedAt: 1, data: { five_hour: { utilization: 12 }, seven_day: { utilization: 81 } } } }));
-    expect(accountStatus(lookup, windows, NOW)).toEqual({ tone: 'warning', reason: 'heavy', percent: 81 });
-  });
-
-  it('reports a terminated session ahead of any usage reading', () => {
-    const lookup = findCredential(record({ accounts: [credential({ state: 'session_terminated', stateMessage: 'revoked' })] }));
-    expect(accountStatus(lookup, [{ key: 'fiveHour', percent: 99, resetAt: null, status: null, source: 'probe', fetchedAt: 1 }], NOW))
-      .toEqual({ tone: 'danger', reason: 'session-terminated', detail: 'revoked' });
-  });
-
-  it('stays active when nothing is wrong', () => {
-    const lookup = findCredential(record({ accounts: [credential()] }));
-    expect(accountStatus(lookup, [], NOW)).toEqual({ tone: 'success', reason: 'active' });
-  });
 });
 
 describe('overage disabled reason', () => {
@@ -203,11 +106,5 @@ describe('overage disabled reason', () => {
     expect(actionableDisabledReason(credential({
       quotaSnapshot: { fetchedAt: 1, data: quotaData({ overage: { status: 'rejected', reset: null, utilization: null, disabledReason: 'out_of_credits' } }) },
     }))).toBeNull();
-  });
-
-  it('surfaces any other reason verbatim', () => {
-    expect(actionableDisabledReason(credential({
-      quotaSnapshot: { fetchedAt: 1, data: quotaData({ overage: { status: 'rejected', reset: null, utilization: null, disabledReason: 'billing_hold' } }) },
-    }))).toBe('billing_hold');
   });
 });

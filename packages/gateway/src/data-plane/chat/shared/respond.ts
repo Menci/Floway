@@ -1,27 +1,27 @@
-import type { StreamCompletion } from '../../shared/sse.ts';
+import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
+import type { SseOutcome } from '../../shared/sse.ts';
+import { recordSseOutcome, settle } from '../../shared/telemetry/settle.ts';
+import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
+import { mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { plainResult } from '@floway-dev/provider';
-import type { EventResultMetadata, ExecuteResult, PlainResult } from '@floway-dev/provider';
-
-// Emits a measurement endpoint's already-shaped body verbatim. The endpoint's
-// `attempt` owns all shaping — the success body and any source-specific error
-// envelope — so every source's `respond` renders a plain result identically.
-export const plainResultToResponse = (result: PlainResult): Response =>
-  new Response(result.body.slice().buffer, { status: result.status, headers: result.headers });
+import { plainResult, readResponseBody } from '@floway-dev/provider';
+import type { EventResultMetadata, ExecuteResult, HttpHead, PlainResult } from '@floway-dev/provider';
 
 // Used by count_tokens endpoints that either pass through the upstream body
 // or wrap an already-built error/success Response.
-export const plainResultFromResponse = async (response: Response, upstream?: string): Promise<PlainResult> =>
-  plainResult(
-    response.status,
-    new Headers({ 'content-type': response.headers.get('content-type') ?? 'application/json' }),
-    new Uint8Array(await response.arrayBuffer()),
-    upstream,
-  );
+export const plainResultFromResponse = async (response: Response, upstream?: string): Promise<PlainResult> => {
+  const headers = new Headers(response.headers);
+  if (!headers.has('content-type')) headers.set('content-type', 'application/json');
+  return plainResult({ status: response.status, headers }, await readResponseBody(response), upstream);
+};
 
-// Per-stream observation accumulated by each source's frame observer and read
-// back when the response settles: did the stream fail, did it reach its
-// terminal frame, and the last frame-level usage worth billing.
+export const jsonResponseInit = (http: HttpHead | undefined) => ({
+  ...(http === undefined ? {} : { status: http.status }),
+  headers: mergeForwardedUpstreamHeaders(undefined, http?.headers),
+});
+
+export type StreamCompletion = 'eof' | 'error' | 'cancel';
+
 export class SourceStreamState {
   failed = false;
   completed = false;
@@ -36,3 +36,21 @@ export const eventResultMetadata = async <TEvent>(result: Extract<ExecuteResult<
     modelIdentity: result.modelIdentity,
     ...(result.performance ? { performance: result.performance } : {}),
   });
+
+export const observeChatFrames = async function* <TEvent>(frames: AsyncIterable<ProtocolFrame<TEvent>>, ctx: GatewayCtx): AsyncGenerator<ProtocolFrame<TEvent>> {
+  for await (const frame of frames) {
+    ctx.dump?.frame(frame);
+    yield frame;
+  }
+};
+
+export const settleChatSse = async <TEvent>(
+  ctx: GatewayCtx,
+  result: Extract<ExecuteResult<ProtocolFrame<TEvent>>, { type: 'events' }>,
+  outcome: SseOutcome,
+): Promise<void> => {
+  const metadata = await eventResultMetadata(result);
+  const usage = tokenUsageFromBillableUsage(metadata.billableUsage);
+  const failed = recordSseOutcome(ctx, outcome, metadata.modelIdentity, usage);
+  settle(ctx, metadata.performance, metadata.modelIdentity, usage, failed);
+};

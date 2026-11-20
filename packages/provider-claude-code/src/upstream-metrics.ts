@@ -41,7 +41,7 @@ export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIde
   if (extra) {
     return {
       name: quota,
-      labelKey: 'dashboard.upstreamMetrics.metrics.extraUsage',
+      labelKey: 'monitoring.upstreams.series.extraUsage',
       unit: 'percent',
       axisPriority: upstreamMetricAxisPriority.extraUsage,
       windowSeconds: null,
@@ -54,8 +54,8 @@ export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIde
   return quotaPercentDisplay(options, 'used', {
     name: quota,
     labelKey: named === null
-      ? options.quotaDisplay === 'used' ? 'dashboard.upstreamMetrics.metrics.usage' : 'dashboard.upstreamMetrics.metrics.remaining'
-      : `dashboard.upstreamMetrics.metrics.named${options.quotaDisplay === 'used' ? 'Usage' : 'Remaining'}`,
+      ? options.quotaDisplay === 'used' ? 'monitoring.upstreams.series.usage' : 'monitoring.upstreams.series.remaining'
+      : `monitoring.upstreams.series.named${options.quotaDisplay === 'used' ? 'Usage' : 'Remaining'}`,
     labelValues: named === null ? undefined : { name: named },
     axisPriority: upstreamMetricAxisPriority.subscriptionQuota,
     windowSeconds: quota === 'five_hour' ? 18_000 : 604_800,

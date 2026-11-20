@@ -11,10 +11,10 @@ import { iterateCandidates } from '../shared/iterate-candidates.ts';
 import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { recordFailedRequest, recordPerformance, type PerformanceTelemetryContext } from '../shared/telemetry/performance.ts';
 import { recordUsage } from '../shared/telemetry/usage.ts';
-import { forwardUpstreamResponse } from '../shared/upstream-response.ts';
+import { forwardUpstreamResponse, providerModelsUnavailableResponse } from '../shared/upstream-response.ts';
 import { parseDecimalString, parseJSONWithRawNumbers, type DecisionProtocol } from '@floway-dev/protocols/common';
 import { parseDecisionRequest, parseDecisionResponse, parseDecisionUsage, renderDecisionResponse, type ParsedDecisionRequest } from '@floway-dev/protocols/decision';
-import { httpResponseToResponse, ProviderModelsUnavailableError, providerModelOf, toInternalDebugError } from '@floway-dev/provider';
+import { providerModelOf, toInternalDebugError } from '@floway-dev/provider';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 const apiError = (c: Context, message: string, status: ContentfulStatusCode): Response =>
@@ -112,11 +112,11 @@ export const decision = (sourceProtocol: DecisionProtocol) => async (c: Context)
       candidate => decisionAttempt(c, ctx, candidate, request),
     );
 
-    if (!terminal.response.ok) {
+    if (!terminal.http.ok) {
       ctx.dump?.error('upstream', terminal.identity.upstream);
       settleDecision(ctx, terminal.performance, terminal.identity, undefined, true);
       usageSettled = true;
-      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
+      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.http));
     }
 
     const sameProtocol = sourceProtocol === terminal.target.protocol;
@@ -124,7 +124,7 @@ export const decision = (sourceProtocol: DecisionProtocol) => async (c: Context)
     try {
       // Raw-number parsing keeps each probability's source token, so a
       // cross-dialect render writes the digits back unchanged.
-      upstreamBody = parseJSONWithRawNumbers(await terminal.response.clone().text()) as Record<string, unknown>;
+      upstreamBody = parseJSONWithRawNumbers(await terminal.http.clone().text()) as Record<string, unknown>;
     } catch (error) {
       // A cross-dialect client cannot read the upstream's own body, so a
       // translation failure must surface instead of being forwarded as success.
@@ -136,33 +136,31 @@ export const decision = (sourceProtocol: DecisionProtocol) => async (c: Context)
       ctx.dump?.success(terminal.identity, null);
       settleDecision(ctx, terminal.performance, terminal.identity, undefined, false);
       usageSettled = true;
-      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
+      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.http));
     }
     measuredUsage = parseDecisionUsage(upstreamBody);
     if (sameProtocol) {
       ctx.dump?.success(terminal.identity, null);
       settleDecision(ctx, terminal.performance, terminal.identity, measuredUsage, false);
       usageSettled = true;
-      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response));
+      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.http));
     }
     const canonical = parseDecisionResponse(terminal.target.protocol, upstreamBody);
     const rendered = renderDecisionResponse(sourceProtocol, canonical);
     ctx.dump?.success(terminal.identity, null);
     settleDecision(ctx, terminal.performance, terminal.identity, measuredUsage, false);
     usageSettled = true;
-    return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.response, { body: JSON.stringify(rendered) }));
+    return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.http, { body: JSON.stringify(rendered) }));
   } catch (error) {
     if (terminal !== undefined && !usageSettled) {
       settleDecision(ctx, terminal.performance, terminal.identity, measuredUsage, true);
     } else if (terminal === undefined) {
       recordFailedRequest(ctx, ctx.attempt.telemetry);
     }
-    if (error instanceof ProviderModelsUnavailableError) {
-      const forwarded = httpResponseToResponse(error.httpResponse);
-      if (forwarded) {
-        ctx.dump?.error('upstream');
-        return finalizeGatewayResponse(ctx, forwarded);
-      }
+    const forwarded = providerModelsUnavailableResponse(error);
+    if (forwarded) {
+      ctx.dump?.error('upstream');
+      return finalizeGatewayResponse(ctx, forwarded);
     }
     ctx.dump?.failed(error);
     return finalizeGatewayResponse(ctx, c.json({ error: toInternalDebugError(error) }, 502));

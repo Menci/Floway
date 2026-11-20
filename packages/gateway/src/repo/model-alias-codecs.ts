@@ -28,7 +28,7 @@ const announcedMetadataSchema = z.object({
   limits: limitsSchema.optional(),
   chat: z.object({
     modalities: z.object({
-      input: z.array(z.enum(['text', 'image'])),
+      input: z.array(z.enum(['text', 'image', 'audio'])),
       output: z.array(z.enum(['text', 'image'])),
     }).passthrough().optional(),
     image_detail_original: z.boolean().optional(),

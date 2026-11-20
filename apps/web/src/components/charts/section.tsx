@@ -37,14 +37,14 @@ export function ChartSection({
     <section className="grid gap-3 min-w-0">
       <SectionHeader level={2} title={title} actions={
         <Toolbar aria-label={controlsLabel} className="!p-0" size="small">
-          <Tooltip content={t('dashboard.charts.series.all')} relationship="label">
-            <ToolbarButton aria-label={t('dashboard.charts.series.all')} icon={<SelectAllOnRegular />} onClick={() => onHiddenChange(new Set())} />
+          <Tooltip content={t('monitoring.charts.series.all')} relationship="label">
+            <ToolbarButton aria-label={t('monitoring.charts.series.all')} icon={<SelectAllOnRegular />} onClick={() => onHiddenChange(new Set())} />
           </Tooltip>
-          <Tooltip content={t('dashboard.charts.series.none')} relationship="label">
-            <ToolbarButton aria-label={t('dashboard.charts.series.none')} icon={<SelectAllOffRegular />} onClick={() => onHiddenChange(new Set(ids))} />
+          <Tooltip content={t('monitoring.charts.series.none')} relationship="label">
+            <ToolbarButton aria-label={t('monitoring.charts.series.none')} icon={<SelectAllOffRegular />} onClick={() => onHiddenChange(new Set(ids))} />
           </Tooltip>
-          <Tooltip content={t('dashboard.charts.series.invert')} relationship="label">
-            <ToolbarButton aria-label={t('dashboard.charts.series.invert')} icon={<SquareMultipleRegular />} onClick={() => onHiddenChange(invertedSeries(ids, hidden))} />
+          <Tooltip content={t('monitoring.charts.series.invert')} relationship="label">
+            <ToolbarButton aria-label={t('monitoring.charts.series.invert')} icon={<SquareMultipleRegular />} onClick={() => onHiddenChange(invertedSeries(ids, hidden))} />
           </Tooltip>
         </Toolbar>
       } />
@@ -53,7 +53,7 @@ export function ChartSection({
         ? <div className="flex flex-wrap gap-1.5 min-w-0">
             {entries.map(entry => (
               <InteractionTag appearance="outline" key={entry.id} shape="circular" size="small">
-                <Tooltip content={t('dashboard.charts.series.toggleHint')} relationship="description">
+                <Tooltip content={t('monitoring.charts.series.toggleHint')} relationship="description">
                   <InteractionTagPrimary
                     className={hidden.has(entry.id) ? 'line-through opacity-[0.55]' : ''}
                     icon={<SeriesMarker className="mx-[4px]" color={colorForHue(entry.hue)} />}
