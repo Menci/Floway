@@ -47,6 +47,13 @@ export const uiTextEditorCss = `
   box-sizing: border-box;
 }
 
+.floway-ui-text-editor-highlight-svg {
+  position: fixed;
+  pointer-events: none;
+  opacity: 0.42;
+  overflow: visible;
+}
+
 .floway-ui-text-editor-highlight-tag {
   position: fixed;
   pointer-events: none;

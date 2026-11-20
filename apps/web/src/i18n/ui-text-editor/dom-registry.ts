@@ -13,6 +13,7 @@ interface AttributeKeyRecord {
 export interface HitTarget {
   element: Element;
   rect: DOMRect;
+  rects: DOMRect[];
   primaryKey: string;
   primaryAttribute?: string;
   candidates: string[];
@@ -38,43 +39,89 @@ const isRestrictedElement = (element: Element | null): boolean => {
 const pointInsideRect = (rect: DOMRect, x: number, y: number, pad = 4): boolean =>
   x >= rect.left - pad && x <= rect.right + pad && y >= rect.top - pad && y <= rect.bottom + pad;
 
-const rectFromTextSegmentAtPoint = (
-  textNode: Text,
-  start: number,
-  end: number,
-  clientX: number,
-  clientY: number,
-): DOMRect | null => {
+const isNonZeroRect = (rect: DOMRect): boolean => rect.width > 0 || rect.height > 0;
+
+const unionRects = (rects: DOMRect[]): DOMRect | null => {
+  if (rects.length === 0) return null;
+  let left = Infinity;
+  let top = Infinity;
+  let right = -Infinity;
+  let bottom = -Infinity;
+  for (const r of rects) {
+    if (r.left < left) left = r.left;
+    if (r.top < top) top = r.top;
+    if (r.right > right) right = r.right;
+    if (r.bottom > bottom) bottom = r.bottom;
+  }
+  return new DOMRect(left, top, right - left, bottom - top);
+};
+
+// Merge adjacent client rects produced on the same visual line (e.g. mixed
+// CJK/Latin font runs) into one clean rect per line.
+const normalizeLineRects = (rawRects: DOMRect[]): DOMRect[] => {
+  const sorted = rawRects.filter(isNonZeroRect).sort((a, b) => (a.top - b.top) || (a.left - b.left));
+  const merged: DOMRect[] = [];
+  for (const r of sorted) {
+    const prev = merged[merged.length - 1];
+    if (
+      prev
+      && Math.abs(r.top - prev.top) <= 4
+      && Math.abs(r.bottom - prev.bottom) <= 4
+      && r.left <= prev.right + 4
+    ) {
+      const left = Math.min(prev.left, r.left);
+      const top = Math.min(prev.top, r.top);
+      const right = Math.max(prev.right, r.right);
+      const bottom = Math.max(prev.bottom, r.bottom);
+      merged[merged.length - 1] = new DOMRect(left, top, right - left, bottom - top);
+    } else {
+      merged.push(new DOMRect(r.left, r.top, r.width, r.height));
+    }
+  }
+  return merged;
+};
+
+interface TextSegmentMetrics {
+  lineRects: DOMRect[];
+  boundingRect: DOMRect;
+}
+
+const getTextSegmentMetrics = (textNode: Text, start: number, end: number): TextSegmentMetrics | null => {
   if (start >= end || end > textNode.data.length) return null;
   const range = textNode.ownerDocument.createRange();
   range.setStart(textNode, start);
   range.setEnd(textNode, end);
 
-  // Prefer the individual line rect under the pointer for wrapped multi-line
-  // segments before falling back to the combined bounding rect.
   if (typeof range.getClientRects === 'function') {
-    const rects = Array.from(range.getClientRects());
-    for (const r of rects) {
-      if ((r.width > 0 || r.height > 0) && pointInsideRect(r, clientX, clientY, 8)) {
-        return r;
+    const lineRects = normalizeLineRects(Array.from(range.getClientRects()));
+    if (lineRects.length > 0) {
+      const boundingRect = unionRects(lineRects);
+      if (boundingRect && isNonZeroRect(boundingRect)) {
+        return { lineRects, boundingRect };
       }
     }
   }
 
   const rect = range.getBoundingClientRect();
-  return (rect.width > 0 || rect.height > 0) && pointInsideRect(rect, clientX, clientY, 8) ? rect : null;
+  return isNonZeroRect(rect) ? { lineRects: [rect], boundingRect: rect } : null;
 };
 
-const rectFromTextSegment = (textNode: Text, start: number, end: number): DOMRect | null => {
-  if (start >= end || end > textNode.data.length) return null;
-  const range = textNode.ownerDocument.createRange();
-  range.setStart(textNode, start);
-  range.setEnd(textNode, end);
-  const rect = range.getBoundingClientRect();
-  return rect.width > 0 || rect.height > 0 ? rect : null;
+// Hit-test against each wrapped line's own rect without falling back to the
+// outer bounding box, and return the full segment metrics so every line of a
+// multi-line key highlights consistently regardless of which line is hovered.
+const matchTextSegmentAtPoint = (
+  textNode: Text,
+  start: number,
+  end: number,
+  clientX: number,
+  clientY: number,
+): TextSegmentMetrics | null => {
+  const metrics = getTextSegmentMetrics(textNode, start, end);
+  if (!metrics) return null;
+  return metrics.lineRects.some(lineRect => pointInsideRect(lineRect, clientX, clientY, 3))
+    ? metrics
+    : null;
 };
-
-const isNonZeroRect = (rect: DOMRect): boolean => rect.width > 0 || rect.height > 0;
 
 const INTERACTIVE_CONTAINER_SELECTOR = 'button, a, label, [role="button"], [role="menuitem"], [role="option"], [role="tab"], [role="tooltip"]';
 
@@ -335,11 +382,11 @@ export class UiTextEditorDomRegistry {
     element: Element,
     clientX: number,
     clientY: number,
-  ): { key: string; rect: DOMRect; allKeys: string[] } | null {
+  ): { key: string; rect: DOMRect; rects: DOMRect[]; allKeys: string[] } | null {
     const textNodes = this.elementTexts.get(element);
     if (!textNodes) return null;
     const allKeys: string[] = [];
-    let matched: { key: string; rect: DOMRect } | null = null;
+    let matched: { key: string; rect: DOMRect; rects: DOMRect[] } | null = null;
     for (const textNode of textNodes) {
       if (!textNode.isConnected || textNode.parentElement !== element) {
         textNodes.delete(textNode);
@@ -350,8 +397,8 @@ export class UiTextEditorDomRegistry {
       for (const seg of segments) {
         allKeys.push(seg.key);
         if (!matched) {
-          const rect = rectFromTextSegmentAtPoint(textNode, seg.start, seg.end, clientX, clientY);
-          if (rect) matched = { key: seg.key, rect };
+          const metrics = matchTextSegmentAtPoint(textNode, seg.start, seg.end, clientX, clientY);
+          if (metrics) matched = { key: seg.key, rect: metrics.boundingRect, rects: metrics.lineRects };
         }
       }
     }
@@ -432,7 +479,7 @@ export class UiTextEditorDomRegistry {
   // Containers with multiple distinct keys do not claim empty background space.
   private resolveUniqueSubtreeVisibleTarget(container: Element): HitTarget | null {
     const visibleKeys = new Set<string>();
-    let target: { element: Element; rect: DOMRect | null } | null = null;
+    let target: { element: Element; metrics: TextSegmentMetrics | null } | null = null;
     const walker = container.ownerDocument.createTreeWalker(
       container,
       NodeFilter.SHOW_ELEMENT,
@@ -459,7 +506,7 @@ export class UiTextEditorDomRegistry {
           for (const seg of segments) {
             visibleKeys.add(seg.key);
             if (visibleKeys.size > 1) return null;
-            target ??= { element: el, rect: rectFromTextSegment(textNode, seg.start, seg.end) };
+            target ??= { element: el, metrics: getTextSegmentMetrics(textNode, seg.start, seg.end) };
           }
         }
       }
@@ -468,7 +515,10 @@ export class UiTextEditorDomRegistry {
         if (visibleKeys.size > 1) return null;
         if (!target) {
           const rect = el.getBoundingClientRect();
-          target = { element: el, rect: isNonZeroRect(rect) ? rect : null };
+          target = {
+            element: el,
+            metrics: isNonZeroRect(rect) ? { lineRects: [rect], boundingRect: rect } : null,
+          };
         }
       }
       el = walker.nextNode() as Element | null;
@@ -477,10 +527,11 @@ export class UiTextEditorDomRegistry {
     if (visibleKeys.size !== 1 || !target) return null;
     const primaryKey = [...visibleKeys][0]!;
     const fallbackRect = target.element.getBoundingClientRect();
-    const rect = target.rect ?? (isNonZeroRect(fallbackRect) ? fallbackRect : null);
+    const rect = target.metrics?.boundingRect ?? (isNonZeroRect(fallbackRect) ? fallbackRect : null);
     if (!rect) return null;
+    const rects = target.metrics?.lineRects ?? [rect];
     const candidates = dedupeKeys([primaryKey, ...this.collectSubtreeKeys(container)]);
-    return { element: target.element, rect, primaryKey, candidates };
+    return { element: target.element, rect, rects, primaryKey, candidates };
   }
 
   resolveAtPoint(doc: Document, clientX: number, clientY: number): HitTarget | null {
@@ -495,14 +546,14 @@ export class UiTextEditorDomRegistry {
       if (segments && segments.length > 0 && parent) {
         const hitSegment = findSegmentAtOffset(segments, caret.offset);
         if (hitSegment) {
-          const segRect = rectFromTextSegmentAtPoint(
+          const metrics = matchTextSegmentAtPoint(
             caret.node,
             hitSegment.start,
             hitSegment.end,
             clientX,
             clientY,
           );
-          if (segRect) {
+          if (metrics) {
             const container = parent.closest('p, li, td, th, button, a, label, h1, h2, h3, h4, h5, h6, [role="tooltip"], [role="menuitem"], [role="option"]') ?? parent;
             const allCandidates = dedupeKeys([
               hitSegment.key,
@@ -511,7 +562,8 @@ export class UiTextEditorDomRegistry {
             ]);
             return {
               element: parent,
-              rect: segRect,
+              rect: metrics.boundingRect,
+              rects: metrics.lineRects,
               primaryKey: hitSegment.key,
               candidates: allCandidates,
             };
@@ -546,6 +598,7 @@ export class UiTextEditorDomRegistry {
         return {
           element,
           rect: textHit.rect,
+          rects: textHit.rects,
           primaryKey: textHit.key,
           candidates,
         };
@@ -563,6 +616,7 @@ export class UiTextEditorDomRegistry {
           return {
             element,
             rect,
+            rects: [rect],
             primaryKey: candidates[0]!,
             candidates,
           };
@@ -583,15 +637,9 @@ export class UiTextEditorDomRegistry {
             const segments = this.textSegments.get(textNode);
             if (!segments) continue;
             for (const seg of segments) {
-              if (seg.start < seg.end && seg.end <= textNode.data.length) {
-                const range = textNode.ownerDocument.createRange();
-                range.setStart(textNode, seg.start);
-                range.setEnd(textNode, seg.end);
-                const r = range.getBoundingClientRect();
-                if (r.width > 0 || r.height > 0) {
-                  hasNonZeroTextRect = true;
-                  break;
-                }
+              if (getTextSegmentMetrics(textNode, seg.start, seg.end)) {
+                hasNonZeroTextRect = true;
+                break;
               }
             }
             if (hasNonZeroTextRect) break;
@@ -612,6 +660,7 @@ export class UiTextEditorDomRegistry {
           return {
             element,
             rect,
+            rects: [rect],
             primaryKey: candidates[0]!,
             candidates,
           };
@@ -634,6 +683,7 @@ export class UiTextEditorDomRegistry {
           return {
             element,
             rect,
+            rects: [rect],
             primaryKey: aria[0]!,
             primaryAttribute: 'aria-label',
             candidates: aria,

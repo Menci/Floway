@@ -178,4 +178,46 @@ describe('UiTextEditorOverlay', () => {
       Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: originalElementsFromPoint });
     }
   });
+  it('renders a unified multi-line SVG contour when a wrapped text key spans multiple line rects', async () => {
+    const { container } = renderInApp(
+      <>
+        <div data-testid="wrapped-hint">
+          {wrapWithKeyMarkers('Protocol-native fields override the controls above.', 'playground.customJsonHint')}
+        </div>
+        <UiTextEditorOverlay />
+      </>,
+    );
+
+    const hint = screen.getByTestId('wrapped-hint');
+    const line1 = new DOMRect(20, 200, 250, 18);
+    const line2 = new DOMRect(20, 220, 44, 18);
+    vi.spyOn(hint, 'getBoundingClientRect').mockReturnValue(new DOMRect(20, 200, 250, 38));
+    vi.spyOn(Range.prototype, 'getClientRects').mockReturnValue([line1, line2] as unknown as DOMRectList);
+    vi.spyOn(Range.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(20, 200, 250, 38));
+    const originalElementsFromPoint = (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;
+    Object.defineProperty(document, 'elementsFromPoint', {
+      configurable: true,
+      value: () => [hint, container, document.body],
+    });
+
+    await waitFor(() => {
+      expect(hint.textContent).toBe('Protocol-native fields override the controls above.');
+      expect(useUiTextEditorStore.getState().initialized).toBe(true);
+    });
+
+    fireEvent.pointerMove(window, { altKey: true, clientX: 120, clientY: 208 });
+
+    const svg = await waitFor(() => {
+      const el = document.querySelector<SVGSVGElement>('.floway-ui-text-editor-highlight-svg');
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    expect(svg.querySelectorAll('mask')).toHaveLength(2);
+
+    if (originalElementsFromPoint === undefined) {
+      delete (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;
+    } else {
+      Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: originalElementsFromPoint });
+    }
+  });
 });

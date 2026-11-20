@@ -4,7 +4,7 @@ import {
   Copy16Regular,
   Edit16Regular,
 } from '@fluentui/react-icons';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { EditorFlyout } from './editor-flyout';
@@ -69,6 +69,200 @@ interface ActiveFlyoutState {
 }
 
 const FREEZE_EVENTS = ['pointerout', 'pointerleave', 'mouseout', 'mouseleave', 'blur', 'focusout'] as const;
+
+const HIGHLIGHT_PAD = 2;
+const HIGHLIGHT_BORDER = 1.5;
+const HIGHLIGHT_RADIUS = 4;
+const HIGHLIGHT_INNER_RADIUS = Math.max(0, HIGHLIGHT_RADIUS - HIGHLIGHT_BORDER);
+const HIGHLIGHT_MAX_LINE_GAP = 8;
+
+interface Box {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+function HighlightShape({ boundingRect, rects }: { boundingRect: DOMRect; rects: DOMRect[] }) {
+  const maskPrefix = useId().replace(/[^a-zA-Z0-9_-]/g, '');
+
+  if (rects.length <= 1) {
+    const r = rects[0] ?? boundingRect;
+    return (
+      <div
+        className="floway-ui-text-editor-highlight"
+        style={{
+          left: `${r.left - HIGHLIGHT_PAD}px`,
+          top: `${r.top - HIGHLIGHT_PAD}px`,
+          width: `${r.width + HIGHLIGHT_PAD * 2}px`,
+          height: `${r.height + HIGHLIGHT_PAD * 2}px`,
+        }}
+      />
+    );
+  }
+
+  const boxes: Box[] = rects.map(r => ({
+    left: r.left - HIGHLIGHT_PAD,
+    top: r.top - HIGHLIGHT_PAD,
+    right: r.right + HIGHLIGHT_PAD,
+    bottom: r.bottom + HIGHLIGHT_PAD,
+  }));
+
+  // Bridge small line-height gaps between horizontally overlapping lines so
+  // wrapped multi-line keys read as one continuous shape.
+  for (let i = 0; i < boxes.length - 1; i++) {
+    const a = boxes[i]!;
+    const b = boxes[i + 1]!;
+    const overlapLeft = Math.max(a.left, b.left);
+    const overlapRight = Math.min(a.right, b.right);
+    if (overlapRight <= overlapLeft) continue;
+    const gap = b.top - a.bottom;
+    if (gap <= HIGHLIGHT_MAX_LINE_GAP) {
+      const mid = (a.bottom + b.top) / 2;
+      a.bottom = Math.max(a.bottom, mid + HIGHLIGHT_BORDER);
+      b.top = Math.min(b.top, mid - HIGHLIGHT_BORDER);
+    }
+  }
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const box of boxes) {
+    if (box.left < minX) minX = box.left;
+    if (box.top < minY) minY = box.top;
+    if (box.right > maxX) maxX = box.right;
+    if (box.bottom > maxY) maxY = box.bottom;
+  }
+  const width = maxX - minX;
+  const height = maxY - minY;
+
+  const outerBridges: Box[] = [];
+  const innerBridges: Box[] = [];
+  for (let i = 0; i < boxes.length - 1; i++) {
+    const a = boxes[i]!;
+    const b = boxes[i + 1]!;
+    if (a.bottom <= b.top) continue;
+    const outerLeft = Math.max(a.left, b.left);
+    const outerRight = Math.min(a.right, b.right);
+    if (outerRight > outerLeft) {
+      const outerTop = Math.max(a.top + HIGHLIGHT_RADIUS, b.top - HIGHLIGHT_RADIUS);
+      const outerBottom = Math.min(b.bottom - HIGHLIGHT_RADIUS, a.bottom + HIGHLIGHT_RADIUS);
+      if (outerBottom > outerTop) {
+        outerBridges.push({ left: outerLeft, top: outerTop, right: outerRight, bottom: outerBottom });
+      }
+    }
+    const innerLeft = Math.max(a.left, b.left) + HIGHLIGHT_BORDER;
+    const innerRight = Math.min(a.right, b.right) - HIGHLIGHT_BORDER;
+    if (innerRight > innerLeft) {
+      const innerTop = Math.max(a.top + HIGHLIGHT_BORDER, b.top - HIGHLIGHT_RADIUS);
+      const innerBottom = Math.min(b.bottom - HIGHLIGHT_BORDER, a.bottom + HIGHLIGHT_RADIUS);
+      if (innerBottom > innerTop) {
+        innerBridges.push({ left: innerLeft, top: innerTop, right: innerRight, bottom: innerBottom });
+      }
+    }
+  }
+
+  const outerMaskId = `${maskPrefix}-outer`;
+  const borderMaskId = `${maskPrefix}-border`;
+
+  return (
+    <svg
+      aria-hidden="true"
+      className="floway-ui-text-editor-highlight-svg"
+      height={height}
+      style={{ left: `${minX}px`, top: `${minY}px` }}
+      viewBox={`0 0 ${width} ${height}`}
+      width={width}
+    >
+      <defs>
+        <mask id={outerMaskId} maskUnits="userSpaceOnUse">
+          {boxes.map((box, index) => (
+            <rect
+              key={`of-${index}`}
+              fill="white"
+              height={box.bottom - box.top}
+              rx={HIGHLIGHT_RADIUS}
+              width={box.right - box.left}
+              x={box.left - minX}
+              y={box.top - minY}
+            />
+          ))}
+          {outerBridges.map((bridge, index) => (
+            <rect
+              key={`ob-${index}`}
+              fill="white"
+              height={bridge.bottom - bridge.top}
+              width={bridge.right - bridge.left}
+              x={bridge.left - minX}
+              y={bridge.top - minY}
+            />
+          ))}
+        </mask>
+        <mask id={borderMaskId} maskUnits="userSpaceOnUse">
+          {boxes.map((box, index) => (
+            <rect
+              key={`bo-${index}`}
+              fill="white"
+              height={box.bottom - box.top}
+              rx={HIGHLIGHT_RADIUS}
+              width={box.right - box.left}
+              x={box.left - minX}
+              y={box.top - minY}
+            />
+          ))}
+          {outerBridges.map((bridge, index) => (
+            <rect
+              key={`bob-${index}`}
+              fill="white"
+              height={bridge.bottom - bridge.top}
+              width={bridge.right - bridge.left}
+              x={bridge.left - minX}
+              y={bridge.top - minY}
+            />
+          ))}
+          {boxes.map((box, index) => (
+            <rect
+              key={`bi-${index}`}
+              fill="black"
+              height={Math.max(0, box.bottom - box.top - HIGHLIGHT_BORDER * 2)}
+              rx={HIGHLIGHT_INNER_RADIUS}
+              width={Math.max(0, box.right - box.left - HIGHLIGHT_BORDER * 2)}
+              x={box.left - minX + HIGHLIGHT_BORDER}
+              y={box.top - minY + HIGHLIGHT_BORDER}
+            />
+          ))}
+          {innerBridges.map((bridge, index) => (
+            <rect
+              key={`bib-${index}`}
+              fill="black"
+              height={bridge.bottom - bridge.top}
+              width={bridge.right - bridge.left}
+              x={bridge.left - minX}
+              y={bridge.top - minY}
+            />
+          ))}
+        </mask>
+      </defs>
+      <rect
+        fill="var(--winui-accent-tint-fill-default)"
+        height={height}
+        mask={`url(#${outerMaskId})`}
+        width={width}
+        x={0}
+        y={0}
+      />
+      <rect
+        fill="var(--winui-accent-fill-default)"
+        height={height}
+        mask={`url(#${borderMaskId})`}
+        width={width}
+        x={0}
+        y={0}
+      />
+    </svg>
+  );
+}
 
 export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme?: Theme }) {
   const { t, i18n } = useEditorTranslation();
@@ -362,15 +556,7 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
           <FluentProvider className="floway-ui-text-editor-provider" theme={theme}>
             {altPressed && hoverTarget && (
               <>
-                <div
-                  className="floway-ui-text-editor-highlight"
-                  style={{
-                    left: `${hoverTarget.rect.left - 2}px`,
-                    top: `${hoverTarget.rect.top - 2}px`,
-                    width: `${hoverTarget.rect.width + 4}px`,
-                    height: `${hoverTarget.rect.height + 4}px`,
-                  }}
-                />
+                <HighlightShape boundingRect={hoverTarget.rect} rects={hoverTarget.rects} />
                 <div
                   className="floway-ui-text-editor-highlight-tag"
                   style={{ left: `${highlightTagPos.left}px`, top: `${highlightTagPos.top}px` }}

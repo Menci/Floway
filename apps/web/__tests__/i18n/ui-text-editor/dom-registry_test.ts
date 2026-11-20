@@ -193,4 +193,52 @@ describe('UiTextEditorDomRegistry', () => {
       }
     }
   });
+  it('returns all line rects consistently across wrapped lines and ignores trailing blank space', () => {
+    container = document.createElement('div');
+    const hint = document.createElement('div');
+    hint.textContent = wrapWithKeyMarkers(
+      'Protocol-native fields override the controls above.',
+      'playground.customJsonHint',
+    );
+    container.append(hint);
+    document.body.append(container);
+
+    const line1 = new DOMRect(20, 200, 250, 18);
+    const line2 = new DOMRect(20, 220, 44, 18);
+    const combined = new DOMRect(20, 200, 250, 38);
+
+    vi.spyOn(hint, 'getBoundingClientRect').mockReturnValue(combined);
+    vi.spyOn(Range.prototype, 'getClientRects').mockReturnValue([line1, line2] as unknown as DOMRectList);
+    vi.spyOn(Range.prototype, 'getBoundingClientRect').mockReturnValue(combined);
+
+    const originalElementsFromPoint = (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;
+    Object.defineProperty(document, 'elementsFromPoint', {
+      configurable: true,
+      value: () => [hint, container, document.body],
+    });
+
+    try {
+      registry.start(container);
+
+      const firstLineHit = registry.resolveAtPoint(document, 120, 208);
+      const secondLineHit = registry.resolveAtPoint(document, 36, 228);
+
+      expect(firstLineHit?.primaryKey).toBe('playground.customJsonHint');
+      expect(firstLineHit?.rects).toEqual([line1, line2]);
+      expect(firstLineHit?.rect).toEqual(combined);
+
+      expect(secondLineHit?.primaryKey).toBe('playground.customJsonHint');
+      expect(secondLineHit?.rects).toEqual([line1, line2]);
+      expect(secondLineHit?.rect).toEqual(combined);
+
+      // Empty space to the right of the shorter second line does not fall back to the bounding box.
+      expect(registry.resolveAtPoint(document, 180, 228)).toBeNull();
+    } finally {
+      if (originalElementsFromPoint === undefined) {
+        delete (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;
+      } else {
+        Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: originalElementsFromPoint });
+      }
+    }
+  });
 });
