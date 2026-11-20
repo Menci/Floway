@@ -631,27 +631,6 @@ test('POST /api/upstreams/preview-models dials an edit-form list without recordi
   assertEquals(await repo.proxyBackoffs.listAll(), []);
 });
 
-// The setup's SocketDial refuses every connection, so each preview fails at
-// the proxy dial. Neither a create-form draft nor an unsaved list edited on a
-// saved upstream may leave a cooldown row behind.
-test('POST /api/upstreams/preview-models dials an edit-form list without recording proxy backoff', async () => {
-  const { repo, adminSession } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  await repo.proxies.insert({ id: 'p_a', name: 'A', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
-  const create = await requestApp('/api/upstreams', authed(adminSession, createBody()));
-  const saved = await getRecord(repo, ((await create.json()) as { id: string }).id);
-  const discovery = { ...customConfig, modelsFetch: { enabled: true, authStyle: 'bearer' } };
-
-  for (const record of [
-    blueprintEnvelope('custom', { config: discovery, proxy_fallback_list: [{ id: 'p_a' }] }),
-    { ...envelopeFromRecord(saved), config: discovery, proxy_fallback_list: [{ id: 'p_a' }] },
-  ]) {
-    const resp = await requestApp('/api/upstreams/preview-models', authed(adminSession, { record }));
-    assertEquals(resp.status, 502);
-  }
-  assertEquals(await repo.proxyBackoffs.listAll(), []);
-});
-
 // The edit form's in-progress proxy_fallback_list travels on the action
 // envelope and must win over the persisted list.
 test('POST /api/upstreams/claude-code/oauth/refresh honors the record.proxy_fallback_list over the persisted list', async () => {
