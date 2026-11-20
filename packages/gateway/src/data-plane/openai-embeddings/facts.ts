@@ -12,7 +12,7 @@ export interface OpenAIEmbeddingsFacts extends GatewayFacts {
   'response.openaiEmbeddings.canonical': CanonicalOpenAIEmbeddingsResponse | Failure;
   /** What the client is actually sent. The edge provides it, so a dump shows the bytes the
    *  client received rather than the gateway's canonical form. */
-  'response.openaiEmbeddings.rendered': Record<string, unknown>;
+  'response.openaiEmbeddings.rendered': object;
 }
 
 export type Fields<K extends keyof OpenAIEmbeddingsFacts> = { [P in K]: OpenAIEmbeddingsFacts[P] };

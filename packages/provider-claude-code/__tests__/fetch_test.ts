@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { callClaudeCodeAnthropicMessages } from '../src/fetch.ts';
+import { callClaudeCodeAnthropicMessages } from './test-utils/call.ts';
+import { CLAUDE_CODE_HEADERS_HAIKU, CLAUDE_CODE_HEADERS_SONNET_OPUS } from '../src/headers.ts';
+import { parseClaudeCodeQuotaHeaders } from '../src/quota.ts';
 import type {
   ClaudeCodeAccessTokenEntry,
   ClaudeCodeAccountCredential,
@@ -30,6 +32,14 @@ const sonnetModel = stubProviderModel({
   display_name: 'Sonnet',
   endpoints: { anthropicMessages: {} },
   providerData: sonnetProviderData,
+});
+
+const haikuProviderData = { upstreamModelId: 'claude-haiku-4-5-20251001' };
+const haikuModel = stubProviderModel({
+  id: 'claude-haiku-4-5',
+  display_name: 'Haiku',
+  endpoints: { anthropicMessages: {} },
+  providerData: haikuProviderData,
 });
 
 const freshAccessTokenEntry: ClaudeCodeAccessTokenEntry = {
@@ -76,8 +86,6 @@ const seedAccount = (overrides: Partial<ClaudeCodeAccountCredential> = {}): void
 const readQuotaEntry = (): ClaudeCodeQuotaSnapshotEntry | null =>
   currentState().accounts[0]!.quotaSnapshot;
 
-// Yield to the queue so the .catch chain from fireAndForgetPersist completes
-// before assertions inspect the persisted state.
 const flushAsyncQueue = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
 
 beforeEach(() => {
@@ -121,6 +129,10 @@ const errorJson = (status: number, body: unknown, extraHeaders: Record<string, s
 
 const minimalBody = { max_tokens: 16, messages: [{ role: 'user' as const, content: 'hi' }] };
 
+const drain = async <T>(events: AsyncIterable<T>): Promise<void> => {
+  for await (const _event of events) {}
+};
+
 describe('callClaudeCodeAnthropicMessages — pre-fetch gates', () => {
   test('non-active account → synthetic 503', async () => {
     seedAccount({ state: 'session_terminated', stateMessage: 'revoked' });
@@ -128,10 +140,13 @@ describe('callClaudeCodeAnthropicMessages — pre-fetch gates', () => {
       upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.http.status).toBe(503);
+    if (!result.ok) {
+      expect(result.response.status).toBe(503);
+      expect(await result.response.text()).toMatch(/session_terminated/);
+    }
   });
 
-  test('rejected shared five_hour quota → synthetic 429 with retry-after', async () => {
+  test.each(['five_hour', 'seven_day'])('rejected shared %s quota → synthetic 429 with retry-after', async representativeClaim => {
     const resetIso = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     seedAccount({
       accessToken: freshAccessTokenEntry,
@@ -142,7 +157,7 @@ describe('callClaudeCodeAnthropicMessages — pre-fetch gates', () => {
           reset: resetIso,
           fallbackAvailable: null,
           fallbackPercentage: null,
-          representativeClaim: 'five_hour',
+          representativeClaim,
           overage: null,
           fiveHour: null,
           sevenDay: null,
@@ -156,8 +171,8 @@ describe('callClaudeCodeAnthropicMessages — pre-fetch gates', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.http.status).toBe(429);
-      expect(result.http.headers.get('retry-after')).toBeTruthy();
+      expect(result.response.status).toBe(429);
+      expect(result.response.headers.get('retry-after')).toBeTruthy();
     }
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -190,16 +205,16 @@ describe('callClaudeCodeAnthropicMessages — pre-fetch gates', () => {
     const first = await callClaudeCodeAnthropicMessages({ upstreamId, model: fableModel, body: minimalBody, shaped: false, call });
     expect(first.ok).toBe(false);
     if (!first.ok) {
-      expect(first.http.status).toBe(429);
-      expect(first.http.headers.get('retry-after')).toBe(quotaHeaders['retry-after']);
-      expect(await first.http.json()).toEqual(upstreamBody);
+      expect(first.response.status).toBe(429);
+      expect(first.response.headers.get('retry-after')).toBe(quotaHeaders['retry-after']);
+      expect(await first.response.json()).toEqual(upstreamBody);
     }
     await Promise.all(pending);
     expect(readQuotaEntry()).toMatchObject({ modelId: 'claude-fable-5-1', data: { status: 'rejected', representativeClaim: 'seven_day_overage_included' } });
 
     const again = await callClaudeCodeAnthropicMessages({ upstreamId, model: fableModel, body: minimalBody, shaped: false, call });
     expect(again.ok).toBe(false);
-    if (!again.ok) expect(again.http.status).toBe(429);
+    if (!again.ok) expect(again.response.status).toBe(429);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
 
     for (const modelId of ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5']) {
@@ -211,6 +226,19 @@ describe('callClaudeCodeAnthropicMessages — pre-fetch gates', () => {
     }
     expect(fetchSpy).toHaveBeenCalledTimes(4);
     await Promise.all(pending);
+  });
+
+  test.each(['seven_day_overage_included', 'seven_day_opus', 'seven_day_sonnet', 'future_model_limit'])('a persisted %s rejection without a model cannot lock the account', async claim => {
+    const data = parseClaudeCodeQuotaHeaders(new Headers({
+      'anthropic-ratelimit-unified-status': 'rejected',
+      'anthropic-ratelimit-unified-representative-claim': claim,
+      'anthropic-ratelimit-unified-reset': String(Math.floor(Date.now() / 1000) + 3600),
+    }));
+    seedAccount({ accessToken: freshAccessTokenEntry, quotaSnapshot: { fetchedAt: Date.now(), data } });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse(200, {}));
+    const result = await callClaudeCodeAnthropicMessages({ upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions() });
+    expect(result.ok).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -246,6 +274,74 @@ describe('callClaudeCodeAnthropicMessages — header surface', () => {
     expect(wireHeaders.get('x-client-request-id')).toBe('req-xyz');
   });
 
+  test('shaped:true defaults Content-Type to application/json when the inbound omits it', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callClaudeCodeAnthropicMessages({
+      upstreamId, model: sonnetModel, body: minimalBody,
+      shaped: true,
+      call: { ...noopUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.280' }) },
+    });
+    const wireHeaders = new Headers((fetchSpy.mock.calls[0]![1] as RequestInit).headers);
+    expect(wireHeaders.get('content-type')).toBe('application/json');
+  });
+
+  test('shaped:true forwards inbound Content-Type verbatim when present', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callClaudeCodeAnthropicMessages({
+      upstreamId, model: sonnetModel, body: minimalBody,
+      shaped: true,
+      call: {
+        ...noopUpstreamCallOptions(),
+        headers: new Headers({ 'user-agent': 'claude-cli/2.1.280', 'content-type': 'application/json; charset=utf-8' }),
+      },
+    });
+    const wireHeaders = new Headers((fetchSpy.mock.calls[0]![1] as RequestInit).headers);
+    expect(wireHeaders.get('content-type')).toBe('application/json; charset=utf-8');
+  });
+
+  test('shaped:true with empty headers passes through minimal content-type + authorization (no inbound fingerprint to forward)', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callClaudeCodeAnthropicMessages({
+      upstreamId, model: sonnetModel, body: minimalBody,
+      shaped: true,
+      call: noopUpstreamCallOptions(),
+    });
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const wireHeaders = new Headers(init.headers);
+    expect(wireHeaders.get('authorization')).toBe('Bearer at_cached');
+    expect(wireHeaders.get('content-type')).toBe('application/json');
+    // No allowlisted inbound headers were present, so nothing else carries through.
+    expect(wireHeaders.get('x-stainless-lang')).toBeNull();
+    expect(wireHeaders.get('anthropic-beta')).toBeNull();
+  });
+
+  test('shaped:false on sonnet replaces headers with pinned sonnet/opus set', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callClaudeCodeAnthropicMessages({
+      upstreamId, model: sonnetModel, body: minimalBody,
+      shaped: false, call: noopUpstreamCallOptions({ anthropicBeta: ['caller-beta-must-not-replace-mimicry'] }),
+    });
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const wireHeaders = new Headers(init.headers);
+    expect(wireHeaders.get('authorization')).toBe('Bearer at_cached');
+    expect(wireHeaders.get('user-agent')).toBe(CLAUDE_CODE_HEADERS_SONNET_OPUS['User-Agent']);
+    expect(wireHeaders.get('anthropic-beta')).toBe(CLAUDE_CODE_HEADERS_SONNET_OPUS['anthropic-beta']);
+  });
+
+  test('shaped:false on haiku uses the leaner haiku header set', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callClaudeCodeAnthropicMessages({
+      upstreamId, model: haikuModel, body: minimalBody, shaped: false,
+      call: noopUpstreamCallOptions({ anthropicBeta: ['caller-beta-must-not-replace-mimicry'] }),
+    });
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    expect(new Headers(init.headers).get('anthropic-beta')).toBe(CLAUDE_CODE_HEADERS_HAIKU['anthropic-beta']);
+  });
 });
 
 describe('callClaudeCodeAnthropicMessages — wire body', () => {
@@ -260,6 +356,75 @@ describe('callClaudeCodeAnthropicMessages — wire body', () => {
     const body = await readJsonRequest(fetchSpy.mock.calls[0]![1] as RequestInit) as AnthropicMessagesPayload;
     expect(body.stream).toBe(true);
     expect(body.model).toBe('claude-sonnet-4-5-20250929');
+  });
+
+  test('targets /v1/messages?beta=true', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callClaudeCodeAnthropicMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+    });
+    expect(fetchSpy.mock.calls[0]![0]).toBe('https://api.anthropic.com/v1/messages?beta=true');
+  });
+});
+
+describe('callClaudeCodeAnthropicMessages — incomplete stream diagnostics', () => {
+  test('logs upstream trace headers and last raw SSE frames when message_stop is absent', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const warn = vi.fn();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('event: message_start\ndata: {"type":"message_start"}\n\nevent: message_delta\ndata: {"type":"message_delta","delta":{"text":"partial"}}\n\n'));
+          controller.close();
+        },
+      }),
+      {
+        status: 200,
+        headers: {
+          'content-type': 'text/event-stream',
+          'request-id': 'req_trace',
+          'cf-ray': 'ray_trace',
+          traceresponse: 'trace_response',
+        },
+      },
+    ));
+
+    const result = await callClaudeCodeAnthropicMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(), observers: { log: { debug: () => {}, info: () => {}, warn, error: () => {} } },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    await drain(result.events);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toBe('claude_code_messages_stream_incomplete');
+    const fields = warn.mock.calls[0]![1] as Record<string, unknown>;
+    expect(fields).toMatchObject({ upstream_id: upstreamId, request_id: 'req_trace', cf_ray: 'ray_trace', trace_response: 'trace_response', raw_sse_frames: 2, terminal_event: null });
+    expect(fields.last_sse_frames).toContain('message_delta');
+
+  });
+
+  test('does not log a complete Messages stream', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('event: message_stop\ndata: {"type":"message_stop"}\n\n'));
+          controller.close();
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'text/event-stream' } },
+    ));
+
+    const result = await callClaudeCodeAnthropicMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    await drain(result.events);
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 
@@ -278,6 +443,19 @@ describe('callClaudeCodeAnthropicMessages — 401 retry', () => {
     expect(currentState().accounts[0]!.refreshToken).toBe('rt_v2');
   });
 
+  test('second 401 after retry → surface verbatim 401, no further retries', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(errorJson(401, { error: { type: 'authentication_error', message: 'expired' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at_new', refresh_token: 'rt_v2', token_type: 'Bearer', expires_in: 600, scope: '' }), { status: 200 }))
+      .mockResolvedValueOnce(errorJson(401, { error: { type: 'authentication_error', message: 'still expired' } }));
+    const result = await callClaudeCodeAnthropicMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(401);
+  });
+
   test('freshly-minted token 401 → no invalidate, surface verbatim', async () => {
     seedAccount();
     vi.spyOn(globalThis, 'fetch')
@@ -287,16 +465,49 @@ describe('callClaudeCodeAnthropicMessages — 401 retry', () => {
       upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.http.status).toBe(401);
+    if (!result.ok) expect(result.response.status).toBe(401);
   });
 });
 
 describe('callClaudeCodeAnthropicMessages — quota persistence', () => {
-  test('2xx → hands the quota persist to opts.call.waitUntil', async () => {
-    // On Cloudflare Workers the runtime cancels orphan promises the moment
-    // the response is sent. The gateway threads `waitUntil` through
-    // UpstreamCallOptions so the persist can extend the worker's lifetime;
-    // the quota lands only once the handed promise settles.
+  test('2xx → parses and persists quota snapshot from response headers', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse(200, {
+      'anthropic-ratelimit-unified-7d-status': 'allowed',
+      'anthropic-ratelimit-unified-7d-reset': '1782039600',
+      'anthropic-ratelimit-unified-7d-utilization': '0.5',
+    }));
+    const result = await callClaudeCodeAnthropicMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+    });
+    expect(result.ok).toBe(true);
+    await flushAsyncQueue();
+    const stored = readQuotaEntry();
+    expect(stored).not.toBeNull();
+    const data = stored!.data as { status?: string; sevenDay?: { utilization?: number } };
+    expect(data.status).toBe('allowed');
+    expect(data.sevenDay?.utilization).toBe(0.5);
+  });
+
+  test('429 also persists quota snapshot (rate-limit window captured)', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(429, { error: { type: 'rate_limit_error', message: 'slow down' } }, {
+      'anthropic-ratelimit-unified-status': 'rejected',
+      'anthropic-ratelimit-unified-reset': '1781805000',
+      'retry-after': '60',
+    }));
+    const result = await callClaudeCodeAnthropicMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(429);
+    await flushAsyncQueue();
+    const stored = readQuotaEntry();
+    const data = stored!.data as { status?: string };
+    expect(data.status).toBe('rejected');
+  });
+
+  test('2xx quota write completes through the run deferred lifecycle', async () => {
     seedAccount({ accessToken: freshAccessTokenEntry });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const waitUntil = vi.fn<(promise: Promise<unknown>) => void>();
@@ -305,8 +516,9 @@ describe('callClaudeCodeAnthropicMessages — quota persistence', () => {
       upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call,
     });
     expect(result.ok).toBe(true);
-    await Promise.all(waitUntil.mock.calls.map(([promise]) => promise));
-    expect(readQuotaEntry()).not.toBeNull();
+    expect(waitUntil).not.toHaveBeenCalled();
+    const stored = readQuotaEntry();
+    expect(stored).not.toBeNull();
   });
 });
 
@@ -326,16 +538,89 @@ describe('callClaudeCodeAnthropicMessages — terminal sentinel detection', () =
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.http.status).toBe(400);
+      expect(result.response.status).toBe(400);
       // Verbatim body still reaches the caller — the response body must be
       // readable after the provider call returned (we cloned for detection).
-      expect(await result.http.json()).toEqual(upstreamBody);
+      expect(await result.response.json()).toEqual(upstreamBody);
     }
     await flushAsyncQueue();
     const account = currentState().accounts[0]!;
     expect(account.state).toBe('refresh_failed');
+    expect(account.stateMessage).toMatch(/Organization disabled by Anthropic/);
     expect(account.stateMessage).toMatch(/organization has been disabled/);
     expect(account.accessToken).toBeNull();
   });
 
+  test('403 permission_error with banned-org sentinel → surface verbatim AND flip to refresh_failed', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const upstreamBody = {
+      error: {
+        type: 'permission_error',
+        message: 'OAuth authentication is currently not allowed for this organization',
+      },
+    };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(403, upstreamBody));
+    const result = await callClaudeCodeAnthropicMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(403);
+      expect(await result.response.json()).toEqual(upstreamBody);
+    }
+    await flushAsyncQueue();
+    const account = currentState().accounts[0]!;
+    expect(account.state).toBe('refresh_failed');
+    expect(account.stateMessage).toMatch(/Organization banned from OAuth by Anthropic/);
+    expect(account.accessToken).toBeNull();
+  });
+
+  test('400 invalid_request_error with unrelated message → surface verbatim, NO terminal flip', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const upstreamBody = { error: { type: 'invalid_request_error', message: 'max_tokens: must be at most 8192' } };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(400, upstreamBody));
+    const result = await callClaudeCodeAnthropicMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(400);
+      expect(await result.response.json()).toEqual(upstreamBody);
+    }
+    await flushAsyncQueue();
+    expect(currentState().accounts[0]!.state).toBe('active');
+  });
+
+  test('403 permission_error with unrelated message → surface verbatim, NO terminal flip', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const upstreamBody = { error: { type: 'permission_error', message: 'unrelated' } };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(403, upstreamBody));
+    const result = await callClaudeCodeAnthropicMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(403);
+      expect(await result.response.json()).toEqual(upstreamBody);
+    }
+    await flushAsyncQueue();
+    expect(currentState().accounts[0]!.state).toBe('active');
+  });
+
+  test('400 with non-JSON body → surface verbatim, NO terminal flip (defensive parse)', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('not json at all', { status: 400, headers: { 'content-type': 'text/plain' } }),
+    );
+    const result = await callClaudeCodeAnthropicMessages({
+      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(400);
+      expect(await result.response.text()).toBe('not json at all');
+    }
+    await flushAsyncQueue();
+    expect(currentState().accounts[0]!.state).toBe('active');
+  });
 });

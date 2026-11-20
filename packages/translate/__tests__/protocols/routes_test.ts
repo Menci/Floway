@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { test } from 'vitest';
 
 import { fixtureFrames, type nativeResult } from './fixtures.ts';
 import { partitionAnthropicMessagesTurns } from '../../src/protocols/anthropic-messages/as-source/conversation-turns.ts';
@@ -12,10 +12,10 @@ import { decodeRoundTripSidecar } from '../../src/round-trip/sidecar.ts';
 import { requireJSONObject } from '../../src/shared/json/object.ts';
 import type { TranslateInputError } from '../../src/types.ts';
 import { createTestSidecarCodec } from '../round-trip/sidecar-codec.ts';
+import { deepFreeze } from '../shared/deep-freeze.ts';
 import { collect, iterate } from '../shared/iterables.ts';
 import { expectTrip } from '../trip.ts';
-import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import { eventFrame } from '@floway-dev/protocols/common';
+import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentContent, type GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 import { toOpenAIChatCompletionsInputAssistantMessage } from '@floway-dev/protocols/openai-chat-completions';
 import { collectOpenAIChatCompletionsProtocolEventsToResult, type OpenAIChatCompletionsAssistantMessageEx, type OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
@@ -68,70 +68,6 @@ const gemini: GeminiGenerateContentRequest = {
   tools: [{ functionDeclarations: [{ name: 'f', parameters: schema }] }],
   generationConfig: { responseSchema: formatSchema, stopSequences: ['END'], maxOutputTokens: 16 },
 };
-
-const objectsIn = (value: unknown): Set<object> => {
-  const objects = new Set<object>();
-  const visit = (current: unknown): void => {
-    if (typeof current !== 'object' || current === null || objects.has(current)) return;
-    objects.add(current);
-    for (const child of Object.values(current)) visit(child);
-  };
-  visit(value);
-  return objects;
-};
-
-const translations: Array<{ name: string; source: unknown; translate: () => Promise<unknown> }> = [
-  { name: 'Responses to Chat Completions', source: responses, translate: async () => (expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions(responses, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }))).target },
-  { name: 'Responses to Anthropic Messages', source: responses, translate: async () => (expectTrip(await routeOpenAIResponsesViaAnthropicMessages(responses, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }))).target },
-  { name: 'Chat Completions to Responses', source: chat, translate: async () => (expectTrip(await routeOpenAIChatCompletionsViaOpenAIResponses(chat, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }))).target },
-  { name: 'Chat Completions to Anthropic Messages', source: chat, translate: async () => (expectTrip(await routeOpenAIChatCompletionsViaAnthropicMessages(chat, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }))).target },
-  { name: 'Anthropic Messages to Responses', source: anthropic, translate: async () => (expectTrip(await routeAnthropicMessagesViaOpenAIResponses(anthropic, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }))).target },
-  { name: 'Anthropic Messages to Chat Completions', source: anthropic, translate: async () => (expectTrip(await routeAnthropicMessagesViaOpenAIChatCompletions(anthropic, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }))).target },
-  { name: 'Gemini to Responses', source: gemini, translate: async () => (expectTrip(await routeGeminiGenerateContentViaOpenAIResponses(gemini, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }))).target },
-  { name: 'Gemini to Chat Completions', source: gemini, translate: async () => (expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions(gemini, { sidecarCodec: createTestSidecarCodec('test-codec-scope') }))).target },
-  { name: 'Gemini to Anthropic Messages', source: gemini, translate: async () => (expectTrip(await routeGeminiGenerateContentViaAnthropicMessages(gemini, { sidecarCodec: createTestSidecarCodec('test-codec-scope'), fallbackMaxOutputTokens: 16 }))).target },
-];
-
-test.each(translations)('$name owns its target payload without retaining source or prior target objects', async ({ source, translate }) => {
-  const original = structuredClone(source);
-  const first = await translate();
-  const second = await translate();
-  const sourceObjects = objectsIn(source);
-  const firstObjects = objectsIn(first);
-  const secondObjects = objectsIn(second);
-
-  assertEquals(source, original);
-  for (const object of firstObjects) assertEquals(sourceObjects.has(object), false);
-  for (const object of secondObjects) {
-    assertEquals(sourceObjects.has(object), false);
-    assertEquals(firstObjects.has(object), false);
-  }
-});
-
-test.each([
-  { name: 'empty delta', input: {}, deltas: [''], args: '{}' },
-  { name: 'no deltas', input: {}, deltas: [], args: '{}' },
-  { name: 'initial input only', input: { x: 'initial' }, deltas: [], args: '{"x":"initial"}' },
-  { name: 'chunked input', input: {}, deltas: ['{"x": ', '', '"streamed"}'], args: '{"x": "streamed"}' },
-])('Responses via Anthropic Messages emits complete function arguments with $name', async ({ input, deltas, args }) => {
-  const trip = expectTrip(await routeOpenAIResponsesViaAnthropicMessages(responses, { sidecarCodec: createTestSidecarCodec() }));
-  const [start, ...end] = fixtureFrames('anthropic-messages', { stop: 'tool_calls', usage: { output_tokens: 1 } });
-  assert(start !== undefined);
-  const frames = [
-    start,
-    eventFrame<AnthropicMessagesStreamEventEx>({ type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_f', name: 'f', input } }),
-    ...deltas.map(partial_json => eventFrame<AnthropicMessagesStreamEventEx>({ type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json } })),
-    eventFrame<AnthropicMessagesStreamEventEx>({ type: 'content_block_stop', index: 0 }),
-    ...end,
-  ];
-
-  const output = await collect(trip.events(iterate(frames)));
-  const events = output.flatMap(frame => frame.type === 'event' ? [frame.event] : []);
-  expect(events).toContainEqual(expect.objectContaining({ type: 'response.function_call_arguments.done', arguments: args }));
-  const response = await collectOpenAIResponsesProtocolEventsToResult(iterate(output));
-  expect(response.status).toBe('completed');
-  expect(response.output).toContainEqual(expect.objectContaining({ type: 'function_call', name: 'f', arguments: args, status: 'completed' }));
-});
 
 type Protocol = 'openai-chat-completions' | 'openai-responses' | 'anthropic-messages' | 'gemini-generate-content';
 const codecScope = 'test-codec-scope';
@@ -248,40 +184,40 @@ const replayAssistantTurn = async (assistant: AssistantTurn, target: Protocol): 
   if (assistant.protocol === 'openai-responses') {
     const request = { ...responses, input: [...assistant.turn, { type: 'message' as const, role: 'user' as const, content: 'next question' }] };
     if (target === 'openai-chat-completions') {
-      return { protocol: 'openai-chat-completions', payload: (expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions(request, { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
+      return { protocol: 'openai-chat-completions', payload: (expectTrip(await routeOpenAIResponsesViaOpenAIChatCompletions(deepFreeze(request), { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
     }
     if (target === 'anthropic-messages') {
-      return { protocol: 'anthropic-messages', payload: (expectTrip(await routeOpenAIResponsesViaAnthropicMessages(request, { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
+      return { protocol: 'anthropic-messages', payload: (expectTrip(await routeOpenAIResponsesViaAnthropicMessages(deepFreeze(request), { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
     }
   }
   if (assistant.protocol === 'openai-chat-completions') {
     const request = { ...chat, messages: [assistant.turn, { role: 'user' as const, content: 'next question' }] };
     if (target === 'openai-responses') {
-      return { protocol: 'openai-responses', payload: (expectTrip(await routeOpenAIChatCompletionsViaOpenAIResponses(request, { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
+      return { protocol: 'openai-responses', payload: (expectTrip(await routeOpenAIChatCompletionsViaOpenAIResponses(deepFreeze(request), { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
     }
     if (target === 'anthropic-messages') {
-      return { protocol: 'anthropic-messages', payload: (expectTrip(await routeOpenAIChatCompletionsViaAnthropicMessages(request, { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
+      return { protocol: 'anthropic-messages', payload: (expectTrip(await routeOpenAIChatCompletionsViaAnthropicMessages(deepFreeze(request), { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
     }
   }
   if (assistant.protocol === 'anthropic-messages') {
     const request = { ...anthropic, messages: [assistant.turn, { role: 'user' as const, content: 'next question' }] };
     if (target === 'openai-responses') {
-      return { protocol: 'openai-responses', payload: (expectTrip(await routeAnthropicMessagesViaOpenAIResponses(request, { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
+      return { protocol: 'openai-responses', payload: (expectTrip(await routeAnthropicMessagesViaOpenAIResponses(deepFreeze(request), { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
     }
     if (target === 'openai-chat-completions') {
-      return { protocol: 'openai-chat-completions', payload: (expectTrip(await routeAnthropicMessagesViaOpenAIChatCompletions(request, { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
+      return { protocol: 'openai-chat-completions', payload: (expectTrip(await routeAnthropicMessagesViaOpenAIChatCompletions(deepFreeze(request), { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
     }
   }
   if (assistant.protocol === 'gemini-generate-content') {
     const request = { ...gemini, contents: [...assistant.turn, { role: 'user' as const, parts: [{ text: 'next question' }] }] };
     if (target === 'openai-responses') {
-      return { protocol: 'openai-responses', payload: (expectTrip(await routeGeminiGenerateContentViaOpenAIResponses(request, { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
+      return { protocol: 'openai-responses', payload: (expectTrip(await routeGeminiGenerateContentViaOpenAIResponses(deepFreeze(request), { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
     }
     if (target === 'openai-chat-completions') {
-      return { protocol: 'openai-chat-completions', payload: (expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions(request, { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
+      return { protocol: 'openai-chat-completions', payload: (expectTrip(await routeGeminiGenerateContentViaOpenAIChatCompletions(deepFreeze(request), { sidecarCodec: createTestSidecarCodec(codecScope) }))).target };
     }
     if (target === 'anthropic-messages') {
-      return { protocol: 'anthropic-messages', payload: (expectTrip(await routeGeminiGenerateContentViaAnthropicMessages(request, { sidecarCodec: createTestSidecarCodec(codecScope), fallbackMaxOutputTokens: 16 }))).target };
+      return { protocol: 'anthropic-messages', payload: (expectTrip(await routeGeminiGenerateContentViaAnthropicMessages(deepFreeze(request), { sidecarCodec: createTestSidecarCodec(codecScope), fallbackMaxOutputTokens: 16 }))).target };
     }
   }
   throw new Error(`Unsupported route: ${assistant.protocol} via ${target}`);
@@ -301,7 +237,7 @@ test.each(returnedTrips)('$a via $b returns generated content and a decodable si
     signature: 'native B encrypted content',
     tools: [{ name: 'lookup', id: 'native-call', args: { q: 'value' } }],
   };
-  const frames = await collect(translation.events(iterate(fixtureFrames(b, fixture))));
+  const frames = await collect(translation.events(iterate(deepFreeze(fixtureFrames(b, fixture)))));
   const assistant = await collectAssistantTurn(a, frames);
   assertEquals(assistantText(assistant), 'return path');
 
@@ -318,9 +254,7 @@ test.each(returnedTrips)('$a via $b returns generated content and a decodable si
   const replayed = await replayAssistantTurn(assistant, b);
   assertEquals(targetAssistantTurn(replayed), sidecar.targetTurn);
 
-  const before = structuredClone(assistant);
-  const moved = moveCarrierBeforeBody(assistant, carrier);
-  assertEquals(assistant, before);
+  const moved = moveCarrierBeforeBody(deepFreeze(assistant), carrier);
   assertEquals(targetAssistantTurn(await replayAssistantTurn(moved, b)), sidecar.targetTurn);
 });
 

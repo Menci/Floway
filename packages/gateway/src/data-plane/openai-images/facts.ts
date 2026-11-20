@@ -31,7 +31,7 @@ export interface OpenAIImagesFacts extends GatewayFacts {
   /** What the client is actually sent, in the OpenAI Images protocol — a JSON body, or the SSE
    *  frames of a stream. The edge provides it, so a dump shows the body the client received
    *  rather than the gateway's canonical form. */
-  'response.openaiImages.rendered': Record<string, unknown> | AsyncIterable<SseFrame>;
+  'response.openaiImages.rendered': object | AsyncIterable<SseFrame>;
 }
 
 export type Fields<K extends keyof OpenAIImagesFacts> = { [P in K]: OpenAIImagesFacts[P] };

@@ -1,5 +1,3 @@
-import { klona } from 'klona/json';
-
 import { partitionAnthropicMessagesTurns, type AnthropicMessagesConversationTurn } from './conversation-turns.ts';
 import type { AnthropicMessagesSourceAssistantTurn } from './round-trip.ts';
 import type { SourceReading, SourceTurnSlot } from '../../../composition/reading.ts';
@@ -305,7 +303,7 @@ const toolToIR = (tool: AnthropicMessagesClientTool): IRInputTool => {
     type: 'function',
     name: tool.name,
     ...(tool.description === undefined ? {} : { description: tool.description }),
-    parameters: klona(tool.input_schema),
+    parameters: tool.input_schema,
     ...(tool.strict === undefined ? {} : { strict: tool.strict }),
   };
 };
@@ -347,7 +345,7 @@ const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload): IRInp
   // Messages schemas are strict. We assign a stable name because the source format has none.
   // https://platform.claude.com/docs/en/build-with-claude/structured-outputs
   const outputFormat: IRInputOutputFormat | undefined = format?.type === 'json_schema'
-    ? { type: 'json_schema', name: 'messages_response', schema: klona(format.schema), strict: true }
+    ? { type: 'json_schema', name: 'messages_response', schema: format.schema, strict: true }
     : undefined;
 
   const reasoningEffort = reasoningEffortToIR(payload);
@@ -359,7 +357,7 @@ const anthropicMessagesSettingsToIR = (payload: AnthropicMessagesPayload): IRInp
     ...(payload.temperature == null ? {} : { temperature: payload.temperature }),
     ...(payload.top_p == null ? {} : { top_p: payload.top_p }),
     ...(payload.top_k == null ? {} : { top_k: payload.top_k }),
-    ...(payload.stop_sequences == null ? {} : { stop: [...payload.stop_sequences] }),
+    ...(payload.stop_sequences == null ? {} : { stop: payload.stop_sequences }),
     ...(payload.max_tokens == null ? {} : { max_output_tokens: payload.max_tokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),
     ...(serviceTier === undefined ? {} : { service_tier: serviceTier }),

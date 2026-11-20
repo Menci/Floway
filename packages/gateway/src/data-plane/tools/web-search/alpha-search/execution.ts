@@ -60,8 +60,8 @@ export const executeAlphaSearch = async ({
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
-  } catch {
-    throw new Error('OpenAI search upstream returned a non-JSON success body');
+  } catch (cause) {
+    throw new Error('OpenAI search upstream returned a non-JSON success body', { cause });
   }
   if (parsed === null || typeof parsed !== 'object' || typeof (parsed as { output?: unknown }).output !== 'string') {
     throw new Error('OpenAI search upstream response must include an output string');

@@ -5,7 +5,7 @@ import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasesRepo, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
-import { gatewayErrorStatus } from '../chat/gemini-generate-content/errors.ts';
+import { geminiGenerateContentErrorResponse } from '../chat/gemini-generate-content/errors.ts';
 import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import type { InternalModel } from '@floway-dev/provider';
@@ -47,14 +47,8 @@ const toGeminiModel = (model: InternalModel): GeminiModel => {
   };
 };
 
-const geminiError = (status: number, message: string): Response =>
-  Response.json(
-    { error: { code: status, message, status: gatewayErrorStatus(status) } },
-    { status: status as 400 | 404 | 500 | 502 },
-  );
-
 const geminiModelLoadError = (error: unknown): Response =>
-  geminiError(502, error instanceof Error ? error.message : String(error));
+  geminiGenerateContentErrorResponse(502, error instanceof Error ? error.message : String(error));
 
 // Real chat models plus chat-kind alias entries; collision and dedupe ride
 // on the shared `mergeAliasesIntoModels` helper so the Gemini listing stays in
@@ -92,13 +86,13 @@ export const serveGeminiModels = async (c: AuthedContext): Promise<Response> => 
 
 export const serveGeminiModelInfo = async (c: AuthedContext): Promise<Response> => {
   const rawModelId = c.req.param('modelId');
-  if (!rawModelId) return geminiError(404, 'Model not found: ');
+  if (!rawModelId) return geminiGenerateContentErrorResponse(404, 'Model not found: ');
 
   const modelId = rawModelId.replace(/^models\//, '');
   try {
     const scheduleRefresh = createModelsRefreshScheduler(getRuntimeLocation(c.req.raw), backgroundSchedulerFromContext(c));
     const model = (await loadGeminiModels(userFromContext(c), effectiveUpstreamIdsFromContext(c), scheduleRefresh, getRepo().modelAliases)).find(candidate => candidate.baseModelId === modelId || candidate.name === `models/${modelId}`);
-    if (!model) return geminiError(404, `Model not found: ${modelId}`);
+    if (!model) return geminiGenerateContentErrorResponse(404, `Model not found: ${modelId}`);
     return Response.json(model);
   } catch (error) {
     return geminiModelLoadError(error);

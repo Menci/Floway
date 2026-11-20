@@ -2,15 +2,18 @@ import { Hono } from 'hono';
 import { test, vi } from 'vitest';
 
 import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS } from './test-policy.ts';
-import { missingRequiredCompactionKeys, responseOnlyKeysAdded } from './test-required-resource-keys.ts';
+import { missingRequiredCompactionKeys, missingRequiredResourceKeys, responseOnlyKeysAdded } from './test-required-resource-keys.ts';
 import type { AuthVars } from '../../../../src/middleware/auth.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import { stubChatProviderPipelines, type ChatFixtureCalls } from '../../../test-utils/chat-provider-pipelines.ts';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { openaiResponsesResultToEvents, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { type FlagId, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, assertStringIncludes, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
+import { type FlagId, type ModelCandidate, directFetcher, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel, type ProviderOpenAIResponsesResult } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the http entry exactly the
 // provider candidates it wants, optionally with an alias-rules overlay
@@ -41,11 +44,12 @@ const API_KEY_ID = 'key_http_test';
 
 const queueResolution = (
   candidates: readonly ModelCandidate[],
-  aliasRules?: AliasRules,
+  extra: { sawModel?: boolean; aliasRules?: AliasRules } = {},
 ): void => {
+  const rules = extra.aliasRules;
   resolutionsQueue.push({
-    candidates: aliasRules !== undefined ? candidates.map(c => ({ ...c, rules: aliasRules })) : candidates,
-    sawModel: candidates.length > 0,
+    candidates: rules !== undefined ? candidates.map(c => ({ ...c, rules })) : candidates,
+    sawModel: extra.sawModel ?? candidates.length > 0,
     failedUpstreams: [],
   });
 };
@@ -125,9 +129,10 @@ const makeCandidate = (overrides: {
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const endpoints = overrides.endpoints ?? { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} };
-  const provider = stubProvider({
+  const calls = {
     callOpenAIResponses: overrides.callOpenAIResponses,
-  });
+  };
+  const provider = stubProvider();
   return {
     provider: {
       upstreamId: upstream,
@@ -136,7 +141,7 @@ const makeCandidate = (overrides: {
       inboundHeaderAllowlist: [],
       disabledPublicModelIds: [],
       modelPrefix: null,
-      modelsCache: null, pipelines: {},
+      modelsCache: null, pipelines: stubChatProviderPipelines(calls),
       instance: provider,
     },
     model: stubInternalModel({
@@ -160,7 +165,7 @@ const queueCompletedResponse = (id = 'resp_test') => {
     action: 'generate', ok: true,
     events: makeProviderEvents(completedEvents(id)),
     modelKey: 'test-model-key',
-    http: { status: 200, headers: new Headers() },
+    headers: new Headers(),
   }));
   queueResolution([makeCandidate({ callOpenAIResponses })]);
   return callOpenAIResponses;
@@ -226,6 +231,205 @@ test('POST /v1/responses streams a successful SSE body', async () => {
   assertEquals(callOpenAIResponses.mock.calls.length, 1);
 });
 
+test('POST /v1/responses makes a done reasoning item reusable before terminal', async () => {
+  installRepo();
+  const originalReasoning = {
+    type: 'reasoning' as const,
+    id: 'rs_upstream',
+    summary: [],
+    encrypted_content: 'opaque',
+  };
+  const observedBodies: Array<Omit<CanonicalOpenAIResponsesPayload, 'model'>> = [];
+  let releaseFirst!: () => void;
+  const firstReleased = new Promise<void>(resolve => { releaseFirst = resolve; });
+  let responseCall = 0;
+  const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
+    observedBodies.push(body as Omit<CanonicalOpenAIResponsesPayload, 'model'>);
+    responseCall += 1;
+    if (responseCall === 1) {
+      const inProgress = {
+        ...makeOpenAIResponsesResult('resp_first'),
+        status: 'in_progress' as const,
+        output: [],
+      };
+      return {
+        action: 'generate',
+        ok: true,
+        events: (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+          yield eventFrame({ type: 'response.created', response: inProgress });
+          yield eventFrame({ type: 'response.output_item.added', output_index: 0, item: originalReasoning });
+          yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: originalReasoning });
+          await firstReleased;
+        })(),
+        modelKey: 'test-model-key',
+        headers: new Headers(),
+      };
+    }
+    return {
+      action: 'generate',
+      ok: true,
+      events: makeProviderEvents(completedEvents('resp_second')),
+      modelKey: 'test-model-key',
+      headers: new Headers(),
+    };
+  });
+  const candidate = makeCandidate({ callOpenAIResponses });
+  queueResolution([candidate]);
+  queueResolution([candidate]);
+
+  const firstResponse = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', input: 'first', store: true, stream: true }),
+  });
+  const reader = firstResponse.body?.getReader();
+  if (reader === undefined) throw new Error('Expected streaming response body');
+  const decoder = new TextDecoder();
+  let buffered = '';
+  let publicReasoning: typeof originalReasoning | undefined;
+  while (publicReasoning === undefined) {
+    const next = await reader.read();
+    if (next.done) throw new Error('Response ended before output_item.done');
+    buffered += decoder.decode(next.value, { stream: true });
+    for (const block of buffered.split('\n\n')) {
+      if (!block.startsWith('event: response.output_item.done\n')) continue;
+      const data = block.split('\n').find(line => line.startsWith('data: '))?.slice(6);
+      if (data === undefined) throw new Error('output_item.done had no data line');
+      const event = JSON.parse(data) as { item: typeof originalReasoning };
+      publicReasoning = event.item;
+    }
+  }
+  assertEquals(publicReasoning.id, originalReasoning.id);
+  assert(publicReasoning.encrypted_content !== originalReasoning.encrypted_content);
+  await reader.cancel();
+
+  try {
+    const secondResponse = await makeApp().request('/v1/responses', {
+      method: 'POST',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: JSON.stringify({
+        model: 'test-model',
+        store: true,
+        input: [publicReasoning, { type: 'message', role: 'user', content: 'continue' }],
+      }),
+    });
+    assertEquals(secondResponse.status, 200);
+    await secondResponse.json();
+    assertEquals(observedBodies[1]?.input[0], originalReasoning);
+  } finally {
+    releaseFirst();
+  }
+});
+
+test('POST /v1/responses canonicalizes an implicit system message and rewrites it to developer', async () => {
+  installRepo();
+  let observedBody: Omit<CanonicalOpenAIResponsesPayload, 'model'> | undefined;
+  const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
+    observedBody = body as Omit<CanonicalOpenAIResponsesPayload, 'model'>;
+    return {
+      action: 'generate',
+      ok: true,
+      events: makeProviderEvents(completedEvents()),
+      modelKey: 'test-model-key',
+      headers: new Headers(),
+    };
+  });
+  queueResolution([makeCandidate({
+    callOpenAIResponses,
+    enabledFlags: new Set(['rewrite-system-to-developer']),
+  })]);
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      input: [
+        { role: 'system', content: 'rules' },
+        { role: 'user', content: 'hello' },
+      ],
+      store: false,
+      stream: true,
+    }),
+  });
+
+  assertEquals(response.status, 200);
+  const responseBody = await response.text();
+  const responseId = responseBody.match(/"id":"(resp_[A-Za-z0-9_-]+)"/)?.[1];
+  assert(responseId !== undefined, 'expected store:false response id');
+  assert(responseId !== 'resp_test', 'expected the source boundary to replace the upstream response id');
+  assertEquals(observedBody?.input, [
+    { type: 'message', role: 'developer', content: 'rules' },
+    { type: 'message', role: 'user', content: 'hello' },
+  ]);
+});
+
+test('POST /v1/responses rejects a malformed untyped input item', async () => {
+  installRepo();
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', input: [null] }),
+  });
+
+  assertEquals(response.status, 400);
+  const body = await response.json() as { error: { message: string; param: string } };
+  assertEquals(body.error.message, 'Untyped OpenAI Responses input items require a valid role and content.');
+  assertEquals(body.error.param, 'input[0]');
+});
+
+test('POST /v1/responses returns a single JSON body when stream is omitted', async () => {
+  installRepo();
+  queueCompletedResponse('resp_nonstream');
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', input: 'hello' }),
+  });
+
+  assertEquals(response.status, 200);
+  assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
+  const body = await response.json() as OpenAIResponsesResultEx;
+  assert(body.id.length > 0 && body.id !== 'resp_nonstream', 'expected the source boundary to replace the upstream response id');
+  assertEquals(body.status, 'completed');
+});
+
+test('POST /v1/responses answers a translated-shape upstream with a complete response resource', async () => {
+  installRepo();
+  queueCompletedResponse('resp_complete');
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', input: 'hello' }),
+  });
+
+  assertEquals(response.status, 200);
+  const body = await response.json() as Record<string, unknown>;
+  assertEquals(missingRequiredResourceKeys(body), []);
+});
+
+test('POST /v1/responses returns 502 when a non-streaming output item cannot be persisted', async () => {
+  const repo = installRepo();
+  const persistence = vi.spyOn(repo.openaiResponsesItems, 'insertMany').mockRejectedValue(new Error('simulated item persistence failure'));
+  try {
+    queueCompletedResponse();
+
+    const response = await makeApp().request('/v1/responses', {
+      method: 'POST',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ model: 'test-model', input: 'hello' }),
+    });
+
+    assertEquals(response.status, 502);
+    const body = await response.json() as { error: { message: string } };
+    assertEquals(body.error.message, 'simulated item persistence failure');
+  } finally {
+    persistence.mockRestore();
+  }
+});
+
 test('POST /v1/responses terminates an SSE stream with error when an output item cannot be persisted', async () => {
   const repo = installRepo();
   const persistence = vi.spyOn(repo.openaiResponsesItems, 'insertMany').mockRejectedValue(new Error('simulated item persistence failure'));
@@ -246,7 +450,7 @@ test('POST /v1/responses terminates an SSE stream with error when an output item
     assert(body.includes('simulated item persistence failure'));
     assert(!body.includes('event: response.output_item.done'));
     assert(!body.includes('event: response.completed'));
-    assert(body.endsWith('data: [DONE]\n\n'), 'expected the failed stream to end with the transport sentinel');
+    assert(body.endsWith('data: [DONE]\n\n'), 'expected the failed stream to terminate');
   } finally {
     persistence.mockRestore();
   }
@@ -280,7 +484,6 @@ test('POST /v1/responses returns 502 when the response snapshot cannot be persis
 const compactTurn = async (
   upstream: Partial<OpenAIResponsesResultEx> = {},
   requestFields: Record<string, unknown> = {},
-  http = { status: 200, headers: new Headers() },
 ): Promise<{ upstream: OpenAIResponsesResultEx; response: Response }> => {
   const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
   const compactionResult: OpenAIResponsesResultEx = {
@@ -292,7 +495,7 @@ const compactTurn = async (
   };
   const callOpenAIResponses = vi.fn(async (_model: unknown, _body: unknown, action: OpenAIResponsesAction): Promise<ProviderOpenAIResponsesResult> => {
     if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
-    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key', http };
+    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
   });
   queueResolution([makeCandidate({ callOpenAIResponses })]);
 
@@ -308,6 +511,19 @@ const compactTurn = async (
   });
   return { upstream: compactionResult, response };
 };
+
+test('POST /v1/responses/compact returns a non-streaming compaction body', async () => {
+  const repo = installRepo();
+  const { response } = await compactTurn();
+
+  assertEquals(response.status, 200);
+  assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
+  const body = await response.json() as { object: string; id: string; output: Array<{ id: string }> };
+  assertEquals(body.object, 'response.compaction');
+  assert(body.id.length > 0 && body.id !== 'resp_test', 'expected the source boundary to replace the upstream response id');
+  assertEquals(await repo.openaiResponsesSnapshots.lookup(API_KEY_ID, body.id, 0), null);
+  assertEquals(await repo.openaiResponsesItems.lookupMany(API_KEY_ID, body.output.map(item => item.id), 0), []);
+});
 
 test('POST /v1/responses/compact answers the compaction resource, not the response resource', async () => {
   installRepo();
@@ -337,5 +553,380 @@ test('POST /v1/responses/compact reports the failure when the upstream reported 
   assertEquals(response.status, 502);
   const body = await response.json() as { error: { type: string; message: string } };
   assertEquals(body.error.type, 'internal_error');
-  assertStringIncludes(body.error.message, 'no token usage');
+  assert(
+    body.error.message.includes('reported no token usage'),
+    `expected the missing-usage condition to be named, got ${body.error.message}`,
+  );
 });
+
+test('POST /v1/responses with an unresolvable previous_response_id renders the verbatim 400 envelope', async () => {
+  installRepo();
+
+  // No candidates need to be queued — the entry rejects before routing runs.
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      previous_response_id: 'resp_missing',
+      input: [{ type: 'message', role: 'user', content: 'follow up' }],
+    }),
+  });
+
+  assertEquals(response.status, 400);
+  const body = await response.json() as { error: { message: string; type: string; param: string; code: string } };
+  assertEquals(body.error.message, "Previous response with id 'resp_missing' not found.");
+  assertEquals(body.error.type, 'invalid_request_error');
+  assertEquals(body.error.param, 'previous_response_id');
+  assertEquals(body.error.code, 'previous_response_not_found');
+});
+
+test('POST /v1/responses replays a stored turn when the next one names it as previous_response_id', async () => {
+  installRepo();
+  const observedBodies: Array<Omit<CanonicalOpenAIResponsesPayload, 'model'>> = [];
+  const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
+    observedBodies.push(body as Omit<CanonicalOpenAIResponsesPayload, 'model'>);
+    return {
+      action: 'generate', ok: true,
+      events: makeProviderEvents(completedEvents(`resp_upstream_${observedBodies.length}`)),
+      modelKey: 'test-model-key',
+      headers: new Headers(),
+    };
+  });
+  const candidate = makeCandidate({ callOpenAIResponses });
+  queueResolution([candidate]);
+  queueResolution([candidate]);
+  const app = makeApp();
+
+  const first = await app.request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', input: 'hello', store: true }),
+  });
+  assertEquals(first.status, 200);
+  const stored = await first.json() as OpenAIResponsesResultEx;
+
+  const second = await app.request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      store: true,
+      previous_response_id: stored.id,
+      input: 'continue',
+    }),
+  });
+  assertEquals(second.status, 200);
+  await second.json();
+
+  // The prior turn is replayed as the rows the store holds — this turn's own input last —
+  // and the snapshot id names something only this gateway has, so it never reaches the wire.
+  const continued = observedBodies[1];
+  if (continued === undefined) throw new Error('expected a second upstream call');
+  assertEquals(continued.previous_response_id, undefined);
+  assertEquals(continued.input, [
+    { type: 'message', role: 'user', content: 'hello' },
+    {
+      type: 'message',
+      id: 'msg_1',
+      role: 'assistant',
+      status: 'completed',
+      content: [{ type: 'output_text', text: 'hi', annotations: [] }],
+    },
+    { type: 'message', role: 'user', content: 'continue' },
+  ]);
+});
+
+test('POST /v1/responses rejects an item_reference the store cannot resolve', async () => {
+  installRepo();
+
+  // No candidates need to be queued — hydration answers before routing runs.
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      input: [{ type: 'item_reference', id: 'msg_missing' }],
+    }),
+  });
+
+  assertEquals(response.status, 404);
+  const body = await response.json() as { error: { message: string; type: string; param: string; code: string | null } };
+  assertEquals(body.error, {
+    message: "Item with id 'msg_missing' not found.",
+    type: 'invalid_request_error',
+    param: 'input',
+    code: null,
+  });
+});
+
+test('POST /v1/responses and /v1/responses/compact reject a body without `model` with the OpenAI missing-parameter 400', async () => {
+  installRepo();
+
+  for (const path of ['/v1/responses', '/v1/responses/compact']) {
+    const response = await makeApp().request(path, {
+      method: 'POST',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ input: 'hello' }),
+    });
+
+    assertEquals(response.status, 400);
+    const body = await response.json() as { error: { message: string; type: string; param: string; code: string } };
+    assertEquals(body.error, {
+      message: "Missing required parameter: 'model'.",
+      type: 'invalid_request_error',
+      param: 'model',
+      code: 'missing_required_parameter',
+    });
+  }
+});
+
+const queueCodexAutoReviewCandidate = (
+  callOpenAIResponses: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderOpenAIResponsesResult>,
+): void => {
+  const candidate = makeCandidate({ callOpenAIResponses });
+  Object.assign(candidate.model, { id: 'gpt-5.4' });
+  queueResolution([candidate], { aliasRules: { reasoning: { effort: 'low' } } });
+};
+
+test('POST /v1/responses applies the alias rules to a codex-auto-review request: rewrites the model to gpt-5.4 and stamps reasoning.effort=low', async () => {
+  installRepo();
+  lastSeenModel.value = null;
+  const observedBodies: Omit<CanonicalOpenAIResponsesPayload, 'model'>[] = [];
+  queueCodexAutoReviewCandidate(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
+    observedBodies.push(body as Omit<CanonicalOpenAIResponsesPayload, 'model'>);
+    return {
+      action: 'generate', ok: true,
+      events: makeProviderEvents(completedEvents()),
+      modelKey: 'test-model-key',
+      headers: new Headers(),
+    };
+  });
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'codex-auto-review', input: 'hello', stream: true }),
+  });
+
+  assertEquals(response.status, 200);
+  // The resolver sees the inbound alias id verbatim; target-id walking is
+  // internal to `enumerateModelCandidates`.
+  assertEquals(lastSeenModel.value, 'codex-auto-review');
+  const observed = observedBodies[0];
+  if (observed === undefined) throw new Error('expected callOpenAIResponses to receive a body');
+  // The attempt strips `model` from the body — the provider re-stamps it
+  // from `candidate.model.id` — so we only verify the rules landed on the
+  // IR.
+  assertEquals(observed.reasoning?.effort, 'low');
+});
+
+test('POST /v1/responses/compact applies the alias rules to a codex-auto-review request: rewrites the model to gpt-5.4 and stamps reasoning.effort=low (the alias rule overlays the compact body too)', async () => {
+  installRepo();
+  lastSeenModel.value = null;
+  const observedBodies: Omit<CanonicalOpenAIResponsesPayload, 'model'>[] = [];
+  const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
+  const compactionResult: OpenAIResponsesResultEx = {
+    ...makeOpenAIResponsesResult(),
+    object: 'response.compaction',
+    output: [compactionItem] as unknown as OpenAIResponsesResultEx['output'],
+    usage: { input_tokens: 12, output_tokens: 3, total_tokens: 15 },
+  };
+  queueCodexAutoReviewCandidate(async (_model, body, action): Promise<ProviderOpenAIResponsesResult> => {
+    if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
+    observedBodies.push(body as Omit<CanonicalOpenAIResponsesPayload, 'model'>);
+    return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
+  });
+
+  const response = await makeApp().request('/v1/responses/compact', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'codex-auto-review',
+      input: [{ type: 'message', role: 'user', content: 'kept' }],
+      prompt_cache_options: { mode: 'explicit', ttl: '30m' },
+      prompt_cache_retention: '24h',
+    }),
+  });
+
+  assertEquals(response.status, 200);
+  assertEquals(lastSeenModel.value, 'codex-auto-review');
+  const observed = observedBodies[0];
+  if (observed === undefined) throw new Error('expected callOpenAIResponses to receive a body');
+  assertEquals(observed.reasoning?.effort, 'low');
+  assertEquals(observed.prompt_cache_options, { mode: 'explicit', ttl: '30m' });
+  assertEquals(observed.prompt_cache_retention, '24h');
+});
+
+test('POST /v1/responses renders the OpenAI-shaped model-unsupported 400 when no candidate matches the responses picker', async () => {
+  installRepo();
+  // Queue a chat-kind candidate whose endpoints expose only `openaiCompletions` —
+  // openaiResponsesTarget (responses > messages > openai-chat-completions) rejects it,
+  // leaving zero viable candidates, and with sawModel=true the serve renders
+  // model-unsupported as a 400.
+  queueResolution([makeCandidate({ endpoints: { openaiCompletions: {} } })]);
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'wrong-endpoint-model', input: 'hello' }),
+  });
+
+  assertEquals(response.status, 400);
+  assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
+  const body = await response.json() as { error: { type: string; message: string } };
+  assertEquals(body.error.type, 'invalid_request_error');
+  assert(body.error.message.includes('does not support'));
+});
+
+test('POST /v1/responses/compact answers a body that states no status, as a native compact upstream sends', async () => {
+  installRepo();
+  const { response } = await compactTurn({ status: undefined as unknown as OpenAIResponsesResultEx['status'] });
+
+  assertEquals(response.status, 200);
+  const body = await response.json() as Record<string, unknown>;
+  assertEquals(body.object, 'response.compaction');
+  assertEquals(missingRequiredCompactionKeys(body), []);
+  assertEquals((body.output as Array<{ type: string }>).map(item => item.type), ['compaction']);
+});
+
+test('POST /v1/responses nests a mid-stream failure under `error` so an SDK stream reader throws on it, then follows it with response.failed', async () => {
+  installRepo();
+  const callOpenAIResponses = vi.fn(async (): Promise<ProviderOpenAIResponsesResult> => ({
+    action: 'generate', ok: true,
+    events: (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+      yield eventFrame(completedEvents()[0]!);
+      throw new Error('upstream exploded mid-stream');
+    })(),
+    modelKey: 'test-model-key',
+    headers: new Headers(),
+  }));
+  queueResolution([makeCandidate({ callOpenAIResponses })]);
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', input: 'hello', stream: true }),
+  });
+
+  const body = await response.text();
+  const chunk = body.split('\n\n').find(part => part.startsWith('event: error'));
+  assert(chunk !== undefined, `expected an error frame in ${body}`);
+  const data = JSON.parse(chunk.slice(chunk.indexOf('data: ') + 'data: '.length)) as {
+    type: string;
+    error?: { message?: unknown };
+    message?: unknown;
+  };
+  assertEquals(data.type, 'error');
+  assertEquals(data.error?.message, 'upstream exploded mid-stream');
+  assertEquals(data.message, data.error?.message);
+
+  const failedChunk = body.split('\n\n').find(part => part.startsWith('event: response.failed'));
+  assert(failedChunk !== undefined, `expected a response.failed frame in ${body}`);
+  const failed = JSON.parse(failedChunk.slice(failedChunk.indexOf('data: ') + 'data: '.length)) as {
+    response: { status: string; id: string; error: { message: string } };
+  };
+  assertEquals(failed.response.status, 'failed');
+  assertEquals(failed.response.error.message, 'upstream exploded mid-stream');
+  const created = JSON.parse(
+    body.split('\n\n').find(part => part.startsWith('event: response.created'))!.split('data: ')[1]!,
+  ) as { response: { id: string } };
+  assertEquals(failed.response.id, created.response.id);
+});
+
+const translatedCustomCandidate = (
+  target: 'openaiChatCompletions' | 'anthropicMessages',
+  observe: (body: Record<string, unknown>) => void,
+  callExec = false,
+): ModelCandidate => {
+  const candidate = makeCandidate({ upstream: `up_${target}`, endpoints: { [target]: {} } });
+  const calls: ChatFixtureCalls = {
+    callOpenAIChatCompletions: async (_model, body) => {
+      observe(body as unknown as Record<string, unknown>);
+      const chunk = (choices: OpenAIChatCompletionsStreamEvent['choices']): OpenAIChatCompletionsStreamEvent => ({ id: 'chat_exec', object: 'chat.completion.chunk', created: 0, model: 'test-model', choices });
+      return {
+        ok: true, modelKey: 'test-model-key', events: (async function* () {
+          yield eventFrame(chunk([{  index: 0, delta: { role: 'assistant' }, finish_reason: null }]));
+          yield eventFrame(chunk([{  index: 0, delta: callExec ? { tool_calls: [{ index: 0, id: 'call_exec', type: 'function', function: { name: 'exec', arguments: '{"input":"patch"}' } }] } : { content: 'done' }, finish_reason: null }]));
+          yield eventFrame(chunk([{  index: 0, delta: {}, finish_reason: callExec ? 'tool_calls' : 'stop' }]));
+          yield doneFrame();
+        })(),
+      };
+    },
+    callAnthropicMessages: async (_model, body) => {
+      observe(body as unknown as Record<string, unknown>);
+      return {
+        ok: true, modelKey: 'test-model-key', events: (async function* () {
+          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_start', message: { container: null, diagnostics: null, stop_details: null, id: 'msg_exec', type: 'message', role: 'assistant', model: 'test-model', content: [], stop_reason: null, stop_sequence: null, usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 } } });
+          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'content_block_start', index: 0, content_block: callExec ? { type: 'tool_use', id: 'call_exec', name: 'exec', input: {} } : { citations: null, type: 'text', text: '' } });
+          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'content_block_delta', index: 0, delta: callExec ? { type: 'input_json_delta', partial_json: '{"input":"patch"}' } : { type: 'text_delta', text: 'done' } });
+          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'content_block_stop', index: 0 });
+          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: callExec ? 'tool_use' : 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } });
+          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_stop' });
+        })(),
+      };
+    },
+  };
+  return { ...candidate, provider: { ...candidate.provider, pipelines: stubChatProviderPipelines(calls) } };
+};
+
+for (const target of ['openaiChatCompletions', 'anthropicMessages'] as const) {
+  test(`POST /v1/responses continues a custom exec call through ${target} with text-array output`, async () => {
+    installRepo();
+    const bodies: Record<string, unknown>[] = [];
+    const observe = (body: Record<string, unknown>) => { bodies.push(structuredClone(body)); };
+    const headers = { 'content-type': 'application/json' };
+    const tools = [{ type: 'custom', name: 'exec' }];
+    queueResolution([translatedCustomCandidate(target, observe, true)]);
+    const first = await makeApp().request('/v1/responses', {
+      method: 'POST', headers,
+      body: JSON.stringify({ model: 'test-model', store: true, tools, input: [{ role: 'user', content: 'inspect the request' }] }),
+    });
+    assertEquals(first.status, 200);
+    const previous = await first.json() as OpenAIResponsesResultEx;
+    const call = previous.output.find(item => item.type === 'custom_tool_call');
+    assert(call?.type === 'custom_tool_call');
+    assertEquals([call.name, call.namespace, call.input], ['exec', undefined, 'patch']);
+    assertEquals(bodies.length, 1);
+
+    queueResolution([translatedCustomCandidate(target, observe)]);
+    const second = await makeApp().request('/v1/responses', {
+      method: 'POST', headers,
+      body: JSON.stringify({
+        model: 'test-model', store: true, tools, previous_response_id: previous.id,
+        input: [{
+          type: 'custom_tool_call_output', call_id: call.call_id,
+          output: [{ type: 'input_text', text: 'first\n' }, { type: 'input_text', text: 'second' }],
+        }],
+      }),
+    });
+    assertEquals(second.status, 200);
+    const completed = await second.json() as OpenAIResponsesResultEx;
+    assertEquals(completed.status, 'completed');
+    assertEquals(Object.hasOwn(completed, 'output_text'), false);
+    assertEquals(bodies.length, 2);
+    if (target === 'openaiChatCompletions') {
+      assertEquals(bodies[1]!.messages, [
+        { role: 'user', content: 'inspect the request' },
+        {
+          role: 'assistant', content: null, refusal: null,
+          tool_calls: [{ id: call.call_id, type: 'function', function: { name: 'exec', arguments: '{"input":"patch"}' } }],
+        },
+        { role: 'tool', tool_call_id: call.call_id, content: 'first\nsecond' },
+      ]);
+    } else {
+      assertEquals(bodies[1]!.messages, [
+        { role: 'user', content: 'inspect the request' },
+        { role: 'assistant', content: [{ type: 'tool_use', id: call.call_id, name: 'exec', input: { input: 'patch' } }] },
+        {
+          role: 'user',
+          content: [{
+            type: 'tool_result', tool_use_id: call.call_id, is_error: undefined,
+            content: [{ type: 'text', text: 'first\n' }, { type: 'text', text: 'second' }],
+            cache_control: { type: 'ephemeral' },
+          }],
+        },
+      ]);
+    }
+  });
+}

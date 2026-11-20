@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
+import { CHATGPT_RESPONSES_LITE_CLIENT_METADATA_KEY, CHATGPT_RESPONSES_LITE_HEADER } from '../src/constants.ts';
 import { createChatGPTProvider } from '../src/provider.ts';
 import type { ChatGPTAccessTokenEntry, ChatGPTUpstreamState } from '../src/state.ts';
 import { exchangeResponse } from '@floway-dev/http/pipeline';
-import { move, run, setRelease, type Event } from '@floway-dev/pipeline';
-import { directFetcher, initProviderRepo, providerModelFacts, type UpstreamRecord } from '@floway-dev/provider';
-import { callProviderPipeline, noopUpstreamCallOptions, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
+import { getFailureFacts, move, run, setRelease, type Event } from '@floway-dev/pipeline';
+import { directFetcher, initProviderRepo, providerModelFacts, type ProviderOperationPayloads, type UpstreamRecord } from '@floway-dev/provider';
+import { callProviderPipeline, collectChatProviderPipeline, noopUpstreamCallOptions, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
 
@@ -34,6 +35,11 @@ const baseRecord: UpstreamRecord = {
 const recordWithAccessToken = (entry: ChatGPTAccessTokenEntry = freshAccessToken): UpstreamRecord => ({
   ...baseRecord,
   state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: entry, quotaSnapshot: null }] },
+});
+
+const accessOnlyRecord = (entry: ChatGPTAccessTokenEntry): UpstreamRecord => ({
+  ...baseRecord,
+  state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: null, state: 'active', state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: entry, quotaSnapshot: null }] },
 });
 
 let current: UpstreamRecord | null;
@@ -80,15 +86,101 @@ const idToken = (planType = 'plus'): string => [
   Buffer.from('signature').toString('base64url'),
 ].join('.');
 
-const oauthTokenResponse = (overrides: Partial<{ access_token: string; refresh_token: string; expires_in: number }> = {}): Response => new Response(JSON.stringify({
+const oauthTokenResponse = (overrides: Partial<{ access_token: string; refresh_token: string; expires_in: number; id_token: string }> = {}): Response => new Response(JSON.stringify({
   access_token: overrides.access_token ?? 'at_minted',
   refresh_token: overrides.refresh_token ?? 'rt_v2',
-  id_token: idToken(),
+  id_token: overrides.id_token ?? idToken(),
   expires_in: overrides.expires_in ?? 3600,
 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
 
 describe('createChatGPTProvider', () => {
-  test('ChatGPT Images records the complete parsed 401 body and preserves its preceding endpoint observation', async () => {
+  test('the401 finite observer preserves an original stream failure without canceling its locked body', async () => {
+    const original = new Error('Codex refusal body broke');
+    const body = new ReadableStream<Uint8Array>({ start(controller) { controller.error(original); } });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(body, { status: 401 }));
+    const events: Event[] = [];
+    const caught = await collectChatProviderPipeline(createChatGPTProvider(current!), 'openaiResponses', stubProviderModel({ id: 'gpt-5.4', endpoints: { openaiResponses: {} } }), { input: [] }, undefined, noopUpstreamCallOptions(), { dump: event => { events.push(event); } }).catch((error: unknown) => error);
+    expect(caught).toBe(original);
+    expect(getFailureFacts(caught)).toMatchObject({ 'response.provider.called': true, 'response.provider.modelKey': 'gpt-5.4' });
+    expect(events.find(event => event.type === 'stage.failed')).toMatchObject({ error: original });
+  });
+
+  test('access-only401 remains readable while terminal persistence failure reaches the run outcome', async () => {
+    current = accessOnlyRecord(freshAccessToken);
+    const writeError = new Error('terminal state write failed');
+    repo.saveState.mockRejectedValue(writeError);
+    const body = { error: { code: 'token_invalidated', message: 're-import required' }, diagnostic: 'full upstream details' };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json(body, { status: 401, headers: { 'x-upstream': 'retained' } }));
+    const provider = createChatGPTProvider(current);
+    const events: Event[] = [];
+    const executed = await run(provider.pipelines.openaiResponses!, move({
+      'request.provider.model': providerModelFacts(stubProviderModel({ id: 'gpt-5.4', endpoints: { openaiResponses: {} } })),
+      'request.provider.payload': { input: [], stream: true },
+      'request.http.callId': 0, 'request.http.headers': [],
+    }), { httpCall: () => noopUpstreamCallOptions(), recordProtocolFrames: <T>(frames: AsyncIterable<T>) => frames, dump: (event: Event) => { events.push(event); } });
+    const exchange = executed.facts['response.http.exchange'];
+    if (exchange.type === 'transportFailure') throw exchange.error;
+    const response = exchangeResponse(exchange);
+    expect(response.status).toBe(401);
+    expect(response.headers.get('x-upstream')).toBe('retained');
+    expect(await response.json()).toEqual(body);
+    if (exchange.body !== null) setRelease(exchange.body, async () => {});
+    await expect(executed.drain()).rejects.toBe(writeError);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(events.find(event => event.type === 'deferred.settled' && event.outcome.status === 'rejected')).toMatchObject({
+      deferred: (executed.facts as typeof executed.facts & Record<string, unknown>)['response.chatgpt.background'], outcome: { status: 'rejected', reason: writeError },
+    });
+  });
+
+  test.each(['openaiResponses', 'openaiResponsesCompact'] as const)('%s pipeline keeps parsed private wire content and actual endpoint observations', async operation => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => operation === 'openaiResponses'
+      ? new Response(sseResponse().body, { headers: { [CHATGPT_RESPONSES_LITE_HEADER]: 'true' } })
+      : Response.json({ id: 'compact', object: 'response.compaction', output: [] }));
+    const provider = createChatGPTProvider(current!);
+    const model = stubProviderModel({ id: 'future-lite', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite: true } });
+    const options = noopUpstreamCallOptions();
+    const result = await collectChatProviderPipeline(provider, operation, model, {
+      input: [{ type: 'message', role: 'user', content: 'hi' }], tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object' } }], text: { verbosity: 'low' },
+    }, undefined, options);
+    const wire = await readJsonRequest(fetchSpy.mock.calls[0]![1] as RequestInit) as Record<string, unknown>;
+    expect(wire).not.toHaveProperty('instructions');
+    expect(wire).not.toHaveProperty('tools');
+    expect(wire.text).toEqual({ verbosity: 'low' });
+    expect(typeof result.facts['request.http.body']).toBe('object');
+    expect(result.facts['response.provider.called']).toBe(true);
+    expect(result.facts['response.provider.modelKey']).toBe('future-lite');
+    const output = result.facts['response.provider.output'];
+    if (output === null || !('kind' in output)) throw new Error('Expected protocol output');
+    if (output.kind === 'stream') {
+      expect(result.frames.filter(frame => frame.type === 'event').map(frame => frame.event.type)).toEqual(['response.created', 'response.in_progress', 'response.completed']);
+      const exchange = result.facts['response.http.exchange'];
+      if (exchange.type !== 'response') throw new Error('Expected response');
+      expect(exchange.headers).toContainEqual([CHATGPT_RESPONSES_LITE_HEADER, 'true']);
+      expect(exchange.headers).toContainEqual(['content-type', 'text/event-stream']);
+    } else expect(output.body).toMatchObject({ object: 'response.compaction' });
+  });
+
+  test('Responses pipeline retains the first 401 observation and retries without applying the image plan gate', async () => {
+    const state = current!.state as ChatGPTUpstreamState;
+    current = { ...current!, config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'free' }] }, state: { accounts: [{ ...state.accounts[0]!, accessToken: { ...freshAccessToken, planType: 'free' } }] } };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      if (String(input) === 'https://auth.openai.com/oauth/token') return oauthTokenResponse({ id_token: idToken('free') });
+      return new Headers(init?.headers).get('authorization') === 'Bearer at'
+        ? Response.json({ error: { code: 'invalid_token', message: 'expired' } }, { status: 401 })
+        : sseResponse();
+    });
+    const provider = createChatGPTProvider(current!);
+    const model = stubProviderModel({ id: 'gpt-5.4', endpoints: { openaiResponses: {} } });
+    const options = noopUpstreamCallOptions();
+    const result = await collectChatProviderPipeline(provider, 'openaiResponses', model, { input: [] }, undefined, options);
+    expect(result.facts['response.provider.previousCalls']).toEqual([{ modelKey: 'gpt-5.4' }]);
+    expect(fetchSpy.mock.calls.filter(([url]) => String(url).includes('/responses'))).toHaveLength(2);
+    const output = result.facts['response.provider.output'];
+    if (output === null || !('kind' in output) || output.kind !== 'stream') throw new Error('Expected stream');
+    expect(result.frames.some(frame => frame.type === 'event' && frame.event.type === 'response.completed')).toBe(true);
+  });
+
+  test('Codex Images records the complete parsed 401 body and preserves its preceding endpoint observation', async () => {
     const refusal = { error: { code: 'invalid_token', message: 'expired bearer' }, diagnostic: 'x'.repeat(600) };
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       if (String(input) === 'https://auth.openai.com/oauth/token') return oauthTokenResponse();
@@ -115,7 +207,7 @@ describe('createChatGPTProvider', () => {
     await executed.drain();
   });
 
-  test('ChatGPT Images pipeline preserves the image turn and payload across a renewable 401 retry', async () => {
+  test('Codex Images pipeline preserves the image turn and payload across a renewable 401 retry', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       if (String(input) === 'https://auth.openai.com/oauth/token') return oauthTokenResponse();
       const headers = new Headers(init?.headers);
@@ -138,7 +230,7 @@ describe('createChatGPTProvider', () => {
     expect(await Promise.all(imageCalls.map(([, init]) => readJsonRequest(init!)))).toEqual([{ prompt: 'blue circle', model: 'gpt-image-2' }, { prompt: 'blue circle', model: 'gpt-image-2' }]);
   });
 
-  test('ChatGPT Images pipeline marks a preflight Free-plan refusal as an uncalled model endpoint', async () => {
+  test('Codex Images pipeline marks a preflight Free-plan refusal as an uncalled model endpoint', async () => {
     current = { ...current!, state: { accounts: [{ ...(current!.state as ChatGPTUpstreamState).accounts[0], accessToken: { ...freshAccessToken, planType: 'free' } }] } };
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const provider = createChatGPTProvider(current);
@@ -150,8 +242,30 @@ describe('createChatGPTProvider', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  test('owns request identity and turn metadata headers on the instance', () => {
+    const provider = createChatGPTProvider(baseRecord);
+
+    expect(provider.inboundHeaderAllowlist).toEqual([
+      'originator',
+      'session-id',
+      'session_id',
+      'thread-id',
+      'x-client-request-id',
+      'x-codex-image-turn-id',
+      'x-codex-turn-metadata',
+      'x-codex-window-id',
+    ]);
+  });
+
+  test('returns an instance carrying provider kind and identity', async () => {
+    const instance = createChatGPTProvider(baseRecord);
+    expect(instance.kind).toBe('chatgpt');
+    expect(instance.upstreamId).toBe('up_chatgpt');
+    expect(instance.name).toBe('ChatGPT Plus');
+  });
+
   test('getProvidedModels uses the cached access token when fresh and surfaces every catalog entry', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
     const instance = createChatGPTProvider(baseRecord);
     const models = await instance.instance.getProvidedModels(directFetcher);
     // Provider surfaces both visible and hidden upstream models — operators
@@ -161,6 +275,27 @@ describe('createChatGPTProvider', () => {
     expect(models[0].providerData).toEqual({ contextWindow: 272000, useResponsesLite: false });
     expect(models[1].providerData).toEqual({ contextWindow: 272000, useResponsesLite: true });
     expect(models[2]).toMatchObject({ kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][0]).toMatch(/\/codex\/models/);
+  });
+
+  test('getProvidedModels uses an unknown-expiry access-only token without an OAuth refresh', async () => {
+    const record = accessOnlyRecord({ token: 'at_only', expiresAt: null, refreshedAt: 'now' });
+    current = record;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
+    const models = await createChatGPTProvider(record).instance.getProvidedModels(directFetcher);
+    // Unknown plan fails open, so the provider-owned image model is surfaced too.
+    expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review', 'gpt-image-2']);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers).get('authorization')).toBe('Bearer at_only');
+  });
+
+  test('getProvidedModels reports an expired access-only token before fetching', async () => {
+    const record = accessOnlyRecord({ token: 'at_only', expiresAt: Date.now() - 1, refreshedAt: 'now' });
+    current = record;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    await expect(createChatGPTProvider(record).instance.getProvidedModels(directFetcher)).rejects.toThrow(/expired.*re-import/);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   test('getProvidedModels mints an access token when none is cached, then fetches the catalog', async () => {
@@ -187,6 +322,34 @@ describe('createChatGPTProvider', () => {
     expect(account.accessToken?.token).toBe('at_minted');
   });
 
+  test('getProvidedModels propagates catalog fetch failures', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('upstream down', { status: 502 }));
+    const instance = createChatGPTProvider(baseRecord);
+    await expect(instance.instance.getProvidedModels(directFetcher)).rejects.toMatchObject({
+      displayResponse: { status: 502, body: 'upstream down' },
+    });
+  });
+
+  test('getProvidedModels omits image models only for an explicit Free plan', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
+    const freeRecord: UpstreamRecord = {
+      ...baseRecord,
+      config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'free' }] },
+    };
+    const models = await createChatGPTProvider(freeRecord).instance.getProvidedModels(directFetcher);
+    expect(models.map(model => model.id)).toEqual(['gpt-5.4', 'codex-auto-review']);
+  });
+
+  test('getProvidedModels fails open for an unknown future plan', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
+    const futureRecord: UpstreamRecord = {
+      ...baseRecord,
+      config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'future-plan' }] },
+    };
+    const models = await createChatGPTProvider(futureRecord).instance.getProvidedModels(directFetcher);
+    expect(models.map(model => model.id)).toContain('gpt-image-2');
+  });
+
   test('getProvidedModels uses the refreshed access-token plan over import-time config', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => modelsResponse());
     current = recordWithAccessToken({ ...freshAccessToken, planType: 'free' });
@@ -202,10 +365,39 @@ describe('createChatGPTProvider', () => {
     expect(upgraded.map(model => model.id)).toContain('gpt-image-2');
   });
 
+  test('getProvidedModels propagates OAuth refresh failures', async () => {
+    current = baseRecord;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+      const url = typeof input === 'string' ? input : (input instanceof URL ? input.href : (input as Request).url);
+      if (url.includes('/oauth/token')) return new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400, headers: new Headers({ 'content-type': 'application/json' }) });
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const instance = createChatGPTProvider(baseRecord);
+    await expect(instance.instance.getProvidedModels(directFetcher)).rejects.toThrow(/ChatGPT OAuth session terminated/);
+  });
+
+  test('getProvidedModels resolves operator flag overrides into every ProviderModel', async () => {
+    // Provider defaults and operator overrides are resolved once, then
+    // threaded through every model. A previous regression hardcoded
+    // `enabledFlags: new Set()` in the catalog mapper, dropping the resolved
+    // set on the floor — this test guards against that.
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
+    const recordWithOverride: UpstreamRecord = {
+      ...baseRecord,
+      flagOverrides: { 'openai-responses-web-search-shim': true },
+    };
+    const instance = createChatGPTProvider(recordWithOverride);
+    const models = await instance.instance.getProvidedModels(directFetcher);
+    for (const m of models) {
+      expect(m.enabledFlags.has('rewrite-system-to-developer')).toBe(true);
+      expect(m.enabledFlags.has('openai-responses-web-search-shim')).toBe(true);
+    }
+  });
+
   test('callOpenAIResponses preserves developer messages on the Codex wire', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const instance = createChatGPTProvider(baseRecord);
-    const result = await instance.instance.callOpenAIResponses(
+    const result = await collectChatProviderPipeline(instance, 'openaiResponses',
       stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } }),
       {
         input: [
@@ -215,12 +407,10 @@ describe('createChatGPTProvider', () => {
         ],
         stream: true,
       },
-      'generate',
       undefined,
-      noopUpstreamCallOptions(),
-    );
-    expect(result.ok).toBe(true);
-    expect(result.action).toBe('generate');
+      noopUpstreamCallOptions());
+    expect(result.output).not.toBeNull();
+    expect(result.facts['response.provider.responsesAction']).toBe('generate');
     const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
     if (init === undefined) throw new Error('expected a ChatGPT upstream request');
     const body = await readJsonRequest(init) as Record<string, unknown>;
@@ -230,6 +420,126 @@ describe('createChatGPTProvider', () => {
       { type: 'message', role: 'user', content: 'hi' },
       { type: 'message', role: 'developer', content: 'inline instructions' },
     ]);
+  });
+
+  test.each(['generate', 'compact'] as const)('%s preserves Lite input items and skips the default top-level instruction', async action => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => action === 'generate'
+      ? sseResponse()
+      : new Response(JSON.stringify({ id: 'cmp_1', object: 'response.compaction', output: [] })));
+    const provider = createChatGPTProvider(baseRecord);
+    const model = stubProviderModel({ id: 'future-lite', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite: true } });
+    const tool = { type: 'function' as const, name: 'lookup', parameters: { type: 'object' } };
+    const input = [
+      { type: 'additional_tools' as const, role: 'developer' as const, tools: [tool] },
+      { type: 'message' as const, role: 'developer' as const, content: 'inline instructions' },
+      { type: 'message' as const, role: 'user' as const, content: 'hello' },
+    ];
+    const options = noopUpstreamCallOptions();
+    options.headers.set(CHATGPT_RESPONSES_LITE_HEADER, 'true');
+    const result = await collectChatProviderPipeline(provider, action === 'generate' ? 'openaiResponses' : 'openaiResponsesCompact', model, {
+      input,
+      tools: [{ type: 'custom', name: 'patch' }],
+      text: { verbosity: 'low' },
+      client_metadata: { [CHATGPT_RESPONSES_LITE_CLIENT_METADATA_KEY]: 'true' },
+    } as ProviderOperationPayloads['openaiResponses'], undefined, options);
+    expect(result.output).not.toBeNull();
+    expect(result.facts['response.provider.responsesAction']).toBe(action);
+    const wire = await readJsonRequest(fetchSpy.mock.calls[0]![1] as RequestInit) as Record<string, unknown>;
+    expect(wire).not.toHaveProperty('instructions');
+    expect(wire).not.toHaveProperty('tools');
+    expect(wire.text).toEqual({ verbosity: 'low' });
+    expect(wire.input).toEqual([
+      {
+        type: 'additional_tools', role: 'developer', id: expect.stringMatching(/^at_/),
+        tools: [{ type: 'namespace', name: 'functions', description: '', tools: [{ type: 'custom', name: 'patch' }] }],
+      },
+      ...input,
+    ]);
+    expect(input).toHaveLength(3);
+    expect(options.headers.get(CHATGPT_RESPONSES_LITE_HEADER)).toBe('true');
+  });
+
+  test('forwards an already encoded Lite prefix without generating another one', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    const provider = createChatGPTProvider(baseRecord);
+    const model = stubProviderModel({ id: 'future-lite', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite: true } });
+    const input = [
+      { type: 'additional_tools' as const, role: 'developer' as const, id: 'at_caller', tools: [{ type: 'namespace' as const, name: 'functions', description: '', tools: [{ type: 'function' as const, name: 'lookup', parameters: { type: 'object' } }] }] },
+      { type: 'message' as const, role: 'developer' as const, id: 'msg_caller', content: [{ type: 'input_text' as const, text: 'Caller base instructions' }], internal_chat_message_metadata_passthrough: { content_item_kinds: ['model.base_instructions'] } },
+      { type: 'message' as const, role: 'user' as const, content: 'Look up this entry.' },
+    ];
+    const result = await collectChatProviderPipeline(provider, 'openaiResponses', model, { input, instructions: '' }, undefined, noopUpstreamCallOptions());
+
+    expect(result.output).not.toBeNull();
+    const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
+    if (init === undefined) throw new Error('expected a ChatGPT upstream request');
+    const wire = await readJsonRequest(init) as Record<string, unknown>;
+    expect(wire.input).toEqual(input);
+    expect(wire).not.toHaveProperty('instructions');
+    expect(new Headers(init.headers).get(CHATGPT_RESPONSES_LITE_HEADER)).toBe('true');
+  });
+
+  test('callOpenAIResponses re-reads state per request (operator re-import takes effect)', async () => {
+    repo.getById.mockResolvedValueOnce({ ...baseRecord, configVersion: 1, state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'session_terminated', state_updated_at: '2026-01-02T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: null, quotaSnapshot: null }] } as ChatGPTUpstreamState });
+    const instance = createChatGPTProvider(baseRecord);
+    const result = await collectChatProviderPipeline(instance, 'openaiResponses',
+      stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } }),
+      { input: [], stream: true },
+      undefined,
+      noopUpstreamCallOptions());
+    expect(result.output).toBeNull();
+    expect(result.response!.status).toBe(503);
+  });
+
+  test('callOpenAIImagesGenerations posts gpt-image-2 through the ChatGPT Codex endpoint', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      created: 1,
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const instance = createChatGPTProvider(baseRecord);
+    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
+    const options = noopUpstreamCallOptions();
+    options.headers.set('x-codex-image-turn-id', 'turn-image');
+    const result = await callProviderPipeline(instance, 'openaiImagesGenerations', model, { prompt: 'an orange circle', quality: 'low' }, undefined, options);
+    expect(result.http.status).toBe(200);
+    expect(result.modelKey).toBe('gpt-image-2');
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('https://chatgpt.com/backend-api/codex/images/generations');
+    const headers = new Headers((init as RequestInit).headers);
+    expect(headers.get('authorization')).toBe('Bearer at');
+    expect(headers.get('chatgpt-account-id')).toBe('acc');
+    expect(headers.get('x-codex-image-turn-id')).toBe('turn-image');
+    expect(await readJsonRequest(init as RequestInit)).toEqual({ prompt: 'an orange circle', quality: 'low', model: 'gpt-image-2' });
+  });
+
+  test('callOpenAIImagesGenerations rejects an explicit Free plan without touching upstream', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const freeRecord: UpstreamRecord = {
+      ...baseRecord,
+      config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'free' }] },
+    };
+    const instance = createChatGPTProvider(freeRecord);
+    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
+    const result = await callProviderPipeline(instance, 'openaiImagesGenerations', model, { prompt: 'an orange circle' }, undefined, noopUpstreamCallOptions());
+    expect(result.http.status).toBe(403);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test('callOpenAIImagesEdits returns an operation-neutral error for an explicit Free plan', async () => {
+    const freeRecord: UpstreamRecord = {
+      ...baseRecord,
+      config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'free' }] },
+    };
+    const instance = createChatGPTProvider(freeRecord);
+    const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
+    const result = await callProviderPipeline(instance, 'openaiImagesEdits', model, {
+      images: [{ type: 'reference', reference: { image_url: 'https://example.test/image.png' } }],
+      parameters: { prompt: 'edit' },
+    }, undefined, noopUpstreamCallOptions());
+    expect(result.http.status).toBe(403);
+    expect(await result.http.json()).toEqual({
+      error: { type: 'image_tools_unavailable', message: 'ChatGPT Free accounts do not provide Codex image tools.' },
+    });
   });
 
   test('callOpenAIImagesEdits sends uploads as JSON data URLs to the ChatGPT Codex endpoint', async () => {
@@ -254,5 +564,9 @@ describe('createChatGPTProvider', () => {
       images: [{ image_url: 'data:image/png;base64,aW1hZ2U=' }],
       model: 'gpt-image-2',
     });
+  });
+
+  test.each(['openaiEmbeddings', 'openaiAudioTranscriptions', 'openaiChatCompletions', 'anthropicMessagesCountTokens', 'anthropicMessages'] as const)('%s has no Codex dispatch pipeline', operation => {
+    expect(createChatGPTProvider(baseRecord).pipelines[operation]).toBeUndefined();
   });
 });

@@ -14,6 +14,15 @@ export type ApiErrorTranslator = (status: number, headers: Headers, body: Uint8A
   readonly body: unknown;
 } | undefined;
 
+/**
+ * A translated request and the adapters that carry its response back.
+ *
+ * Source and target values are immutable. Translation never writes into the
+ * payload, frames, or options it receives: it rebuilds each node it changes and
+ * shares every unchanged subtree, so `target` may share structure with the
+ * source payload and with other trips. A caller that needs a different value
+ * rebuilds it the same way.
+ */
 export interface TranslateTrip<TargetPayload, SourceEvent, TargetEvent> {
   readonly type: 'trip';
   readonly target: TargetPayload;

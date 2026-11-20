@@ -1,5 +1,3 @@
-import { klona } from 'klona/json';
-
 import { partitionGeminiGenerateContentTurns, type GeminiGenerateContentConversationTurn as GeminiGenerateContentTurn } from './conversation-turns.ts';
 import type { GeminiGenerateContentSourceAssistantTurn } from './round-trip.ts';
 import { geminiFunctionParameters, geminiResponseSchema } from './schema.ts';
@@ -262,7 +260,7 @@ const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest
   const effort = statedLevel ?? (budget === 0 ? 'none' : undefined);
   const schema = config === undefined ? undefined : geminiResponseSchema(config);
   const outputFormat: IRInputOutputFormat | undefined = schema !== undefined
-    ? { type: 'json_schema', schema: klona(schema), name: 'gemini_response' }
+    ? { type: 'json_schema', schema, name: 'gemini_response' }
     : config?.responseMimeType === 'application/json' ? { type: 'json_object' } : undefined;
 
   return {
@@ -271,7 +269,7 @@ const geminiGenerateContentSettingsToIR = (payload: GeminiGenerateContentRequest
     ...(config?.temperature == null ? {} : { temperature: config.temperature }),
     ...(config?.topP == null ? {} : { top_p: config.topP }),
     ...(config?.topK == null ? {} : { top_k: config.topK }),
-    ...(config?.stopSequences == null ? {} : { stop: [...config.stopSequences] }),
+    ...(config?.stopSequences == null ? {} : { stop: config.stopSequences }),
     ...(config?.seed == null ? {} : { seed: config.seed }),
     ...(config?.maxOutputTokens == null ? {} : { max_output_tokens: config.maxOutputTokens }),
     ...(outputFormat === undefined ? {} : { output_format: outputFormat }),

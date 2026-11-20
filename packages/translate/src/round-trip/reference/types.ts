@@ -7,7 +7,7 @@ export type ContentReferenceSegment = number | [hashIndex: number, start: number
 export class ContentReference<Kind extends 'text' | 'json' = 'text' | 'json'> {
   constructor(
     readonly kind: Kind,
-    public parts: ContentReferenceSegment[],
+    readonly parts: readonly ContentReferenceSegment[],
   ) {}
 }
 

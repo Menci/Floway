@@ -7,23 +7,23 @@
 // resolving a dump sink, not a flag anywhere below it.
 
 import type { Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import { createCandidateRegistry } from './candidates.ts';
 import type { AttemptSelector, BillableEntity, GatewayFacts } from './facts.ts';
-import type { GatewayServices, RunGatewayCtx } from './services.ts';
+import type { GatewayServices } from './services.ts';
 import { openRunDump, type RunDump } from '../../dump/run-sink.ts';
 import { apiKeyFromContext, type AuthedContext } from '../../middleware/auth.ts';
 import { internalErrorResponse } from '../../middleware/internal-error-response.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { consoleLogSink } from '../../runtime/log.ts';
 import { stampUpstreamCallStart } from '../shared/attempt-timing.ts';
-import { createGatewayCtxFromHono, finalizeGatewayResponse, type AttemptState } from '../shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono, finalizeGatewayResponse, type CreateGatewayCtxOptions, type AttemptState, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { serializeSseFrame, serveSse } from '../shared/sse.ts';
+import { providerModelsUnavailableResponse } from '../shared/upstream-response.ts';
 import { recordStream } from '@floway-dev/dump';
 import { run, getFailureFacts, type Pipeline } from '@floway-dev/pipeline';
-import type { SseReadableFrame } from '@floway-dev/protocols/common';
+import type { SseReadableFrame, SseWritableFrame } from '@floway-dev/protocols/common';
 
 type Slice<K extends keyof GatewayFacts> = { [P in K]: GatewayFacts[P] };
 
@@ -50,49 +50,59 @@ export const readIngress = async (c: Context): Promise<Ingress> => ({
 export interface Prologue {
   readonly runDump: RunDump | null;
   readonly services: GatewayServices;
-  readonly gateway: RunGatewayCtx;
+  readonly gateway: GatewayCtx;
   readonly headers: readonly (readonly [string, string])[];
 }
 
-/**
- * Opens a run: the request context the telemetry stages read, and the services the stages
- * are given. It takes the bytes the handler has already read and hands them to the dump,
- * which is what leaves the handler's own copy free to be released.
- *
- * The candidate store is the resolver the ruling names — "the resolver is the service and
- * the selector is a fact". A `ModelCandidate` carries the provider's instance, its fetcher
- * and its models cache; those never enter the record, because `move()` would freeze them
- * and the provider's own cache refresh would break. So the stage that enumerates hands the
- * live ones here, and the stage that dials asks for one back by selector.
- */
+/** Opens the run with the request's timing state and live candidate registry. Only
+ *  immutable selectors enter facts; provider instances and transport handles stay here. */
 export const openPrologue = (
   c: AuthedContext,
   ingress: Ingress,
   options: { readonly wantsStream: boolean; readonly model?: string },
 ): Prologue => {
+  const options_ = gatewayCtxOptions(c, ingress, options);
+  return prologueFor(createGatewayCtxFromHono(c, options_), ingress, runDumpOf(options_));
+};
+
+/** What a run's request context is built from. Exported because a family whose context is a
+ *  richer one builds that instead, and both have to be built from the same read of the body:
+ *  `takeRequestBody` empties what it is given, so calling this twice would hand the dump an
+ *  empty buffer the second time. */
+export const gatewayCtxOptions = (
+  c: AuthedContext,
+  ingress: Ingress,
+  options: { readonly wantsStream: boolean; readonly model?: string },
+): CreateGatewayCtxOptions => {
   const backgroundScheduler = backgroundSchedulerFromContext(c);
   const attempt: AttemptState = { timing: { firstOutputTokenAt: null, upstreamCallStartedAt: null }, telemetry: undefined };
   // The shape follows the endpoint. A pipelined turn is recorded as its whole run — every
   // stage, both directions — so it opens that recording here instead of the edge one, and
   // no turn is ever written twice.
-  const runDump = openRunDump(
+  const dump = openRunDump(
     apiKeyFromContext(c),
     { method: c.req.method, path: new URL(c.req.raw.url).pathname, body: ingress.body },
     backgroundScheduler,
     options.wantsStream,
     attempt.timing,
   );
-  const gateway: RunGatewayCtx = {
-    ...createGatewayCtxFromHono(c, {
-      wantsStream: options.wantsStream,
-      attempt,
-      ...(options.model === undefined ? {} : { model: options.model }),
-      requestBody: takeRequestBody(ingress.body),
-      backgroundScheduler,
-      dump: runDump,
-    }),
-    dump: runDump,
+  return {
+    wantsStream: options.wantsStream,
+    attempt,
+    ...(options.model === undefined ? {} : { model: options.model }),
+    requestBody: takeRequestBody(ingress.body),
+    backgroundScheduler,
+    dump,
   };
+};
+
+/** The run recording those options opened, for the caller that has to hand its sink to
+ *  `run`. A context carries the recording; only the prologue needs the sink. */
+export const runDumpOf = (options: CreateGatewayCtxOptions): RunDump | null =>
+  (options.dump ?? null) as RunDump | null;
+
+/** The services every run is given, over whichever context it was opened with. */
+export const prologueFor = (gateway: GatewayCtx, ingress: Ingress, runDump: RunDump | null = null): Prologue => {
   const candidates = createCandidateRegistry();
 
   return {
@@ -137,6 +147,10 @@ export type Rendered =
     /** An answer that *is* a stream. The frames go out as they arrive, which is why nothing
      *  above waits for them and why what they billed is settled afterwards. */
     readonly frames: AsyncIterable<SseReadableFrame>;
+    /** What is written on an idle connection to keep it open. A comment is invisible to any
+     *  client, but a protocol that defines its own idle event is read by clients that expect
+     *  one — Anthropic's `ping` is a frame Claude Code sees — so the family names it. */
+    readonly keepAlive?: SseWritableFrame;
     readonly failure?: (error: unknown) => readonly string[] | Promise<readonly string[]>;
   };
 
@@ -180,6 +194,11 @@ export const serveThrough = async <
   try {
     return await serveRun(c, prologue, pipeline, entry, render);
   } catch (error) {
+    const unavailable = providerModelsUnavailableResponse(error);
+    if (unavailable !== null) {
+      prologue.gateway.dump?.failed(error);
+      return finalizeGatewayResponse(prologue.gateway, unavailable);
+    }
     // `run` drains what it opened before it rethrows, so there is nothing left outstanding to
     // release here — only the record to close, and the reason to put on it.
     const failureFacts = getFailureFacts(error);
@@ -212,12 +231,13 @@ const serveRun = async <
   let answer: Rendered;
   try { answer = render(facts); } catch (error) { await drain(); throw error; }
 
-  const status = facts['response.http.status'] as ContentfulStatusCode;
+  const status = facts['response.http.status'];
   const headers = new Headers(facts['response.http.headers'].map(([name, value]): [string, string] => [name, value]));
   if ('frames' in answer) {
     return finalizeGatewayResponse(prologue.gateway, serveSse(c, {
       http: { status, headers },
       events: answer.frames,
+      ...(answer.keepAlive === undefined ? {} : { keepAlive: { frame: answer.keepAlive } }),
       downstreamAbortController: prologue.gateway.downstreamAbortController,
       protocol: {
         encode: frame => ({ wire: serializeSseFrame(frame) }),
@@ -241,6 +261,10 @@ const serveRun = async <
   // Nothing is left to read either: what the client is sent was serialized from facts the run
   // already held, so releasing can start at once.
   prologue.services.background(drain());
+  if (status === 204 || status === 205 || status === 304) {
+    headers.delete('content-type');
+    return finalizeGatewayResponse(prologue.gateway, new Response(null, { status, headers }));
+  }
   // An upstream that declared no media type is answered without one, rather than having one
   // invented for bytes nobody described.
   if (answer.contentType !== null) headers.set('content-type', answer.contentType);

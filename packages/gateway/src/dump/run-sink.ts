@@ -25,7 +25,7 @@ export class RunDump {
   private sentPayloadBytes = 0;
 
   constructor(
-    apiKey: ApiKey,
+    private readonly apiKey: ApiKey,
     private readonly requestSnapshot: RequestSnapshot,
     private readonly startedAt: number,
     private readonly backgroundScheduler: BackgroundScheduler,
@@ -33,7 +33,7 @@ export class RunDump {
     private readonly timing: AttemptTiming,
   ) {
     this.recorder = createRunRecorder({
-      write: record => getDumpStore().put(apiKey.id, { shape: 'run', ...record }),
+      write: record => getDumpStore().put(apiKey.id, record),
       publish: meta => getDumpBroker().publish(apiKey.id, meta),
     });
     this.sink = this.recorder.sink;
@@ -58,6 +58,17 @@ export class RunDump {
   }
 
   openStream(): StreamRecording { return this.recorder.openStream(); }
+
+  openSubRequest(turn: { readonly method: string; readonly path: string }, wantsStream: boolean, timing: AttemptTiming): RunDump {
+    return new RunDump(
+      this.apiKey,
+      { method: turn.method, path: turn.path, bodyByteLength: 0, streamError: null },
+      Date.now(),
+      this.backgroundScheduler,
+      wantsStream,
+      timing,
+    );
+  }
 
   success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void {
     this.attribution.success(identity, usage);

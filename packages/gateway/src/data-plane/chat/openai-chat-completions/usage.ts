@@ -1,4 +1,5 @@
-import { billableServiceTier, splitInclusiveInputTokens, type BillableUsage } from '@floway-dev/protocols/common';
+import type { ChatBillableUsage } from '../shared/usage.ts';
+import { billableServiceTier, splitInclusiveInputTokens } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsUsageEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
 type OpenAIChatCompletionsUsage = NonNullable<OpenAIChatCompletionsStreamEvent['usage']>;
@@ -6,7 +7,7 @@ type OpenAIChatCompletionsUsage = NonNullable<OpenAIChatCompletionsStreamEvent['
 export const billableUsageFromOpenAIChatCompletionsUsage = (
   usage: OpenAIChatCompletionsUsage,
   serviceTier: string | null | undefined,
-): BillableUsage => {
+): ChatBillableUsage => {
   const extensions = usage as OpenAIChatCompletionsUsageEx;
   const cacheWrite = extensions.prompt_tokens_details?.cache_creation_input_tokens
     ?? extensions.prompt_tokens_details?.cache_write_tokens
@@ -18,15 +19,15 @@ export const billableUsageFromOpenAIChatCompletionsUsage = (
   );
   const tier = billableServiceTier(serviceTier);
   return {
-    input,
+    ...(usage.prompt_tokens === undefined ? {} : { input }),
     cacheRead,
     cacheWrite,
     // OpenAI Chat Completions has no cache-write TTL split.
     cacheWrite1h: 0,
-    output: usage.completion_tokens,
+    ...(usage.completion_tokens === undefined ? {} : { output: usage.completion_tokens }),
     ...(tier !== null ? { tier } : {}),
   };
 };
 
-export const billableUsageFromOpenAIChatCompletionsEvent = (event: OpenAIChatCompletionsStreamEvent): BillableUsage | null =>
+export const billableUsageFromOpenAIChatCompletionsEvent = (event: OpenAIChatCompletionsStreamEvent): ChatBillableUsage | null =>
   event.usage ? billableUsageFromOpenAIChatCompletionsUsage(event.usage, event.service_tier) : null;

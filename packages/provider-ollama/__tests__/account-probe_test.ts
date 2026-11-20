@@ -6,7 +6,7 @@ import { assertOllamaUpstreamRecord } from '../src/config.ts';
 import { createOllamaProvider } from '../src/provider.ts';
 import { readOllamaUpstreamState } from '../src/state.ts';
 import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, noopUpstreamCallOptions, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
+import { collectChatProviderPipeline, assertEquals, assertRejects, noopUpstreamCallOptions, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_ollama_account';
 
@@ -79,6 +79,28 @@ test('the account probe reads the plan and identity ollama.com actually sends', 
   );
 });
 
+test('an account naming no plan reads as naming none', async () => {
+  const { config } = assertOllamaUpstreamRecord(cloudRecord());
+  await withMockedFetch(
+    () => new Response(JSON.stringify({ ...ME_BODY, Plan: '' }), { status: 200 }),
+    async () => {
+      const account = await fetchOllamaAccount(config, directFetcher);
+      assertEquals(account.plan, null);
+    },
+  );
+});
+
+test('a rejected key surfaces the upstream status', async () => {
+  const { config } = assertOllamaUpstreamRecord(cloudRecord());
+  await withMockedFetch(
+    () => new Response('{"error":"invalid credentials"}\n', { status: 401 }),
+    async () => {
+      const error = await assertRejects(() => fetchOllamaAccount(config, directFetcher));
+      assertEquals(error.message, 'Ollama /api/me returned 401: {"error":"invalid credentials"}');
+    },
+  );
+});
+
 test('the account slot resolves a race by read time', async () => {
   const { config } = assertOllamaUpstreamRecord(cloudRecord());
   const repo = withStateRepo();
@@ -112,12 +134,7 @@ const callChat = async (record: UpstreamRecord, onCall: (pathname: string) => vo
       return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } });
     },
     async () => {
-      await provider.instance.callOpenAIChatCompletions(
-        stubProviderModel({ providerData: 'gpt-oss:120b' }),
-        { messages: [] },
-        undefined,
-        noopUpstreamCallOptions({ waitUntil: promise => { pending.push(promise); } }),
-      );
+      await collectChatProviderPipeline(provider, 'openaiChatCompletions', stubProviderModel({ providerData: 'gpt-oss:120b' }), { messages: [] }, undefined, noopUpstreamCallOptions({ waitUntil: promise => { pending.push(promise); } }));
       await Promise.all(pending);
     },
   );

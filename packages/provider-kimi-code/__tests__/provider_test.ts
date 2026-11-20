@@ -4,7 +4,7 @@ import { config, rawModel, record, speedCatalog } from './fixtures.ts';
 import { createKimiCodeProvider } from '../src/provider.ts';
 import { priceRequest } from '@floway-dev/protocols/common';
 import { initProviderRepo } from '@floway-dev/provider';
-import { noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
+import { callProviderChatPipeline, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
 
 const frames = {
   chat: 'data: {"id":"turn","object":"chat.completion.chunk","created":1,"model":"kimi-for-coding","choices":[{"index":0,"delta":{"content":"PONG"},"finish_reason":null}]}\n\ndata: [DONE]\n\n',
@@ -32,10 +32,10 @@ for (const protocol of ['chat', 'responses', 'messages'] as const) test(`${proto
     const signal = new AbortController().signal;
     const payload = { thinking: { type: 'disabled' as const }, vendor_extension: { arbitrary: 'kept' } };
     const result = protocol === 'chat'
-      ? await provider.instance.callOpenAIChatCompletions(model, { ...payload, messages: [{ role: 'user', content: 'hello' }] }, signal, noopUpstreamCallOptions())
+      ? await callProviderChatPipeline(provider, 'openaiChatCompletions', model, { ...payload, messages: [{ role: 'user', content: 'hello' }] }, signal, noopUpstreamCallOptions())
       : protocol === 'responses'
-        ? await provider.instance.callOpenAIResponses(model, { ...payload, input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hello' }] }] }, 'generate', signal, noopUpstreamCallOptions())
-        : await provider.instance.callAnthropicMessages(model, { ...payload, max_tokens: 64, messages: [{ role: 'user', content: 'hello' }] }, signal, noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: ['future-beta'] }));
+        ? await callProviderChatPipeline(provider, 'openaiResponses', model, { ...payload, input: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hello' }] }] }, signal, noopUpstreamCallOptions())
+        : await callProviderChatPipeline(provider, 'anthropicMessages', model, { ...payload, max_tokens: 64, messages: [{ role: 'user', content: 'hello' }] }, signal, noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: ['future-beta'] }));
     expect(captured).toMatchObject({ ...payload, model: 'kimi-for-coding', stream: true });
     expect(result.modelKey).toBe('kimi-for-coding');
     expect(result.ok).toBe(true);
@@ -60,7 +60,7 @@ test.each([400, 429])('Kimi Code preserves upstream status %i, headers and body'
   }, async () => {
     const [model] = await provider.instance.getProvidedModels(testFetcher);
     const body = { messages: [], thinking: { type: 'disabled' } };
-    const result = await provider.instance.callOpenAIChatCompletions(model, body, undefined, noopUpstreamCallOptions({ waitUntil: promise => { background.push(promise); } }));
+    const result = await callProviderChatPipeline(provider, 'openaiChatCompletions', model, body, undefined, noopUpstreamCallOptions({ waitUntil: promise => { background.push(promise); } }));
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('Expected upstream failure');
     expect(result.http.status).toBe(status);
@@ -92,8 +92,8 @@ for (const protocol of ['chat', 'responses'] as const) test.each([
     const model = (await provider.instance.getProvidedModels(testFetcher)).find(model => model.id === publicId)!;
     const common = { service_tier: requestedTier, vendor_extension: 'kept' };
     const result = protocol === 'chat'
-      ? await provider.instance.callOpenAIChatCompletions(model, { ...common, messages: [] }, undefined, noopUpstreamCallOptions())
-      : await provider.instance.callOpenAIResponses(model, { ...common, input: [] }, 'generate', undefined, noopUpstreamCallOptions());
+      ? await callProviderChatPipeline(provider, 'openaiChatCompletions', model, { ...common, messages: [] }, undefined, noopUpstreamCallOptions())
+      : await callProviderChatPipeline(provider, 'openaiResponses', model, { ...common, input: [] }, undefined, noopUpstreamCallOptions());
     expect(result.modelKey).toBe(rawId);
     if (!result.ok || !('events' in result)) throw new Error('Expected a streaming result');
     expect(result.http?.headers.get('x-upstream')).toBe('kept');
@@ -125,9 +125,9 @@ test.each([
   }, async () => {
     const model = (await provider.instance.getProvidedModels(testFetcher)).find(model => model.id === publicId)!;
     const payload = { speed, max_tokens: 64, messages: [], vendor_extension: 'kept' };
-    const result = await provider.instance.callAnthropicMessages(model, payload, undefined, noopAnthropicMessagesUpstreamCallOptions());
+    const result = await callProviderChatPipeline(provider, 'anthropicMessages', model, payload, undefined, noopAnthropicMessagesUpstreamCallOptions());
     expect(result.modelKey).toBe(rawId);
-    if (!result.ok) throw new Error('Expected a streaming result');
+    if (!result.ok || !('events' in result)) throw new Error('Expected a streaming result');
     const events = [];
     for await (const frame of result.events) if (frame.type === 'event') events.push(frame.event);
     const start = events.find(event => event.type === 'message_start');
@@ -151,7 +151,7 @@ test('Anthropic refuses fast on a standard-only model before issuing any inferen
     return Response.json({ data: speedCatalog() });
   }, async () => {
     const model = (await provider.instance.getProvidedModels(testFetcher)).find(model => model.id === publicId)!;
-    const result = await provider.instance.callAnthropicMessages(model, { speed: 'fast', max_tokens: 64, messages: [] }, undefined, noopAnthropicMessagesUpstreamCallOptions());
+    const result = await callProviderChatPipeline(provider, 'anthropicMessages', model, { speed: 'fast', max_tokens: 64, messages: [] }, undefined, noopAnthropicMessagesUpstreamCallOptions());
     if (result.ok) throw new Error('Expected unsupported speed error');
     expect(result.modelKey).toBe(model.upstreamModelId);
     expect(result.http.status).toBe(400);
@@ -175,10 +175,10 @@ for (const protocol of ['chat', 'responses', 'messages'] as const) test(`${proto
     const [model] = await provider.instance.getProvidedModels(testFetcher);
     expect(model.id).toBe('kimi-k9.9-code');
     const result = protocol === 'chat'
-      ? await provider.instance.callOpenAIChatCompletions(model, { service_tier: 'fast', messages: [] }, undefined, noopUpstreamCallOptions())
+      ? await callProviderChatPipeline(provider, 'openaiChatCompletions', model, { service_tier: 'fast', messages: [] }, undefined, noopUpstreamCallOptions())
       : protocol === 'responses'
-        ? await provider.instance.callOpenAIResponses(model, { service_tier: 'priority', input: [] }, 'generate', undefined, noopUpstreamCallOptions())
-        : await provider.instance.callAnthropicMessages(model, { speed: 'fast', max_tokens: 64, messages: [] }, undefined, noopAnthropicMessagesUpstreamCallOptions());
+        ? await callProviderChatPipeline(provider, 'openaiResponses', model, { service_tier: 'priority', input: [] }, undefined, noopUpstreamCallOptions())
+        : await callProviderChatPipeline(provider, 'anthropicMessages', model, { speed: 'fast', max_tokens: 64, messages: [] }, undefined, noopAnthropicMessagesUpstreamCallOptions());
     expect(result.modelKey).toBe('kimi-for-coding-highspeed');
     if (!result.ok || !('events' in result)) throw new Error('Expected a streaming result');
     for await (const frame of result.events) expect(frame.type).toMatch(/event|done/);
@@ -195,8 +195,8 @@ for (const protocol of ['chat', 'messages'] as const) test(`${protocol} refuses 
   }, async () => {
     const model = (await provider.instance.getProvidedModels(testFetcher)).find(model => model.id === 'kimi-k2.7-code')!;
     const result = protocol === 'chat'
-      ? await provider.instance.callOpenAIChatCompletions(model, { service_tier: 'standard', messages: [] }, undefined, noopUpstreamCallOptions())
-      : await provider.instance.callAnthropicMessages(model, { speed: 'standard', max_tokens: 64, messages: [] }, undefined, noopAnthropicMessagesUpstreamCallOptions());
+      ? await callProviderChatPipeline(provider, 'openaiChatCompletions', model, { service_tier: 'standard', messages: [] }, undefined, noopUpstreamCallOptions())
+      : await callProviderChatPipeline(provider, 'anthropicMessages', model, { speed: 'standard', max_tokens: 64, messages: [] }, undefined, noopAnthropicMessagesUpstreamCallOptions());
     if (result.ok) throw new Error('Expected fast-only model error');
     expect(result.modelKey).toBe('kimi-for-coding-highspeed');
     expect(result.http.status).toBe(400);
@@ -219,7 +219,7 @@ for (const speed of ['standard', 'fast']) test(`count_tokens selects the fast-on
     return Response.json({ input_tokens: 7 });
   }, async () => {
     const model = (await provider.instance.getProvidedModels(testFetcher)).find(model => model.id === 'kimi-k2.7-code')!;
-    const result = await provider.instance.callAnthropicMessagesCountTokens(model, { messages: [], max_tokens: 1, speed }, undefined, noopAnthropicMessagesUpstreamCallOptions());
+    const result = await callProviderChatPipeline(provider, 'anthropicMessagesCountTokens', model, { messages: [], max_tokens: 1, speed }, undefined, noopAnthropicMessagesUpstreamCallOptions());
     expect(result.modelKey).toBe('kimi-for-coding-highspeed');
     expect(result.http.status).toBe(speed === 'fast' ? 200 : 400);
     expect(counts).toBe(speed === 'fast' ? 1 : 0);

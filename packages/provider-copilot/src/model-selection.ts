@@ -17,7 +17,7 @@ const supportsOneMillionContext = (model: CopilotRawModel): boolean => {
   // Trust id-level intent first: Copilot has been observed to report
   // claude-opus-4.7-1m-internal with max_context_window_tokens=200000 even
   // though the variant exists specifically for the 1M-context surface. The
-  // explicit-number check used to short-circuit and hide that signal.
+  // id-level intent takes precedence over the reported limit.
   if (/-1m(?:-|$)/.test(model.id)) return true;
 
   const limits = model.capabilities?.limits;
@@ -45,7 +45,7 @@ const firstPreferred = (models: readonly CopilotRawModel[]): CopilotRawModel | u
 // A narrowing filter that rolls back to the original pool when it would empty
 // it. On the OpenAI Responses path that rollback is the feature: OpenAI
 // answers an unavailable Fast mode by serving the standard lane and saying
-// so, and `callOpenAIResponses` mirrors it. `callAnthropicMessages` never
+// so, and OpenAI Responses selection mirrors it. Anthropic Messages selection never
 // reaches the rollback because Anthropic makes Fast Mode a hard contract and
 // the entry point pre-checks it.
 const narrow = (pool: readonly CopilotRawModel[], predicate: (model: CopilotRawModel) => boolean): readonly CopilotRawModel[] => {
@@ -98,7 +98,7 @@ export const resolveCopilotRawModel = (models: CopilotModelsResponse, modelId: s
 };
 
 // Whether the family can serve the accelerated lane at all.
-// `callAnthropicMessages` pre-checks this because Anthropic rejects
+// Anthropic Messages model selection pre-checks this because Anthropic rejects
 // `speed: 'fast'` on a model that cannot serve it, and Copilot never echoes
 // `usage.speed` for us to notice a downgrade afterwards. The OpenAI spelling
 // of the same lane needs no pre-check: that upstream reports the tier it

@@ -4,14 +4,25 @@ import type { OpenAIImagesEditsRequest } from './images.ts';
 import type { ProviderModel } from './model.ts';
 import type { HttpResponseFacts, HttpHeaders, HttpServices } from '@floway-dev/http/pipeline';
 import type { Pipeline } from '@floway-dev/pipeline';
-import type { RerankTarget } from '@floway-dev/protocols/common';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import type { ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
 import type { CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
+import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
+import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAICompletionsPayload } from '@floway-dev/protocols/openai-completions';
 import type { OpenAIEmbeddingsPayload } from '@floway-dev/protocols/openai-embeddings';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { CanonicalRerankRequest } from '@floway-dev/protocols/rerank';
 
 export interface ProviderOperationPayloads {
+  openaiChatCompletions: Omit<OpenAIChatCompletionsPayloadEx, 'model'>;
+  openaiResponses: Omit<CanonicalOpenAIResponsesPayload, 'model'>;
+  openaiResponsesCompact: Omit<CanonicalOpenAIResponsesPayload, 'model'>;
+  anthropicMessages: Omit<AnthropicMessagesPayload, 'model'>;
+  anthropicMessagesCountTokens: Omit<AnthropicMessagesPayload, 'model'>;
+  geminiGenerateContent: GeminiGenerateContentPayload;
+  geminiGenerateContentCountTokens: GeminiGenerateContentPayload;
   alphaSearch: Record<string, unknown>;
   openaiCompletions: Omit<OpenAICompletionsPayload, 'model'>;
   openaiEmbeddings: Omit<OpenAIEmbeddingsPayload, 'model'>;
@@ -23,6 +34,9 @@ export interface ProviderOperationPayloads {
 }
 
 export type ProviderOperation = keyof ProviderOperationPayloads;
+export type ChatProviderOperation = 'openaiChatCompletions' | 'openaiResponses' | 'openaiResponsesCompact' | 'anthropicMessages' | 'anthropicMessagesCountTokens'
+  | 'geminiGenerateContent' | 'geminiGenerateContentCountTokens';
+export type NonChatProviderOperation = Exclude<ProviderOperation, ChatProviderOperation>;
 
 export type ProviderModelFacts = Omit<ProviderModel, 'enabledFlags'> & { readonly enabledFlags: readonly FlagId[] };
 
@@ -34,6 +48,9 @@ export interface ProviderRequest<P> {
   'request.http.callId': number;
   'request.http.headers': HttpHeaders;
 }
+
+export type ProviderOperationRequest<O extends ProviderOperation> = ProviderRequest<ProviderOperationPayloads[O]> &
+  (O extends 'anthropicMessages' | 'anthropicMessagesCountTokens' ? { 'request.provider.anthropicBeta': readonly string[] } : object);
 
 export interface ProviderCallResponse extends HttpResponseFacts {
   /** A preflight reply does not represent a call to the model endpoint. */
@@ -50,13 +67,44 @@ export interface ProviderRerankResponse extends ProviderResponse {
   'response.provider.rerankTarget': RerankTarget;
 }
 
+export interface ProviderProtocolFailure {
+  readonly status: number;
+  readonly message: string;
+  readonly body?: unknown;
+}
+
+export type ProviderStreamOutput<E> = { readonly kind: 'stream'; readonly frames: AsyncIterable<ProtocolFrame<E>> };
+export type ProviderValueOutput<T> = { readonly kind: 'value'; readonly body: T };
+export interface AnthropicMessagesCountTokensBody {
+  readonly input_tokens: number;
+  readonly [key: string]: unknown;
+}
+
+export interface ProviderOperationOutputs {
+  openaiChatCompletions: ProviderStreamOutput<OpenAIChatCompletionsStreamEvent>;
+  openaiResponses: ProviderStreamOutput<OpenAIResponsesStreamEventEx> | ProviderValueOutput<OpenAIResponsesCompactionResultEx>;
+  openaiResponsesCompact: ProviderStreamOutput<OpenAIResponsesStreamEventEx> | ProviderValueOutput<OpenAIResponsesCompactionResultEx>;
+  anthropicMessages: ProviderStreamOutput<AnthropicMessagesStreamEventEx>;
+  anthropicMessagesCountTokens: ProviderValueOutput<AnthropicMessagesCountTokensBody | null>;
+  geminiGenerateContent: ProviderStreamOutput<GeminiGenerateContentStreamEvent>;
+  geminiGenerateContentCountTokens: ProviderValueOutput<{ readonly totalTokens: number } | null>;
+}
+
+export interface ProviderChatResponse<O extends ChatProviderOperation> extends ProviderResponse {
+  'response.provider.output': ProviderOperationOutputs[O] | ProviderProtocolFailure | null;
+}
+
 export type ProviderOperationResponse<O extends ProviderOperation> =
-  O extends 'rerank' ? ProviderRerankResponse : ProviderResponse;
+  O extends ChatProviderOperation ? ProviderChatResponse<O> : O extends 'rerank' ? ProviderRerankResponse : ProviderResponse;
 
 export type ProviderPipeline<O extends ProviderOperation> = Pipeline<
-  ProviderRequest<ProviderOperationPayloads[O]>,
+  ProviderOperationRequest<O>,
   ProviderOperationResponse<O>
 >;
 
 export type ProviderPipelines = { readonly [O in ProviderOperation]?: ProviderPipeline<O> };
 export type ProviderServices = HttpServices;
+
+export type ProviderChatServices = ProviderServices & {
+  readonly recordProtocolFrames: <T extends ProtocolFrame<unknown>>(frames: AsyncIterable<T>) => AsyncIterable<T>;
+};

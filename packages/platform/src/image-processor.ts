@@ -91,10 +91,9 @@ export const compressBytesToWebp = async (
 
 // In-memory passthrough used by tests. There is no WebP codec available under
 // the test runtime, so this stub returns the input bytes unchanged; it exists
-// only to satisfy the ImageProcessor contract so the egress interceptors run
-// end-to-end. Interceptor behaviour (which images are rewritten, what target
-// is computed) is asserted against dedicated spy processors in the
-// interceptor tests, not against this stub.
+// only to satisfy the ImageProcessor contract so the provider stages run
+// end-to-end. Image selection and target dimensions are asserted against
+// dedicated spy processors in the owning stage tests.
 export const createInMemoryImageProcessor = (): ImageProcessor => ({
   compressToWebp: input => Promise.resolve(input),
 });

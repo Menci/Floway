@@ -22,11 +22,12 @@ export const standaloneToolOutputContent = (
   const content: OpenAIResponsesInputContent[] = [{ type: 'input_text', text: open }];
   for (const part of item.output) {
     const last = content.at(-1);
-    if (part.type === 'input_text' && last?.type === 'input_text') last.text += part.text;
-    else content.push(part);
+    if (part.type === 'input_text' && last?.type === 'input_text') {
+      content[content.length - 1] = { ...last, text: last.text + part.text };
+    } else content.push(part);
   }
   const last = content.at(-1);
-  if (last?.type === 'input_text') last.text += close;
+  if (last?.type === 'input_text') content[content.length - 1] = { ...last, text: last.text + close };
   else content.push({ type: 'input_text', text: close });
   return content;
 };

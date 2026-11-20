@@ -36,6 +36,13 @@ describe('what the error page is told about its trace', () => {
   });
   afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
+  it('says nothing about a page that failed without a trace', async () => {
+    vi.stubEnv('DEV', false);
+    renderInApp(<Probe stack={undefined} />);
+    await settle();
+    expect(read()).toEqual({ status: 'settled', stack: '' });
+  });
+
   it('leaves a development build alone, where the trace already names its sources', async () => {
     vi.stubEnv('DEV', true);
     renderInApp(<Probe stack={RAW} />);
@@ -44,13 +51,37 @@ describe('what the error page is told about its trace', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it('shows the minified trace while the maps are still coming', () => {
+    vi.stubEnv('DEV', false);
+    renderInApp(<Probe stack={RAW} />);
+    expect(read()).toEqual({ status: 'loading', stack: RAW });
+  });
+
+  it('replaces the trace once the maps land', async () => {
+    vi.stubEnv('DEV', false);
+    renderInApp(<Probe stack={RAW} />);
+    // Waited for rather than drained once: the restoration loads its source map library through
+    // a dynamic import, which the test runner serves as module I/O, and then reads the script and
+    // map bodies as real stream reads. None of these is a microtask, so how many turns the chain
+    // takes is the machine's business and not this test's.
+    await waitFor(() => expect(read()).toEqual({ status: 'settled', stack: 'Error: boom\n    at handler (/src/first.ts:1:1)' }));
+  });
+
   it('keeps the minified trace and says so when the maps cannot be read', async () => {
     vi.stubEnv('DEV', false);
     vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response('', { status: 503 }))));
     vi.spyOn(console, 'error').mockImplementation(() => {});
     renderInApp(<Probe stack={RAW} />);
-    await settle();
-    expect(read()).toEqual({ status: 'failed', stack: RAW });
+    await waitFor(() => expect(read()).toEqual({ status: 'failed', stack: RAW }));
+  });
+
+  it('goes back to waiting when a second failure replaces the first', async () => {
+    vi.stubEnv('DEV', false);
+    const { rerender } = renderInApp(<Probe stack={RAW} />);
+    await waitFor(() => expect(read().status).toBe('settled'));
+    const second = `Error: later\n    at other (${SCRIPT}:1:1)`;
+    rerender(<Probe stack={second} />);
+    expect(read()).toEqual({ status: 'loading', stack: second });
   });
 
   it('ignores a superseded restoration that finishes after the current one', async () => {
@@ -75,6 +106,9 @@ describe('what the error page is told about its trace', () => {
     rerender(<Probe stack={second} />);
     await waitFor(() => expect(read()).toEqual({ status: 'settled', stack: 'Error: later\n    at other (/src/first.ts:1:1)' }));
 
+    // The superseded restoration finishes here, and what it must not do is write. A settle is
+    // the right instrument for that one: the assertion is that nothing changed, so draining
+    // everything the release queued is exactly the window it could have changed something in.
     await act(async () => {
       releaseFirst(new Response('const a=1;\n//# sourceMappingURL=chunk.js.map'));
     });

@@ -1,10 +1,11 @@
 import type * as Beta from './sdk-beta.ts';
 import type * as Native from './sdk-stable.ts';
 
+// The beta usage union includes model attempts, advisor attempts, and
+// compaction entries, and remains additively extensible. Floway carries it
+// opaquely: nothing reads inside an entry and nothing writes one, so the array
+// an upstream sent travels by reference from the event to the snapshot.
 export type AnthropicMessagesUsageIteration = Beta.BetaIterationsUsage[number];
-
-export const cloneAnthropicMessagesUsageIterations = (iterations: AnthropicMessagesUsageIteration[] | null): AnthropicMessagesUsageIteration[] | null =>
-  iterations === null ? null : structuredClone(iterations);
 
 export interface AnthropicMessagesCacheCreationTtlTokens {
   ephemeral_5m_input_tokens?: number;
@@ -98,7 +99,7 @@ export const anthropicMessagesUsageSnapshot = (usage?: Partial<Omit<AnthropicMes
       ...(present(usage.output_tokens_details) ? { output_tokens_details: { ...usage.output_tokens_details } } : {}),
       ...(present(usage.service_tier) ? { service_tier: usage.service_tier } : {}),
       ...(present(usage.speed) ? { speed: usage.speed } : {}),
-      ...(usage.iterations === undefined ? {} : { iterations: cloneAnthropicMessagesUsageIterations(usage.iterations) }),
+      ...(usage.iterations === undefined ? {} : { iterations: usage.iterations }),
     };
 
 export const mergeAnthropicMessagesUsageSnapshot = (
@@ -115,7 +116,7 @@ export const mergeAnthropicMessagesUsageSnapshot = (
     ...(present(delta.cache_read_input_tokens) ? { cache_read_input_tokens: delta.cache_read_input_tokens } : {}),
     ...(present(delta.cache_creation_input_tokens) ? { cache_creation_input_tokens: delta.cache_creation_input_tokens } : {}),
     ...(present(delta.output_tokens_details) ? { output_tokens_details: { ...delta.output_tokens_details } } : {}),
-    ...(present(delta.iterations) ? { iterations: cloneAnthropicMessagesUsageIterations(delta.iterations) } : {}),
+    ...(present(delta.iterations) ? { iterations: delta.iterations } : {}),
   };
 };
 

@@ -153,7 +153,7 @@ test('buildTargetPayload wraps custom tools as single-string function tools and 
         },
       },
       // Single (only) function-tool entry receives the breakpoint as the last
-      // function tool; applyLastToolCacheBreakpoint walks right-to-left.
+      // function tool; withLastToolCacheBreakpoint walks right-to-left.
       cache_control: { type: 'ephemeral' },
     },
   ]);
@@ -211,7 +211,7 @@ test.each([
         tool_use_id: 'call_1',
         content: expected,
         // Last block of the last message — cache_control attached by
-        // applyLastMessageCacheBreakpoint.
+        // withLastMessageCacheBreakpoint.
         cache_control: { type: 'ephemeral' },
       },
     ],

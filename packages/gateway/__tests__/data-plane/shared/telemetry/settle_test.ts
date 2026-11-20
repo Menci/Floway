@@ -1,6 +1,6 @@
 import { beforeEach, expect, test } from 'vitest';
 
-import { settle } from '../../../../src/data-plane/shared/telemetry/settle.ts';
+import { settleBillable } from '../../../../src/data-plane/pipeline/settlement.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
@@ -29,7 +29,7 @@ const ctx = ({ firstOutputTokenAt = null, upstreamCallStartedAt = null }: {
 } = {}) => mockGatewayCtx({
   apiKeyId: 'key_a',
   backgroundScheduler: promise => { background.push(promise); },
-  attempt: { timing: { firstOutputTokenAt, upstreamCallStartedAt }, telemetry: undefined },
+  attempt: { timing: { firstOutputTokenAt, upstreamCallStartedAt }, telemetry: testPerformanceContext },
 });
 
 beforeEach(() => {
@@ -56,7 +56,11 @@ test('settle records the perf sample without waiting on the usage write', async 
   const beforeSettle = performance.now();
   const gatewayCtx = ctx({ upstreamCallStartedAt: beforeSettle - 10, firstOutputTokenAt: beforeSettle });
 
-  settle(gatewayCtx, testPerformanceContext, testTelemetryModelIdentity, { input: 5, output: 3 }, false);
+  settleBillable({
+    gateway: gatewayCtx,
+    background: promise => { background.push(promise); },
+    log: console,
+  }, [{ identity: testTelemetryModelIdentity, quantities: { input_tokens: '5', output_tokens: '3' } }], false);
   await Promise.all(background);
 
   const rows = await repo.performance.listAll();

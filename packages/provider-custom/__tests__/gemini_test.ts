@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { createCustomProvider } from '../src/provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { callProviderChatPipeline, assertEquals, assertExists, jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildUpstream = (baseUrl = 'https://generativelanguage.googleapis.com'): UpstreamRecord => ({
   id: 'up_gemini',
@@ -42,12 +42,11 @@ test('Gemini generation posts to the model action path with alt=sse and the x-go
     },
     async () => {
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      await provider.instance.callGeminiGenerateContent(
+      await callProviderChatPipeline(provider, 'geminiGenerateContent',
         model,
         { contents: [{ role: 'user', parts: [{ text: 'hello' }] }] },
         undefined,
-        noopUpstreamCallOptions(),
-      );
+        noopUpstreamCallOptions());
     },
   );
 
@@ -80,7 +79,7 @@ test('baseUrl places the generation root, and a stored models/ prefix is strippe
     },
     async () => {
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      await provider.instance.callGeminiGenerateContent(model, { contents: [] }, undefined, noopUpstreamCallOptions());
+      await callProviderChatPipeline(provider, 'geminiGenerateContent', model, { contents: [] }, undefined, noopUpstreamCallOptions());
     },
   );
 
@@ -99,12 +98,11 @@ test('countTokens posts the generate payload inside the generateContentRequest e
     },
     async () => {
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      const { http: response } = await provider.instance.callGeminiGenerateContentCountTokens(
+      const { http: response } = await callProviderChatPipeline(provider, 'geminiGenerateContentCountTokens',
         model,
         { contents: [{ role: 'user', parts: [{ text: 'hello' }] }], systemInstruction: { parts: [{ text: 'be brief' }] } },
         undefined,
-        noopUpstreamCallOptions(),
-      );
+        noopUpstreamCallOptions());
       assertEquals(response.status, 200);
       assertEquals(await response.json(), { totalTokens: 12 });
     },

@@ -1,4 +1,4 @@
-// Errors that bubble out of source/target emit or interceptors and need a
+// Errors that bubble out of source/target emit or stages and need a
 // structured envelope for the api debug response. The target_api lane is
 // typed as a free string here so the package stays decoupled from the
 // api-internal serve-api unions — the api always passes the narrowed value

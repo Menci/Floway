@@ -18,7 +18,7 @@ import type {
 // the only place Floway states one, and only where the wire schema forbids both
 // omission and `null`.
 //
-// The other half of that rule lives in the server-tool shim, which shipped
+// The other half of that rule lives in the hosted-tool shim, which shipped
 // "absent-echo (no tools synthesized when upstream omits it)" in 44322150d
 // (#125) and whose synthesis paths throw on an absent `upstreamResponseSnapshot`
 // rather than fabricate a resource never captured. The two rules do not conflict
@@ -33,12 +33,10 @@ import type {
 //   rows carried by `response.output_item.done` and a snapshot record of their
 //   ordered ids, and awaits that before the terminal frame leaves it, so no
 //   response resource is ever stored. Affinity egress runs underneath too, and
-//   billing reads `billableUsage` off the `ExecuteResult` rather than the
-//   resource. One reader sits above this stage, the non-streaming `settle`
-//   call, and it reads only `status`, which rides through from the upstream and
-//   is never stated here. The WebSocket transport buffers the terminal event
-//   and flushes it last, branching only on the event type; it reads nothing off
-//   the resource at all.
+//   billing uses its own measured usage facts. Client collection runs above
+//   this projection, so a mandatory wire default cannot become an upstream
+//   usage observation. The WebSocket transport buffers the terminal event
+//   and flushes it last, branching on its type.
 //
 // #125's "no tools synthesized when upstream omits it" therefore still holds:
 // the interior resource carries no `tools`, and egress states `[]` on the way
@@ -169,7 +167,7 @@ export const completeResponseResource = (
     // Gateway state. `created_at` and `store` have no candidate chain because no
     // other source can know them. `completed_at` overrides any upstream value
     // because one client turn can span several upstream calls behind the
-    // server-tool runtime, so no single upstream's completion instant describes
+    // hosted-tool runtime, so no single upstream's completion instant describes
     // it.
     created_at: sources.createdAt,
     completed_at: terminal ? Math.floor(Date.now() / 1000) : null,

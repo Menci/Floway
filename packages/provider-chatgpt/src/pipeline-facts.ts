@@ -1,11 +1,11 @@
 import type { ChatGPTPlanObservation } from './access-token.ts';
-import type { ChatGPTCallEffects, ChatGPTBackendCallBase } from './fetch.ts';
+import type { ChatGPTCallEffects, ChatGPTBackendCallBase } from './backend.ts';
 import type { ChatGPTAccountCredential, ChatGPTAccessTokenEntry } from './state.ts';
 import type { HttpRequestFacts } from '@floway-dev/http/pipeline';
 import { secret, type Secret } from '@floway-dev/pipeline';
 import type { ProviderModelFacts, ProviderOperationPayloads, ProviderRequest, ProviderServices } from '@floway-dev/provider';
 
-export type ChatGPTOperation = 'alphaSearch' | 'openaiImagesGenerations' | 'openaiImagesEdits';
+export type ChatGPTOperation = 'alphaSearch' | 'openaiImagesGenerations' | 'openaiImagesEdits' | 'openaiResponses' | 'openaiResponsesCompact';
 export type ChatGPTRequest<O extends ChatGPTOperation = ChatGPTOperation> = ProviderRequest<ProviderOperationPayloads[O]>;
 export type ChatGPTToken = Omit<ChatGPTAccessTokenEntry, 'token'> & { readonly token: Secret<string> };
 export type ChatGPTAccount = Omit<ChatGPTAccountCredential, 'refresh_token' | 'accessToken'> & {
@@ -25,6 +25,7 @@ export interface ChatGPTHttpFacts extends HttpRequestFacts {
   'request.chatgpt.accessToken': ChatGPTToken;
   'request.chatgpt.plan': ChatGPTPlanObservation | null;
   'request.chatgpt.modelKey': string;
+  'request.provider.modelKey': string;
 }
 
 export interface ChatGPTPipelineConfig {

@@ -297,7 +297,7 @@ export type OpenAIResponsesOutputWebSearchCall = OpenAIResponsesWebSearchCallFie
   action?: OpenAIResponsesWebSearchAction;
 };
 
-export type OpenAIResponsesInputWebSearchCall = Omit<OpenAIResponsesOutputWebSearchCall, 'id' | 'status' | 'results'> & {
+export type OpenAIResponsesInputWebSearchCall = Omit<OpenAIResponsesOutputWebSearchCall, 'id' | 'status'> & {
   id?: string;
   status?: OpenAIResponsesOutputWebSearchCall['status'];
 };

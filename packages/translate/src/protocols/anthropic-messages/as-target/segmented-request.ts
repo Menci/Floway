@@ -1,4 +1,4 @@
-import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from './cache-breakpoints.ts';
+import { withLastMessageCacheBreakpoint, withLastSystemCacheBreakpoint, withLastToolCacheBreakpoint } from './cache-breakpoints.ts';
 import { anthropicMessagesConversationFromIR, anthropicMessagesHeaderFromIR } from './input-from.ts';
 import { type RestoredAssistantTurn } from '../../../composition/reading.ts';
 import type { IRInputTurnWithCallIds } from '../../../composition/request/call-ids.ts';
@@ -9,7 +9,7 @@ import type { AnthropicMessagesMessage, AnthropicMessagesPayload, AnthropicMessa
 
 /**
  * Preserve restored native Messages turns verbatim and compute request-wide fields once.
- * Apply cache breakpoints after complete assembly, leaving restored turns untouched.
+ * Place cache breakpoints after complete assembly, leaving restored turns untouched.
  */
 export const anthropicMessagesPayloadFromSegments = (
   request: IRInputRequestHeader,
@@ -32,13 +32,11 @@ export const anthropicMessagesPayloadFromSegments = (
     messages.push(...segment.messages);
   }
 
-  const target: AnthropicMessagesPayload = {
-    ...anthropicMessagesHeaderFromIR(request, options),
-    messages,
-    ...(system.length === 0 ? {} : { system }),
+  const header = anthropicMessagesHeaderFromIR(request, options);
+  return {
+    ...header,
+    ...(header.tools === undefined ? {} : { tools: withLastToolCacheBreakpoint(header.tools) }),
+    messages: withLastMessageCacheBreakpoint(messages, restored),
+    ...(system.length === 0 ? {} : { system: withLastSystemCacheBreakpoint(system) }),
   };
-  applyLastSystemCacheBreakpoint(system);
-  applyLastToolCacheBreakpoint(target.tools);
-  applyLastMessageCacheBreakpoint(messages.filter(message => !restored.has(message)));
-  return target;
 };

@@ -9,34 +9,16 @@ import type { ChatTargetApi } from '@floway-dev/provider';
 // once it has a viable candidate to choose the dispatch wire. `pick` is
 // contractually total — a null return would mean the serve-side filter
 // was bypassed. `canServe` is a 1-bit projection of `pick`.
-export const chatTargetPicker = (preference: readonly ChatTargetApi[]): {
+export const chatTargetPicker = <Target extends ChatTargetApi>(preference: readonly Target[]): {
   canServe: (endpoints: ModelEndpoints) => boolean;
-  pick: (endpoints: ModelEndpoints) => ChatTargetApi;
+  pick: (endpoints: ModelEndpoints) => Target;
 } => {
-  const find = (endpoints: ModelEndpoints): ChatTargetApi | null => {
-    for (const key of preference) {
-      switch (key) {
-      case 'anthropicMessages':
-        if (endpoints.anthropicMessages) return 'anthropicMessages';
-        break;
-      case 'geminiGenerateContent':
-        if (endpoints.geminiGenerateContent) return 'geminiGenerateContent';
-        break;
-      case 'openaiResponses':
-        if (endpoints.openaiResponses) return 'openaiResponses';
-        break;
-      case 'openaiChatCompletions':
-        if (endpoints.openaiChatCompletions) return 'openaiChatCompletions';
-        break;
-      }
-    }
-    return null;
-  };
+  const find = (endpoints: ModelEndpoints): Target | undefined => preference.find(key => endpoints[key] !== undefined);
   return {
-    canServe: endpoints => find(endpoints) !== null,
+    canServe: endpoints => find(endpoints) !== undefined,
     pick: endpoints => {
       const out = find(endpoints);
-      if (out === null) throw new Error('chatTargetPicker.pick called on a candidate the picker rejects — serve must filter via canServe first');
+      if (out === undefined) throw new Error('chatTargetPicker.pick called on a candidate the picker rejects — serve must filter via canServe first');
       return out;
     },
   };

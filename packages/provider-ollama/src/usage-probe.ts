@@ -5,7 +5,7 @@
 
 import { readOllamaAccountUsage } from './account-usage.ts';
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
-import { ollamaFetchUsage, ollamaFetchBalance } from './fetch.ts';
+import { ollamaFetchUsage, ollamaFetchBalance } from './control-http.ts';
 import { type OllamaUsageObservation, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
 import { ollamaMetrics } from './upstream-metrics.ts';
 import { type Fetcher, getProviderRepo, identityWrapUpstreamCall, recordUpstreamMetrics, runScheduledUsageRefresh, type ProviderScheduledOptions, type UpstreamRecord } from '@floway-dev/provider';

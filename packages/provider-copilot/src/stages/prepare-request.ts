@@ -1,7 +1,6 @@
 import { copilotRequestHeaders } from '../auth.ts';
 import { copilotOpenAIEmbeddingsBody, rawModelFor } from '../operation-model.ts';
 import type { CopilotHttpFacts, CopilotOperation, CopilotRequest } from '../pipeline-facts.ts';
-import type { HttpResponseFacts } from '@floway-dev/http/pipeline';
 import type { HttpBody, HttpBodyEncoding } from '@floway-dev/http/request-content';
 import { defineStage, isSecret, move, secret, type Secret } from '@floway-dev/pipeline';
 import { DEFAULT_DECISION_PATHS, serializeDecisionRequest } from '@floway-dev/protocols/decision';
@@ -49,15 +48,15 @@ const prepareBody = async <O extends CopilotOperation>(
 };
 
 export const prepareCopilotRequest = <O extends CopilotOperation>(operation: O) => {
-  const prepare = defineStage<CopilotRequest<O>, CopilotHttpFacts, HttpResponseFacts, ProviderResponse, ProviderServices>({
+  const prepare = defineStage<CopilotRequest<O>, CopilotHttpFacts, ProviderResponse, ProviderResponse, ProviderServices>({
     name: `prepareCopilot${operation.replace(/^openai/, 'OpenAI').replace(/^decision/, 'Decision')}`,
     through: {
       request: {
         needs: ['request.provider.model', 'request.provider.payload', 'request.http.headers', 'request.http.callId', 'request.copilot.session'],
         consumes: ['request.provider.model', 'request.provider.payload', 'request.copilot.session', 'request.http.headers'],
-        provides: ['request.http.url', 'request.http.method', 'request.http.headers', 'request.http.body', 'request.http.encoding', 'request.copilot.modelKey'],
+        provides: ['request.http.url', 'request.http.method', 'request.http.headers', 'request.http.body', 'request.http.encoding', 'request.copilot.modelKey', 'request.provider.modelKey'],
       },
-      response: { needs: ['response.http.exchange'], consumes: [], provides: ['response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls'] },
+      response: { needs: [], consumes: [], provides: [] },
     },
     execute: async (facts, next) => {
       const { 'request.provider.model': model, 'request.provider.payload': payload, 'request.copilot.session': session, ...rest } = facts;
@@ -69,13 +68,14 @@ export const prepareCopilotRequest = <O extends CopilotOperation>(operation: O) 
       const back = await next(move({
         ...rest,
         'request.copilot.modelKey': modelKey,
+        'request.provider.modelKey': modelKey,
         'request.http.url': `${session.baseUrl}${prepared.path}`,
         'request.http.method': 'POST',
         'request.http.headers': withHttpContentType(identity, prepared.body, prepared.encoding),
         'request.http.body': prepared.body,
         'request.http.encoding': prepared.encoding,
       }));
-      return move({ ...back, 'response.provider.modelKey': modelKey, 'response.provider.called': back['response.http.exchange'].type === 'response', 'response.provider.previousCalls': [] });
+      return move({ ...back });
     },
   });
   return prepare;

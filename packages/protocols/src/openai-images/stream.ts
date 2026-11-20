@@ -40,7 +40,7 @@ export const parseOpenAIImagesStream = (
 
 /** The event's own name, which the specification writes twice: as the SSE `event:` label and
  *  as `type` inside the payload. Upstreams that write only the label have been seen on the
- *  Responses protocol, and every reader here takes the name off the payload, so the two are
+ *  OpenAI Responses protocol, and every reader here takes the name off the payload, so the two are
  *  reconciled once at the boundary rather than at each reader. An event that carries neither
  *  is not one this protocol can place — it could be the terminal or a partial — so it ends the
  *  read rather than being passed on as an unknown. */

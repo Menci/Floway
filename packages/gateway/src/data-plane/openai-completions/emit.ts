@@ -1,11 +1,11 @@
 import type { OpenAICompletionsFacts, OpenAICompletionsFrames, Fields } from './facts.ts';
 import type { RunDump } from '../../dump/run-sink.ts';
-import { isFailure } from '../pipeline/facts.ts';
+import { isFailure, mintedErrorEnvelope, renderFailure } from '../pipeline/facts.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { isForwardableUpstreamHeader } from '../shared/upstream-response.ts';
 import { recordStream, streamReferenceOf } from '@floway-dev/dump';
 import { defineStage, move } from '@floway-dev/pipeline';
-import { renderErrorEnvelope, isOpenAIUsageOnlyEventShape, type SseFrame } from '@floway-dev/protocols/common';
+import { isOpenAIUsageOnlyEventShape, type SseFrame } from '@floway-dev/protocols/common';
 import { openaiCompletionsProtocolFrameToSSEFrame } from '@floway-dev/protocols/openai-completions';
 
 const isFrames = (answer: OpenAICompletionsFacts['response.openaiCompletions.payload']): answer is OpenAICompletionsFrames =>
@@ -68,7 +68,7 @@ const rendered = (
   wantsUsageChunk: boolean,
   dump: RunDump | null,
 ): OpenAICompletionsFacts['response.openaiCompletions.rendered'] =>
-  isFailure(answer) ? renderErrorEnvelope(answer.message, answer.body)
+  isFailure(answer) ? renderFailure(answer, mintedErrorEnvelope).body
     : isFrames(answer) ? renderSSE(wantsUsageChunk ? answer : recordStream(withoutUsage(answer), dump))
       : answer;
 

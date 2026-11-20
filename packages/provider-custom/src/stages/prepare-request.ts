@@ -1,13 +1,16 @@
 import type { CustomPathOverrideKey, CustomUpstreamConfig } from '../config.ts';
-import { type HttpHeaders, type HttpRequestFacts, type HttpResponseFacts } from '@floway-dev/http/pipeline';
+import { type HttpHeaders, type HttpRequestFacts } from '@floway-dev/http/pipeline';
 import { multipartBody, type HttpBody, type HttpBodyEncoding } from '@floway-dev/http/request-content';
 import { defineStage, isSecret, move, secret, type Secret } from '@floway-dev/pipeline';
 import type { RerankTarget } from '@floway-dev/protocols/common';
 import { DEFAULT_DECISION_PATHS, serializeDecisionRequest } from '@floway-dev/protocols/decision';
+import type { GeminiCountTokensPayload } from '@floway-dev/protocols/gemini-generate-content';
+import { toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
 import { joinBaseAndPath, mergeHttpHeaders, prepareOpenAIImagesEditsBody, withHttpContentType, type ProviderOperation, type ProviderOperationPayloads, type ProviderRequest, type ProviderResponse, type ProviderServices } from '@floway-dev/provider';
 
 interface CustomHttpFacts extends HttpRequestFacts {
+  'request.provider.modelKey': string;
   'request.custom.modelKey': string;
   'request.custom.path': string;
 }
@@ -15,6 +18,11 @@ interface CustomHttpFacts extends HttpRequestFacts {
 type CustomResponse = ProviderResponse & { 'response.provider.rerankTarget'?: RerankTarget };
 
 const PATHS: Partial<Record<ProviderOperation, CustomPathOverrideKey>> = {
+  openaiChatCompletions: '/chat/completions',
+  openaiResponses: '/responses',
+  openaiResponsesCompact: '/responses',
+  anthropicMessages: '/messages',
+  anthropicMessagesCountTokens: '/messages',
   alphaSearch: '/alpha/search',
   openaiCompletions: '/completions',
   openaiEmbeddings: '/embeddings',
@@ -41,23 +49,25 @@ const resolvedHeaders = (config: CustomUpstreamConfig, incoming: HttpHeaders): H
 };
 
 export const prepareCustomRequest = <O extends ProviderOperation>(config: CustomUpstreamConfig, operation: O) => {
-  const prepare = defineStage<ProviderRequest<ProviderOperationPayloads[O]>, CustomHttpFacts, HttpResponseFacts, CustomResponse, ProviderServices>({
-    name: `prepareCustom${operation.replace(/^openai/, 'OpenAI').replace(/^alpha/, 'Alpha').replace(/^rerank/, 'Rerank').replace(/^decision/, 'Decision')}`,
+  const prepare = defineStage<ProviderRequest<ProviderOperationPayloads[O]> & { 'request.provider.anthropicBeta'?: readonly string[]; 'request.provider.responsesAction': 'generate' | 'compact' }, CustomHttpFacts, CustomResponse, CustomResponse, ProviderServices>({
+    name: `prepareCustom${operation.replace(/^openai/, 'OpenAI').replace(/^alpha/, 'Alpha').replace(/^anthropic/, 'Anthropic').replace(/^gemini/, 'Gemini').replace(/^rerank/, 'Rerank').replace(/^decision/, 'Decision')}`,
     through: {
       request: {
-        needs: ['request.provider.model', 'request.provider.payload', 'request.http.callId', 'request.http.headers'],
+        needs: [...(operation === 'openaiResponses' || operation === 'openaiResponsesCompact' ? ['request.provider.responsesAction' as const] : []), 'request.provider.model', 'request.provider.payload', 'request.http.callId', 'request.http.headers', ...(operation === 'anthropicMessages' || operation === 'anthropicMessagesCountTokens' ? ['request.provider.anthropicBeta' as const] : [])],
         consumes: ['request.provider.model', 'request.provider.payload', 'request.http.headers'],
-        provides: ['request.http.url', 'request.http.method', 'request.http.headers', 'request.http.body', 'request.http.encoding', 'request.custom.modelKey', 'request.custom.path'],
+        provides: ['request.http.url', 'request.http.method', 'request.http.headers', 'request.http.body', 'request.http.encoding', 'request.provider.modelKey', 'request.custom.modelKey', 'request.custom.path'],
       },
       response: {
-        needs: ['response.http.exchange'],
+        needs: [],
         consumes: [],
-        provides: ['response.provider.modelKey', 'response.provider.called', 'response.provider.previousCalls', ...(operation === 'rerank' ? ['response.provider.rerankTarget' as const] : [])],
+        provides: [...(operation === 'rerank' ? ['response.provider.rerankTarget' as const] : [])],
       },
     },
     execute: async (facts, next) => {
       const { 'request.provider.model': model, 'request.provider.payload': payload, ...rest } = facts;
-      const modelKey = model.providerData as string;
+      const gemini = operation === 'geminiGenerateContent' || operation === 'geminiGenerateContentCountTokens';
+      const providerModelId = model.providerData as string;
+      const modelKey = gemini ? providerModelId.replace(/^models\//, '') : providerModelId;
       let body: HttpBody;
       let encoding: HttpBodyEncoding = 'json';
       let target: RerankTarget | undefined;
@@ -90,19 +100,49 @@ export const prepareCustomRequest = <O extends ProviderOperation>(config: Custom
         path = config.pathOverrides?.['/audio/transcriptions'] ?? '/v1/audio/transcriptions';
         break;
       }
+      case 'geminiGenerateContent':
+      case 'geminiGenerateContentCountTokens': {
+        // https://ai.google.dev/api/generate-content#method:-models.streamgeneratecontent
+        // https://ai.google.dev/api/tokens#method:-models.counttokens
+        const root = config.pathOverrides?.['/v1beta/models'] ?? '/v1beta/models';
+        const resource = `${root}/${encodeURIComponent(modelKey)}`;
+        const request = payload as ProviderOperationPayloads['geminiGenerateContent'];
+        if (operation === 'geminiGenerateContentCountTokens') {
+          path = `${resource}:countTokens`;
+          body = { generateContentRequest: { ...request, model: `models/${modelKey}` } } satisfies GeminiCountTokensPayload;
+        } else {
+          path = `${resource}:streamGenerateContent?alt=sse`;
+          body = request;
+        }
+        break;
+      }
       default: {
         const key = PATHS[operation]!;
         path = config.pathOverrides?.[key] ?? `/v1${key}`;
-        body = { ...payload, model: modelKey };
+        if ((operation === 'openaiResponses' || operation === 'openaiResponsesCompact') && facts['request.provider.responsesAction'] === 'compact') path += '/compact';
+        if (operation === 'anthropicMessagesCountTokens') path += '/count_tokens';
+        body = (operation === 'openaiResponses' || operation === 'openaiResponsesCompact') && facts['request.provider.responsesAction'] === 'compact'
+          ? { ...toCompactPayloadShape(payload as ProviderOperationPayloads['openaiResponsesCompact']), model: modelKey }
+          : { ...payload, ...(operation === 'openaiChatCompletions' || operation === 'openaiResponses' || operation === 'openaiResponsesCompact' || operation === 'anthropicMessages' ? { stream: true } : {}), model: modelKey };
       }
       }
-      // Every operation here speaks an OpenAI-compatible wire, which authenticates with a
-      // bearer token; an empty key sends no credential.
-      const credential: HttpHeaders = config.apiKey === '' ? [] : [['Authorization', secret(`Bearer ${config.apiKey}`)]];
+      const anthropic = operation === 'anthropicMessages' || operation === 'anthropicMessagesCountTokens';
+      // https://docs.anthropic.com/en/api/versioning
+      // https://ai.google.dev/gemini-api/docs/api-key
+      const credential: HttpHeaders = config.apiKey === '' ? []
+        : anthropic ? [['x-api-key', secret(config.apiKey)], ['anthropic-version', '2023-06-01']]
+          : gemini ? [['x-goog-api-key', secret(config.apiKey)]]
+            : [['Authorization', secret(`Bearer ${config.apiKey}`)]];
       const base = withHttpContentType(credential, body, encoding);
-      const headers = mergeHttpHeaders(base, resolvedHeaders(config, facts['request.http.headers']));
+      let headers = mergeHttpHeaders(base, resolvedHeaders(config, facts['request.http.headers']));
+      if (anthropic) {
+        const beta = facts['request.provider.anthropicBeta'] as readonly string[];
+        headers = headers.filter(([name]) => name.toLowerCase() !== 'anthropic-beta');
+        if (beta.length > 0) headers = [...headers, ['anthropic-beta', beta.join(',')]];
+      }
       const back = await next(move({
         ...rest,
+        'request.provider.modelKey': modelKey,
         'request.custom.modelKey': modelKey,
         'request.custom.path': path,
         'request.http.url': joinBaseAndPath(config.baseUrl, path),
@@ -111,7 +151,7 @@ export const prepareCustomRequest = <O extends ProviderOperation>(config: Custom
         'request.http.body': body,
         'request.http.encoding': encoding,
       }));
-      return move({ ...back, 'response.provider.modelKey': modelKey, 'response.provider.called': back['response.http.exchange'].type === 'response', 'response.provider.previousCalls': [], ...(target === undefined ? {} : { 'response.provider.rerankTarget': target }) });
+      return move({ ...back, ...(target === undefined ? {} : { 'response.provider.rerankTarget': target }) });
     },
   });
   return prepare;

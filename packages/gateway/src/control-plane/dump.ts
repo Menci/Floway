@@ -5,8 +5,8 @@ import { z } from 'zod';
 
 import { ownedKeyForUser } from './shared/owned-key.ts';
 import { getDumpBroker, getDumpStore } from '../dump/registry.ts';
-import { dumpRecordToWire } from '../dump/wire.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
+import { dumpRecordToWire } from '@floway-dev/dump';
 
 const LIST_LIMIT_DEFAULT = 100;
 const LIST_LIMIT_MAX = 200;

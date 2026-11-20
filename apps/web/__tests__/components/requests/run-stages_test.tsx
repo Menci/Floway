@@ -68,4 +68,25 @@ describe('run stages', () => {
     expect(screen.queryByText(/upstream content/)).toBeNull();
   });
 
+  it('shows and copies the recorded Anthropic citation source without wire projection', async () => {
+    const writeText = vi.fn(async (_text: string) => {});
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const citation = { type: 'search_result_location', source: 'https://citation.test/anthropic', title: 'Reference', search_result_index: 0, start_block_index: 0, end_block_index: 1 };
+    const frame = { type: 'event' as const, event: { type: 'content_block_delta', index: 0, delta: { type: 'citations_delta', citation } } };
+    const events = toNdjson(encodeRun([
+      { type: 'stage.entered', stageId: 1, name: 'emit', parentStageId: null, facts: {} },
+      { type: 'stage.leaved', stageId: 1, facts: { 'response.chat.clientFrames': streamFact(1) } },
+      { type: 'stream.frame', streamId: 1, frames: [frame] },
+      { type: 'stream.end', streamId: 1 },
+    ]));
+    renderInApp(<RunStages ndjson={events} />);
+    await screen.findByTestId('state');
+    fireEvent.click(screen.getByRole('combobox', { name: 'Stage view' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Protocol frames' }));
+    expect(screen.getByText(/https:\/\/citation.test\/anthropic/)).toBeTruthy();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Copy' })[0]!);
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(writeText.mock.calls[0]![0])).toEqual(frame);
+  });
+
 });

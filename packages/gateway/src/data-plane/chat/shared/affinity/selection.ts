@@ -19,8 +19,6 @@ export interface AffinityCandidateSelection<T> {
   readonly payloadFor: (candidate: ModelCandidate) => T;
 }
 
-export type AffinitySelectionFailure = Extract<ChatServeFailure, { kind: 'routing-unavailable' }>;
-
 export type OptionalAffinityBlobProjection =
   | { readonly kind: 'preserve'; readonly value: string; readonly preferred: boolean }
   | { readonly kind: 'remove'; readonly degrades: boolean; readonly preferred: boolean };
@@ -135,7 +133,7 @@ export const defineAffinityRequest = <T>(
 export const selectAffinityCandidates = <T>(
   candidates: readonly ModelCandidate[],
   affinity: AffinityRequestAnalysis<T>,
-): AffinityCandidateSelection<T> | AffinitySelectionFailure => {
+): AffinityCandidateSelection<T> | ChatServeFailure => {
   if (affinity.requiredTargets.length > 1) {
     return {
       kind: 'routing-unavailable',

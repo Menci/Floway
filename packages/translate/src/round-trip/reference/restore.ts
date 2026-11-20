@@ -31,17 +31,20 @@ const restoreValue = (value: unknown, referencedContentHashes: readonly Uint8Arr
     if (text === undefined) return { ok: false, reason: 'missing-reference' };
     return { ok: true, value: value.kind === 'text' ? text : parseJSONObject(text) };
   }
-  if (typeof value === 'object' && value !== null) {
-    for (const [key, child] of Object.entries(value)) {
-      const resolved = restoreValue(child, referencedContentHashes, textsByHash);
-      if (!resolved.ok) return resolved;
-      if (resolved.value !== child) Reflect.set(value, key, resolved.value);
-    }
+  if (typeof value !== 'object' || value === null) return { ok: true, value };
+  const entries: [string, unknown][] = [];
+  let changed = false;
+  for (const [key, child] of Object.entries(value)) {
+    const resolved = restoreValue(child, referencedContentHashes, textsByHash);
+    if (!resolved.ok) return resolved;
+    changed ||= resolved.value !== child;
+    entries.push([key, resolved.value]);
   }
-  return { ok: true, value };
+  if (!changed) return { ok: true, value };
+  return { ok: true, value: Array.isArray(value) ? entries.map(([, child]) => child) : Object.fromEntries(entries) };
 };
 
-/** Consumes the exclusively owned turn decoded by the sidecar codec. */
+/** Rebuilds the paths of the decoded turn that hold references and shares every other node. */
 export const restoreAssistantTurn = async <Protocol extends keyof InputAssistantTurnByProtocol>(
   _protocol: Protocol,
   candidates: readonly ReplayContent[],

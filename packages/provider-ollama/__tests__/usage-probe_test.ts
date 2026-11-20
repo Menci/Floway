@@ -10,7 +10,7 @@ import {
   refreshOllamaUsageProbe,
 } from '../src/usage-probe.ts';
 import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, assertRejects, noopUpstreamCallOptions, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
+import { collectChatProviderPipeline, assertEquals, assertRejects, noopUpstreamCallOptions, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_ollama_usage';
 
@@ -52,8 +52,27 @@ const withStateRepo = (state: unknown = null) => {
   return { read: () => readOllamaUpstreamState(current), writes, metrics };
 };
 
-test('a failed endpoint preserves both prior readings and records one refresh outcome', async () => {
-  const failedPath = '/api/balance';
+test('the usage refresh reads both Ollama endpoints with the upstream API key for an unsaved draft', async () => {
+  const { config } = assertOllamaUpstreamRecord(cloudRecord());
+  const paths: string[] = [];
+  await withMockedFetch(
+    request => {
+      const path = new URL(request.url).pathname;
+      paths.push(path);
+      assertEquals(request.method, 'GET');
+      assertEquals(request.headers.get('authorization'), 'Bearer ollama_test');
+      return Response.json(path === '/api/usage' ? USAGE_BODY : BALANCE_BODY);
+    },
+    async () => {
+      const reading = await refreshOllamaUsageProbe('', config, directFetcher);
+      assertEquals(reading.data.usage, USAGE_BODY);
+      assertEquals(reading.data.balance, BALANCE_BODY);
+    },
+  );
+  assertEquals(paths.toSorted(), ['/api/balance', '/api/usage']);
+});
+
+test.each(['/api/usage', '/api/balance'])('a failure of %s preserves both prior readings and records one refresh outcome', async failedPath => {
   const { config } = assertOllamaUpstreamRecord(cloudRecord());
   const repo = withStateRepo();
   await withMockedFetch(
@@ -112,12 +131,7 @@ const callChat = async (record: UpstreamRecord, onUsageProbe: (path: string) => 
       return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } });
     },
     async () => {
-      await provider.instance.callOpenAIChatCompletions(
-        stubProviderModel({ providerData: 'gpt-oss:120b' }),
-        { messages: [] },
-        undefined,
-        noopUpstreamCallOptions({ waitUntil: promise => { pending.push(promise); } }),
-      );
+      await collectChatProviderPipeline(provider, 'openaiChatCompletions', stubProviderModel({ providerData: 'gpt-oss:120b' }), { messages: [] }, undefined, noopUpstreamCallOptions({ waitUntil: promise => { pending.push(promise); } }));
       await Promise.all(pending);
     },
   );
@@ -136,4 +150,22 @@ test('an inference call arms the probe, and the stored attempt time debounces th
   const stale = { usageProbe: { attemptedAt: Date.now() - OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS, observation: null, error: null } };
   await callChat(cloudRecord({ state: stale }), path => { probes.push(path); });
   assertEquals(probes, ['/api/usage', '/api/balance', '/api/usage', '/api/balance']);
+});
+
+test('token counting leaves the account windows untouched and arms no probe', async () => {
+  withStateRepo();
+  const provider = createOllamaProvider(cloudRecord());
+  const pending: Promise<unknown>[] = [];
+  let probes = 0;
+  await withMockedFetch(
+    request => {
+      if (['/api/usage', '/api/balance'].includes(new URL(request.url).pathname)) probes++;
+      return new Response('{"input_tokens":1}', { status: 200 });
+    },
+    async () => {
+      await collectChatProviderPipeline(provider, 'anthropicMessagesCountTokens', stubProviderModel({ providerData: 'gpt-oss:120b' }), { messages: [], max_tokens: 16 }, undefined, { ...noopUpstreamCallOptions({ waitUntil: promise => { pending.push(promise); } }), anthropicBeta: [] });
+      await Promise.all(pending);
+    },
+  );
+  assertEquals(probes, 0);
 });

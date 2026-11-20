@@ -2,14 +2,31 @@ import { test, vi } from 'vitest';
 
 import { clearInProcessCopilotTokenCache } from '../src/auth.ts';
 import { emptyKnownModels, mergeKnownModels } from '../src/known-models.ts';
+import type { CopilotVariantIndex } from '../src/model-variants.ts';
 import { createCopilotProvider } from '../src/provider.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from '../src/state.ts';
+import type { CopilotRawModel } from '../src/types.ts';
 import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/platform';
-import { PROMPT_TOO_LONG_MESSAGE } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { parseDecisionRequest } from '@floway-dev/protocols/decision';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, initProviderRepo } from '@floway-dev/provider';
-import { callProviderPipeline, assertEquals, assertRejects, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { collectChatProviderPipeline, callProviderPipeline, assertEquals, assertRejects, assertThrows, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+
+const mergeVariantsControl = vi.hoisted<{
+  override: ((merged: CopilotRawModel[]) => CopilotRawModel[]) | null;
+}>(() => ({ override: null }));
+
+vi.mock('../src/merge-variants.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../src/merge-variants.ts')>();
+  return {
+    ...original,
+    mergeCopilotVariants: (index: CopilotVariantIndex): CopilotRawModel[] => {
+      const merged = original.mergeCopilotVariants(index);
+      return mergeVariantsControl.override?.(merged) ?? merged;
+    },
+  };
+});
 
 const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const { config: overrideConfig, ...rest } = overrides;
@@ -38,24 +55,44 @@ const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): Upstream
   };
 };
 
+test('createCopilotProvider reports an invalid host through the config contract', () => {
+  const record = buildCopilotUpstream({
+    config: {
+      githubHost: 'https://github.com',
+      githubToken: 'ghu_test',
+      user: { id: 1, login: 'tester', name: null, avatar_url: '' },
+    },
+  });
+  assertThrows(
+    () => createCopilotProvider(record),
+    Error,
+    'Malformed copilot upstream config: githubHost must be github.com or a tenant hostname ending in .ghe.com',
+  );
+});
+
 interface CopilotTestRepo {
   copilotUpstream: UpstreamRecord;
+  savedStates: unknown[];
   setUpstreamState: (state: unknown) => void;
   getCurrentState: () => unknown;
+  overrideGetById: (impl: () => Promise<UpstreamRecord | null>) => void;
   overrideSaveState: (impl: (id: string, mutate: (current: unknown) => unknown) => Promise<void>) => void;
 }
 
 const setupCopilotTest = async (recordOverrides: Partial<UpstreamRecord> = {}): Promise<CopilotTestRepo> => {
   let upstream = buildCopilotUpstream(recordOverrides);
+  const savedStates: unknown[] = [];
+  let getByIdImpl: () => Promise<UpstreamRecord | null> = async () => upstream;
   // Applies the mutator to the row as it stands, the way the repo does.
   let saveStateImpl: (id: string, mutate: (current: unknown) => unknown) => Promise<void> = async (_id, mutate) => {
     const next = mutate(upstream.state);
+    savedStates.push(next);
     upstream = { ...upstream, state: next };
   };
   initProviderRepo(() => ({
     recordUpstreamMetric: async () => {},
     upstreams: {
-      getById: async () => ({ ...upstream, configVersion: 1 }),
+      getById: async () => { const row = await getByIdImpl(); return row === null ? null : { ...row, configVersion: 1 }; },
       saveState: (id, mutate) => saveStateImpl(id, current => mutate(current, 1)),
     },
   }));
@@ -63,8 +100,10 @@ const setupCopilotTest = async (recordOverrides: Partial<UpstreamRecord> = {}): 
   clearInProcessCopilotTokenCache();
   return {
     copilotUpstream: upstream,
+    savedStates,
     setUpstreamState: state => { upstream = { ...upstream, state }; },
     getCurrentState: () => upstream.state,
+    overrideGetById: impl => { getByIdImpl = impl; },
     overrideSaveState: impl => { saveStateImpl = impl; },
   };
 };
@@ -145,6 +184,55 @@ test('Copilot provider exposes the highest-priority non-Claude endpoint', async 
   );
 });
 
+test('Copilot provider exposes only OpenAI Responses for Claude when available', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const instance = createCopilotProvider(copilotUpstream);
+  const provider = instance.instance;
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+
+      if (url.hostname === 'update.code.visualstudio.com') {
+        return jsonResponse(['1.110.1']);
+      }
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(
+          copilotModels([
+            {
+              id: 'claude-opus-4.7',
+              display_name: 'Claude Opus 4.7',
+              supported_endpoints: ['/responses', '/chat/completions'],
+            },
+            {
+              id: 'claude-opus-4.7-xhigh',
+              supported_endpoints: ['/v1/messages'],
+              reasoningEfforts: ['xhigh'],
+            },
+          ]),
+        );
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [model] = await provider.getProvidedModels(directFetcher);
+
+      assertEquals(model.id, 'claude-opus-4-7');
+      assertEquals(model.display_name, 'Claude Opus 4.7');
+      assertEquals(model.endpoints, { openaiResponses: {} });
+    },
+  );
+});
+
 test('Copilot provider owns the claude-* Anthropic Messages capability workaround', async () => {
   const { copilotUpstream } = await setupCopilotTest();
   const instance = createCopilotProvider(copilotUpstream);
@@ -189,7 +277,7 @@ test('Copilot provider owns the claude-* Anthropic Messages capability workaroun
       assertEquals(providerModel.id, 'claude-haiku-chat-listed');
       assertEquals(providerModel.endpoints, { anthropicMessages: {} });
 
-      await provider.callAnthropicMessages(providerModel, {
+      await collectChatProviderPipeline(instance, 'anthropicMessages', providerModel, {
         max_tokens: 100,
         messages: [{ role: 'user', content: 'hello' }],
       }, undefined, noopAnthropicMessagesUpstreamCallOptions());
@@ -245,7 +333,7 @@ test('Copilot provider selects raw variants that support the target endpoint', a
     },
     async () => {
       const [providerModel] = await provider.getProvidedModels(directFetcher);
-      await provider.callOpenAIResponses(providerModel, {
+      await collectChatProviderPipeline(instance, 'openaiResponses', providerModel, {
         input: [{
           type: 'additional_tools',
           role: 'developer',
@@ -257,19 +345,23 @@ test('Copilot provider selects raw variants that support the target endpoint', a
           }],
         }],
         reasoning: { effort: 'xhigh' },
-      }, 'generate', undefined, noopUpstreamCallOptions());
+      }, undefined, noopUpstreamCallOptions());
     },
   );
 
   assertEquals(openaiResponsesBody?.model, 'claude-opus-4.7');
+  assertEquals(
+    (openaiResponsesBody?.input as Array<{ tools: Array<{ description: string }> }>)[0]?.tools[0]?.description,
+    'Tools in the functions namespace.',
+  );
 });
 
-test('Copilot provider runs the OpenAI Responses boundary chain on the compact path', async () => {
-  // The compact-path boundary registers payload mutators (strip-service-tier,
+test('Copilot provider runs the OpenAI Responses vendor stages on the compact path', async () => {
+  // The compact pipeline carries payload rebuilds (strip-service-tier,
   // strip-image-generation, ...) plus header derivers (set-vision-header,
-  // set-initiator-header). Driving callOpenAIResponses with action='compact'
+  // set-initiator-header). Driving the openaiResponsesCompact pipeline
   // through a real upstream stub exercises the integration end-to-end: the
-  // payload mutators reach the wire body, the header derivers reach the wire
+  // payload rebuilds reach the wire body, the header derivers reach the wire
   // request headers, and the compact-shaped envelope still comes back through
   // `compactionResponse`.
   const { copilotUpstream } = await setupCopilotTest();
@@ -309,10 +401,10 @@ test('Copilot provider runs the OpenAI Responses boundary chain on the compact p
     },
     async () => {
       const [providerModel] = await provider.getProvidedModels(directFetcher);
-      // service_tier is set so withServiceTierStripped has something to strip;
-      // an input_image is included so withVisionHeaderSet fires; the last
-      // input item is a user message so withInitiatorHeaderSet picks 'user'.
-      const result = await provider.callOpenAIResponses(providerModel, {
+      // service_tier is set so copilotOpenAIResponsesStripServiceTier has something to strip;
+      // an input_image is included so copilotOpenAIResponsesSetVisionHeader fires; the last
+      // input item is a user message so copilotOpenAIResponsesSetInitiatorHeader picks 'user'.
+      const result = await collectChatProviderPipeline(instance, 'openaiResponsesCompact', providerModel, {
         input: [
           {
             type: 'additional_tools',
@@ -334,11 +426,11 @@ test('Copilot provider runs the OpenAI Responses boundary chain on the compact p
           },
         ],
         service_tier: 'priority',
-      }, 'compact', undefined, noopUpstreamCallOptions());
+      }, undefined, noopUpstreamCallOptions());
 
-      if (!result.ok) throw new Error('expected ok compaction result');
-      if (result.action !== 'compact') throw new Error(`expected compact action tag, got ${result.action}`);
-      assertEquals(result.result.object, 'response.compaction');
+      if (!(result.output !== null && 'kind' in result.output)) throw new Error('expected ok compaction result');
+      if (result.output === null || !('kind' in result.output) || result.output.kind !== 'value') throw new Error('expected compact value');
+      assertEquals(result.output.body.object, 'response.compaction');
     },
   );
 
@@ -347,9 +439,52 @@ test('Copilot provider runs the OpenAI Responses boundary chain on the compact p
   assertEquals('service_tier' in openaiResponsesBody, false);
   const wireInput = openaiResponsesBody?.input as Array<{ type: string }>;
   assertEquals(wireInput[0]?.type, 'additional_tools');
+  assertEquals(
+    (openaiResponsesBody.input as Array<{ tools?: Array<{ description: string }> }>)[0]?.tools?.[0]?.description,
+    'Tools in the functions namespace.',
+  );
   assertEquals(wireInput.at(-1)?.type, 'compaction_trigger');
   assertEquals(visionHeader, 'true');
   assertEquals(initiatorHeader, 'user');
+});
+
+test('Copilot provider exposes its default flag set via ProviderModel.enabledFlags', async () => {
+  const { copilotUpstream } = await setupCopilotTest({
+    flagOverrides: { 'anthropic-messages-web-search-shim': true },
+    disabledPublicModelIds: [],
+  });
+  const instance = createCopilotProvider(copilotUpstream);
+
+  assertEquals(instance.upstreamId, 'up_copilot');
+  assertEquals(instance.name, copilotUpstream.name);
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') {
+        return jsonResponse(['1.110.1']);
+      }
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-test', supported_endpoints: ['/chat/completions'] }]));
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const models = await instance.instance.getProvidedModels(directFetcher);
+      const model = models[0];
+      if (!model) throw new Error('expected at least one Copilot model in test fixture');
+      assertEquals(model.enabledFlags.has('strip-billing-attribution'), true);
+      assertEquals(model.enabledFlags.has('anthropic-messages-web-search-shim'), true);
+    },
+  );
 });
 
 test('per-model provider default beats operator upstream override — Claude < 4.8 keeps the system rewrite even when the upstream flag is off', async () => {
@@ -459,10 +594,10 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
       const opts = noopUpstreamCallOptions();
       const anthropicMessagesOpts = noopAnthropicMessagesUpstreamCallOptions();
 
-      await provider.callOpenAIChatCompletions(byId.get('gpt-chat')!, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-      await provider.callOpenAIResponses(byId.get('gpt-resp')!, { input: [] }, 'generate', undefined, opts);
-      await provider.callAnthropicMessages(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
-      await provider.callAnthropicMessagesCountTokens(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
+      await collectChatProviderPipeline(instance, 'openaiChatCompletions', byId.get('gpt-chat')!, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+      await collectChatProviderPipeline(instance, 'openaiResponses', byId.get('gpt-resp')!, { input: [] }, undefined, opts);
+      await collectChatProviderPipeline(instance, 'anthropicMessages', byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
+      await collectChatProviderPipeline(instance, 'anthropicMessagesCountTokens', byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
       await callProviderPipeline(instance, 'openaiEmbeddings', byId.get('emb-mini')!, { input: 'hi' }, undefined, opts);
     },
   );
@@ -474,6 +609,126 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
   assertEquals('stream' in bodies['/embeddings'], false);
 });
 
+test('Copilot provider sets copilot-vision-request when an image is nested inside tool_result.content', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const instance = createCopilotProvider(copilotUpstream);
+  const provider = instance.instance;
+  const visionHeaders: (string | null)[] = [];
+
+  const driveAnthropicMessages = async (providerModel: Awaited<ReturnType<typeof instance.instance.getProvidedModels>>[number], body: Omit<AnthropicMessagesPayload, 'model'>): Promise<void> => {
+    await collectChatProviderPipeline(instance, 'anthropicMessages', providerModel, body, undefined, noopAnthropicMessagesUpstreamCallOptions());
+  };
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+
+      if (url.hostname === 'update.code.visualstudio.com') {
+        return jsonResponse(['1.110.1']);
+      }
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'claude-msg', supported_endpoints: ['/v1/messages'] }]));
+      }
+      if (url.pathname === '/v1/messages') {
+        visionHeaders.push(request.headers.get('copilot-vision-request'));
+        await request.text();
+        return sseResponse();
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [model] = await provider.getProvidedModels(directFetcher);
+
+      await driveAnthropicMessages(model, {
+        max_tokens: 10,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'toolu_image',
+                content: [
+                  {
+                    type: 'image',
+                    source: { type: 'base64', media_type: 'image/png', data: 'AAAA' },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+
+      await driveAnthropicMessages(model, {
+        max_tokens: 10,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'toolu_text',
+                content: [{ type: 'text', text: 'plain result' }],
+              },
+            ],
+          },
+        ],
+      });
+    },
+  );
+
+  assertEquals(visionHeaders, ['true', null]);
+});
+
+test('Copilot Anthropic Messages boundary chain does NOT fire on the OpenAI Chat Completions wire (translated path)', async () => {
+  // The operation chain selects wire-specific stages. Claude Code metadata must
+  // not install Anthropic Messages headers on a Chat Completions request.
+  const { copilotUpstream } = await setupCopilotTest();
+  const instance = createCopilotProvider(copilotUpstream);
+  const provider = instance.instance;
+  const observedInteractionType: (string | null)[] = [];
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-chat', supported_endpoints: ['/chat/completions'] }]));
+      }
+      if (url.pathname === '/chat/completions') {
+        observedInteractionType.push(request.headers.get('x-interaction-type'));
+        await request.text();
+        return sseResponse();
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [providerModel] = await provider.getProvidedModels(directFetcher);
+      await collectChatProviderPipeline(instance, 'openaiChatCompletions', providerModel, {
+        messages: [{ role: 'user', content: 'hi' }],
+        metadata: { user_id: JSON.stringify({ device_id: 'dev-1', session_id: 'sess-1' }) },
+      }, undefined, noopUpstreamCallOptions());
+    },
+  );
+
+  // Authentication sets conversation-agent; the Anthropic-only header stage
+  // would overwrite it to messages-proxy if it ran on this operation.
+  assertEquals(observedInteractionType, ['conversation-agent']);
+});
+
 const copilotPreflight = (request: Request): Response | null => {
   const url = new URL(request.url);
   if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
@@ -482,6 +737,72 @@ const copilotPreflight = (request: Request): Response | null => {
   }
   return null;
 };
+
+test('Copilot provider rejects a merged public model without a raw variant group', async () => {
+  const harness = await setupCopilotTest();
+  const instance = createCopilotProvider(harness.copilotUpstream);
+  mergeVariantsControl.override = merged => {
+    const mergedModel = merged[0];
+    if (mergedModel === undefined) throw new Error('expected a merged model fixture');
+    return [{ ...mergedModel, id: 'orphan-public-model' }];
+  };
+
+  try {
+    await withMockedFetch(
+      request => {
+        const preflight = copilotPreflight(request);
+        if (preflight !== null) return preflight;
+        const url = new URL(request.url);
+        if (url.pathname === '/models') {
+          return jsonResponse(copilotModels([{ id: 'gpt-raw-model', supported_endpoints: ['/responses'] }]));
+        }
+        throw new Error(`Unhandled fetch ${request.url}`);
+      },
+      async () => {
+        await assertRejects(
+          () => instance.instance.getProvidedModels(directFetcher),
+          Error,
+          "Copilot model projection invariant violated: merged model 'orphan-public-model' has no raw variant group (raw model ids: gpt-raw-model)",
+        );
+      },
+    );
+  } finally {
+    mergeVariantsControl.override = null;
+  }
+});
+
+test('Copilot provider persists the minted token and the merged known-models view as two writes to distinct slots', async () => {
+  const harness = await setupCopilotTest();
+  const { copilotUpstream, savedStates } = harness;
+
+  await withMockedFetch(
+    request => {
+      const pre = copilotPreflight(request);
+      if (pre) return pre;
+      const url = new URL(request.url);
+      if (url.pathname === '/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'm1', supported_endpoints: ['/v1/messages'] }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const instance = createCopilotProvider(copilotUpstream);
+      const result = await instance.instance.getProvidedModels(directFetcher);
+      assertEquals(result.map(m => m.id), ['m1']);
+    },
+  );
+
+  assertEquals(savedStates.length, 2);
+  const [tokenWrite, modelsWrite] = savedStates as [CopilotUpstreamState, CopilotUpstreamState];
+  // The token mint runs inside the models fetch, so it writes first and only
+  // fills its own slot.
+  assertEquals(tokenWrite.knownModels, null);
+  assertEquals(typeof tokenWrite.copilotToken?.token, 'string');
+  if (!modelsWrite.knownModels) throw new Error('expected knownModels persisted');
+  assertEquals(Object.keys(modelsWrite.knownModels.models), ['m1']);
+  // Spreading the state it was handed is what carries the token through.
+  assertEquals(modelsWrite.copilotToken?.token, tokenWrite.copilotToken?.token);
+});
 
 test('Copilot provider merges known-models into the row as it stands after the fetch, not into the pre-fetch snapshot', async () => {
   const harness = await setupCopilotTest();
@@ -517,6 +838,36 @@ test('Copilot provider merges known-models into the row as it stands after the f
   assertEquals(final.quotaSnapshot?.fetchedAt, 1);
 });
 
+test('Copilot provider accumulates known-models across calls so a model dropped from the fetch still surfaces', async () => {
+  const harness = await setupCopilotTest();
+  const { copilotUpstream } = harness;
+
+  let fetches = 0;
+  await withMockedFetch(
+    request => {
+      const pre = copilotPreflight(request);
+      if (pre) return pre;
+      const url = new URL(request.url);
+      if (url.pathname === '/models') {
+        fetches++;
+        const data = fetches === 1
+          ? [{ id: 'm1', supported_endpoints: ['/v1/messages'] }]
+          : [{ id: 'm2', supported_endpoints: ['/v1/messages'] }];
+        return jsonResponse({ object: 'list', data });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const instance = createCopilotProvider(copilotUpstream);
+      const first = await instance.instance.getProvidedModels(directFetcher);
+      assertEquals(first.map(m => m.id), ['m1']);
+      const second = await instance.instance.getProvidedModels(directFetcher);
+      assertEquals(second.map(m => m.id).sort(), ['m1', 'm2']);
+    },
+  );
+  assertEquals(fetches, 2);
+});
+
 test('Copilot provider throws when the upstream fetch fails — no in-provider fallback to stored projection', async () => {
   const harness = await setupCopilotTest();
   // Seed prior knownModels so a fallback would have something to return if one
@@ -543,12 +894,66 @@ test('Copilot provider throws when the upstream fetch fails — no in-provider f
   );
 });
 
+test('Copilot provider throws "disappeared mid-request" when the upstream row vanishes between construction and call', async () => {
+  const harness = await setupCopilotTest();
+  const instance = createCopilotProvider(harness.copilotUpstream);
+  harness.overrideGetById(async () => null);
+
+  await assertRejects(
+    () => instance.instance.getProvidedModels(directFetcher),
+    Error,
+    'Copilot upstream up_copilot disappeared mid-request',
+  );
+});
+
+test('Copilot provider swallows a saveState throw so a transient persistence hiccup does not invalidate the fetched models', async () => {
+  // Persistence is best-effort: the fetched models are the user-facing
+  // payload, and a storage-level error on the write must not propagate out of
+  // getProvidedModels. Mirrors the gateway's persisted catalog policy.
+  const harness = await setupCopilotTest();
+  harness.overrideSaveState(() => Promise.reject(new Error('D1 hiccup')));
+
+  await withMockedFetch(
+    request => {
+      const pre = copilotPreflight(request);
+      if (pre) return pre;
+      const url = new URL(request.url);
+      if (url.pathname === '/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'm1', supported_endpoints: ['/v1/messages'] }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const instance = createCopilotProvider(harness.copilotUpstream);
+      const result = await instance.instance.getProvidedModels(directFetcher);
+      assertEquals(result.map(m => m.id), ['m1']);
+    },
+  );
+});
+
+test('readCopilotUpstreamState round-trips a persisted state with both knownModels and copilotToken', () => {
+  const seeded: CopilotUpstreamState = {
+    knownModels: mergeKnownModels(
+      emptyKnownModels(),
+      { object: 'list', data: [{ id: 'm1', name: 'm1', version: '1', supported_endpoints: [], capabilities: { type: 'chat', limits: {} } }] },
+      1_000_000,
+    ),
+    copilotToken: { token: 'tok', expiresAt: 2_000_000, baseUrl: 'https://api.individual.githubcopilot.com' },
+    quotaSnapshot: null,
+    seat: null,
+  };
+  const round = readCopilotUpstreamState(JSON.parse(JSON.stringify(seeded)));
+  assertEquals(round.copilotToken?.token, 'tok');
+  if (!round.knownModels) throw new Error('expected knownModels in round-trip');
+  assertEquals(Object.keys(round.knownModels.models), ['m1']);
+});
+
 // ---------------------------------------------------------------------------
 // Anthropic Fast Mode end-to-end through the Copilot provider.
 //
 // The catalog merges `claude-opus-4.6` and `claude-opus-4.6-fast` into one
 // public id; `speed: "fast"` on the request picks the `-fast` raw variant,
-// `withSpeedFast` strips the field from the wire, and the response stream
+// `copilotAnthropicMessagesSpeedFast` strips the field from the wire, and the response stream
 // gets `usage.speed = 'fast'` stamped before it leaves the provider.
 // ---------------------------------------------------------------------------
 
@@ -601,7 +1006,8 @@ const betaIntent = ['context-1m-2025-08-07', 'advanced-tool-use-2025-11-20', 'un
 
 test('Copilot consumes Anthropic Messages beta intent before serializing its supported wire subset', async () => {
   const { copilotUpstream } = await setupCopilotTest();
-  const provider = createCopilotProvider(copilotUpstream).instance;
+  const instance = createCopilotProvider(copilotUpstream);
+  const provider = instance.instance;
   let upstreamModel: unknown;
   let upstreamBeta: string | null = null;
 
@@ -624,13 +1030,41 @@ test('Copilot consumes Anthropic Messages beta intent before serializing its sup
     },
     async () => {
       const [providerModel] = await provider.getProvidedModels(directFetcher);
-      const result = await provider.callAnthropicMessages(
-        providerModel,
-        { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
-        undefined,
-        noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: betaIntent }),
-      );
-      assertEquals(result.modelKey, 'claude-opus-4.6-1m');
+      const result = await collectChatProviderPipeline(instance, 'anthropicMessages', providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: betaIntent }));
+      assertEquals(result.facts['response.provider.modelKey'], 'claude-opus-4.6-1m');
+    },
+  );
+
+  assertEquals(upstreamModel, 'claude-opus-4.6-1m');
+  assertEquals(upstreamBeta, 'advanced-tool-use-2025-11-20');
+});
+
+test('Copilot count_tokens consumes and serializes the same Anthropic Messages beta intent', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const instance = createCopilotProvider(copilotUpstream);
+  const provider = instance.instance;
+  let upstreamModel: unknown;
+  let upstreamBeta: string | null = null;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') return jsonResponse(betaModelCatalog());
+      if (url.pathname === '/v1/messages/count_tokens') {
+        upstreamModel = ((await request.json()) as Record<string, unknown>).model;
+        upstreamBeta = request.headers.get('anthropic-beta');
+        return jsonResponse({ input_tokens: 1 });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [providerModel] = await provider.getProvidedModels(directFetcher);
+      const result = await collectChatProviderPipeline(instance, 'anthropicMessagesCountTokens', providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: betaIntent }));
+      assertEquals(result.facts['response.provider.modelKey'], 'claude-opus-4.6-1m');
     },
   );
 
@@ -662,17 +1096,12 @@ test('Copilot provider routes speed=fast to the -fast raw variant and stamps usa
       const [providerModel] = await provider.getProvidedModels(directFetcher);
       assertEquals(providerModel.id, 'claude-opus-4-6');
 
-      const result = await provider.callAnthropicMessages(
-        providerModel,
-        { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }], speed: 'fast' },
-        undefined,
-        noopAnthropicMessagesUpstreamCallOptions(),
-      );
+      const result = await collectChatProviderPipeline(instance, 'anthropicMessages', providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }], speed: 'fast' }, undefined, noopAnthropicMessagesUpstreamCallOptions());
 
-      if (!result.ok) throw new Error(`expected ok stream, got ${JSON.stringify(result.http)}`);
+      if (!(result.output !== null && 'kind' in result.output)) throw new Error(`expected ok stream, got ${JSON.stringify(result.response)}`);
 
       const frames = [];
-      for await (const frame of result.events) frames.push(frame);
+      for (const frame of result.frames) frames.push(frame);
 
       const messageStart = frames.find(f => f.type === 'event' && f.event.type === 'message_start');
       if (messageStart?.type !== 'event' || messageStart.event.type !== 'message_start') {
@@ -686,50 +1115,13 @@ test('Copilot provider routes speed=fast to the -fast raw variant and stamps usa
       }
       assertEquals('speed' in messageDelta.event.usage!, false);
 
-      assertEquals(result.modelKey, 'claude-opus-4.6-fast');
+      assertEquals(result.facts['response.provider.modelKey'], 'claude-opus-4.6-fast');
     },
   );
 
   assertEquals(upstreamBody?.model, 'claude-opus-4.6-fast');
   if (!upstreamBody) throw new Error('expected /v1/messages to be hit');
   assertEquals('speed' in upstreamBody, false);
-});
-
-test('Copilot provider carries the rewritten context-window failure status and headers', async () => {
-  const { copilotUpstream } = await setupCopilotTest();
-  const provider = createCopilotProvider(copilotUpstream).instance;
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-      }
-      if (url.pathname === '/models') {
-        return jsonResponse(copilotModels([{ id: 'claude-haiku-4.5', supported_endpoints: ['/v1/messages'] }]));
-      }
-      if (url.pathname === '/v1/messages') {
-        return new Response('Request body is too large for model context window', { status: 413 });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const [model] = await provider.getProvidedModels(directFetcher);
-      const result = await provider.callAnthropicMessages(
-        model,
-        { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
-        undefined,
-        noopAnthropicMessagesUpstreamCallOptions(),
-      );
-
-      if (result.ok) throw new Error('expected rewritten context-window error');
-      assertEquals(result.http.status, 400);
-      assertEquals(result.http.headers.get('content-type'), 'application/json');
-      const body = await result.http.json() as { error: { message: string } };
-      assertEquals(body.error.message, PROMPT_TOO_LONG_MESSAGE);
-    },
-  );
 });
 
 test('Copilot provider returns HTTP 400 invalid_request_error when speed=fast hits a model without a -fast variant', async () => {
@@ -757,33 +1149,72 @@ test('Copilot provider returns HTTP 400 invalid_request_error when speed=fast hi
     async () => {
       const [providerModel] = await provider.getProvidedModels(directFetcher);
 
-      const result = await provider.callAnthropicMessages(
-        providerModel,
-        { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }], speed: 'fast' },
-        undefined,
-        noopAnthropicMessagesUpstreamCallOptions(),
-      );
+      const result = await collectChatProviderPipeline(instance, 'anthropicMessages', providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }], speed: 'fast' }, undefined, noopAnthropicMessagesUpstreamCallOptions());
 
-      if (result.ok) throw new Error('expected 400 error, got ok stream');
-      assertEquals(result.http.status, 400);
-      const body = (await result.http.json()) as { type: string; error: { type: string; message: string } };
+      if ((result.output !== null && 'kind' in result.output)) throw new Error('expected 400 error, got ok stream');
+      assertEquals(result.response!.status, 400);
+      const body = (await result.response!.json()) as { type: string; error: { type: string; message: string } };
       // Byte-identical to the wire string Anthropic emits on real api.anthropic.com
       // for the same failure mode — recorded verbatim from a live response in
       // https://github.com/Yeachan-Heo/gajae-code/blob/main/packages/ai/test/anthropic-fast-mode.test.ts
       assertEquals(body.type, 'error');
       assertEquals(body.error.type, 'invalid_request_error');
       assertEquals(body.error.message, "'claude-haiku-4-5' does not support the `speed` parameter.");
-      assertEquals(result.modelKey, providerModel.id);
+      assertEquals(result.facts['response.provider.modelKey'], providerModel.id);
     },
   );
 
   assertEquals(anthropicMessagesHit, false);
 });
 
+test('Copilot provider passes unknown speed values to the upstream verbatim so the upstream owns rejecting them', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const instance = createCopilotProvider(copilotUpstream);
+  const provider = instance.instance;
+  let upstreamBody: Record<string, unknown> | undefined;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') return jsonResponse(fastModelCatalog());
+      if (url.pathname === '/v1/messages') {
+        upstreamBody = (await request.json()) as Record<string, unknown>;
+        return sseResponse(anthropicMessagesSseBody());
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [providerModel] = await provider.getProvidedModels(directFetcher);
+      // `priority` is not a documented Anthropic Messages `speed` value; the gateway
+      // does not own rejecting it and must not strip it either — let
+      // Copilot surface whatever error its strict validator returns.
+      const speedValue = 'priority' as AnthropicMessagesPayload['speed'];
+      await collectChatProviderPipeline(instance, 'anthropicMessages', providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }], speed: speedValue }, undefined, noopAnthropicMessagesUpstreamCallOptions());
+    },
+  );
+
+  assertEquals(upstreamBody?.speed, 'priority');
+});
+
+// ---------------------------------------------------------------------------
+// chat? auto-population from upstream /models capabilities
+// ---------------------------------------------------------------------------
+
 interface CopilotModelCapabilityFixture {
   id: string;
   type?: 'chat' | 'image';
   supported_endpoints?: string[];
+  supports?: {
+    vision?: boolean;
+    reasoning_effort?: string[];
+    min_thinking_budget?: number;
+    max_thinking_budget?: number;
+    adaptive_thinking?: boolean;
+  };
 }
 
 const copilotModelsWithCapabilities = (models: CopilotModelCapabilityFixture[]) => ({
@@ -796,8 +1227,86 @@ const copilotModelsWithCapabilities = (models: CopilotModelCapabilityFixture[]) 
     capabilities: {
       type: model.type ?? 'chat',
       limits: {},
+      ...(model.supports !== undefined ? { supports: model.supports } : {}),
     },
   })),
+});
+
+const getModelsWithCapabilities = async (fixtures: CopilotModelCapabilityFixture[]) => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const instance = createCopilotProvider(copilotUpstream);
+  let models: Awaited<ReturnType<typeof instance.instance.getProvidedModels>> = [];
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') return jsonResponse(copilotModelsWithCapabilities(fixtures));
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => { models = await instance.instance.getProvidedModels(directFetcher); },
+  );
+
+  return models;
+};
+
+test('Copilot OpenAI models share one upstream-bound opaque blob scope', async () => {
+  const [openai, anthropic] = await getModelsWithCapabilities([
+    { id: 'gpt-5' },
+    { id: 'claude-opus-5', supported_endpoints: ['/v1/messages'] },
+  ]);
+  assertEquals(openai.opaqueBlobCompatibilityScope, { bindToUpstream: true, key: 'openai' });
+  assertEquals(anthropic.opaqueBlobCompatibilityScope, { bindToUpstream: true });
+});
+
+test('Copilot chat field: combined vision + reasoning_effort + adaptive_thinking → full chat', async () => {
+  const [model] = await getModelsWithCapabilities([
+    {
+      id: 'claude-opus-4.7',
+      supported_endpoints: ['/v1/messages'],
+      supports: {
+        vision: true,
+        reasoning_effort: ['low', 'medium', 'high', 'xhigh'],
+        min_thinking_budget: 1024,
+        max_thinking_budget: 32768,
+        adaptive_thinking: true,
+      },
+    },
+  ]);
+  assertEquals(model.chat, {
+    modalities: { input: ['text', 'image'], output: ['text'] },
+    reasoning: {
+      effort: { supported: ['low', 'medium', 'high', 'xhigh'], default: 'medium' },
+      budget_tokens: { min: 1024, max: 32768 },
+      adaptive: true,
+    },
+  });
+});
+
+// Copilot's catalog advertises the two image surfaces as separate paths, and
+// the gateway serves each as its own inbound route. A model must therefore
+// carry both keys, and its `kind` must come out as `image` rather than the
+// empty-endpoint `chat` row the old projection produced.
+test('Copilot catalog projects an image model with both image endpoints and kind=image', async () => {
+  const [model] = await getModelsWithCapabilities([
+    { id: 'gpt-image-2.5-flare', type: 'image', supported_endpoints: ['/v1/images/generations', '/v1/images/edits'] },
+  ]);
+  assertEquals(model.kind, 'image');
+  assertEquals(model.endpoints, { openaiImagesGenerations: {}, openaiImagesEdits: {} });
+  assertEquals(model.chat, undefined);
+  // Rates are per token; the table quotes USD per million.
+  assertEquals(model.pricing?.entries[0]?.rates.output_image_tokens, '0.00003');
+});
+
+test('Copilot catalog projects an image model that advertises one surface', async () => {
+  const [model] = await getModelsWithCapabilities([
+    { id: 'gpt-image-generate-only', type: 'image', supported_endpoints: ['/v1/images/generations'] },
+  ]);
+  assertEquals(model.kind, 'image');
+  assertEquals(model.endpoints, { openaiImagesGenerations: {} });
 });
 
 const imageModelCatalog = () => copilotModelsWithCapabilities([
@@ -805,15 +1314,48 @@ const imageModelCatalog = () => copilotModelsWithCapabilities([
 ]);
 
 const setupImageModelTest = async () => {
-  const { copilotUpstream } = await setupCopilotTest();
-  return createCopilotProvider(copilotUpstream);
+  const harness = await setupCopilotTest();
+  const provider = createCopilotProvider(harness.copilotUpstream);
+  return { harness, provider };
 };
+
+test('Copilot image generations POSTs JSON to the v1 path with the raw model id', async () => {
+  const { provider } = await setupImageModelTest();
+  let captured: { path: string; contentType: string | null; body: Record<string, unknown> } | undefined;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') return jsonResponse(imageModelCatalog());
+      captured = {
+        path: url.pathname,
+        contentType: request.headers.get('content-type'),
+        body: (await request.json()) as Record<string, unknown>,
+      };
+      return jsonResponse({ created: 1, data: [{ b64_json: 'AAAA' }] });
+    },
+    async () => {
+      const [model] = await provider.instance.getProvidedModels(directFetcher);
+      const result = await callProviderPipeline(provider, 'openaiImagesGenerations', model, { prompt: 'a red square' });
+      assertEquals(result.http.status, 200);
+    },
+  );
+
+  assertEquals(captured?.path, '/v1/images/generations');
+  assertEquals(captured?.contentType, 'application/json');
+  assertEquals(captured?.body.prompt, 'a red square');
+  assertEquals(captured?.body.model, 'gpt-image-2.5-flare');
+});
 
 // Copilot answers a multipart edit carrying `Content-Type: application/json`
 // with `400 Failed to decode image edit request` before reading a single part,
 // so an upload must be sent with its own multipart boundary.
 test('Copilot image edits keeps multipart uploads free of a JSON content-type', async () => {
-  const provider = await setupImageModelTest();
+  const { provider } = await setupImageModelTest();
   let captured: { path: string; contentType: string | null; body: string } | undefined;
 
   await withMockedFetch(
@@ -851,7 +1393,8 @@ test('Copilot image edits keeps multipart uploads free of a JSON content-type', 
 // the SSE body, so a streaming call snapshots at stream start.
 test('Copilot provider persists the quota snapshot a data-plane response carries', async () => {
   const harness = await setupCopilotTest();
-  const provider = createCopilotProvider(harness.copilotUpstream).instance;
+  const instance = createCopilotProvider(harness.copilotUpstream);
+  const provider = instance.instance;
 
   await withMockedFetch(
     request => {
@@ -877,7 +1420,7 @@ test('Copilot provider persists the quota snapshot a data-plane response carries
     },
     async () => {
       const [model] = await provider.getProvidedModels(directFetcher);
-      await provider.callOpenAIChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
+      await collectChatProviderPipeline(instance, 'openaiChatCompletions', model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
       // The persist is fire-and-forget: on workerd `waitUntil` keeps it alive
       // past the response, and here it settles on the host event loop.
       await vi.waitFor(() => {
@@ -894,10 +1437,10 @@ test('Copilot provider persists the quota snapshot a data-plane response carries
   assertEquals(snapshot?.data.reset_at, '2026-09-01T00:00:00Z');
 });
 
-test('Copilot provider returns the upstream response when passive quota headers are malformed', async () => {
+test('Copilot provider relays the upstream stream and warns about malformed passive quota headers', async () => {
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
   const harness = await setupCopilotTest();
-  const provider = createCopilotProvider(harness.copilotUpstream).instance;
-  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const instance = createCopilotProvider(harness.copilotUpstream);
 
   await withMockedFetch(
     request => {
@@ -921,14 +1464,52 @@ test('Copilot provider returns the upstream response when passive quota headers 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [model] = await provider.getProvidedModels(directFetcher);
-      const result = await provider.callOpenAIChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
-      assertEquals(result.ok, true);
+      const [model] = await instance.instance.getProvidedModels(directFetcher);
+      const result = await collectChatProviderPipeline(instance, 'openaiChatCompletions', model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
+      assertEquals(result.output !== null && 'kind' in result.output && result.output.kind, 'stream');
+      assertEquals(result.frames, [{ type: 'done' }]);
+      assertEquals(warning.mock.calls.length, 1);
+      assertEquals(warning.mock.calls[0][0], 'Failed to parse Copilot quota snapshot for up_copilot:');
+      assertEquals(warning.mock.calls[0][1].message, 'Invalid Copilot quota entitlement');
+      warning.mockRestore();
     },
   );
 
   assertEquals(readCopilotUpstreamState(harness.getCurrentState()).quotaSnapshot, null);
-  warn.mockRestore();
+});
+
+// `/models` and every 4xx we have observed come back without the header
+// family. Writing an empty snapshot on those would erase a good reading for
+// no upside, so the slot is left exactly as it was.
+test('Copilot provider leaves the persisted snapshot alone when a response carries no quota headers', async () => {
+  const harness = await setupCopilotTest();
+  const instance = createCopilotProvider(harness.copilotUpstream);
+  const provider = instance.instance;
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'tid=x;exp=9999999999',
+          expires_at: 9_999_999_999,
+          refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-chat', supported_endpoints: ['/chat/completions'] }]));
+      }
+      if (url.pathname === '/chat/completions') return sseResponse();
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [model] = await provider.getProvidedModels(directFetcher);
+      await collectChatProviderPipeline(instance, 'openaiChatCompletions', model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
+    },
+  );
+
+  assertEquals(readCopilotUpstreamState(harness.getCurrentState()).quotaSnapshot, null);
 });
 
 test('Copilot provider merges the -fast raw variant and reaches it through service_tier', async () => {
@@ -980,10 +1561,10 @@ test('Copilot provider merges the -fast raw variant and reaches it through servi
       const sol = models.find(model => model.id === 'gpt-5.6-sol')!;
       const opts = noopUpstreamCallOptions();
 
-      await provider.callOpenAIResponses(sol, { input: [] }, 'generate', undefined, opts);
-      await provider.callOpenAIResponses(sol, { input: [], service_tier: 'priority' }, 'generate', undefined, opts);
-      await provider.callOpenAIResponses(sol, { input: [], service_tier: 'fast' }, 'generate', undefined, opts);
-      await provider.callOpenAIResponses(sol, { input: [], service_tier: 'flex' }, 'generate', undefined, opts);
+      await collectChatProviderPipeline(instance, 'openaiResponses', sol, { input: [] }, undefined, opts);
+      await collectChatProviderPipeline(instance, 'openaiResponses', sol, { input: [], service_tier: 'priority' }, undefined, opts);
+      await collectChatProviderPipeline(instance, 'openaiResponses', sol, { input: [], service_tier: 'fast' }, undefined, opts);
+      await collectChatProviderPipeline(instance, 'openaiResponses', sol, { input: [], service_tier: 'flex' }, undefined, opts);
     },
   );
 
@@ -1098,4 +1679,62 @@ test('Copilot sends an OpenAI Decisions model to /v1/decisions in its own dialec
   assertEquals(sent[0].body.model, 'gpt-6-luna-decisions');
   assertEquals(sent[0].body.input, 'The API returns 500 on every call.');
   assertEquals(sent[0].body.questions, [{ type: 'predicate', name: 'p', instructions: 'Is this a bug?' }]);
+});
+
+test('Copilot does not infer a decision endpoint from a chat model', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const instance = createCopilotProvider(copilotUpstream);
+  const provider = instance.instance;
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 't', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-chat', supported_endpoints: ['/chat/completions'] }]));
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const models = await provider.getProvidedModels(directFetcher);
+      assertEquals(models[0].kind, 'chat');
+      assertEquals(models[0].decisionTarget, undefined);
+    },
+  );
+});
+
+test('a decision model maps its advertised path onto the dialect it serves', async () => {
+  const { copilotUpstream } = await setupCopilotTest();
+  const provider = createCopilotProvider(copilotUpstream).instance;
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 't', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([
+          { id: 'gpt-6-luna-decisions', capabilitiesType: 'decisions', supported_endpoints: ['/v1/decisions'] },
+          { id: 'microsoft-decision-1', capabilitiesType: 'decisions', supported_endpoints: ['/v1/systemone'] },
+        ]));
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const models = await provider.getProvidedModels(directFetcher);
+      const byId = new Map(models.map(model => [model.id, model]));
+      // `/v1/decisions` is the OpenAI Decisions dialect: mapping only
+      // `/v1/systemone` used to leave this entry with no endpoints, and an
+      // empty endpoint map projects to chat.
+      assertEquals(byId.get('gpt-6-luna-decisions')?.kind, 'decision');
+      assertEquals(byId.get('gpt-6-luna-decisions')?.endpoints, { decision: {} });
+      assertEquals(byId.get('gpt-6-luna-decisions')?.decisionTarget, { protocol: 'openai-decisions' });
+      assertEquals(byId.get('microsoft-decision-1')?.decisionTarget, { protocol: 'typesafe-systemone' });
+    },
+  );
 });

@@ -8,6 +8,11 @@ import type { ProviderResponse, ProviderServices } from '@floway-dev/provider';
 
 type ProbeResponse = ProviderResponse & { 'response.ollama.probes': Deferred<unknown> };
 
+// Cloud inference arms a paired usage/balance refresh; account identity has
+// its own longer cadence. Token counting and decision consume neither, so their
+// pipelines omit this stage. Rate-limited responses arm the refresh too, so the
+// balances explaining the refusal can appear in the dashboard.
+
 export const observeOllamaAccount = (upstreamId: string, config: OllamaUpstreamConfig, state: OllamaUpstreamState) => {
   const observeAccount = defineStage<Pick<HttpRequestFacts, 'request.http.callId'>, Pick<HttpRequestFacts, 'request.http.callId'>, ProviderResponse, ProbeResponse, ProviderServices>({
     name: 'observeOllamaAccount',

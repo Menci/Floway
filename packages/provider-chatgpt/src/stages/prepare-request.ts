@@ -16,7 +16,7 @@ export const prepareChatGPTRequest = <O extends ChatGPTOperation>(operation: O) 
     request: {
       needs: ['request.provider.model', 'request.provider.payload', 'request.http.headers', 'request.http.callId', 'request.chatgpt.account', 'request.chatgpt.accessToken', 'request.chatgpt.plan'],
       consumes: ['request.provider.model', 'request.provider.payload', 'request.http.headers'],
-      provides: ['request.http.url', 'request.http.method', 'request.http.headers', 'request.http.body', 'request.http.encoding', 'request.chatgpt.modelKey', 'request.chatgpt.model'],
+      provides: ['request.http.url', 'request.http.method', 'request.http.headers', 'request.http.body', 'request.http.encoding', 'request.chatgpt.modelKey', 'request.chatgpt.model', 'request.provider.modelKey'],
     },
     response: { needs: ['response.http.exchange', 'response.provider.called', 'response.provider.previousCalls'], consumes: [], provides: ['response.provider.modelKey'] },
   },
@@ -50,6 +50,7 @@ export const prepareChatGPTRequest = <O extends ChatGPTOperation>(operation: O) 
       ...rest,
       'request.chatgpt.model': model,
       'request.chatgpt.modelKey': model.id,
+      'request.provider.modelKey': model.id,
       'request.http.url': `${CHATGPT_BACKEND_BASE}${path}`,
       'request.http.method': 'POST',
       'request.http.headers': headers,

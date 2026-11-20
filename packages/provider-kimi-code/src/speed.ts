@@ -1,11 +1,17 @@
-import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
-import { eventFrame } from '@floway-dev/protocols/common';
-import { parseOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
-import { parseOpenAIResponsesStream } from '@floway-dev/protocols/openai-responses';
-import type { ProviderStreamParser } from '@floway-dev/provider';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
-const mapParser = <T>(parser: ProviderStreamParser<T>, map: (event: T) => T): ProviderStreamParser<T> => async function* (body, options) {
-  for await (const frame of parser(body, options)) yield frame.type === 'done' ? frame : eventFrame(map(frame.event));
+const mapEvents = async function* <T>(frames: AsyncIterable<ProtocolFrame<T>>, map: (event: T) => T): AsyncGenerator<ProtocolFrame<T>> {
+  for await (const frame of frames) {
+    if (frame.type === 'done') {
+      yield frame;
+      continue;
+    }
+    const event = map(frame.event);
+    yield event === frame.event ? frame : eventFrame(event);
+  }
 };
 
 // In observed chat requests Kimi accepted priority without a response tier marker
@@ -14,11 +20,13 @@ const mapParser = <T>(parser: ProviderStreamParser<T>, map: (event: T) => T): Pr
 // https://www.kimi.com/code/docs/en/kimi-code/models.html
 // https://developers.openai.com/api/docs/guides/priority-processing
 // https://platform.claude.com/docs/en/build-with-claude/fast-mode
-export const kimiCodeChatSpeedParser = (tier: 'priority' | 'default') => mapParser(parseOpenAIChatCompletionsStream, event => ({ ...event, service_tier: tier }));
+export const kimiCodeChatSpeed = (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>, tier: 'priority' | 'default') =>
+  mapEvents(frames, event => ({ ...event, service_tier: tier }));
 
-export const kimiCodeResponsesSpeedParser = (tier: 'priority' | 'default') => mapParser(parseOpenAIResponsesStream, event => 'response' in event ? { ...event, response: { ...event.response, service_tier: tier } } : event);
+export const kimiCodeResponsesSpeed = (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>, tier: 'priority' | 'default') =>
+  mapEvents(frames, event => 'response' in event ? { ...event, response: { ...event.response, service_tier: tier } } : event);
 
-export const kimiCodeMessagesSpeedParser = (speed: 'fast' | 'standard') => mapParser(parseAnthropicMessagesStream, event => event.type === 'message_start'
+export const kimiCodeMessagesSpeed = (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>, speed: 'fast' | 'standard') => mapEvents(frames, event => event.type === 'message_start'
   ? { ...event, message: { ...event.message, usage: { ...event.message.usage, speed } } }
   : event);
 
