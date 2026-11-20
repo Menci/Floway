@@ -5,6 +5,83 @@ import { buildCustomUpstreamRecord, copilotModels, requestAppWithWarmModels, set
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
 
+test('/v1/embeddings preserves an upstream success status', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
+    config: {
+      baseUrl: 'https://embeddings.test', apiKey: 'sk-test', ingressHeadersRules: [], endpoints: {},
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
+      models: [{ upstreamModelId: 'embedding', kind: 'embedding', endpoints: { openaiEmbeddings: {} } }],
+    },
+  }));
+  await withMockedFetch(async () => jsonResponse({
+    object: 'list', model: 'embedding', data: [{ object: 'embedding', index: 0, embedding: [0.5] }],
+    usage: { prompt_tokens: 1, total_tokens: 1 },
+  }, 201), async () => {
+    const response = await requestAppWithWarmModels('/v1/embeddings', {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+      body: JSON.stringify({ model: 'embedding', input: 'hello', encoding_format: 'float' }),
+    });
+    assertEquals(response.status, 201);
+    assertEquals((await response.json() as { data: unknown[] }).data.length, 1);
+  });
+});
+
+test.each([
+  ['limited', 'success', 200, null, 'second'],
+  ['disconnected', 'success', 200, null, 'second'],
+  ['limited', 'disconnected', 429, '17', 'first'],
+  ['limited', 'unavailable', 429, '17', 'first'],
+  ['limited', 'limited-later', 429, '17', 'first'],
+  ['limited-later', 'limited', 429, '17', 'second'],
+] as const)('/v1/embeddings selects the response after %s then %s on one upstream', async (first, second, status, retryAfter, selected) => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
+    config: {
+      baseUrl: 'https://same-upstream.test', apiKey: 'sk-test', ingressHeadersRules: [], endpoints: {},
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
+      models: ['first', 'second'].map(upstreamModelId => ({ upstreamModelId, kind: 'embedding', endpoints: { openaiEmbeddings: {} } })),
+    },
+  }));
+  await repo.modelAliases.insert({
+    id: 'alias_embedding', name: 'embeddings', kind: 'embedding', selection: 'first-available',
+    targets: [{ target_model_id: 'first', rules: {} }, { target_model_id: 'second', rules: {} }],
+    displayName: null, visibleInModelsList: true, announcedMetadata: null, sortOrder: 0,
+    createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+  });
+  const dispatched: string[] = [];
+  await withMockedFetch(async request => {
+    const body = await request.json() as { model: string };
+    dispatched.push(body.model);
+    const outcome = body.model === 'first' ? first : second;
+    if (outcome === 'disconnected') throw new TypeError('fixture connection refused');
+    if (outcome === 'success') {
+      return jsonResponse({ object: 'list', model: body.model, data: [{ object: 'embedding', index: 0, embedding: [0.5] }], usage: { prompt_tokens: 1, total_tokens: 1 } });
+    }
+    if (outcome === 'unavailable') return jsonResponse({ error: { message: 'unavailable' } }, 503);
+    return new Response(JSON.stringify({ error: { message: body.model } }), {
+      status: 429,
+      headers: { 'content-type': 'application/json', 'retry-after': outcome === 'limited' ? '17' : '60', 'x-request-id': body.model },
+    });
+  }, async () => {
+    const response = await requestAppWithWarmModels('/v1/embeddings', {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+      body: JSON.stringify({ model: 'embeddings', input: 'hello', encoding_format: 'float' }),
+    });
+    assertEquals(response.status, status);
+    assertEquals(response.headers.get('retry-after'), retryAfter);
+    const body = await response.json() as { data?: unknown[]; error?: { message: string } };
+    if (status === 200) assertEquals(body.data?.length, 1);
+    else {
+      assertEquals(response.headers.get('x-request-id'), selected);
+      assertEquals(body.error?.message, selected);
+    }
+  });
+  assertEquals(dispatched, ['first', 'second']);
+});
+
 test('/v1/embeddings wraps scalar string input for Copilot upstream', async () => {
   const { apiKey } = await setupAppTest();
   let forwardedBody:

@@ -39,7 +39,7 @@ export const eventResultMetadata = async <TEvent>(result: Extract<ExecuteResult<
 
 export const observeChatFrames = async function* <TEvent>(frames: AsyncIterable<ProtocolFrame<TEvent>>, ctx: GatewayCtx): AsyncGenerator<ProtocolFrame<TEvent>> {
   for await (const frame of frames) {
-    ctx.dump?.frame(frame);
+    await ctx.dump?.frame(frame);
     yield frame;
   }
 };

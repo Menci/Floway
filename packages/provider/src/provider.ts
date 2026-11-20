@@ -4,11 +4,11 @@ import type { OpenAIImagesEditsRequest } from './images.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { ProviderModel, UpstreamModelsCache, UpstreamProviderKind, UpstreamRecord } from './model.ts';
 import type { Fetcher } from './options.ts';
+import type { ProviderPipelines } from './pipeline.ts';
 import type { HttpHead } from './result.ts';
 import type { ProviderScheduledOptions } from './scheduled.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import type { DecisionTarget, ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
-import type { CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
+import type { ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAICompletionsPayload } from '@floway-dev/protocols/openai-completions';
@@ -46,6 +46,7 @@ export interface Provider {
   // The row's persisted catalog snapshot, mirrored so resolution does not pay
   // a second round trip after the row has already been loaded.
   modelsCache: UpstreamModelsCache | null;
+  pipelines: ProviderPipelines;
   instance: ProviderInstance;
 }
 
@@ -56,12 +57,6 @@ export interface ProviderCallResult {
 
 export interface ProviderRerankCallResult extends ProviderCallResult {
   target: RerankTarget;
-}
-
-// The target rides back so the serve layer knows which dialect shaped the
-// response and can pick the matching parser.
-export interface ProviderDecisionCallResult extends ProviderCallResult {
-  target: DecisionTarget;
 }
 
 // Streaming endpoints (Anthropic Messages / OpenAI Responses / OpenAI Chat Completions) return decoded
@@ -168,7 +163,6 @@ export interface ProviderInstance {
   callOpenAIImagesEdits(model: ProviderModel, request: OpenAIImagesEditsRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callOpenAIAudioTranscriptions(model: ProviderModel, request: OpenAIAudioTranscriptionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callRerank(model: ProviderModel, request: CanonicalRerankRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderRerankCallResult>;
-  callDecision(model: ProviderModel, request: CanonicalDecisionRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderDecisionCallResult>;
 }
 
 // Static, module-shaped surface each provider package exports. The gateway

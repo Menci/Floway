@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ApiKey } from '../../../src/api/types';
 import { RequestListPanel } from '../../../src/components/requests/list';
 import { renderInApp } from '../../render';
-import type { DumpMetadata } from '@floway-dev/gateway/browser';
+import type { DumpMetadata } from '@floway-dev/dump/browser';
 
 vi.mock('../../../src/components/ui/body-editor', () => ({
   default: ({ text, toolbarStart }: { text: string; toolbarStart?: ReactNode }) => (

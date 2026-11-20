@@ -1,11 +1,13 @@
 import { expect, test } from 'vitest';
 
 import { createSqliteTestDb, mapRunChangeCount } from './test-sqlite.ts';
-import type { DumpWriteRecord } from '../../src/dump/types.ts';
+import { decodeDumpBodyDescriptor } from '../../src/dump/storage-codec.ts';
+import type { DumpWriteEdgeRecord, StoredDumpEdgeRecord, StoredDumpRecord, StoredDumpRunRecord } from '../../src/dump/types.ts';
 import { FileDumpStore } from '../../src/repo/dump-store.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import { collectSpilledFiles } from '../../src/scheduled/spilled-files.ts';
+import { encodeRun, toNdjson, type Facts } from '@floway-dev/pipeline';
 import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 import type { SqlDatabase } from '@floway-dev/platform';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -32,7 +34,8 @@ const utf8 = (s: string): Uint8Array => new TextEncoder().encode(s);
 
 const requestBody = utf8('{"hello":"world"}');
 
-const baseRecord = (id: string, completedAt: number): DumpWriteRecord => ({
+const baseRecord = (id: string, completedAt: number): DumpWriteEdgeRecord => ({
+  shape: 'edge',
   meta: {
     id, startedAt: completedAt - 1, completedAt, method: 'POST', path: '/v1/x', status: 200,
     upstream: null, model: 'm', inputTokens: 1, outputTokens: 2,
@@ -50,6 +53,14 @@ const baseRecord = (id: string, completedAt: number): DumpWriteRecord => ({
   },
 });
 
+// Every fixture above writes the edge shape, and a reader hands back what was
+// written — so a test that asserts on the request or response halves says so.
+const edgeOf = (record: StoredDumpRecord | null): StoredDumpEdgeRecord => {
+  assertExists(record);
+  if (record.shape !== 'edge') throw new Error('expected the edge shape');
+  return record;
+};
+
 test('FileDumpStore prepares request gzip before terminal persistence', async () => {
   const db = await openDb();
   const files = new MemoryFileStore();
@@ -57,7 +68,7 @@ test('FileDumpStore prepares request gzip before terminal persistence', async ()
   const raw = utf8(`{"content":"${'repeatable '.repeat(4096)}"}`);
   const prepared = await store.prepareRequestBody(raw);
   const base = baseRecord('01HZZ0000000000000000000P1', Date.UTC(2026, 5, 1, 12, 0, 0));
-  const record: DumpWriteRecord = {
+  const record: DumpWriteEdgeRecord = {
     ...base,
     meta: { ...base.meta, requestBytes: raw.byteLength },
     request: {
@@ -72,9 +83,94 @@ test('FileDumpStore prepares request gzip before terminal persistence', async ()
   assertEquals(prepared.decodedByteLength, raw.byteLength);
   assertEquals(prepared.bytes.byteLength < raw.byteLength, true);
   await store.put('key_x', record);
+  const fetched = edgeOf(await store.get('key_x', record.meta.id));
+  assertEquals(Array.from(fetched.request.body), Array.from(raw));
+});
+
+// A pipelined turn stores the run rather than its edges: one NDJSON body file
+// under the same contract, and a row that carries the same metadata.
+const runRecord = (id: string, completedAt: number): StoredDumpRunRecord => {
+  const entered: Facts = { 'request.http.path': '/v1/embeddings' };
+  const left: Facts = { ...entered, 'response.http.status': 200 };
+  return {
+    shape: 'run',
+    meta: baseRecord(id, completedAt).meta,
+    events: new TextEncoder().encode(toNdjson(encodeRun([
+      { type: 'stage.entered', stageId: 1, name: 'serve', parentStageId: null, facts: entered },
+      { type: 'stage.entered', stageId: 2, name: 'dial', parentStageId: 1, facts: entered },
+      { type: 'stage.leaved', stageId: 2, facts: left },
+      { type: 'stage.leaved', stageId: 1, facts: left },
+    ]))),
+  };
+};
+
+test('FileDumpStore round-trips a run record as its NDJSON event stream', async () => {
+  const db = await openDb();
+  const files = new MemoryFileStore();
+  const store = new FileDumpStore(db, files);
+  const record = runRecord('01HZZ00000000000000000RUN1', Date.UTC(2026, 5, 1, 12, 0, 0));
+
+  await store.put('key_x', record);
   const fetched = await store.get('key_x', record.meta.id);
   assertExists(fetched);
-  assertEquals(Array.from(fetched.request.body), Array.from(raw));
+  if (fetched.shape !== 'run') throw new Error(`expected the run shape, got ${fetched.shape}`);
+  assertEquals(new TextDecoder().decode(fetched.events), new TextDecoder().decode(record.events));
+
+  // The stream is a body file like the other two: gzipped, named for what it
+  // holds, and pointed at by the row's descriptor.
+  const row = await db.prepare('SELECT request_body_descriptor, response_body_descriptor FROM dump_records WHERE key_id = ? AND id = ?')
+    .bind('key_x', record.meta.id)
+    .first<{ request_body_descriptor: string | null; response_body_descriptor: string }>();
+  assertExists(row);
+  assertEquals(row.request_body_descriptor, null);
+  const descriptor = decodeDumpBodyDescriptor(row.response_body_descriptor, 'test run descriptor');
+  assertEquals(descriptor.type, 'run');
+  assertEquals(descriptor.key.endsWith('.run.gz'), true);
+});
+
+test('FileDumpStore lists a run record alongside an edge-shaped one', async () => {
+  const db = await openDb();
+  const store = new FileDumpStore(db, new MemoryFileStore());
+  const base = Date.UTC(2026, 5, 1, 12, 0, 0);
+  await store.put('key_x', baseRecord('01HZZ00000000000000000EDG1', base));
+  await store.put('key_x', runRecord('01HZZ00000000000000000RUN2', base + 1));
+
+  const listed = await store.list('key_x', { limit: 10 });
+  assertEquals(listed.map(meta => meta.id), ['01HZZ00000000000000000RUN2', '01HZZ00000000000000000EDG1']);
+  // One metadata shape for both: the list says nothing about how a turn was
+  // served, and every column a row renders is filled either way.
+  assertEquals(listed.map(meta => meta.model), ['m', 'm']);
+  assertEquals(listed.map(meta => meta.status), [200, 200]);
+});
+
+test('FileDumpStore retires an expired run record and collects its stream file', async () => {
+  const db = await openDb();
+  const repo = new SqlRepo(db);
+  initRepo(repo);
+  const files = new MemoryFileStore();
+  initFileStore(files);
+  const store = new FileDumpStore(db, files);
+  const now = Date.UTC(2026, 5, 1, 12, 0, 0);
+  await store.put('key_x', runRecord('01HZZ00000000000000000RUN3', Date.UTC(2026, 5, 1, 9, 0, 0)));
+  await store.put('key_x', runRecord('01HZZ00000000000000000RUN4', now));
+  await repo.apiKeys.update('key_x', { dumpRetentionSeconds: 2 * 3600 });
+
+  const originalNow = Date.now;
+  Date.now = () => now + 1;
+  try {
+    assertEquals((await store.list('key_x', { limit: 10 })).map(meta => meta.id), ['01HZZ00000000000000000RUN4']);
+    assertEquals(await store.get('key_x', '01HZZ00000000000000000RUN3'), null);
+    assertEquals(await store.deleteExpiredBatch('key_x', now + 1, 100), 1);
+    await collectSpilledFiles(now + 1);
+  } finally {
+    Date.now = originalNow;
+  }
+
+  const { results: remaining } = await db
+    .prepare("SELECT file_key FROM spilled_files WHERE state = 'owned' ORDER BY file_key")
+    .all<{ file_key: string }>();
+  assertEquals(remaining.map(row => row.file_key.endsWith('.run.gz')), [true]);
+  assertEquals(remaining.every(row => !row.file_key.includes('2026060109')), true);
 });
 
 test('FileDumpStore applies retention immediately and retires exact expired files', async () => {
@@ -156,8 +252,8 @@ test('FileDumpStore round-trips raw exchanges and parsed events in one owned spi
   record.response = { ...record.response, upstream: { status: 200, headers: [['x-trace', 'upstream']], body: { type: 'stream', events: [{ ts: 0, frame: { type: 'done' } }] } } };
   await store.put('key_x', record);
   const stored = await store.get('key_x', record.meta.id);
-  expect(stored?.capture).toEqual(record.capture);
-  expect(stored?.response.upstream).toEqual(record.response.upstream);
+  expect(edgeOf(stored).capture).toEqual(record.capture);
+  expect(edgeOf(stored).response.upstream).toEqual(record.response.upstream);
   const spill = await db.prepare("SELECT file_key, state FROM spilled_files WHERE owner_kind = 'dump-response-upstream'").first<{ file_key: string; state: string }>();
   expect(spill?.state).toBe('owned');
   await db.prepare('DELETE FROM dump_records WHERE id = ?').bind(record.meta.id).run();

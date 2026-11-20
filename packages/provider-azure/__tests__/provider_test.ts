@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { createAzureProvider } from '../src/provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { assertEquals, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { callProviderPipeline, assertEquals, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const config = {
@@ -103,7 +103,7 @@ test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodi
           }],
         }],
       }, 'generate', undefined, noopUpstreamCallOptions());
-      const embeddings = await instance.instance.callOpenAIEmbeddings(providerModel, { input: 'hello' }, undefined, noopUpstreamCallOptions());
+      const embeddings = await callProviderPipeline(instance, 'openaiEmbeddings', providerModel, { input: 'hello' }, undefined, noopUpstreamCallOptions());
 
       assertEquals(chat.modelKey, 'gpt-prod');
       assertEquals(responses.modelKey, 'gpt-prod');
@@ -252,11 +252,11 @@ test('createAzureProvider callOpenAIImagesEdits posts multipart with model repla
     async () => {
       const provider = createAzureProvider(record);
       const models = await provider.instance.getProvidedModels(directFetcher);
-      const result = await provider.instance.callOpenAIImagesEdits(models[0], {
+      const result = await callProviderPipeline(provider, 'openaiImagesEdits', models[0], {
         parameters: { prompt: 'replace sky' },
         images: [{
           type: 'upload',
-          file: new File([new Uint8Array([1, 2, 3])], 'photo.png', { type: 'image/png' }),
+          file: { bytes: new Uint8Array([1, 2, 3]), name: 'photo.png', type: 'image/png' },
         }],
       }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');

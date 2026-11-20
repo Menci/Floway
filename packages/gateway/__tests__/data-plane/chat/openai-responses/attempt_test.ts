@@ -68,7 +68,7 @@ const makeCandidate = (
       inboundHeaderAllowlist: [],
       disabledPublicModelIds: [],
       modelPrefix: null,
-      modelsCache: null,
+      modelsCache: null, pipelines: {},
       instance: provider,
     },
     model: stubInternalModel({
@@ -228,7 +228,7 @@ test('generate defers the role rewrite until after translation to OpenAI Chat Co
       inboundHeaderAllowlist: [],
       disabledPublicModelIds: [],
       modelPrefix: null,
-      modelsCache: null,
+      modelsCache: null, pipelines: {},
       instance: stubProvider({ callOpenAIChatCompletions }),
     },
     model: stubInternalModel({
@@ -303,7 +303,7 @@ test('generate strips disallowed headers and states a remote image URL to Anthro
   const candidate: ModelCandidate = {
     provider: {
       upstreamId: 'up_test', kind: 'custom', name: 'up_test', inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: anthropicMessagesProvider,
+      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, pipelines: {}, instance: anthropicMessagesProvider,
     },
     model: upstreamModel,
     fetcher: directFetcher,
@@ -503,7 +503,7 @@ test('generate lowers a standalone function_call_output to external context acro
   const candidate: ModelCandidate = {
     provider: {
       upstreamId: 'up_chat', kind: 'custom', name: 'up_chat', inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
+      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, pipelines: {},
       instance: stubProvider({
         callOpenAIChatCompletions: async (_model, body): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
           observedBody = body;

@@ -1,6 +1,7 @@
 import { CHATGPT_DEFAULT_FLAGS } from './defaults.ts';
 import { createChatGPTProvider } from './provider.ts';
 import type { ProviderModule } from '@floway-dev/provider';
+export { createChatGPTPipelines } from './pipelines.ts';
 
 export const chatgptProviderModule: ProviderModule = {
   create: createChatGPTProvider,

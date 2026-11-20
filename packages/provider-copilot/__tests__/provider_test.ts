@@ -9,7 +9,7 @@ import { PROMPT_TOO_LONG_MESSAGE } from '@floway-dev/protocols/anthropic-message
 import { parseDecisionRequest } from '@floway-dev/protocols/decision';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, initProviderRepo } from '@floway-dev/provider';
-import { assertEquals, assertRejects, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { callProviderPipeline, assertEquals, assertRejects, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const { config: overrideConfig, ...rest } = overrides;
@@ -463,7 +463,7 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
       await provider.callOpenAIResponses(byId.get('gpt-resp')!, { input: [] }, 'generate', undefined, opts);
       await provider.callAnthropicMessages(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
       await provider.callAnthropicMessagesCountTokens(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
-      await provider.callOpenAIEmbeddings(byId.get('emb-mini')!, { input: 'hi' }, undefined, opts);
+      await callProviderPipeline(instance, 'openaiEmbeddings', byId.get('emb-mini')!, { input: 'hi' }, undefined, opts);
     },
   );
 
@@ -806,14 +806,12 @@ const imageModelCatalog = () => copilotModelsWithCapabilities([
 
 const setupImageModelTest = async () => {
   const { copilotUpstream } = await setupCopilotTest();
-  return createCopilotProvider(copilotUpstream).instance;
+  return createCopilotProvider(copilotUpstream);
 };
 
-// The regression this guards: `copilotAuthedFetch` used to pin
-// `Content-Type: application/json` unconditionally, which made Copilot answer
-// a multipart edit with `400 Failed to decode image edit request` before
-// reading a single part. A FormData body must reach the runtime untouched so
-// it can set its own boundary.
+// Copilot answers a multipart edit carrying `Content-Type: application/json`
+// with `400 Failed to decode image edit request` before reading a single part,
+// so an upload must be sent with its own multipart boundary.
 test('Copilot image edits keeps multipart uploads free of a JSON content-type', async () => {
   const provider = await setupImageModelTest();
   let captured: { path: string; contentType: string | null; body: string } | undefined;
@@ -834,9 +832,9 @@ test('Copilot image edits keeps multipart uploads free of a JSON content-type', 
       return jsonResponse({ created: 1, data: [{ b64_json: 'AAAA' }] });
     },
     async () => {
-      const [model] = await provider.getProvidedModels(directFetcher);
-      const file = new File([new Uint8Array([0x89, 0x50, 0x4E, 0x47])], 'in.png', { type: 'image/png' });
-      const result = await provider.callOpenAIImagesEdits(model, { images: [{ type: 'upload', file }], parameters: { prompt: 'make it blue' } }, undefined, noopUpstreamCallOptions());
+      const [model] = await provider.instance.getProvidedModels(directFetcher);
+      const file = { bytes: new Uint8Array([0x89, 0x50, 0x4E, 0x47]), name: 'in.png', type: 'image/png' };
+      const result = await callProviderPipeline(provider, 'openaiImagesEdits', model, { images: [{ type: 'upload', file }], parameters: { prompt: 'make it blue' } });
       assertEquals(result.http.status, 200);
     },
   );
@@ -996,8 +994,7 @@ test('Copilot provider merges the -fast raw variant and reaches it through servi
 
 test('Copilot provider derives decision endpoints and forwards the System One body', async () => {
   const { copilotUpstream } = await setupCopilotTest();
-  const instance = createCopilotProvider(copilotUpstream);
-  const provider = instance.instance;
+  const provider = createCopilotProvider(copilotUpstream);
   const sent: Record<string, unknown>[] = [];
 
   await withMockedFetch(
@@ -1035,7 +1032,7 @@ test('Copilot provider derives decision endpoints and forwards the System One bo
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const models = await provider.getProvidedModels(directFetcher);
+      const models = await provider.instance.getProvidedModels(directFetcher);
       const decision = models.find(model => model.id === 'microsoft-decision-1')!;
       assertEquals(decision.kind, 'decision');
       assertEquals(decision.endpoints, { decision: {} });
@@ -1046,8 +1043,7 @@ test('Copilot provider derives decision endpoints and forwards the System One bo
         state: 'The API returns 500 on every call.',
         questions: { team: { type: 'choice', instructions: 'Which team?', criteria: { billing: 'Charges', engineering: 'Bugs' } } },
       });
-      const result = await provider.callDecision(decision, parsed.request, undefined, noopUpstreamCallOptions());
-      assertEquals(result.target, { protocol: 'typesafe-systemone' });
+      const result = await callProviderPipeline(provider, 'decision', decision, parsed.request);
       assertEquals(result.http.status, 200);
     },
   );
@@ -1060,7 +1056,7 @@ test('Copilot provider derives decision endpoints and forwards the System One bo
 
 test('Copilot sends an OpenAI Decisions model to /v1/decisions in its own dialect', async () => {
   const { copilotUpstream } = await setupCopilotTest();
-  const provider = createCopilotProvider(copilotUpstream).instance;
+  const provider = createCopilotProvider(copilotUpstream);
   const sent: { path: string; body: Record<string, unknown> }[] = [];
 
   await withMockedFetch(
@@ -1084,14 +1080,14 @@ test('Copilot sends an OpenAI Decisions model to /v1/decisions in its own dialec
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const decision = (await provider.getProvidedModels(directFetcher))[0]!;
+      const decision = (await provider.instance.getProvidedModels(directFetcher))[0]!;
       const parsed = parseDecisionRequest('openai-decisions', {
         model: 'gpt-6-luna-decisions',
         input: 'The API returns 500 on every call.',
         questions: [{ type: 'predicate', name: 'p', instructions: 'Is this a bug?' }],
       });
-      const result = await provider.callDecision(decision, parsed.request, undefined, noopUpstreamCallOptions());
-      assertEquals(result.target, { protocol: 'openai-decisions' });
+      assertEquals(decision.decisionTarget, { protocol: 'openai-decisions' });
+      const result = await callProviderPipeline(provider, 'decision', decision, parsed.request);
       assertEquals(result.http.status, 200);
     },
   );

@@ -110,7 +110,6 @@ export const createKimiCodeProvider = (record: UpstreamRecord): Provider => {
     callOpenAIImagesEdits: unsupported('callOpenAIImagesEdits'),
     callOpenAIAudioTranscriptions: unsupported('callOpenAIAudioTranscriptions'),
     callRerank: unsupported('callRerank'),
-    callDecision: unsupported('callDecision'),
   };
   return {
     upstreamId: record.id,
@@ -120,6 +119,7 @@ export const createKimiCodeProvider = (record: UpstreamRecord): Provider => {
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     modelsCache: record.modelsCache,
+    pipelines: {},
     instance,
   };
 };

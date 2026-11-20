@@ -1,12 +1,14 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
-import { installDumpStubs } from '../../dump/test-fixtures.ts';
+import { eventsOf, installDumpStubs, runRecordOf } from '../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { createRunReader, type DumpEvent } from '@floway-dev/pipeline';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
-import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 // A custom upstream is the easiest fixture to assert /completions against:
 // the operator declares the endpoint capability per-model, and the path
@@ -153,7 +155,7 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
   assertEquals(usage[0]?.model, 'davinci-002');
-  assertEquals(tokenCountsFromUsage(usage[0]!), { input: 7, output: 2 });
+  assertEquals(tokenCountsFromUsage(usage[0]!), { input: 7, input_cache_read: 0, input_cache_write: 0, output: 2 });
 
   const performance = await repo.performance.listAll();
   assertEquals(performance.length, 1);
@@ -162,15 +164,45 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
   assertEquals(performance[0]?.errorsNoOutput, 0);
 
   assertEquals(dumpStubs.stored.length, 1);
-  const dump = dumpStubs.stored[0]!.record;
+  const dump = runRecordOf(dumpStubs.stored[0]?.record);
   assertEquals(dump.meta.path, '/v1/completions');
   assertEquals(dump.meta.status, 200);
   assertEquals(dump.meta.model, 'davinci-002');
   assertEquals(dump.meta.inputTokens, 7);
   assertEquals(dump.meta.outputTokens, 2);
-  // Non-streaming: the upstream sent a one-shot JSON, so the dump
-  // captures the bytes (not a frame log).
-  assertEquals(dump.response.body.type, 'bytes');
+  // The shape follows the endpoint: a pipelined turn is recorded as its whole run, so what
+  // is stored is the event stream rather than the two edges. The metadata is common to both,
+  // which is what lets the dashboard list them together.
+  assertEquals(runRecordOf(dumpStubs.stored[0]!.record).shape, 'run');
+});
+
+// A stream that stops before its terminator did not produce what it said it would, and the
+// performance row has to say so — a neutral row would report a turn that never finished as
+// one that did.
+test('/v1/completions a stream that never terminated is recorded as a failed request', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerOpenAICompletionsUpstream(repo);
+
+  await withMockedFetch(
+    () => Promise.resolve(new Response('data: {"id":"c","object":"text_completion","created":1,"model":"davinci-002","choices":[{"index":0,"text":"hi"}]}\n\n', {
+      status: 200, headers: { 'content-type': 'text/event-stream' },
+    })),
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
+      });
+      assertEquals(response.status, 200);
+      await response.text();
+    },
+  );
+
+  await flushAsyncWork();
+
+  const performance = await repo.performance.listAll();
+  assertEquals(performance.length, 1);
+  assertEquals(performance[0]?.errorsNoOutput, 1);
 });
 
 test('/v1/completions streaming strips the unrequested usage chunk yet records usage and a frame-log dump', async () => {
@@ -179,6 +211,7 @@ test('/v1/completions streaming strips the unrequested usage chunk yet records u
   await registerOpenAICompletionsUpstream(repo);
   const dumpStubs = installDumpStubs(initDumpStore, initDumpBroker);
 
+  let delivered = '';
   await withMockedFetch(
     () => Promise.resolve(completionStream()),
     async () => {
@@ -188,10 +221,10 @@ test('/v1/completions streaming strips the unrequested usage chunk yet records u
         body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
       });
       assertEquals(response.status, 200);
-      const text = await response.text();
-      assertEquals(text.includes('"usage"'), false);
-      assertEquals(text.includes('world'), true);
-      assertEquals(text.includes('[DONE]'), true);
+      delivered = await response.text();
+      assertEquals(delivered.includes('"usage"'), false);
+      assertEquals(delivered.includes('world'), true);
+      assertEquals(delivered.includes('[DONE]'), true);
     },
   );
 
@@ -199,7 +232,7 @@ test('/v1/completions streaming strips the unrequested usage chunk yet records u
 
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
-  assertEquals(tokenCountsFromUsage(usage[0]!), { input: 4, output: 2 });
+  assertEquals(tokenCountsFromUsage(usage[0]!), { input: 4, input_cache_read: 0, input_cache_write: 0, output: 2 });
 
   const performance = await repo.performance.listAll();
   assertEquals(performance.length, 1);
@@ -207,26 +240,76 @@ test('/v1/completions streaming strips the unrequested usage chunk yet records u
   assertEquals(performance[0]?.errorsNoOutput, 0);
 
   assertEquals(dumpStubs.stored.length, 1);
-  const dump = dumpStubs.stored[0]!.record;
+  const dump = runRecordOf(dumpStubs.stored[0]?.record);
   assertEquals(dump.meta.path, '/v1/completions');
   assertEquals(dump.meta.status, 200);
   assertEquals(dump.meta.model, 'davinci-002');
   assertEquals(dump.meta.inputTokens, 4);
   assertEquals(dump.meta.outputTokens, 2);
-  // Streaming: dump stores the protocol frames the gateway saw from
-  // upstream BEFORE transformFrame ran. The fixture stream emits two
-  // content events, one usage-only event (which the client did not opt
-  // into and so it was stripped from the forwarded stream), and a done
-  // terminator.
-  assertEquals(dump.response.body.type, 'stream');
-  if (dump.response.body.type === 'stream') {
-    const frames = dump.response.body.events.map(e => e.frame);
-    // Upstream's usage chunk is preserved in the dump even though it was
-    // stripped from the client-facing stream.
-    const usageFrame = frames[2];
-    if (usageFrame?.type === 'event') {
-      const event = usageFrame.event as { choices: unknown[]; usage: { prompt_tokens: number } };
-      assertEquals(event.usage.prompt_tokens, 4);
-    } else throw new Error('expected the usage event frame');
+  const events = eventsOf(runRecordOf(dumpStubs.stored[0]!.record)) as unknown as DumpEvent[];
+  const read = createRunReader();
+  const streams = new Map<number, ProtocolFrame<unknown>[]>();
+  let client: number | undefined;
+  for (const event of events) {
+    const decoded = read(event);
+    if (decoded?.facts && 'response.openaiCompletions.rendered' in decoded.facts) {
+      client = (decoded.facts['response.openaiCompletions.rendered'] as { stream: number }).stream;
+    }
+    if (event.type === 'stream.frame') {
+      const frames = streams.get(event.streamId) ?? [];
+      frames.push(...decoded!.frames as ProtocolFrame<unknown>[]);
+      streams.set(event.streamId, frames);
+    }
   }
+  assertExists(client);
+  const clientFrames = streams.get(client)!;
+  assertEquals(clientFrames.length, 3);
+  assertEquals(clientFrames.map(frame => `data: ${frame.type === 'done' ? '[DONE]' : JSON.stringify(frame.event)}\n\n`).join(''), delivered);
+  assertEquals([...streams.values()].some(frames => frames.some(frame => frame.type === 'event' && 'usage' in (frame.event as object))), true);
+  assertEquals(events.filter(event => event.type === 'stream.end').map(event => event.streamId).sort(), [...streams.keys()].sort());
+});
+
+// A run that threw is the turn that most needs explaining and used to be the one that left
+// nothing behind: the record is closed at the seam, so an exception escaping past it lost the
+// whole thing — no row, no events, no reason. It is answered there now, with the same envelope
+// the app's own handler writes.
+test('/v1/completions a run that threw is recorded, with the reason and a debuggable body', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  await registerOpenAICompletionsUpstream(repo);
+  const dumpStubs = installDumpStubs(initDumpStore, initDumpBroker);
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+  // Read inside `resolveCandidates`, which is a stage — so the throw happens with the run
+  // open and a record already accumulating.
+  repo.modelAliases.getByName = () => Promise.reject(new Error('alias lookup exploded'));
+
+  try {
+    const response = await requestAppWithWarmModels('/v1/completions', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+      body: JSON.stringify({ model: 'davinci-002', prompt: 'hello' }),
+    });
+
+    assertEquals(response.status, 500);
+    const body = await response.json() as { error: { type: string; message: string; stack?: string } };
+    assertEquals(body.error.type, 'internal_error');
+    assertEquals(body.error.message, 'alias lookup exploded');
+    assertExists(body.error.stack);
+  } finally {
+    errorSpy.mockRestore();
+  }
+
+  await flushAsyncWork();
+
+  assertEquals(dumpStubs.stored.length, 1);
+  const dump = runRecordOf(dumpStubs.stored[0]?.record);
+  assertEquals(dump.meta.status, 500);
+  // The model the client asked for survives an outright failure, and the reason is on the row
+  // rather than only in the answer the client happened to receive.
+  assertEquals(dump.meta.model, 'davinci-002');
+  assertEquals(dump.meta.error, { kind: 'failed', reason: 'alias lookup exploded' });
+  // And the stages the run did get through are in it, which is what makes the record worth
+  // keeping: it says how far the turn got before it threw.
+  assertEquals(eventsOf(dump).some(event => event.type === 'stage.entered'), true);
 });

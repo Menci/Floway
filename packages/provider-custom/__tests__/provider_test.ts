@@ -5,7 +5,7 @@ import type { ModelPricing } from '@floway-dev/protocols/common';
 import { parseRerankRequest } from '@floway-dev/protocols/rerank';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { callProviderPipeline, assertEquals, assertExists, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 interface BuildOptions {
   ingressHeadersRules?: { key: string; value: string | null }[];
@@ -155,12 +155,11 @@ test('callRerank uses the model target protocol, raw model id, and canonical pat
       return jsonResponse({ results: [] });
     },
     async () => {
-      const result = await instance.instance.callRerank(
+      const result = await callProviderPipeline(instance, 'rerank',
         model,
         parseRerankRequest('cohere-v1', { model: 'public-reranker', query: 'query', documents: ['one'], top_n: 1 }).request,
         undefined,
-        noopUpstreamCallOptions(),
-      );
+        noopUpstreamCallOptions());
       assertEquals(result.target, { protocol: 'cohere-v2' });
       assertEquals(result.modelKey, 'raw-reranker');
     },
@@ -170,7 +169,8 @@ test('callRerank uses the model target protocol, raw model id, and canonical pat
 });
 
 test('Custom provider forces stream=true for streaming endpoints and leaves count-tokens/embeddings alone', async () => {
-  const provider = createCustomProvider(buildCustomUpstream()).instance;
+  const instance = createCustomProvider(buildCustomUpstream());
+  const provider = instance.instance;
   const bodies: Record<string, Record<string, unknown>> = {};
   const betas: Record<string, string | null> = {};
 
@@ -199,7 +199,7 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
       await provider.callOpenAIResponses(model, { input: [] }, 'generate', undefined, opts);
       await provider.callAnthropicMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
       await provider.callAnthropicMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
-      await provider.callOpenAIEmbeddings(model, { input: 'hi' }, undefined, opts);
+      await callProviderPipeline(instance, 'openaiEmbeddings', model, { input: 'hi' }, undefined, opts);
     },
   );
 

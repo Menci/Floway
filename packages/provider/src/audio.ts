@@ -1,13 +1,6 @@
-// Buffered multipart carrier for OpenAI-compatible audio transcription.
-// Entries stay ordered and may repeat, matching FormData semantics. File
-// objects retain their bytes, filename, media type, and lastModified metadata;
-// providers rebuild a fresh FormData for every candidate so retries never
-// reuse a consumed request body.
+import type { HttpFormEntry } from '@floway-dev/http/request-content';
 
-export interface OpenAIAudioTranscriptionFormEntry {
-  readonly name: string;
-  readonly value: string | File;
-}
+export type OpenAIAudioTranscriptionFormEntry = HttpFormEntry;
 
 export interface OpenAIAudioTranscriptionRequest {
   readonly entries: readonly OpenAIAudioTranscriptionFormEntry[];
@@ -28,7 +21,8 @@ const serializeOpenAIAudioTranscriptionRequest = (
     } else if (typeof entry.value === 'string') {
       form.append(entry.name, entry.value);
     } else {
-      form.append(entry.name, entry.value, entry.value.name);
+      const file = entry.value;
+      form.append(entry.name, new File([file.bytes as Uint8Array<ArrayBuffer>], file.name, { type: file.type, lastModified: file.lastModified }));
     }
   }
   return form;

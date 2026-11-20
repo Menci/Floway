@@ -12,7 +12,7 @@ test('tokenUsageFromOpenAICompletionsUsage splits prompt_tokens into cache_read 
       { prompt_tokens: 100, completion_tokens: 7, total_tokens: 107, prompt_tokens_details: { cached_tokens: 80 } },
       undefined, false, 'up/model',
     ),
-    { input: 20, input_cache_read: 80, output: 7 },
+    { input: 20, input_cache_read: 80, input_cache_write: 0, output: 7, tier: null },
   );
 });
 
@@ -25,7 +25,7 @@ test('tokenUsageFromOpenAICompletionsUsage reads DeepSeek prompt_cache_hit_token
       { prompt_tokens: 200, completion_tokens: 5, total_tokens: 205, prompt_cache_hit_tokens: 128, prompt_cache_miss_tokens: 72 },
       undefined, false, 'up/model',
     ),
-    { input: 72, input_cache_read: 128, output: 5 },
+    { input: 72, input_cache_read: 128, input_cache_write: 0, output: 5, tier: null },
   );
 });
 
@@ -44,6 +44,12 @@ test('tokenUsageFromOpenAICompletionsUsage folds the cache counts back in on the
       { prompt_tokens: 479, completion_tokens: 373, total_tokens: 14164, prompt_tokens_details: { cached_tokens: 13312 } },
       undefined, false, 'up/model',
     ),
-    { input: 479, input_cache_read: 13312, output: 373 },
+    { input: 479, input_cache_read: 13312, input_cache_write: 0, output: 373, tier: null },
   );
+});
+
+test('tokenUsageFromOpenAICompletionsUsage retains a measured zero', () => {
+  expect(tokenUsageFromOpenAICompletionsUsage({ prompt_tokens: 0, completion_tokens: 0 }, null, false, 'up/model')).toEqual({
+    input: 0, input_cache_read: 0, input_cache_write: 0, output: 0, tier: null,
+  });
 });

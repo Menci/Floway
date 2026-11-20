@@ -8,7 +8,7 @@ export const dumpHeadersSchema = z.array(z.tuple([z.string(), z.string()]));
 
 export const dumpBodyDescriptorSchema = z.object({
   key: z.string(),
-  type: z.enum(['bytes', 'events', 'capture']),
+  type: z.enum(['bytes', 'events', 'run', 'capture']),
 }).strict();
 
 const dumpProtocolFrameSchema = z.discriminatedUnion('type', [

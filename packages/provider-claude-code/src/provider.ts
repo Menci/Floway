@@ -120,7 +120,6 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
     callOpenAIImagesEdits: rejectUnsupported('callOpenAIImagesEdits'),
     callOpenAIAudioTranscriptions: rejectUnsupported('callOpenAIAudioTranscriptions'),
     callRerank: rejectUnsupported('callRerank'),
-    callDecision: rejectUnsupported('callDecision'),
   };
 
   return {
@@ -131,6 +130,7 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     modelsCache: record.modelsCache,
+    pipelines: {},
     instance,
   };
 };

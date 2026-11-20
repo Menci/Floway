@@ -76,12 +76,12 @@ export const respondAnthropicMessages = async (
         return { wire };
       },
       eof: () => ({ type: 'premature-eof', error: new Error(ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE) }),
-      failure: error => {
+      failure: async error => {
         // Anthropic's SSE error body uses its Messages API error types.
         // https://github.com/anthropics/anthropic-sdk-typescript/blob/3f13f60335f8bcf91a782785f4f16e4267c999ad/src/resources/shared.ts#L247-L255
         const payload = internalAnthropicMessagesErrorPayload(toInternalDebugError(error));
         const event = { ...payload, error: { ...payload.error, type: 'api_error' } };
-        ctx.dump?.frame(eventFrame(event));
+        await ctx.dump?.frame(eventFrame(event));
         return [serializeSseFrame(sseFrame(JSON.stringify(event), 'error'))];
       },
     },

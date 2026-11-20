@@ -1,7 +1,6 @@
-import parseHttpDate from 'http-dates';
-
 import type { GatewayCtx } from './gateway-ctx.ts';
 import type { RawAttemptResult } from './raw-attempt-result.ts';
+import { retryTime } from './retry-after.ts';
 import { upstreamPerformanceContext } from './telemetry/attribution.ts';
 import { isUpstreamTransportError } from '../../dial/transport-error.ts';
 import { discardUpstreamResponse, isAbortError, type HttpHead, type ModelCandidate, type PerformanceOperation } from '@floway-dev/provider';
@@ -17,23 +16,6 @@ const isAttemptSuccess = (result: IterableAttemptResult): boolean => {
   if (result.type === 'api-error' || result.type === 'internal-error') return false;
   const status = result.http?.status;
   return status === undefined || (status >= 200 && status < 300);
-};
-
-// https://www.rfc-editor.org/rfc/rfc9110.html#section-10.2.3
-const retryTime = (result: IterableAttemptResult): number | null => {
-  const value = result.http?.headers.get('retry-after')?.trim();
-  if (!value) return null;
-  const now = Date.now();
-  if (/^\d+(?:\.\d+)?$/.test(value)) {
-    const time = now + Number(value) * 1000;
-    return Number.isFinite(time) ? time : null;
-  }
-  try {
-    return Math.max(now, parseHttpDate(value).getTime());
-  } catch {
-    // http-dates signals malformed input by throwing.
-    return null;
-  }
 };
 
 const discardFailure = (ctx: GatewayCtx, result: IterableAttemptResult | undefined): void => {
@@ -83,7 +65,7 @@ export const iterateCandidates = async <T extends IterableAttemptResult>(
 
       if (isAttemptSuccess(result)) return result;
       lastTransportError = undefined;
-      const time = retryTime(result);
+      const time = retryTime(result.http?.headers.get('retry-after') ?? null);
       if (earliestRetryTime !== null && (time === null || time >= earliestRetryTime)) {
         discardFailure(ctx, result);
         continue;

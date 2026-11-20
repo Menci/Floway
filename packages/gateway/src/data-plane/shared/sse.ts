@@ -20,10 +20,12 @@ interface SseFinished {
 type SseEnd = SseFinished | { type: 'premature-eof'; error: Error };
 
 export interface SseProtocol<T> {
-  encode: (input: T) => { wire: string | null; end?: SseEnd };
-  eof: () => SseEnd;
-  failure: (error: unknown) => readonly [string, ...string[]];
+  encode: (input: T) => SseOutput | Promise<SseOutput>;
+  eof: () => SseEnd | Promise<SseEnd>;
+  failure: (error: unknown) => readonly string[] | Promise<readonly string[]>;
 }
+
+type SseOutput = { wire: string | null; end?: SseEnd };
 
 export type SseOutcome =
   | { type: 'completed' | 'protocol-error' | 'cancelled' }
@@ -98,7 +100,7 @@ const drainSse = async <T>(
   const fail = async (error: unknown, type: 'source-error' | 'premature-eof' = 'source-error'): Promise<SseOutcome> => {
     if (disconnected()) return { type: 'cancelled' };
     try {
-      for (const wire of protocol.failure(error)) await write(wire);
+      for (const wire of await protocol.failure(error)) await write(wire);
     } catch (egressError) {
       throw new AggregateError([error, egressError], 'Failed to send the SSE failure', { cause: error });
     }
@@ -135,16 +137,16 @@ const drainSse = async <T>(
         iterator = undefined;
         let end: SseEnd;
         try {
-          end = protocol.eof();
+          end = await protocol.eof();
         } catch (error) {
           return await fail(error);
         }
         return await finish(end);
       }
 
-      let output: ReturnType<SseProtocol<T>['encode']>;
+      let output: SseOutput;
       try {
-        output = protocol.encode(next.result.value);
+        output = await protocol.encode(next.result.value);
       } catch (error) {
         return await fail(error);
       }

@@ -18,6 +18,9 @@
     "./codec": {
       "import": "./src/codec.ts",
       "types": "./src/codec.ts"
+    },
+    "./browser": {
+      "types": "./src/browser.ts"
     }
   },
   "scripts": {

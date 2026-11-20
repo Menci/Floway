@@ -38,6 +38,7 @@ const responseItem = (id: string, refreshedAt: number, apiKeyId = 'key-a'): Stor
 });
 
 const dumpRecord = (id: string, completedAt: number): DumpWriteRecord => ({
+  shape: 'edge',
   meta: {
     id,
     startedAt: completedAt - 1,
