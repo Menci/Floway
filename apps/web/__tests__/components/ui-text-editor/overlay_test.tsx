@@ -220,4 +220,53 @@ describe('UiTextEditorOverlay', () => {
       Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: originalElementsFromPoint });
     }
   });
+  it('clamps wide hover tags near the right edge inside the viewport bounds', async () => {
+    const { container } = renderInApp(
+      <>
+        <button
+          aria-label={wrapWithKeyMarkers('Refresh', 'permissions.actions.refreshVeryLongKeyName')}
+          data-testid="top-right-refresh"
+          type="button"
+        />
+        <UiTextEditorOverlay />
+      </>,
+    );
+
+    const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+    const button = screen.getByTestId('top-right-refresh');
+    vi.spyOn(button, 'getBoundingClientRect').mockReturnValue(new DOMRect(viewportWidth - 40, 12, 32, 32));
+    const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('floway-ui-text-editor-highlight-tag')) {
+        return new DOMRect(0, 0, 340, 24);
+      }
+      return originalGetBoundingClientRect.call(this);
+    });
+    const originalElementsFromPoint = (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;
+    Object.defineProperty(document, 'elementsFromPoint', {
+      configurable: true,
+      value: () => [button, container, document.body],
+    });
+
+    await waitFor(() => {
+      expect(button.getAttribute('aria-label')).toBe('Refresh');
+      expect(useUiTextEditorStore.getState().initialized).toBe(true);
+    });
+
+    fireEvent.pointerMove(window, { altKey: true, clientX: viewportWidth - 20, clientY: 24 });
+
+    await waitFor(() => {
+      const tag = document.querySelector<HTMLElement>('.floway-ui-text-editor-highlight-tag');
+      expect(tag).not.toBeNull();
+      const left = Number.parseFloat(tag!.style.left);
+      expect(left).toBeGreaterThanOrEqual(8);
+      expect(left + 340).toBeLessThanOrEqual(viewportWidth - 8);
+    });
+
+    if (originalElementsFromPoint === undefined) {
+      delete (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;
+    } else {
+      Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: originalElementsFromPoint });
+    }
+  });
 });

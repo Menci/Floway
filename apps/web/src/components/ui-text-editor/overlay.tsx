@@ -4,7 +4,7 @@ import {
   Copy16Regular,
   Edit16Regular,
 } from '@fluentui/react-icons';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { EditorFlyout } from './editor-flyout';
@@ -274,6 +274,7 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
   const layerRef = useRef<HTMLDivElement | null>(null);
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const flyoutEscapeRef = useRef<(() => boolean) | null>(null);
+  const highlightTagRef = useRef<HTMLDivElement | null>(null);
   const exportingRef = useRef(false);
   const quickCopyTimerRef = useRef<number | null>(null);
 
@@ -284,6 +285,7 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
   const [quickCopied, setQuickCopied] = useState(false);
   const [exportedNotice, setExportedNotice] = useState(false);
   const [portalRoot, setPortalRoot] = useState<HTMLDivElement | null>(null);
+  const [highlightTagSize, setHighlightTagSize] = useState<{ width: number; height: number } | null>(null);
 
   const uiOpen = activeFlyout !== null || panelOpen;
   const freezePopovers = altPressed || uiOpen;
@@ -508,16 +510,21 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
     rect: DOMRect,
     pointerX: number,
     pointerY: number,
+    measuredSize: { width: number; height: number } | null,
   ): { left: number; top: number } => {
     const margin = 8;
     const gap = 6;
-    const tagHeight = 24;
-    const maxTop = Math.max(margin, window.innerHeight - tagHeight - margin);
+    const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+    const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+    const tagWidth = measuredSize?.width ?? Math.min(440, Math.max(0, viewportWidth - margin * 2));
+    const tagHeight = measuredSize?.height ?? 24;
+    const maxTop = Math.max(margin, viewportHeight - tagHeight - margin);
+    const maxLeft = Math.max(margin, viewportWidth - tagWidth - margin);
     let top: number;
     let preferredLeft = rect.left;
     if (rect.top >= tagHeight + margin) {
       top = rect.top - tagHeight - gap;
-    } else if (rect.bottom + gap + tagHeight <= window.innerHeight - margin) {
+    } else if (rect.bottom + gap + tagHeight <= viewportHeight - margin) {
       top = rect.bottom + gap;
     } else {
       // Full-height targets (such as the sidebar nav) leave no room above or
@@ -527,12 +534,26 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
       preferredLeft = pointerX;
     }
     const clampedTop = Math.round(Math.max(margin, Math.min(top, maxTop)));
-    const clampedLeft = Math.round(Math.max(margin, Math.min(preferredLeft, window.innerWidth - 260)));
+    const clampedLeft = Math.round(Math.max(margin, Math.min(preferredLeft, maxLeft)));
     return { left: clampedLeft, top: clampedTop };
   };
 
+  const highlightTagKey = hoverTarget
+    ? `${hoverTarget.primaryKey}|${hoverTarget.primaryAttribute ?? ''}|${hoverTarget.candidates.length}`
+    : '';
+
+  useLayoutEffect(() => {
+    const el = highlightTagRef.current;
+    if (!altPressed || !hoverTarget || !el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 && rect.height <= 0) return;
+    const width = Math.ceil(rect.width);
+    const height = Math.ceil(rect.height);
+    setHighlightTagSize(prev => (prev?.width === width && prev.height === height ? prev : { width, height }));
+  }, [altPressed, hoverTarget, highlightTagKey]);
+
   const highlightTagPos = hoverState
-    ? computeHighlightTagPosition(hoverState.target.rect, hoverState.pointerX, hoverState.pointerY)
+    ? computeHighlightTagPosition(hoverState.target.rect, hoverState.pointerX, hoverState.pointerY, highlightTagSize)
     : { left: 0, top: 0 };
 
   const highlightMetaParts: string[] = [];
@@ -558,6 +579,7 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
               <>
                 <HighlightShape boundingRect={hoverTarget.rect} rects={hoverTarget.rects} />
                 <div
+                  ref={highlightTagRef}
                   className="floway-ui-text-editor-highlight-tag"
                   style={{ left: `${highlightTagPos.left}px`, top: `${highlightTagPos.top}px` }}
                 >
