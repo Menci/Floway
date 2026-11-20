@@ -9,19 +9,22 @@ const readStored = (): boolean => {
   }
 };
 
-const writeStored = (enabled: boolean): void => {
-  if (typeof window === 'undefined') return;
+const writeStored = (enabled: boolean): boolean => {
+  if (typeof window === 'undefined') return false;
+  const expected = enabled ? '1' : '0';
   try {
-    window.localStorage.setItem(STORAGE_KEY, enabled ? '1' : '0');
+    window.localStorage.setItem(STORAGE_KEY, expected);
+    return window.localStorage.getItem(STORAGE_KEY) === expected;
   } catch {
-    // Private browsing or quota errors must not crash preference sync.
+    return false;
   }
 };
 
 // Captured once at module load so the running page has a single, immutable
 // decision for whether the UI text editor runtime is mounted. Toggling the
 // preference or signing into an account with a different setting updates the
-// mirror and reloads the page to enter or leave the mode cleanly.
+// mirror and reloads only after the new value actually persisted, avoiding
+// reload loops when storage is unavailable or full.
 let bootEnabled = readStored();
 
 let reloadHandler = (): void => {
@@ -30,11 +33,9 @@ let reloadHandler = (): void => {
 
 export const isUiTextEditorEnabled = (): boolean => bootEnabled;
 
-export const readUiTextEditorMirror = (): boolean => readStored();
-
 export const syncUiTextEditorPreference = (enabled: boolean): boolean => {
-  writeStored(enabled);
-  if (enabled !== bootEnabled) {
+  const persisted = writeStored(enabled);
+  if (enabled !== bootEnabled && persisted) {
     reloadHandler();
     return true;
   }
@@ -42,6 +43,7 @@ export const syncUiTextEditorPreference = (enabled: boolean): boolean => {
 };
 
 export const __testing = {
+  readStored,
   setReloadHandler(handler: () => void): void {
     reloadHandler = handler;
   },

@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   __testing,
   isUiTextEditorEnabled,
-  readUiTextEditorMirror,
   syncUiTextEditorPreference,
 } from '../../../src/i18n/ui-text-editor/mirror';
 import { stubLocalStorage } from '../../local-storage-stub';
@@ -30,7 +29,7 @@ describe('UI text editor preference mirror', () => {
     expect(reload).not.toHaveBeenCalled();
 
     expect(syncUiTextEditorPreference(true)).toBe(true);
-    expect(readUiTextEditorMirror()).toBe(true);
+    expect(__testing.readStored()).toBe(true);
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
@@ -45,7 +44,21 @@ describe('UI text editor preference mirror', () => {
 
     // Signing into an account with uiTextEditor disabled updates mirror and reloads.
     expect(syncUiTextEditorPreference(false)).toBe(true);
-    expect(readUiTextEditorMirror()).toBe(false);
+    expect(__testing.readStored()).toBe(false);
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+  it('does not reload when localStorage refuses the write', () => {
+    const reload = vi.fn();
+    __testing.setReloadHandler(reload);
+    __testing.resetBootState(false);
+
+    const setItem = vi.spyOn(window.localStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException('Quota exceeded', 'QuotaExceededError');
+    });
+
+    expect(syncUiTextEditorPreference(true)).toBe(false);
+    expect(reload).not.toHaveBeenCalled();
+
+    setItem.mockRestore();
   });
 });

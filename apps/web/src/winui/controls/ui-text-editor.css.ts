@@ -1,3 +1,5 @@
+import { reducedMotion } from './selectors';
+
 // WinUI 3 surfaces for the in-context UI text editor overlay, hosted inside a
 // native top-layer popover so it sits above dialogs, flyouts, menus, and
 // tooltips without contending for z-index.
@@ -65,9 +67,10 @@ export const uiTextEditorCss = `
 }
 
 .floway-ui-text-editor-dock {
+  --floway-ute-edge-inset: 16px;
   position: fixed;
-  right: 16px;
-  bottom: 16px;
+  right: var(--floway-ute-edge-inset);
+  bottom: var(--floway-ute-edge-inset);
   pointer-events: auto;
   display: inline-flex;
   align-items: center;
@@ -78,7 +81,6 @@ export const uiTextEditorCss = `
   background-color: var(--winui-acrylic-in-app-fill-default);
   color: var(--winui-text-fill-primary);
   box-shadow: 0 8px 24px var(--winui-tooltip-shadow-color);
-  backdrop-filter: blur(24px) saturate(125%);
 }
 
 .floway-ui-text-editor-dock-divider {
@@ -97,7 +99,6 @@ export const uiTextEditorCss = `
   background-color: var(--winui-acrylic-in-app-fill-default);
   color: var(--winui-text-fill-primary);
   box-shadow: 0 16px 40px var(--winui-tooltip-shadow-color);
-  backdrop-filter: blur(28px) saturate(125%);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -110,10 +111,12 @@ export const uiTextEditorCss = `
 }
 
 .floway-ui-text-editor-panel {
-  right: 16px;
-  bottom: 62px;
-  width: min(460px, calc(100vw - 32px));
-  max-height: min(480px, calc(100vh - 96px));
+  --floway-ute-edge-inset: 16px;
+  --floway-ute-dock-clearance: calc(var(--floway-ute-edge-inset) + 40px + 6px);
+  right: var(--floway-ute-edge-inset);
+  bottom: var(--floway-ute-dock-clearance);
+  width: min(460px, calc(100vw - 2 * var(--floway-ute-edge-inset)));
+  max-height: min(480px, calc(100vh - var(--floway-ute-dock-clearance) - 34px));
 }
 
 .floway-ui-text-editor-header {
@@ -183,7 +186,7 @@ export const uiTextEditorCss = `
   color: var(--winui-text-fill-primary);
   text-align: left;
   cursor: pointer;
-  transition: background-color 83ms linear;
+  transition: background-color var(--winui-control-faster-animation-duration) linear;
 }
 
 .floway-ui-text-editor-header-key-trigger:hover {
@@ -212,7 +215,7 @@ export const uiTextEditorCss = `
 .floway-ui-text-editor-header-key-chevron {
   flex: none;
   color: var(--winui-text-fill-secondary);
-  transition: transform 120ms cubic-bezier(0.1, 0.9, 0.2, 1);
+  transition: transform var(--winui-chevron-turn-duration) var(--winui-chevron-turn-easing);
 }
 
 .floway-ui-text-editor-header-key-chevron[data-open="true"] {
@@ -228,9 +231,11 @@ export const uiTextEditorCss = `
   max-height: min(280px, 50vh);
   overflow-y: auto;
   overscroll-behavior: contain;
+  border-radius: var(--winui-overlay-corner-radius);
   border: 1px solid var(--winui-surface-stroke-flyout);
+  background-color: var(--winui-acrylic-in-app-fill-default);
+  color: var(--winui-text-fill-primary);
   box-shadow: 0 8px 24px var(--winui-tooltip-shadow-color);
-  backdrop-filter: blur(24px) saturate(125%);
 }
 
 .floway-ui-text-editor-key-option {
@@ -504,11 +509,16 @@ export const uiTextEditorCss = `
 }
 
 .floway-ui-text-editor-session-preview-part {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
   color: var(--winui-text-fill-primary);
   font-weight: 400;
   border-radius: 3px;
   cursor: copy;
-  transition: color 80ms ease;
+  transition: color var(--winui-control-faster-animation-duration) linear;
 }
 
 .floway-ui-text-editor-session-preview-part:hover {
@@ -597,10 +607,12 @@ export const uiTextEditorCss = `
 @media (forced-colors: active) {
   .floway-ui-text-editor-dock,
   .floway-ui-text-editor-surface,
+  .floway-ui-text-editor-key-listbox,
   .floway-ui-text-editor-highlight-tag {
     border-width: 2px;
     box-shadow: none;
-    backdrop-filter: none;
   }
 }
+
+${reducedMotion(['.floway-ui-text-editor-header-key-chevron'], 'transition-duration')}
 `;

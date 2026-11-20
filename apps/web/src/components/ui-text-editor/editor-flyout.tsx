@@ -12,16 +12,11 @@ import { EditorIconButton, useUiTextEditorPortal } from './editor-icon-button';
 import { useEditorTranslation } from './use-editor-t';
 import { fluentComponents } from '../../fluent';
 import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages';
-import { useUiTextEditorStore } from '../../i18n/ui-text-editor/store';
+import { LANGUAGE_LABELS, useUiTextEditorStore } from '../../i18n/ui-text-editor/store';
 import { copyToClipboard } from '../ui/copy-to-clipboard';
 import { Textarea } from '../ui/fluent-form-controls';
 
 const { Button, Label, Tooltip } = fluentComponents;
-
-const LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
-  'en': 'English',
-  'zh-Hans': '简体中文',
-};
 
 const clampPosition = (left: number, top: number, width: number, height: number): { left: number; top: number } => {
   const margin = 12;
@@ -86,6 +81,7 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
   };
 
   const [values, setValues] = useState<Record<SupportedLanguage, string>>(() => buildInitialValues(initialKey));
+  const [dirtyLanguages, setDirtyLanguages] = useState<Partial<Record<SupportedLanguage, boolean>>>({});
   const [note, setNote] = useState(() => entries[initialKey]?.note ?? '');
 
   const surfaceRef = useRef<HTMLDivElement | null>(null);
@@ -93,6 +89,7 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
   const listboxRef = useRef<HTMLDivElement | null>(null);
   const firstInputRef = useRef<HTMLTextAreaElement | null>(null);
   const dragOffsetRef = useRef<{ dx: number; dy: number } | null>(null);
+  const copyTimerRef = useRef<number | null>(null);
 
   const [position, setPosition] = useState(() =>
     computeInitialPosition(anchorRect, Math.min(460, window.innerWidth - 24), 440));
@@ -103,6 +100,12 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
     const rect = el.getBoundingClientRect();
     setPosition(computeInitialPosition(anchorRect, rect.width || 460, rect.height || 440));
   }, [anchorRect]);
+
+  useEffect(() => () => {
+    if (copyTimerRef.current !== null) {
+      window.clearTimeout(copyTimerRef.current);
+    }
+  }, []);
 
   // Focus the first editor input immediately when there is only one key; when
   // multiple candidates auto-open the selector, focus the combobox trigger so
@@ -145,6 +148,13 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
     };
   }, [dropdownOpen]);
 
+  // Keep the keyboard-highlighted option scrolled into view inside long lists.
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    const optionEl = listboxRef.current?.querySelector<HTMLElement>(`[data-option-index="${highlightedIndex}"]`);
+    optionEl?.scrollIntoView?.({ block: 'nearest' });
+  }, [dropdownOpen, highlightedIndex]);
+
   useEffect(() => {
     const onPointerMove = (event: PointerEvent) => {
       const drag = dragOffsetRef.current;
@@ -167,6 +177,7 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
   const switchKey = (nextKey: string, focusInput = false) => {
     setActiveKey(nextKey);
     setValues(buildInitialValues(nextKey));
+    setDirtyLanguages({});
     setNote(useUiTextEditorStore.getState().entries[nextKey]?.note ?? '');
     setCopiedKey(false);
     setDropdownOpen(false);
@@ -220,15 +231,26 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
       ?? '';
   };
 
+  // Only languages the user actually edited (or that already belong to the
+  // active entry) are submitted, so adding a note on a key with a historical
+  // override does not copy untouched history text into the active batch.
+  const submittedValues: Partial<Record<SupportedLanguage, string>> = {};
+  for (const lang of supportedLanguages) {
+    if (dirtyLanguages[lang] || existingEntry?.changes[lang] !== undefined) {
+      submittedValues[lang] = values[lang];
+    }
+  }
+
   const hasAnyDiffOrNote = supportedLanguages.some(lang => {
+    if (!(lang in submittedValues)) return false;
     const original = getOriginal(lang, activeKey) ?? '';
-    return values[lang] !== original;
+    return submittedValues[lang] !== original;
   }) || note.trim().length > 0;
 
   const handleSave = () => {
     saveEntry({
       key: activeKey,
-      values,
+      values: submittedValues,
       note,
     });
     onSaved?.();
@@ -239,13 +261,17 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
     const ok = await copyToClipboard(activeKey);
     if (ok) {
       setCopiedKey(true);
-      window.setTimeout(() => setCopiedKey(false), 1500);
+      if (copyTimerRef.current !== null) {
+        window.clearTimeout(copyTimerRef.current);
+      }
+      copyTimerRef.current = window.setTimeout(() => setCopiedKey(false), 1500);
     }
   };
 
   const handleResetLanguage = (language: SupportedLanguage) => {
     const original = getOriginal(language, activeKey) ?? '';
     setValues(prev => ({ ...prev, [language]: original }));
+    setDirtyLanguages(prev => ({ ...prev, [language]: false }));
     if (existingEntry?.changes[language]) {
       revertLanguage(activeKey, language);
     }
@@ -257,11 +283,13 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
       'en': getOriginal('en', activeKey) ?? '',
       'zh-Hans': getOriginal('zh-Hans', activeKey) ?? '',
     });
+    setDirtyLanguages({});
     setNote('');
   };
 
   const noteInputId = `${idPrefix}-note`;
   const listboxId = `${idPrefix}-candidates`;
+  const optionIdFor = (index: number) => `${idPrefix}-option-${index}`;
 
   return (
     <div
@@ -293,6 +321,7 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
             {hasMultipleCandidates ? (
               <button
                 ref={triggerRef}
+                aria-activedescendant={dropdownOpen ? optionIdFor(highlightedIndex) : undefined}
                 aria-controls={dropdownOpen ? listboxId : undefined}
                 aria-expanded={dropdownOpen}
                 aria-haspopup="listbox"
@@ -343,7 +372,7 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
         {hasMultipleCandidates && dropdownOpen && (
           <div
             ref={listboxRef}
-            className="fui-Listbox floway-ui-text-editor-key-listbox"
+            className="floway-ui-text-editor-key-listbox"
             id={listboxId}
             role="listbox"
           >
@@ -358,6 +387,8 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
                     aria-selected={selected}
                     className="fui-Option floway-ui-text-editor-key-option"
                     data-highlighted={highlighted ? 'true' : 'false'}
+                    data-option-index={index}
+                    id={optionIdFor(index)}
                     role="option"
                     type="button"
                     onClick={() => switchKey(candidateKey, true)}
@@ -400,7 +431,10 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
                 placeholder={t('common.uiTextEditor.emptyTextPlaceholder')}
                 rows={Math.min(5, Math.max(2, values[language].split('\n').length))}
                 value={values[language]}
-                onChange={(_, data) => setValues(prev => ({ ...prev, [language]: data.value }))}
+                onChange={(_, data) => {
+                  setValues(prev => ({ ...prev, [language]: data.value }));
+                  setDirtyLanguages(prev => ({ ...prev, [language]: true }));
+                }}
                 onFocus={() => setDropdownOpen(false)}
               />
 

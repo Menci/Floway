@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
 import { i18n, setLanguage } from '../../src/i18n';
-import { __testing as mirrorTesting, readUiTextEditorMirror } from '../../src/i18n/ui-text-editor/mirror';
+import { __testing as mirrorTesting } from '../../src/i18n/ui-text-editor/mirror';
 import DashboardSettings from '../../src/routes/dashboard-settings';
 import { useAuthStore } from '../../src/stores/auth-store';
 import { stubLocalStorage } from '../local-storage-stub';
@@ -75,7 +75,7 @@ describe('preference form', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save preferences' }));
 
     await waitFor(() => expect(useAuthStore.getState().session!.user.preferences.uiTextEditor).toBe(true));
-    expect(readUiTextEditorMirror()).toBe(true);
+    expect(mirrorTesting.readStored()).toBe(true);
     expect(reload).toHaveBeenCalledTimes(1);
   });
 

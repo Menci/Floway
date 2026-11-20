@@ -162,4 +162,68 @@ describe('UI text editor store', () => {
     expect(i18n.t('common.cancel', { lng: 'en' })).toBe('Cancel');
     expect(i18n.t('common.dismiss', { lng: 'en' })).toBe(`Dismiss ${MAX_HISTORY_SESSIONS - 1}`);
   });
+  it('refuses writes before initialization so existing localStorage history is never overwritten', async () => {
+    const seeded = {
+      entries: {
+        'common.cancel': {
+          key: 'common.cancel',
+          changes: { en: { before: 'Cancel', after: 'Keep me' } },
+          note: '',
+          updatedAt: '2026-11-19T00:00:00.000Z',
+        },
+      },
+      history: [],
+    };
+    window.localStorage.setItem(__testing.storageKey, JSON.stringify(seeded));
+    __testing.reset();
+
+    expect(useUiTextEditorStore.getState().saveEntry({
+      key: 'common.dismiss',
+      values: { en: 'Should not persist' },
+      note: '',
+    })).toBe(false);
+
+    await useUiTextEditorStore.getState().ensureInitialized();
+    expect(Object.keys(useUiTextEditorStore.getState().entries)).toEqual(['common.cancel']);
+    expect(useUiTextEditorStore.getState().entries['common.cancel']?.changes.en?.after).toBe('Keep me');
+  });
+
+  it('archives only the captured export snapshot and preserves concurrent edits made before commit', () => {
+    const store = useUiTextEditorStore.getState();
+    store.saveEntry({ key: 'common.cancel', values: { en: 'Abort' }, note: '' });
+
+    const snapshot = useUiTextEditorStore.getState().createExportSnapshot();
+    expect(snapshot).not.toBeNull();
+
+    // Concurrent edit made while clipboard write is pending.
+    useUiTextEditorStore.getState().saveEntry({ key: 'common.dismiss', values: { en: 'Hide' }, note: '' });
+
+    const session = useUiTextEditorStore.getState().commitExportSnapshot(snapshot!);
+    expect(session?.entries.map(e => e.key)).toEqual(['common.cancel']);
+    expect(Object.keys(useUiTextEditorStore.getState().entries)).toEqual(['common.dismiss']);
+  });
+
+  it('saves edits that drop a numeric format without crashing live i18next rendering', () => {
+    const store = useUiTextEditorStore.getState();
+    store.saveEntry({
+      key: 'common.uiTextEditor.editsCount_other',
+      values: { en: '{{count}} edits' },
+      note: '',
+    });
+
+    // Stored and exported intact, yet skipped from live i18next projection so formatting never throws.
+    expect(useUiTextEditorStore.getState().entries['common.uiTextEditor.editsCount_other']?.changes.en?.after).toBe('{{count}} edits');
+    expect(i18n.t('common.uiTextEditor.editsCount', { count: 3, lng: 'en' })).toBe('3 edits');
+  });
+
+  it('rejects unsupported export versions and ignores changes without an explicit before value', () => {
+    expect(() => useUiTextEditorStore.getState().importFromJson(JSON.stringify({ version: 99, entries: [] })))
+      .toThrow(/Unsupported export version/);
+
+    const result = useUiTextEditorStore.getState().importFromJson(JSON.stringify({
+      version: 1,
+      entries: [{ key: 'common.cancel', changes: { en: { after: 'No before' } } }],
+    }));
+    expect(result).toEqual({ imported: 0, changed: false });
+  });
 });

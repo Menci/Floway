@@ -1,11 +1,11 @@
 import * as React from 'react';
 
+import { mayContainKeyMarkers, stripKeyMarkers } from './markers';
 import { isUiTextEditorEnabled } from './mirror';
 import { wrapFluent, type FluentComponents, type PropCarrier } from '../../winui/wrap';
 
 // Tracks whether the UI text editor currently wants open floating surfaces
 // (tooltips, popovers, dropdowns, menus, dialogs, drawers) to resist dismissal.
-// True while Alt is held or while an editor flyout/panel is open.
 let frozen = false;
 
 export const isUiTextEditorFreezeActive = (): boolean => frozen;
@@ -15,7 +15,7 @@ export const setUiTextEditorFreezeActive = (next: boolean): void => {
 };
 
 // Signals that a floating control lives inside the UI text editor's own chrome so
-// its own confirmation flyouts and popovers open and close normally even while
+// its own confirmation flyouts and popovers open and close normally while
 // external page popovers are frozen.
 export const UiTextEditorInternalContext = React.createContext(false);
 
@@ -30,11 +30,14 @@ interface VisibleCarrier extends PropCarrier {
   onVisibleChange?: (event: unknown, data: { visible: boolean }) => void;
 }
 
-// Wraps Fluent open/close floating controls so that, when the UI text editor is
-// active, any dismissal request arriving while Alt is held or while the editor
-// UI is open is ignored. Uncontrolled surfaces are always controlled from the
-// first render so Fluent's `useControllableState` never warns about switching
-// modes.
+interface OptionCarrier extends PropCarrier {
+  text?: string;
+}
+
+// Wraps Fluent open/close floating controls so dismissal requests arriving while
+// Alt is held or while the editor UI is open are ignored. Uncontrolled surfaces
+// stay controlled from the first render so Fluent's `useControllableState` never
+// warns about switching modes.
 const wrapOpenSurface = <Component>(component: Component): Component =>
   wrapFluent(component, (props: OpenCarrier) => {
     const insideEditor = React.useContext(UiTextEditorInternalContext);
@@ -72,6 +75,18 @@ const wrapTooltipSurface = <Component>(component: Component): Component =>
     };
   });
 
+// Strip zero-width markers from `Option.text` so Fluent's typeahead lookup
+// (`optionText.toLocaleLowerCase().indexOf(query) === 0`) still matches the
+// leading character while `children` retain markers for Alt+click inspection.
+const wrapOptionText = <Component>(component: Component): Component =>
+  wrapFluent(component, (props: OptionCarrier) => {
+    if (typeof props.text !== 'string' || !mayContainKeyMarkers(props.text)) return props;
+    return {
+      ...props,
+      text: stripKeyMarkers(props.text),
+    };
+  });
+
 export const withUiTextEditorFreeze = (components: FluentComponents): FluentComponents => {
   if (!isUiTextEditorEnabled()) return components;
   return {
@@ -83,5 +98,6 @@ export const withUiTextEditorFreeze = (components: FluentComponents): FluentComp
     Combobox: wrapOpenSurface(components.Combobox),
     Dialog: wrapOpenSurface(components.Dialog),
     OverlayDrawer: wrapOpenSurface(components.OverlayDrawer),
+    Option: wrapOptionText(components.Option),
   };
 };

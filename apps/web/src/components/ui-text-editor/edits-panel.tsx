@@ -15,20 +15,19 @@ import { Fragment, useEffect, useId, useRef, useState, type Ref } from 'react';
 import { EditorIconButton, useUiTextEditorPortal } from './editor-icon-button';
 import { useEditorTranslation } from './use-editor-t';
 import { fluentComponents } from '../../fluent';
-import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages';
-import { UI_TEXT_EDITOR_ROOT_ATTR } from '../../i18n/ui-text-editor/dom-registry';
+import { supportedLanguages } from '../../i18n/languages';
+import { isInsideUiTextEditor } from '../../i18n/ui-text-editor/dom-registry';
 import { getAltKeyLabel } from '../../i18n/ui-text-editor/mirror';
-import { useUiTextEditorStore, type UiTextEditEntry } from '../../i18n/ui-text-editor/store';
+import {
+  SHORT_LANGUAGE_LABELS,
+  useUiTextEditorStore,
+  type UiTextEditEntry,
+} from '../../i18n/ui-text-editor/store';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 import { useNow } from '../../lib/use-now';
 import { copyToClipboard } from '../ui/copy-to-clipboard';
 
 const { Button, Popover, PopoverSurface, PopoverTrigger, Text, Tooltip } = fluentComponents;
-
-const SHORT_LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
-  'en': 'EN',
-  'zh-Hans': '中文',
-};
 
 const MAX_HISTORY_PREVIEW_ROWS = 2;
 
@@ -205,17 +204,18 @@ function SessionPreviewLines({
                       {' / '}
                     </span>
                   )}
-                  <span
-                    className="floway-ui-text-editor-session-preview-part"
+                  <button
+                    className="floway-ui-text-editor-session-preview-part winui-focus-rect"
                     data-copied={copiedSegmentId === segId ? 'true' : 'false'}
                     title={copiedSegmentId === segId ? copiedLabel : `${copyActionLabel}: ${seg.text}`}
+                    type="button"
                     onClick={event => {
                       event.stopPropagation();
                       onCopySegment(segId, seg.text);
                     }}
                   >
                     {seg.text}
-                  </span>
+                  </button>
                 </Fragment>
               );
             })}
@@ -238,22 +238,12 @@ function SessionPreviewLines({
   );
 }
 
-const isInsideUiTextEditor = (target: EventTarget | null): boolean => {
-  if (!(target instanceof Node)) return false;
-  let current: Node | null = target;
-  while (current) {
-    if (current instanceof Element && current.hasAttribute(UI_TEXT_EDITOR_ROOT_ATTR)) return true;
-    current = current.parentNode;
-  }
-  return false;
-};
-
 export interface EditsPanelProps {
   exportedNotice: boolean;
   onClearExportedNotice: () => void;
   onClose: () => void;
   onEditKey: (key: string) => void;
-  onExported: () => void;
+  onExportActive: () => Promise<'empty' | 'copied' | 'failed'>;
 }
 
 export function EditsPanel({
@@ -261,7 +251,7 @@ export function EditsPanel({
   onClearExportedNotice,
   onClose,
   onEditKey,
-  onExported,
+  onExportActive,
 }: EditsPanelProps) {
   const { t, i18n } = useEditorTranslation();
   const mountNode = useUiTextEditorPortal();
@@ -271,26 +261,25 @@ export function EditsPanel({
   const getOriginal = useUiTextEditorStore(state => state.getOriginal);
   const revertEntry = useUiTextEditorStore(state => state.revertEntry);
   const clearActive = useUiTextEditorStore(state => state.clearActive);
-  const buildExportPayload = useUiTextEditorStore(state => state.buildExportPayload);
   const buildHistoryExportPayload = useUiTextEditorStore(state => state.buildHistoryExportPayload);
-  const archiveActiveAsExport = useUiTextEditorStore(state => state.archiveActiveAsExport);
   const restoreHistorySession = useUiTextEditorStore(state => state.restoreHistorySession);
   const deleteHistorySession = useUiTextEditorStore(state => state.deleteHistorySession);
   const clearHistory = useUiTextEditorStore(state => state.clearHistory);
   const importFromJson = useUiTextEditorStore(state => state.importFromJson);
 
-  const panelRef = useRef<HTMLDivElement | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [copiedSessionId, setCopiedSessionId] = useState<string | null>(null);
   const [copiedSegmentId, setCopiedSegmentId] = useState<string | null>(null);
   const copyTimerRef = useRef<number | null>(null);
+  const sessionTimerRef = useRef<number | null>(null);
+  const segmentTimerRef = useRef<number | null>(null);
 
   useEffect(() => () => {
-    if (copyTimerRef.current !== null) {
-      window.clearTimeout(copyTimerRef.current);
-    }
+    if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
+    if (sessionTimerRef.current !== null) window.clearTimeout(sessionTimerRef.current);
+    if (segmentTimerRef.current !== null) window.clearTimeout(segmentTimerRef.current);
   }, []);
 
   // Dismiss the panel only when pointer or focus returns to the host page
@@ -332,22 +321,19 @@ export function EditsPanel({
 
   const handleExport = async () => {
     clearNotices();
-    const payload = buildExportPayload();
-    if (payload.entries.length === 0) return;
-    const ok = await copyToClipboard(JSON.stringify(payload, null, 2));
+    const outcome = await onExportActive();
+    if (outcome === 'empty') return;
     if (copyTimerRef.current !== null) {
       window.clearTimeout(copyTimerRef.current);
     }
-    if (!ok) {
+    if (outcome === 'failed') {
       setCopyState('failed');
       setErrorNotice(t('common.copy.failed'));
       copyTimerRef.current = window.setTimeout(() => setCopyState('idle'), 2000);
       return;
     }
-    archiveActiveAsExport(payload.exportedAt);
     setShowHistory(false);
     setCopyState('copied');
-    onExported();
     copyTimerRef.current = window.setTimeout(() => setCopyState('idle'), 1600);
   };
 
@@ -357,7 +343,8 @@ export function EditsPanel({
     const ok = await copyToClipboard(JSON.stringify(payload, null, 2));
     if (!ok) return;
     setCopiedSessionId(sessionId);
-    window.setTimeout(() => {
+    if (sessionTimerRef.current !== null) window.clearTimeout(sessionTimerRef.current);
+    sessionTimerRef.current = window.setTimeout(() => {
       setCopiedSessionId(current => (current === sessionId ? null : current));
     }, 1500);
   };
@@ -366,7 +353,8 @@ export function EditsPanel({
     void copyToClipboard(text).then(ok => {
       if (!ok) return;
       setCopiedSegmentId(segmentId);
-      window.setTimeout(() => {
+      if (segmentTimerRef.current !== null) window.clearTimeout(segmentTimerRef.current);
+      segmentTimerRef.current = window.setTimeout(() => {
         setCopiedSegmentId(current => (current === segmentId ? null : current));
       }, 1200);
     });
@@ -413,7 +401,6 @@ export function EditsPanel({
 
   return (
     <div
-      ref={panelRef}
       aria-label={headerTitle}
       className="floway-ui-text-editor-surface floway-ui-text-editor-panel"
       role="dialog"
@@ -507,6 +494,7 @@ export function EditsPanel({
                     onClick={keyExists ? () => onEditKey(entry.key) : undefined}
                     onKeyDown={keyExists
                       ? event => {
+                        if (event.target !== event.currentTarget) return;
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault();
                           onEditKey(entry.key);
@@ -532,6 +520,7 @@ export function EditsPanel({
                             <span
                               aria-label={t('common.uiTextEditor.missingKeyNotice')}
                               className="floway-ui-text-editor-missing-icon"
+                              role="img"
                             >
                               <ErrorCircle16Regular />
                             </span>
@@ -539,7 +528,7 @@ export function EditsPanel({
                         )}
                       </span>
                       <div
-                        className="flex items-center gap-0.5 flex-none"
+                        className="floway-ui-text-editor-header-actions"
                         onClick={event => event.stopPropagation()}
                       >
                         <EditorIconButton
@@ -556,10 +545,10 @@ export function EditsPanel({
                           const change = entry.changes[language];
                           if (!change) return null;
                           const currentOriginal = getOriginal(language, entry.key);
-                          const isApplied = currentOriginal !== undefined && currentOriginal === change.after;
-                          const isStale = currentOriginal !== undefined
-                          && !isApplied
-                          && currentOriginal !== change.before;
+                          const alreadyApplied = currentOriginal !== undefined && currentOriginal === change.after;
+                          const drifted = currentOriginal !== undefined
+                            && !alreadyApplied
+                            && currentOriginal !== change.before;
                           return (
                             <div key={language} className="floway-ui-text-editor-diff-row">
                               <span className="floway-ui-text-editor-diff-lang">
@@ -568,7 +557,7 @@ export function EditsPanel({
                               <div className="floway-ui-text-editor-diff-values">
                                 <span className="floway-ui-text-editor-diff-before-line">
                                   <span className="floway-ui-text-editor-diff-before">{change.before}</span>
-                                  {isApplied && (
+                                  {alreadyApplied && (
                                     <Tooltip
                                       content={t('common.uiTextEditor.appliedNotice')}
                                       mountNode={mountNode}
@@ -577,13 +566,13 @@ export function EditsPanel({
                                       <span
                                         aria-label={t('common.uiTextEditor.appliedNotice')}
                                         className="floway-ui-text-editor-applied-icon"
-                                        onClick={event => event.stopPropagation()}
+                                        role="img"
                                       >
                                         <CheckmarkCircle16Regular />
                                       </span>
                                     </Tooltip>
                                   )}
-                                  {isStale && (
+                                  {drifted && (
                                     <StaleSourcePopover
                                       mountNode={mountNode}
                                       nextOriginal={currentOriginal}
@@ -592,7 +581,7 @@ export function EditsPanel({
                                     />
                                   )}
                                 </span>
-                                {change.after.length > 0 && (
+                                {!alreadyApplied && (
                                   <span className="floway-ui-text-editor-diff-after">{change.after}</span>
                                 )}
                               </div>
@@ -646,11 +635,11 @@ export function EditsPanel({
           {activeEntries.length > 0 && (
             <div
               className="floway-ui-text-editor-entry-item floway-ui-text-editor-interactive-item winui-focus-rect"
-              data-current-session="true"
               role="button"
               tabIndex={0}
               onClick={() => setShowHistory(false)}
               onKeyDown={event => {
+                if (event.target !== event.currentTarget) return;
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
                   setShowHistory(false);
@@ -662,7 +651,7 @@ export function EditsPanel({
                   {t('common.uiTextEditor.currentEdits')}
                 </span>
                 <div
-                  className="flex items-center gap-0.5 flex-none"
+                  className="floway-ui-text-editor-header-actions"
                   onClick={event => event.stopPropagation()}
                 >
                   <EditorIconButton
@@ -695,8 +684,10 @@ export function EditsPanel({
 
           {historySessions.map(session => {
             const archivedMs = Date.parse(session.archivedAt);
-            const effectiveNow = Number.isNaN(archivedMs) ? now : Math.max(now, archivedMs);
-            const relative = relativeTime(session.archivedAt, locale, { now: effectiveNow }) ?? shortDate(session.archivedAt, locale);
+            const rel = Number.isNaN(archivedMs)
+              ? session.archivedAt
+              : relativeTime(session.archivedAt, locale, { now: Math.max(now, archivedMs) });
+            const timeLabel = rel ?? shortDate(session.archivedAt, locale);
             return (
               <div
                 key={session.id}
@@ -705,6 +696,7 @@ export function EditsPanel({
                 tabIndex={0}
                 onClick={() => handleRestoreSession(session.id)}
                 onKeyDown={event => {
+                  if (event.target !== event.currentTarget) return;
                   if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
                     handleRestoreSession(session.id);
@@ -716,10 +708,10 @@ export function EditsPanel({
                     className="floway-ui-text-editor-session-time"
                     title={dateTime(session.archivedAt, locale)}
                   >
-                    {relative}
+                    {timeLabel}
                   </span>
                   <div
-                    className="flex items-center gap-0.5 flex-none"
+                    className="floway-ui-text-editor-header-actions"
                     onClick={event => event.stopPropagation()}
                   >
                     <EditorIconButton

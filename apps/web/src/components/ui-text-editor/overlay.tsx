@@ -4,7 +4,7 @@ import {
   Copy16Regular,
   Edit16Regular,
 } from '@fluentui/react-icons';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { EditorFlyout } from './editor-flyout';
@@ -15,22 +15,17 @@ import { fluentComponents } from '../../fluent';
 import { activateUiTextEditorTracking, setLanguage } from '../../i18n';
 import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages';
 import {
-  UI_TEXT_EDITOR_ROOT_ATTR,
+  isInsideUiTextEditor,
   sharedUiTextEditorRegistry,
   type HitTarget,
 } from '../../i18n/ui-text-editor/dom-registry';
 import { UiTextEditorInternalContext, setUiTextEditorFreezeActive } from '../../i18n/ui-text-editor/freeze';
-import { useUiTextEditorStore } from '../../i18n/ui-text-editor/store';
+import { SHORT_LANGUAGE_LABELS, useUiTextEditorStore } from '../../i18n/ui-text-editor/store';
 import { winuiLightTheme } from '../../winui/theme';
 import { copyToClipboard } from '../ui/copy-to-clipboard';
 import { LocalLanguageZiIcon } from '../ui/local-language-zi-icon';
 
 const { Button, FluentProvider, Tooltip } = fluentComponents;
-
-const SHORT_LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
-  'en': 'EN',
-  'zh-Hans': '中文',
-};
 
 // Fluent v9's `elementContains` and Tabster's `getParent` walk `_virtual.parent`
 // across portals, so attaching the top-layer overlay to the clicked element or
@@ -45,17 +40,6 @@ const setFluentVirtualParent = (child: HTMLElement | null, parent: Element | und
 const findActiveFloatingSurface = (): Element | undefined => {
   const surfaces = document.querySelectorAll('.fui-DialogSurface, .fui-PopoverSurface, .fui-MenuPopover');
   return surfaces.length > 0 ? surfaces[surfaces.length - 1] : undefined;
-};
-
-const isInsideEditor = (node: EventTarget | null, host: HTMLElement | null): boolean => {
-  if (!(node instanceof Node)) return false;
-  if (host?.contains(node)) return true;
-  let current: Node | null = node;
-  while (current) {
-    if (current instanceof Element && current.hasAttribute(UI_TEXT_EDITOR_ROOT_ATTR)) return true;
-    current = current.parentNode;
-  }
-  return false;
 };
 
 const promoteTopLayer = (element: HTMLElement | null): void => {
@@ -87,14 +71,17 @@ const FREEZE_EVENTS = ['pointerout', 'pointerleave', 'mouseout', 'mouseleave', '
 
 export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme?: Theme }) {
   const { t, i18n } = useEditorTranslation();
+  const initialized = useUiTextEditorStore(state => state.initialized);
   const ensureInitialized = useUiTextEditorStore(state => state.ensureInitialized);
   const entries = useUiTextEditorStore(state => state.entries);
-  const buildExportPayload = useUiTextEditorStore(state => state.buildExportPayload);
-  const archiveActiveAsExport = useUiTextEditorStore(state => state.archiveActiveAsExport);
+  const createExportSnapshot = useUiTextEditorStore(state => state.createExportSnapshot);
+  const commitExportSnapshot = useUiTextEditorStore(state => state.commitExportSnapshot);
 
   const layerRef = useRef<HTMLDivElement | null>(null);
+  const portalRootRef = useRef<HTMLDivElement | null>(null);
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const flyoutEscapeRef = useRef<(() => boolean) | null>(null);
+  const exportingRef = useRef(false);
   const quickCopyTimerRef = useRef<number | null>(null);
 
   const [altPressed, setAltPressed] = useState(false);
@@ -111,13 +98,15 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
   const altPressedRef = useRef(altPressed);
   const freezeRef = useRef(freezePopovers);
   const uiOpenRef = useRef(uiOpen);
+  const initializedRef = useRef(initialized);
 
   useEffect(() => {
     altPressedRef.current = altPressed;
     freezeRef.current = freezePopovers;
     uiOpenRef.current = uiOpen;
+    initializedRef.current = initialized;
     setUiTextEditorFreezeActive(freezePopovers);
-  }, [altPressed, freezePopovers, uiOpen]);
+  }, [altPressed, freezePopovers, initialized, uiOpen]);
 
   useEffect(() => () => {
     setUiTextEditorFreezeActive(false);
@@ -128,7 +117,7 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
 
   // Start observing the DOM first, then activate markers and load all locale
   // bundles so every already-mounted view re-renders with markers captured
-  // immediately on page load (without requiring a navigation first).
+  // immediately on page load.
   useEffect(() => {
     sharedUiTextEditorRegistry.start(document.body);
     activateUiTextEditorTracking();
@@ -165,11 +154,10 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
 
   useEffect(() => {
     const updateHover = (x: number, y: number) => {
-      if (!altPressedRef.current) {
+      if (!altPressedRef.current || !initializedRef.current) {
         setHoverTarget(null);
         return;
       }
-      sharedUiTextEditorRegistry.scanNow();
       const target = sharedUiTextEditorRegistry.resolveAtPoint(document, x, y);
       setHoverTarget(target);
     };
@@ -192,6 +180,11 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
       }
 
       if (event.key === 'Escape' && uiOpenRef.current) {
+        // Let an open nested editor popover (such as a delete confirmation
+        // flyout) handle Escape before closing the flyout or panel beneath it.
+        if (portalRootRef.current?.querySelector('.fui-PopoverSurface')) {
+          return;
+        }
         event.preventDefault();
         event.stopImmediatePropagation();
         if (flyoutEscapeRef.current?.()) return;
@@ -228,20 +221,21 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
     const onScroll = () => {
       if (altPressedRef.current && pointerRef.current) {
         updateHover(pointerRef.current.x, pointerRef.current.y);
-      } else {
-        setHoverTarget(null);
       }
     };
 
     const swallowAltPress = (event: MouseEvent | PointerEvent) => {
       if (!event.altKey || event.button !== 0) return;
-      if (isInsideEditor(event.target, layerRef.current)) return;
-      sharedUiTextEditorRegistry.scanNow();
-      const hit = sharedUiTextEditorRegistry.resolveAtPoint(document, event.clientX, event.clientY);
-      if (!hit) return;
+      if (isInsideUiTextEditor(event.target, layerRef.current)) return;
+
       event.preventDefault();
+      event.stopPropagation();
       event.stopImmediatePropagation();
-      if (event.type === 'click') {
+
+      if (event.type !== 'click' || !initializedRef.current) return;
+
+      const hit = sharedUiTextEditorRegistry.resolveAtPoint(document, event.clientX, event.clientY);
+      if (hit) {
         setHoverTarget(null);
         setActiveFlyout({
           key: hit.primaryKey,
@@ -257,7 +251,7 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
     // onto a tooltip and Alt+click its text without dismissing it.
     const onFreezeEvent = (event: Event) => {
       if (!freezeRef.current) return;
-      if (isInsideEditor(event.target, layerRef.current)) return;
+      if (isInsideUiTextEditor(event.target, layerRef.current)) return;
       event.stopImmediatePropagation();
     };
 
@@ -288,6 +282,28 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
     };
   }, []);
 
+  const exportActiveEdits = useCallback(async (): Promise<'empty' | 'copied' | 'failed'> => {
+    if (exportingRef.current) return 'empty';
+    const snapshot = createExportSnapshot();
+    if (!snapshot) return 'empty';
+    exportingRef.current = true;
+    try {
+      const ok = await copyToClipboard(JSON.stringify(snapshot.payload, null, 2));
+      if (!ok) return 'failed';
+      commitExportSnapshot(snapshot);
+      setExportedNotice(true);
+      setPanelOpen(true);
+      setQuickCopied(true);
+      if (quickCopyTimerRef.current !== null) {
+        window.clearTimeout(quickCopyTimerRef.current);
+      }
+      quickCopyTimerRef.current = window.setTimeout(() => setQuickCopied(false), 1600);
+      return 'copied';
+    } finally {
+      exportingRef.current = false;
+    }
+  }, [commitExportSnapshot, createExportSnapshot]);
+
   const activeCount = Object.keys(entries).length;
   const showDock = activeCount > 0 || altPressed || uiOpen || quickCopied;
 
@@ -298,21 +314,6 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
 
   const handlePreviewLanguageToggle = async () => {
     await setLanguage(nextPreviewLang);
-  };
-
-  const handleQuickCopy = async () => {
-    const payload = buildExportPayload();
-    if (payload.entries.length === 0) return;
-    const ok = await copyToClipboard(JSON.stringify(payload, null, 2));
-    if (!ok) return;
-    archiveActiveAsExport(payload.exportedAt);
-    setExportedNotice(true);
-    setPanelOpen(true);
-    setQuickCopied(true);
-    if (quickCopyTimerRef.current !== null) {
-      window.clearTimeout(quickCopyTimerRef.current);
-    }
-    quickCopyTimerRef.current = window.setTimeout(() => setQuickCopied(false), 1600);
   };
 
   if (typeof document === 'undefined') return null;
@@ -364,7 +365,6 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
                   setPanelOpen(false);
                   setExportedNotice(false);
                 }}
-                onExported={() => setExportedNotice(true)}
                 onEditKey={key => {
                   setActiveFlyout({
                     key,
@@ -373,6 +373,7 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
                     anchorElement: findActiveFloatingSurface() ?? null,
                   });
                 }}
+                onExportActive={exportActiveEdits}
               />
             )}
 
@@ -398,7 +399,7 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
                   appearance="subtle"
                   icon={<Edit16Regular />}
                   size="small"
-                  onClick={() => setPanelOpen(open => !open)}
+                  onClick={() => setPanelOpen(prev => !prev)}
                 >
                   {t('common.uiTextEditor.editsCount', { count: activeCount })}
                 </Button>
@@ -417,14 +418,14 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
                   </Button>
                 </Tooltip>
 
-                {(activeCount > 0 || quickCopied) && (
+                {activeCount > 0 && (
                   <>
                     <span className="floway-ui-text-editor-dock-divider" />
                     <Button
                       appearance="primary"
                       icon={quickCopied ? <Checkmark16Regular /> : <Copy16Regular />}
                       size="small"
-                      onClick={() => void handleQuickCopy()}
+                      onClick={() => void exportActiveEdits()}
                     >
                       {quickCopied ? t('common.copy.copied') : t('common.uiTextEditor.export')}
                     </Button>
@@ -432,7 +433,14 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
                 )}
               </div>
             )}
-            <div ref={setPortalRoot} className="floway-ui-text-editor-portal-host" />
+
+            <div
+              ref={node => {
+                portalRootRef.current = node;
+                setPortalRoot(node);
+              }}
+              className="floway-ui-text-editor-portal-host"
+            />
           </FluentProvider>
         </UiTextEditorPortalContext>
       </UiTextEditorInternalContext>
