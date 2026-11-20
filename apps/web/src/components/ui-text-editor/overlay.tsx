@@ -519,7 +519,21 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
 
   const highlightTagPos = hoverState
     ? computeHighlightTagPosition(hoverState.target.rect, hoverState.pointerX, hoverState.pointerY, highlightTagSize)
-    : { left: 0, top: 0 };
+    : { left: 0, top: 0, anchoredToTarget: false };
+
+  const anchorTagToTarget = canAnchorHighlight && highlightTagPos.anchoredToTarget;
+  const highlightTagStyle = ((): CSSProperties => {
+    const style: Record<string, string | number> = {
+      left: `${highlightTagPos.left}px`,
+      top: `${highlightTagPos.top}px`,
+    };
+    if (anchorTagToTarget && hoverTarget) {
+      const anchorBox = hoverTarget.element.getBoundingClientRect();
+      style['--floway-ute-offset-x'] = `${highlightTagPos.left - anchorBox.left}px`;
+      style['--floway-ute-offset-y'] = `${highlightTagPos.top - anchorBox.top}px`;
+    }
+    return style as CSSProperties;
+  })();
 
   const highlightMetaParts: string[] = [];
   if (hoverTarget?.primaryInvisible) {
@@ -551,7 +565,8 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
                 <div
                   ref={highlightTagRef}
                   className="floway-ui-text-editor-highlight-tag"
-                  style={{ left: `${highlightTagPos.left}px`, top: `${highlightTagPos.top}px` }}
+                  data-anchored={anchorTagToTarget ? 'true' : undefined}
+                  style={highlightTagStyle}
                 >
                   {hoverTarget.primaryKey}
                   {highlightMetaParts.length > 0 && (

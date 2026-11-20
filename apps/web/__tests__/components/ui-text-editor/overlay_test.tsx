@@ -349,6 +349,10 @@ describe('UiTextEditorOverlay', () => {
       expect(highlight.style.getPropertyValue('--floway-ute-offset-x')).toBe('22px');
       expect(highlight.style.getPropertyValue('--floway-ute-offset-y')).toBe('5px');
       expect(button.style.getPropertyValue('anchor-name')).toContain('--floway-ute-hover-anchor');
+      const tag = document.querySelector<HTMLElement>('.floway-ui-text-editor-highlight-tag');
+      expect(tag?.getAttribute('data-anchored')).toBe('true');
+      expect(tag?.style.getPropertyValue('--floway-ute-offset-x')).toBe('24px');
+      expect(tag?.style.getPropertyValue('--floway-ute-offset-y')).toBe('-23px');
 
       fireEvent.keyUp(window, { key: 'Alt', altKey: false });
       await waitFor(() => expect(button.style.getPropertyValue('anchor-name')).toBe('--existing-anchor'));

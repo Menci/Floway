@@ -116,19 +116,24 @@ export const computeAnchoredSurfacePosition = (
   return clampPositionToViewport(anchorRect.left, top, width, height, margin, viewport);
 };
 
+export interface HighlightTagPosition extends Point {
+  anchoredToTarget: boolean;
+}
+
 export const computeHighlightTagPosition = (
   rect: DOMRect,
   pointerX: number,
   pointerY: number,
   measuredSize: Size | null,
   viewport: Size = getViewportSize(),
-): Point => {
+): HighlightTagPosition => {
   const margin = 8;
   const gap = 6;
   const tagWidth = measuredSize?.width ?? Math.min(440, Math.max(0, viewport.width - margin * 2));
   const tagHeight = measuredSize?.height ?? 24;
   let top: number;
   let preferredLeft = rect.left;
+  let anchoredToTarget = true;
   if (rect.top >= tagHeight + margin) {
     top = rect.top - tagHeight - gap;
   } else if (rect.bottom + gap + tagHeight <= viewport.height - margin) {
@@ -139,8 +144,10 @@ export const computeHighlightTagPosition = (
     const abovePointer = pointerY - tagHeight - 14;
     top = abovePointer >= margin ? abovePointer : pointerY + 18;
     preferredLeft = pointerX;
+    anchoredToTarget = false;
   }
-  return clampPositionToViewport(preferredLeft, top, tagWidth, tagHeight, margin, viewport);
+  const pos = clampPositionToViewport(preferredLeft, top, tagWidth, tagHeight, margin, viewport);
+  return { ...pos, anchoredToTarget };
 };
 
 // Builds a unified contour geometry from multiple wrapped line rects by

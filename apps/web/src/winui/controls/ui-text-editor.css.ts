@@ -59,7 +59,8 @@ export const uiTextEditorCss = `
    The inline left/top values stay mathematically identical as the fallback. */
 @supports (anchor-name: --x) and (left: calc(anchor(left) + 1px)) {
   .floway-ui-text-editor-highlight[data-anchored="true"],
-  .floway-ui-text-editor-highlight-svg[data-anchored="true"] {
+  .floway-ui-text-editor-highlight-svg[data-anchored="true"],
+  .floway-ui-text-editor-highlight-tag[data-anchored="true"] {
     position-anchor: --floway-ute-hover-anchor;
     position-visibility: anchors-visible;
     left: calc(anchor(left) + var(--floway-ute-offset-x, 0px)) !important;
