@@ -101,18 +101,31 @@ describe('synthesizeCatalogEntry', () => {
     }
   });
 
-  test('adds Ultra and multi-agent v2 when the client supports Ultra and the model supports Max', () => {
+  test.each(['max', 'xhigh'])('adds Ultra and maps it to the last thinking preset %s', effort => {
     const entry = synthesizeCatalogEntry({
       ...base,
-      chat: { reasoning: { effort: { supported: ['low', 'max'], default: 'low' } } },
+      chat: { reasoning: { effort: { supported: ['low', effort, 'none'], default: 'low' } } },
     }, undefined, ultraCapabilities);
     expect(entry.supported_reasoning_levels).toEqual([
       { effort: 'low', description: '' },
-      { effort: 'max', description: '' },
-      { effort: 'ultra', description: 'Maximum reasoning with automatic task delegation' },
+      { effort, description: '' },
+      { effort: 'none', description: '' },
+      ultraCapabilities.ultraReasoningLevel,
     ]);
     expect(entry.multi_agent_version).toBe('v2');
-    expect(entry.multi_agent_reasoning_effort).toBe('max');
+    expect(entry.multi_agent_reasoning_effort).toBe(effort);
+  });
+
+  test.each([
+    ['none-only models', 'none', ultraCapabilities],
+    ['clients without confirmed Ultra support', 'xhigh', {}],
+  ] as const)('preserves the advertised presets for %s', (_scenario, effort, capabilities) => {
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      chat: { reasoning: { effort: { supported: [effort], default: effort } } },
+    }, undefined, capabilities);
+    expect(entry.supported_reasoning_levels).toEqual([{ effort, description: '' }]);
+    expect(entry.multi_agent_reasoning_effort).toBeUndefined();
   });
 
   describe('with a bundled base', () => {
@@ -155,7 +168,7 @@ describe('synthesizeCatalogEntry', () => {
       expect(entry.supported_reasoning_levels).toEqual(supportedReasoning);
     });
 
-    test('uses registry reasoning support when deciding whether to map Ultra to Max', () => {
+    test('adds Ultra from registry-overlaid presets while retaining a valid catalog mapping', () => {
       const entry = synthesizeCatalogEntry({
         ...base,
         chat: { reasoning: { effort: { supported: ['xhigh'], default: 'xhigh' } } },
@@ -168,7 +181,10 @@ describe('synthesizeCatalogEntry', () => {
         ],
         multi_agent_reasoning_effort: 'xhigh',
       }, ultraCapabilities);
-      expect(entry.supported_reasoning_levels).toEqual([{ effort: 'xhigh', description: '' }]);
+      expect(entry.supported_reasoning_levels).toEqual([
+        { effort: 'xhigh', description: '' },
+        ultraCapabilities.ultraReasoningLevel,
+      ]);
       expect(entry.default_reasoning_level).toBe('xhigh');
       expect(entry.multi_agent_reasoning_effort).toBe('xhigh');
     });

@@ -109,13 +109,9 @@ export const synthesizeCatalogEntry = (
   const supportedReasoning: CodexReasoningLevel[] = registryEffort !== undefined
     ? registryEffort.supported.map(effort => ({ effort, description: '' }))
     : (source.supported_reasoning_levels ?? BASELINE.supported_reasoning_levels);
-  const ultraReasoningLevel = capabilities.ultraReasoningLevel;
-  const advertisedReasoning = ultraReasoningLevel !== undefined
-    && supportedReasoning.some(level => level.effort === 'max')
-    && !supportedReasoning.some(level => level.effort === 'ultra')
-    ? [...supportedReasoning, ultraReasoningLevel]
-    : supportedReasoning;
-  const shouldEnableUltra = advertisedReasoning !== supportedReasoning;
+  const highestThinkingEffort = supportedReasoning.findLast(level => level.effort !== 'none' && level.effort !== 'ultra')?.effort;
+  const hasUltra = supportedReasoning.some(level => level.effort === 'ultra');
+  const ultraToAppend = highestThinkingEffort !== undefined && !hasUltra ? capabilities.ultraReasoningLevel : undefined;
 
   const providerLimits = [model.limits.max_context_window_tokens, model.limits.max_prompt_tokens]
     .filter((limit): limit is number => limit !== undefined);
@@ -134,7 +130,7 @@ export const synthesizeCatalogEntry = (
     input_modalities: [...inputModalities],
     supports_image_detail_original: imageDetailOriginal,
     web_search_tool_type: hasImage ? 'text_and_image' : 'text',
-    supported_reasoning_levels: advertisedReasoning,
+    supported_reasoning_levels: ultraToAppend === undefined ? supportedReasoning : [...supportedReasoning, ultraToAppend],
     service_tiers: serviceTiers ?? deriveServiceTiers(model, source.service_tiers ?? [], catalogServiceTiers),
     ...(serviceTiers === undefined ? {} : { additional_speed_tiers: serviceTiers.some(tier => tier.id === 'priority') ? ['fast'] : [] }),
     context_window: contextWindow,
@@ -144,15 +140,14 @@ export const synthesizeCatalogEntry = (
   // Codex uses the advertised version to select the local agent tools for a new thread.
   // https://github.com/openai/codex/blob/29eb79e9866b3262a777fdf8195c1b9e63684c91/codex-rs/core/src/session/mod.rs#L5046-L5057
   const isPurelySynthesized = base === undefined && codexMetadata === undefined;
-  if ((isPurelySynthesized || shouldEnableUltra) && entry.multi_agent_version === undefined) entry.multi_agent_version = 'v2';
+  if ((isPurelySynthesized || ultraToAppend !== undefined) && entry.multi_agent_version === undefined) entry.multi_agent_version = 'v2';
 
   // Codex resolves Ultra through this field before sending the wire effort.
-  // Keep a valid model-owned mapping, falling back to the last non-Ultra preset.
-  // https://github.com/openai/codex/blob/rust-v0.160.0/codex-rs/protocol/src/openai_models/reasoning_effort.rs#L10-L40
-  if (advertisedReasoning.some(level => level.effort === 'ultra') && entry.multi_agent_reasoning_effort !== null
-    && !advertisedReasoning.some(level => level.effort !== 'ultra' && level.effort === entry.multi_agent_reasoning_effort)) {
-    const highestEffort = advertisedReasoning.findLast(level => level.effort !== 'ultra')?.effort;
-    if (highestEffort !== undefined) entry.multi_agent_reasoning_effort = highestEffort;
+  // Keep a valid model-owned mapping, falling back to the last enabled thinking preset.
+  // https://github.com/openai/codex/blob/29eb79e9866b3262a777fdf8195c1b9e63684c91/codex-rs/protocol/src/openai_models/reasoning_effort.rs#L9-L35
+  if ((hasUltra || ultraToAppend !== undefined) && highestThinkingEffort !== undefined && entry.multi_agent_reasoning_effort !== null
+    && !supportedReasoning.some(level => level.effort !== 'ultra' && level.effort === entry.multi_agent_reasoning_effort)) {
+    entry.multi_agent_reasoning_effort = highestThinkingEffort;
   }
 
   // `default_reasoning_level` pairs with `supported_reasoning_levels` — both
