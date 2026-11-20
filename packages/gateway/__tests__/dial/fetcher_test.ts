@@ -250,4 +250,32 @@ describe('createFetcher', () => {
     repo.proxyBackoffs.recordDialSuccess = original;
     warnSpy.mockRestore();
   });
+
+  it('neither consults nor records backoff state without a saved upstream', async () => {
+    const repo = new InMemoryRepo();
+    await repo.proxyBackoffs.recordDialFailure('a', 'u', 'saved upstream cooldown');
+    const before = await repo.proxyBackoffs.listAll();
+    const calls: string[] = [];
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: null,
+      fallbackList: [{ id: 'a' }, { id: 'b' }],
+      runtimeLocation: 'TEST',
+      proxyById: new Map([['a', proxyA], ['b', proxyB]]),
+      runProxied: async config => {
+        calls.push(config.host);
+        if (config.host === 'a') throw new ProxyDialError('tcp connect failed', 'tcp-connect');
+        return new Response('ok');
+      },
+      runDirectFetch: async () => new Response('direct'),
+      runDirectConnect: async () => new Response('direct connect'),
+      socketDial: () => stubSocketDial,
+    });
+
+    expect(await (await fetcher('https://api.openai.com', { method: 'GET' })).text()).toBe('ok');
+    // A saved upstream's cooldown on 'a' does not steer this dial, and the
+    // failure on 'a' plus the success on 'b' leave the table untouched.
+    expect(calls).toEqual(['a', 'b']);
+    expect(await repo.proxyBackoffs.listAll()).toEqual(before);
+  });
 });

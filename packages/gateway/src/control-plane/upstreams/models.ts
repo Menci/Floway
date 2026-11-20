@@ -14,9 +14,8 @@ const MODEL_LISTING_FAILURE_CODE = 'upstream_model_listing_failed';
 const malformedConfigResponse = (error: unknown): boolean =>
   error instanceof Error && /Malformed .* upstream config/.test(error.message);
 
-// A draft never reads or writes its upstream row. Proxy resolution can still
-// access proxy records and backoff state; matching a saved id cannot publish
-// the draft's model catalog.
+// A draft never reads or writes its upstream row or that row's proxy backoff
+// state; matching a saved id cannot publish the draft's model catalog.
 export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) => {
   const { record } = c.req.valid('json');
   const accessError = await fullUpstreamActionError(userFromContext(c), record.id);
@@ -26,7 +25,7 @@ export const previewModels = async (c: CtxWithJson<typeof previewModelsBody>) =>
     return c.json({ error: { message: `Draft model discovery requires custom, ollama or kimi-code: ${kind}`, type: 'invalid_request_error' } }, 400);
   }
   const synthRecord: UpstreamRecord = {
-    id: record.id || 'draft',
+    id: record.id,
     kind,
     name: record.name ?? 'draft',
     enabled: record.enabled ?? true,
