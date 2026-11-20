@@ -4,7 +4,6 @@ import { emitAnthropicMessagesTokenCount } from './count-tokens/emit.ts';
 import type { AnthropicMessagesCountTokensEntry, AnthropicMessagesCountTokensExit } from './count-tokens/facts.ts';
 import { narrowing } from './count-tokens/target.ts';
 import { anthropicMessagesCountTokensWire } from './count-tokens/wire.ts';
-import { isFailure } from '../../pipeline/facts.ts';
 import { failover } from '../../pipeline/failover.ts';
 import { serializeClientJson } from '../../pipeline/serialize-client-json.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';

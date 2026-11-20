@@ -4,7 +4,6 @@ import { emitOpenAIChatCompletions } from './emit.ts';
 import { normalizeEmptyToolsForOpenAIChatCompletions } from './normalize-empty-tools-tool-choice.ts';
 import { narrowing, openaiChatCompletionsTarget } from './target.ts';
 import { openaiChatCompletionsWireFor } from './wires.ts';
-import { isFailure } from '../../pipeline/facts.ts';
 import { failover } from '../../pipeline/failover.ts';
 import { serializeClientJson } from '../../pipeline/serialize-client-json.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';

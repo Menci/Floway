@@ -6,7 +6,6 @@ import { normalizeEmptyToolsForAnthropicMessages } from './normalize-empty-tools
 import { narrowing, anthropicMessagesTarget } from './target.ts';
 import { runAnthropicMessagesWebSearchTool } from './web-search-tool.ts';
 import { anthropicMessagesWireFor } from './wires.ts';
-import { isFailure } from '../../pipeline/facts.ts';
 import { failover } from '../../pipeline/failover.ts';
 import { serializeClientJson } from '../../pipeline/serialize-client-json.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';

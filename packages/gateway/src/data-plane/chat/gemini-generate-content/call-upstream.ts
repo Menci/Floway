@@ -34,9 +34,11 @@ export const callGeminiGenerateContentUpstream = <O extends 'geminiGenerateConte
     const pipeline = candidate.provider.pipelines[operation];
     if (pipeline === undefined) throw new Error(`Provider ${candidate.provider.kind} has no ${operation} pipeline`);
     const back = await next(providerEntry(facts, candidate, payload) as never, pipeline);
-    const { 'response.http.exchange': _exchange, 'response.provider.output': _output,
+    const {
+      'response.http.exchange': _exchange, 'response.provider.output': _output,
       'response.provider.modelKey': _modelKey, 'response.provider.called': _called,
-      'response.provider.previousCalls': _previousCalls, ...rest } = back;
+      'response.provider.previousCalls': _previousCalls, ...rest
+    } = back;
     const reply = await providerChatAnswer(candidate, back as ProviderChatResponse<O>, use.gateway.abortSignal);
     if (generates && 'kind' in reply.answer) use.selectAffinity(candidate);
     return move({

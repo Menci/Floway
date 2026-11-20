@@ -228,6 +228,23 @@ describe('the responses compaction chain', () => {
     expect(rendered(facts)).not.toHaveProperty('truncation');
   });
 
+  it('lowers standalone tool outputs before a native compaction when the flag is enabled', async () => {
+    const seen: { body?: Record<string, unknown>; action?: unknown } = {};
+    resolves([candidate({ callOpenAIResponses: compacts(seen) }, {
+      enabledFlags: new Set(['openai-responses-standalone-tool-output-shim']),
+    })]);
+    const { facts } = await compact({
+      ...payload,
+      input: [...payload.input, { type: 'function_call_output', name: 'goal_objective', output: 'Retain the plan' }],
+    });
+    expect(facts['response.http.status']).toBe(200);
+    expect(seen.action).toBe('compact');
+    expect(seen.body?.input).toEqual([
+      ...payload.input,
+      { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<external_goal_objective>Retain the plan</external_goal_objective>' }] },
+    ]);
+  });
+
   // Neither field belongs on the compaction endpoint: `store` is a gateway-only snapshot hint
   // it rejects, and `stream` describes a delivery this operation does not make.
   it('sends neither store nor stream on the compaction wire', async () => {
