@@ -8,7 +8,7 @@ import { KEEP_ALIVE_EVENT_TYPE } from '../../../../src/data-plane/chat/openai-re
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../../../src/data-plane/shared/sse.ts';
 import { initDumpBroker, initDumpStore } from '../../../../src/dump/registry.ts';
 import { initBackgroundSchedulerResolver } from '../../../../src/runtime/background.ts';
-import { edgeRecordOf, installDumpStubs } from '../../../dump/test-fixtures.ts';
+import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../../repo/upstreams.ts';
 import { FakeTime } from '../../../test-time.ts';
 import { buildChatGPTUpstreamRecord, chatgptModels, copilotModels, flushAsyncWork, setupAppTest, sseResponse, sseOpenAIResponsesResponse, warmModelsForTest } from '../../../test-utils/app.ts';
