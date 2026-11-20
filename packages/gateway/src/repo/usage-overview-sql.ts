@@ -169,7 +169,7 @@ facet_rows AS (
   FROM authorized
   CROSS JOIN axes
   JOIN bucket_map ON bucket_map.hour = authorized.hour
-  WHERE axes.axis IN ('keyId', 'userId', 'model', 'upstream')
+  WHERE axes.axis <> 'none'
     AND (axes.owned_only = 0 OR authorized.owned = 1)
   GROUP BY bucket_map.bucket, dimension, facet_value
 ),
@@ -305,7 +305,7 @@ const finishBucket = (bucket: string, rows: readonly UsageOverviewSqlRow[]): Usa
       facets.get(row.dimension)!.add(row.facet_value);
       continue;
     }
-    if (row.axis === null || row.bucket === null || row.group_value === null || !overviewAxes.has(row.axis as UsageOverviewAxis)) {
+    if (row.axis === null || row.group_value === null || !overviewAxes.has(row.axis as UsageOverviewAxis)) {
       throw new TypeError('Stored Usage overview returned an invalid aggregate coordinate');
     }
     const aggregate = ensureRecord(row.axis as UsageOverviewAxis, row.group_value);
@@ -403,7 +403,7 @@ export const querySqlUsageOverview = async (
   db: SqlDatabase,
   opts: UsageOverviewQueryOptions,
 ): Promise<UsageOverviewResult[]> => {
-  const scoped = opts.groupBy === 'keyId';
+  const scoped = opts.ownedKeysOnly;
   const range = rangeBinds(opts, scoped);
   const { results: hours } = await db.prepare(overviewHoursSql(scoped))
     .bind(...range, ...range)

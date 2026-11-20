@@ -148,7 +148,7 @@ test('SQL usage overview matches the in-memory oracle across filters, facets, ax
     visibleUpstreams: [],
     start: '2026-11-01T05',
     end: '2026-11-01T08',
-    groupBy: 'model',
+    ownedKeysOnly: false,
     filters: { keyIds: [], userIds: [], models: ['model-a', 'model-b'], upstreams: ['none'] },
     bucketForHour: hour => hour === '2026-11-01T05' || hour === '2026-11-01T06'
       ? '2026-11-01T01'
@@ -162,14 +162,14 @@ test('SQL usage overview matches the in-memory oracle across filters, facets, ax
       { actorUserId: 2, isAdmin: false, visibleUserIds: [1, 2], visibleUpstreams: [] },
       { actorUserId: 2, isAdmin: false, visibleUserIds: [], visibleUpstreams: ['none'] },
     ]) {
-      for (const groupBy of ['model', 'upstream', 'userId', 'keyId'] as const) {
+      for (const ownedKeysOnly of [false, true]) {
         for (const filters of [
           { keyIds: [], userIds: [], models: [], upstreams: [] },
           { keyIds: [], userIds: [0], models: [], upstreams: [] },
           { keyIds: ['key-1'], userIds: [1], models: ['model-a'], upstreams: ['none'] },
           { keyIds: [], userIds: [], models: ['missing'], upstreams: [] },
         ]) {
-          const queryOptions = { ...options, ...actor, groupBy, bucketForHour, filters };
+          const queryOptions = { ...options, ...actor, ownedKeysOnly, bucketForHour, filters };
           assertEquals(
             await sql.usage.queryOverview(queryOptions),
             await memory.usage.queryOverview(queryOptions),
@@ -218,7 +218,7 @@ test('SQL usage overview stays within the D1 compound-select limit and returns g
     visibleUpstreams: [],
     start: '2026-07-12T00',
     end: '2026-07-12T01',
-    groupBy: 'model',
+    ownedKeysOnly: false,
     filters: { keyIds: [], userIds: [], models: [], upstreams: [] },
     bucketForHour: hour => hour,
   });

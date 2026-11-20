@@ -23,7 +23,7 @@ interface UsageOverviewParams {
   timeZone?: string;
   timezoneOffsetMinutes: number;
   filters: UsageFilters;
-  cursor?: string;
+  cursor: string | undefined;
 }
 
 const readUsageOverviewQuery = (
@@ -69,8 +69,8 @@ const overviewScope = async (params: UsageOverviewParams, identity: TelemetryOve
 
 const readCursor = (cursor: string | undefined, scope: string) => {
   if (cursor === undefined) return null;
-  const [signature, start, end, resumeFromHour, ...extra] = cursor.split('/');
-  if (signature !== scope || !start || !end || !resumeFromHour || extra.length > 0) return null;
+  const [cursorScope, start, end, resumeFromHour, ...extra] = cursor.split('/');
+  if (cursorScope !== scope || !start || !end || !resumeFromHour || extra.length > 0) return null;
   try {
     if (parseTelemetryHour(start) > parseTelemetryHour(end)) return null;
     parseTelemetryHour(resumeFromHour);
@@ -116,7 +116,7 @@ export const tokenUsageOverview = async (c: Ctx) => {
     visibleUpstreams: [...identity.visibleUpstreams],
     start: scanStart,
     end: windowEnd,
-    groupBy,
+    ownedKeysOnly: groupBy === 'keyId',
     filters: {
       keyIds: [...filters.keyId],
       userIds: [...filters.userId].map(Number),
@@ -135,10 +135,10 @@ export const tokenUsageOverview = async (c: Ctx) => {
       }
       return key;
     },
-  })).map(result => {
-    const bounds = boundaries.get(result.bucket);
+  })).map(({ bucket: partitionKey, ...subtotal }) => {
+    const bounds = boundaries.get(partitionKey);
     if (!bounds) throw new Error('Usage overview bucket has no time bounds');
-    return { ...result, ...bounds };
+    return { bucket: bounds.bucket, ...subtotal, start: bounds.start, end: bounds.end };
   })
     .sort((left, right) => left.start.localeCompare(right.start));
   const metadata = telemetryIdentityMetadata(identity, buckets.flatMap(value => value.dimensionValues.userIds));

@@ -2,9 +2,7 @@ import type { DisplayUsageRecord, UsageGroupBy, UsageOverviewResponse } from './
 import type { TokenUsageOverviewBucket, TokenUsageOverviewResponse } from '@floway-dev/gateway/browser';
 import { addDecimalStrings, usageUpstreamFromDimensionValue } from '@floway-dev/protocols/browser';
 
-export type UsageOverviewSnapshot = TokenUsageOverviewResponse;
-
-export const usageOverviewCursor = (previous: UsageOverviewSnapshot | null | undefined, start: string, end: string): string | undefined =>
+export const usageOverviewCursor = (previous: TokenUsageOverviewResponse | undefined, start: string, end: string): string | undefined =>
   previous && previous.start <= start && previous.end <= end
     && !previous.buckets.some(bucket => bucket.start < start && start < bucket.end)
     ? previous.cursor : undefined;
@@ -13,10 +11,10 @@ const mergeMetadata = <T>(previous: readonly T[], next: readonly T[], key: (valu
   [...new Map([...previous, ...next].map(value => [key(value), value])).values()];
 
 export const mergeUsageOverview = (
-  previous: UsageOverviewSnapshot | null | undefined,
+  previous: TokenUsageOverviewResponse | undefined,
   response: TokenUsageOverviewResponse,
   start: string,
-): UsageOverviewSnapshot => {
+): TokenUsageOverviewResponse => {
   if (response.reset) return response;
   if (!previous) throw new Error('Usage overview patch requires a snapshot');
   if (previous.buckets.some(bucket => bucket.start < response.start && response.start < bucket.end)) {
@@ -39,8 +37,8 @@ type UsageAxis = keyof TokenUsageOverviewBucket['axes'];
 const sumAxis = (buckets: readonly TokenUsageOverviewBucket[], axis: UsageAxis, series: boolean): DisplayUsageRecord[] => {
   const rows = new Map<string, DisplayUsageRecord>();
   for (const bucket of buckets) {
+    const period = series ? bucket.bucket : 'all';
     for (const row of bucket.axes[axis]) {
-      const period = series ? bucket.bucket : 'all';
       const id = JSON.stringify([period, row.group]);
       let aggregate = rows.get(id);
       if (aggregate === undefined) {
@@ -58,13 +56,13 @@ const sumAxis = (buckets: readonly TokenUsageOverviewBucket[], axis: UsageAxis, 
   return [...rows.values()].sort((left, right) => left.bucket.localeCompare(right.bucket) || left.group.localeCompare(right.group));
 };
 
-const union = <T>(values: readonly T[]): T[] => [...new Set(values)].sort();
+const union = (values: readonly string[]): string[] => [...new Set(values)].sort();
 
-export const usageOverviewForDisplay = (data: UsageOverviewSnapshot, groupBy: UsageGroupBy): UsageOverviewResponse => {
+export const usageOverviewForDisplay = (data: TokenUsageOverviewResponse, groupBy: UsageGroupBy): UsageOverviewResponse => {
   const { buckets } = data;
   const dimensionValues = {
     keyIds: union(buckets.flatMap(bucket => bucket.dimensionValues.keyIds)),
-    userIds: union(buckets.flatMap(bucket => bucket.dimensionValues.userIds)).sort((left, right) => left - right),
+    userIds: [...new Set(buckets.flatMap(bucket => bucket.dimensionValues.userIds))].sort((left, right) => left - right),
     models: union(buckets.flatMap(bucket => bucket.dimensionValues.models)),
     upstreams: union(buckets.flatMap(bucket => bucket.dimensionValues.upstreams)),
   };

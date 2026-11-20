@@ -1,4 +1,4 @@
-import { mergeUsageOverview, usageOverviewCursor, usageOverviewForDisplay, type UsageOverviewSnapshot } from './overview';
+import { mergeUsageOverview, usageOverviewCursor, usageOverviewForDisplay } from './overview';
 import type {
   SearchUsageResponse,
   SearchUsageView,
@@ -12,6 +12,7 @@ import { dashboardRangeQuery } from '../charts/dashboard-time';
 import type {
   SearchUsageByKeyResponse,
   SearchUsageByUserResponse,
+  TokenUsageOverviewResponse,
 } from '@floway-dev/gateway/browser';
 
 const userBucketId = (userId: number) => `user-${userId}`;
@@ -40,14 +41,12 @@ export const buildUsageOverviewQuery = (
 
 export type UsageOverviewLoader = (
   range: UsageRange, groupBy: UsageGroupBy, filters: UsageFilters, loadedAt: number,
-  signal?: AbortSignal,
+  signal: AbortSignal,
 ) => Promise<ApiResult<UsageOverviewResponse>>;
 
 export const createUsageOverviewLoader = (): UsageOverviewLoader => {
-  let latest: UsageOverviewSnapshot | undefined;
-  let request = 0;
+  let latest: TokenUsageOverviewResponse | undefined;
   return async (range, groupBy, filters, loadedAt, signal) => {
-    const revision = ++request;
     const previous = latest;
     const query = buildUsageOverviewQuery(range, groupBy, filters, loadedAt);
     const cursor = usageOverviewCursor(previous, query.start, query.end);
@@ -55,7 +54,7 @@ export const createUsageOverviewLoader = (): UsageOverviewLoader => {
     if (result.error) return result;
     const snapshot = mergeUsageOverview(previous, result.data, query.start);
     const data = usageOverviewForDisplay(snapshot, groupBy);
-    if (!signal?.aborted && revision === request) latest = snapshot;
+    if (!signal.aborted) latest = snapshot;
     return { data };
   };
 };
@@ -67,7 +66,7 @@ export const loadUsagePageData = async (
   groupBy: UsageGroupBy,
   filters: UsageFilters,
   loadedAt: number,
-  signal?: AbortSignal,
+  signal: AbortSignal,
   knownAuditableUserIds?: readonly number[],
 ) => {
   const { start, end } = dashboardRangeQuery(range, loadedAt);
@@ -92,7 +91,7 @@ export const loadUsagePageData = async (
       loadSearch(searchView),
     ]);
     const currentSearchView = usageResult.data === undefined ? searchView : searchViewFor(usageResult.data.auditableUserIds);
-    if (!signal?.aborted && currentSearchView !== searchView) {
+    if (!signal.aborted && currentSearchView !== searchView) {
       searchView = currentSearchView;
       searchResult = await loadSearch(searchView);
     }

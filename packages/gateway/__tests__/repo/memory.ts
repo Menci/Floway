@@ -718,7 +718,7 @@ class MemoryUsageRepo implements UsageRepo {
     const records = [...this.store.values()]
       .filter(record => record.hour >= opts.start && record.hour < opts.end)
       .map(record => this.toRecord(record));
-    const scoped = opts.groupBy === 'keyId'
+    const scoped = opts.ownedKeysOnly
       ? records.filter(record => keyToUser.get(record.keyId) === opts.actorUserId)
       : records;
     const visibleUserIds = new Set(opts.visibleUserIds);

@@ -96,7 +96,7 @@ export interface UsageOverviewQueryOptions {
   visibleUpstreams: readonly string[];
   start: string;
   end: string;
-  groupBy: UsageOverviewGroupBy;
+  ownedKeysOnly: boolean;
   filters: UsageOverviewFilters;
   bucketForHour: (hour: string) => string;
 }

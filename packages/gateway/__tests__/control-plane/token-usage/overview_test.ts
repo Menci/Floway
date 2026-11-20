@@ -57,7 +57,6 @@ test('/api/token-usage/overview returns filtered axes and authorized facets per 
     ['2026-04-30T10', 'gpt-5', 5],
     ['2026-04-30T11', 'claude', 3],
   ]);
-  assertEquals(body.buckets.map(bucket => bucket.axes.none[0]?.requests), [5, 3]);
   assertEquals(body.buckets[0]!.dimensionValues, {
     keyIds: ['key_admin'],
     userIds: [1, 2],

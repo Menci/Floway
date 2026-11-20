@@ -60,7 +60,7 @@ const overview = (url: URL) => {
     cursor: 'first', reset: true, start: url.searchParams.get('start'), end: url.searchParams.get('end'),
     buckets: [{
       bucket: start, start, end,
-      axes: { none: [], model: [{ ...row, group: 'gpt-5' }], upstream: [], userId: [{ ...row, group: '1' }], keyId: [] },
+      axes: { none: [], model: [{ ...row, group: 'gpt-5' }], upstream: [], userId: [], keyId: [] },
       dimensionValues: { models: ['gpt-5'], upstreams: ['upstream:first'], userIds: [1], keyIds: [] },
     }],
     users: [{ id: 1, username: 'admin' }], visibleUserIds: [1], visibleUpstreamIds: ['first'],
