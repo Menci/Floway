@@ -14,6 +14,7 @@ export interface HitTarget {
   element: Element;
   rect: DOMRect;
   primaryKey: string;
+  primaryAttribute?: string;
   candidates: string[];
 }
 
@@ -317,6 +318,33 @@ export class UiTextEditorDomRegistry {
     }
   }
 
+  private findTextSegmentHitInElement(
+    element: Element,
+    clientX: number,
+    clientY: number,
+  ): { key: string; rect: DOMRect; allKeys: string[] } | null {
+    const textNodes = this.elementTexts.get(element);
+    if (!textNodes) return null;
+    const allKeys: string[] = [];
+    let matched: { key: string; rect: DOMRect } | null = null;
+    for (const textNode of textNodes) {
+      if (!textNode.isConnected || textNode.parentElement !== element) {
+        textNodes.delete(textNode);
+        continue;
+      }
+      const segments = this.textSegments.get(textNode);
+      if (!segments) continue;
+      for (const seg of segments) {
+        allKeys.push(seg.key);
+        if (!matched) {
+          const rect = rectFromTextSegmentAtPoint(textNode, seg.start, seg.end, clientX, clientY);
+          if (rect) matched = { key: seg.key, rect };
+        }
+      }
+    }
+    return matched ? { ...matched, allKeys } : null;
+  }
+
   private collectTextKeys(element: Element): string[] {
     const out: string[] = [];
     const textNodes = this.elementTexts.get(element);
@@ -437,14 +465,80 @@ export class UiTextEditorDomRegistry {
     }
 
     for (const element of stack) {
-      const visible = dedupeKeys([
-        ...this.collectTextKeys(element),
-        ...this.collectVisibleAttributeKeys(element),
-      ]);
-      if (visible.length > 0) {
+      const textHit = this.findTextSegmentHitInElement(element, clientX, clientY);
+      if (textHit) {
+        const candidates = dedupeKeys([
+          textHit.key,
+          ...textHit.allKeys,
+          ...this.collectVisibleAttributeKeys(element),
+          ...this.collectAriaLabelKeys(element),
+        ]);
+        return {
+          element,
+          rect: textHit.rect,
+          primaryKey: textHit.key,
+          candidates,
+        };
+      }
+
+      const visibleAttrs = dedupeKeys(this.collectVisibleAttributeKeys(element));
+      if (visibleAttrs.length > 0) {
         const rect = element.getBoundingClientRect();
         if (rect.width > 0 || rect.height > 0) {
-          const candidates = dedupeKeys([...visible, ...this.collectAriaLabelKeys(element)]);
+          const candidates = dedupeKeys([
+            ...visibleAttrs,
+            ...this.collectTextKeys(element),
+            ...this.collectAriaLabelKeys(element),
+          ]);
+          return {
+            element,
+            rect,
+            primaryKey: candidates[0]!,
+            candidates,
+          };
+        }
+      }
+    }
+
+    // Fallback for environments without Range layout metrics (e.g. Happy DOM)
+    // or elements whose direct text node has zero-sized range rects: match the
+    // element box directly when it carries tracked text.
+    for (const element of stack) {
+      const textKeys = dedupeKeys(this.collectTextKeys(element));
+      if (textKeys.length > 0) {
+        const textNodes = this.elementTexts.get(element);
+        let hasNonZeroTextRect = false;
+        if (textNodes) {
+          for (const textNode of textNodes) {
+            const segments = this.textSegments.get(textNode);
+            if (!segments) continue;
+            for (const seg of segments) {
+              if (seg.start < seg.end && seg.end <= textNode.data.length) {
+                const range = textNode.ownerDocument.createRange();
+                range.setStart(textNode, seg.start);
+                range.setEnd(textNode, seg.end);
+                const r = range.getBoundingClientRect();
+                if (r.width > 0 || r.height > 0) {
+                  hasNonZeroTextRect = true;
+                  break;
+                }
+              }
+            }
+            if (hasNonZeroTextRect) break;
+          }
+        }
+        // When real text rects exist but the pointer missed them (for instance,
+        // hovering empty space to the right of a block-level label), let the
+        // next pass resolve an enclosing overlay/button instead.
+        if (hasNonZeroTextRect) continue;
+
+        const rect = element.getBoundingClientRect();
+        if (rect.width > 0 || rect.height > 0) {
+          const candidates = dedupeKeys([
+            ...textKeys,
+            ...this.collectVisibleAttributeKeys(element),
+            ...this.collectAriaLabelKeys(element),
+          ]);
           return {
             element,
             rect,
@@ -464,6 +558,7 @@ export class UiTextEditorDomRegistry {
             element,
             rect,
             primaryKey: aria[0]!,
+            primaryAttribute: 'aria-label',
             candidates: aria,
           };
         }

@@ -315,6 +315,14 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
     ? Math.max(12, Math.min(hoverTarget.rect.left, window.innerWidth - 260))
     : 0;
 
+  const highlightMetaParts: string[] = [];
+  if (hoverTarget?.primaryAttribute) {
+    highlightMetaParts.push(hoverTarget.primaryAttribute);
+  }
+  if (hoverTarget && hoverTarget.candidates.length > 1) {
+    highlightMetaParts.push(`+${hoverTarget.candidates.length - 1}`);
+  }
+
   return createPortal(
     <div
       ref={layerRef}
@@ -342,9 +350,9 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
                   style={{ left: `${highlightTagLeft}px`, top: `${highlightTagTop}px` }}
                 >
                   {hoverTarget.primaryKey}
-                  {hoverTarget.candidates.length > 1 && (
+                  {highlightMetaParts.length > 0 && (
                     <span className="floway-ui-text-editor-highlight-tag-more">
-                      {` (+${hoverTarget.candidates.length - 1})`}
+                      {` (${highlightMetaParts.join(', ')})`}
                     </span>
                   )}
                 </div>

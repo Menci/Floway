@@ -89,12 +89,21 @@ describe('UiTextEditorDomRegistry', () => {
       const descHit = registry.resolveAtPoint(document, 80, 42);
       expect(descHit?.element).toBe(description);
       expect(descHit?.primaryKey).toBe('settings.account.password.description');
+      expect(descHit?.primaryAttribute).toBeUndefined();
       expect(descHit?.candidates).toEqual(['settings.account.password.description']);
+
+      stack = [disclosure, container, document.body];
+      const ariaOnlyHit = registry.resolveAtPoint(document, 260, 20);
+      expect(ariaOnlyHit?.element).toBe(disclosure);
+      expect(ariaOnlyHit?.primaryKey).toBe('settings.account.password.title');
+      expect(ariaOnlyHit?.primaryAttribute).toBe('aria-label');
+      expect(ariaOnlyHit?.candidates).toEqual(['settings.account.password.title']);
 
       stack = [input, container, document.body];
       const inputHit = registry.resolveAtPoint(document, 40, 110);
       expect(inputHit?.element).toBe(input);
       expect(inputHit?.primaryKey).toBe('permissions.filters.allPrincipals');
+      expect(inputHit?.primaryAttribute).toBeUndefined();
       expect(inputHit?.candidates).toEqual([
         'permissions.filters.allPrincipals',
         'permissions.fields.principal',
