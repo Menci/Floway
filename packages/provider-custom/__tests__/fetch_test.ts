@@ -11,7 +11,7 @@ import {
 } from '../src/fetch.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
-import { callProviderPipeline, assertEquals, assertExists, jsonResponse, noopUpstreamCallOptions, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
 const baseRecord: UpstreamRecord = {
   id: 'up_test',
