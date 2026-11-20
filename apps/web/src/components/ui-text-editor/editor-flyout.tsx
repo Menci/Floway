@@ -67,10 +67,7 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
   const [activeKey, setActiveKey] = useState(initialKey);
   const [copiedKey, setCopiedKey] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(hasMultipleCandidates);
-  const [highlightedIndex, setHighlightedIndex] = useState(() => {
-    const idx = candidates.indexOf(initialKey);
-    return idx >= 0 ? idx : 0;
-  });
+  const [highlightedIndex, setHighlightedIndex] = useState(() => Math.max(0, candidates.indexOf(initialKey)));
 
   const buildInitialValues = (key: string): Record<SupportedLanguage, string> => {
     const active = useUiTextEditorStore.getState().entries[key];
@@ -148,7 +145,6 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
     };
   }, [dropdownOpen]);
 
-  // Keep the keyboard-highlighted option scrolled into view inside long lists.
   useEffect(() => {
     if (!dropdownOpen) return;
     const optionEl = listboxRef.current?.querySelector<HTMLElement>(`[data-option-index="${highlightedIndex}"]`);
@@ -181,20 +177,17 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
     setNote(useUiTextEditorStore.getState().entries[nextKey]?.note ?? '');
     setCopiedKey(false);
     setDropdownOpen(false);
-    const idx = candidates.indexOf(nextKey);
-    if (idx >= 0) setHighlightedIndex(idx);
+    setHighlightedIndex(Math.max(0, candidates.indexOf(nextKey)));
     if (focusInput) {
       window.setTimeout(() => firstInputRef.current?.focus(), 0);
     }
   };
 
   const handleTriggerKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (!hasMultipleCandidates) return;
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       if (!dropdownOpen) {
-        const idx = candidates.indexOf(activeKey);
-        setHighlightedIndex(idx >= 0 ? idx : 0);
+        setHighlightedIndex(Math.max(0, candidates.indexOf(activeKey)));
         setDropdownOpen(true);
       } else {
         setHighlightedIndex(prev => (prev + 1) % candidates.length);
@@ -202,8 +195,7 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
       if (!dropdownOpen) {
-        const idx = candidates.indexOf(activeKey);
-        setHighlightedIndex(idx >= 0 ? idx : 0);
+        setHighlightedIndex(Math.max(0, candidates.indexOf(activeKey)));
         setDropdownOpen(true);
       } else {
         setHighlightedIndex(prev => (prev - 1 + candidates.length) % candidates.length);
@@ -211,16 +203,13 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
     } else if (event.key === 'Enter' || event.key === ' ') {
       if (dropdownOpen) {
         event.preventDefault();
-        const chosen = candidates[highlightedIndex];
-        if (chosen) switchKey(chosen, true);
+        switchKey(candidates[highlightedIndex]!, true);
       }
     }
   };
 
   const existingEntry = entries[activeKey];
-  const previewLanguage: SupportedLanguage = (supportedLanguages as readonly string[]).includes(i18n.language)
-    ? i18n.language as SupportedLanguage
-    : 'en';
+  const previewLanguage = i18n.language as SupportedLanguage;
 
   const getCandidatePreview = (key: string): string => {
     const active = entries[key];
@@ -332,8 +321,7 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
                   setDropdownOpen(prev => {
                     const next = !prev;
                     if (next) {
-                      const idx = candidates.indexOf(activeKey);
-                      setHighlightedIndex(idx >= 0 ? idx : 0);
+                      setHighlightedIndex(Math.max(0, candidates.indexOf(activeKey)));
                     }
                     return next;
                   });

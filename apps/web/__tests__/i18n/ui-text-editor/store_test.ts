@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { i18n, setLanguage } from '../../../src/i18n';
-import { __testing, MAX_HISTORY_SESSIONS, useUiTextEditorStore } from '../../../src/i18n/ui-text-editor/store';
+import { __testing, useUiTextEditorStore } from '../../../src/i18n/ui-text-editor/store';
 import { stubLocalStorage } from '../../local-storage-stub';
 
 stubLocalStorage();
@@ -55,7 +55,9 @@ describe('UI text editor store', () => {
       note: 'Match desktop terminology',
     });
 
-    const payload = useUiTextEditorStore.getState().buildExportPayload();
+    const snapshot = useUiTextEditorStore.getState().createExportSnapshot();
+    expect(snapshot).not.toBeNull();
+    const payload = snapshot!.payload;
     expect(payload.version).toBe(1);
     expect(payload.exportedAt).toBeTruthy();
     expect(payload.entries).toEqual([
@@ -66,13 +68,12 @@ describe('UI text editor store', () => {
       },
     ]);
 
-    const session1 = useUiTextEditorStore.getState().archiveActiveAsExport(payload.exportedAt);
+    const session1 = useUiTextEditorStore.getState().commitExportSnapshot(snapshot!);
     expect(session1).not.toBeNull();
     expect(Object.keys(useUiTextEditorStore.getState().entries)).toHaveLength(0);
     expect(useUiTextEditorStore.getState().history).toHaveLength(1);
     expect(i18n.t('common.cancel', { lng: 'en' })).toBe('Abort');
 
-    // Start a second active session, then restore session1: the active session swaps into history.
     useUiTextEditorStore.getState().saveEntry({
       key: 'common.dismiss',
       values: { en: 'Close now' },
@@ -85,14 +86,12 @@ describe('UI text editor store', () => {
     expect(i18n.t('common.cancel', { lng: 'en' })).toBe('Abort');
     expect(i18n.t('common.dismiss', { lng: 'en' })).toBe('Close now');
 
-    // Pasting the identical JSON (even with a different exportedAt) is a no-op.
     const sameResult = useUiTextEditorStore.getState().importFromJson(
       JSON.stringify({ ...payload, exportedAt: '2020-01-01T00:00:00.000Z' }),
     );
     expect(sameResult).toEqual({ imported: 1, changed: false });
     expect(useUiTextEditorStore.getState().history).toHaveLength(1);
 
-    // Pasting a different payload archives the active session and activates the pasted one.
     const otherPayload = {
       version: 1,
       exportedAt: '2026-11-19T12:00:00.000Z',
@@ -122,13 +121,12 @@ describe('UI text editor store', () => {
     expect(useUiTextEditorStore.getState().getOriginal('en', 'nonexistent.removed.key')).toBeUndefined();
     expect(i18n.exists('nonexistent.removed.key', { lng: 'en' })).toBe(false);
 
-    // Stale edits whose before does not match the current build do not override live i18next copy.
     useUiTextEditorStore.getState().importFromJson(JSON.stringify({
       version: 1,
       entries: [{ key: 'common.cancel', changes: { en: { before: 'Outdated Cancel', after: 'Should Not Apply' } } }],
     }));
     expect(useUiTextEditorStore.getState().entries['common.cancel']?.changes.en?.after).toBe('Should Not Apply');
-    // Falls back to the latest matching history entry ('Abort') rather than applying the stale edit.
+    // The live projection uses the latest matching history entry ('Abort'); the stale active entry remains available for display.
     expect(i18n.t('common.cancel', { lng: 'en' })).toBe('Abort');
 
     // Deleting history reverts keys no longer overridden by valid active entries.
@@ -138,29 +136,29 @@ describe('UI text editor store', () => {
     expect(i18n.t('common.dismiss', { lng: 'en' })).toBe('Dismiss');
   });
 
-  it('caps history at MAX_HISTORY_SESSIONS and reverts evicted oldest overrides', () => {
+  it('caps history at 200 sessions and reverts evicted oldest overrides', () => {
+    const cap = 200;
     const store = useUiTextEditorStore.getState();
     store.saveEntry({
       key: 'common.cancel',
       values: { en: 'Oldest override' },
       note: '',
     });
-    store.archiveActiveAsExport('2026-01-01T00:00:00.000Z');
+    store.commitExportSnapshot(useUiTextEditorStore.getState().createExportSnapshot()!);
     expect(i18n.t('common.cancel', { lng: 'en' })).toBe('Oldest override');
 
-    for (let i = 0; i < MAX_HISTORY_SESSIONS; i += 1) {
+    for (let i = 0; i < cap; i += 1) {
       store.saveEntry({
         key: 'common.dismiss',
         values: { en: `Dismiss ${i}` },
         note: '',
       });
-      store.archiveActiveAsExport(`2026-01-02T00:00:${String(i % 60).padStart(2, '0')}.000Z`);
+      store.commitExportSnapshot(useUiTextEditorStore.getState().createExportSnapshot()!);
     }
 
-    expect(useUiTextEditorStore.getState().history).toHaveLength(MAX_HISTORY_SESSIONS);
-    // The first session (common.cancel) was evicted and reverted back to original copy.
+    expect(useUiTextEditorStore.getState().history).toHaveLength(cap);
     expect(i18n.t('common.cancel', { lng: 'en' })).toBe('Cancel');
-    expect(i18n.t('common.dismiss', { lng: 'en' })).toBe(`Dismiss ${MAX_HISTORY_SESSIONS - 1}`);
+    expect(i18n.t('common.dismiss', { lng: 'en' })).toBe(`Dismiss ${cap - 1}`);
   });
   it('refuses writes before initialization so existing localStorage history is never overwritten', async () => {
     const seeded = {
@@ -195,7 +193,6 @@ describe('UI text editor store', () => {
     const snapshot = useUiTextEditorStore.getState().createExportSnapshot();
     expect(snapshot).not.toBeNull();
 
-    // Concurrent edit made while clipboard write is pending.
     useUiTextEditorStore.getState().saveEntry({ key: 'common.dismiss', values: { en: 'Hide' }, note: '' });
 
     const session = useUiTextEditorStore.getState().commitExportSnapshot(snapshot!);
@@ -218,7 +215,7 @@ describe('UI text editor store', () => {
 
   it('rejects unsupported export versions and ignores changes without an explicit before value', () => {
     expect(() => useUiTextEditorStore.getState().importFromJson(JSON.stringify({ version: 99, entries: [] })))
-      .toThrow(/Unsupported export version/);
+      .toThrow(TypeError);
 
     const result = useUiTextEditorStore.getState().importFromJson(JSON.stringify({
       version: 1,

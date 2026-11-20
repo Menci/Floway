@@ -15,6 +15,7 @@ import { fluentComponents } from '../../fluent';
 import { activateUiTextEditorTracking, setLanguage } from '../../i18n';
 import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages';
 import {
+  UI_TEXT_EDITOR_ROOT_ATTR,
   isInsideUiTextEditor,
   sharedUiTextEditorRegistry,
   type HitTarget,
@@ -71,14 +72,12 @@ const FREEZE_EVENTS = ['pointerout', 'pointerleave', 'mouseout', 'mouseleave', '
 
 export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme?: Theme }) {
   const { t, i18n } = useEditorTranslation();
-  const initialized = useUiTextEditorStore(state => state.initialized);
   const ensureInitialized = useUiTextEditorStore(state => state.ensureInitialized);
   const entries = useUiTextEditorStore(state => state.entries);
   const createExportSnapshot = useUiTextEditorStore(state => state.createExportSnapshot);
   const commitExportSnapshot = useUiTextEditorStore(state => state.commitExportSnapshot);
 
   const layerRef = useRef<HTMLDivElement | null>(null);
-  const portalRootRef = useRef<HTMLDivElement | null>(null);
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const flyoutEscapeRef = useRef<(() => boolean) | null>(null);
   const exportingRef = useRef(false);
@@ -98,15 +97,13 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
   const altPressedRef = useRef(altPressed);
   const freezeRef = useRef(freezePopovers);
   const uiOpenRef = useRef(uiOpen);
-  const initializedRef = useRef(initialized);
 
   useEffect(() => {
     altPressedRef.current = altPressed;
     freezeRef.current = freezePopovers;
     uiOpenRef.current = uiOpen;
-    initializedRef.current = initialized;
     setUiTextEditorFreezeActive(freezePopovers);
-  }, [altPressed, freezePopovers, initialized, uiOpen]);
+  }, [altPressed, freezePopovers, uiOpen]);
 
   useEffect(() => () => {
     setUiTextEditorFreezeActive(false);
@@ -142,9 +139,6 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
     }
   }, [activeFlyout, panelOpen]);
 
-  // Keep the virtual parent aligned with the clicked element (or topmost open
-  // Fluent floating surface) so interacting with the editor never dismisses
-  // underlying popovers, menus, or dialogs.
   useEffect(() => {
     const layer = layerRef.current;
     const virtualParent = activeFlyout?.anchorElement ?? (uiOpen ? findActiveFloatingSurface() : undefined);
@@ -154,7 +148,7 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
 
   useEffect(() => {
     const updateHover = (x: number, y: number) => {
-      if (!altPressedRef.current || !initializedRef.current) {
+      if (!altPressedRef.current || !useUiTextEditorStore.getState().initialized) {
         setHoverTarget(null);
         return;
       }
@@ -182,7 +176,7 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
       if (event.key === 'Escape' && uiOpenRef.current) {
         // Let an open nested editor popover (such as a delete confirmation
         // flyout) handle Escape before closing the flyout or panel beneath it.
-        if (portalRootRef.current?.querySelector('.fui-PopoverSurface')) {
+        if (layerRef.current?.querySelector('.fui-PopoverSurface')) {
           return;
         }
         event.preventDefault();
@@ -232,7 +226,7 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
       event.stopPropagation();
       event.stopImmediatePropagation();
 
-      if (event.type !== 'click' || !initializedRef.current) return;
+      if (event.type !== 'click' || !useUiTextEditorStore.getState().initialized) return;
 
       const hit = sharedUiTextEditorRegistry.resolveAtPoint(document, event.clientX, event.clientY);
       if (hit) {
@@ -307,16 +301,12 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
   const activeCount = Object.keys(entries).length;
   const showDock = activeCount > 0 || altPressed || uiOpen || quickCopied;
 
-  const currentLang = (supportedLanguages.includes(i18n.language as SupportedLanguage)
-    ? i18n.language
-    : 'en') as SupportedLanguage;
+  const currentLang = i18n.language as SupportedLanguage;
   const nextPreviewLang = supportedLanguages[(supportedLanguages.indexOf(currentLang) + 1) % supportedLanguages.length]!;
 
   const handlePreviewLanguageToggle = async () => {
     await setLanguage(nextPreviewLang);
   };
-
-  if (typeof document === 'undefined') return null;
 
   const highlightTagTop = hoverTarget
     ? (hoverTarget.rect.top >= 28 ? hoverTarget.rect.top - 24 : hoverTarget.rect.bottom + 6)
@@ -329,7 +319,7 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
     <div
       ref={layerRef}
       className="floway-ui-text-editor-layer"
-      data-floway-ui-text-editor-root=""
+      {...{ [UI_TEXT_EDITOR_ROOT_ATTR]: '' }}
       data-tabster={JSON.stringify({ modalizer: { id: 'floway-ui-text-editor', isAlwaysAccessible: true, isOthersAccessible: true } })}
       popover="manual"
     >
@@ -435,10 +425,7 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
             )}
 
             <div
-              ref={node => {
-                portalRootRef.current = node;
-                setPortalRoot(node);
-              }}
+              ref={setPortalRoot}
               className="floway-ui-text-editor-portal-host"
             />
           </FluentProvider>

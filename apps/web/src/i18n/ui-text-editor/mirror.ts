@@ -11,10 +11,9 @@ const readStored = (): boolean => {
 
 const writeStored = (enabled: boolean): boolean => {
   if (typeof window === 'undefined') return false;
-  const expected = enabled ? '1' : '0';
   try {
-    window.localStorage.setItem(STORAGE_KEY, expected);
-    return window.localStorage.getItem(STORAGE_KEY) === expected;
+    window.localStorage.setItem(STORAGE_KEY, enabled ? '1' : '0');
+    return true;
   } catch {
     return false;
   }

@@ -1,8 +1,7 @@
 import { reducedMotion } from './selectors';
 
 // WinUI 3 surfaces for the in-context UI text editor overlay, hosted inside a
-// native top-layer popover so it sits above dialogs, flyouts, menus, and
-// tooltips without contending for z-index.
+// native manual top-layer popover that re-promotes when editor surfaces open.
 export const uiTextEditorCss = `
 .floway-ui-text-editor-layer {
   position: fixed;

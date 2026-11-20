@@ -1,6 +1,5 @@
-// Fluent System Icons `ic_fluent_local_language_zi_24_regular` ("A" + "字").
-// Removed upstream in PR #381 in favor of the Hangul glyph (`LocalLanguage`),
-// so it is not exported by `@fluentui/react-icons`.
+// Local copy of Fluent System Icons `ic_fluent_local_language_zi_24_regular` ("A" + "字").
+// `@fluentui/react-icons` does not export this glyph (dropped upstream in PR #381 as a duplicate of `Local Language/zh`).
 // https://github.com/microsoft/fluentui-system-icons/blob/ff10c8eb2b6bf011a430588b63df634ec74548b6/assets/Local%20Language%20Zi/SVG/ic_fluent_local_language_zi_24_regular.svg
 export function LocalLanguageZiIcon({ size = 24 }: { size?: 16 | 24 }) {
   return (

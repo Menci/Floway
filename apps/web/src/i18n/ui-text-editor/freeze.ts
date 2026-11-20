@@ -8,8 +8,6 @@ import { wrapFluent, type FluentComponents, type PropCarrier } from '../../winui
 // (tooltips, popovers, dropdowns, menus, dialogs, drawers) to resist dismissal.
 let frozen = false;
 
-export const isUiTextEditorFreezeActive = (): boolean => frozen;
-
 export const setUiTextEditorFreezeActive = (next: boolean): void => {
   frozen = next;
 };
@@ -50,7 +48,7 @@ const wrapOpenSurface = <Component>(component: Component): Component =>
       ...rest,
       open: currentOpen,
       onOpenChange: (event: unknown, data: { open: boolean }) => {
-        if (!insideEditor && !data.open && isUiTextEditorFreezeActive()) return;
+        if (!insideEditor && !data.open && frozen) return;
         if (!controlled) setUncontrolledOpen(data.open);
         props.onOpenChange?.(event, data);
       },
@@ -68,7 +66,7 @@ const wrapTooltipSurface = <Component>(component: Component): Component =>
       ...props,
       visible: currentVisible,
       onVisibleChange: (event: unknown, data: { visible: boolean }) => {
-        if (!insideEditor && !data.visible && isUiTextEditorFreezeActive()) return;
+        if (!insideEditor && !data.visible && frozen) return;
         if (!controlled) setUncontrolledVisible(data.visible);
         props.onVisibleChange?.(event, data);
       },

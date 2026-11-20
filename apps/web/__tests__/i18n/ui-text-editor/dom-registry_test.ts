@@ -40,16 +40,13 @@ describe('UiTextEditorDomRegistry', () => {
       const initialHit = registry.resolveAtPoint(document, 20, 20);
       expect(initialHit?.candidates).toEqual(['common.cancel', 'common.uiTextEditor.close']);
 
-      // Removing aria-label clears its tracked key.
       hostA.removeAttribute('aria-label');
       expect(registry.resolveAtPoint(document, 20, 20)?.candidates).toEqual(['common.cancel']);
 
-      // Moving the text node to another parent detaches it from hostA.
       const textNode = hostA.firstChild as Text;
       hostB.append(textNode);
       expect(registry.resolveAtPoint(document, 20, 20)).toBeNull();
 
-      // Overwriting the moved text node with untracked plain text clears its segments.
       textNode.data = 'Plain text';
       stack = [hostB, container, document.body];
       expect(registry.resolveAtPoint(document, 20, 60)).toBeNull();

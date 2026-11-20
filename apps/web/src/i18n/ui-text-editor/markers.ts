@@ -2,9 +2,10 @@ import type { PostProcessorModule } from 'i18next';
 
 // Two zero-width characters form a binary channel invisible to layout while
 // surviving string concatenation, interpolation, and attribute assignment.
-// Every byte is framed with a trailing 0 bit (9 code units per byte) and every
-// token starts with a 2-byte sentinel so incidental ZWNJ/ZWJ in real copy
-// (emoji sequences, Arabic/Indic joining) cannot be mistaken for a marker.
+// Each payload byte is encoded as 8 data bits plus a trailing 0 framing bit
+// (9 code units per byte), and each token carries a 1-byte start/end tag,
+// ASCII digits, and a trailing newline so incidental ZWNJ/ZWJ sequences
+// (emoji, Arabic/Indic joining) are rejected by strict decoding.
 const BIT_0 = '\u200C'; // ZWNJ
 const BIT_1 = '\u200D'; // ZWJ
 
@@ -39,10 +40,8 @@ const encodeToken = (tag: number, id: number): string => {
 const FRAMED_RUN_RE = new RegExp(`(?:[${BIT_0}${BIT_1}]{8}${BIT_0})+`, 'g');
 
 const decodeFramedRun = (run: string): Array<{ kind: 'start' | 'end'; id: number }> | null => {
-  if (run.length % 9 !== 0) return null;
   const bytes: number[] = [];
   for (let i = 0; i < run.length; i += 9) {
-    if (run[i + 8] !== BIT_0) return null;
     let value = 0;
     for (let b = 0; b < 8; b += 1) {
       value = (value << 1) | (run[i + b] === BIT_1 ? 1 : 0);
@@ -67,7 +66,7 @@ const decodeFramedRun = (run: string): Array<{ kind: 'start' | 'end'; id: number
     cursor += 1;
     tokens.push({ kind: tag === START_TAG ? 'start' : 'end', id: Number(digits) });
   }
-  return tokens.length > 0 ? tokens : null;
+  return tokens;
 };
 
 export interface TextKeySegment {
@@ -76,7 +75,7 @@ export interface TextKeySegment {
   end: number;
 }
 
-export interface ExtractedText {
+interface ExtractedText {
   text: string;
   segments: TextKeySegment[];
   hadMarkers: boolean;
@@ -85,7 +84,7 @@ export interface ExtractedText {
 const entries: string[] = [];
 const keyToId = new Map<string, number>();
 
-export const registerKey = (key: string): number => {
+const registerKey = (key: string): number => {
   const existing = keyToId.get(key);
   if (existing !== undefined) return existing;
   const id = entries.length;
@@ -223,7 +222,7 @@ export const uiTextEditorPostProcessor: PostProcessorModule = {
   name: UI_TEXT_EDITOR_POST_PROCESSOR_NAME,
   process(value, key, options) {
     if (!trackingActive || suppressDepth > 0) return value;
-    if (typeof value !== 'string' || value.length === 0) return value;
+    if (value.length === 0) return value;
     const opt = options as { i18nResolved?: ResolvedInfo } | undefined;
     const exactKey = opt?.i18nResolved?.exactUsedKey ?? opt?.i18nResolved?.usedKey ?? (Array.isArray(key) ? key[0] : key);
     if (!exactKey) return value;

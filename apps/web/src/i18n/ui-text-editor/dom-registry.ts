@@ -4,7 +4,7 @@ export const UI_TEXT_EDITOR_ROOT_ATTR = 'data-floway-ui-text-editor-root';
 
 const MONITORED_ATTRIBUTES = ['aria-label', 'placeholder', 'alt', 'value'] as const;
 
-export interface AttributeKeyRecord {
+interface AttributeKeyRecord {
   attribute: string;
   key: string;
 }
@@ -43,16 +43,13 @@ const rectFromTextSegmentAtPoint = (
   clientX: number,
   clientY: number,
 ): DOMRect | null => {
-  const length = textNode.data.length;
-  const safeStart = Math.max(0, Math.min(start, length));
-  const safeEnd = Math.max(safeStart, Math.min(end, length));
-  if (safeStart === safeEnd) return null;
+  if (start >= end || end > textNode.data.length) return null;
   const range = textNode.ownerDocument.createRange();
-  range.setStart(textNode, safeStart);
-  range.setEnd(textNode, safeEnd);
+  range.setStart(textNode, start);
+  range.setEnd(textNode, end);
 
-  // For wrapped multi-line segments, match the individual line rect under the
-  // pointer so inter-line empty space is not treated as a hit.
+  // Prefer the individual line rect under the pointer for wrapped multi-line
+  // segments before falling back to the combined bounding rect.
   if (typeof range.getClientRects === 'function') {
     const rects = Array.from(range.getClientRects());
     for (const r of rects) {
@@ -177,8 +174,8 @@ export class UiTextEditorDomRegistry {
 
     this.processElementAttributes(node);
 
-    // FILTER_REJECT skips a subtree cleanly without terminating traversal of
-    // following siblings/ancestors (unlike calling walker.nextSibling() manually).
+    // FILTER_REJECT prunes a subtree while allowing TreeWalker to continue at
+    // following siblings and ancestors.
     const walker = node.ownerDocument.createTreeWalker(
       node,
       NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
@@ -211,8 +208,8 @@ export class UiTextEditorDomRegistry {
     const raw = textNode.data;
 
     if (!mayContainKeyMarkers(raw)) {
-      // Distinguish our own strip write from an external update that replaced a
-      // tracked node with plain, untracked text.
+      // Skip observer callbacks matching the value we just stripped; invalidate
+      // mappings when a node changes to any other plain text.
       if (this.strippedTextValue.get(textNode) !== raw) {
         this.textSegments.delete(textNode);
         this.strippedTextValue.delete(textNode);
@@ -359,10 +356,8 @@ export class UiTextEditorDomRegistry {
       },
     );
     let child = walker.nextNode() as Element | null;
-    let visited = 0;
-    while (child && visited < 40) {
+    while (child) {
       collected.push(...this.collectTextKeys(child), ...this.collectAttributeKeys(child));
-      visited += 1;
       child = walker.nextNode() as Element | null;
     }
     return dedupeKeys(collected);
@@ -371,7 +366,8 @@ export class UiTextEditorDomRegistry {
   resolveAtPoint(doc: Document, clientX: number, clientY: number): HitTarget | null {
     this.flushMutations();
 
-    // 1. Character-level hit test for multi-key text nodes.
+    // Resolve caret-level matches first so multi-key text returns the exact
+    // segment under the pointer.
     const caret = caretAtPoint(doc, clientX, clientY);
     if (caret && caret.node instanceof Text && !isInsideUiTextEditor(caret.node)) {
       const segments = this.textSegments.get(caret.node);

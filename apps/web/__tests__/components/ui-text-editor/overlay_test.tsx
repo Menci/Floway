@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import UiTextEditorOverlay from '../../../src/components/ui-text-editor/overlay';
 import { setLanguage } from '../../../src/i18n';
 import { wrapWithKeyMarkers } from '../../../src/i18n/ui-text-editor/markers';
-import { __testing as storeTesting } from '../../../src/i18n/ui-text-editor/store';
+import { __testing as storeTesting, useUiTextEditorStore } from '../../../src/i18n/ui-text-editor/store';
 import { stubLocalStorage } from '../../local-storage-stub';
 import { renderInApp } from '../../render';
 
@@ -37,8 +37,6 @@ describe('UiTextEditorOverlay', () => {
     fireEvent.keyDown(window, { key: 'Alt', altKey: true });
     expect(await screen.findByRole('region', { name: 'UI text editor' })).toBeTruthy();
 
-    // Mouse leaving an external trigger while Alt is pressed is swallowed to
-    // keep hover tooltips/popovers frozen.
     fireEvent.mouseLeave(screen.getByTestId('trigger'));
     expect(onExternalLeave).not.toHaveBeenCalled();
 
@@ -68,15 +66,16 @@ describe('UiTextEditorOverlay', () => {
       value: () => [button, container, document.body],
     });
 
-    // Wait for MutationObserver to strip markers and register the node.
-    await waitFor(() => expect(button.textContent).toBe('Cancel'));
+    await waitFor(() => {
+      expect(button.textContent).toBe('Cancel');
+      expect(useUiTextEditorStore.getState().initialized).toBe(true);
+    });
 
     fireEvent.click(button, { altKey: true, button: 0, clientX: 60, clientY: 50 });
 
     expect(onButtonClick).not.toHaveBeenCalled();
     expect(await screen.findByRole('dialog', { name: 'Edit' })).toBeTruthy();
 
-    // Escape closes the UI text editor flyout without leaking to underlying listeners.
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit' })).toBeNull());
     expect(onExternalEscape).not.toHaveBeenCalled();
@@ -107,7 +106,10 @@ describe('UiTextEditorOverlay', () => {
       value: () => [target, container, document.body],
     });
 
-    await waitFor(() => expect(target.textContent).toBe('Cancel Save'));
+    await waitFor(() => {
+      expect(target.textContent).toBe('Cancel Save');
+      expect(useUiTextEditorStore.getState().initialized).toBe(true);
+    });
 
     fireEvent.click(target, { altKey: true, button: 0, clientX: 60, clientY: 50 });
 
@@ -115,12 +117,10 @@ describe('UiTextEditorOverlay', () => {
     expect(screen.getByRole('listbox')).toBeTruthy();
     expect(screen.getAllByRole('option')).toHaveLength(2);
 
-    // First Escape closes only the candidate dropdown while keeping the flyout open.
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
     expect(screen.getByRole('dialog', { name: 'Edit' })).toBeTruthy();
 
-    // Re-opening the header trigger and choosing the other option switches the active key.
     const trigger = screen.getByRole('button', { name: 'common.save' });
     fireEvent.click(trigger);
     const otherOption = screen.getByRole('option', { name: /common\.cancel/ });

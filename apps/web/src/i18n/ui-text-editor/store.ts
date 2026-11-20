@@ -6,7 +6,7 @@ import { numberFormats } from '../number-format';
 import { loadLocale } from '../resources';
 
 const STORAGE_KEY = 'floway.uiTextEditorState.v1';
-export const MAX_HISTORY_SESSIONS = 200;
+const MAX_HISTORY_SESSIONS = 200;
 
 export const LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
   'en': 'English',
@@ -18,7 +18,7 @@ export const SHORT_LANGUAGE_LABELS: Record<SupportedLanguage, string> = {
   'zh-Hans': '中文',
 };
 
-export interface LanguageChange {
+interface LanguageChange {
   before: string;
   after: string;
 }
@@ -30,36 +30,36 @@ export interface UiTextEditEntry {
   updatedAt: string;
 }
 
-export interface UiTextHistorySession {
+interface UiTextHistorySession {
   id: string;
   archivedAt: string;
   entries: UiTextEditEntry[];
 }
 
-export interface ExportedUiTextChange {
+interface ExportedUiTextChange {
   key: string;
   changes?: Partial<Record<SupportedLanguage, LanguageChange>>;
   note?: string;
 }
 
-export interface UiTextEditorExportPayload {
+interface UiTextEditorExportPayload {
   version: 1;
   exportedAt: string;
   entries: ExportedUiTextChange[];
 }
 
-export interface ExportSnapshot {
+interface ExportSnapshot {
   payload: UiTextEditorExportPayload;
   entries: Record<string, UiTextEditEntry>;
 }
 
-export interface SaveEntryInput {
+interface SaveEntryInput {
   key: string;
   values: Partial<Record<SupportedLanguage, string>>;
   note: string;
 }
 
-export interface ImportResult {
+interface ImportResult {
   imported: number;
   changed: boolean;
 }
@@ -100,10 +100,10 @@ const parseInterpolations = (text: string): Map<string, string | undefined> => {
   return map;
 };
 
-// `number-format.ts` throws at render when a numeric interpolation omits its
-// format or names an unknown format. Users are free to save and export any
-// template text, so we keep edits intact in the store while skipping live
-// i18next injection if the edited string would crash the formatter at render.
+// `number-format.ts` throws at render for unknown formats or numeric
+// interpolations that drop their format. Edits remain saveable and exportable,
+// while candidates that drop an existing format or name an unknown format are
+// excluded from live i18next projection.
 const isSafeForLiveProjection = (original: string, candidate: string): boolean => {
   const originalSpecs = parseInterpolations(original);
   const candidateSpecs = parseInterpolations(candidate);
@@ -205,10 +205,6 @@ const emptyOriginals = (): OriginalsMap => ({
   'zh-Hans': new Map(),
 });
 
-const applyResourceValue = (language: SupportedLanguage, key: string, value: string): void => {
-  i18n.addResource(language, 'translation', key, value);
-};
-
 // Resolves the live override for `(language, key)` across history sessions
 // (newest first) and active edits (highest precedence). An edit takes effect
 // only when its recorded `before` matches the running build's original string
@@ -261,10 +257,9 @@ const syncKeysToI18n = (
 ): void => {
   for (const key of keys) {
     for (const language of supportedLanguages) {
-      if (!originals[language].has(key)) continue;
       const value = resolveEffectiveValue(language, key, originals, entries, history);
       if (value !== undefined) {
-        applyResourceValue(language, key, value);
+        i18n.addResource(language, 'translation', key, value);
       }
     }
   }
@@ -338,7 +333,7 @@ const buildHistorySession = (
   };
 };
 
-export interface UiTextEditorStore {
+interface UiTextEditorStore {
   initialized: boolean;
   originals: OriginalsMap;
   entries: Record<string, UiTextEditEntry>;
@@ -351,10 +346,8 @@ export interface UiTextEditorStore {
   revertLanguage: (key: string, language: SupportedLanguage) => void;
   clearActive: () => void;
   createExportSnapshot: () => ExportSnapshot | null;
-  buildExportPayload: () => UiTextEditorExportPayload;
   buildHistoryExportPayload: (sessionId: string) => UiTextEditorExportPayload | null;
   commitExportSnapshot: (snapshot: ExportSnapshot) => UiTextHistorySession | null;
-  archiveActiveAsExport: (archivedAt?: string) => UiTextHistorySession | null;
   restoreHistorySession: (sessionId: string) => void;
   deleteHistorySession: (sessionId: string) => void;
   clearHistory: () => void;
@@ -526,12 +519,6 @@ export const useUiTextEditorStore = create<UiTextEditorStore>((set, get) => {
       };
     },
 
-    buildExportPayload: () => ({
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      entries: formatExportEntries(Object.values(get().entries)),
-    }),
-
     buildHistoryExportPayload: sessionId => {
       const session = get().history.find(item => item.id === sessionId);
       if (!session) return null;
@@ -562,22 +549,6 @@ export const useUiTextEditorStore = create<UiTextEditorStore>((set, get) => {
       for (const key of evictedKeys) touchedKeys.add(key);
       commit(nextEntries, nextHistory, touchedKeys);
       return session;
-    },
-
-    archiveActiveAsExport: (archivedAt = new Date().toISOString()) => {
-      const { initialized, entries } = get();
-      if (!initialized) return null;
-      const snapshotEntries = cloneEntriesMap(entries);
-      const list = Object.values(snapshotEntries);
-      if (list.length === 0) return null;
-      return get().commitExportSnapshot({
-        payload: {
-          version: 1,
-          exportedAt: archivedAt,
-          entries: formatExportEntries(list),
-        },
-        entries: snapshotEntries,
-      });
     },
 
     restoreHistorySession: sessionId => {

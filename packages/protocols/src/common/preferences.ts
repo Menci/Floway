@@ -19,9 +19,6 @@ export interface UserPreferences {
    * account that has never chosen a language reads.
    */
   language: SupportedLanguage | null;
-  /**
-   * Whether the in-context UI text editor overlay is active for this account.
-   */
   uiTextEditor: boolean;
 }
 

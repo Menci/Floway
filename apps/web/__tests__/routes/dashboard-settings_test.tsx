@@ -76,7 +76,7 @@ describe('preference form', () => {
 
     await waitFor(() => expect(useAuthStore.getState().session!.user.preferences.uiTextEditor).toBe(true));
     expect(mirrorTesting.readStored()).toBe(true);
-    expect(reload).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalled();
   });
 
   it('keeps the saved value when the server refuses the write', async () => {

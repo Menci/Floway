@@ -18,8 +18,9 @@ if (!(fluentNamespace as Partial<FluentComponents>).FluentProvider) {
 }
 
 // The app's only value import of `@fluentui/react-components`, so it is the one
-// place the appearance stamping, motion substitution, toaster replacement and
-// Switch drag gesture reach every instance. `react-components` re-exports only
+// place text trimming, appearance stamping, motion substitution, Switch drag
+// gesture, toaster replacement, and UI text editor freeze/Option handling reach
+// every instance. `react-components` re-exports only
 // the toast's component layer, so the state and hook layers the toaster is
 // rebuilt from are imported from `@fluentui/react-toast` in ./winui/toaster,
 // which is the app's only value import of that package.

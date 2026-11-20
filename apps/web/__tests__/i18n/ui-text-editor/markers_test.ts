@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   extractKeySegments,
+  setUiTextEditorTrackingActive,
   stripKeyMarkers,
+  uiTextEditorPostProcessor,
   withoutUiTextEditorMarkers,
   wrapWithKeyMarkers,
 } from '../../../src/i18n/ui-text-editor/markers';
@@ -61,8 +63,21 @@ describe('UI text editor markers', () => {
     expect(trailing.segments).toEqual([{ key: 'alias.count_other', start: 0, end: 7 }]);
   });
 
-  it('supports nested withoutUiTextEditorMarkers suppression safely', () => {
-    const result = withoutUiTextEditorMarkers(() => withoutUiTextEditorMarkers(() => 'plain'));
-    expect(result).toBe('plain');
+  it('suppresses post-processor markers across nested withoutUiTextEditorMarkers calls and restores tracking afterwards', () => {
+    setUiTextEditorTrackingActive(true);
+    try {
+      const options = { i18nResolved: { exactUsedKey: 'common.cancel' } };
+      const process = () => uiTextEditorPostProcessor.process('Cancel', 'common.cancel', options, {} as never);
+
+      const suppressed = withoutUiTextEditorMarkers(() => {
+        const inner = withoutUiTextEditorMarkers(process);
+        expect(inner).toBe('Cancel');
+        return process();
+      });
+      expect(suppressed).toBe('Cancel');
+      expect(extractKeySegments(process()).hadMarkers).toBe(true);
+    } finally {
+      setUiTextEditorTrackingActive(false);
+    }
   });
 });

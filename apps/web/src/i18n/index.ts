@@ -18,8 +18,6 @@ import {
 } from './ui-text-editor/markers';
 import { isUiTextEditorEnabled } from './ui-text-editor/mirror';
 
-const cloneResource = <T>(value: T): T => structuredClone(value);
-
 // Translation data is the larger part of what the dashboard has to load before
 // it can paint, and half of that again is a language the visitor is not
 // reading, so each locale is fetched on its own. That makes the strings
@@ -47,8 +45,8 @@ if (uiTextEditorActive) {
 
 void instance.init({
   resources: {
-    [defaultLanguage]: cloneResource(shellResources),
-    [language]: cloneResource(await loadLocale(language)),
+    [defaultLanguage]: structuredClone(shellResources),
+    [language]: structuredClone(await loadLocale(language)),
   },
   lng: defaultLanguage,
   fallbackLng: language,
@@ -75,16 +73,16 @@ i18n.on('languageChanged', language => {
   }
 });
 
-// Loads a locale's full bundle into i18next at most once. Using `loaded`
-// instead of `i18n.hasResourceBundle` matters because the default language
-// boots with only `shellResources` (one key), which makes `hasResourceBundle`
-// return true even though the full catalog has never been fetched.
+// Tracks completed full-bundle loads separately. When the browser language
+// differs from `defaultLanguage`, the default language starts with only
+// `shellResources`, so `i18n.hasResourceBundle` reports true before the full
+// catalog has been fetched.
 export const ensureLocaleLoaded = async (next: SupportedLanguage): Promise<void> => {
   if (loaded.has(next)) return;
   const bundle = await loadLocale(next);
   // `overwrite: false` preserves any UI text editor overrides already
   // applied to this language while filling in all untouched keys.
-  i18n.addResourceBundle(next, 'translation', cloneResource(bundle.translation), true, false);
+  i18n.addResourceBundle(next, 'translation', structuredClone(bundle.translation), true, false);
   loaded.add(next);
 };
 
@@ -98,9 +96,9 @@ export const setLanguage = async (next: SupportedLanguage): Promise<void> => {
   await i18n.changeLanguage(next);
 };
 
-// Called once the UI text editor overlay and its DOM observer are mounted so that
-// markers never enter the prerendered HydrateFallback frame, yet every already
-// mounted `useTranslation` consumer re-renders with markers right away.
+// Activates after the overlay and DOM observer mount, keeping markers out of
+// the prerendered HydrateFallback frame while refreshing already-mounted
+// `useTranslation` consumers.
 export const activateUiTextEditorTracking = (): void => {
   if (!uiTextEditorActive) return;
   setUiTextEditorTrackingActive(true);

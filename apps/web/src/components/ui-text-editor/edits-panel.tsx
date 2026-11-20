@@ -308,8 +308,6 @@ export function EditsPanel({
   const activeEntries = Object.values(entriesMap).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const locale = i18n.language;
 
-  // Opening the panel with no active edits goes straight to History edits;
-  // when active edits exist it opens on Edits.
   const isRootHistory = activeEntries.length === 0 && historySessions.length > 0;
   const viewingHistory = isRootHistory || (showHistory && historySessions.length > 0);
   const showBackButton = viewingHistory && activeEntries.length > 0;

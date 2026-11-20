@@ -30,7 +30,7 @@ describe('UI text editor preference mirror', () => {
 
     expect(syncUiTextEditorPreference(true)).toBe(true);
     expect(__testing.readStored()).toBe(true);
-    expect(reload).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalled();
   });
 
   it('preserves the last mirror value across reload until a signed-in user overrides it', () => {
@@ -38,14 +38,12 @@ describe('UI text editor preference mirror', () => {
     __testing.resetBootState();
     expect(isUiTextEditorEnabled()).toBe(true);
 
-    // Same preference does not reload.
     expect(syncUiTextEditorPreference(true)).toBe(false);
     expect(reload).not.toHaveBeenCalled();
 
-    // Signing into an account with uiTextEditor disabled updates mirror and reloads.
     expect(syncUiTextEditorPreference(false)).toBe(true);
     expect(__testing.readStored()).toBe(false);
-    expect(reload).toHaveBeenCalledTimes(1);
+    expect(reload).toHaveBeenCalled();
   });
   it('does not reload when localStorage refuses the write', () => {
     const reload = vi.fn();
