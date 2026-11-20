@@ -32,6 +32,19 @@ afterEach(() => {
 const SOCKS_URL = 'socks5://user:pass@198.51.100.10:1080';
 const HTTP_URL = 'http://198.51.100.20:3128';
 
+type AppTestContext = Awaited<ReturnType<typeof setupAppTest>>;
+
+// Backoff rows reference both parents, so each scenario saves the proxies and
+// upstreams its rows name before recording dial failures against them.
+const seedBackoffParents = async (
+  { repo, copilotUpstream }: AppTestContext,
+  proxyIds: readonly string[],
+  upstreams: ReadonlyArray<{ id: string; name: string; hue: number }>,
+): Promise<void> => {
+  for (const id of proxyIds) await repo.proxies.insert({ id, name: id, url: HTTP_URL, dialTimeoutSeconds: null });
+  for (const upstream of upstreams) await saveUpstreamForTest(repo.upstreams, { ...copilotUpstream, ...upstream });
+};
+
 const authed = (adminSession: string, body?: unknown): RequestInit => ({
   method: body === undefined ? 'GET' : 'POST',
   headers: {
@@ -63,8 +76,9 @@ test('POST /api/proxies rejects an unparseable URL with 400', async () => {
 });
 
 test('PATCH /api/proxies/:id with a new url clears outstanding backoff rows', async () => {
-  const { repo, adminSession } = await setupAppTest();
-  await repo.proxies.insert({ id: 'p1', name: 'Old', url: HTTP_URL, dialTimeoutSeconds: null });
+  const ctx = await setupAppTest();
+  const { repo, adminSession } = ctx;
+  await seedBackoffParents(ctx, ['p1'], [{ id: 'up_a', name: 'A', hue: 210 }, { id: 'up_b', name: 'B', hue: 120 }]);
   // Two upstreams have already escalated this proxy through several failures.
   // After the URL changes the operator expects an immediate retry; the dial
   // layer must not keep skipping the row up to an hour against stale state.
@@ -90,9 +104,12 @@ test('DELETE /api/proxies/:id returns 409 when an upstream references the proxy'
 });
 
 test('GET /api/proxies/backoffs returns every backoff row regardless of proxy', async () => {
-  const { repo, adminSession, copilotUpstream } = await setupAppTest();
-  await saveUpstreamForTest(repo.upstreams, { ...copilotUpstream, id: 'up_a', name: 'Primary Copilot', hue: 210 });
-  await saveUpstreamForTest(repo.upstreams, { ...copilotUpstream, id: 'up_b', name: 'Backup Copilot', hue: 120 });
+  const ctx = await setupAppTest();
+  const { repo, adminSession } = ctx;
+  await seedBackoffParents(ctx, ['p_a', 'p_b'], [
+    { id: 'up_a', name: 'Primary Copilot', hue: 210 },
+    { id: 'up_b', name: 'Backup Copilot', hue: 120 },
+  ]);
   await repo.proxyBackoffs.recordDialFailure('p_a', 'up_a', 'boom');
   await repo.proxyBackoffs.recordDialFailure('p_b', 'up_b', 'kaboom');
 
@@ -105,16 +122,10 @@ test('GET /api/proxies/backoffs returns every backoff row regardless of proxy', 
   assertEquals(rows.map(row => row.upstream.name).sort(), ['Backup Copilot', 'Primary Copilot']);
 });
 
-test('GET /api/proxies/backoffs fails when a row references a missing upstream', async () => {
-  const { repo, adminSession } = await setupAppTest();
-  await repo.proxyBackoffs.recordDialFailure('p_a', 'up_missing', 'boom');
-
-  const resp = await requestApp('/api/proxies/backoffs', authed(adminSession));
-  assertEquals(resp.status, 500);
-});
-
 test('POST /api/proxies/:id/backoffs/reset with no body clears every row for the proxy', async () => {
-  const { repo, adminSession } = await setupAppTest();
+  const ctx = await setupAppTest();
+  const { repo, adminSession } = ctx;
+  await seedBackoffParents(ctx, ['p_a', 'p_b'], [{ id: 'up_x', name: 'X', hue: 210 }, { id: 'up_y', name: 'Y', hue: 120 }]);
   await repo.proxyBackoffs.recordDialFailure('p_a', 'up_x', 'boom');
   await repo.proxyBackoffs.recordDialFailure('p_a', 'up_y', 'boom');
   await repo.proxyBackoffs.recordDialFailure('p_b', 'up_x', 'boom');

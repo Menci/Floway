@@ -1045,6 +1045,12 @@ class MemoryWebSearchConfigRepo implements WebSearchConfigRepo {
 class MemoryUpstreamRepo implements UpstreamRepo {
   private store = new Map<string, StoredUpstreamRecord>();
 
+  constructor(private readonly backoffs: MemoryProxyBackoffRows) {}
+
+  has(id: string): boolean {
+    return this.store.has(id);
+  }
+
   list(): Promise<StoredUpstreamRecord[]> {
     return Promise.resolve([...this.store.values()].map(cloneUpstreamRecord).sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)));
   }
@@ -1113,11 +1119,14 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   }
 
   delete(id: string): Promise<boolean> {
-    return Promise.resolve(this.store.delete(id));
+    const deleted = this.store.delete(id);
+    if (deleted) this.backoffs.deleteWhere(row => row.upstreamId === id);
+    return Promise.resolve(deleted);
   }
 
   deleteAll(): Promise<void> {
     this.store.clear();
+    this.backoffs.clear();
     return Promise.resolve();
   }
 
@@ -1493,7 +1502,14 @@ class MemoryExpirationSweepsRepo implements ExpirationSweepsRepo {
 class MemoryProxyRepo implements ProxyRepo {
   private store = new Map<string, ProxyRecord>();
 
-  constructor(private upstreams: UpstreamRepo) {}
+  constructor(
+    private readonly upstreams: UpstreamRepo,
+    private readonly backoffs: MemoryProxyBackoffRows,
+  ) {}
+
+  has(id: string): boolean {
+    return this.store.has(id);
+  }
 
   list(): Promise<ProxyRecord[]> {
     return Promise.resolve(
@@ -1548,11 +1564,14 @@ class MemoryProxyRepo implements ProxyRepo {
     // rejected at the storage layer.
     const upstreams = await this.upstreams.list();
     if (upstreams.some(u => u.proxyFallbackList.some(e => e.id === id))) return false;
-    return this.store.delete(id);
+    const deleted = this.store.delete(id);
+    if (deleted) this.backoffs.deleteWhere(row => row.proxyId === id);
+    return deleted;
   }
 
   deleteAll(): Promise<void> {
     this.store.clear();
+    this.backoffs.clear();
     return Promise.resolve();
   }
 
@@ -1582,14 +1601,29 @@ class MemoryProxyRepo implements ProxyRepo {
 
 const cloneProxyRecord = (record: ProxyRecord): ProxyRecord => ({ ...record });
 
+// Shared by the proxy and upstream repos so their deletes cascade the way the
+// SQL foreign keys on proxy_upstream_backoffs do.
+class MemoryProxyBackoffRows extends Map<string, BackoffRow> {
+  deleteWhere(predicate: (row: BackoffRow) => boolean): void {
+    for (const [key, row] of this) if (predicate(row)) this.delete(key);
+  }
+}
+
 class MemoryProxyBackoffRepo implements ProxyBackoffRepo {
-  private rows = new Map<string, BackoffRow>();
+  constructor(
+    private readonly rows: MemoryProxyBackoffRows,
+    private readonly proxies: MemoryProxyRepo,
+    private readonly upstreams: MemoryUpstreamRepo,
+  ) {}
 
   private key(proxyId: string, upstreamId: string): string {
     return `${proxyId}\0${upstreamId}`;
   }
 
   recordDialFailure(proxyId: string, upstreamId: string, errorMessage: string): Promise<void> {
+    if (!this.proxies.has(proxyId) || !this.upstreams.has(upstreamId)) {
+      return Promise.reject(new Error('FOREIGN KEY constraint failed'));
+    }
     const k = this.key(proxyId, upstreamId);
     const now = Math.floor(Date.now() / 1000);
     const existing = this.rows.get(k);
@@ -1642,26 +1676,12 @@ class MemoryProxyBackoffRepo implements ProxyBackoffRepo {
   }
 
   resetForProxy(proxyId: string): Promise<void> {
-    for (const [k, r] of this.rows) {
-      if (r.proxyId === proxyId) this.rows.delete(k);
-    }
-    return Promise.resolve();
-  }
-
-  resetForUpstream(upstreamId: string): Promise<void> {
-    for (const [k, r] of this.rows) {
-      if (r.upstreamId === upstreamId) this.rows.delete(k);
-    }
+    this.rows.deleteWhere(row => row.proxyId === proxyId);
     return Promise.resolve();
   }
 
   reset(proxyId: string, upstreamId: string): Promise<void> {
     this.rows.delete(this.key(proxyId, upstreamId));
-    return Promise.resolve();
-  }
-
-  deleteAll(): Promise<void> {
-    this.rows.clear();
     return Promise.resolve();
   }
 }
@@ -1883,9 +1903,12 @@ export class InMemoryRepo implements Repo {
     this.performance = new MemoryPerformanceRepo(this.apiKeys);
     this.siteSettings = new MemorySiteSettingsRepo();
     this.webSearchConfig = new MemoryWebSearchConfigRepo();
-    this.upstreams = new MemoryUpstreamRepo();
-    this.proxies = new MemoryProxyRepo(this.upstreams);
-    this.proxyBackoffs = new MemoryProxyBackoffRepo();
+    const backoffRows = new MemoryProxyBackoffRows();
+    const upstreams = new MemoryUpstreamRepo(backoffRows);
+    const proxies = new MemoryProxyRepo(upstreams, backoffRows);
+    this.upstreams = upstreams;
+    this.proxies = proxies;
+    this.proxyBackoffs = new MemoryProxyBackoffRepo(backoffRows, proxies, upstreams);
     this.modelAliases = new MemoryModelAliasesRepo();
     this.openaiResponsesItems = new MemoryOpenAIResponsesItemsRepo(this.apiKeys, this.expirationSweeps);
     this.openaiResponsesSnapshots = new MemoryOpenAIResponsesSnapshotsRepo(this.apiKeys, this.expirationSweeps);

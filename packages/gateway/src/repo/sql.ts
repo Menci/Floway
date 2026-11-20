@@ -1886,22 +1886,11 @@ class SqlProxyBackoffRepo implements ProxyBackoffRepo {
       .run();
   }
 
-  async resetForUpstream(upstreamId: string): Promise<void> {
-    await this.db
-      .prepare('DELETE FROM proxy_upstream_backoffs WHERE upstream_id = ?')
-      .bind(upstreamId)
-      .run();
-  }
-
   async reset(proxyId: string, upstreamId: string): Promise<void> {
     await this.db
       .prepare('DELETE FROM proxy_upstream_backoffs WHERE proxy_id = ? AND upstream_id = ?')
       .bind(proxyId, upstreamId)
       .run();
-  }
-
-  async deleteAll(): Promise<void> {
-    await this.db.prepare('DELETE FROM proxy_upstream_backoffs').run();
   }
 }
 

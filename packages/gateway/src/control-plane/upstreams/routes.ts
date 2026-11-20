@@ -500,7 +500,5 @@ export const deleteUpstream = async (c: AuthedContext<'/:id'>) => {
   const repo = getRepo();
   const deleted = await repo.upstreams.delete(id);
   if (!deleted) return c.json({ error: 'Upstream not found' }, 404);
-  // No FK from proxy_upstream_backoffs to upstreams; clean up explicitly.
-  await repo.proxyBackoffs.resetForUpstream(id);
   return c.json({ ok: true });
 };
