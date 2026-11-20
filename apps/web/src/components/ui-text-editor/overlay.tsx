@@ -342,7 +342,11 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
                   style={{ left: `${highlightTagLeft}px`, top: `${highlightTagTop}px` }}
                 >
                   {hoverTarget.primaryKey}
-                  {hoverTarget.candidates.length > 1 ? ` (+${hoverTarget.candidates.length - 1})` : ''}
+                  {hoverTarget.candidates.length > 1 && (
+                    <span className="floway-ui-text-editor-highlight-tag-more">
+                      {` (+${hoverTarget.candidates.length - 1})`}
+                    </span>
+                  )}
                 </div>
               </>
             )}

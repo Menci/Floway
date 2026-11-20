@@ -2,7 +2,8 @@ import { extractKeySegments, mayContainKeyMarkers, type TextKeySegment } from '.
 
 export const UI_TEXT_EDITOR_ROOT_ATTR = 'data-floway-ui-text-editor-root';
 
-const MONITORED_ATTRIBUTES = ['aria-label', 'placeholder', 'alt', 'value'] as const;
+const VISIBLE_ATTRIBUTES = ['value', 'placeholder', 'alt'] as const;
+const MONITORED_ATTRIBUTES = [...VISIBLE_ATTRIBUTES, 'aria-label'] as const;
 
 interface AttributeKeyRecord {
   attribute: string;
@@ -238,14 +239,16 @@ export class UiTextEditorDomRegistry {
   }
 
   private processElementAttributes(element: Element): void {
+    const isFormValueHost = element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement;
     for (const attr of MONITORED_ATTRIBUTES) {
+      if (attr === 'value' && isFormValueHost) continue;
       if (element.hasAttribute(attr) || this.strippedAttrValues.get(element)?.has(attr)) {
         this.processAttribute(element, attr);
       }
     }
-    // Inputs and textareas can also receive marked text via their DOM property
-    // when controlled in React without setting the HTML `value` attribute.
-    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+    // Inputs and textareas carry controlled text on their DOM `value` property
+    // without necessarily mirroring it onto the HTML `value` attribute.
+    if (isFormValueHost) {
       if (element.type !== 'password') {
         const val = element.value;
         if (mayContainKeyMarkers(val)) {
@@ -333,10 +336,29 @@ export class UiTextEditorDomRegistry {
     return out;
   }
 
-  private collectAttributeKeys(element: Element): string[] {
+  private collectVisibleAttributeKeys(element: Element): string[] {
     const attrs = this.elementAttrs.get(element);
     if (!attrs) return [];
-    return attrs.map(entry => entry.key);
+    const out: string[] = [];
+    for (const attr of VISIBLE_ATTRIBUTES) {
+      for (const entry of attrs) {
+        if (entry.attribute === attr) out.push(entry.key);
+      }
+    }
+    return out;
+  }
+
+  private collectAriaLabelKeys(element: Element): string[] {
+    const attrs = this.elementAttrs.get(element);
+    if (!attrs) return [];
+    return attrs.filter(entry => entry.attribute === 'aria-label').map(entry => entry.key);
+  }
+
+  private collectAttributeKeys(element: Element): string[] {
+    return [
+      ...this.collectVisibleAttributeKeys(element),
+      ...this.collectAriaLabelKeys(element),
+    ];
   }
 
   private collectSubtreeKeys(element: Element): string[] {
@@ -400,25 +422,49 @@ export class UiTextEditorDomRegistry {
       }
     }
 
-    // 2. Fallback to elementsFromPoint: catches icon buttons (aria-label),
-    // inputs (placeholder/value), tooltips, and elements whose text sits inside
-    // a child span.
-    const stack = typeof doc.elementsFromPoint === 'function' ? doc.elementsFromPoint(clientX, clientY) : [];
-    for (const element of stack) {
+    // 2. Two-pass elementsFromPoint scan: prefer elements carrying visible text
+    // or visible attributes (value/placeholder/alt) first so transparent
+    // full-row aria-label overlays (such as SettingsCard) do not shadow the
+    // visible header/description beneath them; include aria-label as secondary
+    // candidates on the matched element, and fall back to aria-label-only or
+    // interactive containers in the second pass.
+    const rawStack = typeof doc.elementsFromPoint === 'function' ? doc.elementsFromPoint(clientX, clientY) : [];
+    const stack: Element[] = [];
+    for (const element of rawStack) {
       if (isInsideUiTextEditor(element)) return null;
       this.processElementAttributes(element);
-      const direct = dedupeKeys([
+      stack.push(element);
+    }
+
+    for (const element of stack) {
+      const visible = dedupeKeys([
         ...this.collectTextKeys(element),
-        ...this.collectAttributeKeys(element),
+        ...this.collectVisibleAttributeKeys(element),
       ]);
-      if (direct.length > 0) {
+      if (visible.length > 0) {
+        const rect = element.getBoundingClientRect();
+        if (rect.width > 0 || rect.height > 0) {
+          const candidates = dedupeKeys([...visible, ...this.collectAriaLabelKeys(element)]);
+          return {
+            element,
+            rect,
+            primaryKey: candidates[0]!,
+            candidates,
+          };
+        }
+      }
+    }
+
+    for (const element of stack) {
+      const aria = dedupeKeys(this.collectAriaLabelKeys(element));
+      if (aria.length > 0) {
         const rect = element.getBoundingClientRect();
         if (rect.width > 0 || rect.height > 0) {
           return {
             element,
             rect,
-            primaryKey: direct[0]!,
-            candidates: direct,
+            primaryKey: aria[0]!,
+            candidates: aria,
           };
         }
       }

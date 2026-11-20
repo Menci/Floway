@@ -65,6 +65,10 @@ export const uiTextEditorCss = `
   text-overflow: ellipsis;
 }
 
+.floway-ui-text-editor-highlight-tag-more {
+  color: var(--winui-text-fill-tertiary);
+}
+
 .floway-ui-text-editor-dock {
   --floway-ute-edge-inset: 16px;
   position: fixed;
