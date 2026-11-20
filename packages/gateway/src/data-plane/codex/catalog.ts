@@ -69,9 +69,8 @@ const inMemoryCache = new Map<string, CodexCatalogResolution>();
 
 const bundled = bundledCatalog as unknown as CodexCatalog;
 
-// Floway may extend Ultra to other Max-capable models only after the exact
-// client-version catalog proves that this Codex build supports the v2 Ultra
-// semantics. A bundled fallback cannot prove anything about the caller.
+// The exact client-version catalog establishes support for v2 Ultra semantics.
+// The bundled catalog is shared across client versions and leaves this capability unset.
 // https://github.com/openai/codex/blob/2deed3fb9c00c74dac3d177ea700d6fb7a94539d/codex-rs/models-manager/models.json#L19-L58
 // https://github.com/openai/codex/blob/2deed3fb9c00c74dac3d177ea700d6fb7a94539d/codex-rs/core/src/session/multi_agents.rs#L39-L54
 // https://github.com/openai/codex/blob/2deed3fb9c00c74dac3d177ea700d6fb7a94539d/codex-rs/core/src/client.rs#L175-L180

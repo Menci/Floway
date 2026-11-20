@@ -91,6 +91,7 @@ describe('Codex model-provider routes', () => {
     expect(bySlug['gpt-6.1-sol']).toMatchObject({ context_window: 272000, max_context_window: 872000, auto_compact_token_limit: null });
     expect(bySlug['gpt-5.5']).toMatchObject({ context_window: 272000, max_context_window: 272000 });
     expect(bySlug['future-model']).toMatchObject({ context_window: 80000, max_context_window: 600000, auto_compact_token_limit: null });
+    expect(bySlug['future-model']).not.toHaveProperty('multi_agent_version');
     expect(bySlug['uncapped-model']).toMatchObject({ context_window: 64000 });
     expect(bySlug['uncapped-model']).not.toHaveProperty('max_context_window');
     const stored = await repo.upstreams.getById('up_chatgpt');
