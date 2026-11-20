@@ -2,7 +2,6 @@ import { callDecisionUpstream } from './call-upstream.ts';
 import { emitDecision } from './emit.ts';
 import type { Fields } from './facts.ts';
 import { narrowing } from './target.ts';
-import { isFailure } from '../pipeline/facts.ts';
 import { failover } from '../pipeline/failover.ts';
 import { resolveCandidates } from '../pipeline/resolve-candidates.ts';
 import { serializeClientJson } from '../pipeline/serialize-client-json.ts';
@@ -18,7 +17,7 @@ export const decisionServePipeline: Pipeline<
   emitDecision,
   resolveCandidates(narrowing),
   failover({
-    failed: handedUp => isFailure((handedUp as { 'response.decision.answer'?: unknown })['response.decision.answer']),
+    answer: handedUp => handedUp['response.decision.answer'],
     owns: ['response.http.body'],
   }),
   callDecisionUpstream,

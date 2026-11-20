@@ -6,6 +6,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { UpstreamTransportError } from '../../../src/dial/transport-error.ts';
 import { geminiGenerateContentServePipeline } from '../../../src/data-plane/chat/gemini-generate-content/pipeline.ts';
 import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
@@ -330,18 +331,10 @@ describe('the Gemini generateContent pipeline', () => {
     await drain();
   });
 
-  it('turns a dial that threw into a failure value rather than a thrown run', async () => {
-    resolves([candidate('up_a', async () => ({ type: 'transportFailure', error: new Error('socket hang up') }))]);
-
-    const { facts, drain } = await serve(entryFacts());
-
-    expect(facts['response.http.status']).toBe(502);
-    expect(facts['response.chat.geminiGenerateContent.rendered']).toEqual({ error: { code: 502, message: 'socket hang up', status: 'UNAVAILABLE' } });
-    // A dial that never completed reached no upstream, so nothing was billed and there are no
-    // headers to carry.
-    expect(facts['response.usage.billable']).toEqual([]);
-    expect(facts['response.http.headers']).toEqual([]);
-    await drain();
+  it('surfaces the terminal dial error with its cause when no candidate offers a retry hint', async () => {
+    const error = new UpstreamTransportError(new Error('socket hang up'));
+    resolves([candidate('up_a', async () => ({ type: 'transportFailure', error }))]);
+    await expect(serve(entryFacts())).rejects.toBe(error);
   });
 
   it('forwards the upstream headers a client may see and drops the ones it may not', async () => {

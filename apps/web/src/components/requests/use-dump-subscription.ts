@@ -47,7 +47,7 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
   // the effect the same way the seed does.
   const disconnectedRef = useRef('');
   // eslint-disable-next-line react-hooks/refs -- Carrying the newest render's translation to an effect that must not list it as a dependency.
-  disconnectedRef.current = t('dashboard.requests.streamDisconnected');
+  disconnectedRef.current = t('requests.streamDisconnected');
 
   // Discarding during render rather than in the effect keeps the component from
   // ever painting one key's records under another key's heading.

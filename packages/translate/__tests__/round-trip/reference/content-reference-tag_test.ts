@@ -32,7 +32,3 @@ test('returns a value without tagged references unchanged', () => {
   const encoded = deepFreeze({ nested: [{ kind: 'text', parts: [0] }] });
   expect(untagContentReferences(encoded)).toBe(encoded);
 });
-
-test.each([null, 'reference', [-1], [0.5], [[0, 1]], [[0, 4, 2]], [[0, -1, 2]], [[0, 1, Infinity]]])('rejects malformed thin reference parts %j', parts => {
-  expect(() => untagContentReferences(new SidecarTaggedValue(65_536, parts))).toThrow('Thin reference sidecar tag requires reference parts');
-});

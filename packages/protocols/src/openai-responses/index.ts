@@ -1,5 +1,6 @@
+import type * as OfficialBeta from './sdk-beta.ts';
 import type * as Official from './sdk.ts';
-import type { WEB_SEARCH_HOSTED_TYPE_NAMES } from './tools.ts';
+import type { OpenWire } from '../common/open-wire.ts';
 
 // OpenAI Responses API type definitions
 // Used for translating Anthropic Messages ↔ OpenAI Responses APIs
@@ -34,7 +35,7 @@ export interface OpenAIResponsesPayloadEx extends Omit<OpenAIResponsesPayload, '
   context_management?: { type: string; compact_threshold?: number | null }[] | null;
   conversation?: string | { id: string } | null;
   moderation?: { model: string; policy?: { input?: { mode: string } | null; output?: { mode: string } | null } | null } | null;
-  prompt?: { id: string; version?: string | null; variables?: Record<string, string | CanonicalOpenAIResponsesText | OpenAIResponsesInputImage | OpenAIResponsesInputFile> | null } | null;
+  prompt?: { id: string; version?: string | null; variables?: Record<string, string | OpenAIResponsesInputText | OpenAIResponsesInputImage | OpenAIResponsesInputFile> | null } | null;
   stream_options?: { include_obfuscation?: boolean } | null;
   user?: string;
   previous_response_id?: string | null;
@@ -103,8 +104,8 @@ export interface OpenAIResponsesPayloadEx extends Omit<OpenAIResponsesPayload, '
 
 // Canonical inputs include documented provider extensions and normalized message discriminators.
 export type CanonicalOpenAIResponsesInputItem =
-  | OpenAIResponsesInputMessageEx
-  | OpenAIResponsesFunctionToolCallItemEx
+  | OpenAIResponsesInputMessage
+  | OpenAIResponsesFunctionToolCallItem
   | OpenAIResponsesFunctionCallOutputItem
   | OpenAIResponsesCustomToolCallItem
   | OpenAIResponsesCustomToolCallOutputItem
@@ -138,38 +139,41 @@ export type CanonicalOpenAIResponsesInputItem =
   | OpenAIResponsesMcpApprovalRequestItem
   | OpenAIResponsesMcpApprovalResponseItem;
 
-export type OpenAIResponsesMessagePhase = 'commentary' | 'final_answer' | (string & {}) | null;
-
-interface OpenAIResponsesInputMessageFields {
-  type: 'message';
-  id?: string;
-  status?: string;
-  phase?: OpenAIResponsesMessagePhase;
-  // Codex marks base-instruction fragments on ordinary developer messages.
-  // https://github.com/openai/codex/blob/0462dcc062b822bb8fff16cc31ce6eeab69823b9/codex-rs/core/tests/suite/responses_lite.rs#L136-L155
+// Codex attaches harness metadata to every history item it replays.
+// https://github.com/openai/codex/blob/24e236514bebcef874c2d38ce5df26164aa50ca4/codex-rs/protocol/src/models.rs#L1140-L1426
+interface CodexInternalChatMessageMetadata {
   internal_chat_message_metadata_passthrough?: Record<string, unknown>;
 }
 
-export type OpenAIResponsesInputMessageEx = OpenAIResponsesInputMessageFields & (
+export type OpenAIResponsesMessagePhase = OpenWire<NonNullable<Official.EasyInputMessage['phase']>> | null;
+
+// An input message is either the explicitly typed request message or an echoed
+// assistant output message. Codex replays both with optional item IDs and the
+// output phase on every role.
+// https://github.com/openai/codex/blob/24e236514bebcef874c2d38ce5df26164aa50ca4/codex-rs/protocol/src/models.rs#L1147-L1158
+interface OpenAIResponsesInputMessageFields extends CodexInternalChatMessageMetadata {
+  type: 'message';
+  id?: string;
+  status?: OpenWire<NonNullable<Official.ResponseInputItem.Message['status']>>;
+  phase?: OpenAIResponsesMessagePhase;
+}
+
+export type OpenAIResponsesInputMessage = OpenAIResponsesInputMessageFields & (
   | { role: 'user' | 'system' | 'developer'; content: string | OpenAIResponsesInputContent[] }
   | { role: 'assistant'; content: string | OpenAIResponsesAssistantInputContent[] }
 );
 
-// The OpenAI Responses request schema's EasyInputMessage makes the constant
-// `type: "message"` discriminator optional. Wire-facing payloads accept that
-// shorthand; gateway and translator boundaries normalize it before internal
-// item processing so the canonical union remains explicitly discriminated.
+// The request schema's EasyInputMessage makes the constant `type: "message"`
+// discriminator optional. Wire-facing payloads accept that shorthand; gateway
+// and translator boundaries normalize it before internal item processing so the
+// canonical union remains explicitly discriminated.
 // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L697-L721
-export interface OpenAIResponsesEasyInputMessageEx {
+export type OpenAIResponsesEasyInputMessage = Omit<OpenWire<Official.EasyInputMessage>, 'content'> & CodexInternalChatMessageMetadata & {
   content: string | OpenAIResponsesInputContent[];
-  role: 'user' | 'assistant' | 'system' | 'developer';
-  phase?: OpenAIResponsesMessagePhase;
-  type?: 'message';
-  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
-}
+};
 
 export type OpenAIResponsesRequestInputItem =
-  | OpenAIResponsesEasyInputMessageEx
+  | OpenAIResponsesEasyInputMessage
   | CanonicalOpenAIResponsesInputItem;
 
 export type OpenAIResponsesRequestPayloadEx = Omit<OpenAIResponsesPayloadEx, 'model' | 'input'> & {
@@ -181,198 +185,135 @@ export type CanonicalOpenAIResponsesPayload = Omit<OpenAIResponsesPayloadEx, 'in
   input: CanonicalOpenAIResponsesInputItem[];
 };
 
-export type OpenAIResponsesInputContent = CanonicalOpenAIResponsesText | OpenAIResponsesInputImage | OpenAIResponsesInputFile;
+// Replayed history carries assistant output text inside input messages; Codex
+// sends it on every role.
+// https://github.com/openai/codex/blob/24e236514bebcef874c2d38ce5df26164aa50ca4/codex-rs/protocol/src/models.rs#L954-L984
+export type OpenAIResponsesInputText = Omit<OpenWire<Official.ResponseInputTextContent>, 'type'> & { type: 'input_text' | 'output_text' };
+// OpenAI splits this part in two: `ResponseInputImageContent` is the
+// request-side shape and leaves `detail` optional and nullable, while
+// `ResponseInputImage` requires it and is the response-side echo. Omitting
+// `detail` means `auto` on both OpenAI Responses and OpenAI Chat Completions.
+// https://web.archive.org/web/20260730100926/https://developers.openai.com/api/docs/guides/images-vision.md
+export type OpenAIResponsesInputImage = OpenWire<Official.ResponseInputImageContent>;
+export type OpenAIResponsesInputFile = OpenWire<Official.ResponseInputFileContent>;
+
+// Codex permits an audio reference beside the OpenAI SDK's text/image/file parts.
+// https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/protocol/src/models.rs#L922-L985
+export type OpenAIResponsesInputAudio = {
+  type: 'input_audio';
+  prompt_cache_breakpoint?: OpenWire<Official.ResponseInputFileContent['prompt_cache_breakpoint']>;
+} & ({ audio_url: string; file_id?: never } | { file_id: string; audio_url?: never });
+
+export type OpenAIResponsesInputContent = OpenAIResponsesInputText | OpenAIResponsesInputImage | OpenAIResponsesInputFile | OpenAIResponsesInputAudio;
 
 export type OpenAIResponsesAssistantInputContent = OpenAIResponsesInputContent | OpenAIResponsesOutputRefusal;
 
-// Explicit content breakpoints inherit their lifetime from
-// `prompt_cache_options.ttl`. The mode stays open-string for forward
-// compatibility.
-// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L5009-L5038
-// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L3973-L3993
-// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L3864-L3884
-export interface OpenAIResponsesPromptCacheBreakpoint {
-  mode: 'explicit' | (string & {});
-}
+export type OpenAIResponsesToolOutputContent = OpenAIResponsesInputContent;
 
-export interface CanonicalOpenAIResponsesText {
-  type: 'input_text' | 'output_text';
-  text: string;
-  prompt_cache_breakpoint?: OpenAIResponsesPromptCacheBreakpoint | null;
-}
+export type OpenAIResponsesConfigurationUpdate = OpenWire<Official.ResponseConfigurationUpdateItemParam>;
 
-export interface OpenAIResponsesInputImage {
-  // OpenAI splits this part in two: `ResponseInputImageContent` /
-  // `InputImageContentParamAutoParam` is the request-side shape and leaves
-  // `detail` optional and nullable, while `ResponseInputImage` /
-  // `InputImageContent` requires it and is the response-side echo. This
-  // interface types requests, so it follows the former. Omitting `detail`
-  // means `auto` on both OpenAI Responses and OpenAI Chat Completions.
-  // https://web.archive.org/web/20260730100926/https://developers.openai.com/api/docs/guides/images-vision.md
-  // Request side:
-  // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L4000-L4029
-  // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L67923-L67961
-  // Response side:
-  // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L3951-L3980
-  // https://github.com/openai/openai-openapi/blob/db3e53198a66732cfe161339ea63bf36fc0137ad/openapi.yaml#L65928-L65961
-  type: 'input_image';
-  image_url?: string | null;
-  file_id?: string | null;
-  detail?: 'auto' | 'low' | 'high' | 'original' | (string & {}) | null;
-  prompt_cache_breakpoint?: OpenAIResponsesPromptCacheBreakpoint | null;
-}
+export type OpenAIResponsesReasoningText = OpenWire<Official.ResponseReasoningItem.Content>;
 
-export type OpenAIResponsesToolOutputContent = CanonicalOpenAIResponsesText | OpenAIResponsesInputImage | OpenAIResponsesInputFile;
-
-export interface OpenAIResponsesInputFile {
-  type: 'input_file';
-  detail?: 'auto' | 'low' | 'high';
-  file_data?: string | null;
-  file_id?: string | null;
-  file_url?: string | null;
-  filename?: string | null;
-  prompt_cache_breakpoint?: OpenAIResponsesPromptCacheBreakpoint | null;
-  [key: string]: unknown;
-}
-
-export interface OpenAIResponsesConfigurationUpdate { type: 'configuration_update'; id?: string | null; reasoning?: { effort?: string | null } }
-
-export interface OpenAIResponsesReasoningText { type: 'reasoning_text'; text: string }
-
-export interface OpenAIResponsesInputReasoning {
-  type: 'reasoning';
-  // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#/components/schemas/ReasoningItemParam
+// Reasoning input permits an omitted or null ID. `encrypted_content` is the
+// opaque blob the upstream signs against `(account, id)`. It is never
+// requested through `include: ['reasoning.encrypted_content']` (forcing it
+// breaks non-OpenAI reasoning models); it is present only when the upstream
+// volunteers it, and round-trips verbatim so the next-turn signature check
+// passes.
+// https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#/components/schemas/ReasoningItemParam
+export type OpenAIResponsesInputReasoning = Omit<OpenWire<Official.ResponseReasoningItem>, 'id'> & CodexInternalChatMessageMetadata & {
   id?: string | null;
-  summary: { type: 'summary_text'; text: string }[];
-  content?: OpenAIResponsesReasoningText[];
-  status?: string;
-  // Opaque reasoning blob the upstream signs against `(account, id)`. Never
-  // auto-requested via `include: ['reasoning.encrypted_content']` (forcing it
-  // breaks non-OpenAI reasoning models); present only when the upstream
-  // volunteers it, and round-tripped verbatim so the next-turn signature
-  // check passes.
-  encrypted_content?: string | null;
-}
+};
 
-// OpenAI Responses Programmatic Tool Calling caller shape.
-// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L3394-L3407
-export type OpenAIResponsesToolCaller =
-  | { type: 'direct' }
-  | { type: 'program'; caller_id: string };
+export type OpenAIResponsesToolCaller = OpenWire<Official.ResponseFunctionToolCall.Direct | Official.ResponseFunctionToolCall.Program>;
 
-export interface OpenAIResponsesFunctionToolCallItemEx {
-  type: 'function_call';
-  id?: string;
-  call_id: string;
-  name: string;
-  namespace?: string;
-  // An empty list selects Codex plaintext collaboration dispatch.
-  // https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/tools/router.rs#L31-L55
+// Codex marks a plaintext collaboration call with an empty
+// `encrypted_function_args` list.
+// https://github.com/openai/codex/blob/24e236514bebcef874c2d38ce5df26164aa50ca4/codex-rs/protocol/src/models.rs#L1180-L1193
+// https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/tools/router.rs#L31-L55
+export type OpenAIResponsesFunctionToolCallItem = OpenWire<Official.ResponseFunctionToolCall> & CodexInternalChatMessageMetadata & {
   encrypted_function_args?: string[] | null;
-  arguments: string;
-  status?: string;
-  async?: boolean;
-  caller?: OpenAIResponsesToolCaller | null;
-}
+};
 
-export interface OpenAIResponsesFunctionCallOutputItem {
-  type: 'function_call_output';
-  id?: string;
-  call_id: string;
-  // Multimodal tool outputs carry an array of content parts (e.g. a screenshot
-  // tool returning `input_image` parts) in addition to the plain-string form.
+// An output without `call_id` is standalone: it answers no function call and
+// instead names the tool that produced it.
+export type OpenAIResponsesFunctionCallOutputItem = Omit<OpenWire<Official.ResponseInputItem.FunctionCallOutput>, 'output'> & CodexInternalChatMessageMetadata & {
   output: string | OpenAIResponsesToolOutputContent[];
-  status?: 'completed' | 'incomplete';
-  caller?: OpenAIResponsesToolCaller | null;
-}
+};
 
-// Freeform custom tool invocation echoed back to the model in conversation
-// history. The model's own emission of a custom tool call is identical in
-// shape (it is also a `custom_tool_call` item).
-export interface OpenAIResponsesCustomToolCallItem {
-  type: 'custom_tool_call';
-  call_id: string;
-  name: string;
-  input: string;
-  id?: string;
-  namespace?: string;
-  status?: string;
-  caller?: OpenAIResponsesToolCaller | null;
-}
+// Codex replays custom tool calls with the item status it observed.
+// https://github.com/openai/codex/blob/24e236514bebcef874c2d38ce5df26164aa50ca4/codex-rs/protocol/src/models.rs#L1289-L1303
+export type OpenAIResponsesCustomToolCallItem = OpenWire<Official.ResponseCustomToolCall> & CodexInternalChatMessageMetadata & {
+  status?: OpenWire<Official.ResponseCustomToolCallOutputItem['status']>;
+};
 
-export interface OpenAIResponsesCustomToolCallOutputItem {
-  type: 'custom_tool_call_output';
-  call_id: string;
+// History replays the output item's status, which the input declaration omits.
+// https://github.com/openai/openai-node/blob/f57c9651c8d22ae82cacca27317cfa7126491011/src/lib/responses/ResponseInputItems.ts#L115-L160
+export type OpenAIResponsesCustomToolCallOutputItem = Omit<OpenWire<Official.ResponseCustomToolCallOutput>, 'output'> & CodexInternalChatMessageMetadata & {
   output: string | OpenAIResponsesToolOutputContent[];
-  id?: string;
-  status?: string;
-  caller?: OpenAIResponsesToolCaller | null;
+  status?: OpenWire<Official.ResponseCustomToolCallOutputItem['status']>;
+};
+
+// The canonical union keeps every item explicitly discriminated; a reference
+// without `type` is a wire shorthand.
+export type OpenAIResponsesItemReference = OpenWire<Official.ResponseInputItem.ItemReference> & { type: 'item_reference' };
+
+export interface OpenAIResponsesWebSearchTextResult {
+  // Codex's official wire tests preserve future fields alongside this shape.
+  // https://github.com/openai/codex/blob/081f205f423eb2a4db54318e7ded3b074aeb5532/codex-rs/codex-api/src/endpoint/search.rs#L138-L150
+  type: 'text_result';
+  url: string;
+  title: string;
+  snippet: string;
+  ref_id?: string;
+  [field: string]: unknown;
 }
 
-export interface OpenAIResponsesItemReference {
-  type: 'item_reference';
-  id: string;
+export interface OpenAIResponsesWebSearchImageResult {
+  // https://developers.openai.com/api/docs/guides/tools-web-search#image-search-results
+  type: 'image_result';
+  image_url: string;
+  source_website_url: string;
+  thumbnail_url?: string | null;
+  caption?: string | null;
+  [field: string]: unknown;
 }
 
-// Tolerant input mirror of OpenAIResponsesOutputWebSearchCall: clients may
-// echo previously emitted web_search_call items back. Every field is
-// optional so the wire shape accepts whatever the client carries.
-export interface OpenAIResponsesInputWebSearchCall {
-  type: 'web_search_call';
-  id?: string;
-  status?: 'completed' | 'in_progress' | 'searching' | 'failed';
-  action?: OpenAIResponsesWebSearchAction;
+export type OpenAIResponsesWebSearchResult =
+  | OpenAIResponsesWebSearchTextResult
+  | OpenAIResponsesWebSearchImageResult;
+
+export type OpenAIResponsesWebSearchAction = OpenWire<Official.ResponseFunctionWebSearch['action']>;
+
+// `results` is returned on `include: ["web_search_call.results"]`.
+// https://github.com/openai/openai-node/blob/7423ac3e9351c46300cd094479cded5551a72eb4/src/resources/responses/responses.ts
+type OpenAIResponsesWebSearchCallFields = Omit<OpenWire<Official.ResponseFunctionWebSearch>, 'action' | 'results'> & CodexInternalChatMessageMetadata & {
   results?: OpenAIResponsesWebSearchResult[];
-}
+};
 
-export interface OpenAIResponsesFileSearchResult {
-  attributes?: Record<string, string | number | boolean> | null;
-  file_id?: string;
-  filename?: string | null;
-  score?: number;
-  text?: string;
-}
+// An upstream omits `action` on `output_item.added`; clients echo the item back
+// in that shape too.
+export type OpenAIResponsesOutputWebSearchCall = OpenAIResponsesWebSearchCallFields & {
+  action?: OpenAIResponsesWebSearchAction;
+};
 
-// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L2909-L2980
-export interface OpenAIResponsesFileSearchCallItem {
-  type: 'file_search_call';
-  id: string;
-  queries: string[];
-  status: string;
-  results?: OpenAIResponsesFileSearchResult[] | null;
-}
+export type OpenAIResponsesInputWebSearchCall = Omit<OpenAIResponsesOutputWebSearchCall, 'id' | 'status'> & {
+  id?: string;
+  status?: OpenAIResponsesOutputWebSearchCall['status'];
+};
 
-// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L298-L535
-export type OpenAIResponsesComputerAction =
-  | { type: 'click'; button: 'left' | 'right' | 'wheel' | 'back' | 'forward'; x: number; y: number; keys?: string[] | null }
-  | { type: 'double_click'; keys: string[] | null; x: number; y: number }
-  | { type: 'drag'; path: Array<{ x: number; y: number }>; keys?: string[] | null }
-  | { type: 'keypress'; keys: string[] }
-  | { type: 'move'; x: number; y: number; keys?: string[] | null }
-  | { type: 'screenshot' }
-  | { type: 'scroll'; scroll_x: number; scroll_y: number; x: number; y: number; keys?: string[] | null }
-  | { type: 'type'; text: string }
-  | { type: 'wait' };
+export type OpenAIResponsesFileSearchCallItem = OpenWire<Official.ResponseFileSearchToolCall>;
 
-export interface OpenAIResponsesComputerSafetyCheck {
-  id: string;
-  code?: string | null;
-  message?: string | null;
-}
+export type OpenAIResponsesComputerAction = OpenWire<Official.ComputerAction>;
 
 // Modern `computer` emits `actions` and rejects even an empty
 // `pending_safety_checks`; the legacy `computer_use_preview` shape uses the
 // singular `action` plus safety checks. Keep both wire generations explicit.
 // https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L1990-L2035
 // https://github.com/Menci/Floway/pull/246#issuecomment-5028154071
-interface OpenAIResponsesComputerCallItemBase {
-  type: 'computer_call';
-  id: string;
-  call_id: string;
-  status: string;
-}
+type OpenAIResponsesComputerCallFields = Omit<OpenWire<Official.ResponseComputerToolCall>, 'action' | 'actions' | 'pending_safety_checks'>;
 
-export type OpenAIResponsesComputerCallItem = OpenAIResponsesComputerCallItemBase & (
+export type OpenAIResponsesComputerCallItem = OpenAIResponsesComputerCallFields & (
   | {
     actions: OpenAIResponsesComputerAction[];
     action?: never;
@@ -381,440 +322,154 @@ export type OpenAIResponsesComputerCallItem = OpenAIResponsesComputerCallItemBas
   | {
     action: OpenAIResponsesComputerAction;
     actions?: never;
-    pending_safety_checks: OpenAIResponsesComputerSafetyCheck[];
+    pending_safety_checks: OpenWire<Official.ResponseComputerToolCall.PendingSafetyCheck>[];
   }
 );
 
-// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L2280-L2359
-export interface OpenAIResponsesComputerCallOutputItem {
-  type: 'computer_call_output';
-  id?: string | null;
-  call_id: string;
-  output: {
-    type: 'computer_screenshot';
-    file_id?: string;
-    image_url?: string;
-  };
-  acknowledged_safety_checks?: OpenAIResponsesComputerSafetyCheck[] | null;
-  status?: string | null;
-  created_by?: string;
-}
+// History replays the output item's `created_by`.
+// https://github.com/openai/openai-node/blob/f57c9651c8d22ae82cacca27317cfa7126491011/src/lib/responses/ResponseInputItems.ts#L41-L67
+export type OpenAIResponsesComputerCallOutputItem = OpenWire<Official.ResponseInputItem.ComputerCallOutput> & Pick<OpenWire<Official.ResponseComputerToolCallOutputItem>, 'created_by'>;
 
-// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L7119-L7223
-export interface OpenAIResponsesToolSearchCallItem {
-  type: 'tool_search_call';
-  arguments: unknown;
-  id?: string | null;
-  call_id?: string | null;
-  execution?: 'server' | 'client';
-  status?: string | null;
-  created_by?: string;
-  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
-}
+export type OpenAIResponsesToolSearchCallItem = OpenWire<Official.ResponseInputItem.ToolSearchCall> & Pick<OpenWire<Official.ResponseToolSearchCall>, 'created_by'> & CodexInternalChatMessageMetadata;
 
-export interface OpenAIResponsesToolSearchOutputItem {
-  type: 'tool_search_output';
+export type OpenAIResponsesToolSearchOutputItem = Omit<OpenWire<Official.ResponseToolSearchOutputItemParam>, 'tools'> & Pick<OpenWire<Official.ResponseToolSearchOutputItem>, 'created_by'> & CodexInternalChatMessageMetadata & {
   tools: OpenAIResponsesTool[];
-  id?: string | null;
-  call_id?: string | null;
-  execution?: 'server' | 'client';
-  status?: string | null;
-  created_by?: string;
-  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
-}
+};
 
-// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L4265-L4285
-export interface OpenAIResponsesInputAdditionalToolsItem {
-  type: 'additional_tools';
-  role: 'developer';
+export type OpenAIResponsesInputAdditionalToolsItem = Omit<OpenWire<Official.ResponseInputItem.AdditionalTools>, 'tools'> & {
   tools: OpenAIResponsesTool[];
-  id?: string | null;
-}
+};
 
-// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L4919-L4971
-export interface OpenAIResponsesProgramItem {
-  type: 'program';
-  id: string;
-  call_id: string;
-  code: string;
-  fingerprint: string;
-}
+export type OpenAIResponsesProgramItem = OpenWire<Official.ResponseInputItem.Program>;
+export type OpenAIResponsesProgramOutputItem = OpenWire<Official.ResponseInputItem.ProgramOutput>;
 
-export interface OpenAIResponsesProgramOutputItem {
-  type: 'program_output';
-  id: string;
-  call_id: string;
-  result: string;
-  status: 'completed' | 'incomplete';
-}
-
-// OpenAI beta OpenAI Responses multi-agent item shapes.
-// https://github.com/openai/openai-node/blob/228c224393ef4bf3bda2a9d7eb40f387499299b5/src/resources/beta/responses/responses.ts#L6549-L6805
+// Multi-agent items are official beta contracts. History replays an output agent
+// message as input, so input content admits both directions' parts. Codex also
+// carries audio and may omit screenshot detail.
+type OpenAIResponsesOfficialAgentMessageContent = OpenWire<
+  | OfficialBeta.BetaResponseInputItem.AgentMessage['content'][number]
+  | OfficialBeta.BetaResponseOutputItem.AgentMessage['content'][number]
+>;
+type OpenAIResponsesOfficialAgentMessageScreenshot = Extract<OpenAIResponsesOfficialAgentMessageContent, { type: 'computer_screenshot' }>;
 export type OpenAIResponsesAgentMessageContent =
-  | CanonicalOpenAIResponsesText
-  | OpenAIResponsesInputImage
-  | OpenAIResponsesInputFile
-  | { type: 'text' | 'summary_text' | 'reasoning_text'; text: string }
-  | { type: 'refusal'; refusal: string }
-  | { type: 'computer_screenshot'; image_url: string | null; file_id: string | null; detail?: 'auto' | 'low' | 'high' | 'original' | (string & {}) | null }
-  | { type: 'encrypted_content'; encrypted_content: string }
-  | (Record<string, unknown> & { type: string });
+  | Exclude<OpenAIResponsesOfficialAgentMessageContent, { type: 'computer_screenshot' }>
+  | (Omit<OpenAIResponsesOfficialAgentMessageScreenshot, 'detail'> & { detail?: OpenAIResponsesOfficialAgentMessageScreenshot['detail'] })
+  | OpenAIResponsesInputAudio;
 
-export interface OpenAIResponsesInputAgentMessageItem {
-  type: 'agent_message';
-  author: string;
-  recipient: string;
+export type OpenAIResponsesInputAgentMessageItem = Omit<OpenWire<OfficialBeta.BetaResponseInputItem.AgentMessage>, 'content'> & CodexInternalChatMessageMetadata & {
   content: OpenAIResponsesAgentMessageContent[];
-  id?: string | null;
-  agent?: { agent_name: string } | null;
-  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
-}
+};
+export type OpenAIResponsesInputMultiAgentCallItem = OpenWire<OfficialBeta.BetaResponseInputItem.MultiAgentCall>;
+export type OpenAIResponsesInputMultiAgentCallOutputItem = OpenWire<OfficialBeta.BetaResponseInputItem.MultiAgentCallOutput>;
 
-export type OpenAIResponsesMultiAgentAction =
-  | 'spawn_agent'
-  | 'interrupt_agent'
-  | 'list_agents'
-  | 'send_message'
-  | 'followup_task'
-  | 'wait_agent';
-
-export interface OpenAIResponsesInputMultiAgentCallItem {
-  type: 'multi_agent_call';
-  action: OpenAIResponsesMultiAgentAction;
-  arguments: string;
-  call_id: string;
-  id?: string | null;
-  agent?: { agent_name: string } | null;
-}
-
-export interface OpenAIResponsesInputMultiAgentCallOutputItem {
-  type: 'multi_agent_call_output';
-  action: OpenAIResponsesMultiAgentAction;
-  call_id: string;
-  output: Array<Record<string, unknown> & { type: 'output_text'; text: string }>;
-  id?: string | null;
-  agent?: { agent_name: string } | null;
-}
-
-// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L1918-L1963
-// The compaction state also uses Codex's alias and context-compaction tag.
-// https://github.com/openai/codex/blob/e0a64cf2bc4535eb330c22857260a7856c1e8749/codex-rs/protocol/src/models.rs#L1226-L1252
-export interface OpenAIResponsesCompactionItem {
+// Codex also sends the compaction state under its alias and as a
+// context-compaction item whose encrypted content may be absent.
+// https://github.com/openai/codex/blob/24e236514bebcef874c2d38ce5df26164aa50ca4/codex-rs/protocol/src/models.rs#L1396-L1424
+export type OpenAIResponsesCompactionItem = Omit<OpenWire<Official.ResponseCompactionItemParam>, 'type' | 'encrypted_content'> & Pick<OpenWire<Official.ResponseCompactionItem>, 'created_by'> & CodexInternalChatMessageMetadata & {
   type: 'compaction' | 'compaction_summary' | 'context_compaction';
-  id?: string | null;
   encrypted_content?: string | null;
-  created_by?: string;
-}
+};
 
+// Floway's native compaction capture forwards per-turn metadata the upstream
+// attaches to the item.
 export interface OpenAIResponsesCompactionItemEx extends OpenAIResponsesCompactionItem {
-  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
 }
 
-// Payload-free trailing input item for a RemoteCompactionV2 round trip.
-// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L4894-L4902
-export interface OpenAIResponsesCompactionTriggerItem {
-  type: 'compaction_trigger';
-}
+export type OpenAIResponsesCompactionTriggerItem = OpenWire<Official.ResponseInputItem.CompactionTrigger>;
 
-// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L1852-L1915
-export interface OpenAIResponsesCodeInterpreterCallItem {
-  type: 'code_interpreter_call';
-  id: string;
-  code: string | null;
-  container_id: string;
-  outputs: Array<
-    | { type: 'logs'; logs: string }
-    | { type: 'image'; url: string }
-  > | null;
-  status: string;
-}
+export type OpenAIResponsesInputImageGenerationCall = OpenWire<Official.ResponseInputItem.ImageGenerationCall> & CodexInternalChatMessageMetadata;
+
+export type OpenAIResponsesCodeInterpreterCallItem = OpenWire<Official.ResponseCodeInterpreterToolCall>;
+
+export type OpenAIResponsesLocalShellCallItem = OpenWire<Official.ResponseInputItem.LocalShellCall> & CodexInternalChatMessageMetadata;
 
 // Legacy local-shell output is opaque text correlated by `call_id`; modern
 // shell output uses structured stdout/stderr/outcome chunks below.
 // https://github.com/openai/openai-agents-python/blob/2fa463571e76dae8ff267622f1018eaf06ffeb9f/tests/test_local_shell_tool.py#L46-L92
-export interface OpenAIResponsesLocalShellCallItem {
-  type: 'local_shell_call';
-  id: string;
-  call_id: string;
-  action: {
-    type: 'exec';
-    command: string[];
-    env: Record<string, string>;
-    timeout_ms?: number | null;
-    user?: string | null;
-    working_directory?: string | null;
-  };
-  status: string;
-}
-
-export interface OpenAIResponsesLocalShellCallOutputItem {
-  type: 'local_shell_call_output';
+export type OpenAIResponsesLocalShellCallOutputItem = Omit<OpenWire<Official.ResponseInputItem.LocalShellCallOutput>, 'id'> & {
   id?: string | null;
   call_id: string;
-  output: string;
-  status?: string | null;
-}
-
-export type OpenAIResponsesShellEnvironment =
-  | { type: 'local' }
-  | { type: 'container_reference'; container_id: string };
-
-// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L3154-L3344
-export interface OpenAIResponsesShellCallItem {
-  type: 'shell_call';
-  id?: string | null;
-  call_id: string;
-  action: {
-    commands: string[];
-    max_output_length?: number | null;
-    timeout_ms?: number | null;
-  };
-  environment?: OpenAIResponsesShellEnvironment | null;
-  status?: string | null;
-  caller?: OpenAIResponsesToolCaller | null;
-  created_by?: string;
-}
-
-export interface OpenAIResponsesShellCallOutputItem {
-  type: 'shell_call_output';
-  id?: string | null;
-  call_id: string;
-  max_output_length?: number | null;
-  output: Array<{
-    stdout: string;
-    stderr: string;
-    outcome: { type: 'timeout' } | { type: 'exit'; exit_code: number };
-    created_by?: string;
-  }>;
-  status?: string | null;
-  caller?: OpenAIResponsesToolCaller | null;
-  created_by?: string;
-}
-
-export type OpenAIResponsesApplyPatchOperation =
-  | { type: 'create_file'; path: string; diff: string }
-  | { type: 'delete_file'; path: string }
-  | { type: 'update_file'; path: string; diff: string };
-
-// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L1472-L1643
-export interface OpenAIResponsesApplyPatchCallItem {
-  type: 'apply_patch_call';
-  id?: string | null;
-  call_id: string;
-  operation: OpenAIResponsesApplyPatchOperation;
-  status: 'in_progress' | 'completed';
-  caller?: OpenAIResponsesToolCaller | null;
-  created_by?: string;
-}
-
-export interface OpenAIResponsesApplyPatchCallOutputItem {
-  type: 'apply_patch_call_output';
-  id?: string | null;
-  call_id: string;
-  status: 'completed' | 'failed';
-  output?: string | null;
-  caller?: OpenAIResponsesToolCaller | null;
-  created_by?: string;
-}
-
-// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L4727-L4892
-export interface OpenAIResponsesMcpCallItem {
-  type: 'mcp_call';
-  id: string;
-  arguments: string;
-  name: string;
-  server_label: string;
-  approval_request_id?: string | null;
-  error?: Official.McpToolCallError | string | null;
-  output?: string | null;
-  status?: string;
-}
-
-export interface OpenAIResponsesMcpListToolsItem {
-  type: 'mcp_list_tools';
-  id: string;
-  server_label: string;
-  tools: Array<{
-    input_schema: unknown;
-    name: string;
-    annotations?: unknown | null;
-    description?: string | null;
-  }>;
-  error?: string | null;
-}
-
-export interface OpenAIResponsesMcpApprovalRequestItem {
-  type: 'mcp_approval_request';
-  id: string;
-  arguments: string;
-  name: string;
-  server_label: string;
-}
-
-export interface OpenAIResponsesMcpApprovalResponseItem {
-  type: 'mcp_approval_response';
-  id?: string | null;
-  approval_request_id: string;
-  approve: boolean;
-  reason?: string | null;
-}
-
-export type OpenAIResponsesInputImageGenerationCall = Official.ResponseInputItem.ImageGenerationCall & {
-  error?: { message: string; code: string; type?: string };
 };
 
-// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L822-L851
-export type OpenAIResponsesToolAllowedCaller = 'direct' | 'programmatic';
+// History replays the output item's `created_by` on the call and on each
+// output chunk.
+// https://github.com/openai/openai-node/blob/f57c9651c8d22ae82cacca27317cfa7126491011/src/lib/responses/ResponseInputItems.ts#L41-L67
+export type OpenAIResponsesShellCallItem = OpenWire<Official.ResponseInputItem.ShellCall> & Pick<OpenWire<Official.ResponseFunctionShellToolCall>, 'created_by'>;
 
-export interface OpenAIResponsesFunctionTool {
-  type: 'function';
-  name: string;
-  // One interface serves both wire directions, and they disagree on
-  // `description`, `parameters` and `strict`: a request may omit all three,
-  // while the echoed response tool marks all three required with an explicit
-  // `null` alternative. The union of the two is optional-and-nullable, so a
-  // translator must handle absent and `null` alike.
-  // Request: https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L808-L847
-  // Response: https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2141-L2192
-  description?: string | null;
-  parameters?: Record<string, unknown> | null;
-  strict?: boolean | null;
-  allowed_callers?: OpenAIResponsesToolAllowedCaller[] | null;
-  defer_loading?: boolean;
-  output_schema?: Record<string, unknown> | null;
-}
+export type OpenAIResponsesShellCallOutputItem = Omit<OpenWire<Official.ResponseInputItem.ShellCallOutput>, 'output'> & Pick<OpenWire<Official.ResponseFunctionShellToolCallOutput>, 'created_by'> & {
+  output: OpenWire<Official.ResponseFunctionShellToolCallOutput.Output>[];
+};
 
-// Codex and other OpenAI Responses clients ship hosted server tools (web_search,
-// image_generation, tool_search), namespace containers for function/custom
-// tools, and Freeform `custom` tools alongside ordinary function tools. Native
-// OpenAI Responses targets pass `custom` through; translated targets wrap each
-// `custom` as a single-string-parameter function tool and unwrap matching
-// function calls back into `custom_tool_call` outputs. The wire-level tools
-// array is still a heterogeneous union and translators must narrow on
-// `type === "function"` (or `"custom"`) before reading `name` / `parameters`.
-//
-export type OpenAIResponsesHostedToolType =
-  | typeof WEB_SEARCH_HOSTED_TYPE_NAMES[number]
-  | 'image_generation'
-  | 'tool_search';
+export type OpenAIResponsesApplyPatchCallItem = OpenWire<Official.ResponseInputItem.ApplyPatchCall> & Pick<OpenWire<Official.ResponseApplyPatchToolCall>, 'created_by'>;
 
-export interface OpenAIResponsesHostedTool {
-  type: OpenAIResponsesHostedToolType;
-  // web_search-specific fields per the OpenAI Responses guide. Typed
-  // explicitly to avoid unsafe index-signature casts at the call site.
-  filters?: {
-    allowed_domains?: string[];
-    blocked_domains?: string[];
-  };
-  user_location?: {
-    type?: 'approximate';
-    city?: string;
-    region?: string;
-    country?: string;
-    timezone?: string;
-  };
-  search_context_size?: 'low' | 'medium' | 'high';
-  // Settings forwarded when the hosted tool is executed through Codex's
-  // standalone `/alpha/search` API.
-  // https://github.com/openai/codex/blob/2f19a57704fb7b1db032bc38cf995034254eaebb/codex-rs/codex-api/src/search.rs#L215-L295
-  external_web_access?: boolean | 'cached' | 'indexed' | 'live';
-  image_settings?: {
-    max_results?: number;
-    caption?: boolean;
-  };
-  allowed_callers?: Array<'direct' | 'shell' | 'code_interpreter'>;
-  search_content_types?: string[];
-  return_token_budget?: 'default' | 'unlimited';
-  name?: string;
-  // Forward-compat catch-all for other hosted-tool fields the gateway
-  // doesn't currently inspect.
-  [key: string]: unknown;
-}
+export type OpenAIResponsesApplyPatchCallOutputItem = OpenWire<Official.ResponseInputItem.ApplyPatchCallOutput> & Pick<OpenWire<Official.ResponseApplyPatchToolCallOutput>, 'created_by'>;
 
-export interface OpenAIResponsesCustomTool {
-  type: 'custom';
-  name: string;
-  description?: string;
-  format?: Record<string, unknown>;
-  allowed_callers?: OpenAIResponsesToolAllowedCaller[] | null;
-  defer_loading?: boolean;
-}
+// Earlier SDK revisions declared the MCP call error as a plain string.
+// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L4876-L4880
+export type OpenAIResponsesMcpCallItem = Omit<OpenWire<Official.ResponseInputItem.McpCall>, 'error'> & {
+  error?: OpenWire<Official.McpToolCallError> | string | null;
+};
+
+export type OpenAIResponsesMcpListToolsItem = OpenWire<Official.ResponseInputItem.McpListTools>;
+export type OpenAIResponsesMcpApprovalRequestItem = OpenWire<Official.ResponseInputItem.McpApprovalRequest>;
+export type OpenAIResponsesMcpApprovalResponseItem = OpenWire<Official.ResponseInputItem.McpApprovalResponse>;
+
+export type OpenAIResponsesToolAllowedCaller = OpenWire<NonNullable<Official.FunctionTool['allowed_callers']>[number]>;
+
+// One declaration serves both wire directions, and they disagree on
+// `parameters` and `strict`: a request may omit both, while the echoed
+// response tool marks both required with an explicit `null` alternative. The
+// union of the two is optional-and-nullable, so a translator must handle absent
+// and `null` alike.
+// Request: https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L808-L847
+// Response: https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2141-L2192
+export type OpenAIResponsesFunctionTool = Omit<OpenWire<Official.FunctionTool>, 'parameters' | 'strict'> & Partial<Pick<OpenWire<Official.FunctionTool>, 'parameters' | 'strict'>>;
+
+export type OpenAIResponsesCustomTool = OpenWire<Official.CustomTool>;
 
 // Namespace descriptions remain required, but OpenAI deliberately permits an
 // empty string. Provider adapters whose upstreams still enforce the former
 // minLength constraint must own that compatibility rewrite rather than
 // narrowing this canonical contract.
 // https://github.com/openai/openai-openapi/commit/466c74a42f51c02f1927bc666815251dc53845dc
-export interface OpenAIResponsesNamespaceTool {
-  type: 'namespace';
-  name: string;
-  description: string;
+export type OpenAIResponsesNamespaceTool = Omit<OpenWire<Official.NamespaceTool>, 'tools'> & {
   tools: Array<OpenAIResponsesFunctionTool | OpenAIResponsesCustomTool>;
-}
+};
 
-// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L8110-L8115
-export interface OpenAIResponsesProgrammaticTool {
-  type: 'programmatic_tool_calling';
-}
+// The web-search guide documents controls the pinned SDK declaration has not
+// caught up with; Codex sends the same tool with its live-access settings.
+// https://web.archive.org/web/20261116202850/https://developers.openai.com/api/docs/guides/tools-web-search
+// https://github.com/openai/codex/blob/24e236514bebcef874c2d38ce5df26164aa50ca4/codex-rs/tools/src/tool_spec.rs#L33-L53
+// https://github.com/openai/codex/blob/24e236514bebcef874c2d38ce5df26164aa50ca4/codex-rs/codex-api/src/search.rs#L218-L248
+export type OpenAIResponsesWebSearchTool = Omit<OpenWire<Official.WebSearchTool | Official.WebSearchPreviewTool>, 'filters' | 'external_web_access'> & {
+  filters?: OpenWire<Official.WebSearchTool.Filters> & { blocked_domains?: string[] | null } | null;
+  external_web_access?: boolean | OpenWire<'cached' | 'indexed' | 'live'>;
+  indexed_web_access?: boolean;
+  search_content_types?: OpenWire<'text' | 'image'>[];
+  image_settings?: { max_results?: number; caption?: boolean };
+  return_token_budget?: OpenWire<'default' | 'unlimited'>;
+  allowed_callers?: OpenWire<'direct' | 'shell' | 'code_interpreter'>[];
+};
 
-// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L7871-L8080
-export interface OpenAIResponsesMcpTool {
-  type: 'mcp';
-  server_label: string;
-  allowed_callers?: OpenAIResponsesToolAllowedCaller[] | null;
-  defer_loading?: boolean;
-  [key: string]: unknown;
-}
+export type OpenAIResponsesImageGenerationTool = OpenWire<Official.Tool.ImageGeneration>;
 
-export interface OpenAIResponsesCodeInterpreterTool {
-  type: 'code_interpreter';
-  container: string | Record<string, unknown>;
-  allowed_callers?: OpenAIResponsesToolAllowedCaller[] | null;
-}
+export type OpenAIResponsesToolSearchTool = OpenWire<Official.ToolSearchTool>;
 
-// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L541-L577
-export interface OpenAIResponsesComputerTool {
-  type: 'computer';
-}
+// Hosted tools the gateway can execute through server-tool shims.
+export type OpenAIResponsesHostedTool = OpenAIResponsesWebSearchTool | OpenAIResponsesImageGenerationTool | OpenAIResponsesToolSearchTool;
 
-export interface OpenAIResponsesComputerUsePreviewTool {
-  type: 'computer_use_preview';
-  display_height: number;
-  display_width: number;
-  environment: 'windows' | 'mac' | 'linux' | 'ubuntu' | 'browser';
-}
+export type OpenAIResponsesHostedToolType = OpenAIResponsesHostedTool['type'];
 
-// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L729-L806
-export interface OpenAIResponsesFileSearchTool {
-  type: 'file_search';
-  vector_store_ids: string[];
-  filters?: Record<string, unknown> | null;
-  max_num_results?: number;
-  ranking_options?: {
-    hybrid_search?: { embedding_weight: number; text_weight: number };
-    ranker?: 'auto' | 'default-2024-11-15';
-    score_threshold?: number;
-  };
-}
-
-// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L8239-L8247
-export interface OpenAIResponsesLocalShellTool {
-  type: 'local_shell';
-}
-
-// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L803-L815
-export interface OpenAIResponsesShellTool {
-  type: 'shell';
-  allowed_callers?: OpenAIResponsesToolAllowedCaller[] | null;
-  environment?: unknown;
-}
-
-// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L245-L264
-export interface OpenAIResponsesApplyPatchTool {
-  type: 'apply_patch';
-  allowed_callers?: OpenAIResponsesToolAllowedCaller[] | null;
-}
+export type OpenAIResponsesProgrammaticTool = OpenWire<Official.Tool.ProgrammaticToolCalling>;
+export type OpenAIResponsesMcpTool = OpenWire<Official.Tool.Mcp>;
+export type OpenAIResponsesCodeInterpreterTool = OpenWire<Official.Tool.CodeInterpreter>;
+export type OpenAIResponsesComputerTool = OpenWire<Official.ComputerTool>;
+export type OpenAIResponsesComputerUsePreviewTool = OpenWire<Official.ComputerUsePreviewTool>;
+export type OpenAIResponsesFileSearchTool = OpenWire<Official.FileSearchTool>;
+export type OpenAIResponsesLocalShellTool = OpenWire<Official.Tool.LocalShell>;
+export type OpenAIResponsesShellTool = OpenWire<Official.FunctionShellTool>;
+export type OpenAIResponsesApplyPatchTool = OpenWire<Official.ApplyPatchTool>;
 
 export type OpenAIResponsesTool =
   | OpenAIResponsesFunctionTool
@@ -831,28 +486,21 @@ export type OpenAIResponsesTool =
   | OpenAIResponsesShellTool
   | OpenAIResponsesApplyPatchTool;
 
-// https://github.com/openai/openai-node/blob/39a15b412fc129df15339ebd6e3e6547854aa81f/src/resources/responses/responses.ts#L8250-L8400
+// The hosted-tool guides force their tools by type.
+// https://developers.openai.com/api/docs/guides/tools-image-generation
+type OpenAIResponsesHostedToolChoice = { type: OpenAIResponsesHostedToolType };
+
 export type OpenAIResponsesToolChoice =
-  | 'auto'
-  | 'none'
-  | 'required'
-  | { type: 'function'; name: string; namespace?: string }
-  | { type: 'custom'; name: string; namespace?: string }
-  | { type: 'mcp'; server_label: string; name?: string | null }
-  | { type: 'allowed_tools'; mode: 'auto' | 'required'; tools: Array<Record<string, unknown>> }
-  | { type: 'shell' }
-  | { type: 'apply_patch' }
-  | { type: 'programmatic_tool_calling' }
-  | {
-    type:
-      | OpenAIResponsesHostedToolType
-      | 'file_search'
-      | 'computer'
-      | 'computer_use_preview'
-      | 'computer_use'
-      | 'code_interpreter'
-      | 'mcp';
-  };
+  | OpenWire<Official.ToolChoiceOptions>
+  | OpenWire<Official.ToolChoiceAllowed>
+  | OpenWire<Official.ToolChoiceTypes>
+  | OpenWire<Official.ToolChoiceFunction>
+  | OpenWire<Official.ToolChoiceMcp>
+  | OpenWire<Official.ToolChoiceCustom>
+  | OpenWire<Official.ResponseCreateParams.SpecificProgrammaticToolCallingParam>
+  | OpenWire<Official.ToolChoiceApplyPatch>
+  | OpenWire<Official.ToolChoiceShell>
+  | OpenAIResponsesHostedToolChoice;
 
 // ── Response types ──
 
@@ -947,38 +595,13 @@ export interface OpenAIResponsesResultEx extends Omit<Partial<OpenAIResponsesRes
 
 // Stored/output additional-tools roles are wider than the input-only
 // `developer` role.
-// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L5116-L5136
-export type OpenAIResponsesAdditionalToolsRole =
-  | 'unknown'
-  | 'user'
-  | 'assistant'
-  | 'system'
-  | 'critic'
-  | 'discriminator'
-  | 'developer'
-  | 'tool';
-
-export interface OpenAIResponsesOutputAdditionalToolsItem {
-  type: 'additional_tools';
-  id: string;
-  role: OpenAIResponsesAdditionalToolsRole;
+export type OpenAIResponsesOutputAdditionalToolsItem = Omit<OpenWire<Official.ResponseOutputItem.AdditionalTools>, 'tools'> & {
   tools: OpenAIResponsesTool[];
-}
-
-export type OpenAIResponsesOutputAgentMessageItem = Omit<OpenAIResponsesInputAgentMessageItem, 'id' | 'agent'> & {
-  id: string;
-  agent?: { agent_name: string };
 };
 
-export type OpenAIResponsesOutputMultiAgentCallItem = Omit<OpenAIResponsesInputMultiAgentCallItem, 'id' | 'agent'> & {
-  id: string;
-  agent?: { agent_name: string };
-};
-
-export type OpenAIResponsesOutputMultiAgentCallOutputItem = Omit<OpenAIResponsesInputMultiAgentCallOutputItem, 'id' | 'agent'> & {
-  id: string;
-  agent?: { agent_name: string };
-};
+export type OpenAIResponsesOutputAgentMessageItem = OpenWire<OfficialBeta.BetaResponseOutputItem.AgentMessage> & CodexInternalChatMessageMetadata;
+export type OpenAIResponsesOutputMultiAgentCallItem = OpenWire<OfficialBeta.BetaResponseOutputItem.MultiAgentCall>;
+export type OpenAIResponsesOutputMultiAgentCallOutputItem = OpenWire<OfficialBeta.BetaResponseOutputItem.MultiAgentCallOutput>;
 
 export type OpenAIResponsesOutputItemEx =
   | OpenAIResponsesOutputMessageEx
@@ -1011,34 +634,35 @@ export type OpenAIResponsesOutputItemEx =
   | OpenAIResponsesMcpListToolsItem
   | OpenAIResponsesMcpApprovalRequestItem
   | OpenAIResponsesMcpApprovalResponseItem
-  | OpenAIResponsesOutputImageGenerationCallEx;
+  | OpenAIResponsesOutputImageGenerationCall;
 
-// The OpenAI Responses item schema requires `status` on an output message and
-// `annotations` on every `output_text` part, even when the text carries no
-// citations, so both are modeled as required and the compiler forces every
-// producer to state them:
-// https://github.com/openai/openai-openapi/blob/d2f04809d7961f01e94031e1f31617394599dbdd/openapi.yaml#L44868-L44873
-// https://github.com/openai/openai-openapi/blob/d2f04809d7961f01e94031e1f31617394599dbdd/openapi.yaml#L66303-L66307
-// `id` is schema-required too but stays optional: an upstream item that omits
-// it is surfaced by `requireItemId` rather than given an invented value.
-export interface OpenAIResponsesOutputMessageEx {
-  type: 'message';
-  id?: string;
-  status: string;
-  role: 'assistant';
-  content: OpenAIResponsesOutputContentBlock[];
-  phase?: OpenAIResponsesMessagePhase;
-}
+export type OpenAIResponsesOutputText = Omit<OpenWire<Official.ResponseOutputText>, 'logprobs'> & {
+  logprobs?: OpenAIResponsesOutputLogprobEx[];
+};
+
+export type OpenAIResponsesOutputRefusal = OpenWire<Official.ResponseOutputRefusal>;
 
 export type OpenAIResponsesOutputContentBlock = OpenAIResponsesOutputText | OpenAIResponsesOutputRefusal;
 
-export type OpenAIResponsesAnnotation =
-  | { type: 'url_citation'; url: string; title: string; start_index: number; end_index: number }
-  | { type: 'file_citation'; file_id: string; filename: string; index: number }
-  | { type: 'container_file_citation'; container_id: string; file_id: string; filename: string; start_index: number; end_index: number }
-  | { type: 'file_path'; file_id: string; index: number };
+export type OpenAIResponsesAnnotation = OpenAIResponsesOutputText['annotations'][number];
 
-export interface OpenAIResponsesLogprob { token: string; logprob: number; bytes: number[]; top_logprobs: { token: string; logprob: number; bytes: number[] }[] }
+// The item schema requires `id` on every output message, so producers must
+// preserve the upstream value rather than synthesize a replacement.
+export type OpenAIResponsesOutputMessageEx = Omit<OpenWire<Official.ResponseOutputMessage>, 'content'> & {
+  content: OpenAIResponsesOutputContentBlock[];
+};
+
+export type OpenAIResponsesOutputFunctionCallEx = Omit<OpenAIResponsesFunctionToolCallItem, 'status'> & {
+  status: NonNullable<OpenAIResponsesFunctionToolCallItem['status']>;
+};
+
+export type OpenAIResponsesOutputCustomToolCall = OpenAIResponsesCustomToolCallItem;
+
+export type OpenAIResponsesOutputReasoning = OpenWire<Official.ResponseReasoningItem> & CodexInternalChatMessageMetadata;
+
+export type OpenAIResponsesOutputImageGenerationCall = OpenWire<Official.ResponseOutputItem.ImageGenerationCall> & CodexInternalChatMessageMetadata;
+
+export type OpenAIResponsesLogprob = OpenWire<Official.ResponseOutputText.Logprob>;
 
 // SSE logprobs are a separate standard shape from ResponseOutputText.Logprob.
 // https://github.com/openai/openai-node/blob/7665932e2b7965a5e0a3123fe3de4dbdb4131933/src/resources/responses/responses.ts#L8756-L8791
@@ -1062,83 +686,6 @@ export interface OpenAIResponsesStreamLogprobEx extends Omit<OpenAIResponsesStre
 // https://github.com/openai/openai-node/blob/7665932e2b7965a5e0a3123fe3de4dbdb4131933/src/resources/responses/responses.ts#L7219-L7261
 export type OpenAIResponsesOutputLogprobEx = Omit<OpenAIResponsesLogprob, 'bytes' | 'top_logprobs'>
   & Pick<OpenAIResponsesStreamLogprobEx, 'bytes' | 'top_logprobs'>;
-
-export interface OpenAIResponsesOutputText {
-  type: 'output_text';
-  text: string;
-  annotations: OpenAIResponsesAnnotation[];
-  logprobs?: OpenAIResponsesOutputLogprobEx[];
-}
-
-export interface OpenAIResponsesOutputRefusal {
-  type: 'refusal';
-  refusal: string;
-}
-
-export interface OpenAIResponsesOutputFunctionCallEx {
-  type: 'function_call';
-  id?: string;
-  call_id: string;
-  name: string;
-  namespace?: string;
-  // An empty list selects Codex plaintext collaboration dispatch.
-  // https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/tools/router.rs#L31-L55
-  encrypted_function_args?: string[] | null;
-  arguments: string;
-  status: string;
-  caller?: OpenAIResponsesToolCaller | null;
-}
-
-export type OpenAIResponsesOutputCustomToolCall = OpenAIResponsesCustomToolCallItem;
-
-export interface OpenAIResponsesOutputReasoning {
-  type: 'reasoning';
-  id: string;
-  summary: { type: 'summary_text'; text: string }[];
-  content?: OpenAIResponsesReasoningText[];
-  status?: string;
-  // See `OpenAIResponsesInputReasoning.encrypted_content`.
-  encrypted_content?: string | null;
-}
-
-// Web-search call types. `results` is opt-in on the wire (native gates
-// it on `include: ["web_search_call.results"]`); consumers must
-// tolerate its absence.
-
-export type OpenAIResponsesWebSearchAction =
-  // `type: 'search'` carries either `queries: string[]` (preferred,
-  // emitted by newer variants) or the deprecated `query: string` (older
-  // codex). Producers should populate `queries`; consumers should read
-  // `queries` first. `sources` is opt-in on the wire (native gates it
-  // on `include: ["web_search_call.action.sources"]`); consumers must
-  // tolerate its absence. The element shape mirrors openai-python
-  // `ActionSearch.sources[]` — `type: 'url'` with the source URL.
-  | { type: 'search'; query?: string; queries?: string[]; sources?: { type: 'url'; url: string }[] }
-  // `url` is optional on `open_page`: native upstreams drop the field on
-  // soft failures (404, network, blocked) rather than emitting a placeholder.
-  | { type: 'open_page'; url?: string }
-  | { type: 'find_in_page'; url: string; pattern: string };
-
-export interface OpenAIResponsesWebSearchResult {
-  type: 'text_result';
-  url: string;
-  title: string;
-  snippet: string;
-}
-
-export interface OpenAIResponsesOutputWebSearchCall {
-  type: 'web_search_call';
-  id: string;
-  status: 'in_progress' | 'searching' | 'completed' | 'failed';
-  // Optional because upstream omits `action` on the in-flight
-  // `output_item.added` and only populates it on `.done` once the
-  // action shape (search vs open_page vs find_in_page) is known.
-  action?: OpenAIResponsesWebSearchAction;
-  results?: OpenAIResponsesWebSearchResult[];
-}
-
-export type OpenAIResponsesOutputImageGenerationCall = Official.ResponseOutputItem.ImageGenerationCall;
-export type OpenAIResponsesOutputImageGenerationCallEx = OpenAIResponsesOutputImageGenerationCall & { error?: { message: string; code: string; type?: string } };
 
 // ── Stream event types ──
 
@@ -1449,5 +996,5 @@ export { createRandomOpenAIResponsesItemId, type GeneratedOpenAIResponsesItemTyp
 export { reassembleOpenAIResponsesEvents } from './reassemble.ts';
 export { openaiResponsesProtocolFrameToSSEFrame } from './to-sse.ts';
 
-export { canonicalizeOpenAIResponsesPayload } from './canonicalize-payload.ts';
+export { canonicalizeOpenAIResponsesPayload, isCodexAudioReference } from './canonicalize-payload.ts';
 export { toOpenAIResponsesInputItem, toOpenAIResponsesInputItems } from './history.ts';

@@ -12,8 +12,8 @@ export function UserIdentity({ isAdmin, username }: { isAdmin: boolean; username
   return <span className="floway-identity">
     <UserAvatar username={username} />
     <TruncationTooltip content={username} relationship="label">{ref => <span className="floway-identity-name truncate" ref={ref}>{username}</span>}</TruncationTooltip>
-    {isAdmin && <Tooltip content={t('dashboard.users.role.admin')} relationship="label">
-      <span aria-label={t('dashboard.users.role.admin')} className="floway-admin-indicator inline-flex flex-none text-fui-fg2" role="img"><PersonRibbon16Regular aria-hidden style={{ width: 16, height: 16 }} /></span>
+    {isAdmin && <Tooltip content={t('directory.users.role.admin')} relationship="label">
+      <span aria-label={t('directory.users.role.admin')} className="floway-admin-indicator inline-flex flex-none text-fui-fg2" role="img"><PersonRibbon16Regular aria-hidden style={{ width: 16, height: 16 }} /></span>
     </Tooltip>}
   </span>;
 }

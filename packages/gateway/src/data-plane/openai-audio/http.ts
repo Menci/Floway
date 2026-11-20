@@ -12,6 +12,7 @@ import type { AudioFormEntry } from './facts.ts';
 import { openaiAudioTranscriptionServePipeline } from './pipeline.ts';
 import { isFrames, openPrologue, readIngress, serveThrough } from '../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
+import { openaiSseFailure } from '../shared/openai-errors.ts';
 import { move } from '@floway-dev/pipeline';
 import { isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
 import { parseOpenAIAudioTranscriptionResponseFormat, type OpenAIAudioTranscriptionResponseFormat } from '@floway-dev/protocols/openai-audio';
@@ -116,7 +117,7 @@ export const openaiAudioTranscriptions = async (c: Context): Promise<Response> =
     }) as never,
     facts => {
       const rendered = facts['response.openaiAudioTranscription.rendered'];
-      if (isFrames(rendered)) return { frames: rendered };
+      if (isFrames(rendered)) return { frames: rendered, failure: error => openaiSseFailure(prologue.gateway, error) };
       // The upstream's own media type, or none where it declared none: a document this
       // gateway carried rather than wrote is not one it can describe.
       return { body: (rendered instanceof Uint8Array ? rendered : facts['response.http.jsonBody']!) as BodyInit, contentType: facts['response.openaiAudioTranscription.mediaType'] };

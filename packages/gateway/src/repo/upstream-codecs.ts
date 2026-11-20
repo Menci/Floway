@@ -21,6 +21,7 @@ const endpointsSchema = z.object({
   openaiChatCompletions: endpointSchema.optional(),
   openaiResponses: endpointSchema.optional(),
   anthropicMessages: endpointSchema.optional(),
+  geminiGenerateContent: endpointSchema.optional(),
   openaiEmbeddings: endpointSchema.optional(),
   openaiImagesGenerations: endpointSchema.optional(),
   openaiImagesEdits: endpointSchema.optional(),
@@ -37,7 +38,7 @@ const limitsSchema = z.object({
 
 const chatSchema = z.object({
   modalities: z.object({
-    input: z.array(z.enum(['text', 'image'])),
+    input: z.array(z.enum(['text', 'image', 'audio'])),
     output: z.array(z.enum(['text', 'image'])),
   }).passthrough().optional(),
   image_detail_original: z.boolean().optional(),

@@ -82,7 +82,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     setMutating(true);
     setDeleteError(null);
 
-    const handle = toasts.start(t('dashboard.proxy.toast.delete.pending', { name: target.name }));
+    const handle = toasts.start(t('proxies.toast.delete.pending', { name: target.name }));
     const result = await callApiNoContent(() => api.api.proxies[':id'].$delete({ param: { id: target.id } }));
 
     setMutating(false);
@@ -94,7 +94,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
       const referencing = raw && 'referencing_upstream_ids' in raw ? raw.referencing_upstream_ids : [];
       if (referencing.length > 0) {
         setDeleteError(
-          `${t('dashboard.proxy.delete.conflict')} ${t('dashboard.proxy.delete.conflictWithIds', { ids: referencing.join(', ') })}`,
+          `${t('proxies.delete.conflict')} ${t('proxies.delete.conflictWithIds', { ids: referencing.join(', ') })}`,
         );
       } else {
         setDeleteError(result.error.message);
@@ -103,7 +103,7 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
     }
 
     deleteDialog.close();
-    handle.succeed(t('dashboard.proxy.toast.delete.success', { name: target.name }));
+    handle.succeed(t('proxies.toast.delete.success', { name: target.name }));
     await refresh();
   }, [deleteDialog, refresh, t, toasts]);
 
@@ -112,22 +112,22 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
       <DashboardPageHeader
         actions={<ResourceListActions
           createDisabled={!loaded}
-          createLabel={t('dashboard.proxy.actions.create')}
+          createLabel={t('proxies.actions.create')}
           disabled={mutating}
           onCreate={() => editorDialog.open(null)}
           onRefresh={() => void refresh()}
-          refreshLabel={t('dashboard.proxy.actions.refresh')}
+          refreshLabel={t('proxies.actions.refresh')}
           refreshing={refreshing}
         />}
-        description={t('dashboard.proxy.description')}
-        title={t('dashboard.nav.proxy')}
+        description={t('proxies.description')}
+        title={t('proxies.title')}
       />
 
       {loadError && (
         <OutcomeMessageBar onDismiss={() => setLoadError(null)}>{loadError}</OutcomeMessageBar>
       )}
 
-      {!loaded ? <Panel><EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine></Panel> : <>
+      {!loaded ? <Panel><EmptyStateLine>{t('common.errors.viewUnavailable')}</EmptyStateLine></Panel> : <>
         <ResourceListPanel>
           <ProxyList disabled={refreshing || mutating} proxies={proxies} onDelete={openDeleteDialog} onEdit={editorDialog.open} />
         </ResourceListPanel>
@@ -143,15 +143,15 @@ export default function DashboardProvidersProxy({ loaderData }: Route.ComponentP
 
         {deleteDialog.invocation && <ConfirmDialog
           open={deleteDialog.isOpen}
-          actionLabel={t('dashboard.proxy.actions.delete')}
+          actionLabel={t('proxies.actions.delete')}
           busy={mutating}
           error={deleteError}
           key={deleteDialog.invocation.key}
-          message={t('dashboard.proxy.delete.message', { name: deleteDialog.invocation.value.name })}
+          message={t('proxies.delete.message', { name: deleteDialog.invocation.value.name })}
           onConfirm={() => void handleDeleteConfirm(deleteDialog.invocation!.value)}
           onDismissError={() => setDeleteError(null)}
           onOpenChange={open => { if (!open) deleteDialog.close(); }}
-          title={t('dashboard.proxy.delete.title')}
+          title={t('proxies.delete.title')}
         />}
       </>}
     </section>

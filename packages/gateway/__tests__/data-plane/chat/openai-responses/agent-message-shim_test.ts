@@ -57,7 +57,7 @@ test('lowers agent_message items immutably to framed user messages when the flag
     type: 'agent_message',
     author: '/root/route_audit',
     recipient: '/root',
-    content: [{ type: 'output_text', text: 'done' }],
+    content: [{ type: 'output_text', text: 'done', annotations: [] }],
   };
 
   const { seen } = await lower([

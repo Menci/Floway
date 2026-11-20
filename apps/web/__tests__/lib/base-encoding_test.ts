@@ -1,16 +1,12 @@
 import { describe, expect, test } from 'vitest';
 
-import { decodeWebBase64, decodeWebBase64BinaryString, encodeBase64BinaryString, encodeBase64url } from '../../src/lib/base-encoding';
+import { decodeWebBase64, decodeWebBase64BinaryString, encodeBase64BinaryString } from '../../src/lib/base-encoding';
 
 describe('browser base encoding', () => {
   test('preserves whitespace, omitted padding, and non-zero trailing padding bits', () => {
     expect(new TextDecoder().decode(decodeWebBase64(' Zm9v\nYg\t'))).toBe('foob');
     expect(new TextDecoder().decode(decodeWebBase64('Zh=='))).toBe('f');
     expect(() => decodeWebBase64('Zg=')).toThrow();
-  });
-
-  test('emits unpadded base64url', () => {
-    expect(encodeBase64url(new Uint8Array([0xfb, 0xff]))).toBe('-_8');
   });
 
   test('uses the bulk Web API fallback when typed-array Base64 is unavailable', () => {

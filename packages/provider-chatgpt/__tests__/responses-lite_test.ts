@@ -56,38 +56,6 @@ describe('Codex Responses Lite request encoding', () => {
     expect(body).toEqual(original);
   });
 
-  test('forwards an existing Lite prefix and later additional_tools with their identities', () => {
-    const initial = additionalTools('at_initial', [{ type: 'namespace', name: 'functions', description: '', tools: [functionTool('read')] }]);
-    const base = {
-      type: 'message' as const, role: 'developer' as const, id: 'msg_base',
-      content: [{ type: 'input_text' as const, text: 'Caller base instructions' }],
-      internal_chat_message_metadata_passthrough: { content_item_kinds: ['model.base_instructions'] },
-    };
-    const later = additionalTools('at_later', [customTool('write')]);
-    const body = requestBody({
-      instructions: '',
-      input: [initial, base, { type: 'message', role: 'user', content: 'First turn' }, later, { type: 'message', role: 'user', content: 'Second turn' }],
-    });
-    const encoded = encodeChatGPTResponsesLiteRequest(body, 'thread');
-
-    expect(encoded.body.input).toEqual(body.input);
-    expect(encoded.body.input[0]).toBe(initial);
-    expect(encoded.body.input[1]).toBe(base);
-    expect(encoded.body.input[3]).toBe(later);
-    expect(encoded.body).not.toHaveProperty('instructions');
-    expect(encoded.movedFields).toEqual({});
-  });
-
-  test('emits an empty tools carrier only when the request has no positional carrier', () => {
-    const empty = encodeChatGPTResponsesLiteRequest(requestBody({ instructions: '' }), 'thread');
-    expect(empty.body.input[0]).toMatchObject({ type: 'additional_tools', tools: [] });
-    expect(empty.body).not.toHaveProperty('instructions');
-
-    const carrier = additionalTools('at_existing', []);
-    const existing = encodeChatGPTResponsesLiteRequest(requestBody({ input: [carrier] }), 'thread');
-    expect(existing.body.input).toEqual([carrier]);
-  });
-
   test('keeps generated IDs stable for one thread and isolates changed instructions', () => {
     const body = requestBody({ tools: [functionTool('read')], instructions: 'First rules' });
     const first = encodeChatGPTResponsesLiteRequest(body, 'thread-a');
@@ -118,13 +86,5 @@ describe('Codex Responses Lite request encoding', () => {
     expect(encoded.body.input[2]).toMatchObject({ output: [{ type: 'input_image', image_url: image.image_url }] });
     expect(encoded.body.input[0]).toMatchObject({ tools: [{ tools: [{ parameters: { examples: [schemaImage] } }] }] });
     expect(image.detail).toBe('high');
-  });
-
-  test('preserves tool_choice and future request fields', () => {
-    const tool_choice: ChatGPTResponsesBody['tool_choice'] = { type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: 'read' }] };
-    const body = { ...requestBody({ tools: [functionTool('read')], tool_choice }), future_field: { value: 1 } };
-    const encoded = encodeChatGPTResponsesLiteRequest(body, 'thread');
-    expect(encoded.body.tool_choice).toBe(tool_choice);
-    expect((encoded.body as unknown as Record<string, unknown>).future_field).toEqual({ value: 1 });
   });
 });

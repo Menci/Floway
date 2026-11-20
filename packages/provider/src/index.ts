@@ -57,7 +57,6 @@ export { getProviderRepo, initProviderRepo, UpstreamGoneError } from './repo.ts'
 export {
   ProviderModelsUnavailableError,
   fetchUpstreamModels,
-  httpResponseToResponse,
 } from './models-fetch.ts';
 export type { ProviderModelsFailureResponse } from './models-fetch.ts';
 

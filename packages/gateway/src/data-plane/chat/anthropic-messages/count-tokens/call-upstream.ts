@@ -30,7 +30,7 @@ export const callAnthropicMessagesCountTokensUpstream = defineStage<
     if (pipeline === undefined) throw new Error(`Provider ${candidate.provider.kind} has no anthropicMessagesCountTokens pipeline`);
     const back = await next(move({ ...providerEntry(facts, candidate, body, [...headers]), 'request.provider.anthropicBeta': anthropicBeta }), pipeline);
     const { 'response.http.exchange': _exchange, 'response.provider.output': _output, 'response.provider.modelKey': _modelKey, 'response.provider.called': _called, 'response.provider.previousCalls': _previousCalls, ...rest } = back;
-    const reply = await providerChatAnswer(candidate, back);
+    const reply = await providerChatAnswer(candidate, back, use.gateway.abortSignal);
     const answer = reply.answer;
     return move({
       ...rest, 'response.chat.anthropicMessages': answer,

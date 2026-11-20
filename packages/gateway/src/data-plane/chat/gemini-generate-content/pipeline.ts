@@ -7,13 +7,8 @@ import { requireGeminiGenerateContentTerminal } from './require-terminal.ts';
 import { narrowing, geminiGenerateContentTarget } from './target.ts';
 import { failover } from '../../pipeline/failover.ts';
 import { materializeAttempt } from '../materialize-attempt.ts';
-import { stripSafetySettingsFromGeminiGenerateContent } from './strip-safety-settings.ts';
-import { stripUnsupportedPartFieldsFromGeminiGenerateContent } from './strip-unsupported-part-fields.ts';
-import { stripUnsupportedToolsFromGeminiGenerateContent } from './strip-unsupported-tools.ts';
-import { suppressThoughtPartsFromGeminiGenerateContent } from './suppress-thought-parts.ts';
 import { dialChatWire } from '../dial-wire.ts';
 import { geminiGenerateContentWireFor } from './wires.ts';
-import { isFailure } from '../../pipeline/facts.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
 
@@ -24,15 +19,11 @@ export const geminiGenerateContentServePipeline = (): Pipeline<GeminiGenerateCon
     emitGeminiGenerateContent,
     resolveChatCandidates(narrowing),
     failover({
-      failed: handedUp => isFailure((handedUp as { 'response.chat.geminiGenerateContent'?: unknown })['response.chat.geminiGenerateContent']),
+      answer: handedUp => handedUp['response.chat.geminiGenerateContent'],
       owns: ['response.http.body'],
       pendingUsage: STREAMED_USAGE,
     }),
     materializeAttempt('request.chat.geminiGenerateContent'),
-    stripUnsupportedPartFieldsFromGeminiGenerateContent,
-    stripUnsupportedToolsFromGeminiGenerateContent,
-    stripSafetySettingsFromGeminiGenerateContent,
-    suppressThoughtPartsFromGeminiGenerateContent,
     requireGeminiGenerateContentTerminal,
     dialChatWire({
       source: 'request.chat.geminiGenerateContent',

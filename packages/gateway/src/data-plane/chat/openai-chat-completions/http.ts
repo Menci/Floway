@@ -16,16 +16,25 @@ import { finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
 import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/store.ts';
 import { openChatPrologue } from '../prologue.ts';
 import { move } from '@floway-dev/pipeline';
-import type { OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 
 /** A body the gateway could not read is reported in the words the protocol's own clients
  *  parse, rather than as a fault of the gateway's. */
-const readRequest = (bytes: Uint8Array): { type: 'ok'; payload: OpenAIChatCompletionsPayload } | { type: 'invalid'; message: string } => {
+const readRequest = (bytes: Uint8Array): { type: 'ok'; payload: OpenAIChatCompletionsPayloadEx }
+  | { type: 'invalid'; message: string; param?: string; code?: null } => {
+  let payload: OpenAIChatCompletionsPayloadEx;
   try {
-    return { type: 'ok', payload: JSON.parse(new TextDecoder().decode(bytes)) as OpenAIChatCompletionsPayload };
+    payload = JSON.parse(new TextDecoder().decode(bytes)) as OpenAIChatCompletionsPayloadEx;
   } catch (error) {
     return { type: 'invalid', message: error instanceof Error ? error.message : String(error) };
   }
+  if (payload.prompt_cache_options === null) {
+    return { type: 'invalid', message: "Invalid 'prompt_cache_options': expected an object when present.", param: 'prompt_cache_options', code: null };
+  }
+  if (payload.user === null) {
+    return { type: 'invalid', message: "Invalid 'user': expected a string when present.", param: 'user', code: null };
+  }
+  return { type: 'ok', payload };
 };
 
 export const openaiChatCompletionsHttp = {
@@ -39,7 +48,7 @@ export const openaiChatCompletionsHttp = {
       refused.gateway.dump?.error('gateway');
       return finalizeGatewayResponse(
         refused.gateway,
-        Response.json({ error: { message: request.message, type: 'invalid_request_error' } }, { status: 400 }),
+        Response.json({ error: { message: request.message, type: 'invalid_request_error', param: request.param, code: request.code } }, { status: 400 }),
       );
     }
 

@@ -6,6 +6,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { UpstreamTransportError } from '../../../src/dial/transport-error.ts';
 import { openaiChatCompletionsServePipeline } from '../../../src/data-plane/chat/openai-chat-completions/pipeline.ts';
 import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
@@ -64,9 +65,9 @@ const resolves = (candidates: readonly ModelCandidate[]): void => {
   vi.mocked(enumerateModelCandidates).mockResolvedValue({ candidates, sawModel: true, failedUpstreams: [] } as never);
 };
 
-const chunk = (text: string): OpenAIChatCompletionsStreamEvent => ({
+const chunk = (text: string, finished = false): OpenAIChatCompletionsStreamEvent => ({
   id: 'c1', object: 'chat.completion.chunk', created: 1, model: 'chat-model',
-  choices: [{ index: 0, delta: { content: text }, finish_reason: null }],
+  choices: [{ index: 0, delta: { content: text }, finish_reason: finished ? 'stop' : null }],
 });
 
 /** What this frame carries of the turn's own state, if it is the carrier the edge writes: a
@@ -435,16 +436,14 @@ describe('the chat completions chain', () => {
     });
   });
 
-  it('accepts normal EOF without a terminal marker', async () => {
-    resolves([candidate(async () => truncated(chunk('he'), chunk('llo')))]);
+  it.each([false, true])('settles EOF without a sentinel when the choice is finished=%s', async finished => {
+    resolves([candidate(async () => truncated(chunk('he'), chunk('llo', finished)))]);
 
     const { facts } = await serve(true);
-    const drain = async (): Promise<void> => {
-      for await (const _frame of facts['response.chat.openaiChatCompletions.rendered'] as AsyncIterable<SseFrame>) { /* to the end */ }
-    };
-
-    await expect(drain()).resolves.toBeUndefined();
-    expect((await facts['response.chat.openaiChatCompletions.streamedUsage']!).failed).toBe(false);
+    const data: string[] = [];
+    for await (const frame of facts['response.chat.openaiChatCompletions.rendered'] as AsyncIterable<SseFrame>) data.push(frame.data);
+    expect(data.some(value => value.includes('OpenAI Chat Completions stream ended before all choices finished.'))).toBe(!finished);
+    expect((await facts['response.chat.openaiChatCompletions.streamedUsage']!).failed).toBe(!finished);
   });
 
   // Anything an upstream keeps sending after its terminator is not part of the answer.
@@ -463,7 +462,7 @@ describe('the chat completions chain', () => {
   it('fails a dial that never connected over to the next candidate', async () => {
     const tried: string[] = [];
     resolves([
-      candidate(async () => { tried.push('dead'); return { type: 'transportFailure' as const, error: new Error('ECONNREFUSED') }; }, 'up_dead'),
+      candidate(async () => { tried.push('dead'); return { type: 'transportFailure' as const, error: new UpstreamTransportError(new Error('ECONNREFUSED')) }; }, 'up_dead'),
       candidate(async () => { tried.push('alive'); return stream(chunk('hi')); }, 'up_alive'),
     ]);
 

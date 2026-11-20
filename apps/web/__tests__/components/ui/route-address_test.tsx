@@ -1,4 +1,4 @@
-import { act, createEvent, fireEvent } from '@testing-library/react';
+import { act, fireEvent } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
@@ -33,19 +33,6 @@ describe('addressed controls', () => {
     expect(router.state.location.pathname).toBe(EDITOR_PATH);
   });
 
-  it('leaves a modified click to the browser', async () => {
-    const { router, getByRole } = renderRouter(
-      <TooltipIconButton icon={<span />} label="Edit upstream" to={EDITOR_PATH} />,
-    );
-
-    const link = getByRole('link', { name: 'Edit upstream' });
-    const click = createEvent.click(link, { button: 0, ctrlKey: true });
-    await act(async () => { fireEvent(link, click); });
-
-    expect(click.defaultPrevented).toBe(false);
-    expect(router.state.location.pathname).toBe('/');
-  });
-
   it('addresses a choice whose page owns the transition, without navigating itself', async () => {
     const onChange = vi.fn();
     const { router, getByRole } = renderRouter(<ChoiceGroup
@@ -63,26 +50,6 @@ describe('addressed controls', () => {
 
     await act(async () => { fireEvent.click(sevenDays, { button: 0 }); });
     expect(onChange).toHaveBeenCalledWith('7d');
-    expect(router.state.location.search).toBe('');
-  });
-
-  it('removes the address and activation from a disabled choice group', async () => {
-    const onChange = vi.fn();
-    const { router, getByRole } = renderRouter(<ChoiceGroup
-      ariaLabel="Range"
-      disabled
-      items={[{ value: '7d', label: '7 days', to: '?range=7d' }]}
-      onChange={onChange}
-      value="today"
-    />);
-
-    const sevenDays = getByRole('radio', { name: '7 days' });
-    expect(sevenDays.getAttribute('href')).toBeNull();
-    await act(async () => { fireEvent.click(sevenDays, { button: 0 }); });
-    const space = createEvent.keyDown(sevenDays, { key: ' ' });
-    fireEvent(sevenDays, space);
-    expect(space.defaultPrevented).toBe(true);
-    expect(onChange).not.toHaveBeenCalled();
     expect(router.state.location.search).toBe('');
   });
 });

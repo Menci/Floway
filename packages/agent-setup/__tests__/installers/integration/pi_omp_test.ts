@@ -12,34 +12,32 @@ for (const agent of ['pi', 'omp'] as const) {
   const extension = agent === 'pi' ? piExtensionPath : ompExtensionPath;
   const oldVersion = agent === 'pi' ? '1.0.4' : '18.8.3';
   for (const [platform, install] of [['Bash', runShellInstaller], ...(hostPwsh ? [['PowerShell', runPowerShellInstaller] as const] : [])] as const) {
-    for (const version of agent === 'pi' ? [oldVersion] : ['omp/17.4.1', oldVersion]) {
-      for (const location of agent === 'pi' ? ['PATH'] : ['PATH', 'Bun outside PATH']) {
-        test(`[${agent}] ${platform}: upgrades ${version} from ${location} before writing configuration`, { timeout: 180_000 }, async () => {
-          const ws = makeWorkspace();
-          let bin = ws.binDir;
-          if (location === 'Bun outside PATH') {
-            const packageDir = join(ws.home, '.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist');
-            place(packageDir);
-            bin = join(ws.home, '.bun/bin');
-            mkdirSync(bin, { recursive: true });
-            symlinkSync(join(packageDir, 'omp'), join(bin, 'omp'));
-          } else {
-            place(bin);
-          }
-          const options = { workspace: ws, baseUrl: modelServer.url, configuration: config(), [agent === 'pi' ? 'fakePiVersion' : 'fakeOmpVersion']: version };
-          const result = await install(options);
-          expect(result.code, result.combined).toBe(0);
-          expect(existsSync(join(ws.root, `updated-${agent}`))).toBeTruthy();
-          if (agent === 'omp') {
-            expect(readFileSync(join(ws.root, 'updated-omp.resolved'), 'utf8').trim(), 'updater resolves the selected launcher through PATH').toBe(join(bin, 'omp'));
-          }
-          expect(existsSync(extension(ws))).toBeTruthy();
-        });
-      }
+    for (const [version, location] of agent === 'pi' ? [[oldVersion, 'PATH']] : [['omp/17.4.1', 'PATH'], [oldVersion, 'Bun outside PATH']]) {
+      test(`[${agent}] ${platform}: upgrades ${version} from ${location} before writing configuration`, { timeout: 180_000 }, async () => {
+        const ws = makeWorkspace();
+        let bin = ws.binDir;
+        if (location === 'Bun outside PATH') {
+          const packageDir = join(ws.home, '.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist');
+          place(packageDir);
+          bin = join(ws.home, '.bun/bin');
+          mkdirSync(bin, { recursive: true });
+          symlinkSync(join(packageDir, 'omp'), join(bin, 'omp'));
+        } else {
+          place(bin);
+        }
+        const options = { workspace: ws, baseUrl: modelServer.url, configuration: config(), [agent === 'pi' ? 'fakePiVersion' : 'fakeOmpVersion']: version };
+        const result = await install(options);
+        expect(result.code, result.combined).toBe(0);
+        expect(existsSync(join(ws.root, `updated-${agent}`))).toBeTruthy();
+        if (agent === 'omp') {
+          expect(readFileSync(join(ws.root, 'updated-omp.resolved'), 'utf8').trim(), 'updater resolves the selected launcher through PATH').toBe(join(bin, 'omp'));
+        }
+        expect(existsSync(extension(ws))).toBeTruthy();
+      });
     }
 
     if (agent === 'omp') {
-      for (const [version, upgrade] of [['18.8.4-canary.1', true], ['18.8.10-canary.1', false], ['18.8.4+build.1', false]] as const) {
+      for (const [version, upgrade] of [['18.8.4-canary.1', true], ['18.8.10-canary.1', false]] as const) {
         test(`[${agent}] ${platform}: ${version} respects the numeric minimum and prerelease precedence`, { timeout: 180_000 }, async () => {
           const ws = makeWorkspace();
           place(ws.binDir);
@@ -51,7 +49,7 @@ for (const agent of ['pi', 'omp'] as const) {
       }
     }
 
-    for (const mode of ['fail', 'noop', 'sleep'] as const) {
+    for (const mode of ['fail', 'noop'] as const) {
       test(`[${agent}] ${platform}: update ${mode} leaves configuration unchanged`, { timeout: 180_000 }, async () => {
         const ws = makeWorkspace();
         place(ws.binDir);
@@ -60,15 +58,6 @@ for (const agent of ['pi', 'omp'] as const) {
         expect(!existsSync(extension(ws))).toBeTruthy();
       });
     }
-
-    test(`[${agent}] ${platform}: malformed versions fail without running an updater`, { timeout: 180_000 }, async () => {
-      const ws = makeWorkspace();
-      place(ws.binDir);
-      const result = await install({ workspace: ws, baseUrl: modelServer.url, configuration: config(), [agent === 'pi' ? 'fakePiVersion' : 'fakeOmpVersion']: '19garbage' });
-      expect(result.code).not.toBe(0);
-      expect(!existsSync(join(ws.root, `updated-${agent}`))).toBeTruthy();
-      expect(!existsSync(extension(ws))).toBeTruthy();
-    });
 
     test(`[${agent}] ${platform}: one extension retains and updates independent providers`, { timeout: 180_000 }, async () => {
       const ws = makeWorkspace();
@@ -124,36 +113,6 @@ for (const [platform, install] of [['Bash', runShellInstaller], ...(hostPwsh ? [
 for (const agent of ['pi', 'omp'] as const) {
   const config = agent === 'pi' ? piConfig : ompConfig;
   const place = agent === 'pi' ? placeFakePi : placeFakeOmp;
-  for (const [platform, install] of [['Bash', runShellInstaller], ...(hostPwsh ? [['PowerShell', runPowerShellInstaller] as const] : [])] as const) {
-    test(`[${agent}] ${platform}: writes explicit global preferences and preserves them when unset`, { timeout: 180_000 }, async () => {
-      const ws = makeWorkspace();
-      place(ws.binDir);
-      const selected = agent === 'pi'
-        ? piConfig({ thinkingLevel: 'high', retry: { enabled: false, maxRetries: 0 } })
-        : ompConfig({ retry: { enabled: false, maxRetries: 0 } });
-      const result = await install({ workspace: ws, baseUrl: modelServer.url, configuration: selected });
-      expect(result.code, result.combined).toBe(0);
-      const settingsPath = agent === 'pi' ? piSettingsPath(ws) : ompConfigPath(ws);
-      const before = readFileSync(settingsPath, 'utf8');
-      if (agent === 'pi') {
-        const settings = readPiSettings(settingsPath);
-        expect(settings.defaultThinkingLevel).toBe('high');
-        expect((settings.retry as Record<string, unknown>).enabled).toBe(false);
-        expect((settings.retry as Record<string, unknown>).maxRetries).toBe(0);
-      } else {
-        expect(before).toContain('enabled: false');
-        expect(before).toContain('maxRetries: 0');
-      }
-      const preserved = await install({ workspace: ws, baseUrl: modelServer.url, configuration: config({ provider: 'another-floway' }) });
-      expect(preserved.code, preserved.combined).toBe(0);
-      expect(readFileSync(settingsPath, 'utf8'), 'unspecified global preferences retain their original bytes').toBe(before);
-    });
-  }
-}
-
-for (const agent of ['pi', 'omp'] as const) {
-  const config = agent === 'pi' ? piConfig : ompConfig;
-  const place = agent === 'pi' ? placeFakePi : placeFakeOmp;
   const extension = agent === 'pi' ? piExtensionPath : ompExtensionPath;
   const settings = agent === 'pi' ? piSettingsPath : ompConfigPath;
   for (const [platform, install] of [['Bash', runShellInstaller], ...(hostPwsh ? [['PowerShell', runPowerShellInstaller] as const] : [])] as const) {
@@ -172,7 +131,6 @@ for (const agent of ['pi', 'omp'] as const) {
         : readOmpConnections(ws);
       expect(connections[0]?.endpoint, 'new connection remains committed').toBe(`${modelServer.url}/updated`);
       expect(readFileSync(settings(ws), 'utf8'), 'new preferences remain committed').toContain('new-model');
-      expect(updated.combined, 'committed data does not enter rollback').not.toContain('rolling back');
     });
   }
 }

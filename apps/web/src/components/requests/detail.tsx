@@ -34,7 +34,7 @@ export function RequestDetailPanel({ collected, error, record, recordId, retainL
   const incoming = retainLastRecord && recordId === null ? shown : { collected, error, record, recordId };
   if (shown.record !== incoming.record || shown.error !== incoming.error || shown.recordId !== incoming.recordId) setShown(incoming);
   const { t } = useTranslation();
-  if (!shown.recordId) return <EmptyStateLine className="p-4">{t('dashboard.requests.selectPrompt')}</EmptyStateLine>;
+  if (!shown.recordId) return <EmptyStateLine className="p-4">{t('requests.selectPrompt')}</EmptyStateLine>;
   if (shown.error) return <OutcomeMessageBar className="!m-4">{shown.error}</OutcomeMessageBar>;
   if (!shown.record) return null;
   return <RunRecordDetail key={shown.record.meta.id} record={shown.record} collected={shown.collected} />;
@@ -44,13 +44,13 @@ function RecordTiming({ meta }: { meta: DumpMetadata }) {
   const { t } = useTranslation();
   const locale = useLocale();
   return <>
-    <Tooltip content={t('dashboard.requests.duration', { value: formatDuration(meta.durationMs, locale) })} relationship="description">
+    <Tooltip content={t('requests.duration', { value: formatDuration(meta.durationMs, locale) })} relationship="description">
       <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
         <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(meta.durationMs, locale)}</Text>
       </span>
     </Tooltip>
     {meta.ttftMs != null && (
-      <Tooltip content={t('dashboard.requests.ttft', { value: formatDuration(meta.ttftMs, locale) })} relationship="description">
+      <Tooltip content={t('requests.ttft', { value: formatDuration(meta.ttftMs, locale) })} relationship="description">
         <span className="inline-flex items-center gap-1 shrink-0 text-fui-fg3">
           <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(meta.ttftMs, locale)}</Text>
         </span>
@@ -68,24 +68,24 @@ function RunRecordDetail({ record, collected }: { record: DumpRecord; collected:
     event: `${event.type} ${event.subject ?? ''}`.trim(), text: event.text, parseError: event.parseError,
   })) : [], [redacted, view]);
   const failure = errorLabel(record.meta.error) ?? collected?.error;
-  const label = view === 'stages' ? t('dashboard.requests.stages') : view === 'events' ? t('dashboard.requests.events', { count }) : t('dashboard.requests.collected');
+  const label = view === 'stages' ? t('requests.stages') : view === 'events' ? t('requests.events', { count }) : t('requests.collected');
   return <div className="h-full min-h-0 flex flex-col">
     <div className={`${PANEL_BAND_CLASS} flex items-center gap-2 min-w-0 shrink-0 border-b border-[var(--winui-divider-stroke-default)]`}>
-      <Dropdown clearable={false} size="small" className="flex-1" aria-label={t('dashboard.requests.streamView')} selectedOptions={[view]} value={label} onOptionSelect={(_, data) => setView(data.optionValue!)}>
-        <Option value="stages">{t('dashboard.requests.stages')}</Option>
-        <Option value="events">{t('dashboard.requests.events', { count })}</Option>
-        {collected?.result != null && <Option value="collected">{t('dashboard.requests.collected')}</Option>}
+      <Dropdown clearable={false} size="small" className="flex-1" aria-label={t('requests.streamView')} selectedOptions={[view]} value={label} onOptionSelect={(_, data) => setView(data.optionValue!)}>
+        <Option value="stages">{t('requests.stages')}</Option>
+        <Option value="events">{t('requests.events', { count })}</Option>
+        {collected?.result != null && <Option value="collected">{t('requests.collected')}</Option>}
       </Dropdown>
-      <HttpStatusBadge severity={requestSeverity(record.meta.status, record.meta.error)}>{record.meta.status ?? t('dashboard.requests.noStatus')}</HttpStatusBadge>
+      <HttpStatusBadge severity={requestSeverity(record.meta.status, record.meta.error)}>{record.meta.status ?? t('requests.noStatus')}</HttpStatusBadge>
       <RecordTiming meta={record.meta} />
-      <TooltipIconButton icon={<ArrowDownloadRegular />} label={t('dashboard.requests.exportRecord')} onClick={() => downloadRecords([record])} />
+      <TooltipIconButton icon={<ArrowDownloadRegular />} label={t('requests.exportRecord')} onClick={() => downloadRecords([record])} />
     </div>
     {failure && <OutcomeMessageBar>{failure}</OutcomeMessageBar>}
-    {collected?.truncated && <OutcomeMessageBar intent="warning">{t('dashboard.requests.incompleteRecording')}</OutcomeMessageBar>}
+    {collected?.truncated && <OutcomeMessageBar intent="warning">{t('requests.incompleteRecording')}</OutcomeMessageBar>}
     <div className="flex-1 min-h-0">
       {view === 'stages' ? <RunStages ndjson={redacted} /> : view === 'events'
-        ? <RenderedEventList events={events} copyText={redacted} toolbarStart={<Text>{t('dashboard.requests.events', { count })}</Text>} emptyText={t('dashboard.requests.noRunEvents')} />
-        : <Suspense fallback={<Spinner />}><BodyEditor text={JSON.stringify(collected!.result, null, 2)} json label={t('dashboard.requests.collected')} /></Suspense>}
+        ? <RenderedEventList events={events} copyText={redacted} toolbarStart={<Text>{t('requests.events', { count })}</Text>} emptyText={t('requests.noRunEvents')} />
+        : <Suspense fallback={<Spinner />}><BodyEditor text={JSON.stringify(collected!.result, null, 2)} json label={t('requests.collected')} /></Suspense>}
     </div>
   </div>;
 }

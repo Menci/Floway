@@ -21,12 +21,13 @@ import type {
   IRInputClientItem,
 } from '../../../ir/input/types.ts';
 import { TranslateInputException } from '../../../shared/input-error.ts';
+import { isAllowedToolsMode } from '../../../shared/tool-choice.ts';
 import { canonicalizeOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import type {
   CanonicalOpenAIResponsesInputItem,
   CanonicalOpenAIResponsesPayload,
   OpenAIResponsesInputContent,
-  OpenAIResponsesInputMessageEx,
+  OpenAIResponsesInputMessage,
   OpenAIResponsesRequestPayloadEx,
   OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
@@ -57,6 +58,8 @@ const userContentPart = (part: OpenAIResponsesInputContent): IRInputUserContentP
   }
   case 'input_file':
     return { type: 'file', file: fileMedia(part), ...(typeof part.filename === 'string' ? { filename: part.filename } : {}) };
+  case 'input_audio':
+    throw new TranslateInputException('Codex input_audio references require a native OpenAI Responses upstream.');
   }
 };
 
@@ -64,7 +67,7 @@ const userContent = (content: string | OpenAIResponsesInputContent[]): IRInputUs
   ? content === '' ? [] : [{ type: 'text', text: content }]
   : content.map(userContentPart);
 
-const textPartsToIR = (message: OpenAIResponsesInputMessageEx): IRInputTextPart[] => typeof message.content === 'string'
+const textPartsToIR = (message: OpenAIResponsesInputMessage): IRInputTextPart[] => typeof message.content === 'string'
   ? message.content === '' ? [] : [{ type: 'text', text: message.content }]
   : message.content.map(part => {
       if (part.type !== 'input_text' && part.type !== 'output_text') {
@@ -75,7 +78,7 @@ const textPartsToIR = (message: OpenAIResponsesInputMessageEx): IRInputTextPart[
 
 // String content becomes one text part, including an empty string. Arrays preserve their listed parts;
 // an empty list still retains the enclosing assistant message and turn.
-const assistantContent = (message: Extract<OpenAIResponsesInputMessageEx, { role: 'assistant' }>): IRInputAssistantContentPart[] => typeof message.content === 'string'
+const assistantContent = (message: Extract<OpenAIResponsesInputMessage, { role: 'assistant' }>): IRInputAssistantContentPart[] => typeof message.content === 'string'
   ? [{ type: 'text', text: message.content }]
   : message.content.map(part => {
       if (part.type === 'input_text' || part.type === 'output_text') return { type: 'text' as const, text: part.text };
@@ -88,6 +91,7 @@ const assistantContent = (message: Extract<OpenAIResponsesInputMessageEx, { role
 const toolResultContent = (output: string | readonly OpenAIResponsesInputContent[]): string | readonly IRInputToolResultContentPart[] => typeof output === 'string'
   ? output
   : output.map(part => {
+      if (part.type === 'input_audio') throw new TranslateInputException('Codex input_audio tool outputs require a native OpenAI Responses upstream.');
       if (part.type === 'input_image') return { type: 'image' as const, image: imageMedia(part), ...(part.detail == null ? {} : { detail: part.detail }) };
       if (part.type === 'input_file') return { type: 'file' as const, file: fileMedia(part), ...(typeof part.filename === 'string' ? { filename: part.filename } : {}) };
       return { type: 'text' as const, text: part.text };
@@ -140,6 +144,10 @@ const clientItems = (items: readonly CanonicalOpenAIResponsesInputItem[]): IRInp
     default: throw new TranslateInputException(`Invalid role '${item.role}' in input message.`);
     }
   case 'function_call_output': {
+    // A standalone output answers no call, and no other protocol can carry a
+    // tool result without one. Rejecting it here keeps the input IR free of
+    // call-less tool results.
+    if (item.call_id == null) throw new TranslateInputException('Cannot translate a function call output without a call_id.');
     const result: IRInputToolResultItem = {
       type: 'tool_result',
       call_id: item.call_id,
@@ -207,8 +215,7 @@ const toolToIR = (tool: Extract<OpenAIResponsesTool, { type: 'function' | 'custo
   };
 };
 
-const selectionToIR = (selection: IRInputToolSelector, declarations: readonly IRInputTool[]): IRInputToolSelector => {
-  if (selection.namespace !== undefined) return selection;
+const selectionToIR = (selection: { readonly type: 'function' | 'custom'; readonly name: string }, declarations: readonly IRInputTool[]): IRInputToolSelector => {
   if (declarations.some(tool => tool.type === selection.type && tool.namespace === undefined && tool.name === selection.name)) return selection;
   const qualified = declarations.filter(tool => tool.type === selection.type && tool.namespace !== undefined
     && (selection.name === `${tool.namespace}.${tool.name}` || selection.name === `${tool.namespace}__${tool.name}`));
@@ -244,7 +251,8 @@ const toolChoiceToIR = (
     throw new TranslateInputException(`Cannot translate OpenAI Responses tool choice '${choice}'.`);
   }
   if (choice.type === 'allowed_tools') {
-    if ((choice.mode !== 'auto' && choice.mode !== 'required') || !Array.isArray(choice.tools)) {
+    const mode = choice.mode;
+    if (!isAllowedToolsMode(mode) || !Array.isArray(choice.tools)) {
       throw new TranslateInputException('Cannot translate malformed allowed_tools mode or tools array.');
     }
     const tools = choice.tools.flatMap(selector => selectorOf(payload, selector, declarations));
@@ -253,10 +261,10 @@ const toolChoiceToIR = (
         throw new TranslateInputException(`Cannot translate allowed_tools selector '${selector.name}' without a matching callable declaration.`);
       }
     }
-    if (tools.length === 0 && choice.mode === 'required') {
+    if (tools.length === 0 && mode === 'required') {
       throw new TranslateInputException('Cannot translate required allowed_tools with an empty callable subset.');
     }
-    return { type: 'allowed_tools', mode: choice.mode, tools };
+    return { type: 'allowed_tools', mode, tools };
   }
   if (choice.type === 'function' || choice.type === 'custom') return selectionToIR(choice, declarations);
   // A hosted selector names a tool this IR does not carry.

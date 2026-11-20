@@ -6,7 +6,8 @@ import type { NonChatProviderOperation, Provider, ProviderModel, ProviderOperati
 import { providerModelFacts } from '@floway-dev/provider';
 
 type CallResult<O extends NonChatProviderOperation> =
-  (O extends 'rerank' ? ProviderRerankCallResult : ProviderCallResult) & { readonly called: boolean; readonly previousCalls: readonly { readonly modelKey: string }[] };
+  (O extends 'rerank' ? ProviderRerankCallResult : ProviderCallResult)
+  & { readonly called: boolean; readonly previousCalls: readonly { readonly modelKey: string }[] };
 
 export const callProviderPipeline = async <O extends NonChatProviderOperation>(
   provider: Provider,
@@ -45,7 +46,7 @@ export const callProviderPipeline = async <O extends NonChatProviderOperation>(
   }
   await executed.drain();
   const result = {
-    response: new Response(exchange.body === null ? null : bytes, { status: exchange.status, statusText: exchange.statusText, headers: response.headers }),
+    http: new Response(exchange.body === null ? null : bytes, { status: exchange.status, statusText: exchange.statusText, headers: response.headers }),
     modelKey: facts['response.provider.modelKey'],
     called: facts['response.provider.called'],
     previousCalls: facts['response.provider.previousCalls'],

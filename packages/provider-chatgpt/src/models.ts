@@ -12,21 +12,33 @@ import { ProviderModelsUnavailableError, type Fetcher, type FlagId, type Provide
 interface ChatGPTProviderData {
   contextWindow: number;
   useResponsesLite: boolean;
+  codex?: CodexModelSettings;
 }
 
-export interface ChatGPTContextWindow {
+// https://github.com/openai/codex/blob/6c0cee502d215e5df2dd9a303cf2e252229c9e12/codex-rs/models-manager/models.json
+const CODEX_STRING_SETTINGS = ['tool_mode', 'apply_patch_tool_type', 'multi_agent_version', 'multi_agent_reasoning_effort', 'default_verbosity'] as const;
+const CODEX_BOOLEAN_SETTINGS = ['support_verbosity', 'supports_search_tool', 'supports_reasoning_effort_updates', 'supports_reasoning_summary_parameter', 'supports_reasoning_summaries'] as const;
+type CodexModelSettings = Partial<Record<typeof CODEX_STRING_SETTINGS[number], string | null>> & Partial<Record<typeof CODEX_BOOLEAN_SETTINGS[number], boolean>> & {
+  experimental_supported_tools?: string[];
+  service_tiers?: { id: string; name: string; description: string }[];
+};
+
+export interface ChatGPTCodexModelMetadata extends CodexModelSettings {
   context_window: number;
   max_context_window?: number;
 }
 
 export interface ChatGPTRawModel {
+  codex?: CodexModelSettings;
   id: string;
   display_name: string;
   // The default and config-override ceiling are separate client settings.
   // https://github.com/openai/codex/blob/15fd656ddb55bd82a208fb9f00681880523f5260/codex-rs/models-manager/src/model_info.rs#L19-L31
   context_window: number;
   max_context_window?: number;
-  input_modalities?: readonly ('text' | 'image')[];
+  // Preserve upstream additions independently of Floway's supported inputs.
+  // https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/protocol/src/openai_models.rs#L178-L185
+  input_modalities?: readonly string[];
   reasoning_efforts?: readonly string[];
   default_reasoning_effort?: string;
   // Codex selects the wire representation from catalog metadata, not the slug.
@@ -63,6 +75,50 @@ export const fetchChatGPTCatalog = async (opts: { accessToken: string; accountId
 const isPlainRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
+const readCodexModelSettings = (value: unknown, id: string): CodexModelSettings | undefined => {
+  if (value === undefined) return undefined;
+  if (!isPlainRecord(value)) throw new TypeError(`ChatGPT model ${id} Codex metadata must be an object`);
+  const settings: CodexModelSettings = {};
+  for (const key of CODEX_STRING_SETTINGS) {
+    const setting = value[key];
+    if (setting === undefined) continue;
+    if (setting !== null && (typeof setting !== 'string' || !setting)) throw new TypeError(`ChatGPT model ${id} ${key} malformed`);
+    settings[key] = setting;
+  }
+  for (const key of CODEX_BOOLEAN_SETTINGS) {
+    const setting = value[key];
+    if (setting === undefined) continue;
+    if (typeof setting !== 'boolean') throw new TypeError(`ChatGPT model ${id} ${key} malformed`);
+    settings[key] = setting;
+  }
+  const tools = value.experimental_supported_tools;
+  if (tools !== undefined) {
+    if (!Array.isArray(tools) || !tools.every((tool): tool is string => typeof tool === 'string' && tool.length > 0)) {
+      throw new TypeError(`ChatGPT model ${id} experimental_supported_tools malformed`);
+    }
+    settings.experimental_supported_tools = tools;
+  }
+  const legacy = value.additional_speed_tiers;
+  if (legacy !== undefined && (!Array.isArray(legacy) || !legacy.every(tier => typeof tier === 'string' && tier.length > 0))) {
+    throw new TypeError(`ChatGPT model ${id} additional_speed_tiers malformed`);
+  }
+  const tiers = value.service_tiers;
+  if (tiers !== undefined) {
+    if (!Array.isArray(tiers)) throw new TypeError(`ChatGPT model ${id} service_tiers malformed`);
+    settings.service_tiers = tiers.map((tier: unknown) => {
+      if (!isPlainRecord(tier) || typeof tier.id !== 'string' || !tier.id || typeof tier.name !== 'string' || typeof tier.description !== 'string') {
+        throw new TypeError(`ChatGPT model ${id} service_tiers entry malformed`);
+      }
+      return { id: tier.id, name: tier.name, description: tier.description };
+    });
+  } else if (Array.isArray(legacy)) {
+    // Codex only recognizes "fast" in the legacy field; its request value is "priority".
+    // https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/protocol/src/openai_models.rs#L1122-L1143
+    settings.service_tiers = legacy.includes('fast') ? [{ id: 'priority', name: 'Fast', description: '' }] : [];
+  }
+  return Object.keys(settings).length ? settings : undefined;
+};
+
 const assertContextWindow = (value: unknown, id: string, field: string): number => {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
     throw new TypeError(`ChatGPT model entry ${id} ${field} must be a positive safe integer`);
@@ -81,15 +137,17 @@ const assertRawModel = (value: unknown): ChatGPTRawModel => {
   const context_window = assertContextWindow(value.context_window, slug, 'context_window');
 
   const raw: ChatGPTRawModel = { id: slug, display_name, context_window };
+  const codex = readCodexModelSettings(value, slug);
+  if (codex !== undefined) raw.codex = codex;
   if (value.max_context_window !== undefined && value.max_context_window !== null) {
     raw.max_context_window = assertContextWindow(value.max_context_window, slug, 'max_context_window');
   }
 
   if (value.input_modalities !== undefined) {
     if (!Array.isArray(value.input_modalities)) throw new TypeError(`ChatGPT model entry ${slug} input_modalities not an array`);
-    const out: ('text' | 'image')[] = [];
+    const out: string[] = [];
     for (const m of value.input_modalities) {
-      if (m !== 'text' && m !== 'image') throw new TypeError(`ChatGPT model entry ${slug} unknown modality ${JSON.stringify(m)}`);
+      if (typeof m !== 'string' || m.length === 0) throw new TypeError(`ChatGPT model entry ${slug} input_modalities entry must be a non-empty string`);
       if (!out.includes(m)) out.push(m);
     }
     raw.input_modalities = out;
@@ -131,11 +189,12 @@ const assertRawModel = (value: unknown): ChatGPTRawModel => {
   return raw;
 };
 
-export const chatgptModelContextWindow = (model: ProviderModel): ChatGPTContextWindow => {
+export const chatgptCodexModelMetadata = (model: ProviderModel): ChatGPTCodexModelMetadata => {
   if (!isPlainRecord(model.providerData)) {
     throw new TypeError(`ChatGPT model ${model.id} providerData is not an object`);
   }
   return {
+    ...readCodexModelSettings(model.providerData.codex, model.id),
     context_window: assertContextWindow(model.providerData.contextWindow, model.id, 'providerData.contextWindow'),
     ...(model.limits.max_context_window_tokens === undefined ? {} : { max_context_window: model.limits.max_context_window_tokens }),
   };
@@ -177,8 +236,9 @@ export const chatgptRawToProviderModel = (raw: ChatGPTRawModel, enabledFlags: Re
   }
   const pricing = pricingForChatGPTModelKey(raw.id);
   const chat: UpstreamChatModelConfig = {};
-  if (raw.input_modalities && raw.input_modalities.length > 0) {
-    chat.modalities = { input: raw.input_modalities, output: ['text'] };
+  const input = raw.input_modalities?.filter(modality => modality === 'text' || modality === 'image' || modality === 'audio');
+  if (input !== undefined) {
+    chat.modalities = { input, output: ['text'] };
   }
   // Resolve the capability to a stated boolean for every entry. The remote
   // provider catalog owns this fact, so we treat an omitted field as unsupported
@@ -211,6 +271,7 @@ export const chatgptRawToProviderModel = (raw: ChatGPTRawModel, enabledFlags: Re
     endpoints: { openaiResponses: {} },
     providerData: {
       contextWindow,
+      ...(raw.codex === undefined ? {} : { codex: raw.codex }),
       useResponsesLite: raw.use_responses_lite ?? false,
     } satisfies ChatGPTProviderData,
     enabledFlags,

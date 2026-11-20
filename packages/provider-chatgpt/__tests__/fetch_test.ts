@@ -373,8 +373,8 @@ describe('Codex Responses wire selection', () => {
         const wire = await readJsonRequest(init as RequestInit) as Record<string, unknown>;
         const wireHeaders = new Headers(init?.headers);
         expect(wireHeaders.get(CHATGPT_RESPONSES_LITE_HEADER)).toBe(useResponsesLite ? 'true' : null);
-        expect(wireHeaders.get('user-agent')).toBe('codex_cli_rs/0.159.3 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10');
-        expect(wireHeaders.get('version')).toBe('0.159.3');
+        expect(wireHeaders.get('user-agent')).toBe('codex_cli_rs/0.169.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10');
+        expect(wireHeaders.get('version')).toBe('0.169.0');
         expect(headers.get(CHATGPT_RESPONSES_LITE_HEADER)).toBe(marker ?? null);
         expect(body).toEqual(original);
         expect(wire.text).toEqual(body.text);
@@ -1351,7 +1351,7 @@ describe('callChatGPTOpenAIImagesGenerations', () => {
       effects: makeEffects(),
       call: { ...noopUpstreamCallOptions(), waitUntil },
     });
-    expect(result.response.status).toBe(200);
+    expect(result.http.status).toBe(200);
     expect(readQuotaEntry()).toEqual(quotaSnapshot);
     expect(waitUntil).not.toHaveBeenCalled();
   });
@@ -1372,7 +1372,7 @@ describe('callChatGPTOpenAIImagesGenerations', () => {
       effects: makeEffects(),
       call: noopUpstreamCallOptions(),
     });
-    expect(result.response.status).toBe(200);
+    expect(result.http.status).toBe(200);
     const imageCalls = fetchSpy.mock.calls.filter(([url]) => String(url).includes('/images/generations'));
     expect(imageCalls).toHaveLength(2);
     const firstHeaders = new Headers((imageCalls[0][1] as RequestInit).headers);
@@ -1402,7 +1402,7 @@ describe('callChatGPTOpenAIImagesGenerations', () => {
       effects: makeEffects(),
       call: noopUpstreamCallOptions(),
     });
-    expect(result.response.status).toBe(403);
+    expect(result.http.status).toBe(403);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(String(fetchSpy.mock.calls[0][0])).toContain('/oauth/token');
   });
@@ -1424,7 +1424,7 @@ describe('callChatGPTOpenAIImagesGenerations', () => {
       effects: makeEffects(),
       call: noopUpstreamCallOptions(),
     });
-    expect(result.response.status).toBe(403);
+    expect(result.http.status).toBe(403);
     expect(fetchSpy.mock.calls.filter(([url]) => String(url).includes('/images/generations'))).toHaveLength(1);
   });
 
@@ -1451,7 +1451,7 @@ describe('callChatGPTOpenAIImagesGenerations', () => {
       effects: makeEffects(),
       call: noopUpstreamCallOptions(),
     });
-    expect(result.response.status).toBe(403);
+    expect(result.http.status).toBe(403);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect((currentRecord.state as ChatGPTUpstreamState).accounts[0].accessToken).toEqual(winner);
   });
@@ -1474,7 +1474,7 @@ describe('callChatGPTOpenAIImagesGenerations', () => {
       effects: makeEffects(),
       call: noopUpstreamCallOptions(),
     });
-    expect(result.response.status).toBe(200);
+    expect(result.http.status).toBe(200);
     expect(fetchSpy.mock.calls.filter(([url]) => String(url).includes('/images/generations'))).toHaveLength(2);
     await flushMicrotasks();
     expect((currentRecord.state as ChatGPTUpstreamState).accounts[0].accessToken?.planType).toBe('plus');
@@ -1646,7 +1646,7 @@ describe('callChatGPTAlphaSearch', () => {
       call: noopUpstreamCallOptions(),
     });
 
-    expect(result.response.status).toBe(200);
+    expect(result.http.status).toBe(200);
     expect(result.modelKey).toBe('gpt-5.4');
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://chatgpt.com/backend-api/codex/alpha/search');
@@ -1677,7 +1677,7 @@ describe('callChatGPTAlphaSearch', () => {
       effects: makeEffects(),
       call: noopUpstreamCallOptions(),
     });
-    expect(result.response.status).toBe(200);
+    expect(result.http.status).toBe(200);
     expect((currentRecord.state as ChatGPTUpstreamState).accounts[0].accessToken?.planType).toBe('free');
   });
 

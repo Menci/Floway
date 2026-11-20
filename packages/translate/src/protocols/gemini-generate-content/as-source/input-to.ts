@@ -29,6 +29,7 @@ const geminiGenerateContentReasoningEffortToIR = (thinkingConfig?: GeminiGenerat
   case 'LOW': return 'low';
   case 'MEDIUM': return 'medium';
   case 'HIGH': return 'high';
+  case 'XHIGH': return 'xhigh';
   case 'MINIMAL': return 'minimal';
   case 'THINKING_LEVEL_UNSPECIFIED': return undefined;
   default: return level;

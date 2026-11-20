@@ -37,7 +37,7 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
   const reset = async (upstreamId?: string) => {
     setResetError(null);
     setResetting(true);
-    const handle = toasts.start(t('dashboard.proxy.toast.backoff.pending'));
+    const handle = toasts.start(t('proxies.toast.backoff.pending'));
     const { error } = await callApi(() => api.api.proxies[':id'].backoffs.reset.$post({
       param: { id: proxyId },
       json: upstreamId === undefined ? {} : { upstream_id: upstreamId },
@@ -48,18 +48,18 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
       setResetError(error.message);
       return;
     }
-    handle.succeed(t('dashboard.proxy.toast.backoff.success'));
+    handle.succeed(t('proxies.toast.backoff.success'));
     onReset();
   };
 
-  return <section className="grid gap-2" aria-label={t('dashboard.proxy.backoff.title')}>
+  return <section className="grid gap-2" aria-label={t('proxies.backoff.title')}>
     <OutcomeMessageBar
       action={<Button disabledFocusable={resetting} icon={<ArrowResetRegular />} onClick={() => void reset()} size="small">
-        {t('dashboard.proxy.backoff.resetAll')}
+        {t('proxies.backoff.resetAll')}
       </Button>}
       intent="warning"
     >
-      {t('dashboard.proxy.backoff.summary', { count: active.length })}
+      {t('proxies.backoff.summary', { count: active.length })}
     </OutcomeMessageBar>
 
     <ul className="m-0 min-w-0 list-none p-0">
@@ -70,14 +70,14 @@ export function ProxyBackoffPanel({ backoffs, onReset, proxyId }: {
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
               <ProviderBadge label={row.upstream.name} upstream={row.upstream} />
               <div className="flex flex-wrap gap-x-3 text-fui-fg2 text-[12px] leading-4">
-                <span className="tabular-nums">{t('dashboard.proxy.backoff.failures', { count: row.fail_count })}</span>
+                <span className="tabular-nums">{t('proxies.backoff.failures', { count: row.fail_count })}</span>
                 <span className="tabular-nums">{remaining <= 0
-                  ? t('dashboard.proxy.backoff.expiring')
-                  : t('dashboard.proxy.backoff.remaining', { duration: formatCountdown(remaining, locale) })}</span>
+                  ? t('proxies.backoff.expiring')
+                  : t('proxies.backoff.remaining', { duration: formatCountdown(remaining, locale) })}</span>
               </div>
             </div>
             <Button className="flex-none" disabledFocusable={resetting} onClick={() => void reset(row.upstream_id)} size="small">
-              {t('dashboard.proxy.backoff.reset')}
+              {t('proxies.backoff.reset')}
             </Button>
           </div>
           {row.last_error && <Text block className="font-mono" size={200}>{row.last_error}</Text>}

@@ -20,7 +20,7 @@ import {
 } from '../../../tools/web-search/operations.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
 import type { ConfiguredWebSearchProvider } from '../../../tools/web-search/types.ts';
-import type { OpenAIResponsesFunctionTool, OpenAIResponsesHostedTool, OpenAIResponsesInputWebSearchCall, OpenAIResponsesOutputWebSearchCall, OpenAIResponsesTool, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesFunctionTool, OpenAIResponsesHostedTool, OpenAIResponsesWebSearchTool, OpenAIResponsesInputWebSearchCall, OpenAIResponsesOutputWebSearchCall, OpenAIResponsesTool, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
 import { collectOpenAIResponsesToolEntries, createRandomOpenAIResponsesItemId, WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/openai-responses';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { providerModelOf } from '@floway-dev/provider';
@@ -47,6 +47,13 @@ const formatUserLocation = (loc: NonNullable<WebSearchFilters['userLocation']>):
   return joined.length === 0 ? `(timezone: ${loc.timezone})` : `${joined} (timezone: ${loc.timezone})`;
 };
 
+const userLocationOf = (tool: OpenAIResponsesWebSearchTool): WebSearchFilters['userLocation'] => {
+  const location = tool.user_location;
+  if (location == null) return undefined;
+  const { city, country, region, timezone } = location;
+  return { city: city ?? undefined, country: country ?? undefined, region: region ?? undefined, timezone: timezone ?? undefined };
+};
+
 // The injected function mirrors the complete command object accepted by
 // OpenAI's alpha-search endpoint. Alpha passthrough can execute every field;
 // local Tavily, Jina, and Microsoft Web IQ execution rejects the fields it
@@ -56,7 +63,8 @@ export const buildFunctionTool = (
   canonical: OpenAIResponsesHostedTool,
   name: string,
 ): OpenAIResponsesFunctionTool => {
-  const userLocation = canonical.user_location;
+  if (!isHostedWebSearchTool(canonical)) throw new Error(`Expected a web search tool, received ${canonical.type}`);
+  const userLocation = userLocationOf(canonical);
   const baseDescription
     = 'Accesses OpenAI web search through text and image search, page navigation, screenshots, finance, weather, sports, and time operations. '
     + 'Multiple sub-property arrays may be populated in one call to dispatch several operations in parallel.';
@@ -232,7 +240,7 @@ export const buildFunctionTool = (
   };
 };
 
-export const isHostedWebSearchTool = (tool: OpenAIResponsesTool): tool is OpenAIResponsesHostedTool =>
+export const isHostedWebSearchTool = (tool: OpenAIResponsesTool): tool is OpenAIResponsesWebSearchTool =>
   typeof tool.type === 'string' && WEB_SEARCH_HOSTED_TYPES.has(tool.type);
 
 // Canonical form of a hosted web_search tool: client's `type` alias is
@@ -249,9 +257,9 @@ export const isHostedWebSearchTool = (tool: OpenAIResponsesTool): tool is OpenAI
 //   `return_token_budget` default `'default'` and
 //   `search_content_types` default `['text']` — observed verbatim in
 //   Copilot's `/responses` echo for `tools: [{type: 'web_search'}]`.
-export const recognizeWebSearchTool = (raw: OpenAIResponsesTool): OpenAIResponsesHostedTool | undefined => {
+export const recognizeWebSearchTool = (raw: OpenAIResponsesTool): OpenAIResponsesWebSearchTool | undefined => {
   if (!isHostedWebSearchTool(raw)) return undefined;
-  const canonical: OpenAIResponsesHostedTool = {
+  const canonical: OpenAIResponsesWebSearchTool = {
     ...raw,
     type: raw.type,
     search_context_size: raw.search_context_size ?? DEFAULT_SEARCH_CONTEXT_SIZE,
@@ -268,10 +276,10 @@ const ALPHA_SEARCH_SETTING_KEYS = [
   'image_settings',
   'allowed_callers',
   'external_web_access',
-] as const satisfies readonly (keyof OpenAIResponsesHostedTool)[];
+] as const satisfies readonly (keyof OpenAIResponsesWebSearchTool)[];
 
 export const alphaSearchSettingsFromHosted = (
-  hosted: OpenAIResponsesHostedTool | undefined,
+  hosted: OpenAIResponsesWebSearchTool | undefined,
 ): Record<string, unknown> => {
   if (hosted === undefined) return {};
   const settings: Record<string, unknown> = {};
@@ -281,12 +289,13 @@ export const alphaSearchSettingsFromHosted = (
   return settings;
 };
 
-const extractFilters = (tool: OpenAIResponsesHostedTool): WebSearchFilters => {
+const extractFilters = (tool: OpenAIResponsesWebSearchTool): WebSearchFilters => {
   const out: WebSearchFilters = {};
   if (tool.filters?.allowed_domains) out.allowedDomains = tool.filters.allowed_domains;
   if (tool.filters?.blocked_domains) out.blockedDomains = tool.filters.blocked_domains;
-  if (tool.user_location) out.userLocation = tool.user_location;
-  out.maxResults = maxResultsForContextSize(tool.search_context_size);
+  const location = userLocationOf(tool);
+  if (location !== undefined) out.userLocation = location;
+  out.maxResults = maxResultsForContextSize(isSearchContextSize(tool.search_context_size) ? tool.search_context_size : undefined);
   return out;
 };
 
@@ -328,7 +337,7 @@ const validateDomainListEntry = (
 // replacement uses the dispatcher command schema; backend settings such as
 // `external_web_access` are handled separately, while unhandled fields such
 // as `return_token_budget` are omitted from that request.
-const validateHostedEntry = (tool: OpenAIResponsesHostedTool): PrepareToolsError | null => {
+const validateHostedEntry = (tool: OpenAIResponsesWebSearchTool): PrepareToolsError | null => {
   const sizeField = (tool as { search_context_size?: unknown }).search_context_size;
   if (sizeField !== undefined && sizeField !== null && !isSearchContextSize(sizeField)) {
     return {

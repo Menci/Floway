@@ -1,6 +1,13 @@
 import { expect, test } from 'vitest';
 
 import { MODEL_CATALOG_REVISION, shouldScheduleModelsRefresh } from '../../src/repo/models-cache-contract.ts';
+import { decodeUpstreamModelsCache } from '../../src/repo/upstream-codecs.ts';
+
+test.each([26, 29])('rejects stored catalog revision %i from before model capability passthrough', revision => {
+  const cache = { revision, fetchedAt: 1_000, models: [], lastError: null };
+  expect(decodeUpstreamModelsCache(JSON.stringify(cache), 'up')).toBeNull();
+  expect(shouldScheduleModelsRefresh(cache, cache.fetchedAt)).toBe(true);
+});
 
 test('automatic refresh becomes due ten minutes after the last successful catalog', () => {
   const cache = { revision: MODEL_CATALOG_REVISION, fetchedAt: 1_000, models: [], lastError: null };

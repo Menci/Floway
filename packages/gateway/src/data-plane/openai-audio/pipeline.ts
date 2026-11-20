@@ -2,7 +2,7 @@ import { callOpenAIAudioTranscriptionUpstream } from './call-upstream.ts';
 import { emitOpenAIAudioTranscription } from './emit.ts';
 import type { Fields } from './facts.ts';
 import { narrowing } from './target.ts';
-import { isFailure, type BillableEntity } from '../pipeline/facts.ts';
+import type { BillableEntity } from '../pipeline/facts.ts';
 import { failover } from '../pipeline/failover.ts';
 import { resolveCandidates } from '../pipeline/resolve-candidates.ts';
 import { serializeClientJson } from '../pipeline/serialize-client-json.ts';
@@ -20,7 +20,7 @@ export const openaiAudioTranscriptionServePipeline: Pipeline<
   emitOpenAIAudioTranscription,
   resolveCandidates(narrowing),
   failover({
-    failed: handedUp => isFailure((handedUp as { 'response.openaiAudioTranscription.canonical'?: unknown })['response.openaiAudioTranscription.canonical']),
+    answer: handedUp => handedUp['response.openaiAudioTranscription.canonical'],
     owns: ['response.http.body'],
     pendingUsage: 'response.openaiAudioTranscription.streamedOutcome',
   }),

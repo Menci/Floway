@@ -30,9 +30,11 @@ interface UsageOverviewSqlRow {
   unit_price: string | null;
   occurrences_text: string | null;
   metric_order: number | null;
+  first_hour: string | null;
+  last_hour: string | null;
 }
 
-const overviewAxes = new Set<UsageOverviewAxis>(['series', 'none', 'keyId', 'userId', 'model', 'upstream']);
+const overviewAxes = new Set<UsageOverviewAxis>(['none', 'keyId', 'userId', 'model', 'upstream']);
 const overviewDimensions = new Set(['keyId', 'userId', 'model', 'upstream']);
 
 const scopedRange = (table: string, scoped: boolean) => scoped
@@ -130,21 +132,20 @@ filtered AS MATERIALIZED (
 -- workerd caps compound SELECTs at five terms, so this extensible axis catalog
 -- is a VALUES table rather than a UNION ALL chain.
 -- https://github.com/cloudflare/workerd/blob/243fd41f8944c2446c46e415373b107ecb9bc789/src/workerd/util/sqlite.c%2B%2B#L1380-L1385
-axes(axis, grouping, bucketed, owned_only, admin_only) AS (
+axes(axis, owned_only) AS (
   VALUES
-    ('series', ?, 1, 0, 0),
-    ('none', 'none', 0, 0, 0),
-    ('keyId', 'keyId', 0, 1, 0),
-    ('userId', 'userId', 0, 0, 0),
-    ('model', 'model', 0, 0, 0),
-    ('upstream', 'upstream', 0, 0, 0)
+    ('none', 0),
+    ('keyId', 1),
+    ('userId', 0),
+    ('model', 0),
+    ('upstream', 0)
 ),
 projected AS MATERIALIZED (
   SELECT
     filtered.*,
     axes.axis,
-    CASE WHEN axes.bucketed = 1 THEN bucket_map.bucket ELSE 'all' END AS bucket,
-    CASE axes.grouping
+    bucket_map.bucket,
+    CASE axes.axis
       WHEN 'none' THEN 'all'
       WHEN 'keyId' THEN filtered.key_id
       WHEN 'userId' THEN CAST(filtered.user_id AS TEXT)
@@ -153,32 +154,33 @@ projected AS MATERIALIZED (
     END AS group_value
   FROM filtered
   CROSS JOIN axes
-  CROSS JOIN settings
   JOIN bucket_map ON bucket_map.hour = filtered.hour
   WHERE (axes.owned_only = 0 OR filtered.owned = 1)
-    AND (axes.admin_only = 0 OR settings.is_admin = 1)
 ),
 facet_rows AS (
-  SELECT 'facet' AS row_kind, NULL AS axis, NULL AS bucket, NULL AS group_value,
+  SELECT 'facet' AS row_kind, NULL AS axis, bucket_map.bucket, NULL AS group_value,
     axes.axis AS dimension,
-    CASE axes.grouping
+    CASE axes.axis
       WHEN 'keyId' THEN authorized.key_id
       WHEN 'userId' THEN CAST(authorized.user_id AS TEXT)
       WHEN 'model' THEN authorized.model
       WHEN 'upstream' THEN authorized.upstream_value
     END AS facet_value,
     NULL AS requests_text,
-    NULL AS metric, NULL AS quantity, NULL AS unit_price, NULL AS occurrences_text, NULL AS metric_order
+    NULL AS metric, NULL AS quantity, NULL AS unit_price, NULL AS occurrences_text, NULL AS metric_order,
+    MIN(authorized.hour) AS first_hour, MAX(authorized.hour) AS last_hour
   FROM authorized
   CROSS JOIN axes
-  WHERE axes.axis IN ('keyId', 'userId', 'model', 'upstream')
+  JOIN bucket_map ON bucket_map.hour = authorized.hour
+  WHERE axes.axis <> 'none'
     AND (axes.owned_only = 0 OR authorized.owned = 1)
-  GROUP BY dimension, facet_value
+  GROUP BY bucket_map.bucket, dimension, facet_value
 ),
 request_rows AS (
   SELECT 'request' AS row_kind, axis, bucket, group_value, NULL AS dimension, NULL AS facet_value,
     CAST(SUM(requests) AS TEXT) AS requests_text,
-    NULL AS metric, NULL AS quantity, NULL AS unit_price, NULL AS occurrences_text, NULL AS metric_order
+    NULL AS metric, NULL AS quantity, NULL AS unit_price, NULL AS occurrences_text, NULL AS metric_order,
+    NULL AS first_hour, NULL AS last_hour
   FROM projected
   WHERE fact_kind = 'request'
   GROUP BY axis, bucket, group_value
@@ -210,7 +212,7 @@ metric_rows AS (
     )) AS quantity,
     NULL AS unit_price,
     NULL AS occurrences_text,
-    MIN(metric_order) AS metric_order
+    MIN(metric_order) AS metric_order, NULL AS first_hour, NULL AS last_hour
   FROM metric_numbered
   GROUP BY axis, bucket, group_value, metric, term_chunk
 ),
@@ -233,7 +235,8 @@ validation_rows AS (
       'quantity', quantity,
       'unitPrice', unit_price
     )) AS quantity,
-    NULL AS unit_price, NULL AS occurrences_text, NULL AS metric_order
+    NULL AS unit_price, NULL AS occurrences_text, NULL AS metric_order,
+    NULL AS first_hour, NULL AS last_hour
   FROM validation_numbered
   GROUP BY term_chunk
 ),
@@ -241,9 +244,10 @@ missing_hour_rows AS (
   SELECT 'missing_hour' AS row_kind,
     NULL AS axis, NULL AS bucket, NULL AS group_value, NULL AS dimension, hour AS facet_value,
     NULL AS requests_text, NULL AS metric, NULL AS quantity, NULL AS unit_price,
-    NULL AS occurrences_text, NULL AS metric_order
-  FROM filtered
-  WHERE NOT EXISTS (SELECT 1 FROM bucket_map WHERE bucket_map.hour = filtered.hour)
+    NULL AS occurrences_text, NULL AS metric_order,
+    NULL AS first_hour, NULL AS last_hour
+  FROM authorized
+  WHERE NOT EXISTS (SELECT 1 FROM bucket_map WHERE bucket_map.hour = authorized.hour)
   GROUP BY hour
 ),
 wire AS (
@@ -282,50 +286,39 @@ const parseStoredMetric = (
   return { metric, quantity, unitPrice };
 };
 
-const finishOverview = (rows: readonly UsageOverviewSqlRow[]): UsageOverviewResult => {
+const finishBucket = (bucket: string, rows: readonly UsageOverviewSqlRow[]): UsageOverviewResult => {
+  let firstHour: string | undefined;
+  let lastHour: string | undefined;
   const records = new Map<UsageOverviewAxis, Map<string, MutableOverviewRecord>>(
     [...overviewAxes].map(axis => [axis, new Map()]),
   );
   const facets = new Map<string, Set<string>>(
     [...overviewDimensions].map(dimension => [dimension, new Set()]),
   );
-  const ensureRecord = (axis: UsageOverviewAxis, bucket: string, group: string) => {
-    const key = `${bucket}\0${group}`;
+  const ensureRecord = (axis: UsageOverviewAxis, group: string) => {
     const axisRecords = records.get(axis)!;
-    let record = axisRecords.get(key);
+    let record = axisRecords.get(group);
     if (!record) {
-      record = { bucket, group, requests: 0, metrics: new Map(), cost: null };
-      axisRecords.set(key, record);
+      record = { group, requests: 0, metrics: new Map(), cost: null };
+      axisRecords.set(group, record);
     }
     return record;
   };
 
   for (const row of rows) {
-    if (row.row_kind === 'missing_hour') {
-      throw new Error('Usage overview bucket map is incomplete');
-    }
-    if (row.row_kind === 'validation') {
-      if (row.quantity === null) throw new TypeError('Stored Usage overview validation terms are missing');
-      const validationTerms: unknown = JSON.parse(row.quantity);
-      if (!Array.isArray(validationTerms)) throw new TypeError('Stored Usage overview validation terms must be an array');
-      for (const term of validationTerms) {
-        if (!term || typeof term !== 'object') throw new TypeError('Stored Usage overview validation term must be an object');
-        const values = term as Record<string, unknown>;
-        parseStoredMetric(values.metric, values.quantity, values.unitPrice);
-      }
-      continue;
-    }
     if (row.row_kind === 'facet') {
-      if (row.dimension === null || row.facet_value === null || !overviewDimensions.has(row.dimension)) {
+      if (row.dimension === null || row.facet_value === null || row.first_hour === null || row.last_hour === null || !overviewDimensions.has(row.dimension)) {
         throw new TypeError('Stored Usage overview returned an invalid facet row');
       }
+      if (firstHour === undefined || row.first_hour < firstHour) firstHour = row.first_hour;
+      if (lastHour === undefined || row.last_hour > lastHour) lastHour = row.last_hour;
       facets.get(row.dimension)!.add(row.facet_value);
       continue;
     }
-    if (row.axis === null || row.bucket === null || row.group_value === null || !overviewAxes.has(row.axis as UsageOverviewAxis)) {
+    if (row.axis === null || row.group_value === null || !overviewAxes.has(row.axis as UsageOverviewAxis)) {
       throw new TypeError('Stored Usage overview returned an invalid aggregate coordinate');
     }
-    const aggregate = ensureRecord(row.axis as UsageOverviewAxis, row.bucket, row.group_value);
+    const aggregate = ensureRecord(row.axis as UsageOverviewAxis, row.group_value);
     if (row.row_kind === 'request') {
       if (row.requests_text === null) throw new TypeError('Stored Usage overview request row omitted requests');
       aggregate.requests = safeInteger(row.requests_text, 'Usage overview requests');
@@ -363,7 +356,6 @@ const finishOverview = (rows: readonly UsageOverviewSqlRow[]): UsageOverviewResu
 
   const finished = (axis: UsageOverviewAxis): UsageOverviewRecord[] => [...records.get(axis)!.values()]
     .map(record => ({
-      bucket: record.bucket,
       group: record.group,
       requests: record.requests,
       metrics: [...record.metrics.entries()]
@@ -371,10 +363,13 @@ const finishOverview = (rows: readonly UsageOverviewSqlRow[]): UsageOverviewResu
         .map(([metric, value]) => ({ metric, quantity: value.quantity })),
       cost: record.cost,
     }))
-    .sort((left, right) => left.bucket.localeCompare(right.bucket) || left.group.localeCompare(right.group));
+    .sort((left, right) => left.group.localeCompare(right.group));
 
+  if (firstHour === undefined || lastHour === undefined) throw new Error('Usage overview bucket has no authorized hours');
   return {
-    series: finished('series'),
+    bucket,
+    firstHour,
+    lastHour,
     axes: {
       none: finished('none'),
       keyId: finished('keyId'),
@@ -391,11 +386,37 @@ const finishOverview = (rows: readonly UsageOverviewSqlRow[]): UsageOverviewResu
   };
 };
 
+const finishOverview = (rows: readonly UsageOverviewSqlRow[]): UsageOverviewResult[] => {
+  const byBucket = new Map<string, UsageOverviewSqlRow[]>();
+  for (const row of rows) {
+    if (row.row_kind === 'validation') {
+      if (row.quantity === null) throw new TypeError('Stored Usage overview validation terms are missing');
+      const terms: unknown = JSON.parse(row.quantity);
+      if (!Array.isArray(terms)) throw new TypeError('Stored Usage overview validation terms must be an array');
+      for (const term of terms) {
+        if (!term || typeof term !== 'object') throw new TypeError('Stored Usage overview validation term must be an object');
+        const values = term as Record<string, unknown>;
+        parseStoredMetric(values.metric, values.quantity, values.unitPrice);
+      }
+      continue;
+    }
+    if (row.bucket === null) throw new Error('Usage overview bucket map is incomplete');
+    let bucket = byBucket.get(row.bucket);
+    if (!bucket) {
+      bucket = [];
+      byBucket.set(row.bucket, bucket);
+    }
+    bucket.push(row);
+  }
+  return [...byBucket].sort(([left], [right]) => left.localeCompare(right))
+    .map(([bucket, bucketRows]) => finishBucket(bucket, bucketRows));
+};
+
 export const querySqlUsageOverview = async (
   db: SqlDatabase,
   opts: UsageOverviewQueryOptions,
-): Promise<UsageOverviewResult> => {
-  const scoped = opts.groupBy === 'keyId';
+): Promise<UsageOverviewResult[]> => {
+  const scoped = opts.ownedKeysOnly;
   const range = rangeBinds(opts, scoped);
   const { results: hours } = await db.prepare(overviewHoursSql(scoped))
     .bind(...range, ...range)
@@ -417,7 +438,6 @@ export const querySqlUsageOverview = async (
       JSON.stringify(buckets),
       ...range,
       ...range,
-      opts.groupBy,
     ];
     const { results } = await db.prepare(overviewSql(scoped)).bind(...binds).all<UsageOverviewSqlRow>();
     const missingHours = results

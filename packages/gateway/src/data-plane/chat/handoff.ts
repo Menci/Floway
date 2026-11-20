@@ -116,6 +116,7 @@ export const handOff = <Source extends RequestKey, Target extends RequestKey, Ta
     const answer = answered as ChatAnswer;
 
     if (isFailure(answer)) {
+      if (answer.transportError !== undefined) return { ...up, [handoff.from.response]: answer } as never;
       const restated = trip.error(
         answer.status,
         new Headers((up['response.http.headers'] as readonly (readonly [string, string])[]).map(([name, value]): [string, string] => [name, value])),
@@ -140,7 +141,7 @@ export const handOff = <Source extends RequestKey, Target extends RequestKey, Ta
         [handoff.from.response]: move({
           status: restated.status,
           message: upstreamErrorMessage(restated.body) ?? answer.message,
-          body: restated.body,
+          envelope: restated.body,
         }),
       } as never;
     }

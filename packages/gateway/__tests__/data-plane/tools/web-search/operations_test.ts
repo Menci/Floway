@@ -4,7 +4,7 @@ import { executeOperationToIr, parseWebSearchOperations, startBatchFetch, type W
 import type { WebSearchFetchPageResult, WebSearchProvider } from '../../../../src/data-plane/tools/web-search/types.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { assert, assertEquals } from '@floway-dev/test-utils';
+import { assert } from '@floway-dev/test-utils';
 
 beforeEach(() => { initRepo(new InMemoryRepo()); });
 
@@ -34,17 +34,6 @@ const page = (url: string, content = 'body') => ({
   content,
   truncated: false,
   fullContentBytes: content.length,
-});
-
-test('open_page matches a provider URL normalized with a trailing slash', async () => {
-  const requestedUrl = 'https://openai.com';
-  const { parsed, ops } = openOps([requestedUrl]);
-  const session = sessionFor({ type: 'ok', pages: [page('https://openai.com/')], failures: [] });
-  const batch = await startBatchFetch(parsed, session);
-  const ir = await executeOperationToIr(ops[0], session, batch);
-
-  assertEquals(ir.action, { type: 'open_page', url: requestedUrl });
-  expect(ir.results[0]).toMatchObject({ url: requestedUrl, title: 'title', snippet: 'body' });
 });
 
 test('open_page pairs one remaining redirected page after exact matches are claimed', async () => {

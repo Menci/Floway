@@ -5,11 +5,15 @@ import { exchangeResponse } from '@floway-dev/http/pipeline';
 import type { Facts } from '@floway-dev/pipeline';
 import type { ChatProviderOperation, ModelCandidate, ProviderChatResponse } from '@floway-dev/provider';
 
-export const providerChatAnswer = async <O extends ChatProviderOperation>(candidate: ModelCandidate, back: ProviderChatResponse<O>) => {
+export const providerChatAnswer = async <O extends ChatProviderOperation>(
+  candidate: ModelCandidate,
+  back: ProviderChatResponse<O>,
+  signal: AbortSignal | undefined,
+) => {
   const { 'response.http.exchange': exchange, 'response.provider.output': output } = back;
   const billable = providerCalls(candidate, back as unknown as Facts);
   if (exchange.type === 'transportFailure') return {
-    answer: dialFailure(exchange.error), status: 502, headers: [], billable, body: null,
+    answer: dialFailure(exchange.error, signal), status: 502, headers: [], billable, body: null,
   };
   if (output !== null) return {
     answer: output as ChatAnswer,

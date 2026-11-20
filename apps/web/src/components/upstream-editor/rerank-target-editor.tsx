@@ -23,7 +23,7 @@ export function RerankTargetEditor({ onChange, readOnly, value }: {
   const { t } = useTranslation();
 
   return <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
-    <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.rerankProtocol')}>
+    <Field className="min-w-0" label={t('models.editor.rerankProtocol')}>
       <Dropdown
         readOnly={readOnly}
         selectedOptions={[value.protocol]}
@@ -36,7 +36,7 @@ export function RerankTargetEditor({ onChange, readOnly, value }: {
       </Dropdown>
     </Field>
 
-    <Field className="min-w-0" label={t('dashboard.upstreamEditor.models.rerankPath')} hint={t('dashboard.upstreamEditor.models.rerankPathHint')}>
+    <Field className="min-w-0" label={t('models.editor.rerankPath')} hint={t('models.editor.rerankPathHint')}>
       <Input
         className="!w-full font-mono"
         readOnly={readOnly}

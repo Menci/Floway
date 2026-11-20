@@ -151,7 +151,6 @@ export function chatgptModels(models: Array<{ slug: string; display_name?: strin
 export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const config = {
     baseUrl: 'https://custom.example.com',
-    authStyle: 'bearer',
     ingressHeadersRules: [],
     apiKey: 'sk-custom',
     endpoints: { openaiChatCompletions: {} },

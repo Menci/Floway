@@ -20,7 +20,6 @@ const registerOpenAIEmbeddingsUpstream = async (
     sortOrder: 100,
     config: {
       baseUrl: 'https://embeddings.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-embeddings',
       endpoints: {},
@@ -127,7 +126,7 @@ test('when every candidate refuses the client gets the last upstream-s own refus
   for (const [id, host, order] of [['up_a', 'up-a.example.com', 100], ['up_b', 'up-b.example.com', 200]] as const) {
     await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
       id, name: id, sortOrder: order,
-      config: { baseUrl: `https://${host}`, authStyle: 'bearer', ingressHeadersRules: [], apiKey: 'sk-x', endpoints: {} },
+      config: { baseUrl: `https://${host}`, ingressHeadersRules: [], apiKey: 'sk-x', endpoints: {} },
     }));
   }
 

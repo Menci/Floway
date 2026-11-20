@@ -6,6 +6,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { UpstreamTransportError } from '../../../src/dial/transport-error.ts';
 import { anthropicMessagesCountTokensPipeline } from '../../../src/data-plane/chat/anthropic-messages/count-tokens.ts';
 import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
@@ -76,7 +77,7 @@ const resolves = (candidates: readonly ModelCandidate[], sawModel = true): void 
 };
 
 const counted = (input: number): ProviderCallResult => ({
-  response: Response.json({ input_tokens: input }),
+  http: Response.json({ input_tokens: input }),
   modelKey: 'claude-model-key',
 });
 
@@ -273,7 +274,7 @@ describe('the messages count-tokens chain', () => {
     resolves([
       candidate(async () => {
         tried.push('busy');
-        return { response: new Response('unavailable', { status: 503 }), modelKey: 'k' };
+        return { http: new Response('unavailable', { status: 503 }), modelKey: 'k' };
       }, { upstreamId: 'up_busy' }),
       candidate(async () => { tried.push('free'); return counted(42); }, { upstreamId: 'up_free' }),
     ]);
@@ -287,7 +288,7 @@ describe('the messages count-tokens chain', () => {
 
   it('answers the last refusal in the upstream-s own status and words', async () => {
     resolves([candidate(async () => ({
-      response: new Response(JSON.stringify({ type: 'error', error: { type: 'rate_limit_error', message: 'slow down' } }), {
+      http: new Response(JSON.stringify({ type: 'error', error: { type: 'rate_limit_error', message: 'slow down' } }), {
         status: 429, headers: { 'content-type': 'application/json' },
       }),
       modelKey: 'k',
@@ -307,7 +308,7 @@ describe('the messages count-tokens chain', () => {
   it('fails a dial that never connected over to the next candidate', async () => {
     const tried: string[] = [];
     resolves([
-      candidate(async () => { tried.push('dead'); return { type: 'transportFailure' as const, error: new Error('ECONNREFUSED') }; }, { upstreamId: 'up_dead' }),
+      candidate(async () => { tried.push('dead'); return { type: 'transportFailure' as const, error: new UpstreamTransportError(new Error('ECONNREFUSED')) }; }, { upstreamId: 'up_dead' }),
       candidate(async () => { tried.push('alive'); return counted(7); }, { upstreamId: 'up_alive' }),
     ]);
 
@@ -346,7 +347,7 @@ describe('the messages count-tokens chain', () => {
 });
 
 it('preserves the accepted native counting HTTP status', async () => {
-  resolves([candidate(async () => ({ response: new Response(JSON.stringify({ input_tokens: 3 }), { status: 201, headers: { 'content-type': 'application/json' } }), modelKey: 'counted-model' }))]);
+  resolves([candidate(async () => ({ http: new Response(JSON.stringify({ input_tokens: 3 }), { status: 201, headers: { 'content-type': 'application/json' } }), modelKey: 'counted-model' }))]);
   const { facts, drain } = await count();
   expect(facts['response.http.status']).toBe(201);
   await drain();

@@ -18,10 +18,10 @@ import { imageGenerationHostedTool } from './hosted-tools/image-generation.ts';
 import { webSearchHostedTool } from './hosted-tools/web-search.ts';
 import { hostedTools } from './hosted-tools.ts';
 import { normalizeEmptyToolsForOpenAIResponses } from './normalize-empty-tools-tool-choice.ts';
+import { lowerOpenAIResponsesStandaloneToolOutputs } from './standalone-tool-output-shim.ts';
 import { summarizeForCompaction } from './summarize-for-compaction.ts';
 import { openaiResponsesNarrowing, openaiResponsesTarget } from './target.ts';
 import { openaiResponsesWireFor } from './wires.ts';
-import { isFailure } from '../../pipeline/facts.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import type { Pipeline, Stage } from '@floway-dev/pipeline';
 
@@ -46,7 +46,7 @@ const openaiResponsesModelStages = (warmup: boolean): readonly Stage[] => [
   hydrateStoredItems,
   resolveChatCandidates(openaiResponsesNarrowing),
   failover({
-    failed: handedUp => isFailure((handedUp as { 'response.chat.openaiResponses'?: unknown })['response.chat.openaiResponses']),
+    answer: handedUp => handedUp['response.chat.openaiResponses'],
     owns: ['response.http.body'],
     pendingUsage: OPENAI_RESPONSES_STREAMED_USAGE,
   }),
@@ -55,6 +55,7 @@ const openaiResponsesModelStages = (warmup: boolean): readonly Stage[] => [
   // Ahead of every rewrite and of the translation the dial performs, so none of them sees
   // the item.
   lowerOpenAIResponsesAgentMessages,
+  lowerOpenAIResponsesStandaloneToolOutputs,
   expandShimCompactions,
   projectOpenAIResponsesCollaboration,
   summarizeForCompaction(asksForCompaction),

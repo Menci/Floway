@@ -32,6 +32,27 @@ const formatNames = (value: string): string[] =>
   [...value.matchAll(/\{\{[^},]+,\s*([^}]+?)\s*\}\}/g)].map(([, name]) => name!);
 
 describe('translation resources', () => {
+  it('organizes strings by stable domain ownership', () => {
+    expect(Object.keys(en.translation)).toEqual([
+      'app',
+      'common',
+      'auth',
+      'upstreams',
+      'models',
+      'playground',
+      'proxies',
+      'search',
+      'apiKeys',
+      'apiDocs',
+      'requests',
+      'monitoring',
+      'directory',
+      'permissions',
+      'backupRestore',
+      'settings',
+    ]);
+  });
+
   it('keeps every locale structurally aligned with English', () => {
     const expected = [...new Set(leafKeys(en).map(pluralBase))].sort();
 

@@ -3,7 +3,7 @@ import type { Chat } from '../facts.ts';
 import { answerWithFrames, rewritingEvents } from '../shared/frames.ts';
 import { withoutKeys, mapKeepingIdentity } from '../shared/structural.ts';
 import { defineStage, transform, move } from '@floway-dev/pipeline';
-import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayload, OpenAIChatCompletionsMessage, OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsReasoningItem } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsMessage, OpenAIChatCompletionsAssistantMessage, OpenAIChatCompletionsReasoningItemEx } from '@floway-dev/protocols/openai-chat-completions';
 
 // ── OpenAI Chat Completions vendor dialects ───────────────────────────────────────────────
 //
@@ -80,7 +80,7 @@ export const vendorDeepSeekNormalizeForOpenAIChatCompletions = defineStage<
   }),
 });
 
-const deepSeekOutbound = (payload: OpenAIChatCompletionsPayload): OpenAIChatCompletionsPayload => {
+const deepSeekOutbound = (payload: OpenAIChatCompletionsPayloadEx): OpenAIChatCompletionsPayloadEx => {
   const withThinking = payload.reasoning_effort === 'none'
     ? { ...withoutKeys(payload, ['reasoning_effort']), thinking: { type: 'disabled' } } satisfies OpenAIChatCompletionsPayloadWithDeepSeekThinking
     : payload;
@@ -96,7 +96,7 @@ const deepSeekOutbound = (payload: OpenAIChatCompletionsPayload): OpenAIChatComp
  *  fields that are projected onto `reasoning_content`. */
 const deepSeekAssistantReasoning = (message: OpenAIChatCompletionsMessage): OpenAIChatCompletionsMessage => {
   if (message.role !== 'assistant') return message;
-  const assistant = message as OpenAIChatCompletionsAssistantMessage & { reasoning_text?: string | null; reasoning_opaque?: string | null; reasoning_items?: OpenAIChatCompletionsReasoningItem[] | null };
+  const assistant = message as OpenAIChatCompletionsAssistantMessage & { reasoning_text?: string | null; reasoning_opaque?: string | null; reasoning_items?: OpenAIChatCompletionsReasoningItemEx[] | null };
   const stripped = withoutKeys(assistant, ['reasoning_text', 'reasoning_opaque', 'reasoning_items']);
   if (stripped === message) return message;
   const text = typeof assistant.reasoning_text === 'string'
@@ -109,7 +109,7 @@ const deepSeekAssistantReasoning = (message: OpenAIChatCompletionsMessage): Open
 
 /** The newer OpenAI shape carries reasoning as summary items; DeepSeek documents only the
  *  scalar, so what summaries there are become it. */
-const deepSeekReasoningFromItems = (items: OpenAIChatCompletionsReasoningItem[] | null | undefined): string | undefined => {
+const deepSeekReasoningFromItems = (items: OpenAIChatCompletionsReasoningItemEx[] | null | undefined): string | undefined => {
   const parts = items?.flatMap(item => item.summary?.map(summary => summary.text) ?? []) ?? [];
   return parts.length > 0 ? parts.join('') : undefined;
 };
@@ -148,7 +148,7 @@ const deepSeekInboundUsage = (chunk: OpenAIChatCompletionsStreamEvent): OpenAICh
 
 /** None of the three fields is an OpenAI Chat Completions field, so each is declared beside the vendor
  *  that reads it rather than widening the protocol's own types. */
-type OpenAIChatCompletionsPayloadWithDeepSeekThinking = Omit<OpenAIChatCompletionsPayload, 'reasoning_effort'> & { thinking: { type: string } };
+type OpenAIChatCompletionsPayloadWithDeepSeekThinking = Omit<OpenAIChatCompletionsPayloadEx, 'reasoning_effort'> & { thinking: { type: string } };
 
 type OpenAIChatCompletionsMessageWithDeepSeekReasoning =
   OpenAIChatCompletionsAssistantMessage & { reasoning_content: string };

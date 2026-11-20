@@ -54,7 +54,7 @@ export function MultiselectCombobox({
     ...options,
     ...[...new Set(value)].filter(entry => !optionValues.has(entry)).map(entry => ({ value: entry, label: entry })),
   ];
-  const visible = completeOptions.filter(option => option.label.toLowerCase().includes(needle));
+  const visible = completeOptions.filter(option => option.label.toLowerCase().includes(needle) || option.value.toLowerCase().includes(needle));
 
   const commit = (next: readonly string[]) => {
     const normalized = [...new Set(next.map(normalizeValue).filter(Boolean))];

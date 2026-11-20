@@ -450,7 +450,7 @@ test('POST /v1/responses terminates an SSE stream with error when an output item
     assert(body.includes('simulated item persistence failure'));
     assert(!body.includes('event: response.output_item.done'));
     assert(!body.includes('event: response.completed'));
-    assert(!body.includes('[DONE]'), 'expected a failed stream to end on the error frame, not the sentinel');
+    assert(body.endsWith('data: [DONE]\n\n'), 'expected the failed stream to terminate');
   } finally {
     persistence.mockRestore();
   }
@@ -819,7 +819,7 @@ test('POST /v1/responses nests a mid-stream failure under `error` so an SDK stre
   };
   assertEquals(data.type, 'error');
   assertEquals(data.error?.message, 'upstream exploded mid-stream');
-  assert(data.message === undefined, 'expected the payload to sit under `error`, not at the top level');
+  assertEquals(data.message, data.error?.message);
 
   const failedChunk = body.split('\n\n').find(part => part.startsWith('event: response.failed'));
   assert(failedChunk !== undefined, `expected a response.failed frame in ${body}`);

@@ -7,6 +7,7 @@ test.each([
   ['LOW', 'low'],
   ['MEDIUM', 'medium'],
   ['HIGH', 'high'],
+  ['XHIGH', 'xhigh'],
   ['MINIMAL', 'minimal'],
   ['THINKING_LEVEL_UNSPECIFIED', undefined],
   ['', ''],
@@ -35,11 +36,4 @@ test('empty thoughts do not enter IR or split visible text', () => {
       { type: 'message', content: [{ type: 'text', text: 'answer' }] },
     ],
   }]);
-});
-
-test('entirely empty thoughts leave no reasoning in input IR', () => {
-  const reading = readGeminiGenerateContentRequest({
-    model: 'm', contents: [{ role: 'model', parts: [{ thought: true, text: '' }] }],
-  });
-  assertEquals(reading.turns[0].toIRInputTurns(), [{ kind: 'assistant', items: [] }]);
 });

@@ -111,7 +111,7 @@ test('customFetchModels resolves the path from modelsFetch.endpoint', async () =
     ...baseRecord,
     config: {
       ...(baseRecord.config as Record<string, unknown>),
-      modelsFetch: { enabled: true, endpoint: '/models' },
+      modelsFetch: { enabled: true, authStyle: 'bearer', endpoint: '/models' },
     },
   });
   let seen: string | undefined;
@@ -133,7 +133,7 @@ test('customFetchModels falls back to the default /v1/models path when modelsFet
     ...baseRecord,
     config: {
       ...(baseRecord.config as Record<string, unknown>),
-      modelsFetch: { enabled: true },
+      modelsFetch: { enabled: true, authStyle: 'bearer' },
     },
   });
   let seen: string | undefined;
@@ -150,7 +150,31 @@ test('customFetchModels falls back to the default /v1/models path when modelsFet
   assertEquals(seen, 'https://custom.example.com/v1/models');
 });
 
-test('bearer authStyle sends the configured token via Authorization', async () => {
+test('modelsFetch auth remains independent of the inference protocol', async () => {
+  const { config } = assertCustomUpstreamRecord({
+    ...baseRecord,
+    config: {
+      ...(baseRecord.config as Record<string, unknown>),
+      endpoints: { anthropicMessages: {} },
+      modelsFetch: { enabled: true, authStyle: 'bearer' },
+    },
+  });
+  const dispatched: (string | null)[][] = [];
+  const options = { fetcher: testFetcher, wrapUpstreamCall: identityWrapUpstreamCall };
+  await withMockedFetch(request => {
+    dispatched.push([new URL(request.url).pathname, request.headers.get('authorization'), request.headers.get('x-api-key')]);
+    return Response.json({});
+  }, async () => {
+    await customFetchModels(config, { method: 'GET' }, options);
+    await collectPreparedProviderRequest(prepareCustomRequest(config, 'anthropicMessages'), 'anthropicMessages', key => key, { method: 'POST', body: '{}' }, options);
+  });
+  assertEquals(dispatched, [
+    ['/v1/models', 'Bearer sk-test', null],
+    ['/v1/messages', null, 'sk-test'],
+  ]);
+});
+
+test('OpenAI inference sends the configured token via Authorization', async () => {
   const { config } = assertCustomUpstreamRecord(baseRecord);
   let authHeader: string | null = null;
   let xApiKey: string | null = null;
@@ -219,12 +243,12 @@ test('authStyle "anthropic" preserves a caller-supplied anthropic-version', asyn
   assertEquals(anthropicVersion, '2024-01-01');
 });
 
-test('authStyle "none" sends neither Authorization nor x-api-key', async () => {
+test('an empty apiKey sends neither Authorization nor x-api-key', async () => {
   const { config } = assertCustomUpstreamRecord({
     ...baseRecord,
     config: {
       baseUrl: 'https://internal.example.com',
-      authStyle: 'none',
+      apiKey: '',
       endpoints: { openaiChatCompletions: {} },
       ingressHeadersRules: [],
     },
@@ -282,7 +306,7 @@ test('Custom provider openaiImagesEdits pipeline forwards multipart body with mo
         }],
       }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
-      assertEquals(result.response.status, 200);
+      assertEquals(result.http.status, 200);
     },
   );
   assertExists(forwarded);
@@ -301,7 +325,7 @@ test('Custom provider openaiAudioTranscriptions pipeline preserves multipart ent
       endpoints: {},
       ingressHeadersRules: [],
       pathOverrides: { '/audio/transcriptions': '/speech/to-text' },
-      modelsFetch: { enabled: false },
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
       models: [{ upstreamModelId: 'whisper-upstream', kind: 'transcription', endpoints: { openaiAudioTranscriptions: {} } }],
     },
   };

@@ -1,9 +1,9 @@
 import { createFetcher } from './fetcher.ts';
 import { loadProxyCatalog } from './proxy-catalog.ts';
 import { getRepo } from '../repo/index.ts';
-import { entryMatchesColo, isDirectFallbackId } from '../repo/proxy-fallback-list.ts';
+import { entryMatchesColo, isDirectFallbackId, normalizeProxyFallbackList } from '../repo/proxy-fallback-list.ts';
 import { getFetch, getHttpContentDecoders, getSocketDial } from '@floway-dev/platform';
-import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
+import type { Fetcher, ProxyFallbackEntry, UpstreamRecord } from '@floway-dev/provider';
 import { runDirectConnectRequest, runProxiedRequest } from '@floway-dev/proxy';
 
 export class InvalidProxyConfigurationError extends Error {
@@ -85,3 +85,36 @@ export const createValidatedPerRequestFetcher = (
   runtimeLocation: string | null,
   preFetchedUpstreams?: readonly UpstreamRecord[],
 ): Promise<(upstreamId: string) => Fetcher> => createFetcherResolver(runtimeLocation, preFetchedUpstreams, 'eager');
+
+// A fallback policy that no saved upstream owns, such as an edit form's
+// in-progress list. Every referenced proxy must resolve before any dial, and
+// the fetcher keeps no backoff state because there is no persisted
+// (proxy, upstream) pair to attach it to.
+export const createDetachedFetcher = async (
+  rawList: readonly ProxyFallbackEntry[],
+  runtimeLocation: string | null,
+): Promise<Fetcher> => {
+  const list = normalizeProxyFallbackList(rawList);
+  const referenced = new Set(list.filter(entry => !isDirectFallbackId(entry.id)).map(entry => entry.id));
+  const repo = getRepo();
+  const { proxyById, parseErrors } = await loadProxyCatalog(repo, referenced);
+
+  for (const id of referenced) {
+    const err = parseErrors.get(id);
+    if (err !== undefined) throw new InvalidProxyConfigurationError(`malformed proxy ${id}: ${err.message}`, err);
+    if (!proxyById.has(id)) throw new InvalidProxyConfigurationError(`unknown proxy id in fallback list: ${id}`);
+  }
+
+  return createFetcher({
+    repo,
+    upstreamId: null,
+    fallbackList: list,
+    runtimeLocation,
+    proxyById,
+    runProxied: runProxiedRequest,
+    runDirectFetch: getFetch(),
+    runDirectConnect: runDirectConnectRequest,
+    socketDial: getSocketDial,
+    contentDecoders: getHttpContentDecoders,
+  });
+};

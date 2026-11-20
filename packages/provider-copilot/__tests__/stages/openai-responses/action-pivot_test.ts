@@ -51,7 +51,7 @@ test('Copilot dispatch and decoding follow the action changed by a stage (compac
   initProviderRepo(() => ({
     recordUpstreamMetric: async () => {},
     upstreams: {
-      getById: async () => upstream,
+      getById: async () => ({ ...upstream, configVersion: 1 }),
       saveState: async () => {},
     },
   }));

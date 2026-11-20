@@ -76,23 +76,23 @@ export function UpstreamAccessControl({
       action={<SettingsSwitch
         checked={override}
         disabled={disabled}
-        label={t('dashboard.upstreamAccess.title')}
+        label={t('apiKeys.upstreamAccess.title')}
         onChange={toggleOverride}
       />}
-      description={t('dashboard.upstreamAccess.description')}
+      description={t('apiKeys.upstreamAccess.description')}
       disclosureDisabled={!override}
-      header={t('dashboard.upstreamAccess.title')}
+      header={t('apiKeys.upstreamAccess.title')}
       icon={<ShieldKeyhole24Regular />}
       toggledOn={override}
     >
       <div className="grid gap-3 min-w-0">
         <ScrollArea axes="horizontal" className="min-w-0">
-          <Table aria-label={t('dashboard.upstreamAccess.tableLabel')} className="min-w-[344px] whitespace-nowrap" style={{ tableLayout: 'auto' }}>
+          <Table aria-label={t('apiKeys.upstreamAccess.tableLabel')} className="min-w-[344px] whitespace-nowrap" style={{ tableLayout: 'auto' }}>
             <TableColumns widths={['80px', '100%', null]} />
             <TableHeader><TableRow>
-              <TableHeaderCell>{t('dashboard.upstreamAccess.enabled')}</TableHeaderCell>
-              <TableHeaderCell>{t('dashboard.upstreamAccess.upstream')}</TableHeaderCell>
-              <TableHeaderCell>{t('dashboard.upstreamAccess.models')}</TableHeaderCell>
+              <TableHeaderCell>{t('apiKeys.upstreamAccess.enabled')}</TableHeaderCell>
+              <TableHeaderCell>{t('apiKeys.upstreamAccess.upstream')}</TableHeaderCell>
+              <TableHeaderCell>{t('apiKeys.upstreamAccess.models')}</TableHeaderCell>
             </TableRow></TableHeader>
             <TableBody {...reorder.listProps()}>
               {rows.map(row => <AccessRow disabled={disabled || !override} index={ids.indexOf(row.id)} key={row.id} onToggle={toggleUpstream} reorder={reorder} row={row} />)}
@@ -102,7 +102,7 @@ export function UpstreamAccessControl({
       </div>
     </SettingsExpander>
     {emptySelection && <MessageBar id={warningId} intent="warning">
-      <MessageBarBody>{t('dashboard.upstreamAccess.emptyWarning')}</MessageBarBody>
+      <MessageBarBody>{t('apiKeys.upstreamAccess.emptyWarning')}</MessageBarBody>
     </MessageBar>}
   </section>;
 }
@@ -120,18 +120,18 @@ function AccessRow({ disabled, index, onToggle, reorder, row }: {
   return <TableRow {...(index < 0 ? {} : reorder.itemProps(index))}>
     <TableCell><div className="inline-flex items-center gap-1">
       <Checkbox
-        aria-label={`${t('dashboard.upstreamAccess.enabled')}: ${row.name}`}
+        aria-label={`${t('apiKeys.upstreamAccess.enabled')}: ${row.name}`}
         checked={row.selected}
         disabled={disabled}
         onChange={(_, data) => onToggle(row.id, !!data.checked)}
       />
-      <ReorderHandle {...reorder.handleProps(index)} label={t('dashboard.upstreams.actions.reorder', { name: row.name })} />
+      <ReorderHandle {...reorder.handleProps(index)} label={t('upstreams.actions.reorder', { name: row.name })} />
     </div></TableCell>
     <TableCell><ProviderBadge label={row.name} upstream={row.upstream} /></TableCell>
     <TableCell><span className="whitespace-nowrap tabular-nums">
       {row.modelCount === null
-        ? t('dashboard.upstreamAccess.modelCountUnknown')
-        : t('dashboard.upstreamAccess.modelCount', { count: row.modelCount })}
+        ? t('apiKeys.upstreamAccess.modelCountUnknown')
+        : t('apiKeys.upstreamAccess.modelCount', { count: row.modelCount })}
     </span></TableCell>
   </TableRow>;
 }

@@ -20,7 +20,7 @@ export const openaiChatCompletionsServePipeline = (): Pipeline<OpenAIChatComplet
     emitOpenAIChatCompletions,
     resolveChatCandidates(narrowing),
     failover({
-      failed: handedUp => isFailure((handedUp as { 'response.chat.openaiChatCompletions'?: unknown })['response.chat.openaiChatCompletions']),
+      answer: handedUp => handedUp['response.chat.openaiChatCompletions'],
       owns: ['response.http.body'],
       pendingUsage: STREAMED_USAGE,
     }),

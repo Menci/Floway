@@ -98,7 +98,7 @@ export type OpenAIResponsesWebSocketExit = Omit<OpenAIResponsesServeExit, 'respo
 export const projectOpenAIResponsesWebSocket = defineStage<
   Pick<OpenAIResponsesWebSocketEntry, 'ingress.chat.openaiResponses.eventId'>,
   Pick<OpenAIResponsesWebSocketEntry, 'ingress.chat.openaiResponses.eventId'>,
-  Fields<'response.chat.openaiResponses.rendered' | 'response.chat.openaiResponses.streamedUsage' | 'response.http.status' | 'response.chat.clientFrames'> & Pick<OpenAIResponsesWebSocketEntry, 'ingress.chat.openaiResponses.eventId'>,
+  Fields<'response.chat.openaiResponses.rendered' | 'response.chat.openaiResponses.streamedUsage' | 'response.http.status' | 'response.http.headers' | 'response.chat.clientFrames'> & Pick<OpenAIResponsesWebSocketEntry, 'ingress.chat.openaiResponses.eventId'>,
   Pick<OpenAIResponsesWebSocketExit, 'response.chat.openaiResponses.websocket'> & Fields<'response.chat.openaiResponses.streamedUsage' | 'response.chat.clientFrames'>,
   OpenAIResponsesWebSocketServices
 >({
@@ -106,7 +106,7 @@ export const projectOpenAIResponsesWebSocket = defineStage<
   through: {
     request: { needs: ['ingress.chat.openaiResponses.eventId'], consumes: [], provides: [] },
     response: {
-      needs: ['response.chat.openaiResponses.rendered', 'response.chat.openaiResponses.streamedUsage', 'response.http.status', 'response.chat.clientFrames'],
+      needs: ['response.chat.openaiResponses.rendered', 'response.chat.openaiResponses.streamedUsage', 'response.http.status', 'response.http.headers', 'response.chat.clientFrames'],
       consumes: ['response.chat.openaiResponses.rendered', 'response.chat.clientFrames', 'response.chat.openaiResponses.streamedUsage'],
       provides: ['response.chat.openaiResponses.websocket', 'response.chat.clientFrames', 'response.chat.openaiResponses.streamedUsage'],
     },
@@ -133,7 +133,15 @@ export const projectOpenAIResponsesWebSocket = defineStage<
       try {
         if (!(Symbol.asyncIterator in rendered)) {
           failed = true;
-          yield packet({ type: 'error', status: back['response.http.status'], error: normalizeErrorBody(rendered, back['response.http.status']) });
+          // Codex reads retry hints from the error envelope after the upgrade.
+          // https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/codex-api/src/endpoint/responses_websocket.rs#L756-L768
+          const retryAfter = back['response.http.headers'].find(([name]) => name.toLowerCase() === 'retry-after')?.[1];
+          yield packet({
+            type: 'error',
+            status: back['response.http.status'],
+            error: normalizeErrorBody(rendered, back['response.http.status']),
+            ...(retryAfter === undefined ? {} : { headers: { 'retry-after': retryAfter } }),
+          });
         } else {
           const iterator = (rendered as AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>)[Symbol.asyncIterator]();
           const sequence = createDownstreamSequence();

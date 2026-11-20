@@ -35,6 +35,7 @@ export interface BillableEntity {
 export interface Failure {
   readonly status: number;
   readonly message: string;
+  readonly transportError?: Error;
   /** The upstream's own body, parsed, when it sent one this protocol can carry. It is what the
    *  client is answered with — the refusing party's words rather than a restatement of them —
    *  and a body that was not JSON at all leaves this absent, because there is nothing to carry

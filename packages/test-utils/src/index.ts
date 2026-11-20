@@ -15,4 +15,5 @@ export {
 } from './assert.ts';
 export { jsonResponse, readJsonRequest, sseResponse, testFetcher, withMockedFetch } from './mock-fetch.ts';
 export { callProviderPipeline } from './provider-pipeline.ts';
+export { callProviderChatPipeline } from './provider-chat-pipeline.ts';
 export { mockPerfTelemetryContext, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, stubInternalModel, stubProvider, stubProviderModel, stubModelCandidate, testTelemetryModelIdentity } from './stubs.ts';

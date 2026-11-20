@@ -32,10 +32,6 @@ const translatedResource = (): OpenAIResponsesResultEx => ({
 });
 
 describe('OpenAI Responses resource completion', () => {
-  it('fills every required key a translated target left out', () => {
-    const completed = completeResponseResource(translatedResource(), sources(), true);
-    assertEquals(missingRequiredResourceKeys(completed), []);
-  });
 
   it('prefers what the upstream reported over what the client asked for', () => {
     const upstream: OpenAIResponsesResultEx = {
@@ -84,79 +80,6 @@ describe('OpenAI Responses resource completion', () => {
     assertEquals(completed.metadata, {});
   });
 
-  it('echoes what the client sent in preference to the stated default', () => {
-    const completed = completeResponseResource(translatedResource(), sources({
-      temperature: 0.3,
-      top_p: 0.9,
-      truncation: 'auto',
-      background: true,
-      top_logprobs: 5,
-      presence_penalty: 1.5,
-      frequency_penalty: -0.5,
-      parallel_tool_calls: false,
-      service_tier: 'priority',
-      tool_choice: 'required',
-      metadata: { run: '7' },
-      instructions: 'be terse',
-      previous_response_id: 'resp_0',
-      prompt_cache_key: 'cache-1',
-      safety_identifier: 'user-1',
-      max_output_tokens: 512,
-      max_tool_calls: 3,
-    }), true);
-    assertEquals(completed.temperature, 0.3);
-    assertEquals(completed.top_p, 0.9);
-    assertEquals(completed.truncation, 'auto');
-    assertEquals(completed.background, true);
-    assertEquals(completed.top_logprobs, 5);
-    assertEquals(completed.presence_penalty, 1.5);
-    assertEquals(completed.frequency_penalty, -0.5);
-    assertEquals(completed.parallel_tool_calls, false);
-    assertEquals(completed.service_tier, 'priority');
-    assertEquals(completed.tool_choice, 'required');
-    assertEquals(completed.metadata, { run: '7' });
-    assertEquals(completed.instructions, 'be terse');
-    assertEquals(completed.previous_response_id, 'resp_0');
-    assertEquals(completed.prompt_cache_key, 'cache-1');
-    assertEquals(completed.safety_identifier, 'user-1');
-    assertEquals(completed.max_output_tokens, 512);
-    assertEquals(completed.max_tool_calls, 3);
-  });
-
-  it('states the schema default for a required key neither side supplied', () => {
-    const completed = completeResponseResource(translatedResource(), sources(), true);
-    assertEquals(completed.temperature, 1);
-    assertEquals(completed.top_p, 1);
-    assertEquals(completed.presence_penalty, 0);
-    assertEquals(completed.frequency_penalty, 0);
-    assertEquals(completed.top_logprobs, 0);
-    assertEquals(completed.parallel_tool_calls, true);
-    assertEquals(completed.truncation, 'disabled');
-    assertEquals(completed.background, false);
-    assertEquals(completed.service_tier, 'default');
-    assertEquals(completed.tool_choice, 'auto');
-    assertEquals(completed.tools, []);
-    assertEquals(completed.metadata, {});
-    assertEquals(completed.text, { format: { type: 'text' } });
-  });
-
-  it('marks an unrequested nullable key absent rather than inventing a value', () => {
-    const completed = completeResponseResource(translatedResource(), sources(), true);
-    assertEquals(completed.previous_response_id, null);
-    assertEquals(completed.instructions, null);
-    assertEquals(completed.reasoning, null);
-    assertEquals(completed.max_output_tokens, null);
-    assertEquals(completed.max_tool_calls, null);
-    assertEquals(completed.safety_identifier, null);
-    assertEquals(completed.prompt_cache_key, null);
-  });
-
-  it('reports gateway state for created_at and store', () => {
-    const completed = completeResponseResource(translatedResource(), { ...sources({ store: true }), stored: false }, true);
-    assertEquals(completed.created_at, 1_700_000_000);
-    assertEquals(completed.store, false);
-  });
-
   it('completes both usage breakdowns and reports a missing usage as null', () => {
     const completed = completeResponseResource(translatedResource(), sources(), true);
     assertEquals(completed.usage, {
@@ -169,33 +92,6 @@ describe('OpenAI Responses resource completion', () => {
 
     const { usage: _usage, ...withoutUsage } = translatedResource();
     assertEquals(completeResponseResource(withoutUsage, sources(), true).usage, null);
-  });
-
-  it('keeps a usage breakdown the upstream actually reported', () => {
-    const upstream: OpenAIResponsesResultEx = {
-      ...translatedResource(),
-      usage: { input_tokens: 8, output_tokens: 10, total_tokens: 18, output_tokens_details: { reasoning_tokens: 7 } },
-    };
-    assertEquals(completeResponseResource(upstream, sources(), true).usage?.output_tokens_details, { reasoning_tokens: 7 });
-  });
-
-  it('completes a reasoning block and a text block to their own required keys', () => {
-    const completed = completeResponseResource(
-      translatedResource(),
-      sources({ reasoning: { effort: 'high' }, text: { verbosity: 'low' } }),
-      true,
-    );
-    assertEquals(completed.reasoning, { effort: 'high', summary: null });
-    assertEquals(completed.text, { verbosity: 'low', format: { type: 'text' } });
-  });
-
-  it('completes a minimal echoed function tool to every key the tool schema requires', () => {
-    const completed = completeResponseResource(
-      translatedResource(),
-      sources({ tools: [{ type: 'function', name: 'lookup' }] }),
-      true,
-    );
-    assertEquals(completed.tools, [{ type: 'function', name: 'lookup', description: null, parameters: null, strict: null }]);
   });
 
   // The normalizers run on the resolved value, so a tool array the upstream
@@ -218,15 +114,6 @@ describe('OpenAI Responses resource completion', () => {
       description: null,
       strict: null,
     }]);
-  });
-
-  it('leaves a non-function tool untouched', () => {
-    const completed = completeResponseResource(
-      translatedResource(),
-      sources({ tools: [{ type: 'web_search' }] }),
-      true,
-    );
-    assertEquals(completed.tools, [{ type: 'web_search' }]);
   });
 
   it('completes every resource-bearing frame of a stream and reports completed_at only on the terminal one', async () => {

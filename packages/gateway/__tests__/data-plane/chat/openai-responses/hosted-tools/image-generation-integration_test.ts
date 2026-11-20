@@ -54,13 +54,13 @@ const defaultCandidates = vi.hoisted(() => () => [{
         stub.generationsCalls.push(body);
         const response = stub.nextGenerations.shift();
         if (response === undefined) throw new Error('test did not enqueue a generations response');
-        return { response, modelKey: 'gpt-image-2' };
+        return { http: response, modelKey: 'gpt-image-2' };
       }),
       openaiImagesEdits: stubProviderPipeline('openaiImagesEdits', async (_model, request) => {
         stub.editsRequests.push(request);
         const response = stub.nextEdits.shift();
         if (response === undefined) throw new Error('test did not enqueue an edits response');
-        return { response, modelKey: 'gpt-image-2' };
+        return { http: response, modelKey: 'gpt-image-2' };
       }),
     },
     instance: {
@@ -68,13 +68,13 @@ const defaultCandidates = vi.hoisted(() => () => [{
         stub.generationsCalls.push(body);
         const response = stub.nextGenerations.shift();
         if (response === undefined) throw new Error('test did not enqueue a generations response');
-        return { response, modelKey: 'gpt-image-2' };
+        return { http: response, modelKey: 'gpt-image-2' };
       },
       callOpenAIImagesEdits: async (_model: unknown, request: OpenAIImagesEditsRequest) => {
         stub.editsRequests.push(request);
         const response = stub.nextEdits.shift();
         if (response === undefined) throw new Error('test did not enqueue an edits response');
-        return { response, modelKey: 'gpt-image-2' };
+        return { http: response, modelKey: 'gpt-image-2' };
       },
     },
   },
@@ -229,7 +229,7 @@ beforeEach(async () => {
       ingressHeadersRules: [],
       apiKey: 'unused',
       endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} },
-      modelsFetch: { enabled: false, endpoint: '/models' },
+      modelsFetch: { enabled: false, authStyle: 'bearer', endpoint: '/models' },
       models: [],
     },
     state: null,

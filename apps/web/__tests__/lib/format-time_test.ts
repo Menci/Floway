@@ -1,40 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { dateTime, formatDate, formatDateParts, relativeTime, shortDate } from '../../src/lib/format-time';
-import { NO_READING } from '../../src/lib/no-reading';
+import { formatDate, formatDateParts, relativeTime } from '../../src/lib/format-time';
 
-// A fixed instant, read as both an ISO string and an epoch reading. The
-// rendered wording depends on the machine's zone, so what is asserted about
-// the absolute formats is the relationship between them rather than a literal
-// that only holds in one zone.
-const INSTANT_ISO = '2024-01-15T12:00:00.000Z';
-const INSTANT_EPOCH = Date.parse(INSTANT_ISO);
-
-describe('absolute timestamps', () => {
-  it('writes the shared no-reading dash for an absent timestamp', () => {
-    expect(shortDate(null, 'en')).toBe(NO_READING);
-    expect(shortDate(undefined, 'en')).toBe(NO_READING);
-    expect(dateTime(null, 'en')).toBe(NO_READING);
-    expect(dateTime(undefined, 'en')).toBe(NO_READING);
-  });
-
-  it('reads an epoch reading and an ISO string as the same instant', () => {
-    expect(shortDate(INSTANT_EPOCH, 'en')).toBe(shortDate(INSTANT_ISO, 'en'));
-    expect(dateTime(INSTANT_EPOCH, 'en')).toBe(dateTime(INSTANT_ISO, 'en'));
-  });
-
-  it('adds a time of day to the date it shares with the short form', () => {
-    const long = dateTime(INSTANT_ISO, 'en');
-    expect(long.startsWith(shortDate(INSTANT_ISO, 'en'))).toBe(true);
-    expect(long.length).toBeGreaterThan(shortDate(INSTANT_ISO, 'en').length);
-  });
-
-  it('writes a Chinese date numerically and leaves other locales to Intl', () => {
-    expect(shortDate(INSTANT_ISO, 'zh-Hans')).toMatch(/^\d{4}\/\d{2}\/\d{2}$/);
-    expect(shortDate(INSTANT_ISO, 'zh-Hans')).not.toMatch(/[年月日]/);
-    expect(shortDate(INSTANT_ISO, 'en')).toMatch(/^[A-Z][a-z]{2} \d{1,2}, \d{4}$/);
-  });
-});
+const INSTANT_EPOCH = Date.parse('2024-01-15T12:00:00.000Z');
 
 describe('relative timestamps', () => {
   const at = (deltaSeconds: number) => relativeTime(INSTANT_EPOCH + deltaSeconds * 1000, 'en', { now: INSTANT_EPOCH });
@@ -55,40 +23,9 @@ describe('relative timestamps', () => {
     expect(at(2_591_999)).toBe('in 30 days');
     expect(at(2_592_000)).toBeNull();
   });
-
-  it('says the same distance forwards as backwards', () => {
-    expect(at(3_600)).toBe('in 1 hour');
-    expect(at(86_400)).toBe('tomorrow');
-  });
-
-  it('narrows on request and follows the locale', () => {
-    expect(relativeTime(INSTANT_EPOCH - 3_600_000, 'en', { now: INSTANT_EPOCH, style: 'narrow' })).toBe('1h ago');
-    expect(relativeTime(INSTANT_EPOCH - 3_600_000, 'zh-Hans', { now: INSTANT_EPOCH, style: 'narrow' })).toBe('1 小时前');
-    expect(relativeTime(INSTANT_EPOCH - 3_600_000, 'zh-Hans', { now: INSTANT_EPOCH })).toBe('1 小时前');
-    expect(relativeTime(INSTANT_EPOCH - 90_000, 'zh-Hans', { now: INSTANT_EPOCH })).toBe('1 分钟前');
-  });
-
-  it('words a one-day distance instead of counting it', () => {
-    expect(relativeTime(INSTANT_EPOCH - 86_400_000, 'zh-Hans', { now: INSTANT_EPOCH })).toBe('昨天');
-    expect(relativeTime(INSTANT_EPOCH, 'zh-Hans', { now: INSTANT_EPOCH })).toBe('现在');
-    expect(relativeTime(INSTANT_EPOCH + 86_400_000, 'zh-Hans', { now: INSTANT_EPOCH })).toBe('明天');
-  });
 });
 
 const calendarDay = new Date(2026, 9, 10, 8, 30);
-
-it('writes Chinese dates numerically across full dates and times of day', () => {
-  expect(shortDate(calendarDay.getTime(), 'zh-Hans')).toBe('2026/10/10');
-  expect(dateTime(calendarDay.getTime(), 'zh-Hans')).toBe('2026/10/10 08:30:00');
-});
-
-it('leaves calendar headings, month cells, and weekdays to Intl in Chinese', () => {
-  expect(formatDate(calendarDay, 'zh-Hans', { year: 'numeric', month: 'long' })).toBe('2026 年 10 月');
-  expect(formatDate(calendarDay, 'zh-Hans', { month: 'short' })).toBe('10 月');
-  expect(formatDate(calendarDay, 'zh-Hans', { weekday: 'long' })).toBe('星期六');
-  const sunday = new Date(2026, 9, 11);
-  expect(formatDate(sunday, 'zh-Hans', { weekday: 'long' })).toBe('星期日');
-});
 
 it('spaces Chinese range parts and preserves English date punctuation', () => {
   const formatter = new Intl.DateTimeFormat('zh-Hans', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });

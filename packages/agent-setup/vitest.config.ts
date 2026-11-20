@@ -16,5 +16,6 @@ export default defineConfig({
     // case that is merely slow. This sits above the spawn timeout so the child's
     // own deadline stays the one that reports a hang.
     testTimeout: 20_000,
+    globalSetup: ['./__tests__/installers/warm-powershell.ts'],
   },
 });

@@ -24,10 +24,13 @@ const registerTargetMathFunctions = (db: SqlJsDatabase) => {
 export const wrapSqlJsDatabase = (db: SqlJsDatabase): SqlDatabase => new SqlJsSqlDatabase(db);
 
 // The only way to open a sql.js database here, so no test can reach one that
-// is missing a function the deployment targets have.
+// is missing a function or a constraint the deployment targets have. Both
+// targets enforce foreign keys: node:sqlite at open, D1 on every query.
+// https://developers.cloudflare.com/d1/sql-api/foreign-keys/
 export const createSqlJsDatabase = async (): Promise<SqlJsDatabase> => {
   const db = new (await initSqlJs()).Database();
   registerTargetMathFunctions(db);
+  db.run('PRAGMA foreign_keys = ON');
   return db;
 };
 

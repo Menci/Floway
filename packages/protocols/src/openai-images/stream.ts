@@ -34,7 +34,7 @@ export const parseOpenAIImagesStream = (
     // sentinel it writes elsewhere is saying the body is over, which is all it can mean here —
     // whether the image finished is what the completed event says, and that has already passed.
     if (frame.type === 'done') return;
-    yield named(frame.data, frame.frame.event);
+    yield named(frame.data, frame.type === 'sse-json' ? frame.frame.event : undefined);
   }
 })();
 

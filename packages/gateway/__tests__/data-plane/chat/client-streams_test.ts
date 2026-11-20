@@ -31,7 +31,7 @@ const cases = [
   ...[false, true].flatMap(includeUsage => [false, true].map(done => ({
     name: `Chat Completions ${includeUsage ? 'included' : 'hidden'} usage with ${done ? 'DONE' : 'normal EOF'}`,
     emit: emitOpenAIChatCompletions,
-    entry: { 'ingress.chat.openaiChatCompletions.wantsStream': true, 'ingress.chat.openaiChatCompletions.wantsUsageChunk': includeUsage },
+    entry: { 'ingress.chat.openaiChatCompletions.wantsStream': true, 'request.chat.openaiChatCompletions': { model: 'm', messages: [] }, 'ingress.chat.openaiChatCompletions.wantsUsageChunk': includeUsage },
     response: 'response.chat.openaiChatCompletions', rendered: 'response.chat.openaiChatCompletions.rendered',
     upstream: [eventFrame(chat), eventFrame(usage), ...(done ? [doneFrame()] : [])],
     verify: (events: unknown[]) => {

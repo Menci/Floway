@@ -46,7 +46,7 @@ const usePerformanceChartStyles = makeStyles({
 });
 export function PerformanceChartSection({ chart, hidden, onHiddenChange, title }: { chart: PerformancePlot; hidden: Set<string>; onHiddenChange: (next: Set<string>) => void; title: string }) {
   const { t } = useTranslation();
-  return <ChartSection controlsLabel={t('dashboard.performance.series.label')} emptyText={t('dashboard.performance.empty')} entries={chart.entries} hidden={hidden} onHiddenChange={onHiddenChange} title={title}>
+  return <ChartSection controlsLabel={t('monitoring.performance.series.label')} emptyText={t('monitoring.performance.empty')} entries={chart.entries} hidden={hidden} onHiddenChange={onHiddenChange} title={title}>
     <PerformanceChart chart={chart} hidden={hidden} />
   </ChartSection>;
 }
@@ -72,7 +72,7 @@ function PerformanceChart({ chart, hidden }: { chart: PerformancePlot; hidden: S
         title={formatCalloutTitle(props.x, labelByTime, locale)}
       />, [chart.details, entryByLegend, labelByTime, locale]);
 
-  return <ChartHost className={chartStyles.root} emptyText={t('dashboard.performance.empty')} hasData={Boolean(visibleData.lineChartData?.length)}>
+  return <ChartHost className={chartStyles.root} emptyText={t('monitoring.performance.empty')} hasData={Boolean(visibleData.lineChartData?.length)}>
     {({ element, size }) => <>
       <LineChart styles={chartRootStyles} customDateTimeFormatter={formatAxisDate} data={visibleData} enablePerfOptimization height={size.height} hideLegend margins={chartMargins} onRenderCalloutPerStack={callout} tickValues={chartTickValues(chart.buckets).map(bucket => bucket.date)} width={size.width} xAxistickSize={-Math.max(0, size.height - chartMargins.top - chartMargins.bottom)} yAxisTickFormat={(value: number) => labelledOnLogAxis(value) ? formatter(value) : ''} yMaxValue={values.length ? Math.max(...values) : undefined} yMinValue={values.length ? Math.min(...values) : undefined} yScaleType="log" />
       <FluentChartPointMarkers data={visibleData} element={element} form="line" />
@@ -112,8 +112,8 @@ function PerformanceChartCallout({ data, details, entryByLegend, title }: {
     <ScrollArea axes="horizontal" className="max-w-[min(420px,calc(100vw-48px))] min-w-[300px]" contentClassName="grid gap-1">
       <ChartCalloutTable
         columns={[
-          { key: 'ttft', label: t('dashboard.performance.metric.ttft') },
-          { key: 'outputSpeed', label: t('dashboard.performance.metric.outputSpeed') },
+          { key: 'ttft', label: t('monitoring.performance.metric.ttft') },
+          { key: 'outputSpeed', label: t('monitoring.performance.metric.outputSpeed') },
         ]}
         rows={rows}
         title={title}

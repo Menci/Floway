@@ -7,6 +7,8 @@ export type ChatFixtureCalls = Partial<{
   callOpenAIResponses: StubChatProviderCall<'openaiResponses'>;
   callAnthropicMessages: StubChatProviderCall<'anthropicMessages'>;
   callAnthropicMessagesCountTokens: StubChatProviderCall<'anthropicMessagesCountTokens'>;
+  callGeminiGenerateContent: StubChatProviderCall<'geminiGenerateContent'>;
+  callGeminiGenerateContentCountTokens: StubChatProviderCall<'geminiGenerateContentCountTokens'>;
 }>;
 
 export const stubChatProviderPipelines = (calls: ChatFixtureCalls): ProviderPipelines => ({
@@ -17,6 +19,8 @@ export const stubChatProviderPipelines = (calls: ChatFixtureCalls): ProviderPipe
   }),
   ...(calls.callAnthropicMessages === undefined ? {} : { anthropicMessages: stubChatProviderPipeline('anthropicMessages', calls.callAnthropicMessages) }),
   ...(calls.callAnthropicMessagesCountTokens === undefined ? {} : { anthropicMessagesCountTokens: stubChatProviderPipeline('anthropicMessagesCountTokens', calls.callAnthropicMessagesCountTokens) }),
+  ...(calls.callGeminiGenerateContent === undefined ? {} : { geminiGenerateContent: stubChatProviderPipeline('geminiGenerateContent', calls.callGeminiGenerateContent) }),
+  ...(calls.callGeminiGenerateContentCountTokens === undefined ? {} : { geminiGenerateContentCountTokens: stubChatProviderPipeline('geminiGenerateContentCountTokens', calls.callGeminiGenerateContentCountTokens) }),
 });
 
 export const chatFixtureHttpServices = (gateway: GatewayCtx): ProviderChatServices => ({

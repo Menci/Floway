@@ -61,50 +61,50 @@ export function OllamaUsageCard({ probeRecord, readOnly = false, record }: { pro
       {account?.plan && <StatusBadge tone="accent" className="capitalize">{account.plan}</StatusBadge>}
     </div>}
 
-    <SectionHeader level={3} title={t('dashboard.upstreamEditor.ollama.usage.title')} actions={!readOnly &&
+    <SectionHeader level={3} title={t('upstreams.editor.ollama.usage.title')} actions={!readOnly &&
       <ResourceListActions
         appearance="subtle"
         onRefresh={() => void load()}
-        refreshLabel={t(`dashboard.upstreamEditor.ollama.usage.${observation ? 'refresh' : 'load'}`)}
+        refreshLabel={t(`upstreams.editor.ollama.usage.${observation ? 'refresh' : 'load'}`)}
         refreshing={loading}
       />
     } />
 
     {usage?.included.kind === 'credits' && <div className="grid gap-1">
       <div className="flex items-baseline justify-between gap-3">
-        <InfoLabel info={t('dashboard.upstreamEditor.ollama.usage.balanceHint.included')}>{t('dashboard.upstreamEditor.ollama.usage.balance.included')}</InfoLabel>
+        <InfoLabel info={t('upstreams.editor.ollama.usage.balanceHint.included')}>{t('upstreams.editor.ollama.usage.balance.included')}</InfoLabel>
         <Text className="tabular-nums">{activityCostText(usage.included.balanceUsd)}</Text>
       </div>
       <div className="flex flex-wrap justify-between gap-x-3">
-        <Text size={200} className="text-fui-fg3 tabular-nums">{t('dashboard.upstreamEditor.ollama.usage.allowance', { amount: activityCostText(usage.included.allowanceUsd) })}</Text>
-        <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.resets', { time: dateTime(usage.included.until, locale) })}</Text>
+        <Text size={200} className="text-fui-fg3 tabular-nums">{t('upstreams.editor.ollama.usage.allowance', { amount: activityCostText(usage.included.allowanceUsd) })}</Text>
+        <Text size={200} className="text-fui-fg3">{t('upstreams.editor.ollama.usage.resets', { time: dateTime(usage.included.until, locale) })}</Text>
       </div>
     </div>}
 
     {windows.map(usageWindow => <QuotaProgressRow
       key={usageWindow.key}
-      label={t(`dashboard.upstreamEditor.ollama.usage.window.${usageWindow.key}`)}
+      label={t(`upstreams.editor.ollama.usage.window.${usageWindow.key}`)}
       percent={usageWindow.percent}
       quotaDisplay={preferences.quotaDisplay}
-      footer={<Text size={200} className="text-fui-fg3 tabular-nums">{t('dashboard.upstreamEditor.ollama.usage.resets', { time: dateTime(usageWindow.resetsAt, locale) })}</Text>}
+      footer={<Text size={200} className="text-fui-fg3 tabular-nums">{t('upstreams.editor.ollama.usage.resets', { time: dateTime(usageWindow.resetsAt, locale) })}</Text>}
     />)}
 
     {usage !== null && <div className="flex justify-between gap-3">
-      <InfoLabel info={t('dashboard.upstreamEditor.ollama.usage.balanceHint.purchased')}>{t('dashboard.upstreamEditor.ollama.usage.balance.purchased')}</InfoLabel>
+      <InfoLabel info={t('upstreams.editor.ollama.usage.balanceHint.purchased')}>{t('upstreams.editor.ollama.usage.balance.purchased')}</InfoLabel>
       <Text className="tabular-nums">{activityCostText(usage.purchasedBalanceUsd)}</Text>
     </div>}
 
     {usage?.activity.usageUsd != null && <div className="flex justify-between gap-3">
-      <InfoLabel info={activityCostHint(usage.activity, t, locale)}>{t('dashboard.upstreamEditor.ollama.usage.recentUsage', { count: activityRangeDays(usage.activity.range) })}</InfoLabel>
+      <InfoLabel info={activityCostHint(usage.activity, t, locale)}>{t('upstreams.editor.ollama.usage.recentUsage', { count: activityRangeDays(usage.activity.range) })}</InfoLabel>
       <Text className="tabular-nums">{activityCostText(usage.activity.usageUsd)}</Text>
     </div>}
 
-    {observation !== null && <Text size={200} align="end" className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.observed', { time: dateTime(observation.fetchedAt, locale) })}</Text>}
+    {observation !== null && <Text size={200} align="end" className="text-fui-fg3">{t('upstreams.editor.ollama.usage.observed', { time: dateTime(observation.fetchedAt, locale) })}</Text>}
 
-    {!observation && !loading && <Text size={200} className="text-fui-fg3">{t('dashboard.upstreamEditor.ollama.usage.empty')}</Text>}
+    {!observation && !loading && <Text size={200} className="text-fui-fg3">{t('upstreams.editor.ollama.usage.empty')}</Text>}
 
     {backgroundError !== null && <OutcomeMessageBar intent="warning">
-      {t('dashboard.upstreamEditor.ollama.usage.backgroundFailed', { message: backgroundError })}
+      {t('upstreams.editor.ollama.usage.backgroundFailed', { message: backgroundError })}
     </OutcomeMessageBar>}
 
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error}</OutcomeMessageBar>}

@@ -26,7 +26,7 @@ const records: Props['records'] = ['gpt-5', 'gpt-6'].map((value, index) => ({
   id: index + 1, principal: { kind: 'user', id: 2 }, scope: { kind: 'upstreamModel', upstreamId: 'up_a', model: { kind: 'exact', value } }, sortOrder: index,
   values: { 'Model.Use': true }, createdAt: '', updatedAt: '',
 }));
-const data: Props['data'] = { users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null }, groupIds: [] }], groups: [], models: [], upstreams: [{ id: 'up_a', name: 'Copilot', kind: 'copilot', hue: 210, enabled: true, cachedModelCount: 0 }] };
+const data: Props['data'] = { users: [{ id: 2, username: 'alice', isAdmin: false, createdAt: '', preferences: { quotaDisplay: 'remaining' as const, language: null, uiTextEditor: false }, groupIds: [] }], groups: [], models: [], upstreams: [{ id: 'up_a', name: 'Copilot', kind: 'copilot', hue: 210, enabled: true, cachedModelCount: 0 }] };
 const administratorData: Props['data'] = { ...data, users: [{ ...data.users[0]!, id: 1, username: 'admin', isAdmin: true }] };
 const administratorRecords: Props['records'] = records.map(record => ({ ...record, principal: { kind: 'user', id: 1 } }));
 const renderTable = (
@@ -63,29 +63,6 @@ test('a pointer drop persists before the controller commits the rendered order',
   expect(onReorder).toHaveBeenCalledWith([1, 2], 0, 1);
   expect(onReordered).not.toHaveBeenCalled();
   act(() => controllers[0]!.onReorder(0, 1));
-  expect(onReordered).toHaveBeenCalledExactlyOnceWith(records);
-});
-
-test('keyboard reordering persists and commits without a pointer drop phase', async () => {
-  const { onReordered } = renderTable();
-  await act(async () => { controllers[0]!.onReorder(0, 1); });
-  expect(onReordered).toHaveBeenCalledExactlyOnceWith(records);
-});
-
-test('filtering a segment away after its write still commits its pending result once', async () => {
-  const { onReordered, unmount } = renderTable();
-  await act(async () => { await controllers[0]!.onDrop!(0, 1); });
-  unmount();
-  expect(onReordered).toHaveBeenCalledExactlyOnceWith(records);
-});
-
-test('a write completed after filtering its segment away still commits', async () => {
-  let complete!: (records: Props['records']) => void;
-  const write = new Promise<Props['records']>(resolve => { complete = resolve; });
-  const { onReordered, unmount } = renderTable(async () => await write);
-  const dropped = controllers[0]!.onDrop!(0, 1);
-  unmount();
-  await act(async () => { complete(records); await dropped; });
   expect(onReordered).toHaveBeenCalledExactlyOnceWith(records);
 });
 

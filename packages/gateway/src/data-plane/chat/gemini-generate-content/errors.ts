@@ -1,5 +1,6 @@
 import { renderFailure, type Failure, type RenderedFailure } from '../../pipeline/facts.ts';
 import { inputErrorFields, type InputErrorDetails } from '../shared/errors.ts';
+import { isJsonObject } from '@floway-dev/protocols/common';
 import { geminiGenerateContentStatusForHttpStatus, type GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
 import { internalDebugErrorFields, type InternalDebugError } from '@floway-dev/provider';
 
@@ -81,8 +82,13 @@ const statusName = (status: number): string => {
 };
 
 export const renderGeminiGenerateContentFailure = (failure: Failure): RenderedFailure => {
+  const body = failure.body;
+  if (isJsonObject(body) && isJsonObject(body.error)
+    && typeof body.error.code === 'number' && typeof body.error.status === 'string' && typeof body.error.message === 'string') {
+    const code = body.error.code;
+    return { body, status: Number.isInteger(code) && code >= 400 && code <= 599 ? code : 500 };
+  }
   const rendered = renderFailure(failure, mintGeminiGenerateContentFailure);
-  const body = rendered.body as GeminiGenerateContentErrorResponse;
   if (statusName(rendered.status) !== 'INTERNAL' || rendered.status === 500) return rendered;
-  return { body: { ...body, error: { ...body.error, code: 500, status: 'INTERNAL' } }, status: 500 };
+  return mintGeminiGenerateContentFailure(failure);
 };

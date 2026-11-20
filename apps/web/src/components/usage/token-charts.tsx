@@ -39,7 +39,7 @@ export function TokenUsageCharts({ usage, dimensions, upstreams, groupBy, range,
       }),
     };
   }, [groupBy, hidden, loadedAt, metric, range, selected, upstreams, usage]);
-  if (model === null || selected === undefined) return <EmptyStateLine>{t('dashboard.pages.unavailable')}</EmptyStateLine>;
+  if (model === null || selected === undefined) return <EmptyStateLine>{t('common.errors.viewUnavailable')}</EmptyStateLine>;
   return <>
     <UsageChartSection chart={model.chart} detailsLabel={selected.groupLabel} hidden={hidden} onHiddenChange={onHiddenChange}
       title={title ?? selected.groupLabel} valueFormatter={value => formatMetricValue(value, metric, locale)} />

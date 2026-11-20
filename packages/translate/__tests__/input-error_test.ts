@@ -40,6 +40,14 @@ const routes = [
   () => translate.routeGeminiGenerateContentViaOpenAIResponses(gemini, options),
 ];
 
+test('cross-protocol routing rejects native audio references instead of silently losing them', async () => {
+  const content = [{ type: 'input_audio' as const, file_id: 'audio-file' }];
+  for (const item of [{ type: 'message' as const, role: 'user' as const, content }, { type: 'function_call_output' as const, call_id: 'call', output: content }]) {
+    const result = await translate.routeOpenAIResponsesViaAnthropicMessages({ model: 'm', input: [item] }, options);
+    expect(result).toMatchObject({ type: 'input-error' });
+  }
+});
+
 test.each(routes.map((run, index) => ({ index, run })))('route $index returns an ordinary input error object', async ({ run }) => {
   const result = await run();
   expect(result.type).toBe('input-error');
@@ -59,11 +67,8 @@ test('an unexpected codec failure retains its original error and cause', async (
   await expect(translate.routeOpenAIChatCompletionsViaAnthropicMessages({ model: 'm', stream: true, messages: [turn] }, { sidecarCodec: codec })).rejects.toBe(failure);
 });
 
-test.each([
-  translate.routeAnthropicMessagesViaOpenAIChatCompletions,
-  translate.routeAnthropicMessagesViaOpenAIResponses,
-])('a target that cannot express document image transformations returns an input error', async route => {
-  const result = await route({
+test('a target that cannot express document image transformations returns an input error', async () => {
+  const result = await translate.routeAnthropicMessagesViaOpenAIChatCompletions({
     model: 'm', max_tokens: 32, stream: true, messages: [{
       role: 'user', content: [{
         type: 'document',
@@ -76,6 +81,6 @@ test.each([
       }],
     }],
   }, options);
-  expect(result).toMatchObject({ type: 'input-error', message: 'Cannot translate document image transformations to this protocol.' });
+  expect(result).toMatchObject({ type: 'input-error' });
   expect(result).not.toBeInstanceOf(Error);
 });

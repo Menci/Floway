@@ -20,11 +20,10 @@ const registerOpenAIImagesModel = async (repo: InMemoryRepo): Promise<void> => {
     sortOrder: 100,
     config: {
       baseUrl: 'https://images.example.com',
-      authStyle: 'bearer',
       ingressHeadersRules: [],
       apiKey: 'sk-images',
       endpoints: {},
-      modelsFetch: { enabled: false },
+      modelsFetch: { enabled: false, authStyle: 'bearer' },
       models: [{
         upstreamModelId: 'gpt-image-2-upstream',
         publicModelId: 'gpt-image-2',

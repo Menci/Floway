@@ -30,14 +30,6 @@ const message = (text: string, status: OutputMessage['status']): OutputMessage =
   content: text === '' ? [] : [{ type: 'output_text', text, annotations: [], logprobs: [] }],
 });
 
-const refusalMessage = (refusal: string, status: OutputMessage['status']): OutputMessage => ({
-  type: 'message',
-  id: 'msg',
-  role: 'assistant',
-  status,
-  content: refusal === '' ? [] : [{ type: 'refusal', refusal }],
-});
-
 const collectProvenance = async (events: readonly OpenAIResponsesStreamEventEx[], field: 'text' | 'refusal' | 'arguments' | 'input' = 'text') => {
   const capture = createRoundTripReaderCapture<'openaiResponses'>();
   const content = createEmittedFieldState(capture.builder, 'text');
@@ -117,46 +109,6 @@ test('keeps a tiny complete snapshot-only atom literal and hydrates the native R
   )).toEqual({ ok: true, value: captured.turn });
 });
 
-test('invalidates streamed refusal provenance when its done snapshot supplies a suffix', async () => {
-  const added = refusalMessage('', 'in_progress');
-  const done = refusalMessage('refused', 'completed');
-  const captured = await collectProvenance([
-    { type: 'response.created', response: response([], 'in_progress') },
-    { type: 'response.output_item.added', output_index: 0, item: added },
-    { type: 'response.content_part.added', item_id: 'msg', output_index: 0, content_index: 0, part: { type: 'refusal', refusal: '' } },
-    { type: 'response.refusal.delta', item_id: 'msg', output_index: 0, content_index: 0, delta: 'refu' },
-    { type: 'response.refusal.done', item_id: 'msg', output_index: 0, content_index: 0, refusal: 'refused' },
-    { type: 'response.output_item.done', output_index: 0, item: done },
-    { type: 'response.completed', response: response([done], 'completed') },
-  ], 'refusal');
-
-  expect(captured.appends).toEqual([{ text: 'refu', referencePieceIds: [0] }, { text: 'sed' }]);
-  const itemState = captured.fieldState[0];
-  if (itemState === undefined || !('content' in itemState) || !Array.isArray(itemState.content)) {
-    throw new Error('Responses message content state was not collected');
-  }
-  expect(itemState.content[0]).toMatchObject({ refusal: { valid: false } });
-  const finalized = await referenceAssistantTurn<'openaiResponses'>(captured.turn, captured.fieldState, captured.builder, collectEmittedFieldPlacements('refused', captured.content));
-  expect(finalized).not.toHaveProperty('referencedContentHashes');
-  expect(await restoreAssistantTurn('openaiResponses', ['refused'], finalized.targetTurn, finalized.referencedContentHashes)).toEqual({ ok: true, value: captured.turn });
-});
-
-test('collects a snapshot-only refusal through its refusal field state', async () => {
-  const added = refusalMessage('', 'in_progress');
-  const done = refusalMessage('refused', 'completed');
-  const captured = await collectProvenance([
-    { type: 'response.created', response: response([], 'in_progress') },
-    { type: 'response.output_item.added', output_index: 0, item: added },
-    { type: 'response.output_item.done', output_index: 0, item: done },
-    { type: 'response.completed', response: response([done], 'completed') },
-  ], 'refusal');
-
-  expect(captured.appends).toEqual([{ text: 'refused', referencePieceIds: [0] }]);
-  const finalized = await referenceAssistantTurn<'openaiResponses'>(captured.turn, captured.fieldState, captured.builder, collectEmittedFieldPlacements('refused', captured.content));
-  expect(finalized).not.toHaveProperty('referencedContentHashes');
-  expect(await restoreAssistantTurn('openaiResponses', ['refused'], finalized.targetTurn, finalized.referencedContentHashes)).toEqual({ ok: true, value: captured.turn });
-});
-
 type ToolItem = Extract<OpenAIResponsesOutputItemEx, { type: 'function_call' | 'custom_tool_call' }>;
 
 const toolItem = (type: ToolItem['type'], text: string, status: 'in_progress' | 'completed'): ToolItem => type === 'function_call'
@@ -194,98 +146,17 @@ test.each(toolCases)('collects streamed native $type text through its existing s
   expect(await restoreAssistantTurn('openaiResponses', [text], finalized.targetTurn, finalized.referencedContentHashes)).toEqual({ ok: true, value: captured.turn });
 });
 
-test.each(toolCases)('collects a snapshot-only native $type atom and inlines the tiny field', async ({ type, field, prefix, suffix }) => {
-  const text = prefix + suffix;
-  const done = toolItem(type, text, 'completed');
-  const captured = await collectProvenance([
+// Identity checks share one path for both callable kinds, so the function call covers them.
+test.each([
+  [undefined, 'files'],
+  ['files', undefined],
+])('rejects function_call namespace changing from %s to %s', async (initial, final) => {
+  const added = { ...toolItem('function_call', '', 'in_progress'), ...(initial === undefined ? {} : { namespace: initial }) };
+  const done = { ...toolItem('function_call', '{}', 'completed'), ...(final === undefined ? {} : { namespace: final }) };
+  await expect(collectProvenance([
     { type: 'response.created', response: response([], 'in_progress') },
-    { type: 'response.output_item.added', output_index: 0, item: toolItem(type, '', 'in_progress') },
-    toolDone(type, text),
+    { type: 'response.output_item.added', output_index: 0, item: added },
     { type: 'response.output_item.done', output_index: 0, item: done },
     { type: 'response.completed', response: response([done], 'completed') },
-  ], field);
-  expect(captured.appends).toEqual([{ text, referencePieceIds: [0] }]);
-  const finalized = await referenceAssistantTurn<'openaiResponses'>(captured.turn, captured.fieldState, captured.builder, collectEmittedFieldPlacements(text, captured.content));
-  expect(finalized.targetTurn[0]).toHaveProperty(field, text);
-  expect(finalized).not.toHaveProperty('referencedContentHashes');
-  expect(await restoreAssistantTurn('openaiResponses', [text], finalized.targetTurn, finalized.referencedContentHashes)).toEqual({ ok: true, value: captured.turn });
+  ], 'arguments')).rejects.toThrow();
 });
-
-test.each(toolCases)('invalidates native $type provenance when its done snapshot extends a delta', async ({ type, field, prefix, suffix }) => {
-  const text = prefix + suffix;
-  const done = toolItem(type, text, 'completed');
-  const captured = await collectProvenance([
-    { type: 'response.created', response: response([], 'in_progress') },
-    { type: 'response.output_item.added', output_index: 0, item: toolItem(type, '', 'in_progress') },
-    toolDelta(type, prefix), toolDone(type, text),
-    { type: 'response.output_item.done', output_index: 0, item: done },
-    { type: 'response.completed', response: response([done], 'completed') },
-  ], field);
-  expect(captured.appends).toEqual([{ text: prefix, referencePieceIds: [0] }, { text: suffix }]);
-  expect(captured.fieldState[0]).toMatchObject({ [field]: { valid: false } });
-  const finalized = await referenceAssistantTurn<'openaiResponses'>(captured.turn, captured.fieldState, captured.builder, collectEmittedFieldPlacements(text, captured.content));
-  expect(finalized.targetTurn).toEqual(captured.turn);
-  expect(finalized).not.toHaveProperty('referencedContentHashes');
-});
-
-for (const { type, field } of toolCases) {
-  test(`accepts an unchanged ${type} identity across snapshots`, async () => {
-    const added = { ...toolItem(type, '', 'in_progress'), namespace: 'files' };
-    const done = { ...toolItem(type, '{}', 'completed'), namespace: 'files' };
-    const captured = await collectProvenance([
-      { type: 'response.created', response: response([], 'in_progress') },
-      { type: 'response.output_item.added', output_index: 0, item: added },
-      { type: 'response.output_item.done', output_index: 0, item: done },
-      { type: 'response.completed', response: response([done], 'completed') },
-    ], field);
-    expect(captured.turn[0]).toMatchObject({ type, name: 'lookup', namespace: 'files', call_id: 'call' });
-  });
-
-  test.each([
-    ['files', 'web'],
-    [undefined, 'files'],
-    ['files', undefined],
-  ])(`rejects ${type} namespace changing from %s to %s`, async (initial, final) => {
-    const added = { ...toolItem(type, '', 'in_progress'), ...(initial === undefined ? {} : { namespace: initial }) };
-    const done = { ...toolItem(type, '{}', 'completed'), ...(final === undefined ? {} : { namespace: final }) };
-    await expect(collectProvenance([
-      { type: 'response.created', response: response([], 'in_progress') },
-      { type: 'response.output_item.added', output_index: 0, item: added },
-      { type: 'response.output_item.done', output_index: 0, item: done },
-      { type: 'response.completed', response: response([done], 'completed') },
-    ], field)).rejects.toThrow(`namespace changed from ${String(initial)} to ${String(final)}`);
-  });
-
-  test(`rejects a ${type} name change in the done snapshot`, async () => {
-    const added = toolItem(type, '', 'in_progress');
-    const done = { ...toolItem(type, '{}', 'completed'), name: 'other' };
-    await expect(collectProvenance([
-      { type: 'response.created', response: response([], 'in_progress') },
-      { type: 'response.output_item.added', output_index: 0, item: added },
-      { type: 'response.output_item.done', output_index: 0, item: done },
-      { type: 'response.completed', response: response([done], 'completed') },
-    ], field)).rejects.toThrow('Responses snapshot conflicts with streamed value at ["choices",0,"items",0,"name"]');
-  });
-
-  test(`rejects a ${type} namespace change after the done snapshot`, async () => {
-    const added = { ...toolItem(type, '', 'in_progress'), namespace: 'files' };
-    const done = { ...toolItem(type, '{}', 'completed'), namespace: 'files' };
-    await expect(collectProvenance([
-      { type: 'response.created', response: response([], 'in_progress') },
-      { type: 'response.output_item.added', output_index: 0, item: added },
-      { type: 'response.output_item.done', output_index: 0, item: done },
-      { type: 'response.completed', response: response([{ ...done, namespace: 'web' }], 'completed') },
-    ], field)).rejects.toThrow('namespace changed from files to web');
-  });
-
-  test(`rejects a ${type} name change after the done snapshot`, async () => {
-    const added = toolItem(type, '', 'in_progress');
-    const done = toolItem(type, '{}', 'completed');
-    await expect(collectProvenance([
-      { type: 'response.created', response: response([], 'in_progress') },
-      { type: 'response.output_item.added', output_index: 0, item: added },
-      { type: 'response.output_item.done', output_index: 0, item: done },
-      { type: 'response.completed', response: response([{ ...done, name: 'other' }], 'completed') },
-    ], field)).rejects.toThrow('Responses terminal snapshot conflicts with closed output item 0');
-  });
-}

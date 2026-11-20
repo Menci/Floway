@@ -228,7 +228,7 @@ function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, 
 
   return (
     <div style={style} className={mergeClasses(s.selectionRow, selected && s.selected)}>
-      <Checkbox aria-label={t('dashboard.requests.selectExport')} checked={exportIds.has(record.id)} onChange={() => onToggleExport(record.id)} />
+      <Checkbox aria-label={t('requests.selectExport')} checked={exportIds.has(record.id)} onChange={() => onToggleExport(record.id)} />
       <a
         {...address}
         aria-selected={selected}
@@ -240,9 +240,9 @@ function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, 
       >
         <div className="flex items-center gap-2 min-w-0">
           <StatusIcon aria-hidden="true" className={`${s[severity]} block flex-none`} fontSize={22} />
-          <span className="sr-only">{t(`dashboard.requests.status.${severity}`)}</span>
+          <span className="sr-only">{t(`requests.status.${severity}`)}</span>
           <Text size={300} className="min-w-0 font-mono" truncate wrap={false}>
-            {record.model ?? t('dashboard.requests.unknownModel')}
+            {record.model ?? t('requests.unknownModel')}
           </Text>
           {/* These triggers stay unfocusable: the row is an `option` under a
             roving tabindex, and a focusable descendant breaks that stop. */}
@@ -267,24 +267,24 @@ function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, 
           />}
         </div>
         <div className="flex items-center gap-3 min-w-0 text-fui-fg3">
-          <Tooltip content={t('dashboard.requests.duration', { value: formatDuration(record.durationMs, locale) })} relationship="description">
+          <Tooltip content={t('requests.duration', { value: formatDuration(record.durationMs, locale) })} relationship="description">
             <span className="inline-flex items-center gap-1 shrink-0">
               <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.durationMs, locale)}</Text>
             </span>
           </Tooltip>
           {record.ttftMs != null && (
-            <Tooltip content={t('dashboard.requests.ttft', { value: formatDuration(record.ttftMs, locale) })} relationship="description">
+            <Tooltip content={t('requests.ttft', { value: formatDuration(record.ttftMs, locale) })} relationship="description">
               <span className="inline-flex items-center gap-1 shrink-0">
                 <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.ttftMs, locale)}</Text>
               </span>
             </Tooltip>
           )}
-          <Tooltip content={t('dashboard.requests.requestBytes', { value: record.requestBytes })} relationship="description">
+          <Tooltip content={t('requests.requestBytes', { value: record.requestBytes })} relationship="description">
             <span className="inline-flex items-center gap-1 shrink-0">
               <ArrowUploadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatBytes(record.requestBytes, locale)}</Text>
             </span>
           </Tooltip>
-          <Tooltip content={t('dashboard.requests.responseBytes', { value: record.responseBytes })} relationship="description">
+          <Tooltip content={t('requests.responseBytes', { value: record.responseBytes })} relationship="description">
             <span className="inline-flex items-center gap-1 shrink-0">
               <ArrowDownloadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatBytes(record.responseBytes, locale)}</Text>
             </span>
@@ -334,7 +334,7 @@ export function RequestListPanel(props: RequestListProps) {
   return (
     <div className="h-full min-h-0 flex flex-col">
       <Dropdown
-        aria-label={t('dashboard.requests.apiKey')}
+        aria-label={t('requests.apiKey')}
         className={s.keySelector}
         selectedOptions={[props.selectedKeyId]}
         value={`${selectedKey.name} (${selectedKey.key.slice(-4)})`}
@@ -348,11 +348,11 @@ export function RequestListPanel(props: RequestListProps) {
       </div>
       {props.error && <OutcomeMessageBar className="!m-2" onDismiss={props.onDismissError}>{props.error}</OutcomeMessageBar>}
       {props.records.length === 0 ? (
-        <EmptyState className="flex-1 p-6" title={t(props.q || props.failures ? 'dashboard.requests.noMatches' : 'dashboard.requests.empty')} />
+        <EmptyState className="flex-1 p-6" title={t(props.q || props.failures ? 'requests.noMatches' : 'requests.empty')} />
       ) : (
         <div {...hostProps} className={mergeClasses(hostProps.className, 'flex-1 min-h-0')}>
           <List
-            aria-label={t('dashboard.requests.listLabel')}
+            aria-label={t('requests.listLabel')}
             className={s.list}
             defaultHeight={620}
             listRef={setListRef}

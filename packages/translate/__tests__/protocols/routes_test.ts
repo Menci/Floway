@@ -18,7 +18,7 @@ import { expectTrip } from '../trip.ts';
 import { collectAnthropicMessagesProtocolEventsToResult, type AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import { collectGeminiGenerateContentProtocolEventsToResult, type GeminiGenerateContentContent, type GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini-generate-content';
 import { toOpenAIChatCompletionsInputAssistantMessage } from '@floway-dev/protocols/openai-chat-completions';
-import { collectOpenAIChatCompletionsProtocolEventsToResult, type OpenAIChatCompletionsAssistantMessageEx, type OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import { collectOpenAIChatCompletionsProtocolEventsToResult, type OpenAIChatCompletionsAssistantMessageEx, type OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 import { toOpenAIResponsesInputItems } from '@floway-dev/protocols/openai-responses';
 import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesInputItem, type CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals } from '@floway-dev/test-utils';
@@ -38,7 +38,7 @@ const responses: CanonicalOpenAIResponsesPayload = {
   text: { format: { type: 'json_schema', name: 'f', schema: formatSchema } },
   metadata: { nested: 'x' },
 };
-const chat: OpenAIChatCompletionsPayload = {
+const chat: OpenAIChatCompletionsPayloadEx = {
   model: 'm',
   stream: true,
   messages: [
@@ -177,7 +177,7 @@ const moveCarrierBeforeBody = (assistant: AssistantTurn, carrier: string): Assis
 
 type TargetPayload =
   | { protocol: 'openai-responses'; payload: CanonicalOpenAIResponsesPayload }
-  | { protocol: 'openai-chat-completions'; payload: OpenAIChatCompletionsPayload }
+  | { protocol: 'openai-chat-completions'; payload: OpenAIChatCompletionsPayloadEx }
   | { protocol: 'anthropic-messages'; payload: AnthropicMessagesPayload };
 
 const replayAssistantTurn = async (assistant: AssistantTurn, target: Protocol): Promise<TargetPayload> => {

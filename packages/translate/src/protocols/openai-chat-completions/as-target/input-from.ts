@@ -6,7 +6,7 @@ import { DOCUMENT_CLOSE_TAG, documentImage, documentOpening } from '../../../sha
 import { TranslateInputException } from '../../../shared/input-error.ts';
 import { reasoningEffortForBudget } from '../../../shared/reasoning-budget.ts';
 import type {
-  OpenAIChatCompletionsPayload,
+  OpenAIChatCompletionsPayloadEx,
   OpenAIChatCompletionsMessage,
   OpenAIChatCompletionsStreamOptionsEx,
   OpenAIChatCompletionsToolCall,
@@ -228,7 +228,7 @@ const toolFromIR = (tool: IRInputTool): OpenAIChatCompletionsTool => {
   };
 };
 
-const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<OpenAIChatCompletionsPayload['tool_choice']> => {
+const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<OpenAIChatCompletionsPayloadEx['tool_choice']> => {
   if (typeof choice === 'string') return choice;
   if (choice.type === 'allowed_tools') return {
     type: 'allowed_tools',
@@ -249,7 +249,7 @@ const toolChoiceFromIR = (choice: IRInputToolChoice): NonNullable<OpenAIChatComp
  * assistant turns a sidecar already resolved, so only this half is computed once
  * per payload.
  */
-export const openaiChatCompletionsHeaderFromIR = (request: IRInputRequestHeader): Omit<OpenAIChatCompletionsPayload, 'messages'> => {
+export const openaiChatCompletionsHeaderFromIR = (request: IRInputRequestHeader): Omit<OpenAIChatCompletionsPayloadEx, 'messages'> => {
   const tools = request.tools;
   const choice = tools === undefined || tools.length === 0 ? request.tool_choice === 'required' ? 'required' : undefined : request.tool_choice;
   return {
@@ -270,18 +270,18 @@ export const openaiChatCompletionsHeaderFromIR = (request: IRInputRequestHeader)
 const chatReasoningEffort = (settings: IRInputSettings): string | undefined =>
   settings.reasoning_effort ?? (settings.reasoning_budget === undefined ? undefined : reasoningEffortForBudget(settings.reasoning_budget));
 
-export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): Partial<OpenAIChatCompletionsPayload> => {
+export const openaiChatCompletionsSettingsFromIR = (settings: IRInputSettings): Partial<OpenAIChatCompletionsPayloadEx> => {
   const ceiling = settings.max_output_tokens !== undefined ? settings.max_output_tokens : settings.max_visible_output_tokens;
   const format = settings.output_format;
   const reasoningEffort = chatReasoningEffort(settings);
 
   return {
-    // State both cap spellings. OpenAI uses the replacement
-    // `max_completion_tokens`, while compatible targets such as Ollama still
-    // read only `max_tokens`.
+    // OpenAI replaces the deprecated `max_tokens` with `max_completion_tokens`,
+    // and compatible upstreams reject a request that carries both spellings.
+    // A target that only reads the legacy field renames this one at its own
+    // provider boundary.
     // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/chat/completions/completions.ts
-    // https://github.com/ollama/ollama/blob/c1db5f9/openai/openai.go
-    ...(ceiling === undefined ? {} : { max_tokens: ceiling, max_completion_tokens: ceiling }),
+    ...(ceiling === undefined ? {} : { max_completion_tokens: ceiling }),
     ...(settings.temperature === undefined ? {} : { temperature: settings.temperature }),
     ...(settings.top_p === undefined ? {} : { top_p: settings.top_p }),
     ...(settings.stop === undefined ? {} : { stop: [...settings.stop] }),

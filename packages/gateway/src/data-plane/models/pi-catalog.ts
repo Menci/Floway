@@ -97,7 +97,7 @@ const piReasoning = (modelId: string, reasoning: ChatModelInfo['reasoning'], max
 };
 
 export const toPiCatalog = (models: readonly PublicModel[], baseUrl: string, provider: string): { models: PiModel[] } => ({
-  models: models.filter(model => model.kind === 'chat').map(model => ({
+  models: models.filter(model => model.kind === 'chat' && (model.chat?.modalities?.input.some(m => m !== 'audio') ?? true)).map(model => ({
     id: model.id,
     name: model.display_name || model.id,
     provider,
@@ -106,7 +106,7 @@ export const toPiCatalog = (models: readonly PublicModel[], baseUrl: string, pro
       : 'openai-responses',
     baseUrl: model.chat?.reasoning?.budget_tokens !== undefined || model.chat?.reasoning?.adaptive === true ? baseUrl.replace(/\/v1$/, '') : baseUrl,
     ...piReasoning(model.id, model.chat?.reasoning, model.limits.max_output_tokens ?? PI_DEFAULT_MAX_TOKENS),
-    input: model.chat?.modalities?.input ?? ['text'],
+    input: model.chat?.modalities?.input.filter(m => m !== 'audio') ?? ['text'],
     contextWindow: model.limits.max_context_window_tokens ?? PI_DEFAULT_CONTEXT_WINDOW,
     maxTokens: model.limits.max_output_tokens ?? PI_DEFAULT_MAX_TOKENS,
     cost: piCost(model),

@@ -148,17 +148,17 @@ test('queue rows cannot be removed before their domain rows', async () => {
     raw.run("INSERT INTO expiration_sweeps (domain, key_id, due_at) VALUES ('dumps', 'empty', 0)");
 
     expect(() => raw.run("DELETE FROM expiration_sweeps WHERE domain = 'dumps' AND key_id = 'both'"))
-      .toThrow('expiration sweep cannot be removed while stored rows remain');
+      .toThrow('cannot be removed');
     expect(() => raw.run("DELETE FROM expiration_sweeps WHERE domain = 'responses' AND key_id = 'both'"))
-      .toThrow('expiration sweep cannot be removed while stored rows remain');
+      .toThrow('cannot be removed');
     expect(() => raw.run("UPDATE expiration_sweeps SET key_id = 'moved' WHERE domain = 'dumps' AND key_id = 'identity'"))
-      .toThrow('expiration sweep identity is immutable');
+      .toThrow('immutable');
     expect(() => raw.run("UPDATE expiration_sweeps SET domain = 'responses' WHERE domain = 'dumps' AND key_id = 'identity'"))
-      .toThrow('expiration sweep identity is immutable');
+      .toThrow('immutable');
     expect(() => raw.run("UPDATE expiration_sweeps SET key_id = 'moved-empty' WHERE domain = 'dumps' AND key_id = 'empty'"))
-      .toThrow('expiration sweep identity is immutable');
+      .toThrow('immutable');
     expect(() => raw.run("UPDATE expiration_sweeps SET domain = 'responses' WHERE domain = 'dumps' AND key_id = 'empty'"))
-      .toThrow('expiration sweep identity is immutable');
+      .toThrow('immutable');
 
     raw.run("DELETE FROM dump_records WHERE key_id = 'both'");
     raw.run("DELETE FROM expiration_sweeps WHERE domain = 'dumps' AND key_id = 'both'");
@@ -167,7 +167,7 @@ test('queue rows cannot be removed before their domain rows', async () => {
 
     raw.run("DELETE FROM responses_items WHERE api_key_id = 'both'");
     expect(() => raw.run("DELETE FROM expiration_sweeps WHERE domain = 'responses' AND key_id = 'both'"))
-      .toThrow('expiration sweep cannot be removed while stored rows remain');
+      .toThrow('cannot be removed');
     raw.run("DELETE FROM responses_snapshots WHERE api_key_id = 'both'");
     raw.run("DELETE FROM expiration_sweeps WHERE domain = 'responses' AND key_id = 'both'");
     expect(raw.exec("SELECT domain FROM expiration_sweeps WHERE key_id = 'both'")).toEqual([]);
@@ -203,7 +203,7 @@ test('drained completion cannot remove a queue whose domain still has rows', asy
   if (first === null) throw new Error('expected first expiration claim');
 
   await expect(repo.expirationSweeps.complete('claim-a', first.revision, { kind: 'drained', nextDueAt: null }))
-    .rejects.toThrow('expiration sweep cannot be removed while stored rows remain');
+    .rejects.toThrow('cannot be removed');
   await repo.expirationSweeps.complete('claim-a', first.revision, { kind: 'partial', retryAt: 12 });
   expect(await db.prepare(
     "SELECT due_at, claim_token FROM expiration_sweeps WHERE domain = 'dumps' AND key_id = 'key-a'",

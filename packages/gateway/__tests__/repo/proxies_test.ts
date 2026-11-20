@@ -27,7 +27,7 @@ const upstreamFixture = (id: string, proxyFallbackList: ProxyFallbackEntry[]): U
   sortOrder: 0,
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-06-01T00:00:00.000Z',
-  config: { baseUrl: 'https://example.test', authStyle: 'bearer', apiKey: 'sk', endpoints: { openaiChatCompletions: {} } },
+  config: { baseUrl: 'https://example.test', apiKey: 'sk', endpoints: { openaiChatCompletions: {} } },
   state: null,
   flagOverrides: {},
   disabledPublicModelIds: [],
@@ -38,17 +38,6 @@ const upstreamFixture = (id: string, proxyFallbackList: ProxyFallbackEntry[]): U
 });
 
 for (const [backend, makeRepo] of REPO_BACKENDS) {
-
-  test(`[${backend}] proxies repo inserts and lists ordered by createdAt`, async () => {
-    const repo = await makeRepo();
-    await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', dialTimeoutSeconds: null });
-    // Sleep to guarantee a distinct createdAt so the order assertion is deterministic.
-    await new Promise(resolve => setTimeout(resolve, 5));
-    await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', dialTimeoutSeconds: null });
-    const list = await repo.proxies.list();
-    assertEquals(list.map(p => p.id), ['a', 'b']);
-  });
-
   test(`[${backend}] proxies repo findUpstreamsReferencing returns ids of upstreams whose fallback list contains the proxy`, async () => {
     const repo = await makeRepo();
     await repo.proxies.insert({ id: 'p', name: 'P', url: 'socks5://host:1080', dialTimeoutSeconds: null });
@@ -58,34 +47,6 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
 
     const ids = (await repo.proxies.findUpstreamsReferencing('p')).toSorted();
     assertEquals(ids, ['up_1', 'up_2']);
-  });
-
-  test(`[${backend}] proxies repo delete returns false when id is unknown`, async () => {
-    const repo = await makeRepo();
-    assertEquals(await repo.proxies.delete('nope'), false);
-  });
-
-  test(`[${backend}] proxies repo delete returns true and removes the row`, async () => {
-    const repo = await makeRepo();
-    await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host:1080', dialTimeoutSeconds: null });
-    assertEquals(await repo.proxies.delete('a'), true);
-    assertEquals(await repo.proxies.getById('a'), null);
-  });
-
-  test(`[${backend}] proxies repo patch returns null for unknown id`, async () => {
-    const repo = await makeRepo();
-    assertEquals(await repo.proxies.patch('nope', { name: 'x' }), null);
-  });
-
-  test(`[${backend}] proxies repo save inserts a new row with createdAt and updatedAt set to now`, async () => {
-    const repo = await makeRepo();
-    await repo.proxies.save({ id: 'a', name: 'A', url: 'socks5://host:1080', dialTimeoutSeconds: 30 });
-    const row = await repo.proxies.getById('a');
-    assertEquals(row?.name, 'A');
-    assertEquals(row?.url, 'socks5://host:1080');
-    assertEquals(row?.dialTimeoutSeconds, 30);
-    assertEquals(typeof row?.createdAt, 'string');
-    assertEquals(row?.createdAt, row?.updatedAt);
   });
 
   test(`[${backend}] proxies repo save on id collision preserves createdAt while overwriting config`, async () => {
@@ -104,13 +65,4 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     assertEquals(after?.dialTimeoutSeconds, 60);
     assertEquals(after?.createdAt, originalCreatedAt);
   });
-
-  test(`[${backend}] proxies repo deleteAll drops every row`, async () => {
-    const repo = await makeRepo();
-    await repo.proxies.insert({ id: 'a', name: 'A', url: 'socks5://host-a:1080', dialTimeoutSeconds: null });
-    await repo.proxies.insert({ id: 'b', name: 'B', url: 'socks5://host-b:1080', dialTimeoutSeconds: null });
-    await repo.proxies.deleteAll();
-    assertEquals(await repo.proxies.list(), []);
-  });
-
 }

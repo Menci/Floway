@@ -153,6 +153,24 @@ export const scopeExpressionCss = String.raw`
   min-width: 0;
 }
 
+/* Keep the native input hit target across trailing editor space so pointer
+   placement and drag selection continue beyond the rendered model text. */
+.floway-scope-expression-segment:last-child:has(.floway-scope-expression-part-editor) {
+  flex: 1 1 auto;
+}
+
+.floway-scope-expression-segment:last-child > .floway-scope-expression-part-editor:has(.floway-scope-expression-part-control) {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+.floway-scope-expression-segment:last-child > .floway-scope-expression-part-editor > .floway-scope-expression-part-control,
+.floway-scope-expression-segment:last-child > .floway-scope-expression-part-editor > .floway-scope-expression-part-control > .floway-scope-expression-part,
+.floway-scope-expression-segment:last-child > .floway-scope-expression-part-editor > .floway-scope-expression-part-control > .floway-scope-expression-part > .fui-Combobox {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
 .floway-scope-expression-segment[data-scope-part='model'],
 .floway-scope-expression-segment[data-scope-part='model'] .floway-scope-expression-part,
 .floway-scope-expression-segment[data-scope-part='model'] .floway-scope-expression-part-control {

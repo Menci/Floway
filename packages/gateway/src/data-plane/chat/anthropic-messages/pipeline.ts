@@ -22,7 +22,7 @@ export const anthropicMessagesServePipeline = (): Pipeline<AnthropicMessagesServ
     emitAnthropicMessages,
     resolveChatCandidates(narrowing),
     failover({
-      failed: handedUp => isFailure((handedUp as { 'response.chat.anthropicMessages'?: unknown })['response.chat.anthropicMessages']),
+      answer: handedUp => handedUp['response.chat.anthropicMessages'],
       owns: ['response.http.body'],
       pendingUsage: STREAMED_USAGE,
     }),

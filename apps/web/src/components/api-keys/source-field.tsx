@@ -26,7 +26,7 @@ export function KeySourceControl({
 }) {
   const { t } = useTranslation();
   const dangerText = useDangerTextClass();
-  const label = t('dashboard.apiKeys.form.customKey');
+  const label = t('apiKeys.form.customKey');
   const errorId = useId();
 
   return (
@@ -39,8 +39,8 @@ export function KeySourceControl({
       <ChoiceGroup
         ariaLabel={label}
         items={[
-          { value: 'generate', label: t('dashboard.apiKeys.source.generate'), disabled },
-          { value: 'custom', label: t('dashboard.apiKeys.source.custom'), disabled },
+          { value: 'generate', label: t('apiKeys.source.generate'), disabled },
+          { value: 'custom', label: t('apiKeys.source.custom'), disabled },
         ]}
         onChange={value => onSourceChange(value as KeySource)}
         value={source}
@@ -50,7 +50,7 @@ export function KeySourceControl({
         aria-label={label}
         disabled={disabled || source !== 'custom'}
         onChange={(_, data) => onCustomKeyChange(data.value)}
-        placeholder={t('dashboard.apiKeys.form.customKeyPlaceholder')}
+        placeholder={t('apiKeys.form.customKeyPlaceholder')}
         value={customKey}
       />
       {error && (

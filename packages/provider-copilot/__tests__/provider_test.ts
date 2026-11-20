@@ -92,8 +92,8 @@ const setupCopilotTest = async (recordOverrides: Partial<UpstreamRecord> = {}): 
   initProviderRepo(() => ({
     recordUpstreamMetric: async () => {},
     upstreams: {
-      getById: () => getByIdImpl(),
-      saveState: (id, mutate) => saveStateImpl(id, mutate),
+      getById: async () => { const row = await getByIdImpl(); return row === null ? null : { ...row, configVersion: 1 }; },
+      saveState: (id, mutate) => saveStateImpl(id, current => mutate(current, 1)),
     },
   }));
   initImageProcessor(createInMemoryImageProcessor());
@@ -1341,7 +1341,7 @@ test('Copilot image generations POSTs JSON to the v1 path with the raw model id'
     async () => {
       const [model] = await provider.instance.getProvidedModels(directFetcher);
       const result = await callProviderPipeline(provider, 'openaiImagesGenerations', model, { prompt: 'a red square' });
-      assertEquals(result.response.status, 200);
+      assertEquals(result.http.status, 200);
     },
   );
 
@@ -1377,7 +1377,7 @@ test('Copilot image edits keeps multipart uploads free of a JSON content-type', 
       const [model] = await provider.instance.getProvidedModels(directFetcher);
       const file = { bytes: new Uint8Array([0x89, 0x50, 0x4E, 0x47]), name: 'in.png', type: 'image/png' };
       const result = await callProviderPipeline(provider, 'openaiImagesEdits', model, { images: [{ type: 'upload', file }], parameters: { prompt: 'make it blue' } });
-      assertEquals(result.response.status, 200);
+      assertEquals(result.http.status, 200);
     },
   );
 
@@ -1625,7 +1625,7 @@ test('Copilot provider derives decision endpoints and forwards the System One bo
         questions: { team: { type: 'choice', instructions: 'Which team?', criteria: { billing: 'Charges', engineering: 'Bugs' } } },
       });
       const result = await callProviderPipeline(provider, 'decision', decision, parsed.request);
-      assertEquals(result.response.status, 200);
+      assertEquals(result.http.status, 200);
     },
   );
 
@@ -1669,7 +1669,7 @@ test('Copilot sends an OpenAI Decisions model to /v1/decisions in its own dialec
       });
       assertEquals(decision.decisionTarget, { protocol: 'openai-decisions' });
       const result = await callProviderPipeline(provider, 'decision', decision, parsed.request);
-      assertEquals(result.response.status, 200);
+      assertEquals(result.http.status, 200);
     },
   );
 

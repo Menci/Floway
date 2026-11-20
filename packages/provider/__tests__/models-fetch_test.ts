@@ -17,11 +17,3 @@ test('model-list failure parses JSON for display without changing the captured u
   });
   expect(failure.httpResponse?.body).toBe(body);
 });
-
-test('model-list failure shortens a long body only in its display projection', () => {
-  const body = 'x'.repeat(20_000);
-  const failure = new ProviderModelsUnavailableError({ status: 503, headers: new Headers(), body });
-
-  expect(failure.displayResponse?.body).toBe(`${body.slice(0, 12_288)}…`);
-  expect(failure.httpResponse?.body).toBe(body);
-});

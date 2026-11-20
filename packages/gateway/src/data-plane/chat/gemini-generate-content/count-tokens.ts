@@ -4,14 +4,13 @@ import { serializeClientJson } from '../../pipeline/serialize-client-json.ts';
 import { materializeAttempt } from '../materialize-attempt.ts';
 import { resolveChatCandidates } from '../resolve-candidates.ts';
 import { measureGeminiGenerateContentAsAnthropicMessages } from './count-tokens/measure-via-anthropic-messages.ts';
-import { narrowing } from './count-tokens/target.ts';
-import { stripSafetySettingsFromGeminiGenerateContent } from './strip-safety-settings.ts';
-import { stripUnsupportedPartFieldsFromGeminiGenerateContent } from './strip-unsupported-part-fields.ts';
-import { stripUnsupportedToolsFromGeminiGenerateContent } from './strip-unsupported-tools.ts';
-import { isFailure } from '../../pipeline/facts.ts';
+import { geminiGenerateContentCountTokensTarget, narrowing } from './count-tokens/target.ts';
+import { callGeminiGenerateContentUpstream } from './call-upstream.ts';
+import { shapeGeminiGenerateContentForTranslation } from './wires.ts';
 import { failover } from '../../pipeline/failover.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import { anthropicMessagesCountTokensWire } from '../anthropic-messages/count-tokens/wire.ts';
+import { dialChatWire } from '../dial-wire.ts';
 import { compose, type Pipeline } from '@floway-dev/pipeline';
 
 export const geminiGenerateContentCountTokensPipeline = (): Pipeline<GeminiGenerateContentCountTokensEntry, GeminiGenerateContentCountTokensExit> =>
@@ -23,13 +22,19 @@ export const geminiGenerateContentCountTokensPipeline = (): Pipeline<GeminiGener
     emitGeminiGenerateContentTokenCount,
     resolveChatCandidates(narrowing),
     failover({
-      failed: handedUp => isFailure((handedUp as { 'response.chat.geminiGenerateContent'?: unknown })['response.chat.geminiGenerateContent']),
+      answer: handedUp => handedUp['response.chat.geminiGenerateContent'],
       owns: ['response.http.body'],
     }),
     materializeAttempt('request.chat.geminiGenerateContent'),
-    stripUnsupportedPartFieldsFromGeminiGenerateContent,
-    stripUnsupportedToolsFromGeminiGenerateContent,
-    stripSafetySettingsFromGeminiGenerateContent,
-    measureGeminiGenerateContentAsAnthropicMessages,
-    ...anthropicMessagesCountTokensWire,
+    dialChatWire({
+      source: 'request.chat.geminiGenerateContent',
+      needs: ['request.chat.geminiGenerateContent', 'ingress.http.headers', 'ingress.chat.sourceProtocol'],
+      provides: ['response.chat.geminiGenerateContent', 'response.usage.billable', 'response.http.headers'],
+      pick: geminiGenerateContentCountTokensTarget.pick,
+      wire: target => target === 'geminiGenerateContent'
+        ? compose('geminiGenerateContentCountTokensNative', [callGeminiGenerateContentUpstream('geminiGenerateContentCountTokens')])
+        : compose('geminiGenerateContentCountTokensViaAnthropicMessages', [
+          ...shapeGeminiGenerateContentForTranslation, measureGeminiGenerateContentAsAnthropicMessages, ...anthropicMessagesCountTokensWire,
+        ]),
+    }),
   ]);

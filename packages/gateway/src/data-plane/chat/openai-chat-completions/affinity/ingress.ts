@@ -1,12 +1,12 @@
 import { isEncryptedReasoningDetail } from './reasoning-details.ts';
 import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
 import { withKeysChanged } from '@floway-dev/protocols/common';
-import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsPayload } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsAssistantMessageEx, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 
 export const analyzeOpenAIChatCompletionsAffinity = async (
-  payload: OpenAIChatCompletionsPayload,
+  payload: OpenAIChatCompletionsPayloadEx,
   codec: AffinityCodec,
-): Promise<AffinityRequestAnalysis<OpenAIChatCompletionsPayload>> => {
+): Promise<AffinityRequestAnalysis<OpenAIChatCompletionsPayloadEx>> => {
   const decodedOpaque = new Map<number, DecodedAffinityBlob>();
   const decodedDetails = new Map<number, { details: unknown[]; blobs: Map<number, DecodedAffinityBlob> }>();
   for (const [index, message] of payload.messages.entries()) {

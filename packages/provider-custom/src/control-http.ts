@@ -24,15 +24,15 @@ const customFetchInternal = async (
   options: UpstreamFetchOptions,
 ): Promise<Response> => {
   const headers: [string, string][] = init.headers ? [...new Headers(init.headers)] : [];
-  if (config.authStyle === 'anthropic') {
+  const { authStyle } = config.modelsFetch;
+  if (config.apiKey !== '' && authStyle === 'x-api-key') {
     replace(headers, 'x-api-key', config.apiKey);
     if (!has(headers, 'anthropic-version')) headers.push(['anthropic-version', ANTHROPIC_VERSION]);
-  } else if (config.authStyle === 'bearer') {
+  } else if (config.apiKey !== '' && authStyle === 'bearer') {
     replace(headers, 'Authorization', `Bearer ${config.apiKey}`);
+  } else if (config.apiKey !== '' && authStyle === 'x-goog-api-key') {
+    replace(headers, 'x-goog-api-key', config.apiKey);
   }
-  // authStyle === 'none' falls through with no auth header. The same goes
-  // for the /models fetch — Models Fetch shares this code path, so a 'none'
-  // upstream is queried anonymously end-to-end.
   if (init.body && !has(headers, 'content-type') && !(init.body instanceof FormData)) {
     headers.push(['Content-Type', 'application/json']);
   }
@@ -47,7 +47,9 @@ const customFetchInternal = async (
   return await options.wrapUpstreamCall(() => options.fetcher(joinBaseAndPath(config.baseUrl, path), { ...init, headers }));
 };
 
-// /models lives on its own fetch toggle (see config.modelsFetch.endpoint),
-// not in pathOverrides.
-export const customFetchModels = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions): Promise<Response> =>
-  customFetchInternal(config, config.modelsFetch.endpoint ?? '/v1/models', init, options);
+// The catalog has its own authentication scheme. Gemini's catalog uses
+// pageToken to continue a listing.
+export const customFetchModels = (config: CustomUpstreamConfig, init: FetchInit, options: UpstreamFetchOptions, pageToken?: string): Promise<Response> => {
+  const path = config.modelsFetch.endpoint ?? '/v1/models';
+  return customFetchInternal(config, pageToken === undefined ? path : `${path}${path.includes('?') ? '&' : '?'}pageToken=${encodeURIComponent(pageToken)}`, init, options);
+};

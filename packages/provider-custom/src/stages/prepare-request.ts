@@ -4,9 +4,10 @@ import { multipartBody, type HttpBody, type HttpBodyEncoding } from '@floway-dev
 import { defineStage, isSecret, move, secret, type Secret } from '@floway-dev/pipeline';
 import type { RerankTarget } from '@floway-dev/protocols/common';
 import { DEFAULT_DECISION_PATHS, serializeDecisionRequest } from '@floway-dev/protocols/decision';
+import type { GeminiCountTokensPayload } from '@floway-dev/protocols/gemini-generate-content';
 import { toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import { DEFAULT_RERANK_PATHS, serializeRerankRequest } from '@floway-dev/protocols/rerank';
-import { joinBaseAndPath, mergeHttpHeaders, prepareOpenAIImagesEditsBody, replaceHttpHeader, withHttpContentType, type ProviderOperation, type ProviderOperationPayloads, type ProviderRequest, type ProviderResponse, type ProviderServices } from '@floway-dev/provider';
+import { joinBaseAndPath, mergeHttpHeaders, prepareOpenAIImagesEditsBody, withHttpContentType, type ProviderOperation, type ProviderOperationPayloads, type ProviderRequest, type ProviderResponse, type ProviderServices } from '@floway-dev/provider';
 
 interface CustomHttpFacts extends HttpRequestFacts {
   'request.provider.modelKey': string;
@@ -49,7 +50,7 @@ const resolvedHeaders = (config: CustomUpstreamConfig, incoming: HttpHeaders): H
 
 export const prepareCustomRequest = <O extends ProviderOperation>(config: CustomUpstreamConfig, operation: O) => {
   const prepare = defineStage<ProviderRequest<ProviderOperationPayloads[O]> & { 'request.provider.anthropicBeta'?: readonly string[]; 'request.provider.responsesAction': 'generate' | 'compact' }, CustomHttpFacts, CustomResponse, CustomResponse, ProviderServices>({
-    name: `prepareCustom${operation.replace(/^openai/, 'OpenAI').replace(/^alpha/, 'Alpha').replace(/^rerank/, 'Rerank').replace(/^decision/, 'Decision')}`,
+    name: `prepareCustom${operation.replace(/^openai/, 'OpenAI').replace(/^alpha/, 'Alpha').replace(/^anthropic/, 'Anthropic').replace(/^gemini/, 'Gemini').replace(/^rerank/, 'Rerank').replace(/^decision/, 'Decision')}`,
     through: {
       request: {
         needs: [...(operation === 'openaiResponses' || operation === 'openaiResponsesCompact' ? ['request.provider.responsesAction' as const] : []), 'request.provider.model', 'request.provider.payload', 'request.http.callId', 'request.http.headers', ...(operation === 'anthropicMessages' || operation === 'anthropicMessagesCountTokens' ? ['request.provider.anthropicBeta' as const] : [])],
@@ -64,7 +65,9 @@ export const prepareCustomRequest = <O extends ProviderOperation>(config: Custom
     },
     execute: async (facts, next) => {
       const { 'request.provider.model': model, 'request.provider.payload': payload, ...rest } = facts;
-      const modelKey = model.providerData as string;
+      const gemini = operation === 'geminiGenerateContent' || operation === 'geminiGenerateContentCountTokens';
+      const providerModelId = model.providerData as string;
+      const modelKey = gemini ? providerModelId.replace(/^models\//, '') : providerModelId;
       let body: HttpBody;
       let encoding: HttpBodyEncoding = 'json';
       let target: RerankTarget | undefined;
@@ -97,6 +100,22 @@ export const prepareCustomRequest = <O extends ProviderOperation>(config: Custom
         path = config.pathOverrides?.['/audio/transcriptions'] ?? '/v1/audio/transcriptions';
         break;
       }
+      case 'geminiGenerateContent':
+      case 'geminiGenerateContentCountTokens': {
+        // https://ai.google.dev/api/generate-content#method:-models.streamgeneratecontent
+        // https://ai.google.dev/api/tokens#method:-models.counttokens
+        const root = config.pathOverrides?.['/v1beta/models'] ?? '/v1beta/models';
+        const resource = `${root}/${encodeURIComponent(modelKey)}`;
+        const request = payload as ProviderOperationPayloads['geminiGenerateContent'];
+        if (operation === 'geminiGenerateContentCountTokens') {
+          path = `${resource}:countTokens`;
+          body = { generateContentRequest: { ...request, model: `models/${modelKey}` } } satisfies GeminiCountTokensPayload;
+        } else {
+          path = `${resource}:streamGenerateContent?alt=sse`;
+          body = request;
+        }
+        break;
+      }
       default: {
         const key = PATHS[operation]!;
         path = config.pathOverrides?.[key] ?? `/v1${key}`;
@@ -107,16 +126,16 @@ export const prepareCustomRequest = <O extends ProviderOperation>(config: Custom
           : { ...payload, ...(operation === 'openaiChatCompletions' || operation === 'openaiResponses' || operation === 'openaiResponsesCompact' || operation === 'anthropicMessages' ? { stream: true } : {}), model: modelKey };
       }
       }
-      let base: HttpHeaders = [];
-      if (config.authStyle === 'anthropic') {
+      const anthropic = operation === 'anthropicMessages' || operation === 'anthropicMessagesCountTokens';
       // https://docs.anthropic.com/en/api/versioning
-        base = [['x-api-key', secret(config.apiKey)], ['anthropic-version', '2023-06-01']];
-      } else if (config.authStyle === 'bearer') {
-        base = replaceHttpHeader(base, 'Authorization', secret(`Bearer ${config.apiKey}`));
-      }
-      base = withHttpContentType(base, body, encoding);
+      // https://ai.google.dev/gemini-api/docs/api-key
+      const credential: HttpHeaders = config.apiKey === '' ? []
+        : anthropic ? [['x-api-key', secret(config.apiKey)], ['anthropic-version', '2023-06-01']]
+          : gemini ? [['x-goog-api-key', secret(config.apiKey)]]
+            : [['Authorization', secret(`Bearer ${config.apiKey}`)]];
+      const base = withHttpContentType(credential, body, encoding);
       let headers = mergeHttpHeaders(base, resolvedHeaders(config, facts['request.http.headers']));
-      if (operation === 'anthropicMessages' || operation === 'anthropicMessagesCountTokens') {
+      if (anthropic) {
         const beta = facts['request.provider.anthropicBeta'] as readonly string[];
         headers = headers.filter(([name]) => name.toLowerCase() !== 'anthropic-beta');
         if (beta.length > 0) headers = [...headers, ['anthropic-beta', beta.join(',')]];

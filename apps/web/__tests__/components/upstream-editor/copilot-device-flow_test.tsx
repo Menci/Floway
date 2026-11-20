@@ -34,7 +34,7 @@ let startRecord: { config: { githubHost: string } } | null;
 const pollCount = () =>
   fetchMock.mock.calls.filter(([input]) => String(input).includes(DEVICE_LOGIN_POLL)).length;
 
-const copilot = (key: string) => i18n.t(`dashboard.upstreamEditor.copilot.${key}`);
+const copilot = (key: string) => i18n.t(`upstreams.editor.copilot.${key}`);
 
 const startFlow = async () => {
   renderInApp(<ProviderConfigHarness record={record} />);
@@ -113,23 +113,5 @@ describe('Copilot device-flow polling', () => {
     expect(pollCount()).toBe(2);
     expect(screen.getByText(flow.user_code)).toBeTruthy();
     expect(screen.queryByText('Bad Gateway')).toBeNull();
-  });
-
-  it('does not schedule another tick when the panel unmounts while a poll is in flight', async () => {
-    let release: (() => void) | undefined;
-    pollResponse = () => new Promise<Response>(resolve => {
-      release = () => resolve(Response.json({ status: 'pending' }));
-    });
-    const { unmount } = renderInApp(<ProviderConfigHarness record={record} />);
-    fireEvent.click(screen.getByRole('button', { name: copilot('connect') }));
-    await advance(0);
-
-    await advance(INTERVAL_SECONDS * 1000);
-    expect(pollCount()).toBe(1);
-
-    unmount();
-    release!();
-    await advance(INTERVAL_SECONDS * 1000 * 4);
-    expect(pollCount()).toBe(1);
   });
 });

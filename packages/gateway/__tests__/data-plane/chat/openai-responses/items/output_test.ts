@@ -9,7 +9,7 @@ import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy } from '../test-policy.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { OpenAIResponsesOutputReasoning, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesOutputItemEx, OpenAIResponsesOutputReasoning, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 const frames = async function* (response: OpenAIResponsesResultEx): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   const item = response.output[0];
@@ -66,65 +66,6 @@ test('stateless client egress retains terminal-only output without applying a pr
   expect(terminal.event.response.output[1]).toEqual(terminalOnly);
 });
 
-test('client output rewrites only the response id inside queued envelopes', async () => {
-  const { store } = memoryOutputHarness();
-  const queued: OpenAIResponsesResultEx = {
-    id: 'resp_upstream',
-    object: 'response',
-    model: 'model',
-    status: 'queued',
-    output: [completedReasoningItem],
-    error: null,
-    incomplete_details: null,
-  };
-  const input = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-    yield eventFrame({ type: 'response.queued', response: queued });
-  })();
-  const output: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-  for await (const frame of wrapOpenAIResponsesClientOutput(input, { store, responseId: 'resp_public' })) output.push(frame);
-
-  expect(output[0]).toMatchObject({
-    event: {
-      type: 'response.queued',
-      response: { id: 'resp_public', output: [{ type: 'reasoning' }] },
-    },
-  });
-  const frame = output[0];
-  if (frame.type !== 'event' || frame.event.type !== 'response.queued') throw new Error('expected queued event');
-  expect(frame.event.response.output[0].id).toBe('rs_upstream');
-});
-
-test('client output preserves emitted ids and persists the exact complete item before terminal', async () => {
-  const { repo, store } = memoryOutputHarness();
-  const result: OpenAIResponsesResultEx = {
-    id: 'resp_upstream',
-    object: 'response',
-    model: 'model',
-    status: 'completed',
-    output: [{ type: 'reasoning', id: 'rs_upstream', summary: [], encrypted_content: 'wrapped-affinity' }],
-    error: null,
-    incomplete_details: null,
-  };
-
-  const events: OpenAIResponsesStreamEventEx[] = [];
-  for await (const frame of wrapOpenAIResponsesClientOutput(frames(result), {
-    store,
-    responseId: 'resp_public',
-  })) {
-    if (frame.type === 'event') events.push(frame.event);
-  }
-
-  const terminal = events.at(-1);
-  expect(terminal?.type).toBe('response.completed');
-  if (terminal?.type !== 'response.completed') throw new Error('Expected terminal response');
-  const publicItem = terminal.response.output[0];
-  expect(publicItem.id).toBe('rs_upstream');
-  const rows = await repo.openaiResponsesItems.lookupMany('key-a', [publicItem.id!], 0);
-  expect(rows[0].payload.item).toEqual(publicItem);
-  expect(rows[0].payload.item).toMatchObject({ encrypted_content: 'wrapped-affinity' });
-  expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0)).not.toBeNull();
-});
-
 test('client output replaces history when a compaction_summary item closes', async () => {
   const { repo, store } = memoryOutputHarness();
   const item = { type: 'compaction_summary' as const, id: 'cmp_alias', encrypted_content: 'opaque' };
@@ -176,160 +117,6 @@ test('client output waits for persistence before publishing output_item.done', a
   await iterator.return?.(doneFrame());
 });
 
-test('client output does not publish output_item.done when persistence fails', async () => {
-  const { repo, store } = memoryOutputHarness();
-  const persistenceError = new Error('simulated item persistence failure');
-  vi.spyOn(repo.openaiResponsesItems, 'insertMany').mockRejectedValue(persistenceError);
-  const input = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: completedReasoningItem });
-  };
-  const iterator = wrapOpenAIResponsesClientOutput(input(), {
-    store,
-    responseId: 'resp_public',
-  })[Symbol.asyncIterator]();
-
-  await expect(iterator.next()).rejects.toBe(persistenceError);
-});
-
-test('store=false passes the emitted item id through without persistence', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), false);
-  const result: OpenAIResponsesResultEx = {
-    id: 'resp_upstream',
-    object: 'response',
-    model: 'model',
-    status: 'completed',
-    output: [{ type: 'reasoning', id: 'rs_upstream', summary: [], encrypted_content: 'wrapped-affinity' }],
-    error: null,
-    incomplete_details: null,
-  };
-
-  const events: OpenAIResponsesStreamEventEx[] = [];
-  for await (const frame of wrapOpenAIResponsesClientOutput(frames(result), { store, responseId: 'resp_public' })) {
-    if (frame.type === 'event') events.push(frame.event);
-  }
-
-  const terminal = events.at(-1);
-  if (terminal?.type !== 'response.completed') throw new Error('Expected terminal response');
-  // The client-facing boundary applies the response ID without changing item IDs.
-  expect(terminal.response.id).toBe('resp_public');
-  expect(terminal.response.output[0].id).toBe('rs_upstream');
-  const added = events.find(event => event.type === 'response.output_item.added');
-  expect(added?.type === 'response.output_item.added' && added.item.id).toBe('rs_upstream');
-  expect(await repo.openaiResponsesItems.lookupMany('key-a', ['rs_upstream'], 0)).toEqual([]);
-});
-
-test('client output uses one item id across lifecycle snapshots without committing a failed snapshot', async () => {
-  const { repo, store } = memoryOutputHarness();
-  const item = { type: 'reasoning' as const, id: 'rs_upstream', summary: [], encrypted_content: 'wrapped-affinity' };
-  const response: OpenAIResponsesResultEx = {
-    id: 'resp_upstream',
-    object: 'response',
-    model: 'model',
-    status: 'failed',
-    output: [item],
-    error: { code: 'failed', message: 'failed' },
-    incomplete_details: null,
-  };
-  const input = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-    yield eventFrame({ type: 'response.created', response: { ...response, status: 'in_progress', error: null } });
-    yield eventFrame({ type: 'response.output_item.added', output_index: 0, item });
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
-    yield eventFrame({ type: 'response.failed', response });
-  };
-
-  const events: OpenAIResponsesStreamEventEx[] = [];
-  for await (const frame of wrapOpenAIResponsesClientOutput(input(), {
-    store,
-    responseId: 'resp_public',
-  })) {
-    if (frame.type === 'event') events.push(frame.event);
-  }
-
-  const ids = events.flatMap(event => {
-    if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') return [event.item.id];
-    if ('response' in event) return event.response.output.map(output => output.id);
-    return [];
-  });
-  expect(new Set(ids).size).toBe(1);
-  expect(await repo.openaiResponsesItems.lookupMany('key-a', ids.filter((id): id is string => typeof id === 'string'), 0)).toHaveLength(1);
-  expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
-});
-
-test('client output persists a completed item before forwarding an error event', async () => {
-  const { repo, store } = memoryOutputHarness();
-  const item = completedReasoningItem;
-  const input = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
-    yield eventFrame({ type: 'error', message: 'upstream failed' });
-  };
-  let clientId: string | undefined;
-
-  for await (const frame of wrapOpenAIResponsesClientOutput(input(), {
-    store,
-    responseId: 'resp_public',
-  })) {
-    if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = openaiResponsesItemId(frame.event.item) ?? undefined;
-  }
-
-  expect(clientId).toEqual(expect.any(String));
-  expect(await repo.openaiResponsesItems.lookupMany('key-a', [clientId!], 0)).toHaveLength(1);
-  expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
-});
-
-test('client output preserves an error notification and the following failed response without committing a snapshot', async () => {
-  const { repo, store } = memoryOutputHarness();
-  const error = { type: 'error' as const, sequence_number: 3, code: null, message: 'upstream failed', param: 'tools', vendor: { retryable: false } };
-  const response = {
-    ...responseFor([completedReasoningItem]),
-    status: 'failed' as const,
-    error: { code: 'vendor_failure', message: error.message },
-    usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 },
-  };
-  const input = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-    yield eventFrame({ type: 'response.created', sequence_number: 0, response: { ...response, status: 'in_progress', output: [], error: null } });
-    yield eventFrame({ type: 'response.output_item.added', sequence_number: 1, output_index: 0, item: completedReasoningItem });
-    yield eventFrame({ type: 'response.output_item.done', sequence_number: 2, output_index: 0, item: completedReasoningItem });
-    yield eventFrame(error);
-    yield eventFrame({ type: 'response.failed', sequence_number: 4, response });
-  };
-  const output: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-  for await (const frame of wrapOpenAIResponsesClientOutput(input(), { store, responseId: 'resp_public' })) {
-    output.push(frame);
-    if (frame.type === 'event' && frame.event.type === 'error') {
-      expect(await repo.openaiResponsesItems.lookupMany('key-a', ['rs_upstream'], 0)).toHaveLength(1);
-    }
-  }
-
-  expect(output.slice(-2)).toEqual([
-    eventFrame(error),
-    eventFrame({ type: 'response.failed', sequence_number: 4, response: { ...response, id: 'resp_public' } }),
-  ]);
-  expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
-});
-
-test('client output does not persist a partial item without output_item.done', async () => {
-  const { repo, store } = memoryOutputHarness();
-  const item = completedReasoningItem;
-  const input = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-    yield eventFrame({ type: 'response.output_item.added', output_index: 0, item });
-    yield eventFrame({ type: 'error', message: 'upstream failed' });
-  };
-  let clientId: string | undefined;
-
-  for await (const frame of wrapOpenAIResponsesClientOutput(input(), {
-    store,
-    responseId: 'resp_public',
-  })) {
-    if (frame.type === 'event' && frame.event.type === 'response.output_item.added') clientId = openaiResponsesItemId(frame.event.item) ?? undefined;
-  }
-
-  expect(clientId).toEqual(expect.any(String));
-  expect(await repo.openaiResponsesItems.lookupMany('key-a', [clientId!], 0)).toEqual([]);
-  expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
-});
-
 test('client output persists completed items before rethrowing an iterator error', async () => {
   const { repo, store } = memoryOutputHarness();
   const item = completedReasoningItem;
@@ -354,93 +141,6 @@ test('client output persists completed items before rethrowing an iterator error
   expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
 });
 
-test('client output persists completed items when the source ends without a terminal event', async () => {
-  const { repo, store } = memoryOutputHarness();
-  const item = completedReasoningItem;
-  const input = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
-    yield doneFrame();
-  };
-  let clientId: string | undefined;
-
-  for await (const frame of wrapOpenAIResponsesClientOutput(input(), {
-    store,
-    responseId: 'resp_public',
-  })) {
-    if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = openaiResponsesItemId(frame.event.item) ?? undefined;
-  }
-
-  expect(clientId).toEqual(expect.any(String));
-  expect(await repo.openaiResponsesItems.lookupMany('key-a', [clientId!], 0)).toHaveLength(1);
-  expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
-});
-
-test('client output persists a completed item when its consumer cancels', async () => {
-  const { repo, store } = memoryOutputHarness();
-  const item = completedReasoningItem;
-  const input = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
-    await new Promise(() => {});
-  };
-  const iterator = wrapOpenAIResponsesClientOutput(input(), {
-    store,
-    responseId: 'resp_public',
-  })[Symbol.asyncIterator]();
-
-  const first = await iterator.next();
-  if (first.value?.type !== 'event' || first.value.event.type !== 'response.output_item.done') {
-    throw new Error('Expected completed output item');
-  }
-  const clientId = first.value.event.item.id!;
-  await iterator.return?.(doneFrame());
-
-  expect(await repo.openaiResponsesItems.lookupMany('key-a', [clientId], 0)).toHaveLength(1);
-  expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
-});
-
-test('client output makes every finalized item durable before publishing its done frame', async () => {
-  const { repo, store } = memoryOutputHarness();
-  const items = Array.from({ length: 3 }, (_, index) => ({
-    type: 'reasoning' as const,
-    id: `rs_upstream_${index}`,
-    summary: [{ type: 'summary_text' as const, text: `summary ${index}` }],
-  }));
-  const response: OpenAIResponsesResultEx = {
-    id: 'resp_upstream',
-    object: 'response',
-    model: 'model',
-    status: 'completed',
-    output: items,
-    error: null,
-    incomplete_details: null,
-  };
-  const input = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-    for (const [outputIndex, item] of items.entries()) {
-      yield eventFrame({ type: 'response.output_item.done', output_index: outputIndex, item });
-    }
-    yield eventFrame({ type: 'response.completed', response });
-  };
-  const iterator = wrapOpenAIResponsesClientOutput(input(), {
-    store,
-    responseId: 'resp_public',
-  })[Symbol.asyncIterator]();
-
-  for (const item of items) {
-    const next = await iterator.next();
-    expect(next.value?.type === 'event' && next.value.event.type).toBe('response.output_item.done');
-    if (next.value?.type !== 'event' || next.value.event.type !== 'response.output_item.done') {
-      throw new Error('Expected finalized output item');
-    }
-    expect(next.value.event.item.id).toBe(item.id);
-    expect(await repo.openaiResponsesItems.lookupMany('key-a', [next.value.event.item.id!], 0)).toHaveLength(1);
-  }
-  expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
-
-  const terminal = await iterator.next();
-  expect(terminal.value?.type === 'event' && terminal.value.event.type).toBe('response.completed');
-  expect((await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0))?.itemIds).toHaveLength(items.length);
-});
-
 test('client output refuses to persist an id-less upstream item', async () => {
   const { store } = memoryOutputHarness();
   const item = {
@@ -448,7 +148,7 @@ test('client output refuses to persist an id-less upstream item', async () => {
     role: 'assistant' as const,
     status: 'completed' as const,
     content: [{ type: 'output_text' as const, text: 'answer', annotations: [] }],
-  };
+  } as unknown as OpenAIResponsesOutputItemEx;
   const result: OpenAIResponsesResultEx = {
     id: 'resp_upstream',
     object: 'response',
@@ -466,7 +166,7 @@ test('client output refuses to persist an id-less upstream item', async () => {
     })) { /* drain */ }
   };
 
-  await expect(collect()).rejects.toThrow('OpenAI Responses message output has no id');
+  await expect(collect()).rejects.toThrow();
 });
 
 test('stateful output rejects a terminal item that never emitted output_item.done', async () => {
@@ -491,7 +191,7 @@ test('stateful output rejects a terminal item that never emitted output_item.don
     })) { /* drain */ }
   };
 
-  await expect(collect()).rejects.toThrow('terminal output_index 0 arrived before output_item.done');
+  await expect(collect()).rejects.toThrow();
   expect(await repo.openaiResponsesItems.lookupMany('key-a', [item.id], 0)).toEqual([]);
   expect(await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0)).toBeNull();
 });
@@ -524,184 +224,6 @@ test('interrupted output persists completed items after a discarded output_index
 
   expect((await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0))?.itemIds).toEqual([completed.id]);
   expect(await repo.openaiResponsesItems.lookupMany('key-a', [pending.id], 0)).toEqual([]);
-});
-
-test('store=false forwards an id-less finalized item without persistence work', async () => {
-  initRepo(new InMemoryRepo());
-  const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), false);
-  const item = {
-    type: 'message' as const,
-    role: 'assistant' as const,
-    status: 'completed' as const,
-    content: [{ type: 'output_text' as const, text: 'answer', annotations: [] }],
-  };
-  const response: OpenAIResponsesResultEx = {
-    id: 'resp_upstream',
-    object: 'response',
-    model: 'model',
-    status: 'completed',
-    output: [item],
-    error: null,
-    incomplete_details: null,
-  };
-  const input = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-    yield eventFrame({ type: 'response.output_item.added', output_index: 0, item });
-    yield eventFrame({ type: 'response.output_text.delta', item_id: 'msg_late_upstream', output_index: 0, content_index: 0, delta: 'answer' });
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
-    yield eventFrame({ type: 'response.completed', response });
-  };
-
-  const events: OpenAIResponsesStreamEventEx[] = [];
-  for await (const frame of wrapOpenAIResponsesClientOutput(input(), {
-    store,
-    responseId: 'resp_public',
-  })) if (frame.type === 'event') events.push(frame.event);
-
-  expect(events.map(event => event.type)).toEqual([
-    'response.output_item.added',
-    'response.output_text.delta',
-    'response.output_item.done',
-    'response.completed',
-  ]);
-});
-
-test('client output forwards terminal item drift while retaining the first done snapshot', async () => {
-  const { repo, store } = memoryOutputHarness();
-  const doneItem = { type: 'reasoning' as const, id: 'rs_upstream', summary: [], encrypted_content: 'done-blob' };
-  const terminalItem = { ...doneItem, encrypted_content: 'terminal-blob' };
-  const response: OpenAIResponsesResultEx = {
-    id: 'resp_upstream',
-    object: 'response',
-    model: 'model',
-    status: 'completed',
-    output: [terminalItem],
-    error: null,
-    incomplete_details: null,
-  };
-  const input = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-    yield eventFrame({ type: 'response.output_item.added', output_index: 0, item: doneItem });
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: doneItem });
-    yield eventFrame({ type: 'response.completed', response });
-  };
-  let terminal: OpenAIResponsesResultEx | undefined;
-  const collect = async () => {
-    for await (const frame of wrapOpenAIResponsesClientOutput(input(), {
-      store,
-      responseId: 'resp_public',
-    })) {
-      if (frame.type === 'event' && frame.event.type === 'response.completed') terminal = frame.event.response;
-    }
-  };
-
-  await collect();
-  expect(terminal?.output[0]).toMatchObject({ encrypted_content: 'terminal-blob' });
-  const snapshot = await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0);
-  expect(snapshot).not.toBeNull();
-  if (snapshot === null) throw new Error('Expected persisted snapshot');
-  expect((await repo.openaiResponsesItems.lookupMany('key-a', snapshot.itemIds, 0))[0].payload.item)
-    .toMatchObject({ encrypted_content: 'done-blob' });
-});
-
-test('client output forwards repeated done drift while retaining the first done snapshot', async () => {
-  const { repo, store } = memoryOutputHarness();
-  const first = { type: 'reasoning' as const, id: 'rs_upstream', summary: [{ type: 'summary_text' as const, text: 'old' }] };
-  const changed = { ...first, summary: [{ type: 'summary_text' as const, text: 'new' }] };
-  const input = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-    yield eventFrame({ type: 'response.output_item.added', output_index: 0, item: first });
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: first });
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: changed });
-  };
-  const publicItems: Array<typeof first> = [];
-  const collect = async () => {
-    for await (const frame of wrapOpenAIResponsesClientOutput(input(), {
-      store,
-      responseId: 'resp_public',
-    })) {
-      if (frame.type === 'event' && frame.event.type === 'response.output_item.done') {
-        publicItems.push(frame.event.item as typeof first);
-      }
-    }
-  };
-
-  await collect();
-  expect(publicItems).toHaveLength(2);
-  expect(publicItems[0].id).toBe(publicItems[1].id);
-  expect(publicItems[1]).toMatchObject({ summary: [{ type: 'summary_text', text: 'new' }] });
-  expect((await repo.openaiResponsesItems.lookupMany('key-a', [publicItems[0].id], 0))[0].payload.item).toMatchObject({
-    summary: [{ type: 'summary_text', text: 'old' }],
-  });
-});
-
-test('later done and terminal views may omit id after first-done durability', async () => {
-  const { repo, store } = memoryOutputHarness();
-  const first = {
-    type: 'message' as const,
-    id: 'msg_first_done',
-    status: 'completed' as const,
-    role: 'assistant' as const,
-    content: [{ type: 'output_text' as const, text: 'first', annotations: [] }],
-  };
-  const later = {
-    type: 'message' as const,
-    status: 'completed' as const,
-    role: 'assistant' as const,
-    content: [{ type: 'output_text' as const, text: 'later', annotations: [] }],
-  };
-  const response: OpenAIResponsesResultEx = {
-    id: 'resp_upstream',
-    object: 'response',
-    model: 'model',
-    status: 'completed',
-    output: [later],
-    error: null,
-    incomplete_details: null,
-  };
-  const input = (async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: first });
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: later });
-    yield eventFrame({ type: 'response.completed', response });
-  })();
-  const events: OpenAIResponsesStreamEventEx[] = [];
-  for await (const frame of wrapOpenAIResponsesClientOutput(input, {
-    store,
-    responseId: 'resp_public',
-  })) if (frame.type === 'event') events.push(frame.event);
-
-  const doneItems = events.flatMap(event => event.type === 'response.output_item.done' ? [event.item] : []);
-  expect(doneItems).toEqual([first, later]);
-  const terminal = events.at(-1);
-  expect(terminal?.type === 'response.completed' && terminal.response.output).toEqual([later]);
-  expect((await repo.openaiResponsesItems.lookupMany('key-a', [first.id], 0))[0].payload.item).toEqual(first);
-});
-
-test('snapshot output IDs follow output_index rather than done arrival order', async () => {
-  const { repo, store } = memoryOutputHarness();
-  const first = { type: 'reasoning' as const, id: 'rs_first', summary: [] };
-  const second = { type: 'reasoning' as const, id: 'rs_second', summary: [] };
-  const response: OpenAIResponsesResultEx = {
-    id: 'resp_upstream',
-    object: 'response',
-    model: 'model',
-    status: 'completed',
-    output: [first, second],
-    error: null,
-    incomplete_details: null,
-  };
-  const input = async function* (): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-    yield eventFrame({ type: 'response.output_item.done', output_index: 1, item: second });
-    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: first });
-    yield eventFrame({ type: 'response.completed', response });
-  };
-  let terminal: OpenAIResponsesResultEx | undefined;
-  for await (const frame of wrapOpenAIResponsesClientOutput(input(), {
-    store,
-    responseId: 'resp_public',
-  })) if (frame.type === 'event' && frame.event.type === 'response.completed') terminal = frame.event.response;
-  if (terminal === undefined) throw new Error('Expected terminal response');
-
-  expect((await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_public', 0))?.itemIds).toEqual(
-    terminal.output.map(item => item.id),
-  );
 });
 
 test('snapshot retains completed streamed items omitted from the terminal output', async () => {

@@ -48,7 +48,7 @@ for (const client of ['unread', 'partial-before-tool', 'partial-second', 'comple
   const plain = stubModelCandidate();
   const candidate: ModelCandidate = {
     ...plain,
-    provider: { ...plain.provider, pipelines: createCustomPipelines({ baseUrl: 'https://custom.example', authStyle: 'none', endpoints: {}, ingressHeadersRules: [], modelsFetch: { enabled: false }, models: [] }) },
+    provider: { ...plain.provider, pipelines: createCustomPipelines({ baseUrl: 'https://custom.example', apiKey: '', endpoints: {}, ingressHeadersRules: [], modelsFetch: { enabled: false, authStyle: 'bearer' as const }, models: [] }) },
     fetcher: async (_url, init) => {
       if (!isReplayableBody(init.body)) throw new Error('Expected JSON HTTP request');
       expect(await new Response(init.body.open()).json()).toMatchObject({ stream: true });

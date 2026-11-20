@@ -5,7 +5,7 @@ import { getFailureFacts, move, run, type Event } from '@floway-dev/pipeline';
 import { providerModelFacts, type ProviderChatServices, type ProviderOperationRequest } from '@floway-dev/provider';
 import { jsonResponse, noopUpstreamCallOptions, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
-const pipelines = createCustomPipelines({ baseUrl: 'https://custom.example', authStyle: 'bearer', apiKey: 'secret-key', endpoints: {}, ingressHeadersRules: [{ key: 'x-many', value: 'first' }, { key: 'x-many', value: 'second' }], pathOverrides: { '/responses': '/overridden' }, modelsFetch: { enabled: false }, models: [] });
+const pipelines = createCustomPipelines({ baseUrl: 'https://custom.example', apiKey: 'secret-key', endpoints: {}, ingressHeadersRules: [{ key: 'x-many', value: 'first' }, { key: 'x-many', value: 'second' }], pathOverrides: { '/responses': '/overridden' }, modelsFetch: { enabled: false, authStyle: 'bearer' }, models: [] });
 const services: ProviderChatServices = { httpCall: () => ({ ...noopUpstreamCallOptions(), signal: undefined }), recordProtocolFrames: frames => frames };
 
 test('custom compact chain derives URL and wire payload from immutable action facts', async () => {

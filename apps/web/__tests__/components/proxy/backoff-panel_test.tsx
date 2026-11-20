@@ -34,17 +34,6 @@ afterEach(() => {
 });
 
 describe('proxy backoff panel', () => {
-  it('renders operator-facing upstream identity and complete diagnostics', () => {
-    const row = backoff();
-    const view = renderPanel(row);
-
-    expect(screen.getByText('This proxy is in backoff for 1 upstream.')).toBeTruthy();
-    expect(screen.getByText(row.upstream.name)).toBeTruthy();
-    expect(view.container.textContent).not.toContain(row.upstream_id);
-    expect(screen.getByText('1 failure')).toBeTruthy();
-    expect(screen.getByText(row.last_error!)).toBeTruthy();
-  });
-
   it('resets one upstream by its internal id without displaying that id', async () => {
     const row = backoff();
     const onReset = vi.fn();

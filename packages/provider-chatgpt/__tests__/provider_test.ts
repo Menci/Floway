@@ -222,8 +222,8 @@ describe('createChatGPTProvider', () => {
     const result = await callProviderPipeline(provider, 'openaiImagesGenerations', model, { prompt: 'blue circle' }, undefined, options);
     expect(result.called).toBe(true);
     expect(result.previousCalls).toEqual([{ modelKey: 'gpt-image-2' }]);
-    expect(result.response.status).toBe(201);
-    expect(result.response.headers.get('x-upstream')).toBe('retained');
+    expect(result.http.status).toBe(201);
+    expect(result.http.headers.get('x-upstream')).toBe('retained');
     const imageCalls = fetchSpy.mock.calls.filter(([input]) => String(input).endsWith('/codex/images/generations'));
     expect(imageCalls).toHaveLength(2);
     expect(imageCalls.map(([, init]) => new Headers(init?.headers).get('x-codex-image-turn-id'))).toEqual(['stable-image-turn', 'stable-image-turn']);
@@ -236,7 +236,7 @@ describe('createChatGPTProvider', () => {
     const provider = createChatGPTProvider(current);
     const model = stubProviderModel({ id: 'gpt-image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
     const result = await callProviderPipeline(provider, 'openaiImagesGenerations', model, { prompt: 'blue circle' });
-    expect(result.response.status).toBe(403);
+    expect(result.http.status).toBe(403);
     expect(result.called).toBe(false);
     expect(result.previousCalls).toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -480,7 +480,7 @@ describe('createChatGPTProvider', () => {
   });
 
   test('callOpenAIResponses re-reads state per request (operator re-import takes effect)', async () => {
-    repo.getById.mockResolvedValueOnce({ ...baseRecord, state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'session_terminated', state_updated_at: '2026-01-02T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: null, quotaSnapshot: null }] } as ChatGPTUpstreamState });
+    repo.getById.mockResolvedValueOnce({ ...baseRecord, configVersion: 1, state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'session_terminated', state_updated_at: '2026-01-02T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: null, quotaSnapshot: null }] } as ChatGPTUpstreamState });
     const instance = createChatGPTProvider(baseRecord);
     const result = await collectChatProviderPipeline(instance, 'openaiResponses',
       stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } }),
@@ -501,7 +501,7 @@ describe('createChatGPTProvider', () => {
     const options = noopUpstreamCallOptions();
     options.headers.set('x-codex-image-turn-id', 'turn-image');
     const result = await callProviderPipeline(instance, 'openaiImagesGenerations', model, { prompt: 'an orange circle', quality: 'low' }, undefined, options);
-    expect(result.response.status).toBe(200);
+    expect(result.http.status).toBe(200);
     expect(result.modelKey).toBe('gpt-image-2');
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe('https://chatgpt.com/backend-api/codex/images/generations');
@@ -521,7 +521,7 @@ describe('createChatGPTProvider', () => {
     const instance = createChatGPTProvider(freeRecord);
     const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
     const result = await callProviderPipeline(instance, 'openaiImagesGenerations', model, { prompt: 'an orange circle' }, undefined, noopUpstreamCallOptions());
-    expect(result.response.status).toBe(403);
+    expect(result.http.status).toBe(403);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -536,8 +536,8 @@ describe('createChatGPTProvider', () => {
       images: [{ type: 'reference', reference: { image_url: 'https://example.test/image.png' } }],
       parameters: { prompt: 'edit' },
     }, undefined, noopUpstreamCallOptions());
-    expect(result.response.status).toBe(403);
-    expect(await result.response.json()).toEqual({
+    expect(result.http.status).toBe(403);
+    expect(await result.http.json()).toEqual({
       error: { type: 'image_tools_unavailable', message: 'ChatGPT Free accounts do not provide Codex image tools.' },
     });
   });
@@ -555,7 +555,7 @@ describe('createChatGPTProvider', () => {
       images: [{ type: 'upload', file: { bytes: new TextEncoder().encode('image'), name: 'image.png', type: 'image/png' } }],
       parameters: { prompt: 'make it blue' },
     }, undefined, options);
-    expect(result.response.status).toBe(200);
+    expect(result.http.status).toBe(200);
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe('https://chatgpt.com/backend-api/codex/images/edits');
     expect(new Headers((init as RequestInit).headers).get('originator')).toBe('chatgpt_cca');

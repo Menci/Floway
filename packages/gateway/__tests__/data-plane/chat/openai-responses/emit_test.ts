@@ -114,7 +114,7 @@ for (const failureAt of ['before-response', 'upstream-stream', 'snapshot', 'rend
     }
     const frames = client === null ? [] : streams.get(client) ?? [];
     expect(frames.length).toBeGreaterThan(0);
-    expect(frames.map(frame => frame.type === 'done' ? '[DONE]' : frame.event)).toEqual(wire.map(frame => JSON.parse(frame.data)));
+    expect(frames.map(frame => frame.type === 'done' ? '[DONE]' : frame.event)).toEqual(wire.map(frame => frame.data === '[DONE]' ? frame.data : JSON.parse(frame.data)));
     const expectedEvents = failureAt === 'snapshot'
       ? ['response.created', 'response.output_item.added', 'response.output_item.done', 'error', 'response.failed']
       : announced ? ['response.created', 'error', 'response.failed'] : ['error'];
@@ -125,7 +125,8 @@ for (const failureAt of ['before-response', 'upstream-stream', 'snapshot', 'rend
     if (announced) {
       const created = frames[0] as ProtocolFrame<Extract<ClientOpenAIResponsesStreamEvent, { type: 'response.created' }>>;
       if (created.type !== 'event') throw new Error('announced response has no creation event');
-      expect(frames.at(-1)).toMatchObject({ event: { response: { id: created.event.response.id, status: 'failed' } } });
+      expect(frames.at(-2)).toMatchObject({ event: { response: { id: created.event.response.id, status: 'failed' } } });
     }
+    expect(frames.at(-1)).toMatchObject({ type: 'done' });
   });
 }

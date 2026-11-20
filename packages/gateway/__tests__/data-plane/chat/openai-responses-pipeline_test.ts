@@ -11,6 +11,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { UpstreamTransportError } from '../../../src/dial/transport-error.ts';
 import { SUMMARY_PREFIX } from '../../../src/data-plane/chat/openai-responses/compact-shim.ts';
 import { openaiResponsesServePipeline } from '../../../src/data-plane/chat/openai-responses/pipeline.ts';
 import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
@@ -480,7 +481,8 @@ describe('the responses chain', () => {
     const { facts } = await serve(true);
     const frames = await drain(facts['response.chat.openaiResponses.rendered']);
 
-    expect(frames.map(frame => frame.event)).toEqual(['response.output_text.delta', 'error']);
+    expect(frames.map(frame => frame.event)).toEqual(['response.output_text.delta', 'error', undefined]);
+    expect(frames.at(-1)?.data).toBe('[DONE]');
     expect(JSON.parse(frames[1]!.data)).toMatchObject({
       type: 'error',
       error: { message: OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE },
@@ -567,7 +569,7 @@ describe('the responses chain', () => {
   it('fails a dial that never connected over to the next candidate', async () => {
     const tried: string[] = [];
     resolves([
-      candidate({ callOpenAIResponses: async () => { tried.push('dead'); return { type: 'transportFailure' as const, error: new Error('ECONNREFUSED') }; } }, { upstreamId: 'up_dead' }),
+      candidate({ callOpenAIResponses: async () => { tried.push('dead'); return { type: 'transportFailure' as const, error: new UpstreamTransportError(new Error('ECONNREFUSED')) }; } }, { upstreamId: 'up_dead' }),
       candidate({ callOpenAIResponses: async () => { tried.push('alive'); return stream(completed('hi')); } }, { upstreamId: 'up_alive' }),
     ]);
 

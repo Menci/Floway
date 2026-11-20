@@ -2,7 +2,6 @@ import { callRerankUpstream } from './call-upstream.ts';
 import { emitRerank } from './emit.ts';
 import type { Fields } from './facts.ts';
 import { narrowing } from './target.ts';
-import { isFailure } from '../pipeline/facts.ts';
 import { failover } from '../pipeline/failover.ts';
 import { resolveCandidates } from '../pipeline/resolve-candidates.ts';
 import { serializeClientJson } from '../pipeline/serialize-client-json.ts';
@@ -19,7 +18,7 @@ export const rerankServePipeline = (request: CanonicalRerankRequest): Pipeline<
   emitRerank,
   resolveCandidates(narrowing(request)),
   failover({
-    failed: handedUp => isFailure((handedUp as { 'response.rerank.canonical'?: unknown })['response.rerank.canonical']),
+    answer: handedUp => handedUp['response.rerank.canonical'],
     owns: ['response.http.body'],
   }),
   callRerankUpstream,

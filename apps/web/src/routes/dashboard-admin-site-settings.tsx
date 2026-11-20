@@ -43,7 +43,7 @@ export async function clientLoader(): Promise<LoaderData> {
 const siteNameSchema = z.object({
   siteName: z
     .string()
-    .max(SITE_NAME_MAX_LENGTH, 'dashboard.siteSettings.validation.tooLong'),
+    .max(SITE_NAME_MAX_LENGTH, 'settings.site.validation.tooLong'),
 });
 
 type SiteNameFormValues = z.infer<typeof siteNameSchema>;
@@ -85,12 +85,12 @@ export default function DashboardAdminSiteSettings({ loaderData }: Route.Compone
     // typed whitespace there would show a value the deployment does not hold.
     setSiteName(result.data.site_name);
     reset({ siteName: result.data.site_name ?? '' });
-    toasts.succeed(t('dashboard.siteSettings.updated'));
+    toasts.succeed(t('settings.site.updated'));
   };
 
   return (
     <section className="dashboard-page max-w-[960px]">
-      <DashboardPageHeader description={t('dashboard.siteSettings.description')} title={t('dashboard.nav.siteSettings')} />
+      <DashboardPageHeader description={t('settings.site.description')} title={t('settings.site.title')} />
 
       {/* A failed read is not an empty setting: offering the form would let a
           save overwrite a name this page never saw. */}
@@ -109,17 +109,17 @@ export default function DashboardAdminSiteSettings({ loaderData }: Route.Compone
                     >
                       <Input
                         {...field}
-                        aria-label={t('dashboard.siteSettings.name')}
+                        aria-label={t('settings.site.name')}
                         disabled={saving}
                         maxLength={SITE_NAME_MAX_LENGTH}
-                        placeholder={t('dashboard.siteSettings.namePlaceholder')}
+                        placeholder={t('settings.site.namePlaceholder')}
                       />
                     </Field>
                   )}
                 />
               </div>}
-              description={t('dashboard.siteSettings.nameHint')}
-              header={t('dashboard.siteSettings.name')}
+              description={t('settings.site.nameHint')}
+              header={t('settings.site.name')}
               icon={<TextEditStyle24Regular />}
             />
 
@@ -127,7 +127,7 @@ export default function DashboardAdminSiteSettings({ loaderData }: Route.Compone
 
             <div className="flex justify-start mt-2">
               <Button appearance="primary" disabledFocusable={saving} type="submit">
-                {t('dashboard.siteSettings.save')}
+                {t('settings.site.save')}
               </Button>
             </div>
           </form>}

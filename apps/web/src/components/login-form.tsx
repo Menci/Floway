@@ -20,13 +20,13 @@ const {
 export const loginSchema = z.object({
   username: z
     .string()
-    .regex(/^[a-zA-Z0-9_.-]{0,64}$/, 'validation.usernamePattern'),
+    .regex(/^[a-zA-Z0-9_.-]{0,64}$/, 'common.validation.usernamePattern'),
   password: z
     .string()
-    .max(1024, 'validation.passwordMax'),
+    .max(1024, 'common.validation.passwordMax'),
 }).superRefine((value, context) => {
   if (value.username.trim() && !value.password) {
-    context.addIssue({ code: 'custom', message: 'validation.passwordRequired', path: ['password'] });
+    context.addIssue({ code: 'custom', message: 'common.validation.passwordRequired', path: ['password'] });
   }
 });
 

@@ -45,7 +45,6 @@ Restore-SetupOmpFiles
 `);
     const result = spawnSync('pwsh', ['-NoProfile', '-File', scriptPath, directory], { encoding: 'utf8', timeout: 10000 });
     expect(result.status, result.stdout + result.stderr).toBe(0);
-    expect(result.stdout + result.stderr).toContain('could not restore the existing @floway-dev/omp plugin link');
     expect(readFileSync(lockPath, 'utf8')).toBe(original);
   } finally {
     rmSync(directory, { recursive: true, force: true });

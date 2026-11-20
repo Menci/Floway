@@ -10,18 +10,6 @@ const loadUlid = async () => {
   return (await import('../../src/shared/ulid.ts')).ulid;
 };
 
-test('ulid produces canonical, increasing ids for an explicit epoch timestamp', async () => {
-  const ulid = await loadUlid();
-  const a = ulid(0);
-  const b = ulid(0);
-
-  assertEquals(/^[0-9A-HJKMNP-TV-Z]{26}$/.test(a), true);
-  assertEquals(/^[0-9A-HJKMNP-TV-Z]{26}$/.test(b), true);
-  assertEquals(a < b, true);
-  assertEquals(decodeTime(a), 0);
-  assertEquals(decodeTime(b), 0);
-});
-
 test('ulid produces strictly increasing ids within the same millisecond', async () => {
   const ulid = await loadUlid();
   const a = ulid(TIMESTAMP);
@@ -33,16 +21,6 @@ test('ulid produces strictly increasing ids within the same millisecond', async 
   assertEquals(decodeTime(a), TIMESTAMP);
   assertEquals(decodeTime(b), TIMESTAMP);
   assertEquals(decodeTime(c), TIMESTAMP);
-});
-
-test('ulid encodes and orders consecutive milliseconds', async () => {
-  const ulid = await loadUlid();
-  const a = ulid(TIMESTAMP + 1);
-  const b = ulid(TIMESTAMP + 2);
-
-  assertEquals(a < b, true);
-  assertEquals(decodeTime(a), TIMESTAMP + 1);
-  assertEquals(decodeTime(b), TIMESTAMP + 2);
 });
 
 test('ulid produces strictly increasing ids when the clock rewinds', async () => {

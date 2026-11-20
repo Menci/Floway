@@ -11,6 +11,7 @@ import { openaiCompletionsServePipeline } from './pipeline.ts';
 import { isFrames, openPrologue, readIngress, serveThrough } from '../pipeline/serve.ts';
 import { finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
 import { prepareJsonModelRequest } from '../shared/json-model-request.ts';
+import { openaiSseFailure } from '../shared/openai-errors.ts';
 import { move } from '@floway-dev/pipeline';
 
 export const openaiCompletions = async (c: Context): Promise<Response> => {
@@ -47,7 +48,7 @@ export const openaiCompletions = async (c: Context): Promise<Response> => {
     facts => {
       const rendered = facts['response.openaiCompletions.rendered'];
       return isFrames(rendered)
-        ? { frames: rendered }
+        ? { frames: rendered, failure: error => openaiSseFailure(prologue.gateway, error) }
         : { body: facts['response.http.jsonBody']!, contentType: 'application/json' };
     },
   );

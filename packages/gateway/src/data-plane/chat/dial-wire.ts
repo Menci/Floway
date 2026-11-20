@@ -7,7 +7,7 @@ import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { ChatTargetApi, ModelCandidate } from '@floway-dev/provider';
 
 /** How a source protocol reaches an upstream. */
-export interface ChatWiring {
+export interface ChatWiring<Target extends ChatTargetApi> {
   /** The request key of the protocol the client spoke. It names the stage, so a dump says
    *  which chain forked without the name having to be written twice. */
   readonly source: RequestKey;
@@ -21,10 +21,10 @@ export interface ChatWiring {
   /** Which wire this candidate is reachable on. Total by contract: serve narrowed the
    *  candidates with the same picker's `canServe`, so a candidate that reached here has one
    *  of the endpoints the preference list names. */
-  readonly pick: (endpoints: ModelEndpoints) => ChatTargetApi;
+  readonly pick: (endpoints: ModelEndpoints) => Target;
   /** The chain for one wire, built against the candidate that will be dialled — which is what
    *  lets a translation close over the model it is translating for. */
-  readonly wire: (target: ChatTargetApi, candidate: ModelCandidate, use: Use<ChatServices>) => ChatWire;
+  readonly wire: (target: Target, candidate: ModelCandidate, use: Use<ChatServices>) => ChatWire;
 }
 
 /**
@@ -34,7 +34,7 @@ export interface ChatWiring {
  * state across candidates: what re-decides for the next candidate is failover re-running the
  * suffix, which re-runs this stage.
  */
-export const dialChatWire = (wiring: ChatWiring) => defineStage<
+export const dialChatWire = <Target extends ChatTargetApi>(wiring: ChatWiring<Target>) => defineStage<
   { 'route.attempt': AttemptSelector } & Record<string, unknown>,
   Record<string, unknown>,
   Record<string, unknown>,

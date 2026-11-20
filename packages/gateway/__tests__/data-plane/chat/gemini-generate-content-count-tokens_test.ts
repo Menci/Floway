@@ -66,7 +66,7 @@ const resolves = (candidates: readonly ModelCandidate[]): void => {
 };
 
 const answered = (body: unknown): ProviderCallResult => ({
-  response: Response.json(body),
+  http: Response.json(body),
   modelKey: 'claude-model-key',
 });
 
@@ -195,7 +195,7 @@ describe('the Gemini generateContent count-tokens chain', () => {
   });
 
   it('keeps the status of an upstream that refused, and names a refusal that said nothing', async () => {
-    resolves([candidate(async () => ({ response: new Response('', { status: 503 }), modelKey: 'k' }))]);
+    resolves([candidate(async () => ({ http: new Response('', { status: 503 }), modelKey: 'k' }))]);
 
     const { facts } = await count();
 
@@ -228,7 +228,7 @@ describe('the Gemini generateContent count-tokens chain', () => {
 });
 
 it('preserves the accepted native counting HTTP status', async () => {
-  resolves([candidate(async () => ({ response: new Response(JSON.stringify({ input_tokens: 3 }), { status: 201, headers: { 'content-type': 'application/json' } }), modelKey: 'counted-model' }))]);
+  resolves([candidate(async () => ({ http: new Response(JSON.stringify({ input_tokens: 3 }), { status: 201, headers: { 'content-type': 'application/json' } }), modelKey: 'counted-model' }))]);
   const { facts, drain } = await count();
   expect(facts['response.http.status']).toBe(201);
   await drain();

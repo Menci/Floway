@@ -632,40 +632,34 @@ const accumulateMemoryOverview = (aggregate: UsageOverviewRecord, record: UsageR
 const memoryOverviewGroup = (
   record: UsageRecord,
   axis: UsageOverviewAxis,
-  opts: UsageOverviewQueryOptions,
   keyToUser: ReadonlyMap<string, number>,
 ): string => {
   if (axis === 'none') return 'all';
-  const groupBy = axis === 'series' ? opts.groupBy : axis;
-  if (groupBy === 'userId') return String(memoryUsageUserIdForKey(record.keyId, keyToUser));
-  if (groupBy === 'upstream') return usageUpstreamDimensionValue(record.upstream);
-  return record[groupBy];
+  if (axis === 'userId') return String(memoryUsageUserIdForKey(record.keyId, keyToUser));
+  if (axis === 'upstream') return usageUpstreamDimensionValue(record.upstream);
+  return record[axis];
 };
 
 const aggregateMemoryOverview = (
   records: readonly UsageRecord[],
-  opts: UsageOverviewQueryOptions,
   keyToUser: ReadonlyMap<string, number>,
   visibleKeyIds: ReadonlySet<string>,
 ): Map<UsageOverviewAxis, UsageOverviewRecord[]> => {
-  const axes: UsageOverviewAxis[] = ['series', 'none', 'keyId', 'userId', 'model', 'upstream'];
+  const axes: UsageOverviewAxis[] = ['none', 'keyId', 'userId', 'model', 'upstream'];
   const result = new Map<UsageOverviewAxis, UsageOverviewRecord[]>();
   for (const axis of axes) {
     const aggregates = new Map<string, UsageOverviewRecord>();
     for (const record of records) {
       if (axis === 'keyId' && !visibleKeyIds.has(record.keyId)) continue;
-      const bucket = axis === 'series' ? opts.bucketForHour(record.hour) : 'all';
-      const group = memoryOverviewGroup(record, axis, opts, keyToUser);
-      const key = `${bucket}\0${group}`;
-      let aggregate = aggregates.get(key);
+      const group = memoryOverviewGroup(record, axis, keyToUser);
+      let aggregate = aggregates.get(group);
       if (!aggregate) {
-        aggregate = { bucket, group, requests: 0, metrics: [], cost: null };
-        aggregates.set(key, aggregate);
+        aggregate = { group, requests: 0, metrics: [], cost: null };
+        aggregates.set(group, aggregate);
       }
       accumulateMemoryOverview(aggregate, record);
     }
-    result.set(axis, [...aggregates.values()]
-      .sort((left, right) => left.bucket.localeCompare(right.bucket) || left.group.localeCompare(right.group)));
+    result.set(axis, [...aggregates.values()].sort((left, right) => left.group.localeCompare(right.group)));
   }
   return result;
 };
@@ -719,12 +713,12 @@ class MemoryUsageRepo implements UsageRepo {
     );
   }
 
-  async queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult> {
+  async queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult[]> {
     const keyToUser = buildKeyToUserMap(await this.apiKeys.listIncludingDeleted());
     const records = [...this.store.values()]
       .filter(record => record.hour >= opts.start && record.hour < opts.end)
       .map(record => this.toRecord(record));
-    const scoped = opts.groupBy === 'keyId'
+    const scoped = opts.ownedKeysOnly
       ? records.filter(record => keyToUser.get(record.keyId) === opts.actorUserId)
       : records;
     const visibleUserIds = new Set(opts.visibleUserIds);
@@ -735,40 +729,46 @@ class MemoryUsageRepo implements UsageRepo {
     const visibleKeyIds = new Set([...keyToUser]
       .filter(([, userId]) => userId === opts.actorUserId)
       .map(([keyId]) => keyId));
-    const partitioned = partitionTelemetryOverviewRecords(authorized, {
-      keyId: {
-        value: record => record.keyId,
-        includeFacet: record => visibleKeyIds.has(record.keyId),
-      },
-      userId: {
-        value: record => String(memoryUsageUserIdForKey(record.keyId, keyToUser)),
-        includeFacet: () => true,
-      },
-      model: { value: record => record.model },
-      upstream: { value: record => usageUpstreamDimensionValue(record.upstream) },
-    }, {
-      keyId: new Set(opts.filters.keyIds),
-      userId: new Set(opts.filters.userIds.map(String)),
-      model: new Set(opts.filters.models),
-      upstream: new Set(opts.filters.upstreams),
+    const buckets = Map.groupBy(authorized, record => opts.bucketForHour(record.hour));
+    return [...buckets].sort(([left], [right]) => left.localeCompare(right)).map(([bucket, bucketRecords]) => {
+      const partitioned = partitionTelemetryOverviewRecords(bucketRecords, {
+        keyId: {
+          value: record => record.keyId,
+          includeFacet: record => visibleKeyIds.has(record.keyId),
+        },
+        userId: {
+          value: record => String(memoryUsageUserIdForKey(record.keyId, keyToUser)),
+          includeFacet: () => true,
+        },
+        model: { value: record => record.model },
+        upstream: { value: record => usageUpstreamDimensionValue(record.upstream) },
+      }, {
+        keyId: new Set(opts.filters.keyIds),
+        userId: new Set(opts.filters.userIds.map(String)),
+        model: new Set(opts.filters.models),
+        upstream: new Set(opts.filters.upstreams),
+      });
+      const aggregates = aggregateMemoryOverview(partitioned.filtered, keyToUser, visibleKeyIds);
+      const hours = bucketRecords.map(record => record.hour).sort();
+      return {
+        bucket,
+        firstHour: hours[0]!,
+        lastHour: hours.at(-1)!,
+        axes: {
+          none: aggregates.get('none')!,
+          keyId: aggregates.get('keyId')!,
+          userId: aggregates.get('userId')!,
+          model: aggregates.get('model')!,
+          upstream: aggregates.get('upstream')!,
+        },
+        dimensionValues: {
+          keyIds: partitioned.dimensionValues.keyId,
+          userIds: partitioned.dimensionValues.userId.map(Number).sort((left, right) => left - right),
+          models: partitioned.dimensionValues.model,
+          upstreams: partitioned.dimensionValues.upstream,
+        },
+      };
     });
-    const aggregates = aggregateMemoryOverview(partitioned.filtered, opts, keyToUser, visibleKeyIds);
-    return {
-      series: aggregates.get('series')!,
-      axes: {
-        none: aggregates.get('none')!,
-        keyId: aggregates.get('keyId')!,
-        userId: aggregates.get('userId')!,
-        model: aggregates.get('model')!,
-        upstream: aggregates.get('upstream')!,
-      },
-      dimensionValues: {
-        keyIds: partitioned.dimensionValues.keyId,
-        userIds: partitioned.dimensionValues.userId.map(Number).sort((left, right) => left - right),
-        models: partitioned.dimensionValues.model,
-        upstreams: partitioned.dimensionValues.upstream,
-      },
-    };
   }
 
   listAll(): Promise<UsageRecord[]> {
@@ -1045,6 +1045,12 @@ class MemoryWebSearchConfigRepo implements WebSearchConfigRepo {
 class MemoryUpstreamRepo implements UpstreamRepo {
   private store = new Map<string, StoredUpstreamRecord>();
 
+  constructor(private readonly backoffs: MemoryProxyBackoffRows) {}
+
+  has(id: string): boolean {
+    return this.store.has(id);
+  }
+
   list(): Promise<StoredUpstreamRecord[]> {
     return Promise.resolve([...this.store.values()].map(cloneUpstreamRecord).sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)));
   }
@@ -1113,11 +1119,14 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   }
 
   delete(id: string): Promise<boolean> {
-    return Promise.resolve(this.store.delete(id));
+    const deleted = this.store.delete(id);
+    if (deleted) this.backoffs.deleteWhere(row => row.upstreamId === id);
+    return Promise.resolve(deleted);
   }
 
   deleteAll(): Promise<void> {
     this.store.clear();
+    this.backoffs.clear();
     return Promise.resolve();
   }
 
@@ -1125,10 +1134,10 @@ class MemoryUpstreamRepo implements UpstreamRepo {
   // the current state and the write always lands. Serialization still round-
   // trips through the canonical encoder so a mutator that returns its argument
   // unchanged is a no-op here too.
-  saveState(id: string, mutate: (current: unknown) => unknown): Promise<void> {
+  saveState(id: string, mutate: (current: unknown, configVersion: number) => unknown): Promise<void> {
     const existing = this.store.get(id);
     if (!existing) throw new UpstreamGoneError(id);
-    const next = mutate(existing.state);
+    const next = mutate(existing.state, existing.configVersion);
     const serialized = serializeStoredState(next);
     existing.state = serialized === null ? null : (JSON.parse(serialized) as unknown);
     return Promise.resolve();
@@ -1493,7 +1502,14 @@ class MemoryExpirationSweepsRepo implements ExpirationSweepsRepo {
 class MemoryProxyRepo implements ProxyRepo {
   private store = new Map<string, ProxyRecord>();
 
-  constructor(private upstreams: UpstreamRepo) {}
+  constructor(
+    private readonly upstreams: UpstreamRepo,
+    private readonly backoffs: MemoryProxyBackoffRows,
+  ) {}
+
+  has(id: string): boolean {
+    return this.store.has(id);
+  }
 
   list(): Promise<ProxyRecord[]> {
     return Promise.resolve(
@@ -1548,11 +1564,14 @@ class MemoryProxyRepo implements ProxyRepo {
     // rejected at the storage layer.
     const upstreams = await this.upstreams.list();
     if (upstreams.some(u => u.proxyFallbackList.some(e => e.id === id))) return false;
-    return this.store.delete(id);
+    const deleted = this.store.delete(id);
+    if (deleted) this.backoffs.deleteWhere(row => row.proxyId === id);
+    return deleted;
   }
 
   deleteAll(): Promise<void> {
     this.store.clear();
+    this.backoffs.clear();
     return Promise.resolve();
   }
 
@@ -1582,14 +1601,29 @@ class MemoryProxyRepo implements ProxyRepo {
 
 const cloneProxyRecord = (record: ProxyRecord): ProxyRecord => ({ ...record });
 
+// Shared by the proxy and upstream repos so their deletes cascade the way the
+// SQL foreign keys on proxy_upstream_backoffs do.
+class MemoryProxyBackoffRows extends Map<string, BackoffRow> {
+  deleteWhere(predicate: (row: BackoffRow) => boolean): void {
+    for (const [key, row] of this) if (predicate(row)) this.delete(key);
+  }
+}
+
 class MemoryProxyBackoffRepo implements ProxyBackoffRepo {
-  private rows = new Map<string, BackoffRow>();
+  constructor(
+    private readonly rows: MemoryProxyBackoffRows,
+    private readonly proxies: MemoryProxyRepo,
+    private readonly upstreams: MemoryUpstreamRepo,
+  ) {}
 
   private key(proxyId: string, upstreamId: string): string {
     return `${proxyId}\0${upstreamId}`;
   }
 
   recordDialFailure(proxyId: string, upstreamId: string, errorMessage: string): Promise<void> {
+    if (!this.proxies.has(proxyId) || !this.upstreams.has(upstreamId)) {
+      return Promise.reject(new Error('FOREIGN KEY constraint failed'));
+    }
     const k = this.key(proxyId, upstreamId);
     const now = Math.floor(Date.now() / 1000);
     const existing = this.rows.get(k);
@@ -1642,26 +1676,12 @@ class MemoryProxyBackoffRepo implements ProxyBackoffRepo {
   }
 
   resetForProxy(proxyId: string): Promise<void> {
-    for (const [k, r] of this.rows) {
-      if (r.proxyId === proxyId) this.rows.delete(k);
-    }
-    return Promise.resolve();
-  }
-
-  resetForUpstream(upstreamId: string): Promise<void> {
-    for (const [k, r] of this.rows) {
-      if (r.upstreamId === upstreamId) this.rows.delete(k);
-    }
+    this.rows.deleteWhere(row => row.proxyId === proxyId);
     return Promise.resolve();
   }
 
   reset(proxyId: string, upstreamId: string): Promise<void> {
     this.rows.delete(this.key(proxyId, upstreamId));
-    return Promise.resolve();
-  }
-
-  deleteAll(): Promise<void> {
-    this.rows.clear();
     return Promise.resolve();
   }
 }
@@ -1883,9 +1903,12 @@ export class InMemoryRepo implements Repo {
     this.performance = new MemoryPerformanceRepo(this.apiKeys);
     this.siteSettings = new MemorySiteSettingsRepo();
     this.webSearchConfig = new MemoryWebSearchConfigRepo();
-    this.upstreams = new MemoryUpstreamRepo();
-    this.proxies = new MemoryProxyRepo(this.upstreams);
-    this.proxyBackoffs = new MemoryProxyBackoffRepo();
+    const backoffRows = new MemoryProxyBackoffRows();
+    const upstreams = new MemoryUpstreamRepo(backoffRows);
+    const proxies = new MemoryProxyRepo(upstreams, backoffRows);
+    this.upstreams = upstreams;
+    this.proxies = proxies;
+    this.proxyBackoffs = new MemoryProxyBackoffRepo(backoffRows, proxies, upstreams);
     this.modelAliases = new MemoryModelAliasesRepo();
     this.openaiResponsesItems = new MemoryOpenAIResponsesItemsRepo(this.apiKeys, this.expirationSweeps);
     this.openaiResponsesSnapshots = new MemoryOpenAIResponsesSnapshotsRepo(this.apiKeys, this.expirationSweeps);
