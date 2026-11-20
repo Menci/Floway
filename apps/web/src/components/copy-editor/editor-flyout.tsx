@@ -367,12 +367,7 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
                     <span className="floway-copy-editor-key-option-value">
                       {preview.length > 0 ? preview : t('common.copyEditor.emptyTextPlaceholder')}
                     </span>
-                    <span className="floway-copy-editor-key-option-meta">
-                      <span className="floway-copy-editor-key-option-key">{candidate.key}</span>
-                      {candidate.attribute && (
-                        <span className="floway-copy-editor-key-option-attr">{candidate.attribute}</span>
-                      )}
-                    </span>
+                    <span className="floway-copy-editor-key-option-key">{candidate.key}</span>
                   </button>
                 );
               })}

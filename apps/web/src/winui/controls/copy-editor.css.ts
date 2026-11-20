@@ -263,30 +263,14 @@ export const copyEditorCss = `
   word-break: break-word;
 }
 
-.floway-copy-editor-key-option-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 6px;
-  width: 100%;
-  min-width: 0;
-}
-
 .floway-copy-editor-key-option-key {
+  width: 100%;
   font-family: var(--fontFamilyMonospace);
   font-size: calc(var(--fontSizeBase200) - 1px);
   line-height: 16px;
   color: var(--winui-text-fill-secondary);
   overflow-wrap: anywhere;
   word-break: break-word;
-}
-
-.floway-copy-editor-key-option-attr {
-  font-family: var(--fontFamilyMonospace);
-  font-size: calc(var(--fontSizeBase200) - 1px);
-  line-height: 16px;
-  color: var(--winui-text-fill-tertiary);
-  flex: none;
 }
 
 .floway-copy-editor-body {
