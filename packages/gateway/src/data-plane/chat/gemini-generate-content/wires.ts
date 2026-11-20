@@ -1,8 +1,8 @@
 import { composeChat as compose } from '../compose.ts';
 import { handOff } from '../handoff.ts';
+import { callGeminiGenerateContentUpstream } from './call-upstream.ts';
 import { mintGeminiGenerateContentInputFailure } from './errors.ts';
 import { STREAMED_USAGE } from './facts.ts';
-import { callGeminiGenerateContentUpstream } from './call-upstream.ts';
 import { meterGeminiGenerateContent } from './meter.ts';
 import { stripSafetySettingsFromGeminiGenerateContent } from './strip-safety-settings.ts';
 import { stripUnsupportedPartFieldsFromGeminiGenerateContent } from './strip-unsupported-part-fields.ts';

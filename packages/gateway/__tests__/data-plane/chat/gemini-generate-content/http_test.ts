@@ -8,8 +8,8 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import { flushAsyncWork } from '../../../test-utils/app.ts';
 import { stubChatProviderPipelines } from '../../../test-utils/chat-provider-pipelines.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { type ModelCandidate, directFetcher, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel, type ProviderCallResult, type ProviderStreamResult } from '@floway-dev/test-utils';
@@ -450,20 +450,29 @@ const makeNativeGeminiEvents = (): readonly GeminiGenerateContentStreamEvent[] =
 
 test('a native Gemini upstream is reached without translation and streams its own frames', async () => {
   installRepo();
-  const callGeminiGenerateContent = vi.fn(async (): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => ({
+  const callGeminiGenerateContent = vi.fn(async (_model: unknown, _body: unknown): Promise<ProviderStreamResult<GeminiGenerateContentStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeNativeGeminiEvents()), modelKey: 'gemini-3-flash', headers: new Headers({ 'x-goog-request-id': 'r1' }),
   }));
-  queueCandidates([makeCandidate({ endpoints: { geminiGenerateContent: {} }, callGeminiGenerateContent })]);
+  const callOpenAIChatCompletions = vi.fn(async () => { throw new Error('translated target was called'); });
+  queueCandidates([makeCandidate({ endpoints: { geminiGenerateContent: {}, openaiChatCompletions: {} }, callGeminiGenerateContent, callOpenAIChatCompletions })]);
+
+  const payload = {
+    contents: [{ role: 'user', parts: [{ text: 'hi' }, { fileData: { fileUri: 'gs://native/file.txt', mimeType: 'text/plain' } }] }],
+    tools: [{ googleSearch: {} }],
+    safetySettings: [{ category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' }],
+  };
 
   const response = await makeApp().request('/v1beta/models/test-model:streamGenerateContent?alt=sse', {
     method: 'POST',
     headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'hi' }] }] }),
+    body: JSON.stringify(payload),
   });
 
   assertEquals(response.status, 200);
   assertEquals(response.headers.get('content-type')?.split(';')[0], 'text/event-stream');
   assertEquals(response.headers.get('x-goog-request-id'), 'r1');
+  assertEquals(callOpenAIChatCompletions.mock.calls.length, 0);
+  assertEquals(callGeminiGenerateContent.mock.calls[0]?.[1], payload);
   const text = await response.text();
   // Each upstream chunk is one `data:` event and the wire has no [DONE].
   assertEquals(text.includes(`data: ${JSON.stringify(makeNativeGeminiEvents()[0])}`), true);

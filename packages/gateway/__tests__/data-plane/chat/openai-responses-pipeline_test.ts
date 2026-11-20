@@ -11,12 +11,12 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { UpstreamTransportError } from '../../../src/dial/transport-error.ts';
 import { SUMMARY_PREFIX } from '../../../src/data-plane/chat/openai-responses/compact-shim.ts';
 import { openaiResponsesServePipeline } from '../../../src/data-plane/chat/openai-responses/pipeline.ts';
 import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
 import type { StreamOutcome } from '../../../src/data-plane/pipeline/serve.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
+import { UpstreamTransportError } from '../../../src/dial/transport-error.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../src/shared/base64url-json.ts';
 import { chatFixtureHttpServices, stubChatProviderPipelines } from '../../test-utils/chat-provider-pipelines.ts';

@@ -136,9 +136,11 @@ test.each([
   },
 ] as const)('OpenAI Responses finishes the announced resource after $name', async ({ event, message }) => {
   const frames = async function* () {
-    yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.created', sequence_number: 3, response: {
-      id: 'upstream', object: 'response', model: 'm', status: 'in_progress', output: [], error: null, incomplete_details: null,
-    } });
+    yield eventFrame<OpenAIResponsesStreamEventEx>({
+      type: 'response.created', sequence_number: 3, response: {
+        id: 'upstream', object: 'response', model: 'm', status: 'in_progress', output: [], error: null, incomplete_details: null,
+      },
+    });
     yield eventFrame(event as OpenAIResponsesStreamEventEx);
   };
   const app = new Hono().get('/', c => renderResponse(c, streamAnswer(frames(), testTelemetryModelIdentity), true, mockChatGatewayCtx(), { model: 'm', input: [] }));

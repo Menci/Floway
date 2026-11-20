@@ -1,14 +1,14 @@
+import { callGeminiGenerateContentUpstream } from './call-upstream.ts';
 import { emitGeminiGenerateContentTokenCount } from './count-tokens/emit.ts';
 import type { GeminiGenerateContentCountTokensEntry, GeminiGenerateContentCountTokensExit } from './count-tokens/facts.ts';
+import { failover } from '../../pipeline/failover.ts';
 import { serializeClientJson } from '../../pipeline/serialize-client-json.ts';
+import { writeSettlement } from '../../pipeline/settlement.ts';
 import { materializeAttempt } from '../materialize-attempt.ts';
 import { resolveChatCandidates } from '../resolve-candidates.ts';
 import { measureGeminiGenerateContentAsAnthropicMessages } from './count-tokens/measure-via-anthropic-messages.ts';
 import { geminiGenerateContentCountTokensTarget, narrowing } from './count-tokens/target.ts';
-import { callGeminiGenerateContentUpstream } from './call-upstream.ts';
 import { shapeGeminiGenerateContentForTranslation } from './wires.ts';
-import { failover } from '../../pipeline/failover.ts';
-import { writeSettlement } from '../../pipeline/settlement.ts';
 import { anthropicMessagesCountTokensWire } from '../anthropic-messages/count-tokens/wire.ts';
 import { dialChatWire } from '../dial-wire.ts';
 import { compose, type Pipeline } from '@floway-dev/pipeline';
@@ -34,7 +34,7 @@ export const geminiGenerateContentCountTokensPipeline = (): Pipeline<GeminiGener
       wire: target => target === 'geminiGenerateContent'
         ? compose('geminiGenerateContentCountTokensNative', [callGeminiGenerateContentUpstream('geminiGenerateContentCountTokens')])
         : compose('geminiGenerateContentCountTokensViaAnthropicMessages', [
-          ...shapeGeminiGenerateContentForTranslation, measureGeminiGenerateContentAsAnthropicMessages, ...anthropicMessagesCountTokensWire,
-        ]),
+            ...shapeGeminiGenerateContentForTranslation, measureGeminiGenerateContentAsAnthropicMessages, ...anthropicMessagesCountTokensWire,
+          ]),
     }),
   ]);

@@ -3,8 +3,8 @@ import { internalErrorEnvelope, internalStreamFailure, openaiResponsesErrorHttpS
 import { OPENAI_RESPONSES_STREAMED_USAGE, type OpenAIResponsesStreamFraming, type Fields } from './facts.ts';
 import { OPENAI_RESPONSES_REASONING_INCLUDED_HEADER, OPENAI_RESPONSES_REASONING_INCLUDED_VALUE } from './response-headers.ts';
 import { isFailure, renderFailure, mintedErrorEnvelope } from '../../pipeline/facts.ts';
-import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import { validateSseFrame } from '../../shared/sse.ts';
+import { isForwardableUpstreamHeader } from '../../shared/upstream-response.ts';
 import type { ChatServices } from '../services.ts';
 import { bindClientRelease, collectClientFrames, framedClientStream, withClientVerdict } from '../shared/client-stream.ts';
 import { recordStream } from '@floway-dev/dump';

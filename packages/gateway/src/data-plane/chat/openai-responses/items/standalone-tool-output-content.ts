@@ -24,8 +24,7 @@ export const standaloneToolOutputContent = (
     const last = content.at(-1);
     if (part.type === 'input_text' && last?.type === 'input_text') {
       content[content.length - 1] = { ...last, text: last.text + part.text };
-    }
-    else content.push(part);
+    } else content.push(part);
   }
   const last = content.at(-1);
   if (last?.type === 'input_text') content[content.length - 1] = { ...last, text: last.text + close };

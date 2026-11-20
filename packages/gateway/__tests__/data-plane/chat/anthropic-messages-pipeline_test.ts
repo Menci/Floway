@@ -8,10 +8,10 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { UpstreamTransportError } from '../../../src/dial/transport-error.ts';
 import { anthropicMessagesServePipeline } from '../../../src/data-plane/chat/anthropic-messages/pipeline.ts';
 import { createCandidateRegistry } from '../../../src/data-plane/pipeline/candidates.ts';
 import { enumerateModelCandidates } from '../../../src/data-plane/providers/resolution.ts';
+import { UpstreamTransportError } from '../../../src/dial/transport-error.ts';
 import { initRepo } from '../../../src/repo/index.ts';
 import { chatFixtureHttpServices, stubChatProviderPipelines } from '../../test-utils/chat-provider-pipelines.ts';
 import { mockChatGatewayCtx } from '../../test-utils/gateway-ctx.ts';

@@ -13,8 +13,8 @@ import { imageGenerationHostedTool } from './hosted-tools/image-generation.ts';
 import { webSearchHostedTool } from './hosted-tools/web-search.ts';
 import { hostedTools } from './hosted-tools.ts';
 import { hydrateStoredItems } from './hydrate-stored-items.ts';
+import { lowerOpenAIResponsesStandaloneToolOutputs } from './standalone-tool-output-shim.ts';
 import { openaiResponsesNarrowing, openaiResponsesTarget } from './target.ts';
-import { isFailure } from '../../pipeline/facts.ts';
 import { serializeClientJson } from '../../pipeline/serialize-client-json.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
@@ -32,6 +32,7 @@ export const openaiResponsesCompactPipeline = (): Pipeline<OpenAIResponsesCompac
       pendingUsage: OPENAI_RESPONSES_STREAMED_USAGE,
     }),
     materializeAttempt('request.chat.openaiResponses'),
+    lowerOpenAIResponsesStandaloneToolOutputs,
     expandShimCompactions,
     projectOpenAIResponsesCollaboration,
     // A compaction declares no hosted tool of its own, so what this does here is the other half

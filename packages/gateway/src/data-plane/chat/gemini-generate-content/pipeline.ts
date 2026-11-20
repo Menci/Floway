@@ -2,12 +2,12 @@ import { STREAMED_USAGE, type GeminiGenerateContentServeEntry, type GeminiGenera
 import { composeChat as compose } from '../compose.ts';
 import { emitGeminiGenerateContent } from './emit.ts';
 import { serializeClientJson } from '../../pipeline/serialize-client-json.ts';
+import { dialChatWire } from '../dial-wire.ts';
 import { resolveChatCandidates } from '../resolve-candidates.ts';
 import { requireGeminiGenerateContentTerminal } from './require-terminal.ts';
 import { narrowing, geminiGenerateContentTarget } from './target.ts';
 import { failover } from '../../pipeline/failover.ts';
 import { materializeAttempt } from '../materialize-attempt.ts';
-import { dialChatWire } from '../dial-wire.ts';
 import { geminiGenerateContentWireFor } from './wires.ts';
 import { writeSettlement } from '../../pipeline/settlement.ts';
 import type { Pipeline } from '@floway-dev/pipeline';
