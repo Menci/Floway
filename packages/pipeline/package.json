@@ -1,0 +1,19 @@
+{
+  "name": "@floway-dev/pipeline",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@noble/hashes": "^2.2.0",
+    "@scure/base": "^2.2.0"
+  }
+}

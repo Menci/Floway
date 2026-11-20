@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
 
 import { fakeMeta } from './test-fixtures.ts';
-import { dumpCodec } from '../../src/dump/codec.ts';
 import { decodeDumpHeaders, decodePersistedDumpMetadata, encodeDumpHeaders } from '../../src/dump/storage-codec.ts';
+import { dumpCodec } from '@floway-dev/dump/codec';
 
 test('dump storage headers preserve duplicate pairs and their order', () => {
   const headers: Array<[string, string]> = [

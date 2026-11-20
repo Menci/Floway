@@ -12,6 +12,7 @@
     "start:built": "tsx entry.ts"
   },
   "dependencies": {
+    "@floway-dev/dump": "workspace:*",
     "@floway-dev/gateway": "workspace:*",
     "@floway-dev/http": "workspace:*",
     "@floway-dev/platform": "workspace:*",
