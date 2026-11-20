@@ -84,7 +84,7 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
   const quickCopyTimerRef = useRef<number | null>(null);
 
   const [altPressed, setAltPressed] = useState(false);
-  const [hoverTarget, setHoverTarget] = useState<HitTarget | null>(null);
+  const [hoverState, setHoverState] = useState<{ target: HitTarget; pointerX: number; pointerY: number } | null>(null);
   const [activeFlyout, setActiveFlyout] = useState<ActiveFlyoutState | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [quickCopied, setQuickCopied] = useState(false);
@@ -149,11 +149,11 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
   useEffect(() => {
     const updateHover = (x: number, y: number) => {
       if (!altPressedRef.current || !useUiTextEditorStore.getState().initialized) {
-        setHoverTarget(null);
+        setHoverState(null);
         return;
       }
       const target = sharedUiTextEditorRegistry.resolveAtPoint(document, x, y);
-      setHoverTarget(target);
+      setHoverState(target ? { target, pointerX: x, pointerY: y } : null);
     };
 
     const setAltSync = (next: boolean) => {
@@ -193,13 +193,13 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
     const onKeyUp = (event: KeyboardEvent) => {
       if (event.key === 'Alt') {
         setAltSync(false);
-        setHoverTarget(null);
+        setHoverState(null);
       }
     };
 
     const onWindowBlur = () => {
       setAltSync(false);
-      setHoverTarget(null);
+      setHoverState(null);
     };
 
     const onPointerMove = (event: PointerEvent) => {
@@ -230,7 +230,7 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
 
       const hit = sharedUiTextEditorRegistry.resolveAtPoint(document, event.clientX, event.clientY);
       if (hit) {
-        setHoverTarget(null);
+        setHoverState(null);
         setActiveFlyout({
           key: hit.primaryKey,
           candidates: hit.candidates,
@@ -308,12 +308,38 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
     await setLanguage(nextPreviewLang);
   };
 
-  const highlightTagTop = hoverTarget
-    ? (hoverTarget.rect.top >= 28 ? hoverTarget.rect.top - 24 : hoverTarget.rect.bottom + 6)
-    : 0;
-  const highlightTagLeft = hoverTarget
-    ? Math.max(12, Math.min(hoverTarget.rect.left, window.innerWidth - 260))
-    : 0;
+  const hoverTarget = hoverState?.target ?? null;
+
+  const computeHighlightTagPosition = (
+    rect: DOMRect,
+    pointerX: number,
+    pointerY: number,
+  ): { left: number; top: number } => {
+    const margin = 8;
+    const gap = 6;
+    const tagHeight = 24;
+    const maxTop = Math.max(margin, window.innerHeight - tagHeight - margin);
+    let top: number;
+    let preferredLeft = rect.left;
+    if (rect.top >= tagHeight + margin) {
+      top = rect.top - tagHeight - gap;
+    } else if (rect.bottom + gap + tagHeight <= window.innerHeight - margin) {
+      top = rect.bottom + gap;
+    } else {
+      // Full-height targets (such as the sidebar nav) leave no room above or
+      // below the box, so anchor the tag beside the pointer within the viewport.
+      const abovePointer = pointerY - tagHeight - 14;
+      top = abovePointer >= margin ? abovePointer : pointerY + 18;
+      preferredLeft = pointerX;
+    }
+    const clampedTop = Math.round(Math.max(margin, Math.min(top, maxTop)));
+    const clampedLeft = Math.round(Math.max(margin, Math.min(preferredLeft, window.innerWidth - 260)));
+    return { left: clampedLeft, top: clampedTop };
+  };
+
+  const highlightTagPos = hoverState
+    ? computeHighlightTagPosition(hoverState.target.rect, hoverState.pointerX, hoverState.pointerY)
+    : { left: 0, top: 0 };
 
   const highlightMetaParts: string[] = [];
   if (hoverTarget?.primaryAttribute) {
@@ -347,7 +373,7 @@ export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme
                 />
                 <div
                   className="floway-ui-text-editor-highlight-tag"
-                  style={{ left: `${highlightTagLeft}px`, top: `${highlightTagTop}px` }}
+                  style={{ left: `${highlightTagPos.left}px`, top: `${highlightTagPos.top}px` }}
                 >
                   {hoverTarget.primaryKey}
                   {highlightMetaParts.length > 0 && (

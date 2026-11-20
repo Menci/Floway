@@ -135,4 +135,47 @@ describe('UiTextEditorOverlay', () => {
       Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: originalElementsFromPoint });
     }
   });
+  it('anchors the hover tag inside the viewport with an aria-label suffix for full-height targets', async () => {
+    const { container } = renderInApp(
+      <>
+        <nav
+          aria-label={wrapWithKeyMarkers('Navigation', 'app.navigation.label')}
+          data-testid="full-nav"
+        />
+        <UiTextEditorOverlay />
+      </>,
+    );
+
+    const nav = screen.getByTestId('full-nav');
+    vi.spyOn(nav, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 240, window.innerHeight));
+    const originalElementsFromPoint = (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;
+    Object.defineProperty(document, 'elementsFromPoint', {
+      configurable: true,
+      value: () => [nav, container, document.body],
+    });
+
+    await waitFor(() => {
+      expect(nav.getAttribute('aria-label')).toBe('Navigation');
+      expect(useUiTextEditorStore.getState().initialized).toBe(true);
+    });
+
+    fireEvent.pointerMove(window, { altKey: true, clientX: 100, clientY: 200 });
+
+    const tag = await waitFor(() => {
+      const el = document.querySelector<HTMLElement>('.floway-ui-text-editor-highlight-tag');
+      expect(el).not.toBeNull();
+      return el!;
+    });
+
+    expect(tag.textContent).toBe('app.navigation.label (aria-label)');
+    const top = Number.parseFloat(tag.style.top);
+    expect(top).toBeGreaterThanOrEqual(8);
+    expect(top).toBeLessThanOrEqual(window.innerHeight - 32);
+
+    if (originalElementsFromPoint === undefined) {
+      delete (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;
+    } else {
+      Object.defineProperty(document, 'elementsFromPoint', { configurable: true, value: originalElementsFromPoint });
+    }
+  });
 });
