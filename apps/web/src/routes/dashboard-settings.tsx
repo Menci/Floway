@@ -1,4 +1,4 @@
-import { DataUsage24Regular, LocalLanguage24Regular, LockClosed24Regular } from '@fluentui/react-icons';
+import { DataUsage24Regular, Edit24Regular, LockClosed24Regular } from '@fluentui/react-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -12,17 +12,19 @@ import { requireDashboardSession } from './guards';
 import { changeOwnPassword, updateOwnPreferences } from '../api/auth';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
 import { DialogShell } from '../components/ui/dialog-shell';
-import { Dropdown, Input } from '../components/ui/fluent-form-controls';
+import { Dropdown, Input, Switch } from '../components/ui/fluent-form-controls';
 import { SETTINGS_PAGE_CLASS, SETTINGS_SECTION_HEADER_CLASS } from '../components/ui/layout';
+import { LocalLanguageZiIcon } from '../components/ui/local-language-zi-icon';
 import { OutcomeMessageBar } from '../components/ui/outcome-message-bar';
 import { useOutcomeToasts } from '../components/ui/outcome-toast';
 import { SectionHeader } from '../components/ui/section-header';
 import { SettingsCard } from '../components/ui/settings-card';
 import { fluentComponents } from '../fluent';
-import { browserLanguage, normalizeLanguage, supportedLanguages } from '../i18n/languages';
+import { browserLanguage, languageNames, normalizeLanguage, supportedLanguages } from '../i18n/languages';
+import { getAltKeyLabel, syncUiTextEditorPreference } from '../i18n/ui-text-editor/mirror';
 import { useUserPreferences } from '../lib/use-preferences';
 import { useAuthStore } from '../stores/auth-store';
-import { QUOTA_DISPLAYS, type QuotaDisplay, type SupportedLanguage, type UserPreferences } from '@floway-dev/protocols/browser';
+import { QUOTA_DISPLAYS, type QuotaDisplay, type UserPreferences } from '@floway-dev/protocols/browser';
 
 const {
   Button,
@@ -106,11 +108,6 @@ export default function DashboardSettings() {
   );
 }
 
-const languageNames: Record<SupportedLanguage, string> = {
-  'en': 'English',
-  'zh-Hans': '简体中文',
-};
-
 // SettingsCard rows carry the choice; the save is one action for the group, as
 // WinUI's SettingsPage does, and its outcome is reported through the toast that
 // every other save on this dashboard uses.
@@ -123,7 +120,9 @@ function PreferencesSection() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const dirty = draft.quotaDisplay !== saved.quotaDisplay || draft.language !== saved.language;
+  const dirty = draft.quotaDisplay !== saved.quotaDisplay
+    || draft.language !== saved.language
+    || draft.uiTextEditor !== saved.uiTextEditor;
 
   const save = async () => {
     // Nothing to send, so the button answers a press without a request rather
@@ -141,6 +140,7 @@ function PreferencesSection() {
     const next = result.data.preferences;
     replacePreferences(next);
     setDraft(next);
+    if (syncUiTextEditorPreference(next.uiTextEditor)) return;
     if (next.language !== null) await setLanguage(next.language);
     else await setLanguage(browserLanguage());
     toasts.succeed(t('settings.account.preferences.saved'));
@@ -192,7 +192,18 @@ function PreferencesSection() {
         </Dropdown>}
         description={t('settings.account.preferences.language.description')}
         header={t('common.language')}
-        icon={<LocalLanguage24Regular />}
+        icon={<LocalLanguageZiIcon />}
+      />
+
+      <SettingsCard
+        action={<Switch
+          aria-label={t('settings.account.preferences.uiTextEditor.title')}
+          checked={draft.uiTextEditor}
+          onChange={(_, data) => setDraft(current => ({ ...current, uiTextEditor: data.checked }))}
+        />}
+        description={t('settings.account.preferences.uiTextEditor.description', { key: getAltKeyLabel() })}
+        header={t('settings.account.preferences.uiTextEditor.title')}
+        icon={<Edit24Regular />}
       />
     </div>
 

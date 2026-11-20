@@ -26,7 +26,7 @@ const gatewayForOperator = (input: RequestInfo | URL) => {
 
 describe('where the performance page reads upstream names from', () => {
   it('names an upstream for an operator, whose session may not read the admin upstream list', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } } });
+    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false } } });
     vi.stubGlobal('fetch', vi.fn(gatewayForOperator));
 
     const data = await clientLoader({ request: new Request('http://localhost/dashboard/monitor/performance') } as never);
@@ -36,7 +36,7 @@ describe('where the performance page reads upstream names from', () => {
   });
 
   it('re-reads a Node overview after removing stale Region URL state', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } } });
+    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false } } });
     const fetch = vi.fn(gatewayForOperator);
     vi.stubGlobal('fetch', fetch);
 
@@ -49,7 +49,7 @@ describe('where the performance page reads upstream names from', () => {
   });
 
   it('preserves Region state when runtime capability cannot be determined', async () => {
-    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null } } });
+    useAuthStore.getState().primeFromLogin({ token: 'operator-session', user: { id: 2, username: 'operator', isAdmin: false, canViewPermissions: true, canViewUpstreams: true, preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false } } });
     const fetch = vi.fn((input: RequestInfo | URL) => {
       const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost').pathname;
       return path === '/api/runtime-info'

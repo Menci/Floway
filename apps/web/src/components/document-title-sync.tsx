@@ -3,6 +3,7 @@ import { useLocation } from 'react-router';
 
 import { useTranslation } from '../i18n/translation';
 import { pageLabelKeys } from './sidebar/pages';
+import { withoutUiTextEditorMarkers } from '../i18n/ui-text-editor/markers';
 import { useSiteSettingsStore } from '../stores/site-settings-store';
 
 const titleKeyForPathname = (pathname: string) => {
@@ -31,8 +32,10 @@ export function DocumentTitleSync() {
   const siteName = useSiteSettingsStore(state => state.siteName);
 
   useEffect(() => {
-    const title = t(titleKeyForPathname(location.pathname));
-    window.document.title = t('app.documentTitle', { title, siteName: siteName ?? t('app.title') });
+    withoutUiTextEditorMarkers(() => {
+      const title = t(titleKeyForPathname(location.pathname));
+      window.document.title = t('app.documentTitle', { title, siteName: siteName ?? t('app.title') });
+    });
   }, [i18n.language, location.pathname, siteName, t]);
 
   return null;
