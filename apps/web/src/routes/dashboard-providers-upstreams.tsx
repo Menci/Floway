@@ -41,6 +41,7 @@ import { MODEL_ERROR_TOOLTIP_LENGTH, modelErrorExcerpt } from '../components/ups
 import { ProviderBadge, ProviderIcon } from '../components/upstreams/provider-badge';
 import { UpstreamSignals } from '../components/upstreams/signals';
 import { UpstreamTelemetryRow, loadUpstreamTelemetry, type UpstreamTelemetryData, type UpstreamTelemetryQuery } from '../components/upstreams/telemetry';
+import { createUsageOverviewLoader } from '../components/usage/data';
 import { fluentComponents } from '../fluent';
 import { dateTime } from '../lib/format-time';
 import { useEntryRewrite } from '../lib/page-navigation';
@@ -143,6 +144,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
   const queryRef = useRef(initialQuery);
   const loadedQueryRef = useRef(initialQuery);
   const [telemetry, setTelemetry] = useState<UpstreamTelemetryData | null>(null);
+  const [loadUsageOverview] = useState(createUsageOverviewLoader);
   const [editingRange, setEditingRange] = useState(false);
   const [immediateCollapse, setImmediateCollapse] = useState(false);
   const navigate = useNavigate();
@@ -204,7 +206,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     const requested = queryRef.current;
     const [next, readings] = await Promise.all([
       loadPageData(signal),
-      requested.upstreamId === null ? Promise.resolve(null) : loadUpstreamTelemetry(requested, Date.now(), signal),
+      requested.upstreamId === null ? Promise.resolve(null) : loadUpstreamTelemetry(requested, Date.now(), signal, loadUsageOverview),
     ]);
     if (signal.aborted) return;
     setData(current => ({
@@ -225,7 +227,7 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
       setTelemetry(readings.data);
     }
     loadedQueryRef.current = requested;
-  }, []));
+  }, [loadUsageOverview]));
 
   const reorderBusy = mutation !== null || refreshing;
   const surfaceBusy = refreshing;

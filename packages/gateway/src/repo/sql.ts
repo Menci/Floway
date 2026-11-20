@@ -856,7 +856,7 @@ class SqlUsageRepo implements UsageRepo {
     return assembleUsageRecords(metrics, requests);
   }
 
-  queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult> {
+  queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult[]> {
     return querySqlUsageOverview(this.db, opts);
   }
 

@@ -20,7 +20,7 @@ import { Panel } from '../components/ui/panel';
 import { ResourceListActions } from '../components/ui/resource-list';
 import { useRefreshOnChange } from '../components/ui/use-refresh';
 import { UsageChartSection } from '../components/usage/chart-section';
-import { loadUsagePageData } from '../components/usage/data';
+import { createUsageOverviewLoader, loadUsagePageData, type UsageOverviewLoader } from '../components/usage/data';
 import { usageDimensions } from '../components/usage/dimensions';
 import { UsageGrouping } from '../components/usage/grouping';
 import { buildSearchChart, dashboardBuckets } from '../components/usage/plot';
@@ -33,6 +33,7 @@ import { useLocale } from '../lib/use-locale';
 
 type LoaderData = Awaited<ReturnType<typeof loadUsagePageData>> & {
   currentUserId: string;
+  loadOverview: UsageOverviewLoader;
   loadedAt: number;
   state: UsageUrlState;
 };
@@ -46,8 +47,10 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
     userDimensionAvailable: true,
   });
   const loadedAt = Date.now();
+  const loadOverview = createUsageOverviewLoader();
   return {
-    ...await loadUsagePageData(String(user.id), parsed.range, scoped.groupBy, scoped.filters, loadedAt),
+    ...await loadUsagePageData(loadOverview, String(user.id), parsed.range, scoped.groupBy, scoped.filters, loadedAt, request.signal),
+    loadOverview,
     currentUserId: String(user.id),
     loadedAt,
     state: { ...parsed, ...scoped },
@@ -83,7 +86,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
 
   const reload = useCallback(async (signal: AbortSignal, { background, requestedAt }: { background: boolean; requestedAt: number }) => {
     if (!background) setError(null);
-    const next = await loadUsagePageData(loaderData.currentUserId, query.range, query.groupBy, query.filters, requestedAt, signal, auditableUserIdsRef.current);
+    const next = await loadUsagePageData(loaderData.loadOverview, loaderData.currentUserId, query.range, query.groupBy, query.filters, requestedAt, signal, auditableUserIdsRef.current);
     if (signal.aborted) return false;
     if (next.usage === null) {
       setError(next.error);
@@ -95,7 +98,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     setUpstreams(next.upstreams);
     setError(next.error);
     return true;
-  }, [loaderData.currentUserId, query]);
+  }, [loaderData.loadOverview, loaderData.currentUserId, query]);
 
   const onQueryCommit = useCallback((previous: typeof query, next: typeof query) => {
     if (previous.groupBy !== next.groupBy) setHiddenSeries(new Set());
