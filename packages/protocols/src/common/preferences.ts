@@ -20,15 +20,15 @@ export interface UserPreferences {
    */
   language: SupportedLanguage | null;
   /**
-   * Whether the in-context copy editor overlay is active for this account.
+   * Whether the in-context UI text editor overlay is active for this account.
    */
-  copyEditor: boolean;
+  uiTextEditor: boolean;
 }
 
 export const defaultUserPreferences: UserPreferences = {
   quotaDisplay: 'remaining',
   language: null,
-  copyEditor: false,
+  uiTextEditor: false,
 };
 
 const isQuotaDisplay = (value: unknown): value is QuotaDisplay =>
@@ -57,12 +57,12 @@ export const parseUserPreferences = (value: unknown): UserPreferences => {
     throw new TypeError(`preferences.language is not one of ${[...SUPPORTED_LANGUAGES, 'null'].join(', ')}`);
   }
 
-  const copyEditor = record.copyEditor === undefined ? defaultUserPreferences.copyEditor : record.copyEditor;
-  if (typeof copyEditor !== 'boolean') {
-    throw new TypeError('preferences.copyEditor must be a boolean');
+  const uiTextEditor = record.uiTextEditor === undefined ? defaultUserPreferences.uiTextEditor : record.uiTextEditor;
+  if (typeof uiTextEditor !== 'boolean') {
+    throw new TypeError('preferences.uiTextEditor must be a boolean');
   }
 
-  return { quotaDisplay, language, copyEditor };
+  return { quotaDisplay, language, uiTextEditor };
 };
 
 export const serializeUserPreferences = (preferences: UserPreferences): string => JSON.stringify(preferences);

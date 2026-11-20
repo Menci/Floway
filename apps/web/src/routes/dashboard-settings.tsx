@@ -6,7 +6,6 @@ import { useFetcher } from 'react-router';
 import { z } from 'zod';
 
 import { setLanguage } from '../i18n';
-import { getAltKeyLabel, syncCopyEditorPreference } from '../i18n/copy-editor/mirror';
 import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-settings';
 import { requireDashboardSession } from './guards';
@@ -22,6 +21,7 @@ import { SectionHeader } from '../components/ui/section-header';
 import { SettingsCard } from '../components/ui/settings-card';
 import { fluentComponents } from '../fluent';
 import { browserLanguage, normalizeLanguage, supportedLanguages } from '../i18n/languages';
+import { getAltKeyLabel, syncUiTextEditorPreference } from '../i18n/ui-text-editor/mirror';
 import { useUserPreferences } from '../lib/use-preferences';
 import { useAuthStore } from '../stores/auth-store';
 import { QUOTA_DISPLAYS, type QuotaDisplay, type SupportedLanguage, type UserPreferences } from '@floway-dev/protocols/browser';
@@ -127,7 +127,7 @@ function PreferencesSection() {
 
   const dirty = draft.quotaDisplay !== saved.quotaDisplay
     || draft.language !== saved.language
-    || draft.copyEditor !== saved.copyEditor;
+    || draft.uiTextEditor !== saved.uiTextEditor;
 
   const save = async () => {
     // Nothing to send, so the button answers a press without a request rather
@@ -145,7 +145,7 @@ function PreferencesSection() {
     const next = result.data.preferences;
     replacePreferences(next);
     setDraft(next);
-    if (syncCopyEditorPreference(next.copyEditor)) return;
+    if (syncUiTextEditorPreference(next.uiTextEditor)) return;
     if (next.language !== null) await setLanguage(next.language);
     else await setLanguage(browserLanguage());
     toasts.succeed(t('settings.account.preferences.saved'));
@@ -202,12 +202,12 @@ function PreferencesSection() {
 
       <SettingsCard
         action={<Switch
-          aria-label={t('settings.account.preferences.copyEditor.title')}
-          checked={draft.copyEditor}
-          onChange={(_, data) => setDraft(current => ({ ...current, copyEditor: data.checked }))}
+          aria-label={t('settings.account.preferences.uiTextEditor.title')}
+          checked={draft.uiTextEditor}
+          onChange={(_, data) => setDraft(current => ({ ...current, uiTextEditor: data.checked }))}
         />}
-        description={t('settings.account.preferences.copyEditor.description', { key: getAltKeyLabel() })}
-        header={t('settings.account.preferences.copyEditor.title')}
+        description={t('settings.account.preferences.uiTextEditor.description', { key: getAltKeyLabel() })}
+        header={t('settings.account.preferences.uiTextEditor.title')}
         icon={<Edit24Regular />}
       />
     </div>

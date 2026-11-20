@@ -11,7 +11,7 @@ export const primeDefaultSession = (): void => {
       isAdmin: true,
       canViewPermissions: true,
       canViewUpstreams: true,
-      preferences: { quotaDisplay: 'remaining', language: null, copyEditor: false },
+      preferences: { quotaDisplay: 'remaining', language: null, uiTextEditor: false },
     },
   });
 };

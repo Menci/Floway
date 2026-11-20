@@ -3,11 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   extractKeySegments,
   stripKeyMarkers,
-  withoutCopyEditorMarkers,
+  withoutUiTextEditorMarkers,
   wrapWithKeyMarkers,
-} from '../../../src/i18n/copy-editor/markers';
+} from '../../../src/i18n/ui-text-editor/markers';
 
-describe('copy editor markers', () => {
+describe('UI text editor markers', () => {
   it('wraps and extracts exact offsets for concatenated strings', () => {
     const first = wrapWithKeyMarkers('Save', 'common.save');
     const second = wrapWithKeyMarkers('Cancel', 'common.cancel');
@@ -61,8 +61,8 @@ describe('copy editor markers', () => {
     expect(trailing.segments).toEqual([{ key: 'alias.count_other', start: 0, end: 7 }]);
   });
 
-  it('supports nested withoutCopyEditorMarkers suppression safely', () => {
-    const result = withoutCopyEditorMarkers(() => withoutCopyEditorMarkers(() => 'plain'));
+  it('supports nested withoutUiTextEditorMarkers suppression safely', () => {
+    const result = withoutUiTextEditorMarkers(() => withoutUiTextEditorMarkers(() => 'plain'));
     expect(result).toBe('plain');
   });
 });

@@ -59,7 +59,7 @@ const en = {
         copied: 'Copied',
         failed: 'Copy failed',
       },
-      copyEditor: {
+      uiTextEditor: {
         dockLabel: 'UI text editor',
         editsCount_one: '{{count, number}} edit',
         editsCount_other: '{{count, number}} edits',
@@ -86,8 +86,8 @@ const en = {
         staleNotice: 'Source text changed',
         noteLabel: 'Note',
         save: 'Save',
-        revert: 'Delete',
-        emptyDrafts: 'Hold {{key}} and click any text to start editing',
+        delete: 'Delete',
+        emptyHint: 'Hold {{key}} and click any text to start editing',
         moreEdits_one: '+{{count, number}} more',
         moreEdits_other: '+{{count, number}} more',
         deleteHistory: 'Delete and revert',
@@ -2105,7 +2105,7 @@ const en = {
             description: 'Language used by the dashboard',
             browser: 'Follow browser',
           },
-          copyEditor: {
+          uiTextEditor: {
             title: 'UI text editor',
             description: 'Hold {{key}} and click any interface text to edit and export translations',
           },

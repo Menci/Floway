@@ -94,8 +94,6 @@ export const registerKey = (key: string): number => {
   return id;
 };
 
-export const lookupKey = (id: number): string | undefined => entries[id];
-
 export const wrapWithKeyMarkers = (text: string, key: string): string => {
   const id = registerKey(key);
   return `${encodeToken(START_TAG, id)}${text}${encodeToken(END_TAG, id)}`;
@@ -195,18 +193,16 @@ export const stripKeyMarkers = (input: string): string =>
 let trackingActive = false;
 let suppressDepth = 0;
 
-export const isCopyEditorTrackingActive = (): boolean => trackingActive;
-
-export const setCopyEditorTrackingActive = (active: boolean): void => {
+export const setUiTextEditorTrackingActive = (active: boolean): void => {
   trackingActive = active;
 };
 
 /**
- * Runs a synchronous callback without attaching copy-editor markers to any
- * translations resolved inside it (used by the copy editor's own UI and
+ * Runs a synchronous callback without attaching UI text editor markers to any
+ * translations resolved inside it (used by the UI text editor's own UI and
  * non-DOM consumers such as document.title).
  */
-export const withoutCopyEditorMarkers = <T>(fn: () => T): T => {
+export const withoutUiTextEditorMarkers = <T>(fn: () => T): T => {
   suppressDepth += 1;
   try {
     return fn();
@@ -215,21 +211,20 @@ export const withoutCopyEditorMarkers = <T>(fn: () => T): T => {
   }
 };
 
-export const COPY_EDITOR_POST_PROCESSOR_NAME = 'flowayCopyEditor';
+export const UI_TEXT_EDITOR_POST_PROCESSOR_NAME = 'flowayUiTextEditor';
 
 interface ResolvedInfo {
   exactUsedKey?: string;
   usedKey?: string;
 }
 
-export const copyEditorPostProcessor: PostProcessorModule = {
+export const uiTextEditorPostProcessor: PostProcessorModule = {
   type: 'postProcessor',
-  name: COPY_EDITOR_POST_PROCESSOR_NAME,
+  name: UI_TEXT_EDITOR_POST_PROCESSOR_NAME,
   process(value, key, options) {
     if (!trackingActive || suppressDepth > 0) return value;
     if (typeof value !== 'string' || value.length === 0) return value;
-    const opt = options as { i18nResolved?: ResolvedInfo; copyEditorSkip?: boolean } | undefined;
-    if (opt?.copyEditorSkip) return value;
+    const opt = options as { i18nResolved?: ResolvedInfo } | undefined;
     const exactKey = opt?.i18nResolved?.exactUsedKey ?? opt?.i18nResolved?.usedKey ?? (Array.isArray(key) ? key[0] : key);
     if (!exactKey) return value;
     return wrapWithKeyMarkers(value, exactKey);

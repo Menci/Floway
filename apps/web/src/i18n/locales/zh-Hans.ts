@@ -57,7 +57,7 @@ const zhHansCN = {
         copied: '已复制',
         failed: '复制失败',
       },
-      copyEditor: {
+      uiTextEditor: {
         dockLabel: '文案编辑器',
         editsCount_other: '{{count, number}} 项编辑',
         previewLanguage: '切换预览语言',
@@ -83,8 +83,8 @@ const zhHansCN = {
         staleNotice: '原文已变更',
         noteLabel: '备注',
         save: '保存',
-        revert: '删除',
-        emptyDrafts: '按住 {{key}} 并点击页面文案即可开始编辑',
+        delete: '删除',
+        emptyHint: '按住 {{key}} 并点击页面文案即可开始编辑',
         moreEdits_other: '还有 {{count, number}} 项',
         deleteHistory: '删除并还原',
         deleteAllHistory: '全部删除',
@@ -2073,7 +2073,7 @@ const zhHansCN = {
             description: '控制台界面使用的语言',
             browser: '跟随浏览器',
           },
-          copyEditor: {
+          uiTextEditor: {
             title: '文案编辑模式',
             description: '按住 {{key}} 并点击界面上的任意文案，即可现场编辑并导出',
           },

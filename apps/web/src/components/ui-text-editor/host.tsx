@@ -1,27 +1,27 @@
 import type { Theme } from '@fluentui/react-components';
 import { lazy, Suspense, useSyncExternalStore } from 'react';
 
-import { isCopyEditorEnabled } from '../../i18n/copy-editor/mirror';
+import { isUiTextEditorEnabled } from '../../i18n/ui-text-editor/mirror';
 
-const LazyCopyEditorOverlay = lazy(() => import('./overlay'));
+const LazyUiTextEditorOverlay = lazy(() => import('./overlay'));
 
 const subscribeNever = () => () => {};
 const isClient = () => true;
 const isServer = () => false;
 
-// Stays completely inert when copy editing is off: no overlay chunk is fetched
+// Stays completely inert when the UI text editor is off: no overlay chunk is fetched
 // and no markers are injected. When enabled, the lazy overlay starts its DOM
 // observer before activating markers so the initial page needs no navigation
 // and prerendered hydration stays byte-identical.
-export function CopyEditorHost({ theme }: { theme: Theme }) {
+export function UiTextEditorHost({ theme }: { theme: Theme }) {
   const hydrated = useSyncExternalStore(subscribeNever, isClient, isServer);
-  const enabled = isCopyEditorEnabled();
+  const enabled = isUiTextEditorEnabled();
 
   if (!enabled || !hydrated) return null;
 
   return (
     <Suspense fallback={null}>
-      <LazyCopyEditorOverlay theme={theme} />
+      <LazyUiTextEditorOverlay theme={theme} />
     </Suspense>
   );
 }

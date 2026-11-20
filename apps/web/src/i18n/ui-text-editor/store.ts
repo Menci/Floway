@@ -4,7 +4,7 @@ import { ensureLocaleLoaded, i18n } from '../index';
 import { supportedLanguages, type SupportedLanguage } from '../languages';
 import { loadLocale } from '../resources';
 
-const STORAGE_KEY = 'floway.copyEditorState.v4';
+const STORAGE_KEY = 'floway.uiTextEditorState.v1';
 export const MAX_HISTORY_SESSIONS = 200;
 
 export interface LanguageChange {
@@ -12,32 +12,32 @@ export interface LanguageChange {
   after: string;
 }
 
-export interface CopyDraftEntry {
+export interface UiTextEditEntry {
   key: string;
   changes: Partial<Record<SupportedLanguage, LanguageChange>>;
   note: string;
   updatedAt: string;
 }
 
-export interface CopyHistorySession {
+export interface UiTextHistorySession {
   id: string;
   archivedAt: string;
-  entries: CopyDraftEntry[];
+  entries: UiTextEditEntry[];
 }
 
-export interface ExportedCopyChange {
+export interface ExportedUiTextChange {
   key: string;
   changes?: Partial<Record<SupportedLanguage, LanguageChange>>;
   note?: string;
 }
 
-export interface CopyEditorExportPayload {
+export interface UiTextEditorExportPayload {
   version: 1;
   exportedAt: string;
-  entries: ExportedCopyChange[];
+  entries: ExportedUiTextChange[];
 }
 
-export interface StageEntryInput {
+export interface SaveEntryInput {
   key: string;
   values: Partial<Record<SupportedLanguage, string>>;
   note: string;
@@ -49,8 +49,8 @@ export interface ImportResult {
 }
 
 interface PersistedState {
-  entries: Record<string, CopyDraftEntry>;
-  history: CopyHistorySession[];
+  entries: Record<string, UiTextEditEntry>;
+  history: UiTextHistorySession[];
 }
 
 const flattenLeaves = (value: object, prefix = ''): Map<string, string> => {
@@ -72,7 +72,7 @@ const flattenLeaves = (value: object, prefix = ''): Map<string, string> => {
 const isSupportedLanguage = (value: string): value is SupportedLanguage =>
   (supportedLanguages as readonly string[]).includes(value);
 
-const parseEntry = (raw: unknown, fallbackKey?: string): CopyDraftEntry | null => {
+const parseEntry = (raw: unknown, fallbackKey?: string): UiTextEditEntry | null => {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const rec = raw as Record<string, unknown>;
   const key = typeof rec.key === 'string' && rec.key.trim().length > 0 ? rec.key.trim() : fallbackKey;
@@ -106,7 +106,7 @@ const readStoredState = (): PersistedState => {
     }
     const rec = parsed as Record<string, unknown>;
 
-    const entries: Record<string, CopyDraftEntry> = {};
+    const entries: Record<string, UiTextEditEntry> = {};
     if (rec.entries && typeof rec.entries === 'object' && !Array.isArray(rec.entries)) {
       for (const [k, rawEntry] of Object.entries(rec.entries as Record<string, unknown>)) {
         const entry = parseEntry(rawEntry, k);
@@ -114,7 +114,7 @@ const readStoredState = (): PersistedState => {
       }
     }
 
-    const history: CopyHistorySession[] = [];
+    const history: UiTextHistorySession[] = [];
     if (Array.isArray(rec.history)) {
       for (const rawSession of rec.history) {
         if (!rawSession || typeof rawSession !== 'object' || Array.isArray(rawSession)) continue;
@@ -124,7 +124,7 @@ const readStoredState = (): PersistedState => {
         if (!id || !archivedAt || !Array.isArray(sessionRec.entries)) continue;
         const sessionEntries = sessionRec.entries
           .map(item => parseEntry(item))
-          .filter((item): item is CopyDraftEntry => item !== null);
+          .filter((item): item is UiTextEditEntry => item !== null);
         if (sessionEntries.length > 0) {
           history.push({ id, archivedAt, entries: sessionEntries });
         }
@@ -163,16 +163,16 @@ const applyResourceValue = (language: SupportedLanguage, key: string, value: str
 
 /**
  * Resolves the effective override for `(language, key)` across history
- * sessions (newest first) and active drafts (highest precedence).
+ * sessions (newest first) and active edits (highest precedence).
  * An edit only takes effect when its recorded `before` matches the running
- * build's original string so stale edits never overwrite newly shipped copy.
+ * build's original string so stale edits never overwrite newly shipped strings.
  */
 const resolveEffectiveValue = (
   language: SupportedLanguage,
   key: string,
   originals: OriginalsMap,
-  entries: Record<string, CopyDraftEntry>,
-  history: CopyHistorySession[],
+  entries: Record<string, UiTextEditEntry>,
+  history: UiTextHistorySession[],
 ): string | undefined => {
   const original = originals[language].get(key);
   if (original === undefined) return undefined;
@@ -190,8 +190,8 @@ const resolveEffectiveValue = (
 };
 
 const capHistory = (
-  sessions: CopyHistorySession[],
-): { kept: CopyHistorySession[]; evictedKeys: string[] } => {
+  sessions: UiTextHistorySession[],
+): { kept: UiTextHistorySession[]; evictedKeys: string[] } => {
   if (sessions.length <= MAX_HISTORY_SESSIONS) {
     return { kept: sessions, evictedKeys: [] };
   }
@@ -206,8 +206,8 @@ const capHistory = (
 const syncKeysToI18n = (
   keys: Iterable<string>,
   originals: OriginalsMap,
-  entries: Record<string, CopyDraftEntry>,
-  history: CopyHistorySession[],
+  entries: Record<string, UiTextEditEntry>,
+  history: UiTextHistorySession[],
 ): void => {
   for (const key of keys) {
     for (const language of supportedLanguages) {
@@ -220,11 +220,11 @@ const syncKeysToI18n = (
   }
 };
 
-const formatExportEntries = (list: CopyDraftEntry[]): ExportedCopyChange[] =>
+const formatExportEntries = (list: UiTextEditEntry[]): ExportedUiTextChange[] =>
   [...list]
     .sort((a, b) => a.key.localeCompare(b.key))
     .map(entry => {
-      const item: ExportedCopyChange = {
+      const item: ExportedUiTextChange = {
         key: entry.key,
       };
       if (Object.keys(entry.changes).length > 0) {
@@ -241,8 +241,8 @@ const makeSessionId = (archivedAt: string): string =>
   `${archivedAt}-${Math.random().toString(36).slice(2, 8)}`;
 
 const areEntrySetsEqual = (
-  a: Record<string, CopyDraftEntry>,
-  b: Record<string, CopyDraftEntry>,
+  a: Record<string, UiTextEditEntry>,
+  b: Record<string, UiTextEditEntry>,
 ): boolean => {
   const keysA = Object.keys(a);
   const keysB = Object.keys(b);
@@ -263,9 +263,9 @@ const areEntrySetsEqual = (
 };
 
 const buildHistorySession = (
-  entries: Record<string, CopyDraftEntry>,
+  entries: Record<string, UiTextEditEntry>,
   archivedAt: string,
-): CopyHistorySession | null => {
+): UiTextHistorySession | null => {
   const list = Object.values(entries).sort((a, b) => a.key.localeCompare(b.key));
   if (list.length === 0) return null;
   return {
@@ -275,22 +275,22 @@ const buildHistorySession = (
   };
 };
 
-export interface CopyEditorStore {
+export interface UiTextEditorStore {
   initialized: boolean;
   initializing: boolean;
   originals: OriginalsMap;
-  entries: Record<string, CopyDraftEntry>;
-  history: CopyHistorySession[];
+  entries: Record<string, UiTextEditEntry>;
+  history: UiTextHistorySession[];
   ensureInitialized: () => Promise<void>;
   getOriginal: (language: SupportedLanguage, key: string) => string | undefined;
   getCurrent: (language: SupportedLanguage, key: string) => string | undefined;
-  stageEntry: (input: StageEntryInput) => void;
+  saveEntry: (input: SaveEntryInput) => void;
   revertEntry: (key: string) => void;
   revertLanguage: (key: string, language: SupportedLanguage) => void;
   clearActive: () => void;
-  buildExportPayload: () => CopyEditorExportPayload;
-  buildHistoryExportPayload: (sessionId: string) => CopyEditorExportPayload | null;
-  archiveActiveAsExport: (archivedAt?: string) => CopyHistorySession | null;
+  buildExportPayload: () => UiTextEditorExportPayload;
+  buildHistoryExportPayload: (sessionId: string) => UiTextEditorExportPayload | null;
+  archiveActiveAsExport: (archivedAt?: string) => UiTextHistorySession | null;
   restoreHistorySession: (sessionId: string) => void;
   deleteHistorySession: (sessionId: string) => void;
   clearHistory: () => void;
@@ -299,7 +299,7 @@ export interface CopyEditorStore {
 
 let initPromise: Promise<void> | null = null;
 
-export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
+export const useUiTextEditorStore = create<UiTextEditorStore>((set, get) => ({
   initialized: false,
   initializing: false,
   originals: emptyOriginals(),
@@ -360,7 +360,7 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
     return resolveEffectiveValue(language, key, originals, entries, history);
   },
 
-  stageEntry: ({ key, values, note }) => {
+  saveEntry: ({ key, values, note }) => {
     const { originals, entries, history } = get();
     const prev = entries[key];
     const nextChanges: Partial<Record<SupportedLanguage, LanguageChange>> = {};
@@ -489,7 +489,7 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
       archivedCurrent ? [archivedCurrent, ...remaining] : remaining,
     );
 
-    const nextEntries: Record<string, CopyDraftEntry> = {};
+    const nextEntries: Record<string, UiTextEditEntry> = {};
     const touchedKeys = new Set<string>([...Object.keys(entries), ...evictedKeys]);
     for (const item of target.entries) {
       nextEntries[item.key] = { ...item };
@@ -536,7 +536,7 @@ export const useCopyEditorStore = create<CopyEditorStore>((set, get) => ({
     }
 
     const { originals, entries, history } = get();
-    const importedEntries: Record<string, CopyDraftEntry> = {};
+    const importedEntries: Record<string, UiTextEditEntry> = {};
     let imported = 0;
     const now = new Date().toISOString();
 
@@ -599,7 +599,7 @@ export const __testing = {
   storageKey: STORAGE_KEY,
   reset(): void {
     initPromise = null;
-    useCopyEditorStore.setState({
+    useUiTextEditorStore.setState({
       initialized: false,
       initializing: false,
       originals: emptyOriginals(),

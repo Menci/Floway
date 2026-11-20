@@ -7,21 +7,20 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { DraftsPanel } from './drafts-panel';
 import { EditorFlyout } from './editor-flyout';
-import { CopyEditorPortalContext } from './editor-icon-button';
+import { UiTextEditorPortalContext } from './editor-icon-button';
+import { EditsPanel } from './edits-panel';
 import { useEditorTranslation } from './use-editor-t';
 import { fluentComponents } from '../../fluent';
-import { activateCopyEditorTracking, setLanguage } from '../../i18n';
-import {
-  COPY_EDITOR_ROOT_ATTR,
-  sharedCopyEditorRegistry,
-  type HitTarget,
-  type KeyCandidate,
-} from '../../i18n/copy-editor/dom-registry';
-import { CopyEditorInternalContext, setCopyEditorFreezeActive } from '../../i18n/copy-editor/freeze';
-import { useCopyEditorStore } from '../../i18n/copy-editor/store';
+import { activateUiTextEditorTracking, setLanguage } from '../../i18n';
 import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages';
+import {
+  UI_TEXT_EDITOR_ROOT_ATTR,
+  sharedUiTextEditorRegistry,
+  type HitTarget,
+} from '../../i18n/ui-text-editor/dom-registry';
+import { UiTextEditorInternalContext, setUiTextEditorFreezeActive } from '../../i18n/ui-text-editor/freeze';
+import { useUiTextEditorStore } from '../../i18n/ui-text-editor/store';
 import { winuiLightTheme } from '../../winui/theme';
 import { copyToClipboard } from '../ui/copy-to-clipboard';
 import { LocalLanguageZiIcon } from '../ui/local-language-zi-icon';
@@ -53,7 +52,7 @@ const isInsideEditor = (node: EventTarget | null, host: HTMLElement | null): boo
   if (host?.contains(node)) return true;
   let current: Node | null = node;
   while (current) {
-    if (current instanceof Element && current.hasAttribute(COPY_EDITOR_ROOT_ATTR)) return true;
+    if (current instanceof Element && current.hasAttribute(UI_TEXT_EDITOR_ROOT_ATTR)) return true;
     current = current.parentNode;
   }
   return false;
@@ -79,19 +78,19 @@ const promoteTopLayer = (element: HTMLElement | null): void => {
 
 interface ActiveFlyoutState {
   key: string;
-  candidates: KeyCandidate[];
+  candidates: string[];
   anchorRect: DOMRect | null;
   anchorElement: Element | null;
 }
 
 const FREEZE_EVENTS = ['pointerout', 'pointerleave', 'mouseout', 'mouseleave', 'blur', 'focusout'] as const;
 
-export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?: Theme }) {
+export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme?: Theme }) {
   const { t, i18n } = useEditorTranslation();
-  const ensureInitialized = useCopyEditorStore(state => state.ensureInitialized);
-  const entries = useCopyEditorStore(state => state.entries);
-  const buildExportPayload = useCopyEditorStore(state => state.buildExportPayload);
-  const archiveActiveAsExport = useCopyEditorStore(state => state.archiveActiveAsExport);
+  const ensureInitialized = useUiTextEditorStore(state => state.ensureInitialized);
+  const entries = useUiTextEditorStore(state => state.entries);
+  const buildExportPayload = useUiTextEditorStore(state => state.buildExportPayload);
+  const archiveActiveAsExport = useUiTextEditorStore(state => state.archiveActiveAsExport);
 
   const layerRef = useRef<HTMLDivElement | null>(null);
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
@@ -117,11 +116,11 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
     altPressedRef.current = altPressed;
     freezeRef.current = freezePopovers;
     uiOpenRef.current = uiOpen;
-    setCopyEditorFreezeActive(freezePopovers);
+    setUiTextEditorFreezeActive(freezePopovers);
   }, [altPressed, freezePopovers, uiOpen]);
 
   useEffect(() => () => {
-    setCopyEditorFreezeActive(false);
+    setUiTextEditorFreezeActive(false);
     if (quickCopyTimerRef.current !== null) {
       window.clearTimeout(quickCopyTimerRef.current);
     }
@@ -131,13 +130,13 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
   // bundles so every already-mounted view re-renders with markers captured
   // immediately on page load (without requiring a navigation first).
   useEffect(() => {
-    sharedCopyEditorRegistry.start(document.body);
-    activateCopyEditorTracking();
+    sharedUiTextEditorRegistry.start(document.body);
+    activateUiTextEditorTracking();
     void ensureInitialized().then(() => {
-      sharedCopyEditorRegistry.scanNow();
+      sharedUiTextEditorRegistry.scanNow();
     });
     return () => {
-      sharedCopyEditorRegistry.stop();
+      sharedUiTextEditorRegistry.stop();
     };
   }, [ensureInitialized]);
 
@@ -170,8 +169,8 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
         setHoverTarget(null);
         return;
       }
-      sharedCopyEditorRegistry.scanNow();
-      const target = sharedCopyEditorRegistry.resolveAtPoint(document, x, y);
+      sharedUiTextEditorRegistry.scanNow();
+      const target = sharedUiTextEditorRegistry.resolveAtPoint(document, x, y);
       setHoverTarget(target);
     };
 
@@ -179,7 +178,7 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
       altPressedRef.current = next;
       const nextFreeze = next || uiOpenRef.current;
       freezeRef.current = nextFreeze;
-      setCopyEditorFreezeActive(nextFreeze);
+      setUiTextEditorFreezeActive(nextFreeze);
       setAltPressed(next);
     };
 
@@ -237,8 +236,8 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
     const swallowAltPress = (event: MouseEvent | PointerEvent) => {
       if (!event.altKey || event.button !== 0) return;
       if (isInsideEditor(event.target, layerRef.current)) return;
-      sharedCopyEditorRegistry.scanNow();
-      const hit = sharedCopyEditorRegistry.resolveAtPoint(document, event.clientX, event.clientY);
+      sharedUiTextEditorRegistry.scanNow();
+      const hit = sharedUiTextEditorRegistry.resolveAtPoint(document, event.clientX, event.clientY);
       if (!hit) return;
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -328,18 +327,18 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
   return createPortal(
     <div
       ref={layerRef}
-      className="floway-copy-editor-layer"
-      data-floway-copy-editor-root=""
-      data-tabster={JSON.stringify({ modalizer: { id: 'floway-copy-editor', isAlwaysAccessible: true, isOthersAccessible: true } })}
+      className="floway-ui-text-editor-layer"
+      data-floway-ui-text-editor-root=""
+      data-tabster={JSON.stringify({ modalizer: { id: 'floway-ui-text-editor', isAlwaysAccessible: true, isOthersAccessible: true } })}
       popover="manual"
     >
-      <CopyEditorInternalContext value={true}>
-        <CopyEditorPortalContext value={portalRoot}>
-          <FluentProvider className="floway-copy-editor-provider" theme={theme}>
+      <UiTextEditorInternalContext value={true}>
+        <UiTextEditorPortalContext value={portalRoot}>
+          <FluentProvider className="floway-ui-text-editor-provider" theme={theme}>
             {altPressed && hoverTarget && (
               <>
                 <div
-                  className="floway-copy-editor-highlight"
+                  className="floway-ui-text-editor-highlight"
                   style={{
                     left: `${hoverTarget.rect.left - 2}px`,
                     top: `${hoverTarget.rect.top - 2}px`,
@@ -348,7 +347,7 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
                   }}
                 />
                 <div
-                  className="floway-copy-editor-highlight-tag"
+                  className="floway-ui-text-editor-highlight-tag"
                   style={{ left: `${highlightTagLeft}px`, top: `${highlightTagTop}px` }}
                 >
                   {hoverTarget.primaryKey}
@@ -358,7 +357,7 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
             )}
 
             {panelOpen && (
-              <DraftsPanel
+              <EditsPanel
                 exportedNotice={exportedNotice}
                 onClearExportedNotice={() => setExportedNotice(false)}
                 onClose={() => {
@@ -369,7 +368,7 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
                 onEditKey={key => {
                   setActiveFlyout({
                     key,
-                    candidates: [{ key, source: 'text' }],
+                    candidates: [key],
                     anchorRect: null,
                     anchorElement: findActiveFloatingSurface() ?? null,
                   });
@@ -391,8 +390,8 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
 
             {showDock && (
               <div
-                aria-label={t('common.copyEditor.dockLabel')}
-                className="floway-copy-editor-dock"
+                aria-label={t('common.uiTextEditor.dockLabel')}
+                className="floway-ui-text-editor-dock"
                 role="region"
               >
                 <Button
@@ -401,15 +400,15 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
                   size="small"
                   onClick={() => setPanelOpen(open => !open)}
                 >
-                  {t('common.copyEditor.editsCount', { count: activeCount })}
+                  {t('common.uiTextEditor.editsCount', { count: activeCount })}
                 </Button>
 
-                <span className="floway-copy-editor-dock-divider" />
+                <span className="floway-ui-text-editor-dock-divider" />
 
-                <Tooltip content={t('common.copyEditor.previewLanguage')} mountNode={portalRoot} relationship="description">
+                <Tooltip content={t('common.uiTextEditor.previewLanguage')} mountNode={portalRoot} relationship="description">
                   <Button
                     appearance="subtle"
-                    aria-label={t('common.copyEditor.previewLanguage')}
+                    aria-label={t('common.uiTextEditor.previewLanguage')}
                     icon={<LocalLanguageZiIcon size={16} />}
                     size="small"
                     onClick={() => void handlePreviewLanguageToggle()}
@@ -420,23 +419,23 @@ export default function CopyEditorOverlay({ theme = winuiLightTheme }: { theme?:
 
                 {(activeCount > 0 || quickCopied) && (
                   <>
-                    <span className="floway-copy-editor-dock-divider" />
+                    <span className="floway-ui-text-editor-dock-divider" />
                     <Button
                       appearance="primary"
                       icon={quickCopied ? <Checkmark16Regular /> : <Copy16Regular />}
                       size="small"
                       onClick={() => void handleQuickCopy()}
                     >
-                      {quickCopied ? t('common.copy.copied') : t('common.copyEditor.export')}
+                      {quickCopied ? t('common.copy.copied') : t('common.uiTextEditor.export')}
                     </Button>
                   </>
                 )}
               </div>
             )}
-            <div ref={setPortalRoot} className="floway-copy-editor-portal-host" />
+            <div ref={setPortalRoot} className="floway-ui-text-editor-portal-host" />
           </FluentProvider>
-        </CopyEditorPortalContext>
-      </CopyEditorInternalContext>
+        </UiTextEditorPortalContext>
+      </UiTextEditorInternalContext>
     </div>,
     document.body,
   );

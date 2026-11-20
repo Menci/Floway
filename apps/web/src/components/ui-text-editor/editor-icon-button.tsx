@@ -4,12 +4,12 @@ import { fluentComponents } from '../../fluent';
 
 const { Button, Tooltip } = fluentComponents;
 
-// Shares the top-layer portal container inside CopyEditorOverlay so every
-// Tooltip and Popover rendered by the copy editor mounts above native/Fluent
+// Shares the top-layer portal container inside UiTextEditorOverlay so every
+// Tooltip and Popover rendered by the UI text editor mounts above native/Fluent
 // dialogs without being obscured or dismissed.
-export const CopyEditorPortalContext = createContext<HTMLElement | null>(null);
+export const UiTextEditorPortalContext = createContext<HTMLElement | null>(null);
 
-export const useCopyEditorPortal = (): HTMLElement | null => useContext(CopyEditorPortalContext);
+export const useUiTextEditorPortal = (): HTMLElement | null => useContext(UiTextEditorPortalContext);
 
 export function EditorIconButton({
   className,
@@ -22,7 +22,7 @@ export function EditorIconButton({
   label: string;
   onClick: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
-  const mountNode = useCopyEditorPortal();
+  const mountNode = useUiTextEditorPortal();
   return (
     <Tooltip content={label} mountNode={mountNode} relationship="label">
       <Button

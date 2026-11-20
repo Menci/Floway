@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'floway.copyEditorEnabled';
+const STORAGE_KEY = 'floway.uiTextEditorEnabled';
 
 const readStored = (): boolean => {
   if (typeof window === 'undefined') return false;
@@ -19,7 +19,7 @@ const writeStored = (enabled: boolean): void => {
 };
 
 // Captured once at module load so the running page has a single, immutable
-// decision for whether the copy editor runtime is mounted. Toggling the
+// decision for whether the UI text editor runtime is mounted. Toggling the
 // preference or signing into an account with a different setting updates the
 // mirror and reloads the page to enter or leave the mode cleanly.
 let bootEnabled = readStored();
@@ -28,11 +28,11 @@ let reloadHandler = (): void => {
   if (typeof window !== 'undefined') window.location.reload();
 };
 
-export const isCopyEditorEnabled = (): boolean => bootEnabled;
+export const isUiTextEditorEnabled = (): boolean => bootEnabled;
 
-export const readCopyEditorMirror = (): boolean => readStored();
+export const readUiTextEditorMirror = (): boolean => readStored();
 
-export const syncCopyEditorPreference = (enabled: boolean): boolean => {
+export const syncUiTextEditorPreference = (enabled: boolean): boolean => {
   writeStored(enabled);
   if (enabled !== bootEnabled) {
     reloadHandler();

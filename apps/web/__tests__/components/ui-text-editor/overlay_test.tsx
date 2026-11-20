@@ -1,16 +1,16 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import CopyEditorOverlay from '../../../src/components/copy-editor/overlay';
+import UiTextEditorOverlay from '../../../src/components/ui-text-editor/overlay';
 import { setLanguage } from '../../../src/i18n';
-import { wrapWithKeyMarkers } from '../../../src/i18n/copy-editor/markers';
-import { __testing as storeTesting } from '../../../src/i18n/copy-editor/store';
+import { wrapWithKeyMarkers } from '../../../src/i18n/ui-text-editor/markers';
+import { __testing as storeTesting } from '../../../src/i18n/ui-text-editor/store';
 import { stubLocalStorage } from '../../local-storage-stub';
 import { renderInApp } from '../../render';
 
 stubLocalStorage();
 
-describe('CopyEditorOverlay', () => {
+describe('UiTextEditorOverlay', () => {
   beforeEach(async () => {
     window.localStorage.clear();
     storeTesting.reset();
@@ -21,14 +21,14 @@ describe('CopyEditorOverlay', () => {
     vi.restoreAllMocks();
   });
 
-  it('stays hidden with zero drafts until Alt is held, and freezes external pointerleave while Alt is down', async () => {
+  it('stays hidden with zero edits until Alt is held, and freezes external pointerleave while Alt is down', async () => {
     const onExternalLeave = vi.fn();
     renderInApp(
       <>
         <button data-testid="trigger" onMouseLeave={onExternalLeave} type="button">
           {wrapWithKeyMarkers('Cancel', 'common.cancel')}
         </button>
-        <CopyEditorOverlay />
+        <UiTextEditorOverlay />
       </>,
     );
 
@@ -56,7 +56,7 @@ describe('CopyEditorOverlay', () => {
         <button data-testid="target-btn" onClick={onButtonClick} type="button">
           {wrapWithKeyMarkers('Cancel', 'common.cancel')}
         </button>
-        <CopyEditorOverlay />
+        <UiTextEditorOverlay />
       </>,
     );
 
@@ -76,7 +76,7 @@ describe('CopyEditorOverlay', () => {
     expect(onButtonClick).not.toHaveBeenCalled();
     expect(await screen.findByRole('dialog', { name: 'Edit' })).toBeTruthy();
 
-    // Escape closes the copy editor flyout without leaking to underlying listeners.
+    // Escape closes the UI text editor flyout without leaking to underlying listeners.
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit' })).toBeNull());
     expect(onExternalEscape).not.toHaveBeenCalled();
@@ -95,7 +95,7 @@ describe('CopyEditorOverlay', () => {
         <p data-testid="multi-key">
           {`${wrapWithKeyMarkers('Cancel', 'common.cancel')} ${wrapWithKeyMarkers('Save', 'common.save')}`}
         </p>
-        <CopyEditorOverlay />
+        <UiTextEditorOverlay />
       </>,
     );
 

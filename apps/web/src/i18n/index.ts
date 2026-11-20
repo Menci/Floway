@@ -2,12 +2,6 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
 import {
-  COPY_EDITOR_POST_PROCESSOR_NAME,
-  copyEditorPostProcessor,
-  setCopyEditorTrackingActive,
-} from './copy-editor/markers';
-import { isCopyEditorEnabled } from './copy-editor/mirror';
-import {
   browserLanguage,
   defaultLanguage,
   htmlLanguageFor,
@@ -17,6 +11,12 @@ import {
 import { numberFormatter } from './number-format';
 import { loadLocale } from './resources';
 import { shellResources } from './shell';
+import {
+  UI_TEXT_EDITOR_POST_PROCESSOR_NAME,
+  uiTextEditorPostProcessor,
+  setUiTextEditorTrackingActive,
+} from './ui-text-editor/markers';
+import { isUiTextEditorEnabled } from './ui-text-editor/mirror';
 
 const cloneResource = <T>(value: T): T => structuredClone(value);
 
@@ -38,11 +38,11 @@ const cloneResource = <T>(value: T): T => structuredClone(value);
 // LanguageSync in the visitor's language rather than briefly in English.
 const language = browserLanguage();
 const loaded = new Set<SupportedLanguage>([language]);
-const copyEditorActive = isCopyEditorEnabled();
+const uiTextEditorActive = isUiTextEditorEnabled();
 
 const instance = i18n.use(numberFormatter).use(initReactI18next);
-if (copyEditorActive) {
-  instance.use(copyEditorPostProcessor);
+if (uiTextEditorActive) {
+  instance.use(uiTextEditorPostProcessor);
 }
 
 void instance.init({
@@ -57,9 +57,9 @@ void instance.init({
     escapeValue: false,
     alwaysFormat: true,
   },
-  ...(copyEditorActive
+  ...(uiTextEditorActive
     ? {
-        postProcess: [COPY_EDITOR_POST_PROCESSOR_NAME],
+        postProcess: [UI_TEXT_EDITOR_POST_PROCESSOR_NAME],
         postProcessPassResolved: true,
         react: {
           bindI18n: 'languageChanged',
@@ -82,7 +82,7 @@ i18n.on('languageChanged', language => {
 export const ensureLocaleLoaded = async (next: SupportedLanguage): Promise<void> => {
   if (loaded.has(next)) return;
   const bundle = await loadLocale(next);
-  // `overwrite: false` preserves any staged copy-editor overrides already
+  // `overwrite: false` preserves any UI text editor overrides already
   // applied to this language while filling in all untouched keys.
   i18n.addResourceBundle(next, 'translation', cloneResource(bundle.translation), true, false);
   loaded.add(next);
@@ -98,12 +98,12 @@ export const setLanguage = async (next: SupportedLanguage): Promise<void> => {
   await i18n.changeLanguage(next);
 };
 
-// Called once the copy-editor overlay and its DOM observer are mounted so that
+// Called once the UI text editor overlay and its DOM observer are mounted so that
 // markers never enter the prerendered HydrateFallback frame, yet every already
 // mounted `useTranslation` consumer re-renders with markers right away.
-export const activateCopyEditorTracking = (): void => {
-  if (!copyEditorActive) return;
-  setCopyEditorTrackingActive(true);
+export const activateUiTextEditorTracking = (): void => {
+  if (!uiTextEditorActive) return;
+  setUiTextEditorTrackingActive(true);
   i18n.addResources(i18n.language, 'translation', {});
 };
 

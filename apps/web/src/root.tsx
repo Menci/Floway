@@ -10,13 +10,13 @@ import winuiStylesheet from 'virtual:floway-winui.css?url';
 
 import type { Route } from './+types/root';
 import flowayLogoUrl from './assets/floway-blue.svg?no-inline';
-import { CopyEditorHost } from './components/copy-editor/host';
 import { DocumentTitleSync } from './components/document-title-sync';
 import { GradientBackground } from './components/gradient-background';
 import { LanguageSync } from './components/language-sync';
 import { NavigationProgress } from './components/navigation-progress';
 import { ErrorShell, ErrorStack } from './components/ui/error-shell';
 import { AppLoadingScreen } from './components/ui/loading-screen';
+import { UiTextEditorHost } from './components/ui-text-editor/host';
 import { fluentComponents } from './fluent';
 import { defaultLanguage, htmlLanguageFor } from './i18n/languages';
 import { useTranslation } from './i18n/translation';
@@ -82,7 +82,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <body className="text-[14px]">
         <FluentProvider theme={theme}>
           <LanguageSync />
-          <CopyEditorHost theme={theme} />
+          <UiTextEditorHost theme={theme} />
           <GradientBackground>{children}</GradientBackground>
         </FluentProvider>
         <Scripts />

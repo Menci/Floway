@@ -12,13 +12,13 @@ import {
 } from '@fluentui/react-icons';
 import { Fragment, useEffect, useId, useRef, useState, type Ref } from 'react';
 
-import { EditorIconButton, useCopyEditorPortal } from './editor-icon-button';
+import { EditorIconButton, useUiTextEditorPortal } from './editor-icon-button';
 import { useEditorTranslation } from './use-editor-t';
 import { fluentComponents } from '../../fluent';
-import { COPY_EDITOR_ROOT_ATTR } from '../../i18n/copy-editor/dom-registry';
-import { getAltKeyLabel } from '../../i18n/copy-editor/mirror';
-import { useCopyEditorStore, type CopyDraftEntry } from '../../i18n/copy-editor/store';
 import { supportedLanguages, type SupportedLanguage } from '../../i18n/languages';
+import { UI_TEXT_EDITOR_ROOT_ATTR } from '../../i18n/ui-text-editor/dom-registry';
+import { getAltKeyLabel } from '../../i18n/ui-text-editor/mirror';
+import { useUiTextEditorStore, type UiTextEditEntry } from '../../i18n/ui-text-editor/store';
 import { dateTime, relativeTime, shortDate } from '../../lib/format-time';
 import { useNow } from '../../lib/use-now';
 import { copyToClipboard } from '../ui/copy-to-clipboard';
@@ -37,7 +37,7 @@ interface PreviewSegment {
   text: string;
 }
 
-const getSessionPreviewSegments = (entry: CopyDraftEntry): PreviewSegment[] => {
+const getSessionPreviewSegments = (entry: UiTextEditEntry): PreviewSegment[] => {
   const segments: PreviewSegment[] = [];
   for (const language of supportedLanguages) {
     const after = entry.changes[language]?.after;
@@ -70,7 +70,7 @@ function StaleSourcePopover({
       <PopoverTrigger disableButtonEnhancement>
         <button
           aria-label={title}
-          className="floway-copy-editor-stale-trigger winui-focus-rect"
+          className="floway-ui-text-editor-stale-trigger winui-focus-rect"
           type="button"
           onClick={event => event.stopPropagation()}
         >
@@ -78,11 +78,11 @@ function StaleSourcePopover({
         </button>
       </PopoverTrigger>
       <PopoverSurface onClick={event => event.stopPropagation()}>
-        <div className="floway-copy-editor-stale-popover">
+        <div className="floway-ui-text-editor-stale-popover">
           <Text size={200} weight="semibold">{title}</Text>
-          <div className="floway-copy-editor-stale-diff">
-            <span className="floway-copy-editor-diff-before">{previousOriginal}</span>
-            <span className="floway-copy-editor-diff-after">{nextOriginal}</span>
+          <div className="floway-ui-text-editor-stale-diff">
+            <span className="floway-ui-text-editor-diff-before">{previousOriginal}</span>
+            <span className="floway-ui-text-editor-diff-after">{nextOriginal}</span>
           </div>
         </div>
       </PopoverSurface>
@@ -182,7 +182,7 @@ function SessionPreviewLines({
   copiedLabel: string;
   copiedSegmentId: string | null;
   copyActionLabel: string;
-  entries: CopyDraftEntry[];
+  entries: UiTextEditEntry[];
   moreLabel: (count: number) => string;
   onCopySegment: (segmentId: string, text: string) => void;
   scopeKey: string;
@@ -191,22 +191,22 @@ function SessionPreviewLines({
   const extraCount = entries.length - visibleEntries.length;
 
   return (
-    <div className="floway-copy-editor-batch-lines">
+    <div className="floway-ui-text-editor-session-lines">
       {visibleEntries.map(item => {
         const segments = getSessionPreviewSegments(item);
         return (
-          <div key={item.key} className="floway-copy-editor-batch-line">
+          <div key={item.key} className="floway-ui-text-editor-session-line">
             {segments.map((seg, index) => {
               const segId = `${scopeKey}:${seg.id}`;
               return (
                 <Fragment key={segId}>
                   {index > 0 && (
-                    <span aria-hidden="true" className="floway-copy-editor-batch-preview-sep">
+                    <span aria-hidden="true" className="floway-ui-text-editor-session-preview-sep">
                       {' / '}
                     </span>
                   )}
                   <span
-                    className="floway-copy-editor-batch-preview-part"
+                    className="floway-ui-text-editor-session-preview-part"
                     data-copied={copiedSegmentId === segId ? 'true' : 'false'}
                     title={copiedSegmentId === segId ? copiedLabel : `${copyActionLabel}: ${seg.text}`}
                     onClick={event => {
@@ -220,7 +220,7 @@ function SessionPreviewLines({
               );
             })}
             <span
-              className="floway-copy-editor-batch-key"
+              className="floway-ui-text-editor-session-key"
               data-leading={segments.length === 0 ? 'true' : 'false'}
               title={item.key}
             >
@@ -230,7 +230,7 @@ function SessionPreviewLines({
         );
       })}
       {extraCount > 0 && (
-        <span className="floway-copy-editor-batch-more">
+        <span className="floway-ui-text-editor-session-more">
           {moreLabel(extraCount)}
         </span>
       )}
@@ -238,17 +238,17 @@ function SessionPreviewLines({
   );
 }
 
-const isInsideCopyEditor = (target: EventTarget | null): boolean => {
+const isInsideUiTextEditor = (target: EventTarget | null): boolean => {
   if (!(target instanceof Node)) return false;
   let current: Node | null = target;
   while (current) {
-    if (current instanceof Element && current.hasAttribute(COPY_EDITOR_ROOT_ATTR)) return true;
+    if (current instanceof Element && current.hasAttribute(UI_TEXT_EDITOR_ROOT_ATTR)) return true;
     current = current.parentNode;
   }
   return false;
 };
 
-export interface DraftsPanelProps {
+export interface EditsPanelProps {
   exportedNotice: boolean;
   onClearExportedNotice: () => void;
   onClose: () => void;
@@ -256,28 +256,28 @@ export interface DraftsPanelProps {
   onExported: () => void;
 }
 
-export function DraftsPanel({
+export function EditsPanel({
   exportedNotice,
   onClearExportedNotice,
   onClose,
   onEditKey,
   onExported,
-}: DraftsPanelProps) {
+}: EditsPanelProps) {
   const { t, i18n } = useEditorTranslation();
-  const mountNode = useCopyEditorPortal();
+  const mountNode = useUiTextEditorPortal();
   const now = useNow(30_000);
-  const entriesMap = useCopyEditorStore(state => state.entries);
-  const historySessions = useCopyEditorStore(state => state.history);
-  const getOriginal = useCopyEditorStore(state => state.getOriginal);
-  const revertEntry = useCopyEditorStore(state => state.revertEntry);
-  const clearActive = useCopyEditorStore(state => state.clearActive);
-  const buildExportPayload = useCopyEditorStore(state => state.buildExportPayload);
-  const buildHistoryExportPayload = useCopyEditorStore(state => state.buildHistoryExportPayload);
-  const archiveActiveAsExport = useCopyEditorStore(state => state.archiveActiveAsExport);
-  const restoreHistorySession = useCopyEditorStore(state => state.restoreHistorySession);
-  const deleteHistorySession = useCopyEditorStore(state => state.deleteHistorySession);
-  const clearHistory = useCopyEditorStore(state => state.clearHistory);
-  const importFromJson = useCopyEditorStore(state => state.importFromJson);
+  const entriesMap = useUiTextEditorStore(state => state.entries);
+  const historySessions = useUiTextEditorStore(state => state.history);
+  const getOriginal = useUiTextEditorStore(state => state.getOriginal);
+  const revertEntry = useUiTextEditorStore(state => state.revertEntry);
+  const clearActive = useUiTextEditorStore(state => state.clearActive);
+  const buildExportPayload = useUiTextEditorStore(state => state.buildExportPayload);
+  const buildHistoryExportPayload = useUiTextEditorStore(state => state.buildHistoryExportPayload);
+  const archiveActiveAsExport = useUiTextEditorStore(state => state.archiveActiveAsExport);
+  const restoreHistorySession = useUiTextEditorStore(state => state.restoreHistorySession);
+  const deleteHistorySession = useUiTextEditorStore(state => state.deleteHistorySession);
+  const clearHistory = useUiTextEditorStore(state => state.clearHistory);
+  const importFromJson = useUiTextEditorStore(state => state.importFromJson);
 
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [showHistory, setShowHistory] = useState(false);
@@ -294,18 +294,18 @@ export function DraftsPanel({
   }, []);
 
   // Dismiss the panel only when pointer or focus returns to the host page
-  // outside the copy editor (keeping it open while focusing EditorFlyout,
+  // outside the UI text editor (keeping it open while focusing EditorFlyout,
   // internal popovers, the dock, or Alt+clicking page text).
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
       if (event.altKey) return;
-      if (isInsideCopyEditor(event.target)) return;
+      if (isInsideUiTextEditor(event.target)) return;
       onClose();
     };
     const onFocusIn = (event: FocusEvent) => {
       if (event.target === document.body || event.target === document.documentElement) return;
       if (event.target instanceof Element && 'flowayClipboardHelper' in (event.target as HTMLElement).dataset) return;
-      if (isInsideCopyEditor(event.target)) return;
+      if (isInsideUiTextEditor(event.target)) return;
       onClose();
     };
     window.addEventListener('pointerdown', onPointerDown, true);
@@ -381,18 +381,18 @@ export function DraftsPanel({
   const handlePasteImport = async () => {
     clearNotices();
     if (!navigator.clipboard || typeof navigator.clipboard.readText !== 'function') {
-      setErrorNotice(t('common.copyEditor.pasteReadError'));
+      setErrorNotice(t('common.uiTextEditor.pasteReadError'));
       return;
     }
     let rawText: string;
     try {
       rawText = await navigator.clipboard.readText();
     } catch {
-      setErrorNotice(t('common.copyEditor.pasteReadError'));
+      setErrorNotice(t('common.uiTextEditor.pasteReadError'));
       return;
     }
     if (rawText.trim().length === 0) {
-      setErrorNotice(t('common.copyEditor.pasteEmptyError'));
+      setErrorNotice(t('common.uiTextEditor.pasteEmptyError'));
       return;
     }
     try {
@@ -401,28 +401,28 @@ export function DraftsPanel({
         setShowHistory(false);
       }
     } catch (error) {
-      setErrorNotice(t('common.copyEditor.importError', {
+      setErrorNotice(t('common.uiTextEditor.importError', {
         message: error instanceof Error ? error.message : String(error),
       }));
     }
   };
 
   const headerTitle = viewingHistory
-    ? t('common.copyEditor.historyTitle')
-    : t('common.copyEditor.panelTitle');
+    ? t('common.uiTextEditor.historyTitle')
+    : t('common.uiTextEditor.panelTitle');
 
   return (
     <div
       ref={panelRef}
       aria-label={headerTitle}
-      className="floway-copy-editor-surface floway-copy-editor-panel"
+      className="floway-ui-text-editor-surface floway-ui-text-editor-panel"
       role="dialog"
     >
-      <div className="floway-copy-editor-header">
-        <div className="floway-copy-editor-header-main">
+      <div className="floway-ui-text-editor-header">
+        <div className="floway-ui-text-editor-header-main">
           {showBackButton && (
             <EditorIconButton
-              className="floway-copy-editor-header-back"
+              className="floway-ui-text-editor-header-back"
               icon={<ArrowLeft16Regular />}
               label={t('common.errors.back')}
               onClick={() => setShowHistory(false)}
@@ -430,11 +430,11 @@ export function DraftsPanel({
           )}
           <Text size={400} weight="semibold">{headerTitle}</Text>
         </div>
-        <div className="floway-copy-editor-header-actions">
+        <div className="floway-ui-text-editor-header-actions">
           {!viewingHistory && historySessions.length > 0 && (
             <EditorIconButton
               icon={<History16Regular />}
-              label={t('common.copyEditor.historyTitle')}
+              label={t('common.uiTextEditor.historyTitle')}
               onClick={() => {
                 clearNotices();
                 setShowHistory(true);
@@ -443,17 +443,17 @@ export function DraftsPanel({
           )}
           <EditorIconButton
             icon={<ClipboardPaste16Regular />}
-            label={t('common.copyEditor.pasteJson')}
+            label={t('common.uiTextEditor.pasteJson')}
             onClick={() => void handlePasteImport()}
           />
           {viewingHistory && historySessions.length > 0 && (
             <ConfirmDeleteIconFlyout
-              actionLabel={t('common.copyEditor.deleteAllHistoryAction')}
+              actionLabel={t('common.uiTextEditor.deleteAllHistoryAction')}
               cancelLabel={t('common.cancel')}
-              message={t('common.copyEditor.deleteAllHistoryMessage')}
+              message={t('common.uiTextEditor.deleteAllHistoryMessage')}
               mountNode={mountNode}
-              title={t('common.copyEditor.deleteAllHistoryTitle')}
-              triggerLabel={t('common.copyEditor.deleteAllHistory')}
+              title={t('common.uiTextEditor.deleteAllHistoryTitle')}
+              triggerLabel={t('common.uiTextEditor.deleteAllHistory')}
               onConfirm={() => {
                 clearHistory();
                 setShowHistory(false);
@@ -462,7 +462,7 @@ export function DraftsPanel({
           )}
           <EditorIconButton
             icon={<Dismiss16Regular />}
-            label={t('common.copyEditor.close')}
+            label={t('common.uiTextEditor.close')}
             onClick={onClose}
           />
         </div>
@@ -470,17 +470,17 @@ export function DraftsPanel({
 
       {(errorNotice !== null || exportedNotice) && (
         <div
-          className="floway-copy-editor-notice-bar"
+          className="floway-ui-text-editor-notice-bar"
           data-tone={errorNotice ? 'error' : 'success'}
           role={errorNotice ? 'alert' : 'status'}
         >
           {!errorNotice && <CheckmarkCircle16Regular className="flex-none" />}
           <span className="min-w-0 flex-1">
-            {errorNotice ?? t('common.copyEditor.exportedNotice')}
+            {errorNotice ?? t('common.uiTextEditor.exportedNotice')}
           </span>
           <EditorIconButton
             icon={<Dismiss16Regular />}
-            label={t('common.copyEditor.close')}
+            label={t('common.uiTextEditor.close')}
             onClick={clearNotices}
           />
         </div>
@@ -488,10 +488,10 @@ export function DraftsPanel({
 
       {!viewingHistory ? (
         <>
-          <div className="floway-copy-editor-body floway-copy-editor-body--list">
+          <div className="floway-ui-text-editor-body floway-ui-text-editor-body--list">
             {activeEntries.length === 0 ? (
-              <div className="floway-copy-editor-empty">
-                {t('common.copyEditor.emptyDrafts', { key: getAltKeyLabel() })}
+              <div className="floway-ui-text-editor-empty">
+                {t('common.uiTextEditor.emptyHint', { key: getAltKeyLabel() })}
               </div>
             ) : (
               activeEntries.map(entry => {
@@ -500,8 +500,8 @@ export function DraftsPanel({
                   <div
                     key={entry.key}
                     className={keyExists
-                      ? 'floway-copy-editor-draft-item floway-copy-editor-interactive-item winui-focus-rect'
-                      : 'floway-copy-editor-draft-item'}
+                      ? 'floway-ui-text-editor-entry-item floway-ui-text-editor-interactive-item winui-focus-rect'
+                      : 'floway-ui-text-editor-entry-item'}
                     role={keyExists ? 'button' : undefined}
                     tabIndex={keyExists ? 0 : undefined}
                     onClick={keyExists ? () => onEditKey(entry.key) : undefined}
@@ -514,10 +514,10 @@ export function DraftsPanel({
                       }
                       : undefined}
                   >
-                    <div className="floway-copy-editor-draft-head">
-                      <span className="floway-copy-editor-draft-key-group">
+                    <div className="floway-ui-text-editor-entry-head">
+                      <span className="floway-ui-text-editor-entry-key-group">
                         <span
-                          className="floway-copy-editor-draft-key"
+                          className="floway-ui-text-editor-entry-key"
                           data-missing={keyExists ? 'false' : 'true'}
                           title={entry.key}
                         >
@@ -525,13 +525,13 @@ export function DraftsPanel({
                         </span>
                         {!keyExists && (
                           <Tooltip
-                            content={t('common.copyEditor.missingKeyNotice')}
+                            content={t('common.uiTextEditor.missingKeyNotice')}
                             mountNode={mountNode}
                             relationship="label"
                           >
                             <span
-                              aria-label={t('common.copyEditor.missingKeyNotice')}
-                              className="floway-copy-editor-missing-icon"
+                              aria-label={t('common.uiTextEditor.missingKeyNotice')}
+                              className="floway-ui-text-editor-missing-icon"
                             >
                               <ErrorCircle16Regular />
                             </span>
@@ -544,14 +544,14 @@ export function DraftsPanel({
                       >
                         <EditorIconButton
                           icon={<Delete16Regular />}
-                          label={t('common.copyEditor.revert')}
+                          label={t('common.uiTextEditor.delete')}
                           onClick={() => revertEntry(entry.key)}
                         />
                       </div>
                     </div>
 
                     {Object.keys(entry.changes).length > 0 && (
-                      <div className="floway-copy-editor-diff-list">
+                      <div className="floway-ui-text-editor-diff-list">
                         {supportedLanguages.map(language => {
                           const change = entry.changes[language];
                           if (!change) return null;
@@ -561,22 +561,22 @@ export function DraftsPanel({
                           && !isApplied
                           && currentOriginal !== change.before;
                           return (
-                            <div key={language} className="floway-copy-editor-diff-row">
-                              <span className="floway-copy-editor-diff-lang">
+                            <div key={language} className="floway-ui-text-editor-diff-row">
+                              <span className="floway-ui-text-editor-diff-lang">
                                 {SHORT_LANGUAGE_LABELS[language]}
                               </span>
-                              <div className="floway-copy-editor-diff-values">
-                                <span className="floway-copy-editor-diff-before-line">
-                                  <span className="floway-copy-editor-diff-before">{change.before}</span>
+                              <div className="floway-ui-text-editor-diff-values">
+                                <span className="floway-ui-text-editor-diff-before-line">
+                                  <span className="floway-ui-text-editor-diff-before">{change.before}</span>
                                   {isApplied && (
                                     <Tooltip
-                                      content={t('common.copyEditor.appliedNotice')}
+                                      content={t('common.uiTextEditor.appliedNotice')}
                                       mountNode={mountNode}
                                       relationship="label"
                                     >
                                       <span
-                                        aria-label={t('common.copyEditor.appliedNotice')}
-                                        className="floway-copy-editor-applied-icon"
+                                        aria-label={t('common.uiTextEditor.appliedNotice')}
+                                        className="floway-ui-text-editor-applied-icon"
                                         onClick={event => event.stopPropagation()}
                                       >
                                         <CheckmarkCircle16Regular />
@@ -588,12 +588,12 @@ export function DraftsPanel({
                                       mountNode={mountNode}
                                       nextOriginal={currentOriginal}
                                       previousOriginal={change.before}
-                                      title={t('common.copyEditor.staleNotice')}
+                                      title={t('common.uiTextEditor.staleNotice')}
                                     />
                                   )}
                                 </span>
                                 {change.after.length > 0 && (
-                                  <span className="floway-copy-editor-diff-after">{change.after}</span>
+                                  <span className="floway-ui-text-editor-diff-after">{change.after}</span>
                                 )}
                               </div>
                             </div>
@@ -603,7 +603,7 @@ export function DraftsPanel({
                     )}
 
                     {entry.note.trim().length > 0 && (
-                      <span className="floway-copy-editor-meta pr-1.5">{entry.note}</span>
+                      <span className="floway-ui-text-editor-meta pr-1.5">{entry.note}</span>
                     )}
                   </div>
                 );
@@ -611,18 +611,18 @@ export function DraftsPanel({
             )}
           </div>
 
-          <div className="floway-copy-editor-footer">
-            <div className="floway-copy-editor-footer-start">
+          <div className="floway-ui-text-editor-footer">
+            <div className="floway-ui-text-editor-footer-start">
               {activeEntries.length > 0 && (
                 <ConfirmDeleteIconFlyout
-                  actionLabel={t('common.copyEditor.discardEdits')}
+                  actionLabel={t('common.uiTextEditor.discardEdits')}
                   align="start"
                   cancelLabel={t('common.cancel')}
-                  message={t('common.copyEditor.discardEditsMessage')}
+                  message={t('common.uiTextEditor.discardEditsMessage')}
                   mountNode={mountNode}
                   position="above"
-                  title={t('common.copyEditor.discardEditsTitle')}
-                  triggerLabel={t('common.copyEditor.discardEdits')}
+                  title={t('common.uiTextEditor.discardEditsTitle')}
+                  triggerLabel={t('common.uiTextEditor.discardEdits')}
                   onConfirm={clearActive}
                 />
               )}
@@ -637,15 +637,15 @@ export function DraftsPanel({
                 ? t('common.copy.copied')
                 : copyState === 'failed'
                   ? t('common.copy.failed')
-                  : t('common.copyEditor.export')}
+                  : t('common.uiTextEditor.export')}
             </Button>
           </div>
         </>
       ) : (
-        <div className="floway-copy-editor-body floway-copy-editor-body--list">
+        <div className="floway-ui-text-editor-body floway-ui-text-editor-body--list">
           {activeEntries.length > 0 && (
             <div
-              className="floway-copy-editor-draft-item floway-copy-editor-interactive-item winui-focus-rect"
+              className="floway-ui-text-editor-entry-item floway-ui-text-editor-interactive-item winui-focus-rect"
               data-current-session="true"
               role="button"
               tabIndex={0}
@@ -657,9 +657,9 @@ export function DraftsPanel({
                 }
               }}
             >
-              <div className="floway-copy-editor-draft-head">
-                <span className="floway-copy-editor-batch-time">
-                  {t('common.copyEditor.currentEdits')}
+              <div className="floway-ui-text-editor-entry-head">
+                <span className="floway-ui-text-editor-session-time">
+                  {t('common.uiTextEditor.currentEdits')}
                 </span>
                 <div
                   className="flex items-center gap-0.5 flex-none"
@@ -667,16 +667,16 @@ export function DraftsPanel({
                 >
                   <EditorIconButton
                     icon={copyState === 'copied' ? <Checkmark16Regular /> : <Copy16Regular />}
-                    label={copyState === 'copied' ? t('common.copy.copied') : t('common.copyEditor.export')}
+                    label={copyState === 'copied' ? t('common.copy.copied') : t('common.uiTextEditor.export')}
                     onClick={() => void handleExport()}
                   />
                   <ConfirmDeleteIconFlyout
-                    actionLabel={t('common.copyEditor.discardEdits')}
+                    actionLabel={t('common.uiTextEditor.discardEdits')}
                     cancelLabel={t('common.cancel')}
-                    message={t('common.copyEditor.discardEditsMessage')}
+                    message={t('common.uiTextEditor.discardEditsMessage')}
                     mountNode={mountNode}
-                    title={t('common.copyEditor.discardEditsTitle')}
-                    triggerLabel={t('common.copyEditor.discardEdits')}
+                    title={t('common.uiTextEditor.discardEditsTitle')}
+                    triggerLabel={t('common.uiTextEditor.discardEdits')}
                     onConfirm={clearActive}
                   />
                 </div>
@@ -686,7 +686,7 @@ export function DraftsPanel({
                 copiedSegmentId={copiedSegmentId}
                 copyActionLabel={t('common.copy.action')}
                 entries={activeEntries}
-                moreLabel={count => t('common.copyEditor.moreEdits', { count })}
+                moreLabel={count => t('common.uiTextEditor.moreEdits', { count })}
                 scopeKey="current"
                 onCopySegment={handleCopySegment}
               />
@@ -700,7 +700,7 @@ export function DraftsPanel({
             return (
               <div
                 key={session.id}
-                className="floway-copy-editor-draft-item floway-copy-editor-interactive-item winui-focus-rect"
+                className="floway-ui-text-editor-entry-item floway-ui-text-editor-interactive-item winui-focus-rect"
                 role="button"
                 tabIndex={0}
                 onClick={() => handleRestoreSession(session.id)}
@@ -711,9 +711,9 @@ export function DraftsPanel({
                   }
                 }}
               >
-                <div className="floway-copy-editor-draft-head">
+                <div className="floway-ui-text-editor-entry-head">
                   <span
-                    className="floway-copy-editor-batch-time"
+                    className="floway-ui-text-editor-session-time"
                     title={dateTime(session.archivedAt, locale)}
                   >
                     {relative}
@@ -724,12 +724,12 @@ export function DraftsPanel({
                   >
                     <EditorIconButton
                       icon={copiedSessionId === session.id ? <Checkmark16Regular /> : <Copy16Regular />}
-                      label={copiedSessionId === session.id ? t('common.copy.copied') : t('common.copyEditor.export')}
+                      label={copiedSessionId === session.id ? t('common.copy.copied') : t('common.uiTextEditor.export')}
                       onClick={() => void handleCopySession(session.id)}
                     />
                     <EditorIconButton
                       icon={<Delete16Regular />}
-                      label={t('common.copyEditor.deleteHistory')}
+                      label={t('common.uiTextEditor.deleteHistory')}
                       onClick={() => deleteHistorySession(session.id)}
                     />
                   </div>
@@ -739,7 +739,7 @@ export function DraftsPanel({
                   copiedSegmentId={copiedSegmentId}
                   copyActionLabel={t('common.copy.action')}
                   entries={session.entries}
-                  moreLabel={count => t('common.copyEditor.moreEdits', { count })}
+                  moreLabel={count => t('common.uiTextEditor.moreEdits', { count })}
                   scopeKey={session.id}
                   onCopySegment={handleCopySegment}
                 />

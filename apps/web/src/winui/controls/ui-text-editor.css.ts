@@ -1,8 +1,8 @@
-// WinUI 3 surfaces for the in-context copy editor overlay, hosted inside a
+// WinUI 3 surfaces for the in-context UI text editor overlay, hosted inside a
 // native top-layer popover so it sits above dialogs, flyouts, menus, and
 // tooltips without contending for z-index.
-export const copyEditorCss = `
-.floway-copy-editor-layer {
+export const uiTextEditorCss = `
+.floway-ui-text-editor-layer {
   position: fixed;
   inset: 0;
   width: 100%;
@@ -17,7 +17,7 @@ export const copyEditorCss = `
   pointer-events: none;
 }
 
-.floway-copy-editor-layer::backdrop {
+.floway-ui-text-editor-layer::backdrop {
   background: transparent;
   pointer-events: none;
 }
@@ -25,18 +25,18 @@ export const copyEditorCss = `
 /* FluentProvider supplies theme CSS variables for all controls inside the top
    layer while staying visually transparent and click-through outside the
    editor surfaces themselves. */
-.fui-FluentProvider.floway-copy-editor-provider {
+.fui-FluentProvider.floway-ui-text-editor-provider {
   position: fixed;
   inset: 0;
   background-color: transparent;
   pointer-events: none;
 }
 
-.floway-copy-editor-portal-host {
+.floway-ui-text-editor-portal-host {
   pointer-events: auto;
 }
 
-.floway-copy-editor-highlight {
+.floway-ui-text-editor-highlight {
   position: fixed;
   pointer-events: none;
   border-radius: var(--winui-control-corner-radius);
@@ -46,7 +46,7 @@ export const copyEditorCss = `
   box-sizing: border-box;
 }
 
-.floway-copy-editor-highlight-tag {
+.floway-ui-text-editor-highlight-tag {
   position: fixed;
   pointer-events: none;
   max-width: min(440px, calc(100vw - 24px));
@@ -64,7 +64,7 @@ export const copyEditorCss = `
   text-overflow: ellipsis;
 }
 
-.floway-copy-editor-dock {
+.floway-ui-text-editor-dock {
   position: fixed;
   right: 16px;
   bottom: 16px;
@@ -81,7 +81,7 @@ export const copyEditorCss = `
   backdrop-filter: blur(24px) saturate(125%);
 }
 
-.floway-copy-editor-dock-divider {
+.floway-ui-text-editor-dock-divider {
   width: 1px;
   height: 16px;
   margin: 0 2px;
@@ -89,7 +89,7 @@ export const copyEditorCss = `
   flex: none;
 }
 
-.floway-copy-editor-surface {
+.floway-ui-text-editor-surface {
   position: fixed;
   pointer-events: auto;
   border-radius: var(--winui-overlay-corner-radius);
@@ -103,20 +103,20 @@ export const copyEditorCss = `
   overflow: hidden;
 }
 
-.floway-copy-editor-flyout {
+.floway-ui-text-editor-flyout {
   width: min(460px, calc(100vw - 24px));
   max-height: min(640px, calc(100vh - 24px));
   overflow: visible;
 }
 
-.floway-copy-editor-panel {
+.floway-ui-text-editor-panel {
   right: 16px;
   bottom: 62px;
   width: min(460px, calc(100vw - 32px));
   max-height: min(480px, calc(100vh - 96px));
 }
 
-.floway-copy-editor-header {
+.floway-ui-text-editor-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -128,16 +128,16 @@ export const copyEditorCss = `
   box-sizing: border-box;
 }
 
-.floway-copy-editor-header[data-draggable="true"] {
+.floway-ui-text-editor-header[data-draggable="true"] {
   cursor: grab;
   user-select: none;
 }
 
-.floway-copy-editor-header[data-draggable="true"]:active {
+.floway-ui-text-editor-header[data-draggable="true"]:active {
   cursor: grabbing;
 }
 
-.floway-copy-editor-header-main {
+.floway-ui-text-editor-header-main {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -145,18 +145,18 @@ export const copyEditorCss = `
   flex: 1 1 auto;
 }
 
-.floway-copy-editor-header-actions {
+.floway-ui-text-editor-header-actions {
   display: flex;
   align-items: center;
   gap: 2px;
   flex: none;
 }
 
-.floway-copy-editor-header-back {
+.floway-ui-text-editor-header-back {
   margin-inline-start: -6px;
 }
 
-.floway-copy-editor-header-key-group {
+.floway-ui-text-editor-header-key-group {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -164,11 +164,11 @@ export const copyEditorCss = `
   flex: 0 1 auto;
 }
 
-.floway-copy-editor-flyout-header {
+.floway-ui-text-editor-flyout-header {
   position: relative;
 }
 
-.floway-copy-editor-header-key-trigger {
+.floway-ui-text-editor-header-key-trigger {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -186,16 +186,16 @@ export const copyEditorCss = `
   transition: background-color 83ms linear;
 }
 
-.floway-copy-editor-header-key-trigger:hover {
+.floway-ui-text-editor-header-key-trigger:hover {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
-.floway-copy-editor-header-key-trigger:active,
-.floway-copy-editor-header-key-trigger[data-open="true"] {
+.floway-ui-text-editor-header-key-trigger:active,
+.floway-ui-text-editor-header-key-trigger[data-open="true"] {
   background-color: var(--winui-subtle-fill-tertiary);
 }
 
-.floway-copy-editor-header-key {
+.floway-ui-text-editor-header-key {
   font-family: var(--fontFamilyMonospace);
   font-size: calc(var(--fontSizeBase300) - 1px);
   line-height: var(--lineHeightBase300);
@@ -209,17 +209,17 @@ export const copyEditorCss = `
   min-width: 0;
 }
 
-.floway-copy-editor-header-key-chevron {
+.floway-ui-text-editor-header-key-chevron {
   flex: none;
   color: var(--winui-text-fill-secondary);
   transition: transform 120ms cubic-bezier(0.1, 0.9, 0.2, 1);
 }
 
-.floway-copy-editor-header-key-chevron[data-open="true"] {
+.floway-ui-text-editor-header-key-chevron[data-open="true"] {
   transform: rotate(180deg);
 }
 
-.floway-copy-editor-key-listbox {
+.floway-ui-text-editor-key-listbox {
   position: absolute;
   top: calc(100% + 4px);
   left: 8px;
@@ -233,7 +233,7 @@ export const copyEditorCss = `
   backdrop-filter: blur(24px) saturate(125%);
 }
 
-.floway-copy-editor-key-option {
+.floway-ui-text-editor-key-option {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -247,11 +247,11 @@ export const copyEditorCss = `
   box-sizing: border-box;
 }
 
-.floway-copy-editor-key-option[data-highlighted="true"]:not([aria-selected="true"]) {
+.floway-ui-text-editor-key-option[data-highlighted="true"]:not([aria-selected="true"]) {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
-.floway-copy-editor-key-option-value {
+.floway-ui-text-editor-key-option-value {
   width: 100%;
   font-size: var(--fontSizeBase300);
   line-height: var(--lineHeightBase300);
@@ -263,7 +263,7 @@ export const copyEditorCss = `
   word-break: break-word;
 }
 
-.floway-copy-editor-key-option-key {
+.floway-ui-text-editor-key-option-key {
   width: 100%;
   font-family: var(--fontFamilyMonospace);
   font-size: calc(var(--fontSizeBase200) - 1px);
@@ -273,7 +273,7 @@ export const copyEditorCss = `
   word-break: break-word;
 }
 
-.floway-copy-editor-body {
+.floway-ui-text-editor-body {
   padding: 16px;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -284,12 +284,12 @@ export const copyEditorCss = `
   flex: 1 1 auto;
 }
 
-.floway-copy-editor-body--list {
+.floway-ui-text-editor-body--list {
   padding: 0;
   gap: 0;
 }
 
-.floway-copy-editor-footer {
+.floway-ui-text-editor-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -302,19 +302,19 @@ export const copyEditorCss = `
   flex: none;
 }
 
-.floway-copy-editor-footer-start {
+.floway-ui-text-editor-footer-start {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.floway-copy-editor-field {
+.floway-ui-text-editor-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.floway-copy-editor-field-header {
+.floway-ui-text-editor-field-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -322,24 +322,24 @@ export const copyEditorCss = `
   min-height: 24px;
 }
 
-.floway-copy-editor-field-header .fui-Label {
+.floway-ui-text-editor-field-header .fui-Label {
   padding: 0;
   line-height: 20px;
 }
 
-.floway-copy-editor-field-header .fui-Button {
+.floway-ui-text-editor-field-header .fui-Button {
   margin-inline-end: -4px;
 }
 
 
-.floway-copy-editor-meta {
+.floway-ui-text-editor-meta {
   font-size: 12px;
   line-height: 16px;
   color: var(--winui-text-fill-secondary);
   word-break: break-word;
 }
 
-.floway-copy-editor-stale-trigger {
+.floway-ui-text-editor-stale-trigger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -355,11 +355,11 @@ export const copyEditorCss = `
   vertical-align: middle;
 }
 
-.floway-copy-editor-stale-trigger:hover {
+.floway-ui-text-editor-stale-trigger:hover {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
-.floway-copy-editor-applied-icon {
+.floway-ui-text-editor-applied-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -370,7 +370,7 @@ export const copyEditorCss = `
   vertical-align: middle;
 }
 
-.floway-copy-editor-missing-icon {
+.floway-ui-text-editor-missing-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -381,14 +381,14 @@ export const copyEditorCss = `
   vertical-align: middle;
 }
 
-.floway-copy-editor-stale-popover {
+.floway-ui-text-editor-stale-popover {
   display: flex;
   flex-direction: column;
   gap: 6px;
   max-width: min(320px, calc(100vw - 32px));
 }
 
-.floway-copy-editor-stale-diff {
+.floway-ui-text-editor-stale-diff {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -396,7 +396,7 @@ export const copyEditorCss = `
   line-height: 17px;
 }
 
-.floway-copy-editor-empty {
+.floway-ui-text-editor-empty {
   padding: 28px 16px;
   font-size: 13px;
   line-height: 18px;
@@ -404,7 +404,7 @@ export const copyEditorCss = `
   text-align: center;
 }
 
-.floway-copy-editor-notice-bar {
+.floway-ui-text-editor-notice-bar {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -415,17 +415,17 @@ export const copyEditorCss = `
   flex: none;
 }
 
-.floway-copy-editor-notice-bar[data-tone="error"] {
+.floway-ui-text-editor-notice-bar[data-tone="error"] {
   background-color: var(--winui-system-fill-critical-background);
   color: var(--winui-system-fill-critical);
 }
 
-.floway-copy-editor-notice-bar[data-tone="success"] {
+.floway-ui-text-editor-notice-bar[data-tone="success"] {
   background-color: var(--winui-system-fill-success-background);
   color: var(--winui-system-fill-success);
 }
 
-.floway-copy-editor-draft-item {
+.floway-ui-text-editor-entry-item {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -433,38 +433,38 @@ export const copyEditorCss = `
   border-bottom: 1px solid var(--winui-divider-stroke-default);
 }
 
-.floway-copy-editor-draft-item:last-child {
+.floway-ui-text-editor-entry-item:last-child {
   border-bottom: 0;
 }
 
-.floway-copy-editor-interactive-item {
+.floway-ui-text-editor-interactive-item {
   cursor: pointer;
   transition: background-color 80ms ease;
 }
 
-.floway-copy-editor-interactive-item:hover {
+.floway-ui-text-editor-interactive-item:hover {
   background-color: var(--winui-subtle-fill-secondary);
 }
 
-.floway-copy-editor-interactive-item:active {
+.floway-ui-text-editor-interactive-item:active {
   background-color: var(--winui-subtle-fill-tertiary);
 }
 
-.floway-copy-editor-draft-head {
+.floway-ui-text-editor-entry-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-.floway-copy-editor-draft-key-group {
+.floway-ui-text-editor-entry-key-group {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   min-width: 0;
 }
 
-.floway-copy-editor-draft-key {
+.floway-ui-text-editor-entry-key {
   font-family: var(--fontFamilyMonospace);
   font-size: calc(var(--fontSizeBase300) - 1px);
   line-height: var(--lineHeightBase300);
@@ -475,26 +475,26 @@ export const copyEditorCss = `
   min-width: 0;
 }
 
-.floway-copy-editor-draft-key[data-missing="true"] {
+.floway-ui-text-editor-entry-key[data-missing="true"] {
   color: var(--winui-text-fill-secondary);
   text-decoration: line-through;
 }
 
-.floway-copy-editor-batch-time {
+.floway-ui-text-editor-session-time {
   font-size: 13px;
   line-height: 18px;
   font-weight: 500;
   color: var(--winui-text-fill-primary);
 }
 
-.floway-copy-editor-batch-lines {
+.floway-ui-text-editor-session-lines {
   display: flex;
   flex-direction: column;
   gap: 3px;
   padding-right: 6px;
 }
 
-.floway-copy-editor-batch-line {
+.floway-ui-text-editor-session-line {
   font-size: 12px;
   line-height: 17px;
   white-space: nowrap;
@@ -503,7 +503,7 @@ export const copyEditorCss = `
   min-width: 0;
 }
 
-.floway-copy-editor-batch-preview-part {
+.floway-ui-text-editor-session-preview-part {
   color: var(--winui-text-fill-primary);
   font-weight: 400;
   border-radius: 3px;
@@ -511,47 +511,47 @@ export const copyEditorCss = `
   transition: color 80ms ease;
 }
 
-.floway-copy-editor-batch-preview-part:hover {
+.floway-ui-text-editor-session-preview-part:hover {
   color: var(--winui-accent-text-fill-primary);
 }
 
-.floway-copy-editor-batch-preview-part[data-copied="true"] {
+.floway-ui-text-editor-session-preview-part[data-copied="true"] {
   color: var(--winui-accent-text-fill-primary);
 }
 
-.floway-copy-editor-batch-preview-sep {
+.floway-ui-text-editor-session-preview-sep {
   color: var(--winui-text-fill-tertiary);
   user-select: none;
   pointer-events: none;
 }
 
-.floway-copy-editor-batch-key {
+.floway-ui-text-editor-session-key {
   font-family: var(--fontFamilyMonospace);
   font-size: calc(var(--fontSizeBase200) - 1px);
   color: var(--winui-text-fill-tertiary);
   margin-inline-start: 8px;
 }
 
-.floway-copy-editor-batch-key[data-leading="true"] {
+.floway-ui-text-editor-session-key[data-leading="true"] {
   margin-inline-start: 0;
   color: var(--winui-text-fill-secondary);
 }
 
-.floway-copy-editor-batch-more {
+.floway-ui-text-editor-session-more {
   font-size: 12px;
   line-height: 16px;
   color: var(--winui-text-fill-tertiary);
   margin-top: 1px;
 }
 
-.floway-copy-editor-diff-list {
+.floway-ui-text-editor-diff-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 18px;
   padding-right: 6px;
 }
 
-.floway-copy-editor-diff-row {
+.floway-ui-text-editor-diff-row {
   display: inline-flex;
   align-items: baseline;
   gap: 6px;
@@ -561,21 +561,21 @@ export const copyEditorCss = `
   line-height: 17px;
 }
 
-.floway-copy-editor-diff-lang {
+.floway-ui-text-editor-diff-lang {
   font-size: 12px;
   line-height: 17px;
   color: var(--winui-text-fill-tertiary);
   flex: none;
 }
 
-.floway-copy-editor-diff-values {
+.floway-ui-text-editor-diff-values {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 
-.floway-copy-editor-diff-before-line {
+.floway-ui-text-editor-diff-before-line {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -583,21 +583,21 @@ export const copyEditorCss = `
   min-width: 0;
 }
 
-.floway-copy-editor-diff-before {
+.floway-ui-text-editor-diff-before {
   color: var(--winui-text-fill-secondary);
   text-decoration: line-through;
   word-break: break-word;
 }
 
-.floway-copy-editor-diff-after {
+.floway-ui-text-editor-diff-after {
   color: var(--winui-text-fill-primary);
   word-break: break-word;
 }
 
 @media (forced-colors: active) {
-  .floway-copy-editor-dock,
-  .floway-copy-editor-surface,
-  .floway-copy-editor-highlight-tag {
+  .floway-ui-text-editor-dock,
+  .floway-ui-text-editor-surface,
+  .floway-ui-text-editor-highlight-tag {
     border-width: 2px;
     box-shadow: none;
     backdrop-filter: none;

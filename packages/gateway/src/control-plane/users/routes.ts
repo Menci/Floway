@@ -166,7 +166,7 @@ export const updateOwnPreferences = async (c: CtxWithJson<typeof updateOwnPrefer
   const next = {
     quotaDisplay: body.quotaDisplay ?? current.quotaDisplay,
     language: body.language === undefined ? current.language : body.language,
-    copyEditor: body.copyEditor ?? current.copyEditor,
+    uiTextEditor: body.uiTextEditor ?? current.uiTextEditor,
   };
   await repo.userPreferences.save(userId, next);
   return c.json({ preferences: next });

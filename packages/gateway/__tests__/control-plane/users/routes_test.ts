@@ -124,9 +124,9 @@ test('PATCH /api/users/me/preferences merges a partial update and clears languag
   const { adminSession, repo } = await setupAppTest();
 
   await patchPreferences(adminSession, { language: 'zh-Hans' });
-  expect(await repo.userPreferences.get(1)).toEqual({ quotaDisplay: 'remaining', language: 'zh-Hans', copyEditor: false });
+  expect(await repo.userPreferences.get(1)).toEqual({ quotaDisplay: 'remaining', language: 'zh-Hans', uiTextEditor: false });
 
   const cleared = await patchPreferences(adminSession, { language: null });
   assertEquals(cleared.status, 200);
-  expect(await repo.userPreferences.get(1)).toEqual({ quotaDisplay: 'remaining', language: null, copyEditor: false });
+  expect(await repo.userPreferences.get(1)).toEqual({ quotaDisplay: 'remaining', language: null, uiTextEditor: false });
 });

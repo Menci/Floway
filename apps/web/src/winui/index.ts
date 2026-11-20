@@ -6,7 +6,6 @@ import { calendarRangeCss } from './controls/calendar-range.css';
 import { cardCss } from './controls/card.css';
 import { choiceCss } from './controls/choice.css';
 import { colorPickerCss } from './controls/color-picker.css';
-import { copyEditorCss } from './controls/copy-editor.css';
 import { dialogCss } from './controls/dialog.css';
 import { drawerCss } from './controls/drawer.css';
 import { fieldCss } from './controls/field.css';
@@ -30,6 +29,7 @@ import { textCss } from './controls/text.css';
 import { toastCss } from './controls/toast.css';
 import { toolbarCss } from './controls/toolbar.css';
 import { tooltipCss } from './controls/tooltip.css';
+import { uiTextEditorCss } from './controls/ui-text-editor.css';
 import { focusRectCss } from './focus-rect.css';
 import { pageTransitionCss } from './page-transition.css';
 import { winuiResetCss } from './reset.css';
@@ -48,7 +48,7 @@ export const winuiCss = [
   calendarRangeCss,
   choiceCss,
   colorPickerCss,
-  copyEditorCss,
+  uiTextEditorCss,
   dialogCss,
   drawerCss,
   fieldCss,

@@ -1,6 +1,6 @@
 import { extractKeySegments, mayContainKeyMarkers, type TextKeySegment } from './markers';
 
-export const COPY_EDITOR_ROOT_ATTR = 'data-floway-copy-editor-root';
+export const UI_TEXT_EDITOR_ROOT_ATTR = 'data-floway-ui-text-editor-root';
 
 const MONITORED_ATTRIBUTES = ['aria-label', 'placeholder', 'alt', 'value'] as const;
 
@@ -9,23 +9,17 @@ export interface AttributeKeyRecord {
   key: string;
 }
 
-export interface KeyCandidate {
-  key: string;
-  source: 'text' | 'attribute';
-  attribute?: string;
-}
-
 export interface HitTarget {
   element: Element;
   rect: DOMRect;
   primaryKey: string;
-  candidates: KeyCandidate[];
+  candidates: string[];
 }
 
 const isInsideEditorUi = (node: Node | null): boolean => {
   let current: Node | null = node;
   while (current) {
-    if (current instanceof Element && current.hasAttribute(COPY_EDITOR_ROOT_ATTR)) return true;
+    if (current instanceof Element && current.hasAttribute(UI_TEXT_EDITOR_ROOT_ATTR)) return true;
     current = current.parentNode;
   }
   return false;
@@ -73,18 +67,9 @@ const caretAtPoint = (doc: Document, x: number, y: number): CaretHit | null => {
 const pointInsideRect = (rect: DOMRect, x: number, y: number, pad = 4): boolean =>
   x >= rect.left - pad && x <= rect.right + pad && y >= rect.top - pad && y <= rect.bottom + pad;
 
-const dedupeCandidates = (items: KeyCandidate[]): KeyCandidate[] => {
-  const seen = new Set<string>();
-  const out: KeyCandidate[] = [];
-  for (const item of items) {
-    if (seen.has(item.key)) continue;
-    seen.add(item.key);
-    out.push(item);
-  }
-  return out;
-};
+const dedupeKeys = (items: string[]): string[] => [...new Set(items)];
 
-export class CopyEditorDomRegistry {
+export class UiTextEditorDomRegistry {
   private readonly textSegments = new WeakMap<Text, TextKeySegment[]>();
   private readonly elementTexts = new WeakMap<Element, Set<Text>>();
   private readonly elementAttrs = new WeakMap<Element, AttributeKeyRecord[]>();
@@ -149,7 +134,7 @@ export class CopyEditorDomRegistry {
       {
         acceptNode(candidate) {
           if (candidate instanceof Element) {
-            if (candidate.hasAttribute(COPY_EDITOR_ROOT_ATTR) || isRestrictedElement(candidate)) {
+            if (candidate.hasAttribute(UI_TEXT_EDITOR_ROOT_ATTR) || isRestrictedElement(candidate)) {
               return NodeFilter.FILTER_REJECT;
             }
           }
@@ -233,8 +218,8 @@ export class CopyEditorDomRegistry {
     this.elementAttrs.set(element, filtered);
   }
 
-  private collectTextCandidates(element: Element): KeyCandidate[] {
-    const out: KeyCandidate[] = [];
+  private collectTextKeys(element: Element): string[] {
+    const out: string[] = [];
     const textNodes = this.elementTexts.get(element);
     if (textNodes) {
       for (const textNode of textNodes) {
@@ -245,21 +230,17 @@ export class CopyEditorDomRegistry {
         const segments = this.textSegments.get(textNode);
         if (!segments) continue;
         for (const seg of segments) {
-          out.push({ key: seg.key, source: 'text' });
+          out.push(seg.key);
         }
       }
     }
     return out;
   }
 
-  private collectAttributeCandidates(element: Element): KeyCandidate[] {
+  private collectAttributeKeys(element: Element): string[] {
     const attrs = this.elementAttrs.get(element);
     if (!attrs) return [];
-    return attrs.map(entry => ({
-      key: entry.key,
-      source: 'attribute',
-      attribute: entry.attribute,
-    }));
+    return attrs.map(entry => entry.key);
   }
 
   /**
@@ -267,17 +248,17 @@ export class CopyEditorDomRegistry {
    * element so a sentence composed of several locale strings (or a <Trans>
    * spanning inline tags) exposes every contributing key together.
    */
-  private collectSubtreeCandidates(element: Element): KeyCandidate[] {
-    const collected: KeyCandidate[] = [
-      ...this.collectTextCandidates(element),
-      ...this.collectAttributeCandidates(element),
+  private collectSubtreeKeys(element: Element): string[] {
+    const collected: string[] = [
+      ...this.collectTextKeys(element),
+      ...this.collectAttributeKeys(element),
     ];
     const walker = element.ownerDocument.createTreeWalker(
       element,
       NodeFilter.SHOW_ELEMENT,
       {
         acceptNode(candidate) {
-          return candidate instanceof Element && candidate.hasAttribute(COPY_EDITOR_ROOT_ATTR)
+          return candidate instanceof Element && candidate.hasAttribute(UI_TEXT_EDITOR_ROOT_ATTR)
             ? NodeFilter.FILTER_REJECT
             : NodeFilter.FILTER_ACCEPT;
         },
@@ -286,11 +267,11 @@ export class CopyEditorDomRegistry {
     let child = walker.nextNode() as Element | null;
     let visited = 0;
     while (child && visited < 40) {
-      collected.push(...this.collectTextCandidates(child), ...this.collectAttributeCandidates(child));
+      collected.push(...this.collectTextKeys(child), ...this.collectAttributeKeys(child));
       visited += 1;
       child = walker.nextNode() as Element | null;
     }
-    return dedupeCandidates(collected);
+    return dedupeKeys(collected);
   }
 
   resolveAtPoint(doc: Document, clientX: number, clientY: number): HitTarget | null {
@@ -306,10 +287,10 @@ export class CopyEditorDomRegistry {
           // Include siblings in the same inline sentence/element so the user
           // can edit either the exact segment clicked or any adjacent key.
           const container = parent.closest('p, li, td, th, button, a, label, h1, h2, h3, h4, h5, h6, [role="tooltip"], [role="menuitem"], [role="option"]') ?? parent;
-          const allCandidates = dedupeCandidates([
-            { key: hitSegment.key, source: 'text' },
-            ...segments.map(seg => ({ key: seg.key, source: 'text' as const })),
-            ...this.collectSubtreeCandidates(container),
+          const allCandidates = dedupeKeys([
+            hitSegment.key,
+            ...segments.map(seg => seg.key),
+            ...this.collectSubtreeKeys(container),
           ]);
           return {
             element: parent,
@@ -327,9 +308,9 @@ export class CopyEditorDomRegistry {
     const stack = typeof doc.elementsFromPoint === 'function' ? doc.elementsFromPoint(clientX, clientY) : [];
     for (const element of stack) {
       if (isInsideEditorUi(element)) return null;
-      const direct = dedupeCandidates([
-        ...this.collectTextCandidates(element),
-        ...this.collectAttributeCandidates(element),
+      const direct = dedupeKeys([
+        ...this.collectTextKeys(element),
+        ...this.collectAttributeKeys(element),
       ]);
       if (direct.length > 0) {
         const rect = element.getBoundingClientRect();
@@ -337,7 +318,7 @@ export class CopyEditorDomRegistry {
           return {
             element,
             rect,
-            primaryKey: direct[0]!.key,
+            primaryKey: direct[0]!,
             candidates: direct,
           };
         }
@@ -348,14 +329,14 @@ export class CopyEditorDomRegistry {
       if (
         element.matches('button, a, label, [role="button"], [role="menuitem"], [role="option"], [role="tab"], [role="tooltip"]')
       ) {
-        const subtree = this.collectSubtreeCandidates(element);
+        const subtree = this.collectSubtreeKeys(element);
         if (subtree.length > 0) {
           const rect = element.getBoundingClientRect();
           if (rect.width > 0 || rect.height > 0) {
             return {
               element,
               rect,
-              primaryKey: subtree[0]!.key,
+              primaryKey: subtree[0]!,
               candidates: subtree,
             };
           }
@@ -369,4 +350,4 @@ export class CopyEditorDomRegistry {
 
 // Single shared registry instance so React StrictMode double-mounts never drop
 // previously stripped TextNode mappings.
-export const sharedCopyEditorRegistry = new CopyEditorDomRegistry();
+export const sharedUiTextEditorRegistry = new UiTextEditorDomRegistry();
