@@ -72,12 +72,27 @@ const isCollapsedInsetClipPath = (clipPath: string): boolean => {
   return top + bottom >= 100 || left + right >= 100;
 };
 
-// Determines from computed styles whether an element is visually hidden (e.g.
-// display/visibility/opacity, zero-area clip/clip-path, or overflow-clipped
-// <=1px boxes) without relying on specific CSS class names.
-const isVisuallyHiddenElement = (element: Element | null): boolean => {
+type ElementVisibility = 'visible' | 'sr-only' | 'unrendered';
+
+// Classifies an element from computed styles without relying on class names:
+// - `unrendered`: removed from both visual layout and the accessibility tree
+//   (display: none, visibility: hidden/collapse, content-visibility: hidden,
+//   inert, or aria-hidden="true"), such as responsive breakpoints or closed
+//   panels. Ignored completely during hit-testing and candidate collection.
+// - `sr-only`: rendered for assistive tech but visually clipped/collapsed
+//   (zero-area clip/clip-path or overflow-clipped <=1px box). Grouped with
+//   `aria-label` as lower-priority `invisible` targets.
+const classifyElementVisibility = (element: Element | null): ElementVisibility => {
+  let srOnly = false;
   let current: Element | null = element;
   while (current && current !== current.ownerDocument.body && current !== current.ownerDocument.documentElement) {
+    if (
+      current.hasAttribute('hidden')
+      || current.hasAttribute('inert')
+      || current.getAttribute('aria-hidden') === 'true'
+    ) {
+      return 'unrendered';
+    }
     const view = current.ownerDocument.defaultView;
     if (view && typeof view.getComputedStyle === 'function') {
       const style = view.getComputedStyle(current);
@@ -85,25 +100,29 @@ const isVisuallyHiddenElement = (element: Element | null): boolean => {
         style.display === 'none'
         || style.visibility === 'hidden'
         || style.visibility === 'collapse'
-        || style.opacity === '0'
         || style.contentVisibility === 'hidden'
       ) {
-        return true;
+        return 'unrendered';
       }
-      if (isCollapsedClipRect(style.clip) || isCollapsedInsetClipPath(style.clipPath)) return true;
-      const clipsOverflow = style.overflow === 'hidden' || style.overflow === 'clip'
-        || (style.overflowX === 'hidden' && style.overflowY === 'hidden');
-      if (clipsOverflow) {
-        const width = Number.parseFloat(style.width);
-        const height = Number.parseFloat(style.height);
-        if ((Number.isFinite(width) && width <= 1) || (Number.isFinite(height) && height <= 1)) {
-          return true;
+      if (!srOnly) {
+        if (isCollapsedClipRect(style.clip) || isCollapsedInsetClipPath(style.clipPath)) {
+          srOnly = true;
+        } else {
+          const clipsOverflow = style.overflow === 'hidden' || style.overflow === 'clip'
+            || (style.overflowX === 'hidden' && style.overflowY === 'hidden');
+          if (clipsOverflow) {
+            const width = Number.parseFloat(style.width);
+            const height = Number.parseFloat(style.height);
+            if ((Number.isFinite(width) && width <= 1) || (Number.isFinite(height) && height <= 1)) {
+              srOnly = true;
+            }
+          }
         }
       }
     }
     current = current.parentElement;
   }
-  return false;
+  return srOnly ? 'sr-only' : 'visible';
 };
 
 const pointInsideRect = (rect: DOMRect, x: number, y: number, pad = 4): boolean =>
@@ -526,14 +545,14 @@ export class UiTextEditorDomRegistry {
   }
 
   // Collects invisible keys owned directly by `element`: its own `aria-label`
-  // plus any direct visually hidden children (e.g. `.sr-only` spans). Scoping
-  // to direct children prevents outer layout wrappers from claiming invisible
-  // labels that belong to nested controls.
+  // plus any direct screen-reader-only children (visually clipped/collapsed
+  // but still rendered). Unrendered children (`display: none`, `hidden`, etc.)
+  // are ignored completely.
   private collectOwnInvisibleKeys(element: Element): string[] {
     const collected: string[] = [...this.collectAriaLabelKeys(element)];
     for (const child of Array.from(element.children)) {
       if (child.hasAttribute(this.rootAttr)) continue;
-      if (isVisuallyHiddenElement(child)) {
+      if (classifyElementVisibility(child) === 'sr-only') {
         collected.push(...this.collectSubtreeKeys(child));
       }
     }
@@ -549,15 +568,20 @@ export class UiTextEditorDomRegistry {
       NodeFilter.SHOW_ELEMENT,
       {
         acceptNode(candidate) {
-          return candidate instanceof Element && candidate.hasAttribute(rootAttr)
-            ? NodeFilter.FILTER_REJECT
-            : NodeFilter.FILTER_ACCEPT;
+          if (candidate instanceof Element) {
+            if (candidate.hasAttribute(rootAttr) || classifyElementVisibility(candidate) === 'unrendered') {
+              return NodeFilter.FILTER_REJECT;
+            }
+          }
+          return NodeFilter.FILTER_ACCEPT;
         },
       },
     );
     let current: Element | null = element;
     while (current) {
-      const target = isVisuallyHiddenElement(current) ? invisible : visible;
+      const visibility = classifyElementVisibility(current);
+      if (visibility === 'unrendered') break;
+      const target = visibility === 'sr-only' ? invisible : visible;
       target.push(...this.collectTextKeys(current), ...this.collectVisibleAttributeKeys(current));
       invisible.push(...this.collectAriaLabelKeys(current));
       current = walker.nextNode() as Element | null;
@@ -578,16 +602,20 @@ export class UiTextEditorDomRegistry {
       NodeFilter.SHOW_ELEMENT,
       {
         acceptNode(candidate) {
-          return candidate instanceof Element && candidate.hasAttribute(rootAttr)
-            ? NodeFilter.FILTER_REJECT
-            : NodeFilter.FILTER_ACCEPT;
+          if (candidate instanceof Element) {
+            if (candidate.hasAttribute(rootAttr) || classifyElementVisibility(candidate) === 'unrendered') {
+              return NodeFilter.FILTER_REJECT;
+            }
+          }
+          return NodeFilter.FILTER_ACCEPT;
         },
       },
     );
 
     let el: Element | null = container;
     while (el) {
-      if (!isVisuallyHiddenElement(el)) {
+      const visibility = classifyElementVisibility(el);
+      if (visibility === 'visible') {
         const textNodes = this.elementTexts.get(el);
         if (textNodes) {
           for (const textNode of textNodes) {
@@ -638,7 +666,7 @@ export class UiTextEditorDomRegistry {
     if (caret && caret.node instanceof Text && !isInsideEditorRoot(caret.node, null, this.rootAttr)) {
       const segments = this.textSegments.get(caret.node);
       const parent = caret.node.parentElement;
-      if (segments && segments.length > 0 && parent && !isVisuallyHiddenElement(parent)) {
+      if (segments && segments.length > 0 && parent && classifyElementVisibility(parent) === 'visible') {
         const hitSegment = findSegmentAtOffset(segments, caret.offset);
         if (hitSegment) {
           const metrics = matchTextSegmentAtPoint(
@@ -682,7 +710,7 @@ export class UiTextEditorDomRegistry {
     }
 
     for (const element of stack) {
-      if (isVisuallyHiddenElement(element)) continue;
+      if (classifyElementVisibility(element) !== 'visible') continue;
       const textHit = this.findTextSegmentHitInElement(element, clientX, clientY);
       if (textHit) {
         const candidates = dedupeKeys([
@@ -724,7 +752,7 @@ export class UiTextEditorDomRegistry {
     // or elements whose direct text node has zero-sized range rects: match the
     // element box directly when it carries tracked text.
     for (const element of stack) {
-      if (isVisuallyHiddenElement(element)) continue;
+      if (classifyElementVisibility(element) !== 'visible') continue;
       const textKeys = dedupeKeys(this.collectTextKeys(element));
       if (textKeys.length > 0) {
         const textNodes = this.elementTexts.get(element);
@@ -766,7 +794,7 @@ export class UiTextEditorDomRegistry {
     }
 
     for (const element of stack) {
-      if (isVisuallyHiddenElement(element)) continue;
+      if (classifyElementVisibility(element) !== 'visible') continue;
       if (element.matches(INTERACTIVE_CONTAINER_SELECTOR)) {
         const uniqueTarget = this.resolveUniqueSubtreeVisibleTarget(element);
         if (uniqueTarget) {

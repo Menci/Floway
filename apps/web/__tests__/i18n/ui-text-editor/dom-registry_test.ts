@@ -261,7 +261,17 @@ describe('UiTextEditorDomRegistry', () => {
     srHeaderLabel.textContent = wrapWithKeyMarkers('Actions', 'permissions.actions.column');
     srOnlyHeader.append(srHeaderLabel);
 
-    container.append(badge, srOnlyHeader);
+    const pageShell = document.createElement('div');
+    const hiddenMobileHeader = document.createElement('header');
+    hiddenMobileHeader.style.display = 'none';
+    const openNavBtn = document.createElement('button');
+    openNavBtn.setAttribute('aria-label', wrapWithKeyMarkers('Open navigation', 'app.navigation.open'));
+    const brand = document.createElement('span');
+    brand.textContent = wrapWithKeyMarkers('Floway', 'app.title');
+    hiddenMobileHeader.append(openNavBtn, brand);
+    pageShell.append(hiddenMobileHeader);
+
+    container.append(badge, srOnlyHeader, pageShell);
     document.body.append(container);
 
     const badgeRect = new DOMRect(40, 20, 90, 24);
@@ -269,6 +279,7 @@ describe('UiTextEditorDomRegistry', () => {
     const headerRect = new DOMRect(200, 20, 48, 28);
     vi.spyOn(badge, 'getBoundingClientRect').mockReturnValue(badgeRect);
     vi.spyOn(srOnlyHeader, 'getBoundingClientRect').mockReturnValue(headerRect);
+    vi.spyOn(pageShell, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 1280, 800));
     vi.spyOn(Range.prototype, 'getClientRects').mockImplementation(function (this: Range) {
       return (this.startContainer === visibleText ? [visibleTextRect] : []) as unknown as DOMRectList;
     });
@@ -299,6 +310,10 @@ describe('UiTextEditorDomRegistry', () => {
       expect(srOnlyHit?.primaryKey).toBe('permissions.actions.column');
       expect(srOnlyHit?.primaryInvisible).toBe(true);
       expect(srOnlyHit?.rect).toEqual(headerRect);
+
+      // Unrendered children (e.g. responsive display:none mobile header) are ignored completely.
+      stack = [pageShell, container, document.body];
+      expect(registry.resolveAtPoint(document, 600, 400)).toBeNull();
 
       // Outer wrapper with no direct aria-label/sr-only child does not claim nested invisible labels.
       stack = [container, document.body];
