@@ -73,10 +73,9 @@ export interface UsageRecord {
 }
 
 export type UsageOverviewGroupBy = 'keyId' | 'userId' | 'model' | 'upstream';
-export type UsageOverviewAxis = UsageOverviewGroupBy | 'none' | 'series';
+export type UsageOverviewAxis = UsageOverviewGroupBy | 'none';
 
 export interface UsageOverviewRecord {
-  bucket: string;
   group: string;
   requests: number;
   metrics: Array<{ metric: BillingMetric; quantity: DecimalString }>;
@@ -103,8 +102,8 @@ export interface UsageOverviewQueryOptions {
 }
 
 export interface UsageOverviewResult {
-  series: UsageOverviewRecord[];
-  axes: Record<UsageOverviewGroupBy | 'none', UsageOverviewRecord[]>;
+  bucket: string;
+  axes: Record<UsageOverviewAxis, UsageOverviewRecord[]>;
   dimensionValues: {
     keyIds: string[];
     userIds: number[];
@@ -365,7 +364,7 @@ export interface UsageRepo {
   // snapshot; later writes that share the row keep it unchanged.
   record(record: UsageRecord): Promise<void>;
   query(opts: { keyIds?: readonly string[]; start: string; end: string }): Promise<UsageRecord[]>;
-  queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult>;
+  queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult[]>;
   listAll(): Promise<UsageRecord[]>;
   // Replacement upsert: quantities and unit prices are overwritten from the record.
   set(record: UsageRecord): Promise<void>;

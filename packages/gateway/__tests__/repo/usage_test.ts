@@ -179,18 +179,18 @@ test('SQL usage overview matches the in-memory oracle across filters, facets, ax
     }
   }
 
-  const expected = await memory.usage.queryOverview(options);
-  const actual = await sql.usage.queryOverview(options);
+  const allHours = { ...options, bucketForHour: () => 'all-hours' };
+  const [expected] = await memory.usage.queryOverview(allHours);
+  const [actual] = await sql.usage.queryOverview(allHours);
 
   assertEquals(actual, expected);
-  assertEquals(actual.dimensionValues, {
+  assertEquals(actual!.dimensionValues, {
     keyIds: ['key-1'],
     userIds: [0, 1, 2],
     models: ['model-a', 'model-b'],
     upstreams: ['none', 'upstream:none'],
   });
-  assertEquals(actual.axes.none[0], {
-    bucket: 'all',
+  assertEquals(actual!.axes.none[0], {
     group: 'all',
     requests: 11,
     metrics: [{ metric: 'input_tokens', quantity: '9007199254740992.1' }],
@@ -211,7 +211,7 @@ test('SQL usage overview stays within the D1 compound-select limit and returns g
   const completed: CompletedStatement[] = [];
   const repo = new SqlRepo(recordCompletedStatements(db, completed));
 
-  const overview = await repo.usage.queryOverview({
+  const [overview] = await repo.usage.queryOverview({
     actorUserId: 1,
     isAdmin: true,
     visibleUserIds: [],
@@ -232,8 +232,8 @@ test('SQL usage overview stays within the D1 compound-select limit and returns g
   assertEquals(rawRows.count, 160);
   assertEquals(aggregates.length, 1);
   assertEquals(aggregate.resultCount < rawRows.count, true);
-  assertEquals(overview.axes.none[0], {
-    bucket: 'all', group: 'all', requests: 80,
+  assertEquals(overview!.axes.none[0], {
+    group: 'all', requests: 80,
     metrics: [{ metric: 'input_tokens', quantity: '3240' }], cost: '1620',
   });
 });

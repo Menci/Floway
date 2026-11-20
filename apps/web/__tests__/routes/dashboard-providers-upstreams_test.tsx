@@ -52,11 +52,21 @@ const renderPage = (displayUser = user, pageData: typeof loaderData = loaderData
   },
 ], { initialEntries: ['/dashboard/providers/upstreams'] })} />);
 const metricsButton = (name: string) => screen.getAllByRole('button', { name: `Usage and metrics for ${name}` }).find(node => node.tagName === 'BUTTON')!;
-const overview = (groupBy = 'model') => ({
-  series: [{ bucket: new Date(Date.now() - 3_600_000).toISOString().slice(0, 13), group: groupBy === 'model' ? 'gpt-5' : '1', requests: 1, metrics: [{ metric: 'input_tokens', quantity: '10' }], cost: null }],
-  axes: { none: [], model: [], upstream: [], userId: [], keyId: [] },
-  dimensionValues: { models: ['gpt-5'], upstreams: ['upstream:first'], userIds: [1], keyIds: [] }, users: [{ id: 1, username: 'admin' }], auditableUserIds: [1], upstreams: [{ id: 'first', name: 'First', hue: 210 }], keys: [],
-});
+const overview = (url: URL) => {
+  const start = new Date(Date.now() - 3_600_000).toISOString().slice(0, 13);
+  const end = new Date().toISOString().slice(0, 13);
+  const row = { requests: 1, metrics: [{ metric: 'input_tokens', quantity: '10' }], cost: null };
+  return {
+    cursor: 'first', reset: true, start: url.searchParams.get('start'), end: url.searchParams.get('end'),
+    buckets: [{
+      bucket: start, start, end,
+      axes: { none: [], model: [{ ...row, group: 'gpt-5' }], upstream: [], userId: [{ ...row, group: '1' }], keyId: [] },
+      dimensionValues: { models: ['gpt-5'], upstreams: ['upstream:first'], userIds: [1], keyIds: [] },
+    }],
+    users: [{ id: 1, username: 'admin' }], visibleUserIds: [1], visibleUpstreamIds: ['first'],
+    upstreams: [{ id: 'first', name: 'First', hue: 210 }], keys: [],
+  };
+};
 const metrics = (url: URL) => ({
   start: Number(url.searchParams.get('start')), end: Number(url.searchParams.get('end')), step: Number(url.searchParams.get('step')),
   records: [
@@ -80,7 +90,7 @@ it('blocks the surface until both readings load, then opens a single row with Us
   const requests: URL[] = [];
   stubGateway(async url => {
     requests.push(url);
-    if (url.pathname === '/api/token-usage/overview') { await new Promise<void>(resolve => { finishUsage = resolve; }); return Response.json(overview()); }
+    if (url.pathname === '/api/token-usage/overview') { await new Promise<void>(resolve => { finishUsage = resolve; }); return Response.json(overview(url)); }
     if (url.pathname === '/api/upstream-metrics') { await new Promise<void>(resolve => { finishMetrics = resolve; }); return Response.json(metrics(url)); }
     throw new Error(`Unexpected request: ${url.pathname}`);
   });
@@ -112,7 +122,7 @@ it('opens telemetry and the read-only editor for an audit-only row while keeping
     upstreams: withAccess(true, 'off').upstreams.map((record, index) => index === 0 ? { ...record, modelUse: false, modelsCache: { ...record.modelsCache, modelCount: 7 } } : record),
   };
   stubGateway(async url => {
-    if (url.pathname === '/api/token-usage/overview') return Response.json(overview());
+    if (url.pathname === '/api/token-usage/overview') return Response.json(overview(url));
     if (url.pathname === '/api/upstream-metrics') return Response.json(metrics(url));
     throw new Error(`Unexpected request: ${url.pathname}`);
   }, pageData);

@@ -15,7 +15,7 @@ import { UpstreamMetricsChartSection } from '../upstream-metrics/chart';
 import { loadUpstreamMetrics } from '../upstream-metrics/data';
 import { resolveUpstreamMetricDisplays } from '../upstream-metrics/display-name';
 import { buildUpstreamMetricsChart } from '../upstream-metrics/plot';
-import { loadUsageOverview } from '../usage/data';
+import type { UsageOverviewLoader } from '../usage/data';
 import { usageDimensions } from '../usage/dimensions';
 import { UsageGrouping } from '../usage/grouping';
 import { TokenUsageCharts } from '../usage/token-charts';
@@ -28,7 +28,7 @@ export type UpstreamTelemetryQuery = {
   filters: UsageFilters;
 };
 
-export const loadUpstreamTelemetry = async (query: UpstreamTelemetryQuery, loadedAt: number, signal: AbortSignal): Promise<ApiResult<UpstreamTelemetryData>> => {
+export const loadUpstreamTelemetry = async (query: UpstreamTelemetryQuery, loadedAt: number, signal: AbortSignal, loadUsageOverview: UsageOverviewLoader): Promise<ApiResult<UpstreamTelemetryData>> => {
   if (query.upstreamId === null) throw new TypeError('Upstream telemetry requires an upstream ID');
   const [usage, metrics] = await Promise.all([
     loadUsageOverview(query.range, query.groupBy, query.filters, loadedAt, signal),

@@ -74,16 +74,16 @@ test.each([
     start: '2026-11-01T00', end: '2026-11-01T01', bucketForHour: (hour: string) => hour,
   };
   const filters = { models: [], upstreams: [], userIds: [], keyIds: [] };
-  const usage = await repo.usage.queryOverview({ ...options, filters });
-  expect(usage.axes.none[0]).toEqual({
-    bucket: 'all', group: 'all', requests: 3,
+  const [usage] = await repo.usage.queryOverview({ ...options, filters });
+  expect(usage!.axes.none[0]).toEqual({
+    group: 'all', requests: 3,
     metrics: [{ metric: 'input_tokens', quantity: '9007199254740992.5' }], cost: '1801439850948198.5',
   });
-  expect(usage.dimensionValues.keyIds).toEqual(['statistics-key']);
+  expect(usage!.dimensionValues.keyIds).toEqual(['statistics-key']);
   expect(await repo.usage.queryOverview({
     ...options,
-    filters: { models: ['statistics-model'], upstreams: usage.dimensionValues.upstreams, userIds: [1], keyIds: ['statistics-key'] },
-  })).toEqual(usage);
+    filters: { models: ['statistics-model'], upstreams: usage!.dimensionValues.upstreams, userIds: [1], keyIds: ['statistics-key'] },
+  })).toEqual([usage]);
 
   const performance = await repo.performance.queryOverview({ ...options, filters: { ...filters, operations: [], runtimeLocations: [] } });
   expect(performance.axes.none[0]).toMatchObject({

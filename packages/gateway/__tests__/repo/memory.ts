@@ -632,40 +632,34 @@ const accumulateMemoryOverview = (aggregate: UsageOverviewRecord, record: UsageR
 const memoryOverviewGroup = (
   record: UsageRecord,
   axis: UsageOverviewAxis,
-  opts: UsageOverviewQueryOptions,
   keyToUser: ReadonlyMap<string, number>,
 ): string => {
   if (axis === 'none') return 'all';
-  const groupBy = axis === 'series' ? opts.groupBy : axis;
-  if (groupBy === 'userId') return String(memoryUsageUserIdForKey(record.keyId, keyToUser));
-  if (groupBy === 'upstream') return usageUpstreamDimensionValue(record.upstream);
-  return record[groupBy];
+  if (axis === 'userId') return String(memoryUsageUserIdForKey(record.keyId, keyToUser));
+  if (axis === 'upstream') return usageUpstreamDimensionValue(record.upstream);
+  return record[axis];
 };
 
 const aggregateMemoryOverview = (
   records: readonly UsageRecord[],
-  opts: UsageOverviewQueryOptions,
   keyToUser: ReadonlyMap<string, number>,
   visibleKeyIds: ReadonlySet<string>,
 ): Map<UsageOverviewAxis, UsageOverviewRecord[]> => {
-  const axes: UsageOverviewAxis[] = ['series', 'none', 'keyId', 'userId', 'model', 'upstream'];
+  const axes: UsageOverviewAxis[] = ['none', 'keyId', 'userId', 'model', 'upstream'];
   const result = new Map<UsageOverviewAxis, UsageOverviewRecord[]>();
   for (const axis of axes) {
     const aggregates = new Map<string, UsageOverviewRecord>();
     for (const record of records) {
       if (axis === 'keyId' && !visibleKeyIds.has(record.keyId)) continue;
-      const bucket = axis === 'series' ? opts.bucketForHour(record.hour) : 'all';
-      const group = memoryOverviewGroup(record, axis, opts, keyToUser);
-      const key = `${bucket}\0${group}`;
-      let aggregate = aggregates.get(key);
+      const group = memoryOverviewGroup(record, axis, keyToUser);
+      let aggregate = aggregates.get(group);
       if (!aggregate) {
-        aggregate = { bucket, group, requests: 0, metrics: [], cost: null };
-        aggregates.set(key, aggregate);
+        aggregate = { group, requests: 0, metrics: [], cost: null };
+        aggregates.set(group, aggregate);
       }
       accumulateMemoryOverview(aggregate, record);
     }
-    result.set(axis, [...aggregates.values()]
-      .sort((left, right) => left.bucket.localeCompare(right.bucket) || left.group.localeCompare(right.group)));
+    result.set(axis, [...aggregates.values()].sort((left, right) => left.group.localeCompare(right.group)));
   }
   return result;
 };
@@ -719,7 +713,7 @@ class MemoryUsageRepo implements UsageRepo {
     );
   }
 
-  async queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult> {
+  async queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult[]> {
     const keyToUser = buildKeyToUserMap(await this.apiKeys.listIncludingDeleted());
     const records = [...this.store.values()]
       .filter(record => record.hour >= opts.start && record.hour < opts.end)
@@ -735,40 +729,43 @@ class MemoryUsageRepo implements UsageRepo {
     const visibleKeyIds = new Set([...keyToUser]
       .filter(([, userId]) => userId === opts.actorUserId)
       .map(([keyId]) => keyId));
-    const partitioned = partitionTelemetryOverviewRecords(authorized, {
-      keyId: {
-        value: record => record.keyId,
-        includeFacet: record => visibleKeyIds.has(record.keyId),
-      },
-      userId: {
-        value: record => String(memoryUsageUserIdForKey(record.keyId, keyToUser)),
-        includeFacet: () => true,
-      },
-      model: { value: record => record.model },
-      upstream: { value: record => usageUpstreamDimensionValue(record.upstream) },
-    }, {
-      keyId: new Set(opts.filters.keyIds),
-      userId: new Set(opts.filters.userIds.map(String)),
-      model: new Set(opts.filters.models),
-      upstream: new Set(opts.filters.upstreams),
+    const buckets = Map.groupBy(authorized, record => opts.bucketForHour(record.hour));
+    return [...buckets].sort(([left], [right]) => left.localeCompare(right)).map(([bucket, bucketRecords]) => {
+      const partitioned = partitionTelemetryOverviewRecords(bucketRecords, {
+        keyId: {
+          value: record => record.keyId,
+          includeFacet: record => visibleKeyIds.has(record.keyId),
+        },
+        userId: {
+          value: record => String(memoryUsageUserIdForKey(record.keyId, keyToUser)),
+          includeFacet: () => true,
+        },
+        model: { value: record => record.model },
+        upstream: { value: record => usageUpstreamDimensionValue(record.upstream) },
+      }, {
+        keyId: new Set(opts.filters.keyIds),
+        userId: new Set(opts.filters.userIds.map(String)),
+        model: new Set(opts.filters.models),
+        upstream: new Set(opts.filters.upstreams),
+      });
+      const aggregates = aggregateMemoryOverview(partitioned.filtered, keyToUser, visibleKeyIds);
+      return {
+        bucket,
+        axes: {
+          none: aggregates.get('none')!,
+          keyId: aggregates.get('keyId')!,
+          userId: aggregates.get('userId')!,
+          model: aggregates.get('model')!,
+          upstream: aggregates.get('upstream')!,
+        },
+        dimensionValues: {
+          keyIds: partitioned.dimensionValues.keyId,
+          userIds: partitioned.dimensionValues.userId.map(Number).sort((left, right) => left - right),
+          models: partitioned.dimensionValues.model,
+          upstreams: partitioned.dimensionValues.upstream,
+        },
+      };
     });
-    const aggregates = aggregateMemoryOverview(partitioned.filtered, opts, keyToUser, visibleKeyIds);
-    return {
-      series: aggregates.get('series')!,
-      axes: {
-        none: aggregates.get('none')!,
-        keyId: aggregates.get('keyId')!,
-        userId: aggregates.get('userId')!,
-        model: aggregates.get('model')!,
-        upstream: aggregates.get('upstream')!,
-      },
-      dimensionValues: {
-        keyIds: partitioned.dimensionValues.keyId,
-        userIds: partitioned.dimensionValues.userId.map(Number).sort((left, right) => left - right),
-        models: partitioned.dimensionValues.model,
-        upstreams: partitioned.dimensionValues.upstream,
-      },
-    };
   }
 
   listAll(): Promise<UsageRecord[]> {

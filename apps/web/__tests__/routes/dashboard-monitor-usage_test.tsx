@@ -3,6 +3,7 @@ import { createMemoryRouter, Outlet, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { dashboardBucketFrames } from '../../src/components/charts/dashboard-time';
+import { createUsageOverviewLoader } from '../../src/components/usage/data';
 import { i18n } from '../../src/i18n';
 import DashboardMonitorUsage, { clientLoader } from '../../src/routes/dashboard-monitor-usage';
 import { useAuthStore } from '../../src/stores/auth-store';
@@ -20,6 +21,7 @@ const loadedAt = Date.UTC(2026, 7, 5, 12);
 const bucket = dashboardBucketFrames('today', loadedAt).at(-2)!.key;
 const usageRecord = { bucket, group: 'gpt-5', requests: 1, metrics: { input_tokens: '10' as const }, cost: null };
 const loaderData = {
+  loadOverview: createUsageOverviewLoader(),
   currentUserId: '1',
   error: null,
   loadedAt,
@@ -98,11 +100,9 @@ describe('usage dimension controls', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
       if (url.pathname === '/api/token-usage/overview') return Response.json({
-        series: [],
-        axes: { none: [], model: [], upstream: [], userId: [], keyId: [] },
-        dimensionValues: { models: [], upstreams: [], userIds: [], keyIds: [] },
+        cursor: 'first', reset: true, start: url.searchParams.get('start'), end: url.searchParams.get('end'),
+        buckets: [], visibleUserIds: [2], visibleUpstreamIds: [],
         users: [{ id: 2, username: 'operator' }],
-        auditableUserIds: [2],
         upstreams: [],
         keys: [],
       });
@@ -128,15 +128,11 @@ describe('usage dimension controls', () => {
         requestedGroups.push(groupBy);
         if (overviewRequests === 1) return Response.json({ error: 'Unavailable' }, { status: 500 });
         return Response.json({
-          series: [{
-            ...usageRecord,
-            group: groupBy === 'upstream' ? 'upstream:up-1' : 'gpt-5',
-            metrics: [{ metric: 'input_tokens', quantity: '10' }],
-          }],
-          axes: { none: [], model: [], upstream: [], userId: [], keyId: [] },
-          dimensionValues: loaderData.usage.dimensionValues,
+          cursor: 'new', reset: true, start: url.searchParams.get('start'), end: url.searchParams.get('end'),
+          buckets: [],
           users: loaderData.usage.users,
-          auditableUserIds: loaderData.usage.auditableUserIds,
+          visibleUserIds: loaderData.usage.auditableUserIds,
+          visibleUpstreamIds: ['up-1'],
           upstreams: loaderData.usage.upstreams,
           keys: loaderData.usage.keys,
         });

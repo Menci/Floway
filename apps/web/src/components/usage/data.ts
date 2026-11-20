@@ -1,5 +1,5 @@
+import { mergeUsageOverview, usageOverviewCursor, usageOverviewForDisplay, type UsageOverviewSnapshot } from './overview';
 import type {
-  DisplayUsageRecord,
   SearchUsageResponse,
   SearchUsageView,
   UsageFilters,
@@ -12,29 +12,9 @@ import { dashboardRangeQuery } from '../charts/dashboard-time';
 import type {
   SearchUsageByKeyResponse,
   SearchUsageByUserResponse,
-  TokenUsageOverviewResponse,
 } from '@floway-dev/gateway/browser';
 
 const userBucketId = (userId: number) => `user-${userId}`;
-
-export const metricsFromWire = (
-  metrics: TokenUsageOverviewResponse['series'][number]['metrics'],
-): DisplayUsageRecord['metrics'] => Object.fromEntries(
-  metrics.map(({ metric, quantity }) => [metric, quantity]),
-);
-
-const usageRecordForDisplay = (
-  record: TokenUsageOverviewResponse['series'][number],
-): DisplayUsageRecord => ({ ...record, metrics: metricsFromWire(record.metrics) });
-
-const usageOverviewForDisplay = (data: TokenUsageOverviewResponse): UsageOverviewResponse => ({
-  ...data,
-  series: data.series.map(usageRecordForDisplay),
-  axes: Object.fromEntries(Object.entries(data.axes).map(([key, records]) => [
-    key,
-    records.map(usageRecordForDisplay),
-  ])) as UsageOverviewResponse['axes'],
-});
 
 const searchUsageForDisplay = (data: SearchUsageByKeyResponse | SearchUsageByUserResponse): SearchUsageResponse =>
   data.view === 'all-by-user'
@@ -49,7 +29,7 @@ export const buildUsageOverviewQuery = (
   groupBy: UsageGroupBy,
   filters: UsageFilters,
   nowMs: number,
-): Record<string, string | string[]> => ({
+) => ({
   ...dashboardRangeQuery(range, nowMs),
   group_by: groupBy,
   filter_model: filters.model,
@@ -58,13 +38,30 @@ export const buildUsageOverviewQuery = (
   filter_key_id: filters.keyId,
 });
 
-export const loadUsageOverview = async (range: UsageRange, groupBy: UsageGroupBy, filters: UsageFilters, loadedAt: number, signal?: AbortSignal): Promise<ApiResult<UsageOverviewResponse>> => {
-  const query = buildUsageOverviewQuery(range, groupBy, filters, loadedAt);
-  const result = await callApi(() => api.api['token-usage'].overview.$get({ query }, { init: { signal } }));
-  return result.error ? result : { data: usageOverviewForDisplay(result.data) };
+export type UsageOverviewLoader = (
+  range: UsageRange, groupBy: UsageGroupBy, filters: UsageFilters, loadedAt: number,
+  signal?: AbortSignal,
+) => Promise<ApiResult<UsageOverviewResponse>>;
+
+export const createUsageOverviewLoader = (): UsageOverviewLoader => {
+  let latest: UsageOverviewSnapshot | undefined;
+  let request = 0;
+  return async (range, groupBy, filters, loadedAt, signal) => {
+    const revision = ++request;
+    const previous = latest;
+    const query = buildUsageOverviewQuery(range, groupBy, filters, loadedAt);
+    const cursor = usageOverviewCursor(previous, query.start, query.end);
+    const result = await callApi(() => api.api['token-usage'].overview.$get({ query: { ...query, cursor } }, { init: { signal } }));
+    if (result.error) return result;
+    const snapshot = mergeUsageOverview(previous, result.data, query.start);
+    const data = usageOverviewForDisplay(snapshot, groupBy);
+    if (!signal?.aborted && revision === request) latest = snapshot;
+    return { data };
+  };
 };
 
 export const loadUsagePageData = async (
+  loadUsageOverview: UsageOverviewLoader,
   currentUserId: string,
   range: UsageRange,
   groupBy: UsageGroupBy,
