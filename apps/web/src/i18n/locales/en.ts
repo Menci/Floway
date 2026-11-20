@@ -85,6 +85,7 @@ const en = {
         missingKeyNotice: 'Key does not exist',
         staleNotice: 'Source text changed',
         noteLabel: 'Note',
+        notePlaceholder: 'Add context or feedback (optional)',
         save: 'Save',
         delete: 'Delete',
         emptyHint: 'Hold {{key}} and click any text to start editing',

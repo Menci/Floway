@@ -442,6 +442,7 @@ export function EditorFlyout({ anchorRect, candidates, escapeHandlerRef, initial
           <Textarea
             className="w-full"
             id={noteInputId}
+            placeholder={t('common.uiTextEditor.notePlaceholder')}
             rows={2}
             value={note}
             onChange={(_, data) => setNote(data.value)}

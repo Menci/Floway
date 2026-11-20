@@ -82,6 +82,7 @@ const zhHansCN = {
         missingKeyNotice: '当前 Key 不存在',
         staleNotice: '原文已变更',
         noteLabel: '备注',
+        notePlaceholder: '补充背景或修改建议（可选）',
         save: '保存',
         delete: '删除',
         emptyHint: '按住 {{key}} 并点击页面文案即可开始编辑',
