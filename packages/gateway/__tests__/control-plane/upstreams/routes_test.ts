@@ -585,16 +585,18 @@ test('GET /api/upstreams drops a fallback entry whose proxy is gone, keeping dir
   assertEquals((await repo.upstreams.getById(created.id))?.proxyFallbackList.map(entry => entry.id), ['p_gone', 'p_live', 'direct_fetch']);
 });
 
-test('DELETE /api/upstreams sweeps orphaned proxy backoff rows', async () => {
+test('DELETE /api/upstreams cascades to that upstream\'s proxy backoff rows', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.proxies.insert({ id: 'p_a', name: 'A', url: 'socks5://198.51.100.10:1080', dialTimeoutSeconds: null });
 
   const create = await requestApp('/api/upstreams', authed(adminSession, createBody({ proxy_fallback_list: [{ id: 'p_a' }] })));
   const created = (await create.json()) as { id: string };
+  const sibling = await requestApp('/api/upstreams', authed(adminSession, createBody({ name: 'Sibling', proxy_fallback_list: [{ id: 'p_a' }] })));
+  const kept = (await sibling.json()) as { id: string };
 
   await repo.proxyBackoffs.recordDialFailure('p_a', created.id, 'tcp refused');
-  await repo.proxyBackoffs.recordDialFailure('p_a', 'other_upstream', 'tcp refused');
+  await repo.proxyBackoffs.recordDialFailure('p_a', kept.id, 'tcp refused');
   assertEquals((await repo.proxyBackoffs.listAll()).length, 2);
 
   const del = await requestApp(`/api/upstreams/${created.id}`, {
@@ -605,7 +607,7 @@ test('DELETE /api/upstreams sweeps orphaned proxy backoff rows', async () => {
 
   const remaining = await repo.proxyBackoffs.listAll();
   assertEquals(remaining.length, 1);
-  assertEquals(remaining[0]!.upstreamId, 'other_upstream');
+  assertEquals(remaining[0]!.upstreamId, kept.id);
 });
 
 // The setup's SocketDial refuses every connection, so each preview fails at

@@ -199,7 +199,6 @@ export const importData = async (c: CtxWithJson<typeof importBody>) => {
       repo.upstreamMetrics.deleteAll(),
       repo.upstreams.deleteAll(),
       repo.proxies.deleteAll(),
-      repo.proxyBackoffs.deleteAll(),
       repo.openaiResponsesSnapshots.deleteAll(),
       repo.openaiResponsesItems.deleteAll(),
       repo.userPreferences.deleteAll(),

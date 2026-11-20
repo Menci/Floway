@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFetcher } from '../../src/dial/fetcher.ts';
 import type { ProxyEntry } from '../../src/dial/proxy-catalog.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
+import { saveUpstreamForTest } from '../repo/upstreams.ts';
+import { buildCustomUpstreamRecord } from '../test-utils/app.ts';
 import { isReplayableBody, type ReplayableBody } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type SocketDial } from '@floway-dev/proxy';
 
@@ -13,6 +15,15 @@ const stubSocketDial: SocketDial = {
   startTls: async () => {
     throw new Error('stub socket dial — runProxied is mocked, this should not be called');
   },
+};
+
+// Backoff rows reference saved proxies and upstreams, so the fixtures the
+// fetcher dials through exist in the repository it records against.
+const seededRepo = async (): Promise<InMemoryRepo> => {
+  const repo = new InMemoryRepo();
+  for (const id of ['a', 'b']) await repo.proxies.insert({ id, name: id, url: `socks5://${id}:1`, dialTimeoutSeconds: null });
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({ id: 'u' }));
+  return repo;
 };
 
 describe('createFetcher', () => {
@@ -26,7 +37,7 @@ describe('createFetcher', () => {
   const proxyB: ProxyEntry = { config: { kind: 'socks5', host: 'b', port: 1, name: 'b' }, dialTimeoutMs: null };
 
   it('first-pass tries each non-backoff entry in order and short-circuits on success', async () => {
-    const repo = new InMemoryRepo();
+    const repo = await seededRepo();
     await repo.proxyBackoffs.recordDialFailure('a', 'u', 'x');
     const calls: string[] = [];
     const fetcher = createFetcher({
@@ -52,7 +63,7 @@ describe('createFetcher', () => {
   });
 
   it('tags the unknown-proxy-id failure as stage=config so it does not register against backoff', async () => {
-    const repo = new InMemoryRepo();
+    const repo = await seededRepo();
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
@@ -80,7 +91,7 @@ describe('createFetcher', () => {
   });
 
   it('non-ProxyDialError errors propagate immediately and do not update backoff', async () => {
-    const repo = new InMemoryRepo();
+    const repo = await seededRepo();
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
@@ -97,7 +108,7 @@ describe('createFetcher', () => {
   });
 
   it('uses one implicit fetch for a Cloudflare CONNECT rejection when the current colo has no fetch entry', async () => {
-    const repo = new InMemoryRepo();
+    const repo = await seededRepo();
     const blocked = new Error('blocked by workerd');
     const dial: SocketDial & { shouldConnectErrorFallbackToFetch(error: unknown): boolean } = {
       ...stubSocketDial,
@@ -158,7 +169,7 @@ describe('createFetcher', () => {
   });
 
   it('rethrows AbortError without continuing the chain', async () => {
-    const repo = new InMemoryRepo();
+    const repo = await seededRepo();
     const calls: string[] = [];
     const fetcher = createFetcher({
       repo,
@@ -185,7 +196,7 @@ describe('createFetcher', () => {
   });
 
   it('opens a fresh replayable body stream for each fallback attempt', async () => {
-    const repo = new InMemoryRepo();
+    const repo = await seededRepo();
     let opens = 0;
     const observed: string[] = [];
     const body: ReplayableBody = {
@@ -228,7 +239,7 @@ describe('createFetcher', () => {
     // Response we already hold MUST reach the caller — bookkeeping
     // failures cannot shadow request outcomes (mirrors the failure
     // path's existing log-and-swallow policy).
-    const repo = new InMemoryRepo();
+    const repo = await seededRepo();
     await repo.proxyBackoffs.recordDialFailure('a', 'u', 'old');
     const original = repo.proxyBackoffs.recordDialSuccess.bind(repo.proxyBackoffs);
     repo.proxyBackoffs.recordDialSuccess = async () => { throw new Error('transient store outage'); };
@@ -252,7 +263,7 @@ describe('createFetcher', () => {
   });
 
   it('neither consults nor records backoff state without a saved upstream', async () => {
-    const repo = new InMemoryRepo();
+    const repo = await seededRepo();
     await repo.proxyBackoffs.recordDialFailure('a', 'u', 'saved upstream cooldown');
     const before = await repo.proxyBackoffs.listAll();
     const calls: string[] = [];
