@@ -65,6 +65,19 @@ const rectFromTextSegmentAtPoint = (
   return (rect.width > 0 || rect.height > 0) && pointInsideRect(rect, clientX, clientY, 8) ? rect : null;
 };
 
+const rectFromTextSegment = (textNode: Text, start: number, end: number): DOMRect | null => {
+  if (start >= end || end > textNode.data.length) return null;
+  const range = textNode.ownerDocument.createRange();
+  range.setStart(textNode, start);
+  range.setEnd(textNode, end);
+  const rect = range.getBoundingClientRect();
+  return rect.width > 0 || rect.height > 0 ? rect : null;
+};
+
+const isNonZeroRect = (rect: DOMRect): boolean => rect.width > 0 || rect.height > 0;
+
+const INTERACTIVE_CONTAINER_SELECTOR = 'button, a, label, [role="button"], [role="menuitem"], [role="option"], [role="tab"], [role="tooltip"]';
+
 interface CaretHit {
   node: Node;
   offset: number;
@@ -413,6 +426,63 @@ export class UiTextEditorDomRegistry {
     return dedupeKeys(collected);
   }
 
+  // When hovering an interactive container's padding or icon area, resolve to
+  // the inner text/visible-attribute source if the container maps to one
+  // unique key so the highlight box stays identical across text and background.
+  // Containers with multiple distinct keys do not claim empty background space.
+  private resolveUniqueSubtreeVisibleTarget(container: Element): HitTarget | null {
+    const visibleKeys = new Set<string>();
+    let target: { element: Element; rect: DOMRect | null } | null = null;
+    const walker = container.ownerDocument.createTreeWalker(
+      container,
+      NodeFilter.SHOW_ELEMENT,
+      {
+        acceptNode(candidate) {
+          return candidate instanceof Element && candidate.hasAttribute(UI_TEXT_EDITOR_ROOT_ATTR)
+            ? NodeFilter.FILTER_REJECT
+            : NodeFilter.FILTER_ACCEPT;
+        },
+      },
+    );
+
+    let el: Element | null = container;
+    while (el) {
+      const textNodes = this.elementTexts.get(el);
+      if (textNodes) {
+        for (const textNode of textNodes) {
+          if (!textNode.isConnected || textNode.parentElement !== el) {
+            textNodes.delete(textNode);
+            continue;
+          }
+          const segments = this.textSegments.get(textNode);
+          if (!segments) continue;
+          for (const seg of segments) {
+            visibleKeys.add(seg.key);
+            if (visibleKeys.size > 1) return null;
+            target ??= { element: el, rect: rectFromTextSegment(textNode, seg.start, seg.end) };
+          }
+        }
+      }
+      for (const key of this.collectVisibleAttributeKeys(el)) {
+        visibleKeys.add(key);
+        if (visibleKeys.size > 1) return null;
+        if (!target) {
+          const rect = el.getBoundingClientRect();
+          target = { element: el, rect: isNonZeroRect(rect) ? rect : null };
+        }
+      }
+      el = walker.nextNode() as Element | null;
+    }
+
+    if (visibleKeys.size !== 1 || !target) return null;
+    const primaryKey = [...visibleKeys][0]!;
+    const fallbackRect = target.element.getBoundingClientRect();
+    const rect = target.rect ?? (isNonZeroRect(fallbackRect) ? fallbackRect : null);
+    if (!rect) return null;
+    const candidates = dedupeKeys([primaryKey, ...this.collectSubtreeKeys(container)]);
+    return { element: target.element, rect, primaryKey, candidates };
+  }
+
   resolveAtPoint(doc: Document, clientX: number, clientY: number): HitTarget | null {
     this.flushMutations();
 
@@ -550,6 +620,13 @@ export class UiTextEditorDomRegistry {
     }
 
     for (const element of stack) {
+      if (element.matches(INTERACTIVE_CONTAINER_SELECTOR)) {
+        const uniqueTarget = this.resolveUniqueSubtreeVisibleTarget(element);
+        if (uniqueTarget) {
+          return uniqueTarget;
+        }
+      }
+
       const aria = dedupeKeys(this.collectAriaLabelKeys(element));
       if (aria.length > 0) {
         const rect = element.getBoundingClientRect();
@@ -561,23 +638,6 @@ export class UiTextEditorDomRegistry {
             primaryAttribute: 'aria-label',
             candidates: aria,
           };
-        }
-      }
-
-      if (
-        element.matches('button, a, label, [role="button"], [role="menuitem"], [role="option"], [role="tab"], [role="tooltip"]')
-      ) {
-        const subtree = this.collectSubtreeKeys(element);
-        if (subtree.length > 0) {
-          const rect = element.getBoundingClientRect();
-          if (rect.width > 0 || rect.height > 0) {
-            return {
-              element,
-              rect,
-              primaryKey: subtree[0]!,
-              candidates: subtree,
-            };
-          }
         }
       }
     }
