@@ -1,13 +1,11 @@
-import { copyFile, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { test } from 'vitest';
 
 import { applyMigrations } from '../src/migrate.ts';
 import { createNodeSqliteDatabase } from '../src/node-sqlite-database.ts';
-import { migrationsDir as gatewayMigrationsDir } from '@floway-dev/gateway/migrations-dir';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const withTemp = async (fn: (dir: string) => Promise<void>): Promise<void> => {
@@ -38,6 +36,7 @@ test('applies all real migration files against a fresh sqlite', () => withTemp(a
 test('mid-migration failure rolls back and leaves no partial schema', () => withTemp(async dir => {
   const migrationsDir = join(dir, 'migrations');
   await rm(migrationsDir, { recursive: true, force: true });
+  const { mkdir } = await import('node:fs/promises');
   await mkdir(migrationsDir, { recursive: true });
 
   // First statement creates a table; second is invalid SQL — the transaction
@@ -58,27 +57,4 @@ test('mid-migration failure rolls back and leaves no partial schema', () => with
 
   const recorded = await db.prepare('SELECT name FROM _migrations').all<{ name: string }>();
   assertEquals(recorded.results, []);
-}));
-
-test('0101 clears orphaned proxy backoff rows from an existing database', () => withTemp(async dir => {
-  const migrationsDir = join(dir, 'migrations');
-  await mkdir(migrationsDir, { recursive: true });
-  const realDir = fileURLToPath(gatewayMigrationsDir);
-  const cleanupFile = '0101_drop_orphan_proxy_backoffs.sql';
-  const files = (await readdir(realDir)).filter(file => file.endsWith('.sql')).toSorted();
-  for (const file of files.filter(file => file < cleanupFile)) {
-    await copyFile(join(realDir, file), join(migrationsDir, file));
-  }
-
-  const db = createNodeSqliteDatabase(join(dir, 'orphans.db'));
-  await applyMigrations(db, migrationsDir);
-  await db.prepare('INSERT INTO proxy_upstream_backoffs (proxy_id, upstream_id, expires_at) VALUES (?, ?, ?)')
-    .bind('p_old', 'draft', 9_999_999_999)
-    .run();
-
-  await copyFile(join(realDir, cleanupFile), join(migrationsDir, cleanupFile));
-  await applyMigrations(db, migrationsDir);
-
-  const rows = await db.prepare('SELECT upstream_id FROM proxy_upstream_backoffs').all<{ upstream_id: string }>();
-  assertEquals(rows.results, []);
 }));

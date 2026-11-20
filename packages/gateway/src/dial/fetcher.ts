@@ -3,7 +3,6 @@ import { createReplayableRequest, type ReplayableRequest } from './replayable-re
 import { runUpstreamTransport } from './transport-error.ts';
 import { DIRECT_CONNECT_ID, DIRECT_FETCH_ID, entryMatchesColo, isDirectFallbackId } from '../repo/proxy-fallback-list.ts';
 import type { Repo } from '../repo/types.ts';
-import { isDraftUpstreamId } from '../shared/draft-upstream.ts';
 import type { HttpContentDecoders, HttpRequest } from '@floway-dev/http';
 import type { SocketDial } from '@floway-dev/platform';
 import type { Fetcher, FetchInit, ProxyFallbackEntry } from '@floway-dev/provider';
@@ -12,7 +11,10 @@ import { ProxyDialError, type ProxyConfig, type ProxyRequestTarget, type RunDire
 
 interface CreateFetcherInput {
   repo: Pick<Repo, 'proxyBackoffs'>;
-  upstreamId: string;
+  // Backoff rows belong to a persisted (proxy, upstream) pair. Null marks a
+  // fetcher with no saved policy behind it, such as an edit-form probe, which
+  // neither consults nor records backoff state.
+  upstreamId: string | null;
   fallbackList: ProxyFallbackEntry[];
   proxyById: Map<string, ProxyEntry>;
   // Location tag the request landed in, used to apply each entry's optional
@@ -126,11 +128,9 @@ const runFallbacks = async (
   // Backoff rows only ever exist for operator-managed proxies, so a list made
   // entirely of built-in transports has nothing to look up. Skipping the read
   // keeps the direct-only path — which is what an unset policy resolves to —
-  // free of a per-request store round-trip. Draft probes carry a synthetic
-  // upstream id with no persisted row; their backoff state is request-local
-  // and must never be read from or written to the shared table.
+  // free of a per-request store round-trip.
   const skip = new Set<string>();
-  if (!isDraftUpstreamId(input.upstreamId) && list.some(id => !isDirectFallbackId(id))) {
+  if (input.upstreamId !== null && list.some(id => !isDirectFallbackId(id))) {
     const active = await input.repo.proxyBackoffs.listForUpstream(input.upstreamId);
     const now = Math.floor(Date.now() / 1000);
     for (const b of active) if (b.expiresAt > now) skip.add(b.proxyId);
@@ -170,7 +170,7 @@ const tryOne = async (
   errors: unknown[],
   hasDirectFetch: boolean,
 ): Promise<Response | null> => {
-  const trackBackoffs = !isDraftUpstreamId(input.upstreamId);
+  const { upstreamId } = input;
   let directSocketDial: SocketDial | undefined;
   try {
     if (id === DIRECT_FETCH_ID) {
@@ -222,13 +222,13 @@ const tryOne = async (
     // schedule from where it left off. Mirror the failure-path policy: a
     // transient backoff-store write must not shadow the actual outcome —
     // here that means a bookkeeping rejection cannot discard a healthy
-    // upstream Response we already hold. Draft probes skip the table entirely.
-    try {
-      if (trackBackoffs) {
-        await input.repo.proxyBackoffs.recordDialSuccess(id, input.upstreamId);
+    // upstream Response we already hold.
+    if (upstreamId !== null) {
+      try {
+        await input.repo.proxyBackoffs.recordDialSuccess(id, upstreamId);
+      } catch (recordErr) {
+        console.warn(`failed to clear proxy backoff for ${id}/${upstreamId}:`, recordErr);
       }
-    } catch (recordErr) {
-      console.warn(`failed to clear proxy backoff for ${id}/${input.upstreamId}:`, recordErr);
     }
     return response;
   } catch (err) {
@@ -268,14 +268,13 @@ const tryOne = async (
       // can tell a tcp-connect refusal from an inner-tls cert mismatch
       // without cracking the proxy library open. A transient backoff-store
       // failure must not shadow the real dial error — log and swallow so
-      // `errors[]` carries the original cause up to the caller. A draft probe
-      // writes no row: there is no upstream row for the dashboard to join it to.
-      try {
-        if (trackBackoffs) {
-          await input.repo.proxyBackoffs.recordDialFailure(id, input.upstreamId, `[${err.stage}] ${err.message}`);
+      // `errors[]` carries the original cause up to the caller.
+      if (upstreamId !== null) {
+        try {
+          await input.repo.proxyBackoffs.recordDialFailure(id, upstreamId, `[${err.stage}] ${err.message}`);
+        } catch (recordErr) {
+          console.warn(`failed to persist proxy backoff for ${id}/${upstreamId}:`, recordErr);
         }
-      } catch (recordErr) {
-        console.warn(`failed to persist proxy backoff for ${id}/${input.upstreamId}:`, recordErr);
       }
       return null;
     }

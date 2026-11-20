@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createFetcher } from '../../src/dial/fetcher.ts';
 import type { ProxyEntry } from '../../src/dial/proxy-catalog.ts';
-import { DRAFT_UPSTREAM_ID } from '../../src/shared/draft-upstream.ts';
 import { InMemoryRepo } from '../repo/memory.ts';
 import { isReplayableBody, type ReplayableBody } from '@floway-dev/provider';
 import { ProxyDialError, type ProxyConfig, type SocketDial } from '@floway-dev/proxy';
@@ -252,41 +251,20 @@ describe('createFetcher', () => {
     warnSpy.mockRestore();
   });
 
-  it('does not persist backoff failures from a draft probe', async () => {
+  it('neither consults nor records backoff state without a saved upstream', async () => {
     const repo = new InMemoryRepo();
-    const fetcher = createFetcher({
-      repo,
-      upstreamId: DRAFT_UPSTREAM_ID,
-      fallbackList: [{ id: 'a' }],
-      runtimeLocation: 'TEST',
-      proxyById: new Map([['a', proxyA]]),
-      runProxied: async () => { throw new ProxyDialError('tcp connect failed', 'tcp-connect'); },
-      runDirectFetch: async () => new Response('direct'),
-      runDirectConnect: async () => new Response('direct connect'),
-      socketDial: () => stubSocketDial,
-    });
-
-    await expect(fetcher('https://api.openai.com', { method: 'GET' })).rejects.toMatchObject({
-      name: 'ProxyDialError',
-      stage: 'tcp-connect',
-    });
-    // A row keyed by the synthetic draft id can never be joined to an
-    // upstream row, so it must never reach the shared backoff table.
-    expect(await repo.proxyBackoffs.listAll()).toEqual([]);
-  });
-
-  it('ignores backoff rows left behind by earlier draft probes', async () => {
-    const repo = new InMemoryRepo();
-    await repo.proxyBackoffs.recordDialFailure('a', DRAFT_UPSTREAM_ID, 'stale');
+    await repo.proxyBackoffs.recordDialFailure('a', 'u', 'saved upstream cooldown');
+    const before = await repo.proxyBackoffs.listAll();
     const calls: string[] = [];
     const fetcher = createFetcher({
       repo,
-      upstreamId: DRAFT_UPSTREAM_ID,
+      upstreamId: null,
       fallbackList: [{ id: 'a' }, { id: 'b' }],
       runtimeLocation: 'TEST',
       proxyById: new Map([['a', proxyA], ['b', proxyB]]),
       runProxied: async config => {
         calls.push(config.host);
+        if (config.host === 'a') throw new ProxyDialError('tcp connect failed', 'tcp-connect');
         return new Response('ok');
       },
       runDirectFetch: async () => new Response('direct'),
@@ -294,10 +272,10 @@ describe('createFetcher', () => {
       socketDial: () => stubSocketDial,
     });
 
-    const response = await fetcher('https://api.openai.com', { method: 'GET' });
-    expect(response.status).toBe(200);
-    // 'a' would be skipped on pass one if the stale row were still consulted,
-    // leaving 'b' as the only attempted proxy.
-    expect(calls).toEqual(['a']);
+    expect(await (await fetcher('https://api.openai.com', { method: 'GET' })).text()).toBe('ok');
+    // A saved upstream's cooldown on 'a' does not steer this dial, and the
+    // failure on 'a' plus the success on 'b' leave the table untouched.
+    expect(calls).toEqual(['a', 'b']);
+    expect(await repo.proxyBackoffs.listAll()).toEqual(before);
   });
 });
