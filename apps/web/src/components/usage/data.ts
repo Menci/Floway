@@ -32,6 +32,7 @@ export const buildUsageOverviewQuery = (
   nowMs: number,
 ) => ({
   ...dashboardRangeQuery(range, nowMs),
+  format: 'buckets' as const,
   group_by: groupBy,
   filter_model: filters.model,
   filter_upstream: filters.upstream,
@@ -60,14 +61,6 @@ const sameUsageQuery = (left: UsageOverviewQuery, right: UsageOverviewQuery): bo
   && sameMembers(left.filter_user_id, right.filter_user_id)
   && sameMembers(left.filter_key_id, right.filter_key_id);
 
-const sameUsageAccess = (left: TokenUsageOverviewResponse, right: TokenUsageOverviewResponse, ownedKeysOnly: boolean): boolean => {
-  if (left.actorId !== right.actorId || !sameMembers(left.keys.map(key => key.id), right.keys.map(key => key.id))) return false;
-  return ownedKeysOnly || (left.isAdmin === right.isAdmin && (left.isAdmin || (
-    sameMembers(left.visibleUserIds, right.visibleUserIds)
-    && sameMembers(left.visibleUpstreamIds, right.visibleUpstreamIds)
-  )));
-};
-
 export const createUsageOverviewLoader = (): UsageOverviewLoader => {
   let latest: { query: UsageOverviewQuery; snapshot: TokenUsageOverviewResponse } | undefined;
   return async (range, groupBy, filters, loadedAt, signal) => {
@@ -77,7 +70,7 @@ export const createUsageOverviewLoader = (): UsageOverviewLoader => {
     const load = (cursor: string | undefined) => callApi(() => api.api['token-usage'].overview.$get({ query: { ...query, cursor } }, { init: { signal } }));
     let result = await load(cursor);
     if (result.error) return result;
-    if (previous && !result.data.reset && !sameUsageAccess(previous, result.data, groupBy === 'keyId')) {
+    if (previous && !result.data.reset && JSON.stringify(previous.scope) !== JSON.stringify(result.data.scope)) {
       previous = undefined;
       if (!signal.aborted) latest = undefined;
       result = await load(undefined);

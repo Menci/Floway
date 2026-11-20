@@ -27,8 +27,8 @@ export const mergeUsageOverview = (
       ...previous.buckets.filter(bucket => bucket.start >= start && bucket.end <= response.start),
       ...response.buckets,
     ],
-    users: response.isAdmin ? response.users : mergeMetadata(previous.users, response.users, user => user.id),
-    upstreams: response.isAdmin ? response.upstreams : mergeMetadata(previous.upstreams, response.upstreams, upstream => upstream.id),
+    users: response.metadataVisibility.complete ? response.users : mergeMetadata(previous.users, response.users, user => user.id),
+    upstreams: response.metadataVisibility.complete ? response.upstreams : mergeMetadata(previous.upstreams, response.upstreams, upstream => upstream.id),
   };
 };
 
@@ -66,8 +66,8 @@ export const usageOverviewForDisplay = (data: TokenUsageOverviewResponse, groupB
     models: union(buckets.flatMap(bucket => bucket.dimensionValues.models)),
     upstreams: union(buckets.flatMap(bucket => bucket.dimensionValues.upstreams)),
   };
-  const userIds = new Set([...data.visibleUserIds, ...dimensionValues.userIds]);
-  const upstreamIds = new Set([...data.visibleUpstreamIds, ...dimensionValues.upstreams.map(usageUpstreamFromDimensionValue)]);
+  const userIds = new Set([...data.metadataVisibility.userIds, ...dimensionValues.userIds]);
+  const upstreamIds = new Set([...data.metadataVisibility.upstreamIds, ...dimensionValues.upstreams.map(usageUpstreamFromDimensionValue)]);
   const users = data.users.filter(user => userIds.has(user.id)).sort((left, right) => left.id - right.id);
   return {
     series: sumAxis(buckets, groupBy, true),

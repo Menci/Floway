@@ -63,7 +63,9 @@ const overview = (url: URL) => {
       axes: { none: [], model: [{ ...row, group: 'gpt-5' }], upstream: [], userId: [], keyId: [] },
       dimensionValues: { models: ['gpt-5'], upstreams: ['upstream:first'], userIds: [1], keyIds: [] },
     }],
-    actorId: 1, isAdmin: true, users: [{ id: 1, username: 'admin' }], visibleUserIds: [1], visibleUpstreamIds: ['first'],
+    scope: { actorId: 1, ownedKeyIds: [], visibility: 'all' },
+    metadataVisibility: { complete: true, userIds: [1], upstreamIds: ['first'] },
+    users: [{ id: 1, username: 'admin' }],
     upstreams: [{ id: 'first', name: 'First', hue: 210 }], keys: [],
   };
 };

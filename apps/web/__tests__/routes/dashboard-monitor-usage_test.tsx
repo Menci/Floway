@@ -101,7 +101,9 @@ describe('usage dimension controls', () => {
       const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
       if (url.pathname === '/api/token-usage/overview') return Response.json({
         cursor: 'first', reset: true, start: url.searchParams.get('start'), end: url.searchParams.get('end'),
-        buckets: [], actorId: 2, isAdmin: false, visibleUserIds: [2], visibleUpstreamIds: [],
+        buckets: [],
+        scope: { actorId: 2, ownedKeyIds: [], visibility: { userIds: [2], upstreamIds: [] } },
+        metadataVisibility: { complete: false, userIds: [2], upstreamIds: [] },
         users: [{ id: 2, username: 'operator' }],
         upstreams: [],
         keys: [],
@@ -130,11 +132,9 @@ describe('usage dimension controls', () => {
         return Response.json({
           cursor: 'new', reset: true, start: url.searchParams.get('start'), end: url.searchParams.get('end'),
           buckets: [],
-          actorId: 1,
-          isAdmin: true,
+          scope: { actorId: 1, ownedKeyIds: ['key-2'], visibility: 'all' },
           users: loaderData.usage.users,
-          visibleUserIds: loaderData.usage.auditableUserIds,
-          visibleUpstreamIds: ['up-1'],
+          metadataVisibility: { complete: true, userIds: loaderData.usage.auditableUserIds, upstreamIds: ['up-1'] },
           upstreams: loaderData.usage.upstreams,
           keys: loaderData.usage.keys,
         });

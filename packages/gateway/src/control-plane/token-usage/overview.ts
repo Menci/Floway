@@ -71,6 +71,10 @@ export const tokenUsageOverview = async (c: Ctx) => {
   const identity = await loadTelemetryOverviewIdentity(c);
   const identityError = telemetryIdentityError(identity, filters.keyId);
   if (identityError !== null) return c.json({ error: identityError.error }, identityError.status);
+  const ownedKeysOnly = groupBy === 'keyId';
+  // The dashboard compares the serialized scope across reads, so set order is canonical.
+  const userIds = [...identity.visibleUserIds].sort((left, right) => left - right);
+  const upstreamIds = [...identity.visibleUpstreams].sort();
 
   const previous = readCursor(params.value.cursor);
   const resumeFromHour = shiftHour(nowHour, -1);
@@ -89,11 +93,11 @@ export const tokenUsageOverview = async (c: Ctx) => {
   const buckets = scanStart >= windowEnd ? [] : (await repo.usage.queryOverview({
     actorUserId: identity.actor.id,
     isAdmin: identity.actor.isAdmin,
-    visibleUserIds: [...identity.visibleUserIds],
-    visibleUpstreams: [...identity.visibleUpstreams],
+    visibleUserIds: userIds,
+    visibleUpstreams: upstreamIds,
     start: scanStart,
     end: windowEnd,
-    ownedKeysOnly: groupBy === 'keyId',
+    ownedKeysOnly,
     filters: {
       keyIds: [...filters.keyId],
       userIds: [...filters.userId].map(Number),
@@ -127,10 +131,12 @@ export const tokenUsageOverview = async (c: Ctx) => {
     end: windowEnd,
     buckets,
     ...metadata,
-    actorId: identity.actor.id,
-    isAdmin: identity.actor.isAdmin,
-    visibleUserIds: [...identity.visibleUserIds],
-    visibleUpstreamIds: [...identity.visibleUpstreams],
+    scope: {
+      actorId: identity.actor.id,
+      ownedKeyIds: [...identity.ownedKeyIds].sort(),
+      visibility: ownedKeysOnly ? 'owned-keys' : identity.actor.isAdmin ? 'all' : { userIds, upstreamIds },
+    },
+    metadataVisibility: { complete: identity.actor.isAdmin, userIds, upstreamIds },
     upstreams: telemetryUpstreamMetadata(identity, revealedUpstreamIds),
   } satisfies TokenUsageOverviewResponse);
 };

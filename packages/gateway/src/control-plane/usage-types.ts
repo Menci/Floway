@@ -33,16 +33,20 @@ export interface TokenUsageOverviewBucket extends Omit<UsageOverviewResult, 'fir
   end: string;
 }
 
+export interface TokenUsageOverviewScope {
+  actorId: number;
+  ownedKeyIds: string[];
+  visibility: 'owned-keys' | 'all' | { userIds: number[]; upstreamIds: string[] };
+}
+
 export interface TokenUsageOverviewResponse {
   cursor: string;
   reset: boolean;
   start: string;
   end: string;
   buckets: TokenUsageOverviewBucket[];
-  actorId: number;
-  isAdmin: boolean;
-  visibleUserIds: number[];
-  visibleUpstreamIds: string[];
+  scope: TokenUsageOverviewScope;
+  metadataVisibility: { complete: boolean; userIds: number[]; upstreamIds: string[] };
   users: UsageUserMetadata[];
   upstreams: Array<{ id: string; name: string; hue: number }>;
   keys: UsageKeyMetadata[];

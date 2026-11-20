@@ -28,7 +28,9 @@ test('a rolling overview replaces overlapping hours and adds the remaining inter
       bucket('2026-04-30T12', '2026-04-30T13', 'model-a', 1, null),
       bucket('2026-04-30T13', '2026-04-30T14', 'model-b', 99, '99'),
     ],
-    actorId: 1, isAdmin: false, visibleUserIds: [], visibleUpstreamIds: [], keys: [], upstreams: [], users: [],
+    scope: { actorId: 1, ownedKeyIds: [], visibility: { userIds: [], upstreamIds: [] } },
+    metadataVisibility: { complete: false, userIds: [], upstreamIds: [] },
+    keys: [], upstreams: [], users: [],
   };
   const start = '2026-04-30T00';
   const delta: TokenUsageOverviewResponse = {
@@ -58,20 +60,28 @@ test('Usage keeps a baseline across metadata and display changes and replaces it
   const { start, end } = dashboardRangeQuery('30d', loadedAt);
   const cursor = '2026-04-30T13';
   const initial: TokenUsageOverviewResponse = {
-    start, end, cursor, reset: true, actorId: 1, isAdmin: false,
+    start, end, cursor, reset: true,
     buckets: [bucket('2026-04-29T04', '2026-04-29T05', 'model-a', 4, null)],
-    visibleUserIds: [1, 2], visibleUpstreamIds: [], keys: [], upstreams: [],
+    scope: { actorId: 1, ownedKeyIds: [], visibility: { userIds: [1, 2], upstreamIds: [] } },
+    metadataVisibility: { complete: false, userIds: [1, 2], upstreamIds: [] },
+    keys: [], upstreams: [],
     users: [{ id: 1, username: 'operator' }, { id: 2, username: 'before' }],
   };
   const renamed: TokenUsageOverviewResponse = {
-    ...initial, reset: false, start: cursor, buckets: [], visibleUserIds: [2, 1],
+    ...initial, reset: false, start: cursor, buckets: [],
     users: [{ id: 1, username: 'operator' }, { id: 2, username: 'after' }],
   };
-  const reduced = { ...renamed, visibleUserIds: [1], users: renamed.users.slice(0, 1) };
+  const reduced: TokenUsageOverviewResponse = {
+    ...renamed,
+    scope: { ...renamed.scope, visibility: { userIds: [1], upstreamIds: [] } },
+    metadataVisibility: { ...renamed.metadataVisibility, userIds: [1] },
+    users: renamed.users.slice(0, 1),
+  };
   const responses = [initial, renamed, reduced, { ...reduced, start, reset: true }];
   const cursors: Array<string | null> = [];
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
+    expect(url.searchParams.get('format')).toBe('buckets');
     cursors.push(url.searchParams.get('cursor'));
     const response = responses.shift();
     if (!response) throw new Error('Unexpected Usage request');
