@@ -10,6 +10,23 @@ export const decodeChunked = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   head: Uint8Array,
 ): ReadableStream<Uint8Array> => {
+  const releaseReader = (): void => {
+    try { reader.releaseLock(); } catch { /* lock already released */ }
+  };
+  const cancelAndRelease = async (reason?: unknown): Promise<void> => {
+    try {
+      await reader.cancel(reason);
+    } catch {
+      // Transport teardown can reject after framing has already ended or the
+      // stream has been cancelled. The reader lock still needs releasing.
+    } finally {
+      releaseReader();
+    }
+  };
+  const fail = (controller: ReadableStreamDefaultController<Uint8Array>, error: unknown): void => {
+    controller.error(error);
+    releaseReader();
+  };
   let buf = head;
   // `findCrlfFrom` is otherwise O(n) per call across the whole buffer; on
   // a stream of small chunks that turns into O(n²) total work. We track
@@ -28,144 +45,148 @@ export const decodeChunked = (
   let trailerBytesSeen = 0;
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
-      while (true) {
-        if (state === 'size') {
-          const idx = findCrlfFrom(buf, scanFrom);
-          if (idx < 0) {
-            if (buf.byteLength > MAX_CHUNK_SIZE_LINE) {
-              controller.error(new HttpProtocolError(
+      try {
+        while (true) {
+          if (state === 'size') {
+            const idx = findCrlfFrom(buf, scanFrom);
+            if (idx < 0) {
+              if (buf.byteLength > MAX_CHUNK_SIZE_LINE) {
+                fail(controller, new HttpProtocolError(
+                  `chunked: size line exceeded ${MAX_CHUNK_SIZE_LINE} bytes`,
+                  'CHUNK_TOO_LONG',
+                ));
+                return;
+              }
+              scanFrom = Math.max(0, buf.byteLength - 1);
+              const more = await reader.read();
+              if (more.done) {
+                fail(controller, new HttpProtocolError('chunked: EOF in size', 'EOF'));
+                return;
+              }
+              buf = concat(buf, more.value);
+              continue;
+            }
+            if (idx > MAX_CHUNK_SIZE_LINE) {
+              fail(controller, new HttpProtocolError(
                 `chunked: size line exceeded ${MAX_CHUNK_SIZE_LINE} bytes`,
                 'CHUNK_TOO_LONG',
               ));
               return;
             }
-            scanFrom = Math.max(0, buf.byteLength - 1);
-            const more = await reader.read();
-            if (more.done) {
-              controller.error(new HttpProtocolError('chunked: EOF in size', 'EOF'));
-              return;
-            }
-            buf = concat(buf, more.value);
-            continue;
-          }
-          if (idx > MAX_CHUNK_SIZE_LINE) {
-            controller.error(new HttpProtocolError(
-              `chunked: size line exceeded ${MAX_CHUNK_SIZE_LINE} bytes`,
-              'CHUNK_TOO_LONG',
-            ));
-            return;
-          }
-          const sizeLine = ASCII_DECODER.decode(buf.subarray(0, idx));
-          const semi = sizeLine.indexOf(';');
-          const hex = (semi < 0 ? sizeLine : sizeLine.slice(0, semi)).trim();
-          // Strict hex validation. parseInt('1f garbage', 16) returns 31 —
-          // a smuggling-adjacent path. Require a pure run of hex digits;
-          // chunk extensions (after the `;`) are dropped by the slice
-          // above before we get here.
-          if (!/^[0-9a-fA-F]+$/.test(hex)) {
-            controller.error(new HttpProtocolError(
-              `chunked: bad size line ${JSON.stringify(sizeLine)}`,
-              'CHUNK_BAD_SIZE',
-            ));
-            return;
-          }
-          // The regex bounds the digits to hex but not the magnitude:
-          // MAX_CHUNK_SIZE_LINE allows ~1024 digits, and parseInt overflows
-          // to Infinity past ~256 hex digits (2^1028 > Number.MAX_VALUE).
-          // An Infinity `need` would let a peer stream upstream bytes
-          // unbounded, so cap to a 64-bit-ish chunk size before parsing.
-          if (hex.length > 16) {
-            controller.error(new HttpProtocolError(
-              'chunked: size line exceeds 64-bit chunk size',
-              'CHUNK_BAD_SIZE',
-            ));
-            return;
-          }
-          need = parseInt(hex, 16);
-          buf = buf.subarray(idx + 2);
-          scanFrom = 0;
-          state = need === 0 ? 'trailers' : 'data';
-        } else if (state === 'data') {
-          if (buf.byteLength === 0) {
-            const more = await reader.read();
-            if (more.done) {
-              controller.error(new HttpProtocolError('chunked: EOF mid-data', 'EOF'));
-              return;
-            }
-            buf = copy(more.value);
-            continue;
-          }
-          const take = Math.min(buf.byteLength, need);
-          controller.enqueue(copy(buf.subarray(0, take)));
-          buf = buf.subarray(take);
-          need -= take;
-          if (need === 0) state = 'after-data-crlf';
-          return;
-        } else if (state === 'after-data-crlf') {
-          while (buf.byteLength < 2) {
-            const more = await reader.read();
-            if (more.done) {
-              controller.error(new HttpProtocolError(
-                'chunked: EOF before CRLF after data',
-                'EOF',
+            const sizeLine = ASCII_DECODER.decode(buf.subarray(0, idx));
+            const semi = sizeLine.indexOf(';');
+            const hex = (semi < 0 ? sizeLine : sizeLine.slice(0, semi)).trim();
+            // Strict hex validation. parseInt('1f garbage', 16) returns 31 —
+            // a smuggling-adjacent path. Require a pure run of hex digits;
+            // chunk extensions (after the `;`) are dropped by the slice
+            // above before we get here.
+            if (!/^[0-9a-fA-F]+$/.test(hex)) {
+              fail(controller, new HttpProtocolError(
+                `chunked: bad size line ${JSON.stringify(sizeLine)}`,
+                'CHUNK_BAD_SIZE',
               ));
               return;
             }
-            buf = concat(buf, more.value);
-          }
-          if (buf[0] !== 0x0d || buf[1] !== 0x0a) {
-            controller.error(new HttpProtocolError(
-              'chunked: missing CRLF after data',
-              'CHUNK_BAD_SIZE',
-            ));
+            // The regex bounds the digits to hex but not the magnitude:
+            // MAX_CHUNK_SIZE_LINE allows ~1024 digits, and parseInt overflows
+            // to Infinity past ~256 hex digits (2^1028 > Number.MAX_VALUE).
+            // An Infinity `need` would let a peer stream upstream bytes
+            // unbounded, so cap to a 64-bit-ish chunk size before parsing.
+            if (hex.length > 16) {
+              fail(controller, new HttpProtocolError(
+                'chunked: size line exceeds 64-bit chunk size',
+                'CHUNK_BAD_SIZE',
+              ));
+              return;
+            }
+            need = parseInt(hex, 16);
+            buf = buf.subarray(idx + 2);
+            scanFrom = 0;
+            state = need === 0 ? 'trailers' : 'data';
+          } else if (state === 'data') {
+            if (buf.byteLength === 0) {
+              const more = await reader.read();
+              if (more.done) {
+                fail(controller, new HttpProtocolError('chunked: EOF mid-data', 'EOF'));
+                return;
+              }
+              buf = copy(more.value);
+              continue;
+            }
+            const take = Math.min(buf.byteLength, need);
+            controller.enqueue(copy(buf.subarray(0, take)));
+            buf = buf.subarray(take);
+            need -= take;
+            if (need === 0) state = 'after-data-crlf';
             return;
-          }
-          buf = buf.subarray(2);
-          scanFrom = 0;
-          state = 'size';
-        } else if (state === 'trailers') {
-          const idx = findCrlfFrom(buf, scanFrom);
-          if (idx < 0) {
-            // Bound the unconsumed buffer + already-consumed lines against
-            // the cap, rather than accumulating buf.byteLength per iteration
-            // (which double-counts the same bytes on every drip-fed read and
-            // collapses the effective cap to O(sqrt(MAX_TRAILERS_BYTES))).
-            if (trailerBytesSeen + buf.byteLength > MAX_TRAILERS_BYTES) {
-              controller.error(new HttpProtocolError(
+          } else if (state === 'after-data-crlf') {
+            while (buf.byteLength < 2) {
+              const more = await reader.read();
+              if (more.done) {
+                fail(controller, new HttpProtocolError(
+                  'chunked: EOF before CRLF after data',
+                  'EOF',
+                ));
+                return;
+              }
+              buf = concat(buf, more.value);
+            }
+            if (buf[0] !== 0x0d || buf[1] !== 0x0a) {
+              fail(controller, new HttpProtocolError(
+                'chunked: missing CRLF after data',
+                'CHUNK_BAD_SIZE',
+              ));
+              return;
+            }
+            buf = buf.subarray(2);
+            scanFrom = 0;
+            state = 'size';
+          } else if (state === 'trailers') {
+            const idx = findCrlfFrom(buf, scanFrom);
+            if (idx < 0) {
+              // Bound the unconsumed buffer + already-consumed lines against
+              // the cap, rather than accumulating buf.byteLength per iteration
+              // (which double-counts the same bytes on every drip-fed read and
+              // collapses the effective cap to O(sqrt(MAX_TRAILERS_BYTES))).
+              if (trailerBytesSeen + buf.byteLength > MAX_TRAILERS_BYTES) {
+                fail(controller, new HttpProtocolError(
+                  `chunked: trailers exceeded ${MAX_TRAILERS_BYTES} bytes`,
+                  'TRAILERS_TOO_LONG',
+                ));
+                return;
+              }
+              scanFrom = Math.max(0, buf.byteLength - 1);
+              const more = await reader.read();
+              if (more.done) {
+                fail(controller, new HttpProtocolError('chunked: EOF in trailers', 'EOF'));
+                return;
+              }
+              buf = concat(buf, more.value);
+              continue;
+            }
+            if (idx === 0) {
+              controller.close();
+              await cancelAndRelease();
+              return;
+            }
+            trailerBytesSeen += idx + 2;
+            if (trailerBytesSeen > MAX_TRAILERS_BYTES) {
+              fail(controller, new HttpProtocolError(
                 `chunked: trailers exceeded ${MAX_TRAILERS_BYTES} bytes`,
                 'TRAILERS_TOO_LONG',
               ));
               return;
             }
-            scanFrom = Math.max(0, buf.byteLength - 1);
-            const more = await reader.read();
-            if (more.done) {
-              controller.error(new HttpProtocolError('chunked: EOF in trailers', 'EOF'));
-              return;
-            }
-            buf = concat(buf, more.value);
-            continue;
+            buf = buf.subarray(idx + 2);
+            scanFrom = 0;
           }
-          if (idx === 0) {
-            controller.close();
-            try { await reader.cancel(); } catch { /* reader already cancelled */ }
-            return;
-          }
-          trailerBytesSeen += idx + 2;
-          if (trailerBytesSeen > MAX_TRAILERS_BYTES) {
-            controller.error(new HttpProtocolError(
-              `chunked: trailers exceeded ${MAX_TRAILERS_BYTES} bytes`,
-              'TRAILERS_TOO_LONG',
-            ));
-            return;
-          }
-          buf = buf.subarray(idx + 2);
-          scanFrom = 0;
         }
+      } catch (error) {
+        fail(controller, error);
       }
     },
-    cancel(reason) {
-      reader.cancel(reason).catch(() => {});
+    async cancel(reason) {
+      return await cancelAndRelease(reason);
     },
   });
 };

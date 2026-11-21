@@ -9,8 +9,16 @@ import { brotliCompressSync, createBrotliDecompress, gzipSync } from 'node:zlib'
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { collectBodyBytes, makeFakeDuplex, respondAndEnd } from './test-utils.ts';
+import { collectBody, collectBodyBytes, makeFakeDuplex, respondAndEnd } from './test-utils.ts';
 import { parseHttpResponse, toWebResponse } from '../src/parser.ts';
+
+const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
+
+const deferred = (): { promise: Promise<void>; resolve: () => void } => {
+  let resolve!: () => void;
+  const promise = new Promise<void>(r => { resolve = r; });
+  return { promise, resolve };
+};
 
 describe('parseHttpResponse — status-line grammar', () => {
   it('rejects a status line with two SPs between code and reason (the second SP cannot be absorbed into the reason)', async () => {
@@ -208,6 +216,7 @@ describe('parseHttpResponse — body framing', () => {
     await expect(collectBodyBytes(resp)).rejects.toMatchObject({
       code: 'TRAILING_BODY_BYTES',
     });
+    expect(fake.readable.locked).toBe(false);
   });
 
   it('errors with EOF when CL exceeds the available bytes', async () => {
@@ -218,6 +227,7 @@ describe('parseHttpResponse — body framing', () => {
     await expect(collectBodyBytes(resp)).rejects.toMatchObject({
       code: 'EOF',
     });
+    expect(fake.readable.locked).toBe(false);
   });
 });
 
@@ -243,6 +253,24 @@ describe('toWebResponse', () => {
     const r = toWebResponse(await parseHttpResponse(respondAndEnd('HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n')));
     expect(r.status).toBe(204);
     expect(r.body).toBeNull();
+  });
+
+  it.each([
+    ['Content-Length: 0', 'HTTP/1.1 205 Reset Content\r\nContent-Length: 0\r\n\r\n'],
+    ['until-EOF', 'HTTP/1.1 205 Reset Content\r\n\r\n'],
+  ])('returns a null-body Response for 205 Reset Content framed by %s', async (_label, wire) => {
+    const cancel = vi.fn(() => Promise.resolve());
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(encode(wire)); },
+      cancel,
+    });
+
+    const response = toWebResponse(await parseHttpResponse(source));
+
+    expect(response.status).toBe(205);
+    expect(response.statusText).toBe('Reset Content');
+    expect(response.body).toBeNull();
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalled());
   });
 
   it('rejects a content coding the socket transport cannot decode', async () => {
@@ -295,5 +323,66 @@ describe('parseHttpResponse — reader-lock release on error', () => {
     await expect(parseHttpResponse(readable)).rejects.toMatchObject({ code: 'BAD_STATUS_LINE' });
     expect(readable.locked).toBe(false);
     await expect(readable.cancel()).resolves.toBeUndefined();
+  });
+
+  it('releases the reader lock when an until-EOF body read fails', async () => {
+    const failure = new Error('transport read failed');
+    let sourceController!: ReadableStreamDefaultController<Uint8Array>;
+    const readable = new ReadableStream<Uint8Array>({
+      start(controller) {
+        sourceController = controller;
+        controller.enqueue(encode('HTTP/1.1 200 OK\r\n\r\n'));
+      },
+    });
+    const response = await parseHttpResponse(readable);
+
+    sourceController.error(failure);
+
+    await expect(collectBodyBytes(response)).rejects.toBe(failure);
+    expect(readable.locked).toBe(false);
+  });
+});
+
+describe('response body cancellation', () => {
+  it.each([
+    ['Content-Length', 'HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\n'],
+    ['until-EOF', 'HTTP/1.1 200 OK\r\n\r\n'],
+    ['chunked', 'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n'],
+  ])('awaits asynchronous source cancellation for %s bodies and releases its lock', async (_label, wire) => {
+    const cancellation = deferred();
+    const cancel = vi.fn((_reason: unknown) => cancellation.promise);
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(encode(wire)); },
+      cancel,
+    });
+    const response = toWebResponse(await parseHttpResponse(source));
+    let settled = false;
+
+    const cancelling = response.body!.cancel('stop').then(() => { settled = true; });
+
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalledWith('stop'));
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    cancellation.resolve();
+    await cancelling;
+    expect(source.locked).toBe(false);
+  });
+
+  it.each([
+    ['Content-Length', 'HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nbody', false],
+    ['until-EOF', 'HTTP/1.1 200 OK\r\n\r\nbody', true],
+    ['chunked', 'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n4\r\nbody\r\n0\r\n\r\n', false],
+  ])('releases the source reader after normal %s completion', async (_label, wire, closeAtStart) => {
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encode(wire));
+        if (closeAtStart) controller.close();
+      },
+    });
+    const response = toWebResponse(await parseHttpResponse(source));
+
+    expect(await collectBody(response)).toBe('body');
+    await vi.waitFor(() => expect(source.locked).toBe(false));
   });
 });
