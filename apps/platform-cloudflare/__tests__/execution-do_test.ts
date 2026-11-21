@@ -42,6 +42,8 @@ class FakeState {
       fetch: async (_request: Request) => new Response('executed'),
     },
   };
+  readonly storage = null as unknown as DurableObjectStorage;
+  async blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T> { return await callback(); }
   acceptWebSocket(ws: WebSocket): void {
     this.sockets.push(ws as FakeWebSocket);
   }

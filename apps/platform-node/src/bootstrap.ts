@@ -3,6 +3,7 @@ import { createNodeExternalResourceFetcher } from './external-resource-fetcher.t
 import { nodeFetch } from './fetch.ts';
 import { FsFileStore } from './fs-file-store.ts';
 import { nodeHttpContentDecoders } from './http-content-decoders.ts';
+import { InProcessLogStreamStore } from './in-process-log-stream.ts';
 import { createNodeSqliteDatabase } from './node-sqlite-database.ts';
 import { createSharpImageProcessor } from './sharp-image-processor.ts';
 import { nodeSocketDial } from './socket-dial.ts';
@@ -20,6 +21,7 @@ import {
   initFileStore,
   initImageCacheStore,
   initImageProcessor,
+  initLogStreamStore,
   initRuntimeKind,
   initSocketDial,
   initTimingSafeEqual,
@@ -42,6 +44,7 @@ export const bootstrapNodePlatform = (): { db: SqlDatabase } => {
   const db = createNodeSqliteDatabase(dbPath);
   initImageCacheStore(new SqliteImageCacheStore(db, IMAGE_CACHE_POLICY));
   initImageProcessor(createSharpImageProcessor());
+  initLogStreamStore(new InProcessLogStreamStore());
   initDumpStore(new FileDumpStore(db, files));
   initDumpBroker(new EventTargetChannelBroker<DumpMetadata>(dumpCodec));
   return { db };

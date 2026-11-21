@@ -1,4 +1,5 @@
 import { DurableObjectExecutionCellNamespace, type ExecutionDurableObjectNamespace } from './durable-object-execution-cell.ts';
+import { DurableObjectLogStreamStore, type LogStreamNamespace } from './durable-object-log-stream.ts';
 import { ExecutionCellChannelBroker } from './execution-cell-channel-broker.ts';
 import { createCloudflareExternalResourceFetcher } from './external-resource-fetcher.ts';
 import { cloudflareFetch } from './fetch.ts';
@@ -19,6 +20,7 @@ import {
   initFileStore,
   initImageCacheStore,
   initImageProcessor,
+  initLogStreamStore,
   initRuntimeKind,
   initSocketDial,
   initTimingSafeEqual,
@@ -31,16 +33,17 @@ export interface CloudflareEnv {
   IMAGES: ImagesBinding;
   KV: KvNamespace;
   EXECUTION_DO: ExecutionDurableObjectNamespace;
+  LOG_STREAM_DO: LogStreamNamespace;
   [key: string]: unknown;
 }
 
 // Every binding declared on `CloudflareEnv` is load-bearing — D1 holds all
 // config and telemetry, R2 stores file-backed response payloads and dump bodies,
 // Images re-encodes images, KV memoises the results, and EXECUTION_DO hosts
-// WebSocket fan-out plus per-use execution cells. A missing binding means
-// wrangler.jsonc drifted from the code, so we refuse to initialise rather
-// than 503 on first use of the absent binding.
-const REQUIRED_BINDINGS = ['DB', 'FILES', 'IMAGES', 'KV', 'EXECUTION_DO'] as const;
+// WebSocket fan-out plus per-use execution cells, and the transient live log
+// streams. A missing binding means wrangler.jsonc drifted from the code, so we
+// refuse to initialise rather than 503 on first use of the absent binding.
+const REQUIRED_BINDINGS = ['DB', 'FILES', 'IMAGES', 'KV', 'EXECUTION_DO', 'LOG_STREAM_DO'] as const;
 
 export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDatabase } => {
   const missing = REQUIRED_BINDINGS.filter(name => env[name] === undefined);
@@ -68,6 +71,7 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
   initDumpStore(new FileDumpStore(env.DB, files));
   const executionCells = new DurableObjectExecutionCellNamespace(env.EXECUTION_DO);
   initExecutionCellNamespace(executionCells);
+  initLogStreamStore(new DurableObjectLogStreamStore(env.LOG_STREAM_DO));
   initDumpBroker(new ExecutionCellChannelBroker<DumpMetadata>(executionCells, dumpCodec));
   return { db: env.DB };
 };

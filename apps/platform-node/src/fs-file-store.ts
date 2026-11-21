@@ -1,62 +1,138 @@
+import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, resolve, sep } from 'node:path';
+import { mkdir, open, readFile, rename, rm } from 'node:fs/promises';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-import type { FileStore } from '@floway-dev/platform';
+import type { FileBody, FileStore } from '@floway-dev/platform';
 
-// Filesystem-backed FileStore. Every key resolves to a path under `root`.
-// Keys use forward-slash POSIX separators (matching R2's surface) and are
-// translated to native path segments on the way in/out so the same key reads
-// identically on Windows and POSIX hosts.
-//
-// Threat model: `root` (`FLOWAY_FILES_DIR`) is gateway-trusted. Everything
-// dumped here is data the gateway already holds in its database (API keys,
-// upstream credentials, request payloads); fs-level access to this directory
-// is already equivalent to gateway compromise. We deliberately do not mode
-// 0o600 / 0o700 the writes — bodies are stored verbatim and the OS-level
-// confidentiality boundary belongs to the operator (umask, mount perms,
-// dedicated user). The dashboard redacts sensitive headers at render time
-// for human display, but the on-disk record stays untouched so an operator
-// can replay or diff against upstream byte-for-byte.
+const STAGING_SEGMENT = '.floway-staging';
+
+const isStagingSegment = (segment: string): boolean => segment.toLowerCase() === STAGING_SEGMENT;
+
+// Filesystem-backed FileStore. Keys use POSIX separators so filesystem and
+// object-storage deployments agree. The operator's umask, mount permissions,
+// and service account own confidentiality; access to this directory already
+// exposes the gateway's stored configuration and recorded request contents.
 export class FsFileStore implements FileStore {
   private readonly root: string;
 
   constructor(root: string) {
-    // Resolve once so `pathFor` can verify resolved paths still live under it.
     this.root = resolve(root);
-    // Ensure the root exists so the first put() doesn't race against a missing
-    // directory and so tests / fresh deploys see a consistent structure.
     mkdirSync(this.root, { recursive: true });
   }
 
-  async put(key: string, body: Uint8Array): Promise<void> {
+  async put(key: string, body: FileBody): Promise<void> {
     const path = this.pathFor(key);
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, body);
+    const reader = body instanceof Uint8Array ? null : body.getReader();
+    let staging: string | undefined;
+    let file: Awaited<ReturnType<typeof open>> | undefined;
+    let stagingHint = Date.now();
+
+    try {
+      await mkdir(dirname(path), { recursive: true });
+      const stagingDirectory = this.stagingDirectoryFor(path);
+      await mkdir(stagingDirectory, { recursive: true });
+      staging = join(stagingDirectory, stagingHint.toString(36));
+      for (;;) {
+        try {
+          file = await open(staging, 'wx');
+          break;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+          stagingHint++;
+          staging = join(stagingDirectory, stagingHint.toString(36));
+        }
+      }
+
+      if (body instanceof Uint8Array) {
+        await file.writeFile(body);
+      } else {
+        for (;;) {
+          const { done, value } = await reader!.read();
+          if (done) break;
+          if (value.byteLength > 0) {
+            await file.writeFile(value);
+            const now = new Date();
+            await file.utimes(now, now);
+          }
+        }
+      }
+
+      await file.close();
+      file = undefined;
+      await rename(staging, path);
+      staging = undefined;
+    } catch (error) {
+      const failures: unknown[] = [error];
+      if (file !== undefined) {
+        try {
+          await file.close();
+        } catch (cleanupError) {
+          if (cleanupError !== error) failures.push(cleanupError);
+        }
+      }
+      if (reader !== null) {
+        try {
+          await reader.cancel(error);
+        } catch (cleanupError) {
+          if (cleanupError !== error) failures.push(cleanupError);
+        }
+      }
+      if (staging !== undefined) {
+        try {
+          await rm(staging, { force: true });
+        } catch (cleanupError) {
+          failures.push(cleanupError);
+        }
+      }
+      if (failures.length > 1) {
+        throw new AggregateError(failures, 'File write failed and cleanup also failed', { cause: error });
+      }
+      throw error;
+    } finally {
+      reader?.releaseLock();
+    }
   }
 
   async get(key: string): Promise<Uint8Array | null> {
     try {
       return new Uint8Array(await readFile(this.pathFor(key)));
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
-      throw e;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
     }
   }
 
   async deleteKeys(keys: readonly string[]): Promise<void> {
-    await Promise.all(keys.map(async key => await rm(this.pathFor(key), { force: true })));
+    await Promise.all(keys.map(async key => {
+      const path = this.pathFor(key);
+      await Promise.all([
+        rm(path, { force: true }),
+        rm(this.stagingDirectoryFor(path), { recursive: true, force: true }),
+      ]);
+    }));
   }
 
-  // Resolve a key against `root` and reject paths that escape it. Even though
-  // the FileStore contract treats keys as opaque, callers are not required
-  // to scrub user-controlled segments and a `..`-laden key would otherwise
-  // walk to arbitrary host paths under R2 it would simply be a strange key.
+  // Staging sits beside the destination so `rename` stays atomic across mounted
+  // key prefixes. The basename digest scopes orphan cleanup to the target key
+  // without interpreting a public key as a temporary filename.
+  private stagingDirectoryFor(path: string): string {
+    return join(dirname(path), STAGING_SEGMENT, createHash('sha256').update(basename(path)).digest('hex'));
+  }
+
   private pathFor(key: string): string {
+    if (key.length === 0) throw new Error('FsFileStore: keys must not be empty');
+    if (key.split('/').some(isStagingSegment)) {
+      throw new Error(`FsFileStore: reserved staging segment (${key})`);
+    }
     if (isAbsolute(key)) throw new Error(`FsFileStore: absolute keys are not supported (${key})`);
+
     const path = resolve(this.root, ...key.split('/'));
-    if (path !== this.root && !path.startsWith(this.root + sep)) {
+    if (path === this.root || !path.startsWith(this.root + sep)) {
       throw new Error(`FsFileStore: key escapes root (${key})`);
+    }
+    if (relative(this.root, path).split(sep).some(isStagingSegment)) {
+      throw new Error(`FsFileStore: reserved staging segment (${key})`);
     }
     return path;
   }
