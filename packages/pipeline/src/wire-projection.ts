@@ -331,8 +331,16 @@ export const formatWireUrl = (
 
 const shellQuote = (value: string): string => `'${value.replaceAll('\'', `'\\''`)}'`;
 
-const bodyText = (body: unknown): string | undefined => {
-  if (body === undefined) return undefined;
+const unwrapTaggedBody = (body: unknown): unknown => {
+  if (!isRecord(body) || typeof body.kind !== 'string') return body;
+  if (body.kind === 'json' && 'value' in body) return body.value;
+  if (body.kind === 'raw' && body.bytes instanceof Uint8Array) return body.bytes;
+  return body;
+};
+
+const bodyText = (rawBody: unknown): string | undefined => {
+  const body = unwrapTaggedBody(rawBody);
+  if (body === undefined || body === null) return undefined;
   if (typeof body === 'string') return body;
   if (body instanceof Uint8Array) return new TextDecoder().decode(body);
   const seen = new WeakSet<object>();

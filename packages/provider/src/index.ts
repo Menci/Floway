@@ -66,6 +66,7 @@ export type {
 export type {
   HttpOutcome,
   HttpRequestBody,
+  ProviderModelFacts,
   ProviderPipelineAlphaSearchInput,
   ProviderPipelineAnthropicMessagesCountTokensInput,
   ProviderPipelineAnthropicMessagesInput,
@@ -93,6 +94,8 @@ export type {
 export {
   SENSITIVE_HTTP_HEADER_NAMES,
   asyncIterableToReadableStream,
+  bytesToManagedStream,
+  hasEnabledFlag,
   headersFromEntries,
   httpTerminal,
   isSensitiveHttpHeaderName,
@@ -100,6 +103,8 @@ export {
   materializeWireUrl,
   parseUpstreamSseOutcome,
   readManagedBytes,
+  syntheticJsonOutcome,
+  toProviderModelFacts,
   wrapSensitiveHeaderEntries,
 } from './pipeline.ts';
 export { headersForAnthropicMessagesCall } from './anthropic-messages.ts';

@@ -1,7 +1,8 @@
+import type { FlagId } from './flags.ts';
 import { base64ToBytes, bytesToBase64, parseBase64ImageDataUrl } from './image-helpers.ts';
 import { joinBaseAndPath } from './join.ts';
 import { frozenJsonRequestBody } from './json-request.ts';
-import type { InternalModel, ProviderModel, UpstreamProviderKind } from './model.ts';
+import type { ProviderModel, UpstreamProviderKind } from './model.ts';
 import type { Fetcher, FetchInit } from './options.ts';
 import type { ProviderStreamParser } from './streaming.ts';
 import { isSecret, secret, terminal } from '@floway-dev/pipeline';
@@ -461,6 +462,43 @@ export const httpTerminal = (
   },
 });
 
+export const bytesToManagedStream = (
+  bytes: Uint8Array,
+  env: StageEnv<any>,
+  label = 'http.body',
+): ManagedStream<Uint8Array> => env.createStream<Uint8Array>({
+  label,
+  async *iterate() {
+    if (bytes.byteLength > 0) yield bytes;
+  },
+});
+
+export const syntheticJsonOutcome = (
+  env: StageEnv<any>,
+  options: {
+    readonly status: number;
+    readonly statusText?: string;
+    readonly headers?: readonly HeaderEntry[];
+    readonly body: unknown;
+    readonly modelKey?: string;
+  },
+): HttpOutcome => {
+  const now = env.clock();
+  const baseHeaders = options.headers ?? [];
+  const headers = hasHeader(baseHeaders, 'content-type')
+    ? wrapSensitiveHeaderEntries(baseHeaders)
+    : wrapSensitiveHeaderEntries([...baseHeaders, ['content-type', 'application/json'] as const]);
+  const encoded = new TextEncoder().encode(JSON.stringify(options.body));
+  return {
+    status: options.status,
+    statusText: options.statusText ?? '',
+    headers,
+    body: bytesToManagedStream(encoded, env),
+    ...(options.modelKey === undefined ? {} : { modelKey: options.modelKey }),
+    timing: { startedAtMs: now, headersAtMs: now },
+  };
+};
+
 export const readManagedBytes = async (stream: ManagedStream<Uint8Array> | null): Promise<Uint8Array> => {
   if (stream === null) return new Uint8Array(0);
   const chunks: Uint8Array[] = [];
@@ -603,12 +641,29 @@ export interface ProviderPipelineDecisionOutcome {
   readonly http: HttpOutcome;
 }
 
+export type ProviderModelFacts = Omit<ProviderModel, 'enabledFlags'> & {
+  readonly enabledFlags: readonly FlagId[];
+};
+
+export const toProviderModelFacts = (model: ProviderModel | ProviderModelFacts): ProviderModelFacts => ({
+  ...model,
+  enabledFlags: Object.freeze([...model.enabledFlags]),
+});
+
+export const hasEnabledFlag = (
+  model: { readonly enabledFlags: ReadonlySet<FlagId> | readonly FlagId[] },
+  flag: FlagId,
+): boolean => ('has' in model.enabledFlags ? model.enabledFlags.has(flag) : model.enabledFlags.includes(flag));
+
 export interface RouteCandidate {
   readonly upstreamId: string;
   readonly upstreamName: string;
   readonly kind: UpstreamProviderKind;
-  readonly model: InternalModel;
-  readonly providerModel: ProviderModel;
+  readonly modelId: string;
+  readonly upstreamModelId: string;
+  readonly endpoints: ProviderModel['endpoints'];
+  readonly limits: ProviderModel['limits'];
+  readonly providerModel: ProviderModelFacts;
   readonly rules?: AliasRules;
 }
 
@@ -617,77 +672,77 @@ interface ProviderPipelineHeaderFacts {
 }
 
 export type ProviderPipelineAlphaSearchInput = ProviderPipelineHeaderFacts & {
-  readonly 'provider.model': ProviderModel;
+  readonly 'provider.model': ProviderModelFacts;
   readonly 'request.payload': Record<string, unknown>;
 };
 
 export type ProviderPipelineOpenAICompletionsInput = ProviderPipelineHeaderFacts & {
-  readonly 'provider.model': ProviderModel;
+  readonly 'provider.model': ProviderModelFacts;
   readonly 'request.payload': Omit<OpenAICompletionsPayload, 'model'>;
 };
 
 export type ProviderPipelineOpenAIChatCompletionsInput = ProviderPipelineHeaderFacts & {
-  readonly 'provider.model': ProviderModel;
+  readonly 'provider.model': ProviderModelFacts;
   readonly 'request.payload': Omit<OpenAIChatCompletionsPayloadEx, 'model'>;
 };
 
 export type ProviderPipelineOpenAIResponsesInput = ProviderPipelineHeaderFacts & {
-  readonly 'provider.model': ProviderModel;
+  readonly 'provider.model': ProviderModelFacts;
   readonly 'request.payload': Omit<CanonicalOpenAIResponsesPayload, 'model'>;
   readonly 'request.action': 'generate' | 'compact';
 };
 
 export type ProviderPipelineAnthropicMessagesInput = ProviderPipelineHeaderFacts & {
-  readonly 'provider.model': ProviderModel;
+  readonly 'provider.model': ProviderModelFacts;
   readonly 'request.payload': Omit<AnthropicMessagesPayload, 'model'>;
   readonly 'request.anthropicBeta': readonly string[];
 };
 
 export type ProviderPipelineAnthropicMessagesCountTokensInput = ProviderPipelineHeaderFacts & {
-  readonly 'provider.model': ProviderModel;
+  readonly 'provider.model': ProviderModelFacts;
   readonly 'request.payload': Omit<AnthropicMessagesPayload, 'model'>;
   readonly 'request.anthropicBeta': readonly string[];
 };
 
 export type ProviderPipelineGeminiGenerateContentInput = ProviderPipelineHeaderFacts & {
-  readonly 'provider.model': ProviderModel;
+  readonly 'provider.model': ProviderModelFacts;
   readonly 'request.payload': GeminiGenerateContentPayload;
   readonly 'request.action': 'generate';
 };
 
 export type ProviderPipelineGeminiGenerateContentCountTokensInput = ProviderPipelineHeaderFacts & {
-  readonly 'provider.model': ProviderModel;
+  readonly 'provider.model': ProviderModelFacts;
   readonly 'request.payload': GeminiGenerateContentPayload;
   readonly 'request.action': 'countTokens';
 };
 
 export type ProviderPipelineOpenAIEmbeddingsInput = ProviderPipelineHeaderFacts & {
-  readonly 'provider.model': ProviderModel;
+  readonly 'provider.model': ProviderModelFacts;
   readonly 'request.payload': Omit<OpenAIEmbeddingsPayload, 'model'>;
 };
 
 export type ProviderPipelineOpenAIImagesGenerationsInput = ProviderPipelineHeaderFacts & {
-  readonly 'provider.model': ProviderModel;
+  readonly 'provider.model': ProviderModelFacts;
   readonly 'request.payload': Omit<OpenAIImagesGenerationsPayload, 'model'>;
 };
 
 export type ProviderPipelineOpenAIImagesEditsInput = ProviderPipelineHeaderFacts & {
-  readonly 'provider.model': ProviderModel;
+  readonly 'provider.model': ProviderModelFacts;
   readonly 'request.payload': ImageEditsPipelineRequest;
 };
 
 export type ProviderPipelineOpenAIAudioTranscriptionsInput = ProviderPipelineHeaderFacts & {
-  readonly 'provider.model': ProviderModel;
+  readonly 'provider.model': ProviderModelFacts;
   readonly 'request.payload': AudioTranscriptionPipelineRequest;
 };
 
 export type ProviderPipelineRerankInput = ProviderPipelineHeaderFacts & {
-  readonly 'provider.model': ProviderModel;
+  readonly 'provider.model': ProviderModelFacts;
   readonly 'request.payload': CanonicalRerankRequest;
 };
 
 export type ProviderPipelineDecisionInput = ProviderPipelineHeaderFacts & {
-  readonly 'provider.model': ProviderModel;
+  readonly 'provider.model': ProviderModelFacts;
   readonly 'request.payload': CanonicalDecisionRequest;
 };
 

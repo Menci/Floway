@@ -5,6 +5,8 @@ import { isReplayableBody } from '../src/options.ts';
 import type { FetchInit } from '../src/options.ts';
 import {
   buildAudioTranscriptionMultipartBody,
+  bytesToManagedStream,
+  hasEnabledFlag,
   buildImagesEditsHttpBody,
   buildWireHttpUrl,
   headersFromEntries,
@@ -13,6 +15,8 @@ import {
   materializeWireUrl,
   parseUpstreamSseOutcome,
   readManagedBytes,
+  syntheticJsonOutcome,
+  toProviderModelFacts,
   wrapSensitiveHeaderEntries,
 } from '../src/pipeline.ts';
 import type { ProviderPipelineServices, UpstreamHttpRequest } from '../src/pipeline.ts';
@@ -499,5 +503,43 @@ describe('parseUpstreamSseOutcome', () => {
     expect(receivedRaw).not.toContain('whisper-client');
     expect(receivedRaw).toContain('filename="clip.wav"');
     expect(receivedRaw).toContain('RIFF');
+  });
+
+  test('converts ProviderModel Set flags into freezeable ProviderModelFacts and builds synthetic JSON outcomes', async () => {
+    const modelFacts = toProviderModelFacts({
+      id: 'gpt-test',
+      upstreamModelId: 'gpt-test-raw',
+      limits: {},
+      kind: 'chat',
+      endpoints: { openaiChatCompletions: {} },
+      opaqueBlobCompatibilityScope: { bindToUpstream: true },
+      enabledFlags: new Set(['vendor-deepseek']),
+    });
+    expect(Array.isArray(modelFacts.enabledFlags)).toBe(true);
+    expect(hasEnabledFlag(modelFacts, 'vendor-deepseek')).toBe(true);
+    expect(hasEnabledFlag(modelFacts, 'vendor-kimi')).toBe(false);
+
+    const synthPipe = pipeline<{ readonly 'provider.model': typeof modelFacts }>('synth-test').end(
+      terminal<{ readonly 'provider.model': typeof modelFacts }, ReturnType<typeof syntheticJsonOutcome>>({
+        name: 'synth',
+        execute: async (facts, env) => syntheticJsonOutcome(env, {
+          status: 400,
+          body: { error: { message: `bad ${facts['provider.model'].id}` } },
+          modelKey: facts['provider.model'].upstreamModelId,
+        }),
+      }),
+    );
+    const out = await runPipeline(synthPipe, { 'provider.model': modelFacts });
+    expect(out.status).toBe(400);
+    expect(out.modelKey).toBe('gpt-test-raw');
+    expect(decoder.decode(await readManagedBytes(out.body))).toBe('{"error":{"message":"bad gpt-test"}}');
+    const rewrappedPipe = pipeline<Record<never, never>>('rewrap-test').end(
+      terminal({
+        name: 'rewrap',
+        execute: async (_facts, env) => bytesToManagedStream(encoder.encode('abc'), env),
+      }),
+    );
+    const stream = await runPipeline(rewrappedPipe, {});
+    expect(decoder.decode(await readManagedBytes(stream))).toBe('abc');
   });
 });
