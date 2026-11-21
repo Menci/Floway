@@ -20,6 +20,8 @@
 //    Stateful OpenAI Responses item payloads. Put its name in `bucket_name` below.
 // 5. Run `pnpm wrangler kv namespace create <name>` and paste the returned
 //    id into `kv_namespaces[0].id`.
+// 6. The new LOG_STREAM_DO binding needs no external resource id. It is created
+//    by the checked-in v3 SQLite migration when this config is deployed.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "<YOUR_WORKER_NAME>",
@@ -121,11 +123,17 @@
   // Per-use execution cells. The initial broadcast protocol provides
   // hibernatable WebSocket fan-out; model refresh operations share this
   // actor host without placing provider data in Durable Object storage.
+  // LogStreamDO keeps one live pipeline's transient byte stream in SQLite and
+  // wakes followers over hibernatable WebSockets.
   "durable_objects": {
     "bindings": [
       {
         "name": "EXECUTION_DO",
         "class_name": "ExecutionDO"
+      },
+      {
+        "name": "LOG_STREAM_DO",
+        "class_name": "LogStreamDO"
       }
     ]
   },
@@ -152,6 +160,10 @@
           "to": "ExecutionDO"
         }
       ]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": ["LogStreamDO"]
     }
   ]
 }
