@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { decodeChunked } from '../src/chunked.ts';
 import { HttpProtocolError } from '../src/errors.ts';
@@ -28,51 +28,83 @@ const drainExpectError = async (stream: ReadableStream<Uint8Array>): Promise<unk
 
 const enc = (s: string): Uint8Array => new TextEncoder().encode(s);
 
-const fromString = (s: string): { reader: ReadableStreamDefaultReader<Uint8Array>; head: Uint8Array } => {
+const fromString = (s: string): {
+  source: ReadableStream<Uint8Array>;
+  reader: ReadableStreamDefaultReader<Uint8Array>;
+  head: Uint8Array;
+} => {
   // The decoder takes a head buffer + a reader for the rest. Empty `head`
   // and the entire stream pre-loaded mirrors the realistic case where the
   // response head got peeled off in the same chunk as the first body bytes.
-  const stream = new ReadableStream<Uint8Array>({
+  const source = new ReadableStream<Uint8Array>({
     start(c) { c.enqueue(enc(s)); c.close(); },
   });
-  return { reader: stream.getReader(), head: new Uint8Array(0) };
+  return { source, reader: source.getReader(), head: new Uint8Array(0) };
+};
+
+const fromOpenStream = (s: string): ReadableStream<Uint8Array> => new ReadableStream<Uint8Array>({
+  start(controller) { controller.enqueue(enc(s)); },
+});
+
+const deferred = (): { promise: Promise<void>; resolve: () => void } => {
+  let resolve!: () => void;
+  const promise = new Promise<void>(r => { resolve = r; });
+  return { promise, resolve };
 };
 
 describe('decodeChunked — RFC 9112 §7.1 happy path', () => {
   it('concatenates chunks split into multiple size+data records', async () => {
     // Three chunks: "Wiki" (4), "pedia" (5), " in chunks." (B = 11).
     const input = '4\r\nWiki\r\n5\r\npedia\r\nB\r\n in chunks.\r\n0\r\n\r\n';
-    const { reader, head } = fromString(input);
+    const { source, reader, head } = fromString(input);
     expect(await drain(decodeChunked(reader, head))).toBe('Wikipedia in chunks.');
+    await vi.waitFor(() => expect(source.locked).toBe(false));
   });
 });
 
 describe('decodeChunked — error vectors', () => {
   it('errors when EOF arrives mid-data', async () => {
     const input = '5\r\nhel'; // missing two more bytes + CRLF + 0
-    const { reader, head } = fromString(input);
+    const { source, reader, head } = fromString(input);
     const err = await drainExpectError(decodeChunked(reader, head));
     expect(err).toBeInstanceOf(HttpProtocolError);
     expect(err).toMatchObject({ code: 'EOF' });
+    expect(source.locked).toBe(false);
   });
 
   it('errors when the data block is not followed by CRLF', async () => {
     // Five payload bytes, then garbage instead of CRLF.
     const input = '5\r\nhelloXX0\r\n\r\n';
-    const { reader, head } = fromString(input);
+    const { source, reader, head } = fromString(input);
     const err = await drainExpectError(decodeChunked(reader, head));
     expect(err).toBeInstanceOf(HttpProtocolError);
     expect(err).toMatchObject({ code: 'CHUNK_BAD_SIZE' });
+    expect(source.locked).toBe(false);
+  });
+
+  it('releases the reader lock when the source read throws', async () => {
+    const failure = new Error('transport read failed');
+    let sourceController!: ReadableStreamDefaultController<Uint8Array>;
+    const source = new ReadableStream<Uint8Array>({
+      start(controller) { sourceController = controller; },
+    });
+    const draining = drainExpectError(decodeChunked(source.getReader(), new Uint8Array(0)));
+
+    sourceController.error(failure);
+
+    await expect(draining).resolves.toBe(failure);
+    expect(source.locked).toBe(false);
   });
 });
 
 describe('decodeChunked — RFC 9112 §7.1.1 chunk-size grammar', () => {
   it('rejects a chunk size with a 0x prefix', async () => {
     const input = '0x5\r\nhello\r\n0\r\n\r\n';
-    const { reader, head } = fromString(input);
+    const { source, reader, head } = fromString(input);
     const err = await drainExpectError(decodeChunked(reader, head));
     expect(err).toBeInstanceOf(HttpProtocolError);
     expect((err as HttpProtocolError).code).toBe('CHUNK_BAD_SIZE');
+    expect(source.locked).toBe(false);
   });
 });
 
@@ -82,10 +114,11 @@ describe('decodeChunked — extensions and trailers (RFC 9112 §7.1.1, §7.1.2)'
     // but never reaching the empty-line terminator.
     const big = Array.from({ length: 800 }, (_, i) => `X-Trailer-${i}: ${'p'.repeat(80)}`).join('\r\n');
     const input = `5\r\nhello\r\n0\r\n${big}\r\n\r\n`;
-    const { reader, head } = fromString(input);
+    const { source, reader, head } = fromString(input);
     const err = await drainExpectError(decodeChunked(reader, head));
     expect(err).toBeInstanceOf(HttpProtocolError);
     expect((err as HttpProtocolError).code).toBe('TRAILERS_TOO_LONG');
+    expect(source.locked).toBe(false);
   });
 
   it('still accepts a 4 KiB trailer block delivered one byte at a time', async () => {
@@ -111,9 +144,38 @@ describe('decodeChunked — extensions and trailers (RFC 9112 §7.1.1, §7.1.2)'
 
   it('rejects when the chunk-size line exceeds the 1 KiB cap due to a runaway extension', async () => {
     const input = `5;ext=${'a'.repeat(2000)}\r\nhello\r\n0\r\n\r\n`;
-    const { reader, head } = fromString(input);
+    const { source, reader, head } = fromString(input);
     const err = await drainExpectError(decodeChunked(reader, head));
     expect(err).toBeInstanceOf(HttpProtocolError);
     expect((err as HttpProtocolError).code).toBe('CHUNK_TOO_LONG');
+    expect(source.locked).toBe(false);
+  });
+});
+
+describe('decodeChunked — reader lifecycle', () => {
+  it('releases the reader after a complete chunked body', async () => {
+    const source = fromOpenStream('4\r\nWiki\r\n0\r\n\r\n');
+    const body = decodeChunked(source.getReader(), new Uint8Array(0));
+
+    expect(await drain(body)).toBe('Wiki');
+    await vi.waitFor(() => expect(source.locked).toBe(false));
+  });
+
+  it('awaits asynchronous source cancellation and releases the reader', async () => {
+    const cancellation = deferred();
+    const cancel = vi.fn((_reason: unknown) => cancellation.promise);
+    const source = new ReadableStream<Uint8Array>({ cancel });
+    const body = decodeChunked(source.getReader(), new Uint8Array(0));
+    let settled = false;
+
+    const cancelling = body.cancel('stop').then(() => { settled = true; });
+
+    await vi.waitFor(() => expect(cancel).toHaveBeenCalledWith('stop'));
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    cancellation.resolve();
+    await cancelling;
+    expect(source.locked).toBe(false);
   });
 });

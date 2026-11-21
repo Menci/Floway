@@ -11,7 +11,7 @@ import type { HttpContentDecoders, RawHttpResponse } from './types.ts';
 /**
  * Bridge a wire-faithful {@link RawHttpResponse} to a Web `Response`. The
  * Web `Response` constructor rejects status outside 200..599 and rejects a
- * non-null body for 204/304 — both of which the wire can legitimately
+ * non-null body for 204/205/304 — all of which the wire can legitimately
  * carry — so the parser stays a pure wire decoder and this is the single
  * place that maps the parsed shape onto the Fetch standard's constraints.
  *
@@ -31,11 +31,11 @@ export const toWebResponse = (raw: RawHttpResponse, contentDecoders?: HttpConten
     );
   }
   // RFC 9110 §15.3.5 + §15.4.5: 204 No Content and 304 Not Modified MUST
-  // NOT carry a body. The Web Response constructor also refuses a non-null
-  // body for these statuses, so we cancel the body stream (in case the
-  // parser fell back to until-EOF framing on a misbehaving upstream) and
-  // construct with `null`.
-  if (raw.status === 204 || raw.status === 304) {
+  // NOT carry a body, as must 205 Reset Content (§15.3.6). The Web Response
+  // constructor also refuses a non-null body for these statuses, so we
+  // cancel the body stream (in case the parser fell back to until-EOF
+  // framing on a misbehaving upstream) and construct with `null`.
+  if (raw.status === 204 || raw.status === 205 || raw.status === 304) {
     raw.body.cancel().catch(() => {});
     return new Response(null, { status: raw.status, statusText: raw.statusText, headers: raw.headers });
   }
@@ -92,7 +92,7 @@ const decodeContentEncoding = (
 /**
  * Parse an HTTP/1.1 response off a byte-stream reader. Returns a
  * wire-faithful struct rather than a Web `Response`: Response rejects 1xx
- * and refuses to carry a body for 204/304, but those are legal on the
+ * and refuses to carry a body for 204/205/304, but those are legal on the
  * wire. Bridge to a Response with {@link toWebResponse} when the caller
  * wants one.
  *
@@ -333,6 +333,24 @@ const finalizeResponse = (
   return { status, statusText, headers, headerLines: lines, body };
 };
 
+const releaseReader = (reader: ReadableStreamDefaultReader<Uint8Array>): void => {
+  try { reader.releaseLock(); } catch { /* lock already released */ }
+};
+
+const cancelAndRelease = async (
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  reason?: unknown,
+): Promise<void> => {
+  try {
+    await reader.cancel(reason);
+  } catch {
+    // Transport teardown can reject after framing has already ended or the
+    // stream has been cancelled. The reader lock still needs releasing.
+  } finally {
+    releaseReader(reader);
+  }
+};
+
 // Body framing — Content-Length. Frames the body to exactly `total` bytes:
 // surfaces TRAILING_BODY_BYTES if the transport delivers more (the next
 // message of a keep-alive connection in our non-keep-alive world means the
@@ -350,7 +368,7 @@ const lengthBody = (
           `trailing bytes after Content-Length boundary (${head.byteLength - total} extra in head)`,
           'TRAILING_BODY_BYTES',
         ));
-        try { await reader.cancel(); } catch { /* reader already cancelled */ }
+        await cancelAndRelease(reader);
         return;
       }
       if (head.byteLength) {
@@ -359,7 +377,7 @@ const lengthBody = (
       }
       if (consumed >= total) {
         controller.close();
-        try { await reader.cancel(); } catch { /* reader already cancelled */ }
+        await cancelAndRelease(reader);
       }
     },
     async pull(controller) {
@@ -375,6 +393,7 @@ const lengthBody = (
           `upstream EOF after ${consumed}/${total} body bytes`,
           'EOF',
         ));
+        releaseReader(reader);
         return;
       }
       const remain = total - consumed;
@@ -388,16 +407,16 @@ const lengthBody = (
           `trailing bytes after Content-Length boundary (${value.byteLength - remain} extra)`,
           'TRAILING_BODY_BYTES',
         ));
-        try { await reader.cancel(); } catch { /* reader already cancelled */ }
+        await cancelAndRelease(reader);
         return;
       }
       if (consumed >= total) {
         controller.close();
-        try { await reader.cancel(); } catch { /* reader already cancelled */ }
+        await cancelAndRelease(reader);
       }
     },
-    cancel(reason) {
-      reader.cancel(reason).catch(() => {});
+    async cancel(reason) {
+      return await cancelAndRelease(reader, reason);
     },
   });
 };
@@ -411,12 +430,21 @@ const untilEofBody = (
       if (head.byteLength) controller.enqueue(head);
     },
     async pull(controller) {
-      const { value, done } = await reader.read();
-      if (done) controller.close();
-      else controller.enqueue(copy(value));
+      try {
+        const { value, done } = await reader.read();
+        if (done) {
+          controller.close();
+          releaseReader(reader);
+        } else {
+          controller.enqueue(copy(value));
+        }
+      } catch (error) {
+        releaseReader(reader);
+        throw error;
+      }
     },
-    cancel(reason) {
-      reader.cancel(reason).catch(() => {});
+    async cancel(reason) {
+      return await cancelAndRelease(reader, reason);
     },
   });
 };
