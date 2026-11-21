@@ -4,6 +4,7 @@ import type { OpenAIImagesEditsRequest } from './images.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { ProviderModel, UpstreamModelsCache, UpstreamProviderKind, UpstreamRecord } from './model.ts';
 import type { Fetcher } from './options.ts';
+import type { ProviderPipelines } from './pipeline.ts';
 import type { HttpHead } from './result.ts';
 import type { ProviderScheduledOptions } from './scheduled.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
@@ -34,6 +35,7 @@ export interface Provider {
   upstreamId: string;
   kind: UpstreamProviderKind;
   name: string;
+  pipelines?: ProviderPipelines;
   // Client-authored headers this instance can consume. Strings are exact,
   // ASCII-case-insensitive names; regular expressions run against normalized
   // lowercase names. The gateway applies this at the candidate boundary.

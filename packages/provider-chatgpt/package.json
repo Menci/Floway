@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@floway-dev/interceptor": "workspace:*",
+    "@floway-dev/pipeline": "workspace:*",
     "@floway-dev/protocols": "workspace:*",
     "@floway-dev/provider": "workspace:*",
     "uuid": "^14.0.1"

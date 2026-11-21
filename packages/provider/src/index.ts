@@ -63,6 +63,45 @@ export type {
   OpenAIResponsesAction,
   UpstreamCallOptions,
 } from './provider.ts';
+export type {
+  HttpOutcome,
+  HttpRequestBody,
+  ProviderPipelineAlphaSearchInput,
+  ProviderPipelineAnthropicMessagesCountTokensInput,
+  ProviderPipelineAnthropicMessagesInput,
+  ProviderPipelineCompactionOutcome,
+  ProviderPipelineDecisionInput,
+  ProviderPipelineDecisionOutcome,
+  ProviderPipelineGeminiGenerateContentCountTokensInput,
+  ProviderPipelineGeminiGenerateContentInput,
+  ProviderPipelineOpenAIAudioTranscriptionsInput,
+  ProviderPipelineOpenAIChatCompletionsInput,
+  ProviderPipelineOpenAICompletionsInput,
+  ProviderPipelineOpenAIEmbeddingsInput,
+  ProviderPipelineOpenAIImagesEditsInput,
+  ProviderPipelineOpenAIImagesGenerationsInput,
+  ProviderPipelineOpenAIResponsesInput,
+  ProviderPipelineRerankInput,
+  ProviderPipelineRerankOutcome,
+  ProviderPipelineResponsesOutcome,
+  ProviderPipelineServices,
+  ProviderPipelineStreamOutcome,
+  ProviderPipelines,
+  RouteCandidate,
+  UpstreamHttpRequest,
+} from './pipeline.ts';
+export {
+  SENSITIVE_HTTP_HEADER_NAMES,
+  asyncIterableToReadableStream,
+  headersFromEntries,
+  httpTerminal,
+  isSensitiveHttpHeaderName,
+  materializeHeaderLines,
+  materializeWireUrl,
+  parseUpstreamSseOutcome,
+  readManagedBytes,
+  wrapSensitiveHeaderEntries,
+} from './pipeline.ts';
 export { headersForAnthropicMessagesCall } from './anthropic-messages.ts';
 export type { OpenAIImagesEditsRequest, OpenAIImagesEditsSource } from './images.ts';
 export { serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
@@ -118,7 +157,7 @@ export { directFetcher, dispatchUpstreamFetch, identityWrapUpstreamCall, isRepla
 
 export { isAbortError } from './abort.ts';
 
-export { jsonRequestBody } from './json-request.ts';
+export { frozenJsonRequestBody, jsonRequestBody } from './json-request.ts';
 export { sha256Json, sha256JsonHex } from './json-hash.ts';
 
 export {
@@ -127,3 +166,17 @@ export {
   isBase64ImageDataUrl,
   parseBase64ImageDataUrl,
 } from './image-helpers.ts';
+
+export {
+  buildAudioTranscriptionMultipartBody,
+  buildImagesEditsHttpBody,
+  buildImagesEditsJsonPayload,
+  buildWireHttpUrl,
+  encodeMultipartFormData,
+} from './pipeline.ts';
+export type {
+  AudioTranscriptionPipelineRequest,
+  ImageEditPartSource,
+  ImageEditsPipelineRequest,
+  MultipartField,
+} from './pipeline.ts';

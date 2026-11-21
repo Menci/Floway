@@ -45,3 +45,20 @@ export const jsonRequestBody = (value: object): ReplayableBody => {
     },
   };
 };
+
+export const frozenJsonRequestBody = (value: object): ReplayableBody => ({
+  contentLength: serializedLength(value),
+  open: () => {
+    const bytes = jsonByteChunks(value);
+    return new ReadableStream<Uint8Array>({
+      pull(controller) {
+        const next = bytes.next();
+        if (next.done) controller.close();
+        else controller.enqueue(next.value);
+      },
+      cancel() {
+        bytes.return(undefined);
+      },
+    });
+  },
+});
