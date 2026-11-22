@@ -184,6 +184,38 @@ describe('run completion', () => {
     await expect(handle.done).resolves.toMatchObject({ ok: false, error: { name: 'FinalizationTimeoutError' } });
   });
 
+  it('starts the finalization deadline when execute answers even if a detached child stalls', async () => {
+    const childRelease = Promise.withResolvers<void>();
+    const leaving = Promise.withResolvers<void>();
+    const events: RunEvent[] = [];
+    const stage = defineStage<Facts, Facts, Facts, Facts>({
+      name: 'detached child', through: { request: identity, response: identity }, return: { provides: ['response'] },
+      execute: async (facts, next) => {
+        void next(facts);
+        return { response: 1 };
+      },
+    });
+    const end = defineEnding<Facts, Facts>({
+      name: 'stalled', request: { needs: [] }, response: { provides: [] },
+      execute: async () => {
+        await childRelease.promise;
+        return {};
+      },
+    });
+    const pipeline = compose('deadline', { stages: [stage], ending: end });
+    const handle = run(pipeline, {}, {
+      ...options, finalizationTimeoutMs: 15, events: event => {
+        events.push(event);
+        if (event.k === 'leave' && event.stageId === 1) leaving.resolve();
+      },
+    });
+    await leaving.promise;
+    expect(events).not.toContainEqual(expect.objectContaining({ k: 'closed', stageId: 1 }));
+    await expect(handle.result).rejects.toBeInstanceOf(FinalizationTimeoutError);
+    await expect(handle.done).resolves.toMatchObject({ ok: false, error: { name: 'FinalizationTimeoutError' } });
+    childRelease.resolve();
+  });
+
   it('joins sub-run completion and isolates a throwing event sink', async () => {
     const work = Promise.withResolvers<number>();
     const order: string[] = [];

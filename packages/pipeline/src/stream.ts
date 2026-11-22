@@ -42,12 +42,12 @@ const raceAbort = async <T>(work: Promise<T>, signal: AbortSignal): Promise<T | 
 export class Custody {
   readonly streams = new Set<StreamResource<unknown>>();
 
-  constructor(readonly stageName: string, readonly signal: AbortSignal) {}
+  constructor(readonly stageName: string, readonly signal: AbortSignal, readonly stopReading?: AbortSignal) {}
 
   async cleanup(exclude: ReadonlySet<StreamResource<unknown>> = new Set()): Promise<void> {
     const streams = [...this.streams].filter(stream => !exclude.has(stream));
-    const leaked = streams.filter(stream => !stream.ending);
-    await Promise.allSettled(streams.map(stream => stream.stop({ how: 'leaked' })));
+    const leaked = streams.filter(stream => !stream.ending && !stream.interruptedRead);
+    await Promise.allSettled(streams.map(stream => stream.stop({ how: stream.interruptedRead ? 'released' : 'leaked' })));
     if (leaked.length) throw new StreamLeakError(this.stageName, leaked.map(stream => stream.handle.label));
   }
 }
@@ -95,6 +95,7 @@ export class StreamResource<T> {
   #read: Promise<IteratorResult<T, unknown>> | undefined;
   #reading = false;
   #consuming = false;
+  #interruptedRead = false;
   #wrapped = false;
   #end: StreamEnd | undefined;
   #finished = false;
@@ -125,6 +126,7 @@ export class StreamResource<T> {
   get id(): number { return this.#hooks.id; }
   get ending(): boolean { return this.#end !== undefined; }
   get finished(): boolean { return this.#finished; }
+  get interruptedRead(): boolean { return this.#interruptedRead; }
 
   assertOwned(owner: Custody, operation: string): void {
     if (this.#owner !== owner || this.#consuming || this.ending) throw new StreamOwnershipError(this.handle.label, operation);
@@ -164,13 +166,25 @@ export class StreamResource<T> {
     }
     if (this.ending) throw new StreamOwnershipError(this.handle.label, 'iteration after end');
     this.#consuming = true;
+    const stopReading = this.#owner?.stopReading;
     return {
-      next: () => this.pull(),
+      next: () => stopReading ? this.#pullForProducer(stopReading) : this.pull(),
       return: async () => {
         if (!this.#finished) await this.stop({ how: 'released' });
         return done;
       },
     };
+  }
+
+  async #pullForProducer(signal: AbortSignal): Promise<Pull<T>> {
+    const read = this.pull();
+    const result = await raceAbort(read, signal);
+    if (result !== aborted) return result;
+    // The consumer has stopped. Its producer still owns the child's cleanup,
+    // which runs after the producer's iterator and release hook finish.
+    this.#interruptedRead = true;
+    void read.catch(() => undefined);
+    return done;
   }
 
   async #closePublic(): Promise<void> {
@@ -206,6 +220,7 @@ export class StreamResource<T> {
       throw error;
     } finally {
       leavePull?.();
+      if (!this.ending) this.#read = undefined;
       this.#reading = false;
     }
   }
@@ -239,6 +254,8 @@ export class StreamResource<T> {
     };
     if (this.#read) await Promise.allSettled([this.#read]);
     await attempt(() => this.#source?.return?.());
+    this.#read = undefined;
+    this.#source = undefined;
     await attempt(() => this.#onClose?.(this.#end!));
     await attempt(() => this.#inner?.stop({ how: 'released' }));
     await attempt(() => this.#hooks.finish(this));

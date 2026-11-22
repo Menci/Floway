@@ -194,6 +194,34 @@ describe('stream release and cancellation', () => {
     await expect(handle.done).resolves.toEqual({ ok: true });
   });
 
+  it('records frozen frames by identity and rethrows the original read error', async () => {
+    const frame = { nested: { value: 1 } };
+    const error = new Error('read broke');
+    const events: RunEvent[] = [];
+    const ending = defineEnding<{}, { body: ManagedStream<typeof frame> }>({
+      name: 'reader', request: { needs: [] }, response: { provides: ['body'] },
+      execute: async (_facts, _into, env) => ({
+        body: env.createStream({
+          label: 'body', async *iterate() {
+            yield frame;
+            throw error;
+          },
+        }),
+      }),
+    });
+    const pipeline = compose<{}, { body: ManagedStream<typeof frame> }, {}>('reader', { stages: [], ending });
+    const handle = run(pipeline, {}, { ...options, events: event => events.push(event) });
+    const { body } = await handle.result;
+    const reader = body[Symbol.asyncIterator]();
+    const first = await reader.next();
+    expect(first.value).toBe(frame);
+    expect(Object.isFrozen(frame.nested)).toBe(true);
+    const recorded = events.find(event => event.k === 'frame');
+    expect(recorded?.value).toBe(frame);
+    await expect(reader.next()).rejects.toBe(error);
+    await expect(handle.done).resolves.toMatchObject({ ok: false, error: { message: 'read broke' } });
+  });
+
   it('fails leaked scopes by stream identity even when another run shares its stream ID', async () => {
     const first = run(bodyPipeline(env => ({
       body: env.createStream({
@@ -279,6 +307,62 @@ describe('producer custody', () => {
     const { body } = await handle.result;
     await expect(Array.fromAsync(body)).rejects.toBeInstanceOf(StreamLeakError);
     await expect(handle.done).resolves.toMatchObject({ ok: false, error: { name: 'StreamLeakError', message: expect.stringContaining('turn 2') } });
+  });
+
+  it('releases a second-turn read only after the wrapper settles and runs its hook', async () => {
+    const pulling = Promise.withResolvers<AbortSignal>();
+    const order: string[] = [];
+    const ending = defineEnding<Turn, Body>({
+      name: 'turn', request: { needs: ['turn'] }, response: { provides: ['body'] },
+      execute: async ({ turn }, _into, env) => ({
+        body: env.createStream({
+          label: `turn ${turn}`, async *iterate(signal) {
+            if (turn === 1) {
+              yield 1;
+              return;
+            }
+            pulling.resolve(signal);
+            await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }));
+          },
+          onClose: end => { order.push(`turn ${turn} ${end.how}`); },
+        }),
+      }),
+    });
+    const stage = defineStage<Turn, Turn, Body, Body>({
+      name: 'tool loop', through: {
+        request: { ...empty, provides: ['turn'] }, response: { ...empty, provides: ['body'] },
+      },
+      execute: async (facts, next, env) => {
+        const first = await next(facts);
+        return {
+          body: env.wrapStream(first.body, {
+            label: 'tools', async *transform(source) {
+              try {
+                yield* source;
+                const second = await next({ ...facts, turn: 2 });
+                yield* second.body;
+              } finally {
+                order.push('transform settled');
+              }
+            },
+            onClose: () => { order.push('wrapper hook'); },
+          }),
+        };
+      },
+    });
+    const pipeline = compose<Turn, Body, {}>('tools', { stages: [stage], ending });
+    const handle = run(pipeline, { turn: 1 }, options);
+    const { body } = await handle.result;
+    const reader = body[Symbol.asyncIterator]();
+    await expect(reader.next()).resolves.toEqual({ done: false, value: 1 });
+    const pending = reader.next();
+    const signal = await pulling.promise;
+    expect(signal.aborted).toBe(false);
+    await body.close();
+    await expect(pending).resolves.toMatchObject({ done: true });
+    expect(signal.aborted).toBe(true);
+    expect(order).toEqual(['turn 1 exhausted', 'transform settled', 'wrapper hook', 'turn 2 released']);
+    await expect(handle.done).resolves.toEqual({ ok: true });
   });
 
   it('closes a pass-through stage before its child-owned stream ends', async () => {

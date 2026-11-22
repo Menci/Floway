@@ -235,6 +235,26 @@ const config: Linter.Config[] = [
     },
   },
   {
+    files: ['**/*.{ts,tsx,mjs}'],
+    ignores: [
+      'apps/platform-cloudflare/src/r2-file-store.ts',
+      'apps/platform-node/src/fs-file-store.ts',
+      'packages/dump/src/encoder.ts',
+      'packages/gateway/src/data-plane/chat/openai-responses/websocket.ts',
+      'packages/gateway/src/data-plane/shared/http-writer.ts',
+      'packages/provider/src/http-terminal.ts',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [
+        ...RESTRICTED_IMPORT_PATTERNS,
+        {
+          group: ['@floway-dev/pipeline/bytes-view'],
+          message: 'Only transport writers and the dump encoder may borrow mutable byte views. Use Bytes.toUint8Array() for a copy.',
+        },
+      ] }],
+    },
+  },
+  {
     // Server-side production sources only. `apps/web` runs in a browser, where
     // Blob is the ordinary way to hand bytes to a download, and tests construct
     // Blobs deliberately as fixtures for code that must accept a caller-supplied

@@ -43,6 +43,7 @@ class RunState {
   readonly deferred = new Set<{ abort(error: unknown): void }>();
   readonly abort = new AbortController();
   readonly signal: AbortSignal;
+  readonly #finalizing = Promise.withResolvers<void>();
 
   constructor(readonly trace: Trace, readonly runId: string, readonly options: RunOptions<any>) {
     this.signal = options.signal ? AbortSignal.any([options.signal, this.abort.signal]) : this.abort.signal;
@@ -69,32 +70,33 @@ class RunState {
     return resource;
   }
 
+  beginFinalization(): void {
+    this.#finalizing.resolve();
+  }
+
   async finish(result: Promise<unknown>): Promise<Failure | undefined> {
-    const [settled] = await Promise.allSettled([result]);
-    if (settled.status === 'rejected') this.errors.unshift(settled.reason);
-    if (this.work.size) {
-      const { finalizationTimeoutMs } = this.options;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const deadline = new Promise<Failure>(resolve => {
-        timer = setTimeout(() => {
-          const reason = new FinalizationTimeoutError(finalizationTimeoutMs);
-          for (const deferred of this.deferred) deferred.abort(reason);
-          this.abort.abort(reason);
-          resolve({ reason });
-        }, finalizationTimeoutMs);
-      });
-      const joined = async (): Promise<undefined> => {
-        while (this.work.size) await Promise.allSettled(this.work);
-        return undefined;
-      };
-      try {
-        const timedOut = await Promise.race([joined(), deadline]);
-        if (timedOut) return timedOut;
-      } finally {
-        clearTimeout(timer);
-      }
+    await this.#finalizing.promise;
+    const { finalizationTimeoutMs } = this.options;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<Failure>(resolve => {
+      timer = setTimeout(() => {
+        const reason = new FinalizationTimeoutError(finalizationTimeoutMs);
+        for (const deferred of this.deferred) deferred.abort(reason);
+        this.abort.abort(reason);
+        resolve({ reason });
+      }, finalizationTimeoutMs);
+    });
+    const joined = async (): Promise<Failure | undefined> => {
+      const [settled] = await Promise.allSettled([result]);
+      if (settled.status === 'rejected') this.errors.unshift(settled.reason);
+      while (this.work.size) await Promise.allSettled(this.work);
+      return this.errors.length ? { reason: combineErrors(this.errors, 'Pipeline run failed') } : undefined;
+    };
+    try {
+      return await Promise.race([joined(), deadline]);
+    } finally {
+      clearTimeout(timer);
     }
-    return this.errors.length ? { reason: combineErrors(this.errors, 'Pipeline run failed') } : undefined;
   }
 }
 
@@ -128,18 +130,22 @@ class InvocationCustody extends Custody {
 
 class Producer extends InvocationCustody {
   readonly #abort: AbortController;
+  readonly #stopReading: AbortController;
   #sealed = false;
 
   constructor(stageName: string, parentSignal: AbortSignal) {
     const abort = new AbortController();
-    super(stageName, AbortSignal.any([abort.signal, parentSignal]));
+    const stopReading = new AbortController();
+    super(stageName, AbortSignal.any([abort.signal, parentSignal]), stopReading.signal);
     this.#abort = abort;
+    this.#stopReading = stopReading;
   }
 
   get sealed(): boolean { return this.#sealed; }
 
   seal(end: StreamEnd): void {
     this.#sealed = true;
+    this.#stopReading.abort();
     if (end.how === 'cancelled') this.#abort.abort(end.reason);
   }
 }
@@ -154,10 +160,13 @@ class Scope {
   readonly #pulling = new Set<Producer>();
   readonly #failures: unknown[] = [];
   #phase: 'executing' | 'draining' | 'closed' = 'executing';
+  #answered = false;
   #executionJoined = false;
   #completed = false;
 
-  constructor(readonly state: RunState, readonly id: number, readonly name: string, readonly signal: AbortSignal) {
+  constructor(
+    readonly state: RunState, readonly id: number, readonly name: string, readonly signal: AbortSignal, readonly root: boolean,
+  ) {
     this.custody = new InvocationCustody(name, signal);
     this.finished = state.track(this.#closed.promise, false);
   }
@@ -268,11 +277,13 @@ class Scope {
     }
     this.#created.clear();
     this.#phase = this.#producers.size ? 'draining' : 'closed';
+    this.#answered = true;
+    this.state.trace.emit({ k: 'leave', stageId: this.id, facts, ...(baseChildId === undefined ? {} : { baseChildId }) });
+    if (this.root) this.state.beginFinalization();
     await this.custody.release(handoff);
     this.signal.throwIfAborted();
     for (const stream of handoff) stream.assertOwned(this.custody, 'return');
     for (const stream of handoff) stream.move(recipient);
-    this.state.trace.emit({ k: 'leave', stageId: this.id, facts, ...(baseChildId === undefined ? {} : { baseChildId }) });
     this.#executionJoined = true;
     this.#completeIfDrained();
   }
@@ -281,7 +292,7 @@ class Scope {
     this.#phase = 'closed';
     this.#created.clear();
     this.#failures.push(error);
-    this.state.trace.emit({ k: 'fail', stageId: this.id, error: this.state.trace.snapshot(error), facts });
+    if (!this.#answered) this.state.trace.emit({ k: 'fail', stageId: this.id, error: this.state.trace.snapshot(error), facts });
     const cleanup = async (): Promise<void> => {
       try {
         await this.custody.release();
@@ -344,7 +355,7 @@ const invoke = (
   const step = index < assembly.stages.length ? assembly.stages[index] : assembly.ending;
   const id = state.trace.stageId();
   const signal = caller.edge === 'subrun' ? state.signal : caller.custody.signal;
-  const scope = new Scope(state, id, step.name, signal);
+  const scope = new Scope(state, id, step.name, signal, caller.edge === 'root' || caller.edge === 'subrun');
   const answers: Answer[] = [];
 
   const runChild = (
@@ -372,15 +383,18 @@ const invoke = (
 
       if (step.kind === 'stage') {
         const through = step.through;
-        if (through) requireKeys(step.name, 'entry', facts, through.request.needs);
-        const next = (input: Facts): Promise<Facts> => {
-          const custody = scope.admit('next');
-          if (!through) throw new TypeError(`Stage "${step.name}" has no through declaration`);
-          const handed = freezeFacts(input, `${step.name}.next`);
-          checkDown(step.name, facts, handed, through.request);
-          return runChild(pipeline, assembly, index + 1, handed, custody, 'next', through.response.needs);
-        };
-        output = freezeFacts(await step.execute(facts, next, env), `${step.name}.return`);
+        if (through) {
+          requireKeys(step.name, 'entry', facts, through.request.needs);
+          const next = (input: Facts): Promise<Facts> => {
+            const custody = scope.admit('next');
+            const handed = freezeFacts(input, `${step.name}.next`);
+            checkDown(step.name, facts, handed, through.request);
+            return runChild(pipeline, assembly, index + 1, handed, custody, 'next', through.response.needs);
+          };
+          output = freezeFacts(await step.execute(facts, next, env), `${step.name}.return`);
+        } else {
+          output = freezeFacts(await step.execute(facts, env), `${step.name}.return`);
+        }
         base = checkUp(step, output, answers);
       } else {
         requireKeys(step.name, 'entry', facts, step.request.needs);
@@ -434,7 +448,15 @@ const startRun = <I, O, S>(pipeline: Pipeline<I, O, S>, facts: I, options: RunOp
     }).result;
     return result as O;
   };
-  const result = execute();
+  const interrupted = Promise.withResolvers<never>();
+  const wake = (): void => interrupted.reject(state.abort.signal.reason);
+  state.abort.signal.addEventListener('abort', wake, { once: true });
+  const result = Promise.race([execute(), interrupted.promise]);
+  const settled = (): void => {
+    state.abort.signal.removeEventListener('abort', wake);
+    state.beginFinalization();
+  };
+  void result.then(settled, settled);
   const failure = state.finish(result);
   const done = failure.then(failure => {
     const completion: RunDone = failure ? { ok: false, error: trace.snapshot(failure.reason) } : { ok: true };
