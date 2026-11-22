@@ -21,6 +21,8 @@
 // consumer is deliberate public API, not dead surface.
 
 export type { DuplexStream, Fetcher, FetchInit, HttpContentDecoders, HttpHeaderLines, HttpRequest, RawHttpResponse, ReplayableBody } from './types.ts';
+export type { HeaderEntry, HttpRequestFacts, HttpResponseFacts, HttpUrl } from './facts.ts';
+export { httpUrl, wrapSensitiveHeaderEntries } from './facts.ts';
 export { isReplayableBody } from './request-body.ts';
 
 export { fetchOnStream } from './fetch-on-stream.ts';
