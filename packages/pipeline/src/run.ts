@@ -13,7 +13,7 @@ import type { Deferred, DeferredHandle, ManagedStream } from './handles.ts';
 import type { ErrorSnapshot } from './snapshot-error.ts';
 import type { ChildOptions, LogLevel, SideDecl, StageEnv, ThroughDecl } from './stage.ts';
 import { combineErrors, Custody, resourceOf, StreamResource, wrapOptions } from './stream.ts';
-import type { CreateStreamOptions, StreamEnd, StreamHooks, WrapStreamOptions } from './stream.ts';
+import type { CreateStreamOptions, StreamEnd, StreamFailure, StreamHooks, WrapStreamOptions } from './stream.ts';
 
 export interface RootEnv {
   readonly createStream: <T>(options: CreateStreamOptions<T>) => ManagedStream<T>;
@@ -43,7 +43,7 @@ type AnyPipeline = Pipeline<any, any, any>;
 type Resource = StreamResource<unknown>;
 type Failure = { readonly reason: unknown };
 type ProducerHooks = Pick<StreamHooks, 'pull' | 'seal' | 'finish'> & {
-  readonly end: (stream: Resource, error: unknown, failed: boolean) => void;
+  readonly end: (stream: Resource, failure: StreamFailure | undefined) => void;
 };
 
 class Finalization {
@@ -220,10 +220,10 @@ const createRuntimeStream = <T>(
     seal: (stream, end) => producer?.seal(stream, end),
     finish: stream => producer?.finish(stream),
     frame: value => trace.emit({ k: 'frame', streamId, value }),
-    end: (end, error, failed) => {
-      trace.emit({ k: 'end', streamId, how: end.how, ...(failed ? { error: trace.snapshot(error) } : {}) });
-      if (failed) state.errors.push(error);
-      producer?.end(resource, error, failed);
+    end: (end, diagnostic, failure) => {
+      trace.emit({ k: 'end', streamId, how: end.how, ...(diagnostic ? { error: trace.snapshot(diagnostic.reason) } : {}) });
+      if (failure) state.errors.push(failure.reason);
+      producer?.end(resource, failure);
     },
   }, options, inner);
   void state.track(resource.completion, false);
@@ -333,9 +333,9 @@ class Scope {
         }
       },
       finish: stream => this.#producers.get(stream)?.join(),
-      end: (stream, error, failed) => {
+      end: (stream, failure) => {
         if (this.#producers.has(stream)) {
-          if (failed) this.#failures.push(error);
+          if (failure) this.#failures.push(failure.reason);
           this.#producers.delete(stream);
           this.#completeIfDrained();
         }

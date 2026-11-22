@@ -53,6 +53,10 @@ export class Custody {
   }
 }
 
+export interface StreamFailure {
+  readonly reason: unknown;
+}
+
 export interface StreamHooks {
   readonly membership: object;
   readonly id: number;
@@ -60,13 +64,16 @@ export interface StreamHooks {
   readonly seal: (stream: StreamResource<unknown>, end: StreamEnd) => void;
   readonly finish: (stream: StreamResource<unknown>) => void | Promise<void>;
   readonly frame: (value: unknown) => void;
-  readonly end: (end: StreamEnd, error: unknown, failed: boolean) => void;
+  readonly end: (end: StreamEnd, diagnostic: StreamFailure | undefined, failure: StreamFailure | undefined) => void;
 }
 
 export const combineErrors = (errors: readonly unknown[], message: string): unknown => {
   const unique = [...new Set(errors)];
   return unique.length === 1 ? unique[0] : new AggregateError(unique, message);
 };
+
+const streamFailure = (errors: readonly unknown[]): StreamFailure | undefined =>
+  errors.length ? { reason: combineErrors(errors, 'Stream failed') } : undefined;
 
 type Source<T> = AsyncIterator<T, unknown, void>;
 type Pull<T> = IteratorResult<T, undefined>;
@@ -101,6 +108,7 @@ export class StreamResource<T> {
   #consuming = false;
   #interruptedRead = false;
   #wrapped = false;
+  #releaseOwnsReads = false;
   #end: StreamEnd | undefined;
   #finished = false;
 
@@ -156,6 +164,12 @@ export class StreamResource<T> {
 
   bindDeferred(onEnd: () => OwnerDeferredFailure | undefined): void {
     this.#ownerEnded.add(onEnd);
+  }
+
+  handOffReadFailures(): void {
+    if (this.#releaseOwnsReads) return;
+    if (!this.ending) this.#releaseOwnsReads = true;
+    this.#inner?.handOffReadFailures();
   }
 
   #assertPublic(operation: string): void {
@@ -241,6 +255,7 @@ export class StreamResource<T> {
       return this.completion;
     }
     this.#end = end;
+    if (end.how === 'released') this.#inner?.handOffReadFailures();
     this.#ended.resolve();
     this.#hooks.seal(this, end);
     this.#controller.abort(end.how === 'cancelled' ? end.reason : end.how === 'errored' ? end.error : undefined);
@@ -266,14 +281,14 @@ export class StreamResource<T> {
     await attempt(() => this.#inner?.stop({ how: 'released' }));
     await attempt(() => this.#hooks.finish(this));
     const end = this.#end!;
-    const traceErrors = end.how === 'errored' ? [end.error, ...errors] : [...errors];
+    const cleanupErrors = [...errors];
     for (const ownerEnded of this.#ownerEnded) {
       const failure = ownerEnded();
-      if (failure) traceErrors.push(failure.error);
+      if (failure) cleanupErrors.push(failure.error);
     }
     this.#ownerEnded.clear();
-    const failure = traceErrors.length > 0;
-    this.#hooks.end(end, failure ? combineErrors(traceErrors, 'Stream failed') : undefined, failure);
+    const diagnostic = streamFailure(end.how === 'errored' ? [end.error, ...cleanupErrors] : cleanupErrors);
+    this.#hooks.end(end, diagnostic, this.#releaseOwnsReads ? streamFailure(cleanupErrors) : diagnostic);
     this.#finished = true;
     this.#birthSignal.removeEventListener('abort', this.#onAbort);
     this.move(undefined);
@@ -340,6 +355,7 @@ export const wrapOptions = <In, Out>(inner: StreamResource<In>, options: WrapStr
         await options.onClose(end, null);
         return;
       }
+      inner.handOffReadFailures();
       releasing = true;
       try {
         await options.onClose(end, loan);

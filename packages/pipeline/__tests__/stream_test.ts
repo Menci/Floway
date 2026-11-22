@@ -148,12 +148,12 @@ describe('stream release and cancellation', () => {
     await expect(handle.done).resolves.toEqual({ ok: true });
   });
 
-  it('hands a rejected retained read to onClose even after the inner has ended', async () => {
+  it.each(['classifies', 'discards'] as const)('%s a rejected retained read after the inner has ended', async disposition => {
     const pulling = Promise.withResolvers<void>();
     const upstream = Promise.withResolvers<number>();
     const unwinding = Promise.withResolvers<void>();
     const resume = Promise.withResolvers<void>();
-    const innerEnded = Promise.withResolvers<void>();
+    const innerEnded = Promise.withResolvers<Extract<RunEvent, { k: 'end' }>>();
     const readError = new Error('raw read failed');
     let innerId: number | undefined;
     const handle = run(bodyPipeline(env => {
@@ -174,15 +174,17 @@ describe('stream release and cancellation', () => {
               await resume.promise;
             }
           },
-          onClose: async (_end, inner) => {
-            expect(inner).not.toBeNull();
-            await expect(inner!.next()).rejects.toBe(readError);
-          },
+          ...(disposition === 'classifies' ? {
+            onClose: async (_end, inner) => {
+              expect(inner).not.toBeNull();
+              await expect(inner!.next()).rejects.toBe(readError);
+            },
+          } : {}),
         }),
       };
     }), {}, {
       ...options, events: event => {
-        if (event.k === 'end' && event.streamId === innerId) innerEnded.resolve();
+        if (event.k === 'end' && event.streamId === innerId) innerEnded.resolve(event);
       },
     });
     const { body } = await handle.result;
@@ -191,11 +193,49 @@ describe('stream release and cancellation', () => {
     const release = body.close();
     await unwinding.promise;
     upstream.reject(readError);
-    await innerEnded.promise;
+    const end = await innerEnded.promise;
     resume.resolve();
     await expect(release).resolves.toBeUndefined();
     await expect(read).resolves.toMatchObject({ done: true });
-    await expect(handle.done).resolves.toMatchObject({ ok: false, error: { message: 'raw read failed' } });
+    expect(end).toMatchObject({ how: 'errored', error: { message: 'raw read failed' } });
+    await expect(handle.done).resolves.toEqual({ ok: true });
+  });
+
+  it.each(['classifies', 'rethrows'] as const)('%s an error on the release hook’s first read', async disposition => {
+    const readError = new Error('release read failed');
+    const events: RunEvent[] = [];
+    let innerId: number | undefined;
+    let classification: string | undefined;
+    const handle = run(bodyPipeline(env => {
+      const inner = env.createStream<number>({ label: 'inner', async *iterate() { throw readError; } });
+      innerId = streamIdOf(inner);
+      return {
+        body: env.wrapStream(inner, {
+          label: 'outer', transform: source => source,
+          onClose: async (_end, inner) => {
+            try {
+              await inner!.next();
+            } catch (error) {
+              if (disposition === 'rethrows') throw error;
+              expect(error).toBe(readError);
+              classification = 'unreadable';
+            }
+          },
+        }),
+      };
+    }), {}, { ...options, events: event => events.push(event) });
+    const { body } = await handle.result;
+    if (disposition === 'rethrows') {
+      await expect(body.close()).rejects.toBe(readError);
+      await expect(handle.done).resolves.toMatchObject({ ok: false, error: { name: 'Error', message: readError.message } });
+    } else {
+      await body.close();
+      expect(classification).toBe('unreadable');
+      await expect(handle.done).resolves.toEqual({ ok: true });
+    }
+    expect(events).toContainEqual(expect.objectContaining({
+      k: 'end', streamId: innerId, how: 'errored', error: expect.objectContaining({ message: readError.message }),
+    }));
   });
 
   it('releases the inner by default after the outer hook, aborting its own signal', async () => {
