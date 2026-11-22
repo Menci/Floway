@@ -6,6 +6,7 @@ import type { ErrorSnapshot, RunEvent, RunEventSink } from '@floway-dev/pipeline
 export interface DumpCompletionSummary {
   readonly totalBytes: number;
   readonly truncated: boolean;
+  readonly droppedEvents: number;
   readonly ok: boolean;
   readonly doneError?: ErrorSnapshot;
 }
@@ -201,6 +202,7 @@ export const createDumpPump = (options: DumpPumpOptions = {}): DumpPump => {
         completion.resolve({
           totalBytes,
           truncated: truncation !== undefined,
+          droppedEvents: truncation === undefined ? 0 : done.seq - truncation.seq,
           ok: done.ok,
           ...(error === undefined ? {} : { doneError: error }),
         });

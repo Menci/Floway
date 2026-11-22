@@ -24,7 +24,7 @@ it('enqueues a live fact by identity and starts serialization in a later turn', 
   const [written, summary] = await Promise.all([artifact, pump.completed]);
   expect(reads).toHaveBeenCalledTimes(1);
   expect(lines(written).map(event => event.k)).toEqual(['run', 'obj', 'enter', 'leave', 'closed', 'done']);
-  expect(summary).toEqual({ totalBytes: new TextEncoder().encode(written).byteLength, truncated: false, ok: true });
+  expect(summary).toEqual({ totalBytes: new TextEncoder().encode(written).byteLength, truncated: false, droppedEvents: 0, ok: true });
 });
 
 it('finishes the artifact while a lagged live observer is blocked', async () => {
@@ -47,6 +47,7 @@ it('finishes the artifact while a lagged live observer is blocked', async () => 
   try {
     const [written, summary] = await Promise.all([artifact, pump.completed]);
     expect(summary.truncated).toBe(false);
+    expect(summary.droppedEvents).toBe(0);
     expect(pump.liveLagged).toBe(true);
     expect(onLiveChunk).toHaveBeenCalledTimes(1);
     expect(onLiveChunk.mock.calls[0]).toEqual([0, expect.any(Uint8Array)]);
@@ -68,18 +69,36 @@ it('reserves an ordered truncation marker and done within the artifact cap', asy
   pump.sink(enter(2, 1, {}));
   pump.sink({ k: 'stream', seq: 3, tMs: 3, stageId: 1, streamId: 1, label: 'body' });
   pump.sink({ k: 'frame', seq: 4, tMs: 4, streamId: 1, value: 'x'.repeat(700) });
-  pump.sink(leave(5, 1, { hidden }));
-  pump.sink({ k: 'done', seq: 6, tMs: 6, ok: false, error });
+  pump.sink({ k: 'frame', seq: 5, tMs: 5, streamId: 1, value: 'another frame' });
+  pump.sink(leave(6, 1, { hidden }));
+  pump.sink({ k: 'done', seq: 7, tMs: 7, ok: false, error });
   const [written, summary] = await Promise.all([artifact, pump.completed]);
   const events = lines(written);
-  expect(summary).toMatchObject({ truncated: true, ok: false, doneError: error });
+  expect(summary).toMatchObject({ truncated: true, droppedEvents: 3, ok: false, doneError: error });
   expect(summary.totalBytes).toBe(new TextEncoder().encode(written).byteLength);
   expect(summary.totalBytes).toBeLessThanOrEqual(512);
   expect(events.slice(-2)).toEqual([
     { k: 'truncated', seq: 4, tMs: 4, reason: 'size-limit' },
-    done(6, false),
+    done(7, false),
   ]);
   expect(createDumpDecoder().pushNdjsonChunk(written).run?.done?.ok).toBe(false);
+});
+
+it('drops no events when only the done error exceeds the artifact cap', async () => {
+  const pump = createDumpPump({ maxArtifactBytes: 1_024 });
+  const artifact = collect(pump.artifact);
+  const error = { name: 'Error', message: 'late failure', stack: 'x'.repeat(2_000) };
+  for (const event of [runEvent, enter(2, 1, {}), leave(3, 1, {}), closed(4, 1)]) pump.sink(event);
+  pump.sink({ k: 'done', seq: 5, tMs: 5, ok: false, error });
+
+  const [written, summary] = await Promise.all([artifact, pump.completed]);
+  const events = lines(written);
+  expect(summary).toMatchObject({ truncated: true, droppedEvents: 0, doneError: error });
+  expect(events.map(event => event.k)).toEqual(['run', 'obj', 'enter', 'obj', 'leave', 'closed', 'truncated', 'done']);
+  expect(events.slice(-2)).toEqual([
+    { k: 'truncated', seq: 5, tMs: 5, reason: 'size-limit' },
+    done(5, false),
+  ]);
 });
 
 it('rejects completion with the original artifact cancellation reason', async () => {
