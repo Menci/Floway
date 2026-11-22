@@ -1,5 +1,5 @@
-import { InvalidFactValueError } from './errors.ts';
-import { freezeValue } from './facts.ts';
+import { DeferredOwnershipError, InvalidFactValueError, StreamOwnershipError } from './errors.ts';
+import { copyFactValue, freezeValue } from './facts.ts';
 import type { FactValue } from './facts.ts';
 
 export interface ErrorSnapshot {
@@ -19,18 +19,18 @@ const render = (value: unknown): string => {
   }
 };
 
-const factOrString = (value: unknown): FactValue => {
-  try {
-    return freezeValue(value) as FactValue;
-  } catch (error) {
-    if (error instanceof InvalidFactValueError) return render(value);
-    throw error;
-  }
-};
-
-export const snapshotError = (error: unknown): ErrorSnapshot => {
+export const snapshotErrorIn = (error: unknown, membership?: object): ErrorSnapshot => {
   const ancestors = new WeakSet<Error>();
   const seen = new WeakMap<Error, ErrorSnapshot>();
+  const copies = new WeakMap<object, object>();
+  const factOrString = (value: unknown): FactValue => {
+    try {
+      return freezeValue(copyFactValue(value, copies), 'error', membership) as FactValue;
+    } catch (error) {
+      if (error instanceof InvalidFactValueError || error instanceof StreamOwnershipError || error instanceof DeferredOwnershipError) return render(value);
+      throw error;
+    }
+  };
   const snapshot = (value: unknown): ErrorSnapshot => {
     if (!(value instanceof Error)) return freezeValue({ name: 'Error', message: render(value) });
     if (ancestors.has(value)) return freezeValue({ name: 'Error', message: '[Circular error]' });
@@ -60,3 +60,5 @@ export const snapshotError = (error: unknown): ErrorSnapshot => {
     return freezeValue({ name: 'Error', message: render(error) });
   }
 };
+
+export const snapshotError = (error: unknown): ErrorSnapshot => snapshotErrorIn(error);

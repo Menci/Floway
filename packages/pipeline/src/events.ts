@@ -1,5 +1,6 @@
+import { freezeValue } from './facts.ts';
 import type { Facts } from './facts.ts';
-import { snapshotError } from './snapshot-error.ts';
+import { snapshotErrorIn } from './snapshot-error.ts';
 import type { ErrorSnapshot } from './snapshot-error.ts';
 import type { LogLevel } from './stage.ts';
 import type { StreamEnd } from './stream.ts';
@@ -25,6 +26,7 @@ export type RunEvent = Event & { readonly seq: number; readonly tMs: number };
 export type RunEventSink = (event: RunEvent) => void;
 
 export class Trace {
+  readonly membership = {};
   readonly diagnostics: ErrorSnapshot[] = [];
   readonly #snapshots = new WeakMap<object, ErrorSnapshot>();
   #seq = 0;
@@ -41,16 +43,17 @@ export class Trace {
   deferredId(): number { return ++this.#deferredId; }
 
   snapshot(error: unknown): ErrorSnapshot {
-    if (typeof error !== 'object' || error === null) return snapshotError(error);
+    if (typeof error !== 'object' || error === null) return snapshotErrorIn(error, this.membership);
     const earlier = this.#snapshots.get(error);
     if (earlier !== undefined) return earlier;
-    const value = snapshotError(error);
+    const value = snapshotErrorIn(error, this.membership);
     this.#snapshots.set(error, value);
     return value;
   }
 
   emit(event: Event): void {
     if (this.#finished || this.sink === undefined) return;
+    freezeValue(event, 'event', this.membership);
     if (event.k === 'done') this.#finished = true;
     this.#tMs = Math.max(this.#tMs, this.clock());
     try {

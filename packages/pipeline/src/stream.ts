@@ -1,3 +1,4 @@
+import type { OwnerDeferredFailure } from './deferred.ts';
 import { ConcurrentStreamReadError, DuplicateStreamCloseError, StreamLeakError, StreamOwnershipError } from './errors.ts';
 import { freezeData } from './facts.ts';
 import { managedStreams } from './handles.ts';
@@ -53,6 +54,7 @@ export class Custody {
 }
 
 export interface StreamHooks {
+  readonly membership: object;
   readonly id: number;
   readonly pull: (stream: StreamResource<unknown>) => (() => void) | undefined;
   readonly seal: (stream: StreamResource<unknown>, end: StreamEnd) => void;
@@ -91,7 +93,7 @@ export class StreamResource<T> {
   readonly #iterate: (signal: AbortSignal) => AsyncIterable<T>;
   readonly #onClose: CreateStreamOptions<T>['onClose'];
   readonly #inner?: StreamResource<unknown>;
-  readonly #ownerEnded = new Set<() => void>();
+  readonly #ownerEnded = new Set<() => OwnerDeferredFailure | undefined>();
   #owner: Custody | undefined;
   #source: Source<T> | undefined;
   #read: Promise<IteratorResult<T, unknown>> | undefined;
@@ -120,7 +122,7 @@ export class StreamResource<T> {
       [Symbol.asyncIterator]: () => this.#open(),
       close: () => this.#closePublic(),
     });
-    managedStreams.add(this.handle);
+    managedStreams.set(this.handle, hooks.membership);
     resources.set(this.handle, this);
     this.#birthSignal.addEventListener('abort', this.#onAbort, { once: true });
     this.move(owner);
@@ -152,7 +154,7 @@ export class StreamResource<T> {
     this.move(undefined);
   }
 
-  bindDeferred(onEnd: () => void): void {
+  bindDeferred(onEnd: () => OwnerDeferredFailure | undefined): void {
     this.#ownerEnded.add(onEnd);
   }
 
@@ -263,11 +265,13 @@ export class StreamResource<T> {
     await attempt(() => this.#onClose?.(this.#end!));
     await attempt(() => this.#inner?.stop({ how: 'released' }));
     await attempt(() => this.#hooks.finish(this));
-    for (const ownerEnded of this.#ownerEnded) ownerEnded();
-    this.#ownerEnded.clear();
-
     const end = this.#end!;
-    const traceErrors = end.how === 'errored' ? [end.error, ...errors] : errors;
+    const traceErrors = end.how === 'errored' ? [end.error, ...errors] : [...errors];
+    for (const ownerEnded of this.#ownerEnded) {
+      const failure = ownerEnded();
+      if (failure) traceErrors.push(failure.error);
+    }
+    this.#ownerEnded.clear();
     const failure = traceErrors.length > 0;
     this.#hooks.end(end, failure ? combineErrors(traceErrors, 'Stream failed') : undefined, failure);
     this.#finished = true;

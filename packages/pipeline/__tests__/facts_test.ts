@@ -43,7 +43,7 @@ describe('fact values', () => {
   });
 
   it('snapshots aggregate errors and causes with cycles without mutating thrown errors', () => {
-    const fact = { detail: 'wire' };
+    const fact = { detail: { phase: 'wire' } };
     const cause = new TypeError('endpoint');
     const error = Object.assign(new AggregateError([cause, 16], 'failed', { cause }), { fact, invalid: new Date(0) });
     Object.defineProperty(cause, 'cause', { value: error });
@@ -55,8 +55,12 @@ describe('fact values', () => {
       fields: { fact, invalid: String(error.invalid) },
     });
     expect(snapshot.errors?.[0]).toBe(snapshot.cause);
-    expect(snapshot.fields?.fact).toBe(fact);
-    expect(Object.isFrozen(fact)).toBe(true);
+    expect(snapshot.fields?.fact).not.toBe(fact);
+    expect(Object.isFrozen(snapshot.fields?.fact)).toBe(true);
+    expect(Object.isFrozen(fact)).toBe(false);
+    expect(Object.isFrozen(fact.detail)).toBe(false);
+    fact.detail.phase = 'reassigned';
+    expect(snapshot.fields?.fact).toEqual({ detail: { phase: 'wire' } });
     error.stack = 'reassigned';
     expect(snapshot.stack).toContain('AggregateError: failed');
   });

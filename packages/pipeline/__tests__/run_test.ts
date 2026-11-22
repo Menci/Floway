@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { compose, DeclarationViolationError, deferredIdOf, defineEnding, defineStage, FinalizationTimeoutError, run, transform, UnsettledDeferredError } from '../src/index.ts';
-import type { Deferred, DeferredHandle, Facts, RunEvent, SideDecl, StageEnv } from '../src/index.ts';
+import type { Deferred, DeferredHandle, Facts, ManagedStream, RunDone, RunEvent, SideDecl, StageEnv } from '../src/index.ts';
 
 const options = { services: {}, finalizationTimeoutMs: 200 };
 const identity = { needs: [], consumes: [], provides: [] };
@@ -201,6 +201,7 @@ describe('run completion', () => {
   });
 
   it('rejects unsettled scope and stream deferreds and rejects a second manual settlement', async () => {
+    const events: RunEvent[] = [];
     const end = defineEnding<{}, { scope: Deferred<number>; body: Deferred<number>; result: Deferred<number> }>({
       name: 'unsettled', request: { needs: [] }, return: { provides: ['scope', 'body', 'result'] },
       execute: async (_facts, _into, env) => {
@@ -215,12 +216,63 @@ describe('run completion', () => {
       },
     });
     type Result = { scope: Deferred<number>; body: Deferred<number>; result: Deferred<number> };
-    const handle = run(compose<{}, Result, {}>('unsettled', { stages: [], ending: end }), {}, options);
+    const handle = run(compose<{}, Result, {}>('unsettled', { stages: [], ending: end }), {}, { ...options, events: event => events.push(event) });
     const facts = await handle.result;
     await expect(facts.scope.promise).rejects.toBeInstanceOf(UnsettledDeferredError);
     await expect(facts.body.promise).rejects.toBeInstanceOf(UnsettledDeferredError);
     await expect(facts.result.promise).resolves.toBe(3);
     await expect(handle.done).resolves.toMatchObject({ ok: false, error: { name: 'AggregateError' } });
+    expect(events).toContainEqual(expect.objectContaining({
+      k: 'end', how: 'released', error: expect.objectContaining({ name: 'UnsettledDeferredError', message: expect.stringContaining('body measurement') }),
+    }));
+    expect(events).toContainEqual(expect.objectContaining({
+      k: 'closed', stageId: 1, ok: false, error: expect.objectContaining({ name: 'UnsettledDeferredError', message: expect.stringContaining('scope measurement') }),
+    }));
+  });
+
+  it.each([
+    ['input', 'stream'], ['input', 'deferred'],
+    ['log', 'stream'], ['log', 'deferred'],
+    ['return', 'stream'], ['return', 'deferred'],
+  ] as const)('rejects a foreign handle at %s (%s)', async (boundary, kind) => {
+    type Owner = {
+      stream: { detail: { handle: ManagedStream<number> } };
+      deferred: { detail: { handle: Deferred<number> } };
+    };
+    const origin = compose<{}, Owner, {}>('origin', {
+      stages: [], ending: defineEnding<{}, Owner>({
+        name: 'origin', request: { needs: [] }, return: { provides: ['stream', 'deferred'] },
+        execute: async (_facts, _into, env) => ({
+          stream: { detail: { handle: env.createStream({ label: 'owned', async *iterate() { yield 1; } }) } },
+          deferred: { detail: { handle: env.defer('owned', Promise.resolve(1)) } },
+        }),
+      }),
+    });
+    const donor = run(origin, {}, options);
+    const own = await donor.result;
+    const nestedForeign = own[kind];
+    expect(Object.isFrozen(nestedForeign)).toBe(true);
+    const ending = defineEnding<Facts, Facts>({
+      name: 'recipient', request: { needs: [] }, return: { provides: [] },
+      execute: async (_facts, _into, env) => {
+        env.defer('same trace id', Promise.resolve(2));
+        if (boundary === 'log') env.log.info('foreign', nestedForeign);
+        return boundary === 'return' ? nestedForeign : {};
+      },
+    });
+    const events: RunEvent[] = [];
+    try {
+      const handle = run(compose<Facts, Facts, {}>('recipient', { stages: [], ending }), boundary === 'input' ? nestedForeign : {}, {
+        ...options, events: event => events.push(event),
+      });
+      const name = kind === 'stream' ? 'StreamOwnershipError' : 'DeferredOwnershipError';
+      await expect(handle.result).rejects.toMatchObject({ name });
+      await expect(handle.done).resolves.toMatchObject({ ok: false, error: { name } });
+      expect(events.some(event => ('facts' in event && event.facts === nestedForeign) || (event.k === 'log' && event.fields === nestedForeign))).toBe(false);
+    } finally {
+      await own.stream.detail.handle.close();
+      await donor.done;
+    }
   });
 
   it('rejects pending work at the finalization deadline', async () => {
@@ -345,5 +397,46 @@ describe('run completion', () => {
     const handle = run(pipeline, {}, { ...options, services });
     await expect(handle.result).resolves.toEqual({ response: 1 });
     await expect(handle.done).resolves.toMatchObject({ ok: false, error: { message: 'persist failed' } });
+  });
+
+  it.each(['settles', 'expires'] as const)('shares the root deadline with a sub-run whose work %s', async outcome => {
+    const work = Promise.withResolvers<number>();
+    let childDone: Promise<RunDone> | undefined;
+    let childDeferred: Deferred<number> | undefined;
+    let childFinished = false;
+    const child = compose<{}, { work: Deferred<number> }, {}>('child', {
+      stages: [], ending: defineEnding({
+        name: 'child', request: { needs: [] }, return: { provides: ['work'] },
+        execute: async (_facts, _into, env) => ({ work: env.defer('child work', work.promise) }),
+      }),
+    });
+    type Output = { body: ManagedStream<number> };
+    const pipeline = compose<{}, Output, {}>('parent', {
+      stages: [], ending: defineEnding<{}, Output>({
+        name: 'parent', request: { needs: [] }, return: { provides: ['body'] },
+        execute: async (_facts, _into, env) => {
+          const sub = env.run(child, {});
+          childDone = sub.done;
+          void sub.done.then(() => { childFinished = true; });
+          childDeferred = (await sub.result).work;
+          return { body: env.createStream({ label: 'delivery', async *iterate() { yield 1; } }) };
+        },
+      }),
+    });
+    const handle = run(pipeline, {}, { ...options, finalizationTimeoutMs: 15 });
+    const { body } = await handle.result;
+    await new Promise(resolve => setTimeout(resolve, 40));
+    const completedDuringDelivery = childFinished;
+    if (outcome === 'settles') work.resolve(2);
+    await body.close();
+    expect(completedDuringDelivery).toBe(false);
+    if (outcome === 'settles') {
+      await expect(childDone).resolves.toEqual({ ok: true });
+      await expect(handle.done).resolves.toEqual({ ok: true });
+    } else {
+      await expect(handle.done).resolves.toMatchObject({ ok: false, error: { name: 'FinalizationTimeoutError' } });
+      await expect(childDone).resolves.toMatchObject({ ok: false, error: { name: 'FinalizationTimeoutError' } });
+      await expect(childDeferred!.promise).rejects.toBeInstanceOf(FinalizationTimeoutError);
+    }
   });
 });

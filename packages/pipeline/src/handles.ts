@@ -14,8 +14,8 @@ export interface DeferredHandle<T> {
   reject(error: unknown): void;
 }
 
-export const managedStreams = new WeakSet<ManagedStream<unknown>>();
-export const deferreds = new WeakSet<Deferred<unknown>>();
+export const managedStreams = new WeakMap<ManagedStream<unknown>, object>();
+export const deferreds = new WeakMap<Deferred<unknown>, object>();
 
 export const isManagedStream = (value: unknown): value is ManagedStream<unknown> =>
   typeof value === 'object' && value !== null && managedStreams.has(value as ManagedStream<unknown>);

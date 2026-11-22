@@ -18,7 +18,7 @@ export interface DynamicTarget<K, I, O, S> {
   readonly resolve: (key: K, services: Readonly<S>) => Pipeline<I, O, S>;
 }
 
-export type TargetMap = Readonly<Record<string, StaticTarget<any, any, any> | DynamicTarget<any, any, any, any>>>;
+export type TargetMap<S = any> = Readonly<Record<string, StaticTarget<any, any, S> | DynamicTarget<any, any, any, S>>>;
 
 export type IntoMap<T> = {
   readonly [K in keyof T]:
@@ -52,17 +52,13 @@ export const assemblyOf = (pipeline: AnyPipeline): Assembly => {
   return assembly;
 };
 
-type CompatibleTargets<T extends TargetMap, S> = {
-  readonly [K in keyof T]: T[K] extends StaticTarget<any, any, S> | DynamicTarget<any, any, any, S> ? T[K] : never;
-};
+type TargetOptions<T extends TargetMap> = keyof T extends never ? { readonly targets?: never }
+  : { readonly targets: T };
 
-type TargetOptions<T extends TargetMap, S> = keyof T extends never ? { readonly targets?: never }
-  : { readonly targets: T & CompatibleTargets<T, S> };
-
-export const compose = <In, Out, S, Targets extends TargetMap = {}>(name: string, options: {
+export const compose = <In, Out, S, Targets extends TargetMap<S> = {}>(name: string, options: {
   readonly stages: readonly Stage<S>[];
   readonly ending: Ending<Targets, S>;
-} & TargetOptions<Targets, S>): Pipeline<In, Out, S> => {
+} & TargetOptions<Targets>): Pipeline<In, Out, S> => {
   const { stages, ending } = options;
   const names = new Set([ending.name]);
   if (ending.kind !== 'ending') throw new TypeError(`Pipeline "${name}" must finish with an ending`);

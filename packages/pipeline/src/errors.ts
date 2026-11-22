@@ -21,6 +21,13 @@ export class StreamOwnershipError extends Error {
   }
 }
 
+export class DeferredOwnershipError extends Error {
+  constructor(readonly deferredName: string, readonly path: string) {
+    super(`Deferred "${deferredName}" at ${path} belongs to another run`);
+    this.name = 'DeferredOwnershipError';
+  }
+}
+
 export class DuplicateStreamCloseError extends Error {
   constructor(readonly label: string) {
     super(`Stream "${label}" has already ended or is ending`);

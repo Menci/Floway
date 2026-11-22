@@ -6,6 +6,10 @@ import type { Deferred, DeferredHandle } from './handles.ts';
 
 const ids = new WeakMap<Deferred<unknown>, number>();
 
+export interface OwnerDeferredFailure {
+  readonly error: unknown;
+}
+
 export const deferredIdOf = (deferred: Deferred<unknown>): number => {
   const id = ids.get(deferred);
   if (id === undefined) throw new TypeError('Expected an admitted deferred');
@@ -17,11 +21,12 @@ export class DeferredResource<T> {
   readonly #settlement = Promise.withResolvers<T>();
   readonly #id: number;
   #status: 'pending' | 'settled' | 'expired' = 'pending';
+  #failure: OwnerDeferredFailure | undefined;
 
   constructor(readonly name: string, readonly trace: Trace, stageId: number, readonly isExpired: () => boolean) {
     this.#id = trace.deferredId();
     const deferred = Object.freeze({ name, promise: this.#settlement.promise });
-    deferreds.add(deferred);
+    deferreds.set(deferred, trace.membership);
     ids.set(deferred, this.#id);
     this.handle = Object.freeze({
       deferred,
@@ -39,8 +44,9 @@ export class DeferredResource<T> {
     });
   }
 
-  ownerEnded(): void {
+  ownerEnded(): OwnerDeferredFailure | undefined {
     if (this.#status === 'pending') this.#reject(new UnsettledDeferredError(this.name));
+    return this.#failure;
   }
 
   abort(error: unknown): void {
@@ -75,6 +81,7 @@ export class DeferredResource<T> {
   }
 
   #fail(error: unknown): void {
+    this.#failure = { error };
     this.#settlement.reject(error);
     this.trace.emit({ k: 'settled', deferredId: this.#id, ok: false, error: this.trace.snapshot(error) });
   }
