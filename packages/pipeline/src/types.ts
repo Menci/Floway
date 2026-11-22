@@ -46,10 +46,10 @@ export interface CreateStreamOptions<T, Services extends object = Record<never, 
   readonly onClose?: (info: { readonly how: StreamEndHow; readonly reason?: unknown }) => void | Promise<void>;
 }
 
-export interface WrapStreamOptions<In, Out> {
+export interface WrapStreamOptions<In, Out, Services extends object = Record<never, never>> {
   readonly label?: string;
   readonly adopt?: readonly ManagedStream<unknown>[];
-  readonly transform: (source: AsyncIterable<In>, signal: AbortSignal) => AsyncIterable<Out>;
+  readonly transform: (source: AsyncIterable<In>, signal: AbortSignal, env: StageEnv<Services>) => AsyncIterable<Out>;
   readonly onClose?: (info: { readonly how: StreamEndHow; readonly reason?: unknown }) => void | Promise<void>;
 }
 
@@ -111,7 +111,7 @@ export type StageEnv<Services extends object = Record<never, never>> = Readonly<
   readonly waitUntil: (promise: Promise<unknown>) => void;
   readonly log: StageLogger;
   readonly createStream: <T>(options: CreateStreamOptions<T, Services>) => ManagedStream<T>;
-  readonly wrapStream: <In, Out>(inner: ManagedStream<In>, options: WrapStreamOptions<In, Out>) => ManagedStream<Out>;
+  readonly wrapStream: <In, Out>(inner: ManagedStream<In>, options: WrapStreamOptions<In, Out, Services>) => ManagedStream<Out>;
   readonly teeStream: <T>(inner: ManagedStream<T>, options?: TeeStreamOptions) => readonly [ManagedStream<T>, ManagedStream<T>];
   readonly consumeInBackground: <T>(
     stream: ManagedStream<T>,
@@ -186,7 +186,7 @@ export interface RequestStage<
 
 export type AnyStage = Stage<any, any, any, any, any, any> | RequestStage<any, any, any, any>;
 
-export interface BoundDispatch<Out, Services extends object = Record<never, never>> {
+export interface BoundDispatch<out Out, in Services extends object = Record<never, never>> {
   readonly [DISPATCH_BRAND]: true;
   readonly target: Pipeline<any, Out, Services>;
   readonly input: Facts;
@@ -216,14 +216,14 @@ export type Ending<
   };
 
 export interface Pipeline<
-  In extends object = Record<never, never>,
-  Out = unknown,
-  Services extends object = Record<never, never>,
+  in In extends object = Record<never, never>,
+  out Out = unknown,
+  in Services extends object = Record<never, never>,
 > {
   readonly name: string;
   readonly stages: readonly AnyStage[];
   readonly ending: Ending<any, Out, any>;
-  readonly [PIPELINE_META]?: { readonly in: In; readonly out: Out; readonly services: Services };
+  readonly [PIPELINE_META]?: (input: In, services: Services) => Out;
 }
 
 // --- Live Recording & Dump V2 Contracts ---

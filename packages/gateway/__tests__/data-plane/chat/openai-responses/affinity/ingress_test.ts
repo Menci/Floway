@@ -1,11 +1,12 @@
 import { expect, test } from 'vitest';
 
 import { analyzeOpenAIResponsesAffinity } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
-import { AffinityCodec, type AffinityIdentity, type AffinityRequestAnalysis, compatibilityIdentityForCandidate, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { compatibilityIdentityForRouteCandidate, selectRouteAffinityCandidates, type RouteAffinityRequestAnalysis } from '../../../../../src/data-plane/chat/pipeline/index.ts';
+import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { stubRouteCandidate } from '../../../../test-utils/chat-pipeline.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
-import type { ModelCandidate } from '@floway-dev/provider';
-import { stubModelCandidate, stubProviderModel } from '@floway-dev/test-utils';
+import type { RouteCandidate } from '@floway-dev/provider';
 
 const codec = new AffinityCodec('22'.repeat(32));
 const canonicalItemType = (itemType: string): string => itemType === 'compaction' || itemType === 'compaction_summary' || itemType === 'context_compaction' ? 'compaction' : itemType;
@@ -15,41 +16,30 @@ const candidate = (
   upstream: string,
   model = 'model',
   scope: { bindToUpstream: boolean; key?: string } = { bindToUpstream: true },
-): ModelCandidate => {
-  const base = stubModelCandidate();
-  return stubModelCandidate({
-    provider: { ...base.provider, upstreamId: upstream },
-    model: {
-      id: model,
-      opaqueBlobCompatibilityScope: scope,
-      providerModels: {
-        [upstream]: stubProviderModel({
-          id: model,
-          upstreamModelId: model,
-          opaqueBlobCompatibilityScope: scope,
-        }),
-      },
-    },
-  });
-};
+): RouteCandidate => stubRouteCandidate({
+  upstreamId: upstream,
+  modelId: model,
+  upstreamModelId: model,
+  opaqueBlobCompatibilityScope: scope,
+});
 
-const targetFor = (value: ModelCandidate): AffinityIdentity => ({
-  upstreamId: value.provider.upstreamId,
-  modelId: value.model.id,
+const targetFor = (value: RouteCandidate): AffinityIdentity => ({
+  upstreamId: value.upstreamId,
+  modelId: value.modelId,
   ...(value.rules !== undefined ? { rules: value.rules } : {}),
-  opaqueBlobCompatibilityIdentity: compatibilityIdentityForCandidate(value),
+  opaqueBlobCompatibilityIdentity: compatibilityIdentityForRouteCandidate(value),
 });
 
 const candidateA = candidate('upstream-a');
 const candidateB = candidate('upstream-b');
 
 const select = (
-  candidates: readonly ModelCandidate[],
-  analysis: AffinityRequestAnalysis<CanonicalOpenAIResponsesPayload>,
+  candidates: readonly RouteCandidate[],
+  analysis: RouteAffinityRequestAnalysis<CanonicalOpenAIResponsesPayload>,
 ) => {
-  const selection = selectAffinityCandidates(candidates, analysis);
+  const selection = selectRouteAffinityCandidates(candidates, analysis);
   if ('kind' in selection) throw new Error(`Expected affinity selection, received ${selection.kind}`);
-  return selection;
+  return { candidates: selection.entries.map(entry => entry.candidate), payloadFor: (candidate: RouteCandidate) => selection.entries.find(entry => entry.candidate === candidate)?.payload };
 };
 
 test('restores an owned blob within its compatibility scope and still prefers its exact target', async () => {
@@ -205,7 +195,7 @@ test('derives force routing from blob-less program state after the turn carrier'
   ]);
   const firstEvaluation = acceptedAffinityEvaluation(prepared, firstVariant);
   expect(firstEvaluation.degrades).toBe(false);
-  expect(selection.payloadFor(firstVariant).input).toEqual([{
+  expect(selection.payloadFor(firstVariant)?.input).toEqual([{
     type: 'program_output',
     id: 'prog_out_client',
     call_id: 'call_1',

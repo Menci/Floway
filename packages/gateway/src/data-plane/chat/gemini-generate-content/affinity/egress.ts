@@ -1,4 +1,4 @@
-import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
+import type { AffinityEgressOptions } from '../../pipeline/index.ts';
 import { captureExtras, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentCandidate as WireCandidate, GeminiGenerateContentPart, GeminiGenerateContentContent, GeminiGenerateContentResult as WireResult, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_KEYS } from '@floway-dev/protocols/gemini-generate-content';

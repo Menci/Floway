@@ -1,7 +1,12 @@
-import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
+import {
+  defineRouteAffinityRequest,
+  projectOptionalRouteAffinityBlob,
+  type RouteAffinityRequestAnalysis,
+} from '../../pipeline/index.ts';
+import type { AffinityCodec, DecodedAffinityBlob } from '../../shared/affinity/index.ts';
 import type { GeminiGenerateContentPart, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 
-interface GeminiGenerateContentBlobLocation {
+interface BlobLocation {
   readonly contentIndex: number;
   readonly partIndex: number;
   readonly decoded: DecodedAffinityBlob;
@@ -15,18 +20,25 @@ const hasPartContent = (part: GeminiGenerateContentPart): boolean => {
 export const analyzeGeminiGenerateContentAffinity = async (
   payload: GeminiGenerateContentPayload,
   codec: AffinityCodec,
-): Promise<AffinityRequestAnalysis<GeminiGenerateContentPayload>> => {
-  const locations: GeminiGenerateContentBlobLocation[] = [];
+): Promise<RouteAffinityRequestAnalysis<GeminiGenerateContentPayload>> => {
+  const locations: BlobLocation[] = [];
   for (const [contentIndex, content] of (payload.contents ?? []).entries()) {
     if (content.role !== 'model') continue;
     for (const [partIndex, part] of (content.parts ?? []).entries()) {
       if (typeof part.thoughtSignature !== 'string') continue;
-      locations.push({ contentIndex, partIndex, decoded: await codec.unwrap(part.thoughtSignature, 'gemini-generate-content.part.thoughtSignature') });
+      locations.push({
+        contentIndex,
+        partIndex,
+        decoded: await codec.unwrap(part.thoughtSignature, 'gemini-generate-content.part.thoughtSignature'),
+      });
     }
   }
 
-  return defineAffinityRequest([], candidate => {
-    const projections = locations.map(location => ({ location, projection: projectOptionalAffinityBlob(location.decoded, candidate) }));
+  return defineRouteAffinityRequest([], candidate => {
+    const projections = locations.map(location => ({
+      location,
+      projection: projectOptionalRouteAffinityBlob(location.decoded, candidate),
+    }));
     return {
       kind: 'accepted',
       degrades: projections.some(item => item.projection.kind === 'remove' && item.projection.degrades),
@@ -56,7 +68,8 @@ export const analyzeGeminiGenerateContentAffinity = async (
           });
           if (content.parts.length === 0) emptiedByAffinity.add(contentIndex);
         }
-        candidatePayload.contents = candidatePayload.contents.filter((_content, contentIndex) => !emptiedByAffinity.has(contentIndex));
+        candidatePayload.contents = candidatePayload.contents.filter((_content, contentIndex) =>
+          !emptiedByAffinity.has(contentIndex));
         return candidatePayload;
       },
     };

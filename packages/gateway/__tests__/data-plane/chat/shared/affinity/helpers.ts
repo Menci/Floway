@@ -1,9 +1,9 @@
-import type { AffinityRequestAnalysis, CandidateAffinityEvaluation } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import type { ModelCandidate } from '@floway-dev/provider';
+import type { CandidateAffinityEvaluation, RouteAffinityRequestAnalysis } from '../../../../../src/data-plane/chat/pipeline/index.ts';
+import type { RouteCandidate } from '@floway-dev/provider';
 
 export const acceptedAffinityEvaluation = <T>(
-  analysis: AffinityRequestAnalysis<T>,
-  candidate: ModelCandidate,
+  analysis: RouteAffinityRequestAnalysis<T>,
+  candidate: RouteCandidate,
 ): Extract<CandidateAffinityEvaluation<T>, { kind: 'accepted' }> => {
   const evaluation = analysis.evaluateCandidate(candidate);
   if (evaluation.kind === 'rejected') {

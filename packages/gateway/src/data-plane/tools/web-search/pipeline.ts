@@ -1,5 +1,5 @@
 import {
-  executeOperationToText,
+  executeOperationToIr,
   parseWebSearchOperations,
   renderWebSearchCallOutput,
   runBackendSearchMulti,
@@ -9,7 +9,12 @@ import {
   type WebSearchFilters,
   type WebSearchOperation,
 } from './operations.ts';
-import type { ConfiguredWebSearchProvider } from './types.ts';
+import { runWebSearchAndRecordUsage } from './search.ts';
+import type {
+  ConfiguredWebSearchProvider,
+  WebSearchProviderRequest,
+  WebSearchProviderResult,
+} from './types.ts';
 import { filterInboundHeaderEntries } from '../../pipeline/headers.ts';
 import type { GatewayPipelineServices } from '../../pipeline/services.ts';
 import { defineStage, dispatch, handoff, pipeline, terminal } from '@floway-dev/pipeline';
@@ -37,7 +42,11 @@ export type LocalWebSearchSubInput =
     readonly includeSearchActionSources: boolean;
   };
 
-export type LocalWebSearchSubOutput = string | WebSearchCallIR;
+export type LocalWebSearchSubOutput = WebSearchCallIR;
+
+export interface ProviderWebSearchSubInput {
+  readonly 'web-search.request': WebSearchProviderRequest;
+}
 
 export interface WebSearchPipelineServices extends GatewayPipelineServices {
   readonly webSearchProvider: () => Promise<ConfiguredWebSearchProvider>;
@@ -106,7 +115,7 @@ const localWebSearchStage = defineStage<
 
     const batch = await startBatchFetch({ kind: 'ops', ops: [facts.op] }, session);
     return await next({
-      'web-search.result': await executeOperationToText(facts.op, session, batch),
+      'web-search.result': await executeOperationToIr(facts.op, session, batch),
     });
   },
 });
@@ -126,5 +135,30 @@ export const localWebSearchSubPipeline: Pipeline<
     execute: async facts => facts['web-search.result'],
   }));
 
+export const providerWebSearchSubPipeline: Pipeline<
+  ProviderWebSearchSubInput,
+  WebSearchProviderResult,
+  WebSearchPipelineServices
+> = pipeline<ProviderWebSearchSubInput>('web-search.provider')
+  .end(terminal<
+    ProviderWebSearchSubInput,
+    WebSearchProviderResult,
+    WebSearchPipelineServices
+  >({
+    name: 'web-search.provider.end',
+    execute: async (facts, env) => {
+      const configured = await env.webSearchProvider();
+      if (configured.type !== 'enabled') {
+        throw new Error(`Web search provider is not enabled (${configured.type})`);
+      }
+      return await runWebSearchAndRecordUsage({
+        provider: configured.impl,
+        providerName: configured.provider,
+        keyId: env.apiKeyId,
+        request: facts['web-search.request'],
+      });
+    },
+  }));
+
 export const localWebSearchText = (output: LocalWebSearchSubOutput): string =>
-  typeof output === 'string' ? output : renderWebSearchCallOutput(output);
+  renderWebSearchCallOutput(output);

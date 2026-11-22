@@ -1,27 +1,31 @@
 import type { Context } from 'hono';
 
+import { openaiResponsesAttemptPipeline } from './attempt-pipeline.ts';
 import { wrapOpenAIResponsesClientEgress } from './client-output.ts';
 import { createOpenAIResponsesWsSession } from './items/store.ts';
 import { OPENAI_RESPONSES_REASONING_INCLUDED_HEADER, OPENAI_RESPONSES_REASONING_INCLUDED_VALUE } from './response-headers.ts';
 import { createOpenAIResponsesResponseId } from './response-id.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
-import { openaiResponsesServe } from './serve.ts';
+import { prepareOpenAIResponsesTurn } from './serve.ts';
 import type { DumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
-import { inboundHeaders } from '../../shared/inbound-headers.ts';
+import { buildDownstreamWireUrl, inboundHeaderEntriesFromHono } from '../../pipeline/index.ts';
 import { takeRequestBody } from '../../shared/request-body.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
+import { createChatPipelineServices, failoverChatCandidates, type ChatAttemptOutcome, type ChatPipelineServices } from '../pipeline/index.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, type StreamCompletion } from '../shared/respond.ts';
+import { SourceStreamState, type StreamCompletion } from '../shared/respond.ts';
+import { defineStage, dispatch, handoff, pipeline, runPipeline } from '@floway-dev/pipeline';
+import type { HeaderEntry, Pipeline, WireRequestSnapshot } from '@floway-dev/pipeline';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { eventFrame, isJsonMediaType, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, canonicalizeOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesOutputItemEx, type OpenAIResponsesRequestPayloadEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { type ExecuteResult, decodeResponseBody, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
+import { decodeResponseBody, headersFromEntries, internalDebugErrorFields, toInternalDebugError, type RouteCandidate } from '@floway-dev/provider';
 
 interface WorkerWebSocket extends WebSocket {
   accept(): void;
@@ -33,6 +37,114 @@ interface OpenAIResponsesWebSocketSocket {
 }
 
 const UTF8_ENCODER = new TextEncoder();
+
+export interface OpenAIResponsesWsTurnInput {
+  readonly 'request.http': WireRequestSnapshot;
+  readonly 'request.inboundHeaders': readonly HeaderEntry[];
+  readonly 'request.payload': CanonicalOpenAIResponsesPayload;
+}
+
+interface WsPreparedFacts extends OpenAIResponsesWsTurnInput {
+  readonly 'route.candidates': readonly { readonly candidate: RouteCandidate; readonly payload: CanonicalOpenAIResponsesPayload }[];
+}
+
+interface WsAttemptFacts extends OpenAIResponsesWsTurnInput {
+  readonly 'route.candidate': RouteCandidate;
+}
+
+const rawMessageJson = (bytes: Uint8Array): unknown => JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+
+const wsTurnEdge = defineStage<
+  OpenAIResponsesWsTurnInput,
+  Record<never, never>,
+  ChatAttemptOutcome<OpenAIResponsesStreamEventEx>,
+  ChatAttemptOutcome<OpenAIResponsesStreamEventEx>,
+  never,
+  ChatPipelineServices
+>({
+  name: 'openai-responses.websocket.turn',
+  tap: 'downstream',
+  execute: async (_facts, next) => {
+    try {
+      return await next();
+    } catch (error) {
+      if (!(error instanceof PreviousResponseNotFoundError)) throw error;
+      return {
+        type: 'api-error',
+        source: 'gateway',
+        http: {
+          status: 400,
+          headers: Object.freeze([Object.freeze(['content-type', 'application/json'] as const)]),
+        },
+        body: new TextEncoder().encode(JSON.stringify({
+          error: {
+            message: `Previous response with id '${error.previousResponseId}' not found.`,
+            type: 'invalid_request_error',
+            param: 'previous_response_id',
+            code: 'previous_response_not_found',
+          },
+        })),
+      };
+    }
+  },
+});
+
+const wsPrepare = defineStage<
+  OpenAIResponsesWsTurnInput,
+  Pick<WsPreparedFacts, 'route.candidates' | 'request.payload'>,
+  ChatAttemptOutcome<OpenAIResponsesStreamEventEx>,
+  ChatAttemptOutcome<OpenAIResponsesStreamEventEx>,
+  never,
+  ChatPipelineServices
+>({
+  name: 'gateway.openai-responses.websocket.prepare',
+  provides: ['route.candidates', 'request.payload'],
+  execute: async (facts, next, env) => {
+    const prepared = await prepareOpenAIResponsesTurn(facts['request.payload'], env);
+    if (!prepared.ok) return prepared.failure;
+    return await next({ 'route.candidates': prepared.entries, 'request.payload': prepared.payload });
+  },
+});
+
+const wsFailover = defineStage<
+  WsPreparedFacts,
+  Pick<WsAttemptFacts, 'route.candidate' | 'request.payload'>,
+  ChatAttemptOutcome<OpenAIResponsesStreamEventEx>,
+  ChatAttemptOutcome<OpenAIResponsesStreamEventEx>,
+  'route.candidates',
+  ChatPipelineServices
+>({
+  name: 'gateway.openai-responses.websocket.failover',
+  consumes: ['route.candidates'],
+  provides: ['route.candidate', 'request.payload'],
+  execute: async (facts, next, env) => {
+    const selected = await failoverChatCandidates({
+      entries: facts['route.candidates'],
+      invocationLabel: 'openaiResponsesWebSocket.generate',
+      env,
+      run: entry => next({ 'route.candidate': entry.candidate, 'request.payload': entry.payload }),
+    });
+    return selected.outcome;
+  },
+});
+
+export const openaiResponsesWebSocketTurnPipeline: Pipeline<
+  OpenAIResponsesWsTurnInput,
+  ChatAttemptOutcome<OpenAIResponsesStreamEventEx>,
+  ChatPipelineServices
+> = pipeline<OpenAIResponsesWsTurnInput>('gateway.openai-responses.websocket.turn')
+  .use(wsTurnEdge)
+  .use(wsPrepare)
+  .use(wsFailover)
+  .end(dispatch<WsAttemptFacts, ChatAttemptOutcome<OpenAIResponsesStreamEventEx>, ChatPipelineServices>({
+    name: 'gateway.openai-responses.websocket.turn.dispatch',
+    select: facts => handoff(openaiResponsesAttemptPipeline, {
+      'route.candidate': facts['route.candidate'],
+      'request.inboundHeaders': facts['request.inboundHeaders'],
+      'request.payload': facts['request.payload'],
+      'request.action': 'generate',
+    }),
+  }));
 
 // Our implementor slug prefixes the keep-alive's wire type; the spec reserves
 // every unprefixed type for itself, gives `acme:trace_event` as the form, and
@@ -368,6 +480,7 @@ const handleClientMessage = async (
       return;
     }
     previousResponseId = payload.previous_response_id ?? undefined;
+    const wireMessageJson = rawMessageJson(requestBody.bytes);
     ctx = createChatGatewayCtxFromHono(c, {
       wantsStream: true,
       downstreamAbortController,
@@ -380,29 +493,29 @@ const handleClientMessage = async (
       backgroundScheduler,
     }, (apiKey, requestStartedAt) => session.createStore(apiKey, requestStartedAt, payload.store ?? undefined));
 
-    let result;
-    try {
-      result = await openaiResponsesServe.generate({ payload, ctx, headers: inboundHeaders(c) });
-    } catch (error) {
-      if (signal.aborted || isClosed()) return;
-      // The HTTP entry renders this verbatim envelope as a 400; WS surfaces the
-      // same body nested under the spec's WebSocket error envelope so clients
-      // can still compare error.message byte-for-byte against upstream.
-      if (error instanceof PreviousResponseNotFoundError) {
-        turnFailure.fail(400, {
-          message: error.message,
-          type: 'invalid_request_error',
-          param: 'previous_response_id',
-          code: 'previous_response_not_found',
-        });
-        ctx.dump?.failed(error);
-        ctx.dump?.finalize(400, []);
-        return;
-      }
-      throw error;
-    }
-
-    await respondOpenAIResponsesWebSocket({ socket, eventId, signal, isClosed, result, ctx, payload, turnFailure, turn });
+    const services = createChatPipelineServices(ctx);
+    const inboundHeaders = inboundHeaderEntriesFromHono(c);
+    const result = await runPipeline(
+      openaiResponsesWebSocketTurnPipeline,
+      {
+        'request.http': {
+          method: 'WS',
+          url: buildDownstreamWireUrl(c.req.url),
+          headers: inboundHeaders,
+          body: wireMessageJson,
+          protocol: 'openai-responses-ws',
+        },
+        'request.inboundHeaders': inboundHeaders,
+        'request.payload': payload,
+      },
+      {
+        services,
+        signal,
+        waitUntil: backgroundScheduler,
+        meta: { transport: 'websocket', action: 'generate' },
+      },
+    );
+    await respondOpenAIResponsesWebSocket({ socket, eventId, signal, isClosed, result, ctx, payload, turnFailure, turn, services });
   } catch (error) {
     if (signal.aborted || isClosed()) return;
     if (error instanceof WebSocketClientMessageError) {
@@ -415,11 +528,10 @@ const handleClientMessage = async (
     }
     turnFailure.fail(500, serverErrorEnvelope(error));
     if (ctx !== undefined) {
-      // Mid-attempt throws (interceptor bug, translation error, provider-layer JS
-      // exception not represented as a ChatServeFailure) never reach the
-      // respondOpenAIResponsesWebSocket result branches, so their `recordFailedRequest`
-      // call would be skipped. Attribute the failure to the last upstream stamped
-      // synchronously by `openaiResponsesServe.generate`, matching the HTTP transports.
+      // Pipeline or provider exceptions that bypass a structured ChatServeFailure
+      // never reach the response branches below, so their `recordFailedRequest`
+      // call would otherwise be skipped. Attribute the failure to the last
+      // upstream stamped synchronously by the native turn runner.
       recordFailedRequest(ctx, ctx.attempt.telemetry);
       ctx.dump?.failed(error);
       ctx.dump?.finalize(500, []);
@@ -448,17 +560,19 @@ const respondOpenAIResponsesWebSocket = async (input: {
   readonly eventId: string | undefined;
   readonly signal: AbortSignal;
   readonly isClosed: () => boolean;
-  readonly result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>;
+  readonly result: ChatAttemptOutcome<OpenAIResponsesStreamEventEx>;
   readonly ctx: ChatGatewayCtx;
   readonly payload: CanonicalOpenAIResponsesPayload;
   readonly turnFailure: OpenAIResponsesWsTurnFailure;
   readonly turn: ActiveOpenAIResponsesWebSocketTurn;
+  readonly services: ChatPipelineServices;
 }): Promise<void> => {
-  const { socket, eventId, signal, isClosed, result, ctx, payload, turnFailure, turn } = input;
+  const { socket, eventId, signal, isClosed, result, ctx, payload, turnFailure, turn, services } = input;
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstreamId);
-    const { status, headers } = result.http;
+    const { status } = result.http;
+    const headers = headersFromEntries(result.http.headers);
     const error = normalizeErrorBody(parseMaybeJson(result.body, headers), status);
     turnFailure.fail(status, error, headers.get('retry-after') ?? undefined);
     ctx.dump?.finalize(status, []);
@@ -469,6 +583,14 @@ const respondOpenAIResponsesWebSocket = async (input: {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
     turnFailure.fail(result.http.status, internalErrorEnvelope(result.error));
+    ctx.dump?.finalize(result.http.status, []);
+    return;
+  }
+
+  if (result.type === 'plain') {
+    const headers = headersFromEntries(result.http.headers);
+    const error = normalizeErrorBody(parseMaybeJson(result.body, headers), result.http.status);
+    turnFailure.fail(result.http.status, error, headers.get('retry-after') ?? undefined);
     ctx.dump?.finalize(result.http.status, []);
     return;
   }
@@ -661,7 +783,10 @@ const respondOpenAIResponsesWebSocket = async (input: {
     turnFailure.fail(500, serverErrorEnvelope(error));
   } finally {
     turn.requestInterrupt = undefined;
-    const metadata = await eventResultMetadata(result);
+    const metadata = services.usageLedger.read(result.usageId, {
+      modelIdentity: result.modelIdentity,
+      performance: result.performance,
+    });
     const failed = state.failedAfter(completion);
     if (failed) {
       // `fail` cannot carry the eviction for every failed turn: one that
@@ -846,7 +971,7 @@ const parseMaybeJson = (body: Uint8Array | null, headers: Headers): unknown => {
   }
 };
 
-const internalErrorEnvelope = (error: Extract<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>, { type: 'internal-error' }>['error']): Record<string, unknown> => ({
+const internalErrorEnvelope = (error: Extract<ChatAttemptOutcome<OpenAIResponsesStreamEventEx>, { type: 'internal-error' }>['error']): Record<string, unknown> => ({
   type: error.type,
   code: error.type,
   message: error.message,

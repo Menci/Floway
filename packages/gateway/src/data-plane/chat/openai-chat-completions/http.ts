@@ -1,33 +1,34 @@
-import { respondOpenAIChatCompletions } from './respond.ts';
-import { openaiChatCompletionsServe } from './serve.ts';
+import { openaiChatCompletionsPipeline, type OpenAIChatCompletionsPipelineInput } from './pipeline.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
-import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../../shared/gateway-ctx.ts';
-import { inboundHeaders } from '../../shared/inbound-headers.ts';
+import { buildDownstreamWireUrl, inboundHeaderEntriesFromHono } from '../../pipeline/index.ts';
+import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
+import { openaiInternalErrorPayload } from '../../shared/openai-errors.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
+import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { providerModelsUnavailableResponse } from '../../shared/upstream-response.ts';
 import { createNonOpenAIResponsesSourceStore } from '../openai-responses/items/store.ts';
+import { createChatPipelineServices, runGatewayChatHttpPipeline } from '../pipeline/index.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
-import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
+import { toInternalDebugError } from '@floway-dev/provider';
 
-// Surfaces a pre-stream throw (malformed JSON body, an interceptor crash,
-// etc.) as an OpenAI Chat Completions-shaped 502 with the same internal-error
-// envelope the in-flow `internal-error` ExecuteResult produces. A
-// `ProviderModelsUnavailableError` carrying an upstream HTTP body relays
-// that body verbatim — the upstream's `/models` 401 IS the diagnostic. The
-// caller passes its outer `ctx` when one was already constructed (so the
-// dump row preserves the model attribution the request-time
-// `requestedModel` stamped, and the throwing-candidate telemetry stamped
-// in serve.ts survives onto the error row); a fresh ctx is minted only
-// for pre-parse failures where no payload was available to read model from.
-const respondWithInternalError = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
+const respondWithInternalError = (
+  c: AuthedContext,
+  error: unknown,
+  requestBody: RequestBody,
+  ctx: ChatGatewayCtx | undefined,
+): Response => {
   const verbatim = providerModelsUnavailableResponse(error);
   if (verbatim !== null) return verbatim;
-  const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
-  const result = internalErrorResult(502, toInternalDebugError(error), effectiveCtx.attempt.telemetry);
-  const response = await respondOpenAIChatCompletions(c, result, false, false, effectiveCtx);
-  return finalizeGatewayResponse(effectiveCtx, response);
+  const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, {
+    wantsStream: false,
+    requestBody: takeRequestBody(requestBody),
+    backgroundScheduler: backgroundSchedulerFromContext(c),
+  });
+  recordFailedRequest(effectiveCtx, effectiveCtx.attempt.telemetry);
+  effectiveCtx.dump?.failed(error);
+  return finalizeGatewayResponse(effectiveCtx, Response.json(openaiInternalErrorPayload(toInternalDebugError(error)), { status: 502 }));
 };
 
 export const openaiChatCompletionsHttp = {
@@ -36,7 +37,6 @@ export const openaiChatCompletionsHttp = {
     let ctx: ChatGatewayCtx | undefined;
     try {
       const payload = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as OpenAIChatCompletionsPayloadEx;
-      const wantsStream = payload.stream === true;
       const nullableField = payload.prompt_cache_options === null
         ? 'prompt_cache_options'
         : payload.user === null
@@ -52,19 +52,33 @@ export const openaiChatCompletionsHttp = {
           },
         }, 400);
       }
-      // Read the caller's intent BEFORE any interceptor mutates
-      // `payload.stream_options.include_usage`. Capturing it here means the
-      // downstream renderer never needs to consult per-request Hono context
-      // slots — the value lives in this http-entry closure for the duration of
-      // the request.
-      const includeUsageChunk = payload.stream_options?.include_usage === true;
-      const expectedChoices = payload.n ?? undefined;
-      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonOpenAIResponsesSourceStore(apiKey.id));
-      const result = await openaiChatCompletionsServe.generate({ payload, ctx, headers: inboundHeaders(c) });
-      const response = await respondOpenAIChatCompletions(c, result, wantsStream, includeUsageChunk, ctx, expectedChoices);
-      return finalizeGatewayResponse(ctx, response);
+
+      const inboundHeaders = inboundHeaderEntriesFromHono(c);
+      ctx = createChatGatewayCtxFromHono(c, {
+        wantsStream: payload.stream === true,
+        requestBody: takeRequestBody(requestBody),
+        model: payload.model,
+        backgroundScheduler: backgroundSchedulerFromContext(c),
+      }, apiKey => createNonOpenAIResponsesSourceStore(apiKey.id));
+      const input: OpenAIChatCompletionsPipelineInput = {
+        'request.http': {
+          method: c.req.method,
+          url: buildDownstreamWireUrl(c.req.url),
+          headers: inboundHeaders,
+          body: { kind: 'json', value: payload },
+          protocol: 'openai-chat-completions',
+        },
+        'request.inboundHeaders': inboundHeaders,
+        'request.payload': payload,
+        'request.wantsStream': payload.stream === true,
+        'request.includeUsageChunk': payload.stream_options?.include_usage === true,
+        'request.expectedChoices': payload.n ?? 1,
+      };
+      return await runGatewayChatHttpPipeline(c, ctx, openaiChatCompletionsPipeline, input, {
+        services: createChatPipelineServices(ctx),
+      });
     } catch (error) {
-      return await respondWithInternalError(c, error, requestBody, ctx);
+      return respondWithInternalError(c, error, requestBody, ctx);
     }
   },
 };

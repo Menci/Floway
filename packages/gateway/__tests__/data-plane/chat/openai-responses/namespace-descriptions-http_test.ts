@@ -80,7 +80,8 @@ test.each(wireOutcomes)('HTTP $representation preserves namespace allowed_tools 
       await flushBackground();
       return;
     }
-    const resource = await response.json() as OpenAIResponsesResultEx;
+    const resource = await response.json() as OpenAIResponsesResultEx & { error?: unknown };
+    if (response.status !== 200) throw new Error(JSON.stringify(resource));
     assertEquals(response.status, 200);
     assertEquals(resource.status, 'completed');
     assertEquals(resource.tool_choice, choice);

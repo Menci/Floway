@@ -218,27 +218,32 @@ export const materializeDownstreamResponse = (
   });
 };
 
-export interface RunGatewayHttpPipelineOptions {
+export interface RunGatewayHttpPipelineOptions<
+  Services extends GatewayPipelineServices = GatewayPipelineServices,
+> {
   readonly traceSink?: RunTraceSink;
-  readonly services?: GatewayPipelineServices;
+  readonly services?: Services;
 }
 
 export const runGatewayHttpPipeline = async <
   In extends { readonly 'request.http': WireRequestSnapshot },
+  Services extends GatewayPipelineServices = GatewayPipelineServices,
 >(
   c: AuthedContext,
   ctx: GatewayCtx,
-  pipe: Pipeline<In, DownstreamHttpOutcome, GatewayPipelineServices>,
+  pipe: Pipeline<In, DownstreamHttpOutcome, Services>,
   input: In,
-  options: RunGatewayHttpPipelineOptions = {},
+  ...[options]: GatewayPipelineServices extends Services
+    ? [options?: RunGatewayHttpPipelineOptions<Services>]
+    : [options: RunGatewayHttpPipelineOptions<Services> & { readonly services: Services }]
 ): Promise<Response> => {
-  const services = options.services ?? createGatewayPipelineServices(ctx);
+  const resolvedServices = (options?.services ?? createGatewayPipelineServices(ctx)) as Services;
   const outcome = await runPipeline(pipe, input, {
-    services,
+    services: resolvedServices,
     signal: ctx.abortSignal,
     waitUntil: ctx.backgroundScheduler,
-    ...(options.traceSink === undefined ? {} : { traceSink: options.traceSink }),
+    ...(options?.traceSink === undefined ? {} : { traceSink: options.traceSink }),
   });
-  const response = materializeDownstreamResponse(c, services, outcome);
+  const response = materializeDownstreamResponse(c, resolvedServices, outcome);
   return finalizeGatewayResponse(ctx, response);
 };

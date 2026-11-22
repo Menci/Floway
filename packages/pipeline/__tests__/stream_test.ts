@@ -683,4 +683,57 @@ describe('ManagedStream lifecycle', () => {
     expect(events.at(-1)).toMatchObject({ k: 'done', ok: true });
     expect(leaseReleased).toBe(true);
   });
+
+  it('provides a lazy streamEnv to wrapStream transforms and aborts lazy sub-runs on stream close', async () => {
+    let subRunAborted = false;
+    let startedSubRun!: () => void;
+    const subRunStarted = new Promise<void>(resolve => { startedSubRun = resolve; });
+    const slowSubPipeline = pipeline<{ readonly query: string }>('slow-sub').end(
+      terminal<{ readonly query: string }, string, { readonly prefix: string }>('slow-sub-end', async (facts, env) => {
+        startedSubRun();
+        return await new Promise<string>((resolve, reject) => {
+          if (env.signal.aborted) {
+            subRunAborted = true;
+            reject(env.signal.reason ?? new Error('aborted'));
+            return;
+          }
+          env.signal.addEventListener('abort', () => {
+            subRunAborted = true;
+            reject(env.signal.reason ?? new Error('aborted'));
+          }, { once: true });
+          void resolve;
+          void facts;
+        });
+      }),
+    );
+
+    const host = pipeline<Record<never, never>>('wrap-lazy-host').end(
+      terminal<Record<never, never>, ManagedStream<string>, { readonly prefix: string }>('wrap-lazy-end', async (_facts, env) => {
+        const inner = env.createStream<string>({
+          label: 'inner',
+          async *iterate() {
+            yield 'seed';
+          },
+        });
+        return env.wrapStream(inner, {
+          label: 'outer',
+          async *transform(source, _signal, streamEnv) {
+            for await (const item of source) {
+              yield `${streamEnv.prefix}:${item}`;
+              yield await streamEnv.spawnSubRun(slowSubPipeline, { query: item });
+            }
+          },
+        });
+      }),
+    );
+
+    const out = await runPipeline(host, {}, { services: { prefix: 'svc' } });
+    const iterator = out[Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toEqual({ value: 'svc:seed', done: false });
+    const pendingSecond = iterator.next();
+    await subRunStarted;
+    await out.close('downstream-cancelled');
+    await expect(pendingSecond).resolves.toEqual({ value: undefined, done: true });
+    expect(subRunAborted).toBe(true);
+  });
 });

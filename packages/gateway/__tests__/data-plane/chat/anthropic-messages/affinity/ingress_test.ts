@@ -1,27 +1,30 @@
 import { expect, test } from 'vitest';
 
 import { analyzeAnthropicMessagesAffinity } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/ingress.ts';
+import type { RouteAffinityRequestAnalysis, CandidateAffinityEvaluation } from '../../../../../src/data-plane/chat/pipeline/index.ts';
 import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
-import type { ModelCandidate } from '@floway-dev/provider';
-import { stubModelCandidate } from '@floway-dev/test-utils';
+import { stubRouteCandidate } from '../../../../test-utils/chat-pipeline.ts';
+import type { RouteCandidate } from '@floway-dev/provider';
 
 const codec = new AffinityCodec('22'.repeat(32));
 
-const candidate = (upstream: string): ModelCandidate => {
-  const base = stubModelCandidate();
-  return stubModelCandidate({
-    provider: { ...base.provider, upstreamId: upstream },
-    model: { id: 'model' },
-  });
-};
+const candidate = (upstream: string): RouteCandidate => stubRouteCandidate({ upstreamId: upstream, modelId: 'model' });
 
-const targetFor = (value: ModelCandidate): AffinityIdentity => ({
-  upstreamId: value.provider.upstreamId,
-  modelId: value.model.id,
+const targetFor = (value: RouteCandidate): AffinityIdentity => ({
+  upstreamId: value.upstreamId,
+  modelId: value.modelId,
   ...(value.rules !== undefined ? { rules: value.rules } : {}),
-  opaqueBlobCompatibilityIdentity: { upstreamId: value.provider.upstreamId, key: value.model.id },
+  opaqueBlobCompatibilityIdentity: { upstreamId: value.upstreamId, key: value.upstreamModelId },
 });
+
+const acceptedAffinityEvaluation = <T>(
+  analysis: RouteAffinityRequestAnalysis<T>,
+  value: RouteCandidate,
+): Extract<CandidateAffinityEvaluation<T>, { kind: 'accepted' }> => {
+  const evaluation = analysis.evaluateCandidate(value);
+  if (evaluation.kind === 'rejected') throw new Error('Expected accepted affinity candidate');
+  return evaluation;
+};
 
 test('removes thinking and redacted blocks whose affinity belongs to another candidate', async () => {
   const candidateA = candidate('upstream-a');

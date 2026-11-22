@@ -1,5 +1,6 @@
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
 import { mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
+import type { ChatAttemptOutcome } from '../pipeline/index.ts';
 import { inputErrorFields, type ChatServeFailure, type InputErrorDetails } from '../shared/errors.ts';
 import { geminiGenerateContentStatusForHttpStatus, type GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
 import { decodeResponseBody, internalDebugErrorFields, type ApiErrorResult, type PerformanceTelemetryContext, type InternalDebugError, type InternalErrorResult } from '@floway-dev/provider';
@@ -136,4 +137,48 @@ export const normalizeGeminiGenerateContentFailure = (result: ApiErrorResult | I
       message || 'Upstream Gemini generateContent request failed.',
     ))),
   };
+};
+
+const headerEntriesToHeaders = (
+  entries: readonly (readonly [string, string | import('@floway-dev/pipeline').Secret<string>])[],
+): Headers => {
+  const headers = new Headers();
+  for (const [name, value] of entries) headers.append(name, typeof value === 'string' ? value : value.reveal());
+  return headers;
+};
+
+const headersToHeaderEntries = (
+  headers: Headers,
+): readonly (readonly [string, string])[] => Object.freeze(
+  [...headers.entries()].map(([name, value]) => Object.freeze([name, value] as const)),
+);
+
+export const normalizeGeminiChatFailure = <TEvent>(
+  outcome: ChatAttemptOutcome<TEvent>,
+): ChatAttemptOutcome<TEvent> => {
+  if (outcome.type === 'events' || outcome.type === 'plain') return outcome;
+
+  const normalized = normalizeGeminiGenerateContentFailure({
+    type: outcome.type,
+    ...(outcome.type === 'api-error'
+      ? {
+          source: outcome.source,
+          ...(outcome.upstreamId === undefined ? {} : { upstreamId: outcome.upstreamId }),
+        }
+      : { error: outcome.error }),
+    http: {
+      status: outcome.http.status,
+      headers: headerEntriesToHeaders(outcome.http.headers),
+    },
+    ...(outcome.type === 'api-error' ? { body: outcome.body } : {}),
+    ...(outcome.performance === undefined ? {} : { performance: outcome.performance }),
+  } as never);
+  return {
+    ...normalized,
+    http: {
+      ...outcome.http,
+      status: normalized.http.status,
+      headers: headersToHeaderEntries(normalized.http.headers),
+    },
+  } as ChatAttemptOutcome<TEvent>;
 };

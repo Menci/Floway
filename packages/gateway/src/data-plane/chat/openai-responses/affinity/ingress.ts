@@ -1,18 +1,15 @@
 import {
-  type AffinityCodec,
-  type AffinityIdentity,
-  type AffinityRequestAnalysis,
-  affinityIdentityOf,
-  candidateSatisfiesAffinityIdentity,
-  type DecodedAffinityBlob,
-  defineAffinityRequest,
+  defineRouteAffinityRequest,
+  projectOptionalRouteAffinityBlob,
+  projectRequiredRouteAffinityBlob,
+  routeCandidateSatisfiesAffinityIdentity,
   type OptionalAffinityBlobProjection,
-  projectOptionalAffinityBlob,
-  projectRequiredAffinityBlob,
-} from '../../shared/affinity/index.ts';
-import { isOpenAIResponsesCompactShimItem } from '../interceptors/compact-shim.ts';
+  type RouteAffinityRequestAnalysis,
+} from '../../pipeline/index.ts';
+import type { AffinityCodec, AffinityIdentity, DecodedAffinityBlob } from '../../shared/affinity/index.ts';
+import { isOpenAIResponsesCompactShimItem } from '../stages/compact-shim.ts';
 import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
-import type { ModelCandidate } from '@floway-dev/provider';
+import type { RouteCandidate } from '@floway-dev/provider';
 
 interface OpenAIResponsesBlobLocation {
   readonly itemIndex: number;
@@ -109,7 +106,10 @@ const analyzeOpenAIResponsesRequest = (
     const blobs = itemLocations.map(location => {
       const required = blobRequiresOriginalTarget(item, location.decoded);
       if (location.decoded.kind === 'owned') {
-        latestOwnedTarget = affinityIdentityOf(location.decoded);
+        latestOwnedTarget = {
+          ...location.decoded.affinity,
+          opaqueBlobCompatibilityIdentity: location.decoded.opaqueBlobCompatibilityIdentity,
+        };
         if (required) requiredTargets.push(latestOwnedTarget);
       }
       return { ...location, required };
@@ -172,7 +172,7 @@ const materializeOpenAIResponsesPayload = (
 const evaluateOpenAIResponsesCandidate = (
   payload: CanonicalOpenAIResponsesPayload,
   analysis: OpenAIResponsesRequestAnalysis,
-  candidate: ModelCandidate,
+  candidate: RouteCandidate,
 ) => {
   const unsatisfiedTargets: AffinityIdentity[] = [];
   const projectionsByItem = new Map<number, readonly OpenAIResponsesBlobCandidateProjection[] | null>();
@@ -181,14 +181,14 @@ const evaluateOpenAIResponsesCandidate = (
   for (const item of analysis.items) {
     if (
       item.inheritedRequiredTarget !== undefined
-      && !candidateSatisfiesAffinityIdentity(candidate, item.inheritedRequiredTarget)
+      && !routeCandidateSatisfiesAffinityIdentity(candidate, item.inheritedRequiredTarget)
     ) unsatisfiedTargets.push(item.inheritedRequiredTarget);
 
     const projections: OpenAIResponsesBlobCandidateProjection[] = [];
     for (const blob of item.blobs) {
       const projection = blob.required
-        ? projectRequiredAffinityBlob(blob.decoded, candidate)
-        : projectOptionalAffinityBlob(blob.decoded, candidate);
+        ? projectRequiredRouteAffinityBlob(blob.decoded, candidate)
+        : projectOptionalRouteAffinityBlob(blob.decoded, candidate);
       if (projection.kind === 'reject') {
         unsatisfiedTargets.push(projection.requiredTarget);
         continue;
@@ -211,8 +211,8 @@ const evaluateOpenAIResponsesCandidate = (
       if (item.inheritedRequiredTarget !== undefined) {
         const target = item.inheritedRequiredTarget;
         if (
-          candidate.provider.upstreamId !== target.upstreamId
-          || candidate.model.id !== target.modelId
+          candidate.upstreamId !== target.upstreamId
+          || candidate.modelId !== target.modelId
         ) return false;
       }
       return (projectionsByItem.get(item.itemIndex) ?? []).every(projection => projection.projection.preferred);
@@ -224,10 +224,10 @@ const evaluateOpenAIResponsesCandidate = (
 export const analyzeOpenAIResponsesAffinity = async (
   payload: CanonicalOpenAIResponsesPayload,
   codec: AffinityCodec,
-): Promise<AffinityRequestAnalysis<CanonicalOpenAIResponsesPayload>> => {
+): Promise<RouteAffinityRequestAnalysis<CanonicalOpenAIResponsesPayload>> => {
   const locations = await opaqueBlobLocations(payload.input, codec);
   const analysis = analyzeOpenAIResponsesRequest(payload.input, locations);
-  return defineAffinityRequest(
+  return defineRouteAffinityRequest(
     analysis.requiredTargets,
     candidate => evaluateOpenAIResponsesCandidate(payload, analysis, candidate),
   );

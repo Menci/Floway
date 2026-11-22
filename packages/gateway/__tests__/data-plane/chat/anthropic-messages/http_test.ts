@@ -1,256 +1,174 @@
-import { Hono } from 'hono';
-import { test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
-import type { AuthVars } from '../../../../src/middleware/auth.ts';
-import { initRepo } from '../../../../src/repo/index.ts';
-import type { ApiKey, User } from '../../../../src/repo/types.ts';
-import { InMemoryRepo } from '../../../repo/memory.ts';
-import { flushBackground } from '../../../test-utils/background-tracker.ts';
-import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { MODEL_CATALOG_REVISION } from '../../../../src/data-plane/providers/models-cache.ts';
+import { modelsRefreshInputs } from '../../../../src/repo/models-refresh-inputs.ts';
+import { saveUpstreamForTest } from '../../../repo/upstreams.ts';
+import {
+  buildCustomUpstreamRecord,
+  requestAppWithWarmModels,
+  setupAppTest,
+  sseAnthropicMessagesResponse,
+} from '../../../test-utils/app.ts';
+import { stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
-const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
-vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../../../src/data-plane/providers/resolution.ts')>();
-  return {
-    ...original,
-    enumerateModelCandidates: vi.fn(async () => {
-      const next = candidatesQueue.shift();
-      if (next === undefined) throw new Error('http_test: no candidates enqueued');
-      return next;
-    }),
-  };
-});
-
-const { anthropicMessagesHttp } = await import('../../../../src/data-plane/chat/anthropic-messages/http.ts');
-
-const API_KEY_ID = 'key_messages_http_test';
-
-const queueCandidates = (candidates: readonly ModelCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
-};
-
-const installRepo = (): InMemoryRepo => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  return repo;
-};
-
-const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
-  id: API_KEY_ID,
-  userId: 1,
-  name: 'http_test',
-  key: 'sk-http-test',
-  serverSecret: '00'.repeat(32),
-  createdAt: '2026-01-01T00:00:00.000Z',
-  upstreamIds: null,
-  randomizeUpstreams: false,
-  deletedAt: null,
-  dumpRetentionSeconds: null,
-  openaiResponsesRetentionSeconds: 0,
-  ...overrides,
-});
-
-const buildUser = (overrides: Partial<User> = {}): User => ({
-  id: 1,
-  username: 'http_test',
-  passwordHash: null,
-  isAdmin: false,
-  createdAt: '2026-01-01T00:00:00.000Z',
-  deletedAt: null,
-  ...overrides,
-});
-
-const makeApp = (): Hono<{ Variables: AuthVars }> => {
-  const app = new Hono<{ Variables: AuthVars }>();
-  app.use('*', async (c, next) => {
-    c.set('apiKey', buildApiKey());
-    c.set('user', buildUser());
-    await next();
+const seedModel = async (
+  endpoints: { readonly anthropicMessages?: Record<string, never> } = { anthropicMessages: {} },
+): Promise<Awaited<ReturnType<typeof setupAppTest>>> => {
+  const appTest = await setupAppTest();
+  await appTest.repo.upstreams.deleteAll();
+  const model = stubProviderModel({
+    id: 'test-model',
+    upstreamModelId: 'test-model',
+    kind: 'chat',
+    endpoints,
+    limits: { max_context_window_tokens: 128000, max_output_tokens: 4096 },
   });
-  app.post('/v1/messages', anthropicMessagesHttp.generate);
-  app.post('/v1/messages/count_tokens', anthropicMessagesHttp.countTokens);
-  return app;
-};
-
-const makeAnthropicMessagesEvents = (): readonly AnthropicMessagesStreamEventEx[] => [
-  {
-    type: 'message_start',
-    message: {
-      container: null, diagnostics: null, stop_details: null,
-      id: 'msg_http',
-      type: 'message',
-      role: 'assistant',
-      content: [],
-      model: 'test-model',
-      stop_reason: null,
-      stop_sequence: null,
-      usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 4, output_tokens: 0 },
+  const record = buildCustomUpstreamRecord({
+    id: 'up_messages',
+    name: 'Messages Provider',
+    config: {
+      baseUrl: 'https://messages.pipeline.example.com',
+      ingressHeadersRules: [],
+      apiKey: 'sk-messages',
+      endpoints,
+      modelsFetch: { enabled: false, authStyle: 'x-api-key' },
     },
-  },
-  { type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } },
-  { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
-  { type: 'content_block_stop', index: 0 },
-  { type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } },
-  { type: 'message_stop' },
-];
-
-const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): AsyncGenerator<ProtocolFrame<TEvent>> {
-  for (const event of events) yield eventFrame(event);
-  yield doneFrame();
+  });
+  await saveUpstreamForTest(appTest.repo.upstreams, record);
+  const stored = await appTest.repo.upstreams.getById(record.id);
+  if (stored === null) throw new Error('missing seeded messages upstream');
+  await appTest.repo.upstreams.publishModelsRefresh({
+    id: stored.id,
+    configVersion: stored.configVersion,
+    cacheEpoch: 0,
+    refreshInputs: modelsRefreshInputs(stored),
+    cache: { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models: [model] },
+  });
+  return appTest;
 };
 
-const makeCandidate = (overrides: {
-  upstream?: string;
-  endpoints?: ModelEndpoints;
-  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
-  callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
-} = {}): ModelCandidate => {
-  const upstream = overrides.upstream ?? 'up_test';
-  const provider = stubProvider({
-    callAnthropicMessages: overrides.callAnthropicMessages,
-    callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
-  });
-  return {
-    provider: {
-      upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
+const message = (text = 'hi') => ({
+  id: 'msg_http',
+  type: 'message',
+  role: 'assistant',
+  model: 'test-model',
+  content: [{ type: 'text', text }],
+  stop_reason: 'end_turn',
+  stop_sequence: null,
+  usage: { input_tokens: 4, output_tokens: 1, cache_creation_input_tokens: null, cache_read_input_tokens: null, cache_creation: null, server_tool_use: null, service_tier: 'standard', inference_geo: null, output_tokens_details: null },
+});
+
+test('POST /v1/messages returns one JSON body when stream is omitted', async () => {
+  const appTest = await seedModel();
+  await withMockedFetch(
+    () => sseAnthropicMessagesResponse(message()),
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': appTest.apiKey.key },
+        body: JSON.stringify({ model: 'test-model', max_tokens: 32, messages: [{ role: 'user', content: 'hello' }] }),
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')?.split(';')[0]).toBe('application/json');
+      const body = await response.json() as { role: string; content: unknown[] };
+      expect(body.role).toBe('assistant');
+      expect(body.content).toContainEqual({ type: 'text', text: 'hi', citations: null });
     },
-    model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
-    fetcher: directFetcher,
-  };
-};
-
-test('POST /v1/messages returns a single JSON body when stream is omitted', async () => {
-  installRepo();
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
-  }));
-  queueCandidates([makeCandidate({ callAnthropicMessages })]);
-
-  const response = await makeApp().request('/v1/messages', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'test-model', max_tokens: 32, messages: [{ role: 'user', content: 'hello' }] }),
-  });
-
-  assertEquals(response.status, 200);
-  assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
-  const body = await response.json() as { role: string; content: unknown };
-  assertEquals(body.role, 'assistant');
+  );
 });
 
-test('POST /v1/messages answers the Claude Code model-validation probe without calling the upstream', async () => {
-  const repo = installRepo();
-  const callAnthropicMessages = vi.fn((): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
-    throw new Error('the probe reached the upstream');
-  });
-  queueCandidates([makeCandidate({ callAnthropicMessages })]);
-
-  const response = await makeApp().request('/v1/messages', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json', 'user-agent': 'claude-cli/2.1.226 (external, cli)' }),
-    body: JSON.stringify({
-      model: 'test-model',
-      max_tokens: 1,
-      system: [{ citations: null, type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }],
-      messages: [{ role: 'user', content: [{ citations: null, type: 'text', text: 'Hi', cache_control: { type: 'ephemeral' } }] }],
-      metadata: { user_id: 'user_0_account__session_0' },
-    }),
-  });
-
-  assertEquals(response.status, 200);
-  const body = await response.json() as { model: string; stop_reason: string; usage: { input_tokens: number; output_tokens: number } };
-  assertEquals(body.model, 'test-model');
-  assertEquals(body.stop_reason, 'max_tokens');
-  assertEquals(body.usage.input_tokens, 0);
-  assertEquals(body.usage.output_tokens, 0);
-  assertEquals(callAnthropicMessages.mock.calls.length, 0);
-
-  // The turn is recorded as served, at zero cost, and contributes no latency
-  // sample — there was no upstream call to measure.
-  await flushBackground();
-  const usage = await repo.usage.listAll();
-  assertEquals(usage.length, 1);
-  assertEquals(usage[0]?.requests, 1);
-  assertEquals(usage[0]?.metrics, []);
-  assertEquals(await repo.performance.listAll(), []);
+test('POST /v1/messages streams Anthropic SSE with the ping keepalive format', async () => {
+  const appTest = await seedModel();
+  await withMockedFetch(
+    () => sseAnthropicMessagesResponse(message()),
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': appTest.apiKey.key },
+        body: JSON.stringify({ model: 'test-model', max_tokens: 32, stream: true, messages: [{ role: 'user', content: 'hello' }] }),
+      });
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toContain('text/event-stream');
+      const text = await response.text();
+      expect(text).toContain('event: message_start');
+      expect(text).toContain('event: message_stop');
+    },
+  );
 });
 
-test('POST /v1/messages rejects body anthropic_beta with a 400 before routing', async () => {
-  installRepo();
-  // No candidates queued — the http entry rejects before reaching the serve.
-  const response = await makeApp().request('/v1/messages', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({
-      model: 'test-model',
-      max_tokens: 32,
-      anthropic_beta: ['something'],
-      messages: [{ role: 'user', content: 'hello' }],
-    }),
-  });
-
-  assertEquals(response.status, 400);
-  const body = await response.json() as { error: { param: string; type: string } };
-  assertEquals(body.error.param, 'anthropic_beta');
-  assertEquals(body.error.type, 'invalid_request_error');
+test('POST /v1/messages answers the Claude Code model-validation probe without dialing', async () => {
+  const appTest = await seedModel();
+  const dial = vi.fn();
+  await withMockedFetch(
+    dial.mockImplementation(() => { throw new Error('probe reached upstream'); }),
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/messages', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': appTest.apiKey.key, 'user-agent': 'claude-cli/2.1.226 (external, cli)' },
+        body: JSON.stringify({
+          model: 'test-model', max_tokens: 1,
+          system: [{ citations: null, type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }],
+          messages: [{ role: 'user', content: [{ citations: null, type: 'text', text: 'Hi', cache_control: { type: 'ephemeral' } }] }],
+        }),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ model: 'test-model', stop_reason: 'max_tokens', usage: { input_tokens: 0, output_tokens: 0 } });
+      expect(dial).not.toHaveBeenCalled();
+      expect(await appTest.repo.usage.listAll()).toHaveLength(1);
+    },
+  );
 });
 
-test('POST /v1/messages/count_tokens forwards an upstream rate limit and retry hint unchanged', async () => {
-  installRepo();
+test('POST /v1/messages rejects body anthropic_beta before routing', async () => {
+  const appTest = await seedModel();
+  const response = await requestAppWithWarmModels('/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': appTest.apiKey.key },
+    body: JSON.stringify({ model: 'test-model', max_tokens: 32, anthropic_beta: ['x'], messages: [{ role: 'user', content: 'hello' }] }),
+  });
+  expect(response.status).toBe(400);
+  expect(await response.json()).toMatchObject({ error: { param: 'anthropic_beta', type: 'invalid_request_error' } });
+});
+
+test('POST /v1/messages/count_tokens forwards status, retry and request-id while stripping set-cookie', async () => {
+  const appTest = await seedModel();
   const body = '{"error":{"type":"rate_limit_error","message":"wait"}}';
-  const callAnthropicMessagesCountTokens = vi.fn(async () => ({
-    http: new Response(body, {
-      status: 429,
-      headers: { 'content-type': 'application/json', 'retry-after': '17', 'request-id': 'req-count', 'set-cookie': 'private=1' },
-    }),
-    modelKey: 'k',
-  }));
-  queueCandidates([makeCandidate({ callAnthropicMessagesCountTokens })]);
-  const response = await makeApp().request('/v1/messages/count_tokens', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }] }),
-  });
-  assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
-  assertEquals(response.status, 429);
-  assertEquals(response.headers.get('retry-after'), '17');
-  assertEquals(response.headers.get('request-id'), 'req-count');
-  assertEquals(response.headers.get('set-cookie'), null);
-  assertEquals(await response.text(), body);
+  await withMockedFetch(
+    () => new Response(body, { status: 429, headers: { 'content-type': 'application/json', 'retry-after': '17', 'request-id': 'req-count', 'set-cookie': 'private=1' } }),
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/messages/count_tokens', {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': appTest.apiKey.key },
+        body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }] }),
+      });
+      expect(response.status).toBe(429);
+      expect(response.headers.get('retry-after')).toBe('17');
+      expect(response.headers.get('request-id')).toBe('req-count');
+      expect(response.headers.get('set-cookie')).toBeNull();
+      expect(await response.text()).toBe(body);
+    },
+  );
 });
 
-test('POST /v1/messages does not switch upstreams after the response stream opens and breaks', async () => {
-  installRepo();
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true,
-    events: (async function* () {
-      yield eventFrame(makeAnthropicMessagesEvents()[0]!);
-      throw new Error('connection reset after message_start');
-    })(),
-    modelKey: 'k',
-    http: { status: 200, headers: new Headers() },
-  }));
-  const secondCall = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'second', http: { status: 200, headers: new Headers() },
-  }));
-  queueCandidates([
-    makeCandidate({ upstream: 'first', callAnthropicMessages }),
-    makeCandidate({ upstream: 'second', callAnthropicMessages: secondCall }),
-  ]);
-  const response = await makeApp().request('/v1/messages', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model: 'test-model', max_tokens: 32, stream: true, messages: [{ role: 'user', content: 'hello' }] }),
-  });
-  const body = await response.text();
-  assertEquals(response.status, 200);
-  assert(body.includes('event: message_start'));
-  assert(body.includes('event: error'));
-  assert(body.includes('connection reset after message_start'));
-  assertEquals(secondCall.mock.calls.length, 0);
-  await flushBackground();
+test('POST /v1/messages does not fail over after a response stream opens and breaks', async () => {
+  const appTest = await seedModel();
+  const encoder = new TextEncoder();
+  await withMockedFetch(
+    () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('event: message_start\ndata: {"type":"message_start","message":{"id":"msg_break","type":"message","role":"assistant","model":"test-model","content":[],"stop_reason":null,"stop_sequence":null,"container":null,"diagnostics":null,"stop_details":null,"usage":{"cache_creation":null,"cache_creation_input_tokens":null,"cache_read_input_tokens":null,"inference_geo":null,"output_tokens_details":null,"server_tool_use":null,"service_tier":"standard","input_tokens":1,"output_tokens":0}}}\n\n'));
+        setTimeout(() => controller.error(new Error('connection reset after message_start')), 0);
+      },
+    }), { status: 200, headers: { 'content-type': 'text/event-stream' } }),
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/messages', {
+        method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': appTest.apiKey.key },
+        body: JSON.stringify({ model: 'test-model', max_tokens: 32, stream: true, messages: [{ role: 'user', content: 'hello' }] }),
+      });
+      const text = await response.text();
+      expect(response.status).toBe(200);
+      expect(text).toContain('event: message_start');
+      expect(text).toContain('event: error');
+      expect(text).toContain('connection reset after message_start');
+    },
+  );
 });

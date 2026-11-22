@@ -1,4 +1,9 @@
-import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
+import {
+  defineRouteAffinityRequest,
+  projectOptionalRouteAffinityBlob,
+  type RouteAffinityRequestAnalysis,
+} from '../../pipeline/index.ts';
+import type { AffinityCodec, DecodedAffinityBlob } from '../../shared/affinity/index.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
 interface AnthropicMessagesBlobLocation {
@@ -11,7 +16,7 @@ interface AnthropicMessagesBlobLocation {
 export const analyzeAnthropicMessagesAffinity = async (
   payload: AnthropicMessagesPayload,
   codec: AffinityCodec,
-): Promise<AffinityRequestAnalysis<AnthropicMessagesPayload>> => {
+): Promise<RouteAffinityRequestAnalysis<AnthropicMessagesPayload>> => {
   const locations: AnthropicMessagesBlobLocation[] = [];
   for (const [messageIndex, message] of payload.messages.entries()) {
     if (message.role !== 'assistant' || !Array.isArray(message.content)) continue;
@@ -24,8 +29,8 @@ export const analyzeAnthropicMessagesAffinity = async (
     }
   }
 
-  return defineAffinityRequest([], candidate => {
-    const projections = locations.map(location => ({ location, projection: projectOptionalAffinityBlob(location.decoded, candidate) }));
+  return defineRouteAffinityRequest([], candidate => {
+    const projections = locations.map(location => ({ location, projection: projectOptionalRouteAffinityBlob(location.decoded, candidate) }));
     return {
       kind: 'accepted',
       degrades: projections.some(item => item.projection.kind === 'remove' && item.projection.degrades),

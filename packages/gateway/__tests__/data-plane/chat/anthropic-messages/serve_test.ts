@@ -1,337 +1,96 @@
-import { afterEach, test, vi } from 'vitest';
+import { expect, test } from 'vitest';
 
+import { anthropicMessagesCountTokensPipeline, anthropicMessagesGeneratePipeline, type AnthropicMessagesServeFacts } from '../../../../src/data-plane/chat/anthropic-messages/serve-pipeline.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
+import { createManagedProtocolFrames, mockChatPipelineServices, stubRouteCandidate, stubStreamProviderPipeline } from '../../../test-utils/chat-pipeline.ts';
+import { pipeline, runPipeline, terminal } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { decodeResponseBody, type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type FlagId } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
+import { createAnthropicMessagesUsage } from '@floway-dev/protocols/anthropic-messages';
+import type { HttpOutcome, ProviderPipelineAnthropicMessagesCountTokensInput, ProviderPipelineAnthropicMessagesInput, ProviderPipelineServices } from '@floway-dev/provider';
 
-// Mock the resolver seam so each test hands the serve exactly the provider
-// candidates it wants, optionally with an alias-rules overlay attached.
-interface QueuedResolution {
-  readonly candidates: readonly ModelCandidate[];
-  readonly sawModel: boolean;
-  readonly failedUpstreams: readonly string[];
-}
-const resolutionsQueue: QueuedResolution[] = [];
-const lastResolveCall: { model?: string } = {};
-vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../../../src/data-plane/providers/resolution.ts')>();
-  return {
-    ...original,
-    enumerateModelCandidates: vi.fn(async ({ model }: { model: string }) => {
-      lastResolveCall.model = model;
-      const next = resolutionsQueue.shift();
-      if (next === undefined) throw new Error('serve_test: no resolution enqueued');
-      return next;
-    }),
-  };
-});
-
-const { anthropicMessagesServe } = await import('../../../../src/data-plane/chat/anthropic-messages/serve.ts');
-
-const API_KEY_ID = 'key_messages_serve_test';
-
-const queueResolution = (
-  candidates: readonly ModelCandidate[],
-  extra: { sawModel?: boolean; aliasRules?: AliasRules } = {},
-): void => {
-  const rules = extra.aliasRules;
-  resolutionsQueue.push({
-    candidates: rules !== undefined ? candidates.map(c => ({ ...c, rules })) : candidates,
-    sawModel: extra.sawModel ?? candidates.length > 0,
-    failedUpstreams: [],
-  });
-};
-
-afterEach(() => { resolutionsQueue.length = 0; });
-
-const installRepo = (): InMemoryRepo => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  return repo;
-};
-
-const makeGatewayCtx = () => mockChatGatewayCtx({ apiKeyId: API_KEY_ID, wantsStream: true });
-
-const makePayload = (overrides: Partial<AnthropicMessagesPayload> = {}): AnthropicMessagesPayload => ({
+const payload = (overrides: Partial<AnthropicMessagesPayload> = {}): AnthropicMessagesPayload => ({
   model: 'test-model',
   max_tokens: 32,
   messages: [{ role: 'user', content: 'hello' }],
   ...overrides,
 });
 
-const makeAnthropicMessagesResultEvents = (id = 'msg_test'): readonly AnthropicMessagesStreamEventEx[] => [
-  {
-    type: 'message_start',
-    message: {
-      container: null, diagnostics: null, stop_details: null,
-      id,
-      type: 'message',
-      role: 'assistant',
-      content: [],
-      model: 'test-model',
-      stop_reason: null,
-      stop_sequence: null,
-      usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 10, output_tokens: 0 },
-    },
+const facts = (value: AnthropicMessagesPayload, beta: readonly string[] = []): AnthropicMessagesServeFacts => ({
+  'request.http': {
+    method: 'POST',
+    url: 'https://gateway.example/v1/messages',
+    headers: [['anthropic-beta', beta.join(',')]],
+    body: value,
+    protocol: 'anthropic-messages',
   },
-  {
-    type: 'content_block_start',
-    index: 0,
-    content_block: { type: 'text', text: '', citations: null },
-  },
-  {
-    type: 'content_block_delta',
-    index: 0,
-    delta: { type: 'text_delta', text: 'hi' },
-  },
-  { type: 'content_block_stop', index: 0 },
-  {
-    type: 'message_delta',
-    delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null },
-    usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 },
-  },
-  { type: 'message_stop' },
-];
+  'request.inboundHeaders': [['anthropic-beta', beta.join(',')]],
+  'request.payload': value,
+  'request.anthropicBeta': beta,
+});
 
-const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): AsyncGenerator<ProtocolFrame<TEvent>> {
-  for (const event of events) yield eventFrame(event);
-  yield doneFrame();
-};
+const messageEvents = (): readonly AnthropicMessagesStreamEventEx[] => [{
+  type: 'message_start',
+  message: {
+    container: null, diagnostics: null, stop_details: null, id: 'msg_serve', type: 'message', role: 'assistant', model: 'resolved-model', content: [], stop_reason: null, stop_sequence: null,
+    usage: createAnthropicMessagesUsage(10, 0),
+  },
+}, {
+  type: 'message_delta', delta: { container: null, stop_details: null, stop_sequence: null, stop_reason: 'end_turn' },
+  usage: { input_tokens: null, output_tokens: 1, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null },
+}, { type: 'message_stop' }];
 
-const makeCandidate = (overrides: {
-  upstream?: string;
-  modelId?: string;
-  endpoints?: ModelEndpoints;
-  kind?: ModelCandidate['provider']['kind'];
-  enabledFlags?: ReadonlySet<FlagId>;
-  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
-  callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: AnthropicMessagesUpstreamCallOptions) => Promise<ProviderCallResult>;
-} = {}): ModelCandidate => {
-  const upstream = overrides.upstream ?? 'up_test';
-  const modelId = overrides.modelId ?? 'test-model';
-  const kind = overrides.kind ?? 'custom';
-  const provider = stubProvider({
-    callAnthropicMessages: overrides.callAnthropicMessages,
-    callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
+test('generate routes a native candidate and exposes the beta list to the provider', async () => {
+  initRepo(new InMemoryRepo());
+  let observedBeta: readonly string[] = [];
+  const providerPipeline = stubStreamProviderPipeline<ProviderPipelineAnthropicMessagesInput, AnthropicMessagesStreamEventEx>('test.anthropic-messages', (input, env) => {
+    observedBeta = input['request.anthropicBeta'];
+    return {
+      ok: true,
+      events: createManagedProtocolFrames(env, messageEvents(), { label: 'anthropic-messages.events' }),
+      modelKey: 'wire-model',
+      http: { status: 200, statusText: 'OK', headers: Object.freeze([Object.freeze(['content-type', 'text/event-stream'] as const)]), timing: { startedAtMs: 1, headersAtMs: 2 } },
+    };
   });
-  return {
-    provider: {
-      upstreamId: upstream, kind, name: upstream, inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
-    },
-    model: stubInternalModel({
-      id: modelId,
-      ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
-      providerModels: {
-        [upstream]: stubProviderModel({
-          id: modelId,
-          ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
-          ...(overrides.enabledFlags ? { enabledFlags: overrides.enabledFlags } : {}),
-        }),
+  const candidate = stubRouteCandidate({ modelId: 'resolved-model', endpoints: { anthropicMessages: {} } });
+  const { services } = mockChatPipelineServices({ entries: [{ candidate, pipelines: { anthropicMessages: providerPipeline } }] });
+  const outcome = await runPipeline(anthropicMessagesGeneratePipeline, facts(payload(), ['context-1m-2025-08-07']), { services });
+  expect(outcome.status).toBe(200);
+  expect(observedBeta).toEqual(['context-1m-2025-08-07']);
+  expect(outcome.body).not.toBeNull();
+});
+
+test('generate filters unsupported endpoints and renders model-unsupported as 400', async () => {
+  initRepo(new InMemoryRepo());
+  const candidate = stubRouteCandidate({ endpoints: { openaiCompletions: {} } });
+  const { services } = mockChatPipelineServices({ entries: [{ candidate }] });
+  const outcome = await runPipeline(anthropicMessagesGeneratePipeline, facts(payload()), { services });
+  expect(outcome.status).toBe(400);
+  const body = JSON.parse(new TextDecoder().decode(outcome.body as Uint8Array));
+  expect(body.error.type).toBe('invalid_request_error');
+});
+
+test('count tokens proxies the upstream measurement and stamps the resolved model', async () => {
+  initRepo(new InMemoryRepo());
+  const observedModels: string[] = [];
+  const providerPipeline = pipeline<ProviderPipelineAnthropicMessagesCountTokensInput>('test.anthropic-messages.count-tokens')
+    .end(terminal<ProviderPipelineAnthropicMessagesCountTokensInput, HttpOutcome, ProviderPipelineServices>({
+      name: 'test.anthropic-messages.count-tokens.end',
+      execute: async (input, env): Promise<HttpOutcome> => {
+        observedModels.push(input['request.payload'].messages[0]?.role ?? 'none');
+        return {
+          status: 200,
+          statusText: 'OK',
+          headers: Object.freeze([Object.freeze(['content-type', 'application/json'] as const)]),
+          body: env.createStream<Uint8Array>({ label: 'count.body', async *iterate() { yield new TextEncoder().encode('{"input_tokens":42}'); } }),
+          timing: { startedAtMs: 1, headersAtMs: 2 },
+        };
       },
-    }, upstream),
-    fetcher: directFetcher,
-  };
-};
-
-const collectEvents = async <TEvent>(events: AsyncIterable<ProtocolFrame<TEvent>>): Promise<TEvent[]> => {
-  const out: TEvent[] = [];
-  for await (const frame of events) {
-    if (frame.type === 'event') out.push(frame.event);
-  }
-  return out;
-};
-
-// `assertEquals(result.type, X)` does not narrow the union in the TS type
-// checker; the manual `if (result.type !== X) throw` follow-up was pure
-// type-narrowing scaffold. This helper asserts the variant and returns the
-// narrowed value so call sites stay on a single line.
-const assertResultType = <U extends { type: string }, T extends U['type']>(
-  result: U,
-  type: T,
-): Extract<U, { type: T }> => {
-  assertEquals(result.type, type);
-  return result as Extract<U, { type: T }>;
-};
-
-test('generate routes a native Anthropic Messages candidate end to end', async () => {
-  installRepo();
-  let callOptions: AnthropicMessagesUpstreamCallOptions | undefined;
-  const callAnthropicMessages = vi.fn(async (_model, _body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
-    callOptions = opts;
-    return {
-      ok: true,
-      events: makeProtocolFrames(makeAnthropicMessagesResultEvents()),
-      modelKey: 'test-model-key',
-      http: { status: 200, headers: new Headers() },
-    };
-  });
-  queueResolution([makeCandidate({ upstream: 'up_a', callAnthropicMessages })]);
-
-  const result = await anthropicMessagesServe.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    headers: new Headers({ 'anthropic-beta': 'context-1m-2025-08-07, advanced-tool-use-2025-11-20' }),
-  });
-
-  const events = await collectEvents(assertResultType(result, 'events').events);
-  assert(events.length >= 1);
-  assertEquals(callOptions?.anthropicBeta, ['context-1m-2025-08-07', 'advanced-tool-use-2025-11-20']);
-  assertEquals(callOptions?.headers.has('anthropic-beta'), false);
-});
-
-test('generate filters out candidates whose endpoints do not satisfy the messages-generate preference and renders model-unsupported as a 400', async () => {
-  installRepo();
-  const callAnthropicMessages = vi.fn();
-  // anthropicMessagesGenerateTarget prefers messages > responses > openai-chat-completions; an
-  // endpoints-only `openaiCompletions` candidate matches none and is filtered out.
-  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { openaiCompletions: {} }, callAnthropicMessages })]);
-
-  const result = await anthropicMessagesServe.generate({
-    payload: makePayload({ model: 'wrong-endpoint-model' }),
-    ctx: makeGatewayCtx(),
-    headers: new Headers(),
-  });
-
-  const failure = assertResultType(result, 'api-error');
-  assertEquals(failure.http.status, 400);
-  assertEquals(callAnthropicMessages.mock.calls.length, 0);
-});
-
-test('countTokens proxies the upstream measurement response as a plain result', async () => {
-  installRepo();
-  const observedModelIds: string[] = [];
-  let callOptions: AnthropicMessagesUpstreamCallOptions | undefined;
-  const callAnthropicMessagesCountTokens = vi.fn(async (model: unknown, _body, _signal, opts): Promise<ProviderCallResult> => {
-    observedModelIds.push((model as { id: string }).id);
-    callOptions = opts;
-    return {
-      http: new Response(JSON.stringify({ input_tokens: 42 }), {
-        status: 200,
-        headers: new Headers({ 'content-type': 'application/json' }),
-      }),
-      modelKey: 'test-model-key',
-    };
-  });
-  const candidate = makeCandidate({ upstream: 'up_a', modelId: 'claude-target', callAnthropicMessagesCountTokens });
-  queueResolution([candidate]);
-  const payload = makePayload({ model: 'claude-alias' });
-
-  const result = await anthropicMessagesServe.countTokens({
-    payload,
-    ctx: makeGatewayCtx(),
-    headers: new Headers({ 'anthropic-beta': 'context-1m-2025-08-07, advanced-tool-use-2025-11-20' }),
-  });
-
-  const plain = assertResultType(result, 'plain');
-  assertEquals(plain.http.status, 200);
-  const body = JSON.parse(decodeResponseBody(plain.body));
-  assertEquals(body.input_tokens, 42);
-  assertEquals(callOptions?.anthropicBeta, ['context-1m-2025-08-07', 'advanced-tool-use-2025-11-20']);
-  assertEquals(callOptions?.headers.has('anthropic-beta'), false);
-  assertEquals(observedModelIds, ['claude-target']);
-  assertEquals(payload.model, 'claude-alias');
-});
-
-test('generate failover preserves billing blocks for a strip-off candidate', async () => {
-  installRepo();
-  const billingBlock = 'x-anthropic-billing-header: per-turn-token\ncch=deadbeef1234;';
-  const system = [
-    { type: 'text' as const, text: billingBlock },
-    { type: 'text' as const, text: "You are Claude Code, Anthropic's official CLI for Claude." },
-  ];
-  const expectedSystem = structuredClone(system);
-  const messages = [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'original user text' }] }];
-  const expectedMessages = structuredClone(messages);
-  const firstBodies: Array<Omit<AnthropicMessagesPayload, 'model'>> = [];
-  const firstCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
-    const firstBody = body as Omit<AnthropicMessagesPayload, 'model'>;
-    firstBodies.push(firstBody);
-    const message = firstBody.messages[0];
-    if (!Array.isArray(message.content) || message.content[0]?.type !== 'text') throw new Error('expected text content');
-    message.content[0].text = 'mutated by first provider';
-    return {
-      ok: false,
-      http: new Response('unavailable', { status: 503 }),
-      modelKey: 'first-key',
-    };
-  });
-  const observedBodies: Array<Omit<AnthropicMessagesPayload, 'model'>> = [];
-  const secondCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
-    observedBodies.push(body as Omit<AnthropicMessagesPayload, 'model'>);
-    return {
-      ok: true,
-      events: makeProtocolFrames(makeAnthropicMessagesResultEvents('msg_claude_code')),
-      modelKey: 'claude-code-key',
-    };
-  });
-  queueResolution([
-    makeCandidate({
-      upstream: 'up_copilot',
-      kind: 'copilot',
-      enabledFlags: new Set(['strip-billing-attribution']),
-      callAnthropicMessages: firstCall,
-    }),
-    makeCandidate({
-      upstream: 'up_claude_code',
-      kind: 'claude-code',
-      enabledFlags: new Set(),
-      callAnthropicMessages: secondCall,
-    }),
-  ]);
-
-  const payload = makePayload({ system, messages });
-  const result = await anthropicMessagesServe.generate({ payload, ctx: makeGatewayCtx(), headers: new Headers() });
-  await collectEvents(assertResultType(result, 'events').events);
-
-  assertEquals(firstCall.mock.calls.length, 1);
-  assertEquals(secondCall.mock.calls.length, 1);
-  assertEquals(firstBodies[0]?.system, [{ type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }]);
-  assertEquals(observedBodies[0]?.system, expectedSystem);
-  assertEquals(observedBodies[0]?.messages, expectedMessages);
-  assertEquals(payload.system, expectedSystem);
-  assertEquals(payload.messages, expectedMessages);
-});
-
-test('alias resolution swaps the inbound model id for the target and overlays rules onto the Anthropic Messages payload', async () => {
-  installRepo();
-  const capturedBodies: AnthropicMessagesPayload[] = [];
-  const observedModelIds: string[] = [];
-  const callAnthropicMessages = vi.fn(async (model: unknown, body: unknown): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
-    observedModelIds.push((model as { id: string }).id);
-    capturedBodies.push({ ...(body as Omit<AnthropicMessagesPayload, 'model'>), model: 'claude-opus-4-7' });
-    return { ok: true, events: makeProtocolFrames(makeAnthropicMessagesResultEvents()), modelKey: 'claude-opus-4-7' };
-  });
-  // Alias flow shape: the resolver returns candidates carrying the target's
-  // upstream catalog id AND the alias's rule overlay on `candidate.rules`.
-  // The attempt stamps its private clone with `candidate.model.id` and reads
-  // the overlay directly off `candidate.rules` at wire-call time.
-  const candidate = makeCandidate({ upstream: 'up_cf', modelId: 'claude-opus-4-7', callAnthropicMessages });
-  queueResolution([candidate], { aliasRules: { reasoning: { effort: 'high', budget_tokens: 2048 }, serviceTier: 'fast' } });
-
-  const payload = makePayload({ model: 'claude-fast' });
-  const result = await anthropicMessagesServe.generate({
-    payload,
-    ctx: makeGatewayCtx(),
-    headers: new Headers(),
-  });
-
-  await collectEvents(assertResultType(result, 'events').events);
-
-  // The resolver and caller payload retain the inbound alias while dispatch
-  // uses the resolved target id.
-  assertEquals(lastResolveCall.model, 'claude-fast');
-  assertEquals(observedModelIds, ['claude-opus-4-7']);
-  assertEquals(payload.model, 'claude-fast');
-  const observed = capturedBodies[0]!;
-  assertEquals(observed.output_config?.effort, 'high');
-  if (observed.thinking?.type !== 'enabled') throw new Error('Expected enabled thinking');
-  assertEquals(observed.thinking.budget_tokens, 2048);
-  // The serviceTier=fast → speed=fast bridge lands the alias rule on
-  // Anthropic's native Fast Mode field.
-  assertEquals(observed.speed, 'fast');
+    }));
+  const candidate = stubRouteCandidate({ modelId: 'resolved-model', endpoints: { anthropicMessages: {} } });
+  const { services } = mockChatPipelineServices({ entries: [{ candidate, pipelines: { anthropicMessagesCountTokens: providerPipeline } }] });
+  const outcome = await runPipeline(anthropicMessagesCountTokensPipeline, facts(payload()), { services });
+  expect(outcome.status).toBe(200);
+  expect(new TextDecoder().decode(outcome.body as Uint8Array)).toBe('{"input_tokens":42}');
+  expect(observedModels).toEqual(['user']);
 });

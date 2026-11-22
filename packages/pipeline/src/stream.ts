@@ -46,7 +46,7 @@ export interface StreamCustodyScope {
   assertOpen: (operation: string) => void;
   trackPending: <T>(promise: Promise<T>) => Promise<T>;
   createStream: <T>(options: CreateStreamOptions<T, any>) => ManagedStream<T>;
-  wrapStream: <In, Out>(inner: ManagedStream<In>, options: WrapStreamOptions<In, Out>) => ManagedStream<Out>;
+  wrapStream: <In, Out>(inner: ManagedStream<In>, options: WrapStreamOptions<In, Out, any>) => ManagedStream<Out>;
   teeStream: <T>(inner: ManagedStream<T>, options?: TeeStreamOptions) => readonly [ManagedStream<T>, ManagedStream<T>];
   consumeInBackground: <T>(
     stream: ManagedStream<T>,
@@ -280,6 +280,7 @@ const ensureFinalization = (
   if (runtime.finalization) return { created: false, finalization: runtime.finalization };
 
   runtime.state = 'closing';
+  if (how !== 'exhausted') lazyScopes.get(stream)?.cancel(reason);
   runtime.abort.abort(reason);
   abortDependencies(runtime, reason);
   runtime.finalization = finalize(stream, runtime, how, reason);
@@ -496,7 +497,7 @@ const wrap = <In, Out>(
   owner: StreamCustodyScope,
   coordinator: RunStreamCoordinator,
   inner: ManagedStream<In>,
-  options: WrapStreamOptions<In, Out>,
+  options: WrapStreamOptions<In, Out, any>,
 ): ManagedStream<Out> => {
   owner.assertOpen('wrapStream');
   if (!inner.owned) throw new StreamOwnershipError(inner.streamId, 'wrapStream');
@@ -507,7 +508,7 @@ const wrap = <In, Out>(
   const source = authorizedSource(inner);
   const outer = createStream(owner, coordinator, {
     ...(options.label === undefined ? {} : { label: options.label }),
-    iterate: signal => options.transform(source, signal),
+    iterate: (signal, env) => options.transform(source, signal, env),
     ...(options.onClose === undefined ? {} : { onClose: options.onClose }),
   }, { wraps: inner.streamId });
   const outerRuntime = runtimeFor(outer);
@@ -827,7 +828,7 @@ abstract class BaseScope implements StreamCustodyScope {
     return stream;
   }
 
-  wrapStream<In, Out>(inner: ManagedStream<In>, options: WrapStreamOptions<In, Out>): ManagedStream<Out> {
+  wrapStream<In, Out>(inner: ManagedStream<In>, options: WrapStreamOptions<In, Out, any>): ManagedStream<Out> {
     return wrap(this, this.coordinator, inner, options);
   }
 
@@ -953,15 +954,26 @@ export class StageScope extends BaseScope {
 
 export class LazyStreamScope extends BaseScope {
   readonly owner: StageScope;
+  private readonly cancelAbort: AbortController;
+  private readonly detachOwnerAbort: () => void;
 
   constructor(host: StreamScopeHost, coordinator: RunStreamCoordinator) {
-    super(host, coordinator);
+    const cancelAbort = new AbortController();
+    const detachOwnerAbort = linkAbort(cancelAbort, host.signal);
+    super({ ...host, signal: cancelAbort.signal }, coordinator);
     this.owner = host.parent as StageScope;
+    this.cancelAbort = cancelAbort;
+    this.detachOwnerAbort = detachOwnerAbort;
+  }
+
+  cancel(reason?: unknown): void {
+    this.cancelAbort.abort(reason);
   }
 
   async finish(errors: readonly unknown[] = []): Promise<void> {
     if (this.closed) return;
     this.closed = true;
+    this.detachOwnerAbort();
     this.acceptsPendingExports = true;
     let pendingErrors: unknown[];
     try {

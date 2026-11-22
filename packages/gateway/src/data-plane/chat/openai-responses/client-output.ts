@@ -3,7 +3,7 @@ import { wrapOpenAIResponsesClientOutput } from './items/output.ts';
 import { createOpenAIResponsesResponseId } from './response-id.ts';
 import { wrapResponseResourceCompletion } from './response-resource.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
-import { affinityEgressOptions } from '../shared/affinity/index.ts';
+import type { ChatPipelineServices } from '../pipeline/index.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, ClientOpenAIResponsesStreamEvent, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
@@ -19,12 +19,17 @@ export const openaiResponsesCreatedAt = (ctx: GatewayCtx): number => Math.floor(
 // through this half, whichever resource it answers with.
 export const wrapOpenAIResponsesStatefulOutput = (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
-  ctx: ChatGatewayCtx,
+  ctx: ChatGatewayCtx | ChatPipelineServices,
   responseId = createOpenAIResponsesResponseId(),
 ): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> => {
-  const withAffinity = wrapOpenAIResponsesAffinityEgress(frames, affinityEgressOptions(ctx));
+  const services = 'chatCtx' in ctx ? ctx : undefined;
+  const chatCtx = services?.chatCtx ?? ctx as ChatGatewayCtx;
+  const withAffinity = wrapOpenAIResponsesAffinityEgress(frames, services?.affinity.egressOptions() ?? {
+    codec: chatCtx.affinity.codec,
+    affinity: chatCtx.affinity.selectedTarget(),
+  });
   return wrapOpenAIResponsesClientOutput(withAffinity, {
-    store: ctx.store,
+    store: chatCtx.store,
     responseId,
   });
 };
@@ -34,15 +39,15 @@ export const wrapOpenAIResponsesStatefulOutput = (
 // at the stateful half and completes that resource itself.
 export const wrapOpenAIResponsesClientEgress = (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
-  ctx: GatewayCtx,
+  ctx: GatewayCtx | ChatPipelineServices,
   request: CanonicalOpenAIResponsesPayload,
   responseId?: string,
 ): AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> => {
-  if (!('affinity' in ctx) || !('store' in ctx)) throw new Error('OpenAI Responses output requires chat context');
-  const chatCtx = ctx as ChatGatewayCtx;
-  return wrapResponseResourceCompletion(wrapOpenAIResponsesStatefulOutput(frames, chatCtx, responseId), {
+  const chatCtx = 'chatCtx' in ctx ? ctx.chatCtx : ctx as ChatGatewayCtx;
+  if (!('affinity' in chatCtx) || !('store' in chatCtx)) throw new Error('OpenAI Responses output requires chat context');
+  return wrapResponseResourceCompletion(wrapOpenAIResponsesStatefulOutput(frames, 'chatCtx' in ctx ? ctx : chatCtx, responseId), {
     request,
-    createdAt: openaiResponsesCreatedAt(ctx),
+    createdAt: openaiResponsesCreatedAt(chatCtx),
     stored: chatCtx.store.writesState,
   });
 };

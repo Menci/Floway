@@ -295,7 +295,7 @@ const callStage = async <Out>(options: CallStageOptions<Out>): Promise<Out> => {
   const scope = createScope(state, stageId, stageName, signal, callerScope);
 
   const nextImplementation = async (custody: StreamCustodyScope, provided?: object): Promise<Out> => {
-    if (signal.aborted) throw signal.reason ?? new DOMException('Aborted', 'AbortError');
+    if (custody.signal.aborted) throw custody.signal.reason ?? new DOMException('Aborted', 'AbortError');
     const nextInput = nextFacts(facts, stage as StageLike, provided);
     const tracked = custody.trackPending(continuation(nextInput, stageId, custody));
     return freezeValue(await tracked, 'outcome');
@@ -316,7 +316,7 @@ const callStage = async <Out>(options: CallStageOptions<Out>): Promise<Out> => {
 
   const environment = createEnvironment(state, scope, stageId, stageName, signal, spawnSubRun);
   scope.setEnvironment(environment);
-  scope.setLazyEnvironmentFactory(lazy => createEnvironment(state, lazy, stageId, stageName, signal, spawnSubRun));
+  scope.setLazyEnvironmentFactory(lazy => createEnvironment(state, lazy, stageId, stageName, lazy.signal, spawnSubRun));
 
   traceEvent(state, (seq, tMs) => ({
     k: 'enter',
@@ -423,7 +423,7 @@ const callStageIndex = async <Out>(
     ...(callerScope === undefined ? {} : { callerScope }),
     ...(registerRoot === undefined ? {} : { registerRoot }),
     continuation: (nextInput, currentStageId, currentScope) =>
-      callStageIndex(state, pipeline, index + 1, nextInput, currentStageId, 'child', signal, currentScope),
+      callStageIndex(state, pipeline, index + 1, nextInput, currentStageId, 'child', currentScope.signal, currentScope),
   });
 };
 

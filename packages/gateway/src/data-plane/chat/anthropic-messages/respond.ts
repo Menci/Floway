@@ -1,70 +1,72 @@
-import type { Context } from 'hono';
-
 import { wrapAnthropicMessagesAffinityEgress } from './affinity/egress.ts';
-import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
-import { serializeSseFrame, serveSse } from '../../shared/sse.ts';
+import { gatewayJsonOutcome, serializeSseFrame, type DownstreamHttpOutcome } from '../../pipeline/index.ts';
+import { encodeManagedSseStream } from '../../pipeline/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
-import { forwardBufferedUpstreamResponse } from '../../shared/upstream-response.ts';
-import { affinityEgressOptions } from '../shared/affinity/index.ts';
-import { eventResultMetadata, jsonResponseInit, observeChatFrames, settleChatSse } from '../shared/respond.ts';
-import { anthropicMessagesProtocolFrameToSSEFrame, ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE, collectAnthropicMessagesProtocolEventsToResult } from '@floway-dev/protocols/anthropic-messages';
-import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import { eventFrame, type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
-import { type ExecuteResult, type PlainResult, type InternalDebugError, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
+import {
+  jsonResponseHeadersFromChatHttp,
+  observeChatManagedStream,
+  settleChatManagedSse,
+  type ChatAttemptOutcome,
+  type ChatPipelineServices,
+} from '../pipeline/index.ts';
+import type { StageEnv } from '@floway-dev/pipeline';
+import {
+  ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE,
+  anthropicMessagesProtocolFrameToSSEFrame,
+  collectAnthropicMessagesProtocolEventsToResult,
+  type AnthropicMessagesStreamEventEx,
+} from '@floway-dev/protocols/anthropic-messages';
+import { eventFrame, sseFrame } from '@floway-dev/protocols/common';
+import { internalDebugErrorFields, toInternalDebugError, type InternalDebugError } from '@floway-dev/provider';
 
-// Renders an upstream Anthropic Messages result into the client HTTP/SSE response. An
-// error-typed result is a pre-stream failure and always answers as HTTP; an
-// events result drains to one JSON body (non-streaming) or is proxied frame by
-// frame (streaming).
-export const respondAnthropicMessages = async (
-  c: Context,
-  result: ExecuteResult<ProtocolFrame<AnthropicMessagesStreamEventEx>> | PlainResult,
-  wantsStream: boolean,
-  ctx: GatewayCtx,
-): Promise<Response> => {
-  if (result.type === 'api-error') {
-    recordFailedRequest(ctx, result.performance);
-    ctx.dump?.error(result.source, result.upstreamId);
-    return forwardBufferedUpstreamResponse(result);
-  }
+export const internalAnthropicMessagesErrorPayload = (error: InternalDebugError) => ({
+  type: 'error' as const,
+  error: {
+    type: error.type,
+    message: error.message,
+    provider_specific_fields: internalDebugErrorFields(error),
+  },
+});
 
-  if (result.type === 'internal-error') {
-    recordFailedRequest(ctx, result.performance);
-    ctx.dump?.failed(result.error.message);
-    return internalAnthropicMessagesErrorResponse(result.http, result.error);
-  }
-
-  if (result.type === 'plain') {
-    if (result.http.status >= 400) {
-      ctx.dump?.error(result.upstreamId !== undefined ? 'upstream' : 'gateway', result.upstreamId);
-    }
-    return forwardBufferedUpstreamResponse(result);
-  }
-
-  const frames = wrapAnthropicMessagesAffinityEgress(observeChatFrames(result.events, ctx), affinityEgressOptions(ctx));
-
-  if (!wantsStream) {
+export const renderAnthropicMessagesPipelineResponse = async (
+  outcome: Extract<ChatAttemptOutcome<AnthropicMessagesStreamEventEx>, { type: 'events' }>,
+  env: StageEnv<ChatPipelineServices>,
+): Promise<DownstreamHttpOutcome> => {
+  const observed = observeChatManagedStream(env, outcome.events);
+  const affinity = env.wrapStream(observed, {
+    label: 'anthropic-messages.affinity.events',
+    transform: source => wrapAnthropicMessagesAffinityEgress(source, env.affinity.egressOptions()),
+  });
+  if (!env.chatCtx.wantsStream) {
     try {
-      const response = await collectAnthropicMessagesProtocolEventsToResult(frames);
-      const metadata = await eventResultMetadata(result);
-      const usage = tokenUsageFromBillableUsage(metadata.billableUsage);
-      ctx.dump?.success(metadata.modelIdentity, usage);
-      settle(ctx, metadata.performance, metadata.modelIdentity, usage, false);
-      return Response.json(response, jsonResponseInit(result.http));
+      const response = await collectAnthropicMessagesProtocolEventsToResult(affinity);
+      const meta = env.usageLedger.read(outcome.usageId, {
+        modelIdentity: outcome.modelIdentity,
+        ...(outcome.performance === undefined ? {} : { performance: outcome.performance }),
+      });
+      const usage = tokenUsageFromBillableUsage(meta.billableUsage);
+      env.attribution.recordSuccess(meta.modelIdentity, usage);
+      settle(env.ctx, meta.performance, meta.modelIdentity, usage, false);
+      return {
+        status: outcome.http?.status ?? 200,
+        ...(outcome.http?.statusText === undefined ? {} : { statusText: outcome.http.statusText }),
+        headers: jsonResponseHeadersFromChatHttp(outcome.http === undefined ? undefined : {
+          ...outcome.http,
+          headers: outcome.http.headers.filter(([name]) => name.toLowerCase() !== 'content-type'),
+        }),
+        body: new TextEncoder().encode(JSON.stringify(response)),
+      };
     } catch (error) {
-      recordFailedRequest(ctx, result.performance);
-      ctx.dump?.failed(error);
-      return internalAnthropicMessagesErrorResponse({ status: 502 }, toInternalDebugError(error));
+      recordFailedRequest(env.ctx, outcome.performance);
+      env.attribution.recordFailure(error);
+      return gatewayJsonOutcome(502, internalAnthropicMessagesErrorPayload(toInternalDebugError(error)));
     }
   }
 
-  return serveSse(c, {
-    http: result.http,
-    events: frames,
-    keepAlive: { frame: sseFrame(JSON.stringify({ type: 'ping' }), 'ping') },
-    downstreamAbortController: ctx.downstreamAbortController,
+  const body = encodeManagedSseStream(env, affinity, {
+    label: 'anthropic-messages.sse.bytes',
     protocol: {
       encode: frame => {
         const output = anthropicMessagesProtocolFrameToSSEFrame(frame);
@@ -81,21 +83,17 @@ export const respondAnthropicMessages = async (
         // https://github.com/anthropics/anthropic-sdk-typescript/blob/3f13f60335f8bcf91a782785f4f16e4267c999ad/src/resources/shared.ts#L247-L255
         const payload = internalAnthropicMessagesErrorPayload(toInternalDebugError(error));
         const event = { ...payload, error: { ...payload.error, type: 'api_error' } };
-        ctx.dump?.frame(eventFrame(event));
+        env.attribution.recordFrame(eventFrame(event));
         return [serializeSseFrame(sseFrame(JSON.stringify(event), 'error'))];
       },
     },
-    settle: outcome => settleChatSse(ctx, result, outcome),
+    onSettle: settlement => settleChatManagedSse(env, outcome, settlement),
   });
+  return {
+    status: outcome.http?.status ?? 200,
+    ...(outcome.http?.statusText === undefined ? {} : { statusText: outcome.http.statusText }),
+    headers: jsonResponseHeadersFromChatHttp(outcome.http, [['content-type', 'text/event-stream']]),
+    body,
+    sse: { keepAliveWire: serializeSseFrame(sseFrame(JSON.stringify({ type: 'ping' }), 'ping')) },
+  };
 };
-
-const internalAnthropicMessagesErrorPayload = (error: InternalDebugError) => ({
-  type: 'error',
-  error: {
-    type: error.type,
-    message: error.message,
-    provider_specific_fields: internalDebugErrorFields(error),
-  },
-});
-
-const internalAnthropicMessagesErrorResponse = (http: ResponseInit, error: InternalDebugError): Response => Response.json(internalAnthropicMessagesErrorPayload(error), http);

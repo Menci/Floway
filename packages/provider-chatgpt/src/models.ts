@@ -11,7 +11,6 @@ import { ProviderModelsUnavailableError, type Fetcher, type FlagId, type Provide
 
 interface ChatGPTProviderData {
   contextWindow: number;
-  maxContextWindow?: number;
   useResponsesLite: boolean;
   codex?: CodexModelSettings;
 }
@@ -190,16 +189,16 @@ const assertRawModel = (value: unknown): ChatGPTRawModel => {
   return raw;
 };
 
-export const chatgptCodexModelMetadata = (model: Pick<ProviderModel, 'id' | 'providerData'>): ChatGPTCodexModelMetadata => {
+export const chatgptCodexModelMetadata = (model: Pick<ProviderModel, 'id' | 'limits' | 'providerData'>): ChatGPTCodexModelMetadata => {
   if (!isPlainRecord(model.providerData)) {
     throw new TypeError(`ChatGPT model ${model.id} providerData is not an object`);
   }
   return {
     ...readCodexModelSettings(model.providerData.codex, model.id),
     context_window: assertContextWindow(model.providerData.contextWindow, model.id, 'providerData.contextWindow'),
-    ...(model.providerData.maxContextWindow === undefined
+    ...(model.limits.max_context_window_tokens === undefined
       ? {}
-      : { max_context_window: assertContextWindow(model.providerData.maxContextWindow, model.id, 'providerData.maxContextWindow') }),
+      : { max_context_window: model.limits.max_context_window_tokens }),
   };
 };
 
@@ -274,7 +273,6 @@ export const chatgptRawToProviderModel = (raw: ChatGPTRawModel, enabledFlags: Re
     endpoints: { openaiResponses: {} },
     providerData: {
       contextWindow,
-      ...(maxContextWindow === undefined ? {} : { maxContextWindow }),
       ...(raw.codex === undefined ? {} : { codex: raw.codex }),
       useResponsesLite: raw.use_responses_lite ?? false,
     } satisfies ChatGPTProviderData,

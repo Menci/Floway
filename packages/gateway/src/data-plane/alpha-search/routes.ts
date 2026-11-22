@@ -180,11 +180,7 @@ const executeSearch = defineStage<
     }
 
     const { model: _callerModel, ...payload } = facts['request.body'];
-    const http = await env.spawnSubRun(alphaSearchPassthroughSubPipeline as import('@floway-dev/pipeline').Pipeline<
-      import('../tools/web-search/pipeline.ts').AlphaSearchPassthroughSubInput,
-      import('@floway-dev/provider').HttpOutcome,
-      WebSearchPipelineServices
-    >, {
+    const http = await env.spawnSubRun(alphaSearchPassthroughSubPipeline, {
       'route.candidate': candidate,
       'request.payload': payload,
       'request.inboundHeaders': facts['request.inboundHeaders'],
