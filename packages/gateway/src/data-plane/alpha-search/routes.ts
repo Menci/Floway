@@ -18,19 +18,31 @@
 import type { Hono } from 'hono';
 import { z } from 'zod';
 
-import { type AuthVars, apiKeyFromContext, effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
+import { type AuthVars } from '../../middleware/auth.ts';
 import { type CtxWithJson, zValidator } from '../../middleware/zod-validator.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
+import {
+  buildDownstreamWireUrl,
+  createGatewayPipelineServices,
+  edgeHttpStage,
+  gatewayApiErrorOutcome,
+  gatewayJsonOutcome,
+  inboundHeaderEntriesFromHono,
+  materializeDownstreamResponse,
+  relayedResponseHeaderEntries,
+  type DownstreamHttpOutcome,
+} from '../pipeline/index.ts';
 import { mountPublicRoute } from '../public-route.ts';
-import { passthroughApiError } from '../shared/passthrough-serve.ts';
-import { relayFetchedResponse } from '../tools/web-search/alpha-search/relay-response.ts';
-import { AlphaSearchModelNotFoundError, resolveAlphaSearchDispatcher } from '../tools/web-search/alpha-search/upstream.ts';
-import type { AlphaSearchDispatcher } from '../tools/web-search/alpha-search/upstream.ts';
+import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
+import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
+import { AlphaSearchModelNotFoundError, resolveAlphaSearchRouteCandidate } from '../tools/web-search/alpha-search/upstream.ts';
 import { loadWebSearchConfig } from '../tools/web-search/config.ts';
 import { assertLocalWebSearchSupport, executeOperationToText, isSearchResponseLength, maxResultsForContextSize, parseWebSearchOperations, startBatchFetch, UnsupportedLocalWebSearchFeatureError, type WebSearchExecutionSession, type WebSearchFilters } from '../tools/web-search/operations.ts';
+import { alphaSearchPassthroughSubPipeline, type WebSearchPipelineServices } from '../tools/web-search/pipeline.ts';
 import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
 import type { ConfiguredWebSearchProvider } from '../tools/web-search/types.ts';
+import { defineStage, pipeline, runPipeline, terminal } from '@floway-dev/pipeline';
+import type { HeaderEntry, Pipeline, WireRequestSnapshot } from '@floway-dev/pipeline';
 import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
 
 const domainListSchema = z.array(z.string());
@@ -72,7 +84,17 @@ const alphaSearchRequestSchema = z.looseObject({
   settings: searchSettingsSchema.optional(),
 });
 
-type AlphaSearchRequest = z.infer<typeof alphaSearchRequestSchema>;
+export type AlphaSearchRequest = z.infer<typeof alphaSearchRequestSchema>;
+
+interface AlphaSearchPipelineInput {
+  readonly 'request.http': WireRequestSnapshot;
+  readonly 'request.inboundHeaders': readonly HeaderEntry[];
+  readonly 'request.body': AlphaSearchRequest;
+}
+
+interface AlphaSearchOutcomeFacts extends AlphaSearchPipelineInput {
+  readonly 'response.outcome': DownstreamHttpOutcome;
+}
 
 const filtersFromSettings = (settings: AlphaSearchRequest['settings']): WebSearchFilters => {
   const filters: WebSearchFilters = {
@@ -92,73 +114,137 @@ const filtersFromSettings = (settings: AlphaSearchRequest['settings']): WebSearc
   return filters;
 };
 
-const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Promise<Response> => {
-  const body = c.req.valid('json');
-  const webSearchConfig = await loadWebSearchConfig();
-  if (webSearchConfig.passthroughOpenAiSearch.enabled) {
-    let dispatcher: AlphaSearchDispatcher;
-    try {
-      dispatcher = await resolveAlphaSearchDispatcher({
-        config: webSearchConfig.passthroughOpenAiSearch,
-        subject: userFromContext(c),
-        upstreamIds: effectiveUpstreamIdsFromContext(c),
-        scheduler: backgroundSchedulerFromContext(c),
-        runtimeLocation: getRuntimeLocation(c.req.raw),
-      });
-    } catch (error) {
-      // The configured model is private; missing models and grants share a response.
-      if (error instanceof AlphaSearchModelNotFoundError) return passthroughApiError(c, error.message, 404);
-      throw error;
-    }
-    const headers = new Headers();
-    const turnMetadata = c.req.header('x-codex-turn-metadata');
-    if (turnMetadata !== undefined) headers.set('x-codex-turn-metadata', turnMetadata);
-    const response = await dispatcher(body, c.req.raw.signal, headers);
-    return relayFetchedResponse(response);
-  }
-
+const localSearchOutcome = async (
+  body: AlphaSearchRequest,
+  env: WebSearchPipelineServices,
+  signal: AbortSignal,
+): Promise<DownstreamHttpOutcome> => {
   try {
     assertLocalWebSearchSupport(body.commands ?? {});
   } catch (error) {
     if (error instanceof UnsupportedLocalWebSearchFeatureError) {
-      return c.json({ encrypted_output: null, output: error.message });
+      return gatewayJsonOutcome(200, { encrypted_output: null, output: error.message });
     }
     throw error;
   }
 
   const responseLength = body.commands?.response_length;
-  let configuredProvider: Promise<ConfiguredWebSearchProvider> | undefined;
   const session: WebSearchExecutionSession = {
     ...(isSearchResponseLength(responseLength) ? { responseLength } : {}),
-    getProvider: () => {
-      configuredProvider ??= Promise.resolve(resolveConfiguredWebSearchProvider(webSearchConfig));
-      return configuredProvider;
-    },
+    getProvider: env.webSearchProvider,
     filters: filtersFromSettings(body.settings),
-    apiKeyId: apiKeyFromContext(c).id,
-    pageCache: new Map(),
-    // Codex renders `output` as plain text; the search-action sources list
-    // is an OpenAI Responses wire concern with no place here.
+    apiKeyId: env.apiKeyId,
+    pageCache: env.pageCache,
     includeSearchActionSources: false,
-    signal: c.req.raw.signal,
+    signal,
   };
 
   const parsed = parseWebSearchOperations(body.commands ?? {});
   if (parsed.kind !== 'ops' || parsed.ops.length === 0) {
-    return c.json({
+    return gatewayJsonOutcome(200, {
       encrypted_output: null,
       output: 'No web search commands were provided. Populate at least one of `search_query`, `open`, or `find`.',
     });
   }
 
-  // One batched provider.fetchPage covers every open/find URL; each op then
-  // renders its own text block. The shared parser's canonical order is
-  // search_query → open → find, preserving array order within each command
-  // kind.
   const batch = await startBatchFetch(parsed, session);
   const blocks = await Promise.all(parsed.ops.map(op => executeOperationToText(op, session, batch)));
+  return gatewayJsonOutcome(200, { encrypted_output: null, output: blocks.join('\n\n') });
+};
 
-  return c.json({ encrypted_output: null, output: blocks.join('\n\n') });
+const executeSearch = defineStage<
+  AlphaSearchPipelineInput,
+  { readonly 'response.outcome': DownstreamHttpOutcome },
+  DownstreamHttpOutcome,
+  DownstreamHttpOutcome,
+  never,
+  WebSearchPipelineServices
+>({
+  name: 'gateway.alpha-search.execute',
+  provides: ['response.outcome'],
+  execute: async (facts, next, env) => {
+    const config = await loadWebSearchConfig();
+    if (!config.passthroughOpenAiSearch.enabled) {
+      return await next({ 'response.outcome': await localSearchOutcome(facts['request.body'], env, env.signal) });
+    }
+
+    let candidate;
+    try {
+      candidate = await resolveAlphaSearchRouteCandidate(env.directory, config.passthroughOpenAiSearch);
+    } catch (error) {
+      if (error instanceof AlphaSearchModelNotFoundError) {
+        env.attribution.recordError('gateway');
+        return await next({ 'response.outcome': gatewayApiErrorOutcome(error.message, 404) });
+      }
+      throw error;
+    }
+
+    const { model: _callerModel, ...payload } = facts['request.body'];
+    const http = await env.spawnSubRun(alphaSearchPassthroughSubPipeline as import('@floway-dev/pipeline').Pipeline<
+      import('../tools/web-search/pipeline.ts').AlphaSearchPassthroughSubInput,
+      import('@floway-dev/provider').HttpOutcome,
+      WebSearchPipelineServices
+    >, {
+      'route.candidate': candidate,
+      'request.payload': payload,
+      'request.inboundHeaders': facts['request.inboundHeaders'],
+    });
+    return await next({
+      'response.outcome': {
+        status: http.status,
+        statusText: http.statusText,
+        headers: relayedResponseHeaderEntries(http.headers),
+        body: http.body,
+      },
+    });
+  },
+});
+
+const alphaSearchPipeline: Pipeline<
+  AlphaSearchPipelineInput,
+  DownstreamHttpOutcome,
+  WebSearchPipelineServices
+> = pipeline<AlphaSearchPipelineInput>('gateway.alpha-search')
+  .use(edgeHttpStage<AlphaSearchPipelineInput>('gateway.alpha-search.edge'))
+  .use(executeSearch)
+  .end(terminal<AlphaSearchOutcomeFacts, DownstreamHttpOutcome, WebSearchPipelineServices>({
+    name: 'gateway.alpha-search.response',
+    execute: async facts => facts['response.outcome'],
+  }));
+
+const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Promise<Response> => {
+  const requestBody = await readRequestBody(c);
+  const ctx = createGatewayCtxFromHono(c, {
+    wantsStream: false,
+    requestBody: takeRequestBody(requestBody),
+    backgroundScheduler: backgroundSchedulerFromContext(c),
+  });
+  const body = c.req.valid('json');
+  let configuredProvider: Promise<ConfiguredWebSearchProvider> | undefined;
+  const services: WebSearchPipelineServices = {
+    ...createGatewayPipelineServices(ctx),
+    webSearchProvider: async () => {
+      configuredProvider ??= loadWebSearchConfig().then(config => resolveConfiguredWebSearchProvider(config));
+      return await configuredProvider;
+    },
+    pageCache: new Map(),
+  };
+  const outcome = await runPipeline(alphaSearchPipeline, {
+    'request.http': {
+      method: c.req.method,
+      url: buildDownstreamWireUrl(c.req.url),
+      headers: inboundHeaderEntriesFromHono(c),
+      body,
+      protocol: '/alpha/search',
+    },
+    'request.inboundHeaders': inboundHeaderEntriesFromHono(c),
+    'request.body': body,
+  }, {
+    services,
+    signal: ctx.abortSignal,
+    waitUntil: ctx.backgroundScheduler,
+  });
+  return finalizeGatewayResponse(ctx, materializeDownstreamResponse(c, services, outcome));
 };
 
 type AlphaSearchRoute = typeof PUBLIC_DATA_PLANE_ROUTES.alphaSearch | typeof PUBLIC_DATA_PLANE_ROUTES.codexAlphaSearch;

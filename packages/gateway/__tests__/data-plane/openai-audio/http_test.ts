@@ -112,7 +112,7 @@ test('/v1/audio/transcriptions preserves multipart fields, headers, JSON body, a
   ]);
 });
 
-test('/v1/audio/transcriptions opens SSE with 200 and streams through transcript.text.done', async () => {
+test('/v1/audio/transcriptions preserves a 2xx upstream SSE status through transcript.text.done', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo, {
     entries: [{ rates: { input_audio_tokens: '0.000001', output_tokens: '0.000001' } }],
@@ -128,7 +128,7 @@ test('/v1/audio/transcriptions opens SSE with 200 and streams through transcript
       const response = await requestAppWithWarmModels('/v1/audio/transcriptions', {
         method: 'POST', headers: { 'x-api-key': apiKey.key }, body: transcriptionForm([['stream', 'true']]),
       });
-      assertEquals(response.status, 200);
+      assertEquals(response.status, 201);
       assertEquals(response.headers.get('x-stream-trace'), 'trace-sse');
       const stream = await response.text();
       assertEquals(stream.includes('transcript.text.delta'), true);

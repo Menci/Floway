@@ -1,6 +1,8 @@
 import { test } from 'vitest';
 
+import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
 import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
+import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, MOCKED_FETCH_EGRESS, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
@@ -44,6 +46,24 @@ test('/v1/images/generations rejects model on custom upstream without /images/ge
       assertEquals(response.status, 400);
     },
   );
+});
+
+test('/v1/images/generations records gateway error attribution for invalid JSON', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+
+  const response = await requestAppWithWarmModels('/v1/images/generations', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+    body: '{',
+  });
+  assertEquals(response.status, 400);
+  assertEquals(await response.json(), {
+    error: { message: 'OpenAI Images Generations request body must be valid JSON.', type: 'api_error' },
+  });
+  await flushAsyncWork();
+  assertEquals(dumps.stored[0]?.record.meta.error, { kind: 'gateway' });
 });
 
 test('/v1/images/generations forwards a JSON request through a custom upstream and records usage', async () => {

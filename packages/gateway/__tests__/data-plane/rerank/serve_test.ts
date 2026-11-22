@@ -1,9 +1,16 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
+import { GatewayRequestDirectory, createGatewayPipelineServices } from '../../../src/data-plane/pipeline/index.ts';
+import { rerankPipeline } from '../../../src/data-plane/rerank/pipeline.ts';
 import type { Repo } from '../../../src/repo/types.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
+import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
+import { createDumpDecoder, createDumpEncoder, defineStage, pipeline, projectWireView, runPipeline, terminal } from '@floway-dev/pipeline';
+import type { RunTraceSink } from '@floway-dev/pipeline';
 import type { ModelPricing, RerankTarget } from '@floway-dev/protocols/common';
+import { parseRerankRequest } from '@floway-dev/protocols/rerank';
+import type { HttpOutcome, ProviderPipelineRerankOutcome } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -209,4 +216,91 @@ test('cross-protocol success still validates result items before rendering', asy
   assertEquals(usage[0].metrics, [{ metric: 'input_tokens', quantity: '7', unitPrice: null }]);
   const [performance] = await repo.performance.listAll();
   assertEquals(performance.errorsNoOutput, 1);
+});
+
+test('rerankPipeline projects raw request and upstream bytes through Dump V2', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveRerankUpstream(repo, { protocol: 'jina-v1' });
+  await warmModelsForTest();
+  const ctx = mockGatewayCtx({ apiKeyId: apiKey.id, backgroundScheduler: promise => { void promise; } });
+  const directory = new GatewayRequestDirectory({
+    user: ctx.user,
+    upstreamIds: null,
+    randomizeUpstreams: false,
+    runtimeLocation: ctx.runtimeLocation,
+    backgroundScheduler: ctx.backgroundScheduler,
+  });
+  await directory.ensureLoaded();
+  const provider = directory.providerFor('up_rerank');
+  const upstreamBody = '{"model":"raw-reranker","object":"list","results":[{"index":0,"relevance_score":1.0,"vendor_result":true}]}';
+  const providerPipe = pipeline<{ readonly 'request.model': string }>('provider.rerank')
+    .use(defineStage<{ readonly 'request.model': string }, Record<never, never>, HttpOutcome, ProviderPipelineRerankOutcome>({
+      name: 'gateway.rerank.dispatch.contract',
+      execute: async (_facts, next) => ({
+        target: { protocol: 'jina-v1' },
+        modelKey: 'raw-reranker',
+        http: await next(),
+      }),
+    }))
+    .end(terminal<Record<never, never>, HttpOutcome>({
+      name: 'gateway.rerank.http',
+      tap: 'upstream',
+      execute: async (_facts, env) => ({
+        status: 200,
+        statusText: 'OK',
+        headers: [['content-type', 'application/json']],
+        body: env.createStream({
+          label: 'http.body',
+          async *iterate() {
+            yield new TextEncoder().encode(upstreamBody);
+          },
+        }),
+        timing: { startedAtMs: 1, headersAtMs: 2 },
+      }),
+    }));
+  Object.assign(provider, { pipelines: { ...provider.pipelines, rerank: providerPipe } });
+
+  const encoder = createDumpEncoder({ detectRawSecretLeaks: false });
+  const chunks: Uint8Array[] = [];
+  const traceSink: RunTraceSink = {
+    push: event => {
+      for (const encoded of encoder.encodeBatch([event])) {
+        chunks.push(new TextEncoder().encode(`${JSON.stringify(encoded)}\n`));
+      }
+    },
+  };
+  const rawRequest = {
+    model: 'public-reranker',
+    query: 'query',
+    documents: ['one'],
+    vendor_request: { weight: 1.0 },
+  };
+  const parsed = parseRerankRequest('jina-v1', rawRequest);
+  const outcome = await runPipeline(rerankPipeline('jina-v1'), {
+    'request.http': {
+      method: 'POST',
+      url: 'https://gateway.example/jina/v1/rerank',
+      headers: [],
+      body: rawRequest,
+      protocol: 'jina-v1',
+    },
+    'request.inboundHeaders': [],
+    'request.model': parsed.model,
+    'request.payload': parsed.request,
+  }, {
+    services: createGatewayPipelineServices(ctx, { directory }),
+    traceSink,
+  });
+  assertEquals(new TextDecoder().decode(outcome.body as Uint8Array), upstreamBody);
+
+  const decoder = createDumpDecoder();
+  for (const chunk of chunks) decoder.pushNdjsonChunk(chunk);
+  const wire = projectWireView(decoder.pushNdjsonChunk(new Uint8Array(), { final: true }));
+  expect(wire.downstreamRequest?.body).toEqual(rawRequest);
+  expect(wire.upstreamAttempts).toHaveLength(1);
+  expect(wire.upstreamAttempts[0]?.response?.status).toBe(200);
+  expect(wire.upstreamAttempts[0]?.response?.rawStreamId).toBeTypeOf('number');
+  expect(new TextDecoder().decode(wire.upstreamAttempts[0]?.response?.rawFrames[0]?.value as Uint8Array)).toBe(upstreamBody);
+  expect(wire.downstreamResponse?.status).toBe(200);
+  expect(new TextDecoder().decode(wire.downstreamResponse?.body as Uint8Array)).toBe(upstreamBody);
 });

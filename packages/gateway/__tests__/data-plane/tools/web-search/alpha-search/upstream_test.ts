@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest';
 
-import type { InboundHeaderMatcher, ModelCandidate } from '@floway-dev/provider';
+import { defineStage, pipeline, terminal } from '@floway-dev/pipeline';
+import type { InboundHeaderMatcher, ModelCandidate, HttpOutcome, ProviderPipelineAlphaSearchInput, ProviderPipelineServices } from '@floway-dev/provider';
 import { assertEquals, assertExists, stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
 let resolvedCandidate: ModelCandidate | undefined;
@@ -34,12 +35,32 @@ const dispatcherFor = async (kind: 'chatgpt' | 'custom', inboundHeaderAllowlist:
     upstreamId: context.config.upstreamId,
     kind,
     inboundHeaderAllowlist,
-    instance: stubProvider({
-      callAlphaSearch: async (_model, _body, _signal, opts) => {
-        observedHeaders = opts.headers;
-        return { http: new Response('{}'), modelKey: 'search-model' };
-      },
-    }),
+    instance: stubProvider(),
+    pipelines: {
+      alphaSearch: pipeline<ProviderPipelineAlphaSearchInput>('test.alphaSearch')
+        .use(defineStage<ProviderPipelineAlphaSearchInput, Record<never, never>, HttpOutcome, HttpOutcome, never, ProviderPipelineServices>({
+          name: 'test.alphaSearch.request',
+          execute: async (facts, _next, _env) => {
+            observedHeaders = new Headers(facts['request.inboundHeaders'].map(([name, value]): [string, string] => [
+              name,
+              typeof value === 'string' ? value : value.reveal(),
+            ]));
+            return {
+              status: 200,
+              statusText: 'OK',
+              headers: [],
+              body: null,
+              timing: { startedAtMs: 0, headersAtMs: 0 },
+            };
+          },
+        }))
+        .end(terminal<ProviderPipelineAlphaSearchInput, HttpOutcome, ProviderPipelineServices>({
+          name: 'unreachable',
+          execute: async () => {
+            throw new Error('unreachable');
+          },
+        })),
+    },
   };
   resolvedCandidate = stubModelCandidate({ provider });
   const dispatcher = await resolveAlphaSearchDispatcher(context);

@@ -1,9 +1,16 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
+import { decisionPipeline } from '../../../src/data-plane/decision/pipeline.ts';
+import { GatewayRequestDirectory, createGatewayPipelineServices } from '../../../src/data-plane/pipeline/index.ts';
 import type { Repo } from '../../../src/repo/types.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
-import type { DecisionTarget, ModelPricing } from '@floway-dev/protocols/common';
+import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
+import { mockGatewayCtx } from '../../test-utils/gateway-ctx.ts';
+import { createDumpDecoder, createDumpEncoder, defineStage, pipeline, projectWireView, runPipeline, terminal } from '@floway-dev/pipeline';
+import type { RunTraceSink } from '@floway-dev/pipeline';
+import { parseJSONWithRawNumbers, type DecisionTarget, type ModelPricing } from '@floway-dev/protocols/common';
+import { parseDecisionRequest } from '@floway-dev/protocols/decision';
+import type { HttpOutcome, ProviderPipelineDecisionOutcome } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -164,4 +171,87 @@ test('/v1/decisions surfaces a cross-dialect upstream body it cannot parse', asy
       assertEquals(response.status, 502);
     },
   );
+});
+
+test('decisionPipeline projects raw-number request and rendered upstream values through Dump V2', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveDecisionUpstream(repo, { protocol: 'typesafe-systemone' });
+  await warmModelsForTest();
+  const ctx = mockGatewayCtx({ apiKeyId: apiKey.id, backgroundScheduler: promise => { void promise; } });
+  const directory = new GatewayRequestDirectory({
+    user: ctx.user,
+    upstreamIds: null,
+    randomizeUpstreams: false,
+    runtimeLocation: ctx.runtimeLocation,
+    backgroundScheduler: ctx.backgroundScheduler,
+  });
+  await directory.ensureLoaded();
+  const provider = directory.providerFor('up_decision');
+  const upstreamBody = '{"model":"microsoft-decision-1","answers":{"is_bug":{"type":"noul","noul":1.0}},"usage":{"input_tokens":11}}';
+  const providerPipe = pipeline<{ readonly 'request.model': string }>('provider.decision')
+    .use(defineStage<{ readonly 'request.model': string }, Record<never, never>, HttpOutcome, ProviderPipelineDecisionOutcome>({
+      name: 'gateway.decision.dispatch.contract',
+      execute: async (_facts, next) => ({
+        target: { protocol: 'typesafe-systemone' },
+        modelKey: 'microsoft-decision-1',
+        http: await next(),
+      }),
+    }))
+    .end(terminal<Record<never, never>, HttpOutcome>({
+      name: 'gateway.decision.http',
+      tap: 'upstream',
+      execute: async (_facts, env) => ({
+        status: 200,
+        statusText: 'OK',
+        headers: [['content-type', 'application/json']],
+        body: env.createStream({
+          label: 'http.body',
+          async *iterate() {
+            yield new TextEncoder().encode(upstreamBody);
+          },
+        }),
+        timing: { startedAtMs: 1, headersAtMs: 2 },
+      }),
+    }));
+  Object.assign(provider, { pipelines: { ...provider.pipelines, decision: providerPipe } });
+
+  const encoder = createDumpEncoder({ detectRawSecretLeaks: false });
+  const chunks: Uint8Array[] = [];
+  const traceSink: RunTraceSink = {
+    push: event => {
+      for (const encoded of encoder.encodeBatch([event])) {
+        chunks.push(new TextEncoder().encode(`${JSON.stringify(encoded)}\n`));
+      }
+    },
+  };
+  const rawRequestText = '{"model":"public-decision","state":{"reading":1.0},"questions":{"is_bug":{"type":"noul","instructions":"Is this a bug?"}}}';
+  const rawRequestBody = parseJSONWithRawNumbers(rawRequestText);
+  const parsed = parseDecisionRequest('typesafe-systemone', rawRequestBody);
+  const outcome = await runPipeline(decisionPipeline('openai-decisions'), {
+    'request.http': {
+      method: 'POST',
+      url: 'https://gateway.example/v1/decisions',
+      headers: [],
+      body: rawRequestBody,
+      protocol: 'typesafe-systemone',
+    },
+    'request.inboundHeaders': [],
+    'request.model': parsed.model,
+    'request.payload': parsed.request,
+  }, {
+    services: createGatewayPipelineServices(ctx, { directory }),
+    traceSink,
+  });
+  expect(new TextDecoder().decode(outcome.body as Uint8Array)).toContain('"probability":1.0');
+
+  const decoder = createDumpDecoder();
+  for (const chunk of chunks) decoder.pushNdjsonChunk(chunk);
+  const wire = projectWireView(decoder.pushNdjsonChunk(new Uint8Array(), { final: true }));
+  expect(JSON.stringify(wire.downstreamRequest?.body)).toContain('"reading":1.0');
+  expect(wire.upstreamAttempts).toHaveLength(1);
+  expect(wire.upstreamAttempts[0]?.response?.status).toBe(200);
+  expect(wire.upstreamAttempts[0]?.response?.rawStreamId).toBeTypeOf('number');
+  expect(new TextDecoder().decode(wire.upstreamAttempts[0]?.response?.rawFrames[0]?.value as Uint8Array)).toBe(upstreamBody);
+  expect(wire.downstreamResponse?.status).toBe(200);
+  expect(new TextDecoder().decode(wire.downstreamResponse?.body as Uint8Array)).toContain('"probability":1.0');
 });

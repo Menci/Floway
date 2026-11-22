@@ -1,6 +1,11 @@
 import type { AlphaSearchDispatcher } from './upstream.ts';
+import type { GatewayPipelineServices } from '../../../pipeline/services.ts';
 import { type WebSearchCallIR, UNSUPPORTED_LOCAL_WEB_SEARCH_FEATURE_ERROR_NAME, unsupportedLocalWebSearchFeatureIr } from '../operations.ts';
+import { alphaSearchPassthroughSubPipeline } from '../pipeline.ts';
+import type { StageEnv } from '@floway-dev/pipeline';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
+import { readManagedBytes } from '@floway-dev/provider';
+import type { RouteCandidate } from '@floway-dev/provider';
 
 interface UpstreamErrorDetails {
   message: string;
@@ -74,6 +79,62 @@ export const executeAlphaSearch = async ({
     // `snippet` field. The model-facing output is the only lossless bridge;
     // this explicitly synthetic entry serves OpenAI Responses clients that request
     // `web_search_call.results` without pretending alpha DTOs were preserved.
+    results: body.output === ''
+      ? []
+      : [{ type: 'text_result', url: '', title: 'OpenAI search output', snippet: body.output }],
+    outputText: body.output,
+  };
+};
+
+export const executeAlphaSearchSubRun = async (
+  env: StageEnv<GatewayPipelineServices>,
+  {
+    candidate,
+    sessionId,
+    commands,
+    settings,
+    input,
+    action,
+  }: {
+    candidate: RouteCandidate;
+    sessionId: string;
+    commands: Record<string, unknown>;
+    settings: Record<string, unknown>;
+    input: CanonicalOpenAIResponsesInputItem[];
+    action: OpenAIResponsesWebSearchAction;
+  },
+): Promise<WebSearchCallIR> => {
+  const http = await env.spawnSubRun(alphaSearchPassthroughSubPipeline, {
+    'route.candidate': candidate,
+    'request.payload': {
+      id: sessionId,
+      input,
+      commands,
+      settings,
+    },
+    'request.inboundHeaders': [],
+  });
+  const raw = new TextDecoder().decode(await readManagedBytes(http.body));
+  if (http.status < 200 || http.status >= 300) {
+    const upstreamError = upstreamErrorDetails(raw);
+    if (upstreamError?.name === UNSUPPORTED_LOCAL_WEB_SEARCH_FEATURE_ERROR_NAME) {
+      return unsupportedLocalWebSearchFeatureIr(action, upstreamError.message);
+    }
+    throw new Error(upstreamError?.message ?? `OpenAI search upstream returned HTTP ${http.status}: ${raw}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch {
+    throw new Error('OpenAI search upstream returned a non-JSON success body');
+  }
+  if (parsed === null || typeof parsed !== 'object' || typeof (parsed as { output?: unknown }).output !== 'string') {
+    throw new Error('OpenAI search upstream response must include an output string');
+  }
+  const body = parsed as { output: string };
+  return {
+    action,
     results: body.output === ''
       ? []
       : [{ type: 'text_result', url: '', title: 'OpenAI search output', snippet: body.output }],

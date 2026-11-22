@@ -6,24 +6,32 @@
 
 import type { Context } from 'hono';
 
-import { respondOpenAIAudioTranscription } from './respond.ts';
+import { openaiAudioTranscriptionsPipeline } from './pipeline.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
+import {
+  buildDownstreamWireUrl,
+  createGatewayPipelineServices,
+  inboundHeaderEntriesFromHono,
+  runGatewayHttpPipeline,
+} from '../pipeline/index.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
-import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
 import { isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
-import type { OpenAIAudioTranscriptionFormEntry } from '@floway-dev/provider';
+import type { MultipartField } from '@floway-dev/provider';
 
 type PreparedOpenAIAudioTranscription =
   | {
     readonly type: 'ok';
     readonly model: string;
     readonly wantsStream: boolean;
-    readonly entries: readonly OpenAIAudioTranscriptionFormEntry[];
+    readonly entries: readonly MultipartField[];
   }
   | { readonly type: 'invalid'; readonly message: string };
 
-const prepareOpenAIAudioTranscription = async (bytes: Uint8Array, contentType: string | undefined): Promise<PreparedOpenAIAudioTranscription> => {
+const prepareOpenAIAudioTranscription = async (
+  bytes: Uint8Array,
+  contentType: string | undefined,
+): Promise<PreparedOpenAIAudioTranscription> => {
   if (!isMultipartFormDataMediaType(contentType)) {
     return { type: 'invalid', message: 'OpenAI Audio Transcriptions request body must use multipart/form-data.' };
   }
@@ -44,9 +52,19 @@ const prepareOpenAIAudioTranscription = async (bytes: Uint8Array, contentType: s
     return { type: 'invalid', message: 'OpenAI Audio Transcriptions request body must include a file upload.' };
   }
 
-  const entries: OpenAIAudioTranscriptionFormEntry[] = [];
+  const entries: MultipartField[] = [];
   for (const [name, value] of form.entries()) {
-    entries.push({ name, value });
+    if (typeof value === 'string') {
+      entries.push({ kind: 'text', name, value });
+    } else {
+      entries.push({
+        kind: 'file',
+        name,
+        bytes: new Uint8Array(await value.arrayBuffer()),
+        filename: value.name,
+        contentType: value.type,
+      });
+    }
   }
   return {
     type: 'ok',
@@ -66,20 +84,25 @@ export const openaiAudioTranscriptions = async (c: Context): Promise<Response> =
   });
   if (request.type === 'invalid') {
     ctx.dump?.error('gateway');
-    return finalizeGatewayResponse(ctx, passthroughApiError(c, request.message, 400));
+    return finalizeGatewayResponse(ctx, Response.json(
+      { error: { message: request.message, type: 'api_error' } },
+      { status: 400 },
+    ));
   }
 
-  ctx.dump?.requestedModel(request.model);
-  const response = await passthroughServe({
-    c,
-    ctx,
-    sourceApi: '/audio/transcriptions',
-    operation: 'audio_transcription',
-    model: request.model,
-    kind: 'transcription',
-    modelServesEndpoint: model => model.endpoints.openaiAudioTranscriptions !== undefined,
-    call: (provider, model, opts) => provider.instance.callOpenAIAudioTranscriptions(model, { entries: request.entries }, ctx.abortSignal, opts),
-    response: { format: 'strategy', respond: respondOpenAIAudioTranscription },
-  });
-  return finalizeGatewayResponse(ctx, response);
+  const services = createGatewayPipelineServices(ctx);
+  services.attribution.recordRequestedModel(request.model);
+  const inboundHeaders = inboundHeaderEntriesFromHono(c);
+  return await runGatewayHttpPipeline(c, ctx, openaiAudioTranscriptionsPipeline, {
+    'request.http': {
+      method: c.req.method,
+      url: buildDownstreamWireUrl(c.req.url),
+      headers: inboundHeaders,
+      body: { kind: 'multipart', parts: request.entries },
+      protocol: 'openai-audio-transcriptions',
+    },
+    'request.inboundHeaders': inboundHeaders,
+    'request.model': request.model,
+    'request.entries': request.entries,
+  }, { services });
 };
