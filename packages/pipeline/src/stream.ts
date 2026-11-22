@@ -332,7 +332,7 @@ export const wrapOptions = <In, Out>(inner: StreamResource<In>, options: WrapStr
     }, signal),
     onClose: async end => {
       if (!options.onClose) return;
-      if (end.how === 'cancelled' || inner.ending) {
+      if (end.how === 'cancelled' || (inner.ending && pending === undefined)) {
         await options.onClose(end, null);
         return;
       }

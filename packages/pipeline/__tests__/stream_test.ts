@@ -148,6 +148,56 @@ describe('stream release and cancellation', () => {
     await expect(handle.done).resolves.toEqual({ ok: true });
   });
 
+  it('hands a rejected retained read to onClose even after the inner has ended', async () => {
+    const pulling = Promise.withResolvers<void>();
+    const upstream = Promise.withResolvers<number>();
+    const unwinding = Promise.withResolvers<void>();
+    const resume = Promise.withResolvers<void>();
+    const innerEnded = Promise.withResolvers<void>();
+    const readError = new Error('raw read failed');
+    let innerId: number | undefined;
+    const handle = run(bodyPipeline(env => {
+      const inner = env.createStream({
+        label: 'inner', async *iterate() {
+          pulling.resolve();
+          yield await upstream.promise;
+        },
+      });
+      innerId = streamIdOf(inner);
+      return {
+        body: env.wrapStream(inner, {
+          label: 'outer', async *transform(source) {
+            try {
+              yield* source;
+            } finally {
+              unwinding.resolve();
+              await resume.promise;
+            }
+          },
+          onClose: async (_end, inner) => {
+            expect(inner).not.toBeNull();
+            await expect(inner!.next()).rejects.toBe(readError);
+          },
+        }),
+      };
+    }), {}, {
+      ...options, events: event => {
+        if (event.k === 'end' && event.streamId === innerId) innerEnded.resolve();
+      },
+    });
+    const { body } = await handle.result;
+    const read = body[Symbol.asyncIterator]().next();
+    await pulling.promise;
+    const release = body.close();
+    await unwinding.promise;
+    upstream.reject(readError);
+    await innerEnded.promise;
+    resume.resolve();
+    await expect(release).resolves.toBeUndefined();
+    await expect(read).resolves.toMatchObject({ done: true });
+    await expect(handle.done).resolves.toMatchObject({ ok: false, error: { message: 'raw read failed' } });
+  });
+
   it('releases the inner by default after the outer hook, aborting its own signal', async () => {
     const order: string[] = [];
     const handle = run(bodyPipeline(env => {

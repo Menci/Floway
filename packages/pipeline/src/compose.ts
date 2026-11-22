@@ -52,13 +52,17 @@ export const assemblyOf = (pipeline: AnyPipeline): Assembly => {
   return assembly;
 };
 
-type TargetOptions<T extends TargetMap> = keyof T extends never ? { readonly targets?: never }
-  : { readonly targets: T };
+type CompatibleTargets<T extends TargetMap, S> = {
+  readonly [K in keyof T]: T[K] extends StaticTarget<any, any, S> | DynamicTarget<any, any, any, S> ? T[K] : never;
+};
+
+type TargetOptions<T extends TargetMap, S> = keyof T extends never ? { readonly targets?: never }
+  : { readonly targets: T & CompatibleTargets<T, S> };
 
 export const compose = <In, Out, S, Targets extends TargetMap = {}>(name: string, options: {
   readonly stages: readonly Stage<S>[];
   readonly ending: Ending<Targets, S>;
-} & TargetOptions<Targets>): Pipeline<In, Out, S> => {
+} & TargetOptions<Targets, S>): Pipeline<In, Out, S> => {
   const { stages, ending } = options;
   const names = new Set([ending.name]);
   if (ending.kind !== 'ending') throw new TypeError(`Pipeline "${name}" must finish with an ending`);
@@ -90,9 +94,8 @@ export const compose = <In, Out, S, Targets extends TargetMap = {}>(name: string
   requireKeys(ending.name, ending.request.needs);
   const declaredSlots: Readonly<Record<string, ThroughDecl>> = ending.into ?? {};
   const suppliedSlots: TargetMap = options.targets ?? {};
-  for (const [key, declaration] of Object.entries(declaredSlots)) {
+  for (const key of Object.keys(declaredSlots)) {
     if (!Object.hasOwn(suppliedSlots, key)) throw new TypeError(`Ending "${ending.name}" declares a missing target "${key}"`);
-    requireKeys(ending.name, declaration.request.needs);
   }
   for (const key of Object.keys(suppliedSlots)) {
     if (!Object.hasOwn(declaredSlots, key)) throw new TypeError(`Ending "${ending.name}" has an undeclared target "${key}"`);

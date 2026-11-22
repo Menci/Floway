@@ -120,7 +120,7 @@ describe('composition', () => {
       },
     };
     const ending = defineEnding<Source, Translated, Target>({
-      name: 'translate', request: { needs: [] }, into: declarations, return: { provides: ['output', 'optional'] },
+      name: 'translate', request: { needs: ['source'] }, into: declarations, return: { provides: ['output', 'optional'] },
       execute: async ({ source, ...rest }, into) => {
         if (source === 'stub') return { output: 'stub', optional: true };
         const request = { ...rest, input: Number(source), ...(source === 'bad request' ? { extra: 1 } : {}) };
@@ -179,6 +179,69 @@ describe('composition', () => {
     const handle = run(pipeline, {}, options);
     await expect(handle.result).rejects.toMatchObject({ name: 'DeclarationViolationError', direction: 'up', detail: 'missing "missed"' });
     expect(resumed).toBe(false);
+  });
+
+  it('requires only the selected ending slot’s request needs', async () => {
+    type Input = { route: 'a' | 'b'; a?: number; b?: number };
+    type Output = { result: string };
+    type Targets = { a: StaticTarget<Input, Output, {}>; b: StaticTarget<Input, Output, {}> };
+    const leaf = compose<Input, Output, {}>('leaf', {
+      stages: [], ending: defineEnding<Input, Output>({
+        name: 'leaf', request: { needs: ['route'] }, return: { provides: ['result'] },
+        execute: async facts => ({ result: String(facts[facts.route]) }),
+      }),
+    });
+    const router = compose<Input, Output, {}, Targets>('router', {
+      stages: [], targets: { a: leaf, b: leaf },
+      ending: defineEnding<Input, Output, Targets>({
+        name: 'route', request: { needs: ['route'] },
+        into: {
+          a: { ...passthrough, request: { ...empty, needs: ['a'] } },
+          b: { ...passthrough, request: { ...empty, needs: ['b'] } },
+        },
+        execute: async (facts, into) => await into[facts.route](facts),
+      }),
+    });
+    link([router]);
+    await expect(run(router, { route: 'a', a: 12 }, options).result).resolves.toEqual({ result: '12' });
+    await expect(run(router, { route: 'b', a: 12 }, options).result).rejects.toThrow('missing "b"');
+    expect(router.entry).toEqual(['route']);
+  });
+
+  it('requires the composing service slice to cover all static and dynamic targets', async () => {
+    type Ports = { price: () => number };
+    type Services = Ports & { currency: string };
+    type Output = { result: string };
+    type Targets = { static: StaticTarget<{}, Output, Ports>; dynamic: DynamicTarget<'standard', {}, Output, Ports> };
+    const target = compose<{}, Output, Ports>('target', {
+      stages: [], ending: defineEnding<{}, Output, {}, Ports>({
+        name: 'price', request: { needs: [] }, return: { provides: ['result'] },
+        execute: async (_facts, _into, env) => ({ result: String(env.services.price()) }),
+      }),
+    });
+    const targets: Targets = { static: () => target, dynamic: { entry: [], exit: ['result'], resolve: () => target } };
+    const missingPorts = () => {
+      const staticEnding = defineEnding<{}, Output, Pick<Targets, 'static'>>({
+        name: 'static', request: { needs: [] }, into: { static: passthrough }, execute: async (facts, into) => await into.static(facts),
+      });
+      const dynamicEnding = defineEnding<{}, Output, Pick<Targets, 'dynamic'>>({
+        name: 'dynamic', request: { needs: [] }, into: { dynamic: passthrough }, execute: async (facts, into) => await into.dynamic('standard', facts),
+      });
+      // @ts-expect-error The thunk's target requires the price port.
+      compose<{}, Output, {}, Pick<Targets, 'static'>>('invalid static', { stages: [], ending: staticEnding, targets });
+      // @ts-expect-error The dynamic slot requires the price port.
+      compose<{}, Output, {}, Pick<Targets, 'dynamic'>>('invalid dynamic', { stages: [], ending: dynamicEnding, targets });
+    };
+    expect(typeof missingPorts).toBe('function');
+    const pipeline = compose<{}, Output, Services, Targets>('valid', {
+      stages: [], targets,
+      ending: defineEnding<{}, Output, Targets, Services>({
+        name: 'route', request: { needs: [] }, into: { static: passthrough, dynamic: passthrough },
+        execute: async (facts, into) => await into.dynamic('standard', facts),
+      }),
+    });
+    link([pipeline]);
+    await expect(run(pipeline, {}, { ...options, services: { price: () => 10, currency: 'SGD' } }).result).resolves.toEqual({ result: '10' });
   });
 
   it('exposes only declared into inputs and responses and omits next on return-only stages', () => {
