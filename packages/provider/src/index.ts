@@ -76,6 +76,7 @@ export {
   materializeHeaderLines,
   materializeWireUrl,
   parseUpstreamSseOutcome,
+  prepareUpstreamHttpRequest,
   readManagedBytes,
   syntheticJsonOutcome,
   toProviderModelFacts,

@@ -37,11 +37,24 @@ const checks = {
       throw new Error(`Durable Object probe returned HTTP ${response.status}`);
     }
   },
+  LOG_STREAM_DO: async (env) => {
+    const id = env.LOG_STREAM_DO.idFromName(PROBE_KEY);
+    const response = await env.LOG_STREAM_DO.get(id).fetch(new Request('https://deployment-probe.internal/'));
+    if (!response.ok || await response.text() !== 'Hello World') {
+      throw new Error(`Log stream Durable Object probe returned HTTP ${response.status}`);
+    }
+  },
 };
 
 const probe = async env => Promise.all(Object.values(checks).map(check => check(env)));
 
 export class ExecutionDO extends DurableObject {
+  fetch() {
+    return new Response('Hello World');
+  }
+}
+
+export class LogStreamDO extends DurableObject {
   fetch() {
     return new Response('Hello World');
   }
@@ -54,7 +67,7 @@ export default {
     try {
       await probe(env);
       return new Response('Hello World', {
-        headers: { 'x-floway-binding-probe': 'DB,FILES,IMAGES,KV,EXECUTION_DO' },
+        headers: { 'x-floway-binding-probe': 'DB,FILES,IMAGES,KV,EXECUTION_DO,LOG_STREAM_DO' },
       });
     } catch (error) {
       const detail = error instanceof Error

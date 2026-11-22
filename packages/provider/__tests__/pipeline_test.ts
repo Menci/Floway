@@ -22,8 +22,11 @@ import {
 import type { ProviderPipelineServices, UpstreamHttpRequest } from '../src/pipeline.ts';
 import {
   createDumpEncoder,
+  createDumpDecoder,
+  formatCurlCommand,
   isSecret,
   pipeline,
+  projectWireView,
   runPipeline,
   secret,
   StreamLeakError,
@@ -231,6 +234,56 @@ describe('httpTerminal', () => {
       { upstreamId: 'timing-up', startedAtMs: 11, headersAtMs: 12 },
     ]);
     expect(outcome.timing).toEqual({ startedAtMs: 11, headersAtMs: 12 });
+  });
+
+  test('projects prepared content types into wire views and curl commands', async () => {
+    let encodedEvents: ReturnType<ReturnType<typeof createDumpEncoder>['encodeBatch']> = [];
+    let collected = createDumpEncoder();
+    const traceSink: RunTraceSink = {
+      push: event => {
+        encodedEvents = [...encodedEvents, ...collected.encodeBatch([event])];
+      },
+    };
+    const jsonOutcome = await runPipeline(pipelineFor('wire-json'), {
+      'request.http': {
+        method: 'POST',
+        url: 'https://example.test/json',
+        headers: [],
+        body: { kind: 'json', value: { input: 'hello' } },
+      },
+    }, {
+      services: services(async () => new Response(null, { status: 204 })),
+      traceSink,
+    });
+    expect(jsonOutcome.status).toBe(204);
+
+    const jsonRequest = projectWireView(createDumpDecoder().pushEvents(encodedEvents)).upstreamAttempts[0]?.request;
+    expect(jsonRequest?.headers).toContainEqual(['content-type', 'application/json']);
+    expect(formatCurlCommand(jsonRequest!)).toContain("--header 'content-type: application/json'");
+
+    encodedEvents = [];
+    collected = createDumpEncoder();
+    await runPipeline(pipelineFor('wire-multipart'), {
+      'request.http': {
+        method: 'POST',
+        url: 'https://example.test/multipart',
+        headers: [['content-type', 'application/octet-stream']],
+        body: { kind: 'multipart', parts: [{ kind: 'text', name: 'model', value: 'm' }], boundary: 'fixed-boundary' },
+      },
+    }, {
+      services: services(async () => new Response(null, { status: 204 })),
+      traceSink,
+    });
+    const model = createDumpDecoder().pushEvents(encodedEvents);
+    const multipartRequest = projectWireView(model).upstreamAttempts.at(-1)?.request;
+    expect(multipartRequest?.headers).toContainEqual(['content-type', 'multipart/form-data; boundary=fixed-boundary']);
+    expect(multipartRequest?.headers.filter(([name]) => name.toLowerCase() === 'content-type')).toHaveLength(1);
+    const multipartCurl = formatCurlCommand(multipartRequest!);
+    expect(multipartCurl).toContain(
+      "--header 'content-type: multipart/form-data; boundary=fixed-boundary'",
+    );
+    expect(multipartCurl).not.toContain('"kind":"multipart"');
+    expect(multipartCurl).toContain('Content-Disposition: form-data; name="model"');
   });
 
   test.each([204, 205, 304])('returns a null body for status %i', async status => {

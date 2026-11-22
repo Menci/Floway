@@ -1,4 +1,6 @@
-import { isDecodedSecret, isDecodedStreamRef } from './dump-decoder.ts';
+import { base64 } from '@scure/base';
+
+import { isDecodedRawJson, isDecodedSecret, isDecodedStreamRef } from './dump-decoder.ts';
 import type { DecodedStageNode, DecodedStreamFrame, DumpViewModel } from './dump-decoder.ts';
 import { SECRET_BRAND } from './types.ts';
 import type { WireHttpUrl } from './types.ts';
@@ -345,6 +347,79 @@ export const formatWireUrl = (
 
 const shellQuote = (value: string): string => `'${value.replaceAll('\'', `'\\''`)}'`;
 
+const ansiCQuote = (value: string): string => {
+  const escaped = value
+    .replaceAll('\\', '\\\\')
+    .replaceAll('\'', "\\'")
+    .replaceAll('\r', '\\r')
+    .replaceAll('\n', '\\n')
+    .replaceAll('\t', '\\t');
+  return `$'${escaped}'`;
+};
+
+const escapeMultipartQuoted = (value: string): string =>
+  value.replaceAll('\r', '%0D').replaceAll('\n', '%0A').replaceAll('"', '%22');
+
+const extractBoundaryFromHeaders = (headers: readonly (readonly [string, unknown])[]): string | undefined => {
+  for (const [name, value] of headers) {
+    if (name.toLowerCase() !== 'content-type' || typeof value !== 'string') continue;
+    const match = /;\s*boundary=(?:"([^"]+)"|([^;\s]+))/i.exec(value);
+    const boundary = match?.[1] ?? match?.[2];
+    if (boundary !== undefined && boundary.length > 0) return boundary;
+  }
+  return undefined;
+};
+
+const encodeMultipartWireBody = (
+  body: Record<string, unknown>,
+  headers: readonly (readonly [string, unknown])[],
+): { readonly bytes: Uint8Array; readonly extraContentType?: string } | null => {
+  if (body.kind !== 'multipart' || !Array.isArray(body.parts)) return null;
+  const boundary = typeof body.boundary === 'string' && body.boundary.length > 0
+    ? body.boundary
+    : extractBoundaryFromHeaders(headers) ?? '----FlowayFormBoundary';
+  const encoder = new TextEncoder();
+  const crlf = encoder.encode('\r\n');
+  const chunks: Uint8Array[] = [];
+  for (const part of body.parts) {
+    if (!isRecord(part) || typeof part.name !== 'string') continue;
+    if (part.kind === 'text') {
+      const rendered = isSecretValue(part.value) ? '***REDACTED***' : String(part.value ?? '');
+      chunks.push(
+        encoder.encode(
+          `--${boundary}\r\nContent-Disposition: form-data; name="${escapeMultipartQuoted(part.name)}"\r\n\r\n${rendered}\r\n`,
+        ),
+      );
+    } else if (part.kind === 'file' && part.bytes instanceof Uint8Array) {
+      const filename = typeof part.filename === 'string' ? part.filename : 'blob';
+      const mime = typeof part.contentType === 'string' && part.contentType.length > 0
+        ? part.contentType
+        : 'application/octet-stream';
+      chunks.push(
+        encoder.encode(
+          `--${boundary}\r\nContent-Disposition: form-data; name="${escapeMultipartQuoted(part.name)}"; filename="${escapeMultipartQuoted(filename)}"\r\nContent-Type: ${mime}\r\n\r\n`,
+        ),
+        part.bytes,
+        crlf,
+      );
+    }
+  }
+  chunks.push(encoder.encode(`--${boundary}--\r\n`));
+  let total = 0;
+  for (const chunk of chunks) total += chunk.byteLength;
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const hasContentType = headers.some(([name]) => name.toLowerCase() === 'content-type');
+  return {
+    bytes,
+    ...(hasContentType ? {} : { extraContentType: `multipart/form-data; boundary=${boundary}` }),
+  };
+};
+
 const unwrapTaggedBody = (body: unknown): unknown => {
   if (!isRecord(body) || typeof body.kind !== 'string') return body;
   if (body.kind === 'json' && 'value' in body) return body.value;
@@ -352,14 +427,70 @@ const unwrapTaggedBody = (body: unknown): unknown => {
   return body;
 };
 
-const bodyText = (rawBody: unknown): string | undefined => {
+type CurlBodyPlan =
+  | { readonly kind: 'none' }
+  | { readonly kind: 'arg'; readonly flag: '--data-raw' | '--data-binary'; readonly quoted: string }
+  | { readonly kind: 'stdin-base64'; readonly encoded: string };
+
+const isPrintableText = (text: string): boolean => {
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index);
+    if (code === 9 || code === 10 || code === 13) continue;
+    if (code < 32 || code === 127) return false;
+  }
+  return true;
+};
+
+const planBytesBody = (bytes: Uint8Array): CurlBodyPlan => {
+  if (bytes.byteLength === 0) return { kind: 'arg', flag: '--data-raw', quoted: "''" };
+  if (!bytes.includes(0)) {
+    try {
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      if (isPrintableText(text)) {
+        return text.includes('\r')
+          ? { kind: 'arg', flag: '--data-binary', quoted: ansiCQuote(text) }
+          : { kind: 'arg', flag: '--data-raw', quoted: shellQuote(text) };
+      }
+    } catch {
+      // Binary payloads fall through to base64 stdin piping.
+    }
+  }
+  return { kind: 'stdin-base64', encoded: base64.encode(bytes) };
+};
+
+const planStringBody = (text: string): CurlBodyPlan =>
+  text.includes('\r')
+    ? { kind: 'arg', flag: '--data-binary', quoted: ansiCQuote(text) }
+    : { kind: 'arg', flag: '--data-raw', quoted: shellQuote(text) };
+
+const planCurlBody = (
+  rawBody: unknown,
+  headers: readonly (readonly [string, unknown])[],
+): { readonly body: CurlBodyPlan; readonly extraContentType?: string } => {
+  if (isRecord(rawBody)) {
+    const multipart = encodeMultipartWireBody(rawBody, headers);
+    if (multipart !== null) {
+      return {
+        body: planBytesBody(multipart.bytes),
+        ...(multipart.extraContentType === undefined ? {} : { extraContentType: multipart.extraContentType }),
+      };
+    }
+  }
   const body = unwrapTaggedBody(rawBody);
-  if (body === undefined || body === null) return undefined;
-  if (typeof body === 'string') return body;
-  if (body instanceof Uint8Array) return new TextDecoder().decode(body);
+  if (body === undefined || body === null) return { body: { kind: 'none' } };
+  if (typeof body === 'string') return { body: planStringBody(body) };
+  if (body instanceof Uint8Array) return { body: planBytesBody(body) };
+  const jsonWithRawCheck = JSON as typeof JSON & { readonly isRawJSON?: (candidate: unknown) => boolean };
+  const fallbackRawTokens = new Map<string, string>();
   const seen = new WeakSet<object>();
   const redact = (value: unknown): unknown => {
     if (isSecretValue(value)) return '***REDACTED***';
+    if (isDecodedRawJson(value)) {
+      if (jsonWithRawCheck.isRawJSON?.(value) === true) return value;
+      const placeholder = `__floway_raw_json_${fallbackRawTokens.size}_${crypto.randomUUID()}__`;
+      fallbackRawTokens.set(JSON.stringify(placeholder), value.rawJSON);
+      return placeholder;
+    }
     if (typeof value !== 'object' || value === null) return value;
     if (seen.has(value)) throw new TypeError('Cannot format a cyclic wire request body');
     seen.add(value);
@@ -368,16 +499,30 @@ const bodyText = (rawBody: unknown): string | undefined => {
     for (const [key, child] of Object.entries(value)) result[key] = redact(child);
     return result;
   };
-  return JSON.stringify(redact(body));
+  let serialized = JSON.stringify(redact(body));
+  for (const [quotedPlaceholder, raw] of fallbackRawTokens) {
+    serialized = serialized.replaceAll(quotedPlaceholder, raw);
+  }
+  return { body: planStringBody(serialized) };
 };
 
 export const formatCurlCommand = (req: ProjectedWireRequest): string => {
+  const { body, extraContentType } = planCurlBody(req.body, req.headers);
   const parts = ['curl', '--request', shellQuote(req.method), shellQuote(formatWireUrl(req.url, { maskSecrets: true }))];
   for (const [name, value] of req.headers) {
     const rendered = isSecretValue(value) ? '***REDACTED***' : String(value);
     parts.push('--header', shellQuote(`${name}: ${rendered}`));
   }
-  const body = bodyText(req.body);
-  if (body !== undefined) parts.push('--data-raw', shellQuote(body));
+  if (extraContentType !== undefined) {
+    parts.push('--header', shellQuote(`content-type: ${extraContentType}`));
+  }
+  if (body.kind === 'arg') {
+    parts.push(body.flag, body.quoted);
+    return parts.join(' ');
+  }
+  if (body.kind === 'stdin-base64') {
+    parts.push('--data-binary', '@-');
+    return `printf '%s' ${shellQuote(body.encoded)} | base64 -d | ${parts.join(' ')}`;
+  }
   return parts.join(' ');
 };

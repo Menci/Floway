@@ -6,6 +6,7 @@ import { logger } from 'hono/logger';
 import { AGENT_SETUP_ROUTE_PATH, agentSetupPublicRoutes } from './control-plane/agent-setup.ts';
 import { controlPlaneRoutes } from './control-plane/routes.ts';
 import { mountDataPlane } from './data-plane/routes.ts';
+import { finalizeUnhandledRequestDump } from './data-plane/shared/gateway-ctx.ts';
 import { type AuthVars, authMiddleware } from './middleware/auth.ts';
 import { internalErrorResponse } from './middleware/internal-error-response.ts';
 
@@ -15,9 +16,12 @@ import { internalErrorResponse } from './middleware/internal-error-response.ts';
 // because apps/web reaches /v1/chat/completions etc. by plain fetch, not through
 // the RPC client, so its route types need not be preserved.
 export const app = new Hono<{ Variables: AuthVars }>()
-  .onError((error, c) => error instanceof HTTPException
-    ? c.json({ error: error.message }, error.status)
-    : internalErrorResponse(error, c))
+  .onError((error, c) => {
+    const response = error instanceof HTTPException
+      ? c.json({ error: error.message }, error.status)
+      : internalErrorResponse(error, c);
+    return finalizeUnhandledRequestDump(c.req.raw, error, response);
+  })
   // The public Agent Setup script endpoints reveal the selected API key as
   // executable source to an unauthenticated machine on purpose. They are mounted
   // here, structurally ahead of the logger / CORS / auth middleware below, so no

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { pipeline } from '../src/compose.ts';
+import { createDumpDecoder } from '../src/dump-decoder.ts';
+import { createDumpEncoder } from '../src/dump-encoder.ts';
 import { StageScopeClosedError, StreamLeakError } from '../src/errors.ts';
 import { runPipeline } from '../src/run.ts';
 import { dispatch, handoff, terminal, defineStage } from '../src/stage.ts';
@@ -607,5 +609,71 @@ describe('runPipeline', () => {
     expect((log?.fields?.body as { data: Uint8Array }).data[0]).toBe(2);
     expect((frame?.value as { data: Uint8Array }).data[0]).toBe(3);
     expect((leave?.outcome as { stable: object }).stable).toBe(outcome.stable);
+  });
+
+  it('snapshots mutable bytes separately for every trace event', async () => {
+    const bytes = new Uint8Array([1]);
+    const events: RawRunEvent[] = [];
+    const stage = defineStage<
+      { readonly input: string },
+      Record<never, never>,
+      number,
+      number,
+      never,
+      Record<never, never>
+    >({
+      name: 'mutable-bytes',
+      execute: async (_facts, _next, env) => {
+        const stream = env.createStream({
+          async *iterate() {
+            yield bytes;
+            bytes[0] = 2;
+            yield { bytes };
+          },
+        });
+        for await (const _value of stream) void _value;
+        return 0;
+      },
+    });
+    const result = pipeline<{ readonly input: string }>('fresh-snapshots')
+      .use(stage)
+      .end(terminal<{ readonly input: string }, number, Record<never, never>>('end', async () => 0));
+    await runPipeline(result, { input: 'x' }, { traceSink: { push: event => events.push(event) } });
+
+    const decoder = createDumpDecoder();
+    const encoder = createDumpEncoder();
+    const encoded = events.flatMap(event => encoder.encodeBatch([event]));
+    const values = decoder.pushEvents(encoded).streams.get(1)?.frames.map(frame => frame.value);
+    expect(values).toEqual([
+      new Uint8Array([1]),
+      { bytes: new Uint8Array([2]) },
+    ]);
+  });
+
+  it('traces a throwing terminal preparation and skips its execute', async () => {
+    const failure = error('prepare failed');
+    const events: RawRunEvent[] = [];
+    let executed = false;
+    const result = pipeline<{ readonly input: string }>('prepare-failure').end(
+      terminal<{ readonly input: string }, number, Record<never, never>>({
+        name: 'prepared-terminal',
+        prepare: () => { throw failure; },
+        execute: async () => {
+          executed = true;
+          return 0;
+        },
+      }),
+    );
+
+    await expect(runPipeline(result, { input: 'x' }, {
+      traceSink: { push: event => events.push(event) },
+    })).rejects.toBe(failure);
+    expect(executed).toBe(false);
+    const enter = events.find((event): event is Extract<RawRunEvent, { readonly k: 'enter' }> =>
+      event.k === 'enter' && event.name === 'prepared-terminal');
+    const fail = events.find((event): event is Extract<RawRunEvent, { readonly k: 'fail' }> =>
+      event.k === 'fail' && event.stageId === enter?.stageId);
+    expect(enter?.facts).toEqual({ input: 'x' });
+    expect(fail?.error).toBe(failure);
   });
 });

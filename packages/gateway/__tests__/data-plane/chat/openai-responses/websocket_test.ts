@@ -1286,6 +1286,55 @@ test('OpenAI Responses WebSocket holds the session lifetime open until a turn th
   );
 });
 
+test('OpenAI Responses WebSocket finalizes a turn cancelled before upstream response headers', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+  let resolveResponseStarted!: () => void;
+  const responseStarted = new Promise<void>(resolve => { resolveResponseStarted = resolve; });
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        resolveResponseStarted();
+        await new Promise<never>((_resolve, reject) => {
+          request.signal.addEventListener('abort', () => reject(request.signal.reason), { once: true });
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const { client, sessionLifetime } = await connectOpenAIResponsesWebSocketCapturingSessionLifetime(apiKey.key);
+      client.send(JSON.stringify({
+        type: 'response.create',
+        event_id: 'evt_close_before_headers',
+        response: { model: 'gpt-direct-responses', input: 'hello' },
+      }));
+
+      await responseStarted;
+      client.close();
+      await sessionLifetime;
+
+      assertEquals(dumps.stored.length, 1);
+      assertEquals(dumps.stored[0]?.meta, expect.objectContaining({
+        status: 499,
+        method: 'WS',
+        path: '/v1/responses',
+        model: 'gpt-direct-responses',
+        error: { kind: 'failed', reason: 'Downstream cancelled the WebSocket turn' },
+      }));
+    }),
+  );
+});
+
 // The four chat HTTP transports render a mid-pipeline throw (translation or
 // provider exception not represented as a ChatServeFailure) through an
 // `internalErrorResult(..., ctx.attempt.telemetry)` envelope,

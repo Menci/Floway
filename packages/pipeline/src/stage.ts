@@ -19,6 +19,10 @@ interface EndingOptions {
   readonly tap?: TapPoint;
 }
 
+interface TerminalOptions<Needs extends object> extends EndingOptions {
+  readonly prepare?: (facts: Readonly<Needs>) => Needs;
+}
+
 export interface StageDefinition<
   Needs extends object,
   Provided extends object,
@@ -102,6 +106,7 @@ export function terminal<
 >(definition: {
   readonly name: string;
   readonly tap?: TapPoint;
+  readonly prepare?: (facts: Readonly<Needs>) => Needs;
   readonly execute: (facts: Readonly<Needs>, env: import('./types.ts').StageEnv<Services>) => Promise<Out>;
 }): Ending<Needs, Out, Services>;
 export function terminal<
@@ -111,7 +116,7 @@ export function terminal<
 >(
   name: string,
   execute: (facts: Readonly<Needs>, env: import('./types.ts').StageEnv<Services>) => Promise<Out>,
-  options?: EndingOptions,
+  options?: TerminalOptions<Needs>,
 ): Ending<Needs, Out, Services>;
 export function terminal<
   Needs extends object,
@@ -121,10 +126,11 @@ export function terminal<
   nameOrDefinition: string | {
     readonly name: string;
     readonly tap?: TapPoint;
+    readonly prepare?: (facts: Readonly<Needs>) => Needs;
     readonly execute: (facts: Readonly<Needs>, env: import('./types.ts').StageEnv<Services>) => Promise<Out>;
   },
   execute?: (facts: Readonly<Needs>, env: import('./types.ts').StageEnv<Services>) => Promise<Out>,
-  options?: EndingOptions,
+  options?: TerminalOptions<Needs>,
 ): Ending<Needs, Out, Services> {
   const definition = typeof nameOrDefinition === 'string'
     ? { name: nameOrDefinition, execute: execute!, ...options }
@@ -133,6 +139,7 @@ export function terminal<
     kind: 'terminal',
     name: definition.name,
     ...(definition.tap === undefined ? {} : { tap: definition.tap }),
+    ...('prepare' in definition && definition.prepare !== undefined ? { prepare: definition.prepare } : {}),
     execute: definition.execute,
   });
 }

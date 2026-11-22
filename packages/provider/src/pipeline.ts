@@ -114,9 +114,11 @@ export type HttpRequestBody =
 const escapeMultipartQuoted = (value: string): string =>
   value.replaceAll('\r', '%0D').replaceAll('\n', '%0A').replaceAll('"', '%22');
 
+const createMultipartBoundary = (): string => `----FlowayFormBoundary${crypto.randomUUID().replaceAll('-', '')}`;
+
 export const encodeMultipartFormData = (
   parts: readonly MultipartField[],
-  boundary = `----FlowayFormBoundary${crypto.randomUUID().replaceAll('-', '')}`,
+  boundary = createMultipartBoundary(),
 ): { readonly bytes: Uint8Array; readonly contentType: string } => {
   const encoder = new TextEncoder();
   const chunks: Uint8Array[] = [];
@@ -295,6 +297,39 @@ export interface UpstreamHttpRequest extends Omit<WireRequestSnapshot, 'body'> {
   readonly body?: HttpRequestBody;
 }
 
+const withoutHeader = (headers: readonly HeaderEntry[], name: string): readonly HeaderEntry[] => Object.freeze(
+  headers.filter(([headerName]) => headerName.toLowerCase() !== name),
+);
+
+const withContentType = (
+  entries: readonly HeaderEntry[],
+  contentType: string,
+): readonly HeaderEntry[] => Object.freeze([
+  ...entries,
+  Object.freeze(['content-type', contentType] as const),
+]);
+
+export const prepareUpstreamHttpRequest = (request: UpstreamHttpRequest): UpstreamHttpRequest => {
+  const body = request.body;
+  if (body === null || body === undefined || body instanceof Uint8Array || typeof body === 'string') return request;
+  if (body.kind === 'json') {
+    return hasHeader(request.headers, 'content-type')
+      ? request
+      : { ...request, headers: withContentType(request.headers, 'application/json') };
+  }
+  if (body.kind === 'raw') {
+    return body.contentType === undefined || hasHeader(request.headers, 'content-type')
+      ? request
+      : { ...request, headers: withContentType(request.headers, body.contentType) };
+  }
+  const boundary = body.boundary ?? createMultipartBoundary();
+  return {
+    ...request,
+    headers: withContentType(withoutHeader(request.headers, 'content-type'), `multipart/form-data; boundary=${boundary}`),
+    body: { ...body, boundary },
+  };
+};
+
 export interface HttpOutcome {
   readonly status: number;
   readonly statusText: string;
@@ -324,40 +359,21 @@ interface MaterializedRequestBody {
   readonly headers: readonly HeaderEntry[];
 }
 
-const withContentType = (
-  entries: readonly HeaderEntry[],
-  contentType: string,
-): readonly HeaderEntry[] => Object.freeze([
-  ...entries,
-  Object.freeze(['content-type', contentType] as const),
-]);
-
 const materializeRequestBody = (body: HttpRequestBody, headers: readonly HeaderEntry[]): MaterializedRequestBody => {
   if (body === null || body === undefined) return { headers };
   if (body instanceof Uint8Array) return { body: body as Uint8Array<ArrayBuffer>, headers };
   if (typeof body === 'string') return { body, headers };
   if (body.kind === 'multipart') {
     const encoded = encodeMultipartFormData(body.parts, body.boundary);
-    const filtered = headers.filter(([name]) => name.toLowerCase() !== 'content-type');
     return {
       body: encoded.bytes as Uint8Array<ArrayBuffer>,
-      headers: withContentType(filtered, encoded.contentType),
+      headers,
     };
   }
   if (body.kind === 'raw') {
-    return {
-      body: body.bytes as Uint8Array<ArrayBuffer>,
-      headers: body.contentType === undefined || hasHeader(headers, 'content-type')
-        ? headers
-        : withContentType(headers, body.contentType),
-    };
+    return { body: body.bytes as Uint8Array<ArrayBuffer>, headers };
   }
-  return {
-    body: frozenJsonRequestBody(body.value),
-    headers: hasHeader(headers, 'content-type')
-      ? headers
-      : withContentType(headers, 'application/json'),
-  };
+  return { body: frozenJsonRequestBody(body.value), headers };
 };
 
 const responseHeaderEntries = (response: Response): readonly HeaderEntry[] => {
@@ -450,6 +466,10 @@ export const httpTerminal = (
 > => terminal({
   name,
   tap: 'upstream',
+  prepare: facts => ({
+    ...facts,
+    'request.http': prepareUpstreamHttpRequest(facts['request.http']),
+  }),
   execute: async (facts, env) => {
     const request = facts['request.http'];
     const url = materializeWireUrl(request.url);

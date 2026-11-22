@@ -97,6 +97,12 @@ describe('decoded value formatting', () => {
     expect(formatDecodedJson(12n)).toBe('"12n"');
   });
 
+  it('keeps decoded raw JSON exact and leaves ordinary rawJSON-shaped objects alone', () => {
+    const rawJSON = JSON as typeof JSON & { rawJSON: (text: string) => unknown };
+    expect(formatDecodedJson({ id: rawJSON.rawJSON('9007199254740993') })).toBe('{\n  "id": 9007199254740993\n}');
+    expect(formatDecodedJson({ rawJSON: 'literal' })).toBe('{\n  "rawJSON": "literal"\n}');
+  });
+
   it('formats structural paths and readable errors', () => {
     expect(formatDiffPath([])).toBe('$');
     expect(formatDiffPath(['request.payload', 'tools', 0, 'name'])).toBe('["request.payload"].tools[0].name');

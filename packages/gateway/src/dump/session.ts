@@ -256,6 +256,10 @@ export class DumpSession {
     this.responseBytes += byteLength;
   }
 
+  get isFinalized(): boolean {
+    return this.finalized;
+  }
+
   finalize(status: number, headers: ReadonlyArray<readonly [string, string]>): void;
   finalize(response: Response): Response;
   finalize(...args: [number, ReadonlyArray<readonly [string, string]>] | [Response]): void | Response {

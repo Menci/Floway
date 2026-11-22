@@ -14,7 +14,7 @@ import {
   retryTimeFromHeaderEntries,
   runGatewayHttpPipeline,
 } from '../../../src/data-plane/pipeline/index.ts';
-import type { DownstreamHttpOutcome, GatewayPipelineServices, SseOutcome } from '../../../src/data-plane/pipeline/index.ts';
+import type { DownstreamHttpOutcome, GatewayPipelineServices, SseOutcome, SseProtocol } from '../../../src/data-plane/pipeline/index.ts';
 import { MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
 import type { AuthedContext } from '../../../src/middleware/auth.ts';
 import { modelsRefreshInputs } from '../../../src/repo/models-refresh-inputs.ts';
@@ -412,7 +412,7 @@ describe('passthrough pipeline', () => {
 });
 
 describe('SSE and downstream response', () => {
-  const protocol = {
+  const protocol: SseProtocol<ProtocolFrame<{ text: string }>> = {
     encode: (frame: ProtocolFrame<{ text: string }>) => frame.type === 'done'
       ? { wire: null, end: { type: 'completed' as const, trailer: ['data: trailer\n\n'] } }
       : { wire: `data: ${frame.event.text}\n\n` },
@@ -476,6 +476,126 @@ describe('SSE and downstream response', () => {
     const { response, settles } = await runSse('source-error');
     expect(await response.text()).toBe('data: source failed\n\n');
     expect(settles).toEqual([{ type: 'source-error', error: expect.any(Error) }]);
+  });
+
+  const settleAtChunk = async (
+    source: (env: StageEnv<GatewayPipelineServices>) => ManagedStream<ProtocolFrame<{ text: string }>>,
+    protocolOverride: typeof protocol,
+    stopAt: string,
+    mutate?: (env: StageEnv<GatewayPipelineServices>) => void,
+  ): Promise<readonly SseOutcome[]> => {
+    const services = createGatewayPipelineServices(mockGatewayCtx());
+    const outcomes: SseOutcome[] = [];
+    const pipe = pipeline<Record<never, never>>('sse-cancel-at-chunk')
+      .use(defineStage<Record<never, never>, Record<never, never>, ManagedStream<Uint8Array>, ManagedStream<Uint8Array>, never, GatewayPipelineServices>({
+        name: 'sse',
+        execute: async (_facts, _next, env) => {
+          const bytes = encodeManagedSseStream(env, source(env), {
+            protocol: protocolOverride,
+            onSettle: outcome => { outcomes.push(outcome); },
+          });
+          const iterator = bytes[Symbol.asyncIterator]();
+          const decoder = new TextDecoder();
+          for (;;) {
+            const next = await iterator.next();
+            if (next.done) throw new Error('SSE source ended before the requested cancellation point');
+            if (decoder.decode(next.value) === stopAt) {
+              mutate?.(env);
+              await iterator.return?.();
+              return bytes;
+            }
+          }
+        },
+      }))
+      .end(terminal<Record<never, never>, ManagedStream<Uint8Array>, GatewayPipelineServices>({
+        name: 'done',
+        execute: async (_facts, env) => env.createStream({ async *iterate() {} }),
+      }));
+
+    await runPipeline(pipe, {}, { services });
+    return outcomes;
+  };
+
+  test('settles completed when downstream closes immediately after the final [DONE] chunk', async () => {
+    const outcomes = await settleAtChunk(
+      env => env.createStream<ProtocolFrame<{ text: string }>>({
+        async *iterate() {
+          yield { type: 'event', event: { text: 'hello' } };
+          yield { type: 'done' };
+        },
+      }),
+      {
+        ...protocol,
+        encode: frame => frame.type === 'done'
+          ? { wire: null, end: { type: 'completed' as const, trailer: ['data: [DONE]\n\n'] } }
+          : protocol.encode(frame),
+      },
+      'data: [DONE]\n\n',
+    );
+
+    expect(outcomes).toEqual([{ type: 'completed' }]);
+  });
+
+  test('settles completed when the terminal event carries its final bytes in wire', async () => {
+    const outcomes = await settleAtChunk(
+      env => env.createStream<ProtocolFrame<{ text: string }>>({
+        async *iterate() {
+          yield { type: 'event', event: { text: 'hello' } };
+          yield { type: 'done' };
+        },
+      }),
+      {
+        ...protocol,
+        encode: frame => frame.type === 'done'
+          ? { wire: 'event: message_stop\n\n', end: { type: 'completed' as const } }
+          : protocol.encode(frame),
+      },
+      'event: message_stop\n\n',
+    );
+
+    expect(outcomes).toEqual([{ type: 'completed' }]);
+  });
+
+  test('settles cancelled when downstream closes after an event before its trailing [DONE] chunk', async () => {
+    const outcomes = await settleAtChunk(
+      env => env.createStream<ProtocolFrame<{ text: string }>>({
+        async *iterate() {
+          yield { type: 'event', event: { text: 'hello' } };
+          yield { type: 'done' };
+        },
+      }),
+      {
+        ...protocol,
+        encode: frame => frame.type === 'done'
+          ? { wire: null, end: { type: 'completed' as const, trailer: ['data: [DONE]\n\n'] } }
+          : protocol.encode(frame),
+      },
+      'data: hello\n\n',
+    );
+
+    expect(outcomes).toEqual([{ type: 'cancelled' }]);
+  });
+
+  test('settles egress-error when the egress failure is set while yielding the final chunk', async () => {
+    const egressError = new Error('downstream write failed');
+    const outcomes = await settleAtChunk(
+      env => env.createStream<ProtocolFrame<{ text: string }>>({
+        async *iterate() {
+          yield { type: 'event', event: { text: 'hello' } };
+          yield { type: 'done' };
+        },
+      }),
+      {
+        ...protocol,
+        encode: frame => frame.type === 'done'
+          ? { wire: null, end: { type: 'completed' as const, trailer: ['data: [DONE]\n\n'] } }
+          : protocol.encode(frame),
+      },
+      'data: [DONE]\n\n',
+      env => { env.egressState.error = egressError; },
+    );
+
+    expect(outcomes).toEqual([{ type: 'egress-error', error: egressError }]);
   });
 
   test('settles cancellation at most once when downstream closes before a frame', async () => {

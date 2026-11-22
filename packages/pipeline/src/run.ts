@@ -49,7 +49,6 @@ interface RunState {
   sequence: number;
   stageSequence: number;
   timestamp: number;
-  readonly traceSnapshotCache: WeakMap<object, object>;
 }
 
 type StageContinuation<Out = unknown> = (
@@ -73,7 +72,7 @@ const streamTraceRecorder = (state: RunState) => ({
   },
   snapshot: (value: unknown) => state.traceSink === undefined
     ? value
-    : snapshotTraceValue(value, state.traceSnapshotCache),
+    : snapshotTraceValue(value),
 });
 
 const createRunState = <Services extends object>(
@@ -96,7 +95,6 @@ const createRunState = <Services extends object>(
     sequence: 0,
     stageSequence: 0,
     timestamp: 0,
-    traceSnapshotCache: new WeakMap(),
   };
   state.streams = new RunStreamCoordinator({
     trace: streamTraceRecorder(state),
@@ -174,7 +172,7 @@ const loggerFor = (
       ...entry,
       ...(entry.fields === undefined || state.traceSink === undefined
         ? {}
-        : { fields: snapshotTraceValue(entry.fields, state.traceSnapshotCache) }),
+        : { fields: snapshotTraceValue(entry.fields) }),
     }));
   };
   return {
@@ -318,6 +316,18 @@ const callStage = async <Out>(options: CallStageOptions<Out>): Promise<Out> => {
   scope.setEnvironment(environment);
   scope.setLazyEnvironmentFactory(lazy => createEnvironment(state, lazy, stageId, stageName, lazy.signal, spawnSubRun));
 
+  let effectiveFacts = facts;
+  let stagePrepareError: unknown;
+  let stagePrepareFailed = false;
+  if (stage.kind === 'terminal' && stage.prepare !== undefined) {
+    try {
+      effectiveFacts = freezeValue(stage.prepare(facts), `${stageName}.facts`) as Facts;
+    } catch (error) {
+      stagePrepareFailed = true;
+      stagePrepareError = error;
+    }
+  }
+
   traceEvent(state, (seq, tMs) => ({
     k: 'enter',
     seq,
@@ -327,39 +337,44 @@ const callStage = async <Out>(options: CallStageOptions<Out>): Promise<Out> => {
     edgeKind,
     name: stageName,
     ...(stage.tap === undefined ? {} : { tap: stage.tap }),
-    facts: state.traceSink ? snapshotTraceValue(facts, state.traceSnapshotCache) : facts,
+    facts: state.traceSink ? snapshotTraceValue(effectiveFacts) : effectiveFacts,
   }));
 
   let outcome: Out | undefined;
   let executionError: unknown;
-  try {
-    if (stage.kind === 'stage') {
-      const typed = stage as Stage<any, any, any, any, any, any>;
-      outcome = await typed.execute(facts, next as NextFn<any, any>, environment) as Out;
-    } else if (stage.kind === 'request-stage') {
-      const typed = stage as RequestStage<any, any, any, any>;
-      outcome = await typed.execute<Out>(facts, next as NextFn<any, Out>, environment);
-    } else if (stage.kind === 'terminal') {
-      outcome = await stage.execute(facts, environment) as Out;
-    } else {
-      const ending = stage as Extract<Ending<any, any, any>, { kind: 'dispatch' }>;
-      const selected = await ending.select(facts, environment);
-      if (!selected?.[DISPATCH_BRAND]) {
-        throw new TypeError(`Dispatch "${stageName}" returned an invalid handoff`);
+  let executionFailed = stagePrepareFailed;
+  if (executionFailed) executionError = stagePrepareError;
+  else {
+    try {
+      if (stage.kind === 'stage') {
+        const typed = stage as Stage<any, any, any, any, any, any>;
+        outcome = await typed.execute(facts, next as NextFn<any, any>, environment) as Out;
+      } else if (stage.kind === 'request-stage') {
+        const typed = stage as RequestStage<any, any, any, any>;
+        outcome = await typed.execute<Out>(facts, next as NextFn<any, Out>, environment);
+      } else if (stage.kind === 'terminal') {
+        outcome = await stage.execute(effectiveFacts, environment) as Out;
+      } else {
+        const ending = stage as Extract<Ending<any, any, any>, { kind: 'dispatch' }>;
+        const selected = await ending.select(facts, environment);
+        if (!selected?.[DISPATCH_BRAND]) {
+          throw new TypeError(`Dispatch "${stageName}" returned an invalid handoff`);
+        }
+        const dispatchInput = freezeValue(selected.input, 'dispatch.input') as Facts;
+        outcome = await executePipeline(state, selected.target, dispatchInput, stageId, 'dispatch', signal, scope) as Out;
       }
-      const dispatchInput = freezeValue(selected.input, 'dispatch.input') as Facts;
-      outcome = await executePipeline(state, selected.target, dispatchInput, stageId, 'dispatch', signal, scope) as Out;
+      outcome = freezeValue(outcome, 'outcome');
+    } catch (error) {
+      executionFailed = true;
+      executionError = error;
     }
-    outcome = freezeValue(outcome, 'outcome');
-  } catch (error) {
-    executionError = error;
   }
 
   let cleanupError: unknown;
   let exported: readonly ManagedStream<unknown>[] = [];
   try {
-    exported = executionError === undefined ? collectManagedStreams(outcome) : [];
-    await scope.finish(exported, executionError === undefined ? [] : [executionError]);
+    exported = executionFailed ? [] : collectManagedStreams(outcome);
+    await scope.finish(exported, executionFailed ? [executionError] : []);
     for (const stream of exported) {
       if (callerScope) {
         callerScope.receiveExport(stream);
@@ -374,7 +389,7 @@ const callStage = async <Out>(options: CallStageOptions<Out>): Promise<Out> => {
     traceEvent(state, (seq, tMs) => ({ k: 'fail', seq, tMs, stageId, error: cleanupError }));
     throw cleanupError;
   }
-  if (executionError !== undefined) {
+  if (executionFailed) {
     traceEvent(state, (seq, tMs) => ({ k: 'fail', seq, tMs, stageId, error: executionError }));
     throw executionError;
   }
@@ -383,7 +398,7 @@ const callStage = async <Out>(options: CallStageOptions<Out>): Promise<Out> => {
     seq,
     tMs,
     stageId,
-    outcome: state.traceSink ? snapshotTraceValue(outcome, state.traceSnapshotCache) : outcome,
+    outcome: state.traceSink ? snapshotTraceValue(outcome) : outcome,
   }));
   return outcome as Out;
 };
@@ -497,11 +512,8 @@ export const runPipeline = async <
     }));
     release?.();
   } else {
-    const settlement = Promise.all([
-      state.streams.settleRoots(),
-      state.streams.settleBackground(),
-    ]).then(([rootErrors, backgroundErrors]) => {
-      const combinedErrors = [...rootErrors, ...backgroundErrors];
+    const settlement = state.streams.settleAll().then(settledErrors => {
+      const combinedErrors = [...settledErrors];
       if (error !== undefined) combinedErrors.unshift(error);
       const doneError = combinedErrors.length === 0
         ? undefined

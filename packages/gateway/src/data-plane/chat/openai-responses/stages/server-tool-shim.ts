@@ -1107,7 +1107,7 @@ async function* consumeBilledTurn(
       await env.discard(result.events);
     }
     const usage = env.usageLedger.read(result.usageId, result).billableUsage;
-    if (usage !== undefined) env.usageLedger.updateBillableUsage(shimUsageId, usage);
+    env.usageLedger.accumulateBillableUsage(shimUsageId, usage);
   }
 }
 

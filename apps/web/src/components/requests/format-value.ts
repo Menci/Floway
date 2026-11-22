@@ -1,15 +1,9 @@
-import { isDecodedSecret, isDecodedStreamRef } from '@floway-dev/pipeline/browser';
+import { isDecodedRawJson, isDecodedSecret, isDecodedStreamRef } from '@floway-dev/pipeline/browser';
 
 type JsonRecord = Record<string, unknown>;
 
 const isRecord = (value: unknown): value is JsonRecord =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const rawJsonText = (value: unknown): string | null => {
-  if (!isRecord(value) || typeof value.rawJSON !== 'string') return null;
-  const enhanced = JSON as typeof JSON & { readonly isRawJSON?: (candidate: unknown) => boolean };
-  return Object.hasOwn(value, 'rawJSON') || enhanced.isRawJSON?.(value) === true ? value.rawJSON : null;
-};
 
 const base64Preview = (bytes: Uint8Array): string => {
   const preview = bytes.subarray(0, 96);
@@ -45,14 +39,13 @@ export const sanitizeDecodedForJson = (value: unknown): unknown => {
     if (typeof candidate === 'bigint') return `${candidate.toString()}n`;
     if (isRecord(candidate) && '$error' in candidate) return visit(candidate.$error);
 
-    // JSON.rawJSON objects stringify to their number without a placeholder.
-    // Reading the text here also preserves the decoder's polyfill shape.
-    const raw = rawJsonText(candidate);
-    if (raw !== null) {
+    if (isDecodedRawJson(candidate)) {
+      const enhanced = JSON as typeof JSON & { readonly rawJSON?: (text: string) => unknown };
+      if (enhanced.rawJSON !== undefined) return enhanced.rawJSON(candidate.rawJSON);
       try {
-        return JSON.parse(raw) as unknown;
+        return JSON.parse(candidate.rawJSON) as unknown;
       } catch {
-        return raw;
+        return candidate.rawJSON;
       }
     }
 

@@ -1,4 +1,4 @@
-import type { BillableUsage } from '@floway-dev/protocols/common';
+import { sumBillableUsage, type BillableUsage } from '@floway-dev/protocols/common';
 import type { PerformanceTelemetryContext, TelemetryModelIdentity } from '@floway-dev/provider';
 
 export interface ChatUsageEntry {
@@ -24,6 +24,13 @@ export class ChatUsageLedger {
   updateBillableUsage(usageId: string, billableUsage: BillableUsage): void {
     const entry = this.#require(usageId);
     this.#entries.set(usageId, { ...entry, billableUsage });
+  }
+
+  accumulateBillableUsage(usageId: string, billableUsage: BillableUsage | undefined): void {
+    if (billableUsage === undefined) return;
+    const entry = this.#require(usageId);
+    const accumulated = sumBillableUsage(entry.billableUsage, billableUsage);
+    if (accumulated !== undefined) this.#entries.set(usageId, { ...entry, billableUsage: accumulated });
   }
 
   setEntry(usageId: string, entry: ChatUsageEntryUpdate): void {

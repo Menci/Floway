@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { openaiResponsesAttemptPipeline } from '../../../../../src/data-plane/chat/openai-responses/attempt-pipeline.ts';
+import { tokenUsageFromBillableUsage } from '../../../../../src/data-plane/shared/telemetry/usage.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatPipelineServices, stubRouteCandidate } from '../../../../test-utils/chat-pipeline.ts';
@@ -16,9 +17,15 @@ test('a hosted tool loop executes through a real subrun and records edgeKind sub
   const calls: string[] = [];
   const actions: string[] = [];
   const provider = stubResponsesProviderPipeline('provider.responses', async (facts, env) => {
+    const callIndex = calls.length + 1;
     calls.push(JSON.stringify(facts['request.payload'].input));
     actions.push(facts['request.action']);
-    const terminalResponse = response('done');
+    const terminalResponse = {
+      ...response('done'),
+      usage: callIndex === 1
+        ? { input_tokens: 100, output_tokens: 10, total_tokens: 110, input_tokens_details: { cached_tokens: 25 } }
+        : { input_tokens: 200, output_tokens: 20, total_tokens: 220, input_tokens_details: { cached_tokens: 50 } },
+    };
     if (calls.length > 1) {
       return {
         action: 'generate', ok: true, modelKey: 'wire',
@@ -40,7 +47,11 @@ test('a hosted tool loop executes through a real subrun and records edgeKind sub
           yield eventFrame({ type: 'response.created', sequence_number: 0, response: { ...response(''), status: 'in_progress' } });
           yield eventFrame({ type: 'response.output_item.added', sequence_number: 1, output_index: 0, item: { ...call, status: 'in_progress' } });
           yield eventFrame({ type: 'response.output_item.done', sequence_number: 2, output_index: 0, item: call });
-          yield eventFrame({ type: 'response.completed', sequence_number: 3, response: { ...response(''), output: [call] } });
+          yield eventFrame({
+            type: 'response.completed',
+            sequence_number: 3,
+            response: { ...response(''), usage: terminalResponse.usage, output: [call] },
+          });
           yield doneFrame();
         },
       }),
@@ -82,6 +93,11 @@ test('a hosted tool loop executes through a real subrun and records edgeKind sub
   }
   expect(calls.length).toBeGreaterThan(1);
   expect(actions).toEqual(['generate', 'generate']);
+  expect(outcome.type).toBe('events');
+  if (outcome.type !== 'events') throw new Error(`Expected events, received ${outcome.type}`);
+  const ledgerUsage = services.usageLedger.read(outcome.usageId, outcome).billableUsage;
+  expect(ledgerUsage).toEqual({ input: 225, cacheRead: 75, cacheWrite: 0, cacheWrite1h: 0, output: 30 });
+  expect(tokenUsageFromBillableUsage(ledgerUsage)).toEqual({ input: 225, input_cache_read: 75, output: 30 });
   const enters = sink.events.filter(event => event.k === 'enter');
   expect(enters.some(event => event.name === 'agentMessageShim')).toBe(true);
   expect(enters.some(event => event.name === 'serverToolShim')).toBe(true);

@@ -548,7 +548,14 @@ const handleClientMessage = async (
     );
     await respondOpenAIResponsesWebSocket({ socket, eventId, signal, isClosed, result, ctx, payload, turnFailure, turn, services });
   } catch (error) {
-    if (signal.aborted || isClosed()) return;
+    if (signal.aborted || isClosed()) {
+      if (ctx !== undefined) {
+        recordFailedRequest(ctx, ctx.attempt.telemetry);
+        ctx.dump?.failed('Downstream cancelled the WebSocket turn');
+        ctx.dump?.finalize(499, []);
+      }
+      return;
+    }
     if (error instanceof WebSocketClientMessageError) {
       turnFailure.fail(400, {
         type: 'invalid_request_error',
@@ -567,6 +574,8 @@ const handleClientMessage = async (
       ctx.dump?.failed(error);
       ctx.dump?.finalize(500, []);
     }
+  } finally {
+    ctx?.dump?.finalize(signal.aborted || isClosed() ? 499 : 500, []);
   }
 };
 

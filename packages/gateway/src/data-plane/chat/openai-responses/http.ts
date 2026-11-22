@@ -25,7 +25,11 @@ const internalErrorResponse = (
   ctx?: ChatGatewayCtx,
 ): Response => {
   const verbatim = providerModelsUnavailableResponse(error);
-  if (verbatim !== null) return verbatim;
+  if (verbatim !== null) {
+    if (ctx === undefined) return verbatim;
+    ctx.dump?.error('upstream');
+    return finalizeGatewayResponse(ctx, verbatim);
+  }
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, {
     wantsStream: false,
     requestBody: takeRequestBody(requestBody),

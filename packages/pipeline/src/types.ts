@@ -201,6 +201,7 @@ export type Ending<
     readonly kind: 'terminal';
     readonly name: string;
     readonly tap?: TapPoint;
+    readonly prepare?: (facts: Readonly<Needs>) => Needs;
     readonly execute: (facts: Readonly<Needs>, env: StageEnv<Services>) => Promise<Out>;
     readonly [ENDING_META]?: { readonly needs: Needs; readonly out: Out; readonly services: Services };
   }

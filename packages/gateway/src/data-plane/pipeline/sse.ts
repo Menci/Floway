@@ -20,25 +20,41 @@ export const encodeManagedSseStream = <TFrame>(
   let terminalOutcome: SseOutcome | undefined;
   let settled = false;
 
-  const resolveTerminal = (): SseOutcome => terminalOutcome ??= env.egressState.error === undefined
-    ? { type: 'cancelled' }
-    : { type: 'egress-error', error: env.egressState.error };
+  const resolveTerminal = (): SseOutcome => {
+    if (env.egressState.error !== undefined) return { type: 'egress-error', error: env.egressState.error };
+    return terminalOutcome ?? { type: 'cancelled' };
+  };
 
   return env.wrapStream<TFrame, Uint8Array>(events, {
     label: options.label ?? 'downstream.sse.bytes',
     async *transform(source, signal) {
+      const emitTerminal = async function* (
+        wire: string | null,
+        trailer: readonly string[],
+        outcome: SseOutcome,
+      ): AsyncGenerator<Uint8Array> {
+        const chunks = wire === null ? trailer : [wire, ...trailer];
+        if (chunks.length === 0) {
+          terminalOutcome = outcome;
+          return;
+        }
+        for (const chunk of chunks.slice(0, -1)) yield encoder.encode(chunk);
+        terminalOutcome = outcome;
+        yield encoder.encode(chunks[chunks.length - 1]!);
+      };
+
       try {
         for await (const frame of source) {
           const output = options.protocol.encode(frame);
-          if (output.wire !== null) yield encoder.encode(output.wire);
-          if (output.end === undefined) continue;
+          if (output.end === undefined) {
+            if (output.wire !== null) yield encoder.encode(output.wire);
+            continue;
+          }
           if (output.end.type === 'premature-eof') {
-            for (const chunk of options.protocol.failure(output.end.error)) yield encoder.encode(chunk);
-            terminalOutcome = { type: 'premature-eof', error: output.end.error };
+            yield* emitTerminal(output.wire, options.protocol.failure(output.end.error), { type: 'premature-eof', error: output.end.error });
             return;
           }
-          for (const chunk of output.end.trailer ?? []) yield encoder.encode(chunk);
-          terminalOutcome = { type: output.end.type };
+          yield* emitTerminal(output.wire, output.end.trailer ?? [], { type: output.end.type });
           return;
         }
 
@@ -51,12 +67,10 @@ export const encodeManagedSseStream = <TFrame>(
 
         const end = options.protocol.eof();
         if (end.type === 'premature-eof') {
-          for (const chunk of options.protocol.failure(end.error)) yield encoder.encode(chunk);
-          terminalOutcome = { type: 'premature-eof', error: end.error };
+          yield* emitTerminal(null, options.protocol.failure(end.error), { type: 'premature-eof', error: end.error });
           return;
         }
-        for (const chunk of end.trailer ?? []) yield encoder.encode(chunk);
-        terminalOutcome = { type: end.type };
+        yield* emitTerminal(null, end.trailer ?? [], { type: end.type });
       } catch (error) {
         if (signal.aborted || env.egressState.error !== undefined) {
           terminalOutcome = env.egressState.error === undefined
@@ -64,8 +78,7 @@ export const encodeManagedSseStream = <TFrame>(
             : { type: 'egress-error', error: env.egressState.error };
           return;
         }
-        for (const chunk of options.protocol.failure(error)) yield encoder.encode(chunk);
-        terminalOutcome = { type: 'source-error', error };
+        yield* emitTerminal(null, options.protocol.failure(error), { type: 'source-error', error });
       }
     },
     onClose: async () => {

@@ -70,9 +70,10 @@ After authorization:
    )"
    ```
 
-3. Read the owning provider's `config.ts`, `state.ts` when present, and fetch
-   implementation under `packages/provider-<kind>/src/`. Extract only the chosen
-   upstream's endpoint, existing access token or API key, expiry, and required
+3. Read the owning provider's `config.ts`, `state.ts` when present, and
+   `pipelines.ts` with its request, header, or authentication support modules
+   under `packages/provider-<kind>/src/`. Extract only the chosen upstream's
+   endpoint, existing access token or API key, expiry, and required
    account/header fields with targeted `json_extract` expressions. Do not select
    entire credential-bearing config/state documents. Keep credentials and proxy
    URLs containing credentials out of the chat transcript, comments, and commits.
@@ -109,12 +110,14 @@ identity from the current provider implementation and selected configuration.
 Do not import a provider entrypoint that can renew tokens or persist state.
 
 - **Copilot:** follow [the Copilot access reference](references/copilot.md) for
-  PAT exchange, token-advertised endpoints, and Copilot Chat headers.
+  PAT exchange, token-advertised endpoints, and Copilot Chat headers. Read
+  `auth.ts` alongside `pipelines.ts` for the current exchange and request path.
 - **ChatGPT / Claude Code:** use the selected account's persisted
-  `state_json.accounts[].accessToken.token` and its expiry. Read `fetch.ts` and
-  the protocol transport for headers and endpoints; join the credential to the
-  configured account identity. All refresh-token paths remain forbidden.
-- **Custom / Azure / Ollama:** read `config.ts` and the protocol fetch functions
+  `state_json.accounts[].accessToken.token` and its expiry. Read `pipelines.ts`
+  plus `responses-request.ts` for ChatGPT or `headers.ts` for Claude Code, along
+  with the protocol transport for headers and endpoints; join the credential to
+  the configured account identity. All refresh-token paths remain forbidden.
+- **Custom / Azure / Kimi Code / Ollama:** read `config.ts` and `pipelines.ts`
   for the configured endpoint, API key or bearer, and custom headers. Preserve
   operator-configured paths and protocol choices.
 

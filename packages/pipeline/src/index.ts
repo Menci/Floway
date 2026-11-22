@@ -75,6 +75,7 @@ export {
   decodeDumpView,
   diffStoredValues,
   getStreamLineage,
+  isDecodedRawJson,
   isDecodedSecret,
   isDecodedStreamRef,
 } from './dump-decoder.ts';

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { createDumpDecoder, computeStageDiffs, diffStoredValues, getStreamLineage } from '../src/dump-decoder.ts';
+import {
+  createDumpDecoder,
+  computeStageDiffs,
+  diffStoredValues,
+  getStreamLineage,
+  isDecodedRawJson,
+} from '../src/dump-decoder.ts';
 import type { EncodedDumpEvent, StoredValue } from '../src/types.ts';
 
 const run: EncodedDumpEvent = {
@@ -227,5 +233,23 @@ describe('dump decoder', () => {
     ]);
     expect((model.run?.done?.error as { $error?: { $metadata?: string } }).$error?.$metadata).toBe('error metadata');
     expect((model.stages.get(1)?.facts as { $metadata?: string }).$metadata).toBe('inline metadata');
+  });
+
+  it('brands the raw JSON fallback when the runtime lacks JSON.rawJSON', () => {
+    const descriptors = ['rawJSON', 'isRawJSON'].map(key => [
+      key,
+      Object.getOwnPropertyDescriptor(JSON, key),
+    ] as const);
+    for (const [key] of descriptors) Object.defineProperty(JSON, key, { configurable: true, value: undefined });
+    try {
+      const raw = createDumpDecoder().resolve({ $rawJson: '9007199254740993' });
+      expect(isDecodedRawJson(raw)).toBe(true);
+      expect((raw as { readonly rawJSON: string }).rawJSON).toBe('9007199254740993');
+      expect(isDecodedRawJson({ rawJSON: '9007199254740993' })).toBe(false);
+    } finally {
+      for (const [key, descriptor] of descriptors) {
+        if (descriptor !== undefined) Object.defineProperty(JSON, key, descriptor);
+      }
+    }
   });
 });

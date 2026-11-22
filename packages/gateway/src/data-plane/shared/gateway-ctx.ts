@@ -7,6 +7,8 @@ import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 
+const requestDumps = new WeakMap<Request, DumpSession>();
+
 // Per-attempt timing and performance attribution. `timing` keeps its identity
 // across candidate resets because the dump accumulator reads the same object.
 // Null timestamps distinguish an unstamped slot from a real timestamp of 0.
@@ -85,6 +87,7 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     attempt.timing,
     opts.model,
   );
+  if (dump !== null) requestDumps.set(c.req.raw, dump);
   return {
     apiKeyId: apiKey.id,
     user: userFromContext(c),
@@ -106,3 +109,10 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
 // pipeline applies uniformly across happy-path, error, and passthrough paths.
 export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Response =>
   ctx.dump?.finalize(response) ?? response;
+
+export const finalizeUnhandledRequestDump = (request: Request, error: unknown, response: Response): Response => {
+  const dump = requestDumps.get(request);
+  if (dump === undefined || dump.isFinalized) return response;
+  dump.failed(error);
+  return dump.finalize(response);
+};

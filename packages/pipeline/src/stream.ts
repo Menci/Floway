@@ -998,6 +998,7 @@ export class RunStreamCoordinator {
   private streamSequence = 0;
   private readonly rootStreams = new Map<ManagedStream<unknown>, Promise<void>>();
   private readonly backgroundTasks = new Set<Promise<void>>();
+  private readonly backgroundErrors: unknown[] = [];
   private backgroundSettlement?: Promise<unknown[]>;
 
   constructor(options: RunStreamCoordinatorOptions = {}) {
@@ -1047,14 +1048,53 @@ export class RunStreamCoordinator {
   }
 
   registerBackground(task: Promise<unknown>): void {
-    const tracked = task.then(() => undefined);
+    let resolveSettled!: () => void;
+    const tracked = new Promise<void>(resolve => {
+      resolveSettled = resolve;
+    });
+    void task.then(
+      () => {
+        this.backgroundTasks.delete(tracked);
+        resolveSettled();
+      },
+      (error: unknown) => {
+        this.backgroundErrors.push(error);
+        this.backgroundTasks.delete(tracked);
+        resolveSettled();
+      },
+    );
     this.backgroundTasks.add(tracked);
-    void tracked.finally(() => this.backgroundTasks.delete(tracked)).catch(() => undefined);
     this.waitUntil(tracked);
   }
 
   hasPendingSettlement(): boolean {
-    return this.rootStreams.size > 0 || this.backgroundTasks.size > 0;
+    return this.rootStreams.size > 0 || this.backgroundTasks.size > 0 || this.backgroundErrors.length > 0;
+  }
+
+  async settleAll(): Promise<unknown[]> {
+    const seenRootStreams = new Set<ManagedStream<unknown>>();
+    const errors: unknown[] = [];
+    while (true) {
+      const unseenRootStreams = [...this.rootStreams.keys()].filter(stream => !seenRootStreams.has(stream));
+      if (unseenRootStreams.length === 0 && this.backgroundTasks.size === 0) break;
+      for (const stream of unseenRootStreams) seenRootStreams.add(stream);
+
+      const [rootResults, backgroundResults] = await Promise.all([
+        Promise.allSettled(unseenRootStreams.map(stream => this.rootStreams.get(stream)!)),
+        Promise.allSettled([...this.backgroundTasks]),
+      ]);
+      for (const result of rootResults) {
+        if (result.status === 'rejected') errors.push(result.reason as unknown);
+      }
+      for (const stream of unseenRootStreams) {
+        const terminalError = runtimeFor(stream).terminalError;
+        if (terminalError !== undefined) errors.push(terminalError);
+      }
+      for (const result of backgroundResults) {
+        if (result.status === 'rejected') errors.push(result.reason as unknown);
+      }
+    }
+    return uniqueErrors([...errors, ...this.backgroundErrors]);
   }
 
   async settleBackground(): Promise<unknown[]> {
@@ -1068,7 +1108,7 @@ export class RunStreamCoordinator {
           if (result.status === 'rejected') errors.push(result.reason as unknown);
         }
       }
-      return uniqueErrors(errors);
+      return uniqueErrors([...errors, ...this.backgroundErrors]);
     })();
     this.backgroundSettlement = settlement;
     try {

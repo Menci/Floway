@@ -90,7 +90,11 @@ export const anthropicMessagesHttp = {
 
 const internalResponse = (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: ChatGatewayCtx): Response => {
   const verbatim = providerModelsUnavailableResponse(error);
-  if (verbatim !== null) return verbatim;
+  if (verbatim !== null) {
+    if (ctx === undefined) return verbatim;
+    ctx.dump?.error('upstream');
+    return finalizeGatewayResponse(ctx, verbatim);
+  }
   const effective = ctx ?? createGatewayCtxFromHono(c, {
     wantsStream: false,
     requestBody: takeRequestBody(requestBody),

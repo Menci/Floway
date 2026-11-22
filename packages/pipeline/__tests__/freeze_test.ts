@@ -70,7 +70,7 @@ describe('freezeValue', () => {
     expect(() => freezeValue(Symbol('x'))).toThrow(InvalidFactValueError);
   });
 
-  it('snapshots only nested byte leaves while preserving byte-free identity and sharing copies', () => {
+  it('snapshots only nested byte leaves while preserving byte-free identity and intra-call sharing', () => {
     const stable = { value: 1 };
     const bytes = new Uint8Array([1, 2]);
     const shared = { data: bytes };
@@ -83,6 +83,6 @@ describe('freezeValue', () => {
     expect(snapshot.left.data).not.toBe(bytes);
     bytes[0] = 9;
     expect([...snapshot.left.data]).toEqual([1, 2]);
-    expect(snapshotTraceValue(value, cache)).toBe(snapshot);
+    expect(snapshotTraceValue(value)).not.toBe(snapshot);
   });
 });

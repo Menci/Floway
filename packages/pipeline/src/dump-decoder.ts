@@ -10,6 +10,8 @@ import type {
 } from './types.ts';
 
 type DecodedObject = Record<string, unknown>;
+const RAW_JSON_BRAND = Symbol('floway.pipeline.raw-json');
+type BrandedRawJson = { readonly rawJSON: string; readonly [RAW_JSON_BRAND]: true };
 
 export interface DecodedSecret {
   readonly $secret: StoredSecret;
@@ -183,9 +185,21 @@ const numberTagValue = (tag: unknown): unknown => {
   }
 };
 
+const jsonWithRawJson = JSON as typeof JSON & {
+  readonly isRawJSON?: (value: unknown) => boolean;
+  readonly rawJSON?: (text: string) => unknown;
+};
+
+export const isDecodedRawJson = (value: unknown): value is { readonly rawJSON: string } =>
+  jsonWithRawJson.isRawJSON?.(value) === true
+  || (typeof value === 'object' && value !== null && (value as Partial<BrandedRawJson>)[RAW_JSON_BRAND] === true);
+
 const rawJsonValue = (value: string): unknown => {
-  const enhanced = JSON as typeof JSON & { readonly rawJSON?: (text: string) => unknown };
-  return enhanced.rawJSON?.(value) ?? { rawJSON: value };
+  if (jsonWithRawJson.rawJSON !== undefined) return jsonWithRawJson.rawJSON(value);
+  return Object.freeze({
+    rawJSON: value,
+    [RAW_JSON_BRAND]: true,
+  } satisfies BrandedRawJson);
 };
 
 const cloneSecret = (info: StoredSecret): DecodedSecret =>

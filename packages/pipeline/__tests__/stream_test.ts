@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { pipeline } from '../src/compose.ts';
+import { createDumpPump } from '../src/dump-pump.ts';
 import {
   ConcurrentStreamReadError,
   DuplicateStreamCloseError,
@@ -682,6 +683,102 @@ describe('ManagedStream lifecycle', () => {
     await vi.waitFor(() => expect(events.some(event => event.k === 'done')).toBe(true));
     expect(events.at(-1)).toMatchObject({ k: 'done', ok: true });
     expect(leaseReleased).toBe(true);
+  });
+
+  it('settles background work started by a lazy root transform before closing the dump', async () => {
+    let releaseBackground!: () => void;
+    const backgroundGate = new Promise<void>(resolve => { releaseBackground = resolve; });
+    const events: RawRunEvent[] = [];
+    let artifact = '';
+    const pump = createDumpPump({
+      writeArtifact: async stream => {
+        const decoder = new TextDecoder();
+        for await (const chunk of stream) artifact += decoder.decode(chunk, { stream: true });
+        artifact += decoder.decode();
+      },
+    });
+    const run = pipeline<{ readonly input: string }>('lazy-background-settlement').end(
+      terminal<{ readonly input: string }, ManagedStream<string>, Record<never, never>>('lazy-end', async (_facts, env) => {
+        const source = env.createStream<string>({ async *iterate() { yield 'root'; } });
+        return env.wrapStream(source, {
+          label: 'lazy-root',
+          async *transform(values, _signal, streamEnv) {
+            const delayed = streamEnv.createStream<string>({
+              label: 'lazy-background',
+              async *iterate() {
+                await backgroundGate;
+                yield 'late';
+              },
+            });
+            streamEnv.consumeInBackground(delayed, async background => {
+              for await (const _value of background) void _value;
+            });
+            yield* values;
+          },
+        });
+      }),
+    );
+
+    const output = await runPipeline(run, { input: 'x' }, {
+      traceSink: {
+        push: event => {
+          events.push(event);
+          pump.push(event);
+        },
+        registerSecretPlaintext: pump.registerSecretPlaintext,
+        acquireProducerLease: pump.acquireProducerLease,
+      },
+    });
+    const values: string[] = [];
+    for await (const value of output) values.push(value);
+    expect(values).toEqual(['root']);
+    expect(events.some(event => event.k === 'done')).toBe(false);
+
+    releaseBackground();
+    await expect(pump.completion).resolves.toMatchObject({ ok: true });
+    const backgroundStreamId = events.find((event): event is Extract<RawRunEvent, { readonly k: 'stream' }> =>
+      event.k === 'stream' && event.label === 'lazy-background')?.streamId;
+    expect(backgroundStreamId).toBeDefined();
+    const doneIndex = events.findIndex(event => event.k === 'done');
+    const backgroundFrameIndices = events.flatMap((event, index) =>
+      event.k === 'frame' && event.streamId === backgroundStreamId ? [index] : []);
+    const backgroundEndIndex = events.findIndex(event =>
+      event.k === 'end' && event.streamId === backgroundStreamId);
+    expect(backgroundFrameIndices).toHaveLength(1);
+    expect(backgroundFrameIndices.every(index => index < doneIndex)).toBe(true);
+    expect(backgroundEndIndex).toBeGreaterThanOrEqual(0);
+    expect(backgroundEndIndex).toBeLessThan(doneIndex);
+    expect(events.at(-1)).toMatchObject({ k: 'done', ok: true });
+    expect(artifact).toContain('"label":"lazy-background"');
+  });
+
+  it('surfaces a background rejection in the done event', async () => {
+    const failure = new Error('background failed');
+    const events: RawRunEvent[] = [];
+    const pending: Promise<unknown>[] = [];
+    let signalRejected!: () => void;
+    const rejected = new Promise<void>(resolve => { signalRejected = resolve; });
+    const run = pipeline<{ readonly input: string }>('background-rejection').end(
+      terminal<{ readonly input: string }, string, Record<never, never>>('background-end', async (_facts, env) => {
+        const stream = env.createStream<string>({ async *iterate() { yield 'value'; } });
+        env.consumeInBackground(stream, async source => {
+          for await (const _value of source) void _value;
+          signalRejected();
+          throw failure;
+        });
+        await rejected;
+        await new Promise(resolve => setTimeout(resolve, 0));
+        return 'result';
+      }),
+    );
+
+    await expect(runPipeline(run, { input: 'x' }, {
+      traceSink: { push: event => events.push(event) },
+      waitUntil: promise => pending.push(promise),
+    })).resolves.toBe('result');
+    await Promise.all([...pending]);
+
+    expect(events.at(-1)).toMatchObject({ k: 'done', ok: false, error: failure });
   });
 
   it('provides a lazy streamEnv to wrapStream transforms and aborts lazy sub-runs on stream close', async () => {

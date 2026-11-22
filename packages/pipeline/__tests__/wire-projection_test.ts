@@ -1,6 +1,9 @@
+import { base64 } from '@scure/base';
 import { describe, expect, it } from 'vitest';
 
 import { createDumpDecoder } from '../src/dump-decoder.ts';
+import { createDumpEncoder } from '../src/dump-encoder.ts';
+import { secret as makeSecret } from '../src/secret.ts';
 import { SECRET_BRAND, SECRET_RENDERED } from '../src/types.ts';
 import type { EncodedDumpEvent, Secret, StoredValue, WireHttpUrl } from '../src/types.ts';
 import { formatCurlCommand, formatWireUrl, projectWireView } from '../src/wire-projection.ts';
@@ -182,5 +185,124 @@ describe('wire projection', () => {
   it('masks sensitive query keys in string URLs while preserving non-sensitive parameters', () => {
     expect(formatWireUrl('https://example.com/v1?token=secret&keep=value', { maskSecrets: true }))
       .toBe('https://example.com/v1?token=***REDACTED***&keep=value');
+  });
+
+  it('preserves decoded raw JSON while redacting neighboring secrets in curl bodies', () => {
+    const decoder = createDumpDecoder();
+    const largeInteger = (JSON as typeof JSON & { rawJSON: (text: string) => unknown }).rawJSON('9007199254740993');
+    const encoded = createDumpEncoder().encodeBatch([{
+      k: 'leave',
+      seq: 1,
+      tMs: 1,
+      stageId: 1,
+      outcome: { id: largeInteger, key: makeSecret('sk-1') },
+    }]);
+    const model = decoder.pushEvents(encoded);
+    const body = model.stages.get(1)?.outcome;
+
+    const command = formatCurlCommand({
+      stageId: 1,
+      tMs: 1,
+      method: 'POST',
+      url: 'https://example.com/v1/responses',
+      headers: [['content-type', 'application/json']],
+      body,
+    });
+    expect(command).toContain(`--data-raw '{"id":9007199254740993,"key":"***REDACTED***"}'`);
+    expect(formatCurlCommand({
+      stageId: 1,
+      tMs: 1,
+      method: 'POST',
+      url: 'https://example.com/v1/responses',
+      headers: [],
+      body: { rawJSON: 'literal' },
+    })).toContain(`--data-raw '{"rawJSON":"literal"}'`);
+
+    const descriptors = ['rawJSON', 'isRawJSON'].map(key => [
+      key,
+      Object.getOwnPropertyDescriptor(JSON, key),
+    ] as const);
+    for (const [key] of descriptors) Object.defineProperty(JSON, key, { configurable: true, value: undefined });
+    try {
+      const fallbackBody = createDumpDecoder().pushEvents(encoded).stages.get(1)?.outcome;
+      expect(formatCurlCommand({
+        stageId: 1,
+        tMs: 1,
+        method: 'POST',
+        url: 'https://example.com/v1/responses',
+        headers: [],
+        body: fallbackBody,
+      })).toContain(`--data-raw '{"id":9007199254740993,"key":"***REDACTED***"}'`);
+    } finally {
+      for (const [key, descriptor] of descriptors) {
+        if (descriptor !== undefined) Object.defineProperty(JSON, key, descriptor);
+      }
+    }
+  });
+
+  it('formats text and binary multipart bodies into replayable FormData payloads', async () => {
+    const textCurl = formatCurlCommand({
+      stageId: 1,
+      tMs: 1,
+      method: 'POST',
+      url: 'https://example.com/v1/audio/transcriptions',
+      headers: [['content-type', 'multipart/form-data; boundary=test-boundary']],
+      body: {
+        kind: 'multipart',
+        boundary: 'test-boundary',
+        parts: [
+          { kind: 'text', name: 'model', value: 'whisper-1' },
+          { kind: 'file', name: 'file', filename: 'note.txt', contentType: 'text/plain', bytes: new TextEncoder().encode('hello') },
+        ],
+      },
+    });
+    expect(textCurl).not.toContain('"kind":"multipart"');
+    const ansiMatch = /--data-binary \$'((?:\\.|[^'])*)'$/.exec(textCurl);
+    expect(ansiMatch).not.toBeNull();
+    const unescapedText = ansiMatch![1]!
+      .replaceAll('\\r', '\r')
+      .replaceAll('\\n', '\n')
+      .replaceAll('\\t', '\t')
+      .replaceAll("\\'", "'")
+      .replaceAll('\\\\', '\\');
+    const textForm = await new Request('https://example.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { 'content-type': 'multipart/form-data; boundary=test-boundary' },
+      body: unescapedText,
+    }).formData();
+    expect(textForm.get('model')).toBe('whisper-1');
+    const textFile = textForm.get('file') as File;
+    expect(textFile.name).toBe('note.txt');
+    expect(await textFile.text()).toBe('hello');
+
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const binaryCurl = formatCurlCommand({
+      stageId: 2,
+      tMs: 2,
+      method: 'POST',
+      url: 'https://example.com/v1/images/edits',
+      headers: [['content-type', 'multipart/form-data; boundary=bin-boundary']],
+      body: {
+        kind: 'multipart',
+        boundary: 'bin-boundary',
+        parts: [
+          { kind: 'text', name: 'model', value: 'gpt-image-1' },
+          { kind: 'file', name: 'image', filename: 'input.png', contentType: 'image/png', bytes: pngBytes },
+        ],
+      },
+    });
+    const b64Match = /^printf '%s' '([^']+)' \| base64 -d \| curl .* --data-binary @-$/.exec(binaryCurl);
+    expect(b64Match).not.toBeNull();
+    const binaryPayload = base64.decode(b64Match![1]!);
+    const binaryForm = await new Request('https://example.com/v1/images/edits', {
+      method: 'POST',
+      headers: { 'content-type': 'multipart/form-data; boundary=bin-boundary' },
+      body: binaryPayload as Uint8Array<ArrayBuffer>,
+    }).formData();
+    expect(binaryForm.get('model')).toBe('gpt-image-1');
+    const imageFile = binaryForm.get('image') as File;
+    expect(imageFile.name).toBe('input.png');
+    expect(imageFile.type).toBe('image/png');
+    expect(new Uint8Array(await imageFile.arrayBuffer())).toEqual(pngBytes);
   });
 });
