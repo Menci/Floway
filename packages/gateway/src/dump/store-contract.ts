@@ -1,8 +1,4 @@
-import type { DumpMetadata, DumpRecordId, DumpWriteRecord, PreparedDumpRequestBody, StoredDumpRecord } from './types.ts';
-
-// Per-API-key request dump storage contract: metadata in SQL, bodies in the
-// FileStore. Request bytes are prepared before the terminal write; reads
-// always rehydrate raw bytes for the control plane.
+import type { DumpMetadata, DumpRecordId } from './types.ts';
 
 export interface DumpListOptions {
   before?: DumpRecordId;
@@ -12,21 +8,17 @@ export interface DumpListOptions {
 }
 
 export interface DumpStore {
-  // Starts body preparation while the request is in flight. Implementations
-  // may return identity bytes, but persistent stores compress here so the
-  // accumulator can release the original request buffer before terminal IO.
-  prepareRequestBody(body: Uint8Array): Promise<PreparedDumpRequestBody>;
-
-  // Write body files BEFORE the metadata row so a partial failure leaves
-  // orphan files (sweep-collectable), not orphan rows (broken records).
-  put(keyId: string, record: DumpWriteRecord): Promise<void>;
-
-  // Newest-first, paginated by ULID cursor. Reads enforce the API key's
-  // current rolling retention even before queued physical deletion runs.
+  createArtifactKey(keyId: string, startedAt: number, recordId: string): string;
+  stageAndPutArtifact(
+    keyId: string,
+    recordId: string,
+    artifactKey: string,
+    ndjsonStream: ReadableStream<Uint8Array>,
+  ): Promise<void>;
+  commitRecord(keyId: string, record: { readonly meta: DumpMetadata; readonly artifactKey: string }): Promise<void>;
   list(keyId: string, opts: DumpListOptions): Promise<DumpMetadata[]>;
-
-  get(keyId: string, recordId: DumpRecordId): Promise<StoredDumpRecord | null>;
-
+  getMeta(keyId: string, recordId: DumpRecordId): Promise<DumpMetadata | null>;
+  getArtifactStream(keyId: string, recordId: DumpRecordId): Promise<ReadableStream<Uint8Array> | null>;
   deleteExpiredBatch(keyId: string, now: number, limit: number): Promise<number>;
   findOldestCreatedAt(keyId: string): Promise<number | null>;
 }
