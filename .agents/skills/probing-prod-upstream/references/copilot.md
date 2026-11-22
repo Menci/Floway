@@ -63,11 +63,13 @@ openai-intent: conversation-agent
 x-interaction-type: conversation-agent
 ```
 
-`packages/provider-copilot/src/auth.ts` is the source of truth for both header
-sets, their distinct version constants, extraction of `endpoints.api`, and
-data-plane dispatch in `copilotAuthedFetch`. Read the current values and flow
-from there rather than hardcoding them in probe scripts. For Anthropic Messages probes
-needing Claude beta features, also send `anthropic-beta: <feature-list>`.
+`packages/provider-copilot/src/auth.ts` owns both header sets, their distinct
+version constants, and extraction of `endpoints.api`. Read
+`copilotRequestHeaders` for the data-plane defaults and `wireHeadersStage` in
+`packages/provider-copilot/src/stages/shared/stages.ts` for the protocol
+overrides applied before dispatch. Use the current values and flow from those
+files in probe scripts. For Anthropic Messages probes needing Claude beta
+features, also send `anthropic-beta: <feature-list>`.
 
 ## Token cache
 

@@ -1,6 +1,6 @@
 import { copilotFetchModels, type CopilotFetchConfig } from './fetch.ts';
 import type { CopilotModelsResponse } from './types.ts';
-import { fetchUpstreamModels, type Fetcher, type HttpHeaderLines, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { fetchUpstreamModels, type Fetcher, type HttpHeaderLines } from '@floway-dev/provider';
 
 const isCopilotModelsResponse = (value: unknown): value is CopilotModelsResponse => {
   const response = value as CopilotModelsResponse;
@@ -27,6 +27,6 @@ const MODELS_HEADER_OVERRIDES: HttpHeaderLines = [
 
 export const fetchCopilotModels = (config: CopilotFetchConfig, fetcher: Fetcher): Promise<CopilotModelsResponse> =>
   fetchUpstreamModels(
-    () => copilotFetchModels(config, { method: 'GET' }, { extraHeaders: MODELS_HEADER_OVERRIDES, fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
+    () => copilotFetchModels(config, { method: 'GET' }, { extraHeaders: MODELS_HEADER_OVERRIDES, fetcher }),
     v => (isCopilotModelsResponse(v) ? v : null),
   );

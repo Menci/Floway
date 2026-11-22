@@ -626,9 +626,9 @@ importers:
 
   packages/provider-copilot:
     dependencies:
-      '@floway-dev/interceptor':
+      '@floway-dev/pipeline':
         specifier: workspace:*
-        version: link:../interceptor
+        version: link:../pipeline
       '@floway-dev/platform':
         specifier: workspace:*
         version: link:../platform
