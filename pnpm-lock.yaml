@@ -480,6 +480,12 @@ importers:
         specifier: workspace:*
         version: link:../test-utils
 
+  packages/pipeline:
+    dependencies:
+      '@noble/hashes':
+        specifier: ^2.2.0
+        version: 2.2.0
+
   packages/platform:
     dependencies:
       '@floway-dev/http':
