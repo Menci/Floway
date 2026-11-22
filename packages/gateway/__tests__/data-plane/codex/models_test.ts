@@ -2,8 +2,8 @@ import { describe, expect, test } from 'vitest';
 
 import { assembleCodexCatalog } from '../../../src/data-plane/codex/models.ts';
 import type { AddressableIdEntry } from '../../../src/data-plane/shared/listing/addressable.ts';
-import type { InternalModel } from '@floway-dev/provider';
-import { stubModelCandidate, stubProviderModel } from '@floway-dev/test-utils';
+import type { InternalModel, Provider, UpstreamProviderKind } from '@floway-dev/provider';
+import { stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 const bundled = {
   models: [
@@ -32,25 +32,37 @@ const entry = (model: InternalModel, unlisted?: true): AddressableIdEntry => ({
 
 const entries = (...models: InternalModel[]): AddressableIdEntry[] => models.map(m => entry(m));
 
+const provider = (kind: UpstreamProviderKind, upstreamId = 'test-upstream'): Provider => ({
+  upstreamId,
+  kind,
+  name: upstreamId,
+  pipelines: {},
+  inboundHeaderAllowlist: [],
+  disabledPublicModelIds: [],
+  modelPrefix: null,
+  modelsCache: null,
+  instance: stubProvider(),
+});
+
 describe('assembleCodexCatalog', () => {
   test('uses the primary ChatGPT provider default for a prefixed model without a matching client entry', () => {
-    const provider = { ...stubModelCandidate().provider, kind: 'chatgpt' as const };
+    const chatgptProvider = provider('chatgpt');
     const model = {
       ...chat('codex/future-model', 'Future', 600000),
       providerModels: {
-        [provider.upstreamId]: stubProviderModel({
+        [chatgptProvider.upstreamId]: stubProviderModel({
           limits: { max_context_window_tokens: 600000 },
           providerData: { contextWindow: 80000, useResponsesLite: false },
         }),
       },
     };
-    const out = assembleCodexCatalog(bundled, [{ ...entry(model), upstreams: [provider] }]);
+    const out = assembleCodexCatalog(bundled, [{ ...entry(model), upstreams: [chatgptProvider] }]);
     expect(out.models[0]).toMatchObject({ slug: 'codex/future-model', context_window: 80000, max_context_window: 600000 });
   });
 
   test('a secondary ChatGPT provider cannot replace the primary provider budget', () => {
-    const primary = stubModelCandidate().provider;
-    const secondary = { ...primary, upstreamId: 'secondary', kind: 'chatgpt' as const };
+    const primary = provider('custom');
+    const secondary = provider('chatgpt', 'secondary');
     const model = {
       ...chat('gpt-5.5', 'Primary', 200000),
       providerModels: {
@@ -71,8 +83,8 @@ describe('assembleCodexCatalog', () => {
     { codex: { additional_speed_tiers: ['fast'] }, expected: ['priority'] },
     { codex: { service_tiers: [{ id: 'ultrafast', name: 'Ultrafast', description: '' }] }, expected: ['ultrafast'] },
   ])('only lists tiers shared with the ChatGPT catalog $codex, in either routing order', ({ codex, expected }) => {
-    const native = { ...stubModelCandidate().provider, kind: 'custom' as const };
-    const subscription = { ...native, kind: 'chatgpt' as const, upstreamId: 'subscription' };
+    const native = provider('custom');
+    const subscription = provider('chatgpt', 'subscription');
     const pricing = { entries: ['priority', 'ultrafast'].map(serviceTier => ({ selector: { serviceTier }, rates: { input_tokens: '1' } })) };
     const model = {
       ...chat('shared'), pricing,

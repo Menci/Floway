@@ -29,6 +29,8 @@ export const appendPathSegment = (path: string, suffix: string): string => {
 // Gemini carries the model and action in the path. Generation selects SSE in
 // the query string; neither field belongs in the body.
 // https://ai.google.dev/api/generate-content#method:-models.streamgeneratecontent
+// https://ai.google.dev/api/tokens#method:-models.counttokens
+// https://ai.google.dev/gemini-api/docs/api-key
 export const customGeminiActionPath = (
   config: CustomUpstreamConfig,
   modelId: string,

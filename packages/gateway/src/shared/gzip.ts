@@ -34,3 +34,39 @@ export const gzipBytes = async (bytes: Uint8Array): Promise<Uint8Array> =>
 
 export const gunzipBytes = async (bytes: Uint8Array): Promise<Uint8Array> =>
   await collect(bytesStream(bytes).pipeThrough(new DecompressionStream('gzip')));
+
+export const gzipStream = (stream: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> =>
+  transformStream(stream, new CompressionStream('gzip'));
+
+export const gunzipStream = (bytes: Uint8Array): ReadableStream<Uint8Array> =>
+  transformStream(bytesStream(bytes), new DecompressionStream('gzip'));
+
+const transformStream = (
+  source: ReadableStream<Uint8Array | BufferSource>,
+  transform: CompressionStream | DecompressionStream,
+): ReadableStream<Uint8Array> => {
+  const reader = source.getReader();
+  const writer = transform.writable.getWriter();
+  void (async () => {
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        await writer.write(value as BufferSource);
+      }
+      await writer.close();
+    } catch (error) {
+      try {
+        await writer.abort(error);
+      } catch {
+        // The transform may already be closed by the same source error.
+      }
+      try {
+        await reader.cancel(error);
+      } catch {
+        // The upstream reader may already be closed by the same source error.
+      }
+    }
+  })();
+  return transform.readable as ReadableStream<Uint8Array>;
+};

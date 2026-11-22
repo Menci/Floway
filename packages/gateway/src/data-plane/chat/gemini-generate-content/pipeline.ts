@@ -51,7 +51,7 @@ const geminiFailureOutcome = (failure: ReturnType<typeof renderGeminiGenerateCon
     source: failure.source,
     http: {
       status: failure.http.status,
-      headers: Object.freeze([...failure.http.headers.entries()].map(([name, value]) => Object.freeze([name, value] as const))),
+      headers: failure.http.headers,
     },
     body: failure.body,
   });

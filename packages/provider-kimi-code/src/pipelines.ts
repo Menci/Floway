@@ -117,13 +117,17 @@ const scheduleProbes = (
   config: KimiCodeUpstreamConfig,
   http: Pick<HttpOutcome, 'status'>,
   env: PipelineEnv,
-): void => scheduleKimiCodeProbes(
-  record,
-  config,
-  env.fetcherFor(record.id),
-  env.waitUntil,
-  http.status === 429 || http.status === 403,
-);
+): void => {
+  // Quota exhaustion and plan restrictions warrant a current read.
+  // https://www.kimi.com/code/docs/en/kimi-code/error-reference.html
+  scheduleKimiCodeProbes(
+    record,
+    config,
+    env.fetcherFor(record.id),
+    env.waitUntil,
+    http.status === 429 || http.status === 403,
+  );
+};
 
 const parseChat = (
   http: HttpOutcome,

@@ -4,7 +4,6 @@ import type {
   ExpirationSweepCompletion,
   ExpirationSweepsRepo,
 } from './types.ts';
-import { decodeDumpBodyDescriptor } from '../dump/storage-codec.ts';
 import type { SqlDatabase } from '@floway-dev/platform';
 
 interface CleanupBackfillSourceState {
@@ -19,16 +18,12 @@ interface BackfillRow {
 
 interface DumpBackfillRow extends BackfillRow {
   id: string;
-  request_body_descriptor: string | null;
-  response_body_descriptor: string | null;
-  response_upstream_body_descriptor: string | null;
+  artifact_key: string;
 }
 
 interface DumpFileOwner {
   fileKey: string;
-  ownerKind: 'dump-request' | 'dump-response' | 'dump-response-upstream';
-  keyId: string;
-  recordId: string;
+  ownerKind: 'dump-artifact';
 }
 
 const CLEANUP_BACKFILL_SOURCES = {
@@ -61,12 +56,12 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
 
   private async backfillCleanupSource(source: CleanupBackfillSource, cursor: number, limit: number): Promise<number> {
     const config = CLEANUP_BACKFILL_SOURCES[source];
-    const descriptorColumns = source === 'dump_records'
-      ? ', id, request_body_descriptor, response_body_descriptor, response_upstream_body_descriptor'
+    const dumpColumns = source === 'dump_records'
+      ? ', id, artifact_key'
       : '';
     const { results } = await this.db
       .prepare(
-        `SELECT rowid, ${config.keyColumn} AS key_id${descriptorColumns}
+        `SELECT rowid, ${config.keyColumn} AS key_id${dumpColumns}
          FROM ${source} WHERE rowid > ? ORDER BY rowid LIMIT ?`,
       )
       .bind(cursor, limit)
@@ -102,35 +97,10 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
   }
 
   private async registerDumpFiles(rows: readonly DumpBackfillRow[]): Promise<void> {
-    const files: DumpFileOwner[] = rows.flatMap(row => [
-      ...(row.request_body_descriptor === null ? [] : [{
-        fileKey: decodeDumpBodyDescriptor(
-          row.request_body_descriptor,
-          `dump record ${row.key_id}/${row.id} request body descriptor during expiration backfill`,
-        ).key,
-        ownerKind: 'dump-request' as const,
-        keyId: row.key_id,
-        recordId: row.id,
-      }]),
-      ...(row.response_body_descriptor === null ? [] : [{
-        fileKey: decodeDumpBodyDescriptor(
-          row.response_body_descriptor,
-          `dump record ${row.key_id}/${row.id} response body descriptor during expiration backfill`,
-        ).key,
-        ownerKind: 'dump-response' as const,
-        keyId: row.key_id,
-        recordId: row.id,
-      }]),
-      ...(row.response_upstream_body_descriptor === null ? [] : [{
-        fileKey: decodeDumpBodyDescriptor(
-          row.response_upstream_body_descriptor,
-          `dump record ${row.key_id}/${row.id} upstream response body descriptor during expiration backfill`,
-        ).key,
-        ownerKind: 'dump-response-upstream' as const,
-        keyId: row.key_id,
-        recordId: row.id,
-      }]),
-    ]);
+    const files: DumpFileOwner[] = rows.map(row => ({
+      fileKey: row.artifact_key,
+      ownerKind: 'dump-artifact',
+    }));
     if (files.length === 0) return;
     await this.db
       .prepare(
@@ -143,18 +113,8 @@ export class SqlExpirationSweepsRepo implements ExpirationSweepsRepo {
            NULL
          FROM json_each(?) AS incoming
          JOIN dump_records AS records
-           ON records.key_id = json_extract(incoming.value, '$.keyId')
-          AND records.id = json_extract(incoming.value, '$.recordId')
-         WHERE (
-           json_extract(incoming.value, '$.ownerKind') = 'dump-request'
-           AND json_extract(records.request_body_descriptor, '$.key') = json_extract(incoming.value, '$.fileKey')
-         ) OR (
-           json_extract(incoming.value, '$.ownerKind') = 'dump-response'
-           AND json_extract(records.response_body_descriptor, '$.key') = json_extract(incoming.value, '$.fileKey')
-         ) OR (
-           json_extract(incoming.value, '$.ownerKind') = 'dump-response-upstream'
-           AND json_extract(records.response_upstream_body_descriptor, '$.key') = json_extract(incoming.value, '$.fileKey')
-         )
+           ON records.artifact_key = json_extract(incoming.value, '$.fileKey')
+         WHERE json_extract(incoming.value, '$.ownerKind') = 'dump-artifact'
          ON CONFLICT (file_key) DO NOTHING`,
       )
       .bind(JSON.stringify(files))

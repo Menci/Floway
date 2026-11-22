@@ -1,4 +1,4 @@
-import { RouteAffinityRequestContext, routeCandidateAsLegacySelection } from './affinity.ts';
+import type { RouteAffinityRequestContext } from './affinity.ts';
 import { ChatUsageLedger } from './usage-ledger.ts';
 import type { GatewayRequestDirectory } from '../../pipeline/index.ts';
 import { createGatewayPipelineServices } from '../../pipeline/services.ts';
@@ -7,7 +7,6 @@ import type { WebSearchPipelineServices } from '../../tools/web-search/pipeline.
 import { resolveConfiguredWebSearchProvider } from '../../tools/web-search/provider.ts';
 import type { ConfiguredWebSearchProvider } from '../../tools/web-search/types.ts';
 import type { OpenAIResponsesStatefulStore } from '../openai-responses/items/store.ts';
-import type { AffinityRequestContext } from '../shared/affinity/context.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { SidecarCodecFactory } from '../shared/sidecar-codec.ts';
 import type { HeaderEntry, ManagedStream } from '@floway-dev/pipeline';
@@ -62,6 +61,17 @@ export type ChatAttemptOutcome<TEvent> =
 
 export type ChatPlainOutcome = Extract<ChatAttemptOutcome<never>, { type: 'plain' }>;
 
+export type StreamCompletion = 'eof' | 'error' | 'cancel';
+
+export class SourceStreamState {
+  failed = false;
+  completed = false;
+
+  failedAfter(completion: StreamCompletion): boolean {
+    return completion === 'error' || this.failed || (completion === 'cancel' && !this.completed);
+  }
+}
+
 export interface OpenAIChatCompletionsAttemptInput {
   readonly 'route.candidate': RouteCandidate;
   readonly 'request.inboundHeaders': readonly HeaderEntry[];
@@ -101,14 +111,11 @@ export const createChatPipelineServices = (
   options: { readonly directory?: GatewayRequestDirectory } = {},
 ): ChatPipelineServices => {
   const services = createGatewayPipelineServices(ctx, options);
-  const affinityOptions = ctx.affinity as Partial<Pick<AffinityRequestContext, 'select'>>;
   let configuredWebSearchProvider: Promise<ConfiguredWebSearchProvider> | undefined;
   return Object.freeze({
     ...services,
     chatCtx: ctx,
-    affinity: new RouteAffinityRequestContext(ctx.affinity.codec, candidate => {
-      affinityOptions.select?.call(ctx.affinity, routeCandidateAsLegacySelection(candidate));
-    }),
+    affinity: ctx.affinity,
     sidecarCodecFactory: ctx.sidecarCodecFactory,
     store: ctx.store,
     usageLedger: new ChatUsageLedger(),

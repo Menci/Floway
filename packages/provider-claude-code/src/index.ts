@@ -19,10 +19,12 @@ export * from './detection.ts';
 export * from './headers.ts';
 export * from './log.ts';
 export * from './quota.ts';
-export * from './interceptors/anthropic-messages/system-blocks.ts';
+export * from './stages/anthropic-messages/system-blocks.ts';
 export * from './pricing.ts';
-export * from './fetch.ts';
 export * from './pipelines.ts';
 export * from './provider.ts';
+export * from './stream-observation.ts';
+export * from './terminal-account.ts';
+export * from './usage-persistence.ts';
 
 export { claudeCodeProbeMetrics } from './upstream-metrics.ts';

@@ -9,8 +9,9 @@ import {
   isOllamaUsageEnabled,
   refreshOllamaUsageProbe,
 } from '../src/usage-probe.ts';
-import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, assertRejects, noopUpstreamCallOptions, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
+import { runPipeline } from '@floway-dev/pipeline';
+import { directFetcher, initProviderRepo, toProviderModelFacts, type UpstreamRecord } from '@floway-dev/provider';
+import { assertEquals, assertRejects, stubProviderModel, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_ollama_usage';
 
@@ -99,7 +100,7 @@ test('usage is probed when the operator enabled it and a key is configured, and 
 // Drives the provider rather than the probe helpers so the arming decision —
 // which call consumes the account's windows, and what the debounce reads — is
 // exercised where it is made.
-const callChat = async (record: UpstreamRecord, onUsageProbe: (path: string) => void): Promise<void> => {
+const runChat = async (record: UpstreamRecord, onUsageProbe: (path: string) => void): Promise<void> => {
   const provider = createOllamaProvider(record);
   const pending: Promise<unknown>[] = [];
   await withMockedFetch(
@@ -112,12 +113,16 @@ const callChat = async (record: UpstreamRecord, onUsageProbe: (path: string) => 
       return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } });
     },
     async () => {
-      await provider.instance.callOpenAIChatCompletions(
-        stubProviderModel({ providerData: 'gpt-oss:120b' }),
-        { messages: [] },
-        undefined,
-        noopUpstreamCallOptions({ waitUntil: promise => { pending.push(promise); } }),
-      );
+      const outcome = await runPipeline(provider.pipelines.openaiChatCompletions!, {
+        'provider.model': toProviderModelFacts(stubProviderModel({ providerData: 'gpt-oss:120b' })),
+        'request.payload': { messages: [] },
+        'request.inboundHeaders': [],
+      }, {
+        services: { fetcherFor: () => testFetcher },
+        waitUntil: promise => { pending.push(promise); },
+      });
+      if (!outcome.ok) throw new Error('expected chat stream');
+      for await (const _frame of outcome.events) continue;
       await Promise.all(pending);
     },
   );
@@ -126,14 +131,14 @@ const callChat = async (record: UpstreamRecord, onUsageProbe: (path: string) => 
 test('an inference call arms the probe, and the stored attempt time debounces the next one', async () => {
   withStateRepo();
   const probes: string[] = [];
-  await callChat(cloudRecord(), path => { probes.push(path); });
+  await runChat(cloudRecord(), path => { probes.push(path); });
   assertEquals(probes, ['/api/usage', '/api/balance']);
 
   const justProbed = { usageProbe: { attemptedAt: Date.now(), observation: null, error: null } };
-  await callChat(cloudRecord({ state: justProbed }), path => { probes.push(path); });
+  await runChat(cloudRecord({ state: justProbed }), path => { probes.push(path); });
   assertEquals(probes.length, 2);
 
   const stale = { usageProbe: { attemptedAt: Date.now() - OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS, observation: null, error: null } };
-  await callChat(cloudRecord({ state: stale }), path => { probes.push(path); });
+  await runChat(cloudRecord({ state: stale }), path => { probes.push(path); });
   assertEquals(probes, ['/api/usage', '/api/balance', '/api/usage', '/api/balance']);
 });

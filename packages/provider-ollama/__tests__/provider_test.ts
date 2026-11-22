@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { createOllamaProvider } from '../src/provider.ts';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, noopUpstreamCallOptions, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, jsonResponse, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
 
 // A cloud upstream writes its usage snapshot after the calls it serves, so the
 // provider needs a repo to write into wherever those calls are exercised.
@@ -112,90 +112,4 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
     // No duplicate gpt-oss:120b further down.
     assertEquals(models.filter(m => m.id === 'gpt-oss:120b').length, 1);
   });
-});
-
-test('manual transcription models call Ollama without auto-advertising the endpoint', async () => {
-  const instance = createOllamaProvider(buildRecord({
-    config: {
-      baseUrl: 'https://ollama.com',
-      apiKey: 'ollama_test',
-      models: [{ upstreamModelId: 'qwen-audio:latest', kind: 'chat', endpoints: { openaiAudioTranscriptions: {} }, chat: { image_detail_original: true } }],
-    },
-  }));
-  let transcription: Request | undefined;
-  await withMockedFetch(
-    async request => {
-      const path = new URL(request.url).pathname;
-      if (path === '/api/tags') return jsonResponse({ models: [] });
-      if (path === '/v1/audio/transcriptions') {
-        transcription = request;
-        return jsonResponse({ text: 'hello' });
-      }
-      throw new Error(`unexpected request ${request.url}`);
-    },
-    async () => {
-      const models = await instance.instance.getProvidedModels(testFetcher);
-      assertEquals(models.map(model => model.kind), ['transcription']);
-      assertEquals(models[0]?.chat, undefined);
-      await instance.instance.callOpenAIAudioTranscriptions(models[0], {
-        entries: [
-          { name: 'file', value: new File(['audio'], 'clip.wav', { type: 'audio/wav' }) },
-          { name: 'model', value: 'public-model' },
-        ],
-      }, undefined, noopUpstreamCallOptions());
-    },
-  );
-  assertExists(transcription);
-  const form = await transcription.formData();
-  assertEquals(form.get('model'), 'qwen-audio:latest');
-  assertEquals(transcription.headers.get('authorization'), 'Bearer ollama_test');
-});
-
-test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer header', async () => {
-  const instance = createOllamaProvider(buildRecord());
-  let chatRequest: Request | null = null;
-  let chatBody: unknown = null;
-
-  await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.pathname === '/api/tags') {
-        return jsonResponse({ models: [{ name: 'gpt-oss:120b' }] });
-      }
-      if (url.pathname === '/api/show') {
-        return jsonResponse({
-          capabilities: ['completion'],
-          details: { family: 'gptoss' },
-          model_info: { 'general.architecture': 'gptoss', 'gptoss.context_length': 131072 },
-        });
-      }
-      if (url.pathname === '/v1/chat/completions') {
-        chatRequest = request;
-        chatBody = await request.json();
-        // SSE response so streamingProviderCall does not throw on the empty
-        // body — we only assert the request shape.
-        return new Response('', { status: 200, headers: { 'content-type': 'text/event-stream' } });
-      }
-      return new Response('unexpected', { status: 500 });
-    },
-    async () => {
-      const [providerModel] = await instance.instance.getProvidedModels(testFetcher);
-      const result = await instance.instance.callOpenAIChatCompletions(
-        providerModel,
-        { messages: [{ role: 'user', content: 'hi' }], max_completion_tokens: 32000 },
-        undefined,
-        noopUpstreamCallOptions(),
-      );
-      assertEquals(result.modelKey, 'gpt-oss:120b');
-    },
-  );
-
-  assertEquals(chatRequest!.url, 'https://ollama.com/v1/chat/completions');
-  assertEquals(chatRequest!.headers.get('Authorization'), 'Bearer ollama_test');
-  const body = chatBody as { model: string; stream: boolean; max_tokens?: number; max_completion_tokens?: number };
-  assertEquals(body.model, 'gpt-oss:120b');
-  assertEquals(body.stream, true);
-  // Ollama reads only `max_tokens` into `num_predict`.
-  assertEquals(body.max_tokens, 32000);
-  assertEquals('max_completion_tokens' in body, false);
 });

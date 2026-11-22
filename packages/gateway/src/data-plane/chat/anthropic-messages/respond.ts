@@ -18,7 +18,7 @@ import {
   collectAnthropicMessagesProtocolEventsToResult,
   type AnthropicMessagesStreamEventEx,
 } from '@floway-dev/protocols/anthropic-messages';
-import { eventFrame, sseFrame } from '@floway-dev/protocols/common';
+import { sseFrame } from '@floway-dev/protocols/common';
 import { internalDebugErrorFields, toInternalDebugError, type InternalDebugError } from '@floway-dev/provider';
 
 export const internalAnthropicMessagesErrorPayload = (error: InternalDebugError) => ({
@@ -83,7 +83,6 @@ export const renderAnthropicMessagesPipelineResponse = async (
         // https://github.com/anthropics/anthropic-sdk-typescript/blob/3f13f60335f8bcf91a782785f4f16e4267c999ad/src/resources/shared.ts#L247-L255
         const payload = internalAnthropicMessagesErrorPayload(toInternalDebugError(error));
         const event = { ...payload, error: { ...payload.error, type: 'api_error' } };
-        env.attribution.recordFrame(eventFrame(event));
         return [serializeSseFrame(sseFrame(JSON.stringify(event), 'error'))];
       },
     },

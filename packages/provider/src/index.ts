@@ -1,36 +1,7 @@
-export type {
-  OpenAIChatCompletionsInvocation,
-  GeminiGenerateContentInvocation,
-  ChatTargetApi,
-  AnthropicMessagesInvocation,
-  ModelCandidate,
-  OpenAIResponsesInvocation,
-} from './invocation.ts';
-export { providerModelOf } from './invocation.ts';
-
 export type { InternalDebugError } from './error.ts';
 export { internalDebugErrorFields, toInternalDebugError } from './error.ts';
 
-export type {
-  ApiErrorResult,
-  BufferedHttpResult,
-  EventResult,
-  EventResultMetadata,
-  ExecuteResult,
-  HttpHead,
-  InternalErrorResult,
-  PlainResult,
-} from './result.ts';
-export {
-  bufferedResultToResponse,
-  decodeResponseBody,
-  discardUpstreamResponse,
-  eventResult,
-  internalErrorResult,
-  plainResult,
-  readResponseBody,
-  readUpstreamApiError,
-} from './result.ts';
+export { decodeResponseBody, discardUpstreamResponse } from './result.ts';
 
 export type {
   InternalAliasedFrom,
@@ -49,23 +20,20 @@ export type { AddressableForm, ModelPrefixConfig } from './model-prefix.ts';
 export { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeModelPrefix } from './model-prefix.ts';
 
 export type {
-  Provider,
   InboundHeaderMatcher,
+  Provider,
   ProviderInstance,
-  ProviderCallResult,
-  ProviderCompactionResult,
-  ProviderRerankCallResult,
-  ProviderDecisionCallResult,
   ProviderModule,
-  AnthropicMessagesUpstreamCallOptions,
-  ProviderOpenAIResponsesResult,
-  ProviderStreamResult,
-  OpenAIResponsesAction,
-  UpstreamCallOptions,
 } from './provider.ts';
 export type {
+  AudioTranscriptionPipelineRequest,
+  ChatTargetApi,
   HttpOutcome,
   HttpRequestBody,
+  ImageEditPartSource,
+  ImageEditsPipelineRequest,
+  MultipartField,
+  OpenAIResponsesAction,
   ProviderModelFacts,
   ProviderPipelineAlphaSearchInput,
   ProviderPipelineAnthropicMessagesCountTokensInput,
@@ -88,13 +56,19 @@ export type {
   ProviderPipelineServices,
   ProviderPipelineStreamOutcome,
   ProviderPipelines,
+  ProviderStreamParser,
   RouteCandidate,
   UpstreamHttpRequest,
 } from './pipeline.ts';
 export {
   SENSITIVE_HTTP_HEADER_NAMES,
   asyncIterableToReadableStream,
+  buildAudioTranscriptionMultipartBody,
+  buildImagesEditsHttpBody,
+  buildImagesEditsJsonPayload,
+  buildWireHttpUrl,
   bytesToManagedStream,
+  encodeMultipartFormData,
   hasEnabledFlag,
   headersFromEntries,
   httpTerminal,
@@ -108,12 +82,6 @@ export {
   wrapSensitiveHeaderEntries,
 } from './pipeline.ts';
 export { headersForAnthropicMessagesCall } from './anthropic-messages.ts';
-export type { OpenAIImagesEditsRequest, OpenAIImagesEditsSource } from './images.ts';
-export { serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
-export type { OpenAIAudioTranscriptionFormEntry, OpenAIAudioTranscriptionRequest } from './audio.ts';
-export { serializeModelFieldOpenAIAudioTranscriptionRequest, serializeModelPathOpenAIAudioTranscriptionRequest } from './audio.ts';
-export type { ProviderStreamParser } from './streaming.ts';
-export { streamingProviderCall } from './streaming.ts';
 
 export { formatUpstreamMetricIdentity, groupUpstreamMetricSamples, quotaPercentDisplay, recordUpstreamMetric, recordUpstreamMetrics, resolveUpstreamMetricDisplaySeries, upstreamMetricAxisPriority } from './upstream-metrics.ts';
 export type { GroupedUpstreamMetricSamples, UpstreamMetrics, UpstreamMetricDisplay, UpstreamMetricDisplayOptions, UpstreamMetricDisplaySeries, UpstreamMetricLabelKey, UpstreamMetricObservation, UpstreamMetricSample, UpstreamMetricUnit } from './upstream-metrics.ts';
@@ -171,17 +139,3 @@ export {
   isBase64ImageDataUrl,
   parseBase64ImageDataUrl,
 } from './image-helpers.ts';
-
-export {
-  buildAudioTranscriptionMultipartBody,
-  buildImagesEditsHttpBody,
-  buildImagesEditsJsonPayload,
-  buildWireHttpUrl,
-  encodeMultipartFormData,
-} from './pipeline.ts';
-export type {
-  AudioTranscriptionPipelineRequest,
-  ImageEditPartSource,
-  ImageEditsPipelineRequest,
-  MultipartField,
-} from './pipeline.ts';

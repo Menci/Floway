@@ -5,7 +5,19 @@ import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasesRepo, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
-import { gatewayErrorStatus } from '../chat/gemini-generate-content/errors.ts';
+const gatewayErrorStatus = (status: number): string => {
+  switch (status) {
+  case 400: return 'INVALID_ARGUMENT';
+  case 401: return 'UNAUTHENTICATED';
+  case 403: return 'PERMISSION_DENIED';
+  case 404: return 'NOT_FOUND';
+  case 429: return 'RESOURCE_EXHAUSTED';
+  case 500: return 'INTERNAL';
+  case 502: return 'UNAVAILABLE';
+  case 503: return 'UNAVAILABLE';
+  default: return 'INTERNAL';
+  }
+};
 import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import type { InternalModel } from '@floway-dev/provider';

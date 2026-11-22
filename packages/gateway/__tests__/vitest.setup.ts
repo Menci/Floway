@@ -2,12 +2,13 @@ import { trackBackground } from './test-utils/background-tracker.ts';
 import type { DumpBroker } from '../src/dump/broker.ts';
 import { initDumpBroker, initDumpStore } from '../src/dump/registry.ts';
 import type { DumpStore } from '../src/dump/store-contract.ts';
-import type { DumpMetadata, StoredDumpRecord, DumpRecordId } from '../src/dump/types.ts';
+import type { DumpBrokerMessage, DumpMetadata, DumpRecordId } from '../src/dump/types.ts';
 import { handleExecutionRequest } from '../src/execution/handler.ts';
 import { initBackgroundSchedulerResolver } from '../src/runtime/background.ts';
 import { initExecutionCellNamespace } from '../src/runtime/execution.ts';
 import { isReplayableBody } from '@floway-dev/http';
-import { initEnv, initFetch, initRuntimeKind, initTimingSafeEqual, InProcessExecutionCellNamespace } from '@floway-dev/platform';
+import { initEnv, initFetch, initLogStreamStore, initRuntimeKind, initTimingSafeEqual, InProcessExecutionCellNamespace } from '@floway-dev/platform';
+import type { LogStream, LogStreamStore } from '@floway-dev/platform';
 
 // Production always initializes the environment getter at boot. Mirror that
 // here with a neutral default; tests needing real values (RUNTIME_LOCATION,
@@ -33,17 +34,36 @@ initExecutionCellNamespace(new InProcessExecutionCellNamespace(handleExecutionRe
 // independent of that subsystem. Dump-specific tests install real or recording
 // implementations.
 const noopStore: DumpStore = {
-  async prepareRequestBody(body) { return { encoding: 'identity', bytes: body, decodedByteLength: body.byteLength }; },
-  async put(): Promise<void> { /* noop */ },
+  createArtifactKey(keyId, startedAt, recordId) { return `dumps/v2/${keyId}/${startedAt}/${recordId}.ndjson.gz`; },
+  async stageAndPutArtifact(): Promise<void> { /* noop */ },
+  async commitRecord(): Promise<void> { /* noop */ },
   async list(): Promise<DumpMetadata[]> { return []; },
-  async get(_keyId: string, _id: DumpRecordId): Promise<StoredDumpRecord | null> { return null; },
+  async getMeta(_keyId: string, _id: DumpRecordId): Promise<DumpMetadata | null> { return null; },
+  async getArtifactStream(): Promise<ReadableStream<Uint8Array> | null> { return null; },
   async deleteExpiredBatch(): Promise<number> { return 0; },
   async findOldestCreatedAt(): Promise<number | null> { return null; },
 };
 const noopBroker: DumpBroker = {
   async publish(): Promise<void> { /* noop */ },
   async closeChannel(): Promise<void> { /* noop */ },
-  subscribe(): AsyncIterable<DumpMetadata> { return (async function*() {})(); },
+  subscribe(): AsyncIterable<DumpBrokerMessage> { return (async function*() {})(); },
 };
 initDumpStore(noopStore);
 initDumpBroker(noopBroker);
+
+const testLogStreams = new Map<string, LogStream>();
+const noopLogStream: LogStream = {
+  async append(): Promise<void> { /* noop */ },
+  async end(): Promise<void> { /* noop */ },
+  read(): AsyncIterable<Uint8Array> { return (async function*() {})(); },
+};
+const noopLogStreamStore: LogStreamStore = {
+  async open(streamId) {
+    const existing = testLogStreams.get(streamId);
+    if (existing !== undefined) return existing;
+    testLogStreams.set(streamId, noopLogStream);
+    return noopLogStream;
+  },
+  async get(streamId) { return testLogStreams.get(streamId) ?? null; },
+};
+initLogStreamStore(noopLogStreamStore);

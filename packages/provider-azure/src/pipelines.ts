@@ -1,11 +1,12 @@
 import type { AzureUpstreamConfig } from './config.ts';
 import { azureAnthropicBaseUrl, azureOpenAiV1BaseUrl, azureResourceRootUrl } from './endpoint.ts';
+import { fillEmptyNamespaceDescriptionsPayload } from './stages/openai-responses/fill-empty-namespace-descriptions.ts';
 import { defineRequestStage, defineStage, pipeline, secret } from '@floway-dev/pipeline';
 import type { HeaderEntry, StageEnv, WireHttpUrl } from '@floway-dev/pipeline';
 import { parseAnthropicMessagesStream, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { DEFAULT_DECISION_PATHS, serializeDecisionRequest } from '@floway-dev/protocols/decision';
 import { parseOpenAIChatCompletionsStream, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { mapOpenAIResponsesTools, parseOpenAIResponsesStream, toCompactPayloadShape, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import { parseOpenAIResponsesStream, toCompactPayloadShape, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type {
   HttpOutcome,
   ProviderPipelineAnthropicMessagesCountTokensInput,
@@ -130,9 +131,7 @@ export const fillEmptyNamespaceDescriptions = defineRequestStage<
   execute: async (facts, next) => {
     const payload = facts['request.payload'];
     if (!hasEmptyNamespaceDescription(payload)) return await next({ 'request.payload': payload });
-    const updated = mapOpenAIResponsesTools(payload as CanonicalOpenAIResponsesPayload, tool => tool.type === 'namespace' && tool.description === ''
-      ? { ...tool, description: `Tools in the ${tool.name} namespace.` }
-      : tool);
+    const updated = fillEmptyNamespaceDescriptionsPayload(payload);
     return await next({ 'request.payload': updated });
   },
 });
@@ -241,6 +240,11 @@ export const createAzurePipelines = (azure: Azure): ProviderPipelines => {
       'azure.openai-audio-transcriptions.request',
       (facts, modelKey) => ({
         method: 'POST',
+        // Azure selects the deployment in the operation path. The 2025-04
+        // preview route covers both Whisper and GPT transcription deployments,
+        // and every admitted endpoint shape reduces to the resource host.
+        // https://github.com/Azure/azure-rest-api-specs/blob/b0a48bcbffead733affe03944ef09f5e8d12f8c8/specification/cognitiveservices/OpenAI.Inference/models/audio/audio_transcription.tsp#L119-L126
+        // https://github.com/Azure/azure-rest-api-specs/blob/928047803788f7377fa003a26ba2bdc2e0fcccc0/specification/cognitiveservices/OpenAI.Inference/routes/audio_transcription.tsp#L19-L49
         url: buildWireHttpUrl(
           azureResourceRootUrl(azure.config.endpoint),
           `/openai/deployments/${encodeURIComponent(modelKey)}/audio/transcriptions`,

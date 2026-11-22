@@ -163,6 +163,9 @@ importers:
       '@floway-dev/pipeline':
         specifier: workspace:*
         version: link:../../packages/pipeline
+      '@floway-dev/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../../packages/protocols
@@ -378,9 +381,6 @@ importers:
       '@floway-dev/http':
         specifier: workspace:*
         version: link:../http
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
       '@floway-dev/pipeline':
         specifier: workspace:*
         version: link:../pipeline
@@ -480,12 +480,6 @@ importers:
         specifier: ^1.14.3
         version: 1.14.3
 
-  packages/interceptor:
-    devDependencies:
-      '@floway-dev/test-utils':
-        specifier: workspace:*
-        version: link:../test-utils
-
   packages/pipeline:
     dependencies:
       '@noble/hashes':
@@ -560,9 +554,6 @@ importers:
 
   packages/provider-azure:
     dependencies:
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
       '@floway-dev/pipeline':
         specifier: workspace:*
         version: link:../pipeline
@@ -579,9 +570,6 @@ importers:
 
   packages/provider-chatgpt:
     dependencies:
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
       '@floway-dev/pipeline':
         specifier: workspace:*
         version: link:../pipeline
@@ -601,9 +589,6 @@ importers:
 
   packages/provider-claude-code:
     dependencies:
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
       '@floway-dev/pipeline':
         specifier: workspace:*
         version: link:../pipeline
@@ -626,9 +611,6 @@ importers:
 
   packages/provider-copilot:
     dependencies:
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
       '@floway-dev/pipeline':
         specifier: workspace:*
         version: link:../pipeline
@@ -689,9 +671,6 @@ importers:
 
   packages/provider-ollama:
     dependencies:
-      '@floway-dev/interceptor':
-        specifier: workspace:*
-        version: link:../interceptor
       '@floway-dev/pipeline':
         specifier: workspace:*
         version: link:../pipeline

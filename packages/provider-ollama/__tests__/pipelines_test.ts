@@ -25,7 +25,7 @@ import {
   type ProviderPipelineServices,
   type UpstreamRecord,
 } from '@floway-dev/provider';
-import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
+import { stubProviderModel } from '@floway-dev/test-utils';
 
 const encoder = new TextEncoder();
 
@@ -183,14 +183,14 @@ const drain = async (events: AsyncIterable<unknown>): Promise<void> => {
   for await (const _event of events) continue;
 };
 
-test('the provider exposes every supported Ollama pipeline, leaving the legacy instance available', () => {
+test('the provider exposes every supported Ollama pipeline and the current instance contract', () => {
   const provider = createOllamaProvider(record(config()));
   expect(provider.pipelines).toBeDefined();
   expect(Object.keys(provider.pipelines ?? {})).toEqual([
     'openaiCompletions', 'openaiChatCompletions', 'openaiResponses', 'anthropicMessages',
     'anthropicMessagesCountTokens', 'openaiEmbeddings', 'openaiAudioTranscriptions', 'decision',
   ]);
-  expect(provider.instance.callOpenAIChatCompletions).toBeTypeOf('function');
+  expect(Object.keys(provider.instance).sort()).toEqual(['getProvidedModels', 'runScheduledTask']);
 });
 
 test('chat renames the output cap without mutating frozen input and consumes an SSE response', async () => {
@@ -410,13 +410,12 @@ test('the dump encoder redacts the API key and base URL query credentials', asyn
     expect(new Headers(init.headers).get('authorization')).toBe('Bearer ollama-test-api-secret');
     return Response.json({ ok: true });
   };
-  const result = await createOllamaProvider(record(config({ baseUrl: 'https://ollama.example', cloudUsage: false }))).instance.callOpenAIEmbeddings(
-    stubProviderModel({ providerData: 'gpt-oss:120b' }),
-    { input: 'hello' },
-    undefined,
-    noopUpstreamCallOptions({ fetcher }),
+  const embedding = await runPipeline(
+    createOllamaPipelines(record(config({ baseUrl: 'https://ollama.example', cloudUsage: false })), config({ baseUrl: 'https://ollama.example', cloudUsage: false }), staleState).openaiEmbeddings!,
+    embeddings({ input: 'hello' }),
+    { services: { fetcherFor: () => fetcher } },
   );
-  expect(result.http.status).toBe(200);
+  expect(embedding.status).toBe(200);
 });
 
 async function collectEvents<T>(events: AsyncIterable<T>): Promise<T[]> {

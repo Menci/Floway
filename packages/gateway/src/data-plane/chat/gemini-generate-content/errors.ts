@@ -1,12 +1,10 @@
 import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
 import { mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import type { ChatAttemptOutcome } from '../pipeline/index.ts';
-import { inputErrorFields, type ChatServeFailure, type InputErrorDetails } from '../shared/errors.ts';
+import type { ChatServeFailure } from '../shared/errors.ts';
 import { geminiGenerateContentStatusForHttpStatus, type GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
-import { decodeResponseBody, internalDebugErrorFields, type ApiErrorResult, type PerformanceTelemetryContext, type InternalDebugError, type InternalErrorResult } from '@floway-dev/provider';
+import { decodeResponseBody, internalDebugErrorFields, type InternalDebugError } from '@floway-dev/provider';
 
-// Google RPC Status envelope, used by Gemini's `error` channel everywhere
-// (HTTP body, SSE-tunnelled error event).
 export const gatewayErrorStatus = (status: number): string => {
   switch (status) {
   case 400:
@@ -23,10 +21,10 @@ export const gatewayErrorStatus = (status: number): string => {
   }
 };
 
-// ProtoJSON Any encodes the well-known Struct's arbitrary JSON under value.
-// https://protobuf.dev/programming-guides/json/#any
-// https://github.com/googleapis/googleapis/blob/e09e85d32ca349e1b205514a412817a7692595c6/google/rpc/error_details.proto#L97-L104
-export const geminiGenerateContentInternalErrorPayload = (status: number, error: InternalDebugError): GeminiGenerateContentErrorResponse => {
+export const geminiGenerateContentInternalErrorPayload = (
+  status: number,
+  error: InternalDebugError,
+): GeminiGenerateContentErrorResponse => {
   const { stack, ...fields } = internalDebugErrorFields(error);
   return {
     error: {
@@ -41,58 +39,25 @@ export const geminiGenerateContentInternalErrorPayload = (status: number, error:
   };
 };
 
-// ProtoJSON Any wraps a Struct's arbitrary JSON in value.
-// https://protobuf.dev/programming-guides/json/#any
-const geminiGenerateContentRpcErrorResult = (
+export const googleRpcHttpStatusCode = (status: number): number =>
+  Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500;
+
+export const geminiGenerateContentRpcErrorPayload = (
   status: number,
   message: string,
-  performance?: PerformanceTelemetryContext,
-  extension?: Record<string, unknown>,
-): ApiErrorResult => ({
-  type: 'api-error',
-  source: 'gateway',
-  http: { status, headers: new Headers({ 'content-type': 'application/json' }) },
-  body: new TextEncoder().encode(JSON.stringify({
-    error: {
-      code: status,
-      message,
-      status: gatewayErrorStatus(status),
-      ...(extension === undefined ? {} : { details: [{ '@type': 'type.googleapis.com/google.protobuf.Struct', value: extension }] }),
-    },
-  })),
-  ...(performance ? { performance } : {}),
-});
-
-// Validation failures retain the telemetry of the candidate whose attempt rejected the request.
-export const inputErrorResult = (
-  error: InputErrorDetails,
-  performance?: PerformanceTelemetryContext,
-): ApiErrorResult =>
-  geminiGenerateContentRpcErrorResult(400, error.message, performance, inputErrorFields(error));
-
-// `endpoint` selects between `:generateContent` and `:countTokens` only in
-// the `model-unsupported` message string.
-export const renderGeminiGenerateContentFailure = (
-  failure: ChatServeFailure,
-  endpoint: 'generate' | 'countTokens',
-): ApiErrorResult => {
-  switch (failure.kind) {
-  case 'routing-unavailable':
-    return geminiGenerateContentRpcErrorResult(400, failure.message);
-  case 'model-missing':
-    return geminiGenerateContentRpcErrorResult(404, appendFailedUpstreams(`Model ${failure.model} is not available on any configured upstream.`, failure.failedUpstreams));
-  case 'model-unsupported':
-    return geminiGenerateContentRpcErrorResult(400, appendFailedUpstreams(`Model ${failure.model} does not support ${endpoint === 'countTokens' ? 'countTokens' : 'the Gemini generateContent endpoint'}.`, failure.failedUpstreams));
-  }
+): GeminiGenerateContentErrorResponse => {
+  const code = googleRpcHttpStatusCode(status);
+  return { error: { code, message, status: gatewayErrorStatus(code) } };
 };
 
-export const googleRpcHttpStatusCode = (status: number): number => (Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500);
-
-export const geminiGenerateContentRpcErrorPayload = (status: number, message: string): GeminiGenerateContentErrorResponse => {
-  const code = googleRpcHttpStatusCode(status);
-  return {
-    error: { code, message, status: gatewayErrorStatus(code) },
-  };
+export const isGeminiGenerateContentErrorResponse = (
+  value: unknown,
+): value is GeminiGenerateContentErrorResponse => {
+  if (!value || typeof value !== 'object' || !('error' in value)) return false;
+  const error = (value as { error?: unknown }).error;
+  if (!error || typeof error !== 'object') return false;
+  const payload = error as Partial<GeminiGenerateContentErrorResponse['error']>;
+  return typeof payload.code === 'number' && typeof payload.message === 'string' && typeof payload.status === 'string';
 };
 
 const parseJson = (value: string): unknown => {
@@ -103,82 +68,70 @@ const parseJson = (value: string): unknown => {
   }
 };
 
-export const isGeminiGenerateContentErrorResponse = (value: unknown): value is GeminiGenerateContentErrorResponse => {
-  if (!value || typeof value !== 'object' || !('error' in value)) return false;
-  const error = (value as { error?: unknown }).error;
-  if (!error || typeof error !== 'object') return false;
-  const payload = error as Partial<GeminiGenerateContentErrorResponse['error']>;
-  return typeof payload.code === 'number' && typeof payload.message === 'string' && typeof payload.status === 'string';
-};
-
 const gatewayRpcStatus = (status: number): number =>
   gatewayErrorStatus(status) === 'INTERNAL' ? 500 : status;
-
-export const normalizeGeminiGenerateContentFailure = (result: ApiErrorResult | InternalErrorResult): ApiErrorResult | InternalErrorResult => {
-  const { http } = result;
-  if (result.type === 'internal-error') {
-    const status = gatewayRpcStatus(http.status);
-    return status === http.status ? result : { ...result, http: { ...http, status } };
-  }
-  if (result.source === 'gateway') return result;
-
-  const message = decodeResponseBody(result.body).trim();
-  const parsed = parseJson(message);
-  if (isGeminiGenerateContentErrorResponse(parsed)) {
-    return { ...result, http: { ...http, status: googleRpcHttpStatusCode(parsed.error.code) } };
-  }
-
-  const status = gatewayRpcStatus(http.status);
-  return {
-    ...result,
-    http: { status, headers: mergeForwardedUpstreamHeaders({ 'content-type': 'application/json' }, http.headers) },
-    body: new TextEncoder().encode(JSON.stringify(geminiGenerateContentRpcErrorPayload(
-      status,
-      message || 'Upstream Gemini generateContent request failed.',
-    ))),
-  };
-};
-
-const headerEntriesToHeaders = (
-  entries: readonly (readonly [string, string | import('@floway-dev/pipeline').Secret<string>])[],
-): Headers => {
-  const headers = new Headers();
-  for (const [name, value] of entries) headers.append(name, typeof value === 'string' ? value : value.reveal());
-  return headers;
-};
-
-const headersToHeaderEntries = (
-  headers: Headers,
-): readonly (readonly [string, string])[] => Object.freeze(
-  [...headers.entries()].map(([name, value]) => Object.freeze([name, value] as const)),
-);
 
 export const normalizeGeminiChatFailure = <TEvent>(
   outcome: ChatAttemptOutcome<TEvent>,
 ): ChatAttemptOutcome<TEvent> => {
-  if (outcome.type === 'events' || outcome.type === 'plain') return outcome;
-
-  const normalized = normalizeGeminiGenerateContentFailure({
-    type: outcome.type,
-    ...(outcome.type === 'api-error'
-      ? {
-          source: outcome.source,
-          ...(outcome.upstreamId === undefined ? {} : { upstreamId: outcome.upstreamId }),
-        }
-      : { error: outcome.error }),
-    http: {
-      status: outcome.http.status,
-      headers: headerEntriesToHeaders(outcome.http.headers),
-    },
-    ...(outcome.type === 'api-error' ? { body: outcome.body } : {}),
-    ...(outcome.performance === undefined ? {} : { performance: outcome.performance }),
-  } as never);
+  if (outcome.type !== 'api-error' || outcome.source === 'gateway') return outcome;
+  const status = gatewayRpcStatus(outcome.http.status);
+  const message = decodeResponseBody(outcome.body).trim();
+  const parsed = parseJson(message);
+  const code = isGeminiGenerateContentErrorResponse(parsed)
+    ? googleRpcHttpStatusCode(parsed.error.code)
+    : status;
   return {
-    ...normalized,
+    ...outcome,
     http: {
       ...outcome.http,
-      status: normalized.http.status,
-      headers: headersToHeaderEntries(normalized.http.headers),
+      status: code,
+      headers: Object.freeze([...mergeForwardedUpstreamHeaders(
+        { 'content-type': 'application/json' },
+        new Headers(outcome.http.headers.map(([name, value]) => [name, typeof value === 'string' ? value : value.reveal()])),
+      ).entries()].map(([name, value]) => Object.freeze([name, value] as const))),
     },
-  } as ChatAttemptOutcome<TEvent>;
+    body: isGeminiGenerateContentErrorResponse(parsed)
+      ? outcome.body
+      : new TextEncoder().encode(JSON.stringify(geminiGenerateContentRpcErrorPayload(
+          code,
+          message || 'Upstream Gemini generateContent request failed.',
+        ))),
+  };
+};
+
+const geminiGenerateContentFailureOutcome = (
+  status: number,
+  message: string,
+): Extract<ChatAttemptOutcome<never>, { type: 'api-error' }> => ({
+  type: 'api-error',
+  source: 'gateway',
+  http: {
+    status,
+    headers: Object.freeze([Object.freeze(['content-type', 'application/json'] as const)]),
+  },
+  body: new TextEncoder().encode(JSON.stringify(geminiGenerateContentRpcErrorPayload(status, message))),
+});
+
+export const renderGeminiGenerateContentFailure = (
+  failure: ChatServeFailure,
+  endpoint: 'generate' | 'countTokens',
+): Extract<ChatAttemptOutcome<never>, { type: 'api-error' }> => {
+  switch (failure.kind) {
+  case 'routing-unavailable':
+    return geminiGenerateContentFailureOutcome(400, failure.message);
+  case 'model-missing':
+    return geminiGenerateContentFailureOutcome(
+      404,
+      appendFailedUpstreams(`Model ${failure.model} is not available on any configured upstream.`, failure.failedUpstreams),
+    );
+  case 'model-unsupported':
+    return geminiGenerateContentFailureOutcome(
+      400,
+      appendFailedUpstreams(
+        `Model ${failure.model} does not support ${endpoint === 'countTokens' ? 'countTokens' : 'the Gemini generateContent endpoint'}.`,
+        failure.failedUpstreams,
+      ),
+    );
+  }
 };

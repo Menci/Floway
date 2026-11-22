@@ -1,9 +1,10 @@
-import { AffinityRequestContext } from './affinity/index.ts';
+import { AffinityCodec } from './affinity/index.ts';
 import { createSidecarCodecFactory, type SidecarCodecFactory } from './sidecar-codec.ts';
 import { apiKeyFromContext, type AuthedContext } from '../../../middleware/auth.ts';
 import type { ApiKey } from '../../../repo/types.ts';
 import { createGatewayCtxFromHono, type CreateGatewayCtxOptions, type GatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { OpenAIResponsesStatefulStore } from '../openai-responses/items/store.ts';
+import { RouteAffinityRequestContext } from '../pipeline/affinity.ts';
 
 // Chat-protocol ctx adds affinity, signed sidecars, and the OpenAI Responses item store.
 // The store is present on every chat ctx: native OpenAI Responses entries supply a
@@ -13,7 +14,7 @@ import type { OpenAIResponsesStatefulStore } from '../openai-responses/items/sto
 // Embeddings / OpenAI Images / OpenAI Audio Transcriptions / OpenAI
 // Completions) have no stored-items concept and stay on plain `GatewayCtx`.
 export interface ChatGatewayCtx extends GatewayCtx {
-  readonly affinity: AffinityRequestContext;
+  readonly affinity: RouteAffinityRequestContext;
   readonly sidecarCodecFactory: SidecarCodecFactory;
   readonly store: OpenAIResponsesStatefulStore;
 }
@@ -31,7 +32,7 @@ export const createChatGatewayCtxFromHono = (
   const apiKey = apiKeyFromContext(c);
   return {
     ...base,
-    affinity: new AffinityRequestContext(apiKey.serverSecret),
+    affinity: new RouteAffinityRequestContext(new AffinityCodec(apiKey.serverSecret)),
     sidecarCodecFactory: createSidecarCodecFactory(apiKey.serverSecret),
     store: storeFactory(apiKey, base.requestStartedAt),
   };

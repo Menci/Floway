@@ -20,7 +20,7 @@ import { recordSseOutcome, settleUsageMeasurement } from '../shared/telemetry/se
 import { requestOnlyUsageMeasurement } from '../shared/telemetry/usage.ts';
 import { defineStage, dispatch, handoff, pipeline } from '@floway-dev/pipeline';
 import type { HeaderEntry, Pipeline, WireRequestSnapshot } from '@floway-dev/pipeline';
-import { eventFrame, isEventStreamMediaType, isJsonMediaType, parseSSEStream } from '@floway-dev/protocols/common';
+import { isEventStreamMediaType, isJsonMediaType, parseSSEStream } from '@floway-dev/protocols/common';
 import type { SseReadableFrame } from '@floway-dev/protocols/common';
 import { isOpenAIAudioTranscriptionDoneEvent } from '@floway-dev/protocols/openai-audio';
 import { asyncIterableToReadableStream, readManagedBytes } from '@floway-dev/provider';
@@ -175,7 +175,6 @@ const failoverStage = defineStage<
             throw new Error(`Malformed upstream /audio/transcriptions SSE JSON: ${frame.data}`, { cause: error });
           }
           const wire = serializeSseFrame(frame);
-          env.attribution.recordFrame(eventFrame(event));
           if (isOpenAIErrorPayload(event)) return { wire, end: { type: 'protocol-error' } as const };
           if (!isOpenAIAudioTranscriptionDoneEvent(event)) return { wire };
           measurement = measureOpenAIAudioTranscriptionUsage(event, '/audio/transcriptions');

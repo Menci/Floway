@@ -1,9 +1,31 @@
 import { test } from 'vitest';
 
 import { createCustomProvider } from '../src/provider.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
-import { directFetcher } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { runPipeline } from '@floway-dev/pipeline';
+import type { Fetcher, UpstreamRecord } from '@floway-dev/provider';
+import { directFetcher, isReplayableBody, readManagedBytes, toProviderModelFacts } from '@floway-dev/provider';
+import { assertEquals, assertExists, jsonResponse, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+
+interface CapturedRequest {
+  readonly url: string;
+  readonly method: string;
+  readonly headers: Headers;
+  readonly body: unknown;
+}
+
+const captureFetch = (
+  respond: () => Response,
+): { readonly fetcher: Fetcher; readonly requests: CapturedRequest[] } => {
+  const requests: CapturedRequest[] = [];
+  const fetcher: Fetcher = async (url, init) => {
+    const body = init.body === undefined || init.body === null
+      ? undefined
+      : JSON.parse(await new Response(isReplayableBody(init.body) ? init.body.open() : init.body as BodyInit).text()) as unknown;
+    requests.push({ url, method: init.method ?? 'GET', headers: new Headers(init.headers), body });
+    return respond();
+  };
+  return { fetcher, requests };
+};
 
 const buildUpstream = (baseUrl = 'https://generativelanguage.googleapis.com'): UpstreamRecord => ({
   id: 'up_gemini',
@@ -33,29 +55,24 @@ const buildUpstream = (baseUrl = 'https://generativelanguage.googleapis.com'): U
 
 test('Gemini generation posts to the model action path with alt=sse and the x-goog-api-key header', async () => {
   const provider = createCustomProvider(buildUpstream());
-  let request: Request | undefined;
+  const { fetcher, requests } = captureFetch(sseResponse);
 
-  await withMockedFetch(
-    observed => {
-      request = observed;
-      return sseResponse();
-    },
-    async () => {
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
-      await provider.instance.callGeminiGenerateContent(
-        model,
-        { contents: [{ role: 'user', parts: [{ text: 'hello' }] }] },
-        undefined,
-        noopUpstreamCallOptions(),
-      );
-    },
-  );
+  const [model] = await provider.instance.getProvidedModels(directFetcher);
+  const outcome = await runPipeline(provider.pipelines.geminiGenerateContent!, {
+    'provider.model': toProviderModelFacts(model),
+    'request.inboundHeaders': [],
+    'request.payload': { contents: [{ role: 'user', parts: [{ text: 'hello' }] }] },
+    'request.action': 'generate',
+  }, { services: { fetcherFor: () => fetcher } });
+  if (!outcome.ok) throw new Error('expected Gemini stream');
+  for await (const _frame of outcome.events) continue;
 
+  const [request] = requests;
   assertExists(request);
   assertEquals(request.method, 'POST');
   assertEquals(request.url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:streamGenerateContent?alt=sse');
   // The model and the action travel in the path; the body must not repeat them.
-  assertEquals(await request.json(), { contents: [{ role: 'user', parts: [{ text: 'hello' }] }] });
+  assertEquals(request.body, { contents: [{ role: 'user', parts: [{ text: 'hello' }] }] });
   assertEquals(request.headers.get('x-goog-api-key'), 'AIza-test');
   assertEquals(request.headers.get('authorization'), null);
 });
@@ -71,50 +88,43 @@ test('baseUrl places the generation root, and a stored models/ prefix is strippe
       models: [{ upstreamModelId: 'models/gemini-3-flash', kind: 'chat', endpoints: { geminiGenerateContent: {} } }],
     },
   });
-  let request: Request | undefined;
+  const { fetcher, requests } = captureFetch(sseResponse);
 
-  await withMockedFetch(
-    observed => {
-      request = observed;
-      return sseResponse();
-    },
-    async () => {
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
-      await provider.instance.callGeminiGenerateContent(model, { contents: [] }, undefined, noopUpstreamCallOptions());
-    },
-  );
+  const [model] = await provider.instance.getProvidedModels(directFetcher);
+  const outcome = await runPipeline(provider.pipelines.geminiGenerateContent!, {
+    'provider.model': toProviderModelFacts(model),
+    'request.inboundHeaders': [],
+    'request.payload': { contents: [] },
+    'request.action': 'generate',
+  }, { services: { fetcherFor: () => fetcher } });
+  if (!outcome.ok) throw new Error('expected Gemini stream');
+  for await (const _frame of outcome.events) continue;
 
+  const [request] = requests;
   assertExists(request);
   assertEquals(request.url, 'https://gemini-proxy.example.com/api/gemini/v1beta/models/gemini-3-flash:streamGenerateContent?alt=sse');
 });
 
 test('countTokens posts the generate payload inside the generateContentRequest envelope', async () => {
   const provider = createCustomProvider(buildUpstream());
-  let request: Request | undefined;
+  const { fetcher, requests } = captureFetch(() => jsonResponse({ totalTokens: 12 }));
 
-  await withMockedFetch(
-    observed => {
-      request = observed;
-      return jsonResponse({ totalTokens: 12 });
-    },
-    async () => {
-      const [model] = await provider.instance.getProvidedModels(directFetcher);
-      const { http: response } = await provider.instance.callGeminiGenerateContentCountTokens(
-        model,
-        { contents: [{ role: 'user', parts: [{ text: 'hello' }] }], systemInstruction: { parts: [{ text: 'be brief' }] } },
-        undefined,
-        noopUpstreamCallOptions(),
-      );
-      assertEquals(response.status, 200);
-      assertEquals(await response.json(), { totalTokens: 12 });
-    },
-  );
+  const [model] = await provider.instance.getProvidedModels(directFetcher);
+  const outcome = await runPipeline(provider.pipelines.geminiGenerateContentCountTokens!, {
+    'provider.model': toProviderModelFacts(model),
+    'request.inboundHeaders': [],
+    'request.payload': { contents: [{ role: 'user', parts: [{ text: 'hello' }] }], systemInstruction: { parts: [{ text: 'be brief' }] } },
+    'request.action': 'countTokens',
+  }, { services: { fetcherFor: () => fetcher } });
+  assertEquals(outcome.status, 200);
+  assertEquals(JSON.parse(new TextDecoder().decode(await readManagedBytes(outcome.body))), { totalTokens: 12 });
 
+  const [request] = requests;
   assertExists(request);
   assertEquals(request.url, 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:countTokens');
   // The countTokens body has no top-level slot for generate fields; Google
   // rejects `systemInstruction` there as an unknown name.
-  assertEquals(await request.json(), {
+  assertEquals(request.body, {
     generateContentRequest: {
       contents: [{ role: 'user', parts: [{ text: 'hello' }] }],
       systemInstruction: { parts: [{ text: 'be brief' }] },

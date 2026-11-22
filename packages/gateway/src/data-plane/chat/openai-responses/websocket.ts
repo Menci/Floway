@@ -7,7 +7,7 @@ import { OPENAI_RESPONSES_REASONING_INCLUDED_HEADER, OPENAI_RESPONSES_REASONING_
 import { createOpenAIResponsesResponseId } from './response-id.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { prepareOpenAIResponsesTurn } from './serve.ts';
-import type { DumpAccumulator } from '../../../dump/accumulator.ts';
+import type { DumpSession } from '../../../dump/session.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { buildDownstreamWireUrl, inboundHeaderEntriesFromHono } from '../../pipeline/index.ts';
@@ -17,8 +17,8 @@ import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { createChatPipelineServices, failoverChatCandidates, type ChatAttemptOutcome, type ChatPipelineServices } from '../pipeline/index.ts';
+import { SourceStreamState, type StreamCompletion } from '../pipeline/types.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, type StreamCompletion } from '../shared/respond.ts';
 import { defineStage, dispatch, handoff, pipeline, runPipeline } from '@floway-dev/pipeline';
 import type { HeaderEntry, Pipeline, WireRequestSnapshot } from '@floway-dev/pipeline';
 import type { BackgroundScheduler } from '@floway-dev/platform';
@@ -42,6 +42,7 @@ export interface OpenAIResponsesWsTurnInput {
   readonly 'request.http': WireRequestSnapshot;
   readonly 'request.inboundHeaders': readonly HeaderEntry[];
   readonly 'request.payload': CanonicalOpenAIResponsesPayload;
+  readonly 'request.responseId': string;
 }
 
 interface WsPreparedFacts extends OpenAIResponsesWsTurnInput {
@@ -52,21 +53,26 @@ interface WsAttemptFacts extends OpenAIResponsesWsTurnInput {
   readonly 'route.candidate': RouteCandidate;
 }
 
+export interface OpenAIResponsesWsServices extends ChatPipelineServices {
+  readonly wsTurn?: ActiveOpenAIResponsesWebSocketTurn;
+}
+
 const rawMessageJson = (bytes: Uint8Array): unknown => JSON.parse(new TextDecoder().decode(bytes)) as unknown;
 
 const wsTurnEdge = defineStage<
   OpenAIResponsesWsTurnInput,
   Record<never, never>,
   ChatAttemptOutcome<OpenAIResponsesStreamEventEx>,
-  ChatAttemptOutcome<OpenAIResponsesStreamEventEx>,
+  ChatAttemptOutcome<ClientOpenAIResponsesStreamEvent>,
   never,
-  ChatPipelineServices
+  OpenAIResponsesWsServices
 >({
   name: 'openai-responses.websocket.turn',
   tap: 'downstream',
-  execute: async (_facts, next) => {
+  execute: async (facts, next, env) => {
+    let result: ChatAttemptOutcome<OpenAIResponsesStreamEventEx>;
     try {
-      return await next();
+      result = await next();
     } catch (error) {
       if (!(error instanceof PreviousResponseNotFoundError)) throw error;
       return {
@@ -86,6 +92,24 @@ const wsTurnEdge = defineStage<
         })),
       };
     }
+    if (result.type !== 'events') return result;
+    const turn = env.wsTurn;
+    const upstreamFrames = turn === undefined
+      ? result.events
+      : env.wrapStream<ProtocolFrame<OpenAIResponsesStreamEventEx>, ProtocolFrame<OpenAIResponsesStreamEventEx>>(result.events, {
+          label: 'openai-responses.websocket.interruptible.events',
+          transform: source => interruptOpenAIResponsesFrames(source, turn, facts['request.payload']),
+        });
+    const events = env.wrapStream(upstreamFrames, {
+      label: 'openai-responses.websocket.client.events',
+      transform: source => wrapOpenAIResponsesClientEgress(
+        source,
+        env,
+        facts['request.payload'],
+        facts['request.responseId'],
+      ),
+    });
+    return { ...result, events };
   },
 });
 
@@ -130,8 +154,8 @@ const wsFailover = defineStage<
 
 export const openaiResponsesWebSocketTurnPipeline: Pipeline<
   OpenAIResponsesWsTurnInput,
-  ChatAttemptOutcome<OpenAIResponsesStreamEventEx>,
-  ChatPipelineServices
+  ChatAttemptOutcome<ClientOpenAIResponsesStreamEvent>,
+  OpenAIResponsesWsServices
 > = pipeline<OpenAIResponsesWsTurnInput>('gateway.openai-responses.websocket.turn')
   .use(wsTurnEdge)
   .use(wsPrepare)
@@ -197,7 +221,7 @@ type OpenAIResponsesWebSocketClientEvent = Partial<OpenAIResponsesRequestPayload
   [key: string]: unknown;
 };
 
-interface ActiveOpenAIResponsesWebSocketTurn {
+export interface ActiveOpenAIResponsesWebSocketTurn {
   readonly responseId: string;
   readonly abortController: AbortController;
   created: boolean;
@@ -296,6 +320,7 @@ const createOpenAIResponsesWebSocketEvents = (c: AuthedContext): OpenAIResponses
   const closeActiveRequest = (): void => {
     closed = true;
     activeAbortController?.abort();
+    activeTurn?.abortController.abort();
     sessionClosedResolve?.();
   };
 
@@ -312,20 +337,21 @@ const createOpenAIResponsesWebSocketEvents = (c: AuthedContext): OpenAIResponses
       queue = queue
         .then(async () => {
           if (closed) return;
-          const abortController = new AbortController();
+          const connectionAbortController = new AbortController();
+          const interruptAbortController = new AbortController();
           const turn: ActiveOpenAIResponsesWebSocketTurn = {
             responseId: createOpenAIResponsesResponseId(),
-            abortController,
+            abortController: interruptAbortController,
             created: false,
             interrupted: false,
             terminal: false,
           };
-          activeAbortController = abortController;
+          activeAbortController = connectionAbortController;
           activeTurn = turn;
           try {
-            await handleClientMessage(c, socket, session, event.data, authenticatedRawKey, turn, () => closed, sessionScheduler);
+            await handleClientMessage(c, socket, session, event.data, authenticatedRawKey, turn, connectionAbortController, () => closed, sessionScheduler);
           } finally {
-            if (activeAbortController === abortController) activeAbortController = undefined;
+            if (activeAbortController === connectionAbortController) activeAbortController = undefined;
             if (activeTurn === turn) activeTurn = undefined;
             if (turn.terminal) terminalResponseIds.add(turn.responseId);
           }
@@ -404,10 +430,10 @@ const handleClientMessage = async (
   data: unknown,
   authenticatedRawKey: string,
   turn: ActiveOpenAIResponsesWebSocketTurn,
+  downstreamAbortController: AbortController,
   isClosed: () => boolean,
   backgroundScheduler: BackgroundScheduler,
 ): Promise<void> => {
-  const downstreamAbortController = turn.abortController;
   const signal = downstreamAbortController.signal;
   let eventId: string | undefined;
   let ctx: ChatGatewayCtx | undefined;
@@ -493,7 +519,10 @@ const handleClientMessage = async (
       backgroundScheduler,
     }, (apiKey, requestStartedAt) => session.createStore(apiKey, requestStartedAt, payload.store ?? undefined));
 
-    const services = createChatPipelineServices(ctx);
+    const services: OpenAIResponsesWsServices = Object.freeze({
+      ...createChatPipelineServices(ctx),
+      wsTurn: turn,
+    });
     const inboundHeaders = inboundHeaderEntriesFromHono(c);
     const result = await runPipeline(
       openaiResponsesWebSocketTurnPipeline,
@@ -507,11 +536,13 @@ const handleClientMessage = async (
         },
         'request.inboundHeaders': inboundHeaders,
         'request.payload': payload,
+        'request.responseId': turn.responseId,
       },
       {
         services,
         signal,
         waitUntil: backgroundScheduler,
+        traceSink: ctx.dump?.traceSink,
         meta: { transport: 'websocket', action: 'generate' },
       },
     );
@@ -560,7 +591,7 @@ const respondOpenAIResponsesWebSocket = async (input: {
   readonly eventId: string | undefined;
   readonly signal: AbortSignal;
   readonly isClosed: () => boolean;
-  readonly result: ChatAttemptOutcome<OpenAIResponsesStreamEventEx>;
+  readonly result: ChatAttemptOutcome<ClientOpenAIResponsesStreamEvent>;
   readonly ctx: ChatGatewayCtx;
   readonly payload: CanonicalOpenAIResponsesPayload;
   readonly turnFailure: OpenAIResponsesWsTurnFailure;
@@ -599,10 +630,8 @@ const respondOpenAIResponsesWebSocket = async (input: {
   let completion: StreamCompletion = 'error';
   try {
     let terminalEvent: ClientOpenAIResponsesStreamEvent | undefined;
-    const interruptible = interruptOpenAIResponsesFrames(result.events, turn, payload);
-    const observed = observeOpenAIResponsesWebSocketFrames(interruptible, state, ctx);
-    const output = wrapOpenAIResponsesClientEgress(observed, ctx, payload, turn.responseId);
-    const iterator = output[Symbol.asyncIterator]();
+    const observed = observeOpenAIResponsesWebSocketFrames(result.events, state);
+    const iterator = observed[Symbol.asyncIterator]();
     let pendingNext = pendingWsFrameResult(iterator.next());
     let completed = false;
     let stoppedByDownstream = false;
@@ -813,8 +842,36 @@ const interruptOpenAIResponsesFrames = async function* (
   let response: OpenAIResponsesResultEx | undefined;
   let nextSequence = 0;
 
+  const iterator = frames[Symbol.asyncIterator]();
+  let sourceDone = false;
+  const readNext = async (): Promise<IteratorResult<ProtocolFrame<OpenAIResponsesStreamEventEx>> | 'interrupted'> => {
+    if (turn.interrupted || turn.abortController.signal.aborted) return 'interrupted';
+    return await new Promise<IteratorResult<ProtocolFrame<OpenAIResponsesStreamEventEx>> | 'interrupted'>((resolve, reject) => {
+      const onInterrupt = (): void => resolve('interrupted');
+      turn.abortController.signal.addEventListener('abort', onInterrupt, { once: true });
+      iterator.next().then(
+        result => {
+          turn.abortController.signal.removeEventListener('abort', onInterrupt);
+          resolve(result);
+        },
+        error => {
+          turn.abortController.signal.removeEventListener('abort', onInterrupt);
+          if (turn.interrupted || turn.abortController.signal.aborted) resolve('interrupted');
+          else reject(error);
+        },
+      );
+    });
+  };
+
   try {
-    for await (const frame of frames) {
+    for (;;) {
+      const step = await readNext();
+      if (step === 'interrupted') break;
+      if (step.done) {
+        sourceDone = true;
+        break;
+      }
+      const frame = step.value;
       if (turn.interrupted) break;
       if (frame.type !== 'event') {
         yield frame;
@@ -836,6 +893,14 @@ const interruptOpenAIResponsesFrames = async function* (
     }
   } catch (error) {
     if (!turn.interrupted) throw error;
+  } finally {
+    if (!sourceDone) {
+      try {
+        await iterator.return?.();
+      } catch (error) {
+        if (!turn.interrupted) throw error;
+      }
+    }
   }
 
   if (turn.interruptWaitWarning !== undefined) {
@@ -879,12 +944,10 @@ const interruptOpenAIResponsesFrames = async function* (
 };
 
 const observeOpenAIResponsesWebSocketFrames = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+  frames: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>,
   state: SourceStreamState,
-  ctx: ChatGatewayCtx,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+): AsyncGenerator<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> {
   for await (const frame of frames) {
-    ctx.dump?.frame(frame);
     if (frame.type === 'event') {
       const event = frame.event;
       const failed = event.type === 'error' || event.type === 'response.failed';
@@ -1011,7 +1074,7 @@ const sendError = (
   status: number,
   error: Record<string, unknown>,
   eventId?: string,
-  dump?: DumpAccumulator | null,
+  dump?: DumpSession | null,
   retryAfter?: string,
 ): void => {
   // Codex reads retry hints from the WS envelope after the HTTP upgrade.
@@ -1032,14 +1095,14 @@ const sendOpenAIResponsesEvent = (
   socket: OpenAIResponsesWebSocketSocket,
   event: ClientOpenAIResponsesStreamEvent,
   eventId?: string,
-  dump?: DumpAccumulator | null,
+  dump?: DumpSession | null,
 ): boolean => sendJson(socket, event, eventId, dump);
 
 const sendJson = (
   socket: OpenAIResponsesWebSocketSocket,
   value: unknown,
   eventId?: string,
-  dump?: DumpAccumulator | null,
+  dump?: DumpSession | null,
 ): boolean => {
   if (socket.readyState !== 1) return false;
   const payload = eventId === undefined || !value || typeof value !== 'object'

@@ -155,7 +155,6 @@ export const respondGeminiGenerateContentOutcome = async (
       failure: error => {
         const frame = eventFrame(caughtGeminiGenerateContentErrorEvent(error)
           ?? geminiGenerateContentInternalErrorPayload(500, toInternalDebugError(error)));
-        env.attribution.recordFrame(frame);
         return [serializeSseFrame(geminiGenerateContentProtocolFrameToSSEFrame(frame)!)];
       },
     },

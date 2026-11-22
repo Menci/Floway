@@ -5,8 +5,11 @@ import { z } from 'zod';
 
 import { ownedKeyForUser } from './shared/owned-key.ts';
 import { getDumpBroker, getDumpStore } from '../dump/registry.ts';
-import { dumpRecordToWire } from '../dump/wire.ts';
+import { dumpBrokerFrameSchema } from '../dump/schemas.ts';
+import type { DumpBrokerMessage, DumpMetadata, DumpRecordDetail } from '../dump/types.ts';
+import { dumpLiveStreamId } from '../dump/types.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
+import { getLogStreamStore, serveLogStream } from '@floway-dev/platform';
 
 const LIST_LIMIT_DEFAULT = 100;
 const LIST_LIMIT_MAX = 200;
@@ -16,6 +19,10 @@ const listQuery = z.object({
   before: z.string().min(1).optional(),
   q: z.string().trim().max(200).optional(),
   failures: z.enum(['true', 'false']).optional(),
+});
+
+const liveQuery = z.object({
+  offset: z.coerce.number().int().min(0).default(0),
 });
 
 const ownedKey = async (c: Context): Promise<{ id: string; error: null } | { id: null; error: string }> => {
@@ -28,6 +35,20 @@ const ownedKey = async (c: Context): Promise<{ id: string; error: null } | { id:
   return { id: owned.id, error: null };
 };
 
+const matchesQuery = (frame: DumpBrokerMessage, q: string | undefined): boolean => {
+  if (q === undefined) return true;
+  const needle = q.toLowerCase();
+  if (frame.event === 'started') {
+    return [frame.data.id, frame.data.path, frame.data.model]
+      .some(value => value?.toLowerCase().includes(needle));
+  }
+  const { data: meta } = frame;
+  return [meta.id, meta.path, meta.model, meta.upstream?.name, meta.status, meta.error?.kind === 'failed' ? meta.error.reason : meta.error?.kind]
+    .some(value => value !== null && value !== undefined && String(value).toLowerCase().includes(needle));
+};
+
+const isFailure = (meta: DumpMetadata): boolean => meta.error !== null || (meta.status ?? 0) >= 400;
+
 export const dumpRoutes = new Hono()
   .get('/keys/:keyId/records', zValidator('query', listQuery), async c => {
     const owned = await ownedKey(c);
@@ -35,53 +56,77 @@ export const dumpRoutes = new Hono()
     const { limit, before, q, failures } = c.req.valid('query');
     const records = await getDumpStore().list(owned.id, {
       limit: limit ?? LIST_LIMIT_DEFAULT,
-      q, failures: failures === 'true',
-      ...(before !== undefined ? { before } : {}),
+      q,
+      failures: failures === 'true',
+      ...(before === undefined ? {} : { before }),
     });
     return c.json({ records });
   })
   .get('/keys/:keyId/records/:recordId', async c => {
     const owned = await ownedKey(c);
     if (owned.id === null) return c.json({ error: owned.error }, 404);
-    const record = await getDumpStore().get(owned.id, c.req.param('recordId')!);
-    if (!record) return c.json({ error: 'Record not found' }, 404);
-    return c.json(dumpRecordToWire(record));
+    const meta = await getDumpStore().getMeta(owned.id, c.req.param('recordId')!);
+    if (meta === null) return c.json({ error: 'Record not found' }, 404);
+    const detail: DumpRecordDetail = { meta };
+    return c.json(detail);
+  })
+  .get('/keys/:keyId/records/:recordId/artifact', async c => {
+    const owned = await ownedKey(c);
+    if (owned.id === null) return c.json({ error: owned.error }, 404);
+    const stream = await getDumpStore().getArtifactStream(owned.id, c.req.param('recordId')!);
+    if (stream === null) return c.json({ error: 'Record not found' }, 404);
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        'content-type': 'application/x-ndjson; charset=utf-8',
+        'cache-control': 'private, no-store',
+      },
+    });
+  })
+  .get('/keys/:keyId/records/:recordId/live', zValidator('query', liveQuery), async c => {
+    const owned = await ownedKey(c);
+    if (owned.id === null) return c.json({ error: owned.error }, 404);
+    const recordId = c.req.param('recordId')!;
+    const stream = await getLogStreamStore().get(dumpLiveStreamId(owned.id, recordId));
+    if (stream === null) return c.json({ error: 'Live stream not found' }, 404);
+    return serveLogStream(stream, c.req.valid('query').offset, c.req.raw.signal);
   })
   .get('/keys/:keyId/stream', zValidator('query', listQuery), async c => {
     const { q, failures } = c.req.valid('query');
-    // Browsers cannot set custom headers on EventSource, so this SSE route
-    // accepts the session token via `?session=` (path-pinned in
-    // authMiddleware).
     const owned = await ownedKey(c);
     if (owned.id === null) return c.json({ error: owned.error }, 404);
 
-    // Subscribe first, then read the snapshot, so the live broker covers
-    // anything new while the snapshot supplies history.
     const controller = new AbortController();
     const subscription = getDumpBroker().subscribe(owned.id, controller.signal);
-    let snapshot;
+    let records: DumpMetadata[];
     try {
-      snapshot = await getDumpStore().list(owned.id, { limit: LIST_LIMIT_DEFAULT, q, failures: failures === 'true' });
-    } catch (err) {
+      records = await getDumpStore().list(owned.id, {
+        limit: LIST_LIMIT_DEFAULT,
+        q,
+        failures: failures === 'true',
+      });
+    } catch (error) {
       controller.abort();
-      throw err;
+      throw error;
     }
 
     return streamSSE(c, async stream => {
       const onAbort = () => controller.abort();
       c.req.raw.signal.addEventListener('abort', onAbort, { once: true });
       try {
-        await stream.writeSSE({ event: 'snapshot', data: JSON.stringify({ records: snapshot }) });
+        await stream.writeSSE({ event: 'snapshot', data: JSON.stringify({ records }) });
         try {
-          for await (const meta of subscription) {
-            if (failures === 'true' && meta.error === null && (meta.status ?? 0) < 400) continue;
-            if (q && ![meta.id, meta.path, meta.model, meta.upstream?.name, meta.status, meta.error?.kind === 'failed' ? meta.error.reason : meta.error?.kind].join(' ').toLowerCase().includes(q.toLowerCase())) continue;
-            await stream.writeSSE({ event: 'appended', data: JSON.stringify(meta) });
+          for await (const frame of subscription) {
+            const parsed = dumpBrokerFrameSchema.parse(frame);
+            if (parsed.event === 'started' && failures === 'true') continue;
+            if (parsed.event === 'appended' && failures === 'true' && !isFailure(parsed.data)) continue;
+            if (!matchesQuery(parsed, q)) continue;
+            await stream.writeSSE({ event: parsed.event, data: JSON.stringify(parsed.data) });
           }
-        } catch (err) {
+        } catch (error) {
           await stream.writeSSE({
             event: 'error',
-            data: JSON.stringify({ message: err instanceof Error ? err.message : String(err) }),
+            data: JSON.stringify({ message: error instanceof Error ? error.message : String(error) }),
           });
         }
       } finally {

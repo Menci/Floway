@@ -218,7 +218,6 @@ const failover = defineStage<
       label: 'downstream.sse.bytes',
       protocol: {
         encode: frame => {
-          env.attribution.recordFrame(frame);
           if (frame.type === 'done') {
             return {
               wire: serializeSseFrame({ type: 'sse', data: '[DONE]' }),

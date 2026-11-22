@@ -4,7 +4,6 @@ import { joinBaseAndPath } from './join.ts';
 import { frozenJsonRequestBody } from './json-request.ts';
 import type { ProviderModel, UpstreamProviderKind } from './model.ts';
 import type { Fetcher, FetchInit } from './options.ts';
-import type { ProviderStreamParser } from './streaming.ts';
 import { isSecret, secret, terminal } from '@floway-dev/pipeline';
 import type {
   Ending,
@@ -29,6 +28,15 @@ import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResultEx
 import type { CanonicalRerankRequest } from '@floway-dev/protocols/rerank';
 
 export type { Fetcher, FetchInit } from './options.ts';
+
+export type ChatTargetApi = 'anthropicMessages' | 'geminiGenerateContent' | 'openaiResponses' | 'openaiChatCompletions';
+
+export type OpenAIResponsesAction = 'generate' | 'compact';
+
+export type ProviderStreamParser<TEvent> = (
+  body: ReadableStream<Uint8Array>,
+  options?: { signal?: AbortSignal },
+) => AsyncIterable<ProtocolFrame<TEvent>>;
 
 export const SENSITIVE_HTTP_HEADER_NAMES: ReadonlySet<string> = new Set([
   'authorization',
@@ -380,8 +388,10 @@ const NO_BODY_STATUSES = new Set([204, 205, 304]);
 const createResponseBody = async (
   response: Response,
   env: StageEnv<ProviderPipelineServices>,
+  requestControl: { readonly abort: (reason?: unknown) => void; readonly detach: () => void },
 ): Promise<ManagedStream<Uint8Array> | null> => {
   if (response.body === null || NO_BODY_STATUSES.has(response.status)) {
+    requestControl.detach();
     if (response.body !== null) await response.body.cancel();
     return null;
   }
@@ -393,12 +403,14 @@ const createResponseBody = async (
     if (released) return;
     released = true;
     detachAbort();
+    requestControl.detach();
     reader.releaseLock();
   };
   return env.createStream<Uint8Array>({
     label: 'http.body',
     async *iterate(signal) {
       const abort = (): void => {
+        requestControl.abort(signal.reason);
         void reader.cancel(signal.reason).catch(() => undefined);
       };
       if (signal.aborted) abort();
@@ -417,8 +429,9 @@ const createResponseBody = async (
         release();
       }
     },
-    onClose: async ({ reason }) => {
+    onClose: async ({ how, reason }) => {
       try {
+        if (how !== 'exhausted' && !exhausted) requestControl.abort(reason);
         if (!exhausted && !released) await reader.cancel(reason);
       } finally {
         release();
@@ -441,21 +454,35 @@ export const httpTerminal = (
     const request = facts['request.http'];
     const url = materializeWireUrl(request.url);
     const materialized = materializeRequestBody(request.body, request.headers);
+    const requestAbort = new AbortController();
+    const forwardAbort = (): void => requestAbort.abort(env.signal.reason);
+    if (env.signal.aborted) forwardAbort();
+    else env.signal.addEventListener('abort', forwardAbort, { once: true });
+    const detachParentAbort = (): void => env.signal.removeEventListener('abort', forwardAbort);
     const startedAtMs = env.clock();
     env.onUpstreamDispatch?.({ upstreamId, startedAtMs });
-    const response = await env.fetcherFor(upstreamId)(url, {
-      method: request.method,
-      headers: materializeHeaderLines(materialized.headers),
-      ...(materialized.body === undefined ? {} : { body: materialized.body }),
-      signal: env.signal,
-    });
+    let response: Response;
+    try {
+      response = await env.fetcherFor(upstreamId)(url, {
+        method: request.method,
+        headers: materializeHeaderLines(materialized.headers),
+        ...(materialized.body === undefined ? {} : { body: materialized.body }),
+        signal: requestAbort.signal,
+      });
+    } catch (error) {
+      detachParentAbort();
+      throw error;
+    }
     const headersAtMs = env.clock();
     env.onUpstreamDispatch?.({ upstreamId, startedAtMs, headersAtMs });
     return {
       status: response.status,
       statusText: response.statusText,
       headers: responseHeaderEntries(response),
-      body: await createResponseBody(response, env),
+      body: await createResponseBody(response, env, {
+        abort: reason => requestAbort.abort(reason),
+        detach: detachParentAbort,
+      }),
       ...(facts['provider.modelKey'] === undefined ? {} : { modelKey: facts['provider.modelKey'] }),
       timing: { startedAtMs, headersAtMs },
     };

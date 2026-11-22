@@ -91,7 +91,6 @@ export const observeChatManagedStream = <TEvent>(
   transform: (source, signal) => {
     const observed = (async function* () {
       for await (const frame of source) {
-        env.attribution.recordFrame(frame);
         yield frame;
       }
     })();

@@ -115,7 +115,7 @@ export const mockChatPipelineServices = (
       modelPrefix: null,
       modelsCache: null,
       instance: stubProvider(),
-      ...(entry?.pipelines === undefined ? {} : { pipelines: entry.pipelines }),
+      pipelines: entry?.pipelines ?? {},
       configVersion: 1,
       modelsRefreshInputHash: 'test',
     };

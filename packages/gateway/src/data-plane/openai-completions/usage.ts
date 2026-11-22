@@ -16,7 +16,7 @@ import { billableServiceTier, splitInclusiveInputTokens } from '@floway-dev/prot
 // non-streaming /v1/completions body (observed null on a Zhipu/GLM
 // fork); the streaming path was observed to omit the field.
 //
-// This endpoint is a passthrough with no interceptor chain, so the fold the
+// This endpoint is a passthrough with no chat normalization stage, so the fold the
 // chat targets apply to the usage chunk itself happens here instead, on the
 // one read that consumes it. `declaredExclusive` carries the serving
 // upstream's `usage-exclusive-cached-tokens` flag and `identity` names it in

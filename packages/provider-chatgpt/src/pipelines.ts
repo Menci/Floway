@@ -12,16 +12,16 @@ import {
   CHATGPT_RESPONSES_LITE_HEADER,
   CHATGPT_USER_AGENT,
 } from './constants.ts';
-import type { ChatGPTCallEffects } from './fetch.ts';
+import { chatgptStateEffects, type ChatGPTStateEffects } from './effects.ts';
 import { uuidV7 } from './ids.ts';
-import { defaultChatGPTInstructions } from './interceptors/openai-responses/inject-default-instructions.ts';
 import { chatgptPlanSupportsImages } from './models.ts';
 import { hasChatGPTQuotaReading, parseChatGPTQuotaHeaders, putChatGPTQuota } from './quota.ts';
 import { stripChatGPTUnsupportedFields } from './responses-fields.ts';
+import { defaultChatGPTInstructions } from './responses-instructions.ts';
 import { projectMovedChatGPTResponsesFields, type ChatGPTResponsesLiteRequest } from './responses-lite.ts';
 import { restoreChatGPTResponsesOutput } from './responses-output.ts';
 import { prepareChatGPTResponsesRequest, stringField, trimHeader, type ChatGPTRequestIdentity } from './responses-request.ts';
-import { assertChatGPTUpstreamState, findChatGPTAccountIndex, persistChatGPTRefreshTokenRotation, persistChatGPTTerminalState, type ChatGPTAccessTokenEntry, type ChatGPTAccountCredential } from './state.ts';
+import { assertChatGPTUpstreamState, findChatGPTAccountIndex, type ChatGPTAccessTokenEntry, type ChatGPTAccountCredential } from './state.ts';
 import { defineStage, pipeline, secret } from '@floway-dev/pipeline';
 import type { HeaderEntry, Pipeline, Secret, StageEnv } from '@floway-dev/pipeline';
 import { isEventStreamMediaType } from '@floway-dev/protocols/common';
@@ -54,8 +54,10 @@ export interface ChatGPTPipelineConfig {
   readonly upstreamId: string;
   readonly accountId: string | null;
   readonly fallbackPlanType: string | undefined;
-  readonly effects?: ChatGPTCallEffects;
+  readonly stateEffects?: ChatGPTStateEffects;
 }
+
+type PipelineConfig = Required<ChatGPTPipelineConfig>;
 
 type PipelineEnv = StageEnv<ProviderPipelineServices>;
 
@@ -137,8 +139,8 @@ const syntheticFailure = (env: PipelineEnv, message: string, modelKey?: string):
   ...(modelKey === undefined ? {} : { modelKey }),
 });
 
-const refreshFailed = async (config: ChatGPTPipelineConfig, env: PipelineEnv, error: ChatGPTOAuthSessionTerminatedError, modelKey?: string): Promise<HttpOutcome> => {
-  await config.effects!.persistTerminalState('refresh_failed', error.upstreamMessage);
+const refreshFailed = async (config: PipelineConfig, env: PipelineEnv, error: ChatGPTOAuthSessionTerminatedError, modelKey?: string): Promise<HttpOutcome> => {
+  await config.stateEffects.persistTerminalState('refresh_failed', error.upstreamMessage);
   return syntheticFailure(env, `ChatGPT refresh failed: ${error.upstreamMessage}`, modelKey);
 };
 const readAccount = async (config: ChatGPTPipelineConfig): Promise<ChatGPTAccountCredential> => {
@@ -151,7 +153,7 @@ const readAccount = async (config: ChatGPTPipelineConfig): Promise<ChatGPTAccoun
 };
 
 const ensureToken = async (
-  config: ChatGPTPipelineConfig,
+  config: PipelineConfig,
   env: PipelineEnv,
   account: Pick<ChatGPTAccountCredential, 'chatgptAccountId'>,
   force = false,
@@ -160,7 +162,7 @@ const ensureToken = async (
     return {
       ok: true,
       entry: await ensureChatGPTAccessToken(config.upstreamId, account.chatgptAccountId, refreshToken =>
-        mintChatGPTAccessToken(refreshToken, env.fetcherFor(config.upstreamId), config.effects!.persistRefreshTokenRotation), force),
+        mintChatGPTAccessToken(refreshToken, env.fetcherFor(config.upstreamId), config.stateEffects.persistRefreshTokenRotation), force),
     };
   } catch (error) {
     if (error instanceof ChatGPTOAuthSessionTerminatedError) return { ok: false, http: await refreshFailed(config, env, error) };
@@ -170,7 +172,7 @@ const ensureToken = async (
 };
 
 const refreshForRetry = async (
-  config: ChatGPTPipelineConfig,
+  config: PipelineConfig,
   env: PipelineEnv,
   account: ChatGPTAccountFacts,
   failed: ChatGPTAccessTokenEntry,
@@ -182,7 +184,7 @@ const refreshForRetry = async (
     return {
       ok: true,
       entry: await ensureChatGPTAccessToken(config.upstreamId, account.chatgptAccountId, async refreshToken => {
-        const minted = await mintChatGPTAccessToken(refreshToken, env.fetcherFor(config.upstreamId), config.effects!.persistRefreshTokenRotation);
+        const minted = await mintChatGPTAccessToken(refreshToken, env.fetcherFor(config.upstreamId), config.stateEffects.persistRefreshTokenRotation);
         return mergeRetryPlan(minted, fallbackPlan);
       }, true),
     };
@@ -275,7 +277,7 @@ const ensureSse = (http: HttpOutcome): HttpOutcome => {
 };
 
 const retryUnauthorized = async <Facts extends AuthenticatedFacts & { readonly 'provider.model': ProviderModelFacts }, Out>(options: {
-  readonly config: ChatGPTPipelineConfig;
+  readonly config: PipelineConfig;
   readonly env: PipelineEnv;
   readonly facts: Readonly<Facts>;
   readonly first: HttpOutcome;
@@ -288,11 +290,11 @@ const retryUnauthorized = async <Facts extends AuthenticatedFacts & { readonly '
   const parsed = parseUnauthorized(bytes);
   const account = facts['chatgpt.account'];
   if (account.refresh_token === null) {
-    await config.effects!.persistTerminalState('session_terminated', parsed.message).catch(() => {});
+    await config.stateEffects.persistTerminalState('session_terminated', parsed.message).catch(() => {});
     return await classify({ ...first, body: bytesToManagedStream(bytes, env) }, accessTokenEntry(facts['chatgpt.accessToken']));
   }
   if (parsed.code === 'token_invalidated') {
-    await config.effects!.persistTerminalState('session_terminated', parsed.message);
+    await config.stateEffects.persistTerminalState('session_terminated', parsed.message);
     return await classify(syntheticFailure(env, `ChatGPT session terminated: ${parsed.message}`, facts['provider.model'].id), accessTokenEntry(facts['chatgpt.accessToken']));
   }
   const refreshed = await refreshForRetry(config, env, account, accessTokenEntry(facts['chatgpt.accessToken']), fallbackPlan);
@@ -302,18 +304,11 @@ const retryUnauthorized = async <Facts extends AuthenticatedFacts & { readonly '
   const secondBytes = await readManagedBytes(second.body);
   const secondParsed = parseUnauthorized(secondBytes);
   if (secondParsed.code === 'token_invalidated') {
-    await config.effects!.persistTerminalState('session_terminated', secondParsed.message);
+    await config.stateEffects.persistTerminalState('session_terminated', secondParsed.message);
     return await classify(syntheticFailure(env, `ChatGPT session terminated: ${secondParsed.message}`, facts['provider.model'].id), refreshed.entry);
   }
   return await classify({ ...second, body: bytesToManagedStream(secondBytes, env) }, refreshed.entry);
 };
-
-const effectsFor = (config: ChatGPTPipelineConfig): ChatGPTCallEffects => ({
-  persistRefreshTokenRotation: refreshToken =>
-    persistChatGPTRefreshTokenRotation(config.upstreamId, config.accountId, refreshToken, { onMissing: 'throw' }),
-  persistTerminalState: (state, message) =>
-    persistChatGPTTerminalState(config.upstreamId, config.accountId, state, message, { onMissing: 'throw' }),
-});
 
 const genericReadAccount = <Input extends { readonly 'provider.model': ProviderModelFacts }, Out>(config: Required<ChatGPTPipelineConfig>) => defineStage<
   Input,
@@ -464,7 +459,7 @@ const imagesEditsPipeline = (config: Required<ChatGPTPipelineConfig>): Pipeline<
 };
 
 export const createChatGPTPipelines = (config: ChatGPTPipelineConfig): ProviderPipelines => {
-  const resolved: Required<ChatGPTPipelineConfig> = { ...config, effects: config.effects ?? effectsFor(config) };
+  const resolved = { ...config, stateEffects: config.stateEffects ?? chatgptStateEffects(config.upstreamId, config.accountId) };
   return {
     alphaSearch: alphaSearchPipeline(resolved),
     openaiResponses: responsesPipeline(resolved),

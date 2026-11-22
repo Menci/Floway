@@ -10,7 +10,7 @@ import type {
 import type { ChatServeFailure } from '../shared/errors.ts';
 import { freezeValue } from '@floway-dev/pipeline';
 import { materializeOpaqueBlobCompatibilityIdentity } from '@floway-dev/protocols/common';
-import type { InternalModel, ModelCandidate, RouteCandidate } from '@floway-dev/provider';
+import type { RouteCandidate } from '@floway-dev/provider';
 
 export interface AffinityEgressOptions {
   readonly codec: Pick<AffinityCodec, 'wrap'>;
@@ -231,52 +231,3 @@ export class RouteAffinityRequestContext {
     return { codec: this.codec, affinity: this.selectedTarget() };
   }
 }
-
-export const routeCandidateAsLegacySelection = (candidate: RouteCandidate): ModelCandidate => {
-  const provider = Object.freeze({
-    upstreamId: candidate.upstreamId,
-    kind: candidate.kind,
-    name: candidate.upstreamName,
-    inboundHeaderAllowlist: Object.freeze([]),
-    disabledPublicModelIds: Object.freeze([]),
-    modelPrefix: null,
-    modelsCache: null,
-    instance: Object.freeze({
-      runScheduledTask: async () => undefined,
-      getProvidedModels: async () => Object.freeze([]),
-      callAlphaSearch: async () => { throw new Error('Route affinity candidate is not dispatchable'); },
-      callOpenAICompletions: async () => { throw new Error('Route affinity candidate is not dispatchable'); },
-      callOpenAIChatCompletions: async () => { throw new Error('Route affinity candidate is not dispatchable'); },
-      callOpenAIResponses: async () => { throw new Error('Route affinity candidate is not dispatchable'); },
-      callAnthropicMessages: async () => { throw new Error('Route affinity candidate is not dispatchable'); },
-      callAnthropicMessagesCountTokens: async () => { throw new Error('Route affinity candidate is not dispatchable'); },
-      callGeminiGenerateContent: async () => { throw new Error('Route affinity candidate is not dispatchable'); },
-      callGeminiGenerateContentCountTokens: async () => { throw new Error('Route affinity candidate is not dispatchable'); },
-      callOpenAIEmbeddings: async () => { throw new Error('Route affinity candidate is not dispatchable'); },
-      callOpenAIImagesGenerations: async () => { throw new Error('Route affinity candidate is not dispatchable'); },
-      callOpenAIImagesEdits: async () => { throw new Error('Route affinity candidate is not dispatchable'); },
-      callOpenAIAudioTranscriptions: async () => { throw new Error('Route affinity candidate is not dispatchable'); },
-      callRerank: async () => { throw new Error('Route affinity candidate is not dispatchable'); },
-      callDecision: async () => { throw new Error('Route affinity candidate is not dispatchable'); },
-    }),
-  });
-  const model: InternalModel = {
-    id: candidate.modelId,
-    limits: candidate.limits,
-    kind: candidate.providerModel.kind,
-    endpoints: candidate.endpoints,
-    ...(candidate.providerModel.pricing === undefined ? {} : { pricing: candidate.providerModel.pricing }),
-    providerModels: {
-      [candidate.upstreamId]: {
-        ...candidate.providerModel,
-        enabledFlags: new Set(candidate.providerModel.enabledFlags),
-      },
-    },
-  };
-  return {
-    provider,
-    model: Object.freeze(model),
-    fetcher: async () => { throw new Error('Route affinity candidate is not dispatchable'); },
-    ...(candidate.rules === undefined ? {} : { rules: candidate.rules }),
-  };
-};

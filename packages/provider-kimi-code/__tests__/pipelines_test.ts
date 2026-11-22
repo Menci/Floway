@@ -166,14 +166,14 @@ const waitFor = async (condition: () => boolean): Promise<void> => {
   expect(condition()).toBe(true);
 };
 
-test('the provider exposes all four Kimi Code pipelines while retaining the legacy instance', () => {
+test('the provider exposes all four Kimi Code pipelines and the current instance contract', () => {
   const provider = createKimiCodeProvider(record());
   expect(provider.pipelines).toBeDefined();
   expect(provider.pipelines?.openaiChatCompletions?.name).toBe('kimi-code.openai-chat-completions');
   expect(provider.pipelines?.openaiResponses?.name).toBe('kimi-code.openai-responses');
   expect(provider.pipelines?.anthropicMessages?.name).toBe('kimi-code.anthropic-messages');
   expect(provider.pipelines?.anthropicMessagesCountTokens?.name).toBe('kimi-code.anthropic-messages-count-tokens');
-  expect(provider.instance.callOpenAIChatCompletions).toBeTypeOf('function');
+  expect(Object.keys(provider.instance).sort()).toEqual(['getProvidedModels', 'runScheduledTask']);
 });
 
 test('chat routes a fast request to the fast lane, overwrites auth, and stamps the speed', async () => {

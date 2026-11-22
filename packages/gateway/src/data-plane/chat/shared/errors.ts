@@ -1,5 +1,3 @@
-import type { ApiErrorResult, PerformanceTelemetryContext } from '@floway-dev/provider';
-
 // Failures a chat protocol can render before reaching an upstream; unexpected
 // throws bubble as-is. `failedUpstreams` on model-{missing,unsupported}
 // carries upstream names with a recorded catalog-refresh failure. The error
@@ -31,21 +29,6 @@ export const throwChatServeFailure = <TFailure extends { readonly kind: string }
 
 export const tryCatchChatServeFailure = <TFailure extends { readonly kind: string } = ChatServeFailure>(error: unknown): TFailure | null =>
   error instanceof ChatServeFailureError ? error.failure as TFailure : null;
-
-export const openAiErrorResult = (
-  status: number,
-  message: string,
-  extra?: { readonly param: string; readonly code: string | null },
-  performance?: PerformanceTelemetryContext,
-): ApiErrorResult => ({
-  type: 'api-error',
-  source: 'gateway',
-  http: { status, headers: new Headers({ 'content-type': 'application/json' }) },
-  body: new TextEncoder().encode(JSON.stringify({
-    error: { message, type: 'invalid_request_error', ...extra },
-  })),
-  ...(performance ? { performance } : {}),
-}) satisfies ApiErrorResult;
 
 // Builds the failure value every serve dispatches with after `canServe` has
 // dropped every candidate: `sawModel=true` means the inbound id exists in

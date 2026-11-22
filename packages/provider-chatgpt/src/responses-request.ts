@@ -82,6 +82,10 @@ const parseClientTurnMetadataJson = (raw: string | null): Record<string, unknown
   }
 };
 
+// Codex treats the body's turn-metadata blob as canonical and the headers as a
+// compatibility projection. Reading the body first keeps long-lived transport
+// headers from overriding the current turn.
+// https://github.com/openai/codex/blob/a16863f8704831d13e041ed7dba2c4a57a2a940b/codex-rs/core/src/responses_metadata.rs#L184-L189
 const callerTurnMetadata = (headers: Headers, clientMetadata: Record<string, unknown>): Record<string, unknown> | null =>
   parseClientTurnMetadataJson(stringField(clientMetadata, 'x-codex-turn-metadata'))
   ?? parseClientTurnMetadataJson(trimHeader(headers, 'x-codex-turn-metadata'));
@@ -169,6 +173,9 @@ const buildChatGPTTurnMetadata = (
   return base;
 };
 
+// The unbounded tool inventory stays in the body copy so HTTP and WebSocket
+// compatibility headers remain bounded.
+// https://github.com/openai/codex/blob/a16863f8704831d13e041ed7dba2c4a57a2a940b/codex-rs/core/src/responses_metadata.rs#L291-L300
 const HEADER_OMITTED_TURN_METADATA_KEYS = new Set<string>(['tool_namespaces_info']);
 
 const buildChatGPTTurnMetadataJson = (

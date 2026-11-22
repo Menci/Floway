@@ -5,7 +5,6 @@ import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeaderEntriesFromHeaders } from '../../pipeline/headers.ts';
 import { headerEntryValue } from '../../pipeline/index.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../../shared/gateway-ctx.ts';
-import { inboundHeaders } from '../../shared/inbound-headers.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../../shared/request-body.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { providerModelsUnavailableResponse } from '../../shared/upstream-response.ts';
@@ -51,7 +50,7 @@ export const anthropicMessagesHttp = {
 
       const wantsStream = payload.stream === true;
       ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonOpenAIResponsesSourceStore(apiKey.id));
-      const headers = inboundHeaders(c);
+      const headers = new Headers(c.req.raw.headers);
       const headerEntries = inboundHeaderEntriesFromHeaders(headers);
       const response = await runGatewayChatHttpPipeline(
         c,
@@ -74,7 +73,7 @@ export const anthropicMessagesHttp = {
       if (rejected) return rejected;
 
       ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonOpenAIResponsesSourceStore(apiKey.id));
-      const headers = inboundHeaders(c);
+      const headers = new Headers(c.req.raw.headers);
       const headerEntries = inboundHeaderEntriesFromHeaders(headers);
       const response = await runGatewayChatHttpPipeline(
         c,

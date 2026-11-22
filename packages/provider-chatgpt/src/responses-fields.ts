@@ -1,8 +1,8 @@
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 // ChatGPT rejects these regular OpenAI Responses fields on its subscription
-// path. Strip them at the provider boundary so other targets still receive the
-// caller's values unchanged.
+// path. We strip them at the provider boundary so other targets still receive
+// the caller's values unchanged.
 const CHATGPT_UNSUPPORTED_BODY_FIELDS = [
   'max_output_tokens',
   'temperature',

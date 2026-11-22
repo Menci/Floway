@@ -1,10 +1,11 @@
+import { stubRouteCandidate } from './chat-pipeline.ts';
 import { createOpenAIResponsesHttpStore, type OpenAIResponsesStatefulStore } from '../../src/data-plane/chat/openai-responses/items/store.ts';
-import { AffinityRequestContext } from '../../src/data-plane/chat/shared/affinity/index.ts';
+import { RouteAffinityRequestContext } from '../../src/data-plane/chat/pipeline/affinity.ts';
+import { AffinityCodec } from '../../src/data-plane/chat/shared/affinity/index.ts';
 import type { ChatGatewayCtx } from '../../src/data-plane/chat/shared/gateway-ctx.ts';
 import { createSidecarCodecFactory } from '../../src/data-plane/chat/shared/sidecar-codec.ts';
 import type { GatewayCtx } from '../../src/data-plane/shared/gateway-ctx.ts';
 import type { User } from '../../src/repo/types.ts';
-import { stubModelCandidate } from '@floway-dev/test-utils';
 
 const testUser: User = {
   id: 1,
@@ -16,7 +17,7 @@ const testUser: User = {
 };
 
 // Shared minimal GatewayCtx for tests that exercise serve / respond /
-// interceptor code in isolation. Defaults satisfy every required field; pass
+// stage code in isolation. Defaults satisfy every required field; pass
 // `overrides` to nudge what each test cares about. Callers that need a
 // downstream abort controller should construct one and spread
 // `{ abortSignal: controller.signal, downstreamAbortController: controller }`
@@ -40,8 +41,8 @@ export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx 
 // explicitly.
 export const mockChatGatewayCtx = (overrides: Partial<ChatGatewayCtx> = {}): ChatGatewayCtx & { readonly store: OpenAIResponsesStatefulStore } => {
   const base = mockGatewayCtx(overrides);
-  const affinity = overrides.affinity ?? new AffinityRequestContext('00'.repeat(32));
-  if (overrides.affinity === undefined) affinity.select(stubModelCandidate());
+  const affinity = overrides.affinity ?? new RouteAffinityRequestContext(new AffinityCodec('00'.repeat(32)));
+  if (overrides.affinity === undefined) affinity.select(stubRouteCandidate());
   return {
     ...base,
     affinity,

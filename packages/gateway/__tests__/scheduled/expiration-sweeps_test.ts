@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { initDumpStore } from '../../src/dump/registry.ts';
-import type { DumpWriteRecord } from '../../src/dump/types.ts';
+import type { DumpMetadata } from '../../src/dump/types.ts';
 import { FileDumpStore } from '../../src/repo/dump-store.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { OPENAI_RESPONSES_REFRESH_GRANULARITY_MS } from '../../src/repo/openai-responses-retention.ts';
@@ -37,31 +37,30 @@ const responseItem = (id: string, refreshedAt: number, apiKeyId = 'key-a'): Stor
   refreshedAt,
 });
 
-const dumpRecord = (id: string, completedAt: number): DumpWriteRecord => ({
-  meta: {
-    id,
-    startedAt: completedAt - 1,
-    completedAt,
-    method: 'POST',
-    path: '/v1/responses',
-    status: 200,
-    upstream: null,
-    model: 'gpt-test',
-    inputTokens: null,
-    outputTokens: null,
-    requestBytes: 0,
-    responseBytes: 0,
-    durationMs: 1,
-    error: null,
-  },
-  request: {
-    method: 'POST',
-    path: '/v1/responses',
-    headers: [],
-    body: { encoding: 'identity', bytes: new Uint8Array(), decodedByteLength: 0 },
-  },
-  response: { status: 200, headers: [], body: { type: 'none' } },
+const dumpRecord = (id: string, completedAt: number): DumpMetadata => ({
+  id,
+  startedAt: completedAt - 1,
+  completedAt,
+  method: 'POST',
+  path: '/v1/responses',
+  status: 200,
+  upstream: null,
+  model: 'gpt-test',
+  inputTokens: null,
+  outputTokens: null,
+  requestBytes: 0,
+  responseBytes: 0,
+  durationMs: 1,
+  error: null,
 });
+
+const putDump = async (store: FileDumpStore, keyId: string, meta: DumpMetadata): Promise<void> => {
+  const artifactKey = store.createArtifactKey(keyId, meta.startedAt, meta.id);
+  await store.stageAndPutArtifact(keyId, meta.id, artifactKey, new ReadableStream({
+    start(controller) { controller.close(); },
+  }));
+  await store.commitRecord(keyId, { meta, artifactKey });
+};
 
 test('one fair driver drains bounded OpenAI Responses and dump backlogs', async () => {
   const now = Date.UTC(2026, 6, 23, 12);
@@ -84,9 +83,9 @@ test('one fair driver drains bounded OpenAI Responses and dump backlogs', async 
   );
   await repo.openaiResponsesItems.insertMany([responseItem('msg-current', now)], 0);
   for (let index = 0; index < 150; index += 1) {
-    await dumps.put('key-a', dumpRecord(`01K00000000000000000${String(index).padStart(4, '0')}`, dumpExpiredAt));
+    await putDump(dumps, 'key-a', dumpRecord(`01K00000000000000000${String(index).padStart(4, '0')}`, dumpExpiredAt));
   }
-  await dumps.put('key-a', dumpRecord('01K00000000000000000LIVE', now));
+  await putDump(dumps, 'key-a', dumpRecord('01K00000000000000000LIVE', now));
   await repo.apiKeys.update('key-a', { dumpRetentionSeconds: 3600, openaiResponsesRetentionSeconds: OPENAI_RESPONSES_RETENTION_SECONDS });
 
   await sweepExpirations(now);
@@ -149,8 +148,7 @@ test('bounded cleanup backfill tracks rows whose API key was hard-deleted', asyn
   const now = Date.UTC(2026, 6, 23, 12);
   const raw = await createSqlJsDatabase();
   try {
-    for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0082_expiration_sweep_integrity.sql') break;
+    for (const [, sql] of migrationSqlByFilename) {
       raw.run(sql);
     }
     raw.run(
@@ -161,26 +159,21 @@ test('bounded cleanup backfill tracks rows whose API key was hard-deleted', asyn
     );
     const db = wrapSqlJsDatabase(raw);
     const recordId = '01K00000000000000000ORPH';
-    const fileKey = `dumps/v1/key-a/1970010100/${recordId}.req.gz`;
+    const fileKey = `dumps/v2/key-a/1970010100/${recordId}.ndjson.gz`;
     await db.prepare(
-      `INSERT INTO dump_records
-       (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
-       VALUES ('key-a', ?, 1, NULL, '{}', '[]', NULL, ?, NULL)`,
-    ).bind(recordId, JSON.stringify({ key: fileKey, type: 'bytes' })).run();
+      `INSERT INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after)
+       VALUES (?, 'dump-artifact', json_array('key-a', ?), 'staged', ?)`,
+    ).bind(fileKey, recordId, now + 60_000).run();
+    await db.prepare(
+      `INSERT INTO dump_records (key_id, id, created_at, upstream_id, meta_json, artifact_key)
+       VALUES ('key-a', ?, 1, NULL, '{}', ?)`,
+    ).bind(recordId, fileKey).run();
     await db.prepare("DELETE FROM api_keys WHERE id = 'key-a'").run();
-    await db.prepare("DELETE FROM expiration_sweeps WHERE key_id = 'key-a'").run();
+    await db.prepare(
+      "UPDATE expiration_sweeps SET due_at = 3600002 WHERE domain = 'dumps' AND key_id = 'key-a'",
+    ).run();
     await db.prepare('DELETE FROM spilled_files WHERE file_key = ?').bind(fileKey).run();
-    // Run 0082 and every migration after it so the backfill SQL finds the
-    // columns later migrations added (e.g. the upstream body descriptor from
-    // 0089). The orphan row was seeded before the validate trigger existed.
-    let started = false;
-    for (const [filename, sql] of migrationSqlByFilename) {
-      if (!started) {
-        if (filename === '0082_expiration_sweep_integrity.sql') started = true;
-        else continue;
-      }
-      raw.run(sql);
-    }
+    await db.prepare("UPDATE cleanup_backfills SET next_rowid = 0, complete = 0 WHERE source = 'dump_records'").run();
 
     const repo = new SqlRepo(db);
     await repo.expirationSweeps.backfillCleanupTracking(500);
@@ -190,7 +183,7 @@ test('bounded cleanup backfill tracks rows whose API key was hard-deleted', asyn
     expect(await db.prepare(
       'SELECT owner_kind, owner_key, state FROM spilled_files WHERE file_key = ?',
     ).bind(fileKey).first()).toEqual({
-      owner_kind: 'dump-request',
+      owner_kind: 'dump-artifact',
       owner_key: JSON.stringify(['key-a', recordId]),
       state: 'owned',
     });

@@ -29,8 +29,8 @@ import {
   type ChatAttemptOutcome,
   type ChatPipelineServices,
 } from '../pipeline/index.ts';
+import { SourceStreamState } from '../pipeline/types.ts';
 import { noViableCandidateFailure, tryCatchChatServeFailure } from '../shared/errors.ts';
-import { SourceStreamState } from '../shared/respond.ts';
 import { serializeOpenAIResponsesStream, shouldSerializeStreamItems } from '../shared/stream-compatibility/index.ts';
 import { defineStage, dispatch, handoff, pipeline } from '@floway-dev/pipeline';
 import type { HeaderEntry, Pipeline, StageEnv, WireRequestSnapshot } from '@floway-dev/pipeline';
@@ -304,10 +304,9 @@ const errorHttpStatus = (event: Extract<OpenAIResponsesStreamEventEx, { type: 'e
 const observeOpenAIResponsesFrames = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
   state: SourceStreamState,
-  env: StageEnv<ChatPipelineServices>,
+  _env: StageEnv<ChatPipelineServices>,
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   for await (const frame of frames) {
-    env.attribution.recordFrame(frame);
     if (frame.type === 'done') continue;
     const failed = frame.event.type === 'error' || frame.event.type === 'response.failed';
     if (failed) state.failed = true;
@@ -319,7 +318,7 @@ const observeOpenAIResponsesFrames = async function* (
 };
 
 const responsesSseProtocol = (
-  env: StageEnv<ChatPipelineServices>,
+  _env: StageEnv<ChatPipelineServices>,
 ): SseProtocol<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> => {
   let announced: ClientResponseResource | undefined;
   let upstreamFailure: OpenAIResponsesErrorEx | undefined;
@@ -331,7 +330,6 @@ const responsesSseProtocol = (
     const frame = eventFrame(event);
     nextSequence = Math.max(nextSequence, (event.sequence_number ?? nextSequence) + 1);
     const wire = serializeSseFrame(openaiResponsesProtocolFrameToSSEFrame(frame));
-    env.attribution.recordFrame(frame);
     return wire;
   };
   const failedTrailer = (failure: OpenAIResponsesErrorEx) => announced === undefined
@@ -469,7 +467,6 @@ const respondOpenAIResponsesOutcome = async (
     transform: source => wrapOpenAIResponsesClientEgress(
       (async function* () {
         for await (const frame of source) {
-          env.attribution.recordFrame(frame);
           yield frame;
         }
       })(),

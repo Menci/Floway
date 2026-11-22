@@ -242,7 +242,7 @@ export const runGatewayHttpPipeline = async <
     services: resolvedServices,
     signal: ctx.abortSignal,
     waitUntil: ctx.backgroundScheduler,
-    ...(options?.traceSink === undefined ? {} : { traceSink: options.traceSink }),
+    traceSink: options?.traceSink ?? ctx.dump?.traceSink,
   });
   const response = materializeDownstreamResponse(c, resolvedServices, outcome);
   return finalizeGatewayResponse(ctx, response);

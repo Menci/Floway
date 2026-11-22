@@ -1,6 +1,6 @@
 import type { AttemptTiming } from './attempt-timing.ts';
 import type { RequestBody } from './request-body.ts';
-import { type DumpAccumulator, openDumpAccumulator } from '../../dump/accumulator.ts';
+import { type DumpSession, openDumpSession } from '../../dump/session.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import type { User } from '../../repo/types.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
@@ -34,7 +34,7 @@ export interface GatewayCtx {
   // Null when the api key has no dump retention configured, in which case
   // `finalizeGatewayResponse` short-circuits the dump tee and returns the
   // response untouched.
-  readonly dump: DumpAccumulator | null;
+  readonly dump: DumpSession | null;
 }
 
 export interface CreateGatewayCtxOptions {
@@ -75,8 +75,16 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
   const apiKey = apiKeyFromContext(c);
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
   const attempt: AttemptState = { timing: { firstOutputTokenAt: null, upstreamCallStartedAt: null }, telemetry: undefined };
-  const dump = openDumpAccumulator(c, opts.method ?? c.req.method, apiKey, opts.requestBody, opts.backgroundScheduler, opts.wantsStream, attempt.timing);
-  if (opts.model !== undefined) dump?.requestedModel(opts.model);
+  const dump = openDumpSession(
+    c,
+    opts.method ?? c.req.method,
+    apiKey,
+    opts.requestBody,
+    opts.backgroundScheduler,
+    opts.wantsStream,
+    attempt.timing,
+    opts.model,
+  );
   return {
     apiKeyId: apiKey.id,
     user: userFromContext(c),

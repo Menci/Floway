@@ -9,12 +9,12 @@ import { readUpstreamModelsSnapshotAndScheduleRefresh } from '../providers/model
 import { createProvider, listModelProviders, type GatewayProvider } from '../providers/registry.ts';
 import type { AttemptState, GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { ModelKind, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ModelKind } from '@floway-dev/protocols/common';
 import { toProviderModelFacts } from '@floway-dev/provider';
 import type {
   ChatTargetApi,
   Fetcher,
-  providerModelOf,
+  ProviderModel,
   ProviderPipelineServices,
   RouteCandidate,
   TelemetryModelIdentity,
@@ -82,9 +82,6 @@ export class GatewayTurnAttribution {
     this.dump?.failed(reason);
   }
 
-  recordFrame(frame: ProtocolFrame<unknown>): void {
-    this.dump?.frame(frame);
-  }
 }
 
 interface EnumeratedRoutes {
@@ -107,7 +104,7 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
 
 const routeCandidate = (
   provider: GatewayProvider,
-  providerModel: ReturnType<typeof providerModelOf>,
+  providerModel: ProviderModel,
   rules?: ModelAliasRecord['targets'][number]['rules'],
 ): RouteCandidate => {
   const normalizedModel = providerModel.kind === 'chat'
@@ -308,9 +305,6 @@ export const createGatewayPipelineServices = (
     randomizeUpstreams: ctx.randomizeUpstreams,
     runtimeLocation: ctx.runtimeLocation,
     backgroundScheduler: ctx.backgroundScheduler,
-    ...(ctx.dump === null
-      ? {}
-      : { wrapFetcher: (fetcher, upstreamId) => ctx.dump!.http.wrapFetcher(fetcher, upstreamId) }),
   });
   return Object.freeze({
     apiKeyId: ctx.apiKeyId,

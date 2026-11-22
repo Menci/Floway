@@ -1088,7 +1088,7 @@ test.each([
         assertEquals(messages.at(-1), { ...nativeError, event_id: 'evt_standalone' });
         await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
         assertEquals(raw.messages.map(message => JSON.parse(message)), messages);
-        assertEquals(dumps.stored[0]?.record.meta.responseBytes, raw.messages.reduce((total, message) => total + new TextEncoder().encode(message).byteLength, 0));
+        assertEquals(dumps.stored[0]?.meta.responseBytes, raw.messages.reduce((total, message) => total + new TextEncoder().encode(message).byteLength, 0));
         const nextTurn = waitForMessages(client, messages => messages.some(isTerminalResponseEvent));
         if (announced) {
           const created = messages[0] as { response: { id: string } };

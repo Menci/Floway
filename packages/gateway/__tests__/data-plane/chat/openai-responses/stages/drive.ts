@@ -1,9 +1,7 @@
-import type { ChatPipelineServices } from '../../../../../src/data-plane/chat/pipeline/index.ts';
+import type { ChatAttemptOutcome, ChatPipelineServices } from '../../../../../src/data-plane/chat/pipeline/index.ts';
 import { runChatStage } from '../../../../test-utils/chat-pipeline.ts';
 import type { Stage } from '@floway-dev/pipeline';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import type { ExecuteResult } from '@floway-dev/provider';
 
 export interface ShimInvocation {
   payload: import('@floway-dev/protocols/openai-responses').CanonicalOpenAIResponsesPayload;
@@ -13,12 +11,16 @@ export interface ShimInvocation {
   headers: Headers;
 }
 
-export type ShimOutcome = ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>;
+export type ShimOutcome = ChatAttemptOutcome<OpenAIResponsesStreamEventEx>;
+type RawEventsOutcome = Omit<Extract<ShimOutcome, { type: 'events' }>, 'events'> & {
+  readonly events: AsyncIterable<import('@floway-dev/protocols/common').ProtocolFrame<OpenAIResponsesStreamEventEx>>;
+};
+type RawShimOutcome = RawEventsOutcome | Exclude<ShimOutcome, { type: 'events' }>;
 
 export const runShim = async (
   stage: Stage<any, any, any, any, any, ChatPipelineServices>,
   invocation: ShimInvocation,
-  run: (payload: ShimInvocation['payload'], env: Parameters<Parameters<typeof runChatStage>[0]['next']>[1]) => Promise<ShimOutcome>,
+  run: (payload: ShimInvocation['payload'], env: Parameters<Parameters<typeof runChatStage>[0]['next']>[1]) => Promise<RawShimOutcome>,
 ): Promise<ShimOutcome> => {
   const { outcome } = await runChatStage({
     stage,
@@ -34,13 +36,12 @@ export const runShim = async (
       if (result.type !== 'events') return result as never;
       return {
         ...result,
-        events: env.createStream({ async *iterate() { yield* result.events; } }),
-        http: result.http === undefined ? undefined : {
-          status: result.http.status,
-          headers: Object.freeze([...result.http.headers.entries()].map(([name, value]) => Object.freeze([name, value] as const))),
-        },
+        events: env.createStream({
+          label: 'test.openai-responses.events',
+          async *iterate() { yield* result.events; },
+        }),
       } as never;
     },
   });
-  return outcome as unknown as ShimOutcome;
+  return outcome as ShimOutcome;
 };

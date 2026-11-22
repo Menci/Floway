@@ -27,6 +27,7 @@ test('a WebSocket turn runs as a traced pipeline with the WS wire snapshot', asy
     },
     'request.inboundHeaders': [['x-api-key', 'secret']],
     'request.payload': { model: 'missing', input: [{ type: 'message', role: 'user', content: 'hello' }], stream: true },
+    'request.responseId': 'resp_test',
   }, {
     services,
     traceSink: { push: event => events.push(event) },
@@ -93,6 +94,7 @@ test('a matched WebSocket turn dispatches candidate attempts on the main run spi
     },
     'request.inboundHeaders': [['x-trace-id', 'trace-123'], ['x-ignored', 'drop']],
     'request.payload': { model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }], stream: true },
+    'request.responseId': 'resp_ws_1',
   }, {
     services,
     traceSink: {

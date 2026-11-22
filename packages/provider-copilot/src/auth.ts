@@ -238,8 +238,7 @@ export interface CopilotFetchOptions {
    *  request and the selected GitHub host's token exchange so a single
    *  fallback chain covers both paths under restricted egress. */
   fetcher: Fetcher;
-  /** See UpstreamCallOptions.wrapUpstreamCall. Fires on the data-plane
-   *  request only, after any token-exchange round trip. */
+  /** Wraps the data-plane dispatch after any token-exchange round trip. */
   wrapUpstreamCall: <T>(dispatch: () => Promise<T>) => Promise<T>;
 }
 
@@ -274,15 +273,13 @@ export async function copilotAuthedFetch(path: string, init: FetchInit, auth: Co
   }
   for (const [name, value] of copilotBaseHeaderLines({ token: entry.token, requestId })) headers.set(name, value);
 
-  // Provider-attached invocation headers (vision, initiator, anthropic-beta,
-  // ...) flow through unchanged. The provider's boundary interceptors decide
-  // which headers each upstream call needs; this layer only knows how to ship
-  // them. Setting them last lets workaround interceptors override the static
-  // VSCode identification block when a future workaround needs to.
+  // Provider-selected pipeline headers (vision, initiator, anthropic-beta,
+  // ...) flow through unchanged. Setting them last lets those stages override
+  // the static VSCode identification block when a workaround needs to.
   //
-  // Convention: an empty-string value from an interceptor means "delete this
-  // base header" — the interceptor wants Copilot to NOT see a default we'd
-  // otherwise pin. An interceptor that wants to clear an arbitrary downstream
+  // Convention: an empty-string value from a pipeline stage means "delete this
+  // base header" — the stage wants Copilot to NOT see a default we'd
+  // otherwise pin. A stage that wants to clear an arbitrary downstream
   // header value must do so by name through this sentinel; the layer does not
   // otherwise expose a per-header delete API.
   if (options.headers) {

@@ -279,24 +279,33 @@ const openaiAudioTranscriptions = (
   record: UpstreamRecord,
   config: OllamaUpstreamConfig,
   state: OllamaUpstreamState,
-) => defineStage<ProviderPipelineOpenAIAudioTranscriptionsInput, HttpFacts, HttpOutcome, HttpOutcome, never, ProviderPipelineServices>({
-  name: 'ollama.openai-audio-transcriptions.request',
-  provides: ['request.http', 'provider.modelKey'],
-  execute: async (facts, next, env) => {
-    const modelKey = rawModelIdOf(facts['provider.model']);
-    const http = await next({
-      'request.http': {
-        method: 'POST',
-        url: buildWireHttpUrl(config.baseUrl, '/v1/audio/transcriptions'),
-        headers: openAIHeaders(config, facts['request.inboundHeaders']),
-        body: buildAudioTranscriptionMultipartBody(facts['request.payload'], { type: 'replace', value: modelKey }),
-      },
-      'provider.modelKey': modelKey,
-    });
-    armProbes(record, config, state, env);
-    return http;
-  },
-});
+) => {
+  // Stock Ollama mounts this OpenAI-compatible route, parses its multipart body,
+  // and adapts the audio into an internal chat request. Capability discovery
+  // does not advertise a dedicated transcription bit, so this endpoint is
+  // exposed only through manual model entries.
+  // https://github.com/ollama/ollama/blob/573386c35eac76124ffce571f4b0fefa0a7fe13c/server/routes.go#L1916-L1922
+  // https://github.com/ollama/ollama/blob/573386c35eac76124ffce571f4b0fefa0a7fe13c/middleware/openai.go#L682-L789
+  const stage = defineStage<ProviderPipelineOpenAIAudioTranscriptionsInput, HttpFacts, HttpOutcome, HttpOutcome, never, ProviderPipelineServices>({
+    name: 'ollama.openai-audio-transcriptions.request',
+    provides: ['request.http', 'provider.modelKey'],
+    execute: async (facts, next, env) => {
+      const modelKey = rawModelIdOf(facts['provider.model']);
+      const http = await next({
+        'request.http': {
+          method: 'POST',
+          url: buildWireHttpUrl(config.baseUrl, '/v1/audio/transcriptions'),
+          headers: openAIHeaders(config, facts['request.inboundHeaders']),
+          body: buildAudioTranscriptionMultipartBody(facts['request.payload'], { type: 'replace', value: modelKey }),
+        },
+        'provider.modelKey': modelKey,
+      });
+      armProbes(record, config, state, env);
+      return http;
+    },
+  });
+  return stage;
+};
 
 const decision = (
   config: OllamaUpstreamConfig,

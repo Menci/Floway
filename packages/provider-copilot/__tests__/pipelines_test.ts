@@ -102,7 +102,7 @@ afterEach(() => {
 });
 
 describe('Copilot provider pipelines', () => {
-  test('exposes every supported endpoint pipeline alongside the legacy instance', () => {
+  test('exposes every supported endpoint pipeline and the current instance contract', () => {
     const fixture = installRepo();
     const provider = createCopilotProvider(fixture.record);
     expect(provider.instance).toBeDefined();

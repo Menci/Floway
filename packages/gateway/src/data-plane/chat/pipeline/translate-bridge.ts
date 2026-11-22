@@ -6,16 +6,6 @@ import { headersFromEntries } from '@floway-dev/provider';
 import type { ChatTargetApi } from '@floway-dev/provider';
 import type { TranslateTrip } from '@floway-dev/translate';
 
-const captureTargetFrames = async function* <TEvent>(
-  source: AsyncIterable<ProtocolFrame<TEvent>>,
-  env: StageEnv<ChatPipelineServices>,
-): AsyncGenerator<ProtocolFrame<TEvent>> {
-  for await (const frame of source) {
-    env.ctx.dump?.upstreamFrame(frame);
-    yield frame;
-  }
-};
-
 export const applyTranslationTripToOutcome = <TP, SE, TE>(
   env: StageEnv<ChatPipelineServices>,
   trip: TranslateTrip<TP, SE, TE>,
@@ -27,19 +17,13 @@ export const applyTranslationTripToOutcome = <TP, SE, TE>(
     const events = env.wrapStream<ProtocolFrame<TE>, ProtocolFrame<SE>>(inner.events, {
       label: 'translated.protocol.events',
       transform(source) {
-        const captured = env.ctx.dump === null ? source : captureTargetFrames(source, env);
-        return trip.events(captured);
+        return trip.events(source);
       },
     });
     return { ...inner, events };
   }
 
   if (inner.type === 'api-error' && inner.source === 'upstream') {
-    env.ctx.dump?.upstreamApiError({
-      status: inner.http.status,
-      headers: headersFromEntries(inner.http.headers),
-      body: inner.body,
-    });
     if (inner.body === null) return inner;
     const rewritten = trip.error(inner.http.status, headersFromEntries(inner.http.headers), inner.body);
     if (rewritten === undefined) return inner;

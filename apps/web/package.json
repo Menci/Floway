@@ -12,6 +12,7 @@
   "dependencies": {
     "@floway-dev/agent-setup": "workspace:*",
     "@floway-dev/pipeline": "workspace:*",
+    "@floway-dev/platform": "workspace:*",
     "@floway-dev/protocols": "workspace:*",
     "@floway-dev/provider": "workspace:*",
     "@floway-dev/provider-chatgpt": "workspace:*",

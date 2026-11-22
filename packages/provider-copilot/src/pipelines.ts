@@ -1,33 +1,33 @@
 import { copilotBaseHeaderEntries, ensureCopilotToken, isCopilotTokenFetchError } from './auth.ts';
 import { COMPACTION_TRIGGER, compactionResponse } from './compaction.ts';
 import { captureQuotaFireAndForget } from './fetch.ts';
-import { applyCopilotTopLevelCacheControl } from './interceptors/anthropic-messages/apply-top-level-cache-control.ts';
-import { compressCopilotAnthropicMessagesImages } from './interceptors/anthropic-messages/compress-images.ts';
-import { parseUserIdMetadata, type ClaudeCodeMetadata } from './interceptors/anthropic-messages/detect-claude-code-metadata.ts';
-import { normalizeCopilotAnthropicBeta } from './interceptors/anthropic-messages/normalize-anthropic-beta.ts';
-import { omitPromotedThinkingTextFromProtocolFrames, promoteCopilotThinkingDisplay } from './interceptors/anthropic-messages/promote-thinking-display.ts';
-import { isCopilotContextWindowError } from './interceptors/anthropic-messages/rewrite-context-window-error.ts';
-import { copilotClaudeAgentHeaderOverrides } from './interceptors/anthropic-messages/set-claude-agent-headers.ts';
-import { applyCopilotCompactHeaders, classifyCopilotCompact } from './interceptors/anthropic-messages/set-compact-headers.ts';
-import { copilotSessionUuid } from './interceptors/anthropic-messages/set-interaction-id-header.ts';
-import { copilotAnthropicContentHasImage } from './interceptors/anthropic-messages/set-vision-header.ts';
-import { stripCopilotCacheControlExtensions } from './interceptors/anthropic-messages/strip-cache-control-extensions.ts';
-import { stripCopilotEagerInputStreaming } from './interceptors/anthropic-messages/strip-eager-input-streaming.ts';
-import { abortCopilotOpenAIChatCompletionsToolArgumentWhitespace } from './interceptors/openai-chat-completions/abort-on-tool-argument-whitespace.ts';
-import { attachCopilotCacheControlMarkers } from './interceptors/openai-chat-completions/attach-cache-control-markers.ts';
-import { compressCopilotOpenAIChatCompletionsImages } from './interceptors/openai-chat-completions/compress-images.ts';
-import { copilotOpenAIChatCompletionsInitiator } from './interceptors/openai-chat-completions/set-initiator-header.ts';
-import { copilotOpenAIChatCompletionsHasImage } from './interceptors/openai-chat-completions/set-vision-header.ts';
-import { abortCopilotOpenAIResponsesToolArgumentWhitespace } from './interceptors/openai-responses/abort-on-tool-argument-whitespace.ts';
-import { compressCopilotOpenAIResponsesImages } from './interceptors/openai-responses/compress-images.ts';
-import { fillCopilotEmptyNamespaceDescriptions } from './interceptors/openai-responses/fill-empty-namespace-descriptions.ts';
-import { normalizeCopilotOpenAIResponsesCompactionResult, normalizeCopilotOpenAIResponsesFrames, restoreCopilotOpenAIResponsesInputItemIds } from './interceptors/openai-responses/item-id-membrane.ts';
-import { copilotOpenAIResponsesInitiator } from './interceptors/openai-responses/set-initiator-header.ts';
-import { copilotOpenAIResponsesHasImage } from './interceptors/openai-responses/set-vision-header.ts';
-import { stripCopilotImageGeneration } from './interceptors/openai-responses/strip-image-generation.ts';
-import { stripCopilotServiceTier } from './interceptors/openai-responses/strip-service-tier.ts';
 import { CONTEXT_1M_BETA } from './model-selection.ts';
 import { anthropicMessagesReasoningEffort, chatReasoningEffort, copilotModelHasFastVariant, copilotOpenAIEmbeddingsBody, openaiResponsesReasoningEffort, rawModelFor } from './routing.ts';
+import { applyCopilotTopLevelCacheControl } from './stages/anthropic-messages/apply-top-level-cache-control.ts';
+import { compressCopilotAnthropicMessagesImages } from './stages/anthropic-messages/compress-images.ts';
+import { parseUserIdMetadata, type ClaudeCodeMetadata } from './stages/anthropic-messages/detect-claude-code-metadata.ts';
+import { normalizeCopilotAnthropicBeta } from './stages/anthropic-messages/normalize-anthropic-beta.ts';
+import { omitPromotedThinkingTextFromProtocolFrames, promoteCopilotThinkingDisplay } from './stages/anthropic-messages/promote-thinking-display.ts';
+import { isCopilotContextWindowError } from './stages/anthropic-messages/rewrite-context-window-error.ts';
+import { copilotClaudeAgentHeaderOverrides } from './stages/anthropic-messages/set-claude-agent-headers.ts';
+import { applyCopilotCompactHeaders, classifyCopilotCompact } from './stages/anthropic-messages/set-compact-headers.ts';
+import { copilotSessionUuid } from './stages/anthropic-messages/set-interaction-id-header.ts';
+import { copilotAnthropicContentHasImage } from './stages/anthropic-messages/set-vision-header.ts';
+import { stripCopilotCacheControlExtensions } from './stages/anthropic-messages/strip-cache-control-extensions.ts';
+import { stripCopilotEagerInputStreaming } from './stages/anthropic-messages/strip-eager-input-streaming.ts';
+import { abortCopilotOpenAIChatCompletionsToolArgumentWhitespace } from './stages/openai-chat-completions/abort-on-tool-argument-whitespace.ts';
+import { attachCopilotCacheControlMarkers } from './stages/openai-chat-completions/attach-cache-control-markers.ts';
+import { compressCopilotOpenAIChatCompletionsImages } from './stages/openai-chat-completions/compress-images.ts';
+import { copilotOpenAIChatCompletionsInitiator } from './stages/openai-chat-completions/set-initiator-header.ts';
+import { copilotOpenAIChatCompletionsHasImage } from './stages/openai-chat-completions/set-vision-header.ts';
+import { abortCopilotOpenAIResponsesToolArgumentWhitespace } from './stages/openai-responses/abort-on-tool-argument-whitespace.ts';
+import { compressCopilotOpenAIResponsesImages } from './stages/openai-responses/compress-images.ts';
+import { fillCopilotEmptyNamespaceDescriptions } from './stages/openai-responses/fill-empty-namespace-descriptions.ts';
+import { normalizeCopilotOpenAIResponsesCompactionResult, normalizeCopilotOpenAIResponsesFrames, restoreCopilotOpenAIResponsesInputItemIds } from './stages/openai-responses/item-id-membrane.ts';
+import { copilotOpenAIResponsesInitiator } from './stages/openai-responses/set-initiator-header.ts';
+import { copilotOpenAIResponsesHasImage } from './stages/openai-responses/set-vision-header.ts';
+import { stripCopilotImageGeneration } from './stages/openai-responses/strip-image-generation.ts';
+import { stripCopilotServiceTier } from './stages/openai-responses/strip-service-tier.ts';
 import type { CopilotRawModel } from './types.ts';
 import { defineStage } from '@floway-dev/pipeline';
 import type { AnyStage, Ending, HeaderEntry, Pipeline, Stage, StageEnv } from '@floway-dev/pipeline';
@@ -317,6 +317,11 @@ const fastGateStage: Stage<WorkFacts, Record<never, never>, MessagesOutcome, Mes
   execute: async (facts, next, env) => {
     const body = payload<Omit<AnthropicMessagesPayload, 'model'>>(facts);
     if (body.speed !== 'fast' || copilotModelHasFastVariant(facts['provider.model'])) return await next();
+    // Anthropic Fast Mode is a hard request-side contract, unlike the OpenAI
+    // priority lane where the upstream may report a standard fallback.
+    // https://docs.claude.com/en/build-with-claude/fast-mode
+    // https://docs.claude.com/en/api/service-tiers
+    // https://github.com/Yeachan-Heo/gajae-code/blob/main/packages/ai/test/anthropic-fast-mode.test.ts
     return {
       ok: false,
       modelKey: facts['provider.model'].id,

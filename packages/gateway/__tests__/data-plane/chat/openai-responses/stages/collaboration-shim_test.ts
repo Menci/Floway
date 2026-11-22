@@ -5,8 +5,16 @@ import { collaborationShim } from '../../../../../src/data-plane/chat/openai-res
 import { stubRouteCandidate } from '../../../../test-utils/chat-pipeline.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesOutputFunctionCallEx, OpenAIResponsesOutputItemEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
-import { eventResult } from '@floway-dev/provider';
 import { assertEquals, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+
+const eventResult = (
+  events: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+  identity = testTelemetryModelIdentity,
+) => ({
+  type: 'events' as const,
+  events,
+  modelIdentity: identity,
+});
 
 const MESSAGE_SCHEMA = {
   type: 'object',

@@ -1,31 +1,21 @@
-import { describe, expect, test, vi } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 
-import { listModelProviders } from '../../../src/data-plane/providers/registry.ts';
-import { enumerateModelCandidates as enumerateModelCandidatesRaw, enumerateRealModelCandidates as enumerateRealModelCandidatesRaw } from '../../../src/data-plane/providers/resolution.ts';
+import { GatewayRequestDirectory } from '../../../src/data-plane/pipeline/services.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, setupAppTest, testAdminUser, warmModelsForTest } from '../../test-utils/app.ts';
-import { directFetcher } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, withMockedFetch as withMockedFetchRaw } from '@floway-dev/test-utils';
+import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
-const withMockedFetch = <T>(
-  handler: Parameters<typeof withMockedFetchRaw>[0],
-  fn: () => Promise<T>,
-): Promise<T> => withMockedFetchRaw(handler, async () => {
-  await warmModelsForTest();
-  return await fn();
+afterEach(() => vi.restoreAllMocks());
+
+const directory = (runtimeLocation = 'TEST') => new GatewayRequestDirectory({
+  user: testAdminUser,
+  upstreamIds: null,
+  randomizeUpstreams: false,
+  runtimeLocation,
+  backgroundScheduler: promise => { void promise; },
 });
 
-const testScheduler = (promise: Promise<unknown>): void => {
-  promise.catch(err => console.error('[background]', err));
-};
-const enumerateModelCandidates = (
-  input: Omit<Parameters<typeof enumerateModelCandidatesRaw>[0], 'subject'>,
-) => enumerateModelCandidatesRaw({ subject: testAdminUser, ...input });
-const enumerateRealModelCandidates = (
-  ...args: Parameters<typeof enumerateRealModelCandidatesRaw> extends [unknown, ...infer Rest] ? Rest : never
-) => enumerateRealModelCandidatesRaw(testAdminUser, ...args);
-
-test('a cold candidate read schedules refresh without waiting for upstream I/O', async () => {
+test('GatewayRequestDirectory schedules a cold model refresh without waiting for upstream I/O', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord());
@@ -33,204 +23,134 @@ test('a cold candidate read schedules refresh without waiting for upstream I/O',
   let releaseFetch: ((response: Response) => void) | undefined;
   const fetch = vi.fn(() => new Promise<Response>(resolve => { releaseFetch = resolve; }));
 
-  await withMockedFetchRaw(
-    fetch,
-    async () => {
-      const result = await enumerateModelCandidates({
-        upstreamIds: null,
-        randomizeUpstreams: false,
-        model: 'eventual-model',
-        kind: 'chat',
-        scheduler: promise => { background.push(promise); },
-        runtimeLocation: 'TEST',
-      });
-      expect(result.candidates).toEqual([]);
-      expect(background).toHaveLength(1);
-      await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
-      releaseFetch!(jsonResponse({ object: 'list', data: [{ id: 'eventual-model' }] }));
-      await Promise.all(background);
-    },
-  );
-
-  expect(fetch).toHaveBeenCalledOnce();
-  expect((await repo.upstreams.getById('up_custom'))?.modelsCache).toMatchObject({
-    lastError: null,
-    models: [{ id: 'eventual-model' }],
+  await withMockedFetch(fetch, async () => {
+    const resolved = await new GatewayRequestDirectory({
+      user: testAdminUser,
+      upstreamIds: null,
+      randomizeUpstreams: false,
+      runtimeLocation: 'TEST',
+      backgroundScheduler: promise => { background.push(promise); },
+    }).enumerateCandidates('eventual-model', 'chat');
+    expect(resolved.candidates).toEqual([]);
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+    releaseFetch!(jsonResponse({ object: 'list', data: [{ id: 'eventual-model' }] }));
+    await Promise.all(background);
   });
+
+  const warm = await directory().enumerateCandidates('eventual-model', 'chat');
+  expect(warm.candidates.map(candidate => `${candidate.modelId}@${candidate.upstreamId}`)).toEqual(['eventual-model@up_custom']);
 });
 
-test('scheduler registration failures propagate rather than looking like an upstream model-list failure', async () => {
+test('GatewayRequestDirectory randomizes provider groups without splitting their candidates', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    config: { baseUrl: 'https://custom.example.com', apiKey: '', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [], modelsFetch: { enabled: false, authStyle: 'bearer' }, models: [] },
-  }));
-  const providers = await listModelProviders(null);
-  await expect(enumerateRealModelCandidates('model', 'chat', providers, {
-    fetcherForUpstream: () => directFetcher,
-    randomizeUpstreams: false,
-    scheduleRefresh: () => { throw new Error('scheduler unavailable'); },
-  })).rejects.toThrow('scheduler unavailable');
-});
-
-test('randomizes upstream candidate groups without splitting or reordering a group', async () => {
-  const { repo } = await setupAppTest();
-  await repo.upstreams.deleteAll();
-  for (const [id, name, sortOrder] of [['up_a', 'A', 1], ['up_b', 'B', 2]] as const) {
+  for (const [id, host, sortOrder] of [['up_a', 'a', 1], ['up_b', 'b', 2]] as const) {
     await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
       id,
-      name,
+      name: id,
       sortOrder,
-      config: { baseUrl: `https://${name.toLowerCase()}.example.com`, apiKey: `sk-${name.toLowerCase()}`, endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
+      config: { baseUrl: `https://${host}.example.com`, apiKey: `sk-${host}`, endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
       modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['unprefixed', 'prefixed'] },
     }));
   }
-
   await withMockedFetch(
     request => {
-      const hostname = new URL(request.url).hostname;
-      if (hostname === 'a.example.com' || hostname === 'b.example.com') {
+      const host = new URL(request.url).hostname;
+      if (host === 'a.example.com' || host === 'b.example.com') {
         return jsonResponse({ object: 'list', data: [{ id: 'or/gpt-4o' }, { id: 'gpt-4o' }] });
       }
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
+      await warmModelsForTest();
       const random = vi.spyOn(Math, 'random').mockReturnValue(0);
-      try {
-        const resolved = await enumerateModelCandidates({
-          upstreamIds: null,
-          randomizeUpstreams: true,
-          model: 'or/gpt-4o',
-          kind: 'chat',
-          scheduler: testScheduler,
-          runtimeLocation: 'TEST',
-        });
-        assertEquals(
-          resolved.candidates.map(candidate => `${candidate.model.id}@${candidate.provider.upstreamId}`),
-          ['or/gpt-4o@up_b', 'gpt-4o@up_b', 'or/gpt-4o@up_a', 'gpt-4o@up_a'],
-        );
-        expect(random).toHaveBeenCalledOnce();
-      } finally {
-        random.mockRestore();
-      }
+      const resolved = await new GatewayRequestDirectory({
+        user: testAdminUser,
+        upstreamIds: null,
+        randomizeUpstreams: true,
+        runtimeLocation: 'TEST',
+        backgroundScheduler: promise => { void promise; },
+      }).enumerateCandidates('or/gpt-4o', 'chat');
+      expect(resolved.candidates.map(candidate => `${candidate.modelId}@${candidate.upstreamId}`)).toEqual([
+        'or/gpt-4o@up_b', 'gpt-4o@up_b', 'or/gpt-4o@up_a', 'gpt-4o@up_a',
+      ]);
+      expect(random).toHaveBeenCalledOnce();
     },
   );
 });
 
-// A persisted refresh error must not hide healthy siblings. The broken
-// upstream's display name flows back via `failedUpstreams` while its empty
-// or last-known-good snapshot stays independent of the current request.
-test('enumerateModelCandidates: healthy upstream still resolves alongside a rejecting one, with failedUpstreams reported', async () => {
+test('GatewayRequestDirectory keeps healthy candidates and reports failed upstreams', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
-
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    id: 'up_broken',
-    name: 'Broken upstream',
-    sortOrder: 1,
+    id: 'up_broken', name: 'Broken upstream', sortOrder: 1,
     config: { baseUrl: 'https://broken.example.com', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    id: 'up_ok',
-    name: 'Healthy upstream',
-    sortOrder: 2,
+    id: 'up_ok', name: 'Healthy upstream', sortOrder: 2,
     config: { baseUrl: 'https://ok.example.com', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
-
   await withMockedFetch(
     request => {
       const url = new URL(request.url);
-      if (url.hostname === 'broken.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ error: 'upstream went down' }, 502);
-      }
-      if (url.hostname === 'ok.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'ok-model', supported_endpoints: ['/chat/completions'] }] });
-      }
+      if (url.hostname === 'broken.example.com') return jsonResponse({ error: 'down' }, 502);
+      if (url.hostname === 'ok.example.com') return jsonResponse({ object: 'list', data: [{ id: 'ok-model', supported_endpoints: ['/chat/completions'] }] });
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resolvedExisting = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'ok-model', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
-      assertEquals(resolvedExisting.candidates.map(m => m.provider.upstreamId), ['up_ok']);
-      assertEquals(resolvedExisting.candidates[0]?.model.id, 'ok-model');
-      assertEquals(resolvedExisting.failedUpstreams, ['Broken upstream']);
-
-      // A model nobody currently knows about must NOT rethrow the broken
-      // upstream's catalog error — the caller's failure renderer is the right
-      // place to surface that, parenthetically, alongside the model-missing
-      // body.
-      const resolvedMissing = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'unknown-model', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
-      assertEquals(resolvedMissing.candidates.length, 0);
-      assertEquals(resolvedMissing.failedUpstreams, ['Broken upstream']);
+      await warmModelsForTest();
+      const resolved = await directory().enumerateCandidates('ok-model', 'chat');
+      expect(resolved.candidates.map(candidate => candidate.upstreamId)).toEqual(['up_ok']);
+      expect(resolved.failedUpstreams).toEqual(['Broken upstream']);
     },
   );
 });
 
-// The alias walk visits every target, tags each real-catalog candidate
-// with that target's rule overlay, flattens across targets in `selection`
-// order, and dedups by (model, upstream, rules). Two targets pointing at
-// the same real model with the same rules collapse; the same pair with
-// distinct rules stays as two candidates so both can be attempted.
-describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
-  const aliasCommon = {
+test('GatewayRequestDirectory flattens and deduplicates alias targets in selection order', async () => {
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
+    id: 'up_a', name: 'A', sortOrder: 1,
+    config: { baseUrl: 'https://a.example.com', apiKey: 'sk-a', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
+  }));
+  await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
+    id: 'up_b', name: 'B', sortOrder: 2,
+    config: { baseUrl: 'https://b.example.com', apiKey: 'sk-b', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
+  }));
+  await repo.modelAliases.insert({
+    id: 'alias_interleaved',
+    name: 'interleaved',
+    kind: 'chat',
+    selection: 'first-available',
+    targets: [
+      { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
+      { target_model_id: 'claude', rules: { reasoning: { effort: 'high' } } },
+      { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
+    ],
     displayName: null,
     visibleInModelsList: true,
     announcedMetadata: null,
     sortOrder: 1,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
-  } as const;
-
-  const buildCatalogFetch = (byModel: Record<string, readonly string[]>) => (request: Request): Response => {
-    const url = new URL(request.url);
-    if (url.hostname === 'a.example.com' && url.pathname === '/v1/models') {
-      return jsonResponse({ object: 'list', data: byModel.up_a.map(id => ({ id })) });
-    }
-    if (url.hostname === 'b.example.com' && url.pathname === '/v1/models') {
-      return jsonResponse({ object: 'list', data: byModel.up_b.map(id => ({ id })) });
-    }
-    throw new Error(`Unhandled fetch ${request.url}`);
-  };
-
-  const seedUpstreams = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
-    await repo.upstreams.deleteAll();
-    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-      id: 'up_a', name: 'A', sortOrder: 1,
-      config: { baseUrl: 'https://a.example.com', apiKey: 'sk-a', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
-    }));
-    await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-      id: 'up_b', name: 'B', sortOrder: 2,
-      config: { baseUrl: 'https://b.example.com', apiKey: 'sk-b', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
-    }));
-  };
-
-  test('keeps the first representative in its original position when duplicate bindings are interleaved', async () => {
-    const { repo } = await setupAppTest();
-    await seedUpstreams(repo);
-    await repo.modelAliases.insert({
-      id: 'alias_interleaved-duplicates',
-      name: 'interleaved-duplicates', kind: 'chat', selection: 'first-available',
-      targets: [
-        { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
-        { target_model_id: 'claude', rules: { reasoning: { effort: 'high' } } },
-        { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
-      ],
-      ...aliasCommon,
-    });
-
-    await withMockedFetch(
-      buildCatalogFetch({ up_a: ['gpt-5'], up_b: ['claude'] }),
-      async () => {
-        const resolved = await enumerateModelCandidates({
-          upstreamIds: null, randomizeUpstreams: false, model: 'interleaved-duplicates', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
-        });
-        expect(resolved.candidates.map(candidate => ({
-          binding: `${candidate.model.id}@${candidate.provider.upstreamId}`,
-          effort: candidate.rules?.reasoning?.effort,
-        }))).toEqual([
-          { binding: 'gpt-5@up_a', effort: 'low' },
-          { binding: 'claude@up_b', effort: 'high' },
-        ]);
-      },
-    );
   });
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'a.example.com') return jsonResponse({ object: 'list', data: [{ id: 'gpt-5' }] });
+      if (url.hostname === 'b.example.com') return jsonResponse({ object: 'list', data: [{ id: 'claude' }] });
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      await warmModelsForTest();
+      const resolved = await directory().enumerateCandidates('interleaved', 'chat');
+      expect(resolved.candidates.map(candidate => ({
+        binding: `${candidate.modelId}@${candidate.upstreamId}`,
+        effort: candidate.rules?.reasoning?.effort,
+      }))).toEqual([
+        { binding: 'gpt-5@up_a', effort: 'low' },
+        { binding: 'claude@up_b', effort: 'high' },
+      ]);
+    },
+  );
 });

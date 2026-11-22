@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { initDumpStore } from '../src/dump/registry.ts';
-import type { DumpWriteRecord } from '../src/dump/types.ts';
+import type { DumpMetadata } from '../src/dump/types.ts';
 import { FileDumpStore } from '../src/repo/dump-store.ts';
 import { initRepo } from '../src/repo/index.ts';
 import { SqlRepo } from '../src/repo/sql.ts';
@@ -30,31 +30,33 @@ const apiKey = (id: string, now: number, secretDigit: number): ApiKey => ({
   openaiResponsesRetentionSeconds: 0,
 });
 
-const fileBackedDumpRecord = (id: string, completedAt: number): DumpWriteRecord => ({
-  meta: {
-    id,
-    startedAt: completedAt - 1,
-    completedAt,
-    method: 'POST',
-    path: '/v1/responses',
-    status: 200,
-    upstream: null,
-    model: 'gpt-test',
-    inputTokens: null,
-    outputTokens: null,
-    requestBytes: 1,
-    responseBytes: 1,
-    durationMs: 1,
-    error: null,
-  },
-  request: {
-    method: 'POST',
-    path: '/v1/responses',
-    headers: [],
-    body: { encoding: 'identity', bytes: new Uint8Array([1]), decodedByteLength: 1 },
-  },
-  response: { status: 200, headers: [], body: { type: 'bytes', body: new Uint8Array([2]) } },
+const fileBackedDumpRecord = (id: string, completedAt: number): DumpMetadata => ({
+  id,
+  startedAt: completedAt - 1,
+  completedAt,
+  method: 'POST',
+  path: '/v1/responses',
+  status: 200,
+  upstream: null,
+  model: 'gpt-test',
+  inputTokens: null,
+  outputTokens: null,
+  requestBytes: 1,
+  responseBytes: 1,
+  durationMs: 1,
+  error: null,
 });
+
+const putDump = async (store: FileDumpStore, keyId: string, meta: DumpMetadata): Promise<void> => {
+  const artifactKey = store.createArtifactKey(keyId, meta.startedAt, meta.id);
+  await store.stageAndPutArtifact(keyId, meta.id, artifactKey, new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array([1]));
+      controller.close();
+    },
+  }));
+  await store.commitRecord(keyId, { meta, artifactKey });
+};
 
 test('scheduled maintenance isolates the shared expiration driver from later collectors', async () => {
   const { repo } = await setupAppTest();
@@ -95,19 +97,19 @@ test('one maintenance tick collects every file retired by its four dump units', 
     const keyId = `key-${keyIndex}`;
     await repo.apiKeys.save(apiKey(keyId, now, keyIndex + 1));
     for (let rowIndex = 0; rowIndex < 50; rowIndex += 1) {
-      await dumps.put(keyId, fileBackedDumpRecord(`dump-${keyIndex}-${rowIndex}`, now - 3600_001));
+      await putDump(dumps, keyId, fileBackedDumpRecord(`dump-${keyIndex}-${rowIndex}`, now - 3600_001));
     }
   }
   const { results: ownedFiles } = await db.prepare('SELECT file_key FROM spilled_files ORDER BY file_key')
     .all<{ file_key: string }>();
-  expect(ownedFiles).toHaveLength(400);
+  expect(ownedFiles).toHaveLength(200);
 
   await runScheduledMaintenance('TEST', () => {});
 
   expect(await db.prepare('SELECT COUNT(*) AS count FROM dump_records').first<{ count: number }>()).toEqual({ count: 0 });
   expect(await db.prepare('SELECT COUNT(*) AS count FROM spilled_files').first<{ count: number }>()).toEqual({ count: 0 });
   expect(await Promise.all(ownedFiles.map(row => files.get(row.file_key))))
-    .toEqual(Array.from({ length: 400 }, () => null));
+    .toEqual(Array.from({ length: 200 }, () => null));
 });
 
 test('scheduled maintenance lease keeps overlapping ticks within one budget', async () => {

@@ -87,7 +87,7 @@ const captureFetch = (respond: (request: Request) => Response | Promise<Response
   return { requests, headerLines, fetcher };
 };
 
-test('provider exposes all 14 pipelines and retains the provider instance', () => {
+test('provider exposes all 14 pipelines and the current instance contract', () => {
   const provider = createCustomProvider({
     id: 'up_custom_pipeline',
     kind: 'custom',
@@ -114,8 +114,7 @@ test('provider exposes all 14 pipelines and retains the provider instance', () =
   ] as const;
   assertExists(provider.pipelines);
   for (const name of expected) assertExists(provider.pipelines[name]);
-  assertExists(provider.instance.callAlphaSearch);
-  assertEquals(provider.instance.getProvidedModels instanceof Function, true);
+  assertEquals(Object.keys(provider.instance).sort(), ['getProvidedModels', 'runScheduledTask']);
 });
 
 test('all non-streaming OpenAI-compatible pipelines use the expected paths, model ids, and auth', async () => {

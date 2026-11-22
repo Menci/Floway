@@ -96,8 +96,10 @@ const requestFromStage = (stage: DecodedStageNode): ProjectedWireRequest | null 
 };
 
 const findStreamId = (outcome: unknown): number | undefined => {
-  if (!isRecord(outcome) || !isDecodedStreamRef(outcome.body)) return undefined;
-  return outcome.body.$stream;
+  if (!isRecord(outcome)) return undefined;
+  if (isDecodedStreamRef(outcome.body)) return outcome.body.$stream;
+  if (isDecodedStreamRef(outcome.events)) return outcome.events.$stream;
+  return undefined;
 };
 
 const projectFrames = (frames: readonly DecodedStreamFrame[]): readonly ProjectedWireFrame[] =>
@@ -150,7 +152,19 @@ const responseFromStage = (
 ): ProjectedWireResponse | null => {
   const outcome = isRecord(stage.outcome) ? stage.outcome : undefined;
   if (outcome === undefined) return null;
-  const body = outcome?.body;
+  const httpNested = isRecord(outcome.http) ? outcome.http : undefined;
+  const status = typeof outcome.status === 'number'
+    ? outcome.status
+    : typeof httpNested?.status === 'number'
+      ? httpNested.status
+      : undefined;
+  const statusText = typeof outcome.statusText === 'string'
+    ? outcome.statusText
+    : typeof httpNested?.statusText === 'string'
+      ? httpNested.statusText
+      : undefined;
+  const rawHeaders = Array.isArray(outcome.headers) ? outcome.headers : httpNested?.headers;
+  const body = outcome.body ?? outcome.events;
   const rawStreamId = findStreamId(outcome);
   const rawStream = rawStreamId === undefined ? undefined : model.streams.get(rawStreamId);
   const protocolStreamId = rawStreamId === undefined
@@ -162,9 +176,9 @@ const responseFromStage = (
   const clientStreamId = rawStreamId === undefined ? undefined : findClientStreamId(model, rawStreamId);
   const clientStream = clientStreamId === undefined ? undefined : model.streams.get(clientStreamId);
   return Object.freeze({
-    ...(typeof outcome?.status === 'number' ? { status: outcome.status } : {}),
-    ...(typeof outcome?.statusText === 'string' ? { statusText: outcome.statusText } : {}),
-    headers: normalizeHeaders(outcome?.headers),
+    ...(status === undefined ? {} : { status }),
+    ...(statusText === undefined ? {} : { statusText }),
+    headers: normalizeHeaders(rawHeaders),
     ...(body === undefined ? {} : { body, rawBody: body }),
     rawFrames: projectFrames(rawStream?.frames ?? []),
     protocolFrames: projectFrames(protocolStream?.frames ?? []),

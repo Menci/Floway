@@ -1,26 +1,25 @@
 import { ensureClaudeCodeAccessToken, invalidateClaudeCodeAccessToken, type EnsuredAccessToken } from './access-token.ts';
 import { ClaudeCodeOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { isClaudeCodeShapedRequest } from './detection.ts';
-import {
-  detectTerminalSentinel,
-  observedClaudeCodeMessagesStream,
-  persistQuotaSnapshot,
-  persistTerminalAccountState,
-  STREAM_DIAGNOSTIC_FRAME_DATA_CHARS,
-  STREAM_DIAGNOSTIC_FRAME_LIMIT,
-  type StreamDiagnosticFrame,
-} from './fetch.ts';
 import { pickClaudeCodeHeaders } from './headers.ts';
-import { backfillRequiredFieldsPayload } from './interceptors/anthropic-messages/backfill-required-fields.ts';
-import { hoistUserSystemToMessagesPayload } from './interceptors/anthropic-messages/hoist-user-system-to-messages.ts';
-import { injectBillingBlockPayload } from './interceptors/anthropic-messages/inject-billing-block.ts';
-import { injectDefaultTemplatePayload } from './interceptors/anthropic-messages/inject-default-template.ts';
-import { injectIdentityBlockPayload } from './interceptors/anthropic-messages/inject-identity-block.ts';
-import { synthesizeMetadataUserIdPayload } from './interceptors/anthropic-messages/synthesize-metadata-user-id.ts';
 import { logWarn } from './log.ts';
 import type { ClaudeCodeProviderData } from './models.ts';
 import { claudeCodeRateLimitedUntil, parseClaudeCodeQuotaHeaders } from './quota.ts';
+import { backfillRequiredFieldsPayload } from './stages/anthropic-messages/backfill-required-fields.ts';
+import { hoistUserSystemToMessagesPayload } from './stages/anthropic-messages/hoist-user-system-to-messages.ts';
+import { injectBillingBlockPayload } from './stages/anthropic-messages/inject-billing-block.ts';
+import { injectDefaultTemplatePayload } from './stages/anthropic-messages/inject-default-template.ts';
+import { injectIdentityBlockPayload } from './stages/anthropic-messages/inject-identity-block.ts';
+import { synthesizeMetadataUserIdPayload } from './stages/anthropic-messages/synthesize-metadata-user-id.ts';
 import { readClaudeCodeUpstreamState } from './state.ts';
+import {
+  observedClaudeCodeMessagesStream,
+  STREAM_DIAGNOSTIC_FRAME_DATA_CHARS,
+  STREAM_DIAGNOSTIC_FRAME_LIMIT,
+  type StreamDiagnosticFrame,
+} from './stream-observation.ts';
+import { detectTerminalSentinel, persistTerminalAccountState } from './terminal-account.ts';
+import { persistQuotaSnapshot } from './usage-persistence.ts';
 import { defineRequestStage, defineStage, pipeline, secret } from '@floway-dev/pipeline';
 import type { HeaderEntry, Secret, StageEnv } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
@@ -91,7 +90,7 @@ const shapingStage = (
   transform: (facts: ShapedFacts) => MessagePayload,
 ) => defineStage<
   ShapedFacts,
-  Record<never, never>,
+  { readonly 'request.payload': MessagePayload },
   MessagesOutcome,
   MessagesOutcome,
   never,
@@ -99,7 +98,7 @@ const shapingStage = (
 >({
   name,
   execute: async (facts, next) => {
-    if (facts['claudeCode.shaped']) return await next();
+    if (facts['claudeCode.shaped']) return await next({ 'request.payload': facts['request.payload'] });
     return await next({ 'request.payload': { ...transform(facts) } });
   },
 });

@@ -7,4 +7,5 @@ export const azureProviderModule: ProviderModule = {
   defaultFlags: AZURE_DEFAULT_FLAGS,
 };
 export { assertAzureUpstreamRecord, type AzureUpstreamConfig } from './config.ts';
-export { createAzurePipelines, fillEmptyNamespaceDescriptions } from './pipelines.ts';
+export { createAzurePipelines } from './pipelines.ts';
+export { fillEmptyNamespaceDescriptionsPayload } from './stages/openai-responses/fill-empty-namespace-descriptions.ts';

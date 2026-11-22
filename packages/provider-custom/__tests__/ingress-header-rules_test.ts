@@ -2,9 +2,10 @@ import { test } from 'vitest';
 
 import type { CustomIngressHeaderRule } from '../src/config.ts';
 import { createCustomProvider } from '../src/provider.ts';
+import { runPipeline } from '@floway-dev/pipeline';
 import { parseRerankRequest } from '@floway-dev/protocols/rerank';
-import { directFetcher, type Fetcher, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { directFetcher, readManagedBytes, toProviderModelFacts, type Fetcher, type ProviderPipelineServices, type ProviderPipelineStreamOutcome, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
+import { assertEquals, assertExists, jsonResponse, sseResponse } from '@floway-dev/test-utils';
 
 const HEADER = 'x-route';
 
@@ -90,12 +91,13 @@ const upstreamLines = async (rules: CustomIngressHeaderRule[], admitted: string 
 
   const [model] = await provider.instance.getProvidedModels(directFetcher);
   assertExists(model);
-  await provider.instance.callOpenAIChatCompletions(
-    model,
-    { messages: [] },
-    undefined,
-    noopUpstreamCallOptions({ fetcher, headers: admittedBag(provider.inboundHeaderAllowlist, admitted) }),
-  );
+  const inbound = [...admittedBag(provider.inboundHeaderAllowlist, admitted).entries()];
+  const outcome = await runPipeline(provider.pipelines.openaiChatCompletions!, {
+    'provider.model': toProviderModelFacts(model),
+    'request.payload': { messages: [] },
+    'request.inboundHeaders': inbound,
+  }, { services: { fetcherFor: () => fetcher } });
+  if (outcome.ok) for await (const _frame of outcome.events) continue;
 
   assertExists(observed);
   return observed;
@@ -147,49 +149,66 @@ test('every endpoint resolves the same rules', async () => {
     { upstreamModelId: 'reranker', kind: 'rerank', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
   ]));
   const observed: Record<string, string | null> = {};
-
-  await withMockedFetch(
-    request => {
-      const { pathname } = new URL(request.url);
-      observed[pathname] = request.headers.get(HEADER);
-      if (pathname === '/v1/chat/completions' || pathname === '/v1/responses' || pathname === '/v1/messages') return sseResponse();
-      return jsonResponse({});
-    },
-    async () => {
-      const models = await provider.instance.getProvidedModels(directFetcher);
-      const model = models.find(candidate => candidate.kind !== 'rerank');
-      const rerankModel = models.find(candidate => candidate.kind === 'rerank');
-      assertExists(model);
-      assertExists(rerankModel);
-      const headers = () => admittedBag(provider.inboundHeaderAllowlist, 'client-a');
-      const opts = () => noopUpstreamCallOptions({ headers: headers() });
-      const messagesOpts = () => noopAnthropicMessagesUpstreamCallOptions({ headers: headers() });
-      const messagesBody = { max_tokens: 10, messages: [{ role: 'user' as const, content: 'hi' }] };
-
-      await provider.instance.callAlphaSearch(model, { query: 'hi' }, undefined, opts());
-      await provider.instance.callOpenAIChatCompletions(model, { messages: [] }, undefined, opts());
-      await provider.instance.callOpenAICompletions(model, { prompt: 'hi' }, undefined, opts());
-      await provider.instance.callOpenAIResponses(model, { input: [] }, 'generate', undefined, opts());
-      await provider.instance.callOpenAIResponses(model, { input: [] }, 'compact', undefined, opts());
-      await provider.instance.callAnthropicMessages(model, messagesBody, undefined, messagesOpts());
-      await provider.instance.callAnthropicMessagesCountTokens(model, messagesBody, undefined, messagesOpts());
-      await provider.instance.callOpenAIEmbeddings(model, { input: 'hi' }, undefined, opts());
-      await provider.instance.callOpenAIImagesGenerations(model, { prompt: 'hi' }, undefined, opts());
-      await provider.instance.callOpenAIImagesEdits(model, {
-        parameters: { prompt: 'hi' },
-        images: [{ type: 'upload', file: new File([new Uint8Array([1])], 'photo.png', { type: 'image/png' }) }],
-      }, undefined, opts());
-      await provider.instance.callOpenAIAudioTranscriptions(model, {
-        entries: [{ name: 'file', value: new File([new Uint8Array([1])], 'voice.ogg', { type: 'audio/ogg' }) }],
-      }, undefined, opts());
-      await provider.instance.callRerank(
-        rerankModel,
-        parseRerankRequest('cohere-v1', { model: 'reranker', query: 'query', documents: ['one'] }).request,
-        undefined,
-        opts(),
-      );
-    },
-  );
+  const fetcher: Fetcher = async (url, init) => {
+    const pathname = new URL(url).pathname;
+    const lines = init.headers as [string, string][];
+    observed[pathname] = lines.flatMap(([name, value]) => name.toLowerCase() === HEADER ? [value] : []).join(', ');
+    if (pathname === '/v1/chat/completions' || pathname === '/v1/responses' || pathname === '/v1/messages') return sseResponse();
+    return jsonResponse({});
+  };
+  const models = await provider.instance.getProvidedModels(directFetcher);
+  const model = models.find(candidate => candidate.kind !== 'rerank');
+  const rerankModel = models.find(candidate => candidate.kind === 'rerank');
+  assertExists(model);
+  assertExists(rerankModel);
+  const inbound = [...admittedBag(provider.inboundHeaderAllowlist, 'client-a').entries()] as [string, string][];
+  const facts = { 'provider.model': toProviderModelFacts(model), 'request.inboundHeaders': inbound };
+  const services: ProviderPipelineServices = { fetcherFor: () => fetcher };
+  const drainStream = async <T>(outcome: ProviderPipelineStreamOutcome<T>): Promise<void> => {
+    if (outcome.ok) for await (const _frame of outcome.events) continue;
+  };
+  await readManagedBytes((await runPipeline(provider.pipelines.alphaSearch!, {
+    ...facts, 'request.payload': { query: 'hi' },
+  }, { services })).body);
+  await readManagedBytes((await runPipeline(provider.pipelines.openaiCompletions!, {
+    ...facts, 'request.payload': { prompt: 'hi' },
+  }, { services })).body);
+  await readManagedBytes((await runPipeline(provider.pipelines.openaiEmbeddings!, {
+    ...facts, 'request.payload': { input: 'hi' },
+  }, { services })).body);
+  await readManagedBytes((await runPipeline(provider.pipelines.openaiImagesGenerations!, {
+    ...facts, 'request.payload': { prompt: 'hi' },
+  }, { services })).body);
+  await readManagedBytes((await runPipeline(provider.pipelines.openaiImagesEdits!, {
+    ...facts,
+    'request.payload': { parameters: { prompt: 'hi' }, images: [{ type: 'upload', bytes: new Uint8Array([1]), filename: 'photo.png', contentType: 'image/png' }] },
+  }, { services })).body);
+  await readManagedBytes((await runPipeline(provider.pipelines.openaiAudioTranscriptions!, {
+    ...facts,
+    'request.payload': { entries: [{ kind: 'file', name: 'file', bytes: new Uint8Array([1]), filename: 'voice.ogg', contentType: 'audio/ogg' }] },
+  }, { services })).body);
+  await readManagedBytes((await runPipeline(provider.pipelines.anthropicMessagesCountTokens!, {
+    ...facts, 'request.payload': { max_tokens: 10, messages: [] }, 'request.anthropicBeta': [],
+  }, { services })).body);
+  await readManagedBytes((await runPipeline(provider.pipelines.rerank!, {
+    'provider.model': toProviderModelFacts(rerankModel),
+    'request.inboundHeaders': inbound,
+    'request.payload': parseRerankRequest('cohere-v1', { model: 'reranker', query: 'query', documents: ['one'] }).request,
+  }, { services })).http.body);
+  const generated = await runPipeline(provider.pipelines.openaiResponses!, {
+    ...facts, 'request.payload': { input: [] }, 'request.action': 'generate',
+  }, { services });
+  if (generated.action === 'generate' && generated.ok) await drainStream(generated);
+  const compacted = await runPipeline(provider.pipelines.openaiResponses!, {
+    ...facts, 'request.payload': { input: [] }, 'request.action': 'compact',
+  }, { services });
+  if (compacted.action === 'compact' && !compacted.ok) await readManagedBytes(compacted.http.body);
+  await drainStream(await runPipeline(provider.pipelines.openaiChatCompletions!, {
+    ...facts, 'request.payload': { messages: [] },
+  }, { services }));
+  await drainStream(await runPipeline(provider.pipelines.anthropicMessages!, {
+    ...facts, 'request.payload': { max_tokens: 10, messages: [] }, 'request.anthropicBeta': [],
+  }, { services }));
 
   assertEquals(observed, {
     '/v1/alpha/search': 'client-a, appended',

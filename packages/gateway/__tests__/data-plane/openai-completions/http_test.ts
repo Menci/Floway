@@ -5,6 +5,7 @@ import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { flushBackground } from '../../test-utils/background-tracker.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -80,7 +81,7 @@ test('/v1/completions streaming forwards usage chunk when the client opted in', 
 // Dual-path coverage: usage + performance + dump telemetry must land
 // equivalently on both the non-streaming JSON and the streaming SSE
 // branches. The handler does not force `stream: true` upstream the way
-// openai-chat-completions does (no interceptor framework to feed), so the two
+// openai-chat-completions does (no chat protocol frame normalization), so the two
 // paths really do exercise different scaffold branches and the assertions
 // here keep them honest.
 test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/completions sends a data-only failure after partial output on %s', async mode => {
@@ -118,6 +119,7 @@ test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/complet
     },
   );
   await flushAsyncWork();
+  await flushBackground();
   const [performance] = await repo.performance.listAll();
   assertEquals(performance.errorsNoOutput, 1);
 });
@@ -149,6 +151,7 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
   );
 
   await flushAsyncWork();
+  await flushBackground();
 
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
@@ -162,15 +165,13 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
   assertEquals(performance[0]?.errorsNoOutput, 0);
 
   assertEquals(dumpStubs.stored.length, 1);
-  const dump = dumpStubs.stored[0]!.record;
+  const dump = dumpStubs.stored[0]!;
   assertEquals(dump.meta.path, '/v1/completions');
   assertEquals(dump.meta.status, 200);
   assertEquals(dump.meta.model, 'davinci-002');
   assertEquals(dump.meta.inputTokens, 7);
   assertEquals(dump.meta.outputTokens, 2);
-  // Non-streaming: the upstream sent a one-shot JSON, so the dump
-  // captures the bytes (not a frame log).
-  assertEquals(dump.response.body.type, 'bytes');
+  assertEquals(dump.artifact.byteLength > 0, true);
 });
 
 test('/v1/completions streaming strips the unrequested usage chunk yet records usage and a frame-log dump', async () => {
@@ -196,6 +197,7 @@ test('/v1/completions streaming strips the unrequested usage chunk yet records u
   );
 
   await flushAsyncWork();
+  await flushBackground();
 
   const usage = await repo.usage.listAll();
   assertEquals(usage.length, 1);
@@ -207,26 +209,13 @@ test('/v1/completions streaming strips the unrequested usage chunk yet records u
   assertEquals(performance[0]?.errorsNoOutput, 0);
 
   assertEquals(dumpStubs.stored.length, 1);
-  const dump = dumpStubs.stored[0]!.record;
+  const dump = dumpStubs.stored[0]!;
   assertEquals(dump.meta.path, '/v1/completions');
   assertEquals(dump.meta.status, 200);
   assertEquals(dump.meta.model, 'davinci-002');
   assertEquals(dump.meta.inputTokens, 4);
   assertEquals(dump.meta.outputTokens, 2);
-  // Streaming: dump stores the protocol frames the gateway saw from
-  // upstream BEFORE transformFrame ran. The fixture stream emits two
-  // content events, one usage-only event (which the client did not opt
-  // into and so it was stripped from the forwarded stream), and a done
-  // terminator.
-  assertEquals(dump.response.body.type, 'stream');
-  if (dump.response.body.type === 'stream') {
-    const frames = dump.response.body.events.map(e => e.frame);
-    // Upstream's usage chunk is preserved in the dump even though it was
-    // stripped from the client-facing stream.
-    const usageFrame = frames[2];
-    if (usageFrame?.type === 'event') {
-      const event = usageFrame.event as { choices: unknown[]; usage: { prompt_tokens: number } };
-      assertEquals(event.usage.prompt_tokens, 4);
-    } else throw new Error('expected the usage event frame');
-  }
+  const artifact = new TextDecoder().decode(dump.artifact);
+  assertEquals(artifact.includes('"usage"'), true);
+  assertEquals(artifact.includes('"prompt_tokens":4'), true);
 });

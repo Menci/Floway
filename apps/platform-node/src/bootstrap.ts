@@ -11,7 +11,7 @@ import { SqliteImageCacheStore } from './sqlite-image-cache-store.ts';
 import { timingSafeEqual } from './timing-safe-equal.ts';
 import { FileDumpStore, initDumpBroker, initDumpStore } from '@floway-dev/gateway';
 import { dumpCodec } from '@floway-dev/gateway/dump-codec';
-import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
+import type { DumpBrokerMessage } from '@floway-dev/gateway/dump-types';
 import {
   getEnvOptional,
   IMAGE_CACHE_POLICY,
@@ -46,6 +46,6 @@ export const bootstrapNodePlatform = (): { db: SqlDatabase } => {
   initImageProcessor(createSharpImageProcessor());
   initLogStreamStore(new InProcessLogStreamStore());
   initDumpStore(new FileDumpStore(db, files));
-  initDumpBroker(new EventTargetChannelBroker<DumpMetadata>(dumpCodec));
+  initDumpBroker(new EventTargetChannelBroker<DumpBrokerMessage>(dumpCodec));
   return { db };
 };
