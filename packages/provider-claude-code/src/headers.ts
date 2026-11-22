@@ -30,9 +30,8 @@ const STAINLESS_PACKAGE_VERSION = '0.112.1';
 // arm64 CC binary 2026-06-19; cross-platform CC builds (Windows / x86_64)
 // would emit different values, so re-capture on any platform bump.
 //
-// `X-Stainless-Helper-Method: stream` is always set: every /v1/messages
-// call we make to Anthropic is a streaming call (see `wireBody.stream =
-// true` in fetch.ts), so this matches real CC's wire output captured in
+// The Messages pipeline always streams, so `X-Stainless-Helper-Method: stream`
+// matches real CC's wire output captured in
 // `@anthropic-ai/claude-code@2.1.10` cli.js and sub2api's pinned set
 // (gateway_service.go:7427-7429 / allowedHeaders list at :432).
 const STAINLESS_BASE = {

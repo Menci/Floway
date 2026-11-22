@@ -2,7 +2,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { v4 } from 'uuid';
 
-import type { AnthropicMessagesBoundaryCtx } from './types.ts';
+import type { MessagePayload } from './types.ts';
 import type { AnthropicMessagesMessage, AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
 // Real CC includes `metadata.user_id` on every /v1/messages request: a JSON
@@ -28,20 +28,15 @@ import type { AnthropicMessagesMessage, AnthropicMessagesPayload } from '@floway
 // References:
 //   - https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/metadata_userid.go#L15
 
-export const synthesizeMetadataUserId = async <TResult>(
-  ctx: AnthropicMessagesBoundaryCtx,
-  _env: object,
-  run: () => Promise<TResult>,
-): Promise<TResult> => {
-  const existing = ctx.payload.metadata?.user_id;
-  if (typeof existing === 'string' && existing.length > 0) return await run();
+export const synthesizeMetadataUserId = (payload: MessagePayload, upstreamId: string): MessagePayload => {
+  const existing = payload.metadata?.user_id;
+  if (typeof existing === 'string' && existing.length > 0) return payload;
 
-  const deviceId = deviceIdForUpstream(ctx.upstreamId);
-  const sessionId = sessionIdForPayload(ctx.upstreamId, ctx.payload);
+  const deviceId = deviceIdForUpstream(upstreamId);
+  const sessionId = sessionIdForPayload(upstreamId, payload);
   const userId = JSON.stringify({ device_id: deviceId, account_uuid: '', session_id: sessionId });
 
-  ctx.payload = { ...ctx.payload, metadata: { ...ctx.payload.metadata, user_id: userId } };
-  return await run();
+  return { ...payload, metadata: { ...payload.metadata, user_id: userId } };
 };
 
 // 64-hex (32-byte) device_id, matching the format real CC emits. See

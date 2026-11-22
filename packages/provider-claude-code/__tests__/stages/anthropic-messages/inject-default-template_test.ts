@@ -1,24 +1,13 @@
 import { test } from 'vitest';
 
-import { injectDefaultTemplate } from '../../../src/interceptors/anthropic-messages/inject-default-template.ts';
-import { DEFAULT_TEMPLATE_BLOCK, IDENTITY_BLOCK } from '../../../src/interceptors/anthropic-messages/system-blocks.ts';
-import type { AnthropicMessagesBoundaryCtx } from '../../../src/interceptors/anthropic-messages/types.ts';
-import type { AnthropicMessagesClientTool, AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
-import type { ProviderStreamResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
-
-const okEvents = (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> =>
-  Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
-
-const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesBoundaryCtx => ({
-  payload,
-  model: stubProviderModel({ endpoints: { anthropicMessages: {} } }),
-  upstreamId: 'up_test',
-});
+import { injectDefaultTemplate } from '../../../src/stages/anthropic-messages/inject-default-template.ts';
+import { DEFAULT_TEMPLATE_BLOCK, IDENTITY_BLOCK } from '../../../src/stages/anthropic-messages/system-blocks.ts';
+import type { AnthropicMessagesClientTool, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
+import { assertEquals } from '@floway-dev/test-utils';
 
 const billingBlock: AnthropicMessagesTextBlockParam = { type: 'text', text: 'x-anthropic-billing-header: cc_version=2.1.280.abc;' };
 
-test('preserves ephemeral cache_control when caller already holds 3 breakpoints (total 4 = cap)', async () => {
+test('preserves ephemeral cache_control when caller already holds 3 breakpoints (total 4 = cap)', () => {
   const cachedTool: AnthropicMessagesClientTool = {
     name: 'lookup',
     input_schema: { type: 'object' },
@@ -36,23 +25,20 @@ test('preserves ephemeral cache_control when caller already holds 3 breakpoints 
     text: 'cached prior turn',
     cache_control: { type: 'ephemeral' },
   };
-  const ctx = invocation({
-    model: 'claude-sonnet-4-5-20250929',
+  const payload = injectDefaultTemplate({
     max_tokens: 16,
     messages: [{ role: 'user', content: [cachedUserBlock, { type: 'text', text: 'hi' }] }],
     system: [billingBlock, IDENTITY_BLOCK, cachedSystemBlock],
     tools: [cachedTool],
   });
 
-  await injectDefaultTemplate(ctx, {}, okEvents);
-
-  if (!Array.isArray(ctx.payload.system)) throw new Error('expected system to be an array');
-  assertEquals(ctx.payload.system.length, 4);
-  assertEquals(ctx.payload.system[3], DEFAULT_TEMPLATE_BLOCK);
-  assertEquals(ctx.payload.system[3]!.cache_control, { type: 'ephemeral', ttl: '5m' });
+  if (!Array.isArray(payload.system)) throw new Error('expected system to be an array');
+  assertEquals(payload.system.length, 4);
+  assertEquals(payload.system[3], DEFAULT_TEMPLATE_BLOCK);
+  assertEquals(payload.system[3]!.cache_control, { type: 'ephemeral', ttl: '5m' });
 });
 
-test('demotes our cache_control when caller already holds 4 breakpoints (would be 5)', async () => {
+test('demotes our cache_control when caller already holds 4 breakpoints (would be 5)', () => {
   const cachedTool: AnthropicMessagesClientTool = {
     name: 'lookup',
     input_schema: { type: 'object' },
@@ -76,19 +62,16 @@ test('demotes our cache_control when caller already holds 4 breakpoints (would b
     text: 'cached turn B',
     cache_control: { type: 'ephemeral' },
   };
-  const ctx = invocation({
-    model: 'claude-sonnet-4-5-20250929',
+  const payload = injectDefaultTemplate({
     max_tokens: 16,
     messages: [{ role: 'user', content: [cachedUserBlockA, cachedUserBlockB, { type: 'text', text: 'hi' }] }],
     system: [billingBlock, IDENTITY_BLOCK, cachedSystemBlock],
     tools: [cachedTool],
   });
 
-  await injectDefaultTemplate(ctx, {}, okEvents);
-
-  if (!Array.isArray(ctx.payload.system)) throw new Error('expected system to be an array');
-  assertEquals(ctx.payload.system.length, 4);
-  const injected = ctx.payload.system[3]!;
+  if (!Array.isArray(payload.system)) throw new Error('expected system to be an array');
+  assertEquals(payload.system.length, 4);
+  const injected = payload.system[3]!;
   assertEquals(injected.text, DEFAULT_TEMPLATE_BLOCK.text);
   assertEquals(injected.cache_control, undefined);
 });

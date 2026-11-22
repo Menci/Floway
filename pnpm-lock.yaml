@@ -604,9 +604,9 @@ importers:
 
   packages/provider-claude-code:
     dependencies:
-      '@floway-dev/interceptor':
+      '@floway-dev/pipeline':
         specifier: workspace:*
-        version: link:../interceptor
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols

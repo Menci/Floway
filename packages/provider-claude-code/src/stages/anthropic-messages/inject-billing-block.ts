@@ -1,5 +1,5 @@
 import { buildBillingBlock, computeCcVersionFingerprint } from './system-blocks.ts';
-import type { AnthropicMessagesBoundaryCtx } from './types.ts';
+import type { MessagePayload } from './types.ts';
 import { CLAUDE_CLI_VERSION } from '../../headers.ts';
 
 // Drops the per-request `cc_version=${VERSION}.${FP}` billing block at the
@@ -9,20 +9,15 @@ import { CLAUDE_CLI_VERSION } from '../../headers.ts';
 // template (the cached one).
 //
 // Hoist must have run first so any caller-supplied system text is already
-// captured into `messages`; this interceptor unconditionally starts a fresh
+// captured into `messages`; this stage unconditionally starts a fresh
 // `system` array.
 //
 // The fingerprint runs on the post-hoist payload deliberately. That is the
 // shape Anthropic will actually see on the wire, so the fingerprint must
 // reflect it — fingerprinting the pre-hoist shape would compute a different
 // value than what the request body settles to and break CC mimicry.
-export const injectBillingBlock = async <TResult>(
-  ctx: AnthropicMessagesBoundaryCtx,
-  _env: object,
-  run: () => Promise<TResult>,
-): Promise<TResult> => {
-  const fingerprint = computeCcVersionFingerprint(CLAUDE_CLI_VERSION, ctx.payload);
+export const injectBillingBlock = (payload: MessagePayload): MessagePayload => {
+  const fingerprint = computeCcVersionFingerprint(CLAUDE_CLI_VERSION, payload);
   const block = buildBillingBlock(CLAUDE_CLI_VERSION, fingerprint);
-  ctx.payload = { ...ctx.payload, system: [block] };
-  return await run();
+  return { ...payload, system: [block] };
 };

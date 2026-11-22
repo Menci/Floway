@@ -1,4 +1,4 @@
-import type { AnthropicMessagesBoundaryCtx } from './types.ts';
+import type { MessagePayload } from './types.ts';
 import type { AnthropicMessagesMessage, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
 
 // Synthetic assistant turn that closes the hoisted user/assistant pair so the
@@ -27,12 +27,8 @@ const SYNTHETIC_ACK = 'Understood. I will follow these instructions.';
 //
 // References:
 //   - https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/gateway_service.go#L4480-L4486
-export const hoistUserSystemToMessages = async <TResult>(
-  ctx: AnthropicMessagesBoundaryCtx,
-  _env: object,
-  run: () => Promise<TResult>,
-): Promise<TResult> => {
-  const system: string | AnthropicMessagesTextBlockParam[] | undefined = ctx.payload.system;
+export const hoistUserSystemToMessages = (payload: MessagePayload): MessagePayload => {
+  const system: string | AnthropicMessagesTextBlockParam[] | undefined = payload.system;
   let captured = '';
   if (typeof system === 'string') {
     captured = system;
@@ -44,7 +40,7 @@ export const hoistUserSystemToMessages = async <TResult>(
   }
   // inject-billing-block et al rebuild `system` from scratch as a three-block
   // array; removing the field here keeps the boundary mutation self-contained.
-  const nextPayload = { ...ctx.payload };
+  const nextPayload = { ...payload };
   delete nextPayload.system;
 
   if (captured !== '') {
@@ -59,6 +55,5 @@ export const hoistUserSystemToMessages = async <TResult>(
     nextPayload.messages = [...synthetic, ...nextPayload.messages];
   }
 
-  ctx.payload = nextPayload;
-  return await run();
+  return nextPayload;
 };

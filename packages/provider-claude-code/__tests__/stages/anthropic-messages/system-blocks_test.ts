@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { computeCcVersionFingerprint } from '../../../src/interceptors/anthropic-messages/system-blocks.ts';
+import { computeCcVersionFingerprint } from '../../../src/stages/anthropic-messages/system-blocks.ts';
 import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
 const minimalBody = (firstUserText: string): AnthropicMessagesPayload => ({
