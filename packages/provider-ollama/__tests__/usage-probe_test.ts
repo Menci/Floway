@@ -1,5 +1,6 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
+import { callOllama, ollamaInput } from './pipeline-fixture.ts';
 import { CREDIT_BALANCE as BALANCE_BODY, USAGE_TOTALS as USAGE_BODY } from './usage-fixture.ts';
 import { assertOllamaUpstreamRecord } from '../src/config.ts';
 import { createOllamaProvider } from '../src/provider.ts';
@@ -9,8 +10,9 @@ import {
   isOllamaUsageEnabled,
   refreshOllamaUsageProbe,
 } from '../src/usage-probe.ts';
-import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, assertRejects, noopUpstreamCallOptions, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
+import { isDeferred, run } from '@floway-dev/pipeline';
+import { directFetcher, initProviderRepo, readHttpBody, type Fetcher, type UpstreamRecord } from '@floway-dev/provider';
+import { assertEquals, assertExists, assertRejects, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_ollama_usage';
 
@@ -101,7 +103,6 @@ test('usage is probed when the operator enabled it and a key is configured, and 
 // exercised where it is made.
 const callChat = async (record: UpstreamRecord, onUsageProbe: (path: string) => void): Promise<void> => {
   const provider = createOllamaProvider(record);
-  const pending: Promise<unknown>[] = [];
   await withMockedFetch(
     request => {
       const path = new URL(request.url).pathname;
@@ -109,16 +110,14 @@ const callChat = async (record: UpstreamRecord, onUsageProbe: (path: string) => 
         onUsageProbe(path);
         return Response.json(path === '/api/usage' ? USAGE_BODY : BALANCE_BODY);
       }
+      if (path === '/api/me') return Response.json({ Plan: 'free' });
       return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } });
     },
     async () => {
-      await provider.instance.callOpenAIChatCompletions(
-        stubProviderModel({ providerData: 'gpt-oss:120b' }),
-        { messages: [] },
-        undefined,
-        noopUpstreamCallOptions({ waitUntil: promise => { pending.push(promise); } }),
+      await callOllama(
+        provider.pipelines.openaiChatCompletions,
+        ollamaInput(stubProviderModel({ upstreamModelId: 'gpt-oss:120b' }), { messages: [] }),
       );
-      await Promise.all(pending);
     },
   );
 };
@@ -136,4 +135,45 @@ test('an inference call arms the probe, and the stored attempt time debounces th
   const stale = { usageProbe: { attemptedAt: Date.now() - OLLAMA_USAGE_PROBE_MIN_INTERVAL_MS, observation: null, error: null } };
   await callChat(cloudRecord({ state: stale }), path => { probes.push(path); });
   assertEquals(probes, ['/api/usage', '/api/balance', '/api/usage', '/api/balance']);
+});
+
+test('a rate-limited response preserves its body and a failed usage probe settles as data', async () => {
+  const repo = withStateRepo();
+  const { pipelines } = createOllamaProvider(cloudRecord());
+  assertExists(pipelines.openaiChatCompletions);
+  const balance = Promise.withResolvers<Response>();
+  const fetcher: Fetcher = async url => {
+    switch (new URL(url).pathname) {
+    case '/v1/chat/completions': return new Response('rate limit', { status: 429 });
+    case '/api/usage': return Response.json(USAGE_BODY);
+    case '/api/balance': return await balance.promise;
+    case '/api/me': return Response.json({ Plan: 'free' });
+    default: throw new Error(`Unexpected request ${url}`);
+    }
+  };
+  const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  try {
+    const handle = run(pipelines.openaiChatCompletions, ollamaInput(stubProviderModel(), { messages: [] }), {
+      services: { fetcher: () => fetcher }, finalizationTimeoutMs: 1_000,
+    });
+    const result = await handle.result;
+    expect(result['response.http'].status).toBe(429);
+    expect((await readHttpBody(result['response.http'].body)).utf8()).toBe('rate limit');
+    const usage = 'response.provider.usageProbe' in result && result['response.provider.usageProbe'];
+    const account = 'response.provider.accountProbe' in result && result['response.provider.accountProbe'];
+    if (!isDeferred(usage) || !isDeferred(account)) throw new Error('Expected usage and account deferreds');
+    expect(usage.name).toBe('ollama.usageProbe');
+    expect(account.name).toBe('ollama.accountProbe');
+    const done = vi.fn();
+    void handle.done.then(done);
+    await expect(account.promise).resolves.toEqual({ persisted: true });
+    expect(done).not.toHaveBeenCalled();
+    balance.resolve(new Response('probe denied', { status: 401 }));
+    await expect(usage.promise).resolves.toMatchObject({ persisted: false, error: { message: 'Ollama /api/balance returned 401: probe denied' } });
+    await expect(handle.done).resolves.toEqual({ ok: true });
+    expect(repo.read().usageProbe?.error).toBe('Ollama /api/balance returned 401: probe denied');
+    expect(warning).toHaveBeenCalledOnce();
+  } finally {
+    warning.mockRestore();
+  }
 });

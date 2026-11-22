@@ -1,8 +1,10 @@
 import { test } from 'vitest';
 
+import { callOllama, ollamaInput } from './pipeline-fixture.ts';
 import { createOllamaProvider } from '../src/provider.ts';
+import { Bytes } from '@floway-dev/pipeline';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, noopUpstreamCallOptions, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, jsonResponse, sseResponse, stubProviderModel, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
 
 // A cloud upstream writes its usage snapshot after the calls it serves, so the
 // provider needs a repo to write into wherever those calls are exercised.
@@ -137,21 +139,26 @@ test('manual transcription models call Ollama without auto-advertising the endpo
       const models = await instance.instance.getProvidedModels(testFetcher);
       assertEquals(models.map(model => model.kind), ['transcription']);
       assertEquals(models[0]?.chat, undefined);
-      await instance.instance.callOpenAIAudioTranscriptions(models[0], {
+      await callOllama(instance.pipelines.openaiAudioTranscriptions, ollamaInput(models[0], {
         entries: [
-          { name: 'file', value: new File(['audio'], 'clip.wav', { type: 'audio/wav' }) },
-          { name: 'model', value: 'public-model' },
+          { kind: 'file', name: 'file', bytes: Bytes.fromUtf8('audio'), filename: 'clip.wav', contentType: 'audio/wav' },
+          { kind: 'text', name: 'model', value: 'public-model' },
         ],
-      }, undefined, noopUpstreamCallOptions());
+      }));
     },
   );
   assertExists(transcription);
   const form = await transcription.formData();
   assertEquals(form.get('model'), 'qwen-audio:latest');
   assertEquals(transcription.headers.get('authorization'), 'Bearer ollama_test');
+  const file = form.get('file');
+  if (!(file instanceof File)) throw new Error('Expected multipart audio file');
+  assertEquals(file.name, 'clip.wav');
+  assertEquals(file.type, 'audio/wav');
+  assertEquals(await file.text(), 'audio');
 });
 
-test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer header', async () => {
+test('the chat pipeline posts the upstream model ID and bearer header', async () => {
   const instance = createOllamaProvider(buildRecord());
   let chatRequest: Request | null = null;
   let chatBody: unknown = null;
@@ -172,21 +179,17 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
       if (url.pathname === '/v1/chat/completions') {
         chatRequest = request;
         chatBody = await request.json();
-        // SSE response so streamingProviderCall does not throw on the empty
-        // body — we only assert the request shape.
-        return new Response('', { status: 200, headers: { 'content-type': 'text/event-stream' } });
+        return sseResponse();
       }
       return new Response('unexpected', { status: 500 });
     },
     async () => {
       const [providerModel] = await instance.instance.getProvidedModels(testFetcher);
-      const result = await instance.instance.callOpenAIChatCompletions(
-        providerModel,
-        { messages: [{ role: 'user', content: 'hi' }], max_completion_tokens: 32000 },
-        undefined,
-        noopUpstreamCallOptions(),
+      const result = await callOllama(
+        instance.pipelines.openaiChatCompletions,
+        ollamaInput(providerModel, { messages: [{ role: 'user', content: 'hi' }], max_completion_tokens: 32000 }),
       );
-      assertEquals(result.modelKey, 'gpt-oss:120b');
+      assertEquals(result['response.modelKey'], 'gpt-oss:120b');
     },
   );
 
@@ -198,4 +201,22 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
   // Ollama reads only `max_tokens` into `num_predict`.
   assertEquals(body.max_tokens, 32000);
   assertEquals('max_completion_tokens' in body, false);
+});
+
+test.each([
+  { limits: { max_completion_tokens: 0 }, expected: { max_tokens: 0 } },
+  { limits: { max_tokens: null, max_completion_tokens: 128000 }, expected: { max_tokens: null, max_completion_tokens: 128000 } },
+])('Ollama sends $expected for the requested output caps $limits', async ({ limits, expected }) => {
+  const { pipelines } = createOllamaProvider(buildRecord());
+  const model = stubProviderModel({ upstreamModelId: 'gpt-oss:120b' });
+  const messages = [{ role: 'user' as const, content: 'hi' }];
+  let observed: unknown;
+  await withMockedFetch(
+    async request => {
+      observed = await request.json();
+      return sseResponse();
+    },
+    () => callOllama(pipelines.openaiChatCompletions, ollamaInput(model, { messages, ...limits })),
+  );
+  assertEquals(observed, { messages, ...expected, stream: true, model: 'gpt-oss:120b' });
 });
