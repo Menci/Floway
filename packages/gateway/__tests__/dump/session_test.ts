@@ -66,3 +66,31 @@ test.each([null, 250])('dump session publishes live bytes and commits raw HTTP a
   for await (const chunk of live.read(0, AbortSignal.timeout(1000))) liveChunks.push(Bytes.copy(chunk));
   expect(Bytes.concat(liveChunks).toUint8Array()).toEqual(record.artifact);
 });
+
+test('a failed run commits its host response status and the original crash trace', async () => {
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  initLogStreamStore(new MemoryLogStreamStore());
+  const facts: HttpInput = {
+    'request.http': { method: 'POST', url: { origin: 'https://floway.test', pathname: '/v1/test' }, headers: [], body: Bytes.fromUtf8('{}') },
+  };
+  const dump = openDumpSession(apiKey, facts['request.http'])!;
+  const failure = new Error('test gateway failure');
+  const pipeline = compose<HttpInput, HttpOutput, {}>('test.dump-crash', {
+    stages: [],
+    ending: defineEnding<HttpInput, HttpOutput>({
+      name: 'crash', request: { needs: ['request.http'] }, return: { provides: ['response.http'] },
+      execute: async () => { throw failure; },
+    }),
+  });
+  const handle = run(pipeline, facts, { services: {}, events: dump.sink, runId: dump.recordId, finalizationTimeoutMs: 100 });
+  await expect(handle.result).rejects.toBe(failure);
+  dump.hostFailure(failure, 502, false);
+  expect(await handle.done).toMatchObject({ ok: false });
+  await dump.completed;
+
+  expect(stubs.stored[0]?.meta).toMatchObject({ status: 502, requestBytes: 2, error: { kind: 'failed', reason: failure.message } });
+  const decoder = createDumpDecoder();
+  decoder.push(stubs.stored[0]!.artifact);
+  const trace = decoder.finish();
+  expect(trace.stages.get(trace.rootStageIds[0]!)?.error).toMatchObject({ message: failure.message, stack: failure.stack });
+});

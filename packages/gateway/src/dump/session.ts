@@ -37,10 +37,10 @@ const modelFromTrace = (view: DumpViewModel): string | null => {
   return null;
 };
 
-interface HostFailure { readonly status: number; readonly reason: string }
+interface HostFailure { readonly status: number; readonly error: DumpErrorMeta }
 
 const dumpError = (settlement: Settlement | undefined, summary: DumpCompletionSummary, hostFailure: HostFailure | undefined): DumpErrorMeta | null => {
-  if (hostFailure !== undefined) return { kind: 'failed', reason: hostFailure.reason };
+  if (hostFailure !== undefined) return hostFailure.error;
   if (settlement?.outcome === 'gateway-error') return { kind: 'gateway' };
   if (settlement?.outcome === 'upstream-error') return { kind: 'upstream' };
   if (!summary.ok || settlement?.outcome === 'failed') {
@@ -83,7 +83,7 @@ interface DumpSession {
   readonly recordId: string;
   readonly sink: RunEventSink;
   readonly completed: Promise<void>;
-  readonly hostFailure: (error: unknown, status: number) => void;
+  readonly hostFailure: (error: unknown, status: number, upstream: boolean) => void;
 }
 
 export const openDumpSession = (apiKey: ApiKey, request: HttpRequestFacts, requestedModel?: string): DumpSession | null => {
@@ -139,6 +139,8 @@ export const openDumpSession = (apiKey: ApiKey, request: HttpRequestFacts, reque
     recordId,
     sink: pump.sink,
     completed,
-    hostFailure: (error, status) => { hostFailure = { status, reason: oneLine(error) }; },
+    hostFailure: (error, status, upstream) => {
+      hostFailure = { status, error: upstream ? { kind: 'upstream' } : { kind: 'failed', reason: oneLine(error) } };
+    },
   };
 };

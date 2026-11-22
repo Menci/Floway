@@ -1,7 +1,6 @@
 import { currentHour } from './hour.ts';
+import { performanceRecord } from './performance-record.ts';
 import { getRepo } from '../../../repo/index.ts';
-import type { PerformanceDimensions } from '../../../repo/types.ts';
-import { attemptTtftMs } from '../attempt-timing.ts';
 import type { GatewayCtx } from '../gateway-ctx.ts';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 
@@ -52,36 +51,21 @@ export const recordPerformance = (
   requestFinishedAt: number,
 ): void => {
   if (!telemetry) return;
-  if (outputTokens < 0) throw new Error(`recordPerformance: negative outputTokens=${outputTokens}`);
   const { attempt, backgroundScheduler: scheduler } = ctx;
-  const dims: PerformanceDimensions = { ...telemetry, hour: currentHour() };
-  const ttftMs = attemptTtftMs(attempt.timing);
-  if (
-    telemetry.operation !== 'chat' ||
-    ttftMs === null ||
-    attempt.timing.firstOutputTokenAt === null ||
-    (failed && outputTokens === 0)
-  ) {
-    const settle = failed ? getRepo().performance.recordZeroOutputError(dims) : getRepo().performance.recordNeutral(dims);
-    scheduler(record(settle, failed ? 'zero-output-error' : 'neutral'));
-    return;
+  const { performance } = getRepo();
+  const measured = performanceRecord({
+    dimensions: { ...telemetry, hour: currentHour() },
+    firstOutputAt: attempt.timing.firstOutputTokenAt,
+    upstreamStartedAt: attempt.timing.upstreamCallStartedAt,
+    streamEndedAt: requestFinishedAt,
+    outputTokens,
+    failed,
+  });
+  switch (measured.kind) {
+  case 'neutral': scheduler(record(performance.recordNeutral(measured.dimensions), measured.kind)); break;
+  case 'zero-output-error': scheduler(record(performance.recordZeroOutputError(measured.dimensions), measured.kind)); break;
+  case 'sample': scheduler(record(performance.recordSample(measured.sample), measured.kind)); break;
   }
-  const success = !failed;
-  if (outputTokens < 2) {
-    scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, success }), 'sample'));
-    return;
-  }
-  // The first observed decode signal approximates the first sampled token,
-  // including private reasoning without visible text. Estimate the following
-  // inter-token generation interval using outputTokens - 1, following the
-  // OpenTelemetry GenAI spec
-  // gen_ai.server.time_per_output_token
-  // (https://github.com/open-telemetry/semantic-conventions-genai/blob/953dd22e3cecd3a397d742c349d2435d59c8b771/docs/gen-ai/gen-ai-metrics.md#metric-gen_aiservertime_per_output_token)
-  // and Envoy AI Gateway
-  // (https://aigateway.envoyproxy.io/docs/capabilities/observability/metrics/).
-  const streamDeltaMs = requestFinishedAt - attempt.timing.firstOutputTokenAt;
-  const tpotUs = Math.round((streamDeltaMs * 1_000) / (outputTokens - 1));
-  scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, tpotUs, success }), 'sample'));
 };
 
 // Terminal-failure shortcut for every pre-stream / mid-stream error branch

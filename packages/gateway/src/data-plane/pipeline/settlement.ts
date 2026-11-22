@@ -1,18 +1,15 @@
 import type { HttpDeliveryFacts, HttpOutput } from './edge-http.ts';
 import type { SelectedAttemptResponse } from './failover.ts';
 import type { BillableCall, UsageFacts } from './observe-usage.ts';
-import type { GatewayRouteFacts, GatewayServices, PerformanceRecord } from './services.ts';
-import type { PerformanceDimensions, TokenUsage } from '../../repo/types.ts';
-import { usageMetrics } from '../../repo/usage-metrics.ts';
+import type { GatewayRouteFacts, GatewayServices } from './services.ts';
+import type { TokenUsage, UsageRecord } from '../../repo/types.ts';
 import { currentHour } from '../shared/telemetry/hour.ts';
-import { tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../shared/telemetry/usage.ts';
+import { performanceRecord } from '../shared/telemetry/performance-record.ts';
+import { priceUsageMeasurement, tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../shared/telemetry/usage.ts';
 import { defineStage, type Deferred, type ErrorSnapshot, snapshotError, type StageLogger } from '@floway-dev/pipeline';
-import { priceRequest, type PricingSelector } from '@floway-dev/protocols/common';
 import type { PerformanceOperation, TelemetryModelIdentity } from '@floway-dev/provider';
 
-interface PricedCall extends BillableCall {
-  readonly pricingSelector: PricingSelector;
-  readonly metrics: ReturnType<typeof usageMetrics>;
+interface PricedCall extends BillableCall, Readonly<Pick<UsageRecord, 'pricingSelector' | 'metrics'>> {
   readonly dumpTokenUsage: TokenUsage | null;
 }
 
@@ -22,8 +19,8 @@ interface PricedUsageFacts {
 
 const priceCalls = (calls: readonly BillableCall[]): readonly PricedCall[] => calls.map(call => {
   const measurement = call.measurement ?? tokenUsageMeasurement(tokenUsageFromBillableUsage(call.usage ?? undefined));
-  const price = priceRequest(call.identity.pricing, call.pricingFacts);
-  return { ...call, dumpTokenUsage: measurement.dumpTokenUsage, pricingSelector: price.selector, metrics: usageMetrics(measurement.quantities, price.rates) };
+  const pricing = priceUsageMeasurement(call.identity.pricing, measurement.quantities, call.pricingFacts);
+  return { ...call, ...pricing, dumpTokenUsage: measurement.dumpTokenUsage };
 });
 
 type Billings = Pick<UsageFacts, 'response.usage.billable'>;
@@ -66,28 +63,6 @@ type SettlementResponse = HttpOutput & UsageFacts & PricedUsageFacts & HttpDeliv
     readonly 'response.targetApi'?: string;
     readonly 'response.requestedModel'?: string;
   };
-
-const performanceRecord = (sample: {
-  readonly dimensions: PerformanceDimensions;
-  readonly firstOutputAt: number | null;
-  readonly streamEndedAt: number | null;
-  readonly upstreamStartedAt: number;
-  readonly outputTokens: number;
-  readonly failed: boolean;
-}): PerformanceRecord => {
-  const { dimensions, firstOutputAt, streamEndedAt, upstreamStartedAt, outputTokens, failed } = sample;
-  if (outputTokens < 0) throw new RangeError(`recordPerformance: negative outputTokens=${outputTokens}`);
-  if (dimensions.operation !== 'chat' || firstOutputAt === null || (failed && outputTokens === 0)) {
-    return { kind: failed ? 'zero-output-error' : 'neutral', dimensions };
-  }
-  const ttftMs = Math.round(firstOutputAt - upstreamStartedAt);
-  // The first decode signal approximates the first sampled token, including private reasoning.
-  // https://github.com/open-telemetry/semantic-conventions-genai/blob/953dd22e3cecd3a397d742c349d2435d59c8b771/docs/gen-ai/gen-ai-metrics.md#metric-gen_aiservertime_per_output_token
-  const tpot = outputTokens < 2 || streamEndedAt === null ? {} : {
-    tpotUs: Math.round((streamEndedAt - firstOutputAt) * 1_000 / (outputTokens - 1)),
-  };
-  return { kind: 'sample', sample: { ...dimensions, ttftMs, ...tpot, success: !failed } };
-};
 
 const persist = async (
   request: SettlementInput, response: SettlementResponse, operation: PerformanceOperation | null, services: SettlementServices, log: StageLogger,

@@ -44,7 +44,10 @@ const closeFailure = async (result: AttemptResponse | undefined, log: (error: Er
   const streams = new Set([result['response.http'].body, result['response.events']].filter(isManagedStream));
   const closed = await Promise.allSettled([...streams].map(stream => stream.close()));
   for (const outcome of closed) {
-    if (outcome.status === 'rejected') log(snapshotError(outcome.reason));
+    if (outcome.status === 'rejected') {
+      console.warn('Floway: failed to cancel a discarded upstream response', outcome.reason);
+      log(snapshotError(outcome.reason));
+    }
   }
 };
 

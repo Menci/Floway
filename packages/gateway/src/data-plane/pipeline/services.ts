@@ -4,13 +4,14 @@ import { checkMany } from '../../access-control/check.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { createModelsRefreshScheduler, type ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { ApiKey, ModelAliasRecord, PerformanceDimensions, PerformanceSample, UsageRecord, User } from '../../repo/types.ts';
+import type { ApiKey, ModelAliasRecord, UsageRecord, User } from '../../repo/types.ts';
 import { createNonOpenAIResponsesSourceStore, type OpenAIResponsesStatefulStore } from '../chat/openai-responses/items/store.ts';
 import { AffinityCodec } from '../chat/shared/affinity/carrier.ts';
 import { resolveLegacyOpaqueBlobCompatibilityIdentity } from '../chat/shared/affinity/legacy.ts';
 import { createSidecarCodecFactory, type SidecarCodecFactory } from '../chat/shared/sidecar-codec.ts';
 import { readUpstreamModelsSnapshotAndScheduleRefresh } from '../providers/models-cache.ts';
 import { createProvider, type GatewayProvider } from '../providers/registry.ts';
+import type { PerformanceRecord } from '../shared/telemetry/performance-record.ts';
 import { loadWebSearchConfig } from '../tools/web-search/config.ts';
 import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
 import type { ConfiguredWebSearchProvider, WebSearchConfig } from '../tools/web-search/types.ts';
@@ -46,13 +47,10 @@ interface EnumeratedCandidates {
 
 export interface GatewayProviders {
   readonly resolve: (upstreamId: string) => GatewayProvider;
-  readonly list: (upstreamIds: readonly string[] | null) => Promise<readonly GatewayProvider[]>;
   readonly enumerate: (facts: GatewayRouteFacts, model: string, kind: ModelKind) => Promise<EnumeratedCandidates>;
 }
 
-export type PerformanceRecord =
-  | { readonly kind: 'neutral' | 'zero-output-error'; readonly dimensions: PerformanceDimensions }
-  | { readonly kind: 'sample'; readonly sample: PerformanceSample };
+export type { PerformanceRecord } from '../shared/telemetry/performance-record.ts';
 
 interface WebSearchProviderPort {
   (): Promise<ConfiguredWebSearchProvider>;
@@ -147,7 +145,7 @@ const createRequestDirectory = (runtimeLocation: string, scheduleRefresh: Models
   };
   let directory: ReturnType<typeof load> | undefined;
   let fetcher: ProviderServices['fetcher'] | undefined;
-  const list: GatewayProviders['list'] = async upstreamIds => {
+  const list = async (upstreamIds: readonly string[] | null): Promise<readonly GatewayProvider[]> => {
     const loaded = await (directory ??= load());
     fetcher = loaded.fetcher;
     const upstreams = upstreamIds === null ? loaded.enabled : upstreamIds.flatMap(id => {
@@ -185,7 +183,6 @@ const createRequestDirectory = (runtimeLocation: string, scheduleRefresh: Models
   };
   return {
     providers: {
-      list,
       enumerate,
       resolve: (upstreamId: string) => {
         const provider = providers.get(upstreamId);

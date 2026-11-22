@@ -12,7 +12,7 @@ import { providerModelsUnavailableResponse } from '../shared/upstream-response.t
 import { httpUrl, type HttpRequestFacts, wrapSensitiveHeaderEntries } from '@floway-dev/http';
 import { Bytes, type Facts, type Pipeline, type RootEnv, run, type RunEventSink, type RunHandle, secret } from '@floway-dev/pipeline';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { type PerformanceOperation, toInternalDebugError } from '@floway-dev/provider';
+import { type PerformanceOperation, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 
 const FINALIZATION_TIMEOUT_MS = 30_000;
 const SECRET_QUERY_NAMES = new Set(['key', 'api_key', 'api-key', 'apikey', 'access_token', 'token', 'auth', 'sig', 'signature', 'session']);
@@ -87,7 +87,10 @@ export const startGatewayRun = <In, Out, S>(
   options.scheduler(handle.done);
   if (dump !== null) options.scheduler(dump.completed);
   void handle.result.catch(error => {
-    dump?.hostFailure(error, (options.errorStatus ?? gatewayErrorStatus)(error));
+    if (dump !== null) {
+      const upstream = error instanceof ProviderModelsUnavailableError ? error.httpResponse : null;
+      dump.hostFailure(error, upstream?.status ?? (options.errorStatus ?? gatewayErrorStatus)(error), upstream !== null);
+    }
     const performance = options.crashPerformance;
     const candidate = crashFacts?.['route.candidate'];
     if (performance === undefined || candidate === null || typeof candidate !== 'object'

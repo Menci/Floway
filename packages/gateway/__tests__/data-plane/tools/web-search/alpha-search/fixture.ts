@@ -55,7 +55,7 @@ export const fixture = (answer: (input: ProviderInput<Record<string, unknown>>) 
   const enumerate = vi.fn<GatewayServices['providers']['enumerate']>(async () => ({ candidates: options.candidates ?? [candidate], sawModel: true, failedUpstreams: [] }));
   const services = {
     ...createGatewayServices({ apiKey, runtimeLocation: 'TEST', scheduler: () => {} }),
-    providers: { resolve: () => provider, list: async () => [provider], enumerate },
+    providers: { resolve: () => provider, enumerate },
     webSearchProvider: Object.assign(async () => ({ type: 'disabled' as const }), { alphaSearch: async () => config }),
     usageStore: { record: async row => { usage.push(row); } },
   } satisfies GatewayServices;

@@ -113,7 +113,7 @@ export const observeSse = <Frame>(
   });
   const billing = env.deferred<readonly BillableCall[]>('billable call', stream);
   const streamEnd = env.deferred<number | null>('stream end', stream);
-  const headers = forwarded.headers.filter(([name]) => name !== 'content-type');
+  const headers = forwarded.headers.filter(([name]) => !['content-type', 'cache-control'].includes(name.toLowerCase()));
   return {
     'response.http': { ...forwarded, headers: [...headers, ['content-type', 'text/event-stream'], ['cache-control', 'no-cache'], ['connection', 'keep-alive']], body: stream },
     'response.usage.billable': billing.deferred,
