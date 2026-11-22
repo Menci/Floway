@@ -57,6 +57,28 @@ it('projects root HTTP facts and leaf exchanges across failover and a translated
   ]);
 });
 
+it('groups retries under the stage where their shared candidate entered', () => {
+  const candidate = { upstreamId: 'retrying', targetApi: 'anthropic-messages' };
+  const route = { 'route.candidate': candidate };
+  const candidateRequest = { ...route, 'request.http': request('/v1/messages') };
+  const decoder = createDumpDecoder();
+  decoder.pushEvents(createDumpEncoder().encodeBatch([
+    runEvent,
+    enter(2, 1, {}),
+    enter(3, 2, route, 1, 'next'),
+    enter(4, 3, route, 2, 'into'),
+    enter(5, 4, candidateRequest, 3, 'next'),
+    leave(6, 4, { 'response.http': response(401) }),
+    enter(7, 5, route, 2, 'into'),
+    enter(8, 6, candidateRequest, 5, 'next'),
+    leave(9, 6, { 'response.http': response(200) }),
+  ]));
+  const wire = projectWireExchanges(decoder.model);
+  expect(wire.upstreamGroups).toMatchObject([
+    { candidateStageId: 2, candidate, exchanges: [{ stageId: 4 }, { stageId: 6 }] },
+  ]);
+});
+
 it('formats URL queries and curl with redaction, byte-accurate binary bodies, and shell quoting', () => {
   const token = secret('private credential');
   const url = {

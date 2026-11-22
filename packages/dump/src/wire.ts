@@ -74,14 +74,18 @@ const getResponse = (stage: DecodedStageNode, model: DumpViewModel): ProjectedWi
 };
 
 const findCandidateStage = (stage: DecodedStageNode, model: DumpViewModel): DecodedStageNode | undefined => {
+  let candidateStage: DecodedStageNode | undefined;
   let parentId = stage.parentStageId;
   while (parentId !== null) {
     const parent = model.stages.get(parentId);
     if (parent === undefined) throw new Error(`Missing dump parent stage ${parentId}`);
-    if (Object.hasOwn(parent.facts, 'route.candidate')) return parent;
+    const hasCandidate = Object.hasOwn(parent.facts, 'route.candidate');
+    if (candidateStage !== undefined
+      && (!hasCandidate || !Object.is(parent.facts['route.candidate'], candidateStage.facts['route.candidate']))) break;
+    if (hasCandidate) candidateStage = parent;
     parentId = parent.parentStageId;
   }
-  return undefined;
+  return candidateStage;
 };
 
 export const projectWireExchanges = (model: DumpViewModel): WireProjection => {
