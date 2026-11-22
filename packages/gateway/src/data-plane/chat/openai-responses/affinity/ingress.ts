@@ -6,6 +6,7 @@ import {
   candidateSatisfiesAffinityIdentity,
   type DecodedAffinityBlob,
   defineAffinityRequest,
+  isIncompatibleAffinityProjection,
   type OptionalAffinityBlobProjection,
   projectOptionalAffinityBlob,
   projectRequiredAffinityBlob,
@@ -27,6 +28,7 @@ interface OpenAIResponsesBlobAnalysis extends OpenAIResponsesBlobLocation {
 
 interface OpenAIResponsesItemAnalysis {
   readonly itemIndex: number;
+  readonly type: CanonicalOpenAIResponsesInputItem['type'];
   readonly synthetic: boolean;
   readonly blobs: readonly OpenAIResponsesBlobAnalysis[];
   readonly inheritedRequiredTarget?: AffinityIdentity;
@@ -123,6 +125,7 @@ const analyzeOpenAIResponsesRequest = (
 
     itemAnalyses.push({
       itemIndex,
+      type: item.type,
       synthetic: blobs.some(blob => blob.decoded.kind === 'owned' && blob.decoded.syntheticItem === true),
       blobs,
       ...(inheritedRequiredTarget !== undefined ? { inheritedRequiredTarget } : {}),
@@ -196,7 +199,9 @@ const evaluateOpenAIResponsesCandidate = (
       if (!item.synthetic && projection.kind === 'remove') degrades ||= projection.degrades;
       projections.push({ location: blob, projection });
     }
-    if (item.synthetic) {
+    const dropsReasoning = item.type === 'reasoning' && projections.some(({ projection }) => isIncompatibleAffinityProjection(projection));
+    if (item.synthetic || dropsReasoning) {
+      degrades ||= !item.synthetic;
       projectionsByItem.set(item.itemIndex, null);
       continue;
     }
