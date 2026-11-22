@@ -127,6 +127,49 @@ test('generate isolates provider mutations with JSON-safe container cloning', as
   assertEquals((sourceItem as { role: string }).role, 'user');
 });
 
+test('generate sends an explicit null namespace for unresolved calls to previously declared namespace tools', async () => {
+  installRepo();
+  const tool = (name: string) => ({ type: 'function' as const, name });
+  const namespace = (name: string, ...members: string[]) => ({ type: 'namespace' as const, name, description: name, tools: members.map(tool) });
+  const call = (name: string) => ({ type: 'function_call' as const, name, call_id: `call_${name}`, arguments: '{}', status: 'completed' as const });
+  const additionalTools = {
+    type: 'additional_tools' as const,
+    role: 'developer' as const,
+    tools: [
+      namespace('first', 'unique', 'ambiguous', 'before_declaration', 'flat_at_top', 'flat_in_history', 'qualified'),
+      namespace('second', 'ambiguous'),
+      tool('flat_in_history'),
+    ],
+  };
+  const searchOutput = { type: 'tool_search_output' as const, tools: [namespace('discovered', 'from_search')] };
+  const unique = call('unique');
+  const ambiguous = call('ambiguous');
+  const fromSearch = call('from_search');
+  const failedResult = { type: 'function_call_output' as const, call_id: unique.call_id, output: 'unsupported call: unique' };
+  const payload = makePayload({
+    tools: [tool('flat_at_top'), namespace('top_level', 'top_level_only')],
+    input: [
+      call('before_declaration'), additionalTools, unique, failedResult, ambiguous, searchOutput, fromSearch,
+      call('unknown'), call('top_level_only'), call('flat_at_top'), call('flat_in_history'),
+      { ...call('qualified'), namespace: 'first' },
+    ],
+  });
+  const providerCall = vi.fn(async (_model: ProviderModel, _body: Omit<CanonicalOpenAIResponsesPayload, 'model'>): Promise<ProviderOpenAIResponsesResult> => ({
+    action: 'generate', ok: true, events: makeProviderEvents([]), modelKey: 'test-model-key',
+  }));
+
+  await openaiResponsesAttempt.generate({ payload, ctx: makeGatewayCtx(), candidate: makeCandidate(providerCall), headers: new Headers() });
+
+  assertEquals(providerCall.mock.calls.length, 1);
+  assertEquals(providerCall.mock.calls[0][1].input, [
+    call('before_declaration'), additionalTools, { ...unique, namespace: null }, failedResult,
+    { ...ambiguous, namespace: null }, searchOutput, { ...fromSearch, namespace: null },
+    call('unknown'), call('top_level_only'), call('flat_at_top'), call('flat_in_history'),
+    { ...call('qualified'), namespace: 'first' },
+  ]);
+  assert(!Object.hasOwn(unique, 'namespace'));
+});
+
 test('generate treats a translated OpenAI Responses payload as opaque to native affinity and state', async () => {
   installRepo();
   let observedBody: Omit<CanonicalOpenAIResponsesPayload, 'model'> | undefined;

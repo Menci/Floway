@@ -231,8 +231,13 @@ export type OpenAIResponsesToolCaller = OpenWire<Official.ResponseFunctionToolCa
 // `encrypted_function_args` list.
 // https://github.com/openai/codex/blob/24e236514bebcef874c2d38ce5df26164aa50ca4/codex-rs/protocol/src/models.rs#L1180-L1193
 // https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/tools/router.rs#L31-L55
-export type OpenAIResponsesFunctionToolCallItem = OpenWire<Official.ResponseFunctionToolCall> & CodexInternalChatMessageMetadata & {
+type OpenAIResponsesFunctionCall = OpenWire<Official.ResponseFunctionToolCall> & CodexInternalChatMessageMetadata & {
   encrypted_function_args?: string[] | null;
+};
+
+// Replayed input can explicitly mark an unresolved namespace with null.
+export type OpenAIResponsesFunctionToolCallItem = Omit<OpenAIResponsesFunctionCall, 'namespace'> & {
+  namespace?: string | null;
 };
 
 // An output without `call_id` is standalone: it answers no function call and
@@ -652,8 +657,8 @@ export type OpenAIResponsesOutputMessageEx = Omit<OpenWire<Official.ResponseOutp
   content: OpenAIResponsesOutputContentBlock[];
 };
 
-export type OpenAIResponsesOutputFunctionCallEx = Omit<OpenAIResponsesFunctionToolCallItem, 'status'> & {
-  status: NonNullable<OpenAIResponsesFunctionToolCallItem['status']>;
+export type OpenAIResponsesOutputFunctionCallEx = OpenAIResponsesFunctionCall & {
+  status: NonNullable<OpenAIResponsesFunctionCall['status']>;
 };
 
 export type OpenAIResponsesOutputCustomToolCall = OpenAIResponsesCustomToolCallItem;
