@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { compose, DeclarationViolationError, defineEnding, defineStage, FinalizationTimeoutError, run, transform, UnsettledDeferredError } from '../src/index.ts';
-import type { Deferred, Facts, RunEvent, SideDecl } from '../src/index.ts';
+import type { Deferred, DeferredHandle, Facts, RunEvent, SideDecl, StageEnv } from '../src/index.ts';
 
 const options = { services: {}, finalizationTimeoutMs: 200 };
 const identity = { needs: [], consumes: [], provides: [] };
 
 const leaf = defineEnding<Facts, Facts>({
-  name: 'leaf', request: { needs: ['branch'] }, response: { provides: ['response', 'preserve'] },
+  name: 'leaf', request: { needs: ['branch'] }, return: { provides: ['response', 'preserve'] },
   execute: async facts => ({ response: facts.branch, preserve: { branch: facts.branch } }),
 });
 
@@ -78,10 +78,7 @@ describe('declarations during execution', () => {
       name: 'stub',
       through: { request: identity, response: identity },
       return: { provides: ['response'] },
-      execute: async (facts, next) => {
-        await next(facts);
-        return { response: undefined };
-      },
+      execute: async () => ({ response: undefined }),
     });
     const pipeline = compose('synthetic', { stages: [stage], ending: leaf });
     await expect(run(pipeline, { branch: undefined }, options).result).resolves.toStrictEqual({ response: undefined });
@@ -96,6 +93,61 @@ describe('declarations during execution', () => {
       name: 'absent', through: { request: identity, response: identity }, execute: async () => ({}),
     });
     await expect(run(compose('absent', { stages: [absent], ending: leaf }), { branch: 1 }, options).result).rejects.toThrow('without a child response');
+
+    const invalid = defineStage<Facts, Facts, Facts, Facts>({
+      name: 'late stub', through: { request: identity, response: identity }, return: { provides: ['response'] },
+      execute: async (facts, next) => {
+        await next(facts);
+        return { response: undefined };
+      },
+    });
+    await expect(run(compose('invalid', { stages: [invalid], ending: leaf }), { branch: undefined }, options).result).rejects.toThrow('removed undeclared "preserve"');
+  });
+
+  it('uses own keys and Object.is at each handover', async () => {
+    const pass = defineStage<Facts, Facts, Facts, Facts>({
+      name: 'pass', through: { request: identity, response: identity },
+      execute: async (facts, next) => await next({ ...facts }),
+    });
+    const p = compose('NaN', { stages: [pass], ending: leaf });
+    await expect(run(p, { branch: NaN }, options).result).resolves.toMatchObject({ response: NaN });
+    const negZero = defineStage<Facts, Facts, Facts, Facts>({
+      name: 'negative zero', through: { request: identity, response: identity },
+      execute: async (facts, next) => await next({ ...facts, branch: -0 }),
+    });
+    await expect(run(compose('zero', { stages: [negZero], ending: leaf }), { branch: +0 }, options).result).rejects.toThrow('changed or removed undeclared "branch"');
+
+    const needsOwn = defineEnding<Facts, Facts>({
+      name: 'own', request: { needs: ['constructor'] }, return: { provides: [] }, execute: async () => ({}),
+    });
+    await expect(run(compose('own', { stages: [], ending: needsOwn }), {}, options).result).rejects.toThrow('missing "constructor"');
+  });
+
+  it('prefers response identity, then the earliest-called qualifying child', async () => {
+    for (const useIdentity of [true, false]) {
+      const release = Promise.withResolvers<void>();
+      const events: RunEvent[] = [];
+      const stage = defineStage<Facts, Facts, Facts, Facts>({
+        name: 'choose', through: { request: { ...identity, provides: ['branch'] }, response: identity },
+        execute: async (facts, next) => {
+          const first = next({ ...facts, branch: 1 });
+          const second = await next({ ...facts, branch: 2 });
+          release.resolve();
+          await first;
+          return useIdentity ? second : { ...second };
+        },
+      });
+      const end = defineEnding<Facts, Facts>({
+        name: 'fork', request: { needs: ['branch'] }, return: { provides: ['response'] },
+        execute: async facts => {
+          if (facts.branch === 1) await release.promise;
+          return { response: 'same' };
+        },
+      });
+      const pipeline = compose('choose', { stages: [stage], ending: end });
+      await expect(run(pipeline, {}, { ...options, events: event => events.push(event) }).result).resolves.toEqual({ response: 'same' });
+      expect(events).toContainEqual(expect.objectContaining({ k: 'leave', stageId: 1, baseChildId: useIdentity ? 3 : 2 }));
+    }
   });
 
   it('runs transform open per invocation and passes through an omitted side by identity', async () => {
@@ -108,7 +160,7 @@ describe('declarations during execution', () => {
       }),
     });
     const terminal = defineEnding<Facts, Facts>({
-      name: 'identity', request: { needs: [] }, response: { provides: [] },
+      name: 'identity', request: { needs: [] }, return: { provides: [] },
       execute: async facts => { inputs.push(facts); return facts; },
     });
     const pipeline = compose<Facts, Facts, {}>('rewrite', { stages: [stage], ending: terminal });
@@ -126,7 +178,7 @@ describe('run completion', () => {
     const work = Promise.withResolvers<Facts>();
     const boom = new Error('transport failed', { cause: new Error('socket') });
     const end = defineEnding<Facts, Facts>({
-      name: 'thrower', request: { needs: [] }, response: { provides: [] },
+      name: 'thrower', request: { needs: [] }, return: { provides: [] },
       execute: async (facts, _into, env) => {
         env.log.info('starting', facts);
         env.defer('measurement', work.promise);
@@ -150,7 +202,7 @@ describe('run completion', () => {
 
   it('rejects unsettled scope and stream deferreds and rejects a second manual settlement', async () => {
     const end = defineEnding<{}, { scope: Deferred<number>; body: Deferred<number>; result: Deferred<number> }>({
-      name: 'unsettled', request: { needs: [] }, response: { provides: ['scope', 'body', 'result'] },
+      name: 'unsettled', request: { needs: [] }, return: { provides: ['scope', 'body', 'result'] },
       execute: async (_facts, _into, env) => {
         const owner = env.createStream({ label: 'body', async *iterate() { yield 1; } });
         const body = env.deferred<number>('body measurement', owner);
@@ -173,7 +225,7 @@ describe('run completion', () => {
 
   it('rejects pending work at the finalization deadline', async () => {
     const end = defineEnding<{}, { never: Deferred<unknown> }>({
-      name: 'unsettled', request: { needs: [] }, response: { provides: ['never'] },
+      name: 'unsettled', request: { needs: [] }, return: { provides: ['never'] },
       execute: async (_facts, _into, env) => ({ never: env.defer('pending', Promise.withResolvers().promise) }),
     });
     const handle = run(compose<{}, { never: Deferred<unknown> }, {}>('timeout', { stages: [], ending: end }), {}, {
@@ -184,36 +236,41 @@ describe('run completion', () => {
     await expect(handle.done).resolves.toMatchObject({ ok: false, error: { name: 'FinalizationTimeoutError' } });
   });
 
-  it('starts the finalization deadline when execute answers even if a detached child stalls', async () => {
+  it('expires detached work after delivery and ignores settlements after done', async () => {
     const childRelease = Promise.withResolvers<void>();
-    const leaving = Promise.withResolvers<void>();
     const events: RunEvent[] = [];
+    let late: DeferredHandle<number> | undefined;
     const stage = defineStage<Facts, Facts, Facts, Facts>({
-      name: 'detached child', through: { request: identity, response: identity }, return: { provides: ['response'] },
-      execute: async (facts, next) => {
-        void next(facts);
-        return { response: 1 };
+      name: 'detached child', through: {
+        request: { ...identity, provides: ['branch'] }, response: { ...identity, provides: ['work'] },
+      },
+      execute: async (facts, next, env) => {
+        const first = await next({ ...facts, branch: 1 });
+        void next({ ...facts, branch: 2 });
+        late = env.deferred<number>('late', 'scope');
+        return { ...first, work: late.deferred };
       },
     });
     const end = defineEnding<Facts, Facts>({
-      name: 'stalled', request: { needs: [] }, response: { provides: [] },
-      execute: async () => {
-        await childRelease.promise;
-        return {};
+      name: 'stalled', request: { needs: ['branch'] }, return: { provides: ['response'] },
+      execute: async facts => {
+        if (facts.branch === 2) await childRelease.promise;
+        return { response: facts.branch };
       },
     });
     const pipeline = compose('deadline', { stages: [stage], ending: end });
     const handle = run(pipeline, {}, {
-      ...options, finalizationTimeoutMs: 15, events: event => {
-        events.push(event);
-        if (event.k === 'leave' && event.stageId === 1) leaving.resolve();
-      },
+      ...options, finalizationTimeoutMs: 15, events: event => events.push(event),
     });
-    await leaving.promise;
+    await expect(handle.result).resolves.toMatchObject({ response: 1 });
     expect(events).not.toContainEqual(expect.objectContaining({ k: 'closed', stageId: 1 }));
-    await expect(handle.result).rejects.toBeInstanceOf(FinalizationTimeoutError);
     await expect(handle.done).resolves.toMatchObject({ ok: false, error: { name: 'FinalizationTimeoutError' } });
+    const doneCount = events.length;
+    expect(() => late!.resolve(7)).not.toThrow();
+    await expect(late!.deferred.promise).rejects.toBeInstanceOf(FinalizationTimeoutError);
     childRelease.resolve();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(events).toHaveLength(doneCount);
   });
 
   it('joins sub-run completion and isolates a throwing event sink', async () => {
@@ -222,7 +279,7 @@ describe('run completion', () => {
     const events: RunEvent[] = [];
     const child = compose<{}, { response: number }, {}>('child', {
       stages: [], ending: defineEnding({
-        name: 'background', request: { needs: [] }, response: { provides: ['response'] },
+        name: 'background', request: { needs: [] }, return: { provides: ['response'] },
         execute: async (_facts, _into, env) => {
           env.defer('child work', work.promise);
           return { response: 1 };
@@ -231,7 +288,7 @@ describe('run completion', () => {
     });
     const pipeline = compose<{}, { response: number }, {}>('parent', {
       stages: [], ending: defineEnding({
-        name: 'parent', request: { needs: [] }, response: { provides: ['response'] },
+        name: 'parent', request: { needs: [] }, return: { provides: ['response'] },
         execute: async (_facts, _into, env) => {
           const sub = env.run(child, {});
           void sub.done.then(() => order.push('child'));
@@ -252,5 +309,35 @@ describe('run completion', () => {
     expect(order).toEqual(['child']);
     expect(events).toContainEqual(expect.objectContaining({ k: 'enter', pipeline: 'child', edge: 'subrun', parentStageId: 1 }));
     expect(events.filter(event => event.k === 'done')).toHaveLength(1);
+  });
+
+  it('passes the parent service object to sub-runs and folds their failures into done', async () => {
+    interface Ports { readonly counter: { readonly initial: number } }
+    interface Services extends Ports { readonly extra: boolean }
+    const services: Services = { counter: { initial: 1 }, extra: true };
+    const child = compose<{}, { response: number }, Ports>('child', {
+      stages: [], ending: defineEnding<{}, { response: number }, {}, Ports>({
+        name: 'writer', request: { needs: [] }, return: { provides: ['response'] },
+        execute: async (_facts, _into, env) => {
+          expect(env.services).toBe(services);
+          env.defer('persistence', Promise.reject(new Error('persist failed')));
+          return { response: env.services.counter.initial };
+        },
+      }),
+    });
+    const pipeline = compose<{}, { response: number }, Services>('parent', {
+      stages: [], ending: defineEnding<{}, { response: number }, {}, Services>({
+        name: 'parent', request: { needs: [] }, return: { provides: ['response'] },
+        execute: async (_facts, _into, env) => await env.run(child, {}).result,
+      }),
+    });
+    const missingPort = (env: StageEnv<{ unrelated: true }>) => {
+      // @ts-expect-error This stage did not declare the counter port.
+      return env.run(child, {});
+    };
+    expect(typeof missingPort).toBe('function');
+    const handle = run(pipeline, {}, { ...options, services });
+    await expect(handle.result).resolves.toEqual({ response: 1 });
+    await expect(handle.done).resolves.toMatchObject({ ok: false, error: { message: 'persist failed' } });
   });
 });

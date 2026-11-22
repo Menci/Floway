@@ -38,6 +38,8 @@ describe('fact values', () => {
     expect(() => freezeValue(value)).toThrow('facts.key: accessors');
     expect(() => freezeValue({ [Symbol('key')]: true })).toThrow('symbol key');
     expect(() => freezeValue(new class {}())).toThrow('plain object');
+    const hidden = Object.defineProperty({}, 'hidden', { value: 1 });
+    expect(() => freezeValue(hidden)).toThrow('facts.hidden: non-enumerable');
   });
 
   it('snapshots aggregate errors and causes with cycles without mutating thrown errors', () => {

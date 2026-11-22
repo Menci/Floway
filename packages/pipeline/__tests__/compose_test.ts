@@ -5,8 +5,9 @@ import type { DynamicTarget, IntoMap, Pipeline, StaticTarget } from '../src/inde
 
 const options = { services: {}, finalizationTimeoutMs: 100 };
 const empty = { needs: [], consumes: [], provides: [] };
+const passthrough = { request: empty, response: { ...empty, needs: ['result'] } };
 const terminal = defineEnding<{ input: number }, { result: string }>({
-  name: 'leaf', request: { needs: ['input'] }, response: { provides: ['result'] },
+  name: 'leaf', request: { needs: ['input'] }, return: { provides: ['result'] },
   execute: async ({ input }) => ({ result: String(input) }),
 });
 
@@ -54,7 +55,8 @@ describe('composition', () => {
     type Output = { result: string };
     type Target = { other: StaticTarget<Input, Output, {}> };
     const ending = defineEnding<Input, Output, Target>({
-      name: 'recur', request: { needs: ['input'] }, response: { provides: ['result'] },
+      name: 'recur', request: { needs: ['input'] }, return: { provides: ['result'] },
+      into: { other: { ...passthrough, request: { ...empty, provides: ['input'] } } },
       execute: async (facts, into) => facts.input > 0 ? await into.other({ input: facts.input - 1 }) : ({ result: 'done' }),
     });
     let resolutions = 0;
@@ -81,15 +83,12 @@ describe('composition', () => {
     const entry = ['input'];
     const exit = ['result'];
     let selections = 0;
-    const ending = defineEnding<{ input: number; omit?: boolean }, Output, Targets>({
-      name: 'forward', request: { needs: ['input'] }, response: { provides: ['result'] },
-      execute: async (facts, into) => {
-        if (facts.omit) return await into.slot('selected', {} as Input);
-        return await into.slot('selected', facts);
-      },
+    const ending = defineEnding<{ input?: number }, Output, Targets>({
+      name: 'forward', request: { needs: [] }, into: { slot: passthrough },
+      execute: async (facts, into) => await into.slot('selected', facts as Input),
     });
     const targets: Targets = { slot: { entry, exit, resolve: () => { selections++; return leaf; } } };
-    const pipeline = compose<{ input: number; omit?: boolean }, Output, {}, Targets>('dynamic', { stages: [], targets, ending });
+    const pipeline = compose<{ input?: number }, Output, {}, Targets>('dynamic', { stages: [], targets, ending });
     const invalidEntry = compose<Input, Output, {}, Targets>('invalid-entry', {
       stages: [], ending, targets: { slot: { entry: [], exit, resolve: () => leaf } },
     });
@@ -101,22 +100,72 @@ describe('composition', () => {
     link([pipeline, invalidEntry, invalidExit]);
     expect(selections).toBe(0);
     await expect(run(pipeline, { input: 4 }, options).result).resolves.toEqual({ result: '4' });
-    await expect(run(pipeline, { input: 4, omit: true }, options).result).rejects.toThrow(DeclarationViolationError);
+    await expect(run(pipeline, {}, options).result).rejects.toMatchObject({ name: 'DeclarationViolationError', direction: 'entry' });
     await expect(run(invalidEntry, { input: 4 }, options).result).rejects.toThrow('unregistered "input"');
     await expect(run(invalidExit, { input: 4 }, options).result).rejects.toThrow('does not guarantee "other"');
     expect(selections).toBe(2);
   });
 
+  it('derives slot exit keys and checks declared translations in both directions', async () => {
+    type Input = { input: number };
+    type Output = { result: string };
+    type Source = { source: string };
+    type Translated = { output: string };
+    type Target = { leaf: StaticTarget<Input, Output, {}> };
+    const leaf = compose<Input, Output, {}>('leaf', { stages: [], ending: terminal });
+    const declarations = {
+      leaf: {
+        request: { needs: ['source'], consumes: ['source'], provides: ['input'] },
+        response: { needs: ['result'], consumes: ['result'], provides: ['output'] },
+      },
+    };
+    const ending = defineEnding<Source, Translated, Target>({
+      name: 'translate', request: { needs: [] }, into: declarations, return: { provides: ['output', 'optional'] },
+      execute: async ({ source, ...rest }, into) => {
+        if (source === 'stub') return { output: 'stub', optional: true };
+        const request = { ...rest, input: Number(source), ...(source === 'bad request' ? { extra: 1 } : {}) };
+        const { result, ...back } = await into.leaf(request);
+        return { ...back, output: result, ...(source === 'bad response' ? { result } : {}) };
+      },
+    });
+    const targets = { leaf };
+    const pipeline = compose<Source, Translated, {}, Target>('translate', { stages: [], ending, targets });
+    expect(pipeline.entry).toEqual(['source']);
+    expect(pipeline.exit).toEqual(['output']);
+    link([pipeline]);
+    await expect(run(pipeline, { source: '4' }, options).result).resolves.toEqual({ output: '4' });
+    await expect(run(pipeline, { source: 'stub' }, options).result).resolves.toEqual({ output: 'stub', optional: true });
+    await expect(run(pipeline, { source: 'bad request' }, options).result).rejects.toThrow('added undeclared "extra"');
+    await expect(run(pipeline, { source: 'bad response' }, options).result).rejects.toThrow('declared consuming "result"');
+
+    const extra = { ...targets, smuggled: leaf };
+    expect(() => compose<Source, Translated, {}, Target>('extra', { stages: [], ending, targets: extra })).toThrow('undeclared target "smuggled"');
+  });
+
+  it('checks a static target response guarantee after resolving its thunk', () => {
+    type Input = { input: number };
+    type Output = { result: string };
+    type Target = { leaf: StaticTarget<Input, Output, {}> };
+    const ending = defineEnding<Input, Output, Target>({
+      name: 'forward', request: { needs: [] }, into: { leaf: { request: empty, response: { ...empty, needs: ['missing'] } } },
+      execute: async (facts, into) => await into.leaf(facts),
+    });
+    const target = compose<Input, Output, {}>('leaf', { stages: [], ending: terminal });
+    const p = compose<Input, Output, {}, Target>('forward', { stages: [], ending, targets: { leaf: () => target } });
+    expect(() => link([p])).toThrow(DeclarationViolationError);
+    expect(() => link([p])).toThrow('does not guarantee "missing"');
+  });
+
   it('exposes only declared into inputs and responses and omits next on return-only stages', () => {
-    type I = { input: number };
-    type O = { result: string };
+    interface I { input: number }
+    interface O { result: string }
     type Targets = {
       thunk: () => Pipeline<I, O, {}>;
       slot: DynamicTarget<'selected', I, O, {}>;
     };
     const check = async (into: IntoMap<Targets>) => {
-      const { result } = await into.thunk({ input: 1 });
-      const back = await into.slot('selected', { input: 2 });
+      const { result } = await into.thunk({ input: 1, extra: true }, { signal: new AbortController().signal });
+      const back = await into.slot('selected', { input: 2, extra: true }, { signal: new AbortController().signal });
       // @ts-expect-error Unknown target.
       await into.unregistered({ input: 1 });
       // @ts-expect-error Wrong input type.
@@ -136,8 +185,11 @@ describe('composition', () => {
       },
     });
     const ending = defineEnding<I, O, Targets>({
-      name: 'forward', request: { needs: ['input'] }, response: { provides: ['result'] },
+      name: 'forward', request: { needs: ['input'] }, into: { thunk: passthrough, slot: passthrough },
       execute: async (facts, into) => await into.thunk(facts),
+    });
+    const through = defineStage<I, I, O, O>({
+      name: 'pass through interface', through: passthrough, execute: async (facts, next) => await next(facts),
     });
     const leaf = compose<I, O, {}>('leaf', { stages: [], ending: terminal });
     const invalid = () => {
@@ -148,6 +200,6 @@ describe('composition', () => {
       // @ts-expect-error A terminal cannot serve as this target-aware ending.
       compose<I, O, {}, Targets>('wrong ending', { stages: [], targets: { thunk: () => leaf, slot: { entry: [], exit: [], resolve: () => leaf } }, ending: terminal });
     };
-    expect([check, stage, invalid]).toHaveLength(3);
+    expect([check, stage, through, invalid]).toHaveLength(4);
   });
 });

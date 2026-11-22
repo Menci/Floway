@@ -1,6 +1,5 @@
 import { DeclarationViolationError } from './errors.ts';
-import type { Handed } from './facts.ts';
-import type { Ending, Stage } from './stage.ts';
+import type { ChildOptions, Ending, Next, Stage, ThroughDecl } from './stage.ts';
 
 declare const pipelineTypes: unique symbol;
 
@@ -23,8 +22,8 @@ export type TargetMap = Readonly<Record<string, StaticTarget<any, any, any> | Dy
 
 export type IntoMap<T> = {
   readonly [K in keyof T]:
-  T[K] extends DynamicTarget<infer Key, infer I, infer O, any> ? (key: Key, facts: Handed<I>) => Promise<O>
-    : T[K] extends StaticTarget<infer I, infer O, any> ? (facts: Handed<I>) => Promise<O>
+  T[K] extends DynamicTarget<infer Key, infer I, infer O, any> ? <Actual extends I>(key: Key, facts: Actual, options?: ChildOptions) => Promise<O>
+    : T[K] extends StaticTarget<infer I, infer O, any> ? Next<I, O>
       : never;
 };
 
@@ -89,8 +88,23 @@ export const compose = <In, Out, S, Targets extends TargetMap = {}>(name: string
     for (const key of request.provides) provided.add(key);
   }
   requireKeys(ending.name, ending.request.needs);
+  const declaredSlots: Readonly<Record<string, ThroughDecl>> = ending.into ?? {};
+  const suppliedSlots: TargetMap = options.targets ?? {};
+  for (const [key, declaration] of Object.entries(declaredSlots)) {
+    if (!Object.hasOwn(suppliedSlots, key)) throw new TypeError(`Ending "${ending.name}" declares a missing target "${key}"`);
+    requireKeys(ending.name, declaration.request.needs);
+  }
+  for (const key of Object.keys(suppliedSlots)) {
+    if (!Object.hasOwn(declaredSlots, key)) throw new TypeError(`Ending "${ending.name}" has an undeclared target "${key}"`);
+  }
 
-  const exit = new Set(ending.response.provides);
+  const exits = Object.values(declaredSlots).map(({ response }) => new Set([
+    ...response.needs.filter(key => !response.consumes.includes(key)), ...response.provides,
+  ]));
+  if (ending.return) exits.push(new Set(ending.return.provides));
+  if (exits.length === 0) throw new TypeError(`Ending "${ending.name}" has no response path`);
+  const [first, ...others] = exits;
+  const exit = new Set([...first].filter(key => others.every(path => path.has(key))));
   for (const stage of stages.toReversed()) {
     const response = stage.through?.response;
     if (response) {
@@ -114,7 +128,7 @@ export const compose = <In, Out, S, Targets extends TargetMap = {}>(name: string
   }
 
   const targets: Record<string, Slot> = Object.create(null);
-  for (const [key, target] of Object.entries(options.targets ?? {})) {
+  for (const [key, target] of Object.entries(suppliedSlots)) {
     targets[key] = typeof target !== 'function' && 'resolve' in target
       ? Object.freeze({ entry: Object.freeze([...target.entry]), exit: Object.freeze([...target.exit]), resolve: target.resolve })
       : { target };
@@ -134,7 +148,7 @@ export const link = (pipelines: readonly AnyPipeline[]): void => {
     if (seen.has(pipeline)) return;
     const assembly = assemblyOf(pipeline);
     seen.add(pipeline);
-    for (const slot of Object.values(assembly.targets)) {
+    for (const [name, slot] of Object.entries(assembly.targets)) {
       if ('resolve' in slot) continue;
       if (!slot.resolved) {
         const { target } = slot;
@@ -143,6 +157,11 @@ export const link = (pipelines: readonly AnyPipeline[]): void => {
         if (typeof target === 'function') staticResolutions.set(target, resolved);
         slot.resolved = resolved;
         Object.freeze(slot);
+      }
+      for (const key of assembly.ending.into![name].response.needs) {
+        if (!slot.resolved.exit.includes(key)) {
+          throw new DeclarationViolationError(assembly.ending.name, 'up', `target "${name}" does not guarantee "${key}"`);
+        }
       }
       visit(slot.resolved);
     }

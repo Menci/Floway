@@ -1,5 +1,5 @@
 import type { IntoMap, Pipeline, TargetMap } from './compose.ts';
-import type { Facts, Handed } from './facts.ts';
+import type { Facts } from './facts.ts';
 import type { Deferred, DeferredHandle, ManagedStream } from './handles.ts';
 import type { RunHandle } from './run.ts';
 import type { CreateStreamOptions, WrapStreamOptions } from './stream.ts';
@@ -20,7 +20,7 @@ export interface StageEnv<S = {}> {
   readonly wrapStream: <In, Out>(inner: ManagedStream<In>, options: WrapStreamOptions<In, Out>) => ManagedStream<Out>;
   readonly defer: <T>(name: string, work: Promise<T>) => Deferred<T>;
   readonly deferred: <T>(name: string, owner: ManagedStream<unknown> | 'scope') => DeferredHandle<T>;
-  readonly run: <I, O, S2>(pipeline: Pipeline<I, O, S2>, facts: I) => RunHandle<O>;
+  readonly run: <I, O, S2>(pipeline: Pipeline<I, O, S2> & Pipeline<I, O, S>, facts: I) => RunHandle<O>;
 }
 
 export interface SideDecl {
@@ -34,15 +34,19 @@ export interface ThroughDecl {
   readonly response: SideDecl;
 }
 
-interface ReturnDecl {
+export interface ReturnDecl {
   readonly provides: readonly string[];
 }
 
-export type Next<Down, Up> = (facts: Handed<Down>) => Promise<Handed<Up>>;
+export interface ChildOptions {
+  readonly signal?: AbortSignal;
+}
+
+export type Next<Down, Up> = <Actual extends Down>(facts: Actual, options?: ChildOptions) => Promise<Up>;
 
 type Execute<Rq, Down, Up, Rs, S> = (
-  facts: Handed<Rq>, next: Next<Down, Up>, env: StageEnv<S>,
-) => Promise<Handed<Rs>>;
+  facts: Rq, next: Next<Down, Up>, env: StageEnv<S>,
+) => Promise<Rs>;
 
 interface ThroughOptions<Rq, Down, Up, Rs, S> {
   readonly name: string;
@@ -55,7 +59,7 @@ interface ReturnOptions<Rq, Rs, S> {
   readonly name: string;
   readonly through?: undefined;
   readonly return: ReturnDecl;
-  readonly execute: (facts: Handed<Rq>, env: StageEnv<S>) => Promise<Handed<Rs>>;
+  readonly execute: (facts: Rq, env: StageEnv<S>) => Promise<Rs>;
 }
 
 interface ThroughStage<S> {
@@ -101,7 +105,7 @@ export function defineStage(
   return Object.freeze({ kind: 'stage', name, return: Object.freeze({ provides: Object.freeze([...answer.provides]) }), execute: options.execute });
 }
 
-type TransformSide<In, Out> = (facts: Handed<In>) => Handed<Out> | Promise<Handed<Out>>;
+type TransformSide<In, Out> = (facts: In) => Out | Promise<Out>;
 
 type TransformSides<Rq, Down, Up, Rs> = (
   [Rq] extends [Down] ? { readonly request?: TransformSide<Rq, Down> } : { readonly request: TransformSide<Rq, Down> }
@@ -113,32 +117,42 @@ export const transform = <Rq, Down, Up, Rs, S = {}>(
   open: (env: StageEnv<S>) => TransformSides<Rq, Down, Up, Rs>,
 ): Execute<Rq, Down, Up, Rs, S> => async (facts, next, env) => {
   const { request, response } = open(env);
-  const back = await next(request ? await request(facts) : (facts as Facts) as Handed<Down>);
-  return response ? await response(back) : (back as Facts) as Handed<Rs>;
+  const back = await next(request ? await request(facts) : facts as Rq & Down);
+  return response ? await response(back) : back as Up & Rs;
 };
 
 declare const endingTargets: unique symbol;
+type IntoDeclarations<T> = { readonly [K in keyof T]: ThroughDecl };
 
 export interface Ending<T extends TargetMap = {}, S = {}> {
   readonly kind: 'ending';
   readonly name: string;
   readonly request: { readonly needs: readonly string[] };
-  readonly response: { readonly provides: readonly string[] };
+  readonly into?: IntoDeclarations<T>;
+  readonly return?: ReturnDecl;
   readonly execute: (facts: Facts, into: IntoMap<T>, env: StageEnv<S>) => Promise<Facts>;
   readonly [endingTargets]?: (targets: T) => T;
 }
 
+type EndingOptions<T extends TargetMap> = keyof T extends never
+  ? { readonly into?: undefined; readonly return: ReturnDecl }
+  : { readonly into: IntoDeclarations<T>; readonly return?: ReturnDecl };
+
 export const defineEnding = <Rq, Rs, Targets extends TargetMap = {}, S = {}>(options: {
   readonly name: string;
   readonly request: { readonly needs: readonly string[] };
-  readonly response: { readonly provides: readonly string[] };
-  readonly execute: (facts: Handed<Rq>, into: IntoMap<Targets>, env: StageEnv<S>) => Promise<Handed<Rs>>;
-}): Ending<Targets, S> => {
-  const { name, request, response, execute } = options;
+  readonly execute: (facts: Rq, into: IntoMap<Targets>, env: StageEnv<S>) => Promise<Rs>;
+} & EndingOptions<Targets>): Ending<Targets, S> => {
+  const { name, request, into, return: answer, execute } = options;
+  if (!into && !answer) throw new TypeError(`Ending "${name}" needs an into or return declaration`);
+  const declarations = into && Object.freeze(Object.fromEntries(Object.entries<ThroughDecl>(into).map(([key, declaration]) => [key, Object.freeze({
+    request: freezeSide(declaration.request), response: freezeSide(declaration.response),
+  })]))) as IntoDeclarations<Targets> | undefined;
   return Object.freeze({
     kind: 'ending', name,
     request: Object.freeze({ needs: Object.freeze([...request.needs]) }),
-    response: Object.freeze({ provides: Object.freeze([...response.provides]) }),
-    execute: (facts: Facts, into: IntoMap<Targets>, env: StageEnv<S>) => execute(facts as Handed<Rq>, into, env),
+    ...(declarations ? { into: declarations } : {}),
+    ...(answer ? { return: Object.freeze({ provides: Object.freeze([...answer.provides]) }) } : {}),
+    execute: (facts: Facts, calls: IntoMap<Targets>, env: StageEnv<S>) => execute(facts as Facts & Rq, calls, env) as Promise<Rs & Facts>,
   });
 };

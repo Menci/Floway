@@ -1,5 +1,5 @@
 import { ConcurrentStreamReadError, DuplicateStreamCloseError, StreamLeakError, StreamOwnershipError } from './errors.ts';
-import { freezeValue } from './facts.ts';
+import { freezeData } from './facts.ts';
 import { managedStreams } from './handles.ts';
 import type { ManagedStream } from './handles.ts';
 
@@ -80,7 +80,9 @@ export const streamIdOf = (stream: ManagedStream<unknown>): number => resourceOf
 
 export class StreamResource<T> {
   readonly handle: ManagedStream<T>;
+  readonly ended: Promise<void>;
   readonly completion: Promise<void>;
+  readonly #ended = Promise.withResolvers<void>();
   readonly #completed = Promise.withResolvers<void>();
   readonly #controller = new AbortController();
   readonly #birthSignal: AbortSignal;
@@ -110,6 +112,7 @@ export class StreamResource<T> {
       const { reason } = this.#birthSignal.aborted ? this.#birthSignal : this.#owner!.signal;
       void this.stop({ how: 'cancelled', reason });
     };
+    this.ended = this.#ended.promise;
     this.completion = this.#completed.promise;
     void this.completion.catch(() => undefined);
     this.handle = Object.freeze({
@@ -159,12 +162,12 @@ export class StreamResource<T> {
 
   #open(): AsyncIterator<T, undefined> {
     this.#assertPublic('iteration');
-    if (this.#consuming) throw new StreamOwnershipError(this.handle.label, 'second iteration');
+    if (this.#consuming) throw new DuplicateStreamCloseError(this.handle.label);
     if (this.#end?.how === 'cancelled') {
       this.#consuming = true;
       return { next: async () => done };
     }
-    if (this.ending) throw new StreamOwnershipError(this.handle.label, 'iteration after end');
+    if (this.ending) throw new DuplicateStreamCloseError(this.handle.label);
     this.#consuming = true;
     const stopReading = this.#owner?.stopReading;
     return {
@@ -211,7 +214,7 @@ export class StreamResource<T> {
         await this.stop({ how: 'exhausted' });
         return done;
       }
-      const value = freezeValue(result.value, `stream(${this.handle.label}).frame`);
+      const value = freezeData(result.value, `stream(${this.handle.label}).frame`);
       this.#hooks.frame(value);
       return { value, done: false };
     } catch (error) {
@@ -236,6 +239,7 @@ export class StreamResource<T> {
       return this.completion;
     }
     this.#end = end;
+    this.#ended.resolve();
     this.#hooks.seal(this, end);
     this.#controller.abort(end.how === 'cancelled' ? end.reason : end.how === 'errored' ? end.error : undefined);
     if (end.how === 'cancelled') void this.#inner?.stop(end);
@@ -323,7 +327,9 @@ export const wrapOptions = <In, Out>(inner: StreamResource<In>, options: WrapStr
     label: options.label,
     // Retain a pending inner pull when the transform stops. The release hook can
     // take that same result, without running a second read or cancelling the inner.
-    iterate: signal => options.transform({ [Symbol.asyncIterator]: () => ({ next: () => next(signal) }) }, signal),
+    iterate: signal => options.transform({
+      [Symbol.asyncIterator]: () => ({ next: () => next(signal), return: async () => done }),
+    }, signal),
     onClose: async end => {
       if (!options.onClose) return;
       if (end.how === 'cancelled' || inner.ending) {

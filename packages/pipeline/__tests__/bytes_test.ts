@@ -27,6 +27,16 @@ describe('bytes', () => {
     }
   });
 
+  it('copies a whole buffer that cannot be transferred', () => {
+    const memory = new WebAssembly.Memory({ initial: 1 });
+    const original = new Uint8Array(memory.buffer);
+    original[0] = 9;
+    const bytes = Bytes.adopt(original);
+    original[0] = 2;
+    expect(original.buffer.detached).toBe(false);
+    expect(bytes.toUint8Array()[0]).toBe(9);
+  });
+
   it('shares subarray storage and returns a fresh writable copy to the public caller', () => {
     const bytes = Bytes.concat([Bytes.fromUtf8('hola'), Bytes.empty, Bytes.fromUtf8(' mundo')]);
     const subarray = bytes.subarray(-5);

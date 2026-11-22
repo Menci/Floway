@@ -1,6 +1,6 @@
 import { UnsettledDeferredError } from './errors.ts';
 import type { Trace } from './events.ts';
-import { freezeValue } from './facts.ts';
+import { freezeData } from './facts.ts';
 import { deferreds } from './handles.ts';
 import type { Deferred, DeferredHandle } from './handles.ts';
 
@@ -16,7 +16,7 @@ export class DeferredResource<T> {
   readonly handle: DeferredHandle<T>;
   readonly #settlement = Promise.withResolvers<T>();
   readonly #id: number;
-  #pending = true;
+  #status: 'pending' | 'settled' | 'expired' = 'pending';
 
   constructor(readonly name: string, readonly trace: Trace, stageId: number) {
     this.#id = trace.deferredId();
@@ -33,29 +33,34 @@ export class DeferredResource<T> {
 
   attach(work: Promise<T>): void {
     void work.then(value => {
-      if (this.#pending) this.#settle(value, false);
+      if (this.#status === 'pending') this.#settle(value, false);
     }, error => {
-      if (this.#pending) this.#reject(error);
+      if (this.#status === 'pending') this.#reject(error);
     });
   }
 
   ownerEnded(): void {
-    if (this.#pending) this.#reject(new UnsettledDeferredError(this.name));
+    if (this.#status === 'pending') this.#reject(new UnsettledDeferredError(this.name));
   }
 
   abort(error: unknown): void {
-    if (this.#pending) this.#reject(error);
+    if (this.#status === 'pending') {
+      this.#status = 'expired';
+      this.#fail(error);
+    }
   }
 
-  #claim(): void {
-    if (!this.#pending) throw new Error(`Deferred "${this.name}" has already settled`);
-    this.#pending = false;
+  #claim(): boolean {
+    if (this.#status === 'expired') return false;
+    if (this.#status === 'settled') throw new Error(`Deferred "${this.name}" has already settled`);
+    this.#status = 'settled';
+    return true;
   }
 
   #settle(value: T, throwInvalid = true): void {
-    this.#claim();
+    if (!this.#claim()) return;
     try {
-      freezeValue(value, `deferred(${this.name})`);
+      freezeData(value, `deferred(${this.name})`);
     } catch (error) {
       this.#fail(error);
       if (throwInvalid) throw error;
@@ -66,8 +71,7 @@ export class DeferredResource<T> {
   }
 
   #reject(error: unknown): void {
-    this.#claim();
-    this.#fail(error);
+    if (this.#claim()) this.#fail(error);
   }
 
   #fail(error: unknown): void {
