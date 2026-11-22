@@ -84,6 +84,22 @@ test('a failed endpoint preserves both prior readings and records one refresh ou
   assertEquals(repo.metrics.length, 4);
 });
 
+test('a synchronous usage fetch failure still dispatches the paired balance read', async () => {
+  const { config } = assertOllamaUpstreamRecord(cloudRecord());
+  const repo = withStateRepo();
+  const error = new Error('usage transport failed');
+  const paths: string[] = [];
+  const fetcher: Fetcher = url => {
+    const path = new URL(url).pathname;
+    paths.push(path);
+    if (path === '/api/usage') throw error;
+    return Promise.resolve(Response.json(BALANCE_BODY));
+  };
+  await expect(refreshOllamaUsageProbe(UPSTREAM_ID, config, fetcher)).rejects.toBe(error);
+  expect(paths).toEqual(['/api/usage', '/api/balance']);
+  expect(repo.read().usageProbe?.error).toBe(error.message);
+});
+
 test('usage is probed when the operator enabled it and a key is configured, and not otherwise', () => {
   const enabled = (config: Record<string, unknown>) =>
     isOllamaUsageEnabled(assertOllamaUpstreamRecord(cloudRecord({ config })).config);

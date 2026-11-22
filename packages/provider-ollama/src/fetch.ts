@@ -1,7 +1,7 @@
 import type { OllamaUpstreamConfig } from './config.ts';
 import { joinBaseAndPath, type FetchInit, type Fetcher } from '@floway-dev/provider';
 
-const ollamaFetchInternal = (
+const ollamaFetchInternal = async (
   config: OllamaUpstreamConfig,
   path: string,
   init: FetchInit,
@@ -10,7 +10,7 @@ const ollamaFetchInternal = (
   const headers = new Headers(init.headers);
   if (config.apiKey) headers.set('Authorization', `Bearer ${config.apiKey}`);
   if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
-  return fetcher(joinBaseAndPath(config.baseUrl, path), { ...init, headers });
+  return await fetcher(joinBaseAndPath(config.baseUrl, path), { ...init, headers });
 };
 
 export const ollamaFetchTags = (config: OllamaUpstreamConfig, init: FetchInit, fetcher: Fetcher): Promise<Response> =>
