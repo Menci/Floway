@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
 import { createChatGPTProvider } from '../src/provider.ts';
 import type { ChatGPTAccessTokenEntry, ChatGPTUpstreamState } from '../src/state.ts';
-import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { noopUpstreamCallOptions, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
+import { Bytes, isSecret, run, type RunEvent } from '@floway-dev/pipeline';
+import { directFetcher, initProviderRepo, readHttpBody, toProviderModelFacts, type HttpRequestFacts, type UpstreamRecord } from '@floway-dev/provider';
+import { readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
 
@@ -138,12 +139,15 @@ describe('createChatGPTProvider', () => {
     expect(upgraded.map(model => model.id)).toContain('gpt-image-2');
   });
 
-  test('callOpenAIResponses preserves developer messages on the Codex wire', async () => {
+  test('Responses preserves developer messages and sends the bearer only through the HTTP terminal', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const instance = createChatGPTProvider(baseRecord);
-    const result = await instance.instance.callOpenAIResponses(
-      stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } }),
-      {
+    const trace: RunEvent[] = [];
+    const handle = run(instance.pipelines.openaiResponses!, {
+      'provider.model': toProviderModelFacts(stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } })),
+      'request.action': 'generate',
+      'request.headers': [],
+      'request.payload': {
         input: [
           { type: 'message', role: 'developer', content: 'base instructions' },
           { type: 'message', role: 'user', content: 'hi' },
@@ -151,14 +155,17 @@ describe('createChatGPTProvider', () => {
         ],
         stream: true,
       },
-      'generate',
-      undefined,
-      noopUpstreamCallOptions(),
-    );
-    expect(result.ok).toBe(true);
-    expect(result.action).toBe('generate');
+    }, { services: { fetcher: () => directFetcher }, finalizationTimeoutMs: 1000, events: event => { trace.push(event); } });
+    const result = await handle.result;
+    expect(result['response.http'].status).toBe(200);
+    await result['response.events']!.close();
+    expect(await handle.done).toEqual({ ok: true });
     const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
     if (init === undefined) throw new Error('expected a ChatGPT upstream request');
+    expect(new Headers(init.headers).get('authorization')).toBe('Bearer at');
+    const terminal = trace.find((event): event is Extract<RunEvent, { k: 'enter' }> => event.k === 'enter' && event.name === 'http');
+    const request = terminal?.facts['request.http'] as HttpRequestFacts | undefined;
+    expect(isSecret(request?.headers.find(([key]) => key === 'authorization')?.[1])).toBe(true);
     const body = await readJsonRequest(init) as Record<string, unknown>;
     expect(body.instructions).toBe("You're a helpful assistant.");
     expect(body.input).toEqual([
@@ -168,20 +175,25 @@ describe('createChatGPTProvider', () => {
     ]);
   });
 
-  test('callOpenAIImagesEdits sends uploads as JSON data URLs to the ChatGPT Codex endpoint', async () => {
+  test('image edits sends uploads as JSON data URLs to the ChatGPT Codex endpoint', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       created: 1,
       data: [{ b64_json: 'ZWRpdA==' }],
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
     const instance = createChatGPTProvider(baseRecord);
     const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
-    const options = noopUpstreamCallOptions();
-    options.headers.set('originator', 'chatgpt_cca');
-    const result = await instance.instance.callOpenAIImagesEdits(model, {
-      images: [{ type: 'upload', file: new File(['image'], 'image.png', { type: 'image/png' }) }],
-      parameters: { prompt: 'make it blue' },
-    }, undefined, options);
-    expect(result.http.status).toBe(200);
+    const handle = run(instance.pipelines.openaiImagesEdits!, {
+      'provider.model': toProviderModelFacts(model),
+      'request.headers': [['originator', 'chatgpt_cca']],
+      'request.payload': {
+        images: [{ type: 'upload', bytes: Bytes.fromUtf8('image'), filename: 'image.png', contentType: 'image/png' }],
+        parameters: { prompt: 'make it blue' },
+      },
+    }, { services: { fetcher: () => directFetcher }, finalizationTimeoutMs: 1000 });
+    const result = await handle.result;
+    expect(result['response.http'].status).toBe(200);
+    await readHttpBody(result['response.http'].body);
+    expect(await handle.done).toEqual({ ok: true });
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe('https://chatgpt.com/backend-api/codex/images/edits');
     expect(new Headers((init as RequestInit).headers).get('originator')).toBe('chatgpt_cca');

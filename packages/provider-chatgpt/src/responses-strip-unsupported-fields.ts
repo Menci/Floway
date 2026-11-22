@@ -1,0 +1,37 @@
+import { defineStage, transform } from '@floway-dev/pipeline';
+import type { ProviderResponsesInput, ProviderResponsesOutput, ProviderServices } from '@floway-dev/provider';
+
+// ChatGPT backend rejects requests carrying any of these fields with a
+// `Unsupported parameter: <name>` 4xx. They are regular OpenAI Responses API
+// fields that the ChatGPT-subscription path does not honor. Source-protocol
+// translators legitimately set max_output_tokens / temperature / top_p (the
+// caller's request might carry them), so we strip them at the ChatGPT target
+// boundary rather than at translation time, where they remain valid for
+// other providers.
+const CHATGPT_UNSUPPORTED_BODY_FIELDS = [
+  'max_output_tokens',
+  'temperature',
+  'top_p',
+  'frequency_penalty',
+  'presence_penalty',
+  'user',
+  'metadata',
+  'prompt_cache_retention',
+  'safety_identifier',
+  'stream_options',
+] as const;
+
+export const stripUnsupportedFields = defineStage<ProviderResponsesInput, ProviderResponsesInput, ProviderResponsesOutput, ProviderResponsesOutput, ProviderServices>({
+  name: 'chatgpt.responses.strip-unsupported-fields',
+  through: {
+    request: { needs: ['request.payload'], consumes: [], provides: ['request.payload'] },
+    response: { needs: [], consumes: [], provides: [] },
+  },
+  execute: transform(() => ({
+    request: facts => {
+      const payload: ProviderResponsesInput['request.payload'] & Partial<Record<typeof CHATGPT_UNSUPPORTED_BODY_FIELDS[number], unknown>> = { ...facts['request.payload'] };
+      for (const key of CHATGPT_UNSUPPORTED_BODY_FIELDS) delete payload[key];
+      return { ...facts, 'request.payload': payload };
+    },
+  })),
+});

@@ -2,13 +2,15 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createUpstreamStateRepoStub } from './upstream-state-repo.ts';
 import { CHATGPT_CLI_VERSION, CHATGPT_ORIGINATOR, CHATGPT_RESPONSES_LITE_CLIENT_METADATA_KEY, CHATGPT_RESPONSES_LITE_HEADER, CHATGPT_USER_AGENT } from '../src/constants.ts';
-import { callChatGPTAlphaSearch, callChatGPTOpenAIImagesGenerations, callChatGPTOpenAIResponses, callChatGPTOpenAIResponsesCompact, type ChatGPTCallEffects } from '../src/fetch.ts';
+import { createChatGPTPipelines, type ChatGPTCallEffects } from '../src/pipelines.ts';
 import * as responsesLite from '../src/responses-lite.ts';
 import type { ChatGPTAccessTokenEntry, ChatGPTAccountCredential, ChatGPTQuotaSnapshotEntryMap, ChatGPTUpstreamState } from '../src/state.ts';
+import { isManagedStream, run, type RunDone, type RunEvent } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
 import { type OpenAIResponsesCompactionItemEx, collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { noopUpstreamCallOptions, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
+import { directFetcher, getProviderRepo, initProviderRepo, readHttpBody, toProviderModelFacts, type ProviderHttpOutput, type ProviderInput, type ProviderResponsesInput, type UpstreamRecord } from '@floway-dev/provider';
+import { readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
 
 const makeEffects = (): ChatGPTCallEffects => ({
   persistRefreshTokenRotation: vi.fn(async () => {}),
@@ -63,18 +65,72 @@ const seedAccountState = (overrides: Partial<ChatGPTAccountCredential>): void =>
 const readQuotaEntry = (): ChatGPTQuotaSnapshotEntryMap | null =>
   (currentRecord.state as ChatGPTUpstreamState).accounts[0].quotaSnapshot;
 
-// putChatGPTQuota fires-and-forgets via .catch(() => {}); yield to the task
-// queue so the saveState promise resolves before the caller asserts on state.
-const flushMicrotasks = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
+interface RunInput<Payload> {
+  upstreamId: string;
+  account: ChatGPTAccountCredential;
+  model: ReturnType<typeof stubProviderModel>;
+  body: Payload;
+  headers: Headers;
+  effects: ChatGPTCallEffects;
+  fallbackPlanType?: string;
+  events?: (event: RunEvent) => void;
+}
+
+const setup = <Payload>(options: RunInput<Payload>) => ({
+  pipelines: createChatGPTPipelines({
+    upstreamId: options.upstreamId,
+    readAccount: async () => options.account,
+    ...options.effects,
+    ...(options.fallbackPlanType === undefined ? {} : { fallbackPlanType: options.fallbackPlanType }),
+  }),
+  facts: {
+    'provider.model': toProviderModelFacts(structuredClone(options.model)),
+    'request.headers': [...options.headers],
+    'request.payload': options.body,
+  } satisfies ProviderInput<Payload>,
+  options: { services: { fetcher: () => directFetcher }, finalizationTimeoutMs: 1000, ...(options.events ? { events: options.events } : {}) },
+});
+
+type ResponsesBody = ProviderResponsesInput['request.payload'];
+
+const runResponsesAction = async (input: RunInput<ResponsesBody>, action: ProviderResponsesInput['request.action']) => {
+  const { pipelines, facts, options } = setup(input);
+  const handle = run(pipelines.openaiResponses, { ...facts, 'request.action': action }, options);
+  return { ...await handle.result, done: handle.done };
+};
+const runResponses = (input: RunInput<ResponsesBody>) => runResponsesAction(input, 'generate');
+const runCompact = (input: RunInput<ResponsesBody>) => runResponsesAction(input, 'compact');
+const runImages = async (input: RunInput<Omit<OpenAIImagesGenerationsPayload, 'model'>>) => {
+  const { pipelines, facts, options } = setup(input);
+  const handle = run(pipelines.openaiImagesGenerations, facts, options);
+  return { ...await handle.result, done: handle.done };
+};
+const runAlphaSearch = async (input: RunInput<Record<string, unknown>>) => {
+  const { pipelines, facts, options } = setup(input);
+  const handle = run(pipelines.alphaSearch, facts, options);
+  return { ...await handle.result, done: handle.done };
+};
+const successful = ({ 'response.http': { status } }: ProviderHttpOutput): boolean => status >= 200 && status < 300;
+const headersOf = ({ 'response.http': { headers } }: ProviderHttpOutput): Headers =>
+  new Headers(headers.map(([name, value]): [string, string] => [name, typeof value === 'string' ? value : value.reveal()]));
+const release = async (result: ProviderHttpOutput & { done: Promise<RunDone>; 'response.events'?: unknown }) => {
+  const body = result['response.events'] ?? result['response.http'].body;
+  if (isManagedStream(body)) await body.close();
+  expect(await result.done).toEqual({ ok: true });
+};
+const inspectResponsesWire = async (input: RunInput<ResponsesBody>) => {
+  await release(await runResponses(input));
+};
 
 beforeEach(() => {
   vi.useRealTimers();
   currentRecord = makeRecord({ accounts: [{ ...activeAccount }] });
+  const upstreams = createUpstreamStateRepoStub(() => currentRecord, state => {
+    currentRecord = { ...currentRecord, state: state as ChatGPTUpstreamState };
+  });
   initProviderRepo(() => ({
     recordUpstreamMetric: async () => {},
-    upstreams: createUpstreamStateRepoStub(() => currentRecord, state => {
-      currentRecord = { ...currentRecord, state: state as ChatGPTUpstreamState };
-    }),
+    upstreams,
   }));
 });
 
@@ -121,14 +177,15 @@ const idToken = (planType = 'plus'): string => [
   Buffer.from('signature').toString('base64url'),
 ].join('.');
 
-describe('callChatGPTOpenAIResponses — gates', () => {
+describe('ChatGPT Responses gates', () => {
   test('refuses non-active state with synthetic 503', async () => {
-    const result = await callChatGPTOpenAIResponses({
+    const result = await runResponses({
       upstreamId, account: { ...activeAccount, state: 'session_terminated' },
-      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(),
     });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.http.status).toBe(503);
+    expect(successful(result)).toBe(false);
+    if (!successful(result)) expect(result['response.http'].status).toBe(503);
+    await release(result);
   });
 
   test('replaces the same family after success despite a future cached restriction, preserving other families', async () => {
@@ -145,15 +202,29 @@ describe('callChatGPTOpenAIResponses — gates', () => {
       },
     });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
-    const result = await callChatGPTOpenAIResponses({
+    const result = await runResponses({
       upstreamId, account: activeAccount,
-      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(),
     });
-    expect(result.ok).toBe(true);
-    await flushMicrotasks();
+    expect(successful(result)).toBe(true);
+    await release(result);
     expect(readQuotaEntry()?.premium.data.primary_used_percent).toBe(42);
     expect(readQuotaEntry()?.premium.data.ratelimited_until).toBeUndefined();
     expect(readQuotaEntry()?.other).toEqual(unrelated);
+  });
+
+  test('quota write failures settle as data while the response run completes', async () => {
+    seedFreshAccessToken();
+    vi.spyOn(getProviderRepo().upstreams, 'saveState').mockRejectedValue(new Error('quota write failed'));
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    const trace: RunEvent[] = [];
+    const result = await runResponses({
+      upstreamId, account: activeAccount,
+      model, body: { input: [] }, headers: new Headers(), effects: makeEffects(), events: event => { trace.push(event); },
+    });
+    expect(await result['response.chatgpt.quota']?.promise).toMatchObject({ persisted: false, error: { message: 'quota write failed' } });
+    await release(result);
+    expect(trace).toContainEqual(expect.objectContaining({ k: 'log', level: 'warn', message: 'chatgpt_quota_persist_failed' }));
   });
 });
 
@@ -178,23 +249,24 @@ describe('ChatGPT terminal output recovery', () => {
         { type: 'response.completed', response: terminal },
       ]));
       const effects = makeEffects();
-      const result = await callChatGPTOpenAIResponses({
+      const result = await runResponses({
         upstreamId, account: activeAccount, model,
         body: { input: [{ type: 'compaction_trigger' } as unknown as CanonicalOpenAIResponsesInputItem], stream },
-        headers: new Headers(), effects, call: noopUpstreamCallOptions(),
+        headers: new Headers(), effects,
       });
-      if (!result.ok) throw new Error('expected a successful native compaction stream');
+      if (!successful(result)) throw new Error('expected a successful native compaction stream');
       if (stream) {
         const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-        for await (const frame of result.events) frames.push(frame);
+        for await (const frame of result['response.events']!) frames.push(frame);
         expect(frames[0]).toMatchObject({ event: { response: { output: [], status: 'in_progress' } } });
         expect(frames[3]).toMatchObject({ event: { type: 'response.compaction.compacting', item_id: item.id } });
         expect(frames[4]).toMatchObject({ event: { type: 'response.output_item.done', output_index: 0, item } });
         expect(frames[5]).toMatchObject({ event: { type: 'response.completed', response: { ...terminal, output: [item] } } });
         expect(frames[6]).toEqual({ type: 'done' });
       } else {
-        expect(await collectOpenAIResponsesProtocolEventsToResult(result.events)).toMatchObject({ ...terminal, output: [item] });
+        expect(await collectOpenAIResponsesProtocolEventsToResult(result['response.events']!)).toMatchObject({ ...terminal, output: [item] });
       }
+      expect(await result.done).toEqual({ ok: true });
       fetchSpy.mockRestore();
     }
   });
@@ -226,13 +298,13 @@ describe('Codex Responses wire selection', () => {
         };
         const original = structuredClone(body);
         const headers = new Headers(marker === undefined ? {} : { [CHATGPT_RESPONSES_LITE_HEADER]: marker });
-        const call = action === 'generate' ? callChatGPTOpenAIResponses : callChatGPTOpenAIResponsesCompact;
+        const call = action === 'generate' ? runResponses : runCompact;
         const result = await call({
           upstreamId, account: activeAccount,
           model: { ...model, providerData: { useResponsesLite } },
-          body, headers, effects: makeEffects(), call: noopUpstreamCallOptions(),
+          body, headers, effects: makeEffects(),
         });
-        if (!result.ok) throw new Error('expected a successful response');
+        if (!successful(result)) throw new Error('expected a successful response');
         const [url, init] = fetchSpy.mock.lastCall!;
         expect(url).toBe(`https://chatgpt.com/backend-api/codex/responses${action === 'compact' ? '/compact' : ''}`);
         const wire = await readJsonRequest(init as RequestInit) as Record<string, unknown>;
@@ -261,18 +333,19 @@ describe('Codex Responses wire selection', () => {
           expect(wire.parallel_tool_calls).toBe(true);
           expect(wire.reasoning).toEqual(body.reasoning);
         }
-        if ('events' in result) {
+        if (result['response.events'] !== undefined) {
           expect(wire.client_metadata).toMatchObject({ retained: { future: true } });
           expect(wire.client_metadata).not.toHaveProperty(CHATGPT_RESPONSES_LITE_CLIENT_METADATA_KEY);
           expect(wire.tool_choice).toBe('auto');
           expect(wire.stream).toBe(true);
           expect(wire.store).toBe(false);
-          expect(result.http?.headers.get(CHATGPT_RESPONSES_LITE_HEADER)).toBe('true');
-          expect(result.http?.headers.get('x-upstream-custom')).toBe('retained');
-          for await (const _frame of result.events) { /* Drain the actual parser. */ }
+          expect(headersOf(result).get(CHATGPT_RESPONSES_LITE_HEADER)).toBe('true');
+          expect(headersOf(result).get('x-upstream-custom')).toBe('retained');
+          await release(result);
         } else {
           for (const field of ['stream', 'store', 'client_metadata', 'temperature', 'tool_choice']) expect(wire).not.toHaveProperty(field);
-          expect(result).not.toHaveProperty('headers');
+          expect(result['response.http'].body).toBeNull();
+          expect(result['response.result']).toBeDefined();
         }
       }
     }
@@ -298,20 +371,21 @@ describe('Codex Responses wire selection', () => {
     upstream.headers.delete('content-type');
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(upstream);
     const body = { input: [], instructions: 'Base', tools: [tool], parallel_tool_calls: true, reasoning: { effort: 'low', context: 'current_turn' }, stream: true };
-    const result = await callChatGPTOpenAIResponses({
-      upstreamId, account: activeAccount, model: liteModel, body, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+    const result = await runResponses({
+      upstreamId, account: activeAccount, model: liteModel, body, headers: new Headers(), effects: makeEffects(),
     });
-    if (!result.ok) throw new Error('expected successful Responses stream');
-    expect(result.http?.headers.get('content-type')).toBe('text/event-stream');
-    expect(result.http?.headers.has(CHATGPT_RESPONSES_LITE_HEADER)).toBe(true);
+    if (!successful(result)) throw new Error('expected successful Responses stream');
+    expect(headersOf(result).get('content-type')).toBe('text/event-stream');
+    expect(headersOf(result).has(CHATGPT_RESPONSES_LITE_HEADER)).toBe(true);
     expect(upstream.headers.get(CHATGPT_RESPONSES_LITE_HEADER)).toBe('true');
     const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-    for await (const frame of result.events) frames.push(frame);
+    for await (const frame of result['response.events']!) frames.push(frame);
     expect(frames[0]).toMatchObject({ type: 'event', event: { item: wireCall } });
     expect(frames[1]).toEqual({ type: 'event', event: future });
     expect(frames[2]).toMatchObject({ type: 'event', event: { item: wireCall } });
     expect(frames[3]).toMatchObject({ type: 'event', event: { response: { ...wireResponse, tools: body.tools, instructions: body.instructions } } });
     expect(frames[4]).toEqual({ type: 'done' });
+    expect(await result.done).toEqual({ ok: true });
   });
 
   test('preserves the complete compact output window around a caller-positioned tools carrier', async () => {
@@ -333,10 +407,11 @@ describe('Codex Responses wire selection', () => {
       expect(String(url)).toContain('/compact');
       return Response.json({ id: 'cmp_resource', object: 'response.compaction', output: [...wire.input as unknown[], opaque] });
     });
-    const opts = { upstreamId, account: activeAccount, model: liteModel, headers: new Headers({ 'thread-id': 'compact-replay-thread' }), effects: makeEffects(), call: noopUpstreamCallOptions() };
-    const compact = await callChatGPTOpenAIResponsesCompact({ ...opts, body });
-    if (!compact.ok) throw new Error('expected successful compact response');
-    expect(compact.result.output).toEqual([...sentInput!, opaque]);
+    const opts = { upstreamId, account: activeAccount, model: liteModel, headers: new Headers({ 'thread-id': 'compact-replay-thread' }), effects: makeEffects() };
+    const compact = await runCompact({ ...opts, body });
+    if (!successful(compact)) throw new Error('expected successful compact response');
+    expect(compact['response.result']?.output).toEqual([...sentInput!, opaque]);
+    await release(compact);
   });
 
   test.each(['generate', 'compact'] as const)('%s reuses prepared bytes and metadata choice across 401 retry', async action => {
@@ -355,12 +430,12 @@ describe('Codex Responses wire selection', () => {
       }
       return action === 'generate' ? sseEventsResponse([]) : compactJsonResponse();
     });
-    const call = action === 'generate' ? callChatGPTOpenAIResponses : callChatGPTOpenAIResponsesCompact;
+    const call = action === 'generate' ? runResponses : runCompact;
     const result = await call({
       upstreamId, account: activeAccount, model: selectedModel,
-      body: { input: [], tools: [tool], instructions: 'Base' }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+      body: { input: [], tools: [tool], instructions: 'Base' }, headers: new Headers(), effects: makeEffects(),
     });
-    expect(result.ok).toBe(true);
+    expect(successful(result)).toBe(true);
     expect(fetchSpy).toHaveBeenCalledTimes(3);
     expect(encode).toHaveBeenCalledTimes(1);
     expect(bodies).toHaveLength(2);
@@ -373,6 +448,7 @@ describe('Codex Responses wire selection', () => {
     expect(headers[1]!.get('authorization')).toBe('Bearer at_retry');
     headers.forEach(header => header.delete('authorization'));
     expect([...headers[1]!]).toEqual([...headers[0]!]);
+    await release(result);
   });
 
   test.each(['generate', 'compact'] as const)('%s returns non-OK upstream Responses unchanged, including Lite markers', async action => {
@@ -383,34 +459,37 @@ describe('Codex Responses wire selection', () => {
           status, statusText: 'Upstream failure', headers: { 'content-type': 'application/problem+json', 'x-upstream-custom': 'retained', ...(marker === undefined ? {} : { [CHATGPT_RESPONSES_LITE_HEADER]: marker }) },
         });
         vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(upstream);
-        const call = action === 'generate' ? callChatGPTOpenAIResponses : callChatGPTOpenAIResponsesCompact;
+        const call = action === 'generate' ? runResponses : runCompact;
         const result = await call({
           upstreamId, account: activeAccount, model: liteModel, body: { input: [] },
-          headers: new Headers({ [CHATGPT_RESPONSES_LITE_HEADER]: 'false' }), effects: makeEffects(), call: noopUpstreamCallOptions(),
+          headers: new Headers({ [CHATGPT_RESPONSES_LITE_HEADER]: 'false' }), effects: makeEffects(),
         });
-        if (result.ok) throw new Error('expected upstream error');
-        expect(result.http).toBe(upstream);
-        expect(result.http.headers.get(CHATGPT_RESPONSES_LITE_HEADER)).toBe(marker ?? null);
-        expect(result.http.headers.get('content-type')).toBe('application/problem+json');
-        expect(result.http.statusText).toBe('Upstream failure');
-        expect(await result.http.text()).toBe('upstream bytes\nnot necessarily JSON');
+        if (successful(result)) throw new Error('expected upstream error');
+        expect(result['response.http'].status).toBe(status);
+        expect(result['response.events']).toBeUndefined();
+        expect(result['response.result']).toBeUndefined();
+        expect(headersOf(result).get(CHATGPT_RESPONSES_LITE_HEADER)).toBe(marker ?? null);
+        expect(headersOf(result).get('content-type')).toBe('application/problem+json');
+        expect(result['response.http'].statusText).toBe('Upstream failure');
+        expect((await readHttpBody(result['response.http'].body)).utf8()).toBe('upstream bytes\nnot necessarily JSON');
+        expect(await result.done).toEqual({ ok: true });
       }
     }
   });
 });
 
-describe('callChatGPTOpenAIResponses — upstream classification', () => {
+describe('ChatGPT Responses upstream classification', () => {
   test('builds Codex responses headers and metadata from a clean set', async () => {
     seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
-    await callChatGPTOpenAIResponses({
+    await inspectResponsesWire({
       upstreamId, account: activeAccount,
       model,
       body: {
         input: [],
         stream: true,
         client_metadata: { 'x-codex-installation-id': 'downstream-installation' },
-      } as unknown as Parameters<typeof callChatGPTOpenAIResponses>[0]['body'],
+      } as unknown as Parameters<typeof runResponses>[0]['body'],
       headers: new Headers({
         'cf-connecting-ip': '203.0.113.10',
         forwarded: 'for=203.0.113.10',
@@ -426,7 +505,6 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
         'x-real-ip': '203.0.113.10',
       }),
       effects: makeEffects(),
-      call: noopUpstreamCallOptions(),
     });
 
     const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
@@ -479,11 +557,10 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
       body: { input: [], stream: true },
       headers: new Headers({ 'session-id': 'stable-session' }),
       effects: makeEffects(),
-      call: noopUpstreamCallOptions(),
-    } satisfies Parameters<typeof callChatGPTOpenAIResponses>[0];
+    } satisfies Parameters<typeof runResponses>[0];
 
-    await callChatGPTOpenAIResponses(request);
-    await callChatGPTOpenAIResponses({ ...request, headers: new Headers({ 'session-id': 'stable-session' }) });
+    await inspectResponsesWire(request);
+    await inspectResponsesWire({ ...request, headers: new Headers({ 'session-id': 'stable-session' }) });
 
     const firstHeaders = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
     const secondHeaders = new Headers((fetchSpy.mock.calls[1][1] as RequestInit).headers);
@@ -503,26 +580,23 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
     seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => sseResponse());
 
-    await callChatGPTOpenAIResponses({
+    await inspectResponsesWire({
       upstreamId, account: activeAccount, model,
       body: { input: [], stream: true },
       headers: new Headers({ 'session-id': 'cache-session' }),
       effects: makeEffects(),
-      call: noopUpstreamCallOptions(),
     });
-    await callChatGPTOpenAIResponses({
+    await inspectResponsesWire({
       upstreamId, account: activeAccount, model,
       body: { input: [], stream: true, prompt_cache_key: 'caller-cache-key' },
       headers: new Headers({ 'session-id': 'cache-session' }),
       effects: makeEffects(),
-      call: noopUpstreamCallOptions(),
     });
-    await callChatGPTOpenAIResponses({
+    await inspectResponsesWire({
       upstreamId, account: activeAccount, model,
       body: { input: [], stream: true, prompt_cache_key: null },
       headers: new Headers({ 'session-id': 'cache-session' }),
       effects: makeEffects(),
-      call: noopUpstreamCallOptions(),
     });
 
     const injectedBody = await readJsonRequest(fetchSpy.mock.calls[0][1] as RequestInit) as Record<string, unknown>;
@@ -536,7 +610,7 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
   test('reads the turn-metadata blob from the body before the header', async () => {
     seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
-    await callChatGPTOpenAIResponses({
+    await inspectResponsesWire({
       upstreamId, account: activeAccount, model,
       body: {
         input: [], stream: true,
@@ -550,7 +624,7 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
             turn_started_at_unix_ms: 1700000000002,
           }),
         },
-      } as unknown as Parameters<typeof callChatGPTOpenAIResponses>[0]['body'],
+      } as unknown as Parameters<typeof runResponses>[0]['body'],
       // A WebSocket upgrade's headers are frozen for the life of the socket,
       // so they carry the connection's first turn, not this one.
       headers: new Headers({
@@ -563,7 +637,6 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
         }),
       }),
       effects: makeEffects(),
-      call: noopUpstreamCallOptions(),
     });
 
     const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
@@ -582,17 +655,16 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
     seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const toolNamespacesInfo = { namespaces: [{ name: 'shell', tools: ['exec'] }] };
-    await callChatGPTOpenAIResponses({
+    await inspectResponsesWire({
       upstreamId, account: activeAccount, model,
       body: {
         input: [], stream: true,
         client_metadata: {
           'x-codex-turn-metadata': JSON.stringify({ tool_namespaces_info: toolNamespacesInfo, thread_source: 'user' }),
         },
-      } as unknown as Parameters<typeof callChatGPTOpenAIResponses>[0]['body'],
+      } as unknown as Parameters<typeof runResponses>[0]['body'],
       headers: new Headers({ 'session-id': 'sess' }),
       effects: makeEffects(),
-      call: noopUpstreamCallOptions(),
     });
 
     const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
@@ -612,13 +684,14 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(401, { error: { code: 'token_invalidated', message: 'session ended' } }));
     const effects = makeEffects();
-    const result = await callChatGPTOpenAIResponses({
+    const result = await runResponses({
       upstreamId, account: activeAccount,
-      model, body: { input: [], stream: true }, headers: new Headers(), effects, call: noopUpstreamCallOptions(),
+      model, body: { input: [], stream: true }, headers: new Headers(), effects,
     });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.http.status).toBe(503);
+    expect(successful(result)).toBe(false);
+    if (!successful(result)) expect(result['response.http'].status).toBe(503);
     expect(effects.persistTerminalState).toHaveBeenCalledWith('session_terminated', expect.stringMatching(/session ended/));
+    await release(result);
   });
 
   test('access-only 401 preserves the upstream response and does not refresh', async () => {
@@ -629,19 +702,20 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
     const upstreamBody = { error: { code: 'token_invalidated', message: 're-import required' } };
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(401, upstreamBody, { 'x-upstream-marker': 'kept' }));
     const persistTerminalState = vi.fn(async () => { throw new Error('state write failed'); });
-    const result = await callChatGPTOpenAIResponses({
+    const result = await runResponses({
       upstreamId, account: accessOnlyAccount,
       model, body: { input: [], stream: true }, headers: new Headers(),
-      effects: { ...makeEffects(), persistTerminalState }, call: noopUpstreamCallOptions(),
+      effects: { ...makeEffects(), persistTerminalState },
     });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.http.status).toBe(401);
-      expect(result.http.headers.get('x-upstream-marker')).toBe('kept');
-      expect(await result.http.json()).toEqual(upstreamBody);
+    expect(successful(result)).toBe(false);
+    if (!successful(result)) {
+      expect(result['response.http'].status).toBe(401);
+      expect(headersOf(result).get('x-upstream-marker')).toBe('kept');
+      expect(JSON.parse((await readHttpBody(result['response.http'].body)).utf8())).toEqual(upstreamBody);
     }
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(persistTerminalState).toHaveBeenCalledWith('session_terminated', 're-import required');
+    expect(await result.done).toEqual({ ok: true });
   });
 
   test('401 other → refresh + retry once, then bubble persistent 401', async () => {
@@ -651,13 +725,14 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at2', refresh_token: 'rt_v2', id_token: idToken(), expires_in: 600 }), { status: 200 }))
       .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'still expired' } }));
     const effects = makeEffects();
-    const result = await callChatGPTOpenAIResponses({
+    const result = await runResponses({
       upstreamId, account: activeAccount,
-      model, body: { input: [], stream: true }, headers: new Headers(), effects, call: noopUpstreamCallOptions(),
+      model, body: { input: [], stream: true }, headers: new Headers(), effects,
     });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.http.status).toBe(401);
+    expect(successful(result)).toBe(false);
+    if (!successful(result)) expect(result['response.http'].status).toBe(401);
     expect(effects.persistRefreshTokenRotation).toHaveBeenCalledWith('rt_v2');
+    await release(result);
   });
 
   test('429 → quota with ratelimited_until, return upstream 429', async () => {
@@ -669,20 +744,20 @@ describe('callChatGPTOpenAIResponses — upstream classification', () => {
       'x-codex-primary-reset-after-seconds': '3600',
       'x-codex-secondary-reset-after-seconds': '7200',
     }));
-    const result = await callChatGPTOpenAIResponses({
+    const result = await runResponses({
       upstreamId, account: activeAccount,
-      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(),
     });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.http.status).toBe(429);
-    await flushMicrotasks();
+    expect(successful(result)).toBe(false);
+    if (!successful(result)) expect(result['response.http'].status).toBe(429);
+    await release(result);
     const stored = readQuotaEntry();
     expect(stored?.premium.data.ratelimited_until).toBe(new Date(Date.parse(stored!.premium.data.observed_at) + 3600 * 1000).toISOString());
   });
 
 });
 
-describe('callChatGPTOpenAIImagesGenerations', () => {
+describe('ChatGPT image generation', () => {
   test('does not replace a meaningful quota snapshot with a headerless image response', async () => {
     const quotaSnapshot: ChatGPTQuotaSnapshotEntryMap = {
       premium: {
@@ -692,8 +767,7 @@ describe('callChatGPTOpenAIImagesGenerations', () => {
     };
     seedAccountState({ accessToken: { ...farFutureAccessToken, planType: 'plus' }, quotaSnapshot });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(200, { created: 1, data: [{ b64_json: 'aW1hZ2U=' }] }));
-    const waitUntil = vi.fn<(promise: Promise<unknown>) => void>();
-    const result = await callChatGPTOpenAIImagesGenerations({
+    const result = await runImages({
       upstreamId,
       account: (currentRecord.state as ChatGPTUpstreamState).accounts[0],
       model: imageModel,
@@ -701,11 +775,11 @@ describe('callChatGPTOpenAIImagesGenerations', () => {
       fallbackPlanType: 'plus',
       headers: new Headers(),
       effects: makeEffects(),
-      call: { ...noopUpstreamCallOptions(), waitUntil },
     });
-    expect(result.http.status).toBe(200);
+    expect(result['response.http'].status).toBe(200);
     expect(readQuotaEntry()).toEqual(quotaSnapshot);
-    expect(waitUntil).not.toHaveBeenCalled();
+    expect(result['response.chatgpt.quota']).toBeUndefined();
+    await release(result);
   });
 
   test('uses a refreshed Free plan before dispatching the image request', async () => {
@@ -713,7 +787,7 @@ describe('callChatGPTOpenAIImagesGenerations', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(errorJson(200, {
       access_token: 'at2', refresh_token: 'rt_v2', id_token: idToken('free'), expires_in: 600,
     }));
-    const result = await callChatGPTOpenAIImagesGenerations({
+    const result = await runImages({
       upstreamId,
       account: (currentRecord.state as ChatGPTUpstreamState).accounts[0],
       model: imageModel,
@@ -721,9 +795,9 @@ describe('callChatGPTOpenAIImagesGenerations', () => {
       fallbackPlanType: 'plus',
       headers: new Headers(),
       effects: makeEffects(),
-      call: noopUpstreamCallOptions(),
     });
-    expect(result.http.status).toBe(403);
+    expect(result['response.http'].status).toBe(403);
+    await release(result);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(String(fetchSpy.mock.calls[0][0])).toContain('/oauth/token');
   });
@@ -741,7 +815,7 @@ describe('callChatGPTOpenAIImagesGenerations', () => {
       seedAccountState({ refresh_token: 'rt_winner', accessToken: winner });
       return errorJson(401, { error: { code: 'expired_token', message: 'expired' } });
     });
-    const result = await callChatGPTOpenAIImagesGenerations({
+    const result = await runImages({
       upstreamId,
       account: { ...activeAccount, accessToken: { ...farFutureAccessToken, token: 'at_failed', planType: 'plus' } },
       model: imageModel,
@@ -749,9 +823,9 @@ describe('callChatGPTOpenAIImagesGenerations', () => {
       fallbackPlanType: 'plus',
       headers: new Headers(),
       effects: makeEffects(),
-      call: noopUpstreamCallOptions(),
     });
-    expect(result.http.status).toBe(403);
+    expect(result['response.http'].status).toBe(403);
+    await release(result);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect((currentRecord.state as ChatGPTUpstreamState).accounts[0].accessToken).toEqual(winner);
   });
@@ -775,7 +849,7 @@ const compactJsonResponse = (): Response =>
     }),
   });
 
-describe('callChatGPTAlphaSearch', () => {
+describe('ChatGPT Alpha Search', () => {
   test('posts the search request to the ChatGPT Codex endpoint with selected model and account auth', async () => {
     seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
@@ -784,18 +858,18 @@ describe('callChatGPTAlphaSearch', () => {
       results: [],
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
 
-    const result = await callChatGPTAlphaSearch({
+    const result = await runAlphaSearch({
       upstreamId,
       account: activeAccount,
       model,
       body: { id: 'search-session', commands: { search_query: [{ q: 'Floway' }] } },
       headers: new Headers({ 'x-codex-turn-metadata': '{"turn_id":"turn-search"}' }),
       effects: makeEffects(),
-      call: noopUpstreamCallOptions(),
     });
 
-    expect(result.http.status).toBe(200);
-    expect(result.modelKey).toBe('gpt-5.4');
+    expect(result['response.http'].status).toBe(200);
+    expect(result['response.modelKey']).toBe('gpt-5.4');
+    await release(result);
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('https://chatgpt.com/backend-api/codex/alpha/search');
     const headers = new Headers(init.headers);

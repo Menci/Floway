@@ -1,35 +1,10 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-import type { OpenAIResponsesBoundaryCtx } from '../../../src/interceptors/openai-responses/types.ts';
-import { createUpstreamStateRepoStub } from '../../upstream-state-repo.ts';
-import type { Interceptor } from '@floway-dev/interceptor';
-import { initProviderRepo, type ProviderOpenAIResponsesResult, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, readJsonRequest } from '@floway-dev/test-utils';
-
-// Terminal dispatch must use the post-chain action and preserve late Standard
-// tool/instruction changes until the private wire encoder and compact projector.
-const pivotGenerateToCompact: Interceptor<OpenAIResponsesBoundaryCtx, object, ProviderOpenAIResponsesResult> = async (ctx, _env, run) => {
-  ctx.action = 'compact';
-  ctx.payload = {
-    ...ctx.payload,
-    instructions: 'Late instructions',
-    tools: [...ctx.payload.tools ?? [], { type: 'custom', name: 'late_tool' }],
-  };
-  return await run();
-};
-
-vi.mock('../../../src/interceptors/openai-responses/index.ts', async () => {
-  const original = await vi.importActual<typeof import('../../../src/interceptors/openai-responses/index.ts')>('../../../src/interceptors/openai-responses/index.ts');
-  return {
-    ...original,
-    CHATGPT_OPENAI_RESPONSES_BOUNDARY: [...original.CHATGPT_OPENAI_RESPONSES_BOUNDARY, pivotGenerateToCompact],
-  };
-});
-
-// Imports below MUST follow the vi.mock so the provider module resolves
-// against the mocked chain on first import.
-const { createChatGPTProvider } = await import('../../../src/provider.ts');
-const { noopUpstreamCallOptions, stubProviderModel } = await import('@floway-dev/test-utils');
+import { createUpstreamStateRepoStub } from './upstream-state-repo.ts';
+import { createChatGPTProvider } from '../src/provider.ts';
+import { run } from '@floway-dev/pipeline';
+import { directFetcher, initProviderRepo, toProviderModelFacts, type UpstreamRecord } from '@floway-dev/provider';
+import { assertEquals, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
 
@@ -73,7 +48,7 @@ const compactJsonResponse = (): Response => new Response(
   { status: 200, headers: { 'content-type': 'application/json' } },
 );
 
-test('ChatGPT projects a post-chain compact pivot after catalog-selected Lite encoding', async () => {
+test('ChatGPT projects compact after catalog-selected Lite encoding', async () => {
   let compactUrl: string | undefined;
   let compactBody: Record<string, unknown> | undefined;
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
@@ -88,24 +63,30 @@ test('ChatGPT projects a post-chain compact pivot after catalog-selected Lite en
   });
 
   const instance = createChatGPTProvider(baseRecord);
-  const result = await instance.instance.callOpenAIResponses(
-    stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite: true } }),
-    {
+  const handle = run(instance.pipelines.openaiResponses!, {
+    'provider.model': toProviderModelFacts(stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite: true } })),
+    'request.headers': [],
+    'request.action': 'compact',
+    'request.payload': {
       input: [{ type: 'message', role: 'user', content: 'hi' }],
-      tools: [{ type: 'function', name: 'noop', description: 'noop', parameters: { type: 'object' }, strict: false }],
+      tools: [
+        { type: 'function', name: 'noop', description: 'noop', parameters: { type: 'object' }, strict: false },
+        { type: 'custom', name: 'late_tool' },
+      ],
+      instructions: 'Late instructions',
       reasoning: { effort: 'medium' },
       temperature: 0.7,
       max_output_tokens: 64,
       stream: true,
       parallel_tool_calls: false,
     },
-    'generate',
-    undefined,
-    noopUpstreamCallOptions(),
-  );
+  }, { services: { fetcher: () => directFetcher }, finalizationTimeoutMs: 1000 });
+  const result = await handle.result;
 
-  if (!result.ok) throw new Error('expected ok result');
-  if (result.action !== 'compact') throw new Error(`expected compact variant after pivot, got ${result.action}`);
+  expect(result['response.http'].status).toBe(200);
+  expect(result['response.events']).toBeUndefined();
+  expect(result['response.result']?.output).toEqual([{ id: 'cmp_x', type: 'compaction', encrypted_content: 'BLOB' }]);
+  expect(await handle.done).toEqual({ ok: true });
 
   if (compactUrl === undefined) throw new Error('expected /codex/responses/compact to be hit');
   if (compactBody === undefined) throw new Error('expected compact body capture');
