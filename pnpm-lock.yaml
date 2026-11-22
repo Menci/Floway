@@ -367,6 +367,15 @@ importers:
         specifier: ^22
         version: 22.19.19
 
+  packages/dump:
+    dependencies:
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
+      '@scure/base':
+        specifier: ^2.2.0
+        version: 2.2.0
+
   packages/gateway:
     dependencies:
       '@floway-dev/agent-setup':
