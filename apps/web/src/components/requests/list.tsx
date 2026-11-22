@@ -14,6 +14,7 @@ import type { ListImperativeAPI, RowComponentProps } from 'react-window';
 import { BatchExport } from './batch-export';
 import { RequestFilters } from './filters';
 import { errorLabel, requestSeverity, totalTokens } from './format';
+import type { RequestListItem } from './use-dump-subscription';
 import type { ApiKey } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
@@ -33,7 +34,7 @@ import { TruncationTooltip } from '../ui/truncation-tooltip';
 import { ProviderBadge } from '../upstreams/provider-badge';
 import type { DumpMetadata } from '@floway-dev/gateway/browser';
 
-const { Option, Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
+const { Option, Spinner, Text, Tooltip, makeStyles, mergeClasses } = fluentComponents;
 const ROW_HEIGHT = 84;
 
 const useStyles = makeStyles({
@@ -172,7 +173,7 @@ interface RequestListProps {
   apiKeys: ApiKey[];
   selectedKeyId: string;
   onKeyChange: (keyId: string) => void;
-  records: DumpMetadata[];
+  records: RequestListItem[];
   selectedRecordId: string | null;
   onRecordChange: (recordId: string) => void;
   hasOlder: boolean;
@@ -187,7 +188,7 @@ interface RowProps {
   addressOfRecord: (recordId: string) => string;
   now: number;
   onSelect: (recordId: string) => void;
-  records: DumpMetadata[];
+  records: RequestListItem[];
   selectedId: string | null;
   selectByIndex: (index: number) => void;
 }
@@ -200,18 +201,20 @@ function RequestRow({ index, records, style, ...rest }: RowComponentProps<RowPro
 
 function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, now, onSelect, record, records, selectByIndex, selectedId, style }: RowProps & {
   index: number;
-  record: DumpMetadata;
+  record: RequestListItem;
   style: CSSProperties;
 }) {
   const s = useStyles();
   const { t } = useTranslation();
   const locale = useLocale();
   const address = useRouteAddress(addressOfRecord(record.id), () => onSelect(record.id));
-  const severity = requestSeverity(record.status, record.error);
-  const tokens = totalTokens(record);
-  const rowError = errorLabel(record.error, record.status);
+  const live = record.live === true;
+  const severity = record.live === true ? 'success' : requestSeverity(record.status, record.error);
+  const tokens = record.live === true ? null : totalTokens(record);
+  const rowError = record.live === true ? null : errorLabel(record.error, record.status);
   const StatusIcon = severity === 'success' ? CheckmarkCircleRegular : DismissCircleRegular;
   const selected = selectedId === record.id;
+  const durationMs = record.live === true ? Math.max(0, now - record.startedAt) : record.durationMs;
 
   const handleKeyDown = (event: KeyboardEvent<HTMLAnchorElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -228,7 +231,7 @@ function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, 
 
   return (
     <div style={style} className={mergeClasses(s.selectionRow, selected && s.selected)}>
-      <Checkbox aria-label={t('requests.selectExport')} checked={exportIds.has(record.id)} onChange={() => onToggleExport(record.id)} />
+      <Checkbox aria-label={t('requests.selectExport')} checked={exportIds.has(record.id)} disabled={live} onChange={() => onToggleExport(record.id)} />
       <a
         {...address}
         aria-selected={selected}
@@ -239,8 +242,8 @@ function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, 
         tabIndex={selected || (selectedId === null && index === 0) ? 0 : -1}
       >
         <div className="flex items-center gap-2 min-w-0">
-          <StatusIcon aria-hidden="true" className={`${s[severity]} block flex-none`} fontSize={22} />
-          <span className="sr-only">{t(`requests.status.${severity}`)}</span>
+          {live ? <Spinner size="extra-tiny" /> : <StatusIcon aria-hidden="true" className={`${s[severity]} block flex-none`} fontSize={22} />}
+          <span className="sr-only">{t(live ? 'requests.status.live' : `requests.status.${severity}`)}</span>
           <Text size={300} className="min-w-0 font-mono" truncate wrap={false}>
             {record.model ?? t('requests.unknownModel')}
           </Text>
@@ -260,19 +263,19 @@ function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, 
               {record.path}
             </Text>
           </Tooltip>
-          {record.upstream && <ProviderBadge
+          {!live && record.upstream && <ProviderBadge
             upstream={record.upstream}
             label={record.upstream.name}
             title={`${record.upstream.kind}, ${record.upstream.id}`}
           />}
         </div>
         <div className="flex items-center gap-3 min-w-0 text-fui-fg3">
-          <Tooltip content={t('requests.duration', { value: formatDuration(record.durationMs, locale) })} relationship="description">
+          <Tooltip content={t('requests.duration', { value: formatDuration(durationMs, locale) })} relationship="description">
             <span className="inline-flex items-center gap-1 shrink-0">
-              <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.durationMs, locale)}</Text>
+              <TimerRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(durationMs, locale)}</Text>
             </span>
           </Tooltip>
-          {record.ttftMs != null && (
+          {record.live !== true && record.ttftMs != null && (
             <Tooltip content={t('requests.ttft', { value: formatDuration(record.ttftMs, locale) })} relationship="description">
               <span className="inline-flex items-center gap-1 shrink-0">
                 <FlashRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatDuration(record.ttftMs, locale)}</Text>
@@ -284,9 +287,9 @@ function RequestRowContent({ exportIds, onToggleExport, addressOfRecord, index, 
               <ArrowUploadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatBytes(record.requestBytes, locale)}</Text>
             </span>
           </Tooltip>
-          <Tooltip content={t('requests.responseBytes', { value: record.responseBytes })} relationship="description">
+          <Tooltip content={t('requests.responseBytes', { value: record.live === true ? 0 : record.responseBytes })} relationship="description">
             <span className="inline-flex items-center gap-1 shrink-0">
-              <ArrowDownloadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{formatBytes(record.responseBytes, locale)}</Text>
+              <ArrowDownloadRegular aria-hidden="true" className="block flex-none" fontSize={16} /> <Text size={200} className="tabular-nums">{record.live === true ? NO_READING : formatBytes(record.responseBytes, locale)}</Text>
             </span>
           </Tooltip>
           {rowError
@@ -309,7 +312,7 @@ export function RequestListPanel(props: RequestListProps) {
   const onToggleExport = useCallback((id: string) => setExportIds(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; }), []);
   const [listRef, setListRef] = useState<ListImperativeAPI | null>(null);
   const { hostProps } = useScrollAreaHost({ axes: 'vertical', noTabIndex: true, viewport: listRef?.element ?? null });
-  const now = useNow(30_000);
+  const now = useNow(props.records.some(record => record.live) ? 1_000 : 30_000);
   const selectedKey = props.apiKeys.find(key => key.id === props.selectedKeyId)!;
 
   const { onRecordChange, records } = props;
@@ -344,7 +347,7 @@ export function RequestListPanel(props: RequestListProps) {
       </Dropdown>
       <div className={mergeClasses(PANEL_INSET_CLASS, 'flex flex-col gap-2', s.toolbar)}>
         {props.onFilterChange && <RequestFilters key={`${props.q}-${props.failures}`} q={props.q ?? ''} failures={props.failures ?? false} onChange={props.onFilterChange} />}
-        <BatchExport keyId={props.selectedKeyId} selected={exportIds} loadedIds={records.map(record => record.id)} onChange={setExportIds} />
+        <BatchExport keyId={props.selectedKeyId} selected={exportIds} loadedIds={records.filter((record): record is DumpMetadata => record.live !== true).map(record => record.id)} onChange={setExportIds} />
       </div>
       {props.error && <OutcomeMessageBar className="!m-2" onDismiss={props.onDismissError}>{props.error}</OutcomeMessageBar>}
       {props.records.length === 0 ? (

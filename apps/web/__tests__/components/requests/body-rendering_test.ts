@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { renderBody } from '../../../src/components/requests/body-render';
+import { contentTypeOf, renderBody, renderWireBody } from '../../../src/components/requests/body-render';
+import { formatDecodedJson, formatDiffPath, formatErrorValue } from '../../../src/components/requests/format-value';
 
 // The dump carries bodies as they went over the wire, so a base64 fixture is
 // built from bytes rather than from a string literal.
@@ -54,5 +55,52 @@ describe('multipart body rendering', () => {
     expect(rendered.text).toContain('{"id":1}');
     expect(rendered.text).toContain(base64(png));
     expect(rendered.decodeError).toBeNull();
+  });
+});
+
+describe('wire body rendering', () => {
+  it('finds content type only when the Dump V2 header value is a string', () => {
+    expect(contentTypeOf([['content-type', { $secret: { length: 1, hash: 'h', redacted: '*' } }], ['Content-Type', 'text/plain']])).toBe('text/plain');
+  });
+
+  it('formats tagged JSON, raw bytes, and multipart parts without losing binary data', () => {
+    expect(renderWireBody({ kind: 'json', value: { input: 'hello' } }, [])).toMatchObject({
+      text: '{\n  "input": "hello"\n}',
+      isJson: true,
+    });
+    expect(renderWireBody({ kind: 'raw', bytes: new TextEncoder().encode('hello'), contentType: 'text/plain' }, [])).toMatchObject({
+      text: 'hello',
+      copyText: 'hello',
+    });
+    const rendered = renderWireBody({
+      kind: 'multipart',
+      parts: [
+        { kind: 'text', name: 'model', value: 'm' },
+        { kind: 'file', name: 'image', filename: 'a.png', contentType: 'image/png', bytes: new Uint8Array([0x89, 0x50]) },
+      ],
+    }, []);
+    expect(rendered.text).toContain('name="model"');
+    expect(rendered.text).toContain('[binary, 2 bytes, content-type=image/png]');
+  });
+
+  it('keeps invalid UTF-8 visible as base64 and rejects stream references as bodies', () => {
+    const bytes = new Uint8Array([0xff, 0xfe]);
+    expect(renderWireBody(bytes, [])).toMatchObject({ text: '//4=', copyText: '//4=', isJson: false });
+    expect(renderWireBody({ $stream: 4 }, []).text).toBe('');
+  });
+});
+
+describe('decoded value formatting', () => {
+  it('redacts secrets and converts non-JSON scalars for display', () => {
+    expect(formatDecodedJson({ token: { $secret: { length: 9, hash: 'abcdef0123456789', redacted: 'secret-val' } }, count: 12n }))
+      .toContain('"$secret": "secret-val (len=9, sha256=abcdef012345)"');
+    expect(formatDecodedJson(12n)).toBe('"12n"');
+  });
+
+  it('formats structural paths and readable errors', () => {
+    expect(formatDiffPath([])).toBe('$');
+    expect(formatDiffPath(['request.payload', 'tools', 0, 'name'])).toBe('["request.payload"].tools[0].name');
+    expect(formatDiffPath(['', 'key with space'])).toBe('[""]["key with space"]');
+    expect(formatErrorValue({ $error: { name: 'TypeError', message: 'bad input', stack: 'TypeError: bad input' } })).toBe('TypeError: bad input');
   });
 });

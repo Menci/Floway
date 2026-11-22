@@ -1,39 +1,51 @@
-import { redactHeaderPairs } from './header-redact';
-import type { DumpRecord } from '@floway-dev/gateway/browser';
+import { isSensitiveHeader, REDACTED_HEADER_VALUE, redactHeaderValue } from './header-redact';
+import type { DumpMetadata } from '@floway-dev/gateway/browser';
+import type { EncodedDumpEvent } from '@floway-dev/pipeline/browser';
 
-// The dump API serves headers verbatim so the dashboard's reveal affordance
-// keeps working, but an exported file leaves the operator's machine, so every
-// credential header is masked to its redacted form before serialization.
-const redactRecord = (record: DumpRecord): DumpRecord => {
-  const capture = record.capture === undefined ? undefined : {
-    ...record.capture,
-    exchanges: record.capture.exchanges.map(exchange => ({
-      ...exchange,
-      request: { ...exchange.request, headers: redactHeaderPairs(exchange.request.headers) },
-      response: exchange.response === null ? null : { ...exchange.response, headers: redactHeaderPairs(exchange.response.headers) },
-    })),
-  };
-  return {
-    ...record,
-    request: { ...record.request, headers: redactHeaderPairs(record.request.headers) },
-    response: {
-      ...record.response,
-      headers: redactHeaderPairs(record.response.headers),
-      ...(record.response.upstream !== undefined ? { upstream: { ...record.response.upstream, headers: redactHeaderPairs(record.response.upstream.headers) } } : {}),
-    },
-    ...(capture === undefined ? {} : { capture }),
-  };
+export interface ExportableDumpRecord {
+  readonly meta: DumpMetadata;
+  readonly events: readonly EncodedDumpEvent[];
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const redactStoredValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(redactStoredValue);
+  if (!isRecord(value)) return value;
+  const redacted: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) redacted[key] = redactStoredValue(child);
+  if (Array.isArray(value.headers)) {
+    redacted.headers = value.headers.map(entry => {
+      if (!Array.isArray(entry) || typeof entry[0] !== 'string') return redactStoredValue(entry);
+      if (typeof entry[1] === 'string' && isSensitiveHeader(entry[0])) {
+        return [entry[0], entry[1] === REDACTED_HEADER_VALUE ? entry[1] : redactHeaderValue(entry[1])];
+      }
+      return [entry[0], redactStoredValue(entry[1])];
+    });
+  }
+  return redacted;
 };
 
-const serializeRecord = (record: DumpRecord): string => JSON.stringify({ format: 'floway-request-dump', version: 1, record: redactRecord(record) }, null, 2);
+const redactRecord = (record: ExportableDumpRecord): ExportableDumpRecord => ({
+  meta: record.meta,
+  events: record.events.map(event => {
+    if (event.k === 'enter') return { ...event, facts: redactStoredValue(event.facts) as typeof event.facts };
+    if (event.k === 'leave') return { ...event, outcome: redactStoredValue(event.outcome) as typeof event.outcome };
+    return event;
+  }),
+});
 
-export const exportRecords = (records: DumpRecord[], separate: boolean): Blob => {
-  if (!separate) return new Blob([JSON.stringify({ format: 'floway-request-dump', version: 1, records: records.map(redactRecord) }, null, 2)], { type: 'application/json' });
+const serializeRecord = (record: ExportableDumpRecord): string => JSON.stringify({ format: 'floway-request-dump', version: 2, record }, null, 2);
+
+export const exportRecords = (records: readonly ExportableDumpRecord[], separate: boolean): Blob => {
+  const safeRecords = records.map(redactRecord);
+  if (!separate) return new Blob([JSON.stringify({ format: 'floway-request-dump', version: 2, records: safeRecords }, null, 2)], { type: 'application/json' });
   // POSIX ustar keeps each UTF-8 JSON record independently readable without a runtime dependency.
   // https://pubs.opengroup.org/onlinepubs/9699919799/utilities/pax.html#tag_20_92_13_06
   const encoder = new TextEncoder();
   const chunks: Uint8Array<ArrayBuffer>[] = [];
-  for (const record of records) {
+  for (const record of safeRecords) {
     const data = encoder.encode(serializeRecord(record));
     const header = new Uint8Array(512);
     const write = (offset: number, value: string) => header.set(encoder.encode(value), offset);
@@ -56,7 +68,7 @@ export const exportRecords = (records: DumpRecord[], separate: boolean): Blob =>
   return new Blob(chunks, { type: 'application/x-tar' });
 };
 
-export const downloadRecords = (records: DumpRecord[], separate = false): void => {
+export const downloadRecords = (records: readonly ExportableDumpRecord[], separate = false): void => {
   const url = URL.createObjectURL(exportRecords(records, separate));
   const anchor = document.createElement('a');
   anchor.href = url;

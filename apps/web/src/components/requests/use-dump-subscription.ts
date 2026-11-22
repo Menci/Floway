@@ -5,24 +5,29 @@ import { api, callApi } from '../../api/client';
 import { getSessionToken } from '../../auth/session';
 import { useTranslation } from '../../i18n/translation';
 import { errorMessage } from '../../lib/error-message';
-import type { DumpMetadata } from '@floway-dev/gateway/browser';
+import type { DumpLiveSummary, DumpMetadata } from '@floway-dev/gateway/browser';
 
 const PAGE_LIMIT = 100;
 
+export type RequestListItem =
+  | ({ readonly live: true } & DumpLiveSummary)
+  | ({ readonly live?: false } & DumpMetadata);
+
 export interface DumpSubscription {
-  records: DumpMetadata[];
+  records: RequestListItem[];
   hasOlder: boolean;
   error: string | null;
   dismissError: () => void;
   loadOlder: () => Promise<void>;
 }
 
-export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMetadata[], q = '', failures = false): DumpSubscription => {
+export const useDumpSubscription = (keyId: string | null, initialRecords: RequestListItem[], q = '', failures = false): DumpSubscription => {
   const { t } = useTranslation();
   const [records, setRecords] = useState(initialRecords);
   const [hasOlder, setHasOlder] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const seenRef = useRef(new Set<string>());
+  const completedIdsRef = useRef(new Set<string>());
+  const liveIdsRef = useRef(new Set<string>());
   // Switching keys re-renders this hook rather than unmounting it, so an
   // older-page request outlives the key it was issued for; its whole outcome
   // -- rows, `setError` and `setHasOlder` alike -- is dropped when the
@@ -58,12 +63,17 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
     setRecords(initialRecords);
     setError(null);
     setHasOlder(true);
+    // eslint-disable-next-line react-hooks/refs -- The new key starts with no known live or completed ids, before its stream can replay them.
+    completedIdsRef.current = new Set();
+    // eslint-disable-next-line react-hooks/refs -- The new key starts with no known live or completed ids, before its stream can replay them.
+    liveIdsRef.current = new Set();
     // eslint-disable-next-line react-hooks/refs -- The generation is part of the same discard: it is what tells a page still in flight that the list it was meant for is gone.
     generationRef.current += 1;
   }
 
   useEffect(() => {
-    seenRef.current = new Set(initialRecordsRef.current.map(record => record.id));
+    completedIdsRef.current = new Set(initialRecordsRef.current.filter(record => record.live !== true).map(record => record.id));
+    liveIdsRef.current = new Set(initialRecordsRef.current.filter(record => record.live === true).map(record => record.id));
     if (!keyId) return;
 
     const token = getSessionToken();
@@ -75,18 +85,30 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
       setRecords(current => {
         const ids = new Set(snapshot.map(record => record.id));
         const oldest = snapshot.at(-1)?.id;
-        const tail = oldest ? current.filter(record => !ids.has(record.id) && record.id < oldest) : [];
-        const next = [...snapshot, ...tail];
-        seenRef.current = new Set(next.map(record => record.id));
+        const inFlight = current.filter((record): record is Extract<RequestListItem, { live: true }> => record.live === true && !ids.has(record.id));
+        const tail = oldest ? current.filter((record): record is DumpMetadata => record.live !== true && !ids.has(record.id) && record.id < oldest) : [];
+        const next = [...inFlight, ...snapshot, ...tail];
+        completedIdsRef.current = new Set(snapshot.map(record => record.id));
+        for (const record of tail) completedIdsRef.current.add(record.id);
+        liveIdsRef.current = new Set(inFlight.map(record => record.id));
         return next;
       });
       setError(null);
     });
+    source.addEventListener('started', raw => {
+      const summary = JSON.parse((raw as MessageEvent).data) as DumpLiveSummary;
+      if (completedIdsRef.current.has(summary.id) || liveIdsRef.current.has(summary.id)) return;
+      liveIdsRef.current.add(summary.id);
+      setRecords(current => [{ ...summary, live: true }, ...current]);
+    });
     source.addEventListener('appended', raw => {
       const record = JSON.parse((raw as MessageEvent).data) as DumpMetadata;
-      if (seenRef.current.has(record.id)) return;
-      seenRef.current.add(record.id);
-      setRecords(current => [record, ...current]);
+      if (completedIdsRef.current.has(record.id)) return;
+      completedIdsRef.current.add(record.id);
+      liveIdsRef.current.delete(record.id);
+      setRecords(current => current.some(item => item.id === record.id)
+        ? current.map(item => item.id === record.id ? record : item)
+        : [record, ...current]);
     });
     source.addEventListener('error', raw => {
       const data = (raw as MessageEvent).data as unknown;
@@ -112,7 +134,7 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
   }, [keyId, q, failures]);
 
   const loadOlder = useCallback(async () => {
-    const oldest = records.at(-1);
+    const oldest = [...records].reverse().find((record): record is DumpMetadata => record.live !== true);
     const generation = generationRef.current;
     if (!keyId || !oldest || loadingOlderRef.current === generation || !hasOlder) return;
     loadingOlderRef.current = generation;
@@ -129,8 +151,8 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
         return;
       }
       const page = result.data.records;
-      const fresh = page.filter(record => !seenRef.current.has(record.id));
-      fresh.forEach(record => seenRef.current.add(record.id));
+      const fresh = page.filter(record => !completedIdsRef.current.has(record.id));
+      fresh.forEach(record => completedIdsRef.current.add(record.id));
       if (page.length < PAGE_LIMIT) setHasOlder(false);
       if (fresh.length) setRecords(current => [...current, ...fresh]);
     } catch (error) {

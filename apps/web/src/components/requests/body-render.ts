@@ -1,6 +1,7 @@
+import { formatDecodedJson } from './format-value';
 import { decodeWebBase64, decodeWebBase64BinaryString, encodeBase64BinaryString } from '../../lib/base-encoding';
 import { errorMessage } from '../../lib/error-message';
-import type { DumpBody } from '@floway-dev/gateway/browser';
+import { isDecodedStreamRef } from '@floway-dev/pipeline/browser';
 import { isTextualMediaType, parseMediaType } from '@floway-dev/protocols/browser';
 
 export interface RenderedBody {
@@ -12,11 +13,10 @@ export interface RenderedBody {
 
 export const EMPTY_BODY: RenderedBody = { text: '', copyText: '', decodeError: null, isJson: false };
 
-export const contentTypeOf = (headers: Array<[string, string]>): string => {
-  return headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1] ?? '';
-};
+export const contentTypeOf = (headers: ReadonlyArray<readonly [string, unknown]>): string =>
+  headers.find(([name, value]) => name.toLowerCase() === 'content-type' && typeof value === 'string')?.[1] as string | undefined ?? '';
 
-export const renderBody = (body: DumpBody, contentType: string): RenderedBody => {
+export const renderBody = (body: { readonly encoding: 'utf8' | 'base64'; readonly data: string }, contentType: string): RenderedBody => {
   if (!body.data) return EMPTY_BODY;
   if (parseMediaType(contentType)?.type === 'multipart' && body.encoding === 'base64') {
     const multipart = renderMultipart(body.data, contentType);
@@ -46,6 +46,75 @@ export const renderBody = (body: DumpBody, contentType: string): RenderedBody =>
   } catch {
     return { text, copyText: text, decodeError: null, isJson: false };
   }
+};
+
+const encodeBytes = (bytes: Uint8Array): string => {
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  return btoa(binary);
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const renderMultipartParts = (parts: readonly unknown[]): RenderedBody => {
+  const rendered: string[] = [];
+  const boundary = parts.some(part => isRecord(part) && part.kind === 'file')
+    ? 'floway-multipart-file'
+    : 'floway-multipart';
+  for (const part of parts) {
+    if (!isRecord(part)) continue;
+    if (part.kind === 'text' && typeof part.name === 'string' && typeof part.value === 'string') {
+      rendered.push(`Content-Disposition: form-data; name=${JSON.stringify(part.name)}\r\n\r\n${part.value}`);
+      continue;
+    }
+    if (part.kind === 'file' && typeof part.name === 'string' && part.bytes instanceof Uint8Array) {
+      const type = typeof part.contentType === 'string' ? part.contentType : 'application/octet-stream';
+      const filename = typeof part.filename === 'string' ? `; filename=${JSON.stringify(part.filename)}` : '';
+      rendered.push(`Content-Disposition: form-data; name=${JSON.stringify(part.name)}${filename}\r\nContent-Type: ${type}\r\n\r\n[binary, ${part.bytes.byteLength} bytes, content-type=${type}]`);
+    }
+  }
+  const text = rendered.length === 0
+    ? ''
+    : `--${boundary}\r\n${rendered.join(`\r\n--${boundary}\r\n`)}\r\n--${boundary}--\r\n`;
+  return { text, copyText: text, decodeError: null, isJson: false };
+};
+
+export const renderWireBody = (body: unknown, headers: ReadonlyArray<readonly [string, unknown]>): RenderedBody => {
+  if (body === null || body === undefined || isDecodedStreamRef(body)) return EMPTY_BODY;
+  const contentType = contentTypeOf(headers);
+  if (typeof body === 'string') return renderBody({ encoding: 'utf8', data: body }, contentType);
+  if (body instanceof Uint8Array) {
+    if (parseMediaType(contentType)?.type === 'multipart') {
+      return renderBody({ encoding: 'base64', data: encodeBytes(body) }, contentType);
+    }
+    try {
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(body);
+      try {
+        const pretty = JSON.stringify(JSON.parse(text) as unknown, null, 2);
+        return { text: pretty, copyText: pretty, decodeError: null, isJson: true };
+      } catch {
+        return { text, copyText: text, decodeError: null, isJson: false };
+      }
+    } catch (error) {
+      const base64 = encodeBytes(body);
+      return { text: base64, copyText: base64, decodeError: errorMessage(error), isJson: false };
+    }
+  }
+  if (isRecord(body) && body.kind === 'json' && 'value' in body) {
+    const formatted = formatDecodedJson(body.value);
+    return { text: formatted, copyText: formatted, decodeError: null, isJson: true };
+  }
+  if (isRecord(body) && body.kind === 'raw' && body.bytes instanceof Uint8Array) {
+    const nestedContentType = typeof body.contentType === 'string' && body.contentType ? body.contentType : contentType;
+    return renderWireBody(body.bytes, [['content-type', nestedContentType]]);
+  }
+  if (isRecord(body) && body.kind === 'multipart' && Array.isArray(body.parts)) {
+    return renderMultipartParts(body.parts);
+  }
+  const formatted = formatDecodedJson(body);
+  return { text: formatted, copyText: formatted, decodeError: null, isJson: true };
 };
 
 const renderMultipart = (base64: string, contentType: string): string | null => {
