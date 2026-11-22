@@ -27,6 +27,7 @@ interface OpenAIResponsesBlobAnalysis extends OpenAIResponsesBlobLocation {
 
 interface OpenAIResponsesItemAnalysis {
   readonly itemIndex: number;
+  readonly type: CanonicalOpenAIResponsesInputItem['type'];
   readonly synthetic: boolean;
   readonly blobs: readonly OpenAIResponsesBlobAnalysis[];
   readonly inheritedRequiredTarget?: AffinityIdentity;
@@ -123,6 +124,7 @@ const analyzeOpenAIResponsesRequest = (
 
     itemAnalyses.push({
       itemIndex,
+      type: item.type,
       synthetic: blobs.some(blob => blob.decoded.kind === 'owned' && blob.decoded.syntheticItem === true),
       blobs,
       ...(inheritedRequiredTarget !== undefined ? { inheritedRequiredTarget } : {}),
@@ -183,6 +185,15 @@ const evaluateOpenAIResponsesCandidate = (
       item.inheritedRequiredTarget !== undefined
       && !candidateSatisfiesAffinityIdentity(candidate, item.inheritedRequiredTarget)
     ) unsatisfiedTargets.push(item.inheritedRequiredTarget);
+
+    // Reasoning belongs to its generating model, including readable history
+    // carried alongside affinity metadata without an opaque upstream value.
+    if (item.type === 'reasoning' && !item.synthetic && item.blobs.some(({ decoded }) =>
+      decoded.kind === 'owned' && !candidateSatisfiesAffinityIdentity(candidate, affinityIdentityOf(decoded)))) {
+      degrades = true;
+      projectionsByItem.set(item.itemIndex, null);
+      continue;
+    }
 
     const projections: OpenAIResponsesBlobCandidateProjection[] = [];
     for (const blob of item.blobs) {

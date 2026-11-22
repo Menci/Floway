@@ -54,6 +54,7 @@ const select = (
 
 test('restores an owned blob within its compatibility scope and still prefers its exact target', async () => {
   const mismatchedRules = { ...candidateA, rules: { reasoning: { effort: 'low' } } };
+  const compatibleModel = candidate('upstream-a', 'another-model', { bindToUpstream: true, key: 'model' });
   const carrier = await codec.wrap(
     'encrypted',
     targetFor(candidateA),
@@ -73,14 +74,14 @@ test('restores an owned blob within its compatibility scope and still prefers it
     summary: [{ type: 'summary_text', text: 'visible' }],
     encrypted_content: 'encrypted',
   }]);
-  expect(projectionB.materialize().input).toEqual([{
-    type: 'reasoning',
-    id: 'rs_client',
-    summary: [{ type: 'summary_text', text: 'visible' }],
-  }]);
+  expect(acceptedAffinityEvaluation(prepared, compatibleModel).materialize().input).toEqual(projectionA.materialize().input);
+  expect(projectionB.materialize().input).toEqual([]);
   expect(projectionA.degrades).toBe(false);
+  expect(projectionB.degrades).toBe(true);
   expect(mismatchedProjection.degrades).toBe(false);
-  expect(select([mismatchedRules, candidateA], prepared).candidates).toEqual([candidateA, mismatchedRules]);
+  expect(select([candidateB, mismatchedRules, compatibleModel, candidateA], prepared).candidates).toEqual([
+    candidateA, mismatchedRules, compatibleModel, candidateB,
+  ]);
 });
 
 test('rewrites nested agent-message carriers and preserves foreign values', async () => {
@@ -131,18 +132,21 @@ test('rewrites nested agent-message carriers and preserves foreign values', asyn
   expect(projectionB.degrades).toBe(true);
 });
 
-test('removes only items explicitly marked synthetic and preserves markerless originless items', async () => {
+test('drops reasoning with a routing-only carrier on a model switch and always removes synthetic items', async () => {
+  const incompatibleModel = candidate('upstream-a', 'another-model');
   const syntheticItem = await codec.wrap(
     undefined,
     targetFor(candidateA),
     carrierDomain('reasoning', 'encrypted_content'),
     { syntheticItem: true },
   );
-  const markerless = await codec.wrap(
+  const routingCarrier = await codec.wrap(
     undefined,
     targetFor(candidateA),
     carrierDomain('reasoning', 'encrypted_content'),
   );
+  const foreignReasoning = { type: 'reasoning' as const, id: 'rs_foreign', summary: [], encrypted_content: 'foreign' };
+  const userMessage = { type: 'message', role: 'user', content: 'next question' } as const;
   const prepared = await analyzeOpenAIResponsesAffinity({
     model: 'model',
     input: [
@@ -153,30 +157,34 @@ test('removes only items explicitly marked synthetic and preserves markerless or
         status: 'completed',
         encrypted_content: syntheticItem,
       } as unknown as CanonicalOpenAIResponsesPayload['input'][number],
-      { type: 'reasoning', id: 'rs_existing', summary: [], encrypted_content: markerless },
+      { type: 'reasoning', id: 'rs_existing', summary: [], encrypted_content: routingCarrier },
       {
         type: 'reasoning',
         id: 'rs_visible',
         summary: [{ type: 'summary_text', text: 'visible' }],
-        encrypted_content: markerless,
+        encrypted_content: routingCarrier,
       },
+      foreignReasoning,
+      userMessage,
     ],
   }, codec);
 
-  const markerlessItems = [
+  const compatibleItems = [
     { type: 'reasoning', id: 'rs_existing', summary: [] },
     {
       type: 'reasoning',
       id: 'rs_visible',
       summary: [{ type: 'summary_text', text: 'visible' }],
     },
+    foreignReasoning,
+    userMessage,
   ];
   const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
-  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
-  expect(projectionA.materialize().input).toEqual(markerlessItems);
-  expect(projectionB.materialize().input).toEqual(markerlessItems);
+  const incompatible = acceptedAffinityEvaluation(prepared, incompatibleModel);
+  expect(projectionA.materialize().input).toEqual(compatibleItems);
+  expect(incompatible.materialize().input).toEqual([foreignReasoning, userMessage]);
   expect(projectionA.degrades).toBe(false);
-  expect(projectionB.degrades).toBe(false);
+  expect(incompatible.degrades).toBe(true);
 });
 
 test('derives force routing from blob-less program state after the turn carrier', async () => {
