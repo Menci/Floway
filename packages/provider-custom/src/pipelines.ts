@@ -1,7 +1,7 @@
 import type { CustomAuthStyle, CustomUpstreamConfig } from './config.ts';
-import { customGeminiActionPath, customPathFor } from './paths.ts';
+import { appendPathSegment, customPathFor } from './paths.ts';
 import { defineRequestStage, defineStage, pipeline, secret } from '@floway-dev/pipeline';
-import type { HeaderEntry, Pipeline, StageEnv } from '@floway-dev/pipeline';
+import type { HeaderEntry, Pipeline, Secret, StageEnv } from '@floway-dev/pipeline';
 import { parseAnthropicMessagesStream, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { DEFAULT_DECISION_PATHS, serializeDecisionRequest } from '@floway-dev/protocols/decision';
 import { parseGeminiGenerateContentStream, type GeminiCountTokensPayload, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
@@ -125,6 +125,7 @@ const requestBuilder = <Input extends UpstreamFacts>(options: {
   readonly config: CustomUpstreamConfig;
   readonly auth: CustomAuthStyle;
   readonly path: string;
+  readonly extraQuery?: ReadonlyArray<readonly [string, string | Secret<string>]>;
   readonly body?: HttpRequestBody;
   readonly modelKey?: string;
   readonly headers?: (facts: Readonly<Input>, resolved: readonly HeaderEntry[]) => readonly HeaderEntry[];
@@ -135,7 +136,7 @@ const requestBuilder = <Input extends UpstreamFacts>(options: {
   return Object.freeze({
     'request.http': Object.freeze({
       method: 'POST',
-      url: buildWireHttpUrl(options.config.baseUrl, options.path),
+      url: buildWireHttpUrl(options.config.baseUrl, options.path, options.extraQuery),
       headers,
       ...(options.body === undefined ? {} : { body: options.body }),
     }),
@@ -247,7 +248,7 @@ export const createCustomPipelines = (upstreamId: string, config: CustomUpstream
           : requestBuilder({
               config,
               auth: 'bearer',
-              path: `${customPathFor(config, '/responses')}/compact`,
+              path: appendPathSegment(customPathFor(config, '/responses'), '/compact'),
               body: { kind: 'json', value: { ...toCompactPayloadShape(facts['request.payload']), model: modelKey } },
               modelKey,
             })(facts);
@@ -303,7 +304,7 @@ export const createCustomPipelines = (upstreamId: string, config: CustomUpstream
       facts => requestBuilder<ProviderPipelineAnthropicMessagesCountTokensInput>({
         config,
         auth: 'x-api-key',
-        path: `${customPathFor(config, '/messages')}/count_tokens`,
+        path: appendPathSegment(customPathFor(config, '/messages'), '/count_tokens'),
         body: { kind: 'json', value: jsonBody(facts['request.payload'], rawModelIdOf(facts)) },
         modelKey: rawModelIdOf(facts),
         headers: (current, resolved) => anthropicTypedHeaders(resolved, current['request.anthropicBeta']),
@@ -317,7 +318,11 @@ export const createCustomPipelines = (upstreamId: string, config: CustomUpstream
         return requestBuilder({
           config,
           auth: 'x-goog-api-key',
-          path: customGeminiActionPath(config, modelId, 'streamGenerateContent'),
+          path: appendPathSegment(
+            customPathFor(config, '/v1beta/models'),
+            `/${encodeURIComponent(modelId)}:streamGenerateContent`,
+          ),
+          extraQuery: [['alt', 'sse']],
           body: { kind: 'json', value: facts['request.payload'] },
           modelKey: modelId,
         })(facts);
@@ -333,7 +338,10 @@ export const createCustomPipelines = (upstreamId: string, config: CustomUpstream
         return requestBuilder({
           config,
           auth: 'x-goog-api-key',
-          path: customGeminiActionPath(config, modelId, 'countTokens'),
+          path: appendPathSegment(
+            customPathFor(config, '/v1beta/models'),
+            `/${encodeURIComponent(modelId)}:countTokens`,
+          ),
           body: { kind: 'json', value: request },
           modelKey: modelId,
         })(facts);

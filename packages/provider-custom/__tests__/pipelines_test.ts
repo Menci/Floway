@@ -5,6 +5,7 @@ import { createCustomProvider } from '../src/provider.ts';
 import {
   createDumpDecoder,
   createDumpEncoder,
+  formatWireUrl,
   isSecret,
   projectWireView,
   runPipeline,
@@ -186,8 +187,8 @@ test('OpenAI chat streaming exposes wire projection status and protocol frames t
 });
 
 test('OpenAI Responses generate streams and compact follows the response override with the compact shape', async () => {
-  const pipelines = createCustomPipelines('up_custom_pipeline', config({ pathOverrides: { '/responses': '/custom/responses' } }));
-  const { requests, fetcher } = captureFetch(request => request.url.endsWith('/compact')
+  const pipelines = createCustomPipelines('up_custom_pipeline', config({ pathOverrides: { '/responses': '/custom/responses?api_version=2' } }));
+  const { requests, fetcher } = captureFetch(request => new URL(request.url).pathname.endsWith('/compact')
     ? jsonResponse({ id: 'compact-1', object: 'response.compaction', output: [] })
     : sseResponse());
   const generate = await runPipeline(pipelines.openaiResponses!, {
@@ -205,14 +206,17 @@ test('OpenAI Responses generate streams and compact follows the response overrid
   assertEquals(compact.action, 'compact');
   assertEquals(compact.ok, true);
   if (compact.action === 'compact' && compact.ok) assertEquals(compact.result, { id: 'compact-1', object: 'response.compaction', output: [] });
-  assertEquals(requests.map(request => new URL(request.url).pathname), ['/custom/responses', '/custom/responses/compact']);
+  assertEquals(requests.map(request => request.url), [
+    'https://custom.example.com/custom/responses?api_version=2',
+    'https://custom.example.com/custom/responses/compact?api_version=2',
+  ]);
   assertEquals(await readBody(requests[0]!), { input: [], model: 'raw-model', stream: true });
   assertEquals(await readBody(requests[1]!), { input: [], model: 'raw-model' });
 });
 
 test('Anthropic messages and count-token derive from the messages override and replace beta headers', async () => {
-  const pipelines = createCustomPipelines('up_custom_pipeline', config({ pathOverrides: { '/messages': '/anthropic/messages' } }));
-  const { requests, fetcher } = captureFetch(request => request.url.endsWith('/count_tokens') ? jsonResponse({ input_tokens: 1 }) : sseResponse());
+  const pipelines = createCustomPipelines('up_custom_pipeline', config({ pathOverrides: { '/messages': '/anthropic/messages?api_version=2' } }));
+  const { requests, fetcher } = captureFetch(request => new URL(request.url).pathname.endsWith('/count_tokens') ? jsonResponse({ input_tokens: 1 }) : sseResponse());
   const requestBody = { max_tokens: 16, messages: [{ role: 'user' as const, content: 'hello' }] };
   const messageOutcome = await runPipeline(pipelines.anthropicMessages!, {
     ...providerFacts(model()),
@@ -227,7 +231,10 @@ test('Anthropic messages and count-token derive from the messages override and r
     'request.anthropicBeta': ['context-1m'],
   }, { services: services(fetcher) });
   await drain(countOutcome.body);
-  assertEquals(requests.map(request => new URL(request.url).pathname), ['/anthropic/messages', '/anthropic/messages/count_tokens']);
+  assertEquals(requests.map(request => request.url), [
+    'https://custom.example.com/anthropic/messages?api_version=2',
+    'https://custom.example.com/anthropic/messages/count_tokens?api_version=2',
+  ]);
   assertEquals(await readBody(requests[0]!), { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }], model: 'raw-model', stream: true });
   assertEquals(await readBody(requests[1]!), { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }], model: 'raw-model' });
   assertEquals(requests[0]!.headers.get('x-api-key'), 'sk-provider-auth');
@@ -432,6 +439,57 @@ test('dump encoding redacts auth, base URL query values, and configured ingress 
   for (const plaintext of ['provider-auth-secret', 'top-secret-query', 'super-secret-rule']) {
     assertEquals(serialized.includes(plaintext), false);
   }
+});
+
+test('dump encoding redacts operator path query credentials while preserving public Gemini SSE parameters', async () => {
+  const pipelines = createCustomPipelines('up_custom_pipeline', config({
+    pathOverrides: {
+      '/embeddings': '/v1/embeddings?api_key=fixture-path-secret',
+      '/v1beta/models': '/custom/models?key=model-secret',
+    },
+  }));
+  const dumpEncoder = createDumpEncoder({ detectRawSecretLeaks: true });
+  const encoded: unknown[] = [];
+  const traceSink: RunTraceSink = {
+    push: event => {
+      encoded.push(...dumpEncoder.encodeBatch([event]));
+    },
+    registerSecretPlaintext: plaintext => dumpEncoder.registerSecretPlaintext(plaintext),
+  };
+  const outbound: string[] = [];
+  const fetcher: Fetcher = async url => {
+    outbound.push(url);
+    return url.includes(':streamGenerateContent') ? sseResponse() : jsonResponse({ data: [] });
+  };
+  const embedding = await runPipeline(pipelines.openaiEmbeddings!, {
+    ...providerFacts(model()), 'request.payload': { input: ['hello'] },
+  }, { services: services(fetcher), traceSink });
+  await drain(embedding.body);
+  const gemini = await runPipeline(pipelines.geminiGenerateContent!, {
+    ...providerFacts(model({ upstreamModelId: 'models/gemini-3-flash' })),
+    'request.payload': { contents: [] },
+    'request.action': 'generate',
+  }, { services: services(fetcher), traceSink });
+  assertEquals(gemini.ok, true);
+  if (gemini.ok) await collect(gemini.events);
+
+  assertEquals(outbound, [
+    'https://custom.example.com/v1/embeddings?api_key=fixture-path-secret',
+    'https://custom.example.com/custom/models/gemini-3-flash:streamGenerateContent?key=model-secret&alt=sse',
+  ]);
+  const serialized = JSON.stringify(encoded);
+  assertEquals(serialized.includes('fixture-path-secret'), false);
+  assertEquals(serialized.includes('model-secret'), false);
+  const decoder = createDumpDecoder();
+  decoder.pushEvents(encoded as ReturnType<typeof dumpEncoder.encodeBatch>);
+  const wire = projectWireView(decoder.view());
+  const geminiUrl = wire.upstreamAttempts
+    .map(attempt => attempt.request?.url)
+    .find(url => formatWireUrl(url).includes(':streamGenerateContent'));
+  assertExists(geminiUrl);
+  assertEquals(typeof geminiUrl === 'string'
+    ? new URL(geminiUrl).searchParams.get('alt')
+    : geminiUrl.query?.find(([name]) => name === 'alt')?.[1], 'sse');
 });
 
 test('missing model targets fail loudly', async () => {

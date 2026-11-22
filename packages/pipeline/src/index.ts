@@ -48,6 +48,7 @@ export type {
   StreamEndHow,
   StreamResourceState,
   TapPoint,
+  TeeStreamOptions,
   UnboundOutcome,
   WireHttpUrl,
   WireRequestSnapshot,

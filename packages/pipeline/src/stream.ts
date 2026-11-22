@@ -14,6 +14,7 @@ import type {
   StreamEndHow,
   StreamResourceState,
   StageEnv,
+  TeeStreamOptions,
   WrapStreamOptions,
 } from './types.ts';
 
@@ -46,6 +47,11 @@ export interface StreamCustodyScope {
   trackPending: <T>(promise: Promise<T>) => Promise<T>;
   createStream: <T>(options: CreateStreamOptions<T, any>) => ManagedStream<T>;
   wrapStream: <In, Out>(inner: ManagedStream<In>, options: WrapStreamOptions<In, Out>) => ManagedStream<Out>;
+  teeStream: <T>(inner: ManagedStream<T>, options?: TeeStreamOptions) => readonly [ManagedStream<T>, ManagedStream<T>];
+  consumeInBackground: <T>(
+    stream: ManagedStream<T>,
+    consumer: (source: AsyncIterable<T>, signal: AbortSignal) => Promise<void>,
+  ) => void;
   discard: (stream: ManagedStream<unknown>, reason?: unknown) => Promise<void>;
   recordDiagnostic?: (error: unknown) => void;
   receiveExport: (stream: ManagedStream<unknown>) => void;
@@ -510,6 +516,182 @@ const wrap = <In, Out>(
   return outer;
 };
 
+const tee = <T>(
+  owner: StreamCustodyScope,
+  coordinator: RunStreamCoordinator,
+  inner: ManagedStream<T>,
+  options: TeeStreamOptions = {},
+): readonly [ManagedStream<T>, ManagedStream<T>] => {
+  owner.assertOpen('teeStream');
+  if (!inner.owned) throw new StreamOwnershipError(inner.streamId, 'teeStream');
+  if (inner.state !== 'open') throw new DuplicateStreamCloseError(inner.streamId, inner.state);
+
+  // One controller owns the shared source: either branch may close without
+  // aborting the peer, and closing both branches finalizes the source.
+  const innerRuntime = runtimeFor(inner);
+  const source = authorizedSource(inner);
+  type TeeResult =
+    | { readonly kind: 'value'; readonly value: T }
+    | { readonly kind: 'done' }
+    | { readonly kind: 'error'; readonly error: unknown };
+  type Waiter = (result: TeeResult) => void;
+  const queues: [TeeResult[], TeeResult[]] = [[], []];
+  const waiting: [Waiter[], Waiter[]] = [[], []];
+  const closed: [boolean, boolean] = [false, false];
+  let innerIterator: AsyncIterator<T> | undefined;
+  let pulling = false;
+  let sourceFinished = false;
+  let finalization: Promise<void> | undefined;
+
+  const hasDemand = (): boolean =>
+    (!closed[0] && waiting[0].length > 0) || (!closed[1] && waiting[1].length > 0);
+
+  const flush = (branch: 0 | 1): void => {
+    while (!closed[branch] && waiting[branch].length > 0 && queues[branch].length > 0) {
+      const waiter = waiting[branch].shift()!;
+      waiter(queues[branch].shift()!);
+    }
+  };
+
+  const pump = (): void => {
+    flush(0);
+    flush(1);
+    if (pulling || sourceFinished || !hasDemand()) return;
+    pulling = true;
+    innerIterator ??= source[Symbol.asyncIterator]();
+    void innerIterator.next().then(
+      next => {
+        pulling = false;
+        if (next.done) sourceFinished = true;
+        const result: TeeResult = next.done
+          ? { kind: 'done' }
+          : { kind: 'value', value: next.value };
+        for (const branch of [0, 1] as const) {
+          if (!closed[branch]) queues[branch].push(result);
+        }
+        pump();
+      },
+      error => {
+        pulling = false;
+        sourceFinished = true;
+        const result: TeeResult = { kind: 'error', error };
+        for (const branch of [0, 1] as const) {
+          if (!closed[branch]) queues[branch].push(result);
+        }
+        pump();
+      },
+    );
+  };
+
+  const request = (branch: 0 | 1, signal: AbortSignal): Promise<IteratorResult<T>> => {
+    if (closed[branch]) return Promise.resolve({ value: undefined, done: true });
+    const queued = queues[branch].shift();
+    if (queued !== undefined) {
+      if (queued.kind === 'value') return Promise.resolve({ value: queued.value, done: false });
+      if (queued.kind === 'done') return Promise.resolve({ value: undefined, done: true });
+      return Promise.reject(queued.error);
+    }
+    return new Promise<IteratorResult<T>>((resolve, reject) => {
+      let settled = false;
+      const waiter: Waiter = result => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener('abort', abort);
+        if (result.kind === 'value') resolve({ value: result.value, done: false });
+        else if (result.kind === 'done') resolve({ value: undefined, done: true });
+        else reject(result.error);
+      };
+      const abort = (): void => {
+        if (settled) return;
+        settled = true;
+        const index = waiting[branch].indexOf(waiter);
+        if (index >= 0) waiting[branch].splice(index, 1);
+        reject(signal.reason ?? new Error('aborted'));
+      };
+      waiting[branch].push(waiter);
+      if (signal.aborted) abort();
+      else signal.addEventListener('abort', abort, { once: true });
+      pump();
+    });
+  };
+
+  const finalizeInner = async (reason: unknown): Promise<void> => {
+    finalization ??= innerRuntime.finalization
+      ?? (inner.state === 'open' || inner.state === 'iterating'
+        ? ensureFinalization(inner as InternalStream<unknown>, 'closed', reason).finalization
+        : promiseFor(innerRuntime));
+    await finalization;
+  };
+
+  const branches = [0, 1].map((branch): ManagedStream<T> => {
+    const index = branch as 0 | 1;
+    return createStream<T>(owner, coordinator, {
+      ...(options.labels?.[index] === undefined ? {} : { label: options.labels[index] }),
+      iterate: signal => ({
+        [Symbol.asyncIterator]: () => {
+          let complete = false;
+          return {
+            next: async () => {
+              if (complete || closed[index]) return { value: undefined, done: true };
+              const next = await request(index, signal);
+              if (next.done) complete = true;
+              return next;
+            },
+            return: async () => {
+              complete = true;
+              return { value: undefined, done: true };
+            },
+          };
+        },
+      }),
+      onClose: async ({ reason }) => {
+        if (closed[index]) return;
+        closed[index] = true;
+        queues[index].length = 0;
+        for (const waiter of waiting[index].splice(0)) waiter({ kind: 'done' });
+        if (!closed[0] || !closed[1]) return;
+
+        queues[0].length = 0;
+        queues[1].length = 0;
+        for (const branch of [0, 1] as const) {
+          for (const waiter of waiting[branch].splice(0)) waiter({ kind: 'done' });
+        }
+        await finalizeInner(reason);
+      },
+    }, { wraps: inner.streamId }) as ManagedStream<T>;
+  });
+
+  adopt(owner, [inner]);
+  return Object.freeze(branches as [ManagedStream<T>, ManagedStream<T>]);
+};
+
+const consumeInBackground = <T>(
+  owner: StreamCustodyScope,
+  coordinator: RunStreamCoordinator,
+  stream: ManagedStream<T>,
+  consumer: (source: AsyncIterable<T>, signal: AbortSignal) => Promise<void>,
+): void => {
+  owner.assertOpen('consumeInBackground');
+  if (!stream.owned) throw new StreamOwnershipError(stream.streamId, 'consumeInBackground');
+  if (stream.state !== 'open') throw new DuplicateStreamCloseError(stream.streamId, stream.state);
+
+  const source = authorizedSource(stream);
+  const runtime = runtimeFor(stream);
+  adopt(owner, [stream]);
+  const task = (async () => {
+    try {
+      await consumer(source, runtime.abort.signal);
+    } finally {
+      if (runtime.finalization) {
+        await runtime.finalization;
+      } else if (stream.state === 'open' || stream.state === 'iterating') {
+        await ensureFinalization(stream as InternalStream<unknown>, 'closed').finalization;
+      }
+    }
+  })();
+  coordinator.registerBackground(task);
+};
+
 const discard = async (
   owner: StreamCustodyScope,
   coordinator: RunStreamCoordinator,
@@ -607,6 +789,8 @@ abstract class BaseScope implements StreamCustodyScope {
       },
       createStream: options => this.createStream(options),
       wrapStream: (inner, options) => this.wrapStream(inner, options),
+      teeStream: (inner, options) => this.teeStream(inner, options),
+      consumeInBackground: (stream, consumer) => this.consumeInBackground(stream, consumer),
       discard: async (stream, reason) => await this.discard(stream, reason),
       bind: <Args extends readonly unknown[], R>(fn: (...args: Args) => Promise<R>) => (...args: Args): Promise<R> => {
         this.assertOpen('bind()');
@@ -645,6 +829,17 @@ abstract class BaseScope implements StreamCustodyScope {
 
   wrapStream<In, Out>(inner: ManagedStream<In>, options: WrapStreamOptions<In, Out>): ManagedStream<Out> {
     return wrap(this, this.coordinator, inner, options);
+  }
+
+  teeStream<T>(inner: ManagedStream<T>, options?: TeeStreamOptions): readonly [ManagedStream<T>, ManagedStream<T>] {
+    return tee(this, this.coordinator, inner, options);
+  }
+
+  consumeInBackground<T>(
+    stream: ManagedStream<T>,
+    consumer: (source: AsyncIterable<T>, signal: AbortSignal) => Promise<void>,
+  ): void {
+    consumeInBackground(this, this.coordinator, stream, consumer);
   }
 
   async discard(stream: ManagedStream<unknown>, reason?: unknown): Promise<void> {
@@ -790,6 +985,8 @@ export class RunStreamCoordinator {
   readonly waitUntil: (promise: Promise<unknown>) => void;
   private streamSequence = 0;
   private readonly rootStreams = new Map<ManagedStream<unknown>, Promise<void>>();
+  private readonly backgroundTasks = new Set<Promise<void>>();
+  private backgroundSettlement?: Promise<unknown[]>;
 
   constructor(options: RunStreamCoordinatorOptions = {}) {
     this.trace = options.trace;
@@ -835,6 +1032,38 @@ export class RunStreamCoordinator {
 
   rootFinalizations(): Promise<void>[] {
     return [...this.rootStreams.values()];
+  }
+
+  registerBackground(task: Promise<unknown>): void {
+    const tracked = task.then(() => undefined);
+    this.backgroundTasks.add(tracked);
+    void tracked.finally(() => this.backgroundTasks.delete(tracked)).catch(() => undefined);
+    this.waitUntil(tracked);
+  }
+
+  hasPendingSettlement(): boolean {
+    return this.rootStreams.size > 0 || this.backgroundTasks.size > 0;
+  }
+
+  async settleBackground(): Promise<unknown[]> {
+    if (this.backgroundSettlement !== undefined) return await this.backgroundSettlement;
+    const errors: unknown[] = [];
+    const settlement = (async () => {
+      while (this.backgroundTasks.size > 0) {
+        const tasks = [...this.backgroundTasks];
+        const results = await Promise.allSettled(tasks);
+        for (const result of results) {
+          if (result.status === 'rejected') errors.push(result.reason as unknown);
+        }
+      }
+      return uniqueErrors(errors);
+    })();
+    this.backgroundSettlement = settlement;
+    try {
+      return await settlement;
+    } finally {
+      this.backgroundSettlement = undefined;
+    }
   }
 
   hasRoot(stream: ManagedStream<unknown>): boolean {

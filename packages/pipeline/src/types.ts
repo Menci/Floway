@@ -53,6 +53,10 @@ export interface WrapStreamOptions<In, Out> {
   readonly onClose?: (info: { readonly how: StreamEndHow; readonly reason?: unknown }) => void | Promise<void>;
 }
 
+export interface TeeStreamOptions {
+  readonly labels?: readonly [string | undefined, string | undefined];
+}
+
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export interface StageLogEntry {
@@ -108,6 +112,11 @@ export type StageEnv<Services extends object = Record<never, never>> = Readonly<
   readonly log: StageLogger;
   readonly createStream: <T>(options: CreateStreamOptions<T, Services>) => ManagedStream<T>;
   readonly wrapStream: <In, Out>(inner: ManagedStream<In>, options: WrapStreamOptions<In, Out>) => ManagedStream<Out>;
+  readonly teeStream: <T>(inner: ManagedStream<T>, options?: TeeStreamOptions) => readonly [ManagedStream<T>, ManagedStream<T>];
+  readonly consumeInBackground: <T>(
+    stream: ManagedStream<T>,
+    consumer: (source: AsyncIterable<T>, signal: AbortSignal) => Promise<void>,
+  ) => void;
   readonly discard: (stream: ManagedStream<unknown>, reason?: unknown) => Promise<void>;
   readonly bind: <Args extends readonly unknown[], R>(
     fn: (...args: Args) => Promise<R>,

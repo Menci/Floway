@@ -431,6 +431,81 @@ describe('Claude Code ProviderPipelines', () => {
     }
   });
 
+  test('returns a delayed 400 stream before sentinel inspection completes', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"error":{"type":"invalid_request_error","message":"organization has been disabled"'));
+      },
+      async pull(controller) {
+        await gate;
+        controller.enqueue(new TextEncoder().encode('}}'));
+        controller.close();
+      },
+    });
+    const pending: Promise<unknown>[] = [];
+    const result = await runMessages(
+      { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
+      async () => new Response(body, { status: 400, headers: { 'content-type': 'application/json' } }),
+      { waitUntil: promise => pending.push(promise) },
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected a 400 outcome');
+    expect(result.http.status).toBe(400);
+    const reader = result.http.body![Symbol.asyncIterator]();
+    const first = await reader.next();
+    expect(first.done).toBe(false);
+    expect(new TextDecoder().decode(first.value)).toContain('organization has been disabled');
+    expect(state().accounts[0]!.state).toBe('active');
+    release();
+    for (;;) {
+      const next = await reader.next();
+      if (next.done) break;
+    }
+    await Promise.all(pending);
+    expect(state().accounts[0]!.state).toBe('refresh_failed');
+  });
+
+  test('surfaces a mid-stream 400 body error without rejecting the provider call or waitUntil', async () => {
+    const upstreamError = new Error('upstream body failed');
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"error":'));
+        controller.error(upstreamError);
+      },
+    });
+    const pending: Promise<unknown>[] = [];
+    const result = await runMessages(
+      { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
+      async () => new Response(body, { status: 400, headers: { 'content-type': 'application/json' } }),
+      { waitUntil: promise => pending.push(promise) },
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected a 400 outcome');
+    expect(result.http.status).toBe(400);
+    await expect(result.http.body!.close()).resolves.toBeUndefined();
+    await expect(Promise.all(pending)).resolves.toBeDefined();
+    expect(state().accounts[0]!.state).toBe('active');
+  });
+
+  test('detects a discarded 400 sentinel body in background', async () => {
+    const pending: Promise<unknown>[] = [];
+    const result = await runMessages(
+      { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
+      async () => jsonResponse(400, {
+        error: { type: 'invalid_request_error', message: 'organization has been disabled' },
+      }),
+      { waitUntil: promise => pending.push(promise) },
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('expected a 400 outcome');
+    await expect(result.http.body!.close()).resolves.toBeUndefined();
+    await Promise.all(pending);
+    expect(state().accounts[0]!.state).toBe('refresh_failed');
+    expect(state().accounts[0]!.stateMessage).toContain('organization has been disabled');
+  });
+
   test('background quota and terminal persistence failures are logged without rejecting waitUntil', async () => {
     const warnings: { message: string; fields: Readonly<Record<string, unknown>> }[] = [];
     const warn = vi.spyOn(console, 'warn').mockImplementation((message: string) => {

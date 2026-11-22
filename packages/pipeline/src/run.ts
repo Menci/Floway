@@ -246,6 +246,10 @@ const createEnvironment = (
     log: loggerFor(state, stageId, stageName),
     createStream: options => custodyFor(scope, 'createStream()').createStream(options),
     wrapStream: (inner, options) => custodyFor(scope, 'wrapStream()').wrapStream(inner, options),
+    teeStream: (inner, options) => custodyFor(scope, 'teeStream()').teeStream(inner, options),
+    consumeInBackground: (stream, consumer) => {
+      custodyFor(scope, 'consumeInBackground()').consumeInBackground(stream, consumer);
+    },
     discard: async (stream, reason) => {
       await custodyFor(scope, 'discard()').discard(stream, reason);
     },
@@ -483,8 +487,7 @@ export const runPipeline = async <
     error = failure;
   }
 
-  const roots = state.streams.rootFinalizations();
-  if (roots.length === 0) {
+  if (!state.streams.hasPendingSettlement()) {
     traceEvent(state, (seq, tMs) => ({
       k: 'done',
       seq,
@@ -494,8 +497,11 @@ export const runPipeline = async <
     }));
     release?.();
   } else {
-    void state.streams.settleRoots().then(rootErrors => {
-      const combinedErrors: unknown[] = rootErrors;
+    const settlement = Promise.all([
+      state.streams.settleRoots(),
+      state.streams.settleBackground(),
+    ]).then(([rootErrors, backgroundErrors]) => {
+      const combinedErrors = [...rootErrors, ...backgroundErrors];
       if (error !== undefined) combinedErrors.unshift(error);
       const doneError = combinedErrors.length === 0
         ? undefined
@@ -511,6 +517,7 @@ export const runPipeline = async <
       }));
       release?.();
     });
+    state.streams.waitUntil(settlement);
   }
   if (error !== undefined) throw error;
   return result as Out;

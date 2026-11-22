@@ -27,13 +27,11 @@ import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
 import type { SseFrame } from '@floway-dev/protocols/common';
 import {
-  bytesToManagedStream,
   getProviderRepo,
   headersForAnthropicMessagesCall,
   headersFromEntries,
   httpTerminal,
   parseUpstreamSseOutcome,
-  readManagedBytes,
   syntheticJsonOutcome,
   wrapSensitiveHeaderEntries,
 } from '@floway-dev/provider';
@@ -170,30 +168,49 @@ const observeQuota = (http: HttpOutcome, record: UpstreamRecord, upstreamModelId
   }));
 };
 
-const observeTerminalSentinel = async (
+const observeTerminalSentinel = (
   http: HttpOutcome,
   record: UpstreamRecord,
   env: PipelineEnv,
-): Promise<HttpOutcome> => {
+): HttpOutcome => {
   if ((http.status !== 400 && http.status !== 403) || http.body === null) return http;
-  const bytes = await readManagedBytes(http.body);
-  const text = new TextDecoder().decode(bytes);
-  env.waitUntil((async () => {
+  const [forward, probe] = env.teeStream(http.body, {
+    labels: ['claude-code.sentinel.forward', 'claude-code.sentinel.probe'],
+  });
+  env.consumeInBackground(probe, async source => {
+    const decoder = new TextDecoder();
+    const chunks: string[] = [];
+    try {
+      for await (const chunk of source) chunks.push(decoder.decode(chunk, { stream: true }));
+      chunks.push(decoder.decode());
+    } catch (error) {
+      logWarn('claude_code_terminal_sentinel_body_read_failed', {
+        upstream_id: record.id,
+        upstream_status: http.status,
+        error: String(error),
+      });
+      return;
+    }
+    const text = chunks.join('');
     const terminalMessage = detectTerminalSentinel(http.status, text);
     if (terminalMessage === null) return;
+    const reason = http.status === 400 ? 'org_disabled_400_sentinel' : 'org_banned_403_sentinel';
+    logWarn('claude_code_terminal_sentinel_detected', {
+      upstream_id: record.id,
+      upstream_status: http.status,
+      reason,
+    });
     await persistTerminalAccountState(
       record.id,
       terminalMessage,
-      http.status === 400 ? 'org_disabled_400_sentinel' : 'org_banned_403_sentinel',
+      reason,
       http.status,
-    );
-  })().catch(error => {
-    logWarn('claude_code_terminal_sentinel_persist_failed', {
+    ).catch(error => logWarn('claude_code_terminal_sentinel_persist_failed', {
       upstream_id: record.id,
       error: String(error),
-    });
-  }));
-  return { ...http, body: bytesToManagedStream(bytes, env) };
+    }));
+  });
+  return { ...http, body: forward };
 };
 
 const parseObservedStream = async (
@@ -303,7 +320,7 @@ const authenticateClaudeCode = (record: UpstreamRecord) => defineStage<
         continue;
       }
       observeQuota(http, record, upstreamModelId, env);
-      http = await observeTerminalSentinel(http, record, env);
+      http = observeTerminalSentinel(http, record, env);
       return await parseObservedStream(http, record, env);
     }
   },

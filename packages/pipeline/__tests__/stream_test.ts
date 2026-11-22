@@ -1,12 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
+import { pipeline } from '../src/compose.ts';
 import {
   ConcurrentStreamReadError,
   DuplicateStreamCloseError,
   StreamOwnershipError,
 } from '../src/errors.ts';
+import { runPipeline } from '../src/run.ts';
+import { terminal } from '../src/stage.ts';
 import { RunStreamCoordinator, createStageScope } from '../src/stream.ts';
-import type { ManagedStream, StreamEndHow } from '../src/types.ts';
+import type { ManagedStream, RawRunEvent, StreamEndHow } from '../src/types.ts';
 
 const never = (signal: AbortSignal): Promise<never> => new Promise((_resolve, reject) => {
   signal.addEventListener('abort', () => reject(signal.reason), { once: true });
@@ -483,5 +486,201 @@ describe('ManagedStream lifecycle', () => {
     expect(stream.state).toBe('closed');
     expect(finallyRan).toBe(1);
     await scope.finish([], []);
+  });
+
+  it('tees both branches at different speeds and finalizes the inner stream after both complete', async () => {
+    const events: RawRunEvent[] = [];
+    const coordinator = new RunStreamCoordinator({
+      trace: {
+        push: event => events.push(event),
+        nextSeq: () => events.length + 1,
+        clock: () => 0,
+      },
+    });
+    const scope = createStageScope({
+      stageId: 1,
+      stageName: 'tee',
+      signal: new AbortController().signal,
+    }, coordinator);
+    let innerClosed: StreamEndHow | undefined;
+    const inner = scope.createStream({
+      async *iterate() {
+        yield 1;
+        await new Promise(resolve => setTimeout(resolve, 2));
+        yield 2;
+        yield 3;
+      },
+      onClose: ({ how }) => {
+        innerClosed = how;
+      },
+    });
+    const [left, right] = scope.teeStream(inner, { labels: ['left', 'right'] });
+    const leftValues: number[] = [];
+    const rightValues: number[] = [];
+    const leftIterator = left[Symbol.asyncIterator]();
+    const rightIterator = right[Symbol.asyncIterator]();
+    expect(await leftIterator.next()).toEqual({ value: 1, done: false });
+    await new Promise(resolve => setTimeout(resolve, 5));
+    expect(await rightIterator.next()).toEqual({ value: 1, done: false });
+    for (;;) {
+      const next = await rightIterator.next();
+      if (next.done) break;
+      rightValues.push(next.value);
+    }
+    for (;;) {
+      const next = await leftIterator.next();
+      if (next.done) break;
+      leftValues.push(next.value);
+    }
+    expect(leftValues).toEqual([2, 3]);
+    expect(rightValues).toEqual([2, 3]);
+    expect(left.state).toBe('closed');
+    expect(right.state).toBe('closed');
+    expect(inner.state).toBe('closed');
+    expect(innerClosed).toBe('exhausted');
+    expect(left.label).toBe('left');
+    expect(right.label).toBe('right');
+    const leftEvent = events.find(event => event.k === 'stream' && event.streamId === left.streamId);
+    const rightEvent = events.find(event => event.k === 'stream' && event.streamId === right.streamId);
+    expect(leftEvent).toMatchObject({ wraps: inner.streamId, label: 'left' });
+    expect(rightEvent).toMatchObject({ wraps: inner.streamId, label: 'right' });
+    await scope.finish([], []);
+  });
+
+  it('keeps the inner stream alive after one branch is discarded while the other reads in background', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const events: RawRunEvent[] = [];
+    let sourceAborted = false;
+    let innerClosed: StreamEndHow | undefined;
+    const received: number[] = [];
+    let inner!: ManagedStream<number>;
+    const pending: Promise<unknown>[] = [];
+    const run = pipeline<{ readonly input: string }>('tee-discard').end(
+      terminal<{ readonly input: string }, string, Record<never, never>>('tee-end', async (_facts, env) => {
+        inner = env.createStream({
+          async *iterate(signal) {
+            signal.addEventListener('abort', () => { sourceAborted = true; }, { once: true });
+            yield 1;
+            await gate;
+            yield 2;
+          },
+          onClose: ({ how }) => {
+            innerClosed = how;
+          },
+        });
+        const [left, right] = env.teeStream(inner);
+        env.consumeInBackground(right, async source => {
+          for await (const value of source) received.push(value);
+        });
+        await env.discard(left);
+        expect(sourceAborted).toBe(false);
+        return 'result';
+      }),
+    );
+    await expect(runPipeline(run, { input: 'x' }, {
+      waitUntil: promise => pending.push(promise),
+      traceSink: { push: event => events.push(event) },
+    })).resolves.toBe('result');
+    expect(events.some(event => event.k === 'done')).toBe(false);
+    expect(received).toEqual([1]);
+    release();
+    await Promise.all(pending);
+    expect(received).toEqual([1, 2]);
+    expect(sourceAborted).toBe(true);
+    expect(inner.state).toBe('closed');
+    expect(innerClosed).toBe('exhausted');
+    const doneIndex = events.findIndex(event => event.k === 'done');
+    const innerEndIndex = events.findIndex(event => event.k === 'end' && event.streamId === inner.streamId);
+    expect(doneIndex).toBeGreaterThan(innerEndIndex);
+    expect(events.at(-1)).toMatchObject({ k: 'done', ok: true });
+  });
+
+  it('reports a tee branch leaked when only the other branch is exported', async () => {
+    const scope = scopeFor();
+    const inner = scope.createStream({ async *iterate() { yield 1; } });
+    const [left, right] = scope.teeStream(inner);
+    await expect(scope.finish([right], [])).rejects.toMatchObject({
+      name: 'StreamLeakError',
+      leakedStreamIds: [left.streamId],
+    });
+    expect(left.state).toBe('closed');
+    expect(right.state).toBe('closed');
+    expect(inner.state).toBe('closed');
+  });
+
+  it('aborts and finalizes the inner stream when both branches close before pulling', async () => {
+    const scope = scopeFor();
+    let sourceAborted = false;
+    let finalized = 0;
+    const inner = scope.createStream({
+      iterate: signal => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () => new Promise<IteratorResult<number>>((_resolve, reject) => {
+            signal.addEventListener('abort', () => {
+              sourceAborted = true;
+              reject(signal.reason ?? new Error('aborted'));
+            }, { once: true });
+          }),
+        }),
+      }),
+      onClose: () => {
+        finalized++;
+      },
+    });
+    const [left, right] = scope.teeStream(inner);
+    const leftRead = left[Symbol.asyncIterator]().next();
+    const rightRead = right[Symbol.asyncIterator]().next();
+    await Promise.resolve();
+    await left.close();
+    expect(sourceAborted).toBe(false);
+    await right.close();
+    await expect(leftRead).resolves.toEqual({ value: undefined, done: true });
+    await expect(rightRead).resolves.toEqual({ value: undefined, done: true });
+    expect(sourceAborted).toBe(true);
+    expect(inner.state).toBe('closed');
+    expect(finalized).toBe(1);
+    await scope.finish([], []);
+  });
+
+  it('settles background consumers before emitting done while returning the pipeline result immediately', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    const events: RawRunEvent[] = [];
+    let releaseLease!: () => void;
+    let leaseReleased = false;
+    const run = pipeline<{ readonly input: string }>('background-settlement').end(
+      terminal<{ readonly input: string }, string, Record<never, never>>('background-end', async (_facts, env) => {
+        const stream = env.createStream({
+          async *iterate() {
+            yield 'first';
+            await gate;
+            yield 'last';
+          },
+        });
+        env.consumeInBackground(stream, async source => {
+          for await (const _value of source) {
+            // Drain the observer before the run emits done.
+          }
+        });
+        return 'result';
+      }),
+    );
+    await expect(runPipeline(run, { input: 'x' }, {
+      traceSink: {
+        push: event => events.push(event),
+        acquireProducerLease: () => {
+          leaseReleased = false;
+          releaseLease = () => { leaseReleased = true; };
+          return releaseLease;
+        },
+      },
+    })).resolves.toBe('result');
+    expect(events.some(event => event.k === 'done')).toBe(false);
+    expect(leaseReleased).toBe(false);
+    release();
+    await vi.waitFor(() => expect(events.some(event => event.k === 'done')).toBe(true));
+    expect(events.at(-1)).toMatchObject({ k: 'done', ok: true });
+    expect(leaseReleased).toBe(true);
   });
 });

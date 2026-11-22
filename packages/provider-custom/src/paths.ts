@@ -19,6 +19,13 @@ const DEFAULT_CUSTOM_PATHS: Readonly<Record<CustomPathOverrideKey, string>> = {
 export const customPathFor = (config: CustomUpstreamConfig, key: CustomPathOverrideKey): string =>
   config.pathOverrides?.[key] ?? DEFAULT_CUSTOM_PATHS[key];
 
+export const appendPathSegment = (path: string, suffix: string): string => {
+  const queryIndex = path.indexOf('?');
+  return queryIndex < 0
+    ? `${path}${suffix}`
+    : `${path.slice(0, queryIndex)}${suffix}${path.slice(queryIndex)}`;
+};
+
 // Gemini carries the model and action in the path. Generation selects SSE in
 // the query string; neither field belongs in the body.
 // https://ai.google.dev/api/generate-content#method:-models.streamgeneratecontent
@@ -27,6 +34,9 @@ export const customGeminiActionPath = (
   modelId: string,
   action: 'streamGenerateContent' | 'countTokens',
 ): string => {
-  const query = action === 'streamGenerateContent' ? '?alt=sse' : '';
-  return `${customPathFor(config, '/v1beta/models')}/${encodeURIComponent(modelId)}:${action}${query}`;
+  const path = appendPathSegment(
+    customPathFor(config, '/v1beta/models'),
+    `/${encodeURIComponent(modelId)}:${action}`,
+  );
+  return action === 'streamGenerateContent' ? `${path}${path.includes('?') ? '&' : '?'}alt=sse` : path;
 };

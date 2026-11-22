@@ -159,7 +159,7 @@ export const buildWireHttpUrl = (
   const cleanBase = `${baseParsed.origin}${baseParsed.pathname.replace(/\/+$/, '')}`;
   const joined = new URL(joinBaseAndPath(cleanBase, pathSuffix));
   for (const [key, val] of joined.searchParams.entries()) {
-    query.push(Object.freeze([key, val] as const));
+    query.push(Object.freeze([key, secret(val)] as const));
   }
   if (extraQuery) {
     for (const [key, val] of extraQuery) query.push(Object.freeze([key, val] as const));
@@ -669,6 +669,7 @@ export interface RouteCandidate {
 
 interface ProviderPipelineHeaderFacts {
   readonly 'request.inboundHeaders': readonly HeaderEntry[];
+  readonly 'route.candidate'?: RouteCandidate;
 }
 
 export type ProviderPipelineAlphaSearchInput = ProviderPipelineHeaderFacts & {

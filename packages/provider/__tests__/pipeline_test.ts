@@ -435,14 +435,20 @@ describe('parseUpstreamSseOutcome', () => {
     expect(outcome.body?.state).toBe('closed');
   });
 
-  test('wraps operator baseUrl query values as secrets in buildWireHttpUrl while keeping path query values plain', () => {
-    const built = buildWireHttpUrl('https://proxy.example.com/openai?token=my-secret-token', '/v1/models?alt=sse');
+  test('wraps configured base and path query values as secrets while preserving explicit public queries', () => {
+    const built = buildWireHttpUrl(
+      'https://proxy.example.com/openai?token=my-secret-token',
+      '/v1/embeddings?api_key=fixture-path-secret',
+      [['alt', 'sse']],
+    );
     expect(built.origin).toBe('https://proxy.example.com');
-    expect(built.pathname).toBe('/openai/v1/models');
-    expect(built.query).toHaveLength(2);
+    expect(built.pathname).toBe('/openai/v1/embeddings');
+    expect(built.query).toHaveLength(3);
     expect(built.query?.[0]?.[0]).toBe('token');
-    expect(typeof built.query?.[0]?.[1]).toBe('object');
-    expect(built.query?.[1]).toEqual(['alt', 'sse']);
+    expect(isSecret(built.query?.[0]?.[1])).toBe(true);
+    expect(built.query?.[1]?.[0]).toBe('api_key');
+    expect(isSecret(built.query?.[1]?.[1])).toBe(true);
+    expect(built.query?.[2]).toEqual(['alt', 'sse']);
   });
 
   test('serializes pure-data multipart bodies in httpTerminal without File or Blob instances', async () => {
