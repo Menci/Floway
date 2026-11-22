@@ -3,6 +3,7 @@ import { KIMI_CODE_DEFAULT_FLAGS } from './defaults.ts';
 import { kimiCodeFetch } from './fetch.ts';
 import { selectKimiCodeModel } from './model-selection.ts';
 import { fetchKimiCodeModels } from './models.ts';
+import { createKimiCodePipelines } from './pipelines.ts';
 import { scheduleKimiCodeProbes, runKimiCodeScheduledTask } from './probe.ts';
 import { kimiCodeChatSpeedParser, kimiCodeMessagesSpeedParser, kimiCodeMessagesWireBody, kimiCodeResponsesSpeedParser } from './speed.ts';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
@@ -120,6 +121,7 @@ export const createKimiCodeProvider = (record: UpstreamRecord): Provider => {
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     modelsCache: record.modelsCache,
+    pipelines: createKimiCodePipelines(record, config),
     instance,
   };
 };

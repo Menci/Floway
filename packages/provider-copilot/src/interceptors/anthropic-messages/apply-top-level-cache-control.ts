@@ -1,6 +1,7 @@
 import type { CopilotAnthropicMessagesBoundaryInterceptor } from './types.ts';
 import type {
   AnthropicMessagesAssistantInputContentBlock,
+  AnthropicMessagesPayload,
   AnthropicMessagesTextBlockParam,
   AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
@@ -35,29 +36,44 @@ type CacheableBlock = Extract<
 const isCacheableBlock = (block: AnthropicMessagesUserContentBlock | AnthropicMessagesAssistantInputContentBlock): block is CacheableBlock =>
   block.type === 'text' || block.type === 'image' || block.type === 'tool_use' || block.type === 'tool_result';
 
-export const withTopLevelCacheControlApplied: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, _env, run) => {
-  const payload = ctx.payload as typeof ctx.payload & { cache_control?: { type: 'ephemeral' } };
-  const topLevel = payload.cache_control;
-  if (topLevel === undefined) return await run();
+export const applyCopilotTopLevelCacheControl = (payload: AnthropicMessagesPayload): AnthropicMessagesPayload => {
+  const payloadWithTopLevel = payload as typeof payload & { cache_control?: { type: 'ephemeral' } };
+  const topLevel = payloadWithTopLevel.cache_control;
+  if (topLevel === undefined) return payload;
 
-  delete payload.cache_control;
+  const { cache_control: _cacheControl, ...withoutTopLevel } = payloadWithTopLevel;
 
-  for (let m = payload.messages.length - 1; m >= 0; m--) {
-    const message = payload.messages[m];
+  for (let m = withoutTopLevel.messages.length - 1; m >= 0; m--) {
+    const message = withoutTopLevel.messages[m];
 
     if (typeof message.content === 'string') {
       const block: AnthropicMessagesTextBlockParam = { type: 'text', text: message.content, cache_control: topLevel };
-      message.content = [block] as AnthropicMessagesUserContentBlock[] | AnthropicMessagesAssistantInputContentBlock[];
-      return await run();
+      return {
+        ...withoutTopLevel,
+        messages: withoutTopLevel.messages.map((candidate, index) => index === m ? { ...candidate, content: [block] } : candidate),
+      } as AnthropicMessagesPayload;
     }
 
     for (let b = message.content.length - 1; b >= 0; b--) {
       const block = message.content[b];
       if (!isCacheableBlock(block)) continue;
-      block.cache_control ??= topLevel;
-      return await run();
+      if (block.cache_control !== undefined && block.cache_control !== null) return { ...withoutTopLevel, messages: withoutTopLevel.messages };
+      return {
+        ...withoutTopLevel,
+        messages: withoutTopLevel.messages.map((candidate, messageIndex) => messageIndex !== m || !Array.isArray(candidate.content)
+          ? candidate
+          : {
+              ...candidate,
+              content: candidate.content.map((candidateBlock, blockIndex) => blockIndex === b ? { ...candidateBlock, cache_control: topLevel } : candidateBlock),
+            }),
+      } as AnthropicMessagesPayload;
     }
   }
 
+  return { ...withoutTopLevel, messages: withoutTopLevel.messages };
+};
+
+export const withTopLevelCacheControlApplied: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, _env, run) => {
+  ctx.payload = applyCopilotTopLevelCacheControl(ctx.payload);
   return await run();
 };

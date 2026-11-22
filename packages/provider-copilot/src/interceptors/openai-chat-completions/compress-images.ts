@@ -1,23 +1,26 @@
 import { memoizedDataUrlCompressor } from '../image-compression.ts';
 import { targetSizeForOpenAIResponsesChat } from '../image-size.ts';
 import type { OpenAIChatCompletionsBoundaryCtx, CopilotOpenAIChatCompletionsBoundaryInterceptor } from './types.ts';
-import type { OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsUserContentPart, OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
 import { isBase64ImageDataUrl } from '@floway-dev/provider';
 
 type OpenAIChatCompletionsImagePart = Extract<OpenAIChatCompletionsUserContentPart, { type: 'image_url' }>;
 
-const compressInlineImages = async (ctx: OpenAIChatCompletionsBoundaryCtx): Promise<void> => {
+export const compressCopilotOpenAIChatCompletionsImages = async (
+  payload: OpenAIChatCompletionsPayloadEx,
+  model: { readonly id: string },
+): Promise<OpenAIChatCompletionsPayloadEx> => {
   const targets: OpenAIChatCompletionsImagePart[] = [];
-  for (const message of ctx.payload.messages) {
+  for (const message of payload.messages) {
     if (message.role !== 'user' || !Array.isArray(message.content)) continue;
     for (const part of message.content) {
       if (part.type === 'image_url' && isBase64ImageDataUrl(part.image_url.url)) targets.push(part);
     }
   }
 
-  if (targets.length === 0) return;
+  if (targets.length === 0) return payload;
 
-  const compress = memoizedDataUrlCompressor(targetSizeForOpenAIResponsesChat(ctx.model.id));
+  const compress = memoizedDataUrlCompressor(targetSizeForOpenAIResponsesChat(model.id));
   const compressedUrls = new Map<OpenAIChatCompletionsImagePart, string>();
   await Promise.all(
     targets.map(async target => {
@@ -31,9 +34,9 @@ const compressInlineImages = async (ctx: OpenAIChatCompletionsBoundaryCtx): Prom
     if (url === undefined) throw new Error('Missing compressed OpenAI Chat Completions image URL');
     return { ...part, image_url: { ...part.image_url, url } };
   };
-  ctx.payload = {
-    ...ctx.payload,
-    messages: ctx.payload.messages.map((message): OpenAIChatCompletionsMessage => {
+  return {
+    ...payload,
+    messages: payload.messages.map((message): OpenAIChatCompletionsMessage => {
       if (message.role !== 'user' || !Array.isArray(message.content) || !message.content.some(hasCompressedImage)) return message;
       return {
         ...message,
@@ -41,6 +44,10 @@ const compressInlineImages = async (ctx: OpenAIChatCompletionsBoundaryCtx): Prom
       };
     }),
   };
+};
+
+const compressInlineImages = async (ctx: OpenAIChatCompletionsBoundaryCtx): Promise<void> => {
+  ctx.payload = await compressCopilotOpenAIChatCompletionsImages(ctx.payload, ctx.model);
 };
 
 // Recompresses every inline base64 image (`data:image/*;base64,...` in an

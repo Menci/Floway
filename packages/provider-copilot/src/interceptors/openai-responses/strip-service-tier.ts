@@ -1,4 +1,5 @@
 import type { OpenAIResponsesBoundaryCtx } from './types.ts';
+import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 /**
  * Copilot has no request-side `service_tier`: `/responses` answers any value
@@ -16,13 +17,17 @@ import type { OpenAIResponsesBoundaryCtx } from './types.ts';
  * - https://github.com/caozhiyuan/copilot-api/commit/f7835a44f06976cab874700e4d94a5f5c0379369
  * - https://platform.openai.com/docs/api-reference/responses/create
  */
+export const stripCopilotServiceTier = (payload: CanonicalOpenAIResponsesPayload): CanonicalOpenAIResponsesPayload => {
+  const { service_tier: _serviceTier, ...withoutServiceTier } = payload;
+  return withoutServiceTier;
+};
+
 export const withServiceTierStripped = async <TResult>(
   ctx: OpenAIResponsesBoundaryCtx,
   _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const { service_tier: _, ...payload } = ctx.payload;
-  ctx.payload = payload;
+  ctx.payload = stripCopilotServiceTier(ctx.payload);
 
   return await run();
 };

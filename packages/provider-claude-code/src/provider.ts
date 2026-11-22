@@ -5,6 +5,7 @@ import { isClaudeCodeShapedRequest } from './detection.ts';
 import { callClaudeCodeAnthropicMessages } from './fetch.ts';
 import { CLAUDE_CODE_ANTHROPIC_MESSAGES_BOUNDARY, type AnthropicMessagesBoundaryCtx } from './interceptors/anthropic-messages/index.ts';
 import { buildClaudeCodeCatalog, fetchClaudeCodeModelsList } from './models.ts';
+import { createClaudeCodePipelines } from './pipelines.ts';
 import { runClaudeCodeScheduledTask } from './scheduled.ts';
 import { assertClaudeCodeUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -131,6 +132,7 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     modelsCache: record.modelsCache,
+    pipelines: createClaudeCodePipelines(record),
     instance,
   };
 };

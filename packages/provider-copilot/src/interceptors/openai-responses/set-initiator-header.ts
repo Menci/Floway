@@ -1,5 +1,5 @@
 import type { OpenAIResponsesBoundaryCtx } from './types.ts';
-import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesInputItem, CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 /**
  * Copilot's `x-initiator` header distinguishes user-triggered turns from
@@ -22,18 +22,20 @@ import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/op
  * - https://github.com/caozhiyuan/copilot-api/blob/cd8207cb70ede07771bf37a04accfbf2af76d980/src/routes/responses/utils.ts#L75-L87
  *   (`hasAgentInitiator`)
  */
+export const copilotOpenAIResponsesInitiator = (payload: CanonicalOpenAIResponsesPayload): 'user' | 'agent' => {
+  const lastItem: CanonicalOpenAIResponsesInputItem | undefined = payload.input.at(-1);
+  const role = lastItem === undefined ? undefined : (lastItem as { role?: unknown }).role;
+  return lastItem !== undefined && (role === undefined || role === null || role === '' || role === 'assistant')
+    ? 'agent'
+    : 'user';
+};
+
 export const withInitiatorHeaderSet = async <TResult>(
   ctx: OpenAIResponsesBoundaryCtx,
   _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const lastItem: CanonicalOpenAIResponsesInputItem | undefined = ctx.payload.input.at(-1);
-  const role = lastItem === undefined ? undefined : (lastItem as { role?: unknown }).role;
-  const initiator: 'user' | 'agent' = lastItem !== undefined
-    && (role === undefined || role === null || role === '' || role === 'assistant')
-    ? 'agent'
-    : 'user';
-  ctx.headers.set('x-initiator', initiator);
+  ctx.headers.set('x-initiator', copilotOpenAIResponsesInitiator(ctx.payload));
 
   return await run();
 };

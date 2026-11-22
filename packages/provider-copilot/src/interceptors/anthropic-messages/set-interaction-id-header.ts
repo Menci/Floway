@@ -19,7 +19,7 @@ import type { CopilotAnthropicMessagesBoundaryInterceptor } from './types.ts';
  * - https://github.com/caozhiyuan/copilot-api/blob/main/src/lib/utils.ts#L217 (getRootSessionId)
  * - https://github.com/caozhiyuan/copilot-api/blob/main/src/lib/utils.ts#L230 (getUUID)
  */
-const sessionUuid = async (input: string): Promise<string> => {
+export const copilotSessionUuid = async (input: string): Promise<string> => {
   const data = new TextEncoder().encode(input);
   return v4({ random: new Uint8Array(await crypto.subtle.digest('SHA-256', data)) });
 };
@@ -27,7 +27,7 @@ const sessionUuid = async (input: string): Promise<string> => {
 export const withInteractionIdHeaderSet: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, _env, run) => {
   const { sessionId } = parseUserIdMetadata(ctx.payload.metadata?.user_id ?? undefined);
   if (sessionId) {
-    ctx.headers.set('x-interaction-id', await sessionUuid(sessionId));
+    ctx.headers.set('x-interaction-id', await copilotSessionUuid(sessionId));
   }
   return await run();
 };

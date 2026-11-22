@@ -90,14 +90,14 @@ const isCompactSystemPrompt = (system: string | AnthropicMessagesTextBlockParam[
   return false;
 };
 
-type CompactClass = 'compact-request' | 'auto-continue' | null;
+export type CopilotCompactClass = 'compact-request' | 'auto-continue' | null;
 
 // Match caozhiyuan's `getCompactType` priority exactly: last-message
 // compact-summary wins, then last-message auto-continue, then system-prompt
 // compact-summary. This ordering matters because a single payload could in
 // principle match more than one shape, and the COMPACT_REQUEST tagging is
 // strictly stronger than the auto-continue tagging.
-const classifyCompact = (payload: { messages: AnthropicMessagesMessage[]; system?: string | AnthropicMessagesTextBlockParam[] }): CompactClass => {
+export const classifyCopilotCompact = (payload: { messages: AnthropicMessagesMessage[]; system?: string | AnthropicMessagesTextBlockParam[] }): CopilotCompactClass => {
   const last = payload.messages.at(-1);
   if (isCompactLastMessage(last)) return 'compact-request';
   if (isAutoContinueLastMessage(last)) return 'auto-continue';
@@ -105,11 +105,10 @@ const classifyCompact = (payload: { messages: AnthropicMessagesMessage[]; system
   return null;
 };
 
-export const withCompactHeadersSet: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, _env, run) => {
-  const kind = classifyCompact(ctx.payload);
+export const applyCopilotCompactHeaders = (kind: CopilotCompactClass, headers: Headers): void => {
   if (kind === 'compact-request') {
-    ctx.headers.set('x-initiator', 'agent');
-    ctx.headers.set('x-interaction-type', 'conversation-compaction');
+    headers.set('x-initiator', 'agent');
+    headers.set('x-interaction-type', 'conversation-compaction');
     // openai-intent stays at `copilotAuthedFetch`'s `conversation-agent`
     // default from `packages/provider-copilot/src/auth.ts` — the same value
     // caozhiyuan/copilot-api re-pins inside prepareForCompact, so setting it
@@ -120,7 +119,11 @@ export const withCompactHeadersSet: CopilotAnthropicMessagesBoundaryInterceptor 
     // `packages/provider-copilot/src/auth.ts`.
     // This mirrors prepareForCompact when compactType === COMPACT_AUTO_CONTINUE:
     // it sets x-initiator: agent and leaves x-interaction-type untouched.
-    ctx.headers.set('x-initiator', 'agent');
+    headers.set('x-initiator', 'agent');
   }
+};
+
+export const withCompactHeadersSet: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, _env, run) => {
+  applyCopilotCompactHeaders(classifyCopilotCompact(ctx.payload), ctx.headers);
   return await run();
 };

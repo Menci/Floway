@@ -6,6 +6,7 @@ import { callChatGPTAlphaSearch, callChatGPTOpenAIImagesEdits, callChatGPTOpenAI
 import { CHATGPT_OPENAI_RESPONSES_BOUNDARY } from './interceptors/openai-responses/index.ts';
 import type { OpenAIResponsesBoundaryCtx } from './interceptors/openai-responses/types.ts';
 import { chatgptImageProviderModel, chatgptPlanSupportsImages, chatgptRawToProviderModel, fetchChatGPTCatalog } from './models.ts';
+import { createChatGPTPipelines } from './pipelines.ts';
 import { assertChatGPTUpstreamState, findChatGPTAccountIndex, persistChatGPTRefreshTokenRotation, persistChatGPTTerminalState } from './state.ts';
 import { runChatGPTScheduledTask } from './usage-probe.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -174,6 +175,11 @@ export const createChatGPTProvider = (record: UpstreamRecord): Provider => {
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     modelsCache: record.modelsCache,
+    pipelines: createChatGPTPipelines({
+      upstreamId: record.id,
+      accountId: accountIdentity.chatgptAccountId,
+      fallbackPlanType: accountIdentity.planType ?? undefined,
+    }),
     instance,
   };
 };

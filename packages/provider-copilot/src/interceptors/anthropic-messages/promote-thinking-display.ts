@@ -1,6 +1,6 @@
 import type { AnthropicMessagesBoundaryCtx, CopilotAnthropicMessagesBoundaryInterceptor } from './types.ts';
 import { copilotRawModelId } from '../../model-name.ts';
-import type { AnthropicMessagesStreamEventEx, AnthropicMessagesThinkingDisplay } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, AnthropicMessagesThinkingDisplay } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 const CLAUDE_VERSION_PATTERN = /(?:^|-)(\d+)\.(\d+)(?=-|$)/;
@@ -54,7 +54,7 @@ const omitThinkingTextFromProtocolFrame = (frame: ProtocolFrame<AnthropicMessage
   return frame;
 };
 
-const omitThinkingTextFromProtocolFrames = async function* (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
+export const omitPromotedThinkingTextFromProtocolFrames = async function* (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   for await (const frame of frames) {
     const omitted = omitThinkingTextFromProtocolFrame(frame);
     if (omitted) yield omitted;
@@ -92,24 +92,41 @@ const omitThinkingTextFromProtocolFrames = async function* (frames: AsyncIterabl
  * - https://github.com/anthropics/claude-code/issues/46987
  * - https://github.com/anthropics/claude-code/issues/50477
  */
-export const withThinkingDisplayPromoted: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, _env, run) => {
-  const downstreamDisplay = resolveAnthropicMessagesDownstreamThinkingDisplay(ctx);
-  const thinking = ctx.payload.thinking;
+export interface CopilotThinkingDisplayPromotion {
+  readonly payload: AnthropicMessagesPayload;
+  readonly omitThinkingText: boolean;
+}
+
+export const promoteCopilotThinkingDisplay = (payload: AnthropicMessagesPayload): CopilotThinkingDisplayPromotion => {
+  const downstreamDisplay = resolveAnthropicMessagesDownstreamThinkingDisplay({ payload });
+  const thinking = payload.thinking;
   const hasActiveThinking = thinking?.type === 'enabled' || thinking?.type === 'adaptive';
   const shouldExposeOmitted = hasActiveThinking && downstreamDisplay === 'omitted';
-
-  if (hasActiveThinking && downstreamDisplay !== undefined && downstreamDisplay !== 'full') {
-    ctx.payload.thinking = {
-      ...thinking,
-      display: 'summarized',
-    };
+  if (!hasActiveThinking || downstreamDisplay === undefined || downstreamDisplay === 'full') {
+    return { payload, omitThinkingText: shouldExposeOmitted };
   }
+  return {
+    payload: {
+      ...payload,
+      thinking: {
+        ...thinking,
+        display: 'summarized',
+      },
+    },
+    omitThinkingText: shouldExposeOmitted,
+  };
+};
+
+export const withThinkingDisplayPromoted: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, _env, run) => {
+  const promoted = promoteCopilotThinkingDisplay(ctx.payload);
+  ctx.payload = promoted.payload;
+  const shouldExposeOmitted = promoted.omitThinkingText;
 
   const result = await run();
 
   if (!shouldExposeOmitted || result.type !== 'events') return result;
   return {
     ...result,
-    events: omitThinkingTextFromProtocolFrames(result.events),
+    events: omitPromotedThinkingTextFromProtocolFrames(result.events),
   };
 };

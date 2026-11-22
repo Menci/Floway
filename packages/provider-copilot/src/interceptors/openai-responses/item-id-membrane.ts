@@ -91,7 +91,7 @@ const restoreInputItem = (item: CanonicalOpenAIResponsesInputItem): CanonicalOpe
   return { ...restored, id: [...upstreamItemIds][0] } as CanonicalOpenAIResponsesInputItem;
 };
 
-const restoreInputItemIds = (payload: CanonicalOpenAIResponsesPayload): CanonicalOpenAIResponsesPayload => ({
+export const restoreCopilotOpenAIResponsesInputItemIds = (payload: CanonicalOpenAIResponsesPayload): CanonicalOpenAIResponsesPayload => ({
   ...payload,
   input: payload.input.map(restoreInputItem),
 });
@@ -251,7 +251,7 @@ const normalizeStreamEvent = (event: OpenAIResponsesStreamEventEx, state: Stream
   return { ...carrier, item_id: trackedAt(state, carrier.output_index).publicId } as OpenAIResponsesStreamEventEx;
 };
 
-const normalizeFrames = async function* (
+export const normalizeCopilotOpenAIResponsesFrames = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
   const state: StreamItemState = { items: new Map() };
@@ -262,7 +262,7 @@ const normalizeFrames = async function* (
   }
 };
 
-const normalizeCompactionResult = (response: OpenAIResponsesCompactionResultEx): OpenAIResponsesCompactionResultEx => ({
+export const normalizeCopilotOpenAIResponsesCompactionResult = (response: OpenAIResponsesCompactionResultEx): OpenAIResponsesCompactionResultEx => ({
   ...response,
   output: response.output.map(item => {
     if (!isOpenAIResponsesCompactionItem(item)) return item;
@@ -271,11 +271,11 @@ const normalizeCompactionResult = (response: OpenAIResponsesCompactionResultEx):
 });
 
 export const withCopilotOpenAIResponsesItemIdMembrane: CopilotOpenAIResponsesBoundaryInterceptor = async (ctx, _env, run) => {
-  ctx.payload = restoreInputItemIds(ctx.payload);
+  ctx.payload = restoreCopilotOpenAIResponsesInputItemIds(ctx.payload);
   const result = await run();
   if (!result.ok) return result;
 
   return result.action === 'generate'
-    ? { ...result, events: normalizeFrames(result.events) }
-    : { ...result, result: normalizeCompactionResult(result.result) };
+    ? { ...result, events: normalizeCopilotOpenAIResponsesFrames(result.events) }
+    : { ...result, result: normalizeCopilotOpenAIResponsesCompactionResult(result.result) };
 };

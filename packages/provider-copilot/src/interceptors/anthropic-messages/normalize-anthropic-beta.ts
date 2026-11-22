@@ -1,4 +1,5 @@
 import type { AnthropicMessagesBoundaryCtx } from './types.ts';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
 const ALLOWED_ANTHROPIC_BETAS = new Set([
   'interleaved-thinking-2025-05-14',
@@ -14,23 +15,31 @@ const CONTEXT_MANAGEMENT_BETA = 'context-management-2025-06-27';
 // with its required token.
 // https://github.com/microsoft/vscode/blob/a234109a108ad2ca78b7d0883688b0a84e3fab42/extensions/copilot/src/platform/endpoint/node/chatEndpoint.ts#L262-L282
 // https://github.com/microsoft/vscode/blob/a234109a108ad2ca78b7d0883688b0a84e3fab42/extensions/copilot/src/extension/chatSessions/claude/node/claudeLanguageModelServer.ts#L413-L427
+export const normalizeCopilotAnthropicBeta = (
+  beta: readonly string[],
+  payload: AnthropicMessagesPayload,
+): readonly string[] => {
+  const callerSuppliedBeta = beta.length > 0;
+  const normalized = [...new Set(beta.filter(value => ALLOWED_ANTHROPIC_BETAS.has(value)))];
+
+  const isAdaptiveThinking = payload.thinking?.type === 'adaptive';
+  if (!callerSuppliedBeta && (payload.thinking?.type === 'enabled' ? payload.thinking.budget_tokens : undefined) && !isAdaptiveThinking) {
+    normalized.push(INTERLEAVED_THINKING_BETA);
+  }
+
+  const extendedPayload = payload as typeof payload & { context_management?: unknown };
+  if (extendedPayload.context_management !== undefined && !normalized.includes(CONTEXT_MANAGEMENT_BETA)) {
+    normalized.push(CONTEXT_MANAGEMENT_BETA);
+  }
+  return Object.freeze(normalized);
+};
+
 export const withAnthropicBetaNormalized = async <TResult>(
   ctx: AnthropicMessagesBoundaryCtx,
   _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const callerSuppliedBeta = ctx.anthropicBeta.length > 0;
-  ctx.anthropicBeta = [...new Set(ctx.anthropicBeta.filter(beta => ALLOWED_ANTHROPIC_BETAS.has(beta)))];
-
-  const isAdaptiveThinking = ctx.payload.thinking?.type === 'adaptive';
-  if (!callerSuppliedBeta && (ctx.payload.thinking?.type === 'enabled' ? ctx.payload.thinking.budget_tokens : undefined) && !isAdaptiveThinking) {
-    ctx.anthropicBeta.push(INTERLEAVED_THINKING_BETA);
-  }
-
-  const payload = ctx.payload as typeof ctx.payload & { context_management?: unknown };
-  if (payload.context_management !== undefined && !ctx.anthropicBeta.includes(CONTEXT_MANAGEMENT_BETA)) {
-    ctx.anthropicBeta.push(CONTEXT_MANAGEMENT_BETA);
-  }
+  ctx.anthropicBeta = [...normalizeCopilotAnthropicBeta(ctx.anthropicBeta, ctx.payload)];
 
   return await run();
 };

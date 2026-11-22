@@ -1,7 +1,7 @@
 import { memoizedBase64Compressor } from '../image-compression.ts';
 import type { AnthropicMessagesBoundaryCtx } from './types.ts';
 import { type ImageSizeCalculator, type SizeCaps, fitWithin } from '@floway-dev/platform';
-import type { AnthropicMessagesImageBlock, AnthropicMessagesMessage, AnthropicMessagesToolResultBlock, AnthropicMessagesToolResultContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesImageBlock, AnthropicMessagesMessage, AnthropicMessagesPayload, AnthropicMessagesToolResultBlock, AnthropicMessagesToolResultContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 
 // Per-model image caps for the Claude (Anthropic Messages) egress, measured from the real
 // /v1/messages generation path (count_tokens misreports the downscale here).
@@ -48,11 +48,14 @@ const collectImageBlocks = (messages: AnthropicMessagesMessage[]): AnthropicMess
   return blocks;
 };
 
-const compressInlineImages = async (ctx: AnthropicMessagesBoundaryCtx): Promise<void> => {
-  const blocks = collectImageBlocks(ctx.payload.messages);
-  if (blocks.length === 0) return;
+export const compressCopilotAnthropicMessagesImages = async (
+  payload: AnthropicMessagesPayload,
+  model: { readonly id: string },
+): Promise<AnthropicMessagesPayload> => {
+  const blocks = collectImageBlocks(payload.messages);
+  if (blocks.length === 0) return payload;
 
-  const caps = claudeImageCaps(ctx.model.id);
+  const caps = claudeImageCaps(model.id);
   const targetSize: ImageSizeCalculator = source => fitWithin(source, caps);
   const compress = memoizedBase64Compressor(targetSize);
   const compressedData = new Map<AnthropicMessagesImageBlock, string>();
@@ -88,15 +91,19 @@ const compressInlineImages = async (ctx: AnthropicMessagesBoundaryCtx): Promise<
       };
     });
 
-  ctx.payload = {
-    ...ctx.payload,
-    messages: ctx.payload.messages.map(message =>
+  return {
+    ...payload,
+    messages: payload.messages.map(message =>
       message.role === 'user'
       && Array.isArray(message.content)
       && message.content.some(block => hasCompressedImage(block) || hasCompressedToolResultImage(block))
         ? { ...message, content: rewriteUserContent(message.content) }
         : message),
   };
+};
+
+const compressInlineImages = async (ctx: AnthropicMessagesBoundaryCtx): Promise<void> => {
+  ctx.payload = await compressCopilotAnthropicMessagesImages(ctx.payload, ctx.model);
 };
 
 // Recompresses every inline base64 image in the outgoing Anthropic Messages payload to

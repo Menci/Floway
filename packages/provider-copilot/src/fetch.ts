@@ -22,7 +22,7 @@ export interface CopilotDataPlaneFetchOptions extends UpstreamFetchOptions {
 // to a concurrent state write, or a storage blip, must not surface on the hot
 // path. A response with no quota headers (every 4xx we have observed, plus
 // `/models`) leaves the persisted snapshot alone rather than erasing it.
-const captureQuotaFireAndForget = (
+export const captureQuotaFireAndForget = (
   upstreamId: string,
   headers: Headers,
   waitUntil: ((promise: Promise<unknown>) => void) | undefined,

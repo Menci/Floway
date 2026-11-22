@@ -12,23 +12,21 @@ import { COPILOT_OPENAI_RESPONSES_BOUNDARY } from './interceptors/openai-respons
 import type { OpenAIResponsesBoundaryCtx } from './interceptors/openai-responses/types.ts';
 import { emptyKnownModels, mergeKnownModels, projectKnownModels } from './known-models.ts';
 import { mergeCopilotVariants } from './merge-variants.ts';
-import { CONTEXT_1M_BETA, copilotModelSupportsFastVariant, type ModelSelectionHints, resolveCopilotRawModel } from './model-selection.ts';
+import { CONTEXT_1M_BETA } from './model-selection.ts';
 import { copilotVariantIndex } from './model-variants.ts';
+import { createCopilotPipelines } from './pipelines.ts';
 import { pricingForCopilotPublicModelId } from './pricing.ts';
+import { anthropicMessagesReasoningEffort, chatReasoningEffort, copilotDecisionTarget, copilotModelEndpoints, copilotModelHasFastVariant, copilotOpenAIEmbeddingsBody, openaiResponsesReasoningEffort, rawModelFor, type CopilotProviderData } from './routing.ts';
 import { runCopilotScheduledTask } from './scheduled.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import type { CopilotRawModel } from './types.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { parseAnthropicMessagesStream, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import { type DecisionProtocol, type DecisionTarget, type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, isFastServiceTier, kindForEndpoints } from '@floway-dev/protocols/common';
+import { type ProtocolFrame, isFastServiceTier, kindForEndpoints } from '@floway-dev/protocols/common';
 import { DEFAULT_DECISION_PATHS, serializeDecisionRequest, type CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
-import { parseOpenAIChatCompletionsStream, type OpenAIChatCompletionsPayloadEx, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import { parseOpenAIResponsesStream, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
+import { parseOpenAIChatCompletionsStream, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { parseOpenAIResponsesStream, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 import { eventResult, getProviderRepo, headersForAnthropicMessagesCall, jsonRequestBody, serializeOpenAIImagesEditsRequest, readUpstreamApiError, streamingProviderCall, bufferedResultToResponse, resolveEffectiveFlags, type ExecuteResult, type FetchInit, type FlagOverrides, type HttpHeaderLines, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
-
-interface CopilotProviderData {
-  rawModels: CopilotRawModel[];
-}
 
 // Project Copilot's raw `/models` shape into the slim provider-neutral fields.
 // kind/endpoints/providerData/enabledFlags/flagOverrides are set by the caller
@@ -55,118 +53,6 @@ const copilotRawToProviderModel = (model: CopilotRawModel): Omit<ProviderModel, 
   return partial;
 };
 
-// Copilot's `/models` reports each model's served endpoints as public paths; map
-// one onto our structured endpoint key. Both `/x` and `/v1/x` spellings appear.
-// Copilot is the only upstream whose catalog speaks paths — operator config and
-// our own constants are structured — so this lives here, not in a shared helper.
-const copilotPathToModelEndpoint = (path: string): ModelEndpointKey | undefined => {
-  switch (path) {
-  case '/chat/completions':
-  case '/v1/chat/completions':
-    return 'openaiChatCompletions';
-  case '/responses':
-  case '/v1/responses':
-    return 'openaiResponses';
-  case '/v1/messages':
-  case '/messages':
-    return 'anthropicMessages';
-  case '/embeddings':
-  case '/v1/embeddings':
-    return 'openaiEmbeddings';
-  case '/images/generations':
-  case '/v1/images/generations':
-    return 'openaiImagesGenerations';
-  case '/images/edits':
-  case '/v1/images/edits':
-    return 'openaiImagesEdits';
-  case '/systemone':
-  case '/v1/systemone':
-  case '/decisions':
-  case '/v1/decisions':
-    return 'decision';
-  default:
-    return undefined;
-  }
-};
-
-// Copilot names the dialect each decision model serves through the path it
-// advertises: `/v1/systemone` speaks System One and `/v1/decisions` speaks
-// OpenAI Decisions. The two are exclusive per model — calling the other one
-// answers 400 `no_available_model_endpoints` — so the advertised path is the
-// only authority for the target dialect.
-const COPILOT_DECISION_PATH_PROTOCOL: Readonly<Record<string, DecisionProtocol>> = {
-  '/systemone': 'typesafe-systemone',
-  '/v1/systemone': 'typesafe-systemone',
-  '/decisions': 'openai-decisions',
-  '/v1/decisions': 'openai-decisions',
-};
-
-const copilotDecisionTarget = (variants: readonly CopilotRawModel[]): DecisionTarget => {
-  const advertised = variants.flatMap(variant => variant.supported_endpoints ?? []);
-  const protocols = [...new Set(advertised.flatMap(path => COPILOT_DECISION_PATH_PROTOCOL[path] ?? []))];
-  if (protocols.length !== 1) {
-    throw new Error(
-      `Copilot decision model advertises ${protocols.length === 0 ? 'no decision path' : `multiple decision dialects (${protocols.join(', ')})`} in supported_endpoints ${JSON.stringify(advertised)}`,
-    );
-  }
-  return { protocol: protocols[0] };
-};
-
-const rawModelSupportsEndpoint = (model: CopilotRawModel, endpoint: ModelEndpointKey): boolean => {
-  if ((model.supported_endpoints ?? []).some(path => copilotPathToModelEndpoint(path) === endpoint)) return true;
-  // Copilot's Anthropic-family entries have historically under-reported their
-  // native Anthropic Messages path, so treat claude-* as Anthropic-Messages-capable.
-  if (endpoint === 'anthropicMessages' && model.id.startsWith('claude-')) return true;
-  if (endpoint === 'openaiChatCompletions') {
-    return model.supported_endpoints === undefined && model.capabilities?.type === 'chat';
-  }
-  if (endpoint === 'openaiEmbeddings') return model.supported_endpoints === undefined && model.capabilities?.type === 'embeddings';
-  // A decision model declares `capabilities.type: "decisions"`. The advertised
-  // path alone cannot decide this: the same family is reached over
-  // `/v1/systemone` and `/v1/decisions`, and a catalog that omits
-  // `supported_endpoints` (or lists a path this map does not know yet) would
-  // otherwise fall through to the chat fallback and be routed to
-  // /v1/chat/completions. The declared type is the authority.
-  if (endpoint === 'decision') return model.capabilities?.type === 'decisions';
-  return false;
-};
-
-const copilotModelEndpoints = (rawModels: readonly CopilotRawModel[]): ModelEndpoints => {
-  if (rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiResponses'))) {
-    return { openaiResponses: {} };
-  }
-
-  if (rawModels.some(model => rawModelSupportsEndpoint(model, 'anthropicMessages'))) {
-    return { anthropicMessages: {} };
-  }
-
-  if (rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiChatCompletions'))) {
-    return { openaiChatCompletions: {} };
-  }
-
-  if (rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiEmbeddings'))) return { openaiEmbeddings: {} };
-  // Image models are their own family too, but unlike the chat collapse above
-  // they advertise two independently routable surfaces: the gateway serves
-  // `/v1/images/generations` and `/v1/images/edits` as separate inbound routes,
-  // so a model that declares both must carry both keys. Copilot's live
-  // `gpt-image-2.5-flare` entry lists both paths and serves real requests on
-  // each, and declaring only one would make the other route reject the model.
-  const imageEndpoints: ModelEndpoints = {
-    ...(rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiImagesGenerations')) ? { openaiImagesGenerations: {} } : {}),
-    ...(rawModels.some(model => rawModelSupportsEndpoint(model, 'openaiImagesEdits')) ? { openaiImagesEdits: {} } : {}),
-  };
-  if (Object.keys(imageEndpoints).length > 0) return imageEndpoints;
-  // A decision model is a family of one: no other endpoint family shares its
-  // row, so this branch never competes with the chat/embeddings collapse above.
-  return rawModels.some(model => rawModelSupportsEndpoint(model, 'decision')) ? { decision: {} } : {};
-};
-
-const chatReasoningEffort = (body: Omit<OpenAIChatCompletionsPayloadEx, 'model'>): string | undefined => (body.reasoning_effort && body.reasoning_effort !== 'none' ? body.reasoning_effort : undefined);
-
-const anthropicMessagesReasoningEffort = (body: Omit<AnthropicMessagesPayload, 'model'>): string | undefined => body.output_config?.effort ?? undefined;
-
-const openaiResponsesReasoningEffort = (body: Omit<CanonicalOpenAIResponsesPayload, 'model'>): string | undefined => (body.reasoning?.effort && body.reasoning.effort !== 'none' ? body.reasoning.effort : undefined);
-
 const anthropicMessagesBoundaryContext = (
   body: Omit<AnthropicMessagesPayload, 'model'>,
   model: ProviderModel,
@@ -183,30 +69,6 @@ const anthropicMessagesBoundaryContext = (
 
 const rejectUnsupported = (capability: string) => (): Promise<never> =>
   Promise.reject(new Error(`Copilot provider does not implement ${capability}`));
-
-const rawModelFor = (model: ProviderModel, endpoint: ModelEndpointKey, hints: ModelSelectionHints = {}): CopilotRawModel => {
-  // Copilot exposes one canonical public Claude model id per family. Raw
-  // variant selection is derived from request body fields and parsed Anthropic Messages
-  // beta intent, not from the client's original model alias string.
-  const rawModels = (model.providerData as CopilotProviderData).rawModels.filter(rawModel => rawModelSupportsEndpoint(rawModel, endpoint));
-  if (rawModels.length === 0) {
-    throw new Error(`Copilot provider exposed ${endpoint} for ${model.id}, but no raw variant supports that endpoint`);
-  }
-  return resolveCopilotRawModel({ object: 'list', data: rawModels }, model.id, hints) ?? rawModels[0];
-};
-
-const copilotOpenAIEmbeddingsBody = (body: Record<string, unknown>): Record<string, unknown> => {
-  if (typeof body.input !== 'string') return body;
-
-  // OpenAI-compatible clients may send scalar string input, but Copilot's
-  // upstream /embeddings endpoint currently returns 400 unless text input is
-  // wrapped as an array.
-  // References:
-  // https://platform.openai.com/docs/api-reference/embeddings/create
-  // https://github.com/ericc-ch/copilot-api/blob/0ea08febdd7e3e055b03dd298bf57e669500b5c1/src/services/copilot/create-embeddings.ts#L19-L21
-  // https://github.com/BerriAI/litellm/blob/c8fb77f119ad69a80f5fde088efd3a1aa77f458b/litellm/proxy/proxy_server.py#L7826-L7839
-  return { ...body, input: [body.input] };
-};
 
 const finalizeCopilotModels = (
   rawModels: CopilotRawModel[],
@@ -486,8 +348,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       // independent gateway's regression test:
       // https://github.com/Yeachan-Heo/gajae-code/blob/main/packages/ai/test/anthropic-fast-mode.test.ts
       if (body.speed === 'fast') {
-        const providerData = model.providerData as CopilotProviderData;
-        if (!copilotModelSupportsFastVariant(providerData.rawModels)) {
+        if (!copilotModelHasFastVariant(model)) {
           return {
             ok: false,
             http: Response.json(
@@ -580,6 +441,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     disabledPublicModelIds: copilot.disabledPublicModelIds,
     modelPrefix: copilot.modelPrefix,
     modelsCache: copilot.modelsCache,
+    pipelines: createCopilotPipelines(upstreamConfig),
     instance,
   };
 };

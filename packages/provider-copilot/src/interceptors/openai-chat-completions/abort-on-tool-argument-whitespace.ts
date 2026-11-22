@@ -49,21 +49,25 @@ const isWhitespaceExceeded = (
   return false;
 };
 
+export const abortCopilotOpenAIChatCompletionsToolArgumentWhitespace = async function* (
+  frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
+): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
+  const whitespaceByIndex = new Map<number, number>();
+
+  for await (const frame of frames) {
+    if (frame.type === 'event' && isWhitespaceExceeded(frame.event, whitespaceByIndex)) {
+      throw new Error('Copilot tool call arguments contained excessive consecutive whitespace, indicating a degenerate response.');
+    }
+    yield frame;
+  }
+};
+
 export const withToolArgumentWhitespaceAborted: CopilotOpenAIChatCompletionsBoundaryInterceptor = async (_invocation, _env, run) => {
   const result = await run();
   if (result.type !== 'events') return result;
 
   return {
     ...result,
-    events: (async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
-      const whitespaceByIndex = new Map<number, number>();
-
-      for await (const frame of result.events) {
-        if (frame.type === 'event' && isWhitespaceExceeded(frame.event, whitespaceByIndex)) {
-          throw new Error('Copilot tool call arguments contained excessive consecutive whitespace, indicating a degenerate response.');
-        }
-        yield frame;
-      }
-    })(),
+    events: abortCopilotOpenAIChatCompletionsToolArgumentWhitespace(result.events),
   };
 };

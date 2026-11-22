@@ -89,7 +89,7 @@ const FINGERPRINT_INDICES = [4, 7, 20] as const;
 
 const encoder = new TextEncoder();
 
-const extractFirstUserText = (body: AnthropicMessagesPayload): string => {
+const extractFirstUserText = (body: Pick<AnthropicMessagesPayload, 'messages'>): string => {
   for (const msg of body.messages) {
     if (msg.role !== 'user') continue;
     if (typeof msg.content === 'string') return msg.content;
@@ -106,7 +106,7 @@ const extractFirstUserText = (body: AnthropicMessagesPayload): string => {
 // user-message text; positions past the end are filled with 0x30 ('0').
 // The output drives `${VERSION}.${FP}` in the billing block; matching
 // real CC's wire shape is cheap and robust to detector tightening.
-export const computeCcVersionFingerprint = (version: string, body: AnthropicMessagesPayload): string => {
+export const computeCcVersionFingerprint = (version: string, body: Pick<AnthropicMessagesPayload, 'messages'>): string => {
   const utf8 = encoder.encode(extractFirstUserText(body));
   const chars = new Uint8Array(FINGERPRINT_INDICES.length);
   for (let i = 0; i < FINGERPRINT_INDICES.length; i++) {

@@ -1,4 +1,5 @@
 import type { CopilotOpenAIChatCompletionsBoundaryInterceptor } from './types.ts';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 
 /**
  * Copilot's `x-initiator` header distinguishes user-triggered turns from
@@ -32,11 +33,13 @@ import type { CopilotOpenAIChatCompletionsBoundaryInterceptor } from './types.ts
  * - https://github.com/microsoft/vscode/blob/fb5e582d1c8edb9ad0a69e50fe6f508a8c095466/extensions/copilot/src/platform/endpoint/node/responsesApi.ts#L419-L468
  * - https://github.com/microsoft/vscode/blob/fb5e582d1c8edb9ad0a69e50fe6f508a8c095466/extensions/copilot/src/extension/prompt/node/chatMLFetcher.ts#L1453-L1474
  */
+export const copilotOpenAIChatCompletionsInitiator = (payload: OpenAIChatCompletionsPayloadEx): 'user' | 'agent' => {
+  const lastMessage = payload.messages.at(-1);
+  return lastMessage?.role === 'assistant' || lastMessage?.role === 'tool' ? 'agent' : 'user';
+};
+
 export const withInitiatorHeaderSet: CopilotOpenAIChatCompletionsBoundaryInterceptor = async (ctx, _env, run) => {
-  const lastMessage = ctx.payload.messages.at(-1);
-  const agentInitiated = lastMessage?.role === 'assistant'
-    || lastMessage?.role === 'tool';
-  ctx.headers.set('x-initiator', agentInitiated ? 'agent' : 'user');
+  ctx.headers.set('x-initiator', copilotOpenAIChatCompletionsInitiator(ctx.payload));
 
   return await run();
 };

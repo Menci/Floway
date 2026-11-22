@@ -63,6 +63,16 @@ export const stripImageGenerationFromPayload = (payload: CanonicalOpenAIResponse
   }
 };
 
+export const stripCopilotImageGeneration = (payload: CanonicalOpenAIResponsesPayload): CanonicalOpenAIResponsesPayload => {
+  const copy = {
+    ...payload,
+    input: [...payload.input],
+    ...(payload.tools === undefined || payload.tools === null ? {} : { tools: [...payload.tools] }),
+  } as CanonicalOpenAIResponsesPayload;
+  stripImageGenerationFromPayload(copy);
+  return copy;
+};
+
 export const withImageGenerationStripped = async <TResult>(
   ctx: OpenAIResponsesBoundaryCtx,
   _env: object,

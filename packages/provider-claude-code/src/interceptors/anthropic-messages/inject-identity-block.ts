@@ -1,14 +1,19 @@
 import { IDENTITY_BLOCK } from './system-blocks.ts';
 import type { AnthropicMessagesBoundaryCtx } from './types.ts';
-import type { AnthropicMessagesTextBlock } from '@floway-dev/protocols/anthropic-messages';
 
 // system[1]; relies on injectBillingBlock having materialized payload.system as an array (see ./index.ts chain order).
+export const injectIdentityBlockPayload = <P extends Omit<AnthropicMessagesBoundaryCtx['payload'], 'model'>>(payload: P): P => {
+  if (!Array.isArray(payload.system)) {
+    throw new Error('inject-identity-block: expected system to be an array (inject-billing-block must run first)');
+  }
+  return { ...payload, system: [...payload.system, IDENTITY_BLOCK] };
+};
+
 export const injectIdentityBlock = async <TResult>(
   ctx: AnthropicMessagesBoundaryCtx,
   _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const system = ctx.payload.system as AnthropicMessagesTextBlock[];
-  ctx.payload = { ...ctx.payload, system: [...system, IDENTITY_BLOCK] };
+  ctx.payload = injectIdentityBlockPayload(ctx.payload);
   return await run();
 };

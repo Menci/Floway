@@ -28,19 +28,27 @@ import type { AnthropicMessagesMessage, AnthropicMessagesPayload } from '@floway
 // References:
 //   - https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/metadata_userid.go#L15
 
+export const synthesizeMetadataUserIdPayload = <P extends Omit<AnthropicMessagesBoundaryCtx['payload'], 'model'>>(
+  payload: P,
+  upstreamId: string,
+): P => {
+  const existing = payload.metadata?.user_id;
+  if (typeof existing === 'string' && existing.length > 0) return payload;
+
+  const userId = JSON.stringify({
+    device_id: deviceIdForUpstream(upstreamId),
+    account_uuid: '',
+    session_id: sessionIdForPayload(upstreamId, payload),
+  });
+  return { ...payload, metadata: { ...payload.metadata, user_id: userId } };
+};
+
 export const synthesizeMetadataUserId = async <TResult>(
   ctx: AnthropicMessagesBoundaryCtx,
   _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const existing = ctx.payload.metadata?.user_id;
-  if (typeof existing === 'string' && existing.length > 0) return await run();
-
-  const deviceId = deviceIdForUpstream(ctx.upstreamId);
-  const sessionId = sessionIdForPayload(ctx.upstreamId, ctx.payload);
-  const userId = JSON.stringify({ device_id: deviceId, account_uuid: '', session_id: sessionId });
-
-  ctx.payload = { ...ctx.payload, metadata: { ...ctx.payload.metadata, user_id: userId } };
+  ctx.payload = synthesizeMetadataUserIdPayload(ctx.payload, ctx.upstreamId);
   return await run();
 };
 

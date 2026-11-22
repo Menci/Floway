@@ -33,6 +33,33 @@ const errorEvent = (): OpenAIResponsesStreamEventEx =>
     code: 'api_error',
   }) as OpenAIResponsesStreamEventEx;
 
+export const abortCopilotOpenAIResponsesToolArgumentWhitespace = async function* (
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+  const whitespaceByIndex = new Map<number, number>();
+
+  for await (const frame of frames) {
+    if (frame.type !== 'event' || !isArgumentsDelta(frame.event)) {
+      yield frame;
+      continue;
+    }
+
+    const event = frame.event;
+    const current = whitespaceByIndex.get(event.output_index) ?? 0;
+    const { count, exceeded } = checkWhitespaceOverflow(event.delta, current);
+    whitespaceByIndex.set(event.output_index, count);
+
+    if (exceeded) {
+      console.warn('Copilot: infinite whitespace detected in OpenAI Responses function call arguments, aborting stream');
+      yield eventFrame(errorEvent());
+      yield doneFrame();
+      return;
+    }
+
+    yield frame;
+  }
+};
+
 export const withToolArgumentWhitespaceAborted: CopilotOpenAIResponsesBoundaryInterceptor = async (_invocation, _env, run) => {
   const result = await run();
   // Only the streaming generate branch produces events worth inspecting.
@@ -41,29 +68,6 @@ export const withToolArgumentWhitespaceAborted: CopilotOpenAIResponsesBoundaryIn
 
   return {
     ...result,
-    events: (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-      const whitespaceByIndex = new Map<number, number>();
-
-      for await (const frame of result.events) {
-        if (frame.type !== 'event' || !isArgumentsDelta(frame.event)) {
-          yield frame;
-          continue;
-        }
-
-        const event = frame.event;
-        const current = whitespaceByIndex.get(event.output_index) ?? 0;
-        const { count, exceeded } = checkWhitespaceOverflow(event.delta, current);
-        whitespaceByIndex.set(event.output_index, count);
-
-        if (exceeded) {
-          console.warn('Copilot: infinite whitespace detected in OpenAI Responses function call arguments, aborting stream');
-          yield eventFrame(errorEvent());
-          yield doneFrame();
-          return;
-        }
-
-        yield frame;
-      }
-    })(),
+    events: abortCopilotOpenAIResponsesToolArgumentWhitespace(result.events),
   };
 };

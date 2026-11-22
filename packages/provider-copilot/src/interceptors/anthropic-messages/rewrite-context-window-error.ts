@@ -1,7 +1,7 @@
 import type { CopilotAnthropicMessagesBoundaryInterceptor } from './types.ts';
 import { buildPromptTooLongBody } from '@floway-dev/protocols/anthropic-messages';
 
-const isContextWindowError = (text: string): boolean => text.includes('Request body is too large for model context window') || text.includes('context_length_exceeded');
+export const isCopilotContextWindowError = (text: string): boolean => text.includes('Request body is too large for model context window') || text.includes('context_length_exceeded');
 
 /**
  * Copilot's `/v1/messages` endpoint reports context-window failures with an
@@ -22,7 +22,7 @@ export const rewriteContextWindowError: CopilotAnthropicMessagesBoundaryIntercep
   if (result.type !== 'api-error' || result.source !== 'upstream' || result.body === null) return result;
 
   const body = new TextDecoder().decode(result.body);
-  if (!isContextWindowError(body)) return result;
+  if (!isCopilotContextWindowError(body)) return result;
 
   return {
     ...result,

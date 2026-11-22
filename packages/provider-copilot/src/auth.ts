@@ -2,6 +2,7 @@ import pRetry, { AbortError as RetryAbortError } from 'p-retry';
 
 import { githubApiOrigin } from './github-host.ts';
 import { readCopilotUpstreamState, type CopilotTokenEntry, type CopilotUpstreamState } from './state.ts';
+import { secret, type HeaderEntry } from '@floway-dev/pipeline';
 import { dispatchUpstreamFetch, getProviderRepo as getRepo, isAbortError, type Fetcher, type FetchInit, type HttpHeaderLines } from '@floway-dev/provider';
 
 // Version constants pinned to a known-good fingerprint that mirrors what a
@@ -127,7 +128,7 @@ function isTokenValid(token: string | null, expiresAt: number): boolean {
   return expiresAt > now + 60;
 }
 
-async function getCopilotToken(upstreamId: string, githubHost: string, githubToken: string, fetcher: Fetcher, signal: AbortSignal | undefined): Promise<CopilotTokenEntry> {
+export async function ensureCopilotToken(upstreamId: string, githubHost: string, githubToken: string, fetcher: Fetcher, signal: AbortSignal | undefined): Promise<CopilotTokenEntry> {
   const now = Date.now();
   const cached = inProcessTokenCache.get(upstreamId);
   if (cached && isTokenValid(cached.entry.token, cached.entry.expiresAt) && now - cached.cachedAt < IN_PROCESS_TTL_MS) {
@@ -168,8 +169,31 @@ async function getCopilotToken(upstreamId: string, githubHost: string, githubTok
   }, signal);
 }
 
+export interface CopilotBaseHeaderOptions {
+  readonly token: string;
+  readonly requestId: string;
+}
+
+export const copilotBaseHeaderLines = (options: CopilotBaseHeaderOptions): HttpHeaderLines =>
+  copilotBaseHeaderEntries(options).map(([name, value]) => [name, typeof value === 'string' ? value : value.reveal()]);
+
+export const copilotBaseHeaderEntries = ({ token, requestId }: CopilotBaseHeaderOptions): readonly HeaderEntry[] => Object.freeze([
+  Object.freeze(['Authorization', secret(`Bearer ${token}`)] as const),
+  Object.freeze(['editor-version', EDITOR_VERSION] as const),
+  Object.freeze(['editor-plugin-version', EDITOR_PLUGIN_VERSION] as const),
+  Object.freeze(['editor-device-id', getEditorDeviceId()] as const),
+  Object.freeze(['user-agent', USER_AGENT] as const),
+  Object.freeze(['x-github-api-version', COPILOT_API_VERSION] as const),
+  Object.freeze(['x-vscode-user-agent-library-version', 'electron-fetch'] as const),
+  Object.freeze(['x-request-id', requestId] as const),
+  Object.freeze(['x-agent-task-id', requestId] as const),
+  Object.freeze(['copilot-integration-id', 'vscode-chat'] as const),
+  Object.freeze(['openai-intent', 'conversation-agent'] as const),
+  Object.freeze(['x-interaction-type', 'conversation-agent'] as const),
+]);
+
 // Pure exchange against /copilot_internal/v2/token — no caching, no
-// persistence, no retry. Callers that want those wrap it (getCopilotToken
+// persistence, no retry. Callers that want those wrap it (ensureCopilotToken
 // adds all three; the control-plane import path calls it once to validate
 // the PAT and seed initial state). Method is GET, not POST — POST returns
 // 404 from this endpoint (matches VSCode Copilot Chat and caozhiyuan/copilot-
@@ -232,7 +256,7 @@ export async function copilotAuthedFetch(path: string, init: FetchInit, auth: Co
   // the body in an explicit owner and replace the generator parameter so the
   // final network wait cannot retain both copies after ownership transfers.
   init = { signal };
-  const entry = await getCopilotToken(auth.id, auth.githubHost, auth.githubToken, options.fetcher, signal);
+  const entry = await ensureCopilotToken(auth.id, auth.githubHost, auth.githubToken, options.fetcher, signal);
 
   // x-request-id and x-agent-task-id share a single per-call UUID, mirroring
   // VSCode Copilot Chat's "one id ties the request to its background task" pattern.
@@ -240,7 +264,6 @@ export async function copilotAuthedFetch(path: string, init: FetchInit, auth: Co
 
   if (ownedInit === undefined) throw new Error('Copilot request ownership missing before dispatch');
   const headers = new Headers(ownedInit.headers);
-  headers.set('Authorization', `Bearer ${entry.token}`);
   // Content-Type follows the body. A `FormData` body has to reach the runtime
   // untouched so it can generate the multipart boundary itself — pinning
   // `application/json` over it makes Copilot reject `/v1/images/edits` with
@@ -249,17 +272,7 @@ export async function copilotAuthedFetch(path: string, init: FetchInit, auth: Co
   if (ownedInit.body !== undefined && ownedInit.body !== null && !(ownedInit.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
   }
-  headers.set('editor-version', EDITOR_VERSION);
-  headers.set('editor-plugin-version', EDITOR_PLUGIN_VERSION);
-  headers.set('editor-device-id', getEditorDeviceId());
-  headers.set('user-agent', USER_AGENT);
-  headers.set('x-github-api-version', COPILOT_API_VERSION);
-  headers.set('x-vscode-user-agent-library-version', 'electron-fetch');
-  headers.set('x-request-id', requestId);
-  headers.set('x-agent-task-id', requestId);
-  headers.set('copilot-integration-id', 'vscode-chat');
-  headers.set('openai-intent', 'conversation-agent');
-  headers.set('x-interaction-type', 'conversation-agent');
+  for (const [name, value] of copilotBaseHeaderLines({ token: entry.token, requestId })) headers.set(name, value);
 
   // Provider-attached invocation headers (vision, initiator, anthropic-beta,
   // ...) flow through unchanged. The provider's boundary interceptors decide

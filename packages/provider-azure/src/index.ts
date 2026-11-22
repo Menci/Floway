@@ -7,3 +7,4 @@ export const azureProviderModule: ProviderModule = {
   defaultFlags: AZURE_DEFAULT_FLAGS,
 };
 export { assertAzureUpstreamRecord, type AzureUpstreamConfig } from './config.ts';
+export { createAzurePipelines, fillEmptyNamespaceDescriptions } from './pipelines.ts';

@@ -25,8 +25,8 @@ import {
 } from '@floway-dev/provider';
 
 const ANTHROPIC_ANTHROPIC_MESSAGES_ENDPOINT = 'https://api.anthropic.com/v1/messages?beta=true';
-const STREAM_DIAGNOSTIC_FRAME_LIMIT = 3;
-const STREAM_DIAGNOSTIC_FRAME_DATA_CHARS = 256;
+export const STREAM_DIAGNOSTIC_FRAME_LIMIT = 3;
+export const STREAM_DIAGNOSTIC_FRAME_DATA_CHARS = 256;
 
 export interface CallClaudeCodeAnthropicMessagesOptions {
   upstreamId: string;
@@ -69,12 +69,12 @@ const oneLineError = (error: unknown): string => {
   return message.length > 512 ? `${message.slice(0, 509)}...` : message;
 };
 
-interface StreamDiagnosticFrame {
+export interface StreamDiagnosticFrame {
   event: string | null;
   data: string;
 }
 
-const observedClaudeCodeMessagesStream = async function* (
+export const observedClaudeCodeMessagesStream = async function* (
   events: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
   options: {
     upstreamId: string;
@@ -83,6 +83,7 @@ const observedClaudeCodeMessagesStream = async function* (
     signal: AbortSignal | undefined;
     frames: StreamDiagnosticFrame[];
     rawFrameCount: () => number;
+    warn?: (message: string, fields: Readonly<Record<string, unknown>>) => Promise<void>;
   },
 ): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
   let terminalEvent: 'message_stop' | 'error' | null = null;
@@ -100,7 +101,7 @@ const observedClaudeCodeMessagesStream = async function* (
     throw error;
   } finally {
     if (options.signal?.aborted || (terminalEvent !== null && streamError === undefined)) return;
-    logWarn('claude_code_messages_stream_incomplete', {
+    const fields = {
       upstream_id: options.upstreamId,
       model: options.model,
       request_id: options.headers.get('request-id'),
@@ -110,11 +111,13 @@ const observedClaudeCodeMessagesStream = async function* (
       terminal_event: terminalEvent,
       error: streamError === undefined ? null : oneLineError(streamError),
       last_sse_frames: JSON.stringify(options.frames),
-    });
+    };
+    if (options.warn === undefined) logWarn('claude_code_messages_stream_incomplete', fields);
+    else await options.warn('claude_code_messages_stream_incomplete', fields);
   }
 };
 
-const persistQuotaSnapshot = async (upstreamId: string, modelId: string, snapshot: ClaudeCodeQuotaSnapshot): Promise<void> => {
+export const persistQuotaSnapshot = async (upstreamId: string, modelId: string, snapshot: ClaudeCodeQuotaSnapshot): Promise<void> => {
   // Stamped before the write: the mutator is replayed on a lost race and must
   // return the same document each time, and this records when the snapshot was
   // observed rather than which attempt landed it.
@@ -202,7 +205,7 @@ interface AnthropicErrorBody {
 // JSON shape doesn't match `{error:{type,message}}`) is the common case
 // for unrelated errors (`max_tokens` validation, beta-feature gating,
 // etc.) and must NOT trigger a terminal flip.
-const detectTerminalSentinel = (status: number, bodyText: string): string | null => {
+export const detectTerminalSentinel = (status: number, bodyText: string): string | null => {
   if (status !== 400 && status !== 403) return null;
   let parsed: unknown;
   try {
@@ -237,7 +240,7 @@ const detectTerminalSentinel = (status: number, bodyText: string): string | null
 // untouched — the repo reads that as "nothing to do" and the dashboard keeps
 // the first signal. Merging the two helpers would force conditional dispatch
 // on every one of these axes.
-const persistTerminalAccountState = async (
+export const persistTerminalAccountState = async (
   upstreamId: string,
   terminalMessage: string,
   reason: string,

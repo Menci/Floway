@@ -1,6 +1,7 @@
 import { parseUserIdMetadata } from './detect-claude-code-metadata.ts';
 import type { CopilotAnthropicMessagesBoundaryInterceptor } from './types.ts';
 import { CLAUDE_AGENT_USER_AGENT } from '../../auth.ts';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
 /**
  * When Anthropic Messages traffic comes from the Claude Code SDK proxy, VSCode
@@ -42,17 +43,32 @@ import { CLAUDE_AGENT_USER_AGENT } from '../../auth.ts';
  */
 const UPSTREAM_REJECTS_CLAUDE_AGENT_IDENTITY = new Set(['claude-opus-4-8']);
 
-export const withClaudeAgentHeadersSet: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, _env, run) => {
-  if (UPSTREAM_REJECTS_CLAUDE_AGENT_IDENTITY.has(ctx.payload.model)) {
-    return await run();
-  }
+export interface CopilotClaudeAgentHeaderOverrides {
+  readonly 'x-interaction-type': 'messages-proxy';
+  readonly 'openai-intent': 'messages-proxy';
+  readonly 'user-agent': string;
+  readonly 'copilot-integration-id': '';
+}
 
-  const { safetyIdentifier, sessionId } = parseUserIdMetadata(ctx.payload.metadata?.user_id ?? undefined);
-  if (safetyIdentifier && sessionId) {
-    ctx.headers.set('x-interaction-type', 'messages-proxy');
-    ctx.headers.set('openai-intent', 'messages-proxy');
-    ctx.headers.set('user-agent', CLAUDE_AGENT_USER_AGENT);
-    ctx.headers.set('copilot-integration-id', '');
+export const copilotClaudeAgentHeaderOverrides = (payload: AnthropicMessagesPayload): CopilotClaudeAgentHeaderOverrides | null => {
+  if (UPSTREAM_REJECTS_CLAUDE_AGENT_IDENTITY.has(payload.model)) return null;
+  const { safetyIdentifier, sessionId } = parseUserIdMetadata(payload.metadata?.user_id ?? undefined);
+  return safetyIdentifier && sessionId
+    ? {
+        'x-interaction-type': 'messages-proxy',
+        'openai-intent': 'messages-proxy',
+        'user-agent': CLAUDE_AGENT_USER_AGENT,
+        'copilot-integration-id': '',
+      }
+    : null;
+};
+
+export const withClaudeAgentHeadersSet: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, _env, run) => {
+  const overrides = copilotClaudeAgentHeaderOverrides(ctx.payload);
+  if (overrides !== null) {
+    for (const [name, value] of Object.entries(overrides)) {
+      ctx.headers.set(name, value);
+    }
   }
   return await run();
 };

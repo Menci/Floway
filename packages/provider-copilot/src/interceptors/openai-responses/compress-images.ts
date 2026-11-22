@@ -1,7 +1,7 @@
 import { memoizedDataUrlCompressor } from '../image-compression.ts';
 import { targetSizeForOpenAIResponsesChat } from '../image-size.ts';
 import type { OpenAIResponsesBoundaryCtx } from './types.ts';
-import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputContent, OpenAIResponsesInputImage, OpenAIResponsesOutputRefusal, OpenAIResponsesToolOutputContent } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputContent, OpenAIResponsesInputImage, OpenAIResponsesOutputRefusal, OpenAIResponsesToolOutputContent } from '@floway-dev/protocols/openai-responses';
 import { isBase64ImageDataUrl } from '@floway-dev/provider';
 
 // A single client request can reach this boundary more than once — a
@@ -14,9 +14,12 @@ import { isBase64ImageDataUrl } from '@floway-dev/provider';
 const compressedImageUrl = Symbol('compressedImageUrl');
 type CompressibleImagePart = OpenAIResponsesInputImage & { image_url: string; [compressedImageUrl]?: string };
 
-const compressInlineImages = async (ctx: OpenAIResponsesBoundaryCtx): Promise<void> => {
+export const compressCopilotOpenAIResponsesImages = async (
+  payload: CanonicalOpenAIResponsesPayload,
+  model: { readonly id: string },
+): Promise<CanonicalOpenAIResponsesPayload> => {
   const targets: Array<{ part: CompressibleImagePart; imageUrl: string }> = [];
-  for (const item of ctx.payload.input) {
+  for (const item of payload.input) {
     const parts = item.type === 'message'
       ? item.content
       : item.type === 'function_call_output' || item.type === 'custom_tool_call_output' ? item.output : undefined;
@@ -29,9 +32,9 @@ const compressInlineImages = async (ctx: OpenAIResponsesBoundaryCtx): Promise<vo
     }
   }
 
-  if (targets.length === 0) return;
+  if (targets.length === 0) return payload;
 
-  const compress = memoizedDataUrlCompressor(targetSizeForOpenAIResponsesChat(ctx.model.id));
+  const compress = memoizedDataUrlCompressor(targetSizeForOpenAIResponsesChat(model.id));
   const compressedUrls = new Map<CompressibleImagePart, string>();
   await Promise.all(
     targets.map(async target => {
@@ -54,9 +57,9 @@ const compressInlineImages = async (ctx: OpenAIResponsesBoundaryCtx): Promise<vo
   const rewriteParts = <TPart extends OpenAIResponsesInputContent | OpenAIResponsesOutputRefusal | OpenAIResponsesToolOutputContent>(parts: TPart[]): TPart[] =>
     parts.map(part => hasCompressedImage(part) ? rewriteImage(part) as TPart : part);
 
-  ctx.payload = {
-    ...ctx.payload,
-    input: ctx.payload.input.map(item => {
+  return {
+    ...payload,
+    input: payload.input.map(item => {
       if (item.type === 'message' && Array.isArray(item.content)) {
         return item.content.some(hasCompressedImage)
           ? { ...item, content: rewriteParts(item.content) } as CanonicalOpenAIResponsesInputItem
@@ -70,6 +73,10 @@ const compressInlineImages = async (ctx: OpenAIResponsesBoundaryCtx): Promise<vo
       return item;
     }),
   };
+};
+
+const compressInlineImages = async (ctx: OpenAIResponsesBoundaryCtx): Promise<void> => {
+  ctx.payload = await compressCopilotOpenAIResponsesImages(ctx.payload, ctx.model);
 };
 
 // Recompresses every inline base64 image in the outgoing OpenAI Responses payload to

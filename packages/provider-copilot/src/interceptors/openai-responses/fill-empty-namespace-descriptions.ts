@@ -1,5 +1,6 @@
 import type { OpenAIResponsesBoundaryCtx } from './types.ts';
 import { mapOpenAIResponsesTools } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 /**
  * Some Copilot data planes reject empty namespace descriptions permitted by
@@ -11,13 +12,16 @@ import { mapOpenAIResponsesTools } from '@floway-dev/protocols/openai-responses'
  * - https://github.com/caozhiyuan/copilot-api/issues/345
  * - https://github.com/engineersamuel/copilot-proxy-rs/commit/1c23d7237bd1bd7c24045d0d426412851bfd57f6
  */
+export const fillCopilotEmptyNamespaceDescriptions = (payload: CanonicalOpenAIResponsesPayload): CanonicalOpenAIResponsesPayload =>
+  mapOpenAIResponsesTools(payload, tool => tool.type === 'namespace' && tool.description === ''
+    ? { ...tool, description: `Tools in the ${tool.name} namespace.` }
+    : tool);
+
 export const withEmptyNamespaceDescriptionsFilled = async <TResult>(
   ctx: OpenAIResponsesBoundaryCtx,
   _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  ctx.payload = mapOpenAIResponsesTools(ctx.payload, tool => tool.type === 'namespace' && tool.description === ''
-    ? { ...tool, description: `Tools in the ${tool.name} namespace.` }
-    : tool);
+  ctx.payload = fillCopilotEmptyNamespaceDescriptions(ctx.payload);
   return await run();
 };

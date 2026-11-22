@@ -22,6 +22,7 @@ export * from './quota.ts';
 export * from './interceptors/anthropic-messages/system-blocks.ts';
 export * from './pricing.ts';
 export * from './fetch.ts';
+export * from './pipelines.ts';
 export * from './provider.ts';
 
 export { claudeCodeProbeMetrics } from './upstream-metrics.ts';

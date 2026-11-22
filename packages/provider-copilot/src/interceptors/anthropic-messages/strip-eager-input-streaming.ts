@@ -1,4 +1,5 @@
 import type { CopilotAnthropicMessagesBoundaryInterceptor } from './types.ts';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
 /**
  * `eager_input_streaming` is a per-tool property in the Anthropic Messages API
@@ -11,15 +12,19 @@ import type { CopilotAnthropicMessagesBoundaryInterceptor } from './types.ts';
  * References:
  * - https://github.com/anthropics/anthropic-sdk-typescript/blob/a53f60d59ca904f3e79296586642aac3ce68ae02/src/resources/messages/messages.ts#L1761
  */
+export const stripCopilotEagerInputStreaming = (payload: AnthropicMessagesPayload): AnthropicMessagesPayload => payload.tools === undefined
+  ? payload
+  : {
+      ...payload,
+      tools: payload.tools.map(tool => {
+        if (!Object.hasOwn(tool, 'eager_input_streaming')) return tool;
+        const { eager_input_streaming: _, ...rest } = tool as typeof tool & { eager_input_streaming?: unknown };
+        return rest;
+      }),
+    };
+
 export const withEagerInputStreamingStripped: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, _env, run) => {
-  if (ctx.payload.tools) {
-    ctx.payload.tools = ctx.payload.tools.map(tool => {
-      const { eager_input_streaming: _, ...rest } = tool as typeof tool & {
-        eager_input_streaming?: unknown;
-      };
-      return rest;
-    });
-  }
+  ctx.payload = stripCopilotEagerInputStreaming(ctx.payload);
 
   return await run();
 };

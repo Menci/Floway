@@ -17,7 +17,7 @@ import type { AnthropicMessagesAssistantMessage, AnthropicMessagesUserMessage } 
  * References:
  * - https://github.com/caozhiyuan/copilot-api/commit/1f6b98924ae092db9b2010846c32e5cbf10817df
  */
-const contentHasImage = (content: AnthropicMessagesUserMessage['content'] | AnthropicMessagesAssistantMessage['content']): boolean => {
+export const copilotAnthropicContentHasImage = (content: AnthropicMessagesUserMessage['content'] | AnthropicMessagesAssistantMessage['content']): boolean => {
   if (!Array.isArray(content)) return false;
   return content.some(block => {
     if (block.type === 'image') return true;
@@ -33,7 +33,7 @@ export const withVisionHeaderSet = async <TResult>(
   _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  if (ctx.payload.messages.some(message => contentHasImage(message.content))) {
+  if (ctx.payload.messages.some(message => copilotAnthropicContentHasImage(message.content))) {
     ctx.headers.set('copilot-vision-request', 'true');
   }
 

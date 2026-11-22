@@ -1,4 +1,5 @@
 import type { CopilotAnthropicMessagesBoundaryInterceptor } from './types.ts';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
 /**
  * Two `cache_control` sub-fields are beta extensions to the base
@@ -41,26 +42,25 @@ const stripExtensions = (block: Record<string, unknown>): void => {
   else delete block.cache_control;
 };
 
+const strippedBlock = <Block extends object>(block: Block): Block => {
+  const cacheControl = (block as Record<string, unknown>).cache_control;
+  if (!cacheControl || typeof cacheControl !== 'object') return block;
+  const copy = { ...block } as Record<string, unknown>;
+  stripExtensions(copy);
+  return copy as Block;
+};
+
+export const stripCopilotCacheControlExtensions = (payload: AnthropicMessagesPayload): AnthropicMessagesPayload => ({
+  ...payload,
+  ...(Array.isArray(payload.system) ? { system: payload.system.map(block => strippedBlock(block)) } : {}),
+  ...(payload.tools === undefined ? {} : { tools: payload.tools.map(tool => strippedBlock(tool)) }),
+  messages: payload.messages.map(message => Array.isArray(message.content)
+    ? { ...message, content: message.content.map(block => strippedBlock(block)) }
+    : message),
+});
+
 export const withCacheControlExtensionsStripped: CopilotAnthropicMessagesBoundaryInterceptor = async (ctx, _env, run) => {
-  if (Array.isArray(ctx.payload.system)) {
-    for (const block of ctx.payload.system as unknown as Record<string, unknown>[]) {
-      stripExtensions(block);
-    }
-  }
-
-  if (ctx.payload.tools) {
-    for (const tool of ctx.payload.tools as unknown as Record<string, unknown>[]) {
-      stripExtensions(tool);
-    }
-  }
-
-  for (const message of ctx.payload.messages) {
-    if (!Array.isArray(message.content)) continue;
-
-    for (const block of message.content as unknown as Record<string, unknown>[]) {
-      stripExtensions(block);
-    }
-  }
+  ctx.payload = stripCopilotCacheControlExtensions(ctx.payload);
 
   return await run();
 };

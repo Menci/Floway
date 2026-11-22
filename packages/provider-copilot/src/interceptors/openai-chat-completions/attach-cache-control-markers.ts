@@ -1,5 +1,5 @@
 import type { CopilotOpenAIChatCompletionsBoundaryInterceptor } from './types.ts';
-import type { OpenAIChatCompletionsMessage } from '@floway-dev/protocols/openai-chat-completions';
+import type { OpenAIChatCompletionsMessage, OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 
 /**
  * Prime Copilot's content-addressed prompt cache by tagging a small set of
@@ -61,13 +61,19 @@ const selectCacheMarkerIndexes = (messages: readonly OpenAIChatCompletionsMessag
   return [...new Set([...systemIndexes, ...nonSystemIndexes])].sort((a, b) => a - b);
 };
 
-export const withCacheControlMarkersAttached: CopilotOpenAIChatCompletionsBoundaryInterceptor = async (ctx, _env, run) => {
-  const indexes = selectCacheMarkerIndexes(ctx.payload.messages);
-  for (const index of indexes) {
-    // Fresh object per message so downstream mutations (none today, but
-    // cheap insurance) cannot bleed across messages.
-    (ctx.payload.messages[index] as CopilotCacheableMessage).copilot_cache_control = { ...COPILOT_CONTEXT_CACHE_CONTROL };
+export const attachCopilotCacheControlMarkers = (payload: OpenAIChatCompletionsPayloadEx): OpenAIChatCompletionsPayloadEx => {
+  const messages = [...payload.messages];
+  for (const index of selectCacheMarkerIndexes(messages)) {
+    messages[index] = {
+      ...messages[index],
+      copilot_cache_control: { ...COPILOT_CONTEXT_CACHE_CONTROL },
+    } as CopilotCacheableMessage;
   }
+  return { ...payload, messages };
+};
+
+export const withCacheControlMarkersAttached: CopilotOpenAIChatCompletionsBoundaryInterceptor = async (ctx, _env, run) => {
+  ctx.payload = attachCopilotCacheControlMarkers(ctx.payload);
 
   return await run();
 };

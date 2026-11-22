@@ -1,4 +1,5 @@
 import type { CopilotOpenAIChatCompletionsBoundaryInterceptor } from './types.ts';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
 
 /**
  * Copilot's OpenAI Chat Completions endpoint requires the private
@@ -10,10 +11,13 @@ import type { CopilotOpenAIChatCompletionsBoundaryInterceptor } from './types.ts
  * - https://github.com/caozhiyuan/copilot-api/blob/cd0d0182eb4b9bf68a3376dc79728afa7f42ce07/src/services/copilot/create-chat-completions.ts#L28-L49
  */
 export const withVisionHeaderSet: CopilotOpenAIChatCompletionsBoundaryInterceptor = async (ctx, _env, run) => {
-  const hasImage = ctx.payload.messages.some(
-    message => Array.isArray(message.content) && message.content.some(part => part.type === 'image_url'),
-  );
+  const hasImage = copilotOpenAIChatCompletionsHasImage(ctx.payload);
   if (hasImage) ctx.headers.set('copilot-vision-request', 'true');
 
   return await run();
 };
+
+export const copilotOpenAIChatCompletionsHasImage = (payload: OpenAIChatCompletionsPayloadEx): boolean =>
+  payload.messages.some(
+    message => Array.isArray(message.content) && message.content.some(part => part.type === 'image_url'),
+  );
