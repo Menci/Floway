@@ -1,5 +1,5 @@
 import type { KimiCodeUpstreamConfig } from './config.ts';
-import { type FetchInit, type UpstreamFetchOptions, joinBaseAndPath } from '@floway-dev/provider';
+import { joinBaseAndPath, type FetchInit, type Fetcher } from '@floway-dev/provider';
 
 // Coding subscription keys use the regional coding service, independently of
 // Moonshot Open Platform keys and billing.
@@ -9,17 +9,17 @@ const BASE_URLS = {
   overseas: 'https://api.kimi.ai/coding/v1',
 } as const;
 
-export const kimiCodeFetch = async (
+export const kimiCodeUrl = (region: KimiCodeUpstreamConfig['region'], path: string): string => joinBaseAndPath(BASE_URLS[region], path);
+
+export const kimiCodeFetch = (
   config: KimiCodeUpstreamConfig,
   path: string,
   init: FetchInit,
-  options: UpstreamFetchOptions,
+  fetcher: Fetcher,
 ): Promise<Response> => {
   const headers = new Headers(init.headers);
-  for (const [name, value] of options.extraHeaders ?? []) headers.set(name, value);
   headers.set('authorization', `Bearer ${config.apiKey}`);
-  if (init.body) headers.set('content-type', 'application/json');
-  return await options.wrapUpstreamCall(() => options.fetcher(joinBaseAndPath(BASE_URLS[config.region], path), { ...init, headers }));
+  return fetcher(kimiCodeUrl(config.region, path), { ...init, headers });
 };
 
 export const readKimiCodeJson = async (response: Response, path: string): Promise<unknown> => {

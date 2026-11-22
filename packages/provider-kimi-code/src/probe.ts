@@ -3,7 +3,7 @@ import { kimiCodeFetch, readKimiCodeJson } from './fetch.ts';
 import { readKimiCodeUpstreamState, readKimiCodeAccount, type KimiCodeAccount, type KimiCodeObservation, type KimiCodeUpstreamState } from './state.ts';
 import { kimiCodeMetrics } from './upstream-metrics.ts';
 import { readKimiCodeUsage } from './usage.ts';
-import { getProviderRepo, identityWrapUpstreamCall, recordUpstreamMetrics, runScheduledUsageRefresh, type Fetcher, type ProviderScheduledOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { getProviderRepo, recordUpstreamMetrics, runScheduledUsageRefresh, type Fetcher, type ProviderScheduledOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 // Request-triggered probes require the last persisted attempt to be at least one
 // minute old for usage or one day old for identity. A 429 or 403 forces a usage
@@ -49,7 +49,7 @@ const refreshProbe = async <T>(
   const configVersion = saved !== null && savedConfig?.apiKey === config.apiKey && savedConfig.region === config.region ? saved.configVersion : null;
   let observation: KimiCodeObservation<T>;
   try {
-    const response = await kimiCodeFetch(config, path, { method: 'GET', headers: new Headers({ accept: 'application/json' }) }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+    const response = await kimiCodeFetch(config, path, { method: 'GET', headers: new Headers({ accept: 'application/json' }) }, fetcher);
     observation = { fetchedAt: Date.now(), data: read(await readKimiCodeJson(response, path)) };
   } catch (error) {
     if (configVersion !== null) {
@@ -86,20 +86,11 @@ export const refreshKimiCodeUsageProbe = (upstreamId: string, config: KimiCodeUp
 export const refreshKimiCodeAccountProbe = (upstreamId: string, config: KimiCodeUpstreamConfig, fetcher: Fetcher): Promise<KimiCodeObservation<KimiCodeAccount>> =>
   refreshProbe(upstreamId, config, fetcher, 'accountProbe', '/me', readKimiCodeAccount);
 
-export const scheduleKimiCodeProbes = (record: UpstreamRecord, config: KimiCodeUpstreamConfig, fetcher: Fetcher, waitUntil: (promise: Promise<unknown>) => void, forceUsage: boolean): void => {
-  const state = readKimiCodeUpstreamState(record.state);
-  const now = Date.now();
-  if (forceUsage || state.usageProbe === null || now - state.usageProbe.attemptedAt >= USAGE_INTERVAL_MS) {
-    waitUntil(refreshKimiCodeUsageProbe(record.id, config, fetcher).catch((error: unknown) => {
-      console.warn(`Failed to refresh Kimi Code usage for ${record.id}:`, error);
-    }));
-  }
-  if (state.accountProbe === null || now - state.accountProbe.attemptedAt >= ACCOUNT_INTERVAL_MS) {
-    waitUntil(refreshKimiCodeAccountProbe(record.id, config, fetcher).catch((error: unknown) => {
-      console.warn(`Failed to refresh Kimi Code account for ${record.id}:`, error);
-    }));
-  }
-};
+export const isKimiCodeUsageProbeDue = (state: KimiCodeUpstreamState, now: number): boolean =>
+  state.usageProbe === null || now - state.usageProbe.attemptedAt >= USAGE_INTERVAL_MS;
+
+export const isKimiCodeAccountProbeDue = (state: KimiCodeUpstreamState, now: number): boolean =>
+  state.accountProbe === null || now - state.accountProbe.attemptedAt >= ACCOUNT_INTERVAL_MS;
 
 export const runKimiCodeScheduledTask = async (record: UpstreamRecord, options: ProviderScheduledOptions): Promise<void> => {
   const { config } = assertKimiCodeUpstreamRecord(record);
@@ -107,7 +98,7 @@ export const runKimiCodeScheduledTask = async (record: UpstreamRecord, options: 
   await runScheduledUsageRefresh(record, options, state.usageProbe?.observation?.fetchedAt ?? null, async (fresh, fetcher) => {
     const outcomes = await Promise.allSettled([
       refreshKimiCodeUsageProbe(fresh.id, config, fetcher),
-      ...(state.accountProbe === null || Date.now() - state.accountProbe.attemptedAt >= ACCOUNT_INTERVAL_MS ? [refreshKimiCodeAccountProbe(fresh.id, config, fetcher)] : []),
+      ...(isKimiCodeAccountProbeDue(state, Date.now()) ? [refreshKimiCodeAccountProbe(fresh.id, config, fetcher)] : []),
     ]);
     const failures = outcomes.filter(result => result.status === 'rejected');
     if (failures.length > 0) throw new AggregateError(failures.map(result => result.reason as unknown), 'Kimi Code scheduled probes failed');
