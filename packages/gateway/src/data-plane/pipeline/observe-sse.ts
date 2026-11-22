@@ -1,6 +1,6 @@
-import type { AttemptResponse } from './failover.ts';
-import { forwardHttp, openAiApiError, scalarHttpAttempt } from './non-chat.ts';
+import { forwardHttp, openAiApiError, type RenderedAttemptResponse, scalarHttpAttempt } from './non-chat.ts';
 import { billableCall, type BillableCall, type ObservedUsage } from './observe-usage.ts';
+import { failedRender, type RenderOutcome } from './render.ts';
 import { openaiInternalErrorPayload } from '../shared/openai-error-payload.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, serializeSseFrame } from '../shared/sse.ts';
 import type { HttpResponseFacts } from '@floway-dev/http';
@@ -60,25 +60,29 @@ async function* withKeepAlive<Frame>(events: AsyncIterable<Frame>, signal: Abort
 
 interface SseDialect<Frame> {
   readonly frames: (body: ReadableStream<Uint8Array>, signal: AbortSignal) => AsyncIterable<Frame>;
-  readonly encode: (frame: Frame) => { readonly wire: string | null; readonly end?: 'completed' | 'stream-error' };
+  readonly encode: (frame: Frame) => { readonly wire: string | null; readonly end?: 'completed' | 'protocol-error' };
   readonly eofMessage: string;
   readonly usage: () => ObservedUsage;
 }
 
 const keepAliveFrame = Bytes.fromUtf8(serializeSseFrame(sseCommentFrame('keepalive')));
+const failureFrame = (error: unknown): Bytes =>
+  Bytes.fromUtf8(serializeSseFrame(sseFrame(JSON.stringify(openaiInternalErrorPayload(toInternalDebugError(error))))));
 
 export const observeSse = <Frame>(
   http: HttpResponseFacts, identity: TelemetryModelIdentity, env: StageEnv, dialect: SseDialect<Frame>,
-): AttemptResponse => {
+): RenderedAttemptResponse => {
   const { body } = http;
   const forwarded = forwardHttp(http);
   if (body === null) {
-    const error = openAiApiError(502, 'Upstream returned a streaming response with no body.', env.clock());
+    const message = 'Upstream returned a streaming response with no body.';
+    const error = openAiApiError(502, message, env.clock());
     const headers = forwarded.headers.filter(([name]) => name !== 'content-type');
-    return scalarHttpAttempt(env, { ...error, headers: [...headers, ...error.headers] }, identity, dialect.usage());
+    return scalarHttpAttempt(env, { ...error, headers: [...headers, ...error.headers] }, identity, dialect.usage(), failedRender('source-error', new Error(message)));
   }
   const source = body instanceof Bytes ? env.createStream({ label: 'buffered upstream SSE', async *iterate() { yield body; } }) : body;
-  let disposition: BillableCall['disposition'] = 'released';
+  let outcome: RenderOutcome = { kind: 'completed' };
+  let reachedTerminal = false;
   const stream = env.wrapStream(source, {
     label: 'downstream SSE frames',
     async *transform(input, signal) {
@@ -89,21 +93,28 @@ export const observeSse = <Frame>(
             continue;
           }
           const encoded = dialect.encode(frame);
-          if (encoded.end !== undefined) disposition = encoded.end;
+          if (encoded.end === 'protocol-error') outcome = failedRender('protocol-error');
+          reachedTerminal = encoded.end !== undefined;
           if (encoded.wire !== null) yield Bytes.fromUtf8(encoded.wire);
-          if (encoded.end !== undefined) return;
+          if (reachedTerminal) return;
         }
-        if (!signal.aborted) throw new Error(dialect.eofMessage);
+        if (!signal.aborted) {
+          const error = new Error(dialect.eofMessage);
+          outcome = failedRender('premature-eof', error);
+          yield failureFrame(error);
+        }
       } catch (error) {
         if (signal.aborted) return;
-        disposition = 'stream-error';
-        yield Bytes.fromUtf8(serializeSseFrame(sseFrame(JSON.stringify(openaiInternalErrorPayload(toInternalDebugError(error))))));
+        outcome = failedRender('source-error', error);
+        yield failureFrame(error);
       }
     },
     onClose(end) {
       streamEnd.resolve(env.clock());
-      if (end.how === 'cancelled') disposition = 'cancelled';
-      else if (end.how === 'leaked' || end.how === 'errored') disposition = 'stream-error';
+      if (end.how === 'errored') outcome = failedRender('source-error', end.error);
+      else if (end.how === 'leaked') outcome = failedRender('source-error');
+      render.resolve(outcome);
+      const disposition = end.how === 'cancelled' ? 'cancelled' : outcome.kind === 'failed' ? 'stream-error' : reachedTerminal ? 'completed' : 'released';
       try {
         billing.resolve([billableCall(env, identity, disposition, dialect.usage())]);
       } catch (error) {
@@ -112,10 +123,12 @@ export const observeSse = <Frame>(
     },
   });
   const billing = env.deferred<readonly BillableCall[]>('billable call', stream);
+  const render = env.deferred<RenderOutcome>('render outcome', stream);
   const streamEnd = env.deferred<number | null>('stream end', stream);
   const headers = forwarded.headers.filter(([name]) => !['content-type', 'cache-control'].includes(name.toLowerCase()));
   return {
     'response.http': { ...forwarded, headers: [...headers, ['content-type', 'text/event-stream'], ['cache-control', 'no-cache'], ['connection', 'keep-alive']], body: stream },
+    'response.render': render.deferred,
     'response.usage.billable': billing.deferred,
     'response.timing.firstOutputAt': env.defer('first output', Promise.resolve(null)),
     'response.timing.streamEndedAt': streamEnd.deferred,

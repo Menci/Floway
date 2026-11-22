@@ -1,6 +1,7 @@
 import type { UsageQuantities } from '../../repo/types.ts';
 import { createGatewayHttpHandler } from '../pipeline/host.ts';
 import { createNonChatPipeline, forwardHttp, httpSucceeded, invalidUpstreamResponse, measured, readHttpBytes, requestBytes, scalarHttpAttempt } from '../pipeline/non-chat.ts';
+import { failedRender } from '../pipeline/render.ts';
 import { Bytes } from '@floway-dev/pipeline';
 import { parseDecimalString, type RerankSourceProtocol, type RerankTarget } from '@floway-dev/protocols/common';
 import { type CanonicalRerankRequest, type CanonicalRerankResponse, parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, rerankRequestIncompatibility } from '@floway-dev/protocols/rerank';
@@ -65,7 +66,7 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => createGatewayHtt
         body = JSON.parse(bytes.utf8());
         usage = parseRerankUsage(target, body);
       } catch (error) {
-        if (!sameProtocol) return scalarHttpAttempt(env, invalidUpstreamResponse(error, env.clock()), identity, measure(usage));
+        if (!sameProtocol) return scalarHttpAttempt(env, invalidUpstreamResponse(error, env.clock()), identity, measure(usage), failedRender('collect-error', error));
         console.warn(`rerank: failed to parse same-protocol 2xx upstream body or usage for ${sourceProtocol}; usage row will be request-only`, error instanceof Error ? error.message : String(error));
       }
       const observed = measure(usage);
@@ -75,7 +76,7 @@ export const rerank = (sourceProtocol: RerankSourceProtocol) => createGatewayHtt
         const result = renderRerankResponse(sourceProtocol, target, canonical, request['request.payload']);
         return scalarHttpAttempt(env, { ...http, body: Bytes.fromUtf8(JSON.stringify(result)) }, identity, observed);
       } catch (error) {
-        return scalarHttpAttempt(env, invalidUpstreamResponse(error, env.clock()), identity, observed);
+        return scalarHttpAttempt(env, invalidUpstreamResponse(error, env.clock()), identity, observed, failedRender('collect-error', error));
       }
     },
   }),

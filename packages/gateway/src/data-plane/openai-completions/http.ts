@@ -51,7 +51,7 @@ const ingress = createNonChatPipeline<Payload, ProviderHttpOutput>({
       encode: parsed => {
         if (parsed.type === 'done') return { wire: serializeSseFrame(sseFrame('[DONE]')), end: 'completed' };
         const event = parsed.data;
-        if (isOpenAIErrorPayload(event)) return { wire: serializeSseFrame(sseFrame(JSON.stringify(event))), end: 'stream-error' };
+        if (isOpenAIErrorPayload(event)) return { wire: serializeSseFrame(sseFrame(JSON.stringify(event))), end: 'protocol-error' };
         if (typeof event === 'object' && event !== null) {
           const root = event as UsageEvent;
           if (root.service_tier !== undefined) serviceTier = root.service_tier;

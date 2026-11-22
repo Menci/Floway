@@ -1,10 +1,11 @@
 import { z } from 'zod';
 
 import { edgeHttp, type HttpOutput, jsonHttpResponse } from '../pipeline/edge-http.ts';
-import { type AttemptResponse, type CandidateRequest, type CandidatesRequest, failover } from '../pipeline/failover.ts';
+import { type CandidateRequest, type CandidatesRequest, failover } from '../pipeline/failover.ts';
 import type { GatewayHttpFacts } from '../pipeline/host.ts';
-import { forwardHttp, header, openAiApiError, requestBytes, scalarHttpAttempt } from '../pipeline/non-chat.ts';
+import { forwardHttp, header, openAiApiError, type RenderedAttemptResponse, requestBytes, scalarHttpAttempt } from '../pipeline/non-chat.ts';
 import { emptyUsageFacts, observeIdentity, usageResponseKeys } from '../pipeline/observe-usage.ts';
+import { renderedNow } from '../pipeline/render.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { priceUsage, type SettlementFacts, writeSettlement } from '../pipeline/settlement.ts';
 import { filterInboundHeaderEntries } from '../shared/inbound-headers.ts';
@@ -111,7 +112,7 @@ type Attempt = GatewayHttpFacts & PayloadFacts & CandidateRequest;
 type AlphaPorts = Pick<GatewayServices, 'providers' | 'webSearchProvider'>;
 type Targets = { provider: DynamicTarget<string, ProviderInput<Payload>, ProviderHttpOutput, GatewayServices> };
 
-const prepareAlphaSearch = defineStage<GatewayHttpFacts, Resolved, AttemptResponse, AttemptResponse, AlphaPorts>({
+const prepareAlphaSearch = defineStage<GatewayHttpFacts, Resolved, RenderedAttemptResponse, RenderedAttemptResponse, AlphaPorts>({
   name: 'prepareAlphaSearch',
   through: {
     request: {
@@ -120,10 +121,12 @@ const prepareAlphaSearch = defineStage<GatewayHttpFacts, Resolved, AttemptRespon
     },
     response: { needs: [], consumes: [], provides: [] },
   },
-  return: { provides: ['response.http', ...usageResponseKeys] },
+  return: { provides: ['response.http', 'response.render', ...usageResponseKeys] },
   execute: async (facts, next, env) => {
     const http = facts['request.http'];
-    const reply = (response: AttemptResponse['response.http']): AttemptResponse => ({ ...emptyUsageFacts(env), 'response.http': response });
+    const reply = (response: RenderedAttemptResponse['response.http']): RenderedAttemptResponse => ({
+      ...emptyUsageFacts(env), ...renderedNow(env, { kind: 'completed' }), 'response.http': response,
+    });
     let body: unknown = {};
     if (isJsonMediaType(header(http.headers, 'content-type'))) {
       try {
@@ -146,13 +149,13 @@ const prepareAlphaSearch = defineStage<GatewayHttpFacts, Resolved, AttemptRespon
   },
 });
 
-const enterUpstream = defineEnding<Attempt, AttemptResponse, Targets, Pick<GatewayServices, 'providers'>>({
+const enterUpstream = defineEnding<Attempt, RenderedAttemptResponse, Targets, Pick<GatewayServices, 'providers'>>({
   name: 'enterUpstream',
   request: { needs: ['request.http', 'request.payload', 'route.candidate'] },
   into: {
     provider: {
       request: { needs: [], consumes: ['request.http'], provides: ['provider.model', 'request.headers'] },
-      response: { needs: ['response.http', 'response.modelKey'], consumes: [], provides: ['response.http', ...usageResponseKeys] },
+      response: { needs: ['response.http', 'response.modelKey'], consumes: [], provides: ['response.http', 'response.render', ...usageResponseKeys] },
     },
   },
   execute: async ({ 'request.http': http, ...facts }, into, env) => {

@@ -1,6 +1,7 @@
 import type { UsageQuantities } from '../../repo/types.ts';
 import { createGatewayHttpHandler } from '../pipeline/host.ts';
 import { createNonChatPipeline, forwardHttp, httpSucceeded, invalidUpstreamResponse, measured, readHttpBytes, requestBytes, scalarHttpAttempt } from '../pipeline/non-chat.ts';
+import { failedRender } from '../pipeline/render.ts';
 import { Bytes } from '@floway-dev/pipeline';
 import { type DecisionProtocol, type DecisionTarget, parseDecimalString, parseJSONWithRawNumbers } from '@floway-dev/protocols/common';
 import { type CanonicalDecisionRequest, parseDecisionRequest, parseDecisionResponse, parseDecisionUsage, renderDecisionResponse } from '@floway-dev/protocols/decision';
@@ -47,7 +48,7 @@ export const decision = (sourceProtocol: DecisionProtocol) => createGatewayHttpH
         // Raw JSON preserves the upstream digits in cross-dialect probabilities.
         body = parseJSONWithRawNumbers(bytes.utf8()) as Record<string, unknown>;
       } catch (error) {
-        if (!sameProtocol) return scalarHttpAttempt(env, invalidUpstreamResponse(error, env.clock()), identity);
+        if (!sameProtocol) return scalarHttpAttempt(env, invalidUpstreamResponse(error, env.clock()), identity, undefined, failedRender('collect-error', error));
         console.warn(`decision: failed to parse 2xx upstream body for ${request['request.model']}; usage row will be request-only`, error instanceof Error ? error.message : String(error));
       }
 
@@ -58,7 +59,7 @@ export const decision = (sourceProtocol: DecisionProtocol) => createGatewayHttpH
         const result = renderDecisionResponse(sourceProtocol, parseDecisionResponse(target, body));
         return scalarHttpAttempt(env, { ...http, body: Bytes.fromUtf8(JSON.stringify(result)) }, identity, usage);
       } catch (error) {
-        return scalarHttpAttempt(env, invalidUpstreamResponse(error, env.clock()), identity, usage);
+        return scalarHttpAttempt(env, invalidUpstreamResponse(error, env.clock()), identity, usage, failedRender('collect-error', error));
       }
     },
   }),

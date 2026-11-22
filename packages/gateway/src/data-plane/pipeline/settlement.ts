@@ -1,13 +1,14 @@
 import type { HttpDeliveryFacts, HttpOutput } from './edge-http.ts';
 import type { SelectedAttemptResponse } from './failover.ts';
 import type { BillableCall, UsageFacts } from './observe-usage.ts';
+import type { RenderFacts } from './render.ts';
 import type { GatewayRouteFacts, GatewayServices } from './services.ts';
 import type { TokenUsage, UsageRecord } from '../../repo/types.ts';
 import { currentHour } from '../shared/telemetry/hour.ts';
 import { performanceRecord } from '../shared/telemetry/performance-record.ts';
 import { priceUsageMeasurement, tokenUsageFromBillableUsage, tokenUsageMeasurement } from '../shared/telemetry/usage.ts';
 import { defineStage, type Deferred, type ErrorSnapshot, snapshotError, type StageLogger } from '@floway-dev/pipeline';
-import type { PerformanceOperation, TelemetryModelIdentity } from '@floway-dev/provider';
+import type { ChatTargetApi, PerformanceOperation, TelemetryModelIdentity } from '@floway-dev/provider';
 
 interface PricedCall extends BillableCall, Readonly<Pick<UsageRecord, 'pricingSelector' | 'metrics'>> {
   readonly dumpTokenUsage: TokenUsage | null;
@@ -50,28 +51,27 @@ export interface Settlement {
   readonly streamEndedAt: number | null;
   readonly upstreamStartedAt: number | null;
   readonly upstreamId: string | null;
-  readonly targetApi: string | null;
-  readonly requestedModel: string | null;
+  readonly targetApi: ChatTargetApi | null;
 }
 
 export interface SettlementFacts { readonly 'response.settlement': Deferred<Settlement> }
 
 type SettlementServices = Pick<GatewayServices, 'usageStore' | 'performanceStore'>;
 type SettlementInput = Pick<GatewayRouteFacts, 'request.auth.apiKeyId' | 'request.route.runtimeLocation'>;
-type SettlementResponse = HttpOutput & UsageFacts & PricedUsageFacts & HttpDeliveryFacts
+type SettlementResponse = HttpOutput & UsageFacts & PricedUsageFacts & HttpDeliveryFacts & RenderFacts
   & Partial<Pick<SelectedAttemptResponse, 'response.route.candidate' | 'response.usage.selected'>> & {
-    readonly 'response.targetApi'?: string;
-    readonly 'response.requestedModel'?: string;
+    readonly 'response.targetApi'?: ChatTargetApi;
   };
 
 const persist = async (
   request: SettlementInput, response: SettlementResponse, operation: PerformanceOperation | null, services: SettlementServices, log: StageLogger,
 ): Promise<Settlement> => {
-  const [calls, firstOutputAt, streamEndedAt, delivery, selected] = await Promise.all([
+  const [calls, firstOutputAt, streamEndedAt, delivery, render, selected] = await Promise.all([
     response['response.usage.priced'].promise,
     response['response.timing.firstOutputAt'].promise,
     response['response.timing.streamEndedAt'].promise,
     response['response.delivery'].promise,
+    response['response.render'].promise,
     response['response.usage.selected']?.promise,
   ]);
   const http = response['response.http'];
@@ -79,9 +79,9 @@ const persist = async (
   const selectedIds = new Set(selected?.map(call => call.callId));
   const selectedCalls = calls.filter(call => selectedIds.has(call.callId));
   const last = selectedCalls.at(-1);
-  const outcome = http.status < 200 || http.status >= 300
-    ? candidate === undefined ? 'gateway-error' : 'upstream-error'
-    : delivery.kind !== 'completed' || last?.disposition === 'stream-error' || last?.disposition === 'cancelled' ? 'failed' : 'success';
+  const outcome = render.kind === 'failed' || delivery.kind !== 'completed'
+    ? 'failed'
+    : http.status < 200 || http.status >= 300 ? candidate === undefined ? 'gateway-error' : 'upstream-error' : 'success';
   const hour = currentHour();
   const keyId = request['request.auth.apiKeyId'];
   const writes = calls.map(call => ({
@@ -93,12 +93,15 @@ const persist = async (
   }));
 
   if (candidate !== undefined && operation !== null) {
+    const outputTokens = render.kind === 'failed' && render.reason === 'collect-error'
+      ? 0
+      : selectedCalls.reduce((sum, call) => sum + (call.dumpTokenUsage?.output ?? 0), 0);
     const record = performanceRecord({
       dimensions: { keyId, hour, model: candidate.modelId, upstream: candidate.upstreamId, operation, runtimeLocation: request['request.route.runtimeLocation'] },
       firstOutputAt,
       streamEndedAt,
       upstreamStartedAt: http.timing.startedAt,
-      outputTokens: selectedCalls.reduce((sum, call) => sum + (call.dumpTokenUsage?.output ?? 0), 0),
+      outputTokens,
       failed: outcome !== 'success',
     });
     writes.push({ label: `performance ${record.kind}`, write: services.performanceStore.record(record) });
@@ -132,7 +135,6 @@ const persist = async (
     upstreamStartedAt: candidate === undefined ? null : http.timing.startedAt,
     upstreamId: candidate?.upstreamId ?? null,
     targetApi: response['response.targetApi'] ?? null,
-    requestedModel: response['response.requestedModel'] ?? null,
   };
 };
 
@@ -142,7 +144,7 @@ export const writeSettlement = (operation: PerformanceOperation | null) =>
     through: {
       request: { needs: ['request.auth.apiKeyId', 'request.route.runtimeLocation'], consumes: [], provides: [] },
       response: {
-        needs: ['response.http', 'response.delivery', 'response.usage.priced', 'response.timing.firstOutputAt', 'response.timing.streamEndedAt'],
+        needs: ['response.http', 'response.delivery', 'response.render', 'response.usage.priced', 'response.timing.firstOutputAt', 'response.timing.streamEndedAt'],
         consumes: [],
         provides: ['response.settlement'],
       },

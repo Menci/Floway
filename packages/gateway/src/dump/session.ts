@@ -1,6 +1,8 @@
 import { getDumpBroker, getDumpStore } from './registry.ts';
 import { dumpMetadataSchema } from './schemas.ts';
 import { type DumpErrorMeta, type DumpLiveSummary, type DumpMetadata, dumpLiveStreamId } from './types.ts';
+import type { HttpDelivery } from '../data-plane/pipeline/edge-http.ts';
+import type { RenderOutcome } from '../data-plane/pipeline/render.ts';
 import type { Settlement } from '../data-plane/pipeline/settlement.ts';
 import { getRepo } from '../repo/index.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
@@ -21,12 +23,13 @@ const inputTokens = (usage: TokenUsage | null | undefined): number | null => {
   return values.some(value => value !== undefined) ? values.reduce<number>((total, value) => total + (value ?? 0), 0) : null;
 };
 
-const decodedSettlement = (view: DumpViewModel): Settlement | undefined => {
-  const root = [...view.stages.values()].find(stage => stage.edge === 'root');
-  const deferred = root?.responseFacts?.['response.settlement'];
+const decodedRootDeferred = <T>(view: DumpViewModel, key: string): T | undefined => {
+  const rootId = view.rootStageIds[0];
+  const root = rootId === undefined ? undefined : view.stages.get(rootId);
+  const deferred = root?.responseFacts?.[key];
   if (!isDecodedDeferredRef(deferred)) return undefined;
   const settled = view.deferreds.get(deferred.$deferred)?.settlement;
-  return settled?.ok ? settled.value as Settlement : undefined;
+  return settled?.ok ? settled.value as T : undefined;
 };
 
 const modelFromTrace = (view: DumpViewModel): string | null => {
@@ -39,11 +42,23 @@ const modelFromTrace = (view: DumpViewModel): string | null => {
 
 interface HostFailure { readonly status: number; readonly error: DumpErrorMeta }
 
-const dumpError = (settlement: Settlement | undefined, summary: DumpCompletionSummary, hostFailure: HostFailure | undefined): DumpErrorMeta | null => {
+const renderFailureMessages = {
+  'protocol-error': 'Upstream SSE reported an error',
+  'premature-eof': 'Upstream SSE ended before its terminal frame',
+  'source-error': 'Upstream response rendering failed',
+  'collect-error': 'Upstream response collection failed',
+} satisfies Record<Extract<RenderOutcome, { kind: 'failed' }>['reason'], string>;
+
+const dumpError = (view: DumpViewModel, settlement: Settlement | undefined, summary: DumpCompletionSummary, hostFailure: HostFailure | undefined): DumpErrorMeta | null => {
   if (hostFailure !== undefined) return hostFailure.error;
   if (settlement?.outcome === 'gateway-error') return { kind: 'gateway' };
   if (settlement?.outcome === 'upstream-error') return { kind: 'upstream' };
   if (!summary.ok || settlement?.outcome === 'failed') {
+    const render = decodedRootDeferred<RenderOutcome>(view, 'response.render');
+    if (render?.kind === 'failed') return { kind: 'failed', reason: oneLine(render.error?.message ?? renderFailureMessages[render.reason]) };
+    const delivery = decodedRootDeferred<HttpDelivery>(view, 'response.delivery');
+    if (delivery?.kind === 'client-cancelled') return { kind: 'failed', reason: 'Downstream cancelled the SSE response' };
+    if (delivery?.kind === 'write-failed') return { kind: 'failed', reason: oneLine(delivery.error.message) };
     return { kind: 'failed', reason: summary.doneError?.message ?? 'Downstream response did not complete' };
   }
   return null;
@@ -53,7 +68,7 @@ const buildMetadata = async (
   started: DumpLiveSummary, view: DumpViewModel, summary: DumpCompletionSummary, hostFailure: HostFailure | undefined,
 ): Promise<DumpMetadata> => {
   const { downstreamRequest, downstreamResponse } = projectWireExchanges(view);
-  const settlement = decodedSettlement(view);
+  const settlement = decodedRootDeferred<Settlement>(view, 'response.settlement');
   const completedAt = Date.now();
   const record = settlement?.upstreamId ? await getRepo().upstreams.getById(settlement.upstreamId) : null;
   const responseBytes = downstreamResponse?.body instanceof Bytes ? downstreamResponse.body.byteLength
@@ -65,14 +80,14 @@ const buildMetadata = async (
     path: downstreamRequest?.url.pathname ?? started.path,
     status: hostFailure?.status ?? downstreamResponse?.status ?? settlement?.status ?? (summary.ok ? 200 : 500),
     upstream: record === null ? null : { id: record.id, name: record.name, kind: record.kind, hue: record.hue },
-    model: settlement?.identity?.model ?? settlement?.requestedModel ?? started.model ?? modelFromTrace(view),
+    model: settlement?.identity?.model ?? started.model ?? modelFromTrace(view),
     inputTokens: inputTokens(settlement?.tokenUsage),
     outputTokens: settlement?.tokenUsage?.output ?? null,
     requestBytes: downstreamRequest?.body instanceof Bytes ? downstreamRequest.body.byteLength : started.requestBytes,
     responseBytes,
     durationMs: completedAt - started.startedAt,
     ttftMs: settlement?.firstOutputAt == null || settlement.upstreamStartedAt === null ? null : Math.round(settlement.firstOutputAt - settlement.upstreamStartedAt),
-    error: dumpError(settlement, summary, hostFailure),
+    error: dumpError(view, settlement, summary, hostFailure),
     targetApi: settlement?.targetApi ?? null,
     truncated: summary.truncated,
     droppedEvents: summary.droppedEvents,

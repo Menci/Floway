@@ -70,7 +70,7 @@ const ingress = createNonChatPipeline<OpenAIAudioTranscriptionRequest, ProviderH
             throw new Error(`Malformed upstream ${sourceApi} SSE JSON: ${frame.data}`, { cause: error });
           }
           const wire = serializeSseFrame(frame);
-          if (isOpenAIErrorPayload(event)) return { wire, end: 'stream-error' };
+          if (isOpenAIErrorPayload(event)) return { wire, end: 'protocol-error' };
           if (!isOpenAIAudioTranscriptionDoneEvent(event)) return { wire };
           measurement = measureOpenAIAudioTranscriptionUsage(event, sourceApi);
           return { wire, end: 'completed' };

@@ -2,6 +2,7 @@ import { edgeHttp, type HttpInput, type HttpOutput, jsonHttpResponse } from './e
 import { type AttemptResponse, type CandidateRequest, failover } from './failover.ts';
 import type { GatewayHttpFacts } from './host.ts';
 import { billableCall, emptyUsageFacts, observedTokenUsage, type ObservedUsage, observeIdentity, scalarUsageFacts, usageResponseKeys } from './observe-usage.ts';
+import { renderedNow, type RenderFacts, type RenderOutcome } from './render.ts';
 import { type CandidateError, createResolveCandidates, type ModelRequest } from './resolve-candidates.ts';
 import type { GatewayServices, RouteCandidate } from './services.ts';
 import { priceUsage, type SettlementFacts, writeSettlement } from './settlement.ts';
@@ -14,6 +15,7 @@ import type { ModelKind } from '@floway-dev/protocols/common';
 import { type PerformanceOperation, type ProviderHttpOutput, type ProviderInput, type ProviderPipelines, type ProviderServices, type TelemetryModelIdentity, toInternalDebugError } from '@floway-dev/provider';
 
 export type ParsedOperation<Payload> = { readonly model: string; readonly payload: Payload } | { readonly error: string };
+export type RenderedAttemptResponse = AttemptResponse & RenderFacts;
 
 interface OperationRequest<Payload> extends ModelRequest, HttpInput {
   readonly 'request.payload': Payload;
@@ -30,7 +32,7 @@ interface NonChatPlan<Payload, Output extends ProviderHttpOutput> {
   readonly prepareProviderPayload?: (payload: Payload) => Payload;
   readonly select: (candidates: readonly RouteCandidate[], request: OperationRequest<Payload>) => readonly RouteCandidate[] | CandidateError;
   readonly unsupportedMessage?: (model: string) => string;
-  readonly respond: (response: Output, request: OperationRequest<Payload> & CandidateRequest, identity: TelemetryModelIdentity, env: StageEnv) => AttemptResponse | Promise<AttemptResponse>;
+  readonly respond: (response: Output, request: OperationRequest<Payload> & CandidateRequest, identity: TelemetryModelIdentity, env: StageEnv) => RenderedAttemptResponse | Promise<RenderedAttemptResponse>;
 }
 
 const PROVIDER_ENTRY = ['provider.model', 'request.headers', 'request.payload'];
@@ -48,27 +50,27 @@ export const createNonChatPipeline = <Payload, ProviderOutput extends ProviderHt
   type Targets = { provider: DynamicTarget<string, ProviderInput<Payload>, ProviderOutput, GatewayServices> };
   const providerExit = [...PROVIDER_EXIT, ...(plan.providerExit ?? [])];
 
-  const parsePayload = defineStage<GatewayHttpFacts, Request, AttemptResponse, AttemptResponse>({
+  const parsePayload = defineStage<GatewayHttpFacts, Request, RenderedAttemptResponse, RenderedAttemptResponse>({
     name: 'parsePayload',
     through: {
       request: { needs: ['request.http'], consumes: [], provides: ['request.model', 'request.payload'] },
       response: { needs: [], consumes: [], provides: [] },
     },
-    return: { provides: ['response.http', ...usageResponseKeys] },
+    return: { provides: ['response.http', 'response.render', ...usageResponseKeys] },
     execute: async (facts, next, env) => {
       const request = await plan.parse(facts['request.http']);
-      if ('error' in request) return { ...emptyUsageFacts(env), 'response.http': openAiApiError(400, request.error, env.clock()) };
+      if ('error' in request) return { ...emptyUsageFacts(env), ...renderedNow(env, { kind: 'completed' }), 'response.http': openAiApiError(400, request.error, env.clock()) };
       return await next({ ...facts, 'request.model': request.model, 'request.payload': request.payload });
     },
   });
 
-  const enterUpstream = defineEnding<Attempt, AttemptResponse, Targets, Pick<GatewayServices, 'providers'>>({
+  const enterUpstream = defineEnding<Attempt, RenderedAttemptResponse, Targets, Pick<GatewayServices, 'providers'>>({
     name: 'enterUpstream',
     request: { needs: ['request.http', 'request.payload', 'route.candidate'] },
     into: {
       provider: {
         request: { needs: [], consumes: ['request.http'], provides: ['provider.model', 'request.headers', ...(plan.prepareProviderPayload === undefined ? [] : ['request.payload'])] },
-        response: { needs: providerExit, consumes: [], provides: ['response.http', 'response.attempt.status', ...usageResponseKeys] },
+        response: { needs: providerExit, consumes: [], provides: ['response.http', 'response.attempt.status', 'response.render', ...usageResponseKeys] },
       },
     },
     execute: async (request, into, env) => {
@@ -167,15 +169,23 @@ export const measured = (measurement: UsageMeasurement): ObservedUsage => {
   };
 };
 
-export const scalarHttpAttempt = (env: StageEnv, http: HttpResponseFacts, identity: TelemetryModelIdentity, usage = observedTokenUsage(null)): AttemptResponse => ({
-  ...scalarUsageFacts(env, billableCall(env, identity, httpSucceeded(http) ? 'completed' : 'api-error', usage)),
-  'response.http': http,
-});
+export const scalarHttpAttempt = (
+  env: StageEnv, http: HttpResponseFacts, identity: TelemetryModelIdentity, usage = observedTokenUsage(null), outcome: RenderOutcome = { kind: 'completed' },
+): RenderedAttemptResponse => {
+  const disposition = outcome.kind === 'failed'
+    ? outcome.reason === 'collect-error' ? 'completed' : 'stream-error'
+    : httpSucceeded(http) ? 'completed' : 'api-error';
+  return {
+    ...scalarUsageFacts(env, billableCall(env, identity, disposition, usage)),
+    ...renderedNow(env, outcome),
+    'response.http': http,
+  };
+};
 
 export const respondJsonUsage = async (
   http: HttpResponseFacts, identity: TelemetryModelIdentity, env: StageEnv, sourceApi: string,
   extract: (body: unknown) => ReturnType<typeof tokenUsageMeasurement>['dumpTokenUsage'],
-): Promise<AttemptResponse> => {
+): Promise<RenderedAttemptResponse> => {
   const response = forwardHttp(http);
   if (!httpSucceeded(http)) return scalarHttpAttempt(env, response, identity);
   const bytes = await readHttpBytes(response.body);
