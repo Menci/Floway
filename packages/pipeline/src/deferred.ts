@@ -18,7 +18,7 @@ export class DeferredResource<T> {
   readonly #id: number;
   #status: 'pending' | 'settled' | 'expired' = 'pending';
 
-  constructor(readonly name: string, readonly trace: Trace, stageId: number) {
+  constructor(readonly name: string, readonly trace: Trace, stageId: number, readonly isExpired: () => boolean) {
     this.#id = trace.deferredId();
     const deferred = Object.freeze({ name, promise: this.#settlement.promise });
     deferreds.add(deferred);
@@ -51,7 +51,7 @@ export class DeferredResource<T> {
   }
 
   #claim(): boolean {
-    if (this.#status === 'expired') return false;
+    if (this.#status === 'expired' || this.isExpired()) return false;
     if (this.#status === 'settled') throw new Error(`Deferred "${this.name}" has already settled`);
     this.#status = 'settled';
     return true;

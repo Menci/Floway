@@ -44,8 +44,8 @@ export class Custody {
 
   constructor(readonly stageName: string, readonly signal: AbortSignal, readonly stopReading?: AbortSignal) {}
 
-  async cleanup(exclude: ReadonlySet<StreamResource<unknown>> = new Set()): Promise<void> {
-    const streams = [...this.streams].filter(stream => !exclude.has(stream));
+  async cleanup(): Promise<void> {
+    const streams = [...this.streams];
     const leaked = streams.filter(stream => !stream.ending && !stream.interruptedRead);
     await Promise.allSettled(streams.map(stream => stream.stop({ how: stream.interruptedRead ? 'released' : 'leaked' })));
     if (leaked.length) throw new StreamLeakError(this.stageName, leaked.map(stream => stream.handle.label));

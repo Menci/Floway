@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { compose, DeclarationViolationError, defineEnding, defineStage, FinalizationTimeoutError, run, transform, UnsettledDeferredError } from '../src/index.ts';
+import { compose, DeclarationViolationError, deferredIdOf, defineEnding, defineStage, FinalizationTimeoutError, run, transform, UnsettledDeferredError } from '../src/index.ts';
 import type { Deferred, DeferredHandle, Facts, RunEvent, SideDecl, StageEnv } from '../src/index.ts';
 
 const options = { services: {}, finalizationTimeoutMs: 200 };
@@ -240,6 +240,7 @@ describe('run completion', () => {
     const childRelease = Promise.withResolvers<void>();
     const events: RunEvent[] = [];
     let late: DeferredHandle<number> | undefined;
+    let other: DeferredHandle<number> | undefined;
     const stage = defineStage<Facts, Facts, Facts, Facts>({
       name: 'detached child', through: {
         request: { ...identity, provides: ['branch'] }, response: { ...identity, provides: ['work'] },
@@ -248,6 +249,7 @@ describe('run completion', () => {
         const first = await next({ ...facts, branch: 1 });
         void next({ ...facts, branch: 2 });
         late = env.deferred<number>('late', 'scope');
+        other = env.deferred<number>('other', 'scope');
         return { ...first, work: late.deferred };
       },
     });
@@ -260,7 +262,10 @@ describe('run completion', () => {
     });
     const pipeline = compose('deadline', { stages: [stage], ending: end });
     const handle = run(pipeline, {}, {
-      ...options, finalizationTimeoutMs: 15, events: event => events.push(event),
+      ...options, finalizationTimeoutMs: 15, events: event => {
+        events.push(event);
+        if (event.k === 'settled' && !event.ok && event.deferredId === deferredIdOf(late!.deferred)) other!.resolve(9);
+      },
     });
     await expect(handle.result).resolves.toMatchObject({ response: 1 });
     expect(events).not.toContainEqual(expect.objectContaining({ k: 'closed', stageId: 1 }));
@@ -268,6 +273,7 @@ describe('run completion', () => {
     const doneCount = events.length;
     expect(() => late!.resolve(7)).not.toThrow();
     await expect(late!.deferred.promise).rejects.toBeInstanceOf(FinalizationTimeoutError);
+    await expect(other!.deferred.promise).rejects.toBeInstanceOf(FinalizationTimeoutError);
     childRelease.resolve();
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(events).toHaveLength(doneCount);

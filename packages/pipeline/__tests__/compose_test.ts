@@ -156,6 +156,31 @@ describe('composition', () => {
     expect(() => link([p])).toThrow('does not guarantee "missing"');
   });
 
+  it('rejects a missing response need before an into call resumes its ending', async () => {
+    type Target = { child: DynamicTarget<'selected', {}, {}, {}> };
+    const child = compose<{}, {}, {}>('child', {
+      stages: [], ending: defineEnding({
+        name: 'child', request: { needs: [] }, return: { provides: [] }, execute: async () => ({}),
+      }),
+    });
+    let resumed = false;
+    const ending = defineEnding<{}, {}, Target>({
+      name: 'parent', request: { needs: [] }, into: { child: { request: empty, response: { ...empty, needs: ['missed'] } } },
+      execute: async (facts, into) => {
+        const result = await into.child('selected', facts);
+        resumed = true;
+        return result;
+      },
+    });
+    const pipeline = compose<{}, {}, {}, Target>('parent', {
+      stages: [], ending, targets: { child: { entry: [], exit: [], resolve: () => child } },
+    });
+    link([pipeline]);
+    const handle = run(pipeline, {}, options);
+    await expect(handle.result).rejects.toMatchObject({ name: 'DeclarationViolationError', direction: 'up', detail: 'missing "missed"' });
+    expect(resumed).toBe(false);
+  });
+
   it('exposes only declared into inputs and responses and omits next on return-only stages', () => {
     interface I { input: number }
     interface O { result: string }

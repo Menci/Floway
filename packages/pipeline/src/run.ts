@@ -51,10 +51,13 @@ class RunState {
   readonly deferred = new Set<{ abort(error: unknown): void }>();
   readonly abort = new AbortController();
   readonly signal: AbortSignal;
+  #expired = false;
 
   constructor(readonly trace: Trace, readonly runId: string, readonly options: RunOptions<any>) {
     this.signal = options.signal ? AbortSignal.any([options.signal, this.abort.signal]) : this.abort.signal;
   }
+
+  get expired(): boolean { return this.#expired; }
 
   track<T>(work: Promise<T>, capture = true): Promise<T> {
     this.work.add(work);
@@ -68,7 +71,7 @@ class RunState {
   }
 
   admitDeferred<T>(name: string, stageId: number): DeferredResource<T> {
-    const resource = new DeferredResource<T>(name, this.trace, stageId);
+    const resource = new DeferredResource<T>(name, this.trace, stageId, () => this.#expired);
     this.deferred.add(resource);
     const work = resource.handle.deferred.promise;
     void this.track(work);
@@ -89,6 +92,7 @@ class RunState {
     const deadline = new Promise<Failure>(resolve => {
       timer = setTimeout(() => {
         const reason = new FinalizationTimeoutError(finalizationTimeoutMs);
+        this.#expired = true;
         for (const deferred of this.deferred) deferred.abort(reason);
         this.abort.abort(reason);
         resolve({ reason });
@@ -129,9 +133,9 @@ class InvocationCustody extends Custody {
     return result;
   }
 
-  async release(exclude?: ReadonlySet<Resource>): Promise<void> {
+  async release(): Promise<void> {
     if (this.#pending.size) await Promise.allSettled(this.#pending);
-    await this.cleanup(exclude);
+    await this.cleanup();
   }
 
   async join(): Promise<void> {
@@ -227,8 +231,9 @@ class Scope {
   }
 
   admit(operation: string, executingOnly = false): InvocationCustody {
-    if (!this.signal.aborted && this.#phase === 'executing') return this.custody;
-    if (!executingOnly && !this.signal.aborted && this.#phase === 'draining' && this.#pulling.size === 1) {
+    if (this.state.expired || this.signal.aborted) throw new StageScopeClosedError(this.name, operation);
+    if (this.#phase === 'executing') return this.custody;
+    if (!executingOnly && this.#phase === 'draining' && this.#pulling.size === 1) {
       const [producer] = this.#pulling;
       if (!producer.sealed && !producer.signal.aborted) return producer;
     }
@@ -386,7 +391,6 @@ const checkLinked = (pipeline: AnyPipeline): ReturnType<typeof assemblyOf> => {
 };
 
 interface Child {
-  readonly id: number;
   readonly result: Promise<Facts>;
   readonly closed: Promise<void>;
 }
@@ -477,7 +481,7 @@ const invoke = (
       throw error;
     }
   };
-  return { id, result: state.track(execute(), false), closed: scope.finished };
+  return { result: state.track(execute(), false), closed: scope.finished };
 };
 
 interface Subrun {
@@ -498,6 +502,7 @@ const startRun = <I, O, S>(pipeline: Pipeline<I, O, S>, input: I | ((root: RootE
   if (!sub) trace.emit({ k: 'run', runId: state.runId, pipeline: pipeline.name, startedAt: Date.now() });
   const execute = async (): Promise<Facts> => {
     const assembly = checkLinked(pipeline);
+    state.signal.throwIfAborted();
     const childId = trace.stageId();
     if (sub) {
       const facts = freezeFacts(input, `${pipeline.name}.input`);
