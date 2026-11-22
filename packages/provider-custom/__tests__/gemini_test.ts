@@ -1,9 +1,11 @@
 import { test } from 'vitest';
 
+import { callCustom, customInput } from './pipeline-fixture.ts';
 import { createCustomProvider } from '../src/provider.ts';
+import { isSecret, type RunEvent } from '@floway-dev/pipeline';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, jsonResponse, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildUpstream = (baseUrl = 'https://generativelanguage.googleapis.com'): UpstreamRecord => ({
   id: 'up_gemini',
@@ -34,6 +36,7 @@ const buildUpstream = (baseUrl = 'https://generativelanguage.googleapis.com'): U
 test('Gemini generation posts to the model action path with alt=sse and the x-goog-api-key header', async () => {
   const provider = createCustomProvider(buildUpstream());
   let request: Request | undefined;
+  const events: RunEvent[] = [];
 
   await withMockedFetch(
     observed => {
@@ -42,11 +45,11 @@ test('Gemini generation posts to the model action path with alt=sse and the x-go
     },
     async () => {
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      await provider.instance.callGeminiGenerateContent(
-        model,
-        { contents: [{ role: 'user', parts: [{ text: 'hello' }] }] },
-        undefined,
-        noopUpstreamCallOptions(),
+      await callCustom(
+        provider.pipelines.geminiGenerateContent,
+        customInput(model, { contents: [{ role: 'user', parts: [{ text: 'hello' }] }] }),
+        directFetcher,
+        event => events.push(event),
       );
     },
   );
@@ -58,6 +61,12 @@ test('Gemini generation posts to the model action path with alt=sse and the x-go
   assertEquals(await request.json(), { contents: [{ role: 'user', parts: [{ text: 'hello' }] }] });
   assertEquals(request.headers.get('x-goog-api-key'), 'AIza-test');
   assertEquals(request.headers.get('authorization'), null);
+  const dispatch = events.find(event => event.k === 'enter' && event.name === 'http');
+  if (dispatch?.k !== 'enter') throw new Error('Expected HTTP terminal entry');
+  assertEquals(JSON.stringify(dispatch).includes('AIza-test'), false);
+  const outbound = dispatch.facts['request.http'];
+  assertEquals(typeof outbound === 'object' && outbound !== null && 'headers' in outbound && Array.isArray(outbound.headers)
+    && outbound.headers.some(entry => Array.isArray(entry) && entry[0] === 'x-goog-api-key' && isSecret(entry[1])), true);
 });
 
 test('baseUrl places the generation root, and a stored models/ prefix is stripped', async () => {
@@ -80,7 +89,7 @@ test('baseUrl places the generation root, and a stored models/ prefix is strippe
     },
     async () => {
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      await provider.instance.callGeminiGenerateContent(model, { contents: [] }, undefined, noopUpstreamCallOptions());
+      await callCustom(provider.pipelines.geminiGenerateContent, customInput(model, { contents: [] }));
     },
   );
 
@@ -99,14 +108,12 @@ test('countTokens posts the generate payload inside the generateContentRequest e
     },
     async () => {
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      const { http: response } = await provider.instance.callGeminiGenerateContentCountTokens(
-        model,
-        { contents: [{ role: 'user', parts: [{ text: 'hello' }] }], systemInstruction: { parts: [{ text: 'be brief' }] } },
-        undefined,
-        noopUpstreamCallOptions(),
+      const result = await callCustom(
+        provider.pipelines.geminiGenerateContentCountTokens,
+        customInput(model, { contents: [{ role: 'user', parts: [{ text: 'hello' }] }], systemInstruction: { parts: [{ text: 'be brief' }] } }),
       );
-      assertEquals(response.status, 200);
-      assertEquals(await response.json(), { totalTokens: 12 });
+      assertEquals(result['response.http'].status, 200);
+      assertEquals(JSON.parse(result.body.utf8()), { totalTokens: 12 });
     },
   );
 

@@ -648,6 +648,9 @@ importers:
 
   packages/provider-custom:
     dependencies:
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols

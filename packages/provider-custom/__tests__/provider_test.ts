@@ -1,11 +1,12 @@
 import { test } from 'vitest';
 
+import { callCustom, customInput } from './pipeline-fixture.ts';
 import { createCustomProvider } from '../src/provider.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { parseRerankRequest } from '@floway-dev/protocols/rerank';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, jsonResponse, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 interface BuildOptions {
   ingressHeadersRules?: { key: string; value: string | null }[];
@@ -133,7 +134,7 @@ test('auto-fetched rerank models stay out of the routable provider catalog', asy
   assertEquals(models.map(model => model.id), ['chat-model']);
 });
 
-test('callRerank uses the model target protocol, raw model id, and canonical path', async () => {
+test('rerank uses the model target protocol, raw model id, and canonical path', async () => {
   const instance = createCustomProvider(buildCustomUpstream({
     modelsFetchEnabled: false,
     models: [{
@@ -155,14 +156,10 @@ test('callRerank uses the model target protocol, raw model id, and canonical pat
       return jsonResponse({ results: [] });
     },
     async () => {
-      const result = await instance.instance.callRerank(
-        model,
-        parseRerankRequest('cohere-v1', { model: 'public-reranker', query: 'query', documents: ['one'], top_n: 1 }).request,
-        undefined,
-        noopUpstreamCallOptions(),
-      );
-      assertEquals(result.target, { protocol: 'cohere-v2' });
-      assertEquals(result.modelKey, 'raw-reranker');
+      const { request } = parseRerankRequest('cohere-v1', { model: 'public-reranker', query: 'query', documents: ['one'], top_n: 1 });
+      const result = await callCustom(instance.pipelines.rerank, customInput(model, request));
+      assertEquals(result['response.target'], { protocol: 'cohere-v2' });
+      assertEquals(result['response.modelKey'], 'raw-reranker');
     },
   );
   assertEquals(requestUrl, 'https://custom.example.com/v2/rerank');
@@ -170,7 +167,7 @@ test('callRerank uses the model target protocol, raw model id, and canonical pat
 });
 
 test('Custom provider forces stream=true for streaming endpoints and leaves count-tokens/embeddings alone', async () => {
-  const provider = createCustomProvider(buildCustomUpstream()).instance;
+  const provider = createCustomProvider(buildCustomUpstream());
   const bodies: Record<string, Record<string, unknown>> = {};
   const betas: Record<string, string | null> = {};
 
@@ -191,15 +188,17 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [model] = await provider.getProvidedModels(directFetcher);
+      const [model] = await provider.instance.getProvidedModels(directFetcher);
       assertExists(model);
-      const opts = noopUpstreamCallOptions();
-      const anthropicMessagesOpts = noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
-      await provider.callOpenAIChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-      await provider.callOpenAIResponses(model, { input: [] }, 'generate', undefined, opts);
-      await provider.callAnthropicMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
-      await provider.callAnthropicMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
-      await provider.callOpenAIEmbeddings(model, { input: 'hi' }, undefined, opts);
+      const anthropic = {
+        ...customInput(model, { max_tokens: 10, messages: [{ role: 'user' as const, content: 'hi' }] }),
+        'request.anthropicBeta': ['context-1m', 'advanced-tool-use'],
+      };
+      await callCustom(provider.pipelines.openaiChatCompletions, customInput(model, { messages: [{ role: 'user', content: 'hi' }] }));
+      await callCustom(provider.pipelines.openaiResponses, { ...customInput(model, { input: [] }), 'request.action': 'generate' });
+      await callCustom(provider.pipelines.anthropicMessages, anthropic);
+      await callCustom(provider.pipelines.anthropicMessagesCountTokens, anthropic);
+      await callCustom(provider.pipelines.openaiEmbeddings, customInput(model, { input: 'hi' }));
     },
   );
 
