@@ -12,6 +12,7 @@ export type CandidateError = { readonly status: 400 | 404; readonly message: str
 export const createResolveCandidates = <Candidate extends RouteCandidate = RouteCandidate, Request extends ModelRequest = ModelRequest>(options: {
   readonly kind: ModelKind;
   readonly sourceApi: string;
+  readonly unsupportedMessage?: (model: string) => string;
   readonly select: (candidates: readonly RouteCandidate[], request: Request) => readonly Candidate[] | CandidateError;
   readonly errorBody?: (error: CandidateError) => unknown;
   readonly requestNeeds?: readonly string[];
@@ -42,7 +43,7 @@ export const createResolveCandidates = <Candidate extends RouteCandidate = Route
         failedUpstreams,
         status: sawModel ? 400 : 404,
         message: appendFailedUpstreams(sawModel
-          ? `Model ${model} does not support the ${options.sourceApi} endpoint.`
+          ? options.unsupportedMessage?.(model) ?? `Model ${model} does not support the ${options.sourceApi} endpoint.`
           : `Model ${model} is not available on any configured upstream.`, failedUpstreams),
       };
       const body = options.errorBody === undefined ? { error: { message: error.message, type: 'api_error' } } : options.errorBody(error);

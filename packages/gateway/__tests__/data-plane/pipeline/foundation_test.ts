@@ -102,6 +102,33 @@ test('failover retries transport failures and returns the earliest Retry-After r
   expect(await handle.done).toEqual({ ok: true });
 });
 
+test('failover returns a successful body without reading any bytes', async () => {
+  const pull = vi.fn();
+  const pipeline = compose<CandidatesRequest, HttpOutput, {}>('test.unread-body', {
+    stages: [failover],
+    ending: endpoint((model, env) => {
+      const result = counted(model, env, 200, 0);
+      const body = env.createStream({
+        label: 'successful upstream body',
+        async *iterate() {
+          pull();
+          yield Bytes.fromUtf8('answer');
+        },
+      });
+      return { ...result, 'response.http': { ...result['response.http'], body } };
+    }),
+  });
+  const handle = run(pipeline, { 'route.candidates': [candidate('winner')] }, { services: {}, finalizationTimeoutMs: 100 });
+  const { 'response.http': { body } } = await handle.result;
+  expect(pull).not.toHaveBeenCalled();
+  if (body === null || body instanceof Bytes) throw new Error('Expected the managed upstream body');
+  const received: Bytes[] = [];
+  for await (const chunk of body) received.push(chunk);
+  expect(Bytes.concat(received).utf8()).toBe('answer');
+  expect(pull).toHaveBeenCalledExactlyOnceWith();
+  expect(await handle.done).toEqual({ ok: true });
+});
+
 test('the host schedules the exact run completion promise and edgeHttp leaves throws intact', async () => {
   const failure = new Error('test crash');
   const pipeline = compose<HttpInput, HttpOutput, {}>('test.crash', {

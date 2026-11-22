@@ -41,7 +41,7 @@ const registerOpenAIEmbeddingsUpstream = async (
   }));
 };
 
-test('passthrough-serve: usage-record failure does not turn upstream 2xx into 502', async () => {
+test('non-chat ingress: usage-record failure does not turn upstream 2xx into 502', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerOpenAIEmbeddingsUpstream(repo);
 
@@ -92,7 +92,7 @@ test('passthrough-serve: usage-record failure does not turn upstream 2xx into 50
   }
 });
 
-test('passthrough-serve: non-JSON 2xx upstream body is forwarded verbatim with a request-only usage record', async () => {
+test('non-chat ingress: non-JSON 2xx upstream body is forwarded verbatim with a request-only usage record', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerOpenAIEmbeddingsUpstream(repo);
 
@@ -155,7 +155,7 @@ const registerTwoOpenAIEmbeddingsUpstreams = async (repo: Awaited<ReturnType<typ
   }));
 };
 
-test('passthrough-serve: 5xx from the first candidate falls through to the next successful upstream', async () => {
+test('non-chat ingress: 5xx from the first candidate falls through to the next successful upstream', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerTwoOpenAIEmbeddingsUpstreams(repo);
 
@@ -200,7 +200,7 @@ test('passthrough-serve: 5xx from the first candidate falls through to the next 
   assertEquals(secondOpenAIEmbeddingsCalls, 1);
 });
 
-test('passthrough-serve: when every candidate returns non-2xx the most recent upstream response is forwarded verbatim', async () => {
+test('non-chat ingress: when every candidate returns non-2xx the most recent upstream response is forwarded verbatim', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerTwoOpenAIEmbeddingsUpstreams(repo);
 
@@ -246,7 +246,7 @@ test.each([
   ['limited', 'limited-later', 429, '17'],
   ['limited-later', 'limited', 429, '17'],
   ['disabled', 'limited', 429, '17'],
-] as const)('passthrough-serve: %s followed by %s preserves the selected response', async (first, second, status, retryAfter) => {
+] as const)('non-chat ingress: %s followed by %s preserves the selected response', async (first, second, status, retryAfter) => {
   const { apiKey, repo } = await setupAppTest();
   await registerTwoOpenAIEmbeddingsUpstreams(repo);
   if (first === 'disabled') {
@@ -294,7 +294,7 @@ test.each([
 
 // A throw during candidate rollover attributes the error row to the
 // throwing candidate, not the previously-succeeded one.
-test('passthrough-serve: throw during rollover attributes the error perf row to the throwing candidate, not the previous one', async () => {
+test('non-chat ingress: throw during rollover attributes the error perf row to the throwing candidate, not the previous one', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerTwoOpenAIEmbeddingsUpstreams(repo);
 

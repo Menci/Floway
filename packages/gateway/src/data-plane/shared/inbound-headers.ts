@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
 
+import type { HeaderEntry } from '@floway-dev/http';
 import type { InboundHeaderMatcher, Provider } from '@floway-dev/provider';
 
 export const inboundHeaders = (c: Context): Headers => new Headers(c.req.raw.headers);
@@ -21,6 +22,17 @@ export const filterInboundHeaders = (
     }
   }
   return filtered;
+};
+
+export const filterInboundHeaderEntries = (
+  headers: readonly HeaderEntry[], allowlist: readonly InboundHeaderMatcher[],
+): readonly HeaderEntry[] => {
+  const names = new Set(allowlist.flatMap(entry => typeof entry === 'string' ? [entry.toLowerCase()] : []));
+  const patterns = allowlist.filter((entry): entry is RegExp => entry instanceof RegExp);
+  return headers.filter(([name]) => {
+    const normalized = name.toLowerCase();
+    return names.has(normalized) || patterns.some(pattern => regexpMatches(pattern, normalized));
+  });
 };
 
 export const filterInboundHeadersForProvider = (

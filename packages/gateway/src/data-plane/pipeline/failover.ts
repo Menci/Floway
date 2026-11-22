@@ -12,6 +12,7 @@ export interface CandidatesRequest { readonly 'route.candidates': readonly Route
 export interface AttemptResponse extends UsageFacts {
   readonly 'response.http': HttpResponseFacts;
   readonly 'response.events'?: ManagedStream<unknown>;
+  readonly 'response.attempt.status'?: number;
 }
 
 export interface SelectedAttemptResponse extends AttemptResponse {
@@ -79,7 +80,7 @@ export const failover = defineStage<CandidatesRequest, CandidateRequest, Attempt
           continue;
         }
         billings.push(response['response.usage.billable']);
-        if (isSuccess(response['response.http'].status)) return answer(response, candidate);
+        if (isSuccess(response['response.attempt.status'] ?? response['response.http'].status)) return answer(response, candidate);
 
         lastTransportError = undefined;
         const time = retryTime(response['response.http']);

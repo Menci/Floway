@@ -1,38 +1,21 @@
-// POST /v1/embeddings — route embedding requests to the provider that
-// declares the requested model and OpenAI Embeddings capability.
-
-import type { Context } from 'hono';
-
 import { tokenUsageFromOpenAIEmbeddingsBody } from './usage.ts';
-import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../shared/gateway-ctx.ts';
-import { prepareJsonModelRequest } from '../shared/passthrough-request.ts';
-import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
-import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
+import { createGatewayHttpHandler } from '../pipeline/host.ts';
+import { createNonChatPipeline, parseJsonModel, respondJsonUsage } from '../pipeline/non-chat.ts';
+import type { OpenAIEmbeddingsPayload } from '@floway-dev/protocols/openai-embeddings';
+import type { ProviderHttpOutput } from '@floway-dev/provider';
 
-export const openaiEmbeddings = async (c: Context): Promise<Response> => {
-  const requestBody = await readRequestBody(c);
-  const request = prepareJsonModelRequest(requestBody.bytes, 'OpenAI Embeddings');
-  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
-  if (request.type === 'invalid') {
-    ctx.dump?.error('gateway');
-    return finalizeGatewayResponse(ctx, passthroughApiError(c, request.message, 400));
-  }
+const ingress = createNonChatPipeline<Omit<OpenAIEmbeddingsPayload, 'model'>, ProviderHttpOutput>({
+  name: 'openai-embeddings',
+  sourceApi: '/embeddings',
+  operation: 'embeddings',
+  kind: 'embedding',
+  parse: request => {
+    const parsed = parseJsonModel(request, 'OpenAI Embeddings');
+    return 'error' in parsed ? parsed : { model: parsed.model, payload: parsed.payload as Omit<OpenAIEmbeddingsPayload, 'model'> };
+  },
+  provider: pipelines => pipelines.openaiEmbeddings,
+  select: candidates => candidates.filter(candidate => candidate.endpoints.openaiEmbeddings !== undefined),
+  respond: (response, _request, identity, env) => respondJsonUsage(response['response.http'], identity, env, '/embeddings', tokenUsageFromOpenAIEmbeddingsBody),
+});
 
-  ctx.dump?.requestedModel(request.model);
-  const response = await passthroughServe({
-    c,
-    ctx,
-    sourceApi: '/embeddings',
-    operation: 'embeddings',
-    model: request.model,
-    kind: 'embedding',
-    modelServesEndpoint: model => model.endpoints.openaiEmbeddings !== undefined,
-    call: async (provider, model, opts) => {
-      const { model: _model, ...body } = request.body;
-      return await provider.instance.callOpenAIEmbeddings(model, body, undefined, opts);
-    },
-    response: { format: 'json', extractBilling: tokenUsageFromOpenAIEmbeddingsBody },
-  });
-  return finalizeGatewayResponse(ctx, response);
-};
+export const openaiEmbeddings = createGatewayHttpHandler(ingress, { errorStatus: () => 502, performanceOperation: 'embeddings' });

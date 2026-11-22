@@ -7,10 +7,12 @@ import type { ApiKey } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { writeHttpResponse } from '../shared/http-writer.ts';
+import { currentHour } from '../shared/telemetry/hour.ts';
+import { providerModelsUnavailableResponse } from '../shared/upstream-response.ts';
 import { httpUrl, type HttpRequestFacts, wrapSensitiveHeaderEntries } from '@floway-dev/http';
-import { Bytes, type Pipeline, type RootEnv, run, type RunEventSink, type RunHandle, secret } from '@floway-dev/pipeline';
+import { Bytes, type Facts, type Pipeline, type RootEnv, run, type RunEventSink, type RunHandle, secret } from '@floway-dev/pipeline';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { toInternalDebugError } from '@floway-dev/provider';
+import { type PerformanceOperation, toInternalDebugError } from '@floway-dev/provider';
 
 const FINALIZATION_TIMEOUT_MS = 30_000;
 const SECRET_QUERY_NAMES = new Set(['key', 'api_key', 'api-key', 'apikey', 'access_token', 'token', 'auth', 'sig', 'signature', 'session']);
@@ -56,6 +58,11 @@ interface StartOptions<S> {
   readonly finalizationTimeoutMs?: number;
   readonly requestedModel?: string;
   readonly errorStatus?: (error: unknown) => 500 | 502;
+  readonly crashPerformance?: {
+    readonly route: GatewayRouteFacts;
+    readonly operation: PerformanceOperation;
+    readonly store: GatewayServices['performanceStore'];
+  };
 }
 
 export const startGatewayRun = <In, Out, S>(
@@ -64,8 +71,10 @@ export const startGatewayRun = <In, Out, S>(
   options: StartOptions<S>,
 ): RunHandle<Out> => {
   const dump = openDumpSession(options.apiKey, options.request, options.requestedModel);
-  const events: RunEventSink | undefined = dump === null ? options.events : event => {
-    dump.sink(event);
+  let crashFacts: Facts | undefined;
+  const events: RunEventSink = event => {
+    if (event.k === 'fail' && 'route.candidate' in event.facts) crashFacts = event.facts;
+    dump?.sink(event);
     options.events?.(event);
   };
   const handle = run(pipeline, input, {
@@ -76,10 +85,26 @@ export const startGatewayRun = <In, Out, S>(
     ...(dump === null ? {} : { runId: dump.recordId }),
   });
   options.scheduler(handle.done);
-  if (dump !== null) {
-    void handle.result.catch(error => dump.hostFailure(error, (options.errorStatus ?? gatewayErrorStatus)(error)));
-    options.scheduler(dump.completed);
-  }
+  if (dump !== null) options.scheduler(dump.completed);
+  void handle.result.catch(error => {
+    dump?.hostFailure(error, (options.errorStatus ?? gatewayErrorStatus)(error));
+    const performance = options.crashPerformance;
+    const candidate = crashFacts?.['route.candidate'];
+    if (performance === undefined || candidate === null || typeof candidate !== 'object'
+      || !('modelId' in candidate) || typeof candidate.modelId !== 'string'
+      || !('upstreamId' in candidate) || typeof candidate.upstreamId !== 'string') return;
+    options.scheduler(performance.store.record({
+      kind: 'zero-output-error',
+      dimensions: {
+        hour: currentHour(),
+        keyId: performance.route['request.auth.apiKeyId'],
+        model: candidate.modelId,
+        upstream: candidate.upstreamId,
+        operation: performance.operation,
+        runtimeLocation: performance.route['request.route.runtimeLocation'],
+      },
+    }).catch(cause => console.warn('Failed to record performance zero-output-error:', cause)));
+  });
   return handle;
 };
 
@@ -89,6 +114,7 @@ interface HttpOptions {
   readonly errorStatus?: StartOptions<GatewayServices>['errorStatus'];
   readonly errorBody?: (error: unknown) => unknown;
   readonly events?: RunEventSink;
+  readonly performanceOperation?: PerformanceOperation;
 }
 
 export const createGatewayHttpHandler = <Out extends HttpOutput>(
@@ -101,9 +127,14 @@ export const createGatewayHttpHandler = <Out extends HttpOutput>(
     const request = httpRequestFacts(raw, raw.body === null ? null : Bytes.adopt(new Uint8Array(await raw.arrayBuffer())));
     const input = { ...host.route, 'request.http': request };
     const services = createGatewayServices({ apiKey: host.apiKey, scheduler: host.scheduler, runtimeLocation: host.route['request.route.runtimeLocation'] });
-    const handle = startGatewayRun(pipeline, input, { ...options, ...host, request, services, signal: raw.signal });
+    const crashPerformance = options.performanceOperation === undefined ? undefined : {
+      route: host.route, operation: options.performanceOperation, store: services.performanceStore,
+    };
+    const handle = startGatewayRun(pipeline, input, { ...options, ...host, request, services, signal: raw.signal, crashPerformance });
     return writeHttpResponse((await handle.result)['response.http']);
   } catch (error) {
+    const upstreamResponse = providerModelsUnavailableResponse(error);
+    if (upstreamResponse !== null) return upstreamResponse;
     const body = options.errorBody === undefined ? { error: toInternalDebugError(error) } : options.errorBody(error);
     return writeHttpResponse(jsonHttpResponse((options.errorStatus ?? gatewayErrorStatus)(error), body, 0));
   }

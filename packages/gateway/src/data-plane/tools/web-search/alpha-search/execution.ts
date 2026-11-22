@@ -1,5 +1,9 @@
-import type { AlphaSearchDispatcher } from './upstream.ts';
+import { alphaSearchIngress } from '../../../alpha-search/pipeline.ts';
+import type { GatewayHttpFacts } from '../../../pipeline/host.ts';
+import { httpSucceeded, readHttpBytes } from '../../../pipeline/non-chat.ts';
+import type { GatewayServices } from '../../../pipeline/services.ts';
 import { type WebSearchCallIR, UNSUPPORTED_LOCAL_WEB_SEARCH_FEATURE_ERROR_NAME, unsupportedLocalWebSearchFeatureIr } from '../operations.ts';
+import { Bytes, type StageEnv } from '@floway-dev/pipeline';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
 
 interface UpstreamErrorDetails {
@@ -25,31 +29,32 @@ const upstreamErrorDetails = (raw: string): UpstreamErrorDetails | undefined => 
   };
 };
 
-export const executeAlphaSearch = async ({
-  dispatcher,
-  sessionId,
-  commands,
-  settings,
-  input,
-  action,
-  signal,
-}: {
-  dispatcher: AlphaSearchDispatcher;
-  sessionId: string;
-  commands: Record<string, unknown>;
-  settings: Record<string, unknown>;
-  input: CanonicalOpenAIResponsesInputItem[];
-  action: OpenAIResponsesWebSearchAction;
-  signal: AbortSignal | undefined;
-}): Promise<WebSearchCallIR> => {
-  const response = await dispatcher({
-    id: sessionId,
-    input,
-    commands,
-    settings,
-  }, signal, new Headers());
-  const raw = await response.text();
-  if (!response.ok) {
+export const executeAlphaSearchSubRun = async (
+  env: StageEnv<GatewayServices>, facts: GatewayHttpFacts, args: {
+    sessionId: string;
+    commands: Record<string, unknown>;
+    settings: Record<string, unknown>;
+    input: CanonicalOpenAIResponsesInputItem[];
+    action: OpenAIResponsesWebSearchAction;
+  },
+): Promise<WebSearchCallIR> => {
+  const { sessionId, commands, settings, input, action } = args;
+  const run = env.run(alphaSearchIngress, {
+    'request.auth.apiKeyId': facts['request.auth.apiKeyId'],
+    'request.auth.user': facts['request.auth.user'],
+    'request.route.upstreamIds': facts['request.route.upstreamIds'],
+    'request.route.randomizeUpstreams': facts['request.route.randomizeUpstreams'],
+    'request.route.runtimeLocation': facts['request.route.runtimeLocation'],
+    'request.http': {
+      method: 'POST',
+      url: { origin: facts['request.http'].url.origin, pathname: '/alpha/search' },
+      headers: [['content-type', 'application/json']],
+      body: Bytes.fromUtf8(JSON.stringify({ id: sessionId, input, commands, settings })),
+    },
+  });
+  const { 'response.http': response } = await run.result;
+  const raw = (await readHttpBytes(response.body)).utf8();
+  if (!httpSucceeded(response)) {
     const upstreamError = upstreamErrorDetails(raw);
     if (upstreamError?.name === UNSUPPORTED_LOCAL_WEB_SEARCH_FEATURE_ERROR_NAME) {
       return unsupportedLocalWebSearchFeatureIr(action, upstreamError.message);

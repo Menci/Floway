@@ -13,7 +13,7 @@ import { readUpstreamModelsSnapshotAndScheduleRefresh } from '../providers/model
 import { createProvider, type GatewayProvider } from '../providers/registry.ts';
 import { loadWebSearchConfig } from '../tools/web-search/config.ts';
 import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
-import type { ConfiguredWebSearchProvider } from '../tools/web-search/types.ts';
+import type { ConfiguredWebSearchProvider, WebSearchConfig } from '../tools/web-search/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelKind } from '@floway-dev/protocols/common';
 import { toProviderModelFacts, type ProviderModelFacts, type ProviderServices } from '@floway-dev/provider';
@@ -54,6 +54,11 @@ export type PerformanceRecord =
   | { readonly kind: 'neutral' | 'zero-output-error'; readonly dimensions: PerformanceDimensions }
   | { readonly kind: 'sample'; readonly sample: PerformanceSample };
 
+interface WebSearchProviderPort {
+  (): Promise<ConfiguredWebSearchProvider>;
+  readonly alphaSearch: () => Promise<WebSearchConfig['passthroughOpenAiSearch']>;
+}
+
 export interface GatewayServices extends ProviderServices {
   readonly providers: GatewayProviders;
   readonly affinityCodec: Pick<AffinityCodec, 'wrap' | 'unwrap'>;
@@ -61,7 +66,7 @@ export interface GatewayServices extends ProviderServices {
   readonly responsesStore: OpenAIResponsesStatefulStore;
   readonly usageStore: { readonly record: (row: UsageRecord) => Promise<void> };
   readonly performanceStore: { readonly record: (record: PerformanceRecord) => Promise<void> };
-  readonly webSearchProvider: () => Promise<ConfiguredWebSearchProvider>;
+  readonly webSearchProvider: WebSearchProviderPort;
 }
 
 const shuffled = <T>(items: readonly T[]): T[] => {
@@ -202,6 +207,12 @@ export const createGatewayServices = (options: {
   readonly responsesStore?: OpenAIResponsesStatefulStore;
 }): GatewayServices => {
   const { apiKey, runtimeLocation, scheduler, responsesStore } = options;
+  let searchConfig: ReturnType<typeof loadWebSearchConfig> | undefined;
+  const loadSearchConfig = () => searchConfig ??= loadWebSearchConfig();
+  const webSearchProvider = Object.assign(
+    async () => resolveConfiguredWebSearchProvider(await loadSearchConfig()),
+    { alphaSearch: async () => (await loadSearchConfig()).passthroughOpenAiSearch },
+  );
   return Object.freeze<GatewayServices>({
     ...createRequestDirectory(runtimeLocation, createModelsRefreshScheduler(runtimeLocation, scheduler)),
     affinityCodec: new AffinityCodec(apiKey.serverSecret, resolveLegacyOpaqueBlobCompatibilityIdentity),
@@ -225,6 +236,6 @@ export const createGatewayServices = (options: {
         }
       },
     },
-    webSearchProvider: async () => resolveConfiguredWebSearchProvider(await loadWebSearchConfig()),
+    webSearchProvider,
   });
 };

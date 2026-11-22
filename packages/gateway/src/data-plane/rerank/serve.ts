@@ -1,183 +1,83 @@
-import type { Context } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
-
-import { rerankAttempt, type RerankAttemptResult } from './attempt.ts';
 import type { UsageQuantities } from '../../repo/types.ts';
-import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { enumerateModelCandidates } from '../providers/resolution.ts';
-import { appendFailedUpstreams } from '../shared/failed-upstreams.ts';
-import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
-import { iterateCandidates } from '../shared/iterate-candidates.ts';
-import { readRequestBody, takeRequestBody } from '../shared/request-body.ts';
-import { recordFailedRequest, recordPerformance, type PerformanceTelemetryContext } from '../shared/telemetry/performance.ts';
-import { recordUsage } from '../shared/telemetry/usage.ts';
-import { forwardUpstreamResponse, providerModelsUnavailableResponse } from '../shared/upstream-response.ts';
-import { parseDecimalString, type RerankSourceProtocol } from '@floway-dev/protocols/common';
-import { parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, rerankRequestIncompatibility, type CanonicalRerankResponse, type ParsedRerankRequest } from '@floway-dev/protocols/rerank';
-import { providerModelOf, toInternalDebugError } from '@floway-dev/provider';
-import type { TelemetryModelIdentity } from '@floway-dev/provider';
+import { createGatewayHttpHandler } from '../pipeline/host.ts';
+import { createNonChatPipeline, forwardHttp, httpSucceeded, invalidUpstreamResponse, measured, readHttpBytes, requestBytes, scalarHttpAttempt } from '../pipeline/non-chat.ts';
+import { Bytes } from '@floway-dev/pipeline';
+import { parseDecimalString, type RerankSourceProtocol, type RerankTarget } from '@floway-dev/protocols/common';
+import { type CanonicalRerankRequest, type CanonicalRerankResponse, parseRerankRequest, parseRerankResponse, parseRerankUsage, renderRerankResponse, rerankRequestIncompatibility } from '@floway-dev/protocols/rerank';
+import type { ProviderTargetOutput } from '@floway-dev/provider';
 
-const apiError = (c: Context, message: string, status: ContentfulStatusCode): Response =>
-  c.json({ error: { message, type: 'api_error' } }, status);
-
-const parseJson = (bytes: Uint8Array): unknown => {
-  try {
-    return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
-  } catch {
-    throw new Error('Rerank request body must be valid JSON');
-  }
-};
-
-const settleRerank = (
-  ctx: GatewayCtx,
-  performanceContext: PerformanceTelemetryContext,
-  identity: TelemetryModelIdentity,
-  usage: Pick<CanonicalRerankResponse, 'searchUnits' | 'totalTokens'> | undefined,
-  failed: boolean,
-): void => {
+const measure = (usage: Pick<CanonicalRerankResponse, 'searchUnits' | 'totalTokens'> | undefined) => {
   const quantities: UsageQuantities = {};
   if (usage?.searchUnits !== undefined) quantities.rerank_searches = parseDecimalString(String(usage.searchUnits));
   if (usage?.totalTokens !== undefined) quantities.input_tokens = parseDecimalString(String(usage.totalTokens));
-  const pricingFacts = usage?.totalTokens === undefined ? {} : { inputTokens: usage.totalTokens };
-  ctx.backgroundScheduler(recordUsage(ctx.apiKeyId, identity, quantities, pricingFacts).catch(error => {
-    console.error('Failed to record rerank usage:', error);
-  }));
-  recordPerformance(ctx, performanceContext, failed, 0, performance.now());
+  return measured({ quantities, pricingFacts: usage?.totalTokens === undefined ? {} : { inputTokens: usage.totalTokens }, dumpTokenUsage: null });
 };
 
-const unsupportedMessage = (model: string): string => `Model ${model} does not support rerank.`;
-
-export const rerank = (sourceProtocol: RerankSourceProtocol) => async (c: Context): Promise<Response> => {
-  const requestBody = await readRequestBody(c);
-  let parsedRequest: ParsedRerankRequest;
-  try {
-    parsedRequest = parseRerankRequest(sourceProtocol, parseJson(requestBody.bytes));
-  } catch (error) {
-    const ctx = createGatewayCtxFromHono(c, {
-      wantsStream: false,
-      requestBody: takeRequestBody(requestBody),
-      backgroundScheduler: backgroundSchedulerFromContext(c),
-    });
-    ctx.dump?.error('gateway');
-    return finalizeGatewayResponse(ctx, apiError(c, error instanceof Error ? error.message : String(error), 400));
-  }
-
-  const { model, request } = parsedRequest;
-  const ctx = createGatewayCtxFromHono(c, {
-    wantsStream: false,
-    model,
-    requestBody: takeRequestBody(requestBody),
-    backgroundScheduler: backgroundSchedulerFromContext(c),
-  });
-
-  let terminal: RerankAttemptResult | undefined;
-  let measuredUsage: Pick<CanonicalRerankResponse, 'searchUnits' | 'totalTokens'> | undefined;
-  let usageSettled = false;
-  try {
-    const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
-      subject: ctx.user,
-      upstreamIds: ctx.upstreamIds,
-      randomizeUpstreams: ctx.randomizeUpstreams,
-      model,
-      kind: 'rerank',
-      scheduler: ctx.backgroundScheduler,
-      runtimeLocation: ctx.runtimeLocation,
-    });
-    if (candidates.length === 0) {
-      ctx.dump?.error('gateway');
-      const message = sawModel
-        ? unsupportedMessage(model)
-        : `Model ${model} is not available on any configured upstream.`;
-      return finalizeGatewayResponse(ctx, apiError(c, appendFailedUpstreams(message, failedUpstreams), sawModel ? 400 : 404));
-    }
-
-    const routable = candidates.flatMap(candidate => {
-      const providerModel = providerModelOf(candidate);
-      return candidate.model.endpoints.rerank === undefined || providerModel.rerankTarget === undefined
-        ? []
-        : [{ candidate, target: providerModel.rerankTarget }];
-    });
-    if (routable.length === 0) {
-      ctx.dump?.error('gateway');
-      return finalizeGatewayResponse(ctx, apiError(c, appendFailedUpstreams(unsupportedMessage(model), failedUpstreams), 400));
-    }
-    const viable = routable.filter(({ target }) => rerankRequestIncompatibility(target.protocol, request) === null);
-    if (viable.length === 0) {
-      const reasons = [...new Set(routable.flatMap(({ target }) => {
-        const reason = rerankRequestIncompatibility(target.protocol, request);
-        return reason === null ? [] : [reason];
-      }))];
-      ctx.dump?.error('gateway');
-      return finalizeGatewayResponse(ctx, apiError(c, `Model ${model} does not support this rerank request: ${reasons.join('; ')}.`, 400));
-    }
-
-    terminal = await iterateCandidates(
-      viable.map(({ candidate }) => candidate),
-      'rerank',
-      ctx,
-      'rerank',
-      candidate => rerankAttempt(c, ctx, candidate, request),
-    );
-
-    if (!terminal.http.ok) {
-      ctx.dump?.error('upstream', terminal.identity.upstream);
-      settleRerank(ctx, terminal.performance, terminal.identity, undefined, true);
-      usageSettled = true;
-      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.http));
-    }
-
-    const sameProtocol = sourceProtocol === terminal.target.protocol;
-    let upstreamBody: unknown;
-    try {
-      upstreamBody = await terminal.http.clone().json() as unknown;
-    } catch (error) {
-      if (!sameProtocol) throw error;
-      console.warn(
-        `rerank: failed to parse same-protocol 2xx upstream body for ${sourceProtocol}; usage row will be request-only`,
-        error instanceof Error ? error.message : String(error),
-      );
-      ctx.dump?.success(terminal.identity, null);
-      settleRerank(ctx, terminal.performance, terminal.identity, undefined, false);
-      usageSettled = true;
-      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.http));
-    }
-    try {
-      measuredUsage = parseRerankUsage(terminal.target.protocol, upstreamBody);
-    } catch (error) {
-      if (!sameProtocol) throw error;
-      console.warn(
-        `rerank: failed to parse same-protocol usage for ${sourceProtocol}; usage row will be request-only`,
-        error instanceof Error ? error.message : String(error),
-      );
-      ctx.dump?.success(terminal.identity, null);
-      settleRerank(ctx, terminal.performance, terminal.identity, undefined, false);
-      usageSettled = true;
-      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.http));
-    }
-    if (sameProtocol) {
-      ctx.dump?.success(terminal.identity, null);
-      settleRerank(ctx, terminal.performance, terminal.identity, measuredUsage, false);
-      usageSettled = true;
-      return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.http));
-    }
-    const canonical = parseRerankResponse(terminal.target.protocol, upstreamBody);
-    const rendered = renderRerankResponse(sourceProtocol, terminal.target.protocol, canonical, request);
-    ctx.dump?.success(terminal.identity, null);
-    settleRerank(ctx, terminal.performance, terminal.identity, measuredUsage, false);
-    usageSettled = true;
-    return finalizeGatewayResponse(ctx, forwardUpstreamResponse(terminal.http, { body: JSON.stringify(rendered) }));
-  } catch (error) {
-    if (terminal !== undefined && !usageSettled) {
-      settleRerank(ctx, terminal.performance, terminal.identity, measuredUsage, true);
-    } else if (terminal === undefined) {
-      recordFailedRequest(ctx, ctx.attempt.telemetry);
-    }
-    const forwarded = providerModelsUnavailableResponse(error);
-    if (forwarded) {
-      ctx.dump?.error('upstream');
-      return finalizeGatewayResponse(ctx, forwarded);
-    }
-    ctx.dump?.failed(error);
-    return finalizeGatewayResponse(ctx, c.json({ error: toInternalDebugError(error) }, 502));
-  }
-};
+export const rerank = (sourceProtocol: RerankSourceProtocol) => createGatewayHttpHandler(
+  createNonChatPipeline<CanonicalRerankRequest, ProviderTargetOutput<RerankTarget>>({
+    name: `rerank.${sourceProtocol}`,
+    sourceApi: '/rerank',
+    operation: 'rerank',
+    kind: 'rerank',
+    unsupportedMessage: model => `Model ${model} does not support rerank.`,
+    parse: http => {
+      const bytes = requestBytes(http);
+      let body: unknown;
+      try {
+        body = JSON.parse(bytes.utf8());
+      } catch {
+        return { error: 'Rerank request body must be valid JSON' };
+      }
+      try {
+        const { model, request } = parseRerankRequest(sourceProtocol, body);
+        return { model, payload: request };
+      } catch (error) {
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+    provider: pipelines => pipelines.rerank,
+    providerExit: ['response.target'],
+    select: (candidates, facts) => {
+      const routable = candidates.flatMap(candidate => {
+        const target = candidate.providerModel.rerankTarget;
+        return candidate.endpoints.rerank === undefined || target === undefined ? [] : [{
+          candidate,
+          reason: rerankRequestIncompatibility(target.protocol, facts['request.payload']),
+        }];
+      });
+      const viable = routable.flatMap(({ candidate, reason }) => reason === null ? [candidate] : []);
+      if (routable.length === 0 || viable.length > 0) return viable;
+      const model = facts['request.model'];
+      return {
+        model, failedUpstreams: [], status: 400,
+        message: `Model ${model} does not support this rerank request: ${[...new Set(routable.map(item => item.reason))].join('; ')}.`,
+      };
+    },
+    respond: async (response, request, identity, env) => {
+      const http = forwardHttp(response['response.http']);
+      if (!httpSucceeded(http)) return scalarHttpAttempt(env, http, identity);
+      const target = response['response.target'].protocol;
+      const sameProtocol = sourceProtocol === target;
+      const bytes = await readHttpBytes(http.body);
+      let body: unknown;
+      let usage: ReturnType<typeof parseRerankUsage> | undefined;
+      try {
+        body = JSON.parse(bytes.utf8());
+        usage = parseRerankUsage(target, body);
+      } catch (error) {
+        if (!sameProtocol) return scalarHttpAttempt(env, invalidUpstreamResponse(error, env.clock()), identity, measure(usage));
+        console.warn(`rerank: failed to parse same-protocol 2xx upstream body or usage for ${sourceProtocol}; usage row will be request-only`, error instanceof Error ? error.message : String(error));
+      }
+      const observed = measure(usage);
+      if (sameProtocol) return scalarHttpAttempt(env, { ...http, body: http.body === null ? null : bytes }, identity, observed);
+      try {
+        const canonical = parseRerankResponse(target, body);
+        const result = renderRerankResponse(sourceProtocol, target, canonical, request['request.payload']);
+        return scalarHttpAttempt(env, { ...http, body: Bytes.fromUtf8(JSON.stringify(result)) }, identity, observed);
+      } catch (error) {
+        return scalarHttpAttempt(env, invalidUpstreamResponse(error, env.clock()), identity, observed);
+      }
+    },
+  }),
+  { errorStatus: () => 502, performanceOperation: 'rerank' },
+);

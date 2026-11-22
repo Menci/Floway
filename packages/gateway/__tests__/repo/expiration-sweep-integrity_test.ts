@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 
 import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename, wrapSqlJsDatabase } from './test-sqlite.ts';
 import { initDumpStore } from '../../src/dump/registry.ts';
+import type { DumpMetadata } from '../../src/dump/types.ts';
 import { FileDumpStore } from '../../src/repo/dump-store.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
@@ -44,6 +45,20 @@ const runMigrationsFrom = (raw: Awaited<ReturnType<typeof createSqlJsDatabase>>,
   }
 };
 
+const createPreDumpV2Database = async (): Promise<{ raw: Awaited<ReturnType<typeof createSqlJsDatabase>>; db: ReturnType<typeof wrapSqlJsDatabase> }> => {
+  const raw = await createSqlJsDatabase();
+  try {
+    for (const [filename, sql] of migrationSqlByFilename) {
+      if (filename === '0102_dump_v2.sql') break;
+      raw.run(sql);
+    }
+    return { raw, db: wrapSqlJsDatabase(raw) };
+  } catch (error) {
+    raw.close();
+    throw error;
+  }
+};
+
 const insertApiKey = (raw: Awaited<ReturnType<typeof createSqlJsDatabase>>, id: string): void => {
   const serverSecret = [...id]
     .map(character => character.charCodeAt(0).toString(16))
@@ -67,6 +82,18 @@ const insertDump = (raw: Awaited<ReturnType<typeof createSqlJsDatabase>>, keyId:
      VALUES (?, ?, 1, NULL, '{}', '[]', NULL, NULL, NULL)`,
     [keyId, id],
   );
+};
+
+const insertV2Dump = async (db: ReturnType<typeof wrapSqlJsDatabase>, keyId: string, id: string): Promise<void> => {
+  const store = new FileDumpStore(db, new MemoryFileStore());
+  const meta: DumpMetadata = {
+    id, startedAt: 0, completedAt: 1, method: 'POST', path: '/v1/x', status: 200, upstream: null,
+    model: null, inputTokens: null, outputTokens: null, requestBytes: 0, responseBytes: 0,
+    durationMs: 1, error: null,
+  };
+  const artifactKey = store.createArtifactKey(keyId, meta.startedAt, id);
+  await store.stageAndPutArtifact(keyId, id, artifactKey, new ReadableStream({ start(controller) { controller.close(); } }));
+  await store.commitRecord(keyId, { meta, artifactKey });
 };
 
 test('migration repairs missing coverage without disturbing existing sweeps', async () => {
@@ -171,6 +198,51 @@ test('queue rows cannot be removed before their domain rows', async () => {
   }
 });
 
+test('0102 retires all v1 dump artifacts and replaces the table with staged v2 triggers', async () => {
+  const { raw, db } = await createPreDumpV2Database();
+  try {
+    insertApiKey(raw, 'dump-key');
+    const files = [
+      'dumps/v1/dump-key/1970010100/dump-a.req.gz',
+      'dumps/v1/dump-key/1970010100/dump-a.resp.gz',
+      'dumps/v1/dump-key/1970010100/dump-a.resp.up.gz',
+    ];
+    raw.run(
+      `INSERT INTO spilled_files (file_key, owner_kind, owner_key, state, collect_after) VALUES
+       (?, 'dump-request', '[\"dump-key\",\"dump-a\"]', 'owned', NULL),
+       (?, 'dump-response', '[\"dump-key\",\"dump-a\"]', 'owned', NULL),
+       (?, 'dump-response-upstream', '[\"dump-key\",\"dump-a\"]', 'owned', NULL)`,
+      files,
+    );
+    raw.run(
+      `INSERT INTO dump_records
+       (key_id, id, created_at, upstream_id, meta_json, request_headers_json,
+        response_headers_json, request_body_descriptor, response_body_descriptor,
+        response_upstream_body_descriptor)
+       VALUES ('dump-key', 'dump-a', 1, NULL, '{}', '[]', NULL, ?, ?, ?)`,
+      files.map(fileKey => JSON.stringify({ key: fileKey, type: 'bytes' })),
+    );
+    runMigrationsFrom(raw, '0102_dump_v2.sql');
+
+    expect(raw.exec('SELECT file_key, state, collect_after FROM spilled_files ORDER BY file_key')[0].values)
+      .toEqual(files.map(fileKey => [fileKey, 'retired', 0]));
+    expect(raw.exec('SELECT COUNT(*) FROM dump_records')[0].values).toEqual([[0]]);
+    expect(raw.exec("SELECT next_rowid, complete FROM cleanup_backfills WHERE source = 'dump_records'")[0].values)
+      .toEqual([[0, 1]]);
+
+    await expect(new FileDumpStore(db, new MemoryFileStore()).commitRecord('dump-key', {
+      meta: {
+        id: 'v1-row', startedAt: 0, completedAt: 1, method: 'POST', path: '/v1/x', status: 200,
+        upstream: null, model: null, inputTokens: null, outputTokens: null, requestBytes: 0,
+        responseBytes: 0, durationMs: 1, error: null,
+      },
+      artifactKey: 'dumps/v1/dump-key/1970010100/v1-row.ndjson.gz',
+    })).rejects.toThrow('v2 prefix');
+  } finally {
+    raw.close();
+  }
+});
+
 test('drained completion cannot remove a queue whose domain still has rows', async () => {
   const db = await createSqliteTestDb();
   const repo = new SqlRepo(db);
@@ -187,12 +259,7 @@ test('drained completion cannot remove a queue whose domain still has rows', asy
     dumpRetentionSeconds: 3600,
     openaiResponsesRetentionSeconds: 0,
   });
-  await db.prepare(
-    `INSERT INTO dump_records
-     (key_id, id, created_at, upstream_id, meta_json, request_headers_json,
-      response_headers_json, request_body_descriptor, response_body_descriptor)
-     VALUES ('key-a', 'dump-a', 1, NULL, '{}', '[]', NULL, NULL, NULL)`,
-  ).run();
+  await insertV2Dump(db, 'key-a', 'dump-a');
   await repo.expirationSweeps.schedule('dumps', 'key-a', 0);
   const first = await repo.expirationSweeps.claim('claim-a', 10, 0);
   if (first === null) throw new Error('expected first expiration claim');
@@ -212,41 +279,40 @@ test('drained completion cannot remove a queue whose domain still has rows', asy
 });
 
 test('repaired inactive dump queues drain in bounded ticks', async () => {
-  const { raw, db } = await createPreIntegrityDatabase();
-  try {
-    insertApiKey(raw, 'disabled');
-    insertApiKey(raw, 'deleted');
-    for (let index = 0; index < 75; index += 1) {
-      insertDump(raw, 'disabled', `disabled-${index}`);
-      insertDump(raw, 'deleted', `deleted-${index}`);
-    }
-    raw.run("UPDATE api_keys SET dump_retention_seconds = NULL WHERE id = 'disabled'");
-    raw.run("UPDATE api_keys SET deleted_at = '2026-01-02T00:00:00Z' WHERE id = 'deleted'");
-    raw.run("DELETE FROM expiration_sweeps WHERE domain = 'dumps'");
-    runMigrationsFrom(raw, '0082_expiration_sweep_integrity.sql');
-
-    const repo = new SqlRepo(db);
-    initRepo(repo);
-    const files = new MemoryFileStore();
-    initDumpStore(new FileDumpStore(db, files));
-
-    await sweepExpirations(Date.UTC(2026, 0, 3));
-    expect((await db.prepare(
-      'SELECT key_id, COUNT(*) AS count FROM dump_records GROUP BY key_id ORDER BY key_id',
-    ).all<{ key_id: string; count: number }>()).results).toEqual([
-      { key_id: 'deleted', count: 25 },
-      { key_id: 'disabled', count: 25 },
-    ]);
-    expect((await db.prepare(
-      "SELECT key_id FROM expiration_sweeps WHERE domain = 'dumps' ORDER BY key_id",
-    ).all<{ key_id: string }>()).results).toEqual([
-      { key_id: 'deleted' },
-      { key_id: 'disabled' },
-    ]);
-    await sweepExpirations(Date.UTC(2026, 0, 3, 0, 1));
-    expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records').first<{ count: number }>())?.count).toBe(0);
-    expect(await db.prepare("SELECT domain FROM expiration_sweeps WHERE domain = 'dumps'").first()).toBeNull();
-  } finally {
-    raw.close();
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  initRepo(repo);
+  const files = new MemoryFileStore();
+  initDumpStore(new FileDumpStore(db, files));
+  await repo.apiKeys.save({
+    id: 'disabled', userId: 1, name: 'disabled', key: 'disabled', serverSecret: '11'.repeat(32),
+    createdAt: '2026-01-01T00:00:00Z', upstreamIds: null, randomizeUpstreams: false, deletedAt: null,
+    dumpRetentionSeconds: null, openaiResponsesRetentionSeconds: 0,
+  });
+  await repo.apiKeys.save({
+    id: 'deleted', userId: 1, name: 'deleted', key: 'deleted', serverSecret: '22'.repeat(32),
+    createdAt: '2026-01-01T00:00:00Z', upstreamIds: null, randomizeUpstreams: false, deletedAt: '2026-01-02T00:00:00Z',
+    dumpRetentionSeconds: 3600, openaiResponsesRetentionSeconds: 0,
+  });
+  for (let index = 0; index < 75; index += 1) {
+    await insertV2Dump(db, 'disabled', `disabled-${index}`);
+    await insertV2Dump(db, 'deleted', `deleted-${index}`);
   }
+
+  await sweepExpirations(Date.UTC(2026, 0, 3));
+  expect((await db.prepare(
+    'SELECT key_id, COUNT(*) AS count FROM dump_records GROUP BY key_id ORDER BY key_id',
+  ).all<{ key_id: string; count: number }>()).results).toEqual([
+    { key_id: 'deleted', count: 25 },
+    { key_id: 'disabled', count: 25 },
+  ]);
+  expect((await db.prepare(
+    "SELECT key_id FROM expiration_sweeps WHERE domain = 'dumps' ORDER BY key_id",
+  ).all<{ key_id: string }>()).results).toEqual([
+    { key_id: 'deleted' },
+    { key_id: 'disabled' },
+  ]);
+  await sweepExpirations(Date.UTC(2026, 0, 3, 0, 1));
+  expect((await db.prepare('SELECT COUNT(*) AS count FROM dump_records').first<{ count: number }>())?.count).toBe(0);
+  expect(await db.prepare("SELECT domain FROM expiration_sweeps WHERE domain = 'dumps'").first()).toBeNull();
 });
