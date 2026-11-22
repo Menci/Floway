@@ -76,8 +76,12 @@ export const createDumpEncoder = ({
       else if (isRawJson(value)) nodes[index] = {
         $rawJson: detectRawSecretLeaks ? checkText(value.rawJSON) : value.rawJSON,
       };
-      else if (Array.isArray(value)) nodes[index] = Array.from(value, encodeValue);
-      else {
+      else if (Array.isArray(value)) {
+        const { length } = value;
+        const items: StoredValue[] = [];
+        for (let item = 0; item < length; item++) items.push(encodeValue(value[item]));
+        nodes[index] = items;
+      } else {
         const prototype = Object.getPrototypeOf(value);
         if (prototype !== Object.prototype && prototype !== null)
           throw new TypeError('Expected a plain object in dump event data');

@@ -100,6 +100,32 @@ describe('dump encoding', () => {
     expect(decoded.array[0]).toBe(decoded);
   });
 
+  it('round-trips the own indices of dense arrays with tagged values, sharing, and cycles', () => {
+    const shared = Object.freeze({ nested: Object.freeze({ name: 'shared' }) });
+    const values: FactValue[] = [undefined, NaN, -0, shared, Object.freeze([shared])];
+    const array = new Proxy(values, {
+      get(target, key, receiver) {
+        if (key === Symbol.iterator) throw new Error('Expected the encoder to read array indices');
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    values.push(array);
+    Object.freeze(array);
+
+    const events = createDumpEncoder().encodeBatch([runEvent, enter(2, 1, { array, shared }), done(3)]);
+    const decoder = createDumpDecoder();
+    decoder.pushNdjsonChunk(events.map(event => JSON.stringify(event)).join('\n'));
+    const facts = decoder.finish().stages.get(1)!.facts;
+    const decoded = facts.array as readonly unknown[];
+    expect(Object.keys(decoded)).toEqual(Object.keys(array));
+    expect(decoded[0]).toBeUndefined();
+    expect(decoded[1]).toBeNaN();
+    expect(decoded[2]).toBe(-0);
+    expect(decoded[3]).toBe(facts.shared);
+    expect((decoded[4] as readonly unknown[])[0]).toBe(facts.shared);
+    expect(decoded[5]).toBe(decoded);
+  });
+
   it('rejects explicitly registered plaintext in leak detection mode', () => {
     const encoder = createDumpEncoder({ detectRawSecretLeaks: true });
     const token = 'raw-test-token';
