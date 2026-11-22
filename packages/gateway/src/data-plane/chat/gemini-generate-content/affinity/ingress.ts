@@ -1,4 +1,4 @@
-import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
+import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, incompatibleReasoningParts, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
 import type { GeminiGenerateContentPart, GeminiGenerateContentPayload } from '@floway-dev/protocols/gemini-generate-content';
 
 interface GeminiGenerateContentBlobLocation {
@@ -20,39 +20,37 @@ export const analyzeGeminiGenerateContentAffinity = async (
   for (const [contentIndex, content] of (payload.contents ?? []).entries()) {
     if (content.role !== 'model') continue;
     for (const [partIndex, part] of (content.parts ?? []).entries()) {
-      if (typeof part.thoughtSignature !== 'string') continue;
+      if (typeof part.thoughtSignature !== 'string' || part.thoughtSignature === '') continue;
       locations.push({ contentIndex, partIndex, decoded: await codec.unwrap(part.thoughtSignature, 'gemini-generate-content.part.thoughtSignature') });
     }
   }
 
+  const locationsByContent = Map.groupBy(locations, location => location.contentIndex);
   return defineAffinityRequest([], candidate => {
-    const projections = locations.map(location => ({ location, projection: projectOptionalAffinityBlob(location.decoded, candidate) }));
+    const contents = [...locationsByContent].map(([contentIndex, contentLocations]) => {
+      const projections = new Map(contentLocations.map(({ partIndex, decoded }) => [partIndex, projectOptionalAffinityBlob(decoded, candidate)]));
+      const dropped = incompatibleReasoningParts(payload.contents![contentIndex].parts!, projections,
+        part => part.thought === true && part.functionCall === undefined && part.functionResponse === undefined);
+      return { contentIndex, projections, dropped };
+    });
+    const projections = contents.flatMap(content => [...content.projections.values()]);
     return {
       kind: 'accepted',
-      degrades: projections.some(item => item.projection.kind === 'remove' && item.projection.degrades),
-      preferred: projections.every(item => item.projection.preferred),
+      degrades: contents.some(content => content.dropped.size > 0) || projections.some(projection => projection.kind === 'remove' && projection.degrades),
+      preferred: projections.every(projection => projection.preferred),
       materialize: () => {
         const candidatePayload = structuredClone(payload);
         if (candidatePayload.contents === undefined) return candidatePayload;
-        const byContent = Map.groupBy(projections, item => item.location.contentIndex);
         const emptiedByAffinity = new Set<number>();
-        for (const [contentIndex, contentProjections] of byContent) {
+        for (const { contentIndex, projections, dropped } of contents) {
           const content = candidatePayload.contents[contentIndex];
-          const replacements = new Map<number, GeminiGenerateContentPart | null>();
-          for (const { location, projection } of contentProjections) {
-            const part = content.parts![location.partIndex];
-            if (location.decoded.kind === 'foreign') continue;
-            if (projection.kind === 'preserve') {
-              replacements.set(location.partIndex, { ...part, thoughtSignature: projection.value });
-            } else {
-              const replacement = { ...part };
-              delete replacement.thoughtSignature;
-              replacements.set(location.partIndex, hasPartContent(replacement) ? replacement : null);
-            }
-          }
           content.parts = content.parts!.flatMap((part, partIndex) => {
-            const replacement = replacements.get(partIndex);
-            return replacement === undefined ? [part] : replacement === null ? [] : [replacement];
+            if (dropped.has(partIndex)) return [];
+            const projection = projections.get(partIndex);
+            if (projection === undefined) return [part];
+            if (projection.kind === 'preserve') return [{ ...part, thoughtSignature: projection.value }];
+            const { thoughtSignature: _signature, ...replacement } = part;
+            return hasPartContent(replacement) ? [replacement] : [];
           });
           if (content.parts.length === 0) emptiedByAffinity.add(contentIndex);
         }

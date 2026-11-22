@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import { analyzeAnthropicMessagesAffinity } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/ingress.ts';
 import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
+import type { AnthropicMessagesAssistantContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -54,4 +55,45 @@ test('removes thinking and redacted blocks whose affinity belongs to another can
       { citations: null, type: 'text', text: 'answer' },
     ],
   });
+});
+
+test('discards marker-only and unsigned thinking on an incompatible turn', async () => {
+  const candidateA = candidate('upstream-a');
+  const candidateB = candidate('upstream-b');
+  const prefix = await codec.wrap(undefined, targetFor(candidateA), 'anthropic-messages.redacted_thinking.data');
+  const marker = await codec.wrap(undefined, targetFor(candidateA), 'anthropic-messages.thinking.signature');
+  const answer = { citations: null, type: 'text' as const, text: 'answer' };
+  const unsigned = { type: 'thinking', thinking: 'unsigned reasoning' } as AnthropicMessagesAssistantContentBlock;
+  const blankSignature = { type: 'thinking' as const, thinking: 'another unsigned block', signature: '' };
+  const prepared = await analyzeAnthropicMessagesAffinity({
+    model: 'model',
+    max_tokens: 100,
+    messages: [{
+      role: 'assistant',
+      content: [
+        { type: 'redacted_thinking', data: prefix },
+        { type: 'thinking', thinking: 'marked reasoning', signature: marker },
+        unsigned,
+        blankSignature,
+        { type: 'thinking', thinking: 'foreign reasoning', signature: 'foreign' },
+        answer,
+      ],
+    }],
+  }, codec);
+
+  const compatible = acceptedAffinityEvaluation(prepared, candidateA);
+  const incompatible = acceptedAffinityEvaluation(prepared, candidateB);
+  expect(compatible.degrades).toBe(false);
+  expect(compatible.materialize().messages[0].content).toEqual([
+    { type: 'thinking', thinking: 'marked reasoning' },
+    unsigned,
+    blankSignature,
+    { type: 'thinking', thinking: 'foreign reasoning', signature: 'foreign' },
+    answer,
+  ]);
+  expect(incompatible.degrades).toBe(true);
+  expect(incompatible.materialize().messages[0].content).toEqual([
+    { type: 'thinking', thinking: 'foreign reasoning', signature: 'foreign' },
+    answer,
+  ]);
 });

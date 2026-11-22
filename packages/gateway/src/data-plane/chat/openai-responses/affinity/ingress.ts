@@ -6,6 +6,7 @@ import {
   candidateSatisfiesAffinityIdentity,
   type DecodedAffinityBlob,
   defineAffinityRequest,
+  isIncompatibleAffinityProjection,
   type OptionalAffinityBlobProjection,
   projectOptionalAffinityBlob,
   projectRequiredAffinityBlob,
@@ -186,15 +187,6 @@ const evaluateOpenAIResponsesCandidate = (
       && !candidateSatisfiesAffinityIdentity(candidate, item.inheritedRequiredTarget)
     ) unsatisfiedTargets.push(item.inheritedRequiredTarget);
 
-    // Reasoning belongs to its generating model, including readable history
-    // carried alongside affinity metadata without an opaque upstream value.
-    if (item.type === 'reasoning' && !item.synthetic && item.blobs.some(({ decoded }) =>
-      decoded.kind === 'owned' && !candidateSatisfiesAffinityIdentity(candidate, affinityIdentityOf(decoded)))) {
-      degrades = true;
-      projectionsByItem.set(item.itemIndex, null);
-      continue;
-    }
-
     const projections: OpenAIResponsesBlobCandidateProjection[] = [];
     for (const blob of item.blobs) {
       const projection = blob.required
@@ -207,7 +199,9 @@ const evaluateOpenAIResponsesCandidate = (
       if (!item.synthetic && projection.kind === 'remove') degrades ||= projection.degrades;
       projections.push({ location: blob, projection });
     }
-    if (item.synthetic) {
+    const dropsReasoning = item.type === 'reasoning' && projections.some(({ projection }) => isIncompatibleAffinityProjection(projection));
+    if (item.synthetic || dropsReasoning) {
+      degrades ||= !item.synthetic;
       projectionsByItem.set(item.itemIndex, null);
       continue;
     }

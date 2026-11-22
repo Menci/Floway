@@ -1,10 +1,9 @@
-import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
+import { type AffinityCodec, type AffinityRequestAnalysis, type DecodedAffinityBlob, defineAffinityRequest, incompatibleReasoningParts, projectOptionalAffinityBlob } from '../../shared/affinity/index.ts';
 import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
 interface AnthropicMessagesBlobLocation {
   readonly messageIndex: number;
   readonly blockIndex: number;
-  readonly kind: 'thinking' | 'redacted_thinking';
   readonly decoded: DecodedAffinityBlob;
 }
 
@@ -16,58 +15,45 @@ export const analyzeAnthropicMessagesAffinity = async (
   for (const [messageIndex, message] of payload.messages.entries()) {
     if (message.role !== 'assistant' || !Array.isArray(message.content)) continue;
     for (const [blockIndex, block] of message.content.entries()) {
-      if (block.type === 'thinking' && typeof block.signature === 'string') {
-        locations.push({ messageIndex, blockIndex, kind: block.type, decoded: await codec.unwrap(block.signature, 'anthropic-messages.thinking.signature') });
+      if (block.type === 'thinking' && typeof block.signature === 'string' && block.signature !== '') {
+        locations.push({ messageIndex, blockIndex, decoded: await codec.unwrap(block.signature, 'anthropic-messages.thinking.signature') });
       } else if (block.type === 'redacted_thinking') {
-        locations.push({ messageIndex, blockIndex, kind: block.type, decoded: await codec.unwrap(block.data, 'anthropic-messages.redacted_thinking.data') });
+        locations.push({ messageIndex, blockIndex, decoded: await codec.unwrap(block.data, 'anthropic-messages.redacted_thinking.data') });
       }
     }
   }
 
+  const locationsByMessage = Map.groupBy(locations, location => location.messageIndex);
   return defineAffinityRequest([], candidate => {
-    const projections = locations.map(location => ({ location, projection: projectOptionalAffinityBlob(location.decoded, candidate) }));
+    const messages = [...locationsByMessage].map(([messageIndex, messageLocations]) => {
+      const { content } = payload.messages[messageIndex];
+      if (!Array.isArray(content)) throw new Error('Anthropic Messages affinity expected content blocks');
+      const projections = new Map(messageLocations.map(({ blockIndex, decoded }) => [blockIndex, projectOptionalAffinityBlob(decoded, candidate)]));
+      // Thinking can only be replayed with its original upstream signature.
+      // https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking#preserving-thinking-blocks
+      const dropped = incompatibleReasoningParts(content, projections, block => block.type === 'thinking');
+      return { messageIndex, projections, dropped };
+    });
+    const projections = messages.flatMap(message => [...message.projections.values()]);
     return {
       kind: 'accepted',
-      degrades: projections.some(item => item.projection.kind === 'remove' && item.projection.degrades),
-      preferred: projections.every(item => item.projection.preferred),
+      degrades: messages.some(message => message.dropped.size > 0) || projections.some(projection => projection.kind === 'remove' && projection.degrades),
+      preferred: projections.every(projection => projection.preferred),
       materialize: () => {
         const candidatePayload = structuredClone(payload);
-        const byMessage = Map.groupBy(projections, item => item.location.messageIndex);
         const emptiedByAffinity = new Set<number>();
-        for (const [messageIndex, messageProjections] of byMessage) {
+        for (const { messageIndex, projections, dropped } of messages) {
           const message = candidatePayload.messages[messageIndex] as { role: 'assistant'; content: AnthropicMessagesAssistantContentBlock[] };
-          const replacements = new Map<number, AnthropicMessagesAssistantContentBlock | null>();
-          for (const { location, projection } of messageProjections) {
-            const block = message.content[location.blockIndex];
-            if (location.kind === 'thinking') {
-              if (block.type !== 'thinking') throw new Error('Anthropic Messages affinity thinking location no longer points at a thinking block');
-              // Anthropic requires an assistant thinking block to retain the
-              // signature issued by the upstream that produced it. If affinity
-              // selects another candidate, remove the complete block rather
-              // than forwarding the visible thinking without its signature.
-              // A marker that never wrapped a signature has nothing to pair with,
-              // so only the marker is removed.
-              // https://docs.anthropic.com/en/docs/build-with-claude/extended-thinking#preserving-thinking-blocks
-              if (projection.kind === 'preserve') replacements.set(location.blockIndex, { ...block, signature: projection.value });
-              else if (projection.degrades) replacements.set(location.blockIndex, null);
-              else {
-                // The wire block may omit a signature the SDK type requires.
-                const unsigned: Partial<typeof block> = { ...block };
-                delete unsigned.signature;
-                replacements.set(location.blockIndex, unsigned as typeof block);
-              }
-            } else {
-              replacements.set(
-                location.blockIndex,
-                projection.kind === 'preserve'
-                  ? { ...block, type: 'redacted_thinking', data: projection.value }
-                  : null,
-              );
-            }
-          }
-          message.content = message.content.flatMap((block, blockIndex) => {
-            const replacement = replacements.get(blockIndex);
-            return replacement === undefined ? [block] : replacement === null ? [] : [replacement];
+          message.content = message.content.flatMap<AnthropicMessagesAssistantContentBlock>((block, blockIndex) => {
+            if (dropped.has(blockIndex)) return [];
+            const projection = projections.get(blockIndex);
+            if (projection === undefined) return [block];
+            if (block.type === 'redacted_thinking') return projection.kind === 'preserve' ? [{ ...block, data: projection.value }] : [];
+            if (block.type !== 'thinking') throw new Error('Anthropic Messages affinity location no longer points at thinking');
+            if (projection.kind === 'preserve') return [{ ...block, signature: projection.value }];
+            // The wire block may omit a signature the SDK type requires.
+            const { signature: _signature, ...unsigned } = block;
+            return [unsigned as typeof block];
           });
           if (message.content.length === 0) emptiedByAffinity.add(messageIndex);
         }

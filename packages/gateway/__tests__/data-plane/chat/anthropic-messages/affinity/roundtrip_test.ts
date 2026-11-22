@@ -108,9 +108,8 @@ test.each([
     expect(Array.isArray(restored) && restored.find(part => part.type === 'thinking')).toStrictEqual(original);
 
     const otherCandidate = acceptedAffinityEvaluation(prepared, candidateB);
-    const hasSignature = typeof original.signature === 'string';
-    expect(otherCandidate.degrades).toBe(hasSignature);
+    expect(otherCandidate.degrades).toBe(true);
     const remaining = otherCandidate.materialize().messages.flatMap(message => typeof message.content === 'string' ? [] : message.content);
-    expect(remaining.find(part => part.type === 'thinking')).toStrictEqual(hasSignature ? undefined : original);
+    expect(remaining).toEqual(index === 0 ? [] : [{ type: 'text', text: 'answer', citations: null }]);
   }
 });

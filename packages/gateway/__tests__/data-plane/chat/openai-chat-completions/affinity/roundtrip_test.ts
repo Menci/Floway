@@ -5,7 +5,7 @@ import { analyzeOpenAIChatCompletionsAffinity } from '../../../../../src/data-pl
 import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { type OpenAIChatCompletionsAssistantDeltaEx, reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import { type OpenAIChatCompletionsAssistantDeltaEx, type OpenAIChatCompletionsAssistantMessageEx, reassembleOpenAIChatCompletionsEvents, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -54,7 +54,7 @@ test('a carrier a real codec emits on reasoning_opaque decodes on the next turn'
     eventFrame(chunk([{
 
       index: 0,
-      delta: { content: 'answer', reasoning_opaque: 'upstream-opaque' },
+      delta: { content: 'answer', reasoning_text: 'visible reasoning', reasoning_opaque: 'upstream-opaque' },
       finish_reason: 'stop',
     }])),
     doneFrame(),
@@ -68,9 +68,10 @@ test('a carrier a real codec emits on reasoning_opaque decodes on the next turn'
   expect(projectionB.degrades).toBe(true);
   expect(projectionA.materialize().messages[0]).toMatchObject({
     content: 'answer',
+    reasoning_text: 'visible reasoning',
     reasoning_opaque: 'upstream-opaque',
   });
-  expect(projectionB.materialize().messages[0]).not.toHaveProperty('reasoning_opaque');
+  expect(projectionB.materialize().messages[0]).toEqual({ role: 'assistant', content: 'answer', refusal: null });
 });
 
 test('encrypted reasoning detail data follows affinity without changing the opaque state machine', async () => {
@@ -103,10 +104,41 @@ test('encrypted reasoning detail data follows affinity without changing the opaq
     ],
   });
   expect(projectionB.degrades).toBe(true);
-  expect(projectionB.materialize().messages[0]).toMatchObject({
-    reasoning_details: [{ type: 'reasoning.summary', summary: 'visible' }],
-  });
+  expect(projectionB.materialize().messages[0]).toEqual({ role: 'assistant', content: 'answer', refusal: null });
   // Egress minted a synthetic reasoning_opaque carrier; ingress removes it for every candidate.
   expect(projectionA.materialize().messages[0]).not.toHaveProperty('reasoning_opaque');
-  expect(projectionB.materialize().messages[0]).not.toHaveProperty('reasoning_opaque');
+});
+
+test('strips reasoning extensions from a turn with only a routing carrier', async () => {
+  const candidateA = candidate('upstream-a');
+  const candidateB = candidate('upstream-b');
+  const carrier = await codec.wrap(undefined, targetFor(candidateA), 'openai-chat-completions.reasoning_opaque');
+  const message = {
+    role: 'assistant' as const,
+    content: 'answer',
+    tool_calls: [{ type: 'function' as const, id: 'call_1', function: { name: 'lookup', arguments: '{}' } }],
+  };
+  const reasoning = {
+    reasoning_text: 'reasoning text',
+    reasoning_content: 'reasoning content',
+    reasoning: 'reasoning',
+    reasoning_details: [{ type: 'reasoning.summary', summary: 'visible' }],
+    reasoning_items: [{ type: 'reasoning', summary: [{ type: 'summary_text', text: 'visible' }] }],
+    thinking_blocks: [{ type: 'thinking', thinking: 'visible', signature: 'signature' }],
+  };
+  const messages: OpenAIChatCompletionsAssistantMessageEx[] = [
+    { ...message, ...reasoning, reasoning_opaque: carrier },
+    { ...message, reasoning_opaque: carrier },
+  ];
+  const prepared = await analyzeOpenAIChatCompletionsAffinity({ model: 'model', messages }, codec);
+
+  const compatible = acceptedAffinityEvaluation(prepared, candidateA);
+  const incompatible = acceptedAffinityEvaluation(prepared, candidateB);
+  expect(compatible.degrades).toBe(false);
+  expect(compatible.materialize().messages).toEqual([{ ...message, ...reasoning }, message]);
+  expect(incompatible.degrades).toBe(true);
+  expect(incompatible.materialize().messages).toEqual([message, message]);
+
+  const ordinaryOnly = await analyzeOpenAIChatCompletionsAffinity({ model: 'model', messages: messages.slice(1) }, codec);
+  expect(acceptedAffinityEvaluation(ordinaryOnly, candidateB).degrades).toBe(false);
 });
