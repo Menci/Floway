@@ -75,9 +75,10 @@ test('generate lets the target system-to-developer rewrite take precedence over 
   })], { responses });
   const { response, done } = await fixture.send(messagesPayload({
     messages: [{ role: 'user', content: 'hello' }, { role: 'system', content: 'inline instructions' }],
-  }));
+  }), { headers: { 'anthropic-beta': 'context-1m-2025-08-07' } });
   expect(response.status).toBe(200);
   expect(await done).toMatchObject({ ok: true });
+  expect(seen[0]?.['request.headers']).toEqual([]);
   expect(seen[0]?.['request.payload'].input).toEqual([
     { type: 'message', role: 'user', content: 'hello' },
     { type: 'message', role: 'developer', content: 'inline instructions' },
