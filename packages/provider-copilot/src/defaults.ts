@@ -20,6 +20,7 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   'serialize-stream-items': false,
   'disable-reasoning-on-forced-tool-choice': false,
   'empty-tools-tool-choice-none': false,
+  'openai-responses-null-unresolved-function-call-namespace': true,
   // Upstream default is off; Claude models below 4.8 flip it on via the
   // per-model default. See `defaultFlagsForCopilotModel` for the empirical
   // basis.

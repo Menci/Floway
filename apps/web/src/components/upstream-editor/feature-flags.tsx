@@ -26,6 +26,7 @@ const flagGroupById = {
   'serialize-stream-items': 'apiCompatibility',
   'disable-reasoning-on-forced-tool-choice': 'apiCompatibility',
   'empty-tools-tool-choice-none': 'apiCompatibility',
+  'openai-responses-null-unresolved-function-call-namespace': 'apiCompatibility',
   'rewrite-mid-conv-system-to-user': 'apiCompatibility',
   'rewrite-disallowed-mid-conv-system-to-user': 'apiCompatibility',
   'rewrite-developer-to-system': 'apiCompatibility',

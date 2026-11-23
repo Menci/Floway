@@ -105,7 +105,7 @@ export interface OpenAIResponsesPayloadEx extends Omit<OpenAIResponsesPayload, '
 // Canonical inputs include documented provider extensions and normalized message discriminators.
 export type CanonicalOpenAIResponsesInputItem =
   | OpenAIResponsesInputMessage
-  | OpenAIResponsesFunctionToolCallItem
+  | OpenAIResponsesFunctionToolCallItemEx
   | OpenAIResponsesFunctionCallOutputItem
   | OpenAIResponsesCustomToolCallItem
   | OpenAIResponsesCustomToolCallOutputItem
@@ -233,6 +233,11 @@ export type OpenAIResponsesToolCaller = OpenWire<Official.ResponseFunctionToolCa
 // https://github.com/openai/codex/blob/c4f42d161ae44a8d696ee9fb595709661979d187/codex-rs/core/src/tools/router.rs#L31-L55
 export type OpenAIResponsesFunctionToolCallItem = OpenWire<Official.ResponseFunctionToolCall> & CodexInternalChatMessageMetadata & {
   encrypted_function_args?: string[] | null;
+};
+
+// Replayed input can explicitly mark an unresolved namespace with null.
+export type OpenAIResponsesFunctionToolCallItemEx = Omit<OpenAIResponsesFunctionToolCallItem, 'namespace'> & {
+  namespace?: string | null;
 };
 
 // An output without `call_id` is standalone: it answers no function call and

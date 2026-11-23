@@ -415,6 +415,10 @@ const zhHansCN = {
               label: '工具列表为空时禁用工具选择',
               description: '部分上游不接受空的 `tools` 数组与 `auto` 等启用状态的 `tool_choice` 同时出现。\n开启此开关后，当 `tools` 是空数组时，Floway 会在转发请求前将 `tool_choice` 改写为当前协议表示**不使用工具**的值。',
             },
+            'openai-responses-null-unresolved-function-call-namespace': {
+              label: '以 null 命名空间标记未解析的函数调用',
+              description: '模型可能以裸名称调用工具（不带 `namespace` 的 `function_call`），而该名称只在某个工具命名空间中声明过，例如只在 `collaboration` 命名空间下声明的 `list_agents`。客户端会将此类调用作为不支持的工具回应，但部分 OpenAI Responses 上游（如 GitHub Copilot）会拒绝之后所有在历史中重放该调用的请求。\n开启此开关后，Floway 会在转发请求前将此类调用的 `namespace` 设为 `null`。调用保持其发生时的未解析状态，Floway 不会猜测本应属于哪个命名空间。',
+            },
             'rewrite-mid-conv-system-to-user': {
               label: '改写行内 system 角色为 user',
               description: '部分上游不支持行内 `system` 消息，例如旧版 Claude deployment 和许多 OpenAI-compatible chat template。\n开启此开关后，Floway 会将所有行内 `system` 角色改写为 `user`。消息内容保持不变。',

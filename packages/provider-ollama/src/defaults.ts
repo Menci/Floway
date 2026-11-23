@@ -15,6 +15,7 @@ export const OLLAMA_DEFAULT_FLAGS: FlagDefaults = {
   'serialize-stream-items': false,
   'disable-reasoning-on-forced-tool-choice': false,
   'empty-tools-tool-choice-none': false,
+  'openai-responses-null-unresolved-function-call-namespace': true,
   'rewrite-mid-conv-system-to-user': false,
   'rewrite-disallowed-mid-conv-system-to-user': false,
   'rewrite-developer-to-system': false,

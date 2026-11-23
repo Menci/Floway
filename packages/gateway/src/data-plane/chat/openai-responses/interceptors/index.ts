@@ -7,6 +7,7 @@ import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-
 import { withStoreForcedFalse } from './force-store-false.ts';
 import { withEmptyToolsToolChoiceNormalized } from './normalize-empty-tools-tool-choice.ts';
 import { withExclusiveCachedTokensNormalized } from './normalize-exclusive-cached-tokens.ts';
+import { withUnresolvedFunctionCallNamespaceNulled } from './null-unresolved-function-call-namespace.ts';
 import { withOpenAIResponsesServerToolShim } from './server-tool-shim.ts';
 import { imageGenerationServerTool } from './server-tools/image-generation.ts';
 import { webSearchServerTool } from './server-tools/web-search.ts';
@@ -46,6 +47,10 @@ import { withVendorQwenOpenAIResponsesNormalize } from './vendor-qwen-normalize.
 //     the complete server-tool loop and restores client identities on egress.
 //   - withOpenAIResponsesServerToolShim: wraps the multi-turn ReAct loop around
 //     the rest of the chain.
+//   - withUnresolvedFunctionCallNamespaceNulled: gated by
+//     `openai-responses-null-unresolved-function-call-namespace`. Runs inside
+//     the server-tool shim so each outgoing history is checked after tool
+//     rewrites.
 //   - withReasoningDisabledOnForcedToolChoice: gated by
 //     `disable-reasoning-on-forced-tool-choice`.
 //   - withEmptyToolsToolChoiceNormalized: gated by
@@ -81,6 +86,7 @@ export const openaiResponsesInterceptors: readonly OpenAIResponsesInterceptor[] 
     webSearchServerTool,
     imageGenerationServerTool,
   ]),
+  withUnresolvedFunctionCallNamespaceNulled,
   withReasoningDisabledOnForcedToolChoice,
   withEmptyToolsToolChoiceNormalized,
   withRoleCompatibilityApplied,
