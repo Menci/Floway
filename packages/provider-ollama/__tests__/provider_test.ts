@@ -1,20 +1,11 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
-import { callOllama, ollamaInput } from './pipeline-fixture.ts';
-import { createOllamaProvider } from '../src/provider.ts';
-import { Bytes } from '@floway-dev/pipeline';
-import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
+import { callOllama, ollamaInput, ollamaServices } from './pipeline-fixture.ts';
+import { createOllamaProvider, ollamaPipelines } from '../src/index.ts';
+import { Bytes, isSecret, type RunEvent } from '@floway-dev/pipeline';
+import { DEFAULT_DECISION_PATHS, parseDecisionRequest } from '@floway-dev/protocols/decision';
+import { UpstreamTransportError, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, assertExists, jsonResponse, sseResponse, stubProviderModel, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
-
-// A cloud upstream writes its usage snapshot after the calls it serves, so the
-// provider needs a repo to write into wherever those calls are exercised.
-initProviderRepo(() => ({
-  recordUpstreamMetric: async () => {},
-  upstreams: {
-    getById: async () => null,
-    saveState: async () => {},
-  },
-}));
 
 const buildRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   id: 'up_ollama',
@@ -117,13 +108,14 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
 });
 
 test('manual transcription models call Ollama without auto-advertising the endpoint', async () => {
-  const instance = createOllamaProvider(buildRecord({
+  const record = buildRecord({
     config: {
       baseUrl: 'https://ollama.com',
       apiKey: 'ollama_test',
       models: [{ upstreamModelId: 'qwen-audio:latest', kind: 'chat', endpoints: { openaiAudioTranscriptions: {} }, chat: { image_detail_original: true } }],
     },
-  }));
+  });
+  const instance = createOllamaProvider(record);
   let transcription: Request | undefined;
   await withMockedFetch(
     async request => {
@@ -139,12 +131,13 @@ test('manual transcription models call Ollama without auto-advertising the endpo
       const models = await instance.instance.getProvidedModels(testFetcher);
       assertEquals(models.map(model => model.kind), ['transcription']);
       assertEquals(models[0]?.chat, undefined);
-      await callOllama(instance.pipelines.openaiAudioTranscriptions, ollamaInput(models[0], {
+      const result = await callOllama(ollamaPipelines.openaiAudioTranscriptions, ollamaInput(record, models[0], {
         entries: [
           { kind: 'file', name: 'file', bytes: Bytes.fromUtf8('audio'), filename: 'clip.wav', contentType: 'audio/wav' },
           { kind: 'text', name: 'model', value: 'public-model' },
         ],
       }));
+      expect(result['response.openaiAudioTranscriptions']).toEqual({ kind: 'ok' });
     },
   );
   assertExists(transcription);
@@ -159,7 +152,8 @@ test('manual transcription models call Ollama without auto-advertising the endpo
 });
 
 test('the chat pipeline posts the upstream model ID and bearer header', async () => {
-  const instance = createOllamaProvider(buildRecord());
+  const record = buildRecord();
+  const instance = createOllamaProvider(record);
   let chatRequest: Request | null = null;
   let chatBody: unknown = null;
 
@@ -185,16 +179,29 @@ test('the chat pipeline posts the upstream model ID and bearer header', async ()
     },
     async () => {
       const [providerModel] = await instance.instance.getProvidedModels(testFetcher);
+      const input = ollamaInput(record, providerModel, { messages: [{ role: 'user' as const, content: 'hi' }], max_completion_tokens: 32000 }, [
+        ['authorization', 'Bearer client-key'],
+        ['content-type', 'text/plain'],
+        ['anthropic-version', 'client-version'],
+        ['anthropic-beta', 'client-beta'],
+        ['x-client-header', 'client-value'],
+      ]);
+      expect(isSecret(input['provider.upstream'].config.apiKey)).toBe(true);
+      expect(input['provider.upstream']).toEqual({
+        id: record.id, kind: 'ollama', name: record.name,
+        config: { baseUrl: 'https://ollama.com', apiKey: expect.any(Object), cloudUsage: false },
+      });
       const result = await callOllama(
-        instance.pipelines.openaiChatCompletions,
-        ollamaInput(providerModel, { messages: [{ role: 'user', content: 'hi' }], max_completion_tokens: 32000 }),
+        ollamaPipelines.openaiChatCompletions,
+        input,
       );
       assertEquals(result['response.modelKey'], 'gpt-oss:120b');
+      expect(result['response.openaiChatCompletions'].kind).toBe('stream');
     },
   );
 
   assertEquals(chatRequest!.url, 'https://ollama.com/v1/chat/completions');
-  assertEquals(chatRequest!.headers.get('Authorization'), 'Bearer ollama_test');
+  assertEquals([...chatRequest!.headers], [['authorization', 'Bearer ollama_test'], ['content-type', 'application/json']]);
   const body = chatBody as { model: string; stream: boolean; max_tokens?: number; max_completion_tokens?: number };
   assertEquals(body.model, 'gpt-oss:120b');
   assertEquals(body.stream, true);
@@ -207,7 +214,6 @@ test.each([
   { limits: { max_completion_tokens: 0 }, expected: { max_tokens: 0 } },
   { limits: { max_tokens: null, max_completion_tokens: 128000 }, expected: { max_tokens: null, max_completion_tokens: 128000 } },
 ])('Ollama sends $expected for the requested output caps $limits', async ({ limits, expected }) => {
-  const { pipelines } = createOllamaProvider(buildRecord());
   const model = stubProviderModel({ upstreamModelId: 'gpt-oss:120b' });
   const messages = [{ role: 'user' as const, content: 'hi' }];
   let observed: unknown;
@@ -216,7 +222,102 @@ test.each([
       observed = await request.json();
       return sseResponse();
     },
-    () => callOllama(pipelines.openaiChatCompletions, ollamaInput(model, { messages, ...limits })),
+    () => callOllama(ollamaPipelines.openaiChatCompletions, ollamaInput(buildRecord(), model, { messages, ...limits })),
   );
   assertEquals(observed, { messages, ...expected, stream: true, model: 'gpt-oss:120b' });
+});
+
+test.each([
+  {
+    response: () => { throw new UpstreamTransportError(new Error('socket disconnected')); },
+    type: 'upstream_transport_error',
+    message: 'socket disconnected',
+  },
+  {
+    response: () => new Response('expected event stream'),
+    type: 'upstream_invalid_stream',
+    message: 'expected event stream',
+  },
+])('the chat pipeline returns $type as an upstream error value', async ({ response, type, message }) => {
+  const result = await callOllama(
+    ollamaPipelines.openaiChatCompletions,
+    ollamaInput(buildRecord(), stubProviderModel(), { messages: [] }),
+    ollamaServices(async () => response()),
+  );
+  expect(result['response.http'].status).toBe(502);
+  expect(result['response.openaiChatCompletions']).toEqual({
+    kind: 'error', source: 'upstream', error: { error: { type, message: expect.stringContaining(message) } },
+  });
+});
+
+test('count-tokens sends provider-owned Anthropic headers and bypasses the probes', async () => {
+  const probeAfterResponse = vi.fn(async () => ({}));
+  const services = { ...ollamaServices(), ollama: { probeAfterResponse } };
+  const model = stubProviderModel({ upstreamModelId: 'claude-upstream' });
+  const input = {
+    ...ollamaInput(buildRecord(), model, { messages: [], max_tokens: 32 }, [
+      ['anthropic-version', 'client-version'],
+      ['anthropic-beta', 'client-beta'],
+      ['x-client-header', 'client-value'],
+    ]),
+    'request.anthropicBeta': ['beta-from-facts'],
+  };
+  await withMockedFetch(async request => {
+    expect(new URL(request.url).pathname).toBe('/v1/messages/count_tokens');
+    expect([...request.headers]).toEqual([
+      ['anthropic-beta', 'beta-from-facts'], ['anthropic-version', '2023-06-01'],
+      ['authorization', 'Bearer ollama_test'], ['content-type', 'application/json'],
+    ]);
+    expect(await request.json()).toEqual({ model: 'claude-upstream', messages: [], max_tokens: 32 });
+    return Response.json({ input_tokens: 3 });
+  }, async () => {
+    const result = await callOllama(ollamaPipelines.anthropicMessagesCountTokens, input, services);
+    expect(result['response.anthropicMessagesCountTokens']).toEqual({ kind: 'ok' });
+    expect(result.body).toEqual({ ok: true, bytes: Bytes.fromUtf8('{"input_tokens":3}') });
+  });
+  expect(probeAfterResponse).not.toHaveBeenCalled();
+});
+
+test('decision returns the System One target and bypasses the probes', async () => {
+  const probeAfterResponse = vi.fn(async () => ({}));
+  const services = { ...ollamaServices(), ollama: { probeAfterResponse } };
+  const target = { protocol: 'typesafe-systemone' } as const;
+  const model = stubProviderModel({ upstreamModelId: 'jev-1.13', decisionTarget: target });
+  const body = { model: 'public-model', state: 's', questions: { is_bug: { type: 'noul', instructions: 'Is it a bug?' } } };
+  const input = ollamaInput(buildRecord(), model, parseDecisionRequest(target.protocol, body).request);
+  await withMockedFetch(async request => {
+    expect(new URL(request.url).pathname).toBe(DEFAULT_DECISION_PATHS[target.protocol]);
+    expect(await request.json()).toEqual({ ...body, model: 'jev-1.13' });
+    return Response.json({ answers: {} });
+  }, async () => {
+    const result = await callOllama(ollamaPipelines.decision, input, services);
+    expect(result['response.decision']).toEqual({ kind: 'ok', target });
+  });
+  expect(probeAfterResponse).not.toHaveBeenCalled();
+});
+
+test.each([
+  { action: 'generate', path: '/v1/responses', response: () => sseResponse(), kind: 'stream' },
+  { action: 'compact', path: '/v1/responses/compact', response: () => Response.json({ output: [] }), kind: 'result' },
+] as const)('Responses $action triggers probes at the correct point relative to parsing', async ({ action, path, response, kind }) => {
+  const services = ollamaServices(async url => {
+    expect(new URL(url).pathname).toBe(path);
+    return response();
+  });
+  const events: RunEvent[] = [];
+  const input = { ...ollamaInput(buildRecord(), stubProviderModel(), { input: [] }), 'request.action': action };
+  const result = await callOllama(ollamaPipelines.openaiResponses, input, {
+    ...services,
+    ollama: { probeAfterResponse: async () => ({ usage: Promise.resolve({ persisted: true }) }) },
+  }, event => events.push(event));
+  expect(result['response.openaiResponses'].kind).toBe(kind);
+  const parse = events.filter(event => event.k === 'enter').find(event => event.name === 'parseResponses');
+  assertExists(parse);
+  const parsed = events.find(event => event.k === 'leave' && event.stageId === parse.stageId);
+  const probe = events.find(event => event.k === 'deferred' && event.name === 'ollama.usageProbe');
+  assertExists(parsed);
+  assertExists(probe);
+  if (action === 'generate') expect(probe.seq).toBeGreaterThan(parsed.seq);
+  else expect(probe.seq).toBeLessThan(parsed.seq);
+  expect(events.filter(event => event.k === 'deferred')).toEqual([probe]);
 });

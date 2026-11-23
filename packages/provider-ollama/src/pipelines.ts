@@ -1,43 +1,57 @@
-import { isOllamaAccountProbeDue, refreshOllamaAccount } from './account-probe.ts';
-import type { OllamaUpstreamConfig } from './config.ts';
-import type { OllamaUpstreamState } from './state.ts';
-import { isOllamaUsageEnabled, isOllamaUsageProbeDue, refreshOllamaUsageProbe } from './usage-probe.ts';
-import { compose, defineStage, secret, snapshotError, transform, type Deferred, type ErrorSnapshot, type Stage, type StageEnv } from '@floway-dev/pipeline';
+import type { OllamaUpstreamFacts } from './config.ts';
+import type { OllamaServices } from './service.ts';
+import { compose, defineStage, secret, transform } from '@floway-dev/pipeline';
 import { parseAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-messages';
-import type { DecisionTarget } from '@floway-dev/protocols/common';
 import { DEFAULT_DECISION_PATHS, serializeDecisionRequest, type CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
 import { parseOpenAIChatCompletionsStream, type OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
-import { parseOpenAIResponsesStream, toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
+import type { OpenAICompletionsPayload } from '@floway-dev/protocols/openai-completions';
+import type { OpenAIEmbeddingsPayload } from '@floway-dev/protocols/openai-embeddings';
+import { toCompactPayloadShape } from '@floway-dev/protocols/openai-responses';
 import {
-  buildHttpRequestStage,
-  encodeHttpRequest,
+  deleteHeader,
   headersForAnthropicMessagesCall,
   httpTerminal,
   httpUrl,
   joinBaseAndPath,
-  parseCompactionStage,
+  parseHttpOutcomeStage,
+  parseResponsesStage,
   parseSseStage,
+  rewriteHttpRequestStage,
   serializeModelFieldOpenAIAudioTranscriptionRequest,
-  type HeaderEntry,
-  type HttpRequestFacts,
+  setHeader,
+  stripHttpHeaders,
   type HttpResponseFacts,
   type OpenAIAudioTranscriptionRequest,
+  type ProviderAnthropicCountTokensOutput,
   type ProviderAnthropicInput,
-  type ProviderHttpOutput,
-  type ProviderHttpRequest,
+  type ProviderAnthropicMessagesOutput,
+  type ProviderDecisionOutput,
+  type ProviderHttpRequestUpdate,
   type ProviderInput,
+  type ProviderModelFacts,
+  type ProviderOpenAIAudioTranscriptionsOutput,
+  type ProviderOpenAIChatCompletionsOutput,
+  type ProviderOpenAICompletionsOutput,
+  type ProviderOpenAIEmbeddingsOutput,
+  type ProviderOpenAIResponsesOutput,
   type ProviderPipelines,
   type ProviderRequestBody,
   type ProviderResponsesInput,
-  type ProviderServices,
-  type ProviderTargetOutput,
 } from '@floway-dev/provider';
 
-const requestKeys: readonly (keyof ProviderInput<unknown>)[] = ['provider.model', 'request.headers', 'request.payload'];
-const anthropicKeys: readonly (keyof ProviderAnthropicInput)[] = [...requestKeys, 'request.anthropicBeta'];
-const responseKeys: readonly (keyof ProviderResponsesInput)[] = [...requestKeys, 'request.action'];
+type OllamaInput<Payload> = ProviderInput<OllamaUpstreamFacts, Payload>;
+type ChatInput = OllamaInput<Omit<OpenAIChatCompletionsPayloadEx, 'model'>>;
+type CompletionsInput = OllamaInput<Omit<OpenAICompletionsPayload, 'model'>>;
+type EmbeddingsInput = OllamaInput<Omit<OpenAIEmbeddingsPayload, 'model'>>;
+type AudioInput = OllamaInput<OpenAIAudioTranscriptionRequest>;
+type DecisionInput = OllamaInput<CanonicalDecisionRequest>;
+type AnthropicInput = ProviderAnthropicInput<OllamaUpstreamFacts>;
+type ResponsesInput = ProviderResponsesInput<OllamaUpstreamFacts>;
 
-type ChatInput = ProviderInput<Omit<OpenAIChatCompletionsPayloadEx, 'model'>>;
+const requestKeys = ['provider.upstream', 'provider.model', 'request.http', 'request.payload'] as const;
+const anthropicKeys = [...requestKeys, 'request.anthropicBeta'] as const;
+const responsesKeys = [...requestKeys, 'request.action'] as const;
+const outputKeys = ['response.http', 'response.modelKey'] as const;
 
 // The Ollama shim maps max_tokens onto num_predict and omits the modern spelling.
 // https://github.com/ollama/ollama/blob/9a4b136efefecb51b428d22e79b0f3d15769a1f8/openai/openai.go#L110-L125
@@ -58,130 +72,174 @@ const renameOutputCap = defineStage<ChatInput, ChatInput, {}, {}>({
   })),
 });
 
-type ProbeResult = { readonly persisted: true } | { readonly persisted: false; readonly error: ErrorSnapshot };
+type ProbeInput = Pick<OllamaInput<unknown>, 'provider.upstream'>;
+type ProbeOutput = { readonly 'response.http': HttpResponseFacts };
 
-type ProbeOutput = ProviderHttpOutput & {
-  readonly 'response.provider.usageProbe': Deferred<ProbeResult> | undefined;
-  readonly 'response.provider.accountProbe': Deferred<ProbeResult> | undefined;
-};
-
-const deferProbe = (
-  name: 'usage' | 'account', upstreamId: string, work: Promise<unknown>, env: StageEnv<ProviderServices>,
-): Deferred<ProbeResult> => env.defer(`ollama.${name}Probe`, work.then<ProbeResult, ProbeResult>(
-  () => ({ persisted: true }),
-  (error: unknown) => {
-    const warning = `Failed to refresh Ollama ${name} for ${upstreamId}:`;
-    console.warn(warning, error);
-    const snapshot = snapshotError(error);
-    env.log.warn(warning, { error: snapshot });
-    return { persisted: false, error: snapshot };
-  },
-));
-
-const probeAfterResponse = (upstreamId: string, config: OllamaUpstreamConfig, state: OllamaUpstreamState) => defineStage<
-  {}, {}, ProviderHttpOutput, ProbeOutput, ProviderServices
->({
-  name: 'probeAfterResponse',
+const probeAfterResponse = <Input extends ProbeInput>(
+  name: string,
+  needs: readonly (keyof Input & string)[],
+  shouldProbe: (facts: Input) => boolean,
+) => defineStage<Input, Input, ProbeOutput, ProbeOutput, OllamaServices>({
+  name,
   through: {
-    request: { needs: [], consumes: [], provides: [] },
-    response: { needs: ['response.http'], consumes: [], provides: ['response.provider.usageProbe', 'response.provider.accountProbe'] },
+    request: { needs: ['provider.upstream', ...needs], consumes: [], provides: [] },
+    response: { needs: ['response.http'], consumes: [], provides: [] },
   },
-  async execute(facts, next, env) {
-    const back = await next(facts);
-    const enabled = isOllamaUsageEnabled(config);
-    const now = Date.now();
-    const usage = enabled && isOllamaUsageProbeDue(state, now)
-      ? deferProbe('usage', upstreamId, refreshOllamaUsageProbe(upstreamId, config, env.services.fetcher(upstreamId)), env)
-      : undefined;
-    const account = enabled && isOllamaAccountProbeDue(state, now)
-      ? deferProbe('account', upstreamId, refreshOllamaAccount(upstreamId, config, env.services.fetcher(upstreamId)), env)
-      : undefined;
-    return { ...back, 'response.provider.usageProbe': usage, 'response.provider.accountProbe': account };
+  async execute(facts, scope) {
+    const back = await scope.next(facts);
+    if (back['response.http'].transportError !== undefined || !shouldProbe(facts)) return back;
+    const upstream = facts['provider.upstream'];
+    const probes = await scope.services.ollama.probeAfterResponse(upstream, scope.services.fetcher(upstream.id));
+    for (const [kind, work] of Object.entries(probes)) {
+      scope.defer(`ollama.${kind}Probe`, work.then(result => {
+        if (!result.persisted) {
+          const warning = `Failed to refresh Ollama ${kind} for ${upstream.id}:`;
+          console.warn(warning, result.error);
+          scope.log.warn(warning, { error: result.error });
+        }
+        return result;
+      }));
+    }
+    return back;
   },
 });
 
-export const createOllamaPipelines = (upstreamId: string, config: OllamaUpstreamConfig, state: OllamaUpstreamState): ProviderPipelines => {
-  const ending = httpTerminal(upstreamId);
-  const assemble = <In, Out>(operation: string, ...stages: Stage<ProviderServices>[]) =>
-    compose<In, Out, ProviderServices>(`${upstreamId}.${operation}`, { stages, ending });
-  const probe = probeAfterResponse(upstreamId, config, state);
-  const authorization = config.apiKey === undefined ? undefined : secret(`Bearer ${config.apiKey}`);
-  const request = (path: string, body: ProviderRequestBody, extra: readonly HeaderEntry[]): ProviderHttpRequest => {
-    const headers = new Map<string, HeaderEntry[1]>();
-    if (authorization !== undefined) headers.set('authorization', authorization);
-    for (const [name, value] of extra) headers.set(name.toLowerCase(), value);
-    return { method: 'POST', url: httpUrl(joinBaseAndPath(config.baseUrl, path)), headers: [...headers], body };
-  };
-  const json = (path: string, stream = false) => buildHttpRequestStage<ProviderInput<object>>('buildRequest', requestKeys, facts => {
-    const modelKey = facts['provider.model'].upstreamModelId;
-    const value = { ...facts['request.payload'], ...(stream ? { stream: true } : {}), model: modelKey };
-    return { modelKey, request: request(path, { kind: 'json', value }, facts['request.headers']) };
-  });
-  const anthropic = (stream: boolean) => buildHttpRequestStage<ProviderAnthropicInput>('buildRequest', anthropicKeys, facts => {
-    const modelKey = facts['provider.model'].upstreamModelId;
-    const value = { ...facts['request.payload'], ...(stream ? { stream: true } : {}), model: modelKey };
-    const path = stream ? '/v1/messages' : '/v1/messages/count_tokens';
-    const headers = headersForAnthropicMessagesCall(facts['request.headers'], facts['request.anthropicBeta']);
-    return { modelKey, request: request(path, { kind: 'json', value }, headers) };
-  });
+const probe = probeAfterResponse('probeAfterResponse', [], () => true);
+const probeGeneration = probeAfterResponse<ResponsesInput>(
+  'probeAfterGeneration', ['request.action'], facts => facts['request.action'] === 'generate',
+);
+const probeCompaction = probeAfterResponse<ResponsesInput>(
+  'probeBeforeCompactionParse', ['request.action'], facts => facts['request.action'] === 'compact',
+);
 
-  // Cloud inference refreshes balances even after a rate limit. Count tokens
-  // and the decision endpoint do not trigger account or usage refreshes.
-  return {
-    openaiCompletions: assemble('openaiCompletions', probe, json('/v1/completions')),
-    openaiChatCompletions: assemble('openaiChatCompletions', renameOutputCap, probe, parseSseStage('parseSse', parseOpenAIChatCompletionsStream), json('/v1/chat/completions', true)),
-    openaiResponses: assemble(
-      'openaiResponses',
-      // Initiate probes after SSE validation for generation or before reading compact JSON.
-      parseCompactionStage(),
-      probe,
-      parseSseStage('parseSse', parseOpenAIResponsesStream, {
-        needs: ['request.action'],
-        when: (facts: ProviderResponsesInput) => facts['request.action'] === 'generate',
-      }),
-      buildHttpRequestStage<ProviderResponsesInput>('buildRequest', responseKeys, facts => {
-        const payload = facts['request.payload'];
-        const modelKey = facts['provider.model'].upstreamModelId;
-        const compact = facts['request.action'] === 'compact';
-        const path = compact ? '/v1/responses/compact' : '/v1/responses';
-        const value = compact ? { ...toCompactPayloadShape(payload), model: modelKey } : { ...payload, stream: true, model: modelKey };
-        return { modelKey, request: request(path, { kind: 'json', value }, facts['request.headers']) };
-      }),
-    ),
-    anthropicMessages: assemble('anthropicMessages', probe, parseSseStage('parseSse', parseAnthropicMessagesStream), anthropic(true)),
-    anthropicMessagesCountTokens: assemble('anthropicMessagesCountTokens', anthropic(false)),
-    openaiEmbeddings: assemble('openaiEmbeddings', probe, json('/v1/embeddings')),
-    openaiAudioTranscriptions: assemble('openaiAudioTranscriptions', probe, buildHttpRequestStage<ProviderInput<OpenAIAudioTranscriptionRequest>>('buildRequest', requestKeys, facts => {
-      const modelKey = facts['provider.model'].upstreamModelId;
-      const body = serializeModelFieldOpenAIAudioTranscriptionRequest(facts['request.payload'], modelKey);
-      // The compatibility route adapts the multipart audio upload to native chat.
-      // https://github.com/ollama/ollama/blob/573386c35eac76124ffce571f4b0fefa0a7fe13c/server/routes.go#L1916-L1922
-      // https://github.com/ollama/ollama/blob/573386c35eac76124ffce571f4b0fefa0a7fe13c/middleware/openai.go#L682-L789
-      return { modelKey, request: request('/v1/audio/transcriptions', body, facts['request.headers']) };
-    })),
-    decision: assemble('decision', defineStage<
-      ProviderInput<CanonicalDecisionRequest>,
-      { 'request.http': HttpRequestFacts },
-      { 'response.http': HttpResponseFacts },
-      ProviderTargetOutput<DecisionTarget>,
-      ProviderServices
-    >({
-      name: 'buildRequest',
-      through: {
-        request: { needs: requestKeys, consumes: [], provides: ['request.http'] },
-        response: { needs: ['response.http'], consumes: [], provides: ['response.modelKey', 'response.target'] },
-      },
-      async execute(facts, next) {
-        const model = facts['provider.model'];
-        const target = model.decisionTarget;
-        if (target === undefined) throw new Error(`Decision model ${model.id} has no outbound target`);
-        const modelKey = model.upstreamModelId;
-        const path = target.path ?? DEFAULT_DECISION_PATHS[target.protocol];
-        const body: ProviderRequestBody = { kind: 'json', value: serializeDecisionRequest(target.protocol, modelKey, facts['request.payload']) };
-        const outgoing = request(path, body, facts['request.headers']);
-        const back = await next({ ...facts, 'request.http': encodeHttpRequest(outgoing) });
-        return { ...back, 'response.modelKey': modelKey, 'response.target': target };
-      },
-    })),
-  };
+const keepOpenAIHeader = (name: string): boolean => name === 'authorization' || name === 'content-type';
+const stripOpenAIHeaders = stripHttpHeaders(keepOpenAIHeader);
+const stripAnthropicHeaders = stripHttpHeaders(name =>
+  keepOpenAIHeader(name) || name === 'anthropic-version' || name === 'anthropic-beta');
+
+const ollamaRequest = (
+  { config }: OllamaUpstreamFacts,
+  path: string,
+  body: ProviderRequestBody,
+  anthropicBeta?: readonly string[],
+): ProviderHttpRequestUpdate => ({
+  method: 'POST',
+  url: httpUrl(joinBaseAndPath(config.baseUrl, path)),
+  headers: headers => {
+    const authorized = config.apiKey === undefined
+      ? deleteHeader(headers, 'authorization')
+      : setHeader(headers, 'authorization', secret(`Bearer ${config.apiKey.reveal()}`));
+    return anthropicBeta === undefined ? authorized : headersForAnthropicMessagesCall(authorized, anthropicBeta);
+  },
+  body,
+});
+
+const buildJsonRequest = (path: string, stream = false) => rewriteHttpRequestStage<OllamaInput<object>>('buildRequest', requestKeys, facts => {
+  const modelKey = facts['provider.model'].upstreamModelId;
+  const value = { ...facts['request.payload'], ...(stream ? { stream: true } : {}), model: modelKey };
+  return { modelKey, request: ollamaRequest(facts['provider.upstream'], path, { kind: 'json', value }) };
+});
+
+const buildAnthropicRequest = (stream: boolean) => rewriteHttpRequestStage<AnthropicInput>('buildRequest', anthropicKeys, facts => {
+  const modelKey = facts['provider.model'].upstreamModelId;
+  const value = { ...facts['request.payload'], ...(stream ? { stream: true } : {}), model: modelKey };
+  const path = stream ? '/v1/messages' : '/v1/messages/count_tokens';
+  return { modelKey, request: ollamaRequest(facts['provider.upstream'], path, { kind: 'json', value }, facts['request.anthropicBeta']) };
+});
+
+const buildResponsesRequest = rewriteHttpRequestStage<ResponsesInput>('buildRequest', responsesKeys, facts => {
+  const payload = facts['request.payload'];
+  const modelKey = facts['provider.model'].upstreamModelId;
+  const compact = facts['request.action'] === 'compact';
+  const path = compact ? '/v1/responses/compact' : '/v1/responses';
+  const value = compact ? { ...toCompactPayloadShape(payload), model: modelKey } : { ...payload, stream: true, model: modelKey };
+  return { modelKey, request: ollamaRequest(facts['provider.upstream'], path, { kind: 'json', value }) };
+});
+
+const buildAudioRequest = rewriteHttpRequestStage<AudioInput>('buildRequest', requestKeys, facts => {
+  const modelKey = facts['provider.model'].upstreamModelId;
+  const body = serializeModelFieldOpenAIAudioTranscriptionRequest(facts['request.payload'], modelKey);
+  // The compatibility route adapts the multipart audio upload to native chat.
+  // https://github.com/ollama/ollama/blob/573386c35eac76124ffce571f4b0fefa0a7fe13c/server/routes.go#L1916-L1922
+  // https://github.com/ollama/ollama/blob/573386c35eac76124ffce571f4b0fefa0a7fe13c/middleware/openai.go#L682-L789
+  return { modelKey, request: ollamaRequest(facts['provider.upstream'], '/v1/audio/transcriptions', body) };
+});
+
+const decisionTarget = (model: ProviderModelFacts) => {
+  if (model.decisionTarget === undefined) throw new Error(`Decision model ${model.id} has no outbound target`);
+  return model.decisionTarget;
 };
+
+const buildDecisionRequest = rewriteHttpRequestStage<DecisionInput>('buildRequest', requestKeys, facts => {
+  const model = facts['provider.model'];
+  const target = decisionTarget(model);
+  const modelKey = model.upstreamModelId;
+  const path = target.path ?? DEFAULT_DECISION_PATHS[target.protocol];
+  const value = serializeDecisionRequest(target.protocol, modelKey, facts['request.payload']);
+  return { modelKey, request: ollamaRequest(facts['provider.upstream'], path, { kind: 'json', value }) };
+});
+
+// A cloud inference response can refresh balances even after a rate limit.
+export const ollamaPipelines = {
+  openaiCompletions: compose<CompletionsInput & ProviderOpenAICompletionsOutput, OllamaServices>()('ollama.openaiCompletions', {
+    entry: requestKeys,
+    exit: [...outputKeys, 'response.openaiCompletions'],
+    stages: [parseHttpOutcomeStage('parseOutcome', 'response.openaiCompletions'), probe, buildJsonRequest('/v1/completions'), stripOpenAIHeaders],
+    ending: httpTerminal,
+  }),
+  openaiChatCompletions: compose<ChatInput & ProviderOpenAIChatCompletionsOutput, OllamaServices>()('ollama.openaiChatCompletions', {
+    entry: requestKeys,
+    exit: [...outputKeys, 'response.openaiChatCompletions'],
+    stages: [
+      renameOutputCap, probe, parseSseStage('parseSse', 'response.openaiChatCompletions', parseOpenAIChatCompletionsStream),
+      buildJsonRequest('/v1/chat/completions', true), stripOpenAIHeaders,
+    ],
+    ending: httpTerminal,
+  }),
+  openaiResponses: compose<ResponsesInput & ProviderOpenAIResponsesOutput, OllamaServices>()('ollama.openaiResponses', {
+    entry: responsesKeys,
+    exit: [...outputKeys, 'response.openaiResponses'],
+    // Generation validates SSE before probing. Compaction probes before reading JSON.
+    stages: [probeGeneration, parseResponsesStage(), probeCompaction, buildResponsesRequest, stripOpenAIHeaders],
+    ending: httpTerminal,
+  }),
+  anthropicMessages: compose<AnthropicInput & ProviderAnthropicMessagesOutput, OllamaServices>()('ollama.anthropicMessages', {
+    entry: anthropicKeys,
+    exit: [...outputKeys, 'response.anthropicMessages'],
+    stages: [
+      probe, parseSseStage('parseSse', 'response.anthropicMessages', parseAnthropicMessagesStream),
+      buildAnthropicRequest(true), stripAnthropicHeaders,
+    ],
+    ending: httpTerminal,
+  }),
+  anthropicMessagesCountTokens: compose<AnthropicInput & ProviderAnthropicCountTokensOutput, OllamaServices>()('ollama.anthropicMessagesCountTokens', {
+    entry: anthropicKeys,
+    exit: [...outputKeys, 'response.anthropicMessagesCountTokens'],
+    stages: [parseHttpOutcomeStage('parseOutcome', 'response.anthropicMessagesCountTokens'), buildAnthropicRequest(false), stripAnthropicHeaders],
+    ending: httpTerminal,
+  }),
+  openaiEmbeddings: compose<EmbeddingsInput & ProviderOpenAIEmbeddingsOutput, OllamaServices>()('ollama.openaiEmbeddings', {
+    entry: requestKeys,
+    exit: [...outputKeys, 'response.openaiEmbeddings'],
+    stages: [parseHttpOutcomeStage('parseOutcome', 'response.openaiEmbeddings'), probe, buildJsonRequest('/v1/embeddings'), stripOpenAIHeaders],
+    ending: httpTerminal,
+  }),
+  openaiAudioTranscriptions: compose<AudioInput & ProviderOpenAIAudioTranscriptionsOutput, OllamaServices>()('ollama.openaiAudioTranscriptions', {
+    entry: requestKeys,
+    exit: [...outputKeys, 'response.openaiAudioTranscriptions'],
+    stages: [parseHttpOutcomeStage('parseOutcome', 'response.openaiAudioTranscriptions'), probe, buildAudioRequest, stripOpenAIHeaders],
+    ending: httpTerminal,
+  }),
+  decision: compose<DecisionInput & ProviderDecisionOutput, OllamaServices>()('ollama.decision', {
+    entry: requestKeys,
+    exit: [...outputKeys, 'response.decision'],
+    stages: [
+      parseHttpOutcomeStage('parseOutcome', 'response.decision', {
+        needs: ['provider.model'],
+        extra: (facts: Pick<DecisionInput, 'provider.model'>) => ({ target: decisionTarget(facts['provider.model']) }),
+      }),
+      buildDecisionRequest, stripOpenAIHeaders,
+    ],
+    ending: httpTerminal,
+  }),
+} satisfies ProviderPipelines<OllamaUpstreamFacts, OllamaServices>;

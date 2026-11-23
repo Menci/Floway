@@ -19,7 +19,8 @@
 // A manual `models[]` entry wins over an auto-fetched row carrying the same
 // upstream id.
 
-import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
+import { secret, type Secret } from '@floway-dev/pipeline';
+import type { ProviderUpstreamBase, UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { modelsField } from '@floway-dev/provider';
 
 export interface OllamaUpstreamConfig {
@@ -38,6 +39,16 @@ export interface OllamaUpstreamConfig {
   cloudUsage: boolean;
   models: UpstreamModelConfig[];
 }
+
+export interface OllamaUpstreamConfigFacts {
+  readonly baseUrl: string;
+  readonly apiKey?: Secret<string>;
+  readonly cloudUsage: boolean;
+}
+
+export type OllamaUpstreamFacts = ProviderUpstreamBase<'ollama', OllamaUpstreamConfigFacts>;
+
+export type OllamaConnectionConfig = Pick<OllamaUpstreamConfig | OllamaUpstreamConfigFacts, 'baseUrl' | 'apiKey'>;
 
 export type OllamaUpstreamRecord = UpstreamRecord & {
   kind: 'ollama';
@@ -58,8 +69,8 @@ const baseUrlField = (value: unknown): string => {
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       throw new Error('invalid protocol');
     }
-  } catch {
-    throw new Error('Malformed ollama upstream config: baseUrl must be an http(s) URL');
+  } catch (cause) {
+    throw new Error('Malformed ollama upstream config: baseUrl must be an http(s) URL', { cause });
   }
   return baseUrl;
 };
@@ -110,4 +121,14 @@ const cloudUsageField = (value: unknown): boolean => {
 export const assertOllamaUpstreamRecord = (record: UpstreamRecord): OllamaUpstreamRecord => {
   if (record.kind !== 'ollama') throw new Error(`Expected ollama upstream record, got ${record.kind}`);
   return { ...record, kind: 'ollama', config: parseOllamaUpstreamConfig(record.config) };
+};
+
+export const toOllamaUpstreamFacts = (record: UpstreamRecord): OllamaUpstreamFacts => {
+  const { id, name, config: { baseUrl, apiKey, cloudUsage } } = assertOllamaUpstreamRecord(record);
+  return {
+    kind: 'ollama',
+    id,
+    name,
+    config: { baseUrl, cloudUsage, ...(apiKey === undefined ? {} : { apiKey: secret(apiKey) }) },
+  };
 };

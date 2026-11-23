@@ -28,9 +28,7 @@ import { chatFromOllamaRaw } from './chat-from-raw.ts';
 import { assertOllamaUpstreamRecord } from './config.ts';
 import { OLLAMA_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchOllamaCatalog, type OllamaCatalog } from './fetch-models.ts';
-import { createOllamaPipelines } from './pipelines.ts';
 import { pricingForOllamaModelKey } from './pricing.ts';
-import { readOllamaUpstreamState } from './state.ts';
 import { runOllamaScheduledTask } from './usage-probe.ts';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { publicModelId, resolveEffectiveFlags, type FlagId, type Provider, type ProviderInstance, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
@@ -80,7 +78,6 @@ const finalizeOllamaModels = (
 export const createOllamaProvider = (record: UpstreamRecord): Provider => {
   const { config } = assertOllamaUpstreamRecord(record);
   const upstreamFlags = resolveEffectiveFlags([OLLAMA_DEFAULT_FLAGS, record.flagOverrides]);
-  const state = readOllamaUpstreamState(record.state);
 
   // Manual models always emit.
   const overriddenIds = new Set(config.models.map(m => m.upstreamModelId));
@@ -123,11 +120,9 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     upstreamId: record.id,
     kind: 'ollama',
     name: record.name,
-    inboundHeaderAllowlist: [],
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     modelsCache: record.modelsCache,
-    pipelines: createOllamaPipelines(record.id, config, state),
     instance,
   };
 };

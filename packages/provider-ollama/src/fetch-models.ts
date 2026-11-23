@@ -120,19 +120,12 @@ const fetchShowForTag = async (
     { method: 'POST', body: jsonRequestBody({ name: tag.name }) },
     fetcher,
   );
-  // A tag whose /api/show fails is skipped rather than failing the catalog, so
-  // this is the one path that walks away from a response it asked for.
+  // Cancel the unread response body before skipping this tag.
   if (!response.ok) {
     await discardUpstreamResponse(response);
     return null;
   }
-  let parsed: unknown;
-  try {
-    parsed = await response.json();
-  } catch {
-    await discardUpstreamResponse(response);
-    return null;
-  }
+  const parsed: unknown = await response.json();
   return parseShowResponse(tag.name, tag.modifiedAt, parsed);
 };
 

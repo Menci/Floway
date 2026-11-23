@@ -4,7 +4,7 @@
 // https://github.com/ollama/ollama/blob/eab97e9f92b9a25c2d52d2cc6c1b1c99bd9fae21/docs/api/balance.mdx
 
 import { readOllamaAccountUsage } from './account-usage.ts';
-import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
+import { assertOllamaUpstreamRecord, type OllamaConnectionConfig } from './config.ts';
 import { ollamaFetchUsage, ollamaFetchBalance } from './fetch.ts';
 import { type OllamaUsageObservation, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
 import { ollamaMetrics } from './upstream-metrics.ts';
@@ -14,7 +14,7 @@ import { type Fetcher, getProviderRepo, recordUpstreamMetrics, runScheduledUsage
 // is an Ollama Cloud account (`cloudUsage` — the endpoint belongs to
 // ollama.com, and a base URL cannot settle it, since the cloud may be reached
 // through the operator's own domain), and a key to authenticate with.
-export const isOllamaUsageEnabled = (config: OllamaUpstreamConfig): boolean =>
+export const isOllamaUsageEnabled = (config: Pick<OllamaConnectionConfig, 'apiKey'> & { readonly cloudUsage: boolean }): boolean =>
   config.cloudUsage && config.apiKey !== undefined;
 
 // Ollama recommends one-minute polling; request-triggered refreshes share
@@ -49,7 +49,7 @@ const persistUsageReading = async (upstreamId: string, attemptedAt: number, obse
   if (accepted && observation !== null) await recordUpstreamMetrics(upstreamId, ollamaMetrics(observation.data), observation.fetchedAt);
 };
 
-export const refreshOllamaUsageProbe = async (upstreamId: string, config: OllamaUpstreamConfig, fetcher: Fetcher): Promise<OllamaUsageObservation> => {
+export const refreshOllamaUsageProbe = async (upstreamId: string, config: OllamaConnectionConfig, fetcher: Fetcher): Promise<OllamaUsageObservation> => {
   const attemptedAt = Date.now();
   let observation: OllamaUsageObservation;
   try {

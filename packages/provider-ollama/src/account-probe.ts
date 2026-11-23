@@ -21,7 +21,7 @@
 // operator's browser fetch an image from ollama.com on every dashboard visit,
 // and the Copilot card next to this one names its account without one.
 
-import { type OllamaUpstreamConfig } from './config.ts';
+import type { OllamaConnectionConfig } from './config.ts';
 import { ollamaFetchMe } from './fetch.ts';
 import { type OllamaAccountEntry, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
 import { type Fetcher, getProviderRepo } from '@floway-dev/provider';
@@ -35,7 +35,7 @@ const optionalString = (value: unknown): string | null =>
   typeof value === 'string' && value !== '' ? value : null;
 
 export const fetchOllamaAccount = async (
-  config: OllamaUpstreamConfig,
+  config: OllamaConnectionConfig,
   fetcher: Fetcher,
 ): Promise<OllamaAccountEntry> => {
   const response = await ollamaFetchMe(
@@ -51,7 +51,7 @@ export const fetchOllamaAccount = async (
   try {
     parsed = JSON.parse(rawText);
   } catch (cause) {
-    throw new Error(`Ollama /api/me returned a non-JSON body (${response.status})`, { cause: cause as Error });
+    throw new Error(`Ollama /api/me returned a non-JSON body (${response.status})`, { cause });
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new Error(`Ollama /api/me returned a non-object body (${response.status})`);
@@ -78,7 +78,7 @@ const persistAccountEntry = async (upstreamId: string, entry: OllamaAccountEntry
 
 export const refreshOllamaAccount = async (
   upstreamId: string,
-  config: OllamaUpstreamConfig,
+  config: OllamaConnectionConfig,
   fetcher: Fetcher,
 ): Promise<OllamaAccountEntry> => {
   const entry = await fetchOllamaAccount(config, fetcher);

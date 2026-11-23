@@ -1,12 +1,13 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
-import { callOllama, ollamaInput } from './pipeline-fixture.ts';
+import { callOllama, ollamaInput, ollamaServices, settledProbes } from './pipeline-fixture.ts';
 import { CREDIT_BALANCE, USAGE_TOTALS } from './usage-fixture.ts';
 import { OLLAMA_ACCOUNT_PROBE_MIN_INTERVAL_MS, fetchOllamaAccount, refreshOllamaAccount } from '../src/account-probe.ts';
 import { assertOllamaUpstreamRecord } from '../src/config.ts';
-import { createOllamaProvider } from '../src/provider.ts';
+import { ollamaPipelines } from '../src/index.ts';
 import { readOllamaUpstreamState } from '../src/state.ts';
-import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
+import type { RunEvent } from '@floway-dev/pipeline';
+import { directFetcher, initProviderRepo, type Fetcher, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_ollama_account';
@@ -59,7 +60,7 @@ const withStateRepo = (state: unknown = null) => {
       },
     },
   }));
-  return { read: () => readOllamaUpstreamState(current) };
+  return { read: () => readOllamaUpstreamState(current), replace: (value: unknown) => { current = value; } };
 };
 
 test('the account probe reads the plan and identity ollama.com actually sends', async () => {
@@ -99,42 +100,34 @@ test('the account slot resolves a race by read time', async () => {
   assertEquals(repoWithNewer.read().account?.plan, 'pro');
 });
 
-// Drives the provider so the arming decision is exercised where it is made.
-const callChat = async (record: UpstreamRecord, onCall: (pathname: string) => void): Promise<void> => {
-  const provider = createOllamaProvider(record);
-  await withMockedFetch(
-    request => {
-      const { pathname } = new URL(request.url);
-      onCall(pathname);
-      if (pathname === '/api/me') return new Response(JSON.stringify(ME_BODY), { status: 200 });
-      if (pathname === '/api/usage') return Response.json(USAGE_TOTALS);
-      if (pathname === '/api/balance') return Response.json(CREDIT_BALANCE);
-      return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } });
-    },
-    async () => {
-      await callOllama(
-        provider.pipelines.openaiChatCompletions,
-        ollamaInput(stubProviderModel({ upstreamModelId: 'gpt-oss:120b' }), { messages: [] }),
-      );
-    },
-  );
-};
-
 test('an inference call arms the account probe on its own daily interval', async () => {
-  withStateRepo();
-  let probes = 0;
-  const count = (pathname: string) => { if (pathname === '/api/me') probes++; };
+  const repo = withStateRepo();
+  const fetcher: Fetcher = async url => {
+    switch (new URL(url).pathname) {
+    case '/api/me': return Response.json(ME_BODY);
+    case '/api/usage': return Response.json(USAGE_TOTALS);
+    case '/api/balance': return Response.json(CREDIT_BALANCE);
+    case '/v1/chat/completions': return new Response('data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } });
+    default: throw new Error(`Unexpected request ${url}`);
+    }
+  };
+  const services = ollamaServices(fetcher);
+  const input = ollamaInput(cloudRecord(), stubProviderModel({ upstreamModelId: 'gpt-oss:120b' }), { messages: [] });
+  const chatProbes = async () => {
+    const events: RunEvent[] = [];
+    await callOllama(ollamaPipelines.openaiChatCompletions, input, services, event => events.push(event));
+    const probes = settledProbes(events);
+    expect(probes.map(({ result }) => result)).toEqual(probes.map(() => expect.objectContaining({ ok: true, value: { persisted: true } })));
+    return probes.map(({ name }) => name);
+  };
 
-  await callChat(cloudRecord(), count);
-  assertEquals(probes, 1);
+  expect(await chatProbes()).toEqual(['ollama.usageProbe', 'ollama.accountProbe']);
 
-  // Fresh enough for the account, stale for the usage window beside it: the
-  // longer interval is what keeps this one from riding along.
   const hourOld = { account: { fetchedAt: Date.now() - 60 * 60 * 1000, plan: 'free', name: null, email: null } };
-  await callChat(cloudRecord({ state: hourOld }), count);
-  assertEquals(probes, 1);
+  repo.replace(hourOld);
+  expect(await chatProbes()).toEqual(['ollama.usageProbe']);
 
   const dayOld = { account: { fetchedAt: Date.now() - OLLAMA_ACCOUNT_PROBE_MIN_INTERVAL_MS, plan: 'free', name: null, email: null } };
-  await callChat(cloudRecord({ state: dayOld }), count);
-  assertEquals(probes, 2);
+  repo.replace({ ...repo.read(), ...dayOld });
+  expect(await chatProbes()).toEqual(['ollama.accountProbe']);
 });

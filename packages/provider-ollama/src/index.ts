@@ -8,7 +8,9 @@ export const ollamaProviderModule: ProviderModule = {
 };
 
 export { createOllamaProvider } from './provider.ts';
-export { assertOllamaUpstreamRecord, parseOllamaUpstreamConfig, type OllamaUpstreamConfig, type OllamaUpstreamRecord } from './config.ts';
+export { assertOllamaUpstreamRecord, parseOllamaUpstreamConfig, toOllamaUpstreamFacts, type OllamaUpstreamConfig, type OllamaUpstreamConfigFacts, type OllamaUpstreamFacts, type OllamaUpstreamRecord } from './config.ts';
+export { ollamaPipelines } from './pipelines.ts';
+export { createOllamaService, type OllamaService, type OllamaServices } from './service.ts';
 export { pricingForOllamaModelKey } from './pricing.ts';
 export { readOllamaUpstreamState, type OllamaAccountEntry, type OllamaUpstreamState } from './state.ts';
 export { isOllamaUsageEnabled, refreshOllamaUsageProbe } from './usage-probe.ts';

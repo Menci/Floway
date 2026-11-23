@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { callOllama, ollamaInput } from './pipeline-fixture.ts';
-import { createOllamaProvider } from '../src/provider.ts';
+import { ollamaPipelines } from '../src/index.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, sseResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -28,10 +28,10 @@ const baseRecord: UpstreamRecord = {
 };
 
 test('Authorization header is omitted entirely when apiKey is absent (local daemon)', async () => {
-  const { pipelines } = createOllamaProvider({
+  const record = {
     ...baseRecord,
     config: { baseUrl: 'http://127.0.0.1:11434' },
-  });
+  };
   let auth: string | null = 'present';
   await withMockedFetch(
     request => {
@@ -39,7 +39,7 @@ test('Authorization header is omitted entirely when apiKey is absent (local daem
       return sseResponse();
     },
     async () => {
-      await callOllama(pipelines.openaiChatCompletions, ollamaInput(stubProviderModel(), { messages: [] }));
+      await callOllama(ollamaPipelines.openaiChatCompletions, ollamaInput(record, stubProviderModel(), { messages: [] }, [['authorization', 'Bearer client-key']]));
     },
   );
   assertEquals(auth, null);
