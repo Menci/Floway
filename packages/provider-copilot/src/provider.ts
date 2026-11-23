@@ -1,18 +1,14 @@
 import { chatFromCopilotRaw } from './chat-from-raw.ts';
-import { assertCopilotUpstreamRecord } from './config.ts';
+import { toCopilotUpstreamFacts } from './config.ts';
 import { COPILOT_DEFAULT_FLAGS, defaultFlagsForCopilotModel } from './defaults.ts';
-import { fetchCopilotModels } from './fetch-models.ts';
-import { emptyKnownModels, mergeKnownModels, projectKnownModels } from './known-models.ts';
 import { mergeCopilotVariants } from './merge-variants.ts';
 import { copilotVariantIndex } from './model-variants.ts';
-import { createCopilotPipelines } from './pipelines.ts';
 import { pricingForCopilotPublicModelId } from './pricing.ts';
 import { type CopilotProviderData, rawModelSupportsEndpoint } from './routing.ts';
-import { runCopilotScheduledTask } from './scheduled.ts';
-import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
+import { defaultCopilotService } from './service.ts';
 import type { CopilotRawModel } from './types.ts';
 import { type DecisionProtocol, type DecisionTarget, type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
-import { getProviderRepo, resolveEffectiveFlags, type FlagOverrides, type ProviderInstance, type Provider, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
+import { resolveEffectiveFlags, type FlagOverrides, type ProviderInstance, type Provider, type ProviderModel, type UpstreamRecord } from '@floway-dev/provider';
 
 // Project Copilot's raw `/models` shape into the slim provider-neutral fields.
 // kind/endpoints/providerData/enabledFlags/flagOverrides are set by the caller
@@ -140,48 +136,21 @@ const finalizeCopilotModels = (
 };
 
 export const createCopilotProvider = (record: UpstreamRecord): Provider => {
-  const copilot = assertCopilotUpstreamRecord(record);
-  const upstreamConfig = { id: copilot.id, githubHost: copilot.config.githubHost, githubToken: copilot.config.githubToken };
+  const upstream = toCopilotUpstreamFacts(record);
 
   const instance: ProviderInstance = {
-    runScheduledTask: options => runCopilotScheduledTask(record, options),
-    getProvidedModels: async fetcher => {
-      const fresh = await getProviderRepo().upstreams.getById(copilot.id);
-      if (!fresh) throw new Error(`Copilot upstream ${copilot.id} disappeared mid-request`);
-      const known = readCopilotUpstreamState(fresh.state).knownModels ?? emptyKnownModels();
-      const response = await fetchCopilotModels(upstreamConfig, fetcher);
-      const now = Date.now();
-      const merged = mergeKnownModels(known, response, now);
-      // The accumulator merges into whatever is stored at write time, not into
-      // the snapshot read before the fetch — fetchCopilotModels may have minted
-      // a token and written this same row on the way through. Persistence stays
-      // best-effort: the fetched catalog is what the caller is about to serve,
-      // and a storage failure only costs the next call the entries this one
-      // would have added.
-      try {
-        await getProviderRepo().upstreams.saveState(copilot.id, current => {
-          const state = readCopilotUpstreamState(current);
-          return {
-            ...state,
-            knownModels: mergeKnownModels(state.knownModels ?? emptyKnownModels(), response, now),
-          } satisfies CopilotUpstreamState;
-        });
-      } catch (err) {
-        console.warn(`Failed to persist Copilot known-models for ${copilot.id}:`, err);
-      }
-      return finalizeCopilotModels(projectKnownModels(merged, now), copilot.flagOverrides);
-    },
+    runScheduledTask: options => defaultCopilotService.runScheduledTask(record, options),
+    getProvidedModels: async fetcher =>
+      finalizeCopilotModels(await defaultCopilotService.getProvidedModels(upstream, fetcher), record.flagOverrides),
   };
 
   return {
-    upstreamId: copilot.id,
+    upstreamId: upstream.id,
     kind: 'copilot',
-    name: copilot.name,
-    inboundHeaderAllowlist: [],
-    disabledPublicModelIds: copilot.disabledPublicModelIds,
-    modelPrefix: copilot.modelPrefix,
-    modelsCache: copilot.modelsCache,
-    pipelines: createCopilotPipelines(upstreamConfig),
+    name: upstream.name,
+    disabledPublicModelIds: record.disabledPublicModelIds,
+    modelPrefix: record.modelPrefix,
+    modelsCache: record.modelsCache,
     instance,
   };
 };

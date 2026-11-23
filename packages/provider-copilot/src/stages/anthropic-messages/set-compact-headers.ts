@@ -1,4 +1,5 @@
 import type { AnthropicMessagesMessage, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
+import { setHeader, type HeaderEntry } from '@floway-dev/provider';
 
 /**
  * Claude Code (and OpenCode) periodically asks the model to summarize the
@@ -104,20 +105,11 @@ export const classifyCopilotCompact = (payload: { messages: AnthropicMessagesMes
   return null;
 };
 
-export const applyCopilotCompactHeaders = (kind: CopilotCompactClass, headers: Headers): void => {
+export const applyCopilotCompactHeaders = (kind: CopilotCompactClass, headers: readonly HeaderEntry[]): readonly HeaderEntry[] => {
   if (kind === 'compact-request') {
-    headers.set('x-initiator', 'agent');
-    headers.set('x-interaction-type', 'conversation-compaction');
-    // openai-intent stays at `copilotAuthedFetch`'s `conversation-agent`
-    // default from `packages/provider-copilot/src/auth.ts` — the same value
-    // caozhiyuan/copilot-api re-pins inside prepareForCompact, so setting it
-    // here would be a no-op.
+    return setHeader(setHeader(headers, 'x-initiator', 'agent'), 'x-interaction-type', 'conversation-compaction');
   } else if (kind === 'auto-continue') {
-    // Auto-continue gets only the agent-initiator tag; interaction-type stays
-    // at `copilotAuthedFetch`'s `conversation-agent` default from
-    // `packages/provider-copilot/src/auth.ts`.
-    // This mirrors prepareForCompact when compactType === COMPACT_AUTO_CONTINUE:
-    // it sets x-initiator: agent and leaves x-interaction-type untouched.
-    headers.set('x-initiator', 'agent');
+    return setHeader(headers, 'x-initiator', 'agent');
   }
+  return headers;
 };

@@ -3,13 +3,6 @@ import { targetSizeForOpenAIResponsesChat } from '../image-size.ts';
 import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputContent, OpenAIResponsesInputImage, OpenAIResponsesOutputRefusal, OpenAIResponsesToolOutputContent } from '@floway-dev/protocols/openai-responses';
 import { isBase64ImageDataUrl } from '@floway-dev/provider';
 
-// A single client request can reach these stages more than once — a
-// fallback candidate attempt, or another turn of the OpenAI Responses server-tool
-// shim's loop — carrying the same nested image part. Remember the exact
-// generated URL on that request-owned object so the repeat neither
-// re-encodes a lossy WebP nor mistakes an unrelated client WebP for our
-// output. Keep this identity-based memo outside the frozen payload.
-const compressedImageUrls = new WeakMap<OpenAIResponsesInputImage, string>();
 type CompressibleImagePart = OpenAIResponsesInputImage & { image_url: string };
 
 export const compressCopilotOpenAIResponsesImages = async (
@@ -25,7 +18,7 @@ export const compressCopilotOpenAIResponsesImages = async (
     for (const part of parts) {
       if (part.type !== 'input_image' || typeof part.image_url !== 'string') continue;
       const imagePart = part as CompressibleImagePart;
-      if (compressedImageUrls.get(imagePart) === imagePart.image_url || !isBase64ImageDataUrl(imagePart.image_url)) continue;
+      if (!isBase64ImageDataUrl(imagePart.image_url)) continue;
       targets.push({ part: imagePart, imageUrl: imagePart.image_url });
     }
   }
@@ -44,9 +37,7 @@ export const compressCopilotOpenAIResponsesImages = async (
   const rewriteImage = (part: CompressibleImagePart): CompressibleImagePart => {
     const imageUrl = compressedUrls.get(part);
     if (imageUrl === undefined) throw new Error('Missing compressed OpenAI Responses image URL');
-    const rewritten: CompressibleImagePart = { ...part, image_url: imageUrl };
-    compressedImageUrls.set(rewritten, imageUrl);
-    return rewritten;
+    return { ...part, image_url: imageUrl };
   };
   const rewriteParts = <TPart extends OpenAIResponsesInputContent | OpenAIResponsesOutputRefusal | OpenAIResponsesToolOutputContent>(parts: TPart[]): TPart[] =>
     parts.map(part => hasCompressedImage(part) ? rewriteImage(part) as TPart : part);

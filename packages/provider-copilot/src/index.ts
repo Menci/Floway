@@ -7,10 +7,9 @@ export const copilotProviderModule: ProviderModule = {
   defaultFlags: COPILOT_DEFAULT_FLAGS,
 };
 
-export {
-  clearInProcessCopilotTokenCache,
-  exchangeCopilotToken,
-} from './auth.ts';
+export { exchangeCopilotToken } from './auth.ts';
+export { copilotPipelines } from './pipelines.ts';
+export { clearInProcessCopilotTokenCache, createCopilotService, type CopilotService, type CopilotServices } from './service.ts';
 export { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from './github-device-flow.ts';
 export { normalizeGitHubHost } from './github-host.ts';
 export { pricingForCopilotPublicModelId } from './pricing.ts';
@@ -28,7 +27,10 @@ export {
 export {
   assertCopilotUpstreamRecord,
   parseCopilotUpstreamConfig,
+  toCopilotUpstreamFacts,
   type CopilotUpstreamConfig,
+  type CopilotUpstreamConfigFacts,
+  type CopilotUpstreamFacts,
   type CopilotUpstreamUser,
 } from './config.ts';
 export {

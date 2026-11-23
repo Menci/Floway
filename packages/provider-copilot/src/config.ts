@@ -1,5 +1,6 @@
 import { normalizeGitHubHost } from './github-host.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
+import { secret, type Secret } from '@floway-dev/pipeline';
+import type { ProviderUpstreamBase, UpstreamRecord } from '@floway-dev/provider';
 
 export interface CopilotUpstreamUser {
   login: string;
@@ -18,6 +19,13 @@ export type CopilotUpstreamRecord = UpstreamRecord & {
   kind: 'copilot';
   config: CopilotUpstreamConfig;
 };
+
+export interface CopilotUpstreamConfigFacts {
+  readonly githubHost: string;
+  readonly githubToken: Secret<string>;
+}
+
+export type CopilotUpstreamFacts = ProviderUpstreamBase<'copilot', CopilotUpstreamConfigFacts>;
 
 type FieldErrorBuilder = (field: string, expected: string) => Error;
 
@@ -40,7 +48,8 @@ const githubHostField = (value: unknown, err: FieldErrorBuilder): string => {
   const host = stringField(value, 'githubHost', err);
   try {
     return normalizeGitHubHost(host);
-  } catch {
+  } catch (error) {
+    if (!(error instanceof Error)) throw error;
     throw err('githubHost', 'github.com or a tenant hostname ending in .ghe.com');
   }
 };
@@ -89,4 +98,9 @@ export const assertCopilotUpstreamRecord = (record: UpstreamRecord): CopilotUpst
       user: copilotUserField(record.config.user, malformedConfig),
     },
   };
+};
+
+export const toCopilotUpstreamFacts = (record: UpstreamRecord): CopilotUpstreamFacts => {
+  const { id, kind, name, config } = assertCopilotUpstreamRecord(record);
+  return { id, kind, name, config: { githubHost: config.githubHost, githubToken: secret(config.githubToken) } };
 };

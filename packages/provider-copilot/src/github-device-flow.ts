@@ -49,7 +49,8 @@ const normalizeGitHubDeviceCodeErrorStatus = async (response: Response): Promise
   let body: unknown;
   try {
     body = await response.clone().json();
-  } catch {
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
     return response;
   }
   if (typeof body !== 'object' || body === null || Array.isArray(body)) return response;

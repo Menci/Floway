@@ -1,9 +1,22 @@
 import { unchanged } from '../shared/stages.ts';
-import { Bytes, defineStage, transform } from '@floway-dev/pipeline';
-import { buildPromptTooLongBody } from '@floway-dev/protocols/anthropic-messages';
-import { readHttpBody, type ProviderHttpOutput, type ProviderServices } from '@floway-dev/provider';
+import { defineStage, transform, type FactValue } from '@floway-dev/pipeline';
+import { PROMPT_TOO_LONG_MESSAGE } from '@floway-dev/protocols/anthropic-messages';
+import type { ProviderAnthropicMessagesOutput } from '@floway-dev/provider';
 
-const isCopilotContextWindowError = (text: string): boolean => text.includes('Request body is too large for model context window') || text.includes('context_length_exceeded');
+const matchesContextWindowError = (value: FactValue): boolean => typeof value === 'string'
+  && (value.includes('Request body is too large for model context window') || value.includes('context_length_exceeded'));
+
+const isCopilotContextWindowError = (error: FactValue): boolean => {
+  if (typeof error !== 'object' || error === null) return matchesContextWindowError(error);
+  if ('type' in error && error.type === 'upstream_invalid_stream') return false;
+  if ('error' in error && typeof error.error === 'object' && error.error !== null) {
+    return isCopilotContextWindowError(error.error);
+  }
+  return ('message' in error && matchesContextWindowError(error.message))
+    || ('code' in error && matchesContextWindowError(error.code))
+    || ('type' in error && matchesContextWindowError(error.type))
+    || ('error' in error && matchesContextWindowError(error.error));
+};
 
 /**
  * Copilot's `/v1/messages` endpoint reports context-window failures with an
@@ -19,18 +32,17 @@ const isCopilotContextWindowError = (text: string): boolean => text.includes('Re
  * substring set here (`Request body is too large...`) is disjoint from
  * the OpenAI Responses/OpenAI Chat Completions shapes those pairs match on.
  */
-export const rewriteContextWindowError = defineStage<{}, {}, ProviderHttpOutput, ProviderHttpOutput, ProviderServices>({
+export const rewriteContextWindowError = defineStage<{}, {}, ProviderAnthropicMessagesOutput, ProviderAnthropicMessagesOutput>({
   name: 'rewrite-context-window-error',
   through: {
     request: unchanged,
-    response: { needs: ['response.http'], consumes: [], provides: ['response.http'] },
+    response: { needs: ['response.http', 'response.anthropicMessages'], consumes: [], provides: ['response.http', 'response.anthropicMessages'] },
   },
   execute: transform(() => ({
-    async response(back) {
+    response(back) {
       const http = back['response.http'];
-      if ((http.status >= 200 && http.status < 300) || http.body === null) return back;
-      const body = await readHttpBody(http.body);
-      if (!isCopilotContextWindowError(body.utf8())) return { ...back, 'response.http': { ...http, body } };
+      const outcome = back['response.anthropicMessages'];
+      if (outcome.kind !== 'error' || outcome.source !== 'upstream' || http.transportError !== undefined || !isCopilotContextWindowError(outcome.error)) return back;
       return {
         ...back,
         'response.http': {
@@ -38,7 +50,14 @@ export const rewriteContextWindowError = defineStage<{}, {}, ProviderHttpOutput,
           status: 400,
           statusText: '',
           headers: [['content-type', 'application/json']],
-          body: Bytes.adopt(buildPromptTooLongBody()),
+          body: null,
+        },
+        'response.anthropicMessages': {
+          ...outcome,
+          error: {
+            type: 'error',
+            error: { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE },
+          },
         },
       };
     },

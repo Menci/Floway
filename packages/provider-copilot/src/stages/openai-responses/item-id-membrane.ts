@@ -1,6 +1,7 @@
 import { unwrapCopilotItemId, wrapCopilotItemId } from './item-id-carrier.ts';
-import { encodeHex, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { encodeHex } from '@floway-dev/protocols/common';
 import { isOpenAIResponsesCompactionItem, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesCompactionResultEx, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import type { ProviderFrame } from '@floway-dev/provider';
 
 // OpenAI's published examples establish these item-specific prefixes. Keeping
 // the Copilot output inventory closed prevents a new upstream item kind from
@@ -251,8 +252,8 @@ const normalizeStreamEvent = (event: OpenAIResponsesStreamEventEx, state: Stream
 };
 
 export const normalizeCopilotOpenAIResponsesFrames = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+  frames: AsyncIterable<ProviderFrame<OpenAIResponsesStreamEventEx>>,
+): AsyncGenerator<ProviderFrame<OpenAIResponsesStreamEventEx>> {
   const state: StreamItemState = { items: new Map() };
   for await (const frame of frames) {
     yield frame.type === 'event'

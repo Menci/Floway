@@ -50,7 +50,8 @@ export const unwrapCopilotItemId = (value: string): DecodedCopilotItemIdCarrier 
       value: encodeOpaqueValue(framed.original, data.origin),
       ...data,
     };
-  } catch {
+  } catch (error) {
+    if (!(error instanceof SyntaxError || error instanceof TypeError)) throw error;
     return { kind: 'foreign', value };
   }
 };

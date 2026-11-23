@@ -1,34 +1,31 @@
-import { clearInProcessCopilotTokenCache } from '../src/auth.ts';
-import { createCopilotProvider } from '../src/provider.ts';
-import { compose, isManagedStream, run, type ManagedStream, type Pipeline, type RunEvent, type Stage } from '@floway-dev/pipeline';
+import { toCopilotUpstreamFacts, type CopilotUpstreamFacts } from '../src/config.ts';
+import { clearInProcessCopilotTokenCache, defaultCopilotService, type CopilotServices } from '../src/service.ts';
+import { compose, run, type ManagedStream, type Pipeline, type RunEvent, type Stage } from '@floway-dev/pipeline';
 import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/platform';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
-import { buildHttpRequestStage, directFetcher, httpTerminal, httpUrl, initProviderRepo, isReplayableBody, readHttpBody, toProviderModelFacts, type Fetcher, type OpenAIResponsesAction, type ProviderAnthropicInput, type ProviderHttpOutput, type ProviderInput, type ProviderModel, type ProviderResponsesInput, type ProviderServices, type ProviderStreamOutput, type UpstreamRecord } from '@floway-dev/provider';
+import { directFetcher, httpTerminal, httpUrl, initProviderRepo, isReplayableBody, readHttpBody, rewriteHttpRequestStage, toProviderModelFacts, type Fetcher, type OpenAIResponsesAction, type ProtocolOutcome, type ProviderAnthropicInput, type ProviderAnthropicMessagesOutput, type ProviderBaseOutput, type ProviderInput, type ProviderModel, type ProviderOpenAIChatCompletionsOutput, type ProviderOpenAIResponsesOutput, type ProviderResponsesInput, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, stubProviderModel } from '@floway-dev/test-utils';
 
 export const runCopilotPipeline = <Input, Output>(
-  pipeline: Pipeline<Input, Output, ProviderServices> | undefined,
+  pipeline: Pipeline<Input, Output, CopilotServices>,
   facts: NoInfer<Input>,
   fetcher: Fetcher = directFetcher,
   options: { signal?: AbortSignal; events?: (event: RunEvent) => void } = {},
 ) => {
-  if (pipeline === undefined) throw new Error('Expected Copilot to serve the tested operation');
   return run(pipeline, facts, {
-    services: { fetcher: () => fetcher },
+    services: { copilot: defaultCopilotService, fetcher: () => fetcher },
     finalizationTimeoutMs: 1_000,
     ...options,
   });
 };
 
-const selectStream = (output: ProviderHttpOutput): ManagedStream<unknown> | undefined => {
-  const stream = 'response.events' in output ? output['response.events'] : undefined;
-  return isManagedStream(stream) ? stream : undefined;
-};
+const selectStream = <Event, Result>(outcome: ProtocolOutcome<Event, Result> | undefined) =>
+  outcome?.kind === 'stream' ? outcome.events : undefined;
 
-const settleCopilotPipeline = async <Input, Output extends ProviderHttpOutput, Event>(
-  pipeline: Pipeline<Input, Output, ProviderServices> | undefined,
+const settleCopilotPipeline = async <Input, Output extends ProviderBaseOutput, Event>(
+  pipeline: Pipeline<Input, Output, CopilotServices>,
   facts: NoInfer<Input>,
   fetcher: Fetcher | undefined,
   selectEvents: (output: Output) => ManagedStream<Event> | undefined,
@@ -50,23 +47,28 @@ const settleCopilotPipeline = async <Input, Output extends ProviderHttpOutput, E
   return { output, body, events, trace };
 };
 
-export const modelInput = <Payload>(model: ProviderModel, payload: Payload): ProviderInput<Payload> => ({
+export const modelInput = <Payload>(
+  model: ProviderModel, payload: Payload, upstream = toCopilotUpstreamFacts(buildCopilotUpstream()),
+): ProviderInput<CopilotUpstreamFacts, Payload> => ({
+  'provider.upstream': upstream,
   'provider.model': toProviderModelFacts(model),
-  'request.headers': [],
+  'request.http': { method: 'POST', url: httpUrl('https://floway.test'), headers: [], body: null },
   'request.payload': payload,
 });
 
-export const invokeModel = <Payload, Output extends ProviderHttpOutput>(
-  pipeline: Pipeline<ProviderInput<Payload>, Output, ProviderServices> | undefined,
+type ChatTestOutput = ProviderBaseOutput & Partial<Pick<ProviderOpenAIChatCompletionsOutput, 'response.openaiChatCompletions'>>;
+
+export const invokeModel = <Payload, Output extends ChatTestOutput>(
+  pipeline: Pipeline<ProviderInput<CopilotUpstreamFacts, Payload>, Output, CopilotServices>,
   model: ProviderModel,
   payload: NoInfer<Payload>,
   fetcher?: Fetcher,
-) => settleCopilotPipeline(pipeline, modelInput(model, payload), fetcher, selectStream);
+) => settleCopilotPipeline(pipeline, modelInput(model, payload), fetcher, output => selectStream(output['response.openaiChatCompletions']));
 
-type AnthropicTestOutput = ProviderHttpOutput & Partial<ProviderStreamOutput<AnthropicMessagesStreamEventEx>>;
+type AnthropicTestOutput = ProviderBaseOutput & Partial<Pick<ProviderAnthropicMessagesOutput, 'response.anthropicMessages'>>;
 
 export const invokeAnthropic = <Output extends AnthropicTestOutput>(
-  pipeline: Pipeline<ProviderAnthropicInput, Output, ProviderServices> | undefined,
+  pipeline: Pipeline<ProviderAnthropicInput<CopilotUpstreamFacts>, Output, CopilotServices>,
   model: ProviderModel,
   payload: Omit<AnthropicMessagesPayload, 'model'>,
   beta: readonly string[] = [],
@@ -74,10 +76,10 @@ export const invokeAnthropic = <Output extends AnthropicTestOutput>(
 ) => settleCopilotPipeline(pipeline, {
   ...modelInput(model, payload),
   'request.anthropicBeta': beta,
-}, fetcher, output => output['response.events']);
+}, fetcher, output => selectStream(output['response.anthropicMessages']));
 
-export const invokeResponses = <Output extends ProviderHttpOutput>(
-  pipeline: Pipeline<ProviderResponsesInput, Output, ProviderServices> | undefined,
+export const invokeResponses = (
+  pipeline: Pipeline<ProviderResponsesInput<CopilotUpstreamFacts>, ProviderOpenAIResponsesOutput, CopilotServices>,
   model: ProviderModel,
   payload: Omit<CanonicalOpenAIResponsesPayload, 'model'>,
   action: OpenAIResponsesAction,
@@ -85,7 +87,7 @@ export const invokeResponses = <Output extends ProviderHttpOutput>(
 ) => settleCopilotPipeline(pipeline, {
   ...modelInput(model, payload),
   'request.action': action,
-}, fetcher, selectStream);
+}, fetcher, output => selectStream(output['response.openaiResponses']));
 
 const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const { config: overrideConfig, ...rest } = overrides;
@@ -147,7 +149,6 @@ export const setupCopilotTest = async (recordOverrides: Partial<UpstreamRecord> 
 
 export const fakeCopilotWire = async (endpoint: string, rawModel: string, respond: (request: Request) => Response | Promise<Response>) => {
   const repo = await setupCopilotTest();
-  const provider = createCopilotProvider(repo.copilotUpstream);
   const model = stubProviderModel({
     id: rawModel,
     providerData: { rawModels: [{ id: rawModel, supported_endpoints: [endpoint] }] },
@@ -164,34 +165,35 @@ export const fakeCopilotWire = async (endpoint: string, rawModel: string, respon
     if (isReplayableBody(init.body)) throw new Error('Expected the Copilot HTTP terminal to materialize the body');
     return await respond(new Request(url, { ...init, body: init.body }));
   };
-  return { provider, model, fetcher, repo };
+  return { model, fetcher, repo };
 };
 
 export const inspectRequestStage = async <Payload extends { model: string }>(
-  stages: readonly Stage<ProviderServices>[],
+  stages: readonly Stage<CopilotServices>[],
   name: string,
   payload: Payload,
   options: { beta?: readonly string[]; model?: string } = {},
 ) => {
   const stage = stages.find(candidate => candidate.name === name);
   if (stage === undefined) throw new Error(`Copilot did not register ${name}`);
-  type Input = ProviderInput<Omit<Payload, 'model'>> & { 'request.anthropicBeta': readonly string[] };
+  type Input = ProviderInput<CopilotUpstreamFacts, Omit<Payload, 'model'>> & { 'request.anthropicBeta': readonly string[] };
   let transformed: Omit<Payload, 'model'> | undefined;
-  const capture = buildHttpRequestStage<Input>('capture', ['request.headers', 'request.payload'], facts => {
+  const capture = rewriteHttpRequestStage<Input>('capture', ['request.payload'], facts => {
     transformed = facts['request.payload'];
     return {
       request: {
         method: 'POST',
         url: httpUrl('https://copilot.test'),
-        headers: facts['request.headers'],
         body: { kind: 'json', value: transformed },
       },
       modelKey: payload.model,
     };
   });
-  const pipeline = compose<Input, ProviderHttpOutput, ProviderServices>(stage.name, {
+  const pipeline = compose<Input & ProviderBaseOutput, CopilotServices>()(stage.name, {
+    entry: ['provider.upstream', 'provider.model', 'request.payload', 'request.http', 'request.anthropicBeta'],
+    exit: ['response.http', 'response.modelKey'],
     stages: [stage, capture],
-    ending: httpTerminal('copilot-stage-test'),
+    ending: httpTerminal,
   });
   const { model: _model, ...body } = payload;
   const model = stubProviderModel({ id: options.model ?? payload.model });
@@ -202,7 +204,7 @@ export const inspectRequestStage = async <Payload extends { model: string }>(
   }, async (_url, init) => {
     headers = new Headers(init.headers);
     return jsonResponse({});
-  }, selectStream);
+  }, () => undefined);
   if (headers === undefined || transformed === undefined) throw new Error('Expected the Copilot stage to dispatch');
   return { headers, payload: { ...transformed, model: payload.model } };
 };

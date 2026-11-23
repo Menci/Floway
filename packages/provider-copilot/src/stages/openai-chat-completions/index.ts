@@ -3,31 +3,30 @@ import { attachCopilotCacheControlMarkers } from './attach-cache-control-markers
 import { compressCopilotOpenAIChatCompletionsImages } from './compress-images.ts';
 import { copilotOpenAIChatCompletionsInitiator } from './set-initiator-header.ts';
 import { copilotOpenAIChatCompletionsHasImage } from './set-vision-header.ts';
+import type { CopilotUpstreamFacts } from '../../config.ts';
 import { headerStage, payloadStage, selectModelStage, unchanged, withPublicModel } from '../shared/stages.ts';
 import { defineStage, transform } from '@floway-dev/pipeline';
-import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { ProviderInput, ProviderServices, ProviderStreamOutput } from '@floway-dev/provider';
+import type { OpenAIChatCompletionsPayloadEx } from '@floway-dev/protocols/openai-chat-completions';
+import { deleteHeader, setHeader, type ProviderInput, type ProviderOpenAIChatCompletionsOutput } from '@floway-dev/provider';
 
-export type ChatInput = ProviderInput<Omit<OpenAIChatCompletionsPayloadEx, 'model'>>;
-type Output = ProviderStreamOutput<OpenAIChatCompletionsStreamEvent>;
+export type ChatInput = ProviderInput<CopilotUpstreamFacts, Omit<OpenAIChatCompletionsPayloadEx, 'model'>>;
+type Output = ProviderOpenAIChatCompletionsOutput;
 
-const abortToolArgumentWhitespace = defineStage<{}, {}, Output, Output, ProviderServices>({
+const abortToolArgumentWhitespace = defineStage<{}, {}, Output, Output>({
   name: 'abort-on-tool-argument-whitespace',
   through: {
     request: unchanged,
-    response: { needs: ['response.events'], consumes: [], provides: ['response.events'] },
+    response: { needs: ['response.openaiChatCompletions'], consumes: [], provides: ['response.openaiChatCompletions'] },
   },
-  execute: transform(env => ({
+  execute: transform(scope => ({
     response(back) {
-      const events = back['response.events'];
-      if (events === undefined) return back;
-      return {
-        ...back,
-        'response.events': env.wrapStream(events, {
-          label: 'chat-completions.tool-arguments',
-          transform: abortCopilotOpenAIChatCompletionsToolArgumentWhitespace,
-        }),
-      };
+      const outcome = back['response.openaiChatCompletions'];
+      if (outcome.kind !== 'stream') return back;
+      const events = scope.wrapStream(outcome.events, {
+        label: 'chat-completions.tool-arguments',
+        transform: abortCopilotOpenAIChatCompletionsToolArgumentWhitespace,
+      });
+      return { ...back, 'response.openaiChatCompletions': { ...outcome, events } };
     },
   })),
 });
@@ -43,10 +42,10 @@ export const openAIChatCompletionsStages = [
   payloadStage<OpenAIChatCompletionsPayloadEx>('compress-images', compressCopilotOpenAIChatCompletionsImages),
   abortToolArgumentWhitespace,
   payloadStage<OpenAIChatCompletionsPayloadEx>('attach-cache-control-markers', attachCopilotCacheControlMarkers),
-  headerStage<ChatInput>('set-initiator-header', ['request.payload', 'provider.model'], (facts, headers) => {
-    headers.set('x-initiator', copilotOpenAIChatCompletionsInitiator(withPublicModel(facts)));
-  }),
-  headerStage<ChatInput>('set-vision-header', ['request.payload', 'provider.model'], (facts, headers) => {
-    if (copilotOpenAIChatCompletionsHasImage(withPublicModel(facts))) headers.set('copilot-vision-request', 'true');
-  }),
+  headerStage<ChatInput>('set-initiator-header', ['request.payload', 'provider.model'], (facts, headers) =>
+    setHeader(headers, 'x-initiator', copilotOpenAIChatCompletionsInitiator(withPublicModel(facts)))),
+  headerStage<ChatInput>('set-vision-header', ['request.payload', 'provider.model'], (facts, headers) =>
+    copilotOpenAIChatCompletionsHasImage(withPublicModel(facts))
+      ? setHeader(headers, 'copilot-vision-request', 'true')
+      : deleteHeader(headers, 'copilot-vision-request')),
 ];

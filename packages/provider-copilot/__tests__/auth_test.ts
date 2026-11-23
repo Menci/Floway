@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { modelInput, runCopilotPipeline } from './pipeline-fixture.ts';
-import type { CopilotAuth } from '../src/auth.ts';
+import type { CopilotUpstreamFacts } from '../src/config.ts';
 import { clearInProcessCopilotTokenCache } from '../src/index.ts';
-import { createCopilotPipelines } from '../src/pipelines.ts';
+import { copilotPipelines } from '../src/pipelines.ts';
 import type { CopilotUpstreamState } from '../src/state.ts';
-import { isSecret, type RunEvent } from '@floway-dev/pipeline';
-import { initProviderRepo, directFetcher, type Fetcher, type UpstreamRecord, readHttpBody } from '@floway-dev/provider';
+import { isSecret, secret, type RunEvent } from '@floway-dev/pipeline';
+import { initProviderRepo, directFetcher, UpstreamTransportError, type Fetcher, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, sseResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_copilot_test';
@@ -51,25 +51,31 @@ const installRepoAndClearCache = async () => {
   clearInProcessCopilotTokenCache();
 };
 
-const defaultAuth = { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' };
+const defaultAuth: CopilotUpstreamFacts = {
+  id: UPSTREAM_ID,
+  kind: 'copilot',
+  name: 'auth-test',
+  config: { githubHost: 'github.com', githubToken: secret('ghu_test') },
+};
 
-const runAuthedPipeline = async (auth: CopilotAuth, fetcher: Fetcher, signal?: AbortSignal) => {
+const runAuthedPipeline = async (auth: CopilotUpstreamFacts, fetcher: Fetcher, signal?: AbortSignal) => {
   const model = stubProviderModel({
     id: 'claude-test',
     endpoints: { anthropicMessages: {} },
     providerData: { rawModels: [{ id: 'claude-test' }] },
   });
   const trace: RunEvent[] = [];
-  const handle = runCopilotPipeline(createCopilotPipelines(auth).anthropicMessages, {
-    ...modelInput(model, { messages: [], max_tokens: 32 }),
+  const handle = runCopilotPipeline(copilotPipelines.anthropicMessages, {
+    ...modelInput(model, { messages: [], max_tokens: 32 }, auth),
     'request.anthropicBeta': [],
   }, fetcher, { signal, events: event => trace.push(event) });
   try {
     const output = await handle.result;
     const http = output['response.http'];
-    const body = await readHttpBody(http.body);
-    if (output['response.events'] !== undefined) await Array.fromAsync(output['response.events']);
-    return { status: http.status, headers: http.headers, body: body.utf8(), trace };
+    const outcome = output['response.anthropicMessages'];
+    if (outcome.kind === 'stream') await Array.fromAsync(outcome.events);
+    assertEquals(await handle.done, { ok: true });
+    return { status: http.status, headers: http.headers, transportError: http.transportError, outcome, trace };
   } finally {
     await handle.done;
   }
@@ -144,9 +150,29 @@ describe('Copilot token exchange retries', () => {
     };
 
     const result = await runAuthedFetch(fetcher);
-    expect(result).toMatchObject({ status: 429, body: 'status 429' });
+    expect(result.status).toBe(429);
     expect(result.headers).toContainEqual(['retry-after', '15']);
+    expect(result.outcome).toEqual({ kind: 'error', source: 'upstream', error: { error: { type: 'upstream_error', message: 'status 429' } } });
     expect(tokenAttempts).toBe(1);
+  });
+
+  test('returns an upstream error after token endpoint transport failures exhaust retries', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetcher = vi.fn<Fetcher>().mockRejectedValue(new UpstreamTransportError(new Error('token endpoint unreachable')));
+    const pending = runAuthedFetch(fetcher);
+    await vi.runAllTimersAsync();
+    const result = await pending;
+
+    expect(fetcher).toHaveBeenCalledTimes(4);
+    expect(fetcher.mock.calls.every(([url]) => new URL(url).pathname === '/copilot_internal/v2/token')).toBe(true);
+    expect(result.status).toBe(502);
+    expect(result.transportError?.name).toBe('UpstreamTransportError');
+    expect(result.outcome).toEqual({
+      kind: 'error',
+      source: 'upstream',
+      error: { error: { type: 'upstream_transport_error', message: 'token endpoint unreachable' } },
+    });
   });
 
   test('preserves an AbortError thrown by the token fetcher without retrying', async () => {
@@ -201,7 +227,7 @@ test('Copilot exchanges a GHE credential on the tenant API and still follows tok
       return messageStop();
     },
     async () => {
-      await runAuthedPipeline({ ...defaultAuth, githubHost: 'octocorp.ghe.com', githubToken: 'ghu_ghe' }, directFetcher);
+      await runAuthedPipeline({ ...defaultAuth, config: { githubHost: 'octocorp.ghe.com', githubToken: secret('ghu_ghe') } }, directFetcher);
     },
   );
 

@@ -97,16 +97,16 @@ test('compresses each unique inline image only once when the same data URL appea
   assertEquals(calls, 2);
 });
 
-test('reuses its compressed image when the same attempt payload is retried', async () => {
-  let calls = 0;
+test('compresses the original image independently on each upstream attempt', async () => {
+  const inputs: number[][] = [];
   initImageProcessor({
-    compressToWebp: () => {
-      calls += 1;
+    compressToWebp: bytes => {
+      inputs.push(Array.from(bytes));
       return Promise.resolve(new Uint8Array([1, 2, 3]));
     },
   });
 
-  let payload: CanonicalOpenAIResponsesPayload = {
+  const payload: CanonicalOpenAIResponsesPayload = {
     model: 'gpt-test',
     input: [{
       type: 'message',
@@ -115,16 +115,11 @@ test('reuses its compressed image when the same attempt payload is retried', asy
     }],
   };
 
-  ({ payload } = await inspectRequestStage(openAIResponsesStages, 'compress-images', payload));
-  ({ payload } = await inspectRequestStage(openAIResponsesStages, 'compress-images', payload));
+  const first = await inspectRequestStage(openAIResponsesStages, 'compress-images', payload);
+  const second = await inspectRequestStage(openAIResponsesStages, 'compress-images', payload);
 
-  assertEquals(calls, 1);
-  assertEquals(imageUrlOf(payload.input[0]), 'data:image/webp;base64,AQID');
-
-  const item = payload.input[0];
-  if (item.type !== 'message' || !Array.isArray(item.content) || item.content[0]?.type !== 'input_image') throw new Error('expected image content');
-  const fresh = { ...payload, input: [{ ...item, content: [{ ...item.content[0], image_url: 'data:image/png;base64,BBBB' }] }] };
-  await inspectRequestStage(openAIResponsesStages, 'compress-images', fresh);
-
-  assertEquals(calls, 2);
+  assertEquals(inputs, [[0, 0, 0], [0, 0, 0]]);
+  assertEquals(imageUrlOf(payload.input[0]), 'data:image/png;base64,AAAA');
+  assertEquals(imageUrlOf(first.payload.input[0]), 'data:image/webp;base64,AQID');
+  assertEquals(imageUrlOf(second.payload.input[0]), 'data:image/webp;base64,AQID');
 });

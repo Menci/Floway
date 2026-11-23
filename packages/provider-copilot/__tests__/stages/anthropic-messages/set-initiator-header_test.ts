@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import { copilotPipelines } from '../../../src/pipelines.ts';
 import { fakeCopilotWire, invokeAnthropic } from '../../pipeline-fixture.ts';
 import type { AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 import { assertEquals, sseResponse } from '@floway-dev/test-utils';
@@ -8,11 +9,11 @@ const toolResult = { type: 'tool_result', tool_use_id: 't_1', content: [{ type: 
 
 const captureInitiator = async (content: AnthropicMessagesUserContentBlock[]) => {
   let initiator: string | null | undefined;
-  const { provider, model, fetcher } = await fakeCopilotWire('/v1/messages', 'claude-test', request => {
+  const { model, fetcher } = await fakeCopilotWire('/v1/messages', 'claude-test', request => {
     initiator = request.headers.get('x-initiator');
     return sseResponse('data: {"type":"message_stop"}\n\n');
   });
-  await invokeAnthropic(provider.pipelines.anthropicMessages, model, {
+  await invokeAnthropic(copilotPipelines.anthropicMessages, model, {
     max_tokens: 10,
     messages: [{ role: 'user', content }],
   }, [], fetcher);

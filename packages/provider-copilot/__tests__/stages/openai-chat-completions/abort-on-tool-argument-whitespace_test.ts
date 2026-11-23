@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 
+import { copilotPipelines } from '../../../src/pipelines.ts';
 import { MAX_CONSECUTIVE_WHITESPACE } from '../../../src/stages/shared/whitespace-overflow.ts';
 import { fakeCopilotWire, invokeModel } from '../../pipeline-fixture.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
@@ -15,10 +16,10 @@ const chunk = (toolCalls: NonNullable<OpenAIChatCompletionsStreamEvent['choices'
 });
 
 const runWith = async (events: OpenAIChatCompletionsStreamEvent[]) => {
-  const { provider, model, fetcher } = await fakeCopilotWire('/chat/completions', 'gpt-test', () => sseResponse(
+  const { model, fetcher } = await fakeCopilotWire('/chat/completions', 'gpt-test', () => sseResponse(
     `${events.map(event => `data: ${JSON.stringify(event)}\n\n`).join('')  }data: [DONE]\n\n`,
   ));
-  return await invokeModel(provider.pipelines.openaiChatCompletions, model, { messages: [] }, fetcher);
+  return await invokeModel(copilotPipelines.openaiChatCompletions, model, { messages: [] }, fetcher);
 };
 
 test('throws when whitespace exceeds the threshold', async () => {

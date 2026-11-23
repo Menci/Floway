@@ -1,20 +1,21 @@
-import { copilotRequestHeaders, ensureCopilotToken, isCopilotTokenFetchError, type CopilotAuth } from '../../auth.ts';
+import { copilotIdentityHeaders, isCopilotIdentityHeader } from '../../auth.ts';
+import type { CopilotUpstreamFacts } from '../../config.ts';
 import type { ModelSelectionHints } from '../../model-selection.ts';
-import { parseCopilotQuotaHeaders, putCopilotQuota } from '../../quota.ts';
+import { hasCopilotQuotaHeaders } from '../../quota.ts';
 import { rawModelFor } from '../../routing.ts';
-import { Bytes, defineStage, secret, snapshotError, transform, type Deferred, type ErrorSnapshot, type Secret } from '@floway-dev/pipeline';
+import type { CopilotServices } from '../../service.ts';
+import { defineStage, transform } from '@floway-dev/pipeline';
 import type { ModelEndpointKey } from '@floway-dev/protocols/common';
-import { buildHttpRequestStage, httpUrl, wrapSensitiveHeaderEntries, type HeaderEntry, type HttpRequestFacts, type ProviderHttpOutput, type ProviderInput, type ProviderModelFacts, type ProviderRequestBody, type ProviderServices } from '@floway-dev/provider';
+import { httpUrl, mergeHeaders, rewriteHttpRequest, setHeader, type HeaderEntry, type HttpRequestFacts, type ProviderBaseOutput, type ProviderInput, type ProviderModelFacts, type ProviderRequestBody } from '@floway-dev/provider';
 
 export const unchanged = { needs: [], consumes: [], provides: [] };
 
-type ModelInput = Pick<ProviderInput<unknown>, 'provider.model'>;
+type ModelInput = Pick<ProviderInput<CopilotUpstreamFacts, unknown>, 'provider.model'>;
 type SelectedModel = { readonly 'request.copilot.modelKey': string };
-type Authenticated = { readonly 'request.copilot.auth': { readonly baseUrl: string; readonly token: Secret<string> } };
 type WireRequest = { readonly 'request.http': HttpRequestFacts };
-type HeadersInput = Pick<ProviderInput<unknown>, 'request.headers'>;
+type HttpOutput = Pick<ProviderBaseOutput, 'response.http'>;
 
-export const withPublicModel = <Payload>(facts: ProviderInput<Payload>) => ({
+export const withPublicModel = <Payload>(facts: ProviderInput<CopilotUpstreamFacts, Payload>) => ({
   ...facts['request.payload'],
   model: facts['provider.model'].id,
 });
@@ -23,7 +24,7 @@ export const selectModelStage = <Input extends ModelInput>(
   endpoint: ModelEndpointKey,
   needs: readonly (keyof Input & string)[],
   hints: (facts: Input) => ModelSelectionHints,
-) => defineStage<Input, Input & SelectedModel, ProviderHttpOutput, ProviderHttpOutput, ProviderServices>({
+) => defineStage<Input, Input & SelectedModel, {}, {}>({
   name: 'select-model',
   through: {
     request: { needs: ['provider.model', ...needs], consumes: [], provides: ['request.copilot.modelKey'] },
@@ -40,7 +41,7 @@ export const selectModelStage = <Input extends ModelInput>(
 export const payloadStage = <Payload extends { model: string }>(
   name: string,
   rewrite: (payload: Omit<Payload, 'model'> & { model: string }, model: ProviderModelFacts) => Payload | Promise<Payload>,
-) => defineStage<ProviderInput<Omit<Payload, 'model'>>, ProviderInput<Omit<Payload, 'model'>>, ProviderHttpOutput, ProviderHttpOutput, ProviderServices>({
+) => defineStage<ProviderInput<CopilotUpstreamFacts, Omit<Payload, 'model'>>, ProviderInput<CopilotUpstreamFacts, Omit<Payload, 'model'>>, {}, {}>({
   name,
   through: {
     request: { needs: ['provider.model', 'request.payload'], consumes: [], provides: ['request.payload'] },
@@ -54,131 +55,91 @@ export const payloadStage = <Payload extends { model: string }>(
   })),
 });
 
-export const headersFromEntries = (entries: readonly HeaderEntry[]): Headers => {
-  const headers = new Headers();
-  for (const [name, value] of entries) headers.append(name, typeof value === 'string' ? value : value.reveal());
-  return headers;
-};
-
-export const headerStage = <Input extends HeadersInput>(
+export const headerStage = <Input extends WireRequest>(
   name: string,
   needs: readonly (keyof Input & string)[],
-  rewrite: (facts: Input, headers: Headers) => void | Promise<void>,
-) => defineStage<Input, Input, ProviderHttpOutput, ProviderHttpOutput, ProviderServices>({
+  rewrite: (facts: Input, headers: readonly HeaderEntry[]) => readonly HeaderEntry[] | Promise<readonly HeaderEntry[]>,
+) => defineStage<Input, Input, {}, {}>({
   name,
   through: {
-    request: { needs: ['request.headers', ...needs], consumes: [], provides: ['request.headers'] },
+    request: { needs: ['request.http', ...needs], consumes: [], provides: ['request.http'] },
     response: unchanged,
   },
   execute: transform(() => ({
     async request(facts) {
-      const headers = headersFromEntries(facts['request.headers']);
-      await rewrite(facts, headers);
-      return { ...facts, 'request.headers': wrapSensitiveHeaderEntries(headers) };
+      const request = facts['request.http'];
+      const headers = await rewrite(facts, request.headers);
+      return headers === request.headers ? facts : { ...facts, 'request.http': { ...request, headers } };
     },
   })),
 });
 
-export const authStage = (copilot: CopilotAuth) => defineStage<
-  SelectedModel, SelectedModel & Authenticated, ProviderHttpOutput, ProviderHttpOutput, ProviderServices
->({
-  name: 'copilot-token',
-  through: {
-    request: { needs: ['request.copilot.modelKey'], consumes: [], provides: ['request.copilot.auth'] },
-    response: unchanged,
-  },
-  return: { provides: ['response.http', 'response.modelKey'] },
-  async execute(facts, next, env) {
-    const startedAt = env.clock();
-    const entry = await ensureCopilotToken(copilot, env.services.fetcher(copilot.id), env.signal).catch((error: unknown) => {
-      if (!isCopilotTokenFetchError(error)) throw error;
-      return error;
-    });
-    if (isCopilotTokenFetchError(entry)) {
-      return {
-        'response.http': {
-          status: entry.status,
-          statusText: '',
-          headers: wrapSensitiveHeaderEntries(entry.headers),
-          body: Bytes.fromUtf8(entry.body),
-          timing: { startedAt, headersAt: env.clock() },
-        },
-        'response.modelKey': facts['request.copilot.modelKey'],
-      };
-    }
-    return await next({
-      ...facts,
-      'request.copilot.auth': { baseUrl: entry.baseUrl, token: secret(entry.token) },
-    });
-  },
-});
+export const keepCopilotWireHeader = (name: string): boolean =>
+  name === 'authorization' || name === 'content-type' || isCopilotIdentityHeader(name);
 
-export const requestStage = <Input extends ProviderInput<unknown>>(
-  name: string,
+export const wireHeadersStage = headerStage('copilot-wire-headers', [], (_facts, headers) =>
+  mergeHeaders(headers, copilotIdentityHeaders()));
+
+export const requestStage = <Input extends ProviderInput<CopilotUpstreamFacts, unknown>>(
   needs: readonly (keyof Input & string)[],
   path: string | ((facts: Input) => string),
   build: (facts: Input, modelKey: string) => ProviderRequestBody,
-) => buildHttpRequestStage<Input & SelectedModel & Authenticated>(
-  name, ['request.payload', 'request.copilot.modelKey', 'request.copilot.auth', ...needs],
-  facts => {
-    const { baseUrl } = facts['request.copilot.auth'];
-    const modelKey = facts['request.copilot.modelKey'];
-    const pathname = typeof path === 'string' ? path : path(facts);
-    return {
-      request: { method: 'POST', url: httpUrl(`${baseUrl}${pathname}`), headers: [], body: build(facts, modelKey) },
-      modelKey,
-    };
-  },
-);
-
-export const wireHeadersStage = defineStage<
-  WireRequest & Authenticated & HeadersInput, WireRequest, { readonly 'response.http': ProviderHttpOutput['response.http'] }, { readonly 'response.http': ProviderHttpOutput['response.http'] }, ProviderServices
->({
-  name: 'copilot-wire-headers',
+) => defineStage<Input & SelectedModel, WireRequest, HttpOutput, ProviderBaseOutput, CopilotServices>({
+  name: 'build-request',
   through: {
-    request: { needs: ['request.http', 'request.copilot.auth', 'request.headers'], consumes: ['request.copilot.auth'], provides: ['request.http'] },
-    response: unchanged,
+    request: {
+      needs: ['provider.upstream', 'request.http', 'request.payload', 'request.copilot.modelKey', ...needs],
+      consumes: ['request.copilot.modelKey'],
+      provides: ['request.http'],
+    },
+    response: { needs: ['response.http'], consumes: [], provides: ['response.modelKey'] },
   },
-  async execute(facts, next) {
-    const { 'request.copilot.auth': auth, 'request.http': request, ...rest } = facts;
-    const base = headersFromEntries(request.headers);
-    const headers = copilotRequestHeaders(auth.token.reveal(), base, headersFromEntries(facts['request.headers']));
-    const contentType = base.get('content-type');
-    if (contentType?.startsWith('multipart/form-data;') && !headers.has('content-type')) headers.set('content-type', contentType);
-    return await next({ ...rest, 'request.http': { ...request, headers: wrapSensitiveHeaderEntries(headers) } });
+  return: { provides: ['response.http', 'response.modelKey'] },
+  async execute(facts, scope) {
+    const { 'request.copilot.modelKey': modelKey, ...rest } = facts;
+    const upstream = facts['provider.upstream'];
+    const startedAt = scope.clock();
+    const decision = await scope.services.copilot.access(upstream, scope.services.fetcher(upstream.id), scope.signal);
+    if (decision.kind === 'error') {
+      const { status, headers, body, transportError } = decision;
+      return {
+        'response.http': {
+          status,
+          statusText: '',
+          headers,
+          body: transportError === undefined ? body : null,
+          timing: { startedAt, headersAt: scope.clock() },
+          exchange: decision.source,
+          ...(transportError === undefined ? {} : { transportError }),
+        },
+        'response.modelKey': modelKey,
+      };
+    }
+    const pathname = typeof path === 'string' ? path : path(facts);
+    const request = rewriteHttpRequest(facts['request.http'], {
+      method: 'POST',
+      url: httpUrl(`${decision.baseUrl}${pathname}`),
+      headers: headers => setHeader(headers, 'authorization', `Bearer ${decision.token.reveal()}`),
+      body: build(facts, modelKey),
+    });
+    return { ...await scope.next({ ...rest, 'request.http': request }), 'response.modelKey': modelKey };
   },
 });
 
-type QuotaPersistence = { readonly persisted: true } | { readonly persisted: false; readonly error: ErrorSnapshot };
-type QuotaResponse = { readonly 'response.copilot.quota': Deferred<QuotaPersistence> | undefined };
+type UpstreamInput = Pick<ProviderInput<CopilotUpstreamFacts, unknown>, 'provider.upstream'>;
 
-export const quotaStage = (upstreamId: string) => defineStage<{}, {}, ProviderHttpOutput, ProviderHttpOutput & QuotaResponse, ProviderServices>({
+export const quotaStage = defineStage<UpstreamInput, UpstreamInput, HttpOutput, HttpOutput, CopilotServices>({
   name: 'copilot-quota',
   through: {
-    request: unchanged,
-    response: { needs: ['response.http'], consumes: [], provides: ['response.copilot.quota'] },
+    request: { ...unchanged, needs: ['provider.upstream'] },
+    response: { ...unchanged, needs: ['response.http'] },
   },
-  execute: transform(env => ({
-    response: back => {
-      let snapshot;
-      try {
-        snapshot = parseCopilotQuotaHeaders(headersFromEntries(back['response.http'].headers), new Date());
-      } catch (error) {
-        console.warn(`Failed to parse Copilot quota snapshot for ${upstreamId}:`, error);
-        return { ...back, 'response.copilot.quota': undefined };
-      }
-      if (snapshot === null) return { ...back, 'response.copilot.quota': undefined };
-      const work = putCopilotQuota(upstreamId, snapshot).then<QuotaPersistence, QuotaPersistence>(
-        () => ({ persisted: true }),
-        (error: unknown) => {
-          console.warn(`Failed to persist Copilot quota snapshot for ${upstreamId}:`, error);
-          return { persisted: false, error: snapshotError(error) };
-        },
-      );
-      return {
-        ...back,
-        'response.copilot.quota': env.defer('copilot-quota', work),
-      };
-    },
-  })),
+  async execute(facts, scope) {
+    const back = await scope.next(facts);
+    const { headers } = back['response.http'];
+    if (hasCopilotQuotaHeaders(headers)) {
+      scope.defer('copilot-quota', scope.services.copilot.saveQuota(facts['provider.upstream'].id, headers));
+    }
+    return back;
+  },
 });

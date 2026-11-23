@@ -1,12 +1,15 @@
 import { expect, test } from 'vitest';
 
+import type { CopilotUpstreamFacts } from '../../../src/config.ts';
+import { copilotPipelines } from '../../../src/pipelines.ts';
+import type { CopilotServices } from '../../../src/service.ts';
 import { openAIResponsesStages } from '../../../src/stages/openai-responses/index.ts';
 import { unwrapCopilotItemId, wrapCopilotItemId } from '../../../src/stages/openai-responses/item-id-carrier.ts';
 import { fakeCopilotWire, invokeResponses, modelInput, protocolSse, runCopilotPipeline } from '../../pipeline-fixture.ts';
 import { compose } from '@floway-dev/pipeline';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { isOpenAIResponsesCompactionItem, openaiResponsesResultToEvents, parseOpenAIResponsesStream, type CanonicalOpenAIResponsesInputItem, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { buildHttpRequestStage, httpTerminal, httpUrl, parseCompactionStage, parseSseStage, type ProviderResponsesInput, type ProviderResponsesOutput, type ProviderServices } from '@floway-dev/provider';
+import { isOpenAIResponsesCompactionItem, openaiResponsesResultToEvents, type CanonicalOpenAIResponsesInputItem, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import { httpTerminal, httpUrl, parseResponsesStage, rewriteHttpRequestStage, type ProviderResponsesInput, type ProviderOpenAIResponsesOutput } from '@floway-dev/provider';
 import { jsonResponse, sseResponse, stubProviderModel } from '@floway-dev/test-utils';
 
 const response = (output: OpenAIResponsesOutputItemEx[]): OpenAIResponsesResultEx => ({
@@ -20,29 +23,29 @@ const response = (output: OpenAIResponsesOutputItemEx[]): OpenAIResponsesResultE
   usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
 });
 
-const collect = async (result: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): Promise<ProtocolFrame<OpenAIResponsesStreamEventEx>[]> => {
-  const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-  for await (const frame of result) frames.push(frame);
-  return frames;
-};
+const collect = (result: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>) => Array.fromAsync(result);
 
 const runStream = async (
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> | ProtocolFrame<OpenAIResponsesStreamEventEx>[],
 ): Promise<AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
-  const { provider, model, fetcher } = await fakeCopilotWire('/responses', 'test-model', () => protocolSse(frames));
-  const handle = runCopilotPipeline(provider.pipelines.openaiResponses, {
+  const { model, fetcher } = await fakeCopilotWire('/responses', 'test-model', () => protocolSse(frames));
+  const handle = runCopilotPipeline(copilotPipelines.openaiResponses, {
     ...modelInput(model, { input: [] }),
     'request.action': 'generate',
   }, fetcher);
   const output = await handle.result;
-  const events = output['response.events'];
-  if (events === undefined) throw new Error('Expected Copilot Responses events');
+  const outcome = output['response.openaiResponses'];
+  if (outcome.kind !== 'stream') throw new Error('Expected Copilot Responses events');
   return (async function* () {
     try {
-      yield* events;
+      for await (const frame of outcome.events) {
+        if (frame.type === 'transport-error') throw new Error(frame.error.message);
+        yield frame;
+      }
     } finally {
       await handle.done;
     }
+    expect(await handle.done).toEqual({ ok: true });
   })();
 };
 
@@ -274,12 +277,12 @@ test('restores owned blob ids for Copilot input and leaves foreign items unchang
     { type: 'message', id: 'msg_foreign', role: 'user', content: 'hello' },
   ];
   let wireInput: CanonicalOpenAIResponsesInputItem[] | undefined;
-  const { provider, model, fetcher } = await fakeCopilotWire('/responses', 'test-model', async request => {
+  const { model, fetcher } = await fakeCopilotWire('/responses', 'test-model', async request => {
     const body = await request.json() as CanonicalOpenAIResponsesPayload;
     wireInput = body.input;
     return sseResponse('data: [DONE]\n\n');
   });
-  await invokeResponses(provider.pipelines.openaiResponses, model, { input }, 'generate', fetcher);
+  await invokeResponses(copilotPipelines.openaiResponses, model, { input }, 'generate', fetcher);
 
   expect(wireInput).toEqual([
     { type: 'reasoning', id: 'rs_raw', summary: [], encrypted_content: 'reasoning state' },
@@ -301,10 +304,10 @@ test('restores owned blob ids for Copilot input and leaves foreign items unchang
 });
 
 test('rejects conflicting ids carried by one input item', async () => {
-  const { provider, model, fetcher } = await fakeCopilotWire('/responses', 'test-model', () => {
+  const { model, fetcher } = await fakeCopilotWire('/responses', 'test-model', () => {
     throw new Error('Unexpected HTTP dispatch');
   });
-  const response = invokeResponses(provider.pipelines.openaiResponses, model, {
+  const response = invokeResponses(copilotPipelines.openaiResponses, model, {
     input: [{
       type: 'agent_message', id: 'amsg_public', author: 'a', recipient: 'b',
       content: [
@@ -324,24 +327,24 @@ test('normalizes a generated compaction without touching retained compact messag
   ]);
   const membrane = openAIResponsesStages.find(stage => stage.name === 'item-id-membrane');
   if (membrane === undefined) throw new Error('Expected the Copilot item ID stage');
-  const pipeline = compose<ProviderResponsesInput, ProviderResponsesOutput, ProviderServices>('item-id-compact-test', {
+  type Input = ProviderResponsesInput<CopilotUpstreamFacts>;
+  const pipeline = compose<Input & ProviderOpenAIResponsesOutput, CopilotServices>()('item-id-compact-test', {
+    entry: ['provider.upstream', 'provider.model', 'request.http', 'request.payload', 'request.action'],
+    exit: ['response.http', 'response.modelKey', 'response.openaiResponses'],
     stages: [
       membrane,
-      parseCompactionStage(),
-      parseSseStage<OpenAIResponsesStreamEventEx, ProviderResponsesInput>('parse-sse', parseOpenAIResponsesStream, {
-        needs: ['request.action'],
-        when: facts => facts['request.action'] === 'generate',
-      }),
-      buildHttpRequestStage<ProviderResponsesInput>('request', [], () => ({
+      parseResponsesStage(),
+      rewriteHttpRequestStage<Input>('request', [], () => ({
         request: { url: httpUrl('https://copilot.test'), method: 'POST', headers: [], body: null },
         modelKey: 'test-model',
       })),
     ],
-    ending: httpTerminal('copilot-test'),
+    ending: httpTerminal,
   });
   const { output } = await invokeResponses(pipeline, stubProviderModel(), { input: [] }, 'compact', async () => jsonResponse(compactResult));
-  const result = output['response.result'];
-  if (result === undefined) throw new Error('Expected Copilot compaction');
+  const outcome = output['response.openaiResponses'];
+  if (outcome.kind !== 'result') throw new Error('Expected Copilot compaction');
+  const { result } = outcome;
 
   expect('id' in result.output[0] ? result.output[0].id : undefined).toBe('msg_retained');
   const compaction = result.output[1];

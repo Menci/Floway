@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import { fetchCopilotModels } from '../src/fetch-models.ts';
-import { clearInProcessCopilotTokenCache } from '../src/index.ts';
+import { toCopilotUpstreamFacts } from '../src/config.ts';
+import { clearInProcessCopilotTokenCache, defaultCopilotService } from '../src/service.ts';
 import { ProviderModelsUnavailableError, initProviderRepo, directFetcher, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -34,7 +34,7 @@ const installRepoAndConfig = async () => {
     },
   }));
   clearInProcessCopilotTokenCache();
-  return { id, githubHost: 'github.com', githubToken };
+  return toCopilotUpstreamFacts(stub);
 };
 
 const copilotTokenResponse = (request: Request): Response | null => {
@@ -59,7 +59,7 @@ test('fetchCopilotModels throws ProviderModelsUnavailableError with null httpRes
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      try { await fetchCopilotModels(config, directFetcher); } catch (e) { thrown = e; }
+      try { await defaultCopilotService.fetchModels(config, directFetcher); } catch (e) { thrown = e; }
     },
   );
   if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');
@@ -82,7 +82,7 @@ test('fetchCopilotModels tags the request with the model-access intent and omits
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      await fetchCopilotModels(config, directFetcher);
+      await defaultCopilotService.fetchModels(config, directFetcher);
     },
   );
 

@@ -8,7 +8,7 @@
 //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/core/src/compact_remote_v2.rs#L439-L501
 //   https://github.com/openai/codex/blob/3d805abdf09093bfa806f359a5adc6514766c420/codex-rs/utils/string/src/truncate.rs#L71-L74
 
-import { isOpenAIResponsesCompactionItem, createRandomOpenAIResponsesItemId, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesCompactionTriggerItem, type OpenAIResponsesAssistantInputContent, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesInputText, type OpenAIResponsesInputMessage, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
+import { isOpenAIResponsesCompactionItem, createRandomOpenAIResponsesItemId, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesCompactionTriggerItem, type OpenAIResponsesAssistantInputContent, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesInputText, type OpenAIResponsesInputMessage } from '@floway-dev/protocols/openai-responses';
 
 export const COMPACTION_TRIGGER: OpenAIResponsesCompactionTriggerItem = { type: 'compaction_trigger' };
 
@@ -36,14 +36,12 @@ const isRetainedMessage = (item: CanonicalOpenAIResponsesInputItem): item is Ope
 
 // The retained items are input-shaped messages with canonical input content,
 // which is what `/responses/compact` echoes so the client can resend `output`
-// as the next turn's `input`. `OpenAIResponsesOutputItem` does not model user/system
-// roles, so the final cast records that the compaction envelope's `output` is
-// deliberately input-shaped.
+// as the next turn's `input`.
 //
 // Retained messages are newly synthesized output items, so their client-visible
 // producer IDs are assigned here instead of inherited from input. They are
 // resent as full content; the compaction blob carries next-turn state.
-export const compactionResponse = (input: CanonicalOpenAIResponsesInputItem[], generated: OpenAIResponsesResultEx): OpenAIResponsesCompactionResultEx => {
+export const compactionResponse = (input: CanonicalOpenAIResponsesInputItem[], generated: OpenAIResponsesCompactionResultEx): OpenAIResponsesCompactionResultEx => {
   const kept: OpenAIResponsesInputMessage[] = [];
   let used = 0;
   for (let i = input.length - 1; i >= 0; i -= 1) {
@@ -99,6 +97,6 @@ export const compactionResponse = (input: CanonicalOpenAIResponsesInputItem[], g
   return {
     ...generated,
     object: 'response.compaction',
-    output: [...kept.reverse(), ...compactionItems] as unknown as OpenAIResponsesOutputItemEx[],
+    output: [...kept.reverse(), ...compactionItems],
   };
 };

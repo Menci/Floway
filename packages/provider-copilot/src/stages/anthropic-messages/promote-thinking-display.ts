@@ -1,6 +1,7 @@
 import { copilotRawModelId } from '../../model-name.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, AnthropicMessagesThinkingDisplay } from '@floway-dev/protocols/anthropic-messages';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame } from '@floway-dev/protocols/common';
+import type { ProviderFrame } from '@floway-dev/provider';
 
 const CLAUDE_VERSION_PATTERN = /(?:^|-)(\d+)\.(\d+)(?=-|$)/;
 
@@ -32,8 +33,8 @@ export const resolveAnthropicMessagesDownstreamThinkingDisplay = (payload: Anthr
   return isClaudeVersionAtLeast(payload.model, 4, 7) ? 'omitted' : 'summarized';
 };
 
-const omitThinkingTextFromProtocolFrame = (frame: ProtocolFrame<AnthropicMessagesStreamEventEx>): ProtocolFrame<AnthropicMessagesStreamEventEx> | undefined => {
-  if (frame.type === 'done') return frame;
+const omitThinkingTextFromProtocolFrame = (frame: ProviderFrame<AnthropicMessagesStreamEventEx>): ProviderFrame<AnthropicMessagesStreamEventEx> | undefined => {
+  if (frame.type !== 'event') return frame;
 
   const { event } = frame;
   if (event.type === 'content_block_start' && event.content_block.type === 'thinking') {
@@ -53,7 +54,7 @@ const omitThinkingTextFromProtocolFrame = (frame: ProtocolFrame<AnthropicMessage
   return frame;
 };
 
-export const omitPromotedThinkingTextFromProtocolFrames = async function* (frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
+export const omitPromotedThinkingTextFromProtocolFrames = async function* (frames: AsyncIterable<ProviderFrame<AnthropicMessagesStreamEventEx>>): AsyncGenerator<ProviderFrame<AnthropicMessagesStreamEventEx>> {
   for await (const frame of frames) {
     const omitted = omitThinkingTextFromProtocolFrame(frame);
     if (omitted) yield omitted;

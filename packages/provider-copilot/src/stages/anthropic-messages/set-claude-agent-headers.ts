@@ -14,7 +14,7 @@ import type { AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-m
  * the messages-proxy intent to ordinary chat traffic that happens to share
  * one half of the legacy regex.
  *
- * Sentinel: an empty-string value tells `copilotAuthedFetch` in
+ * Sentinel: an empty-string value tells the header stage in
  * `packages/provider-copilot/src/auth.ts` to delete the named base header. We
  * use it to clear `copilot-integration-id` because VSCode Copilot Chat omits
  * that header on Claude Code SDK proxy traffic.

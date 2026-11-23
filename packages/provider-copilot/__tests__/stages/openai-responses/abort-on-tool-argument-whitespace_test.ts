@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import { copilotPipelines } from '../../../src/pipelines.ts';
 import { MAX_CONSECUTIVE_WHITESPACE } from '../../../src/stages/shared/whitespace-overflow.ts';
 import { fakeCopilotWire, invokeResponses } from '../../pipeline-fixture.ts';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
@@ -12,10 +13,10 @@ test('aborts and emits an error event and done when whitespace exceeds the thres
     output_index: 0,
     delta,
   }));
-  const { provider, model, fetcher } = await fakeCopilotWire('/responses', 'gpt-test', () => sseResponse(
+  const { model, fetcher } = await fakeCopilotWire('/responses', 'gpt-test', () => sseResponse(
     `${events.map(event => `data: ${JSON.stringify(event)}\n\n`).join('')  }data: [DONE]\n\n`,
   ));
-  const result = await invokeResponses(provider.pipelines.openaiResponses, model, { input: [] }, 'generate', fetcher);
+  const result = await invokeResponses(copilotPipelines.openaiResponses, model, { input: [] }, 'generate', fetcher);
   assertEquals(result.events, [
     eventFrame({
       type: 'error',

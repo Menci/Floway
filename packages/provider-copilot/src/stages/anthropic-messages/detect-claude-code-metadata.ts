@@ -32,7 +32,8 @@ const parseJsonUserId = (userId: string): Record<string, unknown> | null => {
   try {
     const parsed: unknown = JSON.parse(userId);
     return isRecord(parsed) ? parsed : null;
-  } catch {
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
     return null;
   }
 };

@@ -1,6 +1,6 @@
 import { checkWhitespaceOverflow } from '../shared/whitespace-overflow.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
+import type { ProviderFrame } from '@floway-dev/provider';
 
 /**
  * Copilot has been observed to emit only whitespace (`\r`, `\n`, `\t`) inside
@@ -49,8 +49,8 @@ const isWhitespaceExceeded = (
 };
 
 export const abortCopilotOpenAIChatCompletionsToolArgumentWhitespace = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
-): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
+  frames: AsyncIterable<ProviderFrame<OpenAIChatCompletionsStreamEvent>>,
+): AsyncGenerator<ProviderFrame<OpenAIChatCompletionsStreamEvent>> {
   const whitespaceByIndex = new Map<number, number>();
 
   for await (const frame of frames) {

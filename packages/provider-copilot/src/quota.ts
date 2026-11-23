@@ -31,7 +31,7 @@ import { githubApiOrigin } from './github-host.ts';
 import { resolveCopilotQuotaUnlimited } from './quota-entitlement.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import { copilotMetrics } from './upstream-metrics.ts';
-import { recordUpstreamMetrics, getProviderRepo, type Fetcher } from '@floway-dev/provider';
+import { recordUpstreamMetrics, getProviderRepo, type Fetcher, type HeaderEntry } from '@floway-dev/provider';
 
 // One quota bucket. A seat reports three kinds of bucket and both sources spell
 // them differently, so nothing but the pair below is safe to read:
@@ -72,6 +72,9 @@ export interface CopilotQuotaSnapshot {
 }
 
 const QUOTA_SNAPSHOT_HEADER_PREFIX = 'x-quota-snapshot-';
+
+export const hasCopilotQuotaHeaders = (headers: readonly HeaderEntry[]): boolean =>
+  headers.some(([name]) => name.toLowerCase().startsWith(QUOTA_SNAPSHOT_HEADER_PREFIX));
 
 const isUnsafeQuotaId = (id: string): boolean =>
   id === '' || id === '__proto__' || id === 'constructor' || id === 'prototype';

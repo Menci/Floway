@@ -1,5 +1,6 @@
 import { test } from 'vitest';
 
+import { copilotPipelines } from '../../../src/pipelines.ts';
 import { resolveAnthropicMessagesDownstreamThinkingDisplay } from '../../../src/stages/anthropic-messages/promote-thinking-display.ts';
 import { fakeCopilotWire, invokeAnthropic, protocolSse } from '../../pipeline-fixture.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
@@ -40,11 +41,11 @@ const runThinking = async (
 ) => {
   const { model: id, ...requestPayload } = payload;
   let wire: AnthropicMessagesPayload | undefined;
-  const { provider, model, fetcher } = await fakeCopilotWire('/v1/messages', id, async request => {
+  const { model, fetcher } = await fakeCopilotWire('/v1/messages', id, async request => {
     wire = await request.json() as AnthropicMessagesPayload;
     return protocolSse(frames);
   });
-  const result = await invokeAnthropic(provider.pipelines.anthropicMessages, model, requestPayload, [], fetcher);
+  const result = await invokeAnthropic(copilotPipelines.anthropicMessages, model, requestPayload, [], fetcher);
   if (wire === undefined) throw new Error('Expected the Copilot request');
   return { wire, events: result.events };
 };
