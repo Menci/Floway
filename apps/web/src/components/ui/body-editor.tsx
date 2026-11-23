@@ -14,7 +14,7 @@ import { DARK_SCHEME_QUERY, useMediaQuery } from '../../lib/use-media-query';
 
 const { Button, Menu, MenuItem, MenuItemCheckbox, MenuList, MenuPopover, MenuTrigger } = fluentComponents;
 
-export default function BodyEditor({ text, json, label, toolbarStart, emptyText }: { text: string; json: boolean; label: string; toolbarStart?: ReactNode; emptyText?: string }) {
+export default function BodyEditor({ text, copyText = text, json, label, toolbarStart, emptyText }: { text: string; copyText?: string; json: boolean; label: string; toolbarStart?: ReactNode; emptyText?: string }) {
   const { t } = useTranslation();
   const [wrap, setWrap] = useState(true);
   const { copy, outcomeFor } = useCopyToClipboard();
@@ -69,7 +69,7 @@ export default function BodyEditor({ text, json, label, toolbarStart, emptyText 
       <div className="min-w-0">{toolbarStart}</div>
       <div className="ml-auto flex items-center gap-2 shrink-0">
         <TooltipIconButton icon={<SearchRegular />} label={t('common.bodyViewer.find')} onClick={() => void editorRef.current?.getAction('actions.find')?.run()} />
-        <TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('common.copy.action'))} onClick={() => copy(text)} />
+        <TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('common.copy.action'))} onClick={() => copy(copyText)} />
         <Menu checkedValues={{ wrap: wrap ? ['on'] : [] }} onCheckedValueChange={(_, data) => {
           const enabled = data.checkedItems.includes('on');
           setWrap(enabled);

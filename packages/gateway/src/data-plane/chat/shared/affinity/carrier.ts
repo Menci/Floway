@@ -13,6 +13,11 @@ export interface AffinityIdentity extends AffinityTarget {
   opaqueBlobCompatibilityIdentity: OpaqueBlobCompatibilityIdentity;
 }
 
+export interface AffinityEgressOptions {
+  readonly codec: Pick<AffinityCodec, 'wrap'>;
+  readonly affinity: AffinityIdentity;
+}
+
 interface AffinityDataV1 {
   version: 1;
   origin?: OpaqueValueOrigin;

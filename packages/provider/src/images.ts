@@ -1,98 +1,81 @@
 import { base64ToBytes, bytesToBase64, parseBase64ImageDataUrl } from './image-helpers.ts';
-import { jsonRequestBody } from './json-request.ts';
-import type { ReplayableBody } from './options.ts';
+import type { JsonRequestBody, MultipartField, MultipartFile, MultipartRequestBody } from './request-body.ts';
+import { Bytes } from '@floway-dev/pipeline';
 import type { OpenAIImageEditReference } from '@floway-dev/protocols/openai-images';
 
-// Each source stores one authoritative representation. Multipart requires
-// upload-like sources with no extra reference fields plus scalar parameters;
-// every other request uses JSON and encodes File uploads as data URLs.
-interface UploadedOpenAIImagesEditsSource {
-  type: 'upload';
-  file: File;
-}
-
-interface InlineOpenAIImagesEditsSource {
-  type: 'inline';
-  reference: OpenAIImageEditReference & { image_url: string };
-}
-
-interface ReferencedOpenAIImagesEditsSource {
-  type: 'reference';
-  reference: OpenAIImageEditReference;
-}
-
-export type OpenAIImagesEditsSource = UploadedOpenAIImagesEditsSource | InlineOpenAIImagesEditsSource | ReferencedOpenAIImagesEditsSource;
+export type OpenAIImagesEditsSource =
+  | ({ readonly type: 'upload' } & MultipartFile)
+  | { readonly type: 'inline'; readonly reference: OpenAIImageEditReference & { readonly image_url: string } }
+  | { readonly type: 'reference'; readonly reference: OpenAIImageEditReference };
 
 export interface OpenAIImagesEditsRequest {
-  images: OpenAIImagesEditsSource[];
-  mask?: OpenAIImagesEditsSource;
-  parameters: Record<string, unknown>;
+  readonly images: readonly OpenAIImagesEditsSource[];
+  readonly mask?: OpenAIImagesEditsSource;
+  readonly parameters: Readonly<Record<string, unknown>>;
 }
 
-const uploadedFile = (source: OpenAIImagesEditsSource, index: number): File | null => {
-  if (source.type === 'upload') return source.file;
-  if (source.type === 'reference') return null;
+const uploadedPart = (source: OpenAIImagesEditsSource, name: string, index: number): MultipartField | null => {
+  if (source.type === 'upload') {
+    const { bytes, contentType, filename } = source;
+    return { kind: 'file', name, bytes, contentType, filename };
+  }
+  if (source.type === 'reference' || Object.keys(source.reference).some(key => key !== 'image_url')) return null;
   const parsed = parseBase64ImageDataUrl(source.reference.image_url);
   if (parsed === null) return null;
-  let bytes: Uint8Array<ArrayBuffer>;
+  let bytes: Uint8Array;
   try {
     bytes = base64ToBytes(parsed.base64);
   } catch {
+    // Keep an invalid inline upload in the JSON form the caller supplied.
     return null;
   }
-  return new File([bytes], `image-${index}`, { type: parsed.mimeType });
+  return { kind: 'file', name, bytes: Bytes.adopt(bytes), contentType: parsed.mimeType.toLowerCase(), filename: `image-${index}` };
 };
 
-const jsonReference = async (source: OpenAIImagesEditsSource): Promise<OpenAIImageEditReference> => {
-  if (source.type === 'inline' || source.type === 'reference') return source.reference;
-  const bytes = new Uint8Array(await source.file.arrayBuffer());
-  return { image_url: `data:${source.file.type};base64,${bytesToBase64(bytes)}` };
-};
+const jsonReference = (source: OpenAIImagesEditsSource): OpenAIImageEditReference =>
+  source.type === 'upload'
+    ? { image_url: `data:${source.contentType};base64,${bytesToBase64(source.bytes.toUint8Array())}` }
+    : source.reference;
 
-const jsonBody = async (request: OpenAIImagesEditsRequest): Promise<Record<string, unknown>> => {
-  const images = await Promise.all(request.images.map(jsonReference));
-  const mask = request.mask === undefined ? undefined : await jsonReference(request.mask);
+export const serializeOpenAIImagesEditsJsonPayload = (
+  request: OpenAIImagesEditsRequest,
+  model: string,
+): Record<string, unknown> => ({
+  ...request.parameters,
+  images: request.images.map(jsonReference),
+  ...(request.mask === undefined ? {} : { mask: jsonReference(request.mask) }),
+  model,
+});
+
+const multipartBody = (request: OpenAIImagesEditsRequest, model: string): MultipartRequestBody | null => {
+  const parameters = Object.entries(request.parameters);
+  if (parameters.some(([, value]) => typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')) return null;
+  const imageField = request.images.length === 1 ? 'image' : 'image[]';
+  const files: MultipartField[] = [];
+  for (const [index, source] of request.images.entries()) {
+    const part = uploadedPart(source, imageField, index);
+    if (part === null) return null;
+    files.push(part);
+  }
+  if (request.mask !== undefined) {
+    const mask = uploadedPart(request.mask, 'mask', files.length);
+    if (mask === null) return null;
+    files.push(mask);
+  }
   return {
-    ...request.parameters,
-    images,
-    ...(mask === undefined ? {} : { mask }),
+    kind: 'multipart',
+    parts: [
+      ...parameters.map(([name, value]): MultipartField => ({ kind: 'text', name, value: String(value) })),
+      ...files,
+      { kind: 'text', name: 'model', value: model },
+    ],
   };
 };
 
-export const serializeOpenAIImagesEditsJsonPayload = async (
+export const serializeOpenAIImagesEditsRequest = (
   request: OpenAIImagesEditsRequest,
   model: string,
-): Promise<Record<string, unknown>> => ({ ...await jsonBody(request), model });
-
-const multipartBody = (request: OpenAIImagesEditsRequest, model: string): FormData | null => {
-  const sources = [...request.images, ...(request.mask === undefined ? [] : [request.mask])];
-  const compatibleSources = sources.every(source =>
-    source.type === 'upload'
-    || (source.type === 'inline' && Object.keys(source.reference).every(key => key === 'image_url')));
-  const compatibleParameters = Object.values(request.parameters).every(value =>
-    typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean');
-  if (!compatibleSources || !compatibleParameters) return null;
-
-  const images: File[] = [];
-  for (const [index, source] of request.images.entries()) {
-    const file = uploadedFile(source, index);
-    if (file === null) return null;
-    images.push(file);
-  }
-  const mask = request.mask === undefined ? undefined : uploadedFile(request.mask, images.length);
-  if (mask === null) return null;
-
-  const form = new FormData();
-  for (const [name, value] of Object.entries(request.parameters)) form.append(name, String(value));
-  const imageField = images.length === 1 ? 'image' : 'image[]';
-  for (const image of images) form.append(imageField, image);
-  if (mask !== undefined) form.append('mask', mask);
-  form.append('model', model);
-  return form;
-};
-
-export const serializeOpenAIImagesEditsRequest = async (request: OpenAIImagesEditsRequest, model: string): Promise<FormData | ReplayableBody> => {
-  const multipart = multipartBody(request, model);
-  if (multipart !== null) return multipart;
-  return jsonRequestBody(await serializeOpenAIImagesEditsJsonPayload(request, model));
+): MultipartRequestBody | JsonRequestBody => multipartBody(request, model) ?? {
+  kind: 'json',
+  value: serializeOpenAIImagesEditsJsonPayload(request, model),
 };

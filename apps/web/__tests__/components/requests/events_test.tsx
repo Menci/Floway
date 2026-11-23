@@ -2,22 +2,23 @@ import { fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { EventList } from '../../../src/components/requests/events';
+import type { StreamFrameEntry } from '../../../src/components/requests/stream-render';
 import { i18n } from '../../../src/i18n';
 import { renderInApp } from '../../render';
-import type { DumpStreamEvent } from '@floway-dev/gateway/browser';
 
-const events: DumpStreamEvent[] = Array.from({ length: 120 }, (_, i) => ({
+const events: StreamFrameEntry[] = Array.from({ length: 120 }, (_, i) => ({
   ts: i * 15,
-  frame: {
-    type: 'event', event: {
+  deltaMs: i === 0 ? 0 : 15,
+  sse: {
+    type: 'sse', data: JSON.stringify({
       id: 'demo', object: 'chat.completion.chunk', created: 1, model: 'm',
       choices: [{  index: 0, delta: { content: i === 99 ? 'needle <script>alert(1)</script>' : `chunk ${i + 1}` }, finish_reason: null }],
-    },
+    }),
   },
 }));
-events.push({ ts: 1800, frame: { type: 'done' } });
+events.push({ ts: 1800, deltaMs: 15, sse: { type: 'sse', data: '[DONE]' } });
 
-const renderEvents = () => renderInApp(<EventList events={events} kind="openai-chat-completions" toolbarStart={<span>View selector</span>} />);
+const renderEvents = () => renderInApp(<EventList events={events} toolbarStart={<span>View selector</span>} />);
 
 describe('per-event view', () => {
 
@@ -34,5 +35,10 @@ describe('per-event view', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Search events' }), { target: { value: '[DONE]' } });
     expect(screen.getByRole('button', { name: '#121 [DONE]' })).toBeTruthy();
     expect(screen.queryByText(i18n.t('requests.eventParseError'))).toBeNull();
+  });
+
+  it('shows the delta beside the absolute timestamp', () => {
+    renderInApp(<EventList events={events.slice(0, 2)} toolbarStart={<span>View selector</span>} />);
+    expect(screen.getByText('Δ15ms')).toBeTruthy();
   });
 });

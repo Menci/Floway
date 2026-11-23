@@ -24,8 +24,7 @@
 import { type OllamaUpstreamConfig } from './config.ts';
 import { ollamaFetchMe } from './fetch.ts';
 import { type OllamaAccountEntry, type OllamaUpstreamState, readOllamaUpstreamState } from './state.ts';
-import { isOllamaUsageEnabled } from './usage-probe.ts';
-import { type Fetcher, getProviderRepo, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { type Fetcher, getProviderRepo } from '@floway-dev/provider';
 
 // A subscription changes on a billing boundary at most, so this refreshes on a
 // wholly different cadence from the usage windows beside it: an upstream
@@ -42,7 +41,7 @@ export const fetchOllamaAccount = async (
   const response = await ollamaFetchMe(
     config,
     { method: 'POST', headers: new Headers({ accept: 'application/json' }), body: '{}' },
-    { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
+    fetcher,
   );
   const rawText = await response.text();
   if (!response.ok) {
@@ -87,25 +86,7 @@ export const refreshOllamaAccount = async (
   return entry;
 };
 
-const isOllamaAccountProbeDue = (state: OllamaUpstreamState, now: number): boolean => {
+export const isOllamaAccountProbeDue = (state: OllamaUpstreamState, now: number): boolean => {
   const account = state.account;
   return account === null || now - account.fetchedAt >= OLLAMA_ACCOUNT_PROBE_MIN_INTERVAL_MS;
-};
-
-// Fire-and-forget, armed by the same data-plane calls that arm the usage probe
-// and behind its own interval. A failure is logged and dropped rather than
-// recorded: unlike a usage window, an account the dashboard could not read
-// costs the card its name and nothing else, so it earns no error slot.
-export const scheduleOllamaAccountProbe = (
-  upstreamId: string,
-  config: OllamaUpstreamConfig,
-  state: OllamaUpstreamState,
-  fetcher: Fetcher,
-  waitUntil: (promise: Promise<unknown>) => void,
-): void => {
-  if (!isOllamaUsageEnabled(config)) return;
-  if (!isOllamaAccountProbeDue(state, Date.now())) return;
-  waitUntil(refreshOllamaAccount(upstreamId, config, fetcher).catch((error: unknown) => {
-    console.warn(`Failed to refresh Ollama account for ${upstreamId}:`, error);
-  }));
 };

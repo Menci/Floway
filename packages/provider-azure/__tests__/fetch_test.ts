@@ -1,14 +1,10 @@
 import { test } from 'vitest';
 
-import { assertAzureUpstreamRecord } from '../src/config.ts';
-import {
-  azureFetchOpenAIAudioTranscriptions,
-  azureFetchAnthropicMessages,
-  azureFetchOpenAIResponses,
-} from '../src/fetch.ts';
+import { azureInput, callAzure } from './pipeline-fixture.ts';
+import { createAzureProvider } from '../src/provider.ts';
+import { Bytes } from '@floway-dev/pipeline';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
-import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, assertFalse, jsonResponse, sseResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 const baseRecord: UpstreamRecord = {
   id: 'up_azure',
@@ -47,18 +43,30 @@ test('audio transcription selects the deployment on every admitted endpoint shap
   ] as const;
 
   for (const [endpoint, expected] of endpoints) {
-    const { config } = assertAzureUpstreamRecord({
+    const { pipelines } = createAzureProvider({
       ...baseRecord,
       config: { ...(baseRecord.config as Record<string, unknown>), endpoint },
     });
     let seenUrl = '';
     await withMockedFetch(
-      request => {
+      async request => {
         seenUrl = request.url;
-        return new Response('{}', { status: 200 });
+        const body = await request.formData();
+        assertFalse(body.has('model'));
+        const file = body.get('file');
+        if (!(file instanceof File)) throw new Error('Expected multipart audio file');
+        assertEquals(file.name, 'audio.ogg');
+        assertEquals(file.type, 'audio/ogg');
+        assertEquals(await file.text(), 'audio bytes');
+        return jsonResponse({});
       },
       async () => {
-        await azureFetchOpenAIAudioTranscriptions(config, 'transcribe deployment', { method: 'POST', body: new FormData() }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+        await callAzure(pipelines.openaiAudioTranscriptions, azureInput(stubProviderModel({ upstreamModelId: 'transcribe deployment' }), {
+          entries: [
+            { kind: 'text', name: 'model', value: 'public-transcription' },
+            { kind: 'file', name: 'file', bytes: Bytes.fromUtf8('audio bytes'), filename: 'audio.ogg', contentType: 'audio/ogg' },
+          ],
+        }));
       },
     );
     assertEquals(seenUrl, expected);
@@ -66,7 +74,7 @@ test('audio transcription selects the deployment on every admitted endpoint shap
 });
 
 test('Foundry project endpoints split OpenAI v1 vs Anthropic surfaces', async () => {
-  const { config } = assertAzureUpstreamRecord({
+  const provider = createAzureProvider({
     ...baseRecord,
     config: {
       endpoint: 'https://example.services.ai.azure.com/api/projects/prod/openai/v1',
@@ -84,11 +92,13 @@ test('Foundry project endpoints split OpenAI v1 vs Anthropic surfaces', async ()
   await withMockedFetch(
     request => {
       seen.push(request.url);
-      return new Response('{}', { status: 200 });
+      return sseResponse();
     },
     async () => {
-      await azureFetchOpenAIResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await azureFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      const [model] = await provider.instance.getProvidedModels(() => Promise.reject(new Error('Unexpected catalog fetch')));
+      assertExists(model);
+      await callAzure(provider.pipelines.openaiResponses, { ...azureInput(model, { input: [] }), 'request.action': 'generate' });
+      await callAzure(provider.pipelines.anthropicMessages, { ...azureInput(model, { max_tokens: 16, messages: [] }), 'request.anthropicBeta': [] });
     },
   );
 

@@ -3,9 +3,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { buildClaudeCodeCatalog, type ClaudeCodeApiModel } from '../src/models.ts';
 import { createClaudeCodeProvider } from '../src/provider.ts';
 import type { ClaudeCodeAccessTokenEntry, ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from '../src/state.ts';
+import { run } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
-import { initProviderRepo, type FlagId, type AnthropicMessagesUpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
-import { noopAnthropicMessagesUpstreamCallOptions, readJsonRequest } from '@floway-dev/test-utils';
+import { directFetcher, initProviderRepo, toProviderModelFacts, type FlagId, type HeaderEntry, type ProviderAnthropicInput, type UpstreamRecord } from '@floway-dev/provider';
+import { readJsonRequest } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc_provider';
 
@@ -83,28 +84,25 @@ const sseResponse = (): Response => new Response(
   { status: 200, headers: { 'content-type': 'text/event-stream' } },
 );
 
-const cliClientCallOpts = (overrides: Partial<AnthropicMessagesUpstreamCallOptions> = {}): AnthropicMessagesUpstreamCallOptions => ({
-  ...noopAnthropicMessagesUpstreamCallOptions(),
-  headers: new Headers({
-    'user-agent': 'claude-cli/2.1.280 (external, cli)',
-    'x-app': 'cli',
-    'anthropic-version': '2023-06-01',
-  }),
-  anthropicBeta: ['oauth-2025-04-20'],
-  ...overrides,
-});
+const runMessages = async (payload: ProviderAnthropicInput['request.payload'], headers: readonly HeaderEntry[] = [], beta: readonly string[] = []) => {
+  const instance = createClaudeCodeProvider(currentRecord);
+  const handle = run(instance.pipelines.anthropicMessages!, {
+    'provider.model': toProviderModelFacts(sonnetProviderModel),
+    'request.payload': payload,
+    'request.headers': headers,
+    'request.anthropicBeta': beta,
+  }, { services: { fetcher: () => directFetcher }, finalizationTimeoutMs: 1000 });
+  const result = await handle.result;
+  expect(result['response.http'].status).toBe(200);
+  await result['response.events']!.close();
+  expect(await handle.done).toEqual({ ok: true });
+};
 
-describe('createClaudeCodeProvider — callAnthropicMessages routes through chain', () => {
+describe('Claude Code Messages request shaping', () => {
   test('unshaped request runs the re-mimicry chain (3-block system, pinned UA, metadata.user_id)', async () => {
-    const instance = createClaudeCodeProvider(currentRecord);
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
 
-    await instance.instance.callAnthropicMessages(
-      sonnetProviderModel,
-      { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] },
-      undefined,
-      noopAnthropicMessagesUpstreamCallOptions(),
-    );
+    await runMessages({ max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] });
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;
     const wireHeaders = new Headers(init.headers);
@@ -122,20 +120,22 @@ describe('createClaudeCodeProvider — callAnthropicMessages routes through chai
   });
 
   test('shaped request preserves caller-supplied system + headers (chain skipped)', async () => {
-    const instance = createClaudeCodeProvider(currentRecord);
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
 
     const userId = JSON.stringify({ device_id: 'd'.repeat(32), account_uuid: '', session_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' });
-    await instance.instance.callAnthropicMessages(
-      sonnetProviderModel,
+    await runMessages(
       {
         max_tokens: 16,
         messages: [{ role: 'user', content: 'hi' }],
         system: [{ type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }],
         metadata: { user_id: userId },
       },
-      undefined,
-      cliClientCallOpts(),
+      [
+        ['user-agent', 'claude-cli/2.1.280 (external, cli)'],
+        ['x-app', 'cli'],
+        ['anthropic-version', '2023-06-01'],
+      ],
+      ['oauth-2025-04-20'],
     );
 
     const init = fetchSpy.mock.calls[0]![1] as RequestInit;

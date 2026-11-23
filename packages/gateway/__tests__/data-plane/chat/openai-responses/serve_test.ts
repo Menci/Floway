@@ -1,198 +1,55 @@
-import { afterEach, test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
-import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy } from './test-policy.ts';
-import { createOpenAIResponsesHttpStore } from '../../../../src/data-plane/chat/openai-responses/items/store.ts';
-import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gateway-ctx.ts';
-import { initRepo } from '../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../repo/memory.ts';
-import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayloadEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { decodeResponseBody, type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { http, providerResponses, responsesFixture, upstream } from './fixture.ts';
+import { syntheticEventsFromResult } from '../../../../src/data-plane/chat/openai-responses/items/output.ts';
+import { readHttpBytes } from '../../../../src/data-plane/pipeline/non-chat.ts';
+import type { StageEnv } from '@floway-dev/pipeline';
+import type { ProviderResponsesInput } from '@floway-dev/provider';
 
-// Mock the resolver seam so each test hands the serve exactly the provider
-// candidates it wants, optionally with an alias-rules overlay attached.
-// `sawModel` is true when at least one candidate was queued; the
-// `model-missing` failure test queues an empty list so the serve renders 404
-// rather than 400.
-interface QueuedResolution {
-  readonly candidates: readonly ModelCandidate[];
-  readonly sawModel: boolean;
-  readonly failedUpstreams: readonly string[];
-}
-const resolutionsQueue: QueuedResolution[] = [];
-const lastResolveCall: { model?: string } = {};
-vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../../../src/data-plane/providers/resolution.ts')>();
-  return {
-    ...original,
-    enumerateModelCandidates: vi.fn(async ({ model }: { model: string }) => {
-      lastResolveCall.model = model;
-      const next = resolutionsQueue.shift();
-      if (next === undefined) throw new Error('serve_test: no resolution enqueued');
-      return next;
+test('generate filters out candidates whose endpoints do not satisfy the Responses preference', async () => {
+  const respond = vi.fn(() => { throw new Error('Unexpected provider call'); });
+  const source = upstream('unsupported', { openaiResponses: providerResponses(respond) });
+  const fixture = responsesFixture([{ ...source, candidate: { ...source.candidate, endpoints: { openaiCompletions: {} } } }]);
+  const handle = fixture.request({ model: 'wrong-endpoint-model', input: 'hello' });
+  const { 'response.http': response } = await handle.result;
+  expect(response.status).toBe(400);
+  expect(JSON.parse((await readHttpBytes(response.body)).utf8())).toMatchObject({
+    error: { type: 'invalid_request_error', message: 'Model wrong-endpoint-model does not support the /responses endpoint.' },
+  });
+  expect(respond).toHaveBeenCalledTimes(0);
+  expect(await handle.done).toEqual({ ok: true });
+});
+
+test('alias resolution passes the target model and overlays rules onto the native Responses payload', async () => {
+  const respond = vi.fn((_facts: ProviderResponsesInput, env: StageEnv) => ({
+    ...http(),
+    'response.modelKey': 'gpt-5.4',
+    'response.result': undefined,
+    'response.events': env.createStream({
+      label: 'alias output',
+      iterate: () => syntheticEventsFromResult({
+        id: 'response', object: 'response', model: 'gpt-5.4', output: [], status: 'completed', error: null, incomplete_details: null,
+      }),
     }),
-  };
-});
-
-const { openaiResponsesServe } = await import('../../../../src/data-plane/chat/openai-responses/serve.ts');
-
-const API_KEY_ID = 'key_serve_test';
-
-const queueResolution = (
-  candidates: readonly ModelCandidate[],
-  aliasRules?: AliasRules,
-): void => {
-  resolutionsQueue.push({
-    candidates: aliasRules !== undefined ? candidates.map(c => ({ ...c, rules: aliasRules })) : candidates,
-    sawModel: candidates.length > 0,
-    failedUpstreams: [],
-  });
-};
-
-afterEach(() => { resolutionsQueue.length = 0; });
-
-const installRepo = (): InMemoryRepo => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  void repo.apiKeys.save({
-    id: API_KEY_ID, userId: 1, name: 'OpenAI Responses test key', key: 'raw-responses-test',
-    serverSecret: '99'.repeat(32), createdAt: '2026-01-01T00:00:00.000Z',
-    upstreamIds: null, randomizeUpstreams: false, deletedAt: null, dumpRetentionSeconds: null,
-    openaiResponsesRetentionSeconds: TEST_OPENAI_RESPONSES_RETENTION_SECONDS,
-  });
-  return repo;
-};
-
-const makeGatewayCtx = (store?: ChatGatewayCtx['store']) =>
-  mockChatGatewayCtx({
-    apiKeyId: API_KEY_ID,
-    wantsStream: true,
-    store: store ?? createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), true),
-  });
-
-const makePayload = (overrides: Partial<CanonicalOpenAIResponsesPayload> = {}): CanonicalOpenAIResponsesPayload => ({
-  model: 'test-model',
-  input: [{ type: 'message', role: 'user', content: 'hello' }],
-  ...overrides,
-});
-
-const makeOpenAIResponsesResult = (id = 'resp_test'): OpenAIResponsesResultEx => ({
-  id,
-  object: 'response',
-  model: 'test-model',
-  status: 'completed',
-  output: [{
-    type: 'message',
-    id: 'msg_1',
-    role: 'assistant',
-    status: 'completed',
-    content: [{ type: 'output_text', text: 'hi', annotations: [] }],
-  }],
-  error: null,
-  incomplete_details: null,
-});
-
-const makeProtocolFrames = async function* <E>(events: readonly E[]): AsyncGenerator<ProtocolFrame<E>> {
-  for (const event of events) yield eventFrame(event);
-  yield doneFrame();
-};
-
-const makeCandidate = (overrides: {
-  upstream?: string;
-  modelId?: string;
-  endpoints?: ModelEndpoints;
-  callOpenAIResponses?: (model: unknown, body: unknown, action: OpenAIResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderOpenAIResponsesResult>;
-  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
-} = {}): ModelCandidate => {
-  const upstream = overrides.upstream ?? 'up_test';
-  const provider = stubProvider({
-    callOpenAIResponses: overrides.callOpenAIResponses,
-    callAnthropicMessages: overrides.callAnthropicMessages,
-  });
-  return {
-    provider: {
-      upstreamId: upstream,
-      kind: 'custom',
-      name: upstream,
-      inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [],
-      modelPrefix: null,
-      modelsCache: null,
-      instance: provider,
+  }));
+  const source = upstream('responses', { openaiResponses: providerResponses(respond) });
+  const fixture = responsesFixture([{
+    ...source,
+    candidate: {
+      ...source.candidate, modelId: 'gpt-5.4', upstreamModelId: 'gpt-5.4',
+      providerModel: { ...source.candidate.providerModel, id: 'gpt-5.4', upstreamModelId: 'gpt-5.4' },
+      rules: { reasoning: { effort: 'high', summary: 'detailed' }, verbosity: 'medium', serviceTier: 'priority' },
     },
-    // Default keeps stubInternalModel's three-endpoint map intact; tests that
-    // need a rejected candidate pass an explicit `endpoints` override.
-    model: stubInternalModel({
-      id: overrides.modelId ?? 'test-model',
-      ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
-    }, upstream),
-    fetcher: directFetcher,
-  };
-};
-
-const collectEvents = async (events: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): Promise<OpenAIResponsesStreamEventEx[]> => {
-  const out: OpenAIResponsesStreamEventEx[] = [];
-  for await (const frame of events) {
-    if (frame.type === 'event') out.push(frame.event);
-  }
-  return out;
-};
-
-test('generate filters out candidates whose endpoints do not satisfy the responses preference and renders model-unsupported as a 400', async () => {
-  installRepo();
-  const callOpenAIResponses = vi.fn();
-  // openaiResponsesTarget prefers responses > messages > openai-chat-completions; an
-  // endpoints-only `openaiCompletions` candidate matches none and is filtered out.
-  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { openaiCompletions: {} }, callOpenAIResponses })]);
-
-  const result = await openaiResponsesServe.generate({
-    payload: makePayload({ model: 'wrong-endpoint-model' }),
-    ctx: makeGatewayCtx(),
-    headers: new Headers(),
+  }]);
+  const handle = fixture.request({ model: 'gpt-fast', input: 'hello' });
+  const response = (await handle.result)['response.http'];
+  expect(response.status).toBe(200);
+  expect(fixture.requestedModels).toEqual(['gpt-fast']);
+  const request = respond.mock.calls[0]?.[0];
+  expect(request?.['provider.model'].id).toBe('gpt-5.4');
+  expect(request?.['request.payload']).toMatchObject({
+    reasoning: { effort: 'high', summary: 'detailed' }, text: { verbosity: 'medium' }, service_tier: 'priority',
   });
-
-  assertEquals(result.type, 'api-error');
-  if (result.type !== 'api-error') throw new Error('unreachable');
-  assertEquals(result.http.status, 400);
-  const body = JSON.parse(decodeResponseBody(result.body));
-  assertEquals(body.error.type, 'invalid_request_error');
-  assertEquals(callOpenAIResponses.mock.calls.length, 0);
-});
-
-test('alias resolution swaps the inbound model id for the target and overlays rules onto the OpenAI Responses IR', async () => {
-  installRepo();
-  const capturedBodies: OpenAIResponsesPayloadEx[] = [];
-  const observedModelIds: string[] = [];
-  const callOpenAIResponses = vi.fn(async (model: unknown, body: unknown): Promise<ProviderOpenAIResponsesResult> => {
-    observedModelIds.push((model as { id: string }).id);
-    capturedBodies.push(body as OpenAIResponsesPayloadEx);
-    return { action: 'generate', ok: true, events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: makeOpenAIResponsesResult() }]), modelKey: 'gpt-5.4', http: { status: 200, headers: new Headers() } };
-  });
-  const candidate = makeCandidate({ upstream: 'up_a', modelId: 'gpt-5.4', callOpenAIResponses });
-  queueResolution([candidate], { reasoning: { effort: 'high', summary: 'detailed' }, verbosity: 'medium', serviceTier: 'priority' });
-
-  const payload = makePayload({ model: 'gpt-fast' });
-  const result = await openaiResponsesServe.generate({
-    payload,
-    ctx: makeGatewayCtx(createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), true)),
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-
-  // Resolver and caller payload retain the inbound alias; the provider model
-  // argument carries the resolved target id while the body omits `model`.
-  assertEquals(lastResolveCall.model, 'gpt-fast');
-  assertEquals(observedModelIds, ['gpt-5.4']);
-  assertEquals(payload.model, 'gpt-fast');
-  const observed = capturedBodies[0]!;
-  assertEquals(observed.reasoning?.effort, 'high');
-  assertEquals(observed.reasoning?.summary, 'detailed');
-  assertEquals(observed.text?.verbosity, 'medium');
-  assertEquals(observed.service_tier, 'priority');
+  expect(request?.['request.payload']).not.toHaveProperty('model');
+  expect(await handle.done).toEqual({ ok: true });
 });

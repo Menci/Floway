@@ -1,0 +1,17 @@
+{
+  "name": "@floway-dev/dump",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./browser": "./src/browser.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@floway-dev/pipeline": "workspace:*",
+    "@scure/base": "^2.2.0"
+  }
+}

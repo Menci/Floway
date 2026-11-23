@@ -1,6 +1,4 @@
-import { currentHour } from './hour.ts';
-import { getRepo } from '../../../repo/index.ts';
-import type { TokenUsage, UsageQuantities } from '../../../repo/types.ts';
+import type { TokenUsage, UsageQuantities, UsageRecord } from '../../../repo/types.ts';
 import { tokenUsageQuantities, usageMetrics } from '../../../repo/usage-metrics.ts';
 import { priceRequest, type BillableUsage, type PricingRuntimeFacts } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
@@ -242,32 +240,11 @@ const splitModalityCounts = (
   return { [textUsageKey]: text ?? 0, [imageUsageKey]: image ?? 0 };
 };
 
-export const recordUsage = async (
-  keyId: string,
-  modelIdentity: TelemetryModelIdentity,
-  quantities: UsageQuantities,
-  pricingFacts: PricingRuntimeFacts,
-): Promise<void> => {
-  const priced = priceRequest(modelIdentity.pricing, pricingFacts);
-  const metrics = usageMetrics(quantities, priced.rates);
-  await Promise.all([
-    getRepo().usage.record({
-      keyId,
-      model: modelIdentity.model,
-      upstream: modelIdentity.upstream,
-      modelKey: modelIdentity.modelKey,
-      hour: currentHour(),
-      pricingSelector: priced.selector,
-      requests: 1,
-      metrics,
-    }),
-    getRepo().apiKeys.update(keyId, { lastUsedAt: new Date().toISOString() }),
-  ]);
-};
-
-export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
-  const measurement = tokenUsageMeasurement(usage);
-  await recordUsage(keyId, modelIdentity, measurement.quantities, measurement.pricingFacts);
+export const priceUsageMeasurement = (
+  pricing: TelemetryModelIdentity['pricing'], quantities: UsageQuantities, facts: PricingRuntimeFacts,
+): Pick<UsageRecord, 'pricingSelector' | 'metrics'> => {
+  const priced = priceRequest(pricing, facts);
+  return { pricingSelector: priced.selector, metrics: usageMetrics(quantities, priced.rates) };
 };
 
 // `BillableUsage` is already the canonical exclusive/split shape, so pricing is

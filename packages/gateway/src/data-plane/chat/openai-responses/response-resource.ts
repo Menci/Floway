@@ -32,13 +32,9 @@ import type {
 //   Item persistence runs underneath: `wrapOpenAIResponsesClientOutput` commits the
 //   rows carried by `response.output_item.done` and a snapshot record of their
 //   ordered ids, and awaits that before the terminal frame leaves it, so no
-//   response resource is ever stored. Affinity egress runs underneath too, and
-//   billing reads `billableUsage` off the `ExecuteResult` rather than the
-//   resource. One reader sits above this stage, the non-streaming `settle`
-//   call, and it reads only `status`, which rides through from the upstream and
-//   is never stated here. The WebSocket transport buffers the terminal event
-//   and flushes it last, branching only on the event type; it reads nothing off
-//   the resource at all.
+//   response resource is ever stored. Upstream usage is observed before client
+//   fields are completed. The encoder reads the upstream status to classify
+//   delivery, and the WebSocket transport sends the terminal event last.
 //
 // #125's "no tools synthesized when upstream omits it" therefore still holds:
 // the interior resource carries no `tools`, and egress states `[]` on the way
@@ -207,10 +203,10 @@ export const completeResponseResource = (
 // validates too. The narrowed yield type propagates the guarantee, so a stage
 // inserted between this one and a client-facing exit must preserve it or fail
 // to compile.
-export const wrapResponseResourceCompletion = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+export const wrapResponseResourceCompletion = async function* <Control extends { readonly type: 'control' } = never>(
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx> | NoInfer<Control>>,
   sources: ResponseResourceSources,
-): AsyncGenerator<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> {
+): AsyncGenerator<ProtocolFrame<ClientOpenAIResponsesStreamEvent> | Control> {
   for await (const frame of frames) {
     if (frame.type !== 'event') {
       yield frame;

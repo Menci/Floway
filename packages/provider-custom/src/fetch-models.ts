@@ -17,7 +17,7 @@
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, type ModelKind, type ModelPricing, type OpaqueBlobCompatibilityScope, parseNonNegativeDecimalString, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
-import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall, opaqueBlobCompatibilityScopeField } from '@floway-dev/provider';
+import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, opaqueBlobCompatibilityScopeField } from '@floway-dev/provider';
 
 export interface CustomRawModel {
   id: string;
@@ -191,7 +191,7 @@ export const fetchCustomModels = async (config: CustomUpstreamConfig, fetcher: F
   let pageToken: string | undefined;
   do {
     const page = await fetchUpstreamModels(
-      () => customFetchModels(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }, pageToken),
+      () => customFetchModels(config, fetcher, pageToken),
       parseCustomModelsPage,
     );
     data.push(...page.data);

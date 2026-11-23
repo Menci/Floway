@@ -1,55 +1,39 @@
 import { expect, test } from 'vitest';
 
-import { analyzeOpenAIResponsesAffinity } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
-import { AffinityCodec, type AffinityIdentity, type AffinityRequestAnalysis, compatibilityIdentityForCandidate, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
-import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
-import type { ModelCandidate } from '@floway-dev/provider';
-import { stubModelCandidate, stubProviderModel } from '@floway-dev/test-utils';
+import { affinityCandidate } from './fixture.ts';
+import { analyzeOpenAIResponsesAffinity, evaluateOpenAIResponsesCandidate, scoreOpenAIResponsesCandidate } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
+import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/carrier.ts';
+import { affinityIdentityForCandidate } from '../../../../../src/data-plane/chat/shared/affinity/selection.ts';
+import { selectChatCandidates } from '../../../../../src/data-plane/chat/shared/affinity/stages.ts';
+import { openaiResponsesTarget } from '../../../../../src/data-plane/chat/shared/target-picker.ts';
+import type { RouteCandidate } from '../../../../../src/data-plane/pipeline/services.ts';
+import { type CanonicalOpenAIResponsesPayload, canonicalizeOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
 const codec = new AffinityCodec('22'.repeat(32));
 const canonicalItemType = (itemType: string): string => itemType === 'compaction' || itemType === 'compaction_summary' || itemType === 'context_compaction' ? 'compaction' : itemType;
 const carrierDomain = (itemType: string, slot: string): string => `openai-responses.${canonicalItemType(itemType)}.${slot}`;
 
-const candidate = (
-  upstream: string,
-  model = 'model',
-  scope: { bindToUpstream: boolean; key?: string } = { bindToUpstream: true },
-): ModelCandidate => {
-  const base = stubModelCandidate();
-  return stubModelCandidate({
-    provider: { ...base.provider, upstreamId: upstream },
-    model: {
-      id: model,
-      opaqueBlobCompatibilityScope: scope,
-      providerModels: {
-        [upstream]: stubProviderModel({
-          id: model,
-          upstreamModelId: model,
-          opaqueBlobCompatibilityScope: scope,
-        }),
-      },
-    },
-  });
+const candidate = affinityCandidate;
+const targetFor = (candidate: RouteCandidate): AffinityIdentity => affinityIdentityForCandidate(candidate);
+
+const candidateA = candidate('upstream-a', 'model');
+const candidateB = candidate('upstream-b', 'model');
+
+const prepare = async (payload: CanonicalOpenAIResponsesPayload) => ({
+  payload, analysis: await analyzeOpenAIResponsesAffinity(payload, codec),
+});
+type Prepared = Awaited<ReturnType<typeof prepare>>;
+
+const select = (candidates: readonly RouteCandidate[], { analysis, payload }: Prepared) => {
+  const selection = selectChatCandidates(candidates, openaiResponsesTarget, analysis, payload, scoreOpenAIResponsesCandidate, payload.model);
+  if ('status' in selection) throw new Error(`Unexpected affinity failure: ${selection.message}`);
+  return selection;
 };
 
-const targetFor = (value: ModelCandidate): AffinityIdentity => ({
-  upstreamId: value.provider.upstreamId,
-  modelId: value.model.id,
-  ...(value.rules !== undefined ? { rules: value.rules } : {}),
-  opaqueBlobCompatibilityIdentity: compatibilityIdentityForCandidate(value),
-});
-
-const candidateA = candidate('upstream-a');
-const candidateB = candidate('upstream-b');
-
-const select = (
-  candidates: readonly ModelCandidate[],
-  analysis: AffinityRequestAnalysis<CanonicalOpenAIResponsesPayload>,
-) => {
-  const selection = selectAffinityCandidates(candidates, analysis);
-  if ('kind' in selection) throw new Error(`Expected affinity selection, received ${selection.kind}`);
-  return selection;
+const project = ({ analysis, payload }: Prepared, candidate: RouteCandidate) => {
+  const evaluation = evaluateOpenAIResponsesCandidate(analysis, candidate, payload);
+  if (evaluation.kind === 'rejected') throw new Error('Expected accepted affinity projection');
+  return evaluation;
 };
 
 test('restores an owned blob within its compatibility scope and still prefers its exact target', async () => {
@@ -60,26 +44,26 @@ test('restores an owned blob within its compatibility scope and still prefers it
     targetFor(candidateA),
     carrierDomain('reasoning', 'encrypted_content'),
   );
-  const prepared = await analyzeOpenAIResponsesAffinity({
+  const prepared = await prepare({
     model: 'model',
     input: [{ type: 'reasoning', id: 'rs_client', summary: [{ type: 'summary_text', text: 'visible' }], encrypted_content: carrier }],
-  }, codec);
+  });
 
-  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
-  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
-  const mismatchedProjection = acceptedAffinityEvaluation(prepared, mismatchedRules);
-  expect(projectionA.materialize().input).toEqual([{
+  const projectionA = project(prepared, candidateA);
+  const projectionB = project(prepared, candidateB);
+  const mismatchedProjection = project(prepared, mismatchedRules);
+  expect(projectionA.payload.input).toEqual([{
     type: 'reasoning',
     id: 'rs_client',
     summary: [{ type: 'summary_text', text: 'visible' }],
     encrypted_content: 'encrypted',
   }]);
-  expect(acceptedAffinityEvaluation(prepared, compatibleModel).materialize().input).toEqual(projectionA.materialize().input);
-  expect(projectionB.materialize().input).toEqual([]);
+  expect(project(prepared, compatibleModel).payload.input).toEqual(projectionA.payload.input);
+  expect(projectionB.payload.input).toEqual([]);
   expect(projectionA.degrades).toBe(false);
   expect(projectionB.degrades).toBe(true);
   expect(mismatchedProjection.degrades).toBe(false);
-  expect(select([candidateB, mismatchedRules, compatibleModel, candidateA], prepared).candidates).toEqual([
+  expect(select([candidateB, mismatchedRules, compatibleModel, candidateA], prepared)).toEqual([
     candidateA, mismatchedRules, compatibleModel, candidateB,
   ]);
 });
@@ -95,7 +79,7 @@ test('rewrites nested agent-message carriers and preserves foreign values', asyn
     targetFor(candidateA),
     carrierDomain('agent_message', 'content.1.encrypted_content'),
   );
-  const prepared = await analyzeOpenAIResponsesAffinity({
+  const prepared = await prepare({
     model: 'model',
     input: [{
       type: 'agent_message',
@@ -109,11 +93,11 @@ test('rewrites nested agent-message carriers and preserves foreign values', asyn
         { type: 'input_text', text: 'visible' },
       ],
     }],
-  }, codec);
+  });
 
-  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
-  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
-  expect(projectionA.materialize().input[0]).toMatchObject({
+  const projectionA = project(prepared, candidateA);
+  const projectionB = project(prepared, candidateB);
+  expect(projectionA.payload.input[0]).toMatchObject({
     id: 'amsg_client',
     content: [
       { type: 'encrypted_content', encrypted_content: 'first' },
@@ -121,7 +105,7 @@ test('rewrites nested agent-message carriers and preserves foreign values', asyn
       { type: 'input_text', text: 'visible' },
     ],
   });
-  expect(projectionB.materialize().input[0]).toMatchObject({
+  expect(projectionB.payload.input[0]).toMatchObject({
     id: 'amsg_client',
     content: [
       { type: 'encrypted_content', encrypted_content: 'foreign' },
@@ -147,7 +131,7 @@ test('drops reasoning with a routing-only carrier on a model switch and always r
   );
   const foreignReasoning = { type: 'reasoning' as const, id: 'rs_foreign', summary: [], encrypted_content: 'foreign' };
   const userMessage = { type: 'message', role: 'user', content: 'next question' } as const;
-  const prepared = await analyzeOpenAIResponsesAffinity({
+  const parsed = canonicalizeOpenAIResponsesPayload({
     model: 'model',
     input: [
       {
@@ -156,7 +140,7 @@ test('drops reasoning with a routing-only carrier on a model switch and always r
         content: null,
         status: 'completed',
         encrypted_content: syntheticItem,
-      } as unknown as CanonicalOpenAIResponsesPayload['input'][number],
+      },
       { type: 'reasoning', id: 'rs_existing', summary: [], encrypted_content: routingCarrier },
       {
         type: 'reasoning',
@@ -167,7 +151,9 @@ test('drops reasoning with a routing-only carrier on a model switch and always r
       foreignReasoning,
       userMessage,
     ],
-  }, codec);
+  });
+  if ('error' in parsed) throw new Error(parsed.error.message);
+  const prepared = await prepare(parsed);
 
   const compatibleItems = [
     { type: 'reasoning', id: 'rs_existing', summary: [] },
@@ -179,10 +165,10 @@ test('drops reasoning with a routing-only carrier on a model switch and always r
     foreignReasoning,
     userMessage,
   ];
-  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
-  const incompatible = acceptedAffinityEvaluation(prepared, incompatibleModel);
-  expect(projectionA.materialize().input).toEqual(compatibleItems);
-  expect(incompatible.materialize().input).toEqual([foreignReasoning, userMessage]);
+  const projectionA = project(prepared, candidateA);
+  const incompatible = project(prepared, incompatibleModel);
+  expect(projectionA.payload.input).toEqual(compatibleItems);
+  expect(incompatible.payload.input).toEqual([foreignReasoning, userMessage]);
   expect(projectionA.degrades).toBe(false);
   expect(incompatible.degrades).toBe(true);
 });
@@ -196,24 +182,24 @@ test('derives force routing from blob-less program state after the turn carrier'
     carrierDomain('reasoning', 'encrypted_content'),
     { syntheticItem: true },
   );
-  const prepared = await analyzeOpenAIResponsesAffinity({
+  const prepared = await prepare({
     model: 'model',
     input: [
       { type: 'reasoning', id: 'rs_prefix', summary: [], encrypted_content: carrier },
       { type: 'program_output', id: 'prog_out_client', call_id: 'call_1', result: 'done', status: 'completed' },
     ],
-  }, codec);
+  });
 
-  expect(prepared.requiredTargets).toEqual([targetFor(lastRoutedVariant)]);
-  expect(prepared.evaluateCandidate(candidateB)).toEqual({ kind: 'rejected' });
+  expect(prepared.analysis.requiredTargets).toEqual([targetFor(lastRoutedVariant)]);
+  expect(evaluateOpenAIResponsesCandidate(prepared.analysis, candidateB, prepared.payload)).toEqual({ kind: 'rejected' });
   const selection = select([firstVariant, lastRoutedVariant, candidateB], prepared);
-  expect(selection.candidates).toEqual([
+  expect(selection).toEqual([
     firstVariant,
     lastRoutedVariant,
   ]);
-  const firstEvaluation = acceptedAffinityEvaluation(prepared, firstVariant);
+  const firstEvaluation = project(prepared, firstVariant);
   expect(firstEvaluation.degrades).toBe(false);
-  expect(selection.payloadFor(firstVariant).input).toEqual([{
+  expect(firstEvaluation.payload.input).toEqual([{
     type: 'program_output',
     id: 'prog_out_client',
     call_id: 'call_1',
@@ -229,14 +215,14 @@ test('does not inherit force through a foreign program blob', async () => {
     carrierDomain('reasoning', 'encrypted_content'),
     { syntheticItem: true },
   );
-  const prepared = await analyzeOpenAIResponsesAffinity({
+  const prepared = await prepare({
     model: 'model',
     input: [
       { type: 'reasoning', id: 'rs_prefix', summary: [], encrypted_content: carrier },
       { type: 'program', id: 'prog_client', call_id: 'call_1', code: 'return 1', fingerprint: 'foreign' },
     ],
-  }, codec);
+  });
 
-  expect(prepared.requiredTargets).toEqual([]);
-  expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().input[0]).toMatchObject({ fingerprint: 'foreign' });
+  expect(prepared.analysis.requiredTargets).toEqual([]);
+  expect(project(prepared, candidateA).payload.input[0]).toMatchObject({ fingerprint: 'foreign' });
 });

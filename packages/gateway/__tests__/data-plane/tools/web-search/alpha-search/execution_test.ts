@@ -1,69 +1,67 @@
-import { expect, test, vi } from 'vitest';
+import { expect, test } from 'vitest';
 
-import { executeAlphaSearch } from '../../../../../src/data-plane/tools/web-search/alpha-search/execution.ts';
-import type { AlphaSearchDispatcher } from '../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts';
-import { assertEquals } from '@floway-dev/test-utils';
+import { facts, fixture } from './fixture.ts';
+import { jsonHttpResponse } from '../../../../../src/data-plane/pipeline/edge-http.ts';
+import type { GatewayHttpFacts } from '../../../../../src/data-plane/pipeline/host.ts';
+import type { GatewayServices } from '../../../../../src/data-plane/pipeline/services.ts';
+import { executeAlphaSearchSubRun } from '../../../../../src/data-plane/tools/web-search/alpha-search/execution.ts';
+import type { WebSearchCallIR } from '../../../../../src/data-plane/tools/web-search/operations.ts';
+import type { HttpResponseFacts } from '@floway-dev/http';
+import { Bytes, compose, defineEnding, type RunEvent, run } from '@floway-dev/pipeline';
 
-test('executeAlphaSearch preserves model-facing output without retyping opaque alpha results', async () => {
-  const call = vi.fn<AlphaSearchDispatcher>(async () => new Response(JSON.stringify({
+const execute = (http: HttpResponseFacts, args: Parameters<typeof executeAlphaSearchSubRun>[2]) => {
+  const test = fixture(() => http);
+  const events: RunEvent[] = [];
+  type Output = { readonly 'response.tool': WebSearchCallIR };
+  const pipeline = compose<GatewayHttpFacts, Output, GatewayServices>('test.web-search-tool', {
+    stages: [],
+    ending: defineEnding<GatewayHttpFacts, Output, {}, GatewayServices>({
+      name: 'executeSearch',
+      request: { needs: ['request.http'] },
+      return: { provides: ['response.tool'] },
+      execute: async (input, _into, env) => ({ 'response.tool': await executeAlphaSearchSubRun(env, input, args) }),
+    }),
+  });
+  const handle = run(pipeline, facts, { services: test.services, events: event => events.push(event), finalizationTimeoutMs: 100 });
+  return { ...test, ...handle, events };
+};
+
+const base: Parameters<typeof executeAlphaSearchSubRun>[2] = {
+  sessionId: 'session-search',
+  commands: { search_query: [{ q: 'Floway' }] },
+  settings: { external_web_access: true },
+  input: [{ type: 'message', role: 'user', content: 'Search' }],
+  action: { type: 'search', query: 'Floway' },
+};
+
+test('the tool sub-run bills its own request and preserves model-facing output and opaque upstream context', async () => {
+  const tool = execute(jsonHttpResponse(200, {
     encrypted_output: 'opaque',
     output: 'rendered output',
     results: [{ type: 'text_result', ref_id: 'turn0search0', url: 'https://example.com', title: 'Example', domain: 'example.com', future: true }],
-  }), { status: 200, headers: { 'content-type': 'application/json' } }));
-  const ir = await executeAlphaSearch({
-    dispatcher: call,
-    sessionId: 'session-search',
-    commands: { search_query: [{ q: 'Floway' }] },
-    settings: { external_web_access: true },
-    input: [{ type: 'message', role: 'user', content: 'Search' }],
-    action: { type: 'search', query: 'Floway' },
-    signal: undefined,
-  });
-
-  assertEquals(ir.outputText, 'rendered output');
-  assertEquals(ir.results, [{ type: 'text_result', url: '', title: 'OpenAI search output', snippet: 'rendered output' }]);
-  assertEquals(call.mock.calls[0]?.[0], {
-    id: 'session-search',
-    input: [{ type: 'message', role: 'user', content: 'Search' }],
-    commands: { search_query: [{ q: 'Floway' }] },
-    settings: { external_web_access: true },
-  });
+  }, 0), base);
+  const { 'response.tool': ir } = await tool.result;
+  expect(ir.outputText).toBe('rendered output');
+  expect(ir.results).toEqual([{ type: 'text_result', url: '', title: 'OpenAI search output', snippet: 'rendered output' }]);
+  expect(tool.receive.mock.calls[0]?.[0]['request.payload']).toEqual({ id: base.sessionId, input: base.input, commands: base.commands, settings: base.settings });
+  expect(await tool.done).toEqual({ ok: true });
+  expect(tool.events).toContainEqual(expect.objectContaining({ k: 'enter', edge: 'subrun', pipeline: 'alpha-search.ingress' }));
+  expect(tool.usage).toEqual([expect.objectContaining({ model: 'search-model', requests: 1 })]);
 });
 
-test('executeAlphaSearch exposes upstream failure without fallback', async () => {
-  await expect(executeAlphaSearch({
-    dispatcher: async () => new Response('unavailable', { status: 503 }),
-    sessionId: 'session-search',
-    commands: { search_query: [{ q: 'Floway' }] },
-    settings: {},
-    input: [],
-    action: { type: 'search', query: 'Floway' },
-    signal: undefined,
-  })).rejects.toThrow();
+test('the tool sub-run exposes the upstream failure without local fallback', async () => {
+  const tool = execute({ ...jsonHttpResponse(503, null, 0), body: Bytes.fromUtf8('unavailable') }, base);
+  await expect(tool.result).rejects.toThrow('OpenAI search upstream returned HTTP 503: unavailable');
+  expect(await tool.done).toMatchObject({ ok: false });
 });
 
-test('executeAlphaSearch returns a cascaded Floway capability error as exact model-facing output', async () => {
+test('the tool sub-run exposes a cascaded Floway capability error as exact model-facing output', async () => {
   const message = 'The configured web search provider does not implement OpenAI search feature `commands.image_query`.';
-  const ir = await executeAlphaSearch({
-    dispatcher: async () => new Response(JSON.stringify({
-      error: {
-        type: 'internal_error',
-        name: 'UnsupportedLocalWebSearchFeatureError',
-        message,
-      },
-    }), { status: 500, headers: { 'content-type': 'application/json' } }),
-    sessionId: 'session-search',
-    commands: { image_query: [{ q: 'cat' }] },
-    settings: {},
-    input: [],
-    action: { type: 'search', query: 'image_query' },
-    signal: undefined,
-  });
-  assertEquals(ir.outputText, message);
-  assertEquals(ir.results, [{
-    type: 'text_result',
-    url: '',
-    title: 'Unsupported search feature',
-    snippet: message,
-  }]);
+  const tool = execute(jsonHttpResponse(500, {
+    error: { type: 'internal_error', name: 'UnsupportedLocalWebSearchFeatureError', message },
+  }, 0), { ...base, commands: { image_query: [{ q: 'cat' }] }, input: [], action: { type: 'search', query: 'image_query' } });
+  const { 'response.tool': ir } = await tool.result;
+  expect(ir.outputText).toBe(message);
+  expect(ir.results).toEqual([{ type: 'text_result', url: '', title: 'Unsupported search feature', snippet: message }]);
+  expect(await tool.done).toEqual({ ok: true });
 });

@@ -69,8 +69,16 @@ export const workerdConfig = (root: string): unknown => ({
   r2_buckets: [{ binding: 'FILES', bucket_name: 'floway-local-demo' }],
   images: { binding: 'IMAGES' },
   kv_namespaces: [{ binding: 'KV', id: 'floway-local-demo' }],
-  durable_objects: { bindings: [{ name: 'EXECUTION_DO', class_name: 'ExecutionDO' }] },
-  migrations: [{ tag: 'v1', new_sqlite_classes: ['ExecutionDO'] }],
+  durable_objects: {
+    bindings: [
+      { name: 'EXECUTION_DO', class_name: 'ExecutionDO' },
+      { name: 'LOG_STREAM_DO', class_name: 'LogStreamDO' },
+    ],
+  },
+  migrations: [
+    { tag: 'v1', new_sqlite_classes: ['ExecutionDO'] },
+    { tag: 'v2', new_sqlite_classes: ['LogStreamDO'] },
+  ],
 });
 
 const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));

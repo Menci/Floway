@@ -267,7 +267,7 @@ const mergeWithOverride = (
 // Returns null when no target serves this alias on the gateway, OR when the
 // caller cannot reach any of the configured targets — the catalog should
 // never advertise an id the caller would 404 on. The alias itself stays
-// addressable through the request-time resolver in `providers/resolution.ts`,
+// addressable through the request directory,
 // which walks the alias's targets in configured order and surfaces a
 // regular model-missing 404 when no target has any kind-matching binding.
 // Callers (`synthesizeListedAliases`) filter the nulls out.
@@ -340,7 +340,7 @@ const sortAliases = (aliases: readonly ModelAliasRecord[]): ModelAliasRecord[] =
 export const synthesizeListedAliases = (input: ListedAliasInputs): InternalModel[] =>
   sortAliases(input.aliases)
     // `visibleInModelsList` is a LISTING flag only — the request-time
-    // resolver in `providers/resolution.ts` does not consult it, so a hidden
+    // directory does not consult this flag, so a hidden
     // alias stays reachable at dispatch. This lets an operator ship a
     // gateway id (e.g. a legacy client hardcodes it) without cluttering
     // the public catalog.

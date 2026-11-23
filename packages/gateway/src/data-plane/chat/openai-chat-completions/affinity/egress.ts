@@ -1,5 +1,5 @@
 import { isEncryptedReasoningDetail } from './reasoning-details.ts';
-import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
+import type { AffinityEgressOptions } from '../../shared/affinity/carrier.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { openaiChatCompletionsErrorPayloadMessage, type OpenAIChatCompletionsAssistantDeltaEx, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 

@@ -1,4 +1,4 @@
-import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
+import type { AffinityEgressOptions } from '../../shared/affinity/carrier.ts';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 

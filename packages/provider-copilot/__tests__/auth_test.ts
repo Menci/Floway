@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { copilotAuthedFetch } from '../src/auth.ts';
+import { modelInput, runCopilotPipeline } from './pipeline-fixture.ts';
+import type { CopilotAuth } from '../src/auth.ts';
 import { clearInProcessCopilotTokenCache } from '../src/index.ts';
+import { createCopilotPipelines } from '../src/pipelines.ts';
 import type { CopilotUpstreamState } from '../src/state.ts';
-import { initProviderRepo, directFetcher, type Fetcher, type UpstreamRecord, identityWrapUpstreamCall } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { isSecret, type RunEvent } from '@floway-dev/pipeline';
+import { initProviderRepo, directFetcher, type Fetcher, type UpstreamRecord, readHttpBody } from '@floway-dev/provider';
+import { assertEquals, jsonResponse, sseResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_copilot_test';
 const TOKEN_BASE_URL = 'https://api.individual.githubcopilot.com';
@@ -48,15 +51,36 @@ const installRepoAndClearCache = async () => {
   clearInProcessCopilotTokenCache();
 };
 
-const runAuthedFetch = async (fetcher: Fetcher, signal?: AbortSignal): Promise<Response> => {
-  await installRepoAndClearCache();
-  return await copilotAuthedFetch(
-    '/v1/messages',
-    { method: 'POST', body: '{}', signal },
-    { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
-    { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
-  );
+const defaultAuth = { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' };
+
+const runAuthedPipeline = async (auth: CopilotAuth, fetcher: Fetcher, signal?: AbortSignal) => {
+  const model = stubProviderModel({
+    id: 'claude-test',
+    endpoints: { anthropicMessages: {} },
+    providerData: { rawModels: [{ id: 'claude-test' }] },
+  });
+  const trace: RunEvent[] = [];
+  const handle = runCopilotPipeline(createCopilotPipelines(auth).anthropicMessages, {
+    ...modelInput(model, { messages: [], max_tokens: 32 }),
+    'request.anthropicBeta': [],
+  }, fetcher, { signal, events: event => trace.push(event) });
+  try {
+    const output = await handle.result;
+    const http = output['response.http'];
+    const body = await readHttpBody(http.body);
+    if (output['response.events'] !== undefined) await Array.fromAsync(output['response.events']);
+    return { status: http.status, headers: http.headers, body: body.utf8(), trace };
+  } finally {
+    await handle.done;
+  }
 };
+
+const runAuthedFetch = async (fetcher: Fetcher, signal?: AbortSignal) => {
+  await installRepoAndClearCache();
+  return await runAuthedPipeline(defaultAuth, fetcher, signal);
+};
+
+const messageStop = () => sseResponse('data: {"type":"message_stop"}\n\n');
 
 describe('Copilot token exchange retries', () => {
   afterEach(() => {
@@ -69,7 +93,7 @@ describe('Copilot token exchange retries', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     let tokenAttempts = 0;
     const fetcher: Fetcher = async url => {
-      if (new URL(url).pathname !== '/copilot_internal/v2/token') return jsonResponse({});
+      if (new URL(url).pathname !== '/copilot_internal/v2/token') return messageStop();
       tokenAttempts++;
       if (tokenAttempts < 4) throw new Error(`transient ${tokenAttempts}`);
       return tokenResponse();
@@ -116,14 +140,12 @@ describe('Copilot token exchange retries', () => {
     let tokenAttempts = 0;
     const fetcher: Fetcher = async () => {
       tokenAttempts++;
-      return new Response('status 429', { status: 429 });
+      return new Response('status 429', { status: 429, headers: { 'retry-after': '15' } });
     };
 
-    await expect(runAuthedFetch(fetcher)).rejects.toMatchObject({
-      name: 'CopilotTokenFetchError',
-      status: 429,
-      body: 'status 429',
-    });
+    const result = await runAuthedFetch(fetcher);
+    expect(result).toMatchObject({ status: 429, body: 'status 429' });
+    expect(result.headers).toContainEqual(['retry-after', '15']);
     expect(tokenAttempts).toBe(1);
   });
 
@@ -161,7 +183,7 @@ describe('Copilot token exchange retries', () => {
   });
 });
 
-test('copilotAuthedFetch exchanges a GHE credential on the tenant API and still follows token endpoints.api', async () => {
+test('Copilot exchanges a GHE credential on the tenant API and still follows token endpoints.api', async () => {
   await installRepoAndClearCache();
   const observed: string[] = [];
   await withMockedFetch(
@@ -176,15 +198,10 @@ test('copilotAuthedFetch exchanges a GHE credential on the tenant API and still 
           endpoints: { api: 'https://api.business.githubcopilot.com' },
         });
       }
-      return new Response('{}', { status: 200 });
+      return messageStop();
     },
     async () => {
-      await copilotAuthedFetch(
-        '/v1/messages',
-        { method: 'POST', body: '{}' },
-        { id: UPSTREAM_ID, githubHost: 'octocorp.ghe.com', githubToken: 'ghu_ghe' },
-        { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
-      );
+      await runAuthedPipeline({ ...defaultAuth, githubHost: 'octocorp.ghe.com', githubToken: 'ghu_ghe' }, directFetcher);
     },
   );
 
@@ -194,7 +211,7 @@ test('copilotAuthedFetch exchanges a GHE credential on the tenant API and still 
   ]);
 });
 
-test('copilotAuthedFetch reads a still-valid Copilot token from state_json instead of refreshing', async () => {
+test('Copilot reads a still-valid token from state_json instead of refreshing', async () => {
   await installRepoAndClearCache();
   let tokenFetches = 0;
   let upstreamFetches = 0;
@@ -213,20 +230,22 @@ test('copilotAuthedFetch reads a still-valid Copilot token from state_json inste
       }
       upstreamFetches++;
       authHeader = request.headers.get('authorization');
-      return new Response('{}', { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
+      return messageStop();
     },
     async () => {
-      const args = [
-        '/v1/messages',
-        { method: 'POST' as const, body: '{}' },
-        { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
-        { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
-      ] as const;
-      await copilotAuthedFetch(...args);
+      const { trace } = await runAuthedPipeline(defaultAuth, directFetcher);
+      const wire = trace.find(event => event.k === 'enter' && event.name === 'http');
+      if (wire?.k !== 'enter') throw new Error('Expected the Copilot HTTP terminal to run');
+      const http = wire.facts['request.http'];
+      if (typeof http !== 'object' || http === null || !('headers' in http) || !Array.isArray(http.headers)) {
+        throw new Error('Expected HTTP request facts');
+      }
+      const authorization = http.headers.find(entry => Array.isArray(entry) && entry[0] === 'authorization');
+      assertEquals(isSecret(authorization?.[1]), true);
       // Drop the in-process memo so the second call has to consult state_json;
       // if state_json hydration works, the token endpoint won't be hit again.
       clearInProcessCopilotTokenCache();
-      await copilotAuthedFetch(...args);
+      await runAuthedPipeline(defaultAuth, directFetcher);
     },
   );
 
@@ -240,7 +259,7 @@ test('copilotAuthedFetch reads a still-valid Copilot token from state_json inste
 // and the quota harvest writes this row on every data-plane response — was
 // either overwritten or cost the upstream its freshly minted token. The persist
 // is now a mutator over the state the repo hands it at write time.
-test('copilotAuthedFetch persists a minted token even when the row changed during the exchange', async () => {
+test('Copilot persists a minted token even when the row changed during the exchange', async () => {
   let state: unknown = { knownModels: null, copilotToken: null, quotaSnapshot: null };
   let exchanged = false;
   const stub: UpstreamRecord = {
@@ -290,15 +309,10 @@ test('copilotAuthedFetch persists a minted token even when the row changed durin
           endpoints: { api: TOKEN_BASE_URL },
         });
       }
-      return new Response('{}', { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
+      return messageStop();
     },
     async () => {
-      await copilotAuthedFetch(
-        '/v1/messages',
-        { method: 'POST', body: '{}' },
-        { id: UPSTREAM_ID, githubHost: 'github.com', githubToken: 'ghu_test' },
-        { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
-      );
+      await runAuthedPipeline(defaultAuth, directFetcher);
     },
   );
 

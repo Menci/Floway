@@ -67,9 +67,10 @@ const projectList = [
   './apps/web/tsconfig.json',
   './packages/agent-setup/tsconfig.json',
   './packages/agent-setup/tsconfig.scripts.json',
+  './packages/dump/tsconfig.json',
   './packages/gateway/tsconfig.json',
   './packages/http/tsconfig.json',
-  './packages/interceptor/tsconfig.json',
+  './packages/pipeline/tsconfig.json',
   './packages/platform/tsconfig.json',
   './packages/protocols/tsconfig.json',
   './packages/provider/tsconfig.json',
@@ -231,6 +232,26 @@ const config: Linter.Config[] = [
       ecmaVersion: 'latest',
       sourceType: 'module',
       parserOptions,
+    },
+  },
+  {
+    files: ['**/*.{ts,tsx,mjs}'],
+    ignores: [
+      'apps/platform-cloudflare/src/r2-file-store.ts',
+      'apps/platform-node/src/fs-file-store.ts',
+      'packages/dump/src/encoder.ts',
+      'packages/gateway/src/data-plane/chat/openai-responses/websocket.ts',
+      'packages/gateway/src/data-plane/shared/http-writer.ts',
+      'packages/provider/src/http-terminal.ts',
+    ],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [
+        ...RESTRICTED_IMPORT_PATTERNS,
+        {
+          group: ['@floway-dev/pipeline/bytes-view'],
+          message: 'Only transport writers and the dump encoder may borrow mutable byte views. Use Bytes.toUint8Array() for a copy.',
+        },
+      ] }],
     },
   },
   {

@@ -1,73 +1,41 @@
-import { expect, test, vi } from 'vitest';
+import { expect, test } from 'vitest';
 
-import type { InboundHeaderMatcher, ModelCandidate } from '@floway-dev/provider';
-import { assertEquals, assertExists, stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
+import { candidate, config, facts, fixture } from './fixture.ts';
+import { alphaSearchIngress } from '../../../../../src/data-plane/alpha-search/pipeline.ts';
+import { jsonHttpResponse } from '../../../../../src/data-plane/pipeline/edge-http.ts';
+import { resolveAlphaSearchRouteCandidate } from '../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts';
+import { Bytes, run, secret } from '@floway-dev/pipeline';
 
-let resolvedCandidate: ModelCandidate | undefined;
-vi.mock('../../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../../../../src/data-plane/providers/resolution.ts')>();
-  return {
-    ...original,
-    enumerateModelCandidates: vi.fn(async () => ({
-      candidates: resolvedCandidate === undefined ? [] : [resolvedCandidate],
-      sawModel: resolvedCandidate !== undefined,
-      failedUpstreams: [],
-    })),
-  };
+const success = () => jsonHttpResponse(200, {}, 0);
+
+test('Alpha Search reports a missing model for an empty permitted catalog', async () => {
+  const { services, enumerate } = fixture(success, { candidates: [] });
+  await expect(resolveAlphaSearchRouteCandidate(services.providers, facts, config)).resolves.toBeUndefined();
+  expect(enumerate).toHaveBeenCalledWith(expect.objectContaining({ 'request.route.upstreamIds': ['search-upstream'], 'request.route.randomizeUpstreams': false }), 'search-model', 'chat');
 });
 
-const { AlphaSearchModelNotFoundError, resolveAlphaSearchDispatcher } = await import('../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts');
-
-const context: Parameters<typeof resolveAlphaSearchDispatcher>[0] = {
-  config: { upstreamId: 'search-upstream', model: 'search-model' },
-  subject: { id: 1, username: 'admin', passwordHash: null, isAdmin: true, createdAt: '', deletedAt: null },
-  upstreamIds: null,
-  scheduler: promise => { void promise; },
-  runtimeLocation: 'TEST',
-};
-
-const dispatcherFor = async (kind: 'chatgpt' | 'custom', inboundHeaderAllowlist: readonly InboundHeaderMatcher[] = []) => {
-  let observedHeaders: Headers | undefined;
-  const base = stubModelCandidate();
-  const provider = {
-    ...base.provider,
-    upstreamId: context.config.upstreamId,
-    kind,
-    inboundHeaderAllowlist,
-    instance: stubProvider({
-      callAlphaSearch: async (_model, _body, _signal, opts) => {
-        observedHeaders = opts.headers;
-        return { http: new Response('{}'), modelKey: 'search-model' };
-      },
-    }),
-  };
-  resolvedCandidate = stubModelCandidate({ provider });
-  const dispatcher = await resolveAlphaSearchDispatcher(context);
-  return { dispatcher, observedHeaders: () => observedHeaders };
-};
-
-test('Alpha Search reports a missing model when the selection has no permitted candidate', async () => {
-  resolvedCandidate = undefined;
-  await expect(resolveAlphaSearchDispatcher(context)).rejects.toBeInstanceOf(AlphaSearchModelNotFoundError);
+test('Alpha Search hides a configured upstream outside the API-key scope', async () => {
+  const { services, enumerate } = fixture(success);
+  await expect(resolveAlphaSearchRouteCandidate(services.providers, { ...facts, 'request.route.upstreamIds': [] }, config)).resolves.toBeUndefined();
+  expect(enumerate).not.toHaveBeenCalled();
 });
 
-test('Alpha Search rejects unsupported providers as configuration failures', async () => {
-  const candidate = stubModelCandidate();
-  resolvedCandidate = { ...candidate, provider: { ...candidate.provider, upstreamId: context.config.upstreamId, kind: 'copilot' } };
-  await expect(resolveAlphaSearchDispatcher(context)).rejects.toThrow();
+test('Alpha Search rejects providers without the operation as configuration failures', async () => {
+  const { services } = fixture(success, { candidates: [candidate], unsupported: true });
+  await expect(resolveAlphaSearchRouteCandidate(services.providers, facts, config)).rejects.toThrow('Selected upstream does not support OpenAI search passthrough');
 });
 
-test('ChatGPT Alpha Search receives only its declared turn metadata', async () => {
-  const { dispatcher, observedHeaders } = await dispatcherFor('chatgpt', ['x-codex-turn-metadata']);
-  await dispatcher({}, undefined, new Headers({
-    authorization: 'Bearer secret',
-    'x-codex-turn-metadata': '{"turn_id":"turn-1"}',
-    'x-debug': 'discard',
-  }));
-
-  const headers = observedHeaders();
-  assertExists(headers);
-  assertEquals(Object.fromEntries(headers), {
-    'x-codex-turn-metadata': '{"turn_id":"turn-1"}',
-  });
+test('an Alpha Search upstream receives only its declared turn metadata', async () => {
+  const { receive, services } = fixture(success);
+  const handle = run(alphaSearchIngress, {
+    ...facts,
+    'request.http': {
+      ...facts['request.http'],
+      headers: [['authorization', secret('Bearer secret')], ['x-codex-turn-metadata', '{"turn_id":"turn-1"}'], ['x-debug', 'discard'], ['content-type', 'application/json']],
+      body: Bytes.fromUtf8('{}'),
+    },
+  }, { services, finalizationTimeoutMs: 100 });
+  expect((await handle.result)['response.http'].status).toBe(200);
+  expect(receive.mock.calls[0]?.[0]['request.headers']).toEqual([['x-codex-turn-metadata', '{"turn_id":"turn-1"}']]);
+  expect(await handle.done).toEqual({ ok: true });
 });

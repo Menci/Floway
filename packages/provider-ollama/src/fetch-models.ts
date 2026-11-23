@@ -20,7 +20,7 @@
 
 import type { OllamaUpstreamConfig } from './config.ts';
 import { ollamaFetchShow, ollamaFetchTags } from './fetch.ts';
-import { discardUpstreamResponse, fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall, jsonRequestBody } from '@floway-dev/provider';
+import { discardUpstreamResponse, fetchUpstreamModels, type Fetcher, jsonRequestBody } from '@floway-dev/provider';
 
 export interface OllamaRawModel {
   // The slug Ollama uses everywhere (e.g. `gpt-oss:120b`, `deepseek-v4-flash`,
@@ -118,7 +118,7 @@ const fetchShowForTag = async (
   const response = await ollamaFetchShow(
     config,
     { method: 'POST', body: jsonRequestBody({ name: tag.name }) },
-    { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
+    fetcher,
   );
   // A tag whose /api/show fails is skipped rather than failing the catalog, so
   // this is the one path that walks away from a response it asked for.
@@ -142,7 +142,7 @@ export const fetchOllamaCatalog = async (config: OllamaUpstreamConfig, fetcher: 
   // provider's catalog fetch produces, which the control-plane and persisted cache
   // both branch on.
   const tags = await fetchUpstreamModels(
-    () => ollamaFetchTags(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
+    () => ollamaFetchTags(config, { method: 'GET' }, fetcher),
     parseTagsResponse,
   );
   // /api/show fan-out stays outside the scaffold: `allSettled` already drops

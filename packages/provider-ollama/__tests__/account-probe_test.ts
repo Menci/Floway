@@ -1,12 +1,13 @@
 import { test } from 'vitest';
 
+import { callOllama, ollamaInput } from './pipeline-fixture.ts';
 import { CREDIT_BALANCE, USAGE_TOTALS } from './usage-fixture.ts';
 import { OLLAMA_ACCOUNT_PROBE_MIN_INTERVAL_MS, fetchOllamaAccount, refreshOllamaAccount } from '../src/account-probe.ts';
 import { assertOllamaUpstreamRecord } from '../src/config.ts';
 import { createOllamaProvider } from '../src/provider.ts';
 import { readOllamaUpstreamState } from '../src/state.ts';
 import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, noopUpstreamCallOptions, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_ollama_account';
 
@@ -101,7 +102,6 @@ test('the account slot resolves a race by read time', async () => {
 // Drives the provider so the arming decision is exercised where it is made.
 const callChat = async (record: UpstreamRecord, onCall: (pathname: string) => void): Promise<void> => {
   const provider = createOllamaProvider(record);
-  const pending: Promise<unknown>[] = [];
   await withMockedFetch(
     request => {
       const { pathname } = new URL(request.url);
@@ -112,13 +112,10 @@ const callChat = async (record: UpstreamRecord, onCall: (pathname: string) => vo
       return new Response('data: [DONE]\n\n', { status: 200, headers: { 'content-type': 'text/event-stream' } });
     },
     async () => {
-      await provider.instance.callOpenAIChatCompletions(
-        stubProviderModel({ providerData: 'gpt-oss:120b' }),
-        { messages: [] },
-        undefined,
-        noopUpstreamCallOptions({ waitUntil: promise => { pending.push(promise); } }),
+      await callOllama(
+        provider.pipelines.openaiChatCompletions,
+        ollamaInput(stubProviderModel({ upstreamModelId: 'gpt-oss:120b' }), { messages: [] }),
       );
-      await Promise.all(pending);
     },
   );
 };

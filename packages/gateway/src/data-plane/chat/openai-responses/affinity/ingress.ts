@@ -1,19 +1,15 @@
+import type { RouteCandidate } from '../../../pipeline/services.ts';
+import { type AffinityCodec, type AffinityIdentity, affinityIdentityOf, type DecodedAffinityBlob } from '../../shared/affinity/carrier.ts';
 import {
-  type AffinityCodec,
-  type AffinityIdentity,
-  type AffinityRequestAnalysis,
-  affinityIdentityOf,
   candidateSatisfiesAffinityIdentity,
-  type DecodedAffinityBlob,
-  defineAffinityRequest,
   isIncompatibleAffinityProjection,
   type OptionalAffinityBlobProjection,
   projectOptionalAffinityBlob,
   projectRequiredAffinityBlob,
-} from '../../shared/affinity/index.ts';
-import { isOpenAIResponsesCompactShimItem } from '../interceptors/compact-shim.ts';
+  uniqueRequiredAffinityTargets,
+} from '../../shared/affinity/selection.ts';
+import { isOpenAIResponsesCompactShimItem } from '../compact-payload.ts';
 import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
-import type { ModelCandidate } from '@floway-dev/provider';
 
 interface OpenAIResponsesBlobLocation {
   readonly itemIndex: number;
@@ -34,7 +30,7 @@ interface OpenAIResponsesItemAnalysis {
   readonly inheritedRequiredTarget?: AffinityIdentity;
 }
 
-interface OpenAIResponsesRequestAnalysis {
+export interface OpenAIResponsesRequestAnalysis {
   readonly requiredTargets: readonly AffinityIdentity[];
   readonly items: readonly OpenAIResponsesItemAnalysis[];
 }
@@ -61,7 +57,7 @@ const blobRequiresOriginalTarget = (item: CanonicalOpenAIResponsesInputItem, dec
 
 const opaqueBlobLocations = async (
   items: readonly CanonicalOpenAIResponsesInputItem[],
-  codec: AffinityCodec,
+  codec: Pick<AffinityCodec, 'unwrap'>,
 ): Promise<OpenAIResponsesBlobLocation[]> => {
   const locations: OpenAIResponsesBlobLocation[] = [];
   for (const [itemIndex, item] of items.entries()) {
@@ -132,7 +128,7 @@ const analyzeOpenAIResponsesRequest = (
     });
   }
 
-  return { requiredTargets, items: itemAnalyses };
+  return { requiredTargets: uniqueRequiredAffinityTargets(requiredTargets), items: itemAnalyses };
 };
 
 const materializeOpenAIResponsesPayload = (
@@ -172,14 +168,14 @@ const materializeOpenAIResponsesPayload = (
   return { ...payload, input };
 };
 
-const evaluateOpenAIResponsesCandidate = (
-  payload: CanonicalOpenAIResponsesPayload,
+const planOpenAIResponsesCandidate = (
   analysis: OpenAIResponsesRequestAnalysis,
-  candidate: ModelCandidate,
+  candidate: RouteCandidate,
 ) => {
   const unsatisfiedTargets: AffinityIdentity[] = [];
   const projectionsByItem = new Map<number, readonly OpenAIResponsesBlobCandidateProjection[] | null>();
   let degrades = false;
+  const { upstreamId, modelId } = candidate;
 
   for (const item of analysis.items) {
     if (
@@ -216,24 +212,34 @@ const evaluateOpenAIResponsesCandidate = (
       if (item.inheritedRequiredTarget !== undefined) {
         const target = item.inheritedRequiredTarget;
         if (
-          candidate.provider.upstreamId !== target.upstreamId
-          || candidate.model.id !== target.modelId
+          upstreamId !== target.upstreamId
+          || modelId !== target.modelId
         ) return false;
       }
       return (projectionsByItem.get(item.itemIndex) ?? []).every(projection => projection.projection.preferred);
     }),
-    materialize: () => materializeOpenAIResponsesPayload(payload, projectionsByItem),
+    projectionsByItem,
   };
+};
+
+export const scoreOpenAIResponsesCandidate = (analysis: OpenAIResponsesRequestAnalysis, candidate: RouteCandidate) => {
+  const plan = planOpenAIResponsesCandidate(analysis, candidate);
+  return plan.kind === 'rejected' ? plan : { kind: plan.kind, degrades: plan.degrades, preferred: plan.preferred };
+};
+
+export const evaluateOpenAIResponsesCandidate = (
+  analysis: OpenAIResponsesRequestAnalysis,
+  candidate: RouteCandidate,
+  payload: CanonicalOpenAIResponsesPayload,
+) => {
+  const plan = planOpenAIResponsesCandidate(analysis, candidate);
+  if (plan.kind === 'rejected') return plan;
+  const { projectionsByItem, ...score } = plan;
+  return { ...score, payload: materializeOpenAIResponsesPayload(payload, projectionsByItem) };
 };
 
 export const analyzeOpenAIResponsesAffinity = async (
   payload: CanonicalOpenAIResponsesPayload,
-  codec: AffinityCodec,
-): Promise<AffinityRequestAnalysis<CanonicalOpenAIResponsesPayload>> => {
-  const locations = await opaqueBlobLocations(payload.input, codec);
-  const analysis = analyzeOpenAIResponsesRequest(payload.input, locations);
-  return defineAffinityRequest(
-    analysis.requiredTargets,
-    candidate => evaluateOpenAIResponsesCandidate(payload, analysis, candidate),
-  );
-};
+  codec: Pick<AffinityCodec, 'unwrap'>,
+): Promise<OpenAIResponsesRequestAnalysis> =>
+  analyzeOpenAIResponsesRequest(payload.input, await opaqueBlobLocations(payload.input, codec));

@@ -5,6 +5,9 @@ import { tokenCountsFromUsage } from '../../../src/repo/usage-metrics.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { flushBackground } from '../../test-utils/background-tracker.ts';
+import { createDumpDecoder, projectWireExchanges } from '@floway-dev/dump';
+import { Bytes } from '@floway-dev/pipeline';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -161,8 +164,9 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
   assertEquals(performance[0]?.requests, 1);
   assertEquals(performance[0]?.errorsNoOutput, 0);
 
+  await flushBackground();
   assertEquals(dumpStubs.stored.length, 1);
-  const dump = dumpStubs.stored[0]!.record;
+  const dump = dumpStubs.stored[0]!;
   assertEquals(dump.meta.path, '/v1/completions');
   assertEquals(dump.meta.status, 200);
   assertEquals(dump.meta.model, 'davinci-002');
@@ -170,7 +174,9 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
   assertEquals(dump.meta.outputTokens, 2);
   // Non-streaming: the upstream sent a one-shot JSON, so the dump
   // captures the bytes (not a frame log).
-  assertEquals(dump.response.body.type, 'bytes');
+  const decoder = createDumpDecoder();
+  decoder.push(dump.artifact);
+  assertEquals(projectWireExchanges(decoder.finish()).downstreamResponse?.body instanceof Bytes, true);
 });
 
 test('/v1/completions streaming strips the unrequested usage chunk yet records usage and a frame-log dump', async () => {
@@ -206,27 +212,19 @@ test('/v1/completions streaming strips the unrequested usage chunk yet records u
   assertEquals(performance[0]?.requests, 1);
   assertEquals(performance[0]?.errorsNoOutput, 0);
 
+  await flushBackground();
   assertEquals(dumpStubs.stored.length, 1);
-  const dump = dumpStubs.stored[0]!.record;
+  const dump = dumpStubs.stored[0]!;
   assertEquals(dump.meta.path, '/v1/completions');
   assertEquals(dump.meta.status, 200);
   assertEquals(dump.meta.model, 'davinci-002');
   assertEquals(dump.meta.inputTokens, 4);
   assertEquals(dump.meta.outputTokens, 2);
-  // Streaming: dump stores the protocol frames the gateway saw from
-  // upstream BEFORE transformFrame ran. The fixture stream emits two
-  // content events, one usage-only event (which the client did not opt
-  // into and so it was stripped from the forwarded stream), and a done
-  // terminator.
-  assertEquals(dump.response.body.type, 'stream');
-  if (dump.response.body.type === 'stream') {
-    const frames = dump.response.body.events.map(e => e.frame);
-    // Upstream's usage chunk is preserved in the dump even though it was
-    // stripped from the client-facing stream.
-    const usageFrame = frames[2];
-    if (usageFrame?.type === 'event') {
-      const event = usageFrame.event as { choices: unknown[]; usage: { prompt_tokens: number } };
-      assertEquals(event.usage.prompt_tokens, 4);
-    } else throw new Error('expected the usage event frame');
-  }
+  const decoder = createDumpDecoder();
+  decoder.push(dump.artifact);
+  const exchange = projectWireExchanges(decoder.finish());
+  const decodedFrames = (frames: readonly { readonly value: unknown }[] | undefined) =>
+    (frames ?? []).map(({ value }) => value instanceof Bytes ? value.utf8() : '').join('');
+  assertEquals(decodedFrames(exchange.downstreamResponse?.stream?.frames).includes('"usage"'), false);
+  assertEquals(decodedFrames(exchange.upstreamExchanges[0]?.response.stream?.frames).includes('"prompt_tokens":4'), true);
 });

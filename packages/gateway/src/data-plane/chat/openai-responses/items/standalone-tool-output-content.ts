@@ -1,4 +1,4 @@
-import { throwChatServeFailure } from '../../shared/errors.ts';
+import { ResponsesInputError } from '../errors.ts';
 import type { OpenAIResponsesFunctionCallOutputItem, OpenAIResponsesInputContent } from '@floway-dev/protocols/openai-responses';
 
 // Codex renders the same additional context as a user message wrapped in
@@ -13,7 +13,7 @@ export const standaloneToolOutputContent = (
   // Matches the OpenAI Responses rejection of a nameless standalone output.
   // https://github.com/parthg1901/windlass/blob/758b8e94ac4d464a7bb62d41a13bd639de744ec3/docs/reference/responses-api.md?plain=1#L548-L549
   if (typeof item.name !== 'string' || item.name === '') {
-    return throwChatServeFailure({ kind: 'invalid-input', message: 'A function call output without a call_id requires a name.', param: `input[${index}].name` });
+    throw new ResponsesInputError({ message: 'A function call output without a call_id requires a name.', param: `input[${index}].name` });
   }
   const open = `<external_${item.name}>`;
   const close = `</external_${item.name}>`;
@@ -23,7 +23,7 @@ export const standaloneToolOutputContent = (
   for (const part of item.output) {
     const last = content.at(-1);
     if (part.type === 'input_text' && last?.type === 'input_text') last.text += part.text;
-    else content.push(part);
+    else content.push(part.type === 'input_text' ? { ...part } : part);
   }
   const last = content.at(-1);
   if (last?.type === 'input_text') last.text += close;

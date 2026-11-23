@@ -1,14 +1,8 @@
 import type { z } from 'zod';
 
-import {
-  dumpBodyDescriptorSchema,
-  dumpHeadersSchema,
-  persistedDumpMetadataSchema,
-  dumpStreamEventsSchema,
-} from './schemas.ts';
-import type { DumpMetadata, DumpStreamEvent } from './types.ts';
+import { persistedDumpMetadataSchema } from './schemas.ts';
+import type { DumpMetadata } from './types.ts';
 
-export type DumpBodyDescriptor = z.infer<typeof dumpBodyDescriptorSchema>;
 type PersistedDumpMetadata = z.infer<typeof persistedDumpMetadataSchema>;
 
 const parseJson = <T>(text: string, context: string, schema: z.ZodType<T>): T => {
@@ -36,21 +30,3 @@ export const encodePersistedDumpMetadata = (metadata: DumpMetadata, context: str
 
 export const decodePersistedDumpMetadata = (text: string, context: string): PersistedDumpMetadata =>
   parseJson(text, context, persistedDumpMetadataSchema);
-
-export const encodeDumpHeaders = (headers: Array<[string, string]>, context: string): string =>
-  encodeJson(headers, context, dumpHeadersSchema);
-
-export const decodeDumpHeaders = (text: string, context: string): Array<[string, string]> =>
-  parseJson(text, context, dumpHeadersSchema);
-
-export const encodeDumpBodyDescriptor = (descriptor: DumpBodyDescriptor, context: string): string =>
-  encodeJson(descriptor, context, dumpBodyDescriptorSchema);
-
-export const decodeDumpBodyDescriptor = (text: string, context: string): DumpBodyDescriptor =>
-  parseJson(text, context, dumpBodyDescriptorSchema);
-
-export const encodeDumpStreamEvents = (events: DumpStreamEvent[], context: string): string =>
-  encodeJson(events, context, dumpStreamEventsSchema);
-
-export const decodeDumpStreamEvents = (text: string, context: string): DumpStreamEvent[] =>
-  parseJson(text, context, dumpStreamEventsSchema);

@@ -1,10 +1,9 @@
 import { test } from 'vitest';
 
-import { assertOllamaUpstreamRecord } from '../src/config.ts';
-import { ollamaFetchOpenAIChatCompletions } from '../src/fetch.ts';
+import { callOllama, ollamaInput } from './pipeline-fixture.ts';
+import { createOllamaProvider } from '../src/provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
-import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, sseResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 const baseRecord: UpstreamRecord = {
   id: 'up_ollama_test',
@@ -29,7 +28,7 @@ const baseRecord: UpstreamRecord = {
 };
 
 test('Authorization header is omitted entirely when apiKey is absent (local daemon)', async () => {
-  const { config } = assertOllamaUpstreamRecord({
+  const { pipelines } = createOllamaProvider({
     ...baseRecord,
     config: { baseUrl: 'http://127.0.0.1:11434' },
   });
@@ -37,10 +36,10 @@ test('Authorization header is omitted entirely when apiKey is absent (local daem
   await withMockedFetch(
     request => {
       auth = request.headers.get('Authorization');
-      return new Response('{}', { status: 200 });
+      return sseResponse();
     },
     async () => {
-      await ollamaFetchOpenAIChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await callOllama(pipelines.openaiChatCompletions, ollamaInput(stubProviderModel(), { messages: [] }));
     },
   );
   assertEquals(auth, null);

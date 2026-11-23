@@ -1,35 +1,25 @@
-import { describe, expect, it } from 'vitest';
+import { expect, test } from 'vitest';
 
-import { relayFetchedResponse } from '../../../../../src/data-plane/tools/web-search/alpha-search/relay-response.ts';
+import { forwardHttp } from '../../../../../src/data-plane/pipeline/non-chat.ts';
+import { writeHttpResponse } from '../../../../../src/data-plane/shared/http-writer.ts';
+import { wrapSensitiveHeaderEntries } from '@floway-dev/http';
+import { Bytes } from '@floway-dev/pipeline';
 
-describe('relayFetchedResponse', () => {
-  it('keeps decoded bytes and representation-safe upstream headers', async () => {
-    const body = JSON.stringify({ output: 'decoded' });
-    const upstream = new Response(body, {
-      status: 202,
-      statusText: 'Accepted upstream',
-      headers: {
-        connection: 'close',
-        'content-encoding': 'gzip',
-        'content-length': '999',
-        'content-type': 'application/json',
-        'set-cookie': 'session=upstream-secret',
-        'transfer-encoding': 'chunked',
-        'x-oai-request-id': 'req_search_1',
-      },
-    });
-
-    const relayed = relayFetchedResponse(upstream);
-
-    expect(relayed.status).toBe(202);
-    expect(relayed.statusText).toBe('Accepted upstream');
-    expect(await relayed.text()).toBe(body);
-    expect(relayed.headers.get('content-type')).toBe('application/json');
-    expect(relayed.headers.get('x-oai-request-id')).toBe('req_search_1');
-    expect(relayed.headers.get('connection')).toBeNull();
-    expect(relayed.headers.get('content-encoding')).toBeNull();
-    expect(relayed.headers.get('content-length')).toBeNull();
-    expect(relayed.headers.get('set-cookie')).toBeNull();
-    expect(relayed.headers.get('transfer-encoding')).toBeNull();
-  });
+test('Alpha Search relays decoded bytes and representation-safe upstream headers', async () => {
+  const body = JSON.stringify({ output: 'decoded' });
+  const response = writeHttpResponse(forwardHttp({
+    status: 202,
+    statusText: 'Accepted upstream',
+    timing: { startedAt: 0, headersAt: 1 },
+    body: Bytes.fromUtf8(body),
+    headers: wrapSensitiveHeaderEntries([
+      ['connection', 'close'], ['content-encoding', 'gzip'], ['content-length', '999'],
+      ['content-type', 'application/json'], ['set-cookie', 'session=upstream-secret'],
+      ['transfer-encoding', 'chunked'], ['x-oai-request-id', 'req_search_1'],
+    ]),
+  }, null));
+  expect(response.status).toBe(202);
+  expect(response.statusText).toBe('Accepted upstream');
+  expect(await response.text()).toBe(body);
+  expect([...response.headers]).toEqual([['content-type', 'application/json'], ['x-oai-request-id', 'req_search_1']]);
 });

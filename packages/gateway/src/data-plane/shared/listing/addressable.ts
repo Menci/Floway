@@ -3,7 +3,7 @@
 // addressable-but-not-listed surface contributed by `modelPrefix.addressable`
 // alternates. Listing-side availability checks (this module's alias helper,
 // codex catalog) must see the same set the request-time resolver routes
-// through (the per-upstream walk inside `enumerateRealModelCandidates`);
+// through (per-upstream model matching in the request directory);
 // recomputing it once here gives every consumer one consistent answer.
 //
 // Each entry carries the merged `InternalModel` the addressable id will

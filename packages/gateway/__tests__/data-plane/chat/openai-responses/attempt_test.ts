@@ -1,593 +1,274 @@
-import { test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
-import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy } from './test-policy.ts';
-import { analyzeOpenAIResponsesAffinity } from '../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
-import { openaiResponsesAttempt } from '../../../../src/data-plane/chat/openai-responses/attempt.ts';
-import { withOpenAIResponsesCompactShim } from '../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
-import { openaiResponsesInterceptors } from '../../../../src/data-plane/chat/openai-responses/interceptors/index.ts';
-import type { OpenAIResponsesInterceptor } from '../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
-import { createOpenAIResponsesHttpStore } from '../../../../src/data-plane/chat/openai-responses/items/store.ts';
-import type { ChatGatewayCtx } from '../../../../src/data-plane/chat/shared/gateway-ctx.ts';
+import { http, providerResponses, responsesFixture, unusedBody, upstream } from './fixture.ts';
+import { createAnthropicMessagesBody } from '../../../../src/data-plane/chat/anthropic-messages/body.ts';
+import { anthropicMessagesEgress } from '../../../../src/data-plane/chat/anthropic-messages/egress.ts';
+import { createOpenAIChatCompletionsBody } from '../../../../src/data-plane/chat/openai-chat-completions/body.ts';
+import { openaiChatCompletionsEgress } from '../../../../src/data-plane/chat/openai-chat-completions/egress.ts';
+import { syntheticEventsFromResult } from '../../../../src/data-plane/chat/openai-responses/items/output.ts';
 import { SidecarDomain } from '../../../../src/data-plane/chat/shared/sidecar-codec.ts';
-import { initRepo } from '../../../../src/repo/index.ts';
+import { readHttpBytes } from '../../../../src/data-plane/pipeline/non-chat.ts';
 import { encodeBase64UrlJson } from '../../../../src/shared/base64url-json.ts';
-import { InMemoryRepo } from '../../../repo/memory.ts';
-import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import { acceptedAffinityEvaluation } from '../shared/affinity/helpers.ts';
+import { generateProvider } from '../anthropic-messages/fixture.ts';
+import { compose, defineEnding, type StageEnv } from '@floway-dev/pipeline';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayloadEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions, type FlagId } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
+import type { FlagId, ProviderInput, ProviderResponsesInput, ProviderResponsesOutput, ProviderStreamOutput } from '@floway-dev/provider';
 
-const API_KEY_ID = 'key_attempt_test';
-
-const makeGatewayCtx = (store?: ChatGatewayCtx['store']) =>
-  mockChatGatewayCtx({ apiKeyId: API_KEY_ID, wantsStream: true, ...(store ? { store } : {}) });
-
-const makePayload = (overrides: Partial<CanonicalOpenAIResponsesPayload> = {}): CanonicalOpenAIResponsesPayload => ({
-  model: 'test-model',
-  input: [{ type: 'message', role: 'user', content: 'hello' }],
-  ...overrides,
+const chatCompletions = createOpenAIChatCompletionsBody({
+  egress: openaiChatCompletionsEgress,
+  messages: unusedBody('anthropicMessages'),
+  responses: unusedBody('openaiResponses'),
 });
-
-const makeOpenAIResponsesResult = (id = 'resp_test'): OpenAIResponsesResultEx => ({
-  id,
-  object: 'response',
-  model: 'test-model',
-  status: 'completed',
-  output: [{
-    type: 'message',
-    id: 'msg_1',
-    role: 'assistant',
-    status: 'completed',
-    content: [{ type: 'output_text', text: 'hi', annotations: [] }],
-  }],
-  error: null,
-  incomplete_details: null,
+const messages = createAnthropicMessagesBody({
+  egress: anthropicMessagesEgress,
+  responses: unusedBody('openaiResponses'),
+  chatCompletions: unusedBody('openaiChatCompletions'),
 });
+type ChatInput = ProviderInput<Omit<OpenAIChatCompletionsPayloadEx, 'model'>>;
+type ChatOutput = ProviderStreamOutput<OpenAIChatCompletionsStreamEvent>;
 
-const makeProviderEvents = async function* (events: readonly OpenAIResponsesStreamEventEx[]): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-  for (const event of events) yield eventFrame(event);
+const textChunks = async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
+  const base = { id: 'chat_test', object: 'chat.completion.chunk' as const, model: 'test-model', created: 0 };
+  yield eventFrame({ ...base, choices: [{ index: 0, delta: { role: 'assistant', content: 'hello' }, finish_reason: null }] });
+  yield eventFrame({ ...base, choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] });
   yield doneFrame();
 };
 
-const makeCandidate = (
-  callOpenAIResponses: (model: ProviderModel, body: Omit<CanonicalOpenAIResponsesPayload, 'model'>, action: OpenAIResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => Promise<ProviderOpenAIResponsesResult>,
-  enabledFlags: ReadonlySet<FlagId> = new Set<FlagId>(),
-): ModelCandidate => {
-  const provider = stubProvider({ callOpenAIResponses });
-  const upstream = 'up_test';
-  return {
-    provider: {
-      upstreamId: upstream,
-      kind: 'custom',
-      name: upstream,
-      inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [],
-      modelPrefix: null,
-      modelsCache: null,
-      instance: provider,
-    },
-    model: stubInternalModel({
-      providerModels: { [upstream]: stubProviderModel({ enabledFlags }) },
-    }, upstream),
-    fetcher: directFetcher,
-  };
-};
-
-const collectEvents = async (events: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>): Promise<OpenAIResponsesStreamEventEx[]> => {
-  const out: OpenAIResponsesStreamEventEx[] = [];
-  for await (const frame of events) {
-    if (frame.type === 'event') out.push(frame.event);
-  }
-  return out;
-};
-
-const installRepo = () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  void repo.apiKeys.save({
-    id: API_KEY_ID, userId: 1, name: 'OpenAI Responses test key', key: 'raw-responses-test',
-    serverSecret: '99'.repeat(32), createdAt: '2026-01-01T00:00:00.000Z',
-    upstreamIds: null, randomizeUpstreams: false, deletedAt: null, dumpRetentionSeconds: null,
-    openaiResponsesRetentionSeconds: TEST_OPENAI_RESPONSES_RETENTION_SECONDS,
-  });
-  return repo;
-};
-
-test('generate isolates provider mutations with JSON-safe container cloning', async () => {
-  installRepo();
-  const metadata = JSON.parse('{"__proto__":{"retained":true},"nested":{"value":"source"}}') as Record<string, unknown>;
-  const payload = makePayload({ metadata: metadata as unknown as Record<string, string> });
-  const sourceItem = payload.input[0];
-  const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
-    const clonedMetadata = body.metadata as { nested: { value: string } } & Record<string, unknown>;
-    assert(Object.hasOwn(clonedMetadata, '__proto__'), 'clone lost the own __proto__ JSON field');
-    clonedMetadata.nested.value = 'provider';
-    (body.input[0] as { role: string }).role = 'assistant';
-    return {
-      action: 'generate',
-      ok: true,
-      events: makeProviderEvents([]),
-      modelKey: 'test-model-key',
-    };
-  });
-
-  await openaiResponsesAttempt.generate({
-    payload,
-    ctx: makeGatewayCtx(),
-    candidate: makeCandidate(callOpenAIResponses),
-    headers: new Headers(),
-  });
-
-  assertEquals((payload.metadata as unknown as { nested: { value: string } }).nested.value, 'source');
-  assertEquals((sourceItem as { role: string }).role, 'user');
-});
-
-test('generate sends an explicit null namespace for unresolved calls to previously declared namespace tools when flagged', async () => {
-  installRepo();
-  const tool = (name: string) => ({ type: 'function' as const, name });
-  const customTool = (name: string) => ({ type: 'custom' as const, name });
-  const namespace = (name: string, ...members: string[]) => ({ type: 'namespace' as const, name, description: name, tools: members.map(tool) });
-  const call = (name: string) => ({ type: 'function_call' as const, name, call_id: `call_${name}`, arguments: '{}', status: 'completed' as const });
-  const customCall = { type: 'custom_tool_call' as const, name: 'echo_text', call_id: 'call_custom_echo_text', input: 'sample' };
-  const functionCallForCustom = call(customCall.name);
-  const additionalTools = {
-    type: 'additional_tools' as const,
-    role: 'developer' as const,
-    tools: [
-      namespace('first', 'unique', 'ambiguous', 'before_declaration', 'flat_at_top', 'flat_custom_at_top', 'flat_in_history', 'qualified'),
-      namespace('second', 'ambiguous'),
-      { type: 'namespace' as const, name: 'custom_group', description: 'Custom tools', tools: [customTool(customCall.name)] },
-      tool('flat_in_history'),
-    ],
-  };
-  const searchOutput = { type: 'tool_search_output' as const, tools: [namespace('discovered', 'from_search')] };
-  const unique = call('unique');
-  const ambiguous = call('ambiguous');
-  const fromSearch = call('from_search');
-  const failedResult = { type: 'function_call_output' as const, call_id: unique.call_id, output: 'unsupported call: unique' };
-  const payload = makePayload({
-    tools: [tool('flat_at_top'), customTool('flat_custom_at_top'), namespace('top_level', 'top_level_only')],
-    input: [
-      call('before_declaration'), additionalTools, unique, failedResult, ambiguous, searchOutput, fromSearch,
-      call('unknown'), call('top_level_only'), call('flat_at_top'), call('flat_custom_at_top'), call('flat_in_history'),
-      customCall, functionCallForCustom,
-      { ...call('qualified'), namespace: 'first' },
-    ],
-  });
-  const providerCall = vi.fn(async (_model: ProviderModel, _body: Omit<CanonicalOpenAIResponsesPayload, 'model'>): Promise<ProviderOpenAIResponsesResult> => ({
-    action: 'generate', ok: true, events: makeProviderEvents([]), modelKey: 'test-model-key',
-  }));
-
-  const flagged = makeCandidate(providerCall, new Set(['openai-responses-null-unresolved-function-call-namespace']));
-  await openaiResponsesAttempt.generate({ payload, ctx: makeGatewayCtx(), candidate: flagged, headers: new Headers() });
-  await openaiResponsesAttempt.generate({ payload, ctx: makeGatewayCtx(), candidate: makeCandidate(providerCall), headers: new Headers() });
-
-  assertEquals(providerCall.mock.calls.length, 2);
-  assertEquals(providerCall.mock.calls[1][1].input, payload.input);
-  assertEquals(providerCall.mock.calls[0][1].input, [
-    call('before_declaration'), additionalTools, { ...unique, namespace: null }, failedResult,
-    { ...ambiguous, namespace: null }, searchOutput, { ...fromSearch, namespace: null },
-    call('unknown'), call('top_level_only'), call('flat_at_top'), call('flat_custom_at_top'), call('flat_in_history'),
-    customCall, { ...functionCallForCustom, namespace: null },
-    { ...call('qualified'), namespace: 'first' },
-  ]);
-  assert(!Object.hasOwn(unique, 'namespace'));
-});
-
-test('generate treats a translated OpenAI Responses payload as opaque to native affinity and state', async () => {
-  installRepo();
-  let observedBody: Omit<CanonicalOpenAIResponsesPayload, 'model'> | undefined;
-  const callOpenAIResponses = vi.fn(async (
-    _model: ProviderModel,
-    body: Omit<CanonicalOpenAIResponsesPayload, 'model'>,
-  ): Promise<ProviderOpenAIResponsesResult> => {
-    observedBody = body;
-    return {
-      action: 'generate',
-      ok: true,
-      events: makeProviderEvents([{
-        type: 'response.completed',
-        sequence_number: 0,
-        response: makeOpenAIResponsesResult(),
-      }]),
-      modelKey: 'test-model-key',
-      http: { status: 200, headers: new Headers() },
-    };
-  });
-  const candidate = makeCandidate(callOpenAIResponses);
-  const store = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), true);
-  const ctx = makeGatewayCtx(store);
-  const carrier = await ctx.affinity.codec.wrap(
-    undefined,
-    {
-      upstreamId: candidate.provider.upstreamId,
-      modelId: candidate.model.id,
-      opaqueBlobCompatibilityIdentity: { upstreamId: candidate.provider.upstreamId, key: candidate.model.id },
-    },
-    'openai-responses.reasoning.encrypted_content',
-  );
-  const unwrap = vi.spyOn(ctx.affinity.codec, 'unwrap');
-  const getStoredItem = vi.spyOn(store, 'getItemById');
-  const itemId = 'rs_source_edge';
-
-  const result = await openaiResponsesAttempt.generate({
-    payload: makePayload({
-      input: [{ type: 'reasoning', id: itemId, summary: [], encrypted_content: carrier }],
+const chatProvider = (respond: (facts: ChatInput, env: StageEnv) => AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>) =>
+  compose<ChatInput, ChatOutput, {}>('test.chat-completions', {
+    stages: [],
+    ending: defineEnding<ChatInput, ChatOutput>({
+      name: 'stubChatCompletions',
+      request: { needs: ['provider.model', 'request.headers', 'request.payload'] },
+      return: { provides: ['response.http', 'response.modelKey', 'response.events'] },
+      execute: async (facts, _into, env) => ({
+        ...http(),
+        'response.modelKey': 'native-chat',
+        'response.events': env.createStream({ label: 'stub Chat Completions events', iterate: () => respond(facts, env) }),
+      }),
     }),
-    ctx,
-    candidate,
-    headers: new Headers(),
   });
 
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-  assertEquals(unwrap.mock.calls.length, 0);
-  assertEquals(getStoredItem.mock.calls.length, 0);
-  assertEquals(observedBody?.input, [{ type: 'reasoning', id: itemId, summary: [], encrypted_content: carrier }]);
-});
-
-test('generate defers the role rewrite until after translation to OpenAI Chat Completions', async () => {
-  installRepo();
-  let observedBody: Omit<OpenAIChatCompletionsPayloadEx, 'model'> | undefined;
-  const callOpenAIChatCompletions = vi.fn(async (
-    _model: ProviderModel,
-    body: Omit<OpenAIChatCompletionsPayloadEx, 'model'>,
-  ): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
-    observedBody = body;
-    return {
-      ok: true,
-      events: (async function* () {
-        yield eventFrame<OpenAIChatCompletionsStreamEvent>({
-          id: 'chatcmpl_test',
-          object: 'chat.completion.chunk',
-          created: 0,
-          model: 'test-model',
-          choices: [{  index: 0, delta: { role: 'assistant' }, finish_reason: null }],
-        });
-        yield eventFrame<OpenAIChatCompletionsStreamEvent>({
-          id: 'chatcmpl_test',
-          object: 'chat.completion.chunk',
-          created: 0,
-          model: 'test-model',
-          choices: [{  index: 0, delta: { content: 'hi' }, finish_reason: null }],
-        });
-        yield eventFrame<OpenAIChatCompletionsStreamEvent>({
-          id: 'chatcmpl_test',
-          object: 'chat.completion.chunk',
-          created: 0,
-          model: 'test-model',
-          choices: [{  index: 0, delta: {}, finish_reason: 'stop' }],
-        });
-        yield doneFrame();
-      })(),
-      modelKey: 'test-model-key',
-      http: { status: 200, headers: new Headers() },
-    };
-  });
-  const upstream = 'up_chat';
+const chatFixture = (
+  respond: (facts: ChatInput, env: StageEnv) => AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
+  flags: readonly FlagId[] = [],
+) => {
+  const target = upstream('chat', { openaiChatCompletions: chatProvider(respond) }, flags);
   const endpoints = { openaiChatCompletions: {} };
-  const candidate: ModelCandidate = {
-    provider: {
-      upstreamId: upstream,
-      kind: 'custom',
-      name: upstream,
-      inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [],
-      modelPrefix: null,
-      modelsCache: null,
-      instance: stubProvider({ callOpenAIChatCompletions }),
-    },
-    model: stubInternalModel({
-      endpoints,
-      providerModels: {
-        [upstream]: stubProviderModel({
-          endpoints,
-          enabledFlags: new Set(['rewrite-system-to-developer']),
-        }),
-      },
-    }, upstream),
-    fetcher: directFetcher,
-  };
+  return responsesFixture([{
+    ...target,
+    candidate: { ...target.candidate, endpoints, providerModel: { ...target.candidate.providerModel, endpoints } },
+  }], undefined, { chatCompletions });
+};
 
-  const result = await openaiResponsesAttempt.generate({
-    payload: makePayload({
-      input: [
-        { type: 'message', role: 'system', content: 'base instructions' },
-        { type: 'message', role: 'user', content: 'hello' },
-        { type: 'message', role: 'system', content: 'inline instructions' },
-      ],
+const completed = (env: StageEnv): ProviderResponsesOutput => ({
+  ...http(),
+  'response.result': undefined,
+  'response.modelKey': 'native-responses',
+  'response.events': env.createStream({
+    label: 'native Responses events',
+    iterate: () => syntheticEventsFromResult({
+      id: 'resp_upstream', object: 'response', model: 'test-model', status: 'completed', output: [], error: null, incomplete_details: null,
     }),
-    ctx: makeGatewayCtx(createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), false)),
-    candidate,
-    headers: new Headers(),
-  });
+  }),
+});
 
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-  assertEquals(observedBody?.messages, [
+test('native provider request facts preserve own JSON property names and freeze nested data', async () => {
+  const metadata = JSON.parse('{"__proto__":{"retained":true},"nested":{"value":"source"}}') as Record<string, string>;
+  const source = { model: 'test-model', input: [{ type: 'message' as const, role: 'user' as const, content: 'hello' }], metadata };
+  const respond = vi.fn((facts: ProviderResponsesInput, env: StageEnv) => {
+    const body = facts['request.payload'];
+    expect(Object.hasOwn(body.metadata ?? {}, '__proto__')).toBe(true);
+    expect(Object.isFrozen(body.metadata?.nested)).toBe(true);
+    expect(Object.isFrozen(body.input[0])).toBe(true);
+    return completed(env);
+  });
+  const fixture = responsesFixture([upstream('responses', { openaiResponses: providerResponses(respond) })]);
+  const handle = fixture.request(source);
+  expect((await handle.result)['response.http'].status).toBe(200);
+  expect(await handle.done).toEqual({ ok: true });
+  expect(respond).toHaveBeenCalledTimes(1);
+  expect(source.metadata.nested).toEqual({ value: 'source' });
+  expect(source.input[0].role).toBe('user');
+});
+
+test('a translated source reaches the Responses body without opening storage or unwrapping native affinity', async () => {
+  const respond = vi.fn((_facts: ProviderResponsesInput, env: StageEnv) => completed(env));
+  const openStore = vi.fn(() => { throw new Error('Unexpected durable store access from a foreign source'); });
+  const target = upstream('responses', { openaiResponses: providerResponses(respond) });
+  const fixture = responsesFixture([target], openStore);
+  const codec = fixture.services.affinityCodec;
+  const carrier = await codec.wrap(undefined, {
+    upstreamId: target.candidate.upstreamId, modelId: target.candidate.modelId,
+    opaqueBlobCompatibilityIdentity: { upstreamId: target.candidate.upstreamId, key: target.candidate.modelId },
+  }, 'openai-responses.reasoning.encrypted_content');
+  const unwrap = vi.spyOn(codec, 'unwrap');
+  const input = [{ type: 'reasoning' as const, id: 'rs_source_edge', summary: [], encrypted_content: carrier }];
+  const handle = fixture.invokeBody({ model: 'test-model', input }, target.candidate);
+  const events = (await handle.result)['response.openaiResponses'];
+  if (events === undefined) throw new Error('Expected Responses events');
+  for await (const event of events) void event;
+  expect(await handle.done).toEqual({ ok: true });
+  expect(openStore).toHaveBeenCalledTimes(0);
+  expect(unwrap).toHaveBeenCalledTimes(0);
+  expect(respond.mock.calls[0]?.[0]['request.payload'].input).toEqual(input);
+});
+
+test('the role rewrite applies on the Chat Completions wire after translation', async () => {
+  const respond = vi.fn((_facts: ChatInput) => textChunks());
+  const fixture = chatFixture(respond, ['rewrite-system-to-developer']);
+  const handle = fixture.request({
+    model: 'test-model',
+    input: [
+      { type: 'message', role: 'system', content: 'base instructions' },
+      { type: 'message', role: 'user', content: 'hello' },
+      { type: 'message', role: 'system', content: 'inline instructions' },
+    ],
+  });
+  expect((await handle.result)['response.http'].status).toBe(200);
+  expect(await handle.done).toEqual({ ok: true });
+  expect(respond.mock.calls[0]?.[0]['request.payload'].messages).toEqual([
     { role: 'developer', content: 'base instructions' },
     { role: 'user', content: 'hello' },
     { role: 'developer', content: 'inline instructions' },
   ]);
 });
 
-test('generate strips disallowed headers and states a remote image URL to Anthropic Messages', async () => {
-  installRepo();
-  initExternalResourceFetcher(() => {
-    throw new Error('translation must not fetch images');
-  });
-  let observedHeaders: Headers | undefined;
-  let observedAnthropicBeta: readonly string[] | undefined;
-  let observedBody: Omit<AnthropicMessagesPayload, 'model'> | undefined;
-  const upstreamModel = stubInternalModel({ endpoints: { anthropicMessages: {} } }, 'up_test');
-  const anthropicMessagesProvider = stubProvider({
-    callAnthropicMessages: async (_model, body, _signal, opts): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
-      observedHeaders = opts.headers;
-      observedAnthropicBeta = (opts as AnthropicMessagesUpstreamCallOptions).anthropicBeta;
-      observedBody = body as Omit<AnthropicMessagesPayload, 'model'>;
+test('translation to Anthropic Messages filters source headers and keeps a remote image URL', async () => {
+  initExternalResourceFetcher(() => { throw new Error('Unexpected download of an Anthropic URL image'); });
+  const captured: Parameters<NonNullable<Parameters<typeof generateProvider>[0]>>[0][] = [];
+  const target = upstream('messages', {
+    anthropicMessages: generateProvider((facts, env) => {
+      captured.push(facts);
       return {
-        ok: true,
-        events: (async function* () {
-          yield eventFrame<AnthropicMessagesStreamEventEx>({
-            type: 'message_start',
-            message: {
-              container: null, diagnostics: null, stop_details: null,
-              id: 'msg_1', type: 'message', role: 'assistant', content: [],
-              model: 'test-model', stop_reason: null, stop_sequence: null,
-              usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 1, output_tokens: 0 },
-            },
-          });
-          yield eventFrame<AnthropicMessagesStreamEventEx>({ type: 'message_stop' });
-          yield doneFrame();
-        })(),
-        modelKey: 'k',
-        http: { status: 200, headers: new Headers() },
+        ...http(),
+        'response.modelKey': 'messages',
+        'response.events': env.createStream({
+          label: 'stub Messages events',
+          async *iterate() {
+            yield eventFrame({
+              type: 'message_start',
+              message: {
+                type: 'message', role: 'assistant', id: 'msg_1', model: 'test-model', content: [], stop_reason: null, stop_sequence: null,
+                container: null, diagnostics: null, stop_details: null,
+                usage: {
+                  input_tokens: 1, output_tokens: 0, cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null,
+                  inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null,
+                },
+              },
+            });
+            yield eventFrame({ type: 'message_stop' });
+          },
+        }),
       };
-    },
-  });
-  const candidate: ModelCandidate = {
-    provider: {
-      upstreamId: 'up_test', kind: 'custom', name: 'up_test', inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: anthropicMessagesProvider,
-    },
-    model: upstreamModel,
-    fetcher: directFetcher,
-  };
-
-  const result = await openaiResponsesAttempt.generate({
-    payload: makePayload({
-      input: [{
-        type: 'message',
-        role: 'user',
-        content: [{ type: 'input_image', image_url: 'https://example.com/image.png', detail: 'auto' }],
-      }],
     }),
-    ctx: makeGatewayCtx(createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), true)),
-    candidate,
-    headers: new Headers({ 'anthropic-beta': 'must-not-cross-source-protocols', 'x-test': 'abc' }),
   });
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-  assertEquals(observedHeaders?.get('x-test'), null);
-  assertEquals(observedHeaders?.get('anthropic-beta'), null);
-  assertEquals(observedAnthropicBeta, []);
-  const message = observedBody?.messages[0];
-  assert(message?.role === 'user' && Array.isArray(message.content));
-  const image = message.content.find(block => block.type === 'image');
-  assert(image?.type === 'image');
-  assertEquals(image.source, { type: 'url', url: 'https://example.com/image.png' });
+  const endpoints = { anthropicMessages: {} };
+  const fixture = responsesFixture([{
+    ...target,
+    candidate: { ...target.candidate, endpoints, providerModel: { ...target.candidate.providerModel, endpoints } },
+  }], undefined, { messages });
+  const handle = fixture.request({
+    model: 'test-model',
+    input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'https://example.com/image.png', detail: 'auto' }] }],
+  }, 'generate', [['anthropic-beta', 'source-only'], ['x-test', 'abc']]);
+  expect((await handle.result)['response.http'].status).toBe(200);
+  expect(await handle.done).toEqual({ ok: true });
+  expect(captured[0]?.['request.headers']).toEqual([]);
+  expect(captured[0]?.['request.anthropicBeta']).toEqual([]);
+  expect(captured[0]?.['request.payload'].messages).toEqual([expect.objectContaining({
+    role: 'user', content: expect.arrayContaining([expect.objectContaining({ type: 'image', source: { type: 'url', url: 'https://example.com/image.png' } })]),
+  })]);
 });
 
-test('generate restores signed hosted-tool replay data without stored state', async () => {
-  installRepo();
-  const storedId = `ws_${'a'.repeat(32)}`;
-  const storedItem = {
-    type: 'web_search_call' as const,
-    id: storedId,
-    status: 'completed' as const,
-    action: { type: 'search' as const, query: 'deepseek v4', queries: ['deepseek v4'] },
-  };
-  const replay = {
-    functionCall: {
-      type: 'function_call' as const,
-      call_id: 'call_orig_xyz',
-      name: 'web_search',
-      arguments: '{"search_query":[{"q":"deepseek v4"}]}',
-      status: 'completed',
-    },
-    data: {
-      action: { type: 'search', query: 'deepseek v4', queries: ['deepseek v4'] },
-      results: [{ type: 'text_result', url: 'https://example.com', title: 'Example', snippet: 'CACHED_SNIPPET_BODY' }],
-    },
-  };
-
-  // Capture the upstream-bound body so we can verify what the shim produced
-  // after the echoed wsc passed through transformItems.
-  let capturedBody: { input?: unknown[] } | undefined;
-  const upstreamResponse = makeOpenAIResponsesResult();
-  // The shim's multi-turn loop requires `response.created` (carrying a model
-  // name) before any synthesized terminal envelope. Emit the canonical
-  // created → in_progress → completed sequence so the shim can wrap.
-  const upstreamEvents: OpenAIResponsesStreamEventEx[] = [
-    { type: 'response.created', sequence_number: 0, response: upstreamResponse },
-    { type: 'response.in_progress', sequence_number: 1, response: upstreamResponse },
-    { type: 'response.completed', sequence_number: 2, response: upstreamResponse },
-  ];
-  const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
-    capturedBody = body as { input?: unknown[] };
-    return { action: 'generate', ok: true, events: makeProviderEvents(upstreamEvents), modelKey: 'test-model-key', http: { status: 200, headers: new Headers() } };
+test('Responses restores signed hosted-tool replay data without durable state', async () => {
+  const respond = vi.fn((_facts: ProviderResponsesInput, env: StageEnv) => completed(env));
+  const target = upstream('responses', { openaiResponses: providerResponses(respond) }, ['openai-responses-web-search-shim']);
+  const fixture = responsesFixture([target]);
+  const action = { type: 'search' as const, query: 'example', queries: ['example'] };
+  const replay = await fixture.services.sidecarCodecs.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall).encode({
+    v: 1, type: 'web_search_call',
+    functionCall: { type: 'function_call', call_id: 'call_orig_xyz', name: 'web_search', arguments: '{"search_query":[{"q":"example"}]}', status: 'completed' },
+    data: { action, results: [{ type: 'text_result', url: 'https://example.com', title: 'Example', snippet: 'CACHED_SNIPPET_BODY' }] },
   });
-  const candidate = makeCandidate(callOpenAIResponses, new Set(['openai-responses-web-search-shim']));
-
-  const ctx = makeGatewayCtx();
-  const carrier = await ctx.affinity.codec.wrap(
-    await ctx.sidecarCodecFactory.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall).encode({ v: 1, type: storedItem.type, ...replay }),
-    {
-      upstreamId: candidate.provider.upstreamId,
-      modelId: candidate.model.id,
-      opaqueBlobCompatibilityIdentity: { upstreamId: candidate.provider.upstreamId, key: candidate.model.id },
-    },
-    'openai-responses.reasoning.encrypted_content',
-  );
-
-  const sourcePayload = makePayload({
+  const carrier = await fixture.services.affinityCodec.wrap(replay, {
+    upstreamId: target.candidate.upstreamId, modelId: target.candidate.modelId,
+    opaqueBlobCompatibilityIdentity: { upstreamId: target.candidate.upstreamId, key: target.candidate.modelId },
+  }, 'openai-responses.reasoning.encrypted_content');
+  const handle = fixture.request({
+    model: 'test-model', store: false, tools: [{ type: 'web_search' }],
     input: [
       { type: 'message', role: 'user', content: 'follow-up' },
       { type: 'reasoning', id: 'rs_affinity', summary: [], encrypted_content: carrier },
-      storedItem,
+      { type: 'web_search_call', id: 'ws_history', status: 'completed', action },
     ],
-    tools: [{ type: 'web_search' }],
   });
-  const affinity = await analyzeOpenAIResponsesAffinity(JSON.parse(JSON.stringify(sourcePayload)), ctx.affinity.codec);
-  const result = await openaiResponsesAttempt.generate({
-    payload: acceptedAffinityEvaluation(affinity, candidate).materialize(),
-    ctx,
-    candidate,
-    headers: new Headers(),
-  });
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-
-  assert(capturedBody !== undefined, 'callOpenAIResponses was not invoked');
-  const input = (capturedBody!.input ?? []) as Array<{ type: string; call_id?: string; output?: string; name?: string; arguments?: string }>;
-  const fc = input.find(i => i.type === 'function_call' && i.call_id === 'call_orig_xyz');
-  assert(fc !== undefined, 'expected replayed function_call with the persisted call_id');
-  assertEquals(fc!.name, 'web_search');
-  assertEquals(fc!.arguments, '{"search_query":[{"q":"deepseek v4"}]}');
-  const fco = input.find(i => i.type === 'function_call_output' && i.call_id === 'call_orig_xyz');
-  assert(fco !== undefined, 'expected replayed function_call_output');
-  assert(fco!.output?.includes('CACHED_SNIPPET_BODY'), `expected cached body in function_call_output, got: ${fco!.output}`);
-  assert(
-    !input.some(i => i.type === 'function_call_output' && typeof i.output === 'string' && i.output.includes('Prior search results were not preserved')),
-    'shim emitted the not-preserved placeholder despite authenticated replay data',
-  );
+  expect((await handle.result)['response.http'].status).toBe(200);
+  expect(await handle.done).toEqual({ ok: true });
+  expect(respond.mock.calls[0]?.[0]['request.payload'].input).toContainEqual(expect.objectContaining({
+    type: 'function_call', call_id: 'call_orig_xyz', name: 'web_search', arguments: '{"search_query":[{"q":"example"}]}',
+  }));
+  expect(respond.mock.calls[0]?.[0]['request.payload'].input).toContainEqual(expect.objectContaining({
+    type: 'function_call_output', call_id: 'call_orig_xyz', output: expect.stringContaining('CACHED_SNIPPET_BODY'),
+  }));
 });
 
-test('namespace wire mapping follows compact expansion and is isolated from outer shims across repeated dispatches', async () => {
-  installRepo();
-  const namespace = { type: 'namespace' as const, name: 'files', description: '', tools: [{ type: 'function' as const, name: 'read', parameters: { type: 'object' } }] };
+test('namespace wire mapping follows compact expansion across independent dispatches', async () => {
+  const namespace = {
+    type: 'namespace' as const, name: 'files', description: '',
+    tools: [{ type: 'function' as const, name: 'read', parameters: { type: 'object' } }],
+  };
   const history = { type: 'function_call' as const, name: 'read', namespace: 'files', call_id: 'past', arguments: '{}', status: 'completed' as const };
-  const payload = makePayload({
-    tools: [{ type: 'function', name: 'files_read' }, namespace],
+  const payload: CanonicalOpenAIResponsesPayload = {
+    model: 'test-model', tools: [{ type: 'function', name: 'files_read' }, namespace],
     input: [{ type: 'compaction', encrypted_content: encodeBase64UrlJson([history, { type: 'function_call_output', call_id: 'past', output: 'done' }]) }],
-  });
+  };
   const original = structuredClone(payload);
-  const providerBodies: Omit<OpenAIChatCompletionsPayloadEx, 'model'>[] = [];
-  const endpoints = { openaiChatCompletions: {} };
-  const candidate: ModelCandidate = {
-    ...makeCandidate(async () => { throw new Error('native Responses must not be called'); }),
-    model: stubInternalModel({ endpoints, providerModels: { up_test: stubProviderModel({ endpoints }) } }, 'up_test'),
-  };
-  candidate.provider.instance.callOpenAIChatCompletions = async (_model, body) => {
-    providerBodies.push(structuredClone(body));
-    assert(JSON.stringify(body.messages).includes('files_read_2'), 'compact-expanded history must be mapped at dispatch');
-    const tool = body.tools?.[1];
-    assert(tool?.type === 'function' && tool.function.parameters !== undefined);
-    tool.function.parameters.providerOnly = true;
-    return {
-      ok: true, modelKey: 'test-model-key', events: (async function* () {
-        yield eventFrame<OpenAIChatCompletionsStreamEvent>({ id: 'chat_isolation', object: 'chat.completion.chunk', created: 0, model: 'test-model', choices: [{  index: 0, delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'next', type: 'function', function: { name: 'files_read_2', arguments: '{}' } }] }, finish_reason: null }] });
-        yield eventFrame<OpenAIChatCompletionsStreamEvent>({ id: 'chat_isolation', object: 'chat.completion.chunk', created: 0, model: 'test-model', choices: [{  index: 0, delta: {}, finish_reason: 'tool_calls' }] });
-        yield doneFrame();
-      })(),
-    };
-  };
-  let observed = 0;
-  const observer: OpenAIResponsesInterceptor = async (invocation, _ctx, run) => {
-    assertEquals(invocation.payload.input[0], history, 'outer reader must observe expanded canonical history');
-    const freeze = (value: unknown): void => {
-      if (typeof value !== 'object' || value === null) return;
-      Object.freeze(value);
-      for (const child of Object.values(value)) freeze(child);
-    };
-    freeze(invocation.payload);
-    const first = await run();
-    assertEquals(invocation.payload.tools?.[1], namespace, 'translation must leave outer declarations canonical');
-    assertEquals(invocation.payload.input[0], history);
-    assert(first.type === 'events');
-    const events = await collectEvents(first.events);
-    const done = events.find(event => event.type === 'response.output_item.done');
-    assert(done?.type === 'response.output_item.done' && done.item.type === 'function_call');
-    assertEquals([done.item.name, done.item.namespace], ['read', 'files']);
-    observed++;
-    return await run();
-  };
-  // Observe the real seam between compact expansion and the outer server-tool
-  // loop. Dispatch twice like that loop does; both invocations must start from
-  // Standard rather than the first call's ephemeral names.
-  const chain = openaiResponsesInterceptors as OpenAIResponsesInterceptor[];
-  const compactIndex = chain.indexOf(withOpenAIResponsesCompactShim);
-  assert(compactIndex >= 0, 'expected the compaction interceptor in the dispatch chain');
-  chain.splice(compactIndex + 1, 0, observer);
-  try {
-    const result = await openaiResponsesAttempt.generate({ payload, ctx: makeGatewayCtx(), candidate, headers: new Headers() });
-    assert(result.type === 'events');
-    await collectEvents(result.events);
-    assertEquals(observed, 1);
-    assertEquals(providerBodies.length, 2);
-    assertEquals(providerBodies[0], providerBodies[1]);
-    assertEquals(payload, original);
-  } finally {
-    chain.splice(chain.indexOf(observer), 1);
+  const respond = vi.fn(async function* (_facts: ChatInput): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
+    const base = { id: 'chat_isolation', object: 'chat.completion.chunk' as const, model: 'test-model', created: 0 };
+    yield eventFrame({
+      ...base, choices: [{
+        index: 0, finish_reason: null,
+        delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'next', type: 'function', function: { name: 'files_read_2', arguments: '{}' } }] },
+      }],
+    });
+    yield eventFrame({ ...base, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] });
+    yield doneFrame();
+  });
+  const fixture = chatFixture(respond);
+  for (const _ of [1, 2]) {
+    const handle = fixture.request(payload);
+    const response = (await handle.result)['response.http'];
+    expect(response.status).toBe(200);
+    const result = JSON.parse((await readHttpBytes(response.body)).utf8()) as OpenAIResponsesResultEx;
+    expect(result.output).toContainEqual(expect.objectContaining({ type: 'function_call', name: 'read', namespace: 'files' }));
+    expect(await handle.done).toEqual({ ok: true });
   }
+  expect(respond.mock.calls).toHaveLength(2);
+  const body = respond.mock.calls[0]?.[0]['request.payload'];
+  expect(JSON.stringify(body?.messages)).toContain('files_read_2');
+  expect(respond.mock.calls[1]?.[0]['request.payload']).toEqual(body);
+  expect(payload).toEqual(original);
 });
 
-const goalObjectiveInput: OpenAIResponsesPayloadEx['input'] = [
-  { type: 'message', role: 'user', content: 'Write unit tests' },
-  { type: 'function_call', call_id: 'call_goal', name: 'create_goal', arguments: '{"objective":"Write unit tests"}' },
-  { type: 'function_call_output', call_id: 'call_goal', output: '{"goal":{"status":"active"}}' },
-  { type: 'function_call_output', id: 'fco_goal', name: 'goal_objective', namespace: 'agent', output: 'Write unit tests' },
-];
-
-test('generate lowers a standalone function_call_output to external context across translation to OpenAI Chat Completions', async () => {
-  installRepo();
-  let observedBody: Omit<OpenAIChatCompletionsPayloadEx, 'model'> | undefined;
-  const endpoints = { openaiChatCompletions: {} };
-  const candidate: ModelCandidate = {
-    provider: {
-      upstreamId: 'up_chat', kind: 'custom', name: 'up_chat', inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
-      instance: stubProvider({
-        callOpenAIChatCompletions: async (_model, body): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
-          observedBody = body;
-          return {
-            ok: true,
-            events: (async function* () {
-              yield eventFrame<OpenAIChatCompletionsStreamEvent>({ id: 'chatcmpl_goal', object: 'chat.completion.chunk', created: 0, model: 'test-model', choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: 'stop' }] });
-              yield doneFrame();
-            })(),
-            modelKey: 'k',
-            http: { status: 200, headers: new Headers() },
-          };
-        },
-      }),
-    },
-    model: stubInternalModel({
-      endpoints,
-      providerModels: { up_chat: stubProviderModel({ endpoints }) },
-    }, 'up_chat'),
-    fetcher: directFetcher,
-  };
-
-  const result = await openaiResponsesAttempt.generate({
-    payload: makePayload({ input: goalObjectiveInput, tools: [{ type: 'function', name: 'create_goal', parameters: { type: 'object' } }] }),
-    ctx: makeGatewayCtx(createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), false)),
-    candidate,
-    headers: new Headers(),
+test('standalone function outputs become external user context before Chat Completions translation', async () => {
+  const respond = vi.fn((_facts: ChatInput) => textChunks());
+  const fixture = chatFixture(respond);
+  const handle = fixture.request({
+    model: 'test-model', tools: [{ type: 'function', name: 'create_goal', parameters: { type: 'object' } }],
+    input: [
+      { type: 'message', role: 'user', content: 'Write unit tests' },
+      { type: 'function_call', call_id: 'call_goal', name: 'create_goal', arguments: '{"objective":"Write unit tests"}' },
+      { type: 'function_call_output', call_id: 'call_goal', output: '{"goal":{"status":"active"}}' },
+      { type: 'function_call_output', id: 'fco_goal', name: 'goal_objective', namespace: 'agent', output: 'Write unit tests' },
+    ],
   });
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-  assertEquals(observedBody?.messages, [
+  expect((await handle.result)['response.http'].status).toBe(200);
+  expect(await handle.done).toEqual({ ok: true });
+  expect(respond.mock.calls[0]?.[0]['request.payload'].messages).toEqual([
     { role: 'user', content: 'Write unit tests' },
     { role: 'assistant', content: null, tool_calls: [{ id: 'call_goal', type: 'function', function: { name: 'create_goal', arguments: '{"objective":"Write unit tests"}' } }] },
     { role: 'tool', tool_call_id: 'call_goal', content: '{"goal":{"status":"active"}}' },

@@ -160,6 +160,15 @@ importers:
       '@floway-dev/agent-setup':
         specifier: workspace:*
         version: link:../../packages/agent-setup
+      '@floway-dev/dump':
+        specifier: workspace:*
+        version: link:../../packages/dump
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../../packages/pipeline
+      '@floway-dev/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../../packages/protocols
@@ -367,17 +376,29 @@ importers:
         specifier: ^22
         version: 22.19.19
 
+  packages/dump:
+    dependencies:
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
+      '@scure/base':
+        specifier: ^2.2.0
+        version: 2.2.0
+
   packages/gateway:
     dependencies:
       '@floway-dev/agent-setup':
         specifier: workspace:*
         version: link:../agent-setup
+      '@floway-dev/dump':
+        specifier: workspace:*
+        version: link:../dump
       '@floway-dev/http':
         specifier: workspace:*
         version: link:../http
-      '@floway-dev/interceptor':
+      '@floway-dev/pipeline':
         specifier: workspace:*
-        version: link:../interceptor
+        version: link:../pipeline
       '@floway-dev/platform':
         specifier: workspace:*
         version: link:../platform
@@ -460,6 +481,9 @@ importers:
 
   packages/http:
     dependencies:
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@noble/hashes':
         specifier: ^2.2.0
         version: 2.2.0
@@ -474,11 +498,11 @@ importers:
         specifier: ^1.14.3
         version: 1.14.3
 
-  packages/interceptor:
-    devDependencies:
-      '@floway-dev/test-utils':
-        specifier: workspace:*
-        version: link:../test-utils
+  packages/pipeline:
+    dependencies:
+      '@noble/hashes':
+        specifier: ^2.2.0
+        version: 2.2.0
 
   packages/platform:
     dependencies:
@@ -526,6 +550,9 @@ importers:
       '@floway-dev/http':
         specifier: workspace:*
         version: link:../http
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -542,9 +569,9 @@ importers:
 
   packages/provider-azure:
     dependencies:
-      '@floway-dev/interceptor':
+      '@floway-dev/pipeline':
         specifier: workspace:*
-        version: link:../interceptor
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -558,9 +585,9 @@ importers:
 
   packages/provider-chatgpt:
     dependencies:
-      '@floway-dev/interceptor':
+      '@floway-dev/pipeline':
         specifier: workspace:*
-        version: link:../interceptor
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -577,9 +604,9 @@ importers:
 
   packages/provider-claude-code:
     dependencies:
-      '@floway-dev/interceptor':
+      '@floway-dev/pipeline':
         specifier: workspace:*
-        version: link:../interceptor
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -599,9 +626,9 @@ importers:
 
   packages/provider-copilot:
     dependencies:
-      '@floway-dev/interceptor':
+      '@floway-dev/pipeline':
         specifier: workspace:*
-        version: link:../interceptor
+        version: link:../pipeline
       '@floway-dev/platform':
         specifier: workspace:*
         version: link:../platform
@@ -627,6 +654,9 @@ importers:
 
   packages/provider-custom:
     dependencies:
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -640,6 +670,9 @@ importers:
 
   packages/provider-kimi-code:
     dependencies:
+      '@floway-dev/pipeline':
+        specifier: workspace:*
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
@@ -653,9 +686,9 @@ importers:
 
   packages/provider-ollama:
     dependencies:
-      '@floway-dev/interceptor':
+      '@floway-dev/pipeline':
         specifier: workspace:*
-        version: link:../interceptor
+        version: link:../pipeline
       '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols

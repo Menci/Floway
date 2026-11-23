@@ -1,4 +1,4 @@
-import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
+import type { AffinityEgressOptions } from '../../shared/affinity/carrier.ts';
 import { captureExtras, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentCandidate as WireCandidate, GeminiGenerateContentPart, GeminiGenerateContentContent, GeminiGenerateContentResult as WireResult, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import { GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, GEMINI_GENERATE_CONTENT_RESULT_KEYS } from '@floway-dev/protocols/gemini-generate-content';
@@ -383,8 +383,8 @@ const mergeEventMetadata = (
   target: GeminiGenerateContentResult,
 ): void => {
   const extras: Record<string, unknown> = {};
-  captureExtras(earlier as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_RESULT_KEYS, extras);
-  captureExtras(later as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_RESULT_KEYS, extras);
+  captureExtras({ ...earlier }, GEMINI_GENERATE_CONTENT_RESULT_KEYS, extras);
+  captureExtras({ ...later }, GEMINI_GENERATE_CONTENT_RESULT_KEYS, extras);
   const usageMetadata = later.usageMetadata ?? earlier.usageMetadata;
   const modelVersion = later.modelVersion ?? earlier.modelVersion;
   const responseId = later.responseId ?? earlier.responseId;
@@ -407,10 +407,11 @@ const mergeCandidateExtras = (
   target: GeminiGenerateContentCandidateWithParts,
 ): void => {
   const extras: Record<string, unknown> = {};
-  captureExtras(earlier as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, extras);
-  captureExtras(later as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, extras);
+  captureExtras({ ...earlier }, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, extras);
+  captureExtras({ ...later }, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, extras);
+  const knownKeys: ReadonlySet<string> = GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS;
   for (const key of Object.keys(target)) {
-    if (!GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS.has(key as keyof GeminiGenerateContentCandidateWithParts)) delete (target as unknown as Record<string, unknown>)[key];
+    if (!knownKeys.has(key)) Reflect.deleteProperty(target, key);
   }
   Object.assign(target, extras);
 };

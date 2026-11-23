@@ -2,14 +2,11 @@ import { ensureChatGPTAccessToken, mintChatGPTAccessToken } from './access-token
 import { ChatGPTOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { assertChatGPTUpstreamRecord, type ChatGPTUpstreamConfig } from './config.ts';
 import { CHATGPT_DEFAULT_FLAGS } from './defaults.ts';
-import { callChatGPTAlphaSearch, callChatGPTOpenAIImagesEdits, callChatGPTOpenAIImagesGenerations, callChatGPTOpenAIResponses, callChatGPTOpenAIResponsesCompact, type ChatGPTCallEffects } from './fetch.ts';
-import { CHATGPT_OPENAI_RESPONSES_BOUNDARY } from './interceptors/openai-responses/index.ts';
-import type { OpenAIResponsesBoundaryCtx } from './interceptors/openai-responses/types.ts';
 import { chatgptImageProviderModel, chatgptPlanSupportsImages, chatgptRawToProviderModel, fetchChatGPTCatalog } from './models.ts';
+import { createChatGPTPipelines, type ChatGPTCallEffects } from './pipelines.ts';
 import { assertChatGPTUpstreamState, findChatGPTAccountIndex, persistChatGPTRefreshTokenRotation, persistChatGPTTerminalState } from './state.ts';
 import { runChatGPTScheduledTask } from './usage-probe.ts';
-import { runInterceptors } from '@floway-dev/interceptor';
-import { getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type UpstreamRecord } from '@floway-dev/provider';
+import { getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Provider, type UpstreamRecord } from '@floway-dev/provider';
 
 // https://github.com/openai/codex/blob/c607da9f371bb66a41cc772c6ddf1989d28137d3/codex-rs/codex-api/src/requests/headers.rs#L5-L12
 // https://github.com/openai/codex/blob/c607da9f371bb66a41cc772c6ddf1989d28137d3/codex-rs/codex-api/src/endpoint/responses.rs#L87-L96
@@ -52,7 +49,7 @@ export const createChatGPTProvider = (record: UpstreamRecord): Provider => {
     if (accountIndex < 0) {
       throw new Error(`ChatGPT upstream ${record.id} state has no credential for account ${accountIdentity.chatgptAccountId}`);
     }
-    return { state: raw, accountIndex, account: raw.accounts[accountIndex]! };
+    return raw.accounts[accountIndex]!;
   };
 
   // Re-read upstream state on every request rather than capturing the record's
@@ -101,69 +98,6 @@ export const createChatGPTProvider = (record: UpstreamRecord): Provider => {
       if (chatgptPlanSupportsImages(access.planType ?? accountIdentity.planType ?? undefined)) models.push(chatgptImageProviderModel(enabledFlags));
       return models;
     },
-
-    callAlphaSearch: async (model, body, signal, opts) => {
-      const { account } = await readActiveAccount();
-      return await callChatGPTAlphaSearch({
-        upstreamId: record.id,
-        account,
-        model,
-        headers: new Headers(opts.headers),
-        signal,
-        effects,
-        call: opts,
-        body,
-      });
-    },
-
-    callOpenAIResponses: async (model, body, action, signal, opts) => {
-      const ctx: OpenAIResponsesBoundaryCtx = {
-        payload: { ...body, model: model.id },
-        headers: new Headers(opts.headers),
-        model,
-        action,
-      };
-      return await runInterceptors<OpenAIResponsesBoundaryCtx, object, ProviderOpenAIResponsesResult>(
-        ctx, {}, CHATGPT_OPENAI_RESPONSES_BOUNDARY, async () => {
-          const { account } = await readActiveAccount();
-          const { model: _ignored, ...wireBody } = ctx.payload;
-          const backendCallBase = { upstreamId: record.id, account, model, headers: ctx.headers, signal, effects, call: opts };
-          switch (ctx.action) {
-          case 'compact':
-            // The fetch boundary selects the private wire format before compact
-            // projection so interceptor-provided tools and instructions survive.
-            return { action: 'compact', ...(await callChatGPTOpenAIResponsesCompact({ ...backendCallBase, body: wireBody })) };
-          case 'generate':
-            return { action: 'generate', ...(await callChatGPTOpenAIResponses({ ...backendCallBase, body: wireBody })) };
-          default:
-            ctx.action satisfies never;
-            throw new Error(`Unhandled OpenAIResponsesAction: ${ctx.action as string}`);
-          }
-        },
-      );
-    },
-
-    // ChatGPT exposes OpenAI Responses and its provider-owned image endpoints. The
-    // remaining surfaces are unreachable through the advertised catalog, but
-    // a stray dispatch must still surface as a structured 405.
-    callAnthropicMessages: () => unsupportedStreamResult(),
-    callAnthropicMessagesCountTokens: () => unsupportedCallResult(),
-    callGeminiGenerateContent: () => unsupportedStreamResult(),
-    callGeminiGenerateContentCountTokens: () => unsupportedCallResult(),
-    callOpenAICompletions: () => unsupportedCallResult(),
-    callOpenAIChatCompletions: () => unsupportedStreamResult(),
-    callOpenAIEmbeddings: () => unsupportedCallResult(),
-    callOpenAIImagesGenerations: async (model, body, signal, opts) => {
-      const { account } = await readActiveAccount();
-      return await callChatGPTOpenAIImagesGenerations({ upstreamId: record.id, account, model, headers: opts.headers, signal, effects, call: opts, body, fallbackPlanType: accountIdentity.planType ?? undefined });
-    },
-    callOpenAIImagesEdits: async (model, request, signal, opts) => {
-      const { account } = await readActiveAccount();
-      return await callChatGPTOpenAIImagesEdits({ upstreamId: record.id, account, model, headers: opts.headers, signal, effects, call: opts, request, fallbackPlanType: accountIdentity.planType ?? undefined });
-    },
-    callOpenAIAudioTranscriptions: () => unsupportedCallResult(),
-    callRerank: () => Promise.reject(new Error('ChatGPT provider does not support callRerank')),
-    callDecision: () => Promise.reject(new Error('ChatGPT provider does not support callDecision')),
   };
 
   return {
@@ -174,17 +108,12 @@ export const createChatGPTProvider = (record: UpstreamRecord): Provider => {
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     modelsCache: record.modelsCache,
+    pipelines: createChatGPTPipelines({
+      upstreamId: record.id,
+      ...(accountIdentity.planType === null ? {} : { fallbackPlanType: accountIdentity.planType }),
+      readAccount: readActiveAccount,
+      ...effects,
+    }),
     instance,
   };
 };
-
-const synthetic405 = (): Response => new Response(
-  JSON.stringify({ error: { type: 'method_not_allowed', message: 'Endpoint not supported by ChatGPT provider' } }),
-  { status: 405, headers: { 'content-type': 'application/json' } },
-);
-
-const unsupportedStreamResult = <TEvent>(): Promise<ProviderStreamResult<TEvent>> =>
-  Promise.resolve({ ok: false, modelKey: '', http: synthetic405() });
-
-const unsupportedCallResult = (): Promise<ProviderCallResult> =>
-  Promise.resolve({ modelKey: '', http: synthetic405() });

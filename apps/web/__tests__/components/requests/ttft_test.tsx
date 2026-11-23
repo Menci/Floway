@@ -72,3 +72,28 @@ describe('requests TTFT UI presentation', () => {
     expect(screen.queryByText('0ms')).toBeNull();
   });
 });
+
+it('renders a live row as in flight and disables export selection', () => {
+  const live = { id: 'rec-live', startedAt: Date.now() - 5000, method: 'POST', path: '/v1/chat/completions', model: 'gpt-live', requestBytes: 42 };
+  renderInApp(
+    <MemoryRouter>
+      <RequestListPanel
+        apiKeys={[testApiKey]}
+        selectedKeyId={testApiKey.id}
+        onKeyChange={vi.fn()}
+        records={[{ ...live, live: true }]}
+        selectedRecordId={null}
+        onRecordChange={vi.fn()}
+        hasOlder={false}
+        onLoadOlder={vi.fn()}
+        addressOfRecord={id => `/requests/${id}`}
+        error={null}
+        onDismissError={vi.fn()}
+      />
+    </MemoryRouter>,
+  );
+  expect(screen.getByText('In-flight request')).toBeTruthy();
+  expect(screen.getByText('gpt-live')).toBeTruthy();
+  expect(screen.getAllByText('-').length).toBeGreaterThanOrEqual(2);
+  expect((screen.getByRole('checkbox', { name: 'Select for export' }) as HTMLInputElement).disabled).toBe(true);
+});

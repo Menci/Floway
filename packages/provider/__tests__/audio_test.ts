@@ -1,44 +1,24 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
-import { serializeModelPathOpenAIAudioTranscriptionRequest, serializeModelFieldOpenAIAudioTranscriptionRequest } from '../src/audio.ts';
-import { assertEquals, assertExists } from '@floway-dev/test-utils';
+import { serializeModelFieldOpenAIAudioTranscriptionRequest, serializeModelPathOpenAIAudioTranscriptionRequest } from '../src/audio.ts';
+import type { MultipartField } from '../src/request-body.ts';
+import { Bytes } from '@floway-dev/pipeline';
 
-test('serializeModelFieldOpenAIAudioTranscriptionRequest preserves ordered fields and file metadata while replacing model', async () => {
-  const file = new File([new Uint8Array([1, 2, 3, 4])], 'meeting.wav', {
-    type: 'audio/wav',
-    lastModified: 1_700_000_000_000,
-  });
-  const form = serializeModelFieldOpenAIAudioTranscriptionRequest({
-    entries: [
-      { name: 'file', value: file },
-      { name: 'language', value: 'en' },
-      { name: 'model', value: 'public-model' },
-      { name: 'timestamp_granularities[]', value: 'word' },
-      { name: 'timestamp_granularities[]', value: 'segment' },
-    ],
-  }, 'upstream-model');
+const file = { kind: 'file', name: 'file', bytes: Bytes.fromUtf8('audio'), filename: 'meeting.wav', contentType: 'audio/wav' } as const;
+const entries = [
+  file,
+  { kind: 'text', name: 'language', value: 'en' },
+  { kind: 'text', name: 'model', value: 'public-model' },
+  { kind: 'text', name: 'timestamp_granularities[]', value: 'word' },
+  { kind: 'text', name: 'timestamp_granularities[]', value: 'segment' },
+] as const satisfies readonly MultipartField[];
 
-  assertEquals([...form.keys()], ['file', 'language', 'model', 'timestamp_granularities[]', 'timestamp_granularities[]']);
-  assertEquals(form.get('model'), 'upstream-model');
-  assertEquals(form.getAll('timestamp_granularities[]'), ['word', 'segment']);
-  const serializedFile = form.get('file');
-  assertEquals(serializedFile instanceof File, true);
-  assertExists(serializedFile as File);
-  assertEquals((serializedFile as File).name, 'meeting.wav');
-  assertEquals((serializedFile as File).type, 'audio/wav');
-  assertEquals((serializedFile as File).lastModified, file.lastModified);
-  assertEquals(new Uint8Array(await (serializedFile as File).arrayBuffer()), new Uint8Array([1, 2, 3, 4]));
+test('preserves ordered audio fields and file metadata while replacing the model field', () => {
+  const form = serializeModelFieldOpenAIAudioTranscriptionRequest({ entries }, 'upstream-model');
+  expect(form.parts).toEqual([...entries.slice(0, 2), { kind: 'text', name: 'model', value: 'upstream-model' }, ...entries.slice(3)]);
+  expect(form.parts[0]).toBe(file);
 });
 
-test('serializeModelPathOpenAIAudioTranscriptionRequest omits model fields selected by the URL', () => {
-  const form = serializeModelPathOpenAIAudioTranscriptionRequest({
-    entries: [
-      { name: 'model', value: 'public-model' },
-      { name: 'file', value: new File(['audio'], 'meeting.wav', { type: 'audio/wav' }) },
-      { name: 'response_format', value: 'json' },
-    ],
-  });
-
-  assertEquals([...form.keys()], ['file', 'response_format']);
-  assertEquals(form.get('model'), null);
+test('omits model fields selected by the URL', () => {
+  expect(serializeModelPathOpenAIAudioTranscriptionRequest({ entries }).parts).toEqual(entries.filter(entry => entry.name !== 'model'));
 });

@@ -14,13 +14,13 @@ import { isOpenAIResponsesCompactionItem, openaiResponsesResultToEvents, type Op
 // runtime. The caller mints its envelope id once, and this wrapper applies it
 // to every queued/created/in-progress and terminal response envelope without
 // changing any output item.
-export const wrapOpenAIResponsesClientOutput = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+export const wrapOpenAIResponsesClientOutput = async function* <Control extends { readonly type: 'control' } = never>(
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx> | NoInfer<Control>>,
   args: {
     readonly store: OpenAIResponsesStatefulStore;
     readonly responseId: string;
   },
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx> | Control> {
   const { store, responseId } = args;
   const finalizedOutputIds = new Map<number, string>();
   let sawCompactionItem = false;
@@ -127,5 +127,6 @@ export const syntheticEventsFromResult = async function* (result: OpenAIResponse
 // back to `OpenAIResponsesResult` is safe because the expansion reads no
 // response-only field — it spreads whatever the body carried.
 export const syntheticEventsFromCompaction = async function* (result: OpenAIResponsesCompactionResultEx): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-  yield* openaiResponsesResultToEvents(result as unknown as OpenAIResponsesResultEx, { genericOutputItems: true, terminal: 'response.completed' });  yield doneFrame();
+  yield* openaiResponsesResultToEvents(result as OpenAIResponsesResultEx, { genericOutputItems: true, terminal: 'response.completed' });
+  yield doneFrame();
 };

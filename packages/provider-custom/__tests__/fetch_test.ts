@@ -1,17 +1,18 @@
 import { test } from 'vitest';
 
+import { callCustom, customInput } from './pipeline-fixture.ts';
 import { assertCustomUpstreamRecord } from '../src/config.ts';
-import {
-  customFetchAlphaSearch,
-  customFetchOpenAIChatCompletions,
-  customFetchAnthropicMessages,
-  customFetchAnthropicMessagesCountTokens,
-  customFetchModels,
-  customFetchOpenAIResponsesCompact,
-} from '../src/fetch.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
-import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
-import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
+import { customFetchModels } from '../src/fetch.ts';
+import { createCustomProvider } from '../src/provider.ts';
+import { directFetcher, type UpstreamRecord } from '@floway-dev/provider';
+import { assertEquals, jsonResponse, sseResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
+
+const baseConfig = {
+  baseUrl: 'https://custom.example.com',
+  apiKey: 'sk-test',
+  endpoints: { openaiChatCompletions: {} },
+  ingressHeadersRules: [],
+};
 
 const baseRecord: UpstreamRecord = {
   id: 'up_test',
@@ -22,12 +23,7 @@ const baseRecord: UpstreamRecord = {
   sortOrder: 0,
   createdAt: '2026-04-29T00:00:00.000Z',
   updatedAt: '2026-04-29T00:00:00.000Z',
-  config: {
-    baseUrl: 'https://custom.example.com',
-    apiKey: 'sk-test',
-    endpoints: { openaiChatCompletions: {} },
-    ingressHeadersRules: [],
-  },
+  config: baseConfig,
   state: null,
   flagOverrides: {},
   disabledPublicModelIds: [],
@@ -37,11 +33,14 @@ const baseRecord: UpstreamRecord = {
   hue: 210,
 };
 
+const model = stubProviderModel();
+const messages = { ...customInput(model, { max_tokens: 10, messages: [] }), 'request.anthropicBeta': [] };
+
 test('admin pathOverrides replace defaults and propagate to derived sub-paths', async () => {
-  const { config } = assertCustomUpstreamRecord({
+  const { pipelines } = createCustomProvider({
     ...baseRecord,
     config: {
-      ...(baseRecord.config as Record<string, unknown>),
+      ...baseConfig,
       pathOverrides: {
         '/messages': '/api/v1/messages',
         '/responses': '/api/v1/responses',
@@ -53,16 +52,15 @@ test('admin pathOverrides replace defaults and propagate to derived sub-paths', 
   await withMockedFetch(
     request => {
       seen.push(request.url);
-      return new Response('{}', { status: 200 });
+      const { pathname } = new URL(request.url);
+      return pathname.endsWith('/messages') || pathname.endsWith('/chat/completions') ? sseResponse() : jsonResponse({});
     },
     async () => {
-      await customFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      // count_tokens / compact follow their parent override.
-      await customFetchAnthropicMessagesCountTokens(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchOpenAIResponsesCompact(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchAlphaSearch(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      // Endpoints without an override fall back to the OpenAI default.
-      await customFetchOpenAIChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await callCustom(pipelines.anthropicMessages, messages);
+      await callCustom(pipelines.anthropicMessagesCountTokens, messages);
+      await callCustom(pipelines.openaiResponses, { ...customInput(model, { input: [] }), 'request.action': 'compact' });
+      await callCustom(pipelines.alphaSearch, customInput(model, { query: 'hi' }));
+      await callCustom(pipelines.openaiChatCompletions, customInput(model, { messages: [] }));
     },
   );
 
@@ -75,16 +73,17 @@ test('admin pathOverrides replace defaults and propagate to derived sub-paths', 
   ]);
 });
 
-test('customFetchModels uses modelsFetch.authStyle independently from the inference protocol', async () => {
-  const { config: stored } = assertCustomUpstreamRecord(baseRecord);
-  const { config } = assertCustomUpstreamRecord({
+test('the catalog uses modelsFetch.authStyle independently from the inference protocol', async () => {
+  const record = {
     ...baseRecord,
     config: {
-      ...stored,
+      ...baseConfig,
       endpoints: { anthropicMessages: {} },
       modelsFetch: { enabled: true, authStyle: 'bearer' },
     },
-  });
+  };
+  const { config } = assertCustomUpstreamRecord(record);
+  const { pipelines } = createCustomProvider(record);
   const observed: { hostname: string; authorization: string | null; xApiKey: string | null }[] = [];
   await withMockedFetch(
     request => {
@@ -93,11 +92,11 @@ test('customFetchModels uses modelsFetch.authStyle independently from the infere
         authorization: request.headers.get('authorization'),
         xApiKey: request.headers.get('x-api-key'),
       });
-      return new Response('{}', { status: 200 });
+      return request.method === 'GET' ? jsonResponse({}) : sseResponse();
     },
     async () => {
-      await customFetchModels(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchModels(config, directFetcher);
+      await callCustom(pipelines.anthropicMessages, messages);
     },
   );
 
@@ -107,33 +106,28 @@ test('customFetchModels uses modelsFetch.authStyle independently from the infere
   ]);
 });
 
-test('an empty apiKey sends neither Authorization nor x-api-key', async () => {
-  const { config } = assertCustomUpstreamRecord({
+test('an empty apiKey omits Authorization, x-api-key, and anthropic-version', async () => {
+  const { pipelines } = createCustomProvider({
     ...baseRecord,
-    config: {
-      baseUrl: 'https://internal.example.com',
-      apiKey: '',
-      endpoints: { openaiChatCompletions: {} },
-      ingressHeadersRules: [],
-    },
+    config: { ...baseConfig, baseUrl: 'https://internal.example.com', apiKey: '' },
   });
-  let authHeader: string | null = null;
-  let xApiKey: string | null = null;
-  let anthropicVersion: string | null = null;
+  const authorization: (string | null)[] = [];
+  const xApiKey: (string | null)[] = [];
+  const anthropicVersion: (string | null)[] = [];
   await withMockedFetch(
     request => {
-      authHeader = request.headers.get('authorization');
-      xApiKey = request.headers.get('x-api-key');
-      anthropicVersion = request.headers.get('anthropic-version');
-      return new Response('{}', { status: 200 });
+      authorization.push(request.headers.get('authorization'));
+      xApiKey.push(request.headers.get('x-api-key'));
+      anthropicVersion.push(request.headers.get('anthropic-version'));
+      return sseResponse();
     },
     async () => {
-      await customFetchOpenAIChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
-      await customFetchAnthropicMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await callCustom(pipelines.openaiChatCompletions, customInput(model, { messages: [] }));
+      await callCustom(pipelines.anthropicMessages, messages);
     },
   );
 
-  assertEquals(authHeader, null);
-  assertEquals(xApiKey, null);
-  assertEquals(anthropicVersion, null);
+  assertEquals(authorization, [null, null]);
+  assertEquals(xApiKey, [null, null]);
+  assertEquals(anthropicVersion, [null, null]);
 });

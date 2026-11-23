@@ -1,5 +1,5 @@
 import { isReplayableBody } from '@floway-dev/http';
-import type { Fetcher, FetchInit, HttpHeaderLines } from '@floway-dev/http';
+import type { Fetcher, HttpHeaderLines } from '@floway-dev/http';
 
 export type { Fetcher, FetchInit, HttpHeaderLines, ReplayableBody } from '@floway-dev/http';
 export { isReplayableBody } from '@floway-dev/http';
@@ -16,28 +16,4 @@ export const directFetcher: Fetcher = (url, init) => {
 export interface UpstreamFetchOptions {
   extraHeaders?: HttpHeaderLines;
   fetcher: Fetcher;
-  /** See UpstreamCallOptions.wrapUpstreamCall — same contract. */
-  wrapUpstreamCall: <T>(dispatch: () => Promise<T>) => Promise<T>;
 }
-
-// Identity wrapper for callers that don't participate in per-request TTFT
-// timing — model-listing helpers and interceptor sub-calls that dispatch
-// outside the primary data-plane fetch.
-export const identityWrapUpstreamCall = <T>(dispatch: () => Promise<T>): Promise<T> => dispatch();
-
-// Transfer a request into the fetcher exactly once. The wrapper used for
-// upstream-call timing can outlive dispatch for the whole network wait; clearing
-// its slot immediately leaves the fetcher as the request's only owner.
-export const dispatchUpstreamFetch = (
-  options: Pick<UpstreamFetchOptions, 'fetcher' | 'wrapUpstreamCall'>,
-  url: string,
-  init: FetchInit,
-): Promise<Response> => {
-  let owned: FetchInit | undefined = init;
-  return options.wrapUpstreamCall(() => {
-    if (owned === undefined) throw new Error('upstream fetch dispatch invoked more than once');
-    const request = owned;
-    owned = undefined;
-    return options.fetcher(url, request);
-  });
-};

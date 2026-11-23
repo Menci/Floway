@@ -1,10 +1,12 @@
 import { test } from 'vitest';
 
+import { callCustom, customInput } from './pipeline-fixture.ts';
 import type { CustomIngressHeaderRule } from '../src/config.ts';
 import { createCustomProvider } from '../src/provider.ts';
+import { Bytes } from '@floway-dev/pipeline';
 import { parseRerankRequest } from '@floway-dev/protocols/rerank';
 import { directFetcher, type Fetcher, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, noopAnthropicMessagesUpstreamCallOptions, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, jsonResponse, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const HEADER = 'x-route';
 
@@ -90,11 +92,10 @@ const upstreamLines = async (rules: CustomIngressHeaderRule[], admitted: string 
 
   const [model] = await provider.instance.getProvidedModels(directFetcher);
   assertExists(model);
-  await provider.instance.callOpenAIChatCompletions(
-    model,
-    { messages: [] },
-    undefined,
-    noopUpstreamCallOptions({ fetcher, headers: admittedBag(provider.inboundHeaderAllowlist, admitted) }),
+  await callCustom(
+    provider.pipelines.openaiChatCompletions,
+    customInput(model, { messages: [] }, [...admittedBag(provider.inboundHeaderAllowlist, admitted)]),
+    fetcher,
   );
 
   assertExists(observed);
@@ -161,32 +162,32 @@ test('every endpoint resolves the same rules', async () => {
       const rerankModel = models.find(candidate => candidate.kind === 'rerank');
       assertExists(model);
       assertExists(rerankModel);
-      const headers = () => admittedBag(provider.inboundHeaderAllowlist, 'client-a');
-      const opts = () => noopUpstreamCallOptions({ headers: headers() });
-      const messagesOpts = () => noopAnthropicMessagesUpstreamCallOptions({ headers: headers() });
-      const messagesBody = { max_tokens: 10, messages: [{ role: 'user' as const, content: 'hi' }] };
+      const headers = [...admittedBag(provider.inboundHeaderAllowlist, 'client-a')];
+      const input = <Payload>(payload: Payload) => customInput(model, payload, headers);
+      const messages = {
+        ...input({ max_tokens: 10, messages: [{ role: 'user' as const, content: 'hi' }] }),
+        'request.anthropicBeta': [],
+      };
 
-      await provider.instance.callAlphaSearch(model, { query: 'hi' }, undefined, opts());
-      await provider.instance.callOpenAIChatCompletions(model, { messages: [] }, undefined, opts());
-      await provider.instance.callOpenAICompletions(model, { prompt: 'hi' }, undefined, opts());
-      await provider.instance.callOpenAIResponses(model, { input: [] }, 'generate', undefined, opts());
-      await provider.instance.callOpenAIResponses(model, { input: [] }, 'compact', undefined, opts());
-      await provider.instance.callAnthropicMessages(model, messagesBody, undefined, messagesOpts());
-      await provider.instance.callAnthropicMessagesCountTokens(model, messagesBody, undefined, messagesOpts());
-      await provider.instance.callOpenAIEmbeddings(model, { input: 'hi' }, undefined, opts());
-      await provider.instance.callOpenAIImagesGenerations(model, { prompt: 'hi' }, undefined, opts());
-      await provider.instance.callOpenAIImagesEdits(model, {
+      await callCustom(provider.pipelines.alphaSearch, input({ query: 'hi' }));
+      await callCustom(provider.pipelines.openaiChatCompletions, input({ messages: [] }));
+      await callCustom(provider.pipelines.openaiCompletions, input({ prompt: 'hi' }));
+      await callCustom(provider.pipelines.openaiResponses, { ...input({ input: [] }), 'request.action': 'generate' });
+      await callCustom(provider.pipelines.openaiResponses, { ...input({ input: [] }), 'request.action': 'compact' });
+      await callCustom(provider.pipelines.anthropicMessages, messages);
+      await callCustom(provider.pipelines.anthropicMessagesCountTokens, messages);
+      await callCustom(provider.pipelines.openaiEmbeddings, input({ input: 'hi' }));
+      await callCustom(provider.pipelines.openaiImagesGenerations, input({ prompt: 'hi' }));
+      await callCustom(provider.pipelines.openaiImagesEdits, input({
         parameters: { prompt: 'hi' },
-        images: [{ type: 'upload', file: new File([new Uint8Array([1])], 'photo.png', { type: 'image/png' }) }],
-      }, undefined, opts());
-      await provider.instance.callOpenAIAudioTranscriptions(model, {
-        entries: [{ name: 'file', value: new File([new Uint8Array([1])], 'voice.ogg', { type: 'audio/ogg' }) }],
-      }, undefined, opts());
-      await provider.instance.callRerank(
-        rerankModel,
-        parseRerankRequest('cohere-v1', { model: 'reranker', query: 'query', documents: ['one'] }).request,
-        undefined,
-        opts(),
+        images: [{ type: 'upload', bytes: Bytes.fromUtf8('photo'), filename: 'photo.png', contentType: 'image/png' }],
+      }));
+      await callCustom(provider.pipelines.openaiAudioTranscriptions, input({
+        entries: [{ kind: 'file', name: 'file', bytes: Bytes.fromUtf8('voice'), filename: 'voice.ogg', contentType: 'audio/ogg' }],
+      }));
+      await callCustom(
+        provider.pipelines.rerank,
+        customInput(rerankModel, parseRerankRequest('cohere-v1', { model: 'reranker', query: 'query', documents: ['one'] }).request, headers),
       );
     },
   );

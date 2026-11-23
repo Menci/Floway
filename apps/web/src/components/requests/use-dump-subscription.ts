@@ -5,24 +5,27 @@ import { api, callApi } from '../../api/client';
 import { getSessionToken } from '../../auth/session';
 import { useTranslation } from '../../i18n/translation';
 import { errorMessage } from '../../lib/error-message';
-import type { DumpMetadata } from '@floway-dev/gateway/browser';
+import type { DumpLiveSummary, DumpMetadata } from '@floway-dev/gateway/browser';
 
 const PAGE_LIMIT = 100;
 
+export type RequestListItem =
+  | ({ readonly live: true } & DumpLiveSummary)
+  | ({ readonly live?: false } & DumpMetadata);
+
 export interface DumpSubscription {
-  records: DumpMetadata[];
+  records: RequestListItem[];
   hasOlder: boolean;
   error: string | null;
   dismissError: () => void;
   loadOlder: () => Promise<void>;
 }
 
-export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMetadata[], q = '', failures = false): DumpSubscription => {
+export const useDumpSubscription = (keyId: string | null, initialRecords: RequestListItem[], q = '', failures = false): DumpSubscription => {
   const { t } = useTranslation();
   const [records, setRecords] = useState(initialRecords);
   const [hasOlder, setHasOlder] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const seenRef = useRef(new Set<string>());
   // Switching keys re-renders this hook rather than unmounting it, so an
   // older-page request outlives the key it was issued for; its whole outcome
   // -- rows, `setError` and `setHasOlder` alike -- is dropped when the
@@ -32,14 +35,6 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
   // key cannot hold the new key's pagination shut.
   const loadingOlderRef = useRef<number | null>(null);
   const olderRequestRef = useRef<AbortController | null>(null);
-
-  // The loader hands back a fresh `initialRecords` array on every run and
-  // selecting a record re-runs the loader, so the seed reaches the effect
-  // through a ref; listing it as a dependency would close the stream and pay
-  // for another server snapshot on every selection.
-  const initialRecordsRef = useRef(initialRecords);
-  // eslint-disable-next-line react-hooks/refs -- Carrying the newest render's seed to an effect that must not list it as a dependency.
-  initialRecordsRef.current = initialRecords;
 
   // react-i18next hands back a new `t` on every language change, and
   // LanguageSync announces one at boot whether or not the language it
@@ -63,7 +58,6 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
   }
 
   useEffect(() => {
-    seenRef.current = new Set(initialRecordsRef.current.map(record => record.id));
     if (!keyId) return;
 
     const token = getSessionToken();
@@ -75,18 +69,24 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
       setRecords(current => {
         const ids = new Set(snapshot.map(record => record.id));
         const oldest = snapshot.at(-1)?.id;
-        const tail = oldest ? current.filter(record => !ids.has(record.id) && record.id < oldest) : [];
-        const next = [...snapshot, ...tail];
-        seenRef.current = new Set(next.map(record => record.id));
-        return next;
+        const inFlight = current.filter((record): record is Extract<RequestListItem, { live: true }> => record.live === true && !ids.has(record.id));
+        const tail = oldest ? current.filter((record): record is DumpMetadata => record.live !== true && !ids.has(record.id) && record.id < oldest) : [];
+        return [...inFlight, ...snapshot, ...tail];
       });
       setError(null);
     });
+    source.addEventListener('started', raw => {
+      const summary = JSON.parse((raw as MessageEvent).data) as DumpLiveSummary;
+      setRecords(current => current.some(item => item.id === summary.id) ? current : [{ ...summary, live: true }, ...current]);
+    });
     source.addEventListener('appended', raw => {
       const record = JSON.parse((raw as MessageEvent).data) as DumpMetadata;
-      if (seenRef.current.has(record.id)) return;
-      seenRef.current.add(record.id);
-      setRecords(current => [record, ...current]);
+      setRecords(current => {
+        const existing = current.find(item => item.id === record.id);
+        if (existing === undefined) return [record, ...current];
+        if (existing.live !== true) return current;
+        return current.map(item => item.id === record.id ? record : item);
+      });
     });
     source.addEventListener('error', raw => {
       const data = (raw as MessageEvent).data as unknown;
@@ -112,7 +112,7 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
   }, [keyId, q, failures]);
 
   const loadOlder = useCallback(async () => {
-    const oldest = records.at(-1);
+    const oldest = records.findLast((record): record is DumpMetadata => record.live !== true);
     const generation = generationRef.current;
     if (!keyId || !oldest || loadingOlderRef.current === generation || !hasOlder) return;
     loadingOlderRef.current = generation;
@@ -129,10 +129,16 @@ export const useDumpSubscription = (keyId: string | null, initialRecords: DumpMe
         return;
       }
       const page = result.data.records;
-      const fresh = page.filter(record => !seenRef.current.has(record.id));
-      fresh.forEach(record => seenRef.current.add(record.id));
       if (page.length < PAGE_LIMIT) setHasOlder(false);
-      if (fresh.length) setRecords(current => [...current, ...fresh]);
+      if (page.length) setRecords(current => {
+        const pageById = new Map(page.map(record => [record.id, record]));
+        const withCompleted = current.map(record => {
+          const completed = pageById.get(record.id);
+          pageById.delete(record.id);
+          return record.live === true && completed !== undefined ? completed : record;
+        });
+        return [...withCompleted, ...pageById.values()];
+      });
     } catch (error) {
       if (generation !== generationRef.current) return;
       setError(errorMessage(error));

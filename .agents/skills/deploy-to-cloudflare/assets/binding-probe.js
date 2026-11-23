@@ -30,13 +30,16 @@ const checks = {
   KV: async (env) => {
     await env.KV.get(PROBE_KEY);
   },
-  EXECUTION_DO: async (env) => {
-    const id = env.EXECUTION_DO.idFromName(PROBE_KEY);
-    const response = await env.EXECUTION_DO.get(id).fetch(new Request('https://deployment-probe.internal/'));
-    if (!response.ok || await response.text() !== 'Hello World') {
-      throw new Error(`Durable Object probe returned HTTP ${response.status}`);
-    }
-  },
+  EXECUTION_DO: env => probeDurableObject(env.EXECUTION_DO, 'EXECUTION_DO'),
+  LOG_STREAM_DO: env => probeDurableObject(env.LOG_STREAM_DO, 'LOG_STREAM_DO'),
+};
+
+const probeDurableObject = async (namespace, binding) => {
+  const id = namespace.idFromName(PROBE_KEY);
+  const response = await namespace.get(id).fetch(new Request('https://deployment-probe.internal/'));
+  if (!response.ok || await response.text() !== 'Hello World') {
+    throw new Error(`${binding} probe returned HTTP ${response.status}`);
+  }
 };
 
 const probe = async env => Promise.all(Object.values(checks).map(check => check(env)));
@@ -47,6 +50,8 @@ export class ExecutionDO extends DurableObject {
   }
 }
 
+export class LogStreamDO extends ExecutionDO {}
+
 export default {
   async fetch(request, env) {
     if (new URL(request.url).pathname !== '/api/deployment-probe') return new Response('Not Found', { status: 404 });
@@ -54,7 +59,7 @@ export default {
     try {
       await probe(env);
       return new Response('Hello World', {
-        headers: { 'x-floway-binding-probe': 'DB,FILES,IMAGES,KV,EXECUTION_DO' },
+        headers: { 'x-floway-binding-probe': Object.keys(checks).join(',') },
       });
     } catch (error) {
       const detail = error instanceof Error

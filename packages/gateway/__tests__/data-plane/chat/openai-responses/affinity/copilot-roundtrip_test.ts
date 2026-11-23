@@ -1,14 +1,15 @@
 import { expect, test } from 'vitest';
 
+import { routeCandidate } from './fixture.ts';
 import { wrapOpenAIResponsesAffinityEgress } from '../../../../../src/data-plane/chat/openai-responses/affinity/egress.ts';
-import { analyzeOpenAIResponsesAffinity } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
-import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
+import { analyzeOpenAIResponsesAffinity, evaluateOpenAIResponsesCandidate } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
+import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/carrier.ts';
+import { run } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesOutputItemEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { initProviderRepo, providerModelOf, type UpstreamRecord } from '@floway-dev/provider';
+import { initProviderRepo, providerModelOf, toProviderModelFacts, type UpstreamRecord } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache, copilotProviderModule } from '@floway-dev/provider-copilot';
-import { noopUpstreamCallOptions, sseResponse, stubModelCandidate, stubProvider, withMockedFetch } from '@floway-dev/test-utils';
+import { sseResponse, stubModelCandidate, stubProvider, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
 
 const upstream: UpstreamRecord = {
   id: 'up-copilot',
@@ -88,6 +89,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       disabledPublicModelIds: [],
       modelPrefix: null,
       modelsCache: null,
+      pipelines: {},
       instance: stubProvider(),
     },
     model: { id: 'gpt-test', endpoints: { openaiResponses: {} } },
@@ -119,17 +121,18 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       return sseResponse();
     },
     async () => {
-      const first = await provider.instance.callOpenAIResponses(
-        providerModelOf(candidate),
-        { input: [], stream: true, store: false },
-        'generate',
-        undefined,
-        noopUpstreamCallOptions(),
-      );
-      if (!first.ok || first.action !== 'generate') throw new Error('expected first Copilot stream');
+      const pipeline = provider.pipelines.openaiResponses;
+      if (pipeline === undefined) throw new Error('Expected Copilot Responses pipeline');
+      const invoke = (payload: Omit<CanonicalOpenAIResponsesPayload, 'model'>) => run(pipeline, {
+        'provider.model': toProviderModelFacts(providerModelOf(candidate)),
+        'request.headers': [], 'request.action': 'generate', 'request.payload': payload,
+      }, { services: { fetcher: () => testFetcher }, finalizationTimeoutMs: 2000 });
+      const first = invoke({ input: [], stream: true, store: false });
+      const { 'response.events': firstEvents } = await first.result;
+      if (firstEvents === undefined) throw new Error('Expected first Copilot stream');
 
       const codec = new AffinityCodec('00'.repeat(32));
-      const publicEvents = await collectEvents(wrapOpenAIResponsesAffinityEgress(first.events, {
+      const publicEvents = await collectEvents(wrapOpenAIResponsesAffinityEgress(firstEvents, {
         codec,
         affinity: {
           upstreamId: provider.upstreamId,
@@ -137,6 +140,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
           opaqueBlobCompatibilityIdentity: { upstreamId: provider.upstreamId, key: candidate.model.id },
         },
       }));
+      expect(await first.done).toEqual({ ok: true });
       const done = publicEvents.find(event => event.type === 'response.output_item.done');
       if (done?.type !== 'response.output_item.done') throw new Error('expected public done item');
       const publicItem = done.item;
@@ -151,20 +155,20 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
         store: false,
       };
       const prepared = await analyzeOpenAIResponsesAffinity(payload, codec);
-      const exact = acceptedAffinityEvaluation(prepared, candidate).materialize();
-      const incompatible = acceptedAffinityEvaluation(prepared, otherCandidate).materialize();
+      const accepted = evaluateOpenAIResponsesCandidate(prepared, routeCandidate(candidate), payload);
+      const degraded = evaluateOpenAIResponsesCandidate(prepared, routeCandidate(otherCandidate), payload);
+      if (accepted.kind !== 'accepted' || degraded.kind !== 'accepted') throw new Error('Expected both candidate projections');
+      const exact = accepted.payload;
+      const incompatible = degraded.payload;
       expect(exact.input[0]).toMatchObject({ type: 'reasoning', id: publicItem.id });
       expect(incompatible.input).toEqual([]);
 
       const { model: _model, ...exactBody } = exact;
-      const second = await provider.instance.callOpenAIResponses(
-        providerModelOf(candidate),
-        exactBody,
-        'generate',
-        undefined,
-        noopUpstreamCallOptions(),
-      );
-      if (!second.ok || second.action !== 'generate') throw new Error('expected replay Copilot stream');
+      const second = invoke(exactBody);
+      const { 'response.events': replayEvents } = await second.result;
+      if (replayEvents === undefined) throw new Error('Expected replay Copilot stream');
+      await replayEvents.close();
+      expect(await second.done).toEqual({ ok: true });
     },
   );
 
