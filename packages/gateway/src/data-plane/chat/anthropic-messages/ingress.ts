@@ -40,7 +40,14 @@ const parsePayload = (allowsStreaming: boolean) => defineStage<GatewayHttpFacts,
   return: { provides: answerKeys },
   execute: async (facts, next, env) => {
     const http = facts['request.http'];
-    const payload = JSON.parse(requestBytes(http).utf8()) as AnthropicMessagesPayload;
+    const body = requestBytes(http).utf8();
+    let payload: AnthropicMessagesPayload;
+    try {
+      payload = JSON.parse(body) as AnthropicMessagesPayload;
+    } catch (error) {
+      if (facts['request.uploadError'] === undefined) throw error;
+      return gatewayAnswer(env, jsonHttpResponse(502, internalAnthropicMessagesErrorPayload(error), env.clock()));
+    }
     const param = ['anthropic_beta', 'betas'].find(key => Object.hasOwn(payload, key));
     if (param !== undefined) {
       return gatewayAnswer(env, jsonHttpResponse(400, {

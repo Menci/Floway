@@ -11,7 +11,7 @@ import { type GatewayHttpFacts, httpRequestFacts } from '../../../../src/data-pl
 import { type GatewayServices, type RouteCandidate } from '../../../../src/data-plane/pipeline/services.ts';
 import { writeHttpResponse } from '../../../../src/data-plane/shared/http-writer.ts';
 import type { HttpResponseFacts } from '@floway-dev/http';
-import { Bytes, compose, defineEnding, link, type Pipeline, run, type RunEvent, type StageEnv } from '@floway-dev/pipeline';
+import { Bytes, compose, defineEnding, type ErrorSnapshot, link, type Pipeline, run, type RunEvent, type StageEnv } from '@floway-dev/pipeline';
 import { createAnthropicMessagesUsage, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx, toAnthropicMessagesUsageDelta } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import { type ChatTargetApi, type FlagId, type ProviderAnthropicInput, type ProviderHttpOutput, type ProviderPipelines, type ProviderStreamOutput, toProviderModelFacts } from '@floway-dev/provider';
@@ -114,11 +114,12 @@ export const unusedBody = <Api extends ChatTargetApi>(api: Api): Pipeline<ChatBo
 export const messagesFixture = (upstreams = [messagesUpstream()], options: {
   readonly responses?: ChatBodyTargets<'anthropicMessages'>['responses'];
   readonly webSearchProvider?: GatewayServices['webSearchProvider'];
+  readonly recordSearchUsage?: GatewayServices['searchUsageStore']['record'];
   readonly failedUpstreams?: readonly string[];
   readonly sawModel?: boolean;
 } = {}) => {
   const events: RunEvent[] = [];
-  const usage: Parameters<GatewayServices['usageStore']['record']>[0][] = [];
+  const usage: Parameters<GatewayServices['usageStore']['record']>[1][] = [];
   const performance: Parameters<GatewayServices['performanceStore']['record']>[0][] = [];
   const requestedModels: string[] = [];
   const services: GatewayServices = {
@@ -141,8 +142,14 @@ export const messagesFixture = (upstreams = [messagesUpstream()], options: {
     affinityCodec: new AffinityCodec(secret),
     sidecarCodecs: createSidecarCodecFactory(secret),
     responsesStore: () => createNonOpenAIResponsesSourceStore('test-key'),
-    usageStore: { record: async row => { usage.push(row); } },
+    usageStore: {
+      record: async (_callId, row) => {
+        usage.push(row);
+        return { usage: 'written', lastUsedAt: 'written' };
+      },
+    },
     performanceStore: { record: async row => { performance.push(row); } },
+    searchUsageStore: { record: options.recordSearchUsage ?? (async () => {}) },
     webSearchProvider: options.webSearchProvider ?? Object.assign(
       async () => ({ type: 'disabled' as const }),
       { alphaSearch: async () => ({ enabled: false, upstreamId: '', model: '' }) },
@@ -158,11 +165,12 @@ export const messagesFixture = (upstreams = [messagesUpstream()], options: {
   const count = createAnthropicMessagesCountIngress(countBody);
   link([generate, count]);
 
-  const send = async (payload: unknown, opts: { readonly count?: boolean; readonly headers?: HeadersInit } = {}) => {
+  const send = async (payload: unknown, opts: { readonly count?: boolean; readonly headers?: HeadersInit; readonly uploadError?: ErrorSnapshot } = {}) => {
     const path = opts.count ? '/v1/messages/count_tokens' : '/v1/messages';
     const request = new Request(`https://gateway.test${path}`, { method: 'POST', headers: opts.headers });
     const input: GatewayHttpFacts = {
-      'request.http': httpRequestFacts(request, Bytes.fromUtf8(JSON.stringify(payload))),
+      'request.http': httpRequestFacts(request, opts.uploadError === undefined ? Bytes.fromUtf8(JSON.stringify(payload)) : Bytes.empty),
+      ...(opts.uploadError === undefined ? {} : { 'request.uploadError': opts.uploadError }),
       'request.auth.apiKeyId': 'test-key',
       'request.auth.user': { id: 1, isAdmin: false },
       'request.route.upstreamIds': null,

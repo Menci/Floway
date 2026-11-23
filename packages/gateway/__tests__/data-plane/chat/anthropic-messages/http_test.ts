@@ -38,6 +38,34 @@ test.each(['anthropic_beta', 'betas'])('POST /v1/messages rejects body %s with a
   expect(await done).toMatchObject({ ok: true });
 });
 
+test.each([false, true])('interrupted Messages uploads return the Anthropic parse error before routing (count=%s)', async count => {
+  const fixture = messagesFixture([]);
+  const uploadError = { name: 'AbortError', message: 'client disconnected during upload' };
+  const { response, done } = await fixture.send(undefined, { count, uploadError });
+
+  expect(response.status).toBe(502);
+  expect(response.headers.get('content-type')).toBe('application/json');
+  const wire = await response.text();
+  const stack: string = JSON.parse(wire).error.provider_specific_fields.stack;
+  expect(stack).toMatch(/^SyntaxError: Unexpected end of JSON input\n\s+at JSON\.parse/);
+  expect(wire).toBe(JSON.stringify({
+    type: 'error',
+    error: {
+      type: 'internal_error',
+      message: 'Unexpected end of JSON input',
+      provider_specific_fields: { name: 'SyntaxError', stack },
+    },
+  }));
+  expect(await done).toMatchObject({ ok: true });
+  expect(fixture.requestedModels).toEqual([]);
+  const parse = fixture.events.find(event => event.k === 'enter' && event.name === 'parsePayload');
+  if (parse?.k !== 'enter') throw new Error('Missing parsePayload trace entry');
+  expect(parse).toMatchObject({ facts: { 'request.uploadError': uploadError } });
+  expect(fixture.events).toContainEqual(
+    expect.objectContaining({ k: 'leave', stageId: parse.stageId, facts: expect.objectContaining({ 'response.source': 'gateway' }) }),
+  );
+});
+
 test('POST /v1/messages/count_tokens forwards an upstream rate limit and retry hint unchanged', async () => {
   const body = '{"error":{"type":"rate_limit_error","message":"wait"}}';
   const upstream = vi.fn(() => httpReply(429, Bytes.fromUtf8(body), [
