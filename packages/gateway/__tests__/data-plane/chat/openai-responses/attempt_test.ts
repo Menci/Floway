@@ -127,7 +127,7 @@ test('generate isolates provider mutations with JSON-safe container cloning', as
   assertEquals((sourceItem as { role: string }).role, 'user');
 });
 
-test('generate sends an explicit null namespace for unresolved calls to previously declared namespace tools', async () => {
+test('generate sends an explicit null namespace for unresolved calls to previously declared namespace tools when flagged', async () => {
   installRepo();
   const tool = (name: string) => ({ type: 'function' as const, name });
   const customTool = (name: string) => ({ type: 'custom' as const, name });
@@ -163,9 +163,12 @@ test('generate sends an explicit null namespace for unresolved calls to previous
     action: 'generate', ok: true, events: makeProviderEvents([]), modelKey: 'test-model-key',
   }));
 
+  const flagged = makeCandidate(providerCall, new Set(['openai-responses-null-unresolved-function-call-namespace']));
+  await openaiResponsesAttempt.generate({ payload, ctx: makeGatewayCtx(), candidate: flagged, headers: new Headers() });
   await openaiResponsesAttempt.generate({ payload, ctx: makeGatewayCtx(), candidate: makeCandidate(providerCall), headers: new Headers() });
 
-  assertEquals(providerCall.mock.calls.length, 1);
+  assertEquals(providerCall.mock.calls.length, 2);
+  assertEquals(providerCall.mock.calls[1][1].input, payload.input);
   assertEquals(providerCall.mock.calls[0][1].input, [
     call('before_declaration'), additionalTools, { ...unique, namespace: null }, failedResult,
     { ...ambiguous, namespace: null }, searchOutput, { ...fromSearch, namespace: null },

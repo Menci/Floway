@@ -424,6 +424,10 @@ const en = {
               label: 'Disable Tool Choice for Empty Tool Lists',
               description: 'Some upstreams reject requests that combine an empty `tools` array with an active `tool_choice` such as `auto`.\nWhen this option is enabled and `tools` is an empty array, Floway rewrites `tool_choice` to the protocol-specific **none** value before forwarding the request.',
             },
+            'openai-responses-null-unresolved-function-call-namespace': {
+              label: 'Mark Unresolved Function Calls with a null Namespace',
+              description: 'A model may call a tool by its bare name (`function_call` without `namespace`) when that name was declared only inside a tool namespace, for example `list_agents` declared under a `collaboration` namespace. The client answers such a call as an unsupported tool, but some OpenAI Responses upstreams (such as GitHub Copilot) reject every later request that replays it in history.\nEnable this option to set `namespace` to `null` on such calls before forwarding the request. The call stays unresolved as it happened, and Floway does not guess which namespace was meant.',
+            },
             'rewrite-mid-conv-system-to-user': {
               label: 'Rewrite Inline system Roles to user',
               description: 'Some upstreams do not support inline `system` messages (for example, older Claude deployments and many OpenAI-compatible chat templates).\nWhen this option is enabled, Floway rewrites every inline `system` role to `user`. Message content remains unchanged.',

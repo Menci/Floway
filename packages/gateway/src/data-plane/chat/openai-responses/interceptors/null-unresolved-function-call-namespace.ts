@@ -1,11 +1,13 @@
 import type { OpenAIResponsesInterceptor } from './types.ts';
+import { providerModelOf } from '@floway-dev/provider';
 
 // Responses can reject a bare function_call when its name only appears in
 // previously loaded namespaces. The lookup includes function and custom tool
 // declarations. Explicit null preserves the unresolved call and its result.
 // https://github.com/github/copilot-cli/issues/5400
-export const withFunctionCallNamespaceNormalized: OpenAIResponsesInterceptor = (ctx, _gatewayCtx, run) => {
+export const withUnresolvedFunctionCallNamespaceNulled: OpenAIResponsesInterceptor = (ctx, _gatewayCtx, run) => {
   if (ctx.targetApi !== 'openaiResponses') return run();
+  if (!providerModelOf(ctx.candidate).enabledFlags.has('openai-responses-null-unresolved-function-call-namespace')) return run();
 
   const defaultToolNames = new Set(ctx.payload.tools?.flatMap(tool =>
     tool.type === 'function' || tool.type === 'custom' ? [tool.name] : []));

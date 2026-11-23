@@ -34,6 +34,7 @@ export const OPTIONAL_FLAG_IDS = [
   'serialize-stream-items',
   'disable-reasoning-on-forced-tool-choice',
   'empty-tools-tool-choice-none',
+  'openai-responses-null-unresolved-function-call-namespace',
   'rewrite-mid-conv-system-to-user',
   'rewrite-disallowed-mid-conv-system-to-user',
   'rewrite-developer-to-system',
