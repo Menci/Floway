@@ -110,10 +110,12 @@ const parseBoolean = (raw: string | null): boolean | null => {
   return null;
 };
 
+export const isClaudeCodeQuotaHeader = (name: string): boolean => name.toLowerCase().startsWith(HEADER_PREFIX);
+
 const collectRaw = (headers: Headers): Record<string, string> => {
   const out: Record<string, string> = {};
   headers.forEach((value, name) => {
-    if (name.toLowerCase().startsWith(HEADER_PREFIX)) {
+    if (isClaudeCodeQuotaHeader(name)) {
       out[name.toLowerCase()] = value;
     }
   });

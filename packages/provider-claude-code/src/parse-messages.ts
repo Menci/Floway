@@ -1,12 +1,12 @@
 import { logWarn } from './log.ts';
-import { Bytes, defineStage, type ManagedStream } from '@floway-dev/pipeline';
+import type { ClaudeCodeServices } from './service.ts';
+import { defineStage, isManagedStream } from '@floway-dev/pipeline';
 import { parseAnthropicMessagesStream, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import { isEventStreamMediaType, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
-import type { HttpResponseFacts, ProviderHttpOutput, ProviderServices, ProviderStreamOutput } from '@floway-dev/provider';
+import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
+import { getHeader, parseErrorBody, parseSseBody, type HttpResponseFacts, type ProviderAnthropicMessagesOutput, type ProviderStreamParser, type ProviderUpstreamBase } from '@floway-dev/provider';
 
 const STREAM_DIAGNOSTIC_FRAME_LIMIT = 3;
 const STREAM_DIAGNOSTIC_FRAME_DATA_CHARS = 256;
-const ERROR_SNIPPET_CHARS = 1024;
 
 const oneLineError = (error: unknown): string => {
   const message = (error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').trim();
@@ -23,7 +23,7 @@ const observedClaudeCodeMessagesStream = async function* (
   options: {
     upstreamId: string;
     model: string;
-    headers: Headers;
+    headers: HttpResponseFacts['headers'];
     signal: AbortSignal;
     frames: StreamDiagnosticFrame[];
     rawFrameCount: () => number;
@@ -46,9 +46,9 @@ const observedClaudeCodeMessagesStream = async function* (
     if (!options.signal.aborted && (terminalEvent === null || streamError !== undefined)) logWarn('claude_code_messages_stream_incomplete', {
       upstream_id: options.upstreamId,
       model: options.model,
-      request_id: options.headers.get('request-id'),
-      cf_ray: options.headers.get('cf-ray'),
-      trace_response: options.headers.get('traceresponse'),
+      request_id: getHeader(options.headers, 'request-id') ?? null,
+      cf_ray: getHeader(options.headers, 'cf-ray') ?? null,
+      trace_response: getHeader(options.headers, 'traceresponse') ?? null,
       raw_sse_frames: options.rawFrameCount(),
       terminal_event: terminalEvent,
       error: streamError === undefined ? null : oneLineError(streamError),
@@ -57,35 +57,9 @@ const observedClaudeCodeMessagesStream = async function* (
   }
 };
 
-const readableBytes = (source: AsyncIterable<Bytes>): ReadableStream<Uint8Array> => {
-  const iterator = source[Symbol.asyncIterator]();
-  return new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      const part = await iterator.next();
-      if (part.done) controller.close();
-      else controller.enqueue(part.value.toUint8Array());
-    },
-    async cancel() {
-      await iterator.return?.();
-    },
-  }, { highWaterMark: 0 });
-};
-
-const bodySnippet = async (body: HttpResponseFacts['body']): Promise<string> => {
-  const decoder = new TextDecoder();
-  let text = body instanceof Bytes ? body.utf8() : '';
-  if (body !== null && !(body instanceof Bytes)) {
-    for await (const part of body) {
-      text += decoder.decode(part.toUint8Array(), { stream: true });
-      if (text.length > ERROR_SNIPPET_CHARS) break;
-    }
-    text += decoder.decode();
-  }
-  if (text.length === 0) return '<empty>';
-  return text.length > ERROR_SNIPPET_CHARS ? `${text.slice(0, ERROR_SNIPPET_CHARS)}...[truncated]` : text;
-};
-
-const parseBody = (source: AsyncIterable<Bytes>, signal: AbortSignal, upstreamId: string, model: string, headers: Headers, requestSignal: AbortSignal) => {
+const parseBody = (
+  upstreamId: string, model: string, headers: HttpResponseFacts['headers'], requestSignal: AbortSignal,
+): ProviderStreamParser<AnthropicMessagesStreamEventEx> => (source, options) => {
   let rawSseFrames = 0;
   const frames: StreamDiagnosticFrame[] = [];
   const onSseFrame = (frame: SseFrame): void => {
@@ -98,7 +72,7 @@ const parseBody = (source: AsyncIterable<Bytes>, signal: AbortSignal, upstreamId
     });
     if (frames.length > STREAM_DIAGNOSTIC_FRAME_LIMIT) frames.shift();
   };
-  return observedClaudeCodeMessagesStream(parseAnthropicMessagesStream(readableBytes(source), { signal, onSseFrame }), {
+  return observedClaudeCodeMessagesStream(parseAnthropicMessagesStream(source, { ...options, onSseFrame }), {
     upstreamId,
     model,
     headers,
@@ -108,36 +82,30 @@ const parseBody = (source: AsyncIterable<Bytes>, signal: AbortSignal, upstreamId
   });
 };
 
-export const parseMessagesStage = (upstreamId: string) => defineStage<
-  {}, {}, ProviderHttpOutput, ProviderStreamOutput<AnthropicMessagesStreamEventEx>, ProviderServices
->({
+type ParseInput = {
+  readonly 'provider.upstream': ProviderUpstreamBase;
+  readonly 'request.claudeCode.modelKey': string;
+  readonly 'request.claudeCode.retryUnauthorized': boolean;
+};
+type HttpOutput = { readonly 'response.http': HttpResponseFacts };
+type ParseOutput = Omit<ProviderAnthropicMessagesOutput, 'response.modelKey'>;
+
+export const parseMessagesStage = defineStage<ParseInput, ParseInput, HttpOutput, ParseOutput, ClaudeCodeServices>({
   name: 'claude-code.parse-messages',
   through: {
-    request: { needs: [], consumes: [], provides: [] },
-    response: { needs: ['response.http', 'response.modelKey'], consumes: [], provides: ['response.http', 'response.events'] },
+    request: { needs: ['provider.upstream', 'request.claudeCode.modelKey', 'request.claudeCode.retryUnauthorized'], consumes: [], provides: [] },
+    response: { needs: ['response.http'], consumes: [], provides: ['response.http', 'response.anthropicMessages'] },
   },
-  async execute(facts, next, env) {
-    const back = await next(facts);
+  async execute(facts, scope) {
+    const back = await scope.next(facts);
     const response = back['response.http'];
-    if (response.status < 200 || response.status >= 300) return { ...back, 'response.events': undefined };
-    const headers = new Headers(response.headers.map(([name, value]): [string, string] => [name, typeof value === 'string' ? value : value.reveal()]));
-    const contentType = headers.get('content-type');
-    const parse = (source: AsyncIterable<Bytes>, signal: AbortSignal) => parseBody(source, signal, upstreamId, back['response.modelKey'], headers, env.signal);
-    const body = response.body;
-    if (body === null || !isEventStreamMediaType(contentType)) {
-      const message = `Upstream returned ${response.status} with content-type "${contentType ?? 'unknown'}" but stream is required (provider must force stream=true and return text/event-stream when response.ok).`;
-      let snippet: string;
-      try {
-        snippet = await bodySnippet(body);
-      } catch (cause) {
-        throw new Error(`${message} Body: <unreadable>`, { cause });
-      }
-      throw new Error(`${message} Body: ${snippet}`);
-    }
-
-    const events: ManagedStream<ProtocolFrame<AnthropicMessagesStreamEventEx>> = body instanceof Bytes
-      ? env.createStream({ label: 'claude-code.messages', iterate: signal => parse((async function* () { yield body; })(), signal) })
-      : env.wrapStream(body, { label: 'claude-code.messages', transform: parse });
-    return { ...back, 'response.http': { ...response, body: null }, 'response.events': events };
+    const retry = response.status === 401 && facts['request.claudeCode.retryUnauthorized'];
+    // Close the rejected attempt before refreshing, even if its body stalls.
+    if (retry && isManagedStream(response.body)) await response.body.close();
+    const failure = await parseErrorBody(retry ? { ...response, body: null } : response, scope);
+    const parsed = failure ?? await parseSseBody(response, scope, parseBody(
+      facts['provider.upstream'].id, facts['request.claudeCode.modelKey'], response.headers, scope.signal,
+    ));
+    return { ...back, 'response.http': parsed['response.http'], 'response.anthropicMessages': parsed.outcome };
   },
 });

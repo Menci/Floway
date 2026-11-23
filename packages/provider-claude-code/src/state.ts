@@ -13,7 +13,7 @@
 //
 // - `oauth`: a short-lived access token plus a rotating refresh token.
 //   Every refresh call mints a new access token AND rotates the refresh
-//   token; the access-token module commits both together.
+//   token. The Claude Code service commits both together.
 // - `setup-token`: a long-lived (~1 year) inference-only bearer with NO
 //   refresh token. The `accessToken` entry IS the credential — when it
 //   expires the operator must re-import. `refreshToken` is null. The
@@ -62,8 +62,8 @@ export type ClaudeCodeAccountCredential =
 
 interface ClaudeCodeAccountCredentialBase {
   accountUuid: string;
-  // ISO 8601, written on every state transition (initial import, rotation,
-  // terminal-state flip). The mutation paths always set it together with
+  // ISO 8601, written on initial import and terminal-state transition.
+  // The mutation paths always set it together with
   // `state`, so it's required on the wire.
   stateUpdatedAt: string;
   accessToken: ClaudeCodeAccessTokenEntry | null;
@@ -74,7 +74,7 @@ interface ClaudeCodeAccountCredentialBase {
 }
 
 // The credential class. `oauth` carries a non-empty rotating refresh token
-// that the access-token module rotates on every refresh round-trip; `setup-token` is the
+// that the Claude Code service rotates on every refresh round-trip. `setup-token` is the
 // long-lived inference-only bearer with no refresh counterpart.
 type ClaudeCodeAccountCredentialTokenKind =
   | { tokenKind: 'oauth'; refreshToken: string }
@@ -188,7 +188,7 @@ const assertClaudeCodeAccountCredential = (value: unknown, where: string): void 
     throw new TypeError(`${where}.state must be one of 'active' | 'session_terminated' | 'refresh_failed', got ${String(obj.state)}`);
   }
   // Terminal states carry the upstream's terminal message; 'active' must not.
-  // This split keeps the access-token module from inventing a fallback string
+  // This split keeps the Claude Code service from inventing a fallback string
   // when it surfaces ClaudeCodeOAuthSessionTerminatedError.
   if (obj.state === 'active') {
     if (obj.stateMessage !== undefined) {

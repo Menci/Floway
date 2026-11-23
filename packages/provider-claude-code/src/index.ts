@@ -10,7 +10,15 @@ export const claudeCodeProviderModule: ProviderModule = {
 export * from './config.ts';
 export * from './state.ts';
 export * from './constants.ts';
-export * from './access-token.ts';
+export { claudeCodePipelines } from './pipelines.ts';
+export {
+  claudeCodeService,
+  createClaudeCodeService,
+  ensureClaudeCodeAccessToken,
+  persistClaudeCodeUsageProbe,
+  type ClaudeCodeService,
+  type ClaudeCodeServices,
+} from './service.ts';
 export * from './auth/identity.ts';
 export * from './auth/import.ts';
 export * from './auth/oauth.ts';

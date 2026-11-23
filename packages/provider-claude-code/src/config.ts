@@ -1,4 +1,4 @@
-import type { UpstreamRecord } from '@floway-dev/provider';
+import type { ProviderUpstreamBase, UpstreamRecord } from '@floway-dev/provider';
 
 // One Claude account's operator-managed identity, derived from /v1/oauth/profile
 // at import time. Mutating credentials (refreshToken, accessToken, credential
@@ -37,6 +37,17 @@ export interface ClaudeCodeUpstreamConfig {
 export type ClaudeCodeUpstreamRecord = UpstreamRecord & {
   kind: 'claude-code';
   config: ClaudeCodeUpstreamConfig;
+};
+
+export interface ClaudeCodeUpstreamConfigFacts {
+  readonly account: ClaudeCodeAccountIdentity;
+}
+
+export type ClaudeCodeUpstreamFacts = ProviderUpstreamBase<'claude-code', ClaudeCodeUpstreamConfigFacts>;
+
+export const toClaudeCodeUpstreamFacts = (record: UpstreamRecord): ClaudeCodeUpstreamFacts => {
+  assertClaudeCodeUpstreamRecord(record);
+  return { id: record.id, kind: record.kind, name: record.name, config: { account: record.config.accounts[0] } };
 };
 
 function assertClaudeCodeAccountIdentity(value: unknown, where: string): asserts value is ClaudeCodeAccountIdentity {

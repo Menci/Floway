@@ -8,7 +8,7 @@ import {
   CLAUDE_CODE_REDIRECT_URI,
   CLAUDE_CODE_SETUP_TOKEN_EXPIRES_IN_SECONDS,
 } from '../constants.ts';
-import { type Fetcher } from '@floway-dev/provider';
+import { UpstreamTransportError, type Fetcher } from '@floway-dev/provider';
 
 // Discriminates the two PKCE flows. `oauth` is the full Claude Code CLI
 // sign-in: three-scope grant that mints a short-lived access token + rotating
@@ -33,7 +33,7 @@ export interface ClaudeCodeOAuthTokenResponse {
 // from generic OAuth 4xx so callers can react to session-termination
 // separately from a transient upstream message. `code` carries the raw OAuth
 // `error` value (`invalid_grant`, `app_session_terminated`, etc.) so the
-// refresh-race recovery in the access-token module can single out
+// Claude Code service can single out
 // `invalid_grant` — which is the only terminal code that might actually mean
 // "a sibling worker just rotated the refresh token, and our copy is stale" —
 // from codes that signal genuine credential death under any race scenario.
@@ -46,6 +46,10 @@ export class ClaudeCodeOAuthSessionTerminatedError extends Error {
     this.code = args.code;
     this.upstreamMessage = args.message;
   }
+}
+
+export class ClaudeCodeOAuthRequestError extends Error {
+  override readonly name = 'ClaudeCodeOAuthRequestError';
 }
 
 // Terminal-code sets are split by grant type, mirroring codex
@@ -83,12 +87,18 @@ const claudeCodeTokenRequest = async (
     body: JSON.stringify(body),
   });
 
-  const rawText = await response.text();
+  let rawText: string;
+  try {
+    rawText = await response.text();
+  } catch (error) {
+    throw new UpstreamTransportError(error);
+  }
   let parsed: unknown;
   try {
     parsed = rawText.length > 0 ? JSON.parse(rawText) : {};
   } catch (cause) {
-    throw new Error(
+    if (!(cause instanceof SyntaxError)) throw cause;
+    throw new ClaudeCodeOAuthRequestError(
       `Claude Code OAuth /token returned ${response.status} with non-JSON body: ${rawText.slice(0, 256)}`,
       { cause },
     );
@@ -119,21 +129,21 @@ const claudeCodeTokenRequest = async (
     if (code && terminalCodes.has(code)) {
       throw new ClaudeCodeOAuthSessionTerminatedError({ code, message });
     }
-    throw new Error(`Claude Code OAuth /token returned ${response.status}: ${message}`);
+    throw new ClaudeCodeOAuthRequestError(`Claude Code OAuth /token returned ${response.status}: ${message}`);
   }
 
-  if (root === null) throw new Error('Claude Code OAuth /token response is not an object');
+  if (root === null) throw new ClaudeCodeOAuthRequestError('Claude Code OAuth /token response is not an object');
   if (typeof root.access_token !== 'string' || root.access_token === '') {
-    throw new Error('Claude Code OAuth /token response missing access_token');
+    throw new ClaudeCodeOAuthRequestError('Claude Code OAuth /token response missing access_token');
   }
   if (typeof root.expires_in !== 'number' || !Number.isFinite(root.expires_in)) {
-    throw new Error('Claude Code OAuth /token response missing expires_in');
+    throw new ClaudeCodeOAuthRequestError('Claude Code OAuth /token response missing expires_in');
   }
   if (root.refresh_token !== undefined && (typeof root.refresh_token !== 'string' || root.refresh_token === '')) {
-    throw new Error('Claude Code OAuth /token response carries non-string refresh_token');
+    throw new ClaudeCodeOAuthRequestError('Claude Code OAuth /token response carries non-string refresh_token');
   }
   if (typeof root.scope !== 'string') {
-    throw new Error('Claude Code OAuth /token response missing scope');
+    throw new ClaudeCodeOAuthRequestError('Claude Code OAuth /token response missing scope');
   }
   return {
     access_token: root.access_token,
@@ -185,13 +195,16 @@ export const exchangeClaudeCodeAuthorizationCode = async (opts: {
 export const refreshClaudeCodeAccessToken = async (
   refreshToken: string,
   fetcher: Fetcher,
-): Promise<ClaudeCodeOAuthTokenResponse> => {
+): Promise<ClaudeCodeOAuthTokenResponse & { refresh_token: string }> => {
   const body = {
     grant_type: 'refresh_token',
     refresh_token: refreshToken,
     client_id: CLAUDE_CODE_CLIENT_ID,
   };
-  return await claudeCodeTokenRequest(body, REFRESH_TERMINAL_OAUTH_CODES, fetcher);
+  const refreshed = await claudeCodeTokenRequest(body, REFRESH_TERMINAL_OAUTH_CODES, fetcher);
+  const rotated = refreshed.refresh_token;
+  if (rotated === undefined) throw new ClaudeCodeOAuthRequestError('Claude Code refresh response missing refresh_token');
+  return { ...refreshed, refresh_token: rotated };
 };
 
 // The literal `code=true` query param matches what the real Claude Code CLI

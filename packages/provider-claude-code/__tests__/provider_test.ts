@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { toClaudeCodeUpstreamFacts } from '../src/config.ts';
 import { buildClaudeCodeCatalog, type ClaudeCodeApiModel } from '../src/models.ts';
-import { createClaudeCodeProvider } from '../src/provider.ts';
+import { claudeCodePipelines } from '../src/pipelines.ts';
+import { createClaudeCodeService } from '../src/service.ts';
 import type { ClaudeCodeAccessTokenEntry, ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from '../src/state.ts';
 import { run } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload, AnthropicMessagesTextBlockParam } from '@floway-dev/protocols/anthropic-messages';
-import { directFetcher, initProviderRepo, toProviderModelFacts, type FlagId, type HeaderEntry, type ProviderAnthropicInput, type UpstreamRecord } from '@floway-dev/provider';
+import { directFetcher, httpUrl, initProviderRepo, toProviderModelFacts, type FlagId, type HeaderEntry, type ProviderAnthropicInput, type UpstreamRecord } from '@floway-dev/provider';
 import { readJsonRequest } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc_provider';
@@ -85,16 +87,18 @@ const sseResponse = (): Response => new Response(
 );
 
 const runMessages = async (payload: ProviderAnthropicInput['request.payload'], headers: readonly HeaderEntry[] = [], beta: readonly string[] = []) => {
-  const instance = createClaudeCodeProvider(currentRecord);
-  const handle = run(instance.pipelines.anthropicMessages!, {
+  const handle = run(claudeCodePipelines.anthropicMessages, {
+    'provider.upstream': toClaudeCodeUpstreamFacts(currentRecord),
     'provider.model': toProviderModelFacts(sonnetProviderModel),
     'request.payload': payload,
-    'request.headers': headers,
+    'request.http': { method: 'POST', url: httpUrl('http://floway.test/v1/messages'), headers, body: null },
     'request.anthropicBeta': beta,
-  }, { services: { fetcher: () => directFetcher }, finalizationTimeoutMs: 1000 });
+  }, { services: { fetcher: () => directFetcher, claudeCode: createClaudeCodeService() }, finalizationTimeoutMs: 1000 });
   const result = await handle.result;
   expect(result['response.http'].status).toBe(200);
-  await result['response.events']!.close();
+  const outcome = result['response.anthropicMessages'];
+  expect(outcome.kind).toBe('stream');
+  if (outcome.kind === 'stream') await outcome.events.close();
   expect(await handle.done).toEqual({ ok: true });
 };
 

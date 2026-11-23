@@ -1,19 +1,8 @@
 import { logWarn } from './log.ts';
-import { readClaudeCodeUpstreamState, replaceSoleAccount, type ClaudeCodeAccountCredential } from './state.ts';
-import type { PersistenceResult } from './usage-persistence.ts';
-import { Bytes, snapshotError, type Deferred, type ErrorSnapshot, type ReleasingInner, type StageEnv } from '@floway-dev/pipeline';
-import { getProviderRepo, type HttpResponseFacts, type ProviderServices } from '@floway-dev/provider';
+import type { ClaudeCodeServices, PersistenceResult } from './service.ts';
+import { Bytes, type ErrorSnapshot, type ReleasingInner, type Scope, type StreamEnd } from '@floway-dev/pipeline';
+import { isTransportFailure, type HttpResponseBodyChunk, type HttpResponseFacts, type TransportFailure } from '@floway-dev/provider';
 
-// Credential-class terminal sentinels on the data-plane response body. Both
-// signal a permanently disabled org that no retry, refresh, or re-import
-// can recover — the operator must contact Anthropic. Matching the
-// lowercased `error.message` substring mirrors sub2api
-// `ratelimit_service.go:208-214` (400 path) and CRS
-// `claudeRelayService.js:140-153` (`_isOrganizationDisabledError`, both
-// 400 and 403). We match on "organization has been disabled" rather than
-// CRS's slightly longer "this organization has been disabled" so a body
-// that omits the leading "this" still matches (sub2api uses the shorter
-// form too).
 // https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/ratelimit_service.go#L208-L214
 const ORG_DISABLED_400_SENTINEL = 'organization has been disabled';
 const ORG_BANNED_403_SENTINEL = 'oauth authentication is currently not allowed';
@@ -22,96 +11,63 @@ interface AnthropicErrorBody {
   error?: { type?: unknown; message?: unknown };
 }
 
-// Returns the operator-facing terminal message when the response matches
-// one of the credential-class sentinels, or `null` otherwise. The body
-// parse is intentionally defensive: a 400/403 that isn't JSON (or whose
-// JSON shape doesn't match `{error:{type,message}}`) is the common case
-// for unrelated errors (`max_tokens` validation, beta-feature gating,
-// etc.) and must NOT trigger a terminal flip.
-const detectTerminalSentinel = (status: number, bodyText: string): string | null => {
-  if (status !== 400 && status !== 403) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(bodyText);
-  } catch {
-    logWarn('claude_code_unparseable_error_body', { status, body_snippet: bodyText.slice(0, 256) });
-    return null;
-  }
-  if (typeof parsed !== 'object' || parsed === null) return null;
-  const error = (parsed as AnthropicErrorBody).error;
-  if (typeof error !== 'object' || error === null) return null;
-  const type = error.type;
-  const message = error.message;
-  if (typeof type !== 'string' || typeof message !== 'string') return null;
-  const lowered = message.toLowerCase();
-  if (status === 400 && type === 'invalid_request_error' && lowered.includes(ORG_DISABLED_400_SENTINEL)) {
-    return `Organization disabled by Anthropic — re-import will not recover; contact support: ${message}`;
-  }
-  if (status === 403 && type === 'permission_error' && lowered.includes(ORG_BANNED_403_SENTINEL)) {
-    return `Organization banned from OAuth by Anthropic — re-import will not recover; contact support: ${message}`;
-  }
-  return null;
-};
-
-// Preserve the first terminal diagnosis when an OAuth failure or sibling request
-// has already flipped the account.
-const persistTerminalAccountState = async (
-  upstreamId: string,
-  terminalMessage: string,
-  reason: string,
-  upstreamStatus: number,
-): Promise<void> => {
-  // Stamped before the write for the same reason as the quota snapshot: a
-  // replay must produce the same document.
-  const flippedAt = new Date().toISOString();
-  let previousAccount!: ClaudeCodeAccountCredential;
-  await getProviderRepo().upstreams.saveState(upstreamId, current => {
-    const state = readClaudeCodeUpstreamState(current);
-    previousAccount = state.accounts[0];
-    if (previousAccount.state !== 'active') return state;
-    return replaceSoleAccount(state, account => ({
-      ...account,
-      state: 'refresh_failed',
-      stateMessage: terminalMessage,
-      stateUpdatedAt: flippedAt,
-      accessToken: null,
-    }));
-  });
-  if (previousAccount.state !== 'active') return;
-  logWarn('claude_code_account_state_flip', {
-    upstream_id: upstreamId,
-    account_uuid: previousAccount.accountUuid,
-    from_state: previousAccount.state,
-    to_state: 'refresh_failed',
-    reason,
-    upstream_status: upstreamStatus,
-    message: terminalMessage,
-  });
-};
-
 // Terminal detection needs the complete JSON error envelope. The cap allows
 // room for additional error metadata while bounding retained bytes.
 // https://github.com/Menci/Floway/blob/f4089ac480ef97c915a89f0df6d1ff11b0a57150/packages/provider-claude-code/src/fetch.ts#L287-L302
 const TERMINAL_SENTINEL_BYTE_LIMIT = 64 * 1024;
-// Allow an upstream that is still sending the error to finish after release
-// while bounding the wait for a stalled body.
 const TERMINAL_SENTINEL_DRAIN_TIMEOUT_MS = 1000;
 
+export interface TerminalSentinel {
+  readonly kind: 'terminal';
+  readonly status: 400 | 403;
+  readonly reason: 'org_disabled_400_sentinel' | 'org_banned_403_sentinel';
+  readonly message: string;
+}
+
 type SentinelVerdict =
-  | { readonly kind: 'terminal'; readonly message: string }
+  | TerminalSentinel
   | { readonly kind: 'not-terminal' }
   | { readonly kind: 'incomplete'; readonly reason: 'byte_limit' | 'deadline' | 'cancelled' | 'leaked' | 'released' }
   | { readonly kind: 'unreadable'; readonly error: ErrorSnapshot };
 
-export type TerminalSentinelResult = Exclude<SentinelVerdict, { kind: 'terminal' }> | PersistenceResult;
+type SentinelResult = Exclude<SentinelVerdict, TerminalSentinel> | PersistenceResult;
 
-const classify = (status: number, body: Bytes): SentinelVerdict => {
+const classify = (status: 400 | 403, body: Bytes): SentinelVerdict => {
   if (body.byteLength > TERMINAL_SENTINEL_BYTE_LIMIT) return { kind: 'incomplete', reason: 'byte_limit' };
-  const message = detectTerminalSentinel(status, body.utf8());
-  return message === null ? { kind: 'not-terminal' } : { kind: 'terminal', message };
+  const bodyText = body.utf8();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bodyText);
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    logWarn('claude_code_unparseable_error_body', { status, body_snippet: bodyText.slice(0, 256) });
+    return { kind: 'not-terminal' };
+  }
+  if (typeof parsed !== 'object' || parsed === null) return { kind: 'not-terminal' };
+  const error = (parsed as AnthropicErrorBody).error;
+  if (typeof error !== 'object' || error === null) return { kind: 'not-terminal' };
+  const { type, message } = error;
+  if (typeof type !== 'string' || typeof message !== 'string') return { kind: 'not-terminal' };
+  const lowered = message.toLowerCase();
+  if (status === 400 && type === 'invalid_request_error' && lowered.includes(ORG_DISABLED_400_SENTINEL)) {
+    return {
+      kind: 'terminal', status, reason: 'org_disabled_400_sentinel',
+      message: `Organization disabled by Anthropic — re-import will not recover; contact support: ${message}`,
+    };
+  }
+  if (status === 403 && type === 'permission_error' && lowered.includes(ORG_BANNED_403_SENTINEL)) {
+    return {
+      kind: 'terminal', status, reason: 'org_banned_403_sentinel',
+      message: `Organization banned from OAuth by Anthropic — re-import will not recover; contact support: ${message}`,
+    };
+  }
+  return { kind: 'not-terminal' };
 };
 
-const drain = async (inner: ReleasingInner<Bytes>, observe: (chunk: Bytes) => boolean): Promise<'complete' | 'byte_limit' | 'deadline'> => {
+const drain = async (
+  inner: ReleasingInner<HttpResponseBodyChunk>,
+  observe: (chunk: Bytes) => boolean,
+): Promise<'complete' | 'byte_limit' | 'deadline' | TransportFailure> => {
   const expiry = Symbol('sentinel drain deadline');
   const deadline = Promise.withResolvers<typeof expiry>();
   const expiresAt = performance.now() + TERMINAL_SENTINEL_DRAIN_TIMEOUT_MS;
@@ -122,6 +78,7 @@ const drain = async (inner: ReleasingInner<Bytes>, observe: (chunk: Bytes) => bo
       const part = await Promise.race([inner.next(), deadline.promise]);
       if (part === expiry) return 'deadline';
       if (part.done) return 'complete';
+      if (isTransportFailure(part.value)) return part.value;
       if (!observe(part.value)) return 'byte_limit';
     }
   } finally {
@@ -132,33 +89,28 @@ const drain = async (inner: ReleasingInner<Bytes>, observe: (chunk: Bytes) => bo
 export const observeTerminalSentinel = (
   upstreamId: string,
   response: HttpResponseFacts,
-  env: StageEnv<ProviderServices>,
-): { readonly response: HttpResponseFacts; readonly observation: Deferred<TerminalSentinelResult> | undefined } => {
+  scope: Scope<ClaudeCodeServices>,
+): HttpResponseFacts => {
   const { status, body } = response;
-  if (status !== 400 && status !== 403) return { response, observation: undefined };
-  const log = (event: string, extra: Record<string, string>) => {
-    const fields = { upstream_id: upstreamId, upstream_status: status, ...extra };
-    logWarn(event, fields);
-    env.log.warn(event, fields);
-  };
-  const persist = async (verdict: SentinelVerdict): Promise<TerminalSentinelResult> => {
+  if (status !== 400 && status !== 403) return response;
+  const fields = { upstream_id: upstreamId, upstream_status: status };
+  const persist = async (verdict: SentinelVerdict): Promise<SentinelResult> => {
     if (verdict.kind !== 'terminal') return verdict;
-    const reason = status === 400 ? 'org_disabled_400_sentinel' : 'org_banned_403_sentinel';
-    log('claude_code_terminal_sentinel_detected', { reason });
-    try {
-      await persistTerminalAccountState(upstreamId, verdict.message, reason, status);
-      return { persisted: true };
-    } catch (cause) {
-      log('claude_code_terminal_sentinel_persist_failed', { error: String(cause) });
-      return { persisted: false, error: snapshotError(cause) };
+    scope.log.warn('claude_code_terminal_sentinel_detected', { ...fields, reason: verdict.reason });
+    const result = await scope.services.claudeCode.persistTerminalVerdict(upstreamId, verdict);
+    if (!result.persisted) {
+      scope.log.warn('claude_code_terminal_sentinel_persist_failed', { ...fields, error: `${result.error.name}: ${result.error.message}` });
     }
+    return result;
   };
   if (body === null || body instanceof Bytes) {
-    return { response, observation: env.defer('claude-code.terminal-sentinel', persist(classify(status, body ?? Bytes.empty))) };
+    scope.defer('claude-code.terminal-sentinel', persist(classify(status, body ?? Bytes.empty)));
+    return response;
   }
 
   let length = 0;
   let overLimit = false;
+  let sawTransportFailure: ErrorSnapshot | undefined;
   const parts: Bytes[] = [];
   const observe = (part: Bytes): boolean => {
     if (overLimit) return false;
@@ -171,58 +123,43 @@ export const observeTerminalSentinel = (
     if (part.byteLength > 0) parts.push(part);
     return true;
   };
-  const unreadable = (cause: unknown): SentinelVerdict => {
-    log('claude_code_terminal_sentinel_body_read_failed', { error: String(cause) });
-    return { kind: 'unreadable', error: snapshotError(cause) };
+  const finish = (): SentinelVerdict => classify(status, Bytes.concat(parts));
+  const unreadable = (error: ErrorSnapshot): SentinelVerdict => {
+    const details = { ...fields, error: `${error.name}: ${error.message}` };
+    logWarn('claude_code_terminal_sentinel_body_read_failed', details);
+    scope.log.warn('claude_code_terminal_sentinel_body_read_failed', details);
+    return { kind: 'unreadable', error };
   };
-  const finish = () => classify(status, Bytes.concat(parts));
-  const forwarded = env.wrapStream(body, {
+  const closeVerdict = async (end: StreamEnd, inner: ReleasingInner<HttpResponseBodyChunk> | null): Promise<SentinelVerdict> => {
+    if (end.how === 'errored') throw end.error;
+    if (sawTransportFailure !== undefined) return unreadable(sawTransportFailure);
+    if (overLimit) return { kind: 'incomplete', reason: 'byte_limit' };
+    if (end.how === 'exhausted') return finish();
+    if (end.how !== 'released' || inner === null) return { kind: 'incomplete', reason: end.how };
+
+    const drained = await drain(inner, observe);
+    if (isTransportFailure(drained)) return unreadable(drained.error);
+    if (scope.signal.aborted) return { kind: 'incomplete', reason: 'cancelled' };
+    return drained === 'complete' ? finish() : { kind: 'incomplete', reason: drained };
+  };
+  const forwarded = scope.wrapStream(body, {
     label: 'claude-code.terminal-sentinel',
     async *transform(source) {
       for await (const part of source) {
-        observe(part);
+        if (isTransportFailure(part)) sawTransportFailure = part.error;
+        else observe(part);
         yield part;
       }
     },
-    async onClose(end, inner) {
-      if (overLimit) {
-        verdict.resolve({ kind: 'incomplete', reason: 'byte_limit' });
-        return;
-      }
-      switch (end.how) {
-      case 'exhausted':
-        verdict.resolve(finish());
-        return;
-      case 'errored':
-        verdict.resolve(unreadable(end.error));
-        return;
-      case 'cancelled':
-      case 'leaked':
-        verdict.resolve({ kind: 'incomplete', reason: end.how });
-        return;
-      case 'released':
-        break;
-      }
-      if (inner === null) {
-        verdict.resolve({ kind: 'incomplete', reason: 'released' });
-        return;
-      }
-      let drained: Awaited<ReturnType<typeof drain>>;
-      try {
-        drained = await drain(inner, observe);
-      } catch (cause) {
-        verdict.resolve(unreadable(cause));
-        return;
-      }
-      if (env.signal.aborted) {
-        verdict.resolve({ kind: 'incomplete', reason: 'cancelled' });
-        return;
-      }
-      verdict.resolve(drained === 'complete' ? finish() : { kind: 'incomplete', reason: drained });
-    },
+    onClose: (end, inner): Promise<void> => closeVerdict(end, inner).then(
+      verdict.resolve,
+      error => {
+        verdict.reject(error);
+        throw error;
+      },
+    ),
   });
-  const verdict = env.deferred<SentinelVerdict>('claude-code.terminal-sentinel.verdict', forwarded);
-  // Settlement starts with observation; database latency stays out of body delivery.
-  const observation = env.defer('claude-code.terminal-sentinel', verdict.deferred.promise.then(persist));
-  return { response: { ...response, body: forwarded }, observation };
+  const verdict = scope.deferred<SentinelVerdict>('claude-code.terminal-sentinel.verdict', forwarded);
+  scope.defer('claude-code.terminal-sentinel', verdict.deferred.promise.then(persist));
+  return { ...response, body: forwarded };
 };
