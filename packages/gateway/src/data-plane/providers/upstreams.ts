@@ -3,7 +3,7 @@ import type { ProviderPipelines, UpstreamRecord } from '@floway-dev/provider';
 import { azurePipelines, type AzureUpstreamFacts, toAzureUpstreamFacts } from '@floway-dev/provider-azure';
 import { chatgptPipelines, chatgptService, type ChatGPTServices, type ChatGPTUpstreamFacts, createChatGPTService, toChatGPTUpstreamFacts } from '@floway-dev/provider-chatgpt';
 import { claudeCodePipelines, claudeCodeService, type ClaudeCodeServices, type ClaudeCodeUpstreamFacts, createClaudeCodeService, toClaudeCodeUpstreamFacts } from '@floway-dev/provider-claude-code';
-import { copilotPipelines, type CopilotServices, type CopilotUpstreamFacts, createCopilotService, toCopilotUpstreamFacts } from '@floway-dev/provider-copilot';
+import { copilotPipelines, copilotService, type CopilotServices, type CopilotUpstreamFacts, createCopilotService, toCopilotUpstreamFacts } from '@floway-dev/provider-copilot';
 import { customPipelines, type CustomUpstreamFacts, toCustomUpstreamFacts } from '@floway-dev/provider-custom';
 import { createKimiCodeService, kimiCodePipelines, type KimiCodeServices, type KimiCodeUpstreamFacts, toKimiCodeUpstreamFacts } from '@floway-dev/provider-kimi-code';
 import { createOllamaService, ollamaPipelines, type OllamaServices, type OllamaUpstreamFacts, toOllamaUpstreamFacts } from '@floway-dev/provider-ollama';
@@ -75,12 +75,14 @@ export const openaiEmbeddingsProviderTargets = {
 
 export const openaiImagesGenerationsProviderTargets = {
   azure: azurePipelines.openaiImagesGenerations,
+  chatgpt: chatgptPipelines.openaiImagesGenerations,
   copilot: copilotPipelines.openaiImagesGenerations,
   custom: customPipelines.openaiImagesGenerations,
 };
 
 export const openaiImagesEditsProviderTargets = {
   azure: azurePipelines.openaiImagesEdits,
+  chatgpt: chatgptPipelines.openaiImagesEdits,
   copilot: copilotPipelines.openaiImagesEdits,
   custom: customPipelines.openaiImagesEdits,
 };
@@ -102,6 +104,20 @@ export const decisionProviderTargets = {
 
 export const alphaSearchProviderTargets = { chatgpt: chatgptPipelines.alphaSearch, custom: customPipelines.alphaSearch };
 
+type PipelinesByKind = {
+  readonly azure: typeof azurePipelines;
+  readonly chatgpt: typeof chatgptPipelines;
+  readonly 'claude-code': typeof claudeCodePipelines;
+  readonly copilot: typeof copilotPipelines;
+  readonly custom: typeof customPipelines;
+  readonly 'kimi-code': typeof kimiCodePipelines;
+  readonly ollama: typeof ollamaPipelines;
+};
+
+type KindsWith<Op extends keyof ProviderPipelines> = {
+  [K in keyof PipelinesByKind]: Op extends keyof PipelinesByKind[K] ? K : never;
+}[keyof PipelinesByKind];
+
 const providerTargets = {
   openaiChatCompletions: openaiChatCompletionsProviderTargets,
   openaiResponses: openaiResponsesProviderTargets,
@@ -117,15 +133,19 @@ const providerTargets = {
   rerank: rerankProviderTargets,
   decision: decisionProviderTargets,
   alphaSearch: alphaSearchProviderTargets,
-} satisfies Record<keyof ProviderPipelines, object>;
+} satisfies { readonly [Op in keyof ProviderPipelines]: Readonly<Record<KindsWith<Op>, unknown>> };
 
 export const providerSupportsOperation = (kind: UpstreamFacts['kind'], operation: keyof typeof providerTargets): boolean =>
   Object.hasOwn(providerTargets[operation], kind);
 
 export type ProviderRuntimeServices = Omit<CopilotServices & ChatGPTServices & ClaudeCodeServices & OllamaServices & KimiCodeServices, 'fetcher'>;
 
-const createRuntimeServices = (chatgpt: ChatGPTServices['chatgpt'], claudeCode: ClaudeCodeServices['claudeCode']): ProviderRuntimeServices => Object.freeze({
-  copilot: createCopilotService(),
+const createRuntimeServices = (
+  copilot: CopilotServices['copilot'],
+  chatgpt: ChatGPTServices['chatgpt'],
+  claudeCode: ClaudeCodeServices['claudeCode'],
+): ProviderRuntimeServices => Object.freeze({
+  copilot,
   chatgpt,
   claudeCode,
   ollama: createOllamaService(),
@@ -133,6 +153,6 @@ const createRuntimeServices = (chatgpt: ChatGPTServices['chatgpt'], claudeCode: 
 });
 
 export const createProviderRuntimeServices = (): ProviderRuntimeServices =>
-  createRuntimeServices(createChatGPTService(), createClaudeCodeService());
+  createRuntimeServices(createCopilotService(), createChatGPTService(), createClaudeCodeService());
 
-export const providerRuntimeServices = createRuntimeServices(chatgptService, claudeCodeService);
+export const providerRuntimeServices = createRuntimeServices(copilotService, chatgptService, claudeCodeService);

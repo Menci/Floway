@@ -311,10 +311,12 @@ test.each([
 ])('returns %j as an HTTP error value without computing success metadata', async (body, error) => {
   extra.mockClear();
   const handle = run(httpPipeline, input, options(async () => new Response(body, { status: 401 })));
-  await expect(handle.result).resolves.toMatchObject({
-    'response.http': { status: 401, body: null },
+  const facts = await handle.result;
+  expect(facts).toMatchObject({
+    'response.http': { status: 401, body: expect.any(Bytes) },
     'response.alphaSearch': { kind: 'error', source: 'upstream', error },
   });
+  expect((facts['response.http'].body as Bytes).utf8()).toBe(body);
   expect(extra).not.toHaveBeenCalled();
   await expect(handle.done).resolves.toEqual({ ok: true });
 });

@@ -59,20 +59,23 @@ export const parseErrorBody = async (
   http: HttpResponseFacts,
   scope: Pick<Scope, 'signal'>,
   formatNonJsonError: FormatNonJsonError = defaultNonJsonError,
+  preserveBody = false,
 ): Promise<Parsed<UpstreamErrorOutcome> | undefined> => {
   if (http.transportError !== undefined) return transportError(http, http.transportError);
   if (successful(http)) return undefined;
-  const body = await readResponseText(http, scope);
-  if ('failure' in body) return body.failure;
+  const raw = await readHttpBody(http.body);
+  scope.signal.throwIfAborted();
+  if (!raw.ok) return transportError({ ...http, status: 502, statusText: '', body: null, transportError: raw.error }, raw.error);
+  const text = raw.bytes.utf8();
 
   let error: FactValue;
   try {
-    error = JSON.parse(body.text) as FactValue;
+    error = JSON.parse(text) as FactValue;
   } catch (cause) {
     if (!(cause instanceof SyntaxError)) throw cause;
-    error = formatNonJsonError(http.status, body.text);
+    error = formatNonJsonError(http.status, text);
   }
-  return parsedError({ ...http, body: null }, error);
+  return parsedError({ ...http, body: preserveBody && http.body !== null ? raw.bytes : null }, error);
 };
 
 const bodySnippetChars = 1024;
@@ -244,7 +247,7 @@ function makeHttpOutcomeStage<Key extends string, Extra extends object, Input, S
     async execute(facts, scope) {
       const back = await scope.next(facts);
       const http = back['response.http'];
-      const failure = await parseErrorBody(http, scope, options?.formatNonJsonError);
+      const failure = await parseErrorBody(http, scope, options?.formatNonJsonError, true);
       return withOutcome(back, responseKey, failure ?? {
         'response.http': http,
         outcome: { ...options?.extra?.(facts), kind: 'ok' } as HttpOutcome<Extra>,

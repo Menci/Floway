@@ -81,7 +81,7 @@ export const createAffinity = <
       const carrier = { codec: scope.services.affinityCodec, affinity: affinityIdentityForCandidate(candidate) };
       return {
         ...response,
-        [responseKey]: { kind: 'stream', events: wrapProtocolFrames(outcome.events, scope, `${api} affinity`, source => wrap(source, carrier, request)) },
+        [responseKey]: { ...outcome, events: wrapProtocolFrames(outcome.events, scope, `${api} affinity`, source => wrap(source, carrier, request)) },
       };
     },
   });

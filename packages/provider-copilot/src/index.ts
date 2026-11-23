@@ -9,7 +9,13 @@ export const copilotProviderModule: ProviderModule = {
 
 export { exchangeCopilotToken } from './auth.ts';
 export { copilotPipelines } from './pipelines.ts';
-export { clearInProcessCopilotTokenCache, createCopilotService, type CopilotService, type CopilotServices } from './service.ts';
+export {
+  clearInProcessCopilotTokenCache,
+  createCopilotService,
+  defaultCopilotService as copilotService,
+  type CopilotService,
+  type CopilotServices,
+} from './service.ts';
 export { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from './github-device-flow.ts';
 export { normalizeGitHubHost } from './github-host.ts';
 export { pricingForCopilotPublicModelId } from './pricing.ts';

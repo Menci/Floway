@@ -149,7 +149,16 @@ export const createNonChatPipeline = <const Key extends OutcomeKey, Targets exte
       const withoutModel = removeFact<HttpOutput & RenderFacts & Readonly<Record<Key, HttpOutcome>>, 'response.modelKey'>(result, 'response.modelKey');
       const response = removeFact<HttpOutput & RenderFacts, Key>(withoutModel, outcomeKey);
       const http = response['response.http'];
-      if (outcome.kind === 'ok' || http.body !== null) return response;
+      if (outcome.kind === 'ok') return response;
+      if (http.body !== null) return { ...response, 'response.http': forwardHttp(http, null) };
+      if (http.transportError !== undefined) {
+        const error = Object.assign(new Error(http.transportError.message), {
+          name: http.transportError.name,
+          ...(http.transportError.stack === undefined ? {} : { stack: http.transportError.stack }),
+          ...(http.transportError.cause === undefined ? {} : { cause: http.transportError.cause }),
+        });
+        return { ...response, 'response.http': { ...invalidUpstreamResponse(error, http.timing.headersAt), timing: http.timing } };
+      }
       const headers = forwardHttp(http).headers.filter(([name]) => name.toLowerCase() !== 'content-type');
       const body = Bytes.fromUtf8(JSON.stringify(outcome.error));
       return { ...response, 'response.http': { ...http, body, headers: [...headers, ['content-type', 'application/json']] } };

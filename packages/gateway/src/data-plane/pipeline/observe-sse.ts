@@ -1,12 +1,12 @@
 import { billableCall, type BillableCall, type ObservedCallPerformance, type ObservedUsage, streamPerformance } from './call-metering.ts';
-import { forwardHttp, type MeteredHttpResponse, openAiApiError, scalarHttpAttempt } from './non-chat.ts';
+import { forwardHttp, header, type MeteredHttpResponse, openAiApiError, scalarHttpAttempt } from './non-chat.ts';
 import { failedRender, type RenderOutcome } from './render.ts';
 import { openaiInternalErrorPayload } from '../shared/openai-error-payload.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, serializeSseFrame } from '../shared/sse.ts';
 import { type HttpResponseFacts, isTransportFailure, type TransportFailure } from '@floway-dev/http';
 import { Bytes, type Scope } from '@floway-dev/pipeline';
-import { sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
-import { type TelemetryModelIdentity, toInternalDebugError } from '@floway-dev/provider';
+import { isEventStreamMediaType, sseCommentFrame, sseFrame, UpstreamStreamProtocolError } from '@floway-dev/protocols/common';
+import { readHttpBody, type TelemetryModelIdentity, toInternalDebugError } from '@floway-dev/provider';
 
 const asReadable = (source: AsyncIterable<Bytes>): ReadableStream<Uint8Array> => {
   const iterator = source[Symbol.asyncIterator]();
@@ -69,16 +69,36 @@ const keepAliveFrame = Bytes.fromUtf8(serializeSseFrame(sseCommentFrame('keepali
 const failureFrame = (error: unknown): Bytes =>
   Bytes.fromUtf8(serializeSseFrame(sseFrame(JSON.stringify(openaiInternalErrorPayload(toInternalDebugError(error))))));
 
-export const observeSse = <Frame>(
-  http: HttpResponseFacts, identity: TelemetryModelIdentity, scope: Scope, dialect: SseDialect<Frame>,
+const snippetLimit = 1024;
+const formatSnippet = (text: string): string => {
+  if (text.length === 0) return '<empty>';
+  return text.length > snippetLimit ? `${text.slice(0, snippetLimit)}...[truncated]` : text;
+};
+
+const badStreamAttempt = (
+  http: HttpResponseFacts, forwarded: HttpResponseFacts, identity: TelemetryModelIdentity,
+  scope: Scope, usage: ObservedUsage, message: string,
 ): MeteredHttpResponse => {
+  const error = openAiApiError(502, message, scope.clock());
+  const headers = forwarded.headers.filter(([name]) => name.toLowerCase() !== 'content-type');
+  return scalarHttpAttempt(scope, { ...http, status: error.status, statusText: '', headers: [...headers, ...error.headers], body: error.body }, identity, usage, failedRender('collect-error', new Error(message)));
+};
+
+export const observeSse = async <Frame>(
+  http: HttpResponseFacts, identity: TelemetryModelIdentity, scope: Scope, dialect: SseDialect<Frame>,
+): Promise<MeteredHttpResponse> => {
   const { body } = http;
   const forwarded = forwardHttp(http);
   if (body === null) {
-    const message = 'Upstream returned a streaming response with no body.';
-    const error = openAiApiError(502, message, scope.clock());
-    const headers = forwarded.headers.filter(([name]) => name !== 'content-type');
-    return scalarHttpAttempt(scope, { ...http, status: error.status, statusText: '', headers: [...headers, ...error.headers], body: error.body }, identity, dialect.usage(), failedRender('source-error', new Error(message)));
+    return badStreamAttempt(http, forwarded, identity, scope, dialect.usage(), 'Upstream returned a streaming response with no body.');
+  }
+  const contentType = header(http.headers, 'content-type');
+  if (!isEventStreamMediaType(contentType)) {
+    const raw = await readHttpBody(body);
+    scope.signal.throwIfAborted();
+    const snippet = raw.ok ? formatSnippet(raw.bytes.utf8()) : '<unreadable>';
+    const message = `Upstream returned HTTP ${http.status} with content-type "${contentType ?? 'unknown'}" but a text/event-stream body is required. Body: ${snippet}`;
+    return badStreamAttempt(http, forwarded, identity, scope, dialect.usage(), message);
   }
   const source = body instanceof Bytes ? scope.createStream({ label: 'buffered upstream SSE', async *iterate() { yield body; } }) : body;
   let outcome: RenderOutcome = { kind: 'completed' };
@@ -114,6 +134,11 @@ export const observeSse = <Frame>(
           yield failureFrame(error);
         }
       } catch (error) {
+        if (!scope.signal.aborted && error instanceof UpstreamStreamProtocolError) {
+          outcome = failedRender('protocol-error', error);
+          yield failureFrame(error);
+          return;
+        }
         if (interruption === undefined || error !== interruption.error) throw error;
         outcome = { kind: 'failed', reason: 'source-error', error: interruption.failure.error };
         yield failureFrame(error);

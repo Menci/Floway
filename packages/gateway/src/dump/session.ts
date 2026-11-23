@@ -43,6 +43,7 @@ interface LiveMetadata {
   readonly call: CallRecordSummary | undefined;
   readonly render: RenderOutcome | undefined;
   readonly delivery: HttpDelivery | undefined;
+  readonly upstreamExchange: boolean;
 }
 
 const renderFailureMessages = {
@@ -52,14 +53,14 @@ const renderFailureMessages = {
   'collect-error': 'Upstream response collection failed',
 } satisfies Record<Extract<RenderOutcome, { kind: 'failed' }>['reason'], string>;
 
-const dumpError = ({ status, call, uploadError, hostFailure, render, delivery }: LiveMetadata, summary: DumpCompletionSummary): DumpErrorMeta | null => {
+const dumpError = ({ status, call, uploadError, hostFailure, render, delivery, upstreamExchange }: LiveMetadata, summary: DumpCompletionSummary): DumpErrorMeta | null => {
   if (hostFailure !== undefined) return hostFailure.error;
   if (uploadError !== undefined) return { kind: 'failed', reason: oneLine(uploadError.message) };
   if (render?.kind === 'failed') return { kind: 'failed', reason: oneLine(render.error?.message ?? renderFailureMessages[render.reason]) };
   if (delivery?.kind === 'write-failed') return { kind: 'failed', reason: oneLine(delivery.error.message) };
   if (render?.kind === 'cancelled') return { kind: 'failed', reason: 'Downstream cancelled the SSE response' };
   const httpStatus = status ?? call?.status;
-  if (httpStatus !== undefined && (httpStatus < 200 || httpStatus >= 300)) return { kind: call?.failed ? 'upstream' : 'gateway' };
+  if (httpStatus !== undefined && (httpStatus < 200 || httpStatus >= 300)) return { kind: call?.failed || upstreamExchange ? 'upstream' : 'gateway' };
   if (!summary.ok) {
     return { kind: 'failed', reason: summary.doneError?.message ?? 'Downstream response did not complete' };
   }
@@ -70,7 +71,7 @@ const buildMetadata = async (started: DumpLiveSummary, values: LiveMetadata, sum
   const { call, hostFailure } = values;
   const completedAt = Date.now();
   const upstreamId = call?.upstreamId;
-  const record = upstreamId === undefined ? null : await getRepo().upstreams.getById(upstreamId);
+  const record = upstreamId == null ? null : await getRepo().upstreams.getById(upstreamId);
   const status = values.status ?? call?.status ?? (summary.ok ? 200 : 500);
   return dumpMetadataSchema.parse({
     ...started,
@@ -136,6 +137,7 @@ export const openDumpSession = (apiKey: ApiKey, request: HttpRequestFacts, reque
   let model: string | null = null;
   let uploadError: ErrorSnapshot | undefined;
   let hostFailure: HostFailure | undefined;
+  let upstreamExchange = false;
   const baseChildren = new Map<number, number>();
   const pendingCalls = new Map<number, number>();
   const calls = new Map<number, CallRecordSummary>();
@@ -169,6 +171,7 @@ export const openDumpSession = (apiKey: ApiKey, request: HttpRequestFacts, reque
         if ('status' in http && typeof http.status === 'number') status = http.status;
         if ('body' in http && http.body instanceof Bytes) responseBytes = http.body.byteLength;
         if ('body' in http && isManagedStream(http.body)) responseStreamId = streamIdOf(http.body);
+        if ('exchange' in http && http.exchange === 'upstream') upstreamExchange = true;
       }
       render = settledValue<RenderOutcome>(event.facts['response.render']);
       delivery = settledValue<HttpDelivery>(event.facts['response.delivery']);
@@ -202,7 +205,7 @@ export const openDumpSession = (apiKey: ApiKey, request: HttpRequestFacts, reque
       call = calls.get(stageId);
     }
     const meta = await buildMetadata(started, {
-      status, model, responseBytes, uploadError, hostFailure,
+      status, model, responseBytes, uploadError, hostFailure, upstreamExchange,
       call: call ?? lastCall, render: rendered, delivery: delivered,
     }, summary);
     await store.commitRecord(keyId, { meta, artifactKey });

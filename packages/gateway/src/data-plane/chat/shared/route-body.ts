@@ -10,7 +10,7 @@ import { Bytes, defineEnding, type FactValue, type Scope, type StaticTarget, typ
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { GeminiGenerateContentRequest, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesCompactionResultEx, OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesCompactionResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { ChatTargetApi, OpenAIResponsesAction, ProtocolOutcome, ProviderBaseOutput } from '@floway-dev/provider';
 import {
   routeAnthropicMessagesViaOpenAIChatCompletions,
@@ -30,7 +30,7 @@ interface ChatProtocols {
   readonly anthropicMessages: [AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, never];
   readonly geminiGenerateContent: [GeminiGenerateContentRequest, GeminiGenerateContentStreamEvent, never];
   readonly openaiChatCompletions: [OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent, never];
-  readonly openaiResponses: [OpenAIResponsesRequestPayloadEx & { model: string }, OpenAIResponsesStreamEventEx, OpenAIResponsesCompactionResultEx];
+  readonly openaiResponses: [CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx, OpenAIResponsesCompactionResultEx];
 }
 
 export type ChatPayload<Api extends ChatTargetApi> = ChatProtocols[Api][0];
