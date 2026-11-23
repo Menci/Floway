@@ -3,8 +3,9 @@ import { type AnthropicMessagesSearch, invalidWebSearchRequest, prepareAnthropic
 import { answerKeys, gatewayAnswer } from '../../../pipeline/answer.ts';
 import { jsonHttpResponse } from '../../../pipeline/edge-http.ts';
 import type { GatewayRouteFacts, GatewayServices } from '../../../pipeline/services.ts';
-import { runWebSearchAndRecordUsage } from '../../../tools/web-search/search.ts';
+import { currentHour } from '../../../shared/telemetry/hour.ts';
 import type { ConfiguredWebSearchProvider, WebSearchProviderRequest, WebSearchProviderResult } from '../../../tools/web-search/types.ts';
+import { type SearchUsageRecords, type SearchUsageSettlementFacts, writeSearchUsage } from '../../../tools/web-search/write-search-usage.ts';
 import type { ChatBodyOutput } from '../../shared/route-body.ts';
 import { internalAnthropicMessagesErrorPayload } from '../errors.ts';
 import { compose, defineEnding, defineStage, link, snapshotError } from '@floway-dev/pipeline';
@@ -13,36 +14,41 @@ type Request = AnthropicMessagesTargetRequest;
 type SearchAuth = Pick<GatewayRouteFacts, 'request.auth.apiKeyId'>;
 type SearchInput = SearchAuth & { readonly 'request.webSearch': Omit<WebSearchProviderRequest, 'signal'> };
 type SearchOutput = { readonly 'response.webSearch': WebSearchProviderResult };
-type SearchServices = Pick<GatewayServices, 'webSearchProvider'>;
+type MeasuredSearch = SearchOutput & SearchUsageRecords;
+type SearchServices = Pick<GatewayServices, 'webSearchProvider' | 'searchUsageStore'>;
 
 const unavailableSearchProvider = (provider: Exclude<ConfiguredWebSearchProvider, { type: 'enabled' }>): Error =>
   new Error(provider.type === 'disabled'
     ? 'Native Anthropic Messages web search requires an enabled search provider.'
     : `Native Anthropic Messages web search is missing the configured ${provider.provider} credential.`);
 
-const searchPipeline = compose<SearchInput, SearchOutput, SearchServices>('webSearch', {
-  stages: [],
-  ending: defineEnding<SearchInput, SearchOutput, {}, SearchServices>({
+const searchPipeline = compose<SearchInput, SearchOutput & SearchUsageSettlementFacts, SearchServices>('webSearch', {
+  stages: [writeSearchUsage],
+  ending: defineEnding<SearchInput, MeasuredSearch, {}, Pick<GatewayServices, 'webSearchProvider'>>({
     name: 'search',
     request: { needs: ['request.auth.apiKeyId', 'request.webSearch'] },
-    return: { provides: ['response.webSearch'] },
+    return: { provides: ['response.webSearch', 'response.searchUsage.records'] },
     execute: async (facts, _into, env) => {
       const provider = await env.services.webSearchProvider();
       if (provider.type !== 'enabled') throw unavailableSearchProvider(provider);
+      let result: WebSearchProviderResult;
       try {
-        return {
-          'response.webSearch': await runWebSearchAndRecordUsage({
-            provider: provider.impl,
-            providerName: provider.provider,
-            keyId: facts['request.auth.apiKeyId'],
-            request: { ...facts['request.webSearch'], signal: env.signal },
-          }),
-        };
+        result = await provider.impl.search({ ...facts['request.webSearch'], signal: env.signal });
       } catch (error) {
         // Anthropic exposes backend failures as structured tool results.
         env.log.warn('Web search failed', { error: { ...snapshotError(error) } });
-        return { 'response.webSearch': { type: 'error', errorCode: 'unavailable' } };
+        result = { type: 'error', errorCode: 'unavailable' };
       }
+      return {
+        'response.webSearch': result,
+        'response.searchUsage.records': [{
+          provider: provider.provider,
+          keyId: facts['request.auth.apiKeyId'],
+          action: 'search',
+          hour: currentHour(),
+          requests: 1,
+        }],
+      };
     },
   }),
 });

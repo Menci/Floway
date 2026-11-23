@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import {
   decodeWebSearchCitationPayload,
@@ -11,8 +11,6 @@ import {
 } from '../../../../../src/data-plane/chat/anthropic-messages/stages/web-search-protocol.ts';
 import type { GatewayServices } from '../../../../../src/data-plane/pipeline/services.ts';
 import type { WebSearchProvider } from '../../../../../src/data-plane/tools/web-search/types.ts';
-import { initRepo } from '../../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { countProvider, generateProvider, generateReply, httpReply, messagesFixture, messagesUpstream } from '../fixture.ts';
 import { anthropicMessagesProtocolFrameToSSEFrame } from '@floway-dev/protocols/anthropic-messages';
 import type {
@@ -576,10 +574,12 @@ const runStreamingShim = (
     ),
   );
 
-test.each(['success', 'failure'] as const)('webSearchShim runs a %s tool search as its own sub-run and preserves separate usage', async outcome => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const search = outcome === 'success' ? fakeProviderOk : searchOnlyProvider(async () => { throw new Error('test search failure'); });
+test.each(['success', 'search failure', 'recording failure'] as const)('webSearchShim settles each tool sub-run after %s', async outcome => {
+  const search = outcome === 'search failure' ? searchOnlyProvider(async () => { throw new Error('test search failure'); }) : fakeProviderOk;
+  const writeError = new Error('test search usage write failure');
+  const recordSearchUsage = vi.fn<GatewayServices['searchUsageStore']['record']>(async () => {
+    if (outcome === 'recording failure') throw writeError;
+  });
   const upstreamEvents = [
     upstreamMessageStart(),
     ...upstreamWebSearchBlock(0, 'toolu_search', 'react docs'),
@@ -588,30 +588,42 @@ test.each(['success', 'failure'] as const)('webSearchShim runs a %s tool search 
   const fixture = messagesFixture([messagesUpstream({
     flags: ['anthropic-messages-web-search-shim'],
     pipelines: { anthropicMessages: generateProvider((_facts, env) => generateReply(env, () => toAsyncIterable(upstreamEvents.map(eventFrame)))) },
-  })], { webSearchProvider: webSearchProvider(search) });
+  })], { webSearchProvider: webSearchProvider(search), recordSearchUsage });
 
-  const { response, done } = await fixture.send({
-    model: 'test-model', max_tokens: 32, messages: [{ role: 'user', content: 'search' }],
-    tools: [{ name: 'web_search', type: 'web_search_20260209' }],
-  });
-  expect(response.status).toBe(200);
-  expect(await response.json()).toMatchObject({
-    content: expect.arrayContaining([
-      expect.objectContaining({ type: 'server_tool_use' }),
-      expect.objectContaining({
-        type: 'web_search_tool_result',
-        content: outcome === 'success'
-          ? expect.arrayContaining([expect.objectContaining({ type: 'web_search_result', url: 'https://react.dev' })])
-          : { type: 'web_search_tool_result_error', error_code: 'unavailable' },
-      }),
-    ]),
-    stop_reason: 'pause_turn',
-    usage: { server_tool_use: { web_search_requests: 1 } },
-  });
-  expect(await done).toMatchObject({ ok: true });
-  expect(fixture.events.filter(event => event.k === 'enter' && event.edge === 'subrun' && event.pipeline === 'webSearch')).toHaveLength(1);
-  expect(await repo.webSearchUsage.listAll()).toMatchObject([{ provider: 'tavily', keyId: 'test-key', action: 'search', requests: 1 }]);
-  expect(fixture.usage).toHaveLength(1);
+  const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const { response, done } = await fixture.send({
+      model: 'test-model', max_tokens: 32, messages: [{ role: 'user', content: 'search' }],
+      tools: [{ name: 'web_search', type: 'web_search_20260209' }],
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      content: expect.arrayContaining([
+        expect.objectContaining({ type: 'server_tool_use' }),
+        expect.objectContaining({
+          type: 'web_search_tool_result',
+          content: outcome === 'search failure'
+            ? { type: 'web_search_tool_result_error', error_code: 'unavailable' }
+            : expect.arrayContaining([expect.objectContaining({ type: 'web_search_result', url: 'https://react.dev' })]),
+        }),
+      ]),
+      stop_reason: 'pause_turn',
+      usage: { server_tool_use: { web_search_requests: 1 } },
+    });
+    expect(await done).toMatchObject({ ok: true });
+    expect(fixture.events.filter(event => event.k === 'enter' && event.edge === 'subrun' && event.pipeline === 'webSearch')).toHaveLength(1);
+    expect(recordSearchUsage).toHaveBeenCalledOnce();
+    expect(recordSearchUsage).toHaveBeenCalledWith(expect.objectContaining({ provider: 'tavily', keyId: 'test-key', action: 'search', requests: 1 }));
+    expect(fixture.usage).toHaveLength(1);
+    if (outcome === 'recording failure') {
+      expect(errorLog).toHaveBeenCalledWith('Web search usage record error:', writeError);
+      expect(fixture.events).toContainEqual(expect.objectContaining({
+        k: 'settled', ok: true, value: expect.objectContaining({ persisted: false, errors: [expect.objectContaining({ message: writeError.message })] }),
+      }));
+    }
+  } finally {
+    errorLog.mockRestore();
+  }
 });
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative single web search emits server_tool_use/result pair around text', async () => {
