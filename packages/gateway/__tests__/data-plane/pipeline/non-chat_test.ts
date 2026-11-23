@@ -6,7 +6,7 @@ import { initBackgroundSchedulerResolver } from '../../../src/runtime/background
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
-import { trackBackground } from '../../test-utils/background-tracker.ts';
+import { flushBackground, trackBackground } from '../../test-utils/background-tracker.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-utils';
 
@@ -61,7 +61,7 @@ test('non-chat ingress: usage-record failure does not turn upstream 2xx into 502
   const { apiKey, repo } = await setupAppTest();
   await registerOpenAIEmbeddingsUpstream(repo);
 
-  repo.usage.record = () => Promise.reject(new Error('simulated SQL write failure'));
+  const record = vi.spyOn(repo.usage, 'record').mockRejectedValue(new Error('simulated SQL write failure'));
   const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
   try {
@@ -100,7 +100,8 @@ test('non-chat ingress: usage-record failure does not turn upstream 2xx into 502
         assertEquals(response.status, 200);
         const body = await response.json() as { data: Array<{ embedding: number[] }> };
         assertEquals(body.data[0].embedding, [0.5]);
-        await flushAsyncWork();
+        await flushBackground();
+        expect(record).toHaveBeenCalledOnce();
       },
     );
   } finally {

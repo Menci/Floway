@@ -93,7 +93,7 @@ test('a rejected losing billing deferred fails done while the winner settles usa
   const handle = run(pipeline, { ...request, 'route.candidates': [candidate('loser'), candidate('winner')] }, { services, finalizationTimeoutMs: 100 });
   const response = await handle.result;
   expect(response['response.http'].status).toBe(200);
-  expect(await response['response.settlement'].promise).toMatchObject({ outcome: 'success', persistedCallIds: [expect.any(String)] });
+  expect(await response['response.settlement'].promise).toMatchObject({ outcome: 'success' });
   expect(await handle.done).toMatchObject({ ok: false, error: { message: lost.message } });
   expect(usageStore.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ modelKey: 'winner', requests: 1 }));
   expect(performanceStore.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ kind: 'neutral' }));
@@ -134,12 +134,12 @@ test.each([false, true])('the host writes each observed billable call once (oute
   expect(performanceStore.record).toHaveBeenCalledTimes(shouldThrow ? 0 : 1);
 });
 
-test('a performance timeout cannot cause a second write for a completed usage receipt', async () => {
-  const usageStore = { record: vi.fn(async () => {}) };
-  const performance = Promise.withResolvers<void>();
-  const services = { usageStore, performanceStore: { record: () => performance.promise } };
+test('a pending settlement usage write still owns the call after finalization times out', async () => {
+  const pendingWrite = Promise.withResolvers<void>();
+  const usageStore = { record: vi.fn(async () => {}).mockImplementationOnce(() => pendingWrite.promise) };
+  const services = { usageStore, performanceStore: { record: async () => {} } };
   type Input = GatewayHttpFacts & CandidatesRequest;
-  const pipeline = compose<Input, HttpOutput & SettlementFacts, typeof services>('test.usage-receipt', {
+  const pipeline = compose<Input, HttpOutput & SettlementFacts, typeof services>('test.usage-ownership', {
     stages: [writeSettlement('chat'), priceUsage, edgeHttp, failover],
     ending: endpoint((model, env) => counted(model, env, 200, 3)),
   });
@@ -147,15 +147,17 @@ test('a performance timeout cannot cause a second write for a completed usage re
   const handle = startGatewayRun(pipeline, { ...request, 'route.candidates': [candidate('selected')] }, {
     apiKey, request: request['request.http'], services, scheduler: task => tasks.push(task), finalizationTimeoutMs: 20,
   });
-  expect((await handle.result)['response.http'].status).toBe(200);
-  const done = await handle.done;
-  performance.resolve();
-  expect(done).toMatchObject({ ok: false, error: { name: 'FinalizationTimeoutError' } });
-  await Promise.all(tasks);
-  expect(usageStore.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ modelKey: 'selected', requests: 1 }));
+  try {
+    expect((await handle.result)['response.http'].status).toBe(200);
+    expect(await handle.done).toMatchObject({ ok: false, error: { name: 'FinalizationTimeoutError' } });
+    await Promise.all(tasks);
+    expect(usageStore.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ modelKey: 'selected', requests: 1 }));
+  } finally {
+    pendingWrite.resolve();
+  }
 });
 
-test('the billing sweep honors usage receipts from a sub-run whose settlement never reached the root', async () => {
+test('the billing sweep honors a sub-run settlement that never reached the root', async () => {
   const usageStore = { record: vi.fn(async () => {}) };
   const services = { usageStore, performanceStore: { record: vi.fn(async () => {}) } };
   type Input = GatewayHttpFacts & CandidatesRequest;

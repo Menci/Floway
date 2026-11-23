@@ -1,7 +1,7 @@
 import { type HttpInput, type HttpOutput, jsonHttpResponse } from './edge-http.ts';
 import { type BillableCall, mergeBillableCalls } from './observe-usage.ts';
 import { createGatewayServices, type GatewayRouteFacts, type GatewayServices } from './services.ts';
-import { persistBillableCalls, priceCalls, type UsagePersistence } from './settlement.ts';
+import { persistBillableCalls, priceCalls } from './settlement.ts';
 import { isUpstreamTransportError } from '../../dial/transport-error.ts';
 import { openDumpSession } from '../../dump/session.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
@@ -80,7 +80,8 @@ const crashCandidate = (facts: Facts): CrashCandidate | undefined => {
 const observeRun = () => {
   const parents = new Map<number, number | null>();
   const billings = new Set<Deferred<readonly BillableCall[]>>();
-  const receipts = new Set<Deferred<UsagePersistence>>();
+  const settlements = new Set<Deferred<unknown>>();
+  const covered = new Set<Deferred<readonly BillableCall[]>>();
   let crash: { readonly stageId: number; readonly candidate: CrashCandidate | undefined } | undefined;
 
   const isAncestor = (ancestor: number, stage: number): boolean => {
@@ -103,21 +104,27 @@ const observeRun = () => {
     }
     case 'leave': {
       const billing = event.facts['response.usage.billable'];
-      if (isDeferred(billing)) billings.add(billing as Deferred<readonly BillableCall[]>);
-      const receipt = event.facts['response.usage.persisted'];
-      if (isDeferred(receipt)) receipts.add(receipt as Deferred<UsagePersistence>);
+      if (!isDeferred(billing)) break;
+      const observed = billing as Deferred<readonly BillableCall[]>;
+      billings.add(observed);
+      const settlement = event.facts['response.settlement'];
+      // The settlement takes responsibility even if finalization ends before its write returns.
+      if (isDeferred(settlement) && !settlements.has(settlement)) {
+        settlements.add(settlement);
+        covered.add(observed);
+      }
     }
     }
   };
 
   const sweep = async (keyId: string, usageStore: GatewayServices['usageStore']): Promise<void> => {
     if (billings.size === 0) return;
-    const [calls, results] = await Promise.all([
+    const [calls, assigned] = await Promise.all([
       mergeBillableCalls([...billings]),
-      Promise.allSettled([...receipts].map(receipt => receipt.promise)),
+      mergeBillableCalls([...covered]),
     ]);
-    const persisted = new Set(results.flatMap(result => result.status === 'fulfilled' ? result.value.persistedCallIds : []));
-    await persistBillableCalls(priceCalls(calls.filter(call => !persisted.has(call.callId))), keyId, usageStore);
+    const callIds = new Set(assigned.map(call => call.callId));
+    await persistBillableCalls(priceCalls(calls.filter(call => !callIds.has(call.callId))), keyId, usageStore);
   };
 
   return { observe, sweep, candidate: () => crash?.candidate };

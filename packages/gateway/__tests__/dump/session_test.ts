@@ -48,7 +48,7 @@ test.each([
         'response.http': jsonHttpResponse(201, { received: true }, env.clock()),
         ...renderedNow(env, render),
         'response.settlement': env.defer<Settlement>('settlement', Promise.resolve({
-          persisted: true, persistedCallIds: [], errors: [], status: 201, outcome: render.kind === 'completed' ? 'success' : 'failed', identity: null, tokenUsage: { input: 7, output: 2 },
+          persisted: true, errors: [], status: 201, outcome: render.kind === 'completed' ? 'success' : 'failed', identity: null, tokenUsage: { input: 7, output: 2 },
           firstOutputAt, streamEndedAt: null, upstreamStartedAt: 100, upstreamId: null, targetApi: null,
         })),
       }),
@@ -126,7 +126,7 @@ test('a truncated 13 MiB request keeps the live 429 status and upstream attribut
       execute: async (_facts, _into, env) => ({
         'response.http': http,
         'response.settlement': env.defer<Settlement>('settlement', Promise.resolve({
-          persisted: true, persistedCallIds: [], errors: [], status: 429, outcome: 'upstream-error', identity: null, tokenUsage: null,
+          persisted: true, errors: [], status: 429, outcome: 'upstream-error', identity: null, tokenUsage: null,
           firstOutputAt: null, streamEndedAt: null, upstreamStartedAt: 0, upstreamId: upstream.id, targetApi: null,
         })),
       }),

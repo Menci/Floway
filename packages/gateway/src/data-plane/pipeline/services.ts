@@ -15,7 +15,6 @@ import type { PerformanceRecord } from '../shared/telemetry/performance-record.t
 import { loadWebSearchConfig } from '../tools/web-search/config.ts';
 import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
 import type { ConfiguredWebSearchProvider, WebSearchConfig } from '../tools/web-search/types.ts';
-import { type ErrorSnapshot, snapshotError } from '@floway-dev/pipeline';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelKind } from '@floway-dev/protocols/common';
 import { toProviderModelFacts, type ProviderModelFacts, type ProviderServices } from '@floway-dev/provider';
@@ -63,7 +62,7 @@ export interface GatewayServices extends ProviderServices {
   readonly affinityCodec: Pick<AffinityCodec, 'wrap' | 'unwrap'>;
   readonly sidecarCodecs: SidecarCodecFactory;
   readonly responsesStore: OpenAIResponsesStatefulStore;
-  readonly usageStore: { readonly record: (row: UsageRecord) => Promise<void | { readonly lastUsedAtError: ErrorSnapshot }> };
+  readonly usageStore: { readonly record: (row: UsageRecord) => Promise<void> };
   readonly performanceStore: { readonly record: (record: PerformanceRecord) => Promise<void> };
   readonly webSearchProvider: WebSearchProviderPort;
 }
@@ -219,13 +218,10 @@ export const createGatewayServices = (options: {
     responsesStore: responsesStore ?? createNonOpenAIResponsesSourceStore(apiKey.id),
     usageStore: {
       record: async row => {
-        const repo = getRepo();
-        await repo.usage.record(row);
-        try {
-          await repo.apiKeys.update(row.keyId, { lastUsedAt: new Date().toISOString() });
-        } catch (error) {
-          return { lastUsedAtError: snapshotError(error) };
-        }
+        await Promise.all([
+          getRepo().usage.record(row),
+          getRepo().apiKeys.update(row.keyId, { lastUsedAt: new Date().toISOString() }),
+        ]);
       },
     },
     performanceStore: {
