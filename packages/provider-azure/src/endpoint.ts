@@ -25,8 +25,8 @@ const optionalHttpUrlField = (value: unknown, label: string): string | undefined
     if (parsed.search || parsed.hash) {
       throw new Error('query or fragment');
     }
-  } catch {
-    throw new Error(`Malformed ${label}: must be an http(s) URL without query or fragment`);
+  } catch (error) {
+    throw new Error(`Malformed ${label}: must be an http(s) URL without query or fragment`, { cause: error });
   }
   return url;
 };
@@ -59,9 +59,7 @@ export const azureOpenAiV1BaseUrl = (endpoint: string): string => {
   return trimTrailingSlash(url.href);
 };
 
-// Microsoft-Decision-1's decision endpoint lives on the resource host, not
-// under the OpenAI v1 base: <host>/providers/microsoft/v1/systemone. Every
-// admitted endpoint shape reduces to its resource host here.
+// Microsoft-Decision-1's decision endpoint is scoped to the resource host.
 // https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-microsoft-decision
 export const azureResourceRootUrl = (endpoint: string): string => {
   const url = new URL(trimTrailingSlash(endpoint));

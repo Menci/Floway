@@ -1,8 +1,9 @@
 import { test } from 'vitest';
 
-import { assertAzureUpstreamRecord } from '../src/config.ts';
+import { assertAzureUpstreamRecord, toAzureUpstreamFacts } from '../src/index.ts';
+import { isSecret } from '@floway-dev/pipeline';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { assertThrows } from '@floway-dev/test-utils';
+import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 const baseRecord: UpstreamRecord = {
   id: 'up_azure',
@@ -96,4 +97,13 @@ test('assertAzureUpstreamRecord rejects rerank models', () => {
     }),
     Error,
   );
+});
+
+test('Azure upstream facts carry the normalized endpoint and wrapped API key', () => {
+  const { config, ...identity } = toAzureUpstreamFacts({ ...baseRecord, state: { controlPlane: true } });
+  assertEquals(identity, { id: 'up_azure', kind: 'azure', name: 'Azure Resource' });
+  assertEquals(Object.keys(config), ['endpoint', 'apiKey']);
+  assertEquals(config.endpoint, 'https://example.openai.azure.com');
+  assertEquals(isSecret(config.apiKey), true);
+  assertEquals(config.apiKey.reveal(), 'az-key');
 });

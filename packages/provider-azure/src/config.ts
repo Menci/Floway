@@ -1,5 +1,6 @@
 import { azureEndpointField } from './endpoint.ts';
-import { type UpstreamModelConfig, type UpstreamRecord, isRecord, modelsField, nonEmptyStringField } from '@floway-dev/provider';
+import { secret, type Secret } from '@floway-dev/pipeline';
+import { type ProviderUpstreamBase, type UpstreamModelConfig, type UpstreamRecord, isRecord, modelsField, nonEmptyStringField } from '@floway-dev/provider';
 
 export interface AzureUpstreamConfig {
   endpoint: string;
@@ -11,6 +12,13 @@ export type AzureUpstreamRecord = UpstreamRecord & {
   kind: 'azure';
   config: AzureUpstreamConfig;
 };
+
+export interface AzureUpstreamConfigFacts {
+  readonly endpoint: string;
+  readonly apiKey: Secret<string>;
+}
+
+export type AzureUpstreamFacts = ProviderUpstreamBase<'azure', AzureUpstreamConfigFacts>;
 
 export const assertAzureUpstreamRecord = (record: UpstreamRecord): AzureUpstreamRecord => {
   if (record.kind !== 'azure') throw new Error(`Expected azure upstream record, got ${record.kind}`);
@@ -38,4 +46,9 @@ export const assertAzureUpstreamRecord = (record: UpstreamRecord): AzureUpstream
     kind: 'azure',
     config,
   };
+};
+
+export const toAzureUpstreamFacts = (record: UpstreamRecord): AzureUpstreamFacts => {
+  const { id, kind, name, config } = assertAzureUpstreamRecord(record);
+  return { id, kind, name, config: { endpoint: config.endpoint, apiKey: secret(config.apiKey) } };
 };

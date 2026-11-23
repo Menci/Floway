@@ -1,11 +1,12 @@
 import { test } from 'vitest';
 
 import { azureInput, callAzure } from './pipeline-fixture.ts';
+import { azurePipelines, toAzureUpstreamFacts } from '../src/index.ts';
 import { createAzureProvider } from '../src/provider.ts';
 import { Bytes, isSecret, type RunEvent } from '@floway-dev/pipeline';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { assertEquals, assertExists, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, jsonResponse, sseResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const config = {
@@ -78,14 +79,19 @@ test('createAzureProvider projects configured models into upstream models', asyn
   assertEquals(models[0].limits.max_context_window_tokens, 128000);
 });
 
-test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodies and model keys', async () => {
-  const instance = createAzureProvider(azureRecord());
+test('Azure sends deployment ids in OpenAI-shaped request bodies and model keys', async () => {
+  const record = azureRecord();
+  const upstream = toAzureUpstreamFacts(record);
+  const instance = createAzureProvider(record);
   const [providerModel] = await instance.instance.getProvidedModels(directFetcher);
   const seen: Array<{ url: string; apiKey: string | null; body: Record<string, unknown> }> = [];
   const events: RunEvent[] = [];
 
   await withMockedFetch(
     async request => {
+      assertEquals(request.method, 'POST');
+      assertEquals([...request.headers.keys()], ['api-key', 'content-type']);
+      assertEquals(request.headers.get('content-type'), 'application/json');
       seen.push({
         url: request.url,
         apiKey: request.headers.get('api-key'),
@@ -95,13 +101,15 @@ test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodi
     },
     async () => {
       const chat = await callAzure(
-        instance.pipelines.openaiChatCompletions,
-        azureInput(providerModel, { messages: [{ role: 'user', content: 'hello' }] }),
+        azurePipelines.openaiChatCompletions,
+        azureInput(upstream, providerModel, { messages: [{ role: 'user', content: 'hello' }] }, [
+          ['API-Key', 'client-key'], ['authorization', 'client-token'], ['content-type', 'text/plain'], ['x-client-header', 'client-value'],
+        ]),
         directFetcher,
         event => events.push(event),
       );
-      const responses = await callAzure(instance.pipelines.openaiResponses, {
-        ...azureInput(providerModel, {
+      const responses = await callAzure(azurePipelines.openaiResponses, {
+        ...azureInput(upstream, providerModel, {
           input: [{
             type: 'additional_tools',
             role: 'developer',
@@ -115,11 +123,14 @@ test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodi
         }),
         'request.action': 'generate',
       });
-      const embeddings = await callAzure(instance.pipelines.openaiEmbeddings, azureInput(providerModel, { input: 'hello' }));
+      const embeddings = await callAzure(azurePipelines.openaiEmbeddings, azureInput(upstream, providerModel, { input: 'hello' }));
 
       assertEquals(chat['response.modelKey'], 'gpt-prod');
       assertEquals(responses['response.modelKey'], 'gpt-prod');
       assertEquals(embeddings['response.modelKey'], 'gpt-prod');
+      assertEquals(chat['response.openaiChatCompletions'].kind, 'stream');
+      assertEquals(responses['response.openaiResponses'].kind, 'stream');
+      assertEquals(embeddings['response.openaiEmbeddings'], { kind: 'ok' });
     },
   );
 
@@ -136,6 +147,7 @@ test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodi
     ['gpt-prod', 'gpt-prod', 'gpt-prod'],
   );
   assertEquals(seen.map(item => item.apiKey), ['az-key', 'az-key', 'az-key']);
+  assertEquals(seen.map(item => item.body.stream), [true, true, undefined]);
   const dispatch = events.find(event => event.k === 'enter' && event.name === 'http');
   if (dispatch?.k !== 'enter') throw new Error('Expected HTTP terminal entry');
   assertEquals(JSON.stringify(dispatch).includes('az-key'), false);
@@ -154,8 +166,10 @@ test('createAzureProvider sends upstream model ids in OpenAI-shaped request bodi
   }]);
 });
 
-test.each(['compact'] as const)('createAzureProvider preserves %s upstream errors through the OpenAI Responses boundary', async action => {
-  const instance = createAzureProvider(azureRecord());
+test.each(['generate', 'compact'] as const)('Azure Responses represents %s upstream errors as values', async action => {
+  const record = azureRecord();
+  const upstream = toAzureUpstreamFacts(record);
+  const instance = createAzureProvider(record);
   const [providerModel] = await instance.instance.getProvidedModels(directFetcher);
   const upstreamResponse = new Response('{"error":"upstream rejected the request"}', {
     status: 418,
@@ -165,36 +179,78 @@ test.each(['compact'] as const)('createAzureProvider preserves %s upstream error
   await withMockedFetch(
     () => Promise.resolve(upstreamResponse),
     async () => {
-      const result = await callAzure(instance.pipelines.openaiResponses, {
-        ...azureInput(providerModel, { input: [{ type: 'message', role: 'user', content: 'hello' }] }),
+      const result = await callAzure(azurePipelines.openaiResponses, {
+        ...azureInput(upstream, providerModel, { input: [{ type: 'message', role: 'user', content: 'hello' }] }),
         'request.action': action,
       });
-      assertEquals(result['response.events'], undefined);
-      assertEquals(result['response.result'], undefined);
+      assertEquals(result['response.openaiResponses'], {
+        kind: 'error',
+        source: 'upstream',
+        error: { error: 'upstream rejected the request' },
+      });
       assertEquals(result['response.modelKey'], 'gpt-prod');
       assertEquals(result['response.http'].status, 418);
       assertEquals(result['response.http'].headers.find(([name]) => name === 'x-upstream-error')?.[1], action);
-      assertEquals(result.body.utf8(), '{"error":"upstream rejected the request"}');
     },
   );
 });
 
-test('createAzureProvider supports native Azure Anthropic Messages models', async () => {
-  const instance = createAzureProvider(
-    azureRecord({
-      config: {
-        endpoint: 'https://example.services.ai.azure.com/anthropic/v1',
-        apiKey: 'az-key',
-        models: [
-          {
-            upstreamModelId: 'claude-prod',
-            publicModelId: 'claude-public',
-            endpoints: { anthropicMessages: {} },
-          },
-        ],
-      },
-    }),
+test('Azure Responses compact sends the compact payload and returns its result', async () => {
+  const upstream = toAzureUpstreamFacts(azureRecord());
+  const model = stubProviderModel({ upstreamModelId: 'gpt-prod' });
+  const compact = { id: 'compact_1', object: 'response.compaction', output: [] };
+  const input = {
+    ...azureInput(upstream, model, { input: [], instructions: 'Summarize', store: true, stream: true, temperature: 0.1 }),
+    'request.action': 'compact' as const,
+  };
+  const events: RunEvent[] = [];
+  await withMockedFetch(
+    async request => {
+      assertEquals(request.url, 'https://example.openai.azure.com/openai/v1/responses/compact');
+      assertEquals(await request.json(), { model: 'gpt-prod', input: [], instructions: 'Summarize' });
+      return jsonResponse(compact);
+    },
+    async () => {
+      const result = await callAzure(azurePipelines.openaiResponses, input, directFetcher, event => events.push(event));
+      assertEquals(result['response.openaiResponses'], { kind: 'result', result: compact });
+    },
   );
+  const build = events.find(event => event.k === 'enter' && event.name === 'buildRequest');
+  if (build?.k !== 'enter') throw new Error('Expected request builder entry');
+  assertEquals(Object.is(build.facts['request.payload'], input['request.payload']), true);
+});
+
+test('Azure returns upstream transport failure when the error body connection drops', async () => {
+  const upstream = toAzureUpstreamFacts(azureRecord());
+  const model = stubProviderModel({ upstreamModelId: 'gpt-prod' });
+  const failure = new Error('connection reset');
+  const response = new Response(new ReadableStream({ start: controller => controller.error(failure) }), { status: 503 });
+  const result = await callAzure(azurePipelines.openaiEmbeddings, azureInput(upstream, model, { input: 'hello' }), async () => response);
+  assertEquals(result['response.http'].status, 502);
+  assertEquals(result['response.http'].transportError?.message, failure.message);
+  assertEquals(result['response.openaiEmbeddings'], {
+    kind: 'error',
+    source: 'upstream',
+    error: { error: { type: 'upstream_transport_error', message: failure.message } },
+  });
+});
+
+test('Azure supports native Anthropic Messages models', async () => {
+  const record = azureRecord({
+    config: {
+      endpoint: 'https://example.services.ai.azure.com/anthropic/v1',
+      apiKey: 'az-key',
+      models: [
+        {
+          upstreamModelId: 'claude-prod',
+          publicModelId: 'claude-public',
+          endpoints: { anthropicMessages: {} },
+        },
+      ],
+    },
+  });
+  const upstream = toAzureUpstreamFacts(record);
+  const instance = createAzureProvider(record);
   const [providerModel] = await instance.instance.getProvidedModels(directFetcher);
   const seen: Array<{ url: string; xApiKey: string | null; version: string | null; body: Record<string, unknown>; beta: string | null }> = [];
 
@@ -203,6 +259,7 @@ test('createAzureProvider supports native Azure Anthropic Messages models', asyn
 
   await withMockedFetch(
     async request => {
+      assertEquals([...request.headers.keys()], ['anthropic-beta', 'anthropic-version', 'content-type', 'x-api-key']);
       seen.push({
         url: request.url,
         xApiKey: request.headers.get('x-api-key'),
@@ -210,14 +267,19 @@ test('createAzureProvider supports native Azure Anthropic Messages models', asyn
         body: (await request.json()) as Record<string, unknown>,
         beta: request.headers.get('anthropic-beta'),
       });
-      return sseResponse();
+      return request.url.endsWith('/count_tokens') ? jsonResponse({ input_tokens: 5 }) : sseResponse();
     },
     async () => {
-      const input = azureInput(providerModel, { max_tokens: 16, messages: [{ role: 'user' as const, content: 'hello' }] });
-      const messages = await callAzure(instance.pipelines.anthropicMessages, { ...input, 'request.anthropicBeta': ['context-1m'] });
-      const count = await callAzure(instance.pipelines.anthropicMessagesCountTokens, { ...input, 'request.anthropicBeta': ['context-1m', 'advanced-tool-use'] });
+      const input = azureInput(upstream, providerModel, { max_tokens: 16, messages: [{ role: 'user' as const, content: 'hello' }] }, [
+        ['anthropic-version', 'client-version'], ['anthropic-beta', 'client-beta'], ['api-key', 'client-key'], ['x-api-key', 'client-key'],
+      ]);
+      const messages = await callAzure(azurePipelines.anthropicMessages, { ...input, 'request.anthropicBeta': ['context-1m'] });
+      const count = await callAzure(azurePipelines.anthropicMessagesCountTokens, { ...input, 'request.anthropicBeta': ['context-1m', 'advanced-tool-use'] });
       assertEquals(messages['response.modelKey'], 'claude-prod');
       assertEquals(count['response.modelKey'], 'claude-prod');
+      assertEquals(messages['response.anthropicMessages'].kind, 'stream');
+      assertEquals(count['response.anthropicMessagesCountTokens'], { kind: 'ok' });
+      assertEquals(count.body.utf8(), '{"input_tokens":5}');
     },
   );
 
@@ -277,7 +339,7 @@ test('Azure image edits post multipart with the deployment model and api-version
     async () => {
       const provider = createAzureProvider(record);
       const models = await provider.instance.getProvidedModels(directFetcher);
-      const result = await callAzure(provider.pipelines.openaiImagesEdits, azureInput(models[0], {
+      const result = await callAzure(azurePipelines.openaiImagesEdits, azureInput(toAzureUpstreamFacts(record), models[0], {
         parameters: { prompt: 'replace sky' },
         images: [{
           type: 'upload',
@@ -288,6 +350,7 @@ test('Azure image edits post multipart with the deployment model and api-version
       }));
       assertEquals(result['response.modelKey'], 'gpt-image-2');
       assertEquals(result['response.http'].status, 200);
+      assertEquals(result['response.openaiImagesEdits'], { kind: 'ok' });
     },
   );
   assertEquals(observedUrl, 'https://example.openai.azure.com/openai/v1/images/edits?api-version=preview');

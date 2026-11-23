@@ -1,6 +1,5 @@
 import { assertAzureUpstreamRecord } from './config.ts';
 import { AZURE_DEFAULT_FLAGS } from './defaults.ts';
-import { createAzurePipelines } from './pipelines.ts';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { publicModelId, resolveEffectiveFlags, type Provider, type ProviderInstance, type UpstreamRecord } from '@floway-dev/provider';
 
@@ -37,11 +36,9 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
     upstreamId: azure.id,
     kind: 'azure',
     name: azure.name,
-    inboundHeaderAllowlist: [],
     disabledPublicModelIds: azure.disabledPublicModelIds,
     modelPrefix: azure.modelPrefix,
     modelsCache: azure.modelsCache,
-    pipelines: createAzurePipelines(azure.id, azure.config),
     instance,
   };
 };
