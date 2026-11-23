@@ -1,10 +1,13 @@
-import type { ProviderServices } from './pipelines.ts';
+import type { ProviderServices, ProviderUpstreamBase } from './pipelines.ts';
 import { openByteStream, type HttpOutput } from './response-body.ts';
-import { wrapSensitiveHeaderEntries, type FetchInit, type HttpRequestFacts, type HttpUrl } from '@floway-dev/http';
-import { Bytes, defineEnding, type ManagedStream, type StageEnv } from '@floway-dev/pipeline';
+import { isUpstreamTransportError, wrapSensitiveHeaderEntries, type FetchInit, type HttpRequestFacts, type HttpResponseBodyChunk, type HttpUrl } from '@floway-dev/http';
+import { Bytes, defineEnding, isManagedStream, snapshotError, type ManagedStream, type Scope } from '@floway-dev/pipeline';
 import { viewOf } from '@floway-dev/pipeline/bytes-view';
 
-type HttpInput = { readonly 'request.http': HttpRequestFacts };
+type HttpInput = {
+  readonly 'provider.upstream': ProviderUpstreamBase;
+  readonly 'request.http': HttpRequestFacts;
+};
 
 const materializeUrl = ({ origin, pathname, query }: HttpUrl): string => {
   if (!query?.length) return `${origin}${pathname}`;
@@ -15,29 +18,21 @@ const materializeUrl = ({ origin, pathname, query }: HttpUrl): string => {
 const createResponseBody = (
   reader: ReadableStreamDefaultReader<Uint8Array>,
   request: AbortController,
-  env: StageEnv<ProviderServices>,
-): ManagedStream<Bytes> => {
+  scope: Scope<ProviderServices>,
+): ManagedStream<HttpResponseBodyChunk> => {
   let cancellation: Promise<void> | undefined;
-  let exhausted = false;
-  let readFailed = false;
-  const read = async (): Promise<ReadableStreamReadResult<Uint8Array>> => {
-    try {
-      return await reader.read();
-    } catch (error) {
-      readFailed = true;
-      throw error;
-    }
-  };
+  let completedCleanly = false;
+  let readFailure: { readonly error: unknown } | undefined;
   const cancel = (reason?: unknown): Promise<void> => {
     cancellation ??= reader.cancel(reason);
     return cancellation;
   };
-  return env.createStream({
+  return scope.createStream<HttpResponseBodyChunk>({
     label: 'http.body',
-    async *iterate(signal) {
+    async *iterate({ signal }) {
       // The kernel joins an outstanding pull before it runs onClose.
       const interrupt = (): void => {
-        if (exhausted) return;
+        if (completedCleanly || readFailure !== undefined) return;
         // onClose awaits this same cancellation and reports a teardown failure.
         void cancel(signal.reason).catch(() => undefined);
         request.abort(signal.reason);
@@ -46,9 +41,17 @@ const createResponseBody = (
       try {
         if (signal.aborted) interrupt();
         for (;;) {
-          const next = await read();
+          let next: ReadableStreamReadResult<Uint8Array>;
+          try {
+            next = await reader.read();
+          } catch (error) {
+            if (signal.aborted) throw error;
+            readFailure = { error };
+            yield { type: 'transport-error', error: snapshotError(error) };
+            return;
+          }
           if (next.done) {
-            exhausted = !signal.aborted;
+            completedCleanly = !signal.aborted;
             return;
           }
           yield Bytes.adopt(next.value);
@@ -59,9 +62,11 @@ const createResponseBody = (
     },
     async onClose(end) {
       try {
-        if (!exhausted) {
+        if (readFailure !== undefined) {
+          request.abort(readFailure.error);
+        } else if (!completedCleanly) {
           const reason = end.how === 'cancelled' ? end.reason : end.how === 'errored' ? end.error : undefined;
-          const settled = readFailed ? cancellation : cancel(reason);
+          const settled = cancel(reason);
           request.abort(reason);
           await settled;
         }
@@ -72,23 +77,25 @@ const createResponseBody = (
   });
 };
 
-export const httpTerminal = (upstreamId: string, name = 'http') => defineEnding<HttpInput, HttpOutput, {}, ProviderServices>({
-  name,
-  request: { needs: ['request.http'] },
+export const httpTerminal = defineEnding<HttpInput, HttpOutput, {}, ProviderServices>({
+  name: 'http',
+  request: { needs: ['provider.upstream', 'request.http'] },
   return: { provides: ['response.http'] },
-  async execute({ 'request.http': request }, _into, env) {
-    const fetcher = env.services.fetcher(upstreamId);
+  async execute({ 'provider.upstream': upstream, 'request.http': request }, scope) {
+    const { body } = request;
+    if (body !== null && !(body instanceof Bytes) && !isManagedStream(body)) {
+      throw new TypeError('An unparsed client upload error reached the upstream HTTP terminal');
+    }
+    const fetcher = scope.services.fetcher(upstream.id);
     const url = materializeUrl(request.url);
     const headers = request.headers.map(([key, value]): [string, string] => [key, typeof value === 'string' ? value : value.reveal()]);
     const controller = new AbortController();
-    const { body } = request;
-    const upload = body === null || body instanceof Bytes ? null : openByteStream(body);
+    const upload = isManagedStream(body) ? openByteStream(body) : null;
     // Bytes owns a non-shared ArrayBuffer, as required by the Web fetch body.
     const buffered = body instanceof Bytes ? viewOf(body) as Uint8Array<ArrayBuffer> : null;
-    const forwardAbort = (): void => controller.abort(env.signal.reason);
-    const detach = (): void => env.signal.removeEventListener('abort', forwardAbort);
-    if (env.signal.aborted) forwardAbort();
-    else env.signal.addEventListener('abort', forwardAbort, { once: true });
+    const forwardAbort = (): void => controller.abort(scope.signal.reason);
+    if (scope.signal.aborted) forwardAbort();
+    else scope.signal.addEventListener('abort', forwardAbort, { once: true });
 
     try {
       const init: FetchInit & { duplex?: 'half' } = {
@@ -97,12 +104,30 @@ export const httpTerminal = (upstreamId: string, name = 'http') => defineEnding<
         signal: controller.signal,
         ...(upload === null ? { body: buffered } : { body: upload.stream, duplex: 'half' }),
       };
-      const startedAt = env.clock();
-      const response = await fetcher(url, init);
-      const headersAt = env.clock();
+      const startedAt = scope.clock();
+      let response: Response;
+      try {
+        response = await fetcher(url, init);
+      } catch (error) {
+        controller.abort(error);
+        if (upload !== null) await Promise.allSettled([upload.close()]);
+        if (scope.signal.aborted || !isUpstreamTransportError(error)) throw error;
+        return {
+          'response.http': {
+            status: 502,
+            statusText: '',
+            headers: [],
+            body: null,
+            timing: { startedAt, headersAt: scope.clock() },
+            exchange: 'upstream',
+            transportError: snapshotError(error),
+          },
+        };
+      }
+      const headersAt = scope.clock();
       await upload?.close();
       const responseHeaders = wrapSensitiveHeaderEntries(response.headers);
-      const responseBody = response.body === null ? null : createResponseBody(response.body.getReader(), controller, env);
+      const responseBody = response.body === null ? null : createResponseBody(response.body.getReader(), controller, scope);
       return {
         'response.http': {
           status: response.status,
@@ -110,15 +135,15 @@ export const httpTerminal = (upstreamId: string, name = 'http') => defineEnding<
           headers: responseHeaders,
           body: responseBody,
           timing: { startedAt, headersAt },
+          exchange: 'upstream',
         },
       };
     } catch (error) {
       controller.abort(error);
-      if (upload !== null) await Promise.allSettled([upload.close()]);
       throw error;
     } finally {
       // The response body now owns cancellation, including its birth domain.
-      detach();
+      scope.signal.removeEventListener('abort', forwardAbort);
     }
   },
 });

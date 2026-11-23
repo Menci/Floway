@@ -1,18 +1,20 @@
 import { expect, test, vi } from 'vitest';
 
 import { encodeHttpRequest, type ProviderHttpRequest } from '../src/http-request.ts';
-import { httpTerminal, httpUrl, readHttpBody, type ProviderServices } from '../src/index.ts';
+import { httpTerminal, httpUrl, readHttpBody, type ProviderServices, type ProviderUpstreamBase } from '../src/index.ts';
 import { encodeMultipartFormData, type MultipartField } from '../src/request-body.ts';
-import type { Fetcher, HttpRequestFacts, HttpResponseFacts } from '@floway-dev/http';
-import { Bytes, compose, isSecret, run, type RootEnv, type RunEvent } from '@floway-dev/pipeline';
+import { UpstreamTransportError, type Fetcher, type HttpRequestFacts, type HttpResponseFacts } from '@floway-dev/http';
+import { Bytes, compose, isSecret, run, snapshotError, type RootEnv, type RunEvent } from '@floway-dev/pipeline';
 import { jsonInteger } from '@floway-dev/protocols/common';
 
-type Input = { readonly 'request.http': HttpRequestFacts };
+type Input = { readonly 'provider.upstream': ProviderUpstreamBase; readonly 'request.http': HttpRequestFacts };
 type Output = { readonly 'response.http': HttpResponseFacts };
 
-const terminal = compose<Input, Output, ProviderServices>('test.transport', {
+const terminal = compose<Input & Output, ProviderServices>()('test.transport', {
+  entry: ['provider.upstream', 'request.http'],
+  exit: ['response.http'],
   stages: [],
-  ending: httpTerminal('test-upstream'),
+  ending: httpTerminal,
 });
 
 const request = {
@@ -26,7 +28,10 @@ const invoke = (
   fetcher: Fetcher,
   http: HttpRequestFacts | ((env: RootEnv) => HttpRequestFacts) = request,
   options: { signal?: AbortSignal; events?: (event: RunEvent) => void; clock?: () => number } = {},
-) => run(terminal, root => ({ 'request.http': typeof http === 'function' ? http(root) : http }), {
+) => run(terminal, (root): Input => ({
+  'provider.upstream': { id: 'test-upstream', kind: 'custom', name: 'Test Upstream', config: {} },
+  'request.http': typeof http === 'function' ? http(root) : http,
+}), {
   services: {
     fetcher: upstreamId => {
       expect(upstreamId).toBe('test-upstream');
@@ -45,12 +50,14 @@ test('preserves the status, status text, repeated headers, body bytes, and timin
     return new Response(new Uint8Array([0x00, 0xFE, 0x0A]), { status: 418, statusText: 'Brew', headers });
   }, request, { clock: () => time });
   const { 'response.http': response } = await handle.result;
-  expect(response).toMatchObject({ status: 418, statusText: 'Brew', timing: { startedAt: 10, headersAt: 22 } });
+  expect(response).toMatchObject({ status: 418, statusText: 'Brew', timing: { startedAt: 10, headersAt: 22 }, exchange: 'upstream' });
   expect(response.headers).toContainEqual(['x-trace-id', 'trace-1']);
   const cookies = response.headers.filter(([name]) => name === 'set-cookie').map(([, value]) => value);
   expect(cookies.every(isSecret)).toBe(true);
   expect(cookies.map(value => typeof value === 'string' ? value : value.reveal())).toEqual(['first=1', 'second=2']);
-  expect((await readHttpBody(response.body)).toUint8Array()).toEqual(new Uint8Array([0x00, 0xFE, 0x0A]));
+  const body = await readHttpBody(response.body);
+  if (!body.ok) throw new Error('Expected response body bytes');
+  expect(body.bytes.toUint8Array()).toEqual(new Uint8Array([0x00, 0xFE, 0x0A]));
   await expect(handle.done).resolves.toEqual({ ok: true });
 });
 
@@ -110,7 +117,7 @@ test.each([false, true])('releasing a response cancels its reader and aborts fet
 
 test('abort before headers propagates the original fetch failure', async () => {
   const owner = new AbortController();
-  const error = new Error('client disconnected');
+  const error = new UpstreamTransportError(new Error('client disconnected'));
   const dispatched = Promise.withResolvers<AbortSignal>();
   const handle = invoke(async (_url, init) => {
     if (!init.signal) throw new Error('Expected fetch signal');
@@ -124,22 +131,30 @@ test('abort before headers propagates the original fetch failure', async () => {
   owner.abort(error);
   expect(signal.reason).toBe(error);
   await expect(handle.result).rejects.toBe(error);
-  await expect(handle.done).resolves.toMatchObject({ ok: false });
+  await expect(handle.done).resolves.toEqual({ ok: true });
 });
 
 test('abort after headers reaches the physical reader and fetch with the domain reason', async () => {
   const owner = new AbortController();
   const error = new Error('client disconnected');
   const cancel = vi.fn();
+  const pulling = Promise.withResolvers<void>();
   const fetchSignal = Promise.withResolvers<AbortSignal>();
   const handle = invoke(async (_url, init) => {
     if (!init.signal) throw new Error('Expected fetch signal');
     fetchSignal.resolve(init.signal);
-    return new Response(new ReadableStream<Uint8Array>({ cancel }));
+    return new Response(new ReadableStream<Uint8Array>({
+      pull: () => { pulling.resolve(); },
+      cancel,
+    }, { highWaterMark: 0 }));
   }, request, { signal: owner.signal });
-  await handle.result;
+  const { 'response.http': { body } } = await handle.result;
+  if (body === null || body instanceof Bytes) throw new Error('Expected a managed body');
+  const read = body[Symbol.asyncIterator]().next();
+  await pulling.promise;
   owner.abort(error);
-  await handle.done;
+  await expect(read).resolves.toMatchObject({ done: true });
+  await expect(handle.done).resolves.toEqual({ ok: true });
   expect(cancel).toHaveBeenCalledExactlyOnceWith(error);
   expect((await fetchSignal.promise).reason).toBe(error);
 });
@@ -167,8 +182,8 @@ test('streams a managed upload into the fetcher in order', async () => {
   await expect(handle.done).resolves.toEqual({ ok: true });
 });
 
-test('releases a managed upload if fetch rejects before pulling it', async () => {
-  const failure = new Error('connection refused');
+test('preserves a non-transport fetch failure and releases the unread upload', async () => {
+  const failure = new TypeError('invalid fetch configuration');
   const uploadEnded = vi.fn();
   const handle = invoke(async () => { throw failure; }, root => ({
     ...request,
@@ -181,6 +196,48 @@ test('releases a managed upload if fetch rejects before pulling it', async () =>
   await expect(handle.result).rejects.toBe(failure);
   await expect(handle.done).resolves.toMatchObject({ ok: false });
   expect(uploadEnded).toHaveBeenCalledExactlyOnceWith({ how: 'released' });
+});
+
+test('converts an upstream fetch failure to a timed 502 exchange and releases the unread upload', async () => {
+  let time = 10;
+  const failure = new UpstreamTransportError(new Error('connection refused'));
+  const uploadEnded = vi.fn();
+  const fetched = Promise.withResolvers<AbortSignal>();
+  const handle = invoke(async (_url, init) => {
+    if (init.signal == null) throw new Error('Expected fetch signal');
+    fetched.resolve(init.signal);
+    time += 12;
+    throw failure;
+  }, root => ({
+    ...request,
+    body: root.createStream({
+      label: 'upload',
+      iterate() { throw new Error('Unexpected upload read'); },
+      onClose: uploadEnded,
+    }),
+  }), { clock: () => time });
+  await expect(handle.result).resolves.toMatchObject({
+    'response.http': {
+      status: 502,
+      statusText: '',
+      headers: [],
+      body: null,
+      timing: { startedAt: 10, headersAt: 22 },
+      exchange: 'upstream',
+      transportError: { name: 'UpstreamTransportError', message: 'connection refused', cause: { message: 'connection refused' } },
+    },
+  });
+  expect((await fetched.promise).reason).toBe(failure);
+  expect(uploadEnded).toHaveBeenCalledExactlyOnceWith({ how: 'released' });
+  await expect(handle.done).resolves.toEqual({ ok: true });
+});
+
+test('rejects an unparsed upload error before dispatch', async () => {
+  const fetcher = vi.fn<Fetcher>();
+  const handle = invoke(fetcher, { ...request, body: { kind: 'upload-error', error: snapshotError(new Error('broken upload')) } });
+  await expect(handle.result).rejects.toThrow(TypeError);
+  expect(fetcher).not.toHaveBeenCalled();
+  await expect(handle.done).resolves.toMatchObject({ ok: false });
 });
 
 test('writes raw JSON integer tokens and exact exponent formatting on the wire', async () => {

@@ -1,11 +1,4 @@
-export type {
-  OpenAIChatCompletionsInvocation,
-  GeminiGenerateContentInvocation,
-  ChatTargetApi,
-  AnthropicMessagesInvocation,
-  ModelCandidate,
-  OpenAIResponsesInvocation,
-} from './invocation.ts';
+export type { ChatTargetApi, ModelCandidate } from './invocation.ts';
 export { providerModelOf } from './invocation.ts';
 
 export type { InternalDebugError } from './error.ts';
@@ -29,32 +22,48 @@ export { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeModelPrefix } fro
 
 export type {
   Provider,
-  InboundHeaderMatcher,
   ProviderInstance,
   ProviderModule,
 } from './provider.ts';
 export type {
+  ErrorSource,
+  HttpOutcome,
   OpenAIResponsesAction,
+  ProtocolOutcome,
+  ProviderAlphaSearchOutput,
+  ProviderAnthropicCountTokensOutput,
   ProviderAnthropicInput,
-  ProviderHttpOutput,
+  ProviderAnthropicMessagesOutput,
+  ProviderBaseOutput,
+  ProviderDecisionOutput,
+  ProviderFrame,
+  ProviderGeminiCountTokensOutput,
+  ProviderGeminiGenerateContentOutput,
   ProviderInput,
   ProviderModelFacts,
+  ProviderOpenAIAudioTranscriptionsOutput,
+  ProviderOpenAIChatCompletionsOutput,
+  ProviderOpenAICompletionsOutput,
+  ProviderOpenAIEmbeddingsOutput,
+  ProviderOpenAIImagesEditsOutput,
+  ProviderOpenAIImagesGenerationsOutput,
+  ProviderOpenAIResponsesOutput,
   ProviderPipelines,
+  ProviderRerankOutput,
   ProviderResponsesInput,
-  ProviderResponsesOutput,
   ProviderServices,
-  ProviderStreamOutput,
-  ProviderTargetOutput,
+  ProviderUpstreamBase,
 } from './pipelines.ts';
 export { toProviderModelFacts } from './pipelines.ts';
 export { httpTerminal } from './http-terminal.ts';
-export { buildHttpRequestStage, encodeHttpRequest, type ProviderHttpRequest } from './http-request.ts';
-export { parseCompactionStage, parseSseStage, type ProviderStreamParser } from './parse-response.ts';
-export { discardUpstreamResponse, readHttpBody } from './response-body.ts';
+export { appendHeader, deleteHeader, filterHeaders, getHeader, getHeaderEntry, hasHeader, mergeHeaders, setHeader } from './headers.ts';
+export { encodeHttpRequest, rewriteHttpRequest, rewriteHttpRequestStage, stripHttpHeaders, type ProviderHttpRequest, type ProviderHttpRequestUpdate } from './http-request.ts';
+export { parseErrorBody, parseHttpOutcomeStage, parseResponsesStage, parseSseBody, parseSseStage, type FormatNonJsonError, type FormatNonStreamError, type ProviderStreamParser } from './parse-response.ts';
+export { discardUpstreamResponse, readHttpBody, type HttpBodyReadResult } from './response-body.ts';
 export type { JsonRequestBody, MultipartFile, MultipartField, MultipartRequestBody, ProviderRequestBody } from './request-body.ts';
-export type { HeaderEntry, HttpRequestFacts, HttpResponseFacts, HttpUrl } from '@floway-dev/http';
-export { httpUrl, wrapSensitiveHeaderEntries } from '@floway-dev/http';
-export { headersForAnthropicMessagesCall } from './anthropic-messages.ts';
+export type { HeaderEntry, HttpRequestBody, HttpRequestFacts, HttpResponseBodyChunk, HttpResponseFacts, HttpUrl, TransportFailure } from '@floway-dev/http';
+export { httpUrl, isTransportFailure, wrapSensitiveHeaderEntries } from '@floway-dev/http';
+export { headersForAnthropicMessagesCall, setAnthropicBetaHeader } from './anthropic-messages.ts';
 export type { OpenAIImagesEditsRequest, OpenAIImagesEditsSource } from './images.ts';
 export { serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
 export type { OpenAIAudioTranscriptionFormEntry, OpenAIAudioTranscriptionRequest } from './audio.ts';
