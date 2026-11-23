@@ -1519,6 +1519,8 @@ const zhHansCN = {
       raw: '原始内容',
       base64: '原始字节（Base64）',
       partialCapture: '采集在 EOF 前结束。这里保留了目前收到的字节。',
+      uploadFailed: '请求体上传失败。',
+      transportFailed: 'HTTP 传输失败。',
       noUpstreamCapture: '这条记录没有可用的上游 HTTP 采集。',
       upstreamCall: '上游交互',
       callNumber: '第 {{number}} / {{count}} 次调用',
@@ -1549,6 +1551,7 @@ const zhHansCN = {
       secretBadge: '已脱敏（{{length}} 字符，sha256 {{hash}}）',
       truncatedTrace: '追踪已截断（丢弃了 {{dropped, number}} 条事件）。',
       traceSizeLimit: '追踪已达到大小上限并截断。',
+      traceQueueLimit: '追踪已达到采集队列上限并截断。',
       perspective: {
         label: '检视视图',
         wire: '报文',

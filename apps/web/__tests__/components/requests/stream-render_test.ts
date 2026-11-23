@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { collectStream, detectCollectKind, extractRawWireBytes, extractWireStreamFrames, renderStreamEvents, streamEventsCopyText, type StreamFrameEntry } from '../../../src/components/requests/stream-render';
+import { collectStream, detectCollectKind, readWireResponseBody, renderStreamEvents, streamEventsCopyText, type StreamFrameEntry } from '../../../src/components/requests/stream-render';
 import type { ProjectedWireResponse } from '@floway-dev/dump/browser';
 import { createDumpDecoder, isDecodedStreamRef } from '@floway-dev/dump/browser';
 import { Bytes } from '@floway-dev/pipeline/browser';
@@ -32,15 +32,15 @@ describe('wire stream extraction', () => {
         ],
       },
     };
-    const frames = extractWireStreamFrames(responseWithSse);
+    const { frames, bytes } = readWireResponseBody(responseWithSse);
     expect(frames).toHaveLength(2);
     expect(frames[0]?.sse).toEqual({ type: 'sse', event: 'delta', data: '{"text":"hello"}' });
     expect(frames[1]?.sse).toMatchObject({ type: 'sse', data: '[DONE]' });
     expect(frames.map(({ ts, deltaMs }) => [ts, deltaMs])).toEqual([[7, 0], [9, 2]]);
     expect(renderStreamEvents(frames)[0]).toMatchObject({ event: 'delta', text: '{\n  "text": "hello"\n}', parseError: null });
     expect(streamEventsCopyText(frames)).toBe('event: delta\ndata: {"text":"hello"}\n\ndata: [DONE]\n');
-    expect(extractRawWireBytes(responseWithSse)).not.toBeNull();
-    expect(new TextDecoder().decode(extractRawWireBytes(responseWithSse)!)).toContain(': keepalive\n\ndata: [DONE]');
+    expect(bytes).not.toBeNull();
+    expect(new TextDecoder().decode(bytes!)).toContain(': keepalive\n\ndata: [DONE]');
   });
 
   it('renders generic SSE frames and records per-frame deltas', () => {

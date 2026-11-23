@@ -1,6 +1,6 @@
 import { contentTypeOf } from './body-render';
 import { errorMessage } from '../../lib/error-message';
-import type { DecodedStreamNode, ProjectedWireResponse } from '@floway-dev/dump/browser';
+import type { ProjectedWireResponse } from '@floway-dev/dump/browser';
 import { Bytes } from '@floway-dev/pipeline/browser';
 import {
   collectAnthropicMessagesProtocolEventsToResult,
@@ -60,33 +60,45 @@ export const collectKindFromTargetApi = (api: string | null | undefined): Collec
   return null;
 };
 
-const bytesFrame = (value: unknown): Bytes => {
-  if (!(value instanceof Bytes)) throw new TypeError('Expected bytes in a wire stream');
-  return value;
-};
+interface WireResponseBody {
+  readonly frames: StreamFrameEntry[];
+  readonly bytes: Uint8Array | null;
+  readonly ended: boolean;
+  readonly transportFailed: boolean;
+}
 
-const parseSseFrames = (stream: DecodedStreamNode): StreamFrameEntry[] => {
-  const decoder = new TextDecoder();
-  const entries: StreamFrameEntry[] = [];
-  let timestamp = stream.createdAtMs;
-  const parser = createSSEFrameParser(sse => {
-    entries.push({ sse, ts: timestamp, deltaMs: timestamp - (entries.at(-1)?.ts ?? timestamp) });
-  });
-  for (const frame of stream.frames) {
-    timestamp = frame.tMs;
-    parser.feed(decoder.decode(bytesFrame(frame.value).toUint8Array(), { stream: true }));
+export const readWireResponseBody = (response: ProjectedWireResponse | null): WireResponseBody => {
+  const stream = response?.stream;
+  let transportFailed = response?.transportError !== undefined;
+  if (response === null || stream === undefined) {
+    const body = response?.body;
+    return { frames: [], bytes: body instanceof Bytes ? body.toUint8Array() : null, ended: false, transportFailed };
   }
-  if (stream.end?.how === 'exhausted') parser.feed(`${decoder.decode()}\n\n`);
-  return entries;
+
+  const frames: StreamFrameEntry[] = [];
+  const chunks: Bytes[] = [];
+  const decoder = new TextDecoder();
+  let timestamp = stream.createdAtMs;
+  const parser = contentTypeOf(response.headers).toLowerCase().includes('text/event-stream')
+    ? createSSEFrameParser(sse => {
+        frames.push({ sse, ts: timestamp, deltaMs: timestamp - (frames.at(-1)?.ts ?? timestamp) });
+      })
+    : null;
+  for (const { value, tMs } of stream.frames) {
+    if (typeof value === 'object' && value !== null && 'type' in value && value.type === 'transport-error' && 'error' in value) {
+      transportFailed = true;
+      continue;
+    }
+    if (!(value instanceof Bytes)) throw new TypeError('Expected bytes or a transport failure in a wire stream');
+    timestamp = tMs;
+    chunks.push(value);
+    parser?.feed(decoder.decode(value.toUint8Array(), { stream: true }));
+  }
+  const ended = stream.end?.how === 'exhausted' && !transportFailed;
+  if (ended) parser?.feed(`${decoder.decode()}\n\n`);
+  const bytes = chunks.length > 0 ? Bytes.concat(chunks).toUint8Array() : null;
+  return { frames, bytes, ended, transportFailed };
 };
-
-export const extractWireStreamFrames = (response: ProjectedWireResponse | null): StreamFrameEntry[] =>
-  response?.stream !== undefined && contentTypeOf(response.headers).toLowerCase().includes('text/event-stream')
-    ? parseSseFrames(response.stream) : [];
-
-export const extractRawWireBytes = (response: ProjectedWireResponse | null): Uint8Array | null =>
-  response?.body instanceof Bytes ? response.body.toUint8Array()
-    : response?.stream?.frames.length ? Bytes.concat(response.stream.frames.map(frame => bytesFrame(frame.value))).toUint8Array() : null;
 
 const complete = (result: unknown, ended: boolean): CollectedStream =>
   ({ result, error: null, truncated: !ended });

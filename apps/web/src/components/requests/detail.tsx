@@ -91,9 +91,12 @@ function ArtifactDetail({ artifact, isLiveStreaming, resyncing }: { artifact: Lo
   const [selectedStageId, setSelectedStageId] = useState<number | null>(null);
   const meta = artifact.meta;
   const status = meta?.status ?? null;
-  const truncated = meta?.truncated === true || artifact.viewModel.run?.truncated !== undefined;
-  const truncationLabel = meta?.droppedEvents === undefined
-    ? t('requests.traceSizeLimit') : t('requests.truncatedTrace', { dropped: meta.droppedEvents });
+  const truncation = artifact.viewModel.run?.truncated;
+  const truncated = meta?.truncated === true || truncation !== undefined;
+  const droppedEvents = meta?.droppedEvents ?? 0;
+  const truncationLabel = droppedEvents > 0
+    ? t('requests.truncatedTrace', { dropped: droppedEvents })
+    : t(truncation?.reason === 'queue-limit' ? 'requests.traceQueueLimit' : 'requests.traceSizeLimit');
   const exportable: ExportableDumpRecord | null = meta === null ? null : { meta, events: artifact.events };
 
   return <div className="flex h-full min-h-0 flex-col">

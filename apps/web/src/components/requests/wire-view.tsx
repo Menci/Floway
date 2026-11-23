@@ -11,8 +11,7 @@ import {
   collectKindFromTargetApi,
   collectStream,
   detectCollectKind,
-  extractRawWireBytes,
-  extractWireStreamFrames,
+  readWireResponseBody,
   type CollectedStream,
 } from './stream-render';
 import type { LoadedDumpArtifact } from './use-dump-artifact';
@@ -156,17 +155,17 @@ export function WireView({ artifact, isLiveStreaming, onInspectStage }: WireView
   const source = chosenSource ?? defaultSource;
   const upstream = source === 'upstreamRequest' || source === 'upstreamResponse';
   const [chosenExchangeId, setChosenExchangeId] = useState<number | null>(null);
-  const { exchange, request, response, streamFrames, raw, renderedBody } = useMemo(() => {
+  const { exchange, request, response, streamFrames, raw, ended, transportFailed, renderedBody } = useMemo(() => {
     const projection = artifact.wire;
     const calls = projection.upstreamExchanges;
     const picked = calls.find(item => item.stageId === chosenExchangeId) ?? calls.at(-1);
     const req = requestForSource(source, projection.downstreamRequest, picked);
     const res = responseForSource(source, projection.downstreamResponse, picked);
     const message = req ?? res;
+    const { frames, bytes, ended, transportFailed } = readWireResponseBody(res);
     return {
       exchange: picked, request: req, response: res,
-      streamFrames: extractWireStreamFrames(res),
-      raw: rawResponse(extractRawWireBytes(res)),
+      streamFrames: frames, raw: rawResponse(bytes), ended, transportFailed,
       renderedBody: message === null ? EMPTY_BODY : renderWireBody(message.body, message.headers),
     };
   }, [artifact, chosenExchangeId, source]);
@@ -174,8 +173,7 @@ export function WireView({ artifact, isLiveStreaming, onInspectStage }: WireView
     ? detectCollectKind(exchange?.request.url.pathname ?? '') ?? collectKindFromTargetApi(artifact.meta?.targetApi)
     : detectCollectKind(wire.downstreamRequest?.url.pathname ?? artifact.meta?.path ?? '');
   const responseStream = response?.stream;
-  const ended = responseStream?.end?.how === 'exhausted';
-  const partialCapture = !isLiveStreaming && responseStream !== undefined && !ended;
+  const partialCapture = !isLiveStreaming && responseStream !== undefined && !ended && !transportFailed;
   const [chosenView, setChosenView] = useState<ResponseView | null>(null);
   const canCollect = streamFrames.length > 0 && kind !== null;
   const formattedView = canCollect || raw === null || responseStream === undefined ? 'collected' : 'raw';
@@ -190,13 +188,18 @@ export function WireView({ artifact, isLiveStreaming, onInspectStage }: WireView
   const decodeError = source === 'upstreamResponse' || source === 'response'
     ? renderedBody.decodeError ?? (availableView === 'raw' ? raw?.decodeError ?? null : null)
     : null;
+  const bodyWarnings = [
+    renderedBody.uploadFailed === true ? t('requests.uploadFailed') : null,
+    transportFailed ? t('requests.transportFailed') : null,
+    partialCapture ? t('requests.partialCapture') : null,
+    collected?.truncated === true && !transportFailed ? t('requests.truncatedStream') : null,
+    collected?.error ?? null,
+    decodeError === null ? null : t('requests.decodeError', { error: decodeError }),
+  ].filter((value): value is string => value !== null);
   const diagnostics = [...new Set([
     errorLabel(artifact.meta?.error ?? null),
     responseStream?.end?.error === undefined ? null : formatErrorValue(responseStream.end.error),
-    partialCapture ? t('requests.partialCapture') : null,
-    collected?.truncated === true ? t('requests.truncatedStream') : null,
-    collected?.error ?? null,
-    decodeError === null ? null : t('requests.decodeError', { error: decodeError }),
+    ...bodyWarnings,
   ].filter((value): value is string => value !== null))];
   const sourceLabel = t(SOURCE_LABEL_KEYS[source]);
   const bodyLabel = request !== null ? t('requests.requestBody') : t('requests.responseBody');
@@ -279,11 +282,10 @@ export function WireView({ artifact, isLiveStreaming, onInspectStage }: WireView
   </div>;
 
   const warnings: ReactNode = <>
-    {partialCapture && <OutcomeMessageBar intent="warning">{t('requests.partialCapture')}</OutcomeMessageBar>}
-    {collected?.truncated === true && <OutcomeMessageBar intent="warning">{t('requests.truncatedStream')}</OutcomeMessageBar>}
-    {collected?.error !== null && collected?.error !== undefined && <OutcomeMessageBar intent="warning">{collected.error}</OutcomeMessageBar>}
-    {decodeError !== null && <OutcomeMessageBar intent="warning">{t('requests.decodeError', { error: decodeError })}</OutcomeMessageBar>}
+    {bodyWarnings.map(message => <OutcomeMessageBar key={message} intent="warning">{message}</OutcomeMessageBar>)}
   </>;
+  const emptyText = upstream && exchange === undefined ? t('requests.noUpstreamCapture')
+    : renderedBody.uploadFailed === true || transportFailed ? undefined : t('requests.emptyBody');
 
   return <div className="h-full min-h-0 flex flex-col">
     <div className={`${PANEL_BAND_CLASS} flex flex-wrap items-center gap-2 min-w-0 shrink-0 border-b border-b-solid border-b-[var(--winui-divider-stroke-default)]`}>{toolbar}</div>
@@ -311,7 +313,7 @@ export function WireView({ artifact, isLiveStreaming, onInspectStage }: WireView
                 copyText={canCollect ? undefined : renderedBody.copyText}
                 json={canCollect || renderedBody.isJson}
                 label={bodyLabel}
-                emptyText={upstream && exchange === undefined ? t('requests.noUpstreamCapture') : t('requests.emptyBody')}
+                emptyText={emptyText}
                 toolbarStart={warnings}
               /></Suspense>}
     </div>

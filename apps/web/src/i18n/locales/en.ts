@@ -1536,6 +1536,8 @@ const en = {
       raw: 'Raw bytes',
       base64: 'Raw bytes (Base64)',
       partialCapture: 'Capture ended before EOF. These are the bytes received so far.',
+      uploadFailed: 'The request body upload failed.',
+      transportFailed: 'The HTTP transport failed.',
       noUpstreamCapture: 'No HTTP upstream capture is available for this record.',
       upstreamCall: 'Upstream calls',
       callNumber: 'Call {{number}} of {{count}}',
@@ -1566,6 +1568,7 @@ const en = {
       secretBadge: 'Redacted ({{length}} chars, sha256 {{hash}})',
       truncatedTrace: 'Trace truncated ({{dropped, number}} events dropped).',
       traceSizeLimit: 'Trace truncated at the size limit.',
+      traceQueueLimit: 'Trace truncated at the capture queue limit.',
       perspective: {
         label: 'Inspection view',
         wire: 'Wire',

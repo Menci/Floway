@@ -1,5 +1,5 @@
 import { errorMessage } from '../../lib/error-message';
-import type { DecodedStreamRef } from '@floway-dev/dump/browser';
+import type { WireHttpRequest } from '@floway-dev/dump/browser';
 import { Bytes } from '@floway-dev/pipeline/browser';
 import { encodeBase64, isTextualMediaType, parseMediaType } from '@floway-dev/protocols/browser';
 
@@ -8,6 +8,7 @@ export interface RenderedBody {
   copyText: string;
   decodeError: string | null;
   isJson: boolean;
+  uploadFailed?: true;
 }
 
 export const EMPTY_BODY: RenderedBody = { text: '', copyText: '', decodeError: null, isJson: false };
@@ -47,9 +48,10 @@ const renderMultipart = (bytes: Uint8Array, contentType: string): string | null 
 };
 
 export const renderWireBody = (
-  body: Bytes | DecodedStreamRef | null,
+  body: WireHttpRequest['body'],
   headers: ReadonlyArray<readonly [string, unknown]>,
 ): RenderedBody => {
+  if (body !== null && 'kind' in body && body.kind === 'upload-error') return { ...EMPTY_BODY, uploadFailed: true };
   if (!(body instanceof Bytes) || body.byteLength === 0) return EMPTY_BODY;
   const bytes = body.toUint8Array();
   const contentType = contentTypeOf(headers);
