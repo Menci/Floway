@@ -1,21 +1,9 @@
-import { AffinityCodec, type AffinityIdentity } from './carrier.ts';
+import { AffinityCodec, type AffinityEgressOptions, type AffinityIdentity } from './carrier.ts';
 import { resolveLegacyOpaqueBlobCompatibilityIdentity } from './legacy.ts';
-import { compatibilityIdentityForCandidate } from './selection.ts';
+import { affinityIdentityForCandidate } from './selection.ts';
 import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
 import type { ChatGatewayCtx } from '../gateway-ctx.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
-
-export interface AffinityEgressOptions {
-  readonly codec: Pick<AffinityCodec, 'wrap'>;
-  readonly affinity: AffinityIdentity;
-}
-
-const affinityIdentityForCandidate = (candidate: ModelCandidate): AffinityIdentity => ({
-  upstreamId: candidate.provider.upstreamId,
-  modelId: candidate.model.id,
-  ...(candidate.rules !== undefined ? { rules: candidate.rules } : {}),
-  opaqueBlobCompatibilityIdentity: compatibilityIdentityForCandidate(candidate),
-});
 
 export class AffinityRequestContext {
   readonly codec: AffinityCodec;

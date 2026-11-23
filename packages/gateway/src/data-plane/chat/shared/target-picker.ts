@@ -1,43 +1,41 @@
+import type { CandidateRequest } from '../../pipeline/failover.ts';
+import { defineStage } from '@floway-dev/pipeline';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { ChatTargetApi } from '@floway-dev/provider';
 
-// Build a picker from an ordered preference list of chat-target keys. The
-// preference encodes which upstream wire the source protocol prefers to
-// translate to, in order. The first preference whose endpoint key exists
-// on the candidate wins. Serve calls `canServe` to filter candidates whose
-// upstream wire cannot satisfy any preferred target; attempt calls `pick`
-// once it has a viable candidate to choose the dispatch wire. `pick` is
-// contractually total — a null return would mean the serve-side filter
-// was bypassed. `canServe` is a 1-bit projection of `pick`.
-export const chatTargetPicker = (preference: readonly ChatTargetApi[]): {
+export interface ChatTargetPicker {
   canServe: (endpoints: ModelEndpoints) => boolean;
   pick: (endpoints: ModelEndpoints) => ChatTargetApi;
-} => {
-  const find = (endpoints: ModelEndpoints): ChatTargetApi | null => {
-    for (const key of preference) {
-      switch (key) {
-      case 'anthropicMessages':
-        if (endpoints.anthropicMessages) return 'anthropicMessages';
-        break;
-      case 'geminiGenerateContent':
-        if (endpoints.geminiGenerateContent) return 'geminiGenerateContent';
-        break;
-      case 'openaiResponses':
-        if (endpoints.openaiResponses) return 'openaiResponses';
-        break;
-      case 'openaiChatCompletions':
-        if (endpoints.openaiChatCompletions) return 'openaiChatCompletions';
-        break;
-      }
-    }
-    return null;
-  };
+}
+
+export const chatTargetPicker = (preference: readonly ChatTargetApi[]): ChatTargetPicker => {
+  const find = (endpoints: ModelEndpoints) => preference.find(key => endpoints[key]);
   return {
-    canServe: endpoints => find(endpoints) !== null,
+    canServe: endpoints => find(endpoints) !== undefined,
     pick: endpoints => {
       const out = find(endpoints);
-      if (out === null) throw new Error('chatTargetPicker.pick called on a candidate the picker rejects — serve must filter via canServe first');
+      if (out === undefined) throw new Error(`Chat candidate has none of the required endpoints: ${preference.join(', ')}`);
       return out;
     },
   };
 };
+
+export const openaiChatCompletionsTarget = chatTargetPicker(['openaiChatCompletions', 'anthropicMessages', 'openaiResponses']);
+export const openaiResponsesTarget = chatTargetPicker(['openaiResponses', 'anthropicMessages', 'openaiChatCompletions']);
+export const anthropicMessagesGenerateTarget = chatTargetPicker(['anthropicMessages', 'openaiResponses', 'openaiChatCompletions']);
+export const anthropicMessagesCountTokensTarget = chatTargetPicker(['anthropicMessages']);
+export const geminiGenerateContentGenerateTarget = chatTargetPicker(['geminiGenerateContent', 'openaiChatCompletions', 'anthropicMessages', 'openaiResponses']);
+export const geminiGenerateContentCountTokensTarget = chatTargetPicker(['geminiGenerateContent', 'anthropicMessages']);
+
+export interface TargetRequest extends CandidateRequest {
+  readonly 'route.targetApi': ChatTargetApi;
+}
+
+export const pickTarget = (picker: ChatTargetPicker) => defineStage<CandidateRequest, TargetRequest, object, object>({
+  name: 'pickTarget',
+  through: {
+    request: { needs: ['route.candidate'], consumes: [], provides: ['route.targetApi'] },
+    response: { needs: [], consumes: [], provides: [] },
+  },
+  execute: async (facts, next) => await next({ ...facts, 'route.targetApi': picker.pick(facts['route.candidate'].endpoints) }),
+});

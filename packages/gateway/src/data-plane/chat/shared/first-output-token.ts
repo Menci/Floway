@@ -78,7 +78,7 @@ const anthropicMessagesTimingSignal = (event: Record<string, unknown>): FirstOut
   if (!Object.hasOwn(ANTHROPIC_DELTA_OUTPUT_FIELDS, delta.type)) return null;
   const field = ANTHROPIC_DELTA_OUTPUT_FIELDS[delta.type];
   if (field === undefined || field === null) return null;
-  const value = (delta as unknown as Record<string, unknown>)[field];
+  const value: unknown = Reflect.get(delta, field);
   return decodeSignal(field === 'citation' ? value !== undefined : nonEmptyString(value));
 };
 
