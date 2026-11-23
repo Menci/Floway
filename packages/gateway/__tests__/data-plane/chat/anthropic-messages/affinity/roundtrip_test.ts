@@ -1,30 +1,16 @@
 import { expect, test } from 'vitest';
 
+import { analyzeAnthropicMessagesAffinity, evaluateAnthropicMessagesAffinity } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/analysis.ts';
 import { wrapAnthropicMessagesAffinityEgress } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/egress.ts';
-import { analyzeAnthropicMessagesAffinity } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/ingress.ts';
-import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
-import { createAnthropicMessagesUsage, reassembleAnthropicMessagesEvents, type AnthropicMessagesAssistantContentBlock, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
+import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/carrier.ts';
+import { affinityIdentityForCandidate as targetFor } from '../../../../../src/data-plane/chat/shared/affinity/selection.ts';
+import { messagesUpstream } from '../fixture.ts';
+import { createAnthropicMessagesUsage, reassembleAnthropicMessagesEvents, type AnthropicMessagesAssistantContentBlock, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ModelCandidate } from '@floway-dev/provider';
-import { stubModelCandidate } from '@floway-dev/test-utils';
 
 const codec = new AffinityCodec('22'.repeat(32));
 
-const candidate = (upstream: string): ModelCandidate => {
-  const base = stubModelCandidate();
-  return stubModelCandidate({
-    provider: { ...base.provider, upstreamId: upstream },
-    model: { id: 'model' },
-  });
-};
-
-const targetFor = (value: ModelCandidate): AffinityIdentity => ({
-  upstreamId: value.provider.upstreamId,
-  modelId: value.model.id,
-  ...(value.rules !== undefined ? { rules: value.rules } : {}),
-  opaqueBlobCompatibilityIdentity: { upstreamId: value.provider.upstreamId, key: value.model.id },
-});
+const candidate = (upstreamId: string) => messagesUpstream({ upstreamId, model: 'model' }).candidate;
 
 const frames = async function* (values: ProtocolFrame<AnthropicMessagesStreamEventEx>[]) {
   yield* values;
@@ -56,21 +42,22 @@ test('carriers a real codec emits on both Anthropic Messages slots decode on the
     eventFrame({ type: 'message_stop' }),
   ]), { codec, affinity: targetFor(candidateA) }));
 
-  const prepared = await analyzeAnthropicMessagesAffinity({
+  const payload: AnthropicMessagesPayload = {
     model: 'model',
     max_tokens: 100,
     messages: [{ role: 'assistant', content }],
-  }, codec);
+  };
+  const prepared = await analyzeAnthropicMessagesAffinity(payload, codec);
 
-  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
-  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
+  const projectionA = evaluateAnthropicMessagesAffinity(prepared, candidateA, payload);
+  const projectionB = evaluateAnthropicMessagesAffinity(prepared, candidateB, payload);
   expect(projectionA.degrades).toBe(false);
   expect(projectionB.degrades).toBe(true);
-  expect(projectionA.materialize().messages[0].content).toEqual([
+  expect(projectionA.payload.messages[0].content).toEqual([
     { type: 'thinking', thinking: 'visible', signature: 'upstream-signature' },
     { type: 'redacted_thinking', data: 'upstream-redacted' },
   ]);
-  expect(projectionB.materialize().messages).toEqual([]);
+  expect(projectionB.payload.messages).toEqual([]);
 });
 
 test.each([
@@ -97,19 +84,20 @@ test.each([
       eventFrame({ type: 'message_stop' }),
     );
     const content = await assistantContent(wrapAnthropicMessagesAffinityEgress(frames(source), { codec, affinity: targetFor(candidateA) }));
-    const prepared = await analyzeAnthropicMessagesAffinity({
+    const payload: AnthropicMessagesPayload = {
       model: 'model',
       max_tokens: 100,
       messages: [{ role: 'assistant', content }],
-    }, codec);
-    const sameCandidate = acceptedAffinityEvaluation(prepared, candidateA);
+    };
+    const prepared = await analyzeAnthropicMessagesAffinity(payload, codec);
+    const sameCandidate = evaluateAnthropicMessagesAffinity(prepared, candidateA, payload);
     expect(sameCandidate.degrades).toBe(false);
-    const restored = sameCandidate.materialize().messages[0].content;
+    const restored = sameCandidate.payload.messages[0].content;
     expect(Array.isArray(restored) && restored.find(part => part.type === 'thinking')).toStrictEqual(original);
 
-    const otherCandidate = acceptedAffinityEvaluation(prepared, candidateB);
+    const otherCandidate = evaluateAnthropicMessagesAffinity(prepared, candidateB, payload);
     expect(otherCandidate.degrades).toBe(true);
-    const remaining = otherCandidate.materialize().messages.flatMap(message => typeof message.content === 'string' ? [] : message.content);
+    const remaining = otherCandidate.payload.messages.flatMap(message => typeof message.content === 'string' ? [] : message.content);
     expect(remaining).toEqual(index === 0 ? [] : [{ type: 'text', text: 'answer', citations: null }]);
   }
 });

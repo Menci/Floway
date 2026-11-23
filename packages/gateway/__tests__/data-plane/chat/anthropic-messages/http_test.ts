@@ -1,256 +1,80 @@
-import { Hono } from 'hono';
-import { test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
-import type { AuthVars } from '../../../../src/middleware/auth.ts';
-import { initRepo } from '../../../../src/repo/index.ts';
-import type { ApiKey, User } from '../../../../src/repo/types.ts';
-import { InMemoryRepo } from '../../../repo/memory.ts';
-import { flushBackground } from '../../../test-utils/background-tracker.ts';
-import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
-
-const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
-vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../../../src/data-plane/providers/resolution.ts')>();
-  return {
-    ...original,
-    enumerateModelCandidates: vi.fn(async () => {
-      const next = candidatesQueue.shift();
-      if (next === undefined) throw new Error('http_test: no candidates enqueued');
-      return next;
-    }),
-  };
-});
-
-const { anthropicMessagesHttp } = await import('../../../../src/data-plane/chat/anthropic-messages/http.ts');
-
-const API_KEY_ID = 'key_messages_http_test';
-
-const queueCandidates = (candidates: readonly ModelCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
-};
-
-const installRepo = (): InMemoryRepo => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  return repo;
-};
-
-const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
-  id: API_KEY_ID,
-  userId: 1,
-  name: 'http_test',
-  key: 'sk-http-test',
-  serverSecret: '00'.repeat(32),
-  createdAt: '2026-01-01T00:00:00.000Z',
-  upstreamIds: null,
-  randomizeUpstreams: false,
-  deletedAt: null,
-  dumpRetentionSeconds: null,
-  openaiResponsesRetentionSeconds: 0,
-  ...overrides,
-});
-
-const buildUser = (overrides: Partial<User> = {}): User => ({
-  id: 1,
-  username: 'http_test',
-  passwordHash: null,
-  isAdmin: false,
-  createdAt: '2026-01-01T00:00:00.000Z',
-  deletedAt: null,
-  ...overrides,
-});
-
-const makeApp = (): Hono<{ Variables: AuthVars }> => {
-  const app = new Hono<{ Variables: AuthVars }>();
-  app.use('*', async (c, next) => {
-    c.set('apiKey', buildApiKey());
-    c.set('user', buildUser());
-    await next();
-  });
-  app.post('/v1/messages', anthropicMessagesHttp.generate);
-  app.post('/v1/messages/count_tokens', anthropicMessagesHttp.countTokens);
-  return app;
-};
-
-const makeAnthropicMessagesEvents = (): readonly AnthropicMessagesStreamEventEx[] => [
-  {
-    type: 'message_start',
-    message: {
-      container: null, diagnostics: null, stop_details: null,
-      id: 'msg_http',
-      type: 'message',
-      role: 'assistant',
-      content: [],
-      model: 'test-model',
-      stop_reason: null,
-      stop_sequence: null,
-      usage: { cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null, input_tokens: 4, output_tokens: 0 },
-    },
-  },
-  { type: 'content_block_start', index: 0, content_block: { citations: null, type: 'text', text: '' } },
-  { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
-  { type: 'content_block_stop', index: 0 },
-  { type: 'message_delta', delta: { container: null, stop_details: null, stop_reason: 'end_turn', stop_sequence: null }, usage: { input_tokens: null, cache_creation_input_tokens: null, cache_read_input_tokens: null, output_tokens_details: null, server_tool_use: null, output_tokens: 1 } },
-  { type: 'message_stop' },
-];
-
-const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): AsyncGenerator<ProtocolFrame<TEvent>> {
-  for (const event of events) yield eventFrame(event);
-  yield doneFrame();
-};
-
-const makeCandidate = (overrides: {
-  upstream?: string;
-  endpoints?: ModelEndpoints;
-  callAnthropicMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>>;
-  callAnthropicMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
-} = {}): ModelCandidate => {
-  const upstream = overrides.upstream ?? 'up_test';
-  const provider = stubProvider({
-    callAnthropicMessages: overrides.callAnthropicMessages,
-    callAnthropicMessagesCountTokens: overrides.callAnthropicMessagesCountTokens,
-  });
-  return {
-    provider: {
-      upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
-      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
-    },
-    model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
-    fetcher: directFetcher,
-  };
-};
+import { countProvider, defaultFrames, generateProvider, generateReply, httpReply, messagesFixture, messagesPayload, messagesUpstream } from './fixture.ts';
+import { Bytes } from '@floway-dev/pipeline';
 
 test('POST /v1/messages returns a single JSON body when stream is omitted', async () => {
-  installRepo();
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'k', http: { status: 200, headers: new Headers() },
-  }));
-  queueCandidates([makeCandidate({ callAnthropicMessages })]);
-
-  const response = await makeApp().request('/v1/messages', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'test-model', max_tokens: 32, messages: [{ role: 'user', content: 'hello' }] }),
-  });
-
-  assertEquals(response.status, 200);
-  assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
-  const body = await response.json() as { role: string; content: unknown };
-  assertEquals(body.role, 'assistant');
+  const fixture = messagesFixture();
+  const { response, done } = await fixture.send(messagesPayload());
+  expect(response.status).toBe(200);
+  expect(response.headers.get('content-type')).toBe('application/json');
+  expect(await response.json()).toMatchObject({ role: 'assistant' });
+  expect(await done).toMatchObject({ ok: true });
+  expect(fixture.usage).toHaveLength(1);
 });
 
-test('POST /v1/messages answers the Claude Code model-validation probe without calling the upstream', async () => {
-  const repo = installRepo();
-  const callAnthropicMessages = vi.fn((): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => {
-    throw new Error('the probe reached the upstream');
-  });
-  queueCandidates([makeCandidate({ callAnthropicMessages })]);
+test('POST /v1/messages answers the Claude Code model-validation probe without an upstream call or a billable call', async () => {
+  const upstream = vi.fn(() => { throw new Error('the probe reached the upstream'); });
+  const fixture = messagesFixture([messagesUpstream({ pipelines: { anthropicMessages: generateProvider(upstream) } })]);
+  const { response, done } = await fixture.send(messagesPayload({
+    max_tokens: 1, system: [{ type: 'text', text: 'You are Claude Code.' }],
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'Hi', cache_control: { type: 'ephemeral' } }] }],
+    metadata: { user_id: 'user_0_account__session_0' },
+  }), { headers: { 'user-agent': 'claude-cli/2.1.226 (external, cli)' } });
 
-  const response = await makeApp().request('/v1/messages', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json', 'user-agent': 'claude-cli/2.1.226 (external, cli)' }),
-    body: JSON.stringify({
-      model: 'test-model',
-      max_tokens: 1,
-      system: [{ citations: null, type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }],
-      messages: [{ role: 'user', content: [{ citations: null, type: 'text', text: 'Hi', cache_control: { type: 'ephemeral' } }] }],
-      metadata: { user_id: 'user_0_account__session_0' },
-    }),
-  });
-
-  assertEquals(response.status, 200);
-  const body = await response.json() as { model: string; stop_reason: string; usage: { input_tokens: number; output_tokens: number } };
-  assertEquals(body.model, 'test-model');
-  assertEquals(body.stop_reason, 'max_tokens');
-  assertEquals(body.usage.input_tokens, 0);
-  assertEquals(body.usage.output_tokens, 0);
-  assertEquals(callAnthropicMessages.mock.calls.length, 0);
-
-  // The turn is recorded as served, at zero cost, and contributes no latency
-  // sample — there was no upstream call to measure.
-  await flushBackground();
-  const usage = await repo.usage.listAll();
-  assertEquals(usage.length, 1);
-  assertEquals(usage[0]?.requests, 1);
-  assertEquals(usage[0]?.metrics, []);
-  assertEquals(await repo.performance.listAll(), []);
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ model: 'test-model', stop_reason: 'max_tokens', usage: { input_tokens: 0, output_tokens: 0 } });
+  expect(upstream).not.toHaveBeenCalled();
+  expect(await done).toMatchObject({ ok: true });
+  expect(fixture.usage).toEqual([]);
 });
 
-test('POST /v1/messages rejects body anthropic_beta with a 400 before routing', async () => {
-  installRepo();
-  // No candidates queued — the http entry rejects before reaching the serve.
-  const response = await makeApp().request('/v1/messages', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({
-      model: 'test-model',
-      max_tokens: 32,
-      anthropic_beta: ['something'],
-      messages: [{ role: 'user', content: 'hello' }],
-    }),
-  });
-
-  assertEquals(response.status, 400);
-  const body = await response.json() as { error: { param: string; type: string } };
-  assertEquals(body.error.param, 'anthropic_beta');
-  assertEquals(body.error.type, 'invalid_request_error');
+test.each(['anthropic_beta', 'betas'])('POST /v1/messages rejects body %s with a 400 before routing', async param => {
+  const fixture = messagesFixture([]);
+  const { response, done } = await fixture.send({ ...messagesPayload(), [param]: ['example'] });
+  expect(response.status).toBe(400);
+  expect(await response.json()).toMatchObject({ error: { param, type: 'invalid_request_error', message: expect.stringContaining('anthropic-beta HTTP header') } });
+  expect(fixture.requestedModels).toEqual([]);
+  expect(await done).toMatchObject({ ok: true });
 });
 
 test('POST /v1/messages/count_tokens forwards an upstream rate limit and retry hint unchanged', async () => {
-  installRepo();
   const body = '{"error":{"type":"rate_limit_error","message":"wait"}}';
-  const callAnthropicMessagesCountTokens = vi.fn(async () => ({
-    http: new Response(body, {
-      status: 429,
-      headers: { 'content-type': 'application/json', 'retry-after': '17', 'request-id': 'req-count', 'set-cookie': 'private=1' },
-    }),
-    modelKey: 'k',
-  }));
-  queueCandidates([makeCandidate({ callAnthropicMessagesCountTokens })]);
-  const response = await makeApp().request('/v1/messages/count_tokens', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }] }),
-  });
-  assertEquals(callAnthropicMessagesCountTokens.mock.calls.length, 1);
-  assertEquals(response.status, 429);
-  assertEquals(response.headers.get('retry-after'), '17');
-  assertEquals(response.headers.get('request-id'), 'req-count');
-  assertEquals(response.headers.get('set-cookie'), null);
-  assertEquals(await response.text(), body);
+  const upstream = vi.fn(() => httpReply(429, Bytes.fromUtf8(body), [
+    ['content-type', 'application/json'], ['retry-after', '17'], ['request-id', 'req-count'], ['set-cookie', 'private=1'],
+  ]));
+  const fixture = messagesFixture([messagesUpstream({ pipelines: { anthropicMessagesCountTokens: countProvider(upstream) } })]);
+  const { response, done } = await fixture.send({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }] }, { count: true });
+  expect(upstream).toHaveBeenCalledOnce();
+  expect(response.status).toBe(429);
+  expect(response.headers.get('retry-after')).toBe('17');
+  expect(response.headers.get('request-id')).toBe('req-count');
+  expect(response.headers.get('set-cookie')).toBeNull();
+  expect(await response.text()).toBe(body);
+  expect(await done).toMatchObject({ ok: true });
+  expect(fixture.usage).toEqual([]);
 });
 
 test('POST /v1/messages does not switch upstreams after the response stream opens and breaks', async () => {
-  installRepo();
-  const callAnthropicMessages = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true,
-    events: (async function* () {
-      yield eventFrame(makeAnthropicMessagesEvents()[0]!);
-      throw new Error('connection reset after message_start');
-    })(),
-    modelKey: 'k',
-    http: { status: 200, headers: new Headers() },
-  }));
-  const secondCall = vi.fn(async (): Promise<ProviderStreamResult<AnthropicMessagesStreamEventEx>> => ({
-    ok: true, events: makeProtocolFrames(makeAnthropicMessagesEvents()), modelKey: 'second', http: { status: 200, headers: new Headers() },
-  }));
-  queueCandidates([
-    makeCandidate({ upstream: 'first', callAnthropicMessages }),
-    makeCandidate({ upstream: 'second', callAnthropicMessages: secondCall }),
+  const fixture = messagesFixture([
+    messagesUpstream({
+      upstreamId: 'first', pipelines: {
+        anthropicMessages: generateProvider((_facts, env) => generateReply(env, async function* () {
+          for await (const frame of defaultFrames()) {
+            yield frame;
+            throw new Error('connection reset after message_start');
+          }
+        })),
+      },
+    }),
+    messagesUpstream({ upstreamId: 'second', pipelines: { anthropicMessages: generateProvider(() => { throw new Error('unexpected failover'); }) } }),
   ]);
-  const response = await makeApp().request('/v1/messages', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model: 'test-model', max_tokens: 32, stream: true, messages: [{ role: 'user', content: 'hello' }] }),
-  });
-  const body = await response.text();
-  assertEquals(response.status, 200);
-  assert(body.includes('event: message_start'));
-  assert(body.includes('event: error'));
-  assert(body.includes('connection reset after message_start'));
-  assertEquals(secondCall.mock.calls.length, 0);
-  await flushBackground();
+  const { response, done } = await fixture.send(messagesPayload({ stream: true }));
+  const wire = await response.text();
+  expect(response.status).toBe(200);
+  expect(wire).toContain('event: message_start');
+  expect(wire).toContain('event: error');
+  expect(wire).toContain('connection reset after message_start');
+  await done;
+  expect(fixture.usage).toHaveLength(1);
 });

@@ -2,7 +2,19 @@ import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
 import { inputErrorFields, type ChatServeFailure, type InputErrorDetails } from '../shared/errors.ts';
 import { generateAnthropicId, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ApiErrorResult, ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
+import { type ApiErrorResult, type ExecuteResult, internalDebugErrorFields, type PerformanceTelemetryContext, toInternalDebugError } from '@floway-dev/provider';
+
+export const internalAnthropicMessagesErrorPayload = (cause: unknown) => {
+  const error = toInternalDebugError(cause);
+  return {
+    type: 'error',
+    error: {
+      type: error.type,
+      message: error.message,
+      provider_specific_fields: internalDebugErrorFields(error),
+    },
+  };
+};
 
 // Anthropic Messages error envelope used to render pre-stream
 // `ChatServeFailure`s. These are gateway-synthesized rather than received
@@ -10,6 +22,15 @@ import type { ApiErrorResult, ExecuteResult, PerformanceTelemetryContext } from 
 // Byte-shape matches Anthropic-direct: `{type:'error', error:{type, message},
 // request_id}` with `request_id` at the top level (alongside `error`, not
 // nested inside it) and key order load-bearing for byte-faithfulness.
+export const anthropicMessagesErrorBody = (type: string, message: string, extension?: Record<string, unknown>) => ({
+  type: 'error',
+  error: { type, message, ...(extension === undefined ? {} : { provider_specific_fields: extension }) },
+  request_id: generateAnthropicId('req'),
+});
+
+export const anthropicMessagesInputErrorBody = (error: InputErrorDetails) =>
+  anthropicMessagesErrorBody('invalid_request_error', error.message, inputErrorFields(error));
+
 const anthropicErrorResult = (
   status: number,
   type: string,
@@ -20,11 +41,7 @@ const anthropicErrorResult = (
   type: 'api-error',
   source: 'gateway',
   http: { status, headers: new Headers({ 'content-type': 'application/json' }) },
-  body: new TextEncoder().encode(JSON.stringify({
-    type: 'error',
-    error: { type, message, ...(extension === undefined ? {} : { provider_specific_fields: extension }) },
-    request_id: generateAnthropicId('req'),
-  })),
+  body: new TextEncoder().encode(JSON.stringify(anthropicMessagesErrorBody(type, message, extension))),
   ...(performance ? { performance } : {}),
 });
 

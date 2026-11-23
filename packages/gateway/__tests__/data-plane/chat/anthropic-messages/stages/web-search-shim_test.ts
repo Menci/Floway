@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest';
 
-import type { AnthropicMessagesInvocation } from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/types.ts';
 import {
   decodeWebSearchCitationPayload,
   decodeWebSearchResultPayload,
@@ -9,14 +8,12 @@ import {
   type AnthropicMessagesWebSearchShimState,
   prepareAnthropicMessagesWebSearchShimRequest,
   rewriteAnthropicMessagesWebSearchEventsToNative,
-  withAnthropicMessagesWebSearchRequestPrepared,
-  withAnthropicMessagesWebSearchShim,
-} from '../../../../../src/data-plane/chat/anthropic-messages/interceptors/web-search-shim.ts';
-import { DEFAULT_WEB_SEARCH_CONFIG } from '../../../../../src/data-plane/tools/web-search/config.ts';
+} from '../../../../../src/data-plane/chat/anthropic-messages/stages/web-search-events.ts';
+import type { GatewayServices } from '../../../../../src/data-plane/pipeline/services.ts';
 import type { WebSearchProvider } from '../../../../../src/data-plane/tools/web-search/types.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
-import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
+import { countProvider, generateProvider, generateReply, httpReply, messagesFixture, messagesUpstream } from '../fixture.ts';
 import { anthropicMessagesProtocolFrameToSSEFrame } from '@floway-dev/protocols/anthropic-messages';
 import type {
   AnthropicMessagesAssistantContentBlock,
@@ -30,25 +27,7 @@ import type {
   AnthropicMessagesUserContentBlock,
 } from '@floway-dev/protocols/anthropic-messages';
 import { type ProtocolFrame, eventFrame } from '@floway-dev/protocols/common';
-import { assertEquals, assertExists, stubModelCandidate } from '@floway-dev/test-utils';
-
-const testTelemetryModelIdentity = {
-  model: 'test-model',
-  upstream: 'test-upstream',
-  modelKey: 'test-model-key',
-  pricing: null,
-};
-
-const invocation = (payload: AnthropicMessagesPayload): AnthropicMessagesInvocation => ({
-  payload,
-  candidate: stubModelCandidate({
-    model: { endpoints: { anthropicMessages: {} } },
-    enabledFlags: new Set(['anthropic-messages-web-search-shim']),
-  }),
-  targetApi: 'anthropicMessages',
-  headers: new Headers(),
-  anthropicBeta: [],
-});
+import { assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const encodeUnsignedPayload = (payload: unknown): string => btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 
@@ -144,26 +123,17 @@ const fakeProviderOk: WebSearchProvider = searchOnlyProvider(() =>
     ],
   }));
 
-const activeProvider = (impl: WebSearchProvider, apiKeyId: string = 'test-key') => ({
-  providerName: 'tavily' as const,
-  impl,
-  apiKeyId,
-});
+const activeProvider = (impl: WebSearchProvider) => impl.search;
+
+const webSearchProvider = (impl: WebSearchProvider): GatewayServices['webSearchProvider'] => Object.assign(
+  async () => ({ type: 'enabled' as const, provider: 'tavily' as const, impl }),
+  { alphaSearch: async () => ({ enabled: false, upstreamId: '', model: '' }) },
+);
 
 const toAsyncIterable = async function* <T>(values: Iterable<T>): AsyncGenerator<T> {
   for (const value of values) {
     yield value;
   }
-};
-
-const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
-  const collected: T[] = [];
-
-  for await (const event of events) {
-    collected.push(event);
-  }
-
-  return collected;
 };
 
 const anthropicMessagesResponseToUpstreamFrames = (response: AnthropicMessagesResult): ProtocolFrame<AnthropicMessagesStreamEventEx>[] => {
@@ -357,71 +327,56 @@ test('prepareAnthropicMessagesWebSearchShimRequest passes through foreign native
   assertEquals(prepared.payload, payload);
 });
 
-const initDisabledSearchRepo = async (): Promise<void> => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  await repo.webSearchConfig.save(DEFAULT_WEB_SEARCH_CONFIG);
-};
-
-const initEnabledSearchRepo = async (): Promise<void> => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  await repo.webSearchConfig.save({
-    ...DEFAULT_WEB_SEARCH_CONFIG,
-    provider: 'tavily',
-    tavily: { apiKey: 'test-key' },
-  });
-};
-
 test('generation and count_tokens prepare identical web-search request payloads', async () => {
-  await initEnabledSearchRepo();
   const source = makeNativeReplayPayload();
-  const generationInvocation = invocation(structuredClone(source));
-  const countInvocation = invocation(structuredClone(source));
-
-  await withAnthropicMessagesWebSearchShim(generationInvocation, mockChatGatewayCtx(), () => Promise.resolve({
-    type: 'events',
-    events: toAsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>([]),
-    modelIdentity: testTelemetryModelIdentity,
-  }));
-  const countResponse = await withAnthropicMessagesWebSearchRequestPrepared(
-    countInvocation,
-    mockChatGatewayCtx(),
-    () => Promise.resolve(new Response(null, { status: 204 })),
-  );
-
-  assertEquals(countResponse.status, 204);
-  assertEquals(countInvocation.payload, generationInvocation.payload);
-  const rewrittenTool = generationInvocation.payload.tools?.[0] as AnthropicMessagesClientTool;
+  const seen: Omit<AnthropicMessagesPayload, 'model'>[] = [];
+  const fixture = messagesFixture([messagesUpstream({
+    flags: ['anthropic-messages-web-search-shim'],
+    pipelines: {
+      anthropicMessages: generateProvider((facts, env) => {
+        seen.push(facts['request.payload']);
+        return generateReply(env);
+      }),
+      anthropicMessagesCountTokens: countProvider(facts => {
+        seen.push(facts['request.payload']);
+        return httpReply(204);
+      }),
+    },
+  })], { webSearchProvider: webSearchProvider(fakeProviderOk) });
+  const generate = await fixture.send(source);
+  const count = await fixture.send(source, { count: true });
+  expect(await generate.done).toMatchObject({ ok: true });
+  expect(await count.done).toMatchObject({ ok: true });
+  assertEquals(count.response.status, 204);
+  assertEquals(seen[0], seen[1]);
+  const rewrittenTool = seen[0]?.tools?.[0] as AnthropicMessagesClientTool;
   assertEquals(rewrittenTool.name, 'web_search');
   assertEquals('type' in rewrittenTool, false);
 });
 
 test('count_tokens returns a native error response for invalid web-search tools', async () => {
-  const response = await withAnthropicMessagesWebSearchRequestPrepared(
-    invocation({
-      model: 'claude-test',
-      max_tokens: 64,
-      messages: [{ role: 'user', content: 'search' }],
-      tools: [{ name: 'web_search', type: 'web_search_20260209' }, { name: 'web_search', type: 'web_search_20260209' }],
-    }),
-    mockChatGatewayCtx(),
-    () => Promise.reject(new Error('run should not be called')),
-  );
+  const fixture = messagesFixture([messagesUpstream({
+    flags: ['anthropic-messages-web-search-shim'],
+    pipelines: { anthropicMessagesCountTokens: countProvider(() => { throw new Error('unexpected provider call'); }) },
+  })]);
+  const { response, done } = await fixture.send({
+    model: 'claude-test',
+    max_tokens: 64,
+    messages: [{ role: 'user', content: 'search' }],
+    tools: [{ name: 'web_search', type: 'web_search_20260209' }, { name: 'web_search', type: 'web_search_20260209' }],
+  }, { count: true });
 
   assertEquals(response.status, 400);
   expect(await response.json()).toMatchObject({ type: 'error', error: { type: 'invalid_request_error' } });
+  expect(await done).toMatchObject({ ok: true });
 });
 
 const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<AnthropicMessagesStreamEventEx>[]> => {
-  await initDisabledSearchRepo();
-
   const { tools: _tools, ...payload } = makeNativeReplayPayload();
-
-  const result = await withAnthropicMessagesWebSearchShim(invocation(payload), mockChatGatewayCtx(), () =>
-    Promise.resolve({
-      type: 'events',
-      events: toAsyncIterable(
+  const fixture = messagesFixture([messagesUpstream({
+    flags: ['anthropic-messages-web-search-shim'],
+    pipelines: {
+      anthropicMessages: generateProvider((_facts, env) => generateReply(env, () => toAsyncIterable(
         anthropicMessagesResponseToUpstreamFrames({
           container: null, diagnostics: null, stop_details: null,
           id: messageId,
@@ -449,33 +404,33 @@ const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<Anthr
             },
           ],
         }),
-      ),
-      modelIdentity: testTelemetryModelIdentity,
-    }));
-
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('expected events result');
-
-  return await collect(result.events);
+      ))),
+    },
+  })]);
+  const { response, done } = await fixture.send({ ...payload, stream: true });
+  expect(response.status).toBe(200);
+  const wire = await response.text();
+  expect(await done).toMatchObject({ ok: true });
+  return wire.split('\n').filter(line => line.startsWith('data: ')).map(line => eventFrame(JSON.parse(line.slice(6)) as AnthropicMessagesStreamEventEx));
 };
 
-test('withAnthropicMessagesWebSearchShim returns internal-error when request requires disabled search config', async () => {
-  await initDisabledSearchRepo();
-
-  const result = await withAnthropicMessagesWebSearchShim(
-    invocation({
-      model: 'claude-test',
-      max_tokens: 64,
-      messages: [{ role: 'user', content: 'latest React docs' }],
-      tools: [{ name: 'web_search', type: 'web_search_20260209' }],
-    }), mockChatGatewayCtx(),
-    () => Promise.reject(new Error('run should not be called')),
-  );
-
-  assertEquals(result.type, 'internal-error');
+test('webSearchShim returns an internal 500 when the request requires disabled search config', async () => {
+  const fixture = messagesFixture([messagesUpstream({
+    flags: ['anthropic-messages-web-search-shim'],
+    pipelines: { anthropicMessages: generateProvider(() => { throw new Error('unexpected provider call'); }) },
+  })]);
+  const { response, done } = await fixture.send({
+    model: 'claude-test',
+    max_tokens: 64,
+    messages: [{ role: 'user', content: 'latest React docs' }],
+    tools: [{ name: 'web_search', type: 'web_search_20260209' }],
+  });
+  assertEquals(response.status, 500);
+  expect(await response.json()).toMatchObject({ type: 'error', error: { type: 'internal_error', message: expect.stringContaining('requires an enabled search provider') } });
+  expect(await done).toMatchObject({ ok: true });
 });
 
-test('withAnthropicMessagesWebSearchShim emits native-like citation deltas for replay-only history', async () => {
+test('webSearchShim emits native-like citation deltas for replay-only history', async () => {
   const collected = await runReplayOnlyShim('msg_replay_only_stream');
 
   const frames = collected.map(anthropicMessagesProtocolFrameToSSEFrame).filter(frame => frame !== null);
@@ -618,6 +573,35 @@ const runStreamingShim = (
       provider,
     ),
   );
+
+test('webSearchShim runs a tool search as its own sub-run and preserves separate usage', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const upstreamEvents = [
+    upstreamMessageStart(),
+    ...upstreamWebSearchBlock(0, 'toolu_search', 'react docs'),
+    ...upstreamMessageEnd(),
+  ];
+  const fixture = messagesFixture([messagesUpstream({
+    flags: ['anthropic-messages-web-search-shim'],
+    pipelines: { anthropicMessages: generateProvider((_facts, env) => generateReply(env, () => toAsyncIterable(upstreamEvents.map(eventFrame)))) },
+  })], { webSearchProvider: webSearchProvider(fakeProviderOk) });
+
+  const { response, done } = await fixture.send({
+    model: 'test-model', max_tokens: 32, messages: [{ role: 'user', content: 'search' }],
+    tools: [{ name: 'web_search', type: 'web_search_20260209' }],
+  });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    content: expect.arrayContaining([expect.objectContaining({ type: 'server_tool_use' }), expect.objectContaining({ type: 'web_search_tool_result' })]),
+    stop_reason: 'pause_turn',
+    usage: { server_tool_use: { web_search_requests: 1 } },
+  });
+  expect(await done).toMatchObject({ ok: true });
+  expect(fixture.events.filter(event => event.k === 'enter' && event.edge === 'subrun' && event.pipeline === 'webSearch')).toHaveLength(1);
+  expect(await repo.webSearchUsage.listAll()).toMatchObject([{ provider: 'tavily', keyId: 'test-key', action: 'search', requests: 1 }]);
+  expect(fixture.usage).toHaveLength(1);
+});
 
 test('rewriteAnthropicMessagesWebSearchEventsToNative single web search emits server_tool_use/result pair around text', async () => {
   const events = await runStreamingShim(
