@@ -12,27 +12,6 @@ export type { InternalDebugError } from './error.ts';
 export { internalDebugErrorFields, toInternalDebugError } from './error.ts';
 
 export type {
-  ApiErrorResult,
-  BufferedHttpResult,
-  EventResult,
-  EventResultMetadata,
-  ExecuteResult,
-  HttpHead,
-  InternalErrorResult,
-  PlainResult,
-} from './result.ts';
-export {
-  bufferedResultToResponse,
-  decodeResponseBody,
-  discardUpstreamResponse,
-  eventResult,
-  internalErrorResult,
-  plainResult,
-  readResponseBody,
-  readUpstreamApiError,
-} from './result.ts';
-
-export type {
   InternalAliasedFrom,
   InternalModel,
   ProviderModel,
@@ -71,7 +50,7 @@ export { toProviderModelFacts } from './pipelines.ts';
 export { httpTerminal } from './http-terminal.ts';
 export { buildHttpRequestStage, encodeHttpRequest, type ProviderHttpRequest } from './http-request.ts';
 export { parseCompactionStage, parseSseStage, type ProviderStreamParser } from './parse-response.ts';
-export { readHttpBody } from './response-body.ts';
+export { discardUpstreamResponse, readHttpBody } from './response-body.ts';
 export type { JsonRequestBody, MultipartFile, MultipartField, MultipartRequestBody, ProviderRequestBody } from './request-body.ts';
 export type { HeaderEntry, HttpRequestFacts, HttpResponseFacts, HttpUrl } from '@floway-dev/http';
 export { httpUrl, wrapSensitiveHeaderEntries } from '@floway-dev/http';

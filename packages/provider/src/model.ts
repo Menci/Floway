@@ -140,7 +140,7 @@ interface ModelMetadata {
 //   • Real row — carries `providerModels`, keyed on upstream id. Per-request
 //     dispatch reads the chosen upstream's `ProviderModel` off this map via
 //     `providerModelOf(candidate)`. A per-candidate row (from
-//     `enumerateRealModelCandidates`) narrows the map to the single dispatched
+//     the request directory) narrows the map to the single dispatched
 //     upstream; the merged catalog row from `getModelsFromProviders`
 //     aggregates every contributing upstream.
 //   • Alias row — carries `aliasedFrom`, the operator-defined alias record.

@@ -1,52 +1,34 @@
 import { describe, expect, test } from 'vitest';
 
 import {
-  type AffinityRequestAnalysis,
   type AffinityIdentity,
+  affinityIdentityForCandidate,
   candidateSatisfiesAffinityIdentity,
   type DecodedAffinityBlob,
-  defineAffinityRequest,
   projectOptionalAffinityBlob,
   projectRequiredAffinityBlob,
-  selectAffinityCandidates,
+  type ScoreAffinity,
+  uniqueRequiredAffinityTargets,
 } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { selectChatCandidates } from '../../../../../src/data-plane/chat/shared/affinity/stages.ts';
+import { openaiChatCompletionsTarget } from '../../../../../src/data-plane/chat/shared/target-picker.ts';
+import type { RouteCandidate } from '../../../../../src/data-plane/pipeline/services.ts';
+import { chatUpstream } from '../fixture.ts';
 import type { AliasRules } from '@floway-dev/protocols/common';
-import type { ModelCandidate } from '@floway-dev/provider';
-import { stubModelCandidate, stubProviderModel } from '@floway-dev/test-utils';
 
-const candidate = (upstreamId: string, model: string, rules?: AliasRules) => {
-  const base = stubModelCandidate();
-  const value = stubModelCandidate({
-    provider: { ...base.provider, upstreamId },
-    model: { id: model },
-  });
-  return rules === undefined ? value : { ...value, rules };
-};
+const candidate = (upstreamId: string, modelId: string, rules?: AliasRules) =>
+  chatUpstream({ upstreamId, modelId, rules, endpoints: { openaiChatCompletions: {} } }).candidate;
 
 const candidateWithScope = (
   upstreamId: string,
   model: string,
   scope: { bindToUpstream: boolean; key?: string },
 ) => {
-  const base = stubModelCandidate();
-  return stubModelCandidate({
-    provider: { ...base.provider, upstreamId },
-    model: {
-      id: model,
-      opaqueBlobCompatibilityScope: scope,
-      providerModels: {
-        [upstreamId]: stubProviderModel({ id: model, upstreamModelId: model, opaqueBlobCompatibilityScope: scope }),
-      },
-    },
-  });
+  const base = candidate(upstreamId, model);
+  return { ...base, providerModel: { ...base.providerModel, opaqueBlobCompatibilityScope: scope } };
 };
 
-const targetFor = (value: ReturnType<typeof candidate>): AffinityIdentity => ({
-  upstreamId: value.provider.upstreamId,
-  modelId: value.model.id,
-  ...(value.rules !== undefined ? { rules: value.rules } : {}),
-  opaqueBlobCompatibilityIdentity: { upstreamId: value.provider.upstreamId, key: value.model.id },
-});
+const targetFor = affinityIdentityForCandidate;
 
 const ownedBlob = (
   target: AffinityIdentity,
@@ -64,63 +46,28 @@ const ownedBlob = (
 
 const affinity = (
   requiredTargets: readonly AffinityIdentity[] = [],
-  degrading: readonly ModelCandidate[] = [],
-): AffinityRequestAnalysis<undefined> => defineAffinityRequest(requiredTargets, candidate => {
-  const unsatisfiedTargets = requiredTargets.filter(target => !candidateSatisfiesAffinityIdentity(candidate, target));
-  return unsatisfiedTargets.length > 0
-    ? { kind: 'rejected' }
-    : { kind: 'accepted', degrades: degrading.includes(candidate), materialize: () => undefined };
-});
+  degrading: readonly RouteCandidate[] = [],
+) => ({ requiredTargets: uniqueRequiredAffinityTargets(requiredTargets), degrading });
 
-const selectedCandidates = (
-  candidates: readonly ModelCandidate[],
-  analysis: AffinityRequestAnalysis<undefined>,
-): readonly ModelCandidate[] => {
-  const selection = selectAffinityCandidates(candidates, analysis);
-  if ('kind' in selection) throw new Error(`Expected affinity selection, received ${selection.kind}`);
-  return selection.candidates;
-};
+const score: ScoreAffinity<ReturnType<typeof affinity>, undefined> = ({ requiredTargets, degrading }, candidate) =>
+  requiredTargets.every(target => candidateSatisfiesAffinityIdentity(candidate, target))
+    ? { kind: 'accepted', degrades: degrading.includes(candidate) }
+    : { kind: 'rejected' };
+
+const select = (candidates: readonly RouteCandidate[], analysis: ReturnType<typeof affinity>) =>
+  selectChatCandidates(candidates, openaiChatCompletionsTarget, analysis, undefined, score, 'model');
 
 describe('client-carried affinity candidate selection', () => {
-  test('evaluates requirement eligibility and degradation before materializing selected payloads', () => {
-    const required = candidate('up-a', 'model');
-    const sameTargetAlias = candidate('up-a', 'model', { reasoning: { effort: 'low' } });
-    const rejected = candidate('up-b', 'model');
-    let materializations = 0;
-    const analysis = defineAffinityRequest([targetFor(required)], value => {
-      if (!candidateSatisfiesAffinityIdentity(value, targetFor(required))) {
-        return { kind: 'rejected' };
-      }
-      return {
-        kind: 'accepted',
-        degrades: value === required,
-        materialize: () => {
-          materializations += 1;
-          return value.model.id;
-        },
-      };
-    });
-
-    const selection = selectAffinityCandidates([required, sameTargetAlias, rejected], analysis);
-    if ('kind' in selection) throw new Error(`Expected affinity selection, received ${selection.kind}`);
-    expect(selection.candidates).toEqual([sameTargetAlias, required]);
-    expect(materializations).toBe(0);
-    expect(selection.payloadFor(sameTargetAlias)).toBe('model');
-    expect(selection.payloadFor(sameTargetAlias)).toBe('model');
-    expect(materializations).toBe(1);
-    expect(() => selection.payloadFor(rejected)).toThrow();
-  });
-
   test('required state matches upstream and model while degradation orders rule variants', () => {
     const direct = candidate('up-a', 'model');
     const alias = candidate('up-a', 'model', { reasoning: { effort: 'low' } });
     const other = candidate('up-b', 'model');
 
-    expect(selectedCandidates(
+    expect(select(
       [direct, alias, other],
       affinity([targetFor(alias)]),
     )).toEqual([direct, alias]);
-    expect(selectedCandidates(
+    expect(select(
       [direct, alias, other],
       affinity([targetFor(alias)], [direct]),
     )).toEqual([alias, direct]);
@@ -130,8 +77,8 @@ describe('client-carried affinity candidate selection', () => {
     const first = candidate('up-a', 'model');
     const second = candidate('up-b', 'model');
 
-    expect(selectAffinityCandidates([first], affinity([targetFor(second)]))).toMatchObject({ kind: 'routing-unavailable' });
-    expect(selectAffinityCandidates(
+    expect(select([first], affinity([targetFor(second)]))).toMatchObject({ kind: 'routing-unavailable' });
+    expect(select(
       [first, second],
       affinity([targetFor(first), targetFor(second)]),
     )).toMatchObject({ kind: 'routing-unavailable' });

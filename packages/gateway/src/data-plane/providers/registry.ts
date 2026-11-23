@@ -43,7 +43,7 @@ export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
   providersByKind[kind].defaultFlags;
 
 // The upstream scope is a required argument across the catalog-assembly chain
-// (this, `enumerateAddressableModelIds`, `enumerateModelCandidates`) so a
+// (this, `enumerateAddressableModelIds`, and the request directory) so a
 // caller can never omit it and silently receive the full, unscoped catalog —
 // a missing scope is a compile error, not a runtime leak. Pass `null` to
 // deliberately request every enabled upstream.

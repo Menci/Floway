@@ -1,5 +1,3 @@
-import { currentHour } from './hour.ts';
-import { getRepo } from '../../../repo/index.ts';
 import type { TokenUsage, UsageQuantities, UsageRecord } from '../../../repo/types.ts';
 import { tokenUsageQuantities, usageMetrics } from '../../../repo/usage-metrics.ts';
 import { priceRequest, type BillableUsage, type PricingRuntimeFacts } from '@floway-dev/protocols/common';
@@ -242,36 +240,11 @@ const splitModalityCounts = (
   return { [textUsageKey]: text ?? 0, [imageUsageKey]: image ?? 0 };
 };
 
-export const recordUsage = async (
-  keyId: string,
-  modelIdentity: TelemetryModelIdentity,
-  quantities: UsageQuantities,
-  pricingFacts: PricingRuntimeFacts,
-): Promise<void> => {
-  await Promise.all([
-    getRepo().usage.record({
-      keyId,
-      model: modelIdentity.model,
-      upstream: modelIdentity.upstream,
-      modelKey: modelIdentity.modelKey,
-      hour: currentHour(),
-      requests: 1,
-      ...priceUsageMeasurement(modelIdentity.pricing, quantities, pricingFacts),
-    }),
-    getRepo().apiKeys.update(keyId, { lastUsedAt: new Date().toISOString() }),
-  ]);
-};
-
 export const priceUsageMeasurement = (
   pricing: TelemetryModelIdentity['pricing'], quantities: UsageQuantities, facts: PricingRuntimeFacts,
 ): Pick<UsageRecord, 'pricingSelector' | 'metrics'> => {
   const priced = priceRequest(pricing, facts);
   return { pricingSelector: priced.selector, metrics: usageMetrics(quantities, priced.rates) };
-};
-
-export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
-  const measurement = tokenUsageMeasurement(usage);
-  await recordUsage(keyId, modelIdentity, measurement.quantities, measurement.pricingFacts);
 };
 
 // `BillableUsage` is already the canonical exclusive/split shape, so pricing is

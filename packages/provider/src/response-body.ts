@@ -1,6 +1,11 @@
 import type { HttpResponseFacts } from '@floway-dev/http';
 import { Bytes } from '@floway-dev/pipeline';
 
+// Cancelling an unread transport response releases its underlying connection.
+export const discardUpstreamResponse = async (response: Response): Promise<void> => {
+  await response.body?.cancel();
+};
+
 export type HttpOutput = { readonly 'response.http': HttpResponseFacts };
 
 export const openByteStream = (source: AsyncIterable<Bytes>) => {

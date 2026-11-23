@@ -383,8 +383,8 @@ const mergeEventMetadata = (
   target: GeminiGenerateContentResult,
 ): void => {
   const extras: Record<string, unknown> = {};
-  captureExtras(earlier as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_RESULT_KEYS, extras);
-  captureExtras(later as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_RESULT_KEYS, extras);
+  captureExtras({ ...earlier }, GEMINI_GENERATE_CONTENT_RESULT_KEYS, extras);
+  captureExtras({ ...later }, GEMINI_GENERATE_CONTENT_RESULT_KEYS, extras);
   const usageMetadata = later.usageMetadata ?? earlier.usageMetadata;
   const modelVersion = later.modelVersion ?? earlier.modelVersion;
   const responseId = later.responseId ?? earlier.responseId;
@@ -407,10 +407,11 @@ const mergeCandidateExtras = (
   target: GeminiGenerateContentCandidateWithParts,
 ): void => {
   const extras: Record<string, unknown> = {};
-  captureExtras(earlier as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, extras);
-  captureExtras(later as unknown as Record<string, unknown>, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, extras);
+  captureExtras({ ...earlier }, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, extras);
+  captureExtras({ ...later }, GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS, extras);
+  const knownKeys: ReadonlySet<string> = GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS;
   for (const key of Object.keys(target)) {
-    if (!GEMINI_GENERATE_CONTENT_CANDIDATE_KEYS.has(key as keyof GeminiGenerateContentCandidateWithParts)) delete (target as unknown as Record<string, unknown>)[key];
+    if (!knownKeys.has(key)) Reflect.deleteProperty(target, key);
   }
   Object.assign(target, extras);
 };

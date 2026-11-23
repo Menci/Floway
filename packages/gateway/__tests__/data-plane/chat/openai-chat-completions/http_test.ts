@@ -13,6 +13,7 @@ import { defaultFrames as anthropicFrames } from '../anthropic-messages/fixture.
 import { chatUpstream, type ChatTestUpstream, eventReply, httpReply, providersFrom, stubStreamProvider, stubUpstreamPipeline } from '../shared/fixture.ts';
 import { createDumpDecoder, projectWireExchanges } from '@floway-dev/dump';
 import { Bytes, type StageEnv } from '@floway-dev/pipeline';
+import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
@@ -236,11 +237,11 @@ test('translation re-enters Messages with explicit empty betas and keeps native 
     pipelines: { anthropicMessages: stubStreamProvider('stub Messages', call) },
   })]);
   const dump = installDumpStubs(initDumpStore, initDumpBroker);
-  const response = await send({ model: 'test-model', messages: [user], max_tokens: 32, stream: true }, { dumpRetentionSeconds: 3600 }, {
+  const response = await send({ model: 'test-model', messages: [user], max_tokens: 32, stream: false }, { dumpRetentionSeconds: 3600 }, {
     'anthropic-beta': 'must-not-cross-source-protocols',
   });
   expect(response.status).toBe(200);
-  expect(await response.text()).toContain('data: [DONE]');
+  expect(await response.json()).toMatchObject({ choices: [{ message: { content: 'answer' } }] });
   expect(call).toHaveBeenCalledOnce();
   await flushBackground();
   const decoder = createDumpDecoder();
@@ -249,6 +250,37 @@ test('translation re-enters Messages with explicit empty betas and keeps native 
   const stages = [...trace.stages.values()].map(stage => stage.name);
   expect(stages).toContain('prepareGenerate');
   expect(stages).not.toContain('normalizeExclusiveCachedTokens');
+  expect([...trace.streams.values()].find(stream => stream.label === 'provider frames')?.frames[0].value)
+    .toMatchObject({ type: 'event', event: { type: 'message_start' } });
+});
+
+test.each([
+  [JSON.stringify({ type: 'error', error: { type: 'rate_limit_error', message: 'wait' }, request_id: 'req-wait' }),
+    JSON.stringify({ error: { message: 'wait', type: 'rate_limit_error', provider_specific_fields: { request_id: 'req-wait' } } })],
+  ['native plain-text error', 'native plain-text error'],
+])('translation preserves upstream status and records the original error body %s', async (raw, expected) => {
+  const dump = installDumpStubs(initDumpStore, initDumpBroker);
+  queue.push([chatUpstream({
+    endpoints: { anthropicMessages: {} },
+    pipelines: {
+      anthropicMessages: stubStreamProvider<ProviderAnthropicInput, AnthropicMessagesStreamEventEx>('stub Messages failure', async (_facts, env) => ({
+        ...await httpReply(env, new Response(raw, { status: 429, headers: { 'retry-after': '7' } })),
+        'response.events': undefined,
+      })),
+    },
+  })]);
+  const response = await send({ model: 'test-model', messages: [user], max_tokens: 32 }, { dumpRetentionSeconds: 3600 });
+  expect(response.status).toBe(429);
+  expect(response.headers.get('retry-after')).toBe('7');
+  expect(await response.text()).toBe(expected);
+  await flushBackground();
+  const decoder = createDumpDecoder();
+  decoder.push(dump.stored[0].artifact);
+  const leaf = [...decoder.finish().stages.values()].find(stage => stage.pipeline === 'stub Messages failure');
+  const http = leaf?.responseFacts?.['response.http'];
+  expect(http).toMatchObject({ status: 429, body: expect.any(Bytes) });
+  if (http === null || typeof http !== 'object' || !('body' in http) || !(http.body instanceof Bytes)) throw new TypeError('Expected upstream response bytes');
+  expect(http.body.utf8()).toBe(raw);
 });
 
 test('translation to Responses preserves both system messages for the target role normalizer', async () => {

@@ -1,14 +1,14 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
+import { writeDump } from './fixtures.ts';
 import { initDumpStore } from '../../src/dump/registry.ts';
-import type { DumpWriteRecord } from '../../src/dump/types.ts';
 import { FileDumpStore } from '../../src/repo/dump-store.ts';
 import { initRepo } from '../../src/repo/index.ts';
 import { OPENAI_RESPONSES_REFRESH_GRANULARITY_MS } from '../../src/repo/openai-responses-retention.ts';
 import { SqlRepo } from '../../src/repo/sql.ts';
 import type { ApiKey, StoredOpenAIResponsesItem } from '../../src/repo/types.ts';
 import { sweepExpirations } from '../../src/scheduled/expiration-sweeps.ts';
-import { createSqliteTestDb, createSqlJsDatabase, migrationSqlByFilename, wrapSqlJsDatabase } from '../repo/test-sqlite.ts';
+import { createSqliteTestDb } from '../repo/test-sqlite.ts';
 import { initFileStore, MemoryFileStore } from '@floway-dev/platform';
 
 afterEach(() => vi.useRealTimers());
@@ -37,32 +37,6 @@ const responseItem = (id: string, refreshedAt: number, apiKeyId = 'key-a'): Stor
   refreshedAt,
 });
 
-const dumpRecord = (id: string, completedAt: number): DumpWriteRecord => ({
-  meta: {
-    id,
-    startedAt: completedAt - 1,
-    completedAt,
-    method: 'POST',
-    path: '/v1/responses',
-    status: 200,
-    upstream: null,
-    model: 'gpt-test',
-    inputTokens: null,
-    outputTokens: null,
-    requestBytes: 0,
-    responseBytes: 0,
-    durationMs: 1,
-    error: null,
-  },
-  request: {
-    method: 'POST',
-    path: '/v1/responses',
-    headers: [],
-    body: { encoding: 'identity', bytes: new Uint8Array(), decodedByteLength: 0 },
-  },
-  response: { status: 200, headers: [], body: { type: 'none' } },
-});
-
 test('one fair driver drains bounded OpenAI Responses and dump backlogs', async () => {
   const now = Date.UTC(2026, 6, 23, 12);
   vi.useFakeTimers();
@@ -84,9 +58,9 @@ test('one fair driver drains bounded OpenAI Responses and dump backlogs', async 
   );
   await repo.openaiResponsesItems.insertMany([responseItem('msg-current', now)], 0);
   for (let index = 0; index < 150; index += 1) {
-    await dumps.put('key-a', dumpRecord(`01K00000000000000000${String(index).padStart(4, '0')}`, dumpExpiredAt));
+    await writeDump(dumps, 'key-a', `01K00000000000000000${String(index).padStart(4, '0')}`, dumpExpiredAt);
   }
-  await dumps.put('key-a', dumpRecord('01K00000000000000000LIVE', now));
+  await writeDump(dumps, 'key-a', '01K00000000000000000LIVE', now);
   await repo.apiKeys.update('key-a', { dumpRetentionSeconds: 3600, openaiResponsesRetentionSeconds: OPENAI_RESPONSES_RETENTION_SECONDS });
 
   await sweepExpirations(now);
@@ -145,56 +119,45 @@ test('a concurrent schedule wins over stale completion', async () => {
   expect(row).toEqual({ due_at: 0, claim_token: null });
 });
 
-test('bounded cleanup backfill tracks rows whose API key was hard-deleted', async () => {
+test('hard deletion schedules the dump and retires its owned artifact', async () => {
   const now = Date.UTC(2026, 6, 23, 12);
-  const raw = await createSqlJsDatabase();
-  try {
-    for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0082_expiration_sweep_integrity.sql') break;
-      raw.run(sql);
-    }
-    raw.run(
-      `INSERT INTO api_keys
-       (id, user_id, name, key, created_at, upstream_ids, deleted_at, dump_retention_seconds, server_secret, responses_retention_seconds)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ['key-a', 1, 'Sweep key', 'raw-sweep-key', new Date(now).toISOString(), null, null, 3600, '55'.repeat(32), OPENAI_RESPONSES_RETENTION_SECONDS],
-    );
-    const db = wrapSqlJsDatabase(raw);
-    const recordId = '01K00000000000000000ORPH';
-    const fileKey = `dumps/v1/key-a/1970010100/${recordId}.req.gz`;
-    await db.prepare(
-      `INSERT INTO dump_records
-       (key_id, id, created_at, upstream_id, meta_json, request_headers_json, response_headers_json, request_body_descriptor, response_body_descriptor)
-       VALUES ('key-a', ?, 1, NULL, '{}', '[]', NULL, ?, NULL)`,
-    ).bind(recordId, JSON.stringify({ key: fileKey, type: 'bytes' })).run();
-    await db.prepare("DELETE FROM api_keys WHERE id = 'key-a'").run();
-    await db.prepare("DELETE FROM expiration_sweeps WHERE key_id = 'key-a'").run();
-    await db.prepare('DELETE FROM spilled_files WHERE file_key = ?').bind(fileKey).run();
-    // Run 0082 and every migration after it so the backfill SQL finds the
-    // columns later migrations added (e.g. the upstream body descriptor from
-    // 0089). The orphan row was seeded before the validate trigger existed.
-    let started = false;
-    for (const [filename, sql] of migrationSqlByFilename) {
-      if (!started) {
-        if (filename === '0082_expiration_sweep_integrity.sql') started = true;
-        else continue;
-      }
-      raw.run(sql);
-    }
+  vi.useFakeTimers();
+  vi.setSystemTime(now);
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  initRepo(repo);
+  const files = new MemoryFileStore();
+  initFileStore(files);
+  const dumps = new FileDumpStore(db, files);
+  initDumpStore(dumps);
+  await repo.apiKeys.save(key(now));
+  const recordId = '01K00000000000000000ORPH';
+  const artifactKey = await writeDump(dumps, 'key-a', recordId, now);
+  await db.prepare("DELETE FROM api_keys WHERE id = 'key-a'").run();
 
-    const repo = new SqlRepo(db);
-    await repo.expirationSweeps.backfillCleanupTracking(500);
-    expect(await db.prepare(
-      "SELECT due_at FROM expiration_sweeps WHERE domain = 'dumps' AND key_id = 'key-a'",
-    ).first<{ due_at: number }>()).toEqual({ due_at: 0 });
-    expect(await db.prepare(
-      'SELECT owner_kind, owner_key, state FROM spilled_files WHERE file_key = ?',
-    ).bind(fileKey).first()).toEqual({
-      owner_kind: 'dump-request',
-      owner_key: JSON.stringify(['key-a', recordId]),
-      state: 'owned',
-    });
-  } finally {
-    raw.close();
-  }
+  expect(await db.prepare("SELECT due_at FROM expiration_sweeps WHERE domain = 'dumps' AND key_id = 'key-a'").first()).toEqual({ due_at: 0 });
+  await sweepExpirations(now);
+  expect(await db.prepare('SELECT id FROM dump_records WHERE id = ?').bind(recordId).first()).toBeNull();
+  expect(await db.prepare('SELECT owner_kind, owner_key, state, collect_after FROM spilled_files WHERE file_key = ?')
+    .bind(artifactKey).first()).toEqual({
+    owner_kind: 'dump-artifact', owner_key: JSON.stringify(['key-a', recordId]), state: 'retired', collect_after: 0,
+  });
+});
+
+test('bounded Responses backfill schedules old rows whose API key is gone', async () => {
+  const now = Date.UTC(2026, 6, 23, 12);
+  const db = await createSqliteTestDb();
+  const repo = new SqlRepo(db);
+  await repo.apiKeys.save(key(now));
+  await repo.openaiResponsesItems.insertMany([responseItem('msg-orphan', now)], 0);
+  await db.prepare("DELETE FROM api_keys WHERE id = 'key-a'").run();
+  const claim = await repo.expirationSweeps.claim('fixture-claim', now, 0);
+  if (claim === null) throw new Error('Expected the orphaned Responses key to be scheduled');
+  expect(claim).toMatchObject({ domain: 'responses', keyId: 'key-a' });
+  const retryAt = now + 60_000;
+  await repo.expirationSweeps.complete('fixture-claim', claim.revision, { kind: 'partial', retryAt });
+  const due = db.prepare("SELECT due_at FROM expiration_sweeps WHERE domain = 'responses' AND key_id = 'key-a'");
+  expect(await due.first()).toEqual({ due_at: retryAt });
+  await repo.expirationSweeps.backfillCleanupTracking(500);
+  expect(await due.first()).toEqual({ due_at: 0 });
 });
