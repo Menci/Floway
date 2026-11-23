@@ -1,14 +1,12 @@
 import { removeFact } from './remove-fact.ts';
 import type { ChatEvent, ChatFrameFacts } from './route-body.ts';
-import { protocolCompletionKey, type StreamCompletionFacts } from './stream-completion.ts';
 import type { AttemptResponse } from '../../pipeline/failover.ts';
 import { forwardHttp } from '../../pipeline/non-chat.ts';
 import { failedRender, renderedNow, type RenderFacts, type RenderOutcome } from '../../pipeline/render.ts';
-import type { GatewayServices } from '../../pipeline/services.ts';
 import { openaiInternalErrorPayload } from '../../shared/openai-error-payload.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, serializeSseFrame, type SseProtocol } from '../../shared/sse.ts';
 import type { HeaderEntry, HttpResponseFacts } from '@floway-dev/http';
-import { Bytes, defineStage, type ManagedStream, type StageEnv } from '@floway-dev/pipeline';
+import { Bytes, type Deferred, defineStage, type ManagedStream, type StageEnv } from '@floway-dev/pipeline';
 import { type ProtocolFrame, sseCommentFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
 import { type ChatTargetApi, toInternalDebugError } from '@floway-dev/provider';
 
@@ -26,13 +24,14 @@ type FrameRead<T> = { readonly kind: 'frame'; readonly result: IteratorResult<T>
   | { readonly kind: 'error'; readonly error: unknown };
 
 const encodeSse = <T>(
-  env: StageEnv<GatewayServices>, events: ManagedStream<T>, protocol: SseProtocol<T>, keepAlive: SseKeepAlive,
-  completion: StreamCompletionFacts[typeof protocolCompletionKey],
+  env: Pick<StageEnv, 'defer' | 'wrapStream'>,
+  events: ManagedStream<T>, protocol: SseProtocol<T>, keepAlive: SseKeepAlive, completion: Deferred<boolean> | undefined,
 ) => {
   const interval = keepAlive.intervalMs ?? DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS;
   if (!Number.isFinite(interval) || interval <= 0) throw new RangeError('SSE keepalive interval must be a positive number');
   const heartbeat = Bytes.fromUtf8(serializeSseFrame(keepAlive.frame));
   let outcome: RenderOutcome | undefined;
+  const render = Promise.withResolvers<RenderOutcome>();
   const body = env.wrapStream(events, {
     label: 'downstream SSE frames',
     async *transform(source, signal) {
@@ -83,8 +82,10 @@ const encodeSse = <T>(
           let encoded: Encoded;
           try {
             if (next.kind === 'error') encoded = failure(next.error, 'source-error');
-            else if (next.result.done) encoded = { wire: null, end: protocol.eof() };
-            else encoded = protocol.encode(next.result.value);
+            else if (next.result.done) {
+              const contentComplete = completion === undefined ? undefined : await completion.promise;
+              encoded = { wire: null, end: protocol.eof(contentComplete) };
+            } else encoded = protocol.encode(next.result.value);
           } catch (error) {
             if (outcome !== undefined) throw error;
             encoded = failure(error, 'source-error');
@@ -108,16 +109,19 @@ const encodeSse = <T>(
     onClose: end => {
       if (end.how === 'errored' || end.how === 'leaked') {
         render.resolve(failedRender('source-error', end.how === 'errored' ? end.error : undefined));
-      } else if (outcome !== undefined) render.resolve(outcome);
-      else if (end.how === 'cancelled' || end.how === 'released') render.resolve({ kind: 'cancelled' });
-      else render.resolve(failedRender('source-error'));
+      } else if (outcome !== undefined) {
+        render.resolve(outcome);
+      } else if (end.how === 'cancelled' || end.how === 'released') {
+        // The source observation can settle after this wrapper releases it.
+        render.resolve(completion === undefined ? { kind: 'cancelled' } : completion.promise.then(
+          (complete): RenderOutcome => ({ kind: complete ? 'completed' : 'cancelled' }),
+        ));
+      } else {
+        render.resolve(failedRender('source-error'));
+      }
     },
   });
-  const render = env.deferred<RenderOutcome>('render outcome', body);
-  const responseRender = completion === undefined ? render.deferred : env.defer<RenderOutcome>('protocol render outcome', render.deferred.promise.then(
-    async outcome => outcome.kind === 'cancelled' && await completion.promise ? { kind: 'completed' } : outcome,
-  ));
-  return { body, 'response.render': responseRender };
+  return { body, 'response.render': env.defer('render outcome', render.promise) };
 };
 
 const responseHeaders = (http: HttpResponseFacts, contentType: string, base: readonly HeaderEntry[] = []): HeaderEntry[] => {
@@ -130,40 +134,50 @@ export const createEncode = <Api extends ChatTargetApi, Delivery extends Deliver
   ExtraResponse extends object = {}>(
   api: Api,
   dialect: {
-    readonly encodeJson: (source: AsyncIterable<ProtocolFrame<Event>>, delivery: Delivery, env: StageEnv<GatewayServices>) => Promise<unknown>;
-    readonly openSse: (delivery: Delivery, env: StageEnv<GatewayServices>) => SseProtocol<ProtocolFrame<Event>>;
+    readonly encodeJson: (source: AsyncIterable<ProtocolFrame<Event>>, delivery: Delivery) => Promise<unknown>;
+    readonly openSse?: (delivery: Delivery) => SseProtocol<ProtocolFrame<Event>>;
     readonly keepAlive?: SseKeepAlive;
     readonly collectFailure?: (error: unknown) => {
       readonly status: number; readonly body: unknown; readonly reason?: 'protocol-error' | 'collect-error';
     };
     readonly jsonOutcome?: (json: unknown) => RenderOutcome;
-    readonly encodeScalar?: (response: AttemptResponse & ExtraResponse, delivery: Delivery, env: StageEnv<GatewayServices>) => Promise<HttpResponseFacts>;
+    readonly encodeScalar?: (response: AttemptResponse & ExtraResponse) => Promise<HttpResponseFacts>;
+    readonly contentCompletion?: {
+      readonly needs: readonly string[];
+      readonly read: (response: ExtraResponse) => Deferred<boolean> | undefined;
+    };
   },
 ) => {
   type Request = DeliveryFacts<Delivery>;
-  type Response = AttemptResponse & ExtraResponse & ChatFrameFacts<Api, Event> & StreamCompletionFacts;
+  type Response = AttemptResponse & ExtraResponse & ChatFrameFacts<Api, Event>;
   const responseKey = `response.${api}` as const;
-  return defineStage<Request, Request, Response, AttemptResponse & RenderFacts, GatewayServices>({
+  return defineStage<Request, Request, Response, AttemptResponse & RenderFacts>({
     name: 'encode',
     through: {
       request: { needs: ['request.delivery'], consumes: [], provides: [] },
-      response: { needs: ['response.http', 'response.source', responseKey], consumes: [responseKey], provides: ['response.http', 'response.render'] },
+      response: {
+        needs: ['response.http', 'response.source', responseKey, ...(dialect.contentCompletion?.needs ?? [])],
+        consumes: [responseKey],
+        provides: ['response.http', 'response.render'],
+      },
     },
     execute: async (facts, next, env) => {
       const delivery = facts['request.delivery'];
+      const openSse = delivery.stream ? dialect.openSse : undefined;
+      if (delivery.stream && openSse === undefined) throw new TypeError(`The ${api} encoder does not support SSE delivery`);
       const returned = await next(facts);
       const frames = returned[responseKey];
-      const response = removeFact<AttemptResponse & ExtraResponse & StreamCompletionFacts, typeof responseKey>(returned, responseKey);
+      const response = removeFact<AttemptResponse & ExtraResponse, typeof responseKey>(returned, responseKey);
       const http = response['response.http'];
       if (frames === undefined) {
         const encoded = dialect.encodeScalar === undefined
           ? forwardHttp(http, null)
-          : await dialect.encodeScalar(response, delivery, env);
+          : await dialect.encodeScalar(response);
         return { ...response, 'response.http': encoded, ...renderedNow(env, { kind: 'completed' }) };
       }
-      if (delivery.stream) {
+      if (openSse !== undefined) {
         const { body, 'response.render': render } = encodeSse(
-          env, frames, dialect.openSse(delivery, env), dialect.keepAlive ?? { frame: sseCommentFrame('keepalive') }, response[protocolCompletionKey],
+          env, frames, openSse(delivery), dialect.keepAlive ?? { frame: sseCommentFrame('keepalive') }, dialect.contentCompletion?.read(response),
         );
         return {
           ...response,
@@ -175,7 +189,7 @@ export const createEncode = <Api extends ChatTargetApi, Delivery extends Deliver
         };
       }
       try {
-        const json = await dialect.encodeJson(frames, delivery, env);
+        const json = await dialect.encodeJson(frames, delivery);
         return {
           ...response,
           'response.http': { ...http, headers: responseHeaders(http, 'application/json'), body: Bytes.fromUtf8(JSON.stringify(json)) },

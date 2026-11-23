@@ -41,7 +41,14 @@ const parsePayload = defineStage<GatewayHttpFacts, Parsed, Rendered, Rendered>({
   },
   return: { provides: answerKeys },
   execute: async (facts, next, env) => {
-    const payload = JSON.parse(requestBytes(facts['request.http']).utf8()) as OpenAIChatCompletionsPayloadEx;
+    const body = requestBytes(facts['request.http']).utf8();
+    let payload: OpenAIChatCompletionsPayloadEx;
+    try {
+      payload = JSON.parse(body) as OpenAIChatCompletionsPayloadEx;
+    } catch (error) {
+      if (facts['request.uploadError'] === undefined) throw error;
+      return gatewayAnswer(env, jsonHttpResponse(502, openaiChatCompletionsHttpOptions.errorBody(error), env.clock()));
+    }
     const nullableField = payload.prompt_cache_options === null ? 'prompt_cache_options' : payload.user === null ? 'user' : undefined;
     if (nullableField !== undefined) {
       return gatewayAnswer(env, jsonHttpResponse(400, {

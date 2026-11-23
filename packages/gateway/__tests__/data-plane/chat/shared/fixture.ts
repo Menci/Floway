@@ -93,3 +93,21 @@ export const providersFrom = (entries: readonly ChatTestUpstream[]): GatewayProv
     return entry.provider;
   },
 });
+
+export const interruptedUpload = (pathname: string): Request => {
+  let uploaded = false;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (uploaded) {
+        controller.error(new Error('client upload interrupted'));
+        return;
+      }
+      uploaded = true;
+      controller.enqueue(new TextEncoder().encode('{"unfinished":'));
+    },
+  });
+  const init: RequestInit & { duplex: 'half' } = {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body, duplex: 'half',
+  };
+  return new Request(`https://gateway.test${pathname}`, init);
+};

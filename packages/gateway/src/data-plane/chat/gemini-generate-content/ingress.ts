@@ -3,7 +3,9 @@ import { wrapGeminiGenerateContentAffinityEgress } from './affinity/egress.ts';
 import type { GeminiCountBodyOutput } from './body.ts';
 import { geminiGenerateContentRpcErrorPayload, googleRpcHttpStatusCode, isGeminiGenerateContentErrorResponse } from './errors.ts';
 import { geminiInternalErrorBody, normalizeGeminiFailure } from './http-error.ts';
-import { edgeHttp, type HttpOutput } from '../../pipeline/edge-http.ts';
+import { type GeminiCompletionFacts, geminiCompletionKey, geminiTerminal, observeGeminiCompletion } from './stages/observe-completion.ts';
+import { answerKeys, gatewayAnswer } from '../../pipeline/answer.ts';
+import { edgeHttp, type HttpOutput, jsonHttpResponse } from '../../pipeline/edge-http.ts';
 import { failover } from '../../pipeline/failover.ts';
 import type { GatewayHttpFacts } from '../../pipeline/host.ts';
 import { forwardHttp, requestBytes } from '../../pipeline/non-chat.ts';
@@ -18,17 +20,14 @@ import { createEncode, type DeliveryFacts, type DeliveryIntent } from '../shared
 import { type ChatBodyInput, type ChatBodyOutput, type ChatPayloadFacts, enterChatBody } from '../shared/route-body.ts';
 import { type ChatTargetPicker, geminiGenerateContentCountTokensTarget, geminiGenerateContentGenerateTarget } from '../shared/target-picker.ts';
 import { compose, defineEnding, defineStage, type Pipeline, type StaticTarget } from '@floway-dev/pipeline';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame } from '@floway-dev/protocols/common';
 import {
   collectGeminiGenerateContentProtocolEventsToResult,
-  createGeminiGenerateContentCandidateCompletion,
   GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE,
   type GeminiCountTokensPayload,
   type GeminiGenerateContentPayload,
   geminiGenerateContentProtocolFrameToSSEFrame,
   type GeminiGenerateContentStreamEvent,
-  isGeminiGenerateContentErrorEvent,
-  isGeminiGenerateContentTerminalEvent,
 } from '@floway-dev/protocols/gemini-generate-content';
 
 type Api = 'geminiGenerateContent';
@@ -54,9 +53,17 @@ const parsePayload = defineStage<GeminiIngressInput, Parsed, HttpOutput, HttpOut
     },
     response: { needs: [], consumes: [], provides: [] },
   },
-  execute: async (facts, next) => {
+  return: { provides: answerKeys },
+  execute: async (facts, next, env) => {
     const { action, model } = facts['request.geminiAction'];
-    const raw: unknown = JSON.parse(requestBytes(facts['request.http']).utf8());
+    const body = requestBytes(facts['request.http']).utf8();
+    let raw: unknown;
+    try {
+      raw = JSON.parse(body);
+    } catch (error) {
+      if (facts['request.uploadError'] === undefined) throw error;
+      return gatewayAnswer(env, jsonHttpResponse(500, geminiInternalErrorBody(500, error), env.clock()));
+    }
     const payload = action === 'countTokens' ? parseCountPayload(raw as GeminiCountTokensPayload) : raw as GeminiGenerateContentPayload;
     if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) throw new TypeError('Expected a Gemini request object');
     return await next({
@@ -67,27 +74,10 @@ const parsePayload = defineStage<GeminiIngressInput, Parsed, HttpOutput, HttpOut
 });
 
 const analyzeAffinity = createAnalyzeAffinity(api, decodeGeminiGenerateContentAffinity);
-const terminal = (frame: ProtocolFrame<GeminiGenerateContentStreamEvent>): 'completed' | 'protocol-error' | undefined => {
-  if (frame.type === 'done') return 'completed';
-  if (isGeminiGenerateContentErrorEvent(frame.event)) return 'protocol-error';
-  if (isGeminiGenerateContentTerminalEvent(frame.event)) return 'completed';
-};
 
 const affinity = createAffinity(api, {
   evaluate: evaluateGeminiGenerateContentAffinity,
   wrap: wrapGeminiGenerateContentAffinityEgress,
-  observeCompletion: () => {
-    const completion = createGeminiGenerateContentCandidateCompletion();
-    let end: ReturnType<typeof terminal>;
-    return {
-      frame: frame => {
-        if (end !== undefined) return;
-        end = terminal(frame);
-        if (end === undefined && frame.type === 'event') completion.observe(frame.event);
-      },
-      completed: () => end === 'completed' || (end === undefined && completion.isComplete()),
-    };
-  },
 });
 const countAffinity = createAffinity(api, { evaluate: evaluateGeminiGenerateContentAffinity });
 
@@ -106,8 +96,9 @@ const resolveCandidates = (picker: ChatTargetPicker, sourceApi: string, unsuppor
 const caughtGeminiError = (error: unknown) =>
   error instanceof Error && isGeminiGenerateContentErrorResponse(error.cause) ? error.cause : undefined;
 
-const encode = createEncode<Api, DeliveryIntent>(api, {
+const encode = createEncode<Api, DeliveryIntent, GeminiGenerateContentStreamEvent, GeminiCompletionFacts>(api, {
   encodeJson: collectGeminiGenerateContentProtocolEventsToResult,
+  contentCompletion: { needs: [geminiCompletionKey], read: response => response[geminiCompletionKey] },
   encodeScalar: async ({ 'response.http': http, 'response.source': source }) =>
     source === 'gateway' ? forwardHttp(http, null) : await normalizeGeminiFailure(http),
   collectFailure: error => {
@@ -115,27 +106,22 @@ const encode = createEncode<Api, DeliveryIntent>(api, {
     return rpc === undefined ? { status: 502, body: geminiInternalErrorBody(502, error) }
       : { status: googleRpcHttpStatusCode(rpc.error.code), body: rpc };
   },
-  openSse: () => {
-    const completion = createGeminiGenerateContentCandidateCompletion();
-    return {
-      encode: frame => {
-        const output = geminiGenerateContentProtocolFrameToSSEFrame(frame);
-        const wire = output === null ? null : serializeSseFrame(output);
-        const end = terminal(frame);
-        if (end !== undefined) return { wire, end: { type: end } };
-        if (frame.type === 'event') completion.observe(frame.event);
-        return { wire };
-      },
-      eof: () => completion.isComplete() ? { type: 'completed' }
-        : { type: 'premature-eof', error: new Error(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE) },
-      failure: error => {
-        const event = eventFrame(caughtGeminiError(error) ?? geminiInternalErrorBody(500, error));
-        const wire = geminiGenerateContentProtocolFrameToSSEFrame(event);
-        if (wire === null) throw new Error('Gemini error event produced no SSE frame');
-        return [serializeSseFrame(wire)];
-      },
-    };
-  },
+  openSse: () => ({
+    encode: frame => {
+      const output = geminiGenerateContentProtocolFrameToSSEFrame(frame);
+      const wire = output === null ? null : serializeSseFrame(output);
+      const end = geminiTerminal(frame);
+      return end === undefined ? { wire } : { wire, end: { type: end } };
+    },
+    eof: complete => complete ? { type: 'completed' }
+      : { type: 'premature-eof', error: new Error(GEMINI_GENERATE_CONTENT_MISSING_TERMINAL_MESSAGE) },
+    failure: error => {
+      const event = eventFrame(caughtGeminiError(error) ?? geminiInternalErrorBody(500, error));
+      const wire = geminiGenerateContentProtocolFrameToSSEFrame(event);
+      if (wire === null) throw new Error('Gemini error event produced no SSE frame');
+      return [serializeSseFrame(wire)];
+    },
+  }),
 });
 
 const encodeCount = defineStage<object, object, HttpOutput, HttpOutput & RenderFacts>({
@@ -171,7 +157,7 @@ export const createGeminiGenerateContentIngress = (body: Pipeline<ChatBodyInput<
     stages: [
       writeSettlement('chat'), priceUsage, edgeHttp, parsePayload, analyzeAffinity,
       resolveCandidates(geminiGenerateContentGenerateTarget, ':generateContent', model => `Model ${model} does not support the Gemini generateContent endpoint.`),
-      encode, failover, affinity,
+      encode, failover, affinity, observeGeminiCompletion,
     ],
     ending: enterChatBody(api),
     targets: { body },

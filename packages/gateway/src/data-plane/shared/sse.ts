@@ -11,7 +11,7 @@ type SseEnd = SseFinished | { type: 'premature-eof'; error: Error };
 
 export interface SseProtocol<T> {
   encode: (input: T) => { wire: string | null; end?: SseEnd };
-  eof: () => SseEnd;
+  eof: (contentComplete?: boolean) => SseEnd;
   failure: (error: unknown) => readonly [string, ...string[]];
 }
 

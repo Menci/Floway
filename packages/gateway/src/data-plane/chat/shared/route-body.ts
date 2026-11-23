@@ -77,6 +77,10 @@ export type ChatBodyTargets<Api extends ChatTargetApi> = {
   readonly [Slot in SlotsFor<Api>]: StaticTarget<ChatBodyInput<TranslatedApis[Slot]>, ChatBodyOutput<TranslatedApis[Slot]>, GatewayServices>;
 };
 
+export type OpenAIResponsesCompactBodyTargets = ChatBodyTargets<'openaiResponses'> & {
+  readonly generation: ChatBodyTargets<'openaiResponses'>['egress'];
+};
+
 type RouteServices = Pick<GatewayServices, 'sidecarCodecs'>;
 type TargetBodyRequest = BodyRequest & { readonly 'route.targetApi': ChatTargetApi };
 type RouteRequest<Api extends ChatTargetApi> = TargetBodyRequest & ChatPayloadFacts<Api>;
@@ -163,7 +167,6 @@ const translateInto = async <Payload extends object, Event, TargetPayload, Targe
   const targetApi = facts['route.targetApi'];
   const source = facts['route.translationSource'];
   if (source !== undefined) throw new Error(`Chat request from ${source} reached a second translation from ${api} to ${targetApi}`);
-  if (api === 'openaiResponses' && facts['request.action'] === 'compact') throw new Error('Responses compact reached a translation without the compact shim');
   const trip = await translate({ ...payload, stream: true }, {
     sidecarCodec: env.services.sidecarCodecs.codecFor(SidecarDomain.TranslatedAssistantTurn),
     fallbackMaxOutputTokens: facts['route.candidate'].limits.max_output_tokens,
@@ -243,6 +246,35 @@ export const createOpenAIResponsesRouteBody = (inputError: InputErrorBody) => {
       case 'anthropicMessages': return await translateInto(api, facts, payload, routeOpenAIResponsesViaAnthropicMessages, intoMessages(into.messages), reply, inputError, env);
       case 'openaiChatCompletions': return await translateInto(api, facts, payload, routeOpenAIResponsesViaOpenAIChatCompletions, intoChatCompletions(into.chatCompletions), reply, inputError, env);
       default: return noRoute(api, facts['route.targetApi']);
+      }
+    },
+  });
+};
+
+export const createOpenAIResponsesCompactRouteBody = (inputError: InputErrorBody) => {
+  const api = 'openaiResponses';
+  type Api = typeof api;
+  type Request = RouteRequest<Api> & { readonly 'request.action': OpenAIResponsesAction };
+  const reply: RouteReply<ChatEvent<Api>, ChatBodyOutput<Api>> = (response, events) => ({ ...response, 'response.openaiResponses': events });
+  const definition = routeDefinition(api);
+  return defineEnding<Request, ChatBodyOutput<Api>, OpenAIResponsesCompactBodyTargets, RouteServices>({
+    ...definition,
+    request: { needs: [...definition.request.needs, 'request.action'] },
+    into: {
+      egress: egressSlot(api),
+      generation: egressSlot(api),
+      messages: translationSlot(api, 'anthropicMessages'),
+      chatCompletions: translationSlot(api, 'openaiChatCompletions'),
+    },
+    execute: async ({ 'request.openaiResponses': payload, ...facts }, into, env) => {
+      const target = facts['route.targetApi'];
+      const action = facts['request.action'];
+      if (target === api) return await enterEgress(facts, payload, action === 'generate' ? into.generation : into.egress, reply);
+      if (action !== 'generate') throw new Error('Responses compact reached a translation without the compact shim');
+      switch (target) {
+      case 'anthropicMessages': return await translateInto(api, facts, payload, routeOpenAIResponsesViaAnthropicMessages, intoMessages(into.messages), reply, inputError, env);
+      case 'openaiChatCompletions': return await translateInto(api, facts, payload, routeOpenAIResponsesViaOpenAIChatCompletions, intoChatCompletions(into.chatCompletions), reply, inputError, env);
+      default: return noRoute(api, target);
       }
     },
   });

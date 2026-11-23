@@ -10,7 +10,7 @@ import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
 import { defaultFrames as anthropicFrames } from '../anthropic-messages/fixture.ts';
-import { chatUpstream, type ChatTestUpstream, eventReply, httpReply, providersFrom, stubStreamProvider, stubUpstreamPipeline } from '../shared/fixture.ts';
+import { chatUpstream, type ChatTestUpstream, eventReply, httpReply, interruptedUpload, providersFrom, stubStreamProvider, stubUpstreamPipeline } from '../shared/fixture.ts';
 import { createDumpDecoder, projectWireExchanges } from '@floway-dev/dump';
 import { Bytes, type StageEnv } from '@floway-dev/pipeline';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
@@ -77,6 +77,31 @@ const normalFrames = () => frames([
   frame([{ index: 0, delta: {}, finish_reason: 'stop' }]),
   { ...frame([]), usage: { prompt_tokens: 4, completion_tokens: 2, total_tokens: 6 } },
 ]);
+
+test('an interrupted Chat Completions upload answers with the empty JSON parse failure', async () => {
+  const dump = installDumpStubs(initDumpStore, initDumpBroker);
+  const response = await makeApp({ dumpRetentionSeconds: 3600 }).request(interruptedUpload('/v1/chat/completions'));
+  expect(response.status).toBe(502);
+  expect(response.headers.get('content-type')).toBe('application/json');
+  const text = await response.text();
+  const { error } = JSON.parse(text) as { error: { provider_specific_fields: { stack: string } } };
+  const stack = error.provider_specific_fields.stack;
+  expect(stack).toMatch(/^SyntaxError: Unexpected end of JSON input/);
+  expect(text).toBe(JSON.stringify({
+    error: {
+      type: 'internal_error', message: 'Unexpected end of JSON input', provider_specific_fields: { name: 'SyntaxError', stack },
+    },
+  }));
+  await flushBackground();
+  expect(dump.stored[0].meta).toMatchObject({
+    status: 502, requestBytes: 0, error: { kind: 'failed', reason: 'client upload interrupted' },
+  });
+  const decoder = createDumpDecoder();
+  decoder.push(dump.stored[0].artifact);
+  const stages = [...decoder.finish().stages.values()];
+  expect(stages.find(stage => stage.name === 'parsePayload')?.responseFacts).toMatchObject({ 'response.source': 'gateway' });
+  expect(stages.map(stage => stage.name)).not.toContain('resolveCandidates');
+});
 
 test.each(['prompt_cache_options', 'user'] as const)('POST /v1/chat/completions rejects a null %s', async field => {
   const response = await send({ model: 'test-model', messages: [user], [field]: null });

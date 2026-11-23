@@ -8,7 +8,8 @@ import { initRepo } from '../../../../src/repo/index.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { flushBackground } from '../../../test-utils/background-tracker.ts';
-import { chatUpstream, type ChatTestUpstream, eventReply, httpReply, providersFrom, stubScalarProvider, stubStreamProvider } from '../shared/fixture.ts';
+import { chatUpstream, type ChatTestUpstream, eventReply, httpReply, interruptedUpload, providersFrom, stubScalarProvider, stubStreamProvider } from '../shared/fixture.ts';
+import { createDumpDecoder } from '@floway-dev/dump';
 import type { StageEnv } from '@floway-dev/pipeline';
 import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
@@ -69,6 +70,35 @@ const frames = async function* <Event>(events: readonly Event[]) {
   for (const event of events) yield eventFrame(event);
   yield doneFrame();
 };
+
+test.each(['generateContent', 'streamGenerateContent', 'countTokens'])('an interrupted Gemini %s upload answers with the empty JSON parse failure', async action => {
+  const dump = installDumpStubs(initDumpStore, initDumpBroker);
+  const response = await makeApp(3600).request(interruptedUpload(`/v1beta/models/test-model:${action}`));
+  expect(response.status).toBe(500);
+  expect(response.headers.get('content-type')).toBe('application/json');
+  const text = await response.text();
+  const { error } = JSON.parse(text) as { error: { details: [{ stackEntries: string[] }] } };
+  const { stackEntries } = error.details[0];
+  expect(stackEntries[0]).toBe('SyntaxError: Unexpected end of JSON input');
+  expect(text).toBe(JSON.stringify({
+    error: {
+      code: 500, message: 'Unexpected end of JSON input', status: 'INTERNAL',
+      details: [
+        { '@type': 'type.googleapis.com/google.rpc.DebugInfo', stackEntries },
+        { '@type': 'type.googleapis.com/google.protobuf.Struct', value: { type: 'internal_error', name: 'SyntaxError' } },
+      ],
+    },
+  }));
+  expect(requestedModels).toEqual([]);
+  await flushBackground();
+  expect(dump.stored[0].meta).toMatchObject({
+    status: 500, requestBytes: 0, error: { kind: 'failed', reason: 'client upload interrupted' },
+  });
+  const decoder = createDumpDecoder();
+  decoder.push(dump.stored[0].artifact);
+  const parse = [...decoder.finish().stages.values()].find(stage => stage.name === 'parsePayload');
+  expect(parse?.responseFacts).toMatchObject({ 'response.source': 'gateway' });
+});
 
 type GeminiInput = ProviderInput<GeminiGenerateContentPayload>;
 type GeminiEvent = GeminiGenerateContentStreamEvent;
@@ -364,6 +394,22 @@ test.each([false, true])('Gemini response exposes EOF with an unfinished observe
   });
 });
 
+test('Gemini SSE accepts EOF after the last candidate finishes without a done frame', async () => {
+  const dump = installDumpStubs(initDumpStore, initDumpBroker);
+  queue.push([geminiProvider(env => eventReply(env, (async function* () {
+    yield eventFrame({ candidates: [{ index: 0, content: { parts: [{ text: 'answer' }] }, finishReason: 'STOP' }] });
+  })()))]);
+  const response = await makeApp(3600).request('/v1beta/models/test-model:streamGenerateContent', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(input),
+  });
+  expect(response.status).toBe(200);
+  const wire = await response.text();
+  expect(wire).toContain('"finishReason":"STOP"');
+  expect(wire).not.toContain('{"error":');
+  await flushBackground();
+  expect(dump.stored[0].meta.error).toBeNull();
+});
+
 test.each([false, true])('Gemini internal collect and SSE errors retain structured nested causes (stream=%s)', async stream => {
   const cause = new TypeError('nested');
   cause.stack = 'TypeError: nested\n  at nested';
@@ -393,6 +439,11 @@ test.each([
     name: 'a second candidate is still generating',
     next: { candidates: [{ index: 1, content: { role: 'model', parts: [{ text: 'partial' }] } }] },
     completed: false,
+  },
+  {
+    name: 'the second candidate finished in a buffered frame',
+    next: { candidates: [{ index: 1, content: { role: 'model', parts: [{ text: 'buffered' }] }, finishReason: 'STOP' }] },
+    completed: true,
   },
 ] satisfies { name: string; next: GeminiEvent; completed: boolean }[])('Gemini stream cancellation settles when $name', async ({ next, completed }) => {
   const dump = installDumpStubs(initDumpStore, initDumpBroker);
@@ -424,7 +475,9 @@ test.each([
   expect(response.status).toBe(200);
   const reader = response.body!.getReader();
   const first = await reader.read();
-  expect(new TextDecoder().decode(first.value)).toContain('"finishReason":"STOP"');
+  const firstFrame = new TextDecoder().decode(first.value);
+  expect(firstFrame).toContain('"finishReason":"STOP"');
+  expect(firstFrame).not.toContain('"index":1');
   const pending = reader.read();
   await waiting.promise;
   await reader.cancel();
@@ -433,4 +486,13 @@ test.each([
   await flushBackground();
   expect(dump.stored).toHaveLength(1);
   expect(dump.stored[0].meta.error === null).toBe(completed);
+  const decoder = createDumpDecoder();
+  decoder.push(dump.stored[0].artifact);
+  const trace = decoder.finish();
+  const stages = [...trace.stages.values()];
+  const affinity = stages.find(stage => stage.name === 'affinity');
+  const observation = stages.find(stage => stage.name === 'observeCompletion');
+  const encode = stages.find(stage => stage.name === 'encode');
+  expect(observation?.parentStageId).toBe(affinity?.stageId);
+  expect([...trace.deferreds.values()].filter(deferred => deferred.stageId === encode?.stageId).map(deferred => deferred.name)).toEqual(['render outcome']);
 });
