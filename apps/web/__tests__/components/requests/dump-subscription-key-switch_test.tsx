@@ -2,7 +2,7 @@ import { act, screen } from '@testing-library/react';
 import { StrictMode, useLayoutEffect, useSyncExternalStore } from 'react';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { eventSourceClosed, record, stubEventSource } from './dump-stream-stub';
+import { eventSourceClosed, record, started, stubEventSource } from './dump-stream-stub';
 import { flowayTokenStorageKey } from '../../../src/auth/session';
 import { useDumpSubscription } from '../../../src/components/requests/use-dump-subscription';
 import { stubLocalStorage } from '../../local-storage-stub';
@@ -100,5 +100,17 @@ describe('dump subscription key switch', () => {
 
     expect(screen.getAllByText('/v1/key-a-2')).toHaveLength(1);
     expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['/v1/key-a-2', '/v1/key-a-1']);
+  });
+
+  it('replaces a started live row in place when the completed record arrives', () => {
+    renderSubscription('key-a', [record('key-a-1')]);
+    const live = started('key-a-live', '/v1/live');
+    const completed = { ...record('key-a-live'), path: '/v1/completed', durationMs: 12, responseBytes: 7 };
+    stream.liveSource().emit('started', JSON.stringify(live));
+    expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['/v1/live', '/v1/key-a-1']);
+    stream.liveSource().emit('appended', JSON.stringify(completed));
+    expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['/v1/completed', '/v1/key-a-1']);
+    stream.liveSource().emit('appended', JSON.stringify(completed));
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
   });
 });

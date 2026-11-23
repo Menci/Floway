@@ -1,8 +1,8 @@
 import { base64 } from '@scure/base';
 
 import type { EncodedDumpEvent, NumberTag, StoredValue } from './types.ts';
-import { Bytes } from '@floway-dev/pipeline';
-import type { StageEdge, StoredSecret, StreamEnd } from '@floway-dev/pipeline';
+import { Bytes } from '@floway-dev/pipeline/browser';
+import type { StageEdge, StoredSecret, StreamEnd } from '@floway-dev/pipeline/browser';
 
 export type DecodedRecord = Readonly<Record<string, unknown>>;
 export interface DecodedSecret { readonly $secret: StoredSecret }

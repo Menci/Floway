@@ -2,8 +2,8 @@ import { base64 } from '@scure/base';
 
 import { isDecodedSecret, isDecodedStreamRef } from './decoder.ts';
 import type { DecodedSecret, DecodedStageNode, DecodedStreamNode, DecodedStreamRef, DumpViewModel } from './decoder.ts';
-import type { Secret } from '@floway-dev/pipeline';
-import { Bytes, isSecret } from '@floway-dev/pipeline';
+import type { Secret } from '@floway-dev/pipeline/browser';
+import { Bytes, isSecret } from '@floway-dev/pipeline/browser';
 
 type WireString = string | DecodedSecret | Secret<string>;
 type WireEntry = readonly [name: string, value: WireString];

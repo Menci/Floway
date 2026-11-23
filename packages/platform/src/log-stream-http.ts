@@ -66,8 +66,8 @@ export const serveLogStream = (stream: LogStream, fromOffset: number, signal: Ab
 };
 
 export class LogStreamTruncatedError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'LogStreamTruncatedError';
   }
 }
@@ -122,6 +122,7 @@ export const readLogStream = async function* (response: Response): AsyncGenerato
   };
 
   let completed = false;
+  let failed = false;
   try {
     for (;;) {
       const header = await fill(LENGTH_PREFIX_BYTES);
@@ -145,12 +146,15 @@ export const readLogStream = async function* (response: Response): AsyncGenerato
       }
       yield frame;
     }
+  } catch (error) {
+    failed = true;
+    if (error instanceof LogStreamTruncatedError) throw error;
+    throw new LogStreamTruncatedError('log stream connection was interrupted', { cause: error });
   } finally {
-    if (!completed) {
-      const results = await Promise.allSettled([reader.cancel()]);
-      const failure = results.find(result => result.status === 'rejected');
-      if (failure?.status === 'rejected') throw failure.reason;
+    try {
+      if (!completed && !failed) await reader.cancel();
+    } finally {
+      reader.releaseLock();
     }
-    reader.releaseLock();
   }
 };

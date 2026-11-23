@@ -6,7 +6,7 @@ import { expect, test } from 'vitest';
 
 const repoRoot = resolve(import.meta.dirname, '../../..');
 const webRoot = resolve(repoRoot, 'apps/web');
-const packages = ['agent-setup', 'gateway', 'protocols', 'provider', 'provider-custom', 'proxy'];
+const packages = ['agent-setup', 'dump', 'gateway', 'pipeline', 'platform', 'protocols', 'provider', 'provider-custom', 'proxy'];
 
 const browserGuard = (): Plugin => ({
   name: 'browser-boundary-guard',
@@ -52,7 +52,11 @@ test('browser entrypoints exclude backend modules even without tree-shaking', as
   expect(entryExports.get('gateway')).toEqual([]);
   expect([...modules].filter(id =>
     (/\/packages\/(gateway|platform|http|provider-(azure|chatgpt|claude-code|copilot|ollama))\//.test(id)
-      && !id.endsWith('/gateway/src/browser.ts'))
+      && !id.endsWith('/gateway/src/browser.ts')
+      && !id.endsWith('/platform/src/browser.ts')
+      && !id.endsWith('/platform/src/log-stream-http.ts'))
+    || /\/packages\/dump\/src\/(encoder|index|pump)\.ts$/.test(id)
+    || /\/packages\/pipeline\/src\/(compose|index|run|stage|stream)\.ts$/.test(id)
     || /\/apps\/platform-(node|cloudflare)\//.test(id))).toEqual([]);
   expect([...modules].filter(id =>
     /\/proxy\/src\/(bytes|dial-error|dialer)\.ts/.test(id)

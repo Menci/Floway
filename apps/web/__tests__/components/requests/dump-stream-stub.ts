@@ -1,7 +1,7 @@
 import { act } from '@testing-library/react';
 import { afterEach, beforeEach, expect } from 'vitest';
 
-import type { DumpMetadata } from '@floway-dev/gateway/browser';
+import type { DumpLiveSummary, DumpMetadata } from '@floway-dev/gateway/browser';
 
 export const record = (id: string): DumpMetadata => ({
   id,
@@ -18,6 +18,15 @@ export const record = (id: string): DumpMetadata => ({
   responseBytes: 0,
   durationMs: 0,
   error: null,
+});
+
+export const started = (id: string, path = `/v1/${id}`): DumpLiveSummary => ({
+  id,
+  startedAt: 0,
+  method: 'POST',
+  path,
+  model: null,
+  requestBytes: 0,
 });
 
 export interface Lifecycle { event: 'open' | 'close'; keyId: string }

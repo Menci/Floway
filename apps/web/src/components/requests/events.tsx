@@ -2,7 +2,7 @@ import { ChevronDownRegular, ChevronRightRegular, DismissRegular, MoreHorizontal
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { List, useDynamicRowHeight, type ListImperativeAPI, type RowComponentProps } from 'react-window';
 
-import { renderStreamEvents, streamEventsCopyText, type CollectKind, type RenderedStreamEvent } from './stream-render';
+import { renderStreamEvents, streamEventsCopyText, type CollectKind, type RenderedStreamEvent, type StreamFrameEntry } from './stream-render';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { CodeBlock } from '../ui/code-block';
@@ -12,7 +12,6 @@ import { PANEL_BAND_CLASS } from '../ui/panel';
 import { useScrollAreaHost } from '../ui/scroll-area';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { copyOutcomeIcon, useCopyLabel, useCopyToClipboard } from '../ui/use-copy-to-clipboard';
-import type { DumpStreamEvent } from '@floway-dev/gateway/browser';
 
 const { Button, Menu, MenuItem, MenuItemCheckbox, MenuList, MenuPopover, MenuTrigger, Text, mergeClasses } = fluentComponents;
 
@@ -41,13 +40,14 @@ function EventRow({ index, style, ariaAttributes, events, collapsed, toggle, wra
       header={<div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
         <Button appearance="subtle" size="small" icon={closed ? <ChevronRightRegular /> : <ChevronDownRegular />} aria-expanded={!closed} onClick={() => toggle(event.index)}>{label}</Button>
         <Text size={100} className="font-mono text-fui-fg3">+{event.timestamp.toFixed(event.timestamp < 1 ? 3 : 0)}ms</Text>
+        {event.deltaMs !== undefined && event.index > 0 && <Text size={100} className="font-mono text-fui-fg3">Δ{event.deltaMs.toFixed(event.deltaMs < 1 ? 3 : 0)}ms</Text>}
         {event.parseError && <Text size={100}>{t('requests.eventParseError')}</Text>}
       </div>}
     />
   </div>;
 }
 
-export function EventList({ events, kind, toolbarStart }: { events: DumpStreamEvent[]; kind: CollectKind | null; toolbarStart: ReactNode }) {
+export function EventList({ events, kind, toolbarStart }: { events: readonly StreamFrameEntry[]; kind: CollectKind | null; toolbarStart: ReactNode }) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);

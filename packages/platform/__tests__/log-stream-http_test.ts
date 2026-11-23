@@ -33,6 +33,13 @@ const responseFromPieces = (pieces: readonly Uint8Array[]): Response => new Resp
   },
 }));
 
+test('a network interruption is reported as truncated with its original cause and the reader unlocked', async () => {
+  const cause = new TypeError('connection reset');
+  const body = new ReadableStream({ start(controller) { controller.error(cause); } });
+  await expect(collect(new Response(body))).rejects.toMatchObject({ name: 'LogStreamTruncatedError', cause });
+  expect(body.locked).toBe(false);
+});
+
 test('a completed read round-trips non-empty frames and ignores empty chunks', async () => {
   const response = serveLogStream(streamOf([bytes(1, 2, 3), bytes(), bytes(4)]), 0, new AbortController().signal);
   expect(await collect(response)).toEqual([bytes(1, 2, 3), bytes(4)]);
