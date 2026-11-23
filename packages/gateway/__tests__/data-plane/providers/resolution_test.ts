@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import { enumerateModelCandidates } from './request-directory.ts';
+import { enumerateModelCandidates, testGatewayServices } from './request-directory.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
 import { assertEquals, jsonResponse, withMockedFetch as withMockedFetchRaw } from '@floway-dev/test-utils';
@@ -16,6 +16,12 @@ const withMockedFetch = <T>(
 const testScheduler = (promise: Promise<unknown>): void => {
   promise.catch(err => console.error('[background]', err));
 };
+
+test('directory ports reject access before candidate resolution loads the snapshot', () => {
+  const services = testGatewayServices('TEST', testScheduler);
+  expect(() => services.providers.resolve('up_custom')).toThrow('Gateway provider directory was used before candidate resolution loaded it');
+  expect(() => services.fetcher('up_custom')).toThrow('Gateway provider directory was used before candidate resolution loaded it');
+});
 test('a cold candidate read schedules refresh without waiting for upstream I/O', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();

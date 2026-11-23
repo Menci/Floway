@@ -18,7 +18,7 @@ interface PricedUsageFacts {
   readonly 'response.usage.priced': Deferred<readonly PricedCall[]>;
 }
 
-const priceCalls = (calls: readonly BillableCall[]): readonly PricedCall[] => calls.map(call => {
+export const priceCalls = (calls: readonly BillableCall[]): readonly PricedCall[] => calls.map(call => {
   const measurement = call.measurement ?? tokenUsageMeasurement(tokenUsageFromBillableUsage(call.usage ?? undefined));
   const pricing = priceUsageMeasurement(call.identity.pricing, measurement.quantities, call.pricingFacts);
   return { ...call, ...pricing, dumpTokenUsage: measurement.dumpTokenUsage };
@@ -42,6 +42,7 @@ export const priceUsage = defineStage<object, object, Billings, Billings & Price
 
 export interface Settlement {
   readonly persisted: boolean;
+  readonly persistedCallIds: readonly string[];
   readonly errors: readonly ErrorSnapshot[];
   readonly status: number;
   readonly outcome: 'success' | 'gateway-error' | 'upstream-error' | 'failed';
@@ -56,6 +57,13 @@ export interface Settlement {
 
 export interface SettlementFacts { readonly 'response.settlement': Deferred<Settlement> }
 
+export interface UsagePersistence {
+  readonly persistedCallIds: readonly string[];
+  readonly errors: readonly ErrorSnapshot[];
+}
+
+interface UsagePersistenceFacts { readonly 'response.usage.persisted': Deferred<UsagePersistence> }
+
 type SettlementServices = Pick<GatewayServices, 'usageStore' | 'performanceStore'>;
 type SettlementInput = Pick<GatewayRouteFacts, 'request.auth.apiKeyId' | 'request.route.runtimeLocation'>;
 type SettlementResponse = HttpOutput & UsageFacts & PricedUsageFacts & HttpDeliveryFacts & RenderFacts
@@ -63,8 +71,31 @@ type SettlementResponse = HttpOutput & UsageFacts & PricedUsageFacts & HttpDeliv
     readonly 'response.targetApi'?: ChatTargetApi;
   };
 
+export const persistBillableCalls = async (
+  calls: readonly PricedCall[], keyId: string, usageStore: GatewayServices['usageStore'], log?: Pick<StageLogger, 'error'>,
+): Promise<UsagePersistence> => {
+  const hour = currentHour();
+  const unique = [...new Map(calls.map(call => [call.callId, call])).values()];
+  const outcomes = await Promise.allSettled(unique.map(async call => await usageStore.record({
+    keyId, hour, model: call.identity.model, upstream: call.identity.upstream, modelKey: call.identity.modelKey,
+    requests: 1, pricingSelector: call.pricingSelector, metrics: call.metrics,
+  })));
+  const persistedCallIds: string[] = [];
+  const errors: ErrorSnapshot[] = [];
+  for (const [index, outcome] of outcomes.entries()) {
+    if (outcome.status === 'fulfilled') persistedCallIds.push(unique[index]!.callId);
+    const error = outcome.status === 'rejected' ? snapshotError(outcome.reason) : outcome.value?.lastUsedAtError;
+    if (error === undefined) continue;
+    console.error('Failed to record usage:', outcome.status === 'rejected' ? outcome.reason : error);
+    log?.error('Failed to record usage:', { error: { ...error } });
+    errors.push(error);
+  }
+  return { persistedCallIds, errors };
+};
+
 const persist = async (
-  request: SettlementInput, response: SettlementResponse, operation: PerformanceOperation | null, services: SettlementServices, log: StageLogger,
+  request: SettlementInput, response: SettlementResponse, usageWrite: Promise<UsagePersistence>, operation: PerformanceOperation | null,
+  performanceStore: GatewayServices['performanceStore'], log: StageLogger,
 ): Promise<Settlement> => {
   const [calls, firstOutputAt, streamEndedAt, delivery, render, selected] = await Promise.all([
     response['response.usage.priced'].promise,
@@ -72,7 +103,7 @@ const persist = async (
     response['response.timing.streamEndedAt'].promise,
     response['response.delivery'].promise,
     response['response.render'].promise,
-    response['response.usage.selected']?.promise,
+    response['response.usage.selected']?.promise.catch(() => undefined),
   ]);
   const http = response['response.http'];
   const candidate = response['response.route.candidate'];
@@ -82,49 +113,38 @@ const persist = async (
   const outcome = render.kind === 'failed' || delivery.kind !== 'completed'
     ? 'failed'
     : http.status < 200 || http.status >= 300 ? candidate === undefined ? 'gateway-error' : 'upstream-error' : 'success';
-  const hour = currentHour();
   const keyId = request['request.auth.apiKeyId'];
-  const writes = calls.map(call => ({
-    label: 'usage',
-    write: services.usageStore.record({
-      keyId, hour, model: call.identity.model, upstream: call.identity.upstream, modelKey: call.identity.modelKey,
-      requests: 1, pricingSelector: call.pricingSelector, metrics: call.metrics,
-    }),
-  }));
-
-  if (candidate !== undefined && operation !== null) {
+  const writePerformance = async (): Promise<ErrorSnapshot | undefined> => {
+    if (candidate === undefined || operation === null) return;
     const outputTokens = render.kind === 'failed' && render.reason === 'collect-error'
       ? 0
       : selectedCalls.reduce((sum, call) => sum + (call.dumpTokenUsage?.output ?? 0), 0);
     const record = performanceRecord({
-      dimensions: { keyId, hour, model: candidate.modelId, upstream: candidate.upstreamId, operation, runtimeLocation: request['request.route.runtimeLocation'] },
+      dimensions: { keyId, hour: currentHour(), model: candidate.modelId, upstream: candidate.upstreamId, operation, runtimeLocation: request['request.route.runtimeLocation'] },
       firstOutputAt,
       streamEndedAt,
       upstreamStartedAt: http.timing.startedAt,
       outputTokens,
       failed: outcome !== 'success',
     });
-    writes.push({ label: `performance ${record.kind}`, write: services.performanceStore.record(record) });
-  }
-
-  const results = await Promise.allSettled(writes.map(item => item.write));
-  const errors = results.flatMap((result, index) => {
-    if (result.status === 'fulfilled') return [];
-    const error = snapshotError(result.reason);
-    const { label } = writes[index]!;
-    const fields = { error: { ...error } };
-    if (label === 'usage') {
-      console.error('Failed to record usage:', result.reason);
-      log.error('Failed to record usage:', fields);
-    } else {
-      console.warn(`Failed to record ${label}:`, result.reason);
-      log.warn(`Failed to record ${label}:`, fields);
+    try {
+      await performanceStore.record(record);
+    } catch (cause) {
+      const error = snapshotError(cause);
+      console.warn(`Failed to record performance ${record.kind}:`, cause);
+      log.warn(`Failed to record performance ${record.kind}:`, { error: { ...error } });
+      return error;
     }
-    return [error];
-  });
+  };
+  const [usage, performanceError] = await Promise.all([
+    usageWrite,
+    writePerformance(),
+  ]);
+  const errors = performanceError === undefined ? usage.errors : [...usage.errors, performanceError];
 
   return {
     persisted: errors.length === 0,
+    persistedCallIds: usage.persistedCallIds,
     errors,
     status: http.status,
     outcome,
@@ -139,21 +159,25 @@ const persist = async (
 };
 
 export const writeSettlement = (operation: PerformanceOperation | null) =>
-  defineStage<SettlementInput, SettlementInput, SettlementResponse, SettlementResponse & SettlementFacts, SettlementServices>({
+  defineStage<SettlementInput, SettlementInput, SettlementResponse, SettlementResponse & SettlementFacts & UsagePersistenceFacts, SettlementServices>({
     name: 'writeSettlement',
     through: {
       request: { needs: ['request.auth.apiKeyId', 'request.route.runtimeLocation'], consumes: [], provides: [] },
       response: {
         needs: ['response.http', 'response.delivery', 'response.render', 'response.usage.priced', 'response.timing.firstOutputAt', 'response.timing.streamEndedAt'],
         consumes: [],
-        provides: ['response.settlement'],
+        provides: ['response.settlement', 'response.usage.persisted'],
       },
     },
     execute: async (request, next, env) => {
       const response = await next(request);
+      const { usageStore, performanceStore } = env.services;
+      const usage = env.defer('usage rows', response['response.usage.priced'].promise.then(calls =>
+        persistBillableCalls(calls, request['request.auth.apiKeyId'], usageStore, env.log)));
       return {
         ...response,
-        'response.settlement': env.defer('settlement', persist(request, response, operation, env.services, env.log)),
+        'response.usage.persisted': usage,
+        'response.settlement': env.defer('settlement', persist(request, response, usage.promise, operation, performanceStore, env.log)),
       };
     },
   });

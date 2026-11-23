@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { installDumpStubs, MemoryLogStreamStore } from './test-fixtures.ts';
 import { type HttpInput, type HttpOutput, jsonHttpResponse } from '../../src/data-plane/pipeline/edge-http.ts';
@@ -11,6 +11,9 @@ import type { ApiKey } from '../../src/repo/types.ts';
 import { createDumpDecoder, projectWireExchanges } from '@floway-dev/dump';
 import { Bytes, compose, defineEnding, run, secret } from '@floway-dev/pipeline';
 import { initLogStreamStore } from '@floway-dev/platform';
+
+const findUpstream = vi.hoisted(() => vi.fn());
+vi.mock('../../src/repo/index.ts', () => ({ getRepo: () => ({ upstreams: { getById: findUpstream } }) }));
 
 const apiKey: ApiKey = {
   id: 'key_dump_session', userId: 1, name: 'test', key: 'secret', serverSecret: '00'.repeat(32),
@@ -45,7 +48,7 @@ test.each([
         'response.http': jsonHttpResponse(201, { received: true }, env.clock()),
         ...renderedNow(env, render),
         'response.settlement': env.defer<Settlement>('settlement', Promise.resolve({
-          persisted: true, errors: [], status: 201, outcome: render.kind === 'completed' ? 'success' : 'failed', identity: null, tokenUsage: { input: 7, output: 2 },
+          persisted: true, persistedCallIds: [], errors: [], status: 201, outcome: render.kind === 'completed' ? 'success' : 'failed', identity: null, tokenUsage: { input: 7, output: 2 },
           firstOutputAt, streamEndedAt: null, upstreamStartedAt: 100, upstreamId: null, targetApi: null,
         })),
       }),
@@ -100,4 +103,45 @@ test('a failed run commits its host response status and the original crash trace
   decoder.push(stubs.stored[0]!.artifact);
   const trace = decoder.finish();
   expect(trace.stages.get(trace.rootStageIds[0]!)?.error).toMatchObject({ message: failure.message, stack: failure.stack });
+});
+
+test('a truncated 13 MiB request keeps the live 429 status and upstream attribution', async () => {
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  initLogStreamStore(new MemoryLogStreamStore());
+  const upstream = { id: 'upstream-429', name: 'Upstream', kind: 'custom', hue: 22 };
+  findUpstream.mockResolvedValue(upstream);
+  const request = Bytes.adopt(new Uint8Array(13 * 1024 * 1024));
+  const input: HttpInput = {
+    'request.http': { method: 'POST', url: { origin: 'https://floway.test', pathname: '/v1/test' }, headers: [], body: request },
+  };
+  const dump = openDumpSession(apiKey, input['request.http'])!;
+  type Output = HttpOutput & SettlementFacts;
+  const http = jsonHttpResponse(429, { error: 'rate limited' }, 0);
+  const pipeline = compose<HttpInput, Output, {}>('test.dump-truncated', {
+    stages: [],
+    ending: defineEnding<HttpInput, Output>({
+      name: 'upstream-answer',
+      request: { needs: ['request.http'] },
+      return: { provides: ['response.http', 'response.settlement'] },
+      execute: async (_facts, _into, env) => ({
+        'response.http': http,
+        'response.settlement': env.defer<Settlement>('settlement', Promise.resolve({
+          persisted: true, persistedCallIds: [], errors: [], status: 429, outcome: 'upstream-error', identity: null, tokenUsage: null,
+          firstOutputAt: null, streamEndedAt: null, upstreamStartedAt: 0, upstreamId: upstream.id, targetApi: null,
+        })),
+      }),
+    }),
+  });
+  const handle = run(pipeline, input, { services: {}, events: dump.sink, runId: dump.recordId, finalizationTimeoutMs: 100 });
+  expect((await handle.result)['response.http'].status).toBe(429);
+  expect(await handle.done).toEqual({ ok: true });
+  await dump.completed;
+  expect(stubs.stored).toHaveLength(1);
+  expect(stubs.stored[0]!.meta).toMatchObject({
+    status: 429, upstream, requestBytes: request.byteLength, responseBytes: Bytes.fromUtf8('{"error":"rate limited"}').byteLength,
+    truncated: true, droppedEvents: expect.any(Number), error: { kind: 'upstream' },
+  });
+  const decoder = createDumpDecoder();
+  decoder.push(stubs.stored[0]!.artifact);
+  expect(decoder.finish().rootStageIds).toEqual([]);
 });

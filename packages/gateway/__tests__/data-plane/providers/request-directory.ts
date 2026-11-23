@@ -10,6 +10,8 @@ const apiKey: ApiKey = {
   dumpRetentionSeconds: null, openaiResponsesRetentionSeconds: 0,
 };
 
+export const testGatewayServices = (runtimeLocation: string, scheduler: BackgroundScheduler) => createGatewayServices({ apiKey, runtimeLocation, scheduler });
+
 export const enumerateModelCandidates = (input: {
   readonly upstreamIds: readonly string[] | null;
   readonly randomizeUpstreams: boolean;
@@ -17,7 +19,7 @@ export const enumerateModelCandidates = (input: {
   readonly kind: ModelKind;
   readonly runtimeLocation: string;
   readonly scheduler: BackgroundScheduler;
-}) => createGatewayServices({ apiKey, runtimeLocation: input.runtimeLocation, scheduler: input.scheduler }).providers.enumerate({
+}) => testGatewayServices(input.runtimeLocation, input.scheduler).providers.enumerate({
   'request.auth.apiKeyId': apiKey.id,
   'request.auth.user': { id: testAdminUser.id, isAdmin: testAdminUser.isAdmin },
   'request.route.upstreamIds': input.upstreamIds,

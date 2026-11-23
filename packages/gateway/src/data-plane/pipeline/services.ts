@@ -15,6 +15,7 @@ import type { PerformanceRecord } from '../shared/telemetry/performance-record.t
 import { loadWebSearchConfig } from '../tools/web-search/config.ts';
 import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
 import type { ConfiguredWebSearchProvider, WebSearchConfig } from '../tools/web-search/types.ts';
+import { type ErrorSnapshot, snapshotError } from '@floway-dev/pipeline';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelKind } from '@floway-dev/protocols/common';
 import { toProviderModelFacts, type ProviderModelFacts, type ProviderServices } from '@floway-dev/provider';
@@ -62,7 +63,7 @@ export interface GatewayServices extends ProviderServices {
   readonly affinityCodec: Pick<AffinityCodec, 'wrap' | 'unwrap'>;
   readonly sidecarCodecs: SidecarCodecFactory;
   readonly responsesStore: OpenAIResponsesStatefulStore;
-  readonly usageStore: { readonly record: (row: UsageRecord) => Promise<void> };
+  readonly usageStore: { readonly record: (row: UsageRecord) => Promise<void | { readonly lastUsedAtError: ErrorSnapshot }> };
   readonly performanceStore: { readonly record: (record: PerformanceRecord) => Promise<void> };
   readonly webSearchProvider: WebSearchProviderPort;
 }
@@ -143,22 +144,33 @@ const createRequestDirectory = (runtimeLocation: string, scheduleRefresh: Models
       fetcher: await createPerRequestFetcher(runtimeLocation, upstreams),
     };
   };
-  let directory: ReturnType<typeof load> | undefined;
-  let fetcher: ProviderServices['fetcher'] | undefined;
+  let loading: ReturnType<typeof load> | undefined;
+  let directory: Awaited<ReturnType<typeof load>> | undefined;
+  const loadDirectory = () => loading ??= load().then(loaded => {
+    directory = loaded;
+    return loaded;
+  });
+  const requireDirectory = () => {
+    if (directory === undefined) throw new Error('Gateway provider directory was used before candidate resolution loaded it');
+    return directory;
+  };
+  const resolve: GatewayProviders['resolve'] = upstreamId => {
+    const { upstreamById } = requireDirectory();
+    const cached = providers.get(upstreamId);
+    if (cached !== undefined) return cached;
+    const upstream = upstreamById.get(upstreamId);
+    if (upstream === undefined) throw new Error(`Unknown or disabled upstream ${upstreamId}`);
+    const provider = createProvider(upstream);
+    providers.set(upstreamId, provider);
+    return provider;
+  };
   const list = async (upstreamIds: readonly string[] | null): Promise<readonly GatewayProvider[]> => {
-    const loaded = await (directory ??= load());
-    fetcher = loaded.fetcher;
+    const loaded = await loadDirectory();
     const upstreams = upstreamIds === null ? loaded.enabled : upstreamIds.flatMap(id => {
       const upstream = loaded.upstreamById.get(id);
       return upstream === undefined ? [] : [upstream];
     });
-    return upstreams.map(upstream => {
-      const cached = providers.get(upstream.id);
-      if (cached !== undefined) return cached;
-      const provider = createProvider(upstream);
-      providers.set(upstream.id, provider);
-      return provider;
-    });
+    return upstreams.map(upstream => resolve(upstream.id));
   };
   const enumerate: GatewayProviders['enumerate'] = async (facts, model, kind) => {
     const listed = await list(facts['request.route.upstreamIds']);
@@ -182,18 +194,8 @@ const createRequestDirectory = (runtimeLocation: string, scheduleRefresh: Models
     };
   };
   return {
-    providers: {
-      enumerate,
-      resolve: (upstreamId: string) => {
-        const provider = providers.get(upstreamId);
-        if (provider === undefined) throw new Error(`Upstream ${upstreamId} was not resolved in the request directory`);
-        return provider;
-      },
-    },
-    fetcher: (upstreamId: string) => {
-      if (fetcher === undefined) throw new Error('The request directory has not been loaded');
-      return fetcher(upstreamId);
-    },
+    providers: { enumerate, resolve },
+    fetcher: (upstreamId: string) => requireDirectory().fetcher(upstreamId),
   };
 };
 
@@ -217,10 +219,13 @@ export const createGatewayServices = (options: {
     responsesStore: responsesStore ?? createNonOpenAIResponsesSourceStore(apiKey.id),
     usageStore: {
       record: async row => {
-        await Promise.all([
-          getRepo().usage.record(row),
-          getRepo().apiKeys.update(row.keyId, { lastUsedAt: new Date().toISOString() }),
-        ]);
+        const repo = getRepo();
+        await repo.usage.record(row);
+        try {
+          await repo.apiKeys.update(row.keyId, { lastUsedAt: new Date().toISOString() });
+        } catch (error) {
+          return { lastUsedAtError: snapshotError(error) };
+        }
       },
     },
     performanceStore: {

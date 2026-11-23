@@ -30,12 +30,7 @@ export const emptyUsageFacts = (env: Pick<StageEnv, 'defer'>): UsageFacts => ({
 export const mergeBillableCalls = (
   attempts: readonly Deferred<readonly BillableCall[]>[],
 ): Promise<readonly BillableCall[]> => Promise.allSettled(attempts.map(attempt => attempt.promise))
-  .then(results => {
-    const calls = results.flatMap(result => result.status === 'fulfilled' ? result.value : []);
-    const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
-    if (errors.length > 0) throw new AggregateError(errors, 'Failed to observe billable calls', { cause: { calls } });
-    return calls;
-  });
+  .then(results => results.flatMap(result => result.status === 'fulfilled' ? result.value : []));
 
 export type ObservedUsage = Pick<BillableCall, 'usage' | 'measurement' | 'pricingFacts'>;
 
@@ -64,8 +59,11 @@ export const billableCall = (env: TimedEnv, identity: TelemetryModelIdentity, di
   observedAt: env.clock(),
 });
 
+const observedCalls = (call: BillableCall, accepted: boolean): readonly BillableCall[] =>
+  accepted || call.usage !== null || Object.keys(call.measurement?.quantities ?? {}).length > 0 ? [call] : [];
+
 export const scalarUsageFacts = (env: TimedEnv, call: BillableCall): UsageFacts => ({
-  'response.usage.billable': env.defer('billable call', Promise.resolve([call])),
+  'response.usage.billable': env.defer('billable call', Promise.resolve(observedCalls(call, call.disposition !== 'api-error'))),
   'response.timing.firstOutputAt': env.defer('first output', Promise.resolve(null)),
   'response.timing.streamEndedAt': env.defer('stream end', Promise.resolve(null)),
 });
@@ -105,11 +103,11 @@ export const createObserveUsage = <Event, Result = undefined>(dialect: {
     execute: async (request, next, env) => {
       const response = await next(request);
       const { 'response.http': http, 'response.events': events, 'response.result': result } = response;
+      const accepted = http.status >= 200 && http.status < 300;
       const identity = observeIdentity(request['route.candidate'], response['response.modelKey']);
       if (events === undefined) {
-        const ok = http.status >= 200 && http.status < 300;
-        const usage = ok && result !== undefined && dialect.scalar !== undefined ? dialect.scalar(result) : observedTokenUsage(null);
-        return { ...response, 'response.events': undefined, ...scalarUsageFacts(env, billableCall(env, identity, ok ? 'completed' : 'api-error', usage)) };
+        const usage = result !== undefined && dialect.scalar !== undefined ? dialect.scalar(result) : observedTokenUsage(null);
+        return { ...response, 'response.events': undefined, ...scalarUsageFacts(env, billableCall(env, identity, accepted ? 'completed' : 'api-error', usage)) };
       }
 
       const observer = dialect.open();
@@ -130,7 +128,7 @@ export const createObserveUsage = <Event, Result = undefined>(dialect: {
           streamEnd.resolve(env.clock());
           const disposition = streamDisposition(end, failed);
           try {
-            billing.resolve([billableCall(env, identity, disposition, observer.usage())]);
+            billing.resolve(observedCalls(billableCall(env, identity, disposition, observer.usage()), accepted));
           } catch (error) {
             billing.reject(error);
           }

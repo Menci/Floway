@@ -12,7 +12,7 @@ import { UpstreamTransportError } from '../../../src/dial/transport-error.ts';
 import type { AuthVars } from '../../../src/middleware/auth.ts';
 import type { ApiKey } from '../../../src/repo/types.ts';
 import { initBackgroundSchedulerResolver } from '../../../src/runtime/background.ts';
-import { Bytes, compose, defineEnding, type RunEvent, run, type StageEnv } from '@floway-dev/pipeline';
+import { Bytes, compose, defineEnding, defineStage, type RunEvent, run, type StageEnv } from '@floway-dev/pipeline';
 
 vi.mock('../../../src/data-plane/providers/registry.ts', () => ({}));
 vi.mock('../../../src/runtime/runtime-info.ts', () => ({ getRuntimeLocation: () => 'LOCAL' }));
@@ -58,6 +58,162 @@ const counted = (
     observedTokenUsage({ input: 5, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output }))),
   ...renderedNow(env, render),
   'response.http': jsonHttpResponse(status, { variant: model.upstreamModelId }, 10),
+});
+
+test.each([200, 429])('scalar HTTP %s bills one accepted call and skips an unmetered API error', async status => {
+  const pipeline = compose<CandidateRequest, RenderedAttempt, {}>('test.unmetered', {
+    stages: [],
+    ending: endpoint((model, env) => ({
+      ...scalarUsageFacts(env, billableCall(env, observeIdentity(model, model.upstreamModelId), status === 200 ? 'completed' : 'api-error', observedTokenUsage(null))),
+      ...renderedNow(env, { kind: 'completed' }),
+      'response.http': jsonHttpResponse(status, {}, env.clock()),
+    })),
+  });
+  const handle = run(pipeline, { 'route.candidate': candidate('unmetered') }, { services: {}, finalizationTimeoutMs: 100 });
+  const response = await handle.result;
+  expect(await response['response.usage.billable'].promise).toEqual(status === 200 ? [expect.objectContaining({ usage: null })] : []);
+  expect(await handle.done).toEqual({ ok: true });
+});
+
+test('a rejected losing billing deferred fails done while the winner settles usage and performance', async () => {
+  const usageStore = { record: vi.fn(async () => {}) };
+  const performanceStore = { record: vi.fn(async () => {}) };
+  const services = { usageStore, performanceStore };
+  const lost = new Error('original losing billing error');
+  const pipeline = compose<GatewayHttpFacts & CandidatesRequest, HttpOutput & SettlementFacts, typeof services>('test.lose-billing', {
+    stages: [writeSettlement('chat'), priceUsage, edgeHttp, failover],
+    ending: endpoint((model, env) => {
+      if (model.upstreamModelId === 'winner') return counted(model, env, 200, 3);
+      return {
+        ...counted(model, env, 429, 0),
+        'response.usage.billable': env.defer('losing call', Promise.reject(lost)),
+      };
+    }),
+  });
+  const handle = run(pipeline, { ...request, 'route.candidates': [candidate('loser'), candidate('winner')] }, { services, finalizationTimeoutMs: 100 });
+  const response = await handle.result;
+  expect(response['response.http'].status).toBe(200);
+  expect(await response['response.settlement'].promise).toMatchObject({ outcome: 'success', persistedCallIds: [expect.any(String)] });
+  expect(await handle.done).toMatchObject({ ok: false, error: { message: lost.message } });
+  expect(usageStore.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ modelKey: 'winner', requests: 1 }));
+  expect(performanceStore.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ kind: 'neutral' }));
+});
+
+test.each([false, true])('the host writes each observed billable call once (outer throw %s)', async shouldThrow => {
+  const usageStore = { record: vi.fn(async () => {}) };
+  const performanceStore = { record: vi.fn(async () => {}) };
+  const services = { usageStore, performanceStore };
+  type Input = GatewayHttpFacts & CandidatesRequest;
+  const failure = new Error('failed after observing the selected call');
+  const render = defineStage<Input, Input, RenderedAttempt, RenderedAttempt>({
+    name: 'render',
+    through: {
+      request: { needs: [], consumes: [], provides: [] },
+      response: { needs: ['response.http'], consumes: [], provides: [] },
+    },
+    execute: async (facts, next) => {
+      const response = await next(facts);
+      if (shouldThrow) throw failure;
+      return response;
+    },
+  });
+  const pipeline = compose<Input, HttpOutput & SettlementFacts, typeof services>('test.sweep', {
+    stages: [writeSettlement('chat'), priceUsage, edgeHttp, render, failover],
+    ending: endpoint((model, env) => counted(model, env, 200, 3)),
+  });
+  const tasks: Promise<unknown>[] = [];
+  const handle = startGatewayRun(pipeline, { ...request, 'route.candidates': [candidate('selected')] }, {
+    apiKey, request: request['request.http'], services, scheduler: task => tasks.push(task),
+  });
+  if (shouldThrow) await expect(handle.result).rejects.toBe(failure);
+  else expect((await handle.result)['response.http'].status).toBe(200);
+  expect(await handle.done).toMatchObject({ ok: !shouldThrow });
+  expect(tasks).toContain(handle.done);
+  await Promise.all(tasks);
+  expect(usageStore.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ modelKey: 'selected', requests: 1 }));
+  expect(performanceStore.record).toHaveBeenCalledTimes(shouldThrow ? 0 : 1);
+});
+
+test('a performance timeout cannot cause a second write for a completed usage receipt', async () => {
+  const usageStore = { record: vi.fn(async () => {}) };
+  const performance = Promise.withResolvers<void>();
+  const services = { usageStore, performanceStore: { record: () => performance.promise } };
+  type Input = GatewayHttpFacts & CandidatesRequest;
+  const pipeline = compose<Input, HttpOutput & SettlementFacts, typeof services>('test.usage-receipt', {
+    stages: [writeSettlement('chat'), priceUsage, edgeHttp, failover],
+    ending: endpoint((model, env) => counted(model, env, 200, 3)),
+  });
+  const tasks: Promise<unknown>[] = [];
+  const handle = startGatewayRun(pipeline, { ...request, 'route.candidates': [candidate('selected')] }, {
+    apiKey, request: request['request.http'], services, scheduler: task => tasks.push(task), finalizationTimeoutMs: 20,
+  });
+  expect((await handle.result)['response.http'].status).toBe(200);
+  const done = await handle.done;
+  performance.resolve();
+  expect(done).toMatchObject({ ok: false, error: { name: 'FinalizationTimeoutError' } });
+  await Promise.all(tasks);
+  expect(usageStore.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ modelKey: 'selected', requests: 1 }));
+});
+
+test('the billing sweep honors usage receipts from a sub-run whose settlement never reached the root', async () => {
+  const usageStore = { record: vi.fn(async () => {}) };
+  const services = { usageStore, performanceStore: { record: vi.fn(async () => {}) } };
+  type Input = GatewayHttpFacts & CandidatesRequest;
+  const sub = compose<Input, HttpOutput & SettlementFacts, typeof services>('test.usage-sub-run', {
+    stages: [writeSettlement(null), priceUsage, edgeHttp, failover],
+    ending: endpoint((model, env) => counted(model, env, 200, 3)),
+  });
+  const root = compose<Input, HttpOutput, typeof services>('test.parent-run', {
+    stages: [],
+    ending: defineEnding<Input, HttpOutput, {}, typeof services>({
+      name: 'invoke',
+      request: { needs: ['request.http', 'route.candidates'] },
+      return: { provides: ['response.http'] },
+      execute: async (facts, _into, env) => ({ 'response.http': (await env.run(sub, facts).result)['response.http'] }),
+    }),
+  });
+  const tasks: Promise<unknown>[] = [];
+  const handle = startGatewayRun(root, { ...request, 'route.candidates': [candidate('sub-run')] }, {
+    apiKey, request: request['request.http'], services, scheduler: task => tasks.push(task),
+  });
+  expect((await handle.result)['response.http'].status).toBe(200);
+  expect(await handle.done).toEqual({ ok: true });
+  await Promise.all(tasks);
+  expect(usageStore.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ modelKey: 'sub-run', requests: 1 }));
+});
+
+test('crash attribution keeps the deepest candidate on the last failing sibling chain', async () => {
+  const failure = new Error('upstream failed');
+  const outer = { ...candidate('outer'), modelId: 'outer' };
+  const first = { ...candidate('first'), modelId: 'first' };
+  const deepest = { ...candidate('deep'), modelId: 'deep' };
+  const fork = defineStage<CandidateRequest, CandidateRequest, RenderedAttempt, RenderedAttempt>({
+    name: 'fork',
+    through: {
+      request: { needs: ['route.candidate'], consumes: [], provides: ['route.candidate'] },
+      response: { needs: [], consumes: [], provides: [] },
+    },
+    execute: async (facts, next) => {
+      await expect(next({ ...facts, 'route.candidate': first })).rejects.toBe(failure);
+      return await next({ ...facts, 'route.candidate': deepest });
+    },
+  });
+  const pipeline = compose<CandidateRequest, HttpOutput, {}>('test.crash-candidate', {
+    stages: [fork],
+    ending: endpoint(() => { throw failure; }),
+  });
+  const tasks: Promise<unknown>[] = [];
+  const store = { record: vi.fn(async () => {}) };
+  const handle = startGatewayRun(pipeline, { 'route.candidate': outer }, {
+    apiKey, request: request['request.http'], services: {}, scheduler: task => tasks.push(task),
+    crashPerformance: { route: request, operation: 'chat', store },
+  });
+  await expect(handle.result).rejects.toBe(failure);
+  expect(await handle.done).toMatchObject({ ok: false });
+  await Promise.all(tasks);
+  expect(store.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+    kind: 'zero-output-error', dimensions: expect.objectContaining({ model: 'deep', upstream: 'upstream' }),
+  }));
 });
 
 test.each([

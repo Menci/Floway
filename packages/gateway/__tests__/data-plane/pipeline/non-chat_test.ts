@@ -1,24 +1,12 @@
-// Behavioral coverage for the shared passthrough serve scaffold used by
-// /v1/embeddings, /v1/images/{generations,edits}, and audio transcription. Each test exercises a
-// full client request through the in-memory app rather than constructing a
-// synthetic hono Context so the integration with model resolution,
-// upstream HTTP, and background scheduling stays honest.
-//
-// We pick /v1/embeddings as the source under test because:
-//   - its acceptBinding gate is `kind === 'embedding'`, satisfied by any
-//     embedding-only custom upstream, with no per-endpoint Copilot setup
-//     required;
-//   - its extractBilling reads the OpenAI-style `usage.prompt_tokens` off
-//     a 2xx JSON body, so a body with that shape triggers a real usage
-//     write;
-//   - it shares the exact same forwardUpstreamResponse + settle
-//     path as the images endpoints — the behaviors under test are owned by
-//     passthroughServe, not the endpoint shape.
+import { expect, test, vi } from 'vitest';
 
-import { test, vi } from 'vitest';
-
+import { app } from '../../../src/app.ts';
+import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
+import { initBackgroundSchedulerResolver } from '../../../src/runtime/background.ts';
+import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { trackBackground } from '../../test-utils/background-tracker.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { jsonResponse, withMockedFetch, assertEquals } from '@floway-dev/test-utils';
 
@@ -40,6 +28,34 @@ const registerOpenAIEmbeddingsUpstream = async (
     },
   }));
 };
+
+test('an interrupted embeddings upload runs the parser, returns its 400, and finishes the dump', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+  const tasks: Promise<unknown>[] = [];
+  initBackgroundSchedulerResolver(() => promise => tasks.push(promise));
+  try {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"model":'));
+        controller.error(new Error('client upload interrupted'));
+      },
+    });
+    const init: RequestInit & { duplex: 'half' } = {
+      method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key }, body, duplex: 'half',
+    };
+    const response = await app.fetch(new Request('https://floway.test/v1/embeddings', init));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: { type: 'api_error', message: 'OpenAI Embeddings request body must be valid JSON.' } });
+    expect(tasks.length).toBeGreaterThanOrEqual(2);
+    await Promise.all(tasks);
+    expect(dumps.stored).toHaveLength(1);
+    expect(dumps.stored[0]!.meta).toMatchObject({ status: 400, requestBytes: 0, error: { kind: 'failed', reason: 'client upload interrupted' } });
+  } finally {
+    initBackgroundSchedulerResolver(() => trackBackground);
+  }
+});
 
 test('non-chat ingress: usage-record failure does not turn upstream 2xx into 502', async () => {
   const { apiKey, repo } = await setupAppTest();

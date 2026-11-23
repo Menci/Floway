@@ -1,5 +1,7 @@
 import { type HttpInput, type HttpOutput, jsonHttpResponse } from './edge-http.ts';
+import { type BillableCall, mergeBillableCalls } from './observe-usage.ts';
 import { createGatewayServices, type GatewayRouteFacts, type GatewayServices } from './services.ts';
+import { persistBillableCalls, priceCalls, type UsagePersistence } from './settlement.ts';
 import { isUpstreamTransportError } from '../../dial/transport-error.ts';
 import { openDumpSession } from '../../dump/session.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
@@ -10,7 +12,7 @@ import { writeHttpResponse } from '../shared/http-writer.ts';
 import { currentHour } from '../shared/telemetry/hour.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-response.ts';
 import { httpUrl, type HttpRequestFacts, wrapSensitiveHeaderEntries } from '@floway-dev/http';
-import { Bytes, type Facts, type Pipeline, type RootEnv, run, type RunEventSink, type RunHandle, secret } from '@floway-dev/pipeline';
+import { Bytes, type Deferred, type ErrorSnapshot, type Facts, isDeferred, type Pipeline, type RootEnv, run, type RunEvent, type RunEventSink, type RunHandle, secret, snapshotError } from '@floway-dev/pipeline';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { type PerformanceOperation, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 
@@ -18,7 +20,7 @@ const FINALIZATION_TIMEOUT_MS = 30_000;
 const SECRET_QUERY_NAMES = new Set(['key', 'api_key', 'api-key', 'apikey', 'access_token', 'token', 'auth', 'sig', 'signature', 'session']);
 const SECRET_AUTH_HEADERS = new Set(['x-goog-api-key', 'x-floway-session']);
 
-export type GatewayHttpFacts = HttpInput & GatewayRouteFacts;
+export type GatewayHttpFacts = HttpInput & GatewayRouteFacts & { readonly 'request.uploadError'?: ErrorSnapshot };
 
 export const httpRequestFacts = (request: Request, body: Bytes | null, method = request.method): HttpRequestFacts => {
   const url = new URL(request.url);
@@ -51,7 +53,7 @@ export const gatewayHostContext = (c: AuthedContext, scheduler = backgroundSched
 interface StartOptions<S> {
   readonly apiKey: ApiKey;
   readonly request: HttpRequestFacts;
-  readonly services: S;
+  readonly services: S & Partial<Pick<GatewayServices, 'usageStore'>>;
   readonly scheduler: BackgroundScheduler;
   readonly signal?: AbortSignal;
   readonly events?: RunEventSink;
@@ -65,15 +67,71 @@ interface StartOptions<S> {
   };
 }
 
+interface CrashCandidate { readonly modelId: string; readonly upstreamId: string }
+
+const crashCandidate = (facts: Facts): CrashCandidate | undefined => {
+  const candidate = facts['route.candidate'];
+  if (candidate === null || typeof candidate !== 'object'
+    || !('modelId' in candidate) || typeof candidate.modelId !== 'string'
+    || !('upstreamId' in candidate) || typeof candidate.upstreamId !== 'string') return undefined;
+  return { modelId: candidate.modelId, upstreamId: candidate.upstreamId };
+};
+
+const observeRun = () => {
+  const parents = new Map<number, number | null>();
+  const billings = new Set<Deferred<readonly BillableCall[]>>();
+  const receipts = new Set<Deferred<UsagePersistence>>();
+  let crash: { readonly stageId: number; readonly candidate: CrashCandidate | undefined } | undefined;
+
+  const isAncestor = (ancestor: number, stage: number): boolean => {
+    for (let parent = parents.get(stage); parent != null; parent = parents.get(parent)) {
+      if (parent === ancestor) return true;
+    }
+    return false;
+  };
+
+  const observe = (event: RunEvent): void => {
+    switch (event.k) {
+    case 'enter': parents.set(event.stageId, event.parentStageId); break;
+    case 'fail': {
+      if (crash === undefined || !isAncestor(event.stageId, crash.stageId)) {
+        crash = { stageId: event.stageId, candidate: crashCandidate(event.facts) };
+      } else if (crash.candidate === undefined) {
+        crash = { ...crash, candidate: crashCandidate(event.facts) };
+      }
+      break;
+    }
+    case 'leave': {
+      const billing = event.facts['response.usage.billable'];
+      if (isDeferred(billing)) billings.add(billing as Deferred<readonly BillableCall[]>);
+      const receipt = event.facts['response.usage.persisted'];
+      if (isDeferred(receipt)) receipts.add(receipt as Deferred<UsagePersistence>);
+    }
+    }
+  };
+
+  const sweep = async (keyId: string, usageStore: GatewayServices['usageStore']): Promise<void> => {
+    if (billings.size === 0) return;
+    const [calls, results] = await Promise.all([
+      mergeBillableCalls([...billings]),
+      Promise.allSettled([...receipts].map(receipt => receipt.promise)),
+    ]);
+    const persisted = new Set(results.flatMap(result => result.status === 'fulfilled' ? result.value.persistedCallIds : []));
+    await persistBillableCalls(priceCalls(calls.filter(call => !persisted.has(call.callId))), keyId, usageStore);
+  };
+
+  return { observe, sweep, candidate: () => crash?.candidate };
+};
+
 export const startGatewayRun = <In, Out, S>(
   pipeline: Pipeline<In, Out, S>,
   input: In | ((root: RootEnv) => In),
   options: StartOptions<S>,
 ): RunHandle<Out> => {
   const dump = openDumpSession(options.apiKey, options.request, options.requestedModel);
-  let crashFacts: Facts | undefined;
+  const observed = observeRun();
   const events: RunEventSink = event => {
-    if (event.k === 'fail' && 'route.candidate' in event.facts) crashFacts = event.facts;
+    observed.observe(event);
     dump?.sink(event);
     options.events?.(event);
   };
@@ -85,17 +143,17 @@ export const startGatewayRun = <In, Out, S>(
     ...(dump === null ? {} : { runId: dump.recordId }),
   });
   options.scheduler(handle.done);
+  const { usageStore } = options.services;
+  if (usageStore !== undefined) options.scheduler(handle.done.then(() => observed.sweep(options.apiKey.id, usageStore)));
   if (dump !== null) options.scheduler(dump.completed);
   void handle.result.catch(error => {
+    const candidate = observed.candidate();
     if (dump !== null) {
       const upstream = error instanceof ProviderModelsUnavailableError ? error.httpResponse : null;
-      dump.hostFailure(error, upstream?.status ?? (options.errorStatus ?? gatewayErrorStatus)(error), upstream !== null);
+      dump.hostFailure(error, upstream?.status ?? (options.errorStatus ?? gatewayErrorStatus)(error), upstream !== null, candidate);
     }
     const performance = options.crashPerformance;
-    const candidate = crashFacts?.['route.candidate'];
-    if (performance === undefined || candidate === null || typeof candidate !== 'object'
-      || !('modelId' in candidate) || typeof candidate.modelId !== 'string'
-      || !('upstreamId' in candidate) || typeof candidate.upstreamId !== 'string') return;
+    if (performance === undefined || candidate === undefined) return;
     options.scheduler(performance.store.record({
       kind: 'zero-output-error',
       dimensions: {
@@ -120,6 +178,17 @@ interface HttpOptions {
   readonly performanceOperation?: PerformanceOperation;
 }
 
+const readUpload = async (raw: Request): Promise<{ readonly body: Bytes | null; readonly error?: ErrorSnapshot }> => {
+  if (raw.body === null) return { body: null };
+  let bytes: ArrayBuffer;
+  try {
+    bytes = await raw.arrayBuffer();
+  } catch (error) {
+    return { body: Bytes.empty, error: snapshotError(error) };
+  }
+  return { body: Bytes.adopt(new Uint8Array(bytes)) };
+};
+
 export const createGatewayHttpHandler = <Out extends HttpOutput>(
   pipeline: Pipeline<GatewayHttpFacts, Out, GatewayServices>,
   options: HttpOptions = {},
@@ -127,13 +196,17 @@ export const createGatewayHttpHandler = <Out extends HttpOutput>(
   try {
     const raw = c.req.raw;
     const host = gatewayHostContext(c);
-    const request = httpRequestFacts(raw, raw.body === null ? null : Bytes.adopt(new Uint8Array(await raw.arrayBuffer())));
-    const input = { ...host.route, 'request.http': request };
+    const upload = await readUpload(raw);
+    const request = httpRequestFacts(raw, upload.body);
+    const input = { ...host.route, 'request.http': request, ...(upload.error === undefined ? {} : { 'request.uploadError': upload.error }) };
     const services = createGatewayServices({ apiKey: host.apiKey, scheduler: host.scheduler, runtimeLocation: host.route['request.route.runtimeLocation'] });
     const crashPerformance = options.performanceOperation === undefined ? undefined : {
       route: host.route, operation: options.performanceOperation, store: services.performanceStore,
     };
-    const handle = startGatewayRun(pipeline, input, { ...options, ...host, request, services, signal: raw.signal, crashPerformance });
+    const handle = startGatewayRun(pipeline, input, {
+      ...options, ...host, request, services, crashPerformance,
+      ...(upload.error === undefined ? { signal: raw.signal } : {}),
+    });
     return writeHttpResponse((await handle.result)['response.http']);
   } catch (error) {
     const upstreamResponse = providerModelsUnavailableResponse(error);

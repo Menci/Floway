@@ -7,9 +7,9 @@ import type { Settlement } from '../data-plane/pipeline/settlement.ts';
 import { getRepo } from '../repo/index.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
-import { createDumpDecoder, createDumpPump, type DumpCompletionSummary, type DumpViewModel, isDecodedDeferredRef, projectWireExchanges } from '@floway-dev/dump';
+import { createDumpPump, type DumpCompletionSummary } from '@floway-dev/dump';
 import type { HttpRequestFacts } from '@floway-dev/http';
-import { Bytes, type RunEventSink } from '@floway-dev/pipeline';
+import { Bytes, type ErrorSnapshot, type FactValue, isDeferred, isManagedStream, type RunEventSink, streamIdOf } from '@floway-dev/pipeline';
 import { getLogStreamStore } from '@floway-dev/platform';
 
 const oneLine = (error: unknown): string => {
@@ -23,24 +23,30 @@ const inputTokens = (usage: TokenUsage | null | undefined): number | null => {
   return values.some(value => value !== undefined) ? values.reduce<number>((total, value) => total + (value ?? 0), 0) : null;
 };
 
-const decodedRootDeferred = <T>(view: DumpViewModel, key: string): T | undefined => {
-  const rootId = view.rootStageIds[0];
-  const root = rootId === undefined ? undefined : view.stages.get(rootId);
-  const deferred = root?.responseFacts?.[key];
-  if (!isDecodedDeferredRef(deferred)) return undefined;
-  const settled = view.deferreds.get(deferred.$deferred)?.settlement;
-  return settled?.ok ? settled.value as T : undefined;
+const settledValue = async <T>(value: FactValue): Promise<T | undefined> => {
+  if (!isDeferred(value)) return undefined;
+  const [result] = await Promise.allSettled([value.promise]);
+  return result.status === 'fulfilled' ? result.value as T : undefined;
 };
 
-const modelFromTrace = (view: DumpViewModel): string | null => {
-  for (const stage of view.stages.values()) {
-    const model = stage.facts['request.model'];
-    if (typeof model === 'string') return model;
-  }
-  return null;
-};
+interface FailedCandidate { readonly modelId: string; readonly upstreamId: string }
 
-interface HostFailure { readonly status: number; readonly error: DumpErrorMeta }
+interface HostFailure {
+  readonly status: number;
+  readonly error: DumpErrorMeta;
+  readonly candidate?: FailedCandidate;
+}
+
+interface LiveMetadata {
+  readonly model: string | null;
+  readonly status: number | undefined;
+  readonly responseBytes: number;
+  readonly uploadError: ErrorSnapshot | undefined;
+  readonly hostFailure: HostFailure | undefined;
+  readonly settlement: Settlement | undefined;
+  readonly render: RenderOutcome | undefined;
+  readonly delivery: HttpDelivery | undefined;
+}
 
 const renderFailureMessages = {
   'protocol-error': 'Upstream SSE reported an error',
@@ -49,45 +55,37 @@ const renderFailureMessages = {
   'collect-error': 'Upstream response collection failed',
 } satisfies Record<Extract<RenderOutcome, { kind: 'failed' }>['reason'], string>;
 
-const dumpError = (view: DumpViewModel, settlement: Settlement | undefined, summary: DumpCompletionSummary, hostFailure: HostFailure | undefined): DumpErrorMeta | null => {
+const dumpError = ({ settlement, uploadError, hostFailure, render, delivery }: LiveMetadata, summary: DumpCompletionSummary): DumpErrorMeta | null => {
   if (hostFailure !== undefined) return hostFailure.error;
+  if (uploadError !== undefined) return { kind: 'failed', reason: oneLine(uploadError.message) };
   if (settlement?.outcome === 'gateway-error') return { kind: 'gateway' };
   if (settlement?.outcome === 'upstream-error') return { kind: 'upstream' };
+  if (render?.kind === 'failed') return { kind: 'failed', reason: oneLine(render.error?.message ?? renderFailureMessages[render.reason]) };
+  if (delivery?.kind === 'client-cancelled') return { kind: 'failed', reason: 'Downstream cancelled the SSE response' };
+  if (delivery?.kind === 'write-failed') return { kind: 'failed', reason: oneLine(delivery.error.message) };
   if (!summary.ok || settlement?.outcome === 'failed') {
-    const render = decodedRootDeferred<RenderOutcome>(view, 'response.render');
-    if (render?.kind === 'failed') return { kind: 'failed', reason: oneLine(render.error?.message ?? renderFailureMessages[render.reason]) };
-    const delivery = decodedRootDeferred<HttpDelivery>(view, 'response.delivery');
-    if (delivery?.kind === 'client-cancelled') return { kind: 'failed', reason: 'Downstream cancelled the SSE response' };
-    if (delivery?.kind === 'write-failed') return { kind: 'failed', reason: oneLine(delivery.error.message) };
     return { kind: 'failed', reason: summary.doneError?.message ?? 'Downstream response did not complete' };
   }
   return null;
 };
 
-const buildMetadata = async (
-  started: DumpLiveSummary, view: DumpViewModel, summary: DumpCompletionSummary, hostFailure: HostFailure | undefined,
-): Promise<DumpMetadata> => {
-  const { downstreamRequest, downstreamResponse } = projectWireExchanges(view);
-  const settlement = decodedRootDeferred<Settlement>(view, 'response.settlement');
+const buildMetadata = async (started: DumpLiveSummary, values: LiveMetadata, summary: DumpCompletionSummary): Promise<DumpMetadata> => {
+  const { settlement, hostFailure } = values;
   const completedAt = Date.now();
-  const record = settlement?.upstreamId ? await getRepo().upstreams.getById(settlement.upstreamId) : null;
-  const responseBytes = downstreamResponse?.body instanceof Bytes ? downstreamResponse.body.byteLength
-    : downstreamResponse?.stream?.frames.reduce((sum, { value }) => sum + (value instanceof Bytes ? value.byteLength : 0), 0) ?? 0;
+  const upstreamId = settlement?.upstreamId ?? hostFailure?.candidate?.upstreamId;
+  const record = upstreamId === undefined ? null : await getRepo().upstreams.getById(upstreamId);
   return dumpMetadataSchema.parse({
     ...started,
     completedAt,
-    method: downstreamRequest?.method ?? started.method,
-    path: downstreamRequest?.url.pathname ?? started.path,
-    status: hostFailure?.status ?? downstreamResponse?.status ?? settlement?.status ?? (summary.ok ? 200 : 500),
+    status: hostFailure?.status ?? values.status ?? settlement?.status ?? (summary.ok ? 200 : 500),
     upstream: record === null ? null : { id: record.id, name: record.name, kind: record.kind, hue: record.hue },
-    model: settlement?.identity?.model ?? started.model ?? modelFromTrace(view),
+    model: settlement?.identity?.model ?? hostFailure?.candidate?.modelId ?? values.model ?? started.model,
     inputTokens: inputTokens(settlement?.tokenUsage),
     outputTokens: settlement?.tokenUsage?.output ?? null,
-    requestBytes: downstreamRequest?.body instanceof Bytes ? downstreamRequest.body.byteLength : started.requestBytes,
-    responseBytes,
+    responseBytes: values.responseBytes,
     durationMs: completedAt - started.startedAt,
     ttftMs: settlement?.firstOutputAt == null || settlement.upstreamStartedAt === null ? null : Math.round(settlement.firstOutputAt - settlement.upstreamStartedAt),
-    error: dumpError(view, settlement, summary, hostFailure),
+    error: dumpError(values, summary),
     targetApi: settlement?.targetApi ?? null,
     truncated: summary.truncated,
     droppedEvents: summary.droppedEvents,
@@ -98,7 +96,7 @@ interface DumpSession {
   readonly recordId: string;
   readonly sink: RunEventSink;
   readonly completed: Promise<void>;
-  readonly hostFailure: (error: unknown, status: number, upstream: boolean) => void;
+  readonly hostFailure: (error: unknown, status: number, upstream: boolean, candidate?: FailedCandidate) => void;
 }
 
 export const openDumpSession = (apiKey: ApiKey, request: HttpRequestFacts, requestedModel?: string): DumpSession | null => {
@@ -106,7 +104,7 @@ export const openDumpSession = (apiKey: ApiKey, request: HttpRequestFacts, reque
   const { id: keyId } = apiKey;
   const startedAt = Date.now();
   const recordId = ulid(startedAt);
-  const started: DumpLiveSummary = {
+  let started: DumpLiveSummary = {
     id: recordId,
     startedAt,
     method: request.method,
@@ -122,27 +120,73 @@ export const openDumpSession = (apiKey: ApiKey, request: HttpRequestFacts, reque
     reportFailure('live stream open', error);
     return null;
   });
-  const announced = live.then(() => broker.publish(keyId, { event: 'started', data: started }))
+  let announced: Promise<void> | undefined;
+  const announce = () => announced ??= live.then(() => broker.publish(keyId, { event: 'started', data: started }))
     .catch(error => reportFailure('broker start publish', error));
 
   const pump = createDumpPump({
     onLiveChunk: async (offset, bytes) => { await (await live)?.append(offset, bytes); },
     onLiveEnd: async () => { await (await live)?.end(); },
   });
-  const decoder = createDumpDecoder();
-  const artifact = pump.artifact.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
-    transform(chunk, controller) {
-      decoder.push(chunk);
-      controller.enqueue(chunk);
-    },
-  }));
-  const written = store.stageAndPutArtifact(keyId, recordId, artifactKey, artifact);
-  void written.catch(error => artifact.cancel(error).catch(() => undefined));
+  const written = store.stageAndPutArtifact(keyId, recordId, artifactKey, pump.artifact);
+  void written.catch(error => pump.artifact.cancel(error).catch(() => undefined));
+
+  let rootStageId: number | undefined;
+  let responseStreamId: number | undefined;
+  let responseBytes = 0;
+  let status: number | undefined;
+  let model: string | null = null;
+  let uploadError: ErrorSnapshot | undefined;
   let hostFailure: HostFailure | undefined;
+  let settlement: Promise<Settlement | undefined> | undefined;
+  let render: Promise<RenderOutcome | undefined> | undefined;
+  let delivery: Promise<HttpDelivery | undefined> | undefined;
+  const sink: RunEventSink = event => {
+    switch (event.k) {
+    case 'enter': {
+      const requested = event.facts['request.model'];
+      if (model === null && typeof requested === 'string') model = requested;
+      if (event.edge !== 'root') break;
+      rootStageId = event.stageId;
+      const http = event.facts['request.http'];
+      if (http !== null && typeof http === 'object' && 'body' in http && http.body instanceof Bytes) {
+        started = { ...started, requestBytes: http.body.byteLength };
+      }
+      const error = event.facts['request.uploadError'];
+      if (error !== undefined) uploadError = error as ErrorSnapshot;
+      if (model !== null && started.model === null) started = { ...started, model };
+      void announce();
+      break;
+    }
+    case 'leave': {
+      if (event.stageId !== rootStageId) break;
+      const http = event.facts['response.http'];
+      if (http !== null && typeof http === 'object') {
+        if ('status' in http && typeof http.status === 'number') status = http.status;
+        if ('body' in http && http.body instanceof Bytes) responseBytes = http.body.byteLength;
+        if ('body' in http && isManagedStream(http.body)) responseStreamId = streamIdOf(http.body);
+      }
+      settlement = settledValue<Settlement>(event.facts['response.settlement']);
+      render = settledValue<RenderOutcome>(event.facts['response.render']);
+      delivery = settledValue<HttpDelivery>(event.facts['response.delivery']);
+      break;
+    }
+    case 'frame': {
+      if (event.streamId === responseStreamId && event.value instanceof Bytes) responseBytes += event.value.byteLength;
+      break;
+    }
+    }
+    pump.sink(event);
+  };
+
   const completed = Promise.all([pump.completed, written]).then(async ([summary]) => {
-    const meta = await buildMetadata(started, decoder.finish(), summary, hostFailure);
+    const [settled, rendered, delivered] = await Promise.all([settlement, render, delivery]);
+    const meta = await buildMetadata(started, {
+      status, model, responseBytes, uploadError, hostFailure,
+      settlement: settled, render: rendered, delivery: delivered,
+    }, summary);
     await store.commitRecord(keyId, { meta, artifactKey });
-    await announced;
+    await announce();
     try {
       await broker.publish(keyId, { event: 'appended', data: meta });
     } catch (error) {
@@ -152,10 +196,10 @@ export const openDumpSession = (apiKey: ApiKey, request: HttpRequestFacts, reque
 
   return {
     recordId,
-    sink: pump.sink,
+    sink,
     completed,
-    hostFailure: (error, status, upstream) => {
-      hostFailure = { status, error: upstream ? { kind: 'upstream' } : { kind: 'failed', reason: oneLine(error) } };
+    hostFailure: (error, status, upstream, candidate) => {
+      hostFailure = { status, candidate, error: upstream ? { kind: 'upstream' } : { kind: 'failed', reason: oneLine(error) } };
     },
   };
 };
