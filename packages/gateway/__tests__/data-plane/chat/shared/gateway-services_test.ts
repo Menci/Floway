@@ -10,7 +10,7 @@ test('signs sidecars with the authenticated key secret', async () => {
     createdAt: '2026-01-01T00:00:00.000Z', upstreamIds: null, randomizeUpstreams: false, deletedAt: null,
     dumpRetentionSeconds: null, openaiResponsesRetentionSeconds: 0,
   };
-  const services = createGatewayServices({ apiKey, runtimeLocation: 'test', scheduler: () => {} });
+  const services = createGatewayServices({ apiKey, runtimeLocation: 'test' });
   const encoded = await services.sidecarCodecs.codecFor(SidecarDomain.TranslatedAssistantTurn).encode({ value: 1 });
   expect(await createSidecarCodecFactory(apiKey.serverSecret).codecFor(SidecarDomain.TranslatedAssistantTurn).decode(encoded)).toEqual({ value: 1 });
   expect(await createSidecarCodecFactory('22'.repeat(32)).codecFor(SidecarDomain.TranslatedAssistantTurn).decode(encoded)).toBeUndefined();

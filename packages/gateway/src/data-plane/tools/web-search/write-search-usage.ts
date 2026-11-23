@@ -1,6 +1,6 @@
 import type { WebSearchUsageRecord } from '../../../repo/types.ts';
+import { persistSearchUsage } from '../../pipeline/call-metering.ts';
 import type { GatewayServices } from '../../pipeline/services.ts';
-import { persistSearchUsage } from '../../pipeline/settlement.ts';
 import { type Deferred, defineStage, type ErrorSnapshot } from '@floway-dev/pipeline';
 
 export interface SearchUsageRecords {
@@ -21,12 +21,12 @@ export const writeSearchUsage = defineStage<object, object, SearchUsageRecords, 
       provides: ['response.searchUsage.settlement'],
     },
   },
-  execute: async (facts, next, env) => {
-    const { 'response.searchUsage.records': records, ...response } = await next(facts);
-    const settlement = Promise.all(records.map(row => persistSearchUsage(row, env.services.searchUsageStore, env.log))).then(results => {
+  execute: async (facts, scope) => {
+    const { 'response.searchUsage.records': records, ...response } = await scope.next(facts);
+    const settlement = Promise.all(records.map(row => persistSearchUsage(row, scope.services.searchUsageStore, scope.log))).then(results => {
       const errors = results.flatMap(result => result.persisted ? [] : [result.error]);
       return { persisted: errors.length === 0, errors };
     });
-    return { ...response, 'response.searchUsage.settlement': env.defer('web search usage settlement', settlement) };
+    return { ...response, 'response.searchUsage.settlement': scope.defer('web search usage settlement', settlement) };
   },
 });
