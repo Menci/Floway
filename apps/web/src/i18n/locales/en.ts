@@ -1567,6 +1567,18 @@ const en = {
           custom: 'Custom',
           choose: 'Choose date range',
         },
+        resetCycle: {
+          filter: 'By Reset Cycle',
+          choose: 'Choose reset cycle',
+          window: 'Quota window',
+          older: 'Older cycle',
+          newer: 'Newer cycle',
+          current: 'Current cycle',
+          previous: 'Previous cycle',
+          ago: '{{count, number}} cycles ago',
+          waiting: 'No quota resets observed yet',
+          apply: 'Apply',
+        },
       },
       charts: {
         series: {

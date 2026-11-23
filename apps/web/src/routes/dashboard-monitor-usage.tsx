@@ -48,12 +48,13 @@ export async function clientLoader({ request }: Route.ClientLoaderArgs): Promise
   });
   const loadedAt = Date.now();
   const loadOverview = createUsageOverviewLoader();
+  const data = await loadUsagePageData(loadOverview, String(user.id), parsed.range, scoped.groupBy, scoped.filters, loadedAt, request.signal);
   return {
-    ...await loadUsagePageData(loadOverview, String(user.id), parsed.range, scoped.groupBy, scoped.filters, loadedAt, request.signal),
+    ...data,
     loadOverview,
     currentUserId: String(user.id),
     loadedAt,
-    state: { ...parsed, ...scoped },
+    state: { ...parsed, ...scoped, range: data.range },
   };
 }
 
@@ -72,6 +73,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
   const [usage, setUsage] = useState(loaderData.usage);
   const [search, setSearch] = useState(loaderData.search);
   const [upstreams, setUpstreams] = useState(loaderData.upstreams);
+  const [resetCycles, setResetCycles] = useState(loaderData.resetCycles);
   const [metric, setMetric] = useState<UsageMetric>(initialState.metric);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set(initialState.hidden));
   const [hiddenSearch, setHiddenSearch] = useState<Set<string>>(() => new Set(initialState.hiddenSearch));
@@ -96,8 +98,9 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     auditableUserIdsRef.current = next.usage.auditableUserIds;
     setSearch(next.search);
     setUpstreams(next.upstreams);
+    setResetCycles(next.resetCycles);
     setError(next.error);
-    return true;
+    return next.range === query.range ? true : { ...query, range: next.range };
   }, [loaderData.loadOverview, loaderData.currentUserId, query]);
 
   const onQueryCommit = useCallback((previous: typeof query, next: typeof query) => {
@@ -165,16 +168,15 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
       <div className="flex items-end gap-3 min-w-0 flex-wrap">
         {availableDimensions && <UsageGrouping disabled={refreshing} dimensions={availableDimensions} groupBy={loadedQuery.groupBy} onChange={changeGroupBy} />}
-        <div className="ml-auto flex-none">
-          <TelemetryTimeRange
-            addressOf={range => addressOf({ range })}
-            ariaLabel={t('monitoring.usage.range.label')}
-            loadedAt={loadedAt}
-            onChange={changeRange}
-            onEditingChange={setEditingRange}
-            range={loadedQuery.range}
-          />
-        </div>
+        <TelemetryTimeRange
+          addressOf={range => addressOf({ range })}
+          ariaLabel={t('monitoring.usage.range.label')}
+          loadedAt={loadedAt}
+          onChange={changeRange}
+          onEditingChange={setEditingRange}
+          range={loadedQuery.range}
+          resetCycles={resetCycles}
+        />
       </div>
       {availableDimensions && <div className="flex items-end gap-3 min-w-0 flex-wrap">
         <TelemetryFilterFields

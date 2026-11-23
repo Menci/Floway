@@ -70,23 +70,21 @@ const decodeProviderMetrics = (
   }
 };
 
-const localizeDisplay = (
-  display: UpstreamMetricDisplay,
+export const upstreamMetricDisplayName = (
+  display: Pick<UpstreamMetricDisplay, 'name' | 'labelKey' | 'labelValues' | 'windowSeconds'>,
   t: TFunction,
-): ResolvedUpstreamMetricDisplay => {
+): string => {
   if (display.windowSeconds === null) {
-    const name = display.labelKey === null ? display.name : t(translatedKey(display.labelKey), display.labelValues);
-    return { ...display, name };
+    return display.labelKey === null ? display.name : t(translatedKey(display.labelKey), display.labelValues);
   }
   const seconds = display.windowSeconds;
   const window = seconds % 86_400 === 0 ? t('monitoring.upstreams.windows.days', { count: seconds / 86_400 })
     : seconds % 3_600 === 0 ? t('monitoring.upstreams.windows.hours', { count: seconds / 3_600 })
       : seconds % 60 === 0 ? t('monitoring.upstreams.windows.minutes', { count: seconds / 60 })
         : t('monitoring.upstreams.windows.seconds', { count: seconds });
-  const name = display.labelKey === null
+  return display.labelKey === null
     ? display.name === '' ? window : t('monitoring.upstreams.series.window', { name: display.name, window })
     : t(translatedKey(display.labelKey), { ...display.labelValues, window });
-  return { ...display, name };
 };
 
 export const resolveUpstreamMetricDisplays = (
@@ -96,5 +94,5 @@ export const resolveUpstreamMetricDisplays = (
   options: UpstreamMetricDisplayOptions,
 ): ResolvedUpstreamMetricDisplaySeries[] => decodeProviderMetrics(upstream.kind, samples, options).map(series => ({
   ...series,
-  display: localizeDisplay(series.display, t),
+  display: { ...series.display, name: upstreamMetricDisplayName(series.display, t) },
 }));

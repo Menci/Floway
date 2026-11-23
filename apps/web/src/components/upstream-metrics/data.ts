@@ -1,6 +1,6 @@
 import { api, callApi } from '../../api/client';
 import type { UpstreamOption } from '../../api/types';
-import { dashboardInterval, type DashboardRange } from '../charts/dashboard-time';
+import { dashboardInterval, isResetRange, type DashboardRange } from '../charts/dashboard-time';
 
 const MINUTE_MS = 60_000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
@@ -10,7 +10,8 @@ const STEP_MINUTES = [1, 5, 15, 30, 60, 120, 360, 720, 1_440] as const;
 const POINT_BUDGET = 360;
 export type UpstreamMetricsMetadata = Pick<UpstreamOption, 'id' | 'name' | 'kind' | 'hue'>;
 
-export const upstreamMetricsInterval = dashboardInterval;
+export const upstreamMetricsInterval = (range: DashboardRange, now: number) =>
+  isResetRange(range) ? { start: range.start, end: range.end ?? now } : dashboardInterval(range, now);
 
 export const upstreamMetricsStep = (start: number, end: number): number => {
   const span = end - start;

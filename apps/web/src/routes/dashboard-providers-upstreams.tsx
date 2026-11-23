@@ -225,8 +225,9 @@ export default function DashboardProvidersUpstreams({ loaderData }: Route.Compon
     if (readings !== null) {
       if (readings.error) { setPageError(readings.error.message); queryRef.current = loadedQueryRef.current; return; }
       setTelemetry(readings.data);
+      if (readings.data.resetCyclesError) setPageError(readings.data.resetCyclesError.message);
     }
-    loadedQueryRef.current = requested;
+    queryRef.current = loadedQueryRef.current = readings?.data?.query ?? requested;
   }, [loadUsageOverview]));
 
   const reorderBusy = mutation !== null || refreshing;

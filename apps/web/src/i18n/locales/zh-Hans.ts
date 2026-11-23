@@ -1550,6 +1550,18 @@ const zhHansCN = {
           custom: '自定义',
           choose: '选择日期区间',
         },
+        resetCycle: {
+          filter: '按重置周期',
+          choose: '选择重置周期',
+          window: '额度窗口',
+          older: '往前一个周期',
+          newer: '往后一个周期',
+          current: '本周期',
+          previous: '前一个周期',
+          ago: '前 {{count, number}} 个周期',
+          waiting: '尚未观测到额度重置',
+          apply: '应用',
+        },
       },
       charts: {
         series: {

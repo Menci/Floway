@@ -6,6 +6,8 @@ import type { ProviderModel, UpstreamModelsCache, UpstreamProviderKind, Upstream
 import type { Fetcher } from './options.ts';
 import type { HttpHead } from './result.ts';
 import type { ProviderScheduledOptions } from './scheduled.ts';
+import type { UpstreamMetricIdentity } from './upstream-metric-identity.ts';
+import type { UpstreamMetricDisplay, UpstreamMetricDisplayOptions } from './upstream-metrics.ts';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
 import type { DecisionTarget, ProtocolFrame, RerankTarget } from '@floway-dev/protocols/common';
 import type { CanonicalDecisionRequest } from '@floway-dev/protocols/decision';
@@ -185,4 +187,5 @@ export interface ProviderModule {
   // Exhaustive default map over every catalog flag id for a fresh
   // upstream of this kind; see each provider package's `defaults.ts`.
   defaultFlags: FlagDefaults;
+  resolveUpstreamMetricDisplay?: (identity: UpstreamMetricIdentity, options: UpstreamMetricDisplayOptions) => UpstreamMetricDisplay | null;
 }

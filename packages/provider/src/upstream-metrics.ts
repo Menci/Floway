@@ -5,6 +5,9 @@ import type { QuotaDisplay } from '@floway-dev/protocols/common';
 export interface UpstreamMetricObservation extends UpstreamMetricIdentity { value: number }
 export type UpstreamMetrics = readonly UpstreamMetricObservation[];
 export type UpstreamMetricUnit = 'percent' | 'usd' | 'credits' | 'count' | 'none';
+export type UpstreamMetricResetThreshold =
+  | { direction: 'used'; full: number }
+  | { direction: 'remaining'; full: number | UpstreamMetricIdentity };
 export const upstreamMetricAxisPriority = {
   subscriptionQuota: 100,
   remainingQuota: 90,
@@ -58,6 +61,8 @@ export interface UpstreamMetricDisplay {
   windowSeconds: number | null;
   emptyValue: number | null;
   form: 'line' | 'area';
+  /** The stored gauge value (or concurrent allowance) that means 100% remaining. */
+  resetThreshold?: UpstreamMetricResetThreshold;
   toDisplayValue: (storedValue: number) => number;
 }
 
@@ -94,10 +99,11 @@ export interface GroupedUpstreamMetricSamples {
 export const quotaPercentDisplay = (
   options: UpstreamMetricDisplayOptions,
   storedDirection: QuotaDisplay,
-  display: Omit<UpstreamMetricDisplay, 'toDisplayValue' | 'unit'>,
+  { tracksResets = true, ...display }: Omit<UpstreamMetricDisplay, 'toDisplayValue' | 'unit' | 'resetThreshold'> & { tracksResets?: boolean },
 ): UpstreamMetricDisplay => ({
   ...display,
   unit: 'percent',
+  ...(tracksResets && { resetThreshold: { direction: storedDirection, full: storedDirection === 'used' ? 0 : 100 } }),
   toDisplayValue: value => options.quotaDisplay === storedDirection ? value : 100 - value,
 });
 

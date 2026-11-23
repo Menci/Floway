@@ -4,8 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { dashboardBucketFrames } from '../../src/components/charts/dashboard-time';
 import { parsePerformanceUrlState, type PerformanceDisplayRecord, type PerformanceOverviewResponse } from '../../src/components/performance/overview';
+import type { ResetCycleHistory } from '../../src/components/telemetry/reset-cycles';
 import { i18n } from '../../src/i18n';
 import DashboardMonitorPerformance from '../../src/routes/dashboard-monitor-performance';
+import { resetHistory } from '../components/telemetry/reset-fixture';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
 
@@ -53,7 +55,7 @@ const overview: PerformanceOverviewResponse = {
   keys: [],
 };
 
-const renderPage = (search: string, data = overview) => {
+const renderPage = (search: string, data = overview, resetCycles: ResetCycleHistory | null = null) => {
   const state = parsePerformanceUrlState(new URLSearchParams(search));
   const router = createMemoryRouter([{
     path: '/',
@@ -64,6 +66,7 @@ const renderPage = (search: string, data = overview) => {
         loadedAt,
         overview: data,
         regionAvailable: true,
+        resetCycles,
         state,
       }}
       matches={[] as never}
@@ -84,6 +87,34 @@ const chartTitle = (metric: { ttft: string } | { tail: number }) => i18n.t('moni
 });
 
 describe('Performance table state', () => {
+  it('commits the cycle query for one upstream and leaves that cycle when clearing the scope', async () => {
+    const history = resetHistory(loadedAt);
+    const requests: URL[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
+      requests.push(url);
+      if (url.pathname === '/api/upstream-reset-cycles') return Response.json(history);
+      if (url.pathname === '/api/performance/overview') return Response.json(overview);
+      throw new Error(`Unexpected request to ${url.pathname}`);
+    }));
+    const { router } = renderPage('fu=up-1', overview, history);
+    fireEvent.click(screen.getByRole('radio', { name: 'By Reset Cycle' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Older cycle' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+    await waitFor(() => expect(urlSearch(router).get('r')).toBe('reset-cycle'));
+    const readings = requests.find(url => url.pathname === '/api/performance/overview');
+    expect(readings?.searchParams.get('filter_upstream')).toBe('up-1');
+    expect(readings?.searchParams.get('start')).toBe('2026-08-05T04');
+    expect(readings?.searchParams.get('end')).toBe('2026-08-05T09');
+
+    requests.length = 0;
+    fireEvent.click(screen.getByRole('combobox', { name: 'Upstream' }));
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'All upstreams' }));
+    await waitFor(() => expect(screen.queryByRole('radio', { name: 'By Reset Cycle' })).toBeNull());
+    await waitFor(() => expect(urlSearch(router).has('r')).toBe(false));
+    expect(requests.map(url => url.pathname)).toEqual(['/api/performance/overview']);
+  });
+
   it.each(['ttft', 'tokPerSec'] as const)('updates both table metrics for every percentile with chart %s', async metric => {
     const data = { ...overview, axes: { ...overview.axes, model: [record('model-a')] } };
     const fetch = vi.fn();

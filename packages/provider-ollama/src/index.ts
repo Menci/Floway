@@ -1,10 +1,12 @@
 import { OLLAMA_DEFAULT_FLAGS } from './defaults.ts';
 import { createOllamaProvider } from './provider.ts';
+import { resolveUpstreamMetricDisplay } from './upstream-metrics.ts';
 import type { ProviderModule } from '@floway-dev/provider';
 
 export const ollamaProviderModule: ProviderModule = {
   create: createOllamaProvider,
   defaultFlags: OLLAMA_DEFAULT_FLAGS,
+  resolveUpstreamMetricDisplay,
 };
 
 export { createOllamaProvider } from './provider.ts';

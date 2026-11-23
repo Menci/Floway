@@ -26,6 +26,7 @@ export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIde
         : options.quotaDisplay === 'used' ? 'monitoring.upstreams.series.usage' : 'monitoring.upstreams.series.remaining',
       axisPriority: upstreamMetricAxisPriority.subscriptionQuota,
       windowSeconds: session ? null : 604_800,
+      tracksResets: session || labels.window === 'weekly',
       emptyValue: null,
       form: 'area',
     });
@@ -51,7 +52,12 @@ export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIde
     axisPriority = upstreamMetricAxisPriority.entitlement;
   } else return null;
 
-  return { name: metricName, labelKey, unit: 'usd', axisPriority, windowSeconds: null, emptyValue: balance && labels.source === 'purchased' ? 0 : null, form: balance || allowance ? 'line' : 'area', toDisplayValue: value => value };
+  return {
+    name: metricName, labelKey, unit: 'usd', axisPriority, windowSeconds: null,
+    emptyValue: balance && labels.source === 'purchased' ? 0 : null, form: balance || allowance ? 'line' : 'area',
+    ...(balance && labels.source === 'included' && { resetThreshold: { direction: 'remaining', full: { name: 'allowance.usd', labels: { source: 'included' } } } }),
+    toDisplayValue: value => value,
+  };
 };
 
 export const resolveUpstreamMetricDisplays = (samples: readonly UpstreamMetricSample[], options: UpstreamMetricDisplayOptions): UpstreamMetricDisplaySeries[] =>

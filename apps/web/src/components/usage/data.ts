@@ -9,6 +9,7 @@ import type {
 } from './types';
 import { api, callApi, type ApiResult } from '../../api/client';
 import { dashboardRangeQuery } from '../charts/dashboard-time';
+import { loadWithResetCycles, singleTelemetryUpstream } from '../telemetry/reset-cycles';
 import type {
   SearchUsageByKeyResponse,
   SearchUsageByUserResponse,
@@ -83,7 +84,7 @@ export const createUsageOverviewLoader = (): UsageOverviewLoader => {
   };
 };
 
-export const loadUsagePageData = async (
+const loadUsageAndSearch = async (
   loadUsageOverview: UsageOverviewLoader,
   currentUserId: string,
   range: UsageRange,
@@ -129,5 +130,29 @@ export const loadUsagePageData = async (
     search: searchData ? searchUsageForDisplay(searchData) : null,
     upstreams: usageResult.data?.upstreams ?? [],
     error: usageResult.error ?? searchResult.error ?? null,
+  };
+};
+
+export const loadUsagePageData = async (
+  loadUsageOverview: UsageOverviewLoader,
+  currentUserId: string,
+  range: UsageRange,
+  groupBy: UsageGroupBy,
+  filters: UsageFilters,
+  loadedAt: number,
+  signal: AbortSignal,
+  knownAuditableUserIds?: readonly number[],
+) => {
+  const { data, range: resolved, resetCycles, error } = await loadWithResetCycles(
+    singleTelemetryUpstream(filters.upstream, 'usage'), range, loadedAt, signal,
+    active => loadUsageAndSearch(loadUsageOverview, currentUserId, active, groupBy, filters, loadedAt, signal, knownAuditableUserIds),
+  );
+  return {
+    usage: data?.usage ?? null,
+    search: data?.search ?? null,
+    upstreams: data?.upstreams ?? [],
+    error: data?.error ?? error,
+    range: resolved,
+    resetCycles,
   };
 };

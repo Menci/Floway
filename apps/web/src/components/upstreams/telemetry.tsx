@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 
-import type { ApiResult } from '../../api/client';
+import type { ApiResult, GlobalError } from '../../api/client';
 import type { UpstreamRecord } from '../../api/types';
 import { useTranslation } from '../../i18n/translation';
 import { useUserPreferences } from '../../lib/use-preferences';
 import { LinkedChartHoverProvider } from '../charts/linked-hover';
 import { TelemetryFilterFields } from '../telemetry/dimension-controls';
 import { changeTelemetryFilter, changeTelemetryGroupBy } from '../telemetry/filter-state';
+import { loadWithResetCycles, type ResetCycleHistory } from '../telemetry/reset-cycles';
 import { TelemetryTimeRange } from '../telemetry/time-range';
 import { PANEL_STACK_CLASS } from '../ui/layout';
 import { PANEL_INSET_CLASS } from '../ui/panel';
@@ -29,16 +30,26 @@ export type UpstreamTelemetryQuery = {
 };
 
 export const loadUpstreamTelemetry = async (query: UpstreamTelemetryQuery, loadedAt: number, signal: AbortSignal, loadUsageOverview: UsageOverviewLoader): Promise<ApiResult<UpstreamTelemetryData>> => {
-  if (query.upstreamId === null) throw new TypeError('Upstream telemetry requires an upstream ID');
-  const [usage, metrics] = await Promise.all([
-    loadUsageOverview(query.range, query.groupBy, query.filters, loadedAt, signal),
-    loadUpstreamMetrics(query.upstreamId, query.range, loadedAt, signal),
-  ]);
+  const { upstreamId } = query;
+  if (upstreamId === null) throw new TypeError('Upstream telemetry requires an upstream ID');
+  const loaded = await loadWithResetCycles(upstreamId, query.range, loadedAt, signal, range => Promise.all([
+    loadUsageOverview(range, query.groupBy, query.filters, loadedAt, signal),
+    loadUpstreamMetrics(upstreamId, range, loadedAt, signal),
+  ]));
+  if (loaded.data === null) return { error: loaded.error };
+  const [usage, metrics] = loaded.data;
   if (usage.error) return { error: usage.error };
   if (metrics.error) return { error: metrics.error };
-  return { data: { query, loadedAt, usage: usage.data, metrics: metrics.data } };
+  return { data: { query: { ...query, range: loaded.range }, loadedAt, usage: usage.data, metrics: metrics.data, resetCycles: loaded.resetCycles, resetCyclesError: loaded.error } };
 };
-export interface UpstreamTelemetryData { query: UpstreamTelemetryQuery; loadedAt: number; usage: UsageOverviewResponse; metrics: NonNullable<Awaited<ReturnType<typeof loadUpstreamMetrics>>['data']> }
+export interface UpstreamTelemetryData {
+  query: UpstreamTelemetryQuery;
+  loadedAt: number;
+  usage: UsageOverviewResponse;
+  metrics: NonNullable<Awaited<ReturnType<typeof loadUpstreamMetrics>>['data']>;
+  resetCycles: ResetCycleHistory | null;
+  resetCyclesError: GlobalError | null;
+}
 
 export function UpstreamTelemetryRow({ data, immediateCollapse, record, busy, currentUserId, onQueryChange, onRangeEditingChange }: {
   data: UpstreamTelemetryData | null;
@@ -95,8 +106,8 @@ function UpstreamTelemetryPanel({ data, record, busy, currentUserId, onQueryChan
       <TelemetryFilterFields disabled={busy} dimensions={dimensions} filters={query.filters} groupBy={query.groupBy}
         onFilterChange={(key, values) => onQueryChange({ ...query, ...changeTelemetryFilter(query, key, values, identityContext) })}
         selectedLabel={count => t('monitoring.usage.filters.selected', { count })} />
-      <div className="ml-auto flex-none" inert={busy}><TelemetryTimeRange addressOf={null} ariaLabel={t('monitoring.usage.range.label')} loadedAt={loadedAt}
-        onChange={range => onQueryChange({ ...query, range })} onEditingChange={onRangeEditingChange} range={query.range} /></div>
+      <TelemetryTimeRange addressOf={null} ariaLabel={t('monitoring.usage.range.label')} disabled={busy} loadedAt={loadedAt}
+        onChange={range => onQueryChange({ ...query, range })} onEditingChange={onRangeEditingChange} range={query.range} resetCycles={data.resetCycles} />
     </div>
     <TokenUsageCharts usage={data.usage} dimensions={dimensions} upstreams={upstreams} groupBy={query.groupBy} range={query.range} loadedAt={loadedAt}
       metric={metric} onMetricChange={setMetric} hidden={hidden} onHiddenChange={setHidden} title={t('monitoring.upstreams.tabs.usage')} />

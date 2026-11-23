@@ -1,12 +1,12 @@
 import type { UpstreamMetricRecord, UpstreamMetricsRepo } from './types.ts';
 import type { SqlDatabase } from '@floway-dev/platform';
-import { normalizeUpstreamMetricIdentity, type UpstreamMetricLabels } from '@floway-dev/provider';
+import { normalizeUpstreamMetricIdentity, type UpstreamMetricIdentity, type UpstreamMetricLabels, type UpstreamMetricResetThreshold } from '@floway-dev/provider';
 
 export const UPSTREAM_METRICS_INTERVAL_MS = 60_000;
 const columns = 'upstream_id AS upstreamId, metric_name AS name, metric_labels AS labelsJson, timestamp, value';
 type SqlUpstreamMetricRecord = Omit<UpstreamMetricRecord, 'labels'> & { labelsJson: string };
 
-const encodeIdentity = ({ name, labels }: UpstreamMetricRecord) => {
+const encodeIdentity = ({ name, labels }: UpstreamMetricIdentity) => {
   const normalized = normalizeUpstreamMetricIdentity(name, labels);
   return { name: normalized.name, labelsJson: JSON.stringify(normalized.labels) };
 };
@@ -66,5 +66,43 @@ export class SqlUpstreamMetricsRepo implements UpstreamMetricsRepo {
       ORDER BY timestamp, upstreamId, name, labelsJson
     `).bind(start, step, start, end, upstreamId).all<SqlUpstreamMetricRecord>();
     return decodeRecords(results);
+  }
+
+  async listIdentities(upstreamId: string, before: number): Promise<UpstreamMetricIdentity[]> {
+    const { results } = await this.db.prepare(`
+      SELECT DISTINCT metric_name AS name, metric_labels AS labelsJson
+      FROM upstream_metrics
+      WHERE upstream_id = ? AND timestamp < ?
+      ORDER BY metric_name, metric_labels
+    `).bind(upstreamId, before).all<{ name: string; labelsJson: string }>();
+    return results.map(({ name, labelsJson }) => normalizeUpstreamMetricIdentity(name, JSON.parse(labelsJson)));
+  }
+
+  async queryResetStarts(upstreamId: string, identity: UpstreamMetricIdentity, threshold: UpstreamMetricResetThreshold, before: number): Promise<number[]> {
+    const metric = encodeIdentity(identity);
+    const allowance = typeof threshold.full === 'number' ? null : encodeIdentity(threshold.full);
+    // An absolute balance is meaningful only against the allowance observed at
+    // the same instant. A reduction of the allowance alone is not a refill.
+    const full = allowance === null ? '?' : `(SELECT value FROM upstream_metrics allowance
+      WHERE allowance.upstream_id = sample.upstream_id AND allowance.metric_name = ? AND allowance.metric_labels = ?
+        AND allowance.bucket = sample.bucket AND allowance.timestamp = sample.timestamp AND allowance.value > 0)`;
+    const bindings = allowance === null ? [threshold.full as number] : [allowance.name, allowance.labelsJson];
+    const depleted = threshold.direction === 'used' ? '>' : '<';
+    const { results } = await this.db.prepare(`
+      WITH observations AS (
+        SELECT timestamp, value, ${full} AS full_value FROM upstream_metrics sample
+        WHERE upstream_id = ? AND metric_name = ? AND metric_labels = ? AND timestamp < ?
+      ), transitions AS (
+        SELECT timestamp, value, full_value,
+          LAG(value) OVER (ORDER BY timestamp) AS previous_value,
+          LAG(full_value) OVER (ORDER BY timestamp) AS previous_full_value
+        FROM observations
+      )
+      SELECT timestamp FROM transitions
+      WHERE value = full_value AND previous_value ${depleted} previous_full_value
+        ${allowance === null ? '' : 'AND value > previous_value'}
+      ORDER BY timestamp DESC
+    `).bind(...bindings, upstreamId, metric.name, metric.labelsJson, before).all<{ timestamp: number }>();
+    return results.map(({ timestamp }) => timestamp);
   }
 }

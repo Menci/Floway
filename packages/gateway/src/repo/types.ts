@@ -2,7 +2,7 @@ import type { AccessPrincipal, AccessRecord, AccessRecordInput } from '../access
 import type { WebSearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingMetric, DecimalString, ModelKind, PricingSelector, UserPreferences } from '@floway-dev/protocols/common';
-import type { PerformanceTelemetryContext, UpstreamMetricIdentity, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
+import type { PerformanceTelemetryContext, UpstreamMetricIdentity, UpstreamMetricResetThreshold, UpstreamModelsCache, UpstreamRecord } from '@floway-dev/provider';
 
 // Provider config, flag overrides, and catalog transport advance this version;
 // runtime state and non-model metadata do not.
@@ -650,6 +650,8 @@ export interface UpstreamMetricsRepo {
   // The latest sample of each series in every `step`-wide bucket counted from
   // `start`, which is Prometheus's range-query semantics for gauges.
   query(upstreamId: string, start: number, end: number, step: number): Promise<UpstreamMetricRecord[]>;
+  listIdentities(upstreamId: string, before: number): Promise<UpstreamMetricIdentity[]>;
+  queryResetStarts(upstreamId: string, identity: UpstreamMetricIdentity, threshold: UpstreamMetricResetThreshold, before: number): Promise<number[]>;
 }
 
 export interface Repo {

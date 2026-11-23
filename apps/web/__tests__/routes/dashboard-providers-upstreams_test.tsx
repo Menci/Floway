@@ -7,6 +7,7 @@ import { OutcomeToastProvider } from '../../src/components/ui/outcome-toast';
 import { i18n } from '../../src/i18n';
 import DashboardProvidersUpstreams from '../../src/routes/dashboard-providers-upstreams';
 import { upstreamRecord } from '../api/upstream-fixture';
+import { resetHistory } from '../components/telemetry/reset-fixture';
 import { stubLocalStorage } from '../local-storage-stub';
 import { renderInApp } from '../render';
 import { primeDefaultSession } from '../test-session';
@@ -83,6 +84,7 @@ const stubGateway = (
   const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
   if (url.pathname === '/api/upstreams') return Response.json(pageData.upstreams);
   if (url.pathname === '/api/models') return Response.json({ data: [] });
+  if (url.pathname === '/api/upstream-reset-cycles') return Response.json(resetHistory(Date.UTC(2026, 7, 5, 12), url.searchParams.get('upstream_id')!));
   return await handler(url, init?.signal as AbortSignal | undefined);
 }));
 
@@ -116,6 +118,31 @@ it('blocks the surface until both readings load, then opens a single row with Us
   expect(screen.queryByRole('combobox', { name: 'Upstream' })).toBeNull();
   fireEvent.click(screen.getByRole('combobox', { name: 'Group by' }));
   expect(screen.queryByRole('option', { name: 'By Upstream' })).toBeNull();
+});
+
+it('uses exact reset observations for the upstream metrics query and hour buckets for usage', async () => {
+  const expected = resetHistory(Date.UTC(2026, 7, 5, 12), 'first').metrics[0]!.starts;
+  const requested: URL[] = [];
+  stubGateway(async url => {
+    requested.push(url);
+    if (url.pathname === '/api/token-usage/overview') return Response.json({ ...overview(url), buckets: [] });
+    if (url.pathname === '/api/upstream-metrics') return Response.json({ ...metrics(url), records: [] });
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  });
+  renderPage();
+  fireEvent.click(await waitFor(() => metricsButton('First')));
+  fireEvent.click(await screen.findByRole('radio', { name: 'By Reset Cycle' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Older cycle' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+  await waitFor(() => expect(requested).toHaveLength(4));
+  const metricQuery = requested.filter(url => url.pathname === '/api/upstream-metrics')[1]!.searchParams;
+  expect(metricQuery.get('start')).toBe(String(expected[1]));
+  expect(metricQuery.get('end')).toBe(String(expected[0]));
+  const usageQuery = requested.filter(url => url.pathname === '/api/token-usage/overview')[1]!.searchParams;
+  expect(usageQuery.get('filter_upstream')).toBe('upstream:first');
+  expect(usageQuery.get('start')).toBe('2026-08-05T04');
+  expect(usageQuery.get('end')).toBe('2026-08-05T09');
+  await waitFor(() => expect(screen.getByRole('radio', { name: 'By Reset Cycle' }).getAttribute('aria-checked')).toBe('true'));
 });
 
 it('opens telemetry and the read-only editor for an audit-only row while keeping mutations unavailable', async () => {

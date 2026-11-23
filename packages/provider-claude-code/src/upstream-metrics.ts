@@ -59,6 +59,7 @@ export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIde
     labelValues: named === null ? undefined : { name: named },
     axisPriority: upstreamMetricAxisPriority.subscriptionQuota,
     windowSeconds: quota === 'five_hour' ? 18_000 : 604_800,
+    tracksResets: quota === 'five_hour' || quota === 'seven_day' || named !== null,
     emptyValue: null,
     form: 'area',
   });

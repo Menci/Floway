@@ -31,6 +31,7 @@ const renderPage = (regionAvailable: boolean | null, groupBy: 'model' | 'runtime
         loadedAt: Date.UTC(2026, 7, 5, 12),
         overview,
         regionAvailable,
+        resetCycles: null,
         state: {
           metric: 'ttft',
           percentile: 'p95',
@@ -64,7 +65,7 @@ describe('Performance Region dimensions', () => {
     const router = createMemoryRouter([{
       path: '/',
       Component: () => <DashboardMonitorPerformance
-        loaderData={{ currentUserId: '1', error: null, loadedAt: Date.UTC(2026, 7, 5, 12), overview, regionAvailable: false, state }}
+        loaderData={{ currentUserId: '1', error: null, loadedAt: Date.UTC(2026, 7, 5, 12), overview, regionAvailable: false, resetCycles: null, state }}
         matches={[] as never}
         params={{}}
       />,
