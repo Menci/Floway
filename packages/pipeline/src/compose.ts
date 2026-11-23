@@ -1,5 +1,5 @@
 import { DeclarationViolationError } from './errors.ts';
-import type { ChildOptions, Ending, Next, Stage, ThroughDecl } from './stage.ts';
+import type { Ending, Next, SideDecl, Stage, ThroughDecl } from './stage.ts';
 
 declare const pipelineTypes: unique symbol;
 
@@ -11,37 +11,31 @@ export interface Pipeline<in I, out O, in S = {}> {
 }
 
 export type StaticTarget<I, O, S> = Pipeline<I, O, S> | (() => Pipeline<I, O, S>);
-
-export interface DynamicTarget<K, I, O, S> {
-  readonly entry: readonly string[];
-  readonly exit: readonly string[];
-  readonly resolve: (key: K, services: Readonly<S>) => Pipeline<I, O, S>;
-}
-
-export type TargetMap<S = any> = Readonly<Record<string, StaticTarget<any, any, S> | DynamicTarget<any, any, any, S>>>;
+export type TargetMap<S = any> = Readonly<Record<string, StaticTarget<any, any, S>>>;
 
 export type IntoMap<T> = {
-  readonly [K in keyof T]:
-  T[K] extends DynamicTarget<infer Key, infer I, infer O, any> ? <Actual extends I>(key: Key, facts: Actual, options?: ChildOptions) => Promise<O>
-    : T[K] extends StaticTarget<infer I, infer O, any> ? Next<I, O>
-      : never;
+  readonly [K in keyof T]: T[K] extends StaticTarget<infer I, infer O, any> ? Next<I, O> : never;
 };
 
 type AnyPipeline = Pipeline<any, any, any>;
-type DynamicSlot = DynamicTarget<any, any, any, any>;
 
-interface StaticSlot {
+interface Target {
+  readonly name: string;
+  readonly declaration: ThroughDecl;
   readonly target: StaticTarget<any, any, any>;
-  resolved?: AnyPipeline;
 }
 
-export type Slot = StaticSlot | DynamicSlot;
+interface LinkedTarget {
+  readonly name: string;
+  readonly declaration: ThroughDecl;
+  readonly pipeline: AnyPipeline;
+}
 
 interface Assembly {
   readonly stages: readonly Stage<any>[];
   readonly ending: Ending<any, any>;
-  readonly targets: Readonly<Record<string, Slot>>;
-  linked: boolean;
+  readonly targets: readonly Target[];
+  linkedTargets?: readonly LinkedTarget[];
 }
 
 const assemblies = new WeakMap<AnyPipeline, Assembly>();
@@ -52,144 +46,153 @@ export const assemblyOf = (pipeline: AnyPipeline): Assembly => {
   return assembly;
 };
 
-type TargetOptions<T extends TargetMap> = keyof T extends never ? { readonly targets?: never }
-  : { readonly targets: T };
+type RequiredKeys<T> = { [K in keyof T]-?: {} extends Pick<T, K> ? never : K }[keyof T] & string;
 
-export const compose = <In, Out, S, Targets extends TargetMap<S> = {}>(name: string, options: {
+type TargetOptions<T extends TargetMap> = keyof T extends never ? { readonly targets?: never } : { readonly targets: T };
+
+const uniqueKeys = (pipeline: string, direction: 'entry' | 'up', label: string, keys: readonly string[]): Set<string> => {
+  const seen = new Set<string>();
+  for (const key of keys) {
+    if (seen.has(key)) throw new DeclarationViolationError(pipeline, direction, `duplicate "${key}" in ${label}`);
+    seen.add(key);
+  }
+  return seen;
+};
+
+const applySide = (keys: Set<string>, side: SideDecl): void => {
+  for (const key of side.consumes) keys.delete(key);
+  for (const key of side.provides) keys.add(key);
+};
+
+const deriveExit = (stages: readonly Stage<any>[], ending: Ending<any, any>, slots: readonly Target[]): Set<string> => {
+  const paths = slots.map(({ declaration: { response } }) => {
+    const keys = new Set(response.needs);
+    applySide(keys, response);
+    return keys;
+  });
+  if (ending.return) paths.push(new Set(ending.return.provides));
+  if (paths.length === 0) throw new TypeError(`Ending "${ending.name}" has no response path`);
+  let guaranteed = new Set([...paths[0]].filter(key => paths.every(path => path.has(key))));
+  for (const stage of stages.toReversed()) {
+    const response = stage.through?.response;
+    if (response) {
+      for (const key of response.needs) {
+        if (!guaranteed.has(key)) throw new DeclarationViolationError(stage.name, 'up', `no child guarantees "${key}"`);
+      }
+      applySide(guaranteed, response);
+    }
+    if (stage.return) {
+      const provided = stage.return.provides;
+      guaranteed = new Set(response ? provided.filter(key => guaranteed.has(key)) : provided);
+    }
+  }
+  return guaranteed;
+};
+
+export const compose = <Space, S = {}>() => <
+  const Entry extends readonly RequiredKeys<Space>[],
+  const Exit extends readonly RequiredKeys<Space>[],
+  const OptEntry extends readonly (keyof Space & string)[] = readonly [],
+  Targets extends TargetMap<S> = {},
+>(name: string, options: {
+  readonly entry: Entry;
+  readonly optionalEntry?: OptEntry;
+  readonly exit: Exit;
   readonly stages: readonly Stage<S>[];
   readonly ending: Ending<Targets, S>;
-} & TargetOptions<Targets>): Pipeline<In, Out, S> => {
-  const { stages, ending } = options;
-  const names = new Set([ending.name]);
+} & TargetOptions<Targets>): Pipeline<
+  { readonly [K in Entry[number]]: Space[K] } & { readonly [K in OptEntry[number]]?: Exclude<Space[K], undefined> },
+  { readonly [K in Exit[number]]: Space[K] },
+  S
+> => {
+  const { entry, optionalEntry = [], exit, stages, ending } = options;
   if (ending.kind !== 'ending') throw new TypeError(`Pipeline "${name}" must finish with an ending`);
-
-  const entry = new Set<string>();
-  const provided = new Set<string>();
+  const names = new Set([ending.name]);
+  const required = uniqueKeys(name, 'entry', 'entry', entry);
+  for (const key of uniqueKeys(name, 'entry', 'optionalEntry', optionalEntry)) {
+    if (required.has(key)) throw new DeclarationViolationError(name, 'entry', `"${key}" appears in both entry and optionalEntry`);
+  }
+  uniqueKeys(name, 'up', 'exit', exit);
+  const available = new Set(required);
   const consumed = new Set<string>();
-  const requireKeys = (stage: string, needs: readonly string[]): void => {
+  const checkNeeds = (stage: string, needs: readonly string[]): void => {
     for (const key of needs) {
-      if (provided.has(key)) continue;
-      if (consumed.has(key)) throw new DeclarationViolationError(stage, 'entry', `"${key}" was consumed by an earlier stage`);
-      entry.add(key);
+      if (available.has(key)) continue;
+      const detail = consumed.has(key) ? `"${key}" was consumed by an earlier stage` : `entry does not guarantee "${key}"`;
+      throw new DeclarationViolationError(stage, 'entry', detail);
     }
   };
-
   for (const stage of stages) {
     if (stage.kind !== 'stage' || 'targets' in stage) throw new TypeError(`Only the ending of "${name}" can define targets`);
     if (names.has(stage.name)) throw new TypeError(`Duplicate stage "${stage.name}" in pipeline "${name}"`);
     names.add(stage.name);
     if (!stage.through) continue;
-    const request = stage.through.request;
-    requireKeys(stage.name, request.needs);
-    for (const key of request.consumes) {
-      consumed.add(key);
-      provided.delete(key);
-    }
-    for (const key of request.provides) provided.add(key);
+    const { request } = stage.through;
+    checkNeeds(stage.name, request.needs);
+    for (const key of request.consumes) consumed.add(key);
+    applySide(available, request);
   }
-  requireKeys(ending.name, ending.request.needs);
-  const declaredSlots: Readonly<Record<string, ThroughDecl>> = ending.into ?? {};
-  const suppliedSlots: TargetMap = options.targets ?? {};
-  for (const key of Object.keys(declaredSlots)) {
-    if (!Object.hasOwn(suppliedSlots, key)) throw new TypeError(`Ending "${ending.name}" declares a missing target "${key}"`);
-  }
-  for (const key of Object.keys(suppliedSlots)) {
-    if (!Object.hasOwn(declaredSlots, key)) throw new TypeError(`Ending "${ending.name}" has an undeclared target "${key}"`);
-  }
+  checkNeeds(ending.name, ending.request.needs);
 
-  const exits = Object.values(declaredSlots).map(({ response }) => new Set([
-    ...response.needs.filter(key => !response.consumes.includes(key)), ...response.provides,
-  ]));
-  if (ending.return) exits.push(new Set(ending.return.provides));
-  if (exits.length === 0) throw new TypeError(`Ending "${ending.name}" has no response path`);
-  const [first, ...others] = exits;
-  const exit = new Set([...first].filter(key => others.every(path => path.has(key))));
-  for (const stage of stages.toReversed()) {
-    const response = stage.through?.response;
-    if (response) {
-      for (const key of response.needs) {
-        if (!exit.has(key)) throw new DeclarationViolationError(stage.name, 'up', `no child guarantees "${key}"`);
-      }
-      for (const key of response.consumes) exit.delete(key);
-      for (const key of response.provides) exit.add(key);
-    }
-    if (stage.return) {
-      const synthetic = new Set(stage.return.provides);
-      if (response) {
-        for (const key of exit) {
-          if (!synthetic.has(key)) exit.delete(key);
-        }
-      } else {
-        exit.clear();
-        for (const key of synthetic) exit.add(key);
-      }
-    }
+  const declarations: Readonly<Record<string, ThroughDecl>> = ending.into ?? {};
+  const supplied: TargetMap = options.targets ?? {};
+  for (const key of Object.keys(supplied)) {
+    if (!Object.hasOwn(declarations, key)) throw new TypeError(`Ending "${ending.name}" has an undeclared target "${key}"`);
   }
-
-  const targets: Record<string, Slot> = Object.create(null);
-  for (const [key, target] of Object.entries(suppliedSlots)) {
-    targets[key] = typeof target !== 'function' && 'resolve' in target
-      ? Object.freeze({ entry: Object.freeze([...target.entry]), exit: Object.freeze([...target.exit]), resolve: target.resolve })
-      : { target };
-  }
-  const pipeline: Pipeline<In, Out, S> = Object.freeze({
-    name, entry: Object.freeze([...entry]), exit: Object.freeze([...exit]),
+  const targets = Object.entries(declarations).map(([name, declaration]) => {
+    if (!Object.hasOwn(supplied, name)) throw new TypeError(`Ending "${ending.name}" declares a missing target "${name}"`);
+    return Object.freeze({ name, declaration, target: supplied[name] });
   });
-  assemblies.set(pipeline, { stages: Object.freeze([...stages]), ending, targets: Object.freeze(targets), linked: false });
+  const guaranteed = deriveExit(stages, ending, targets);
+  for (const key of exit) {
+    if (!guaranteed.has(key)) throw new DeclarationViolationError(name, 'up', `no response path guarantees "${key}" on every return`);
+  }
+
+  const pipeline = Object.freeze({ name, entry: Object.freeze([...entry]), exit: Object.freeze([...exit]) });
+  assemblies.set(pipeline, { stages: Object.freeze([...stages]), ending, targets: Object.freeze(targets) });
   return pipeline;
 };
 
 const staticResolutions = new WeakMap<() => AnyPipeline, AnyPipeline>();
 
+const resolve = (target: StaticTarget<any, any, any>): AnyPipeline => {
+  if (typeof target !== 'function') return target;
+  const previous = staticResolutions.get(target);
+  if (previous !== undefined) return previous;
+  const pipeline = target();
+  assemblyOf(pipeline);
+  staticResolutions.set(target, pipeline);
+  return pipeline;
+};
+
 export const link = (pipelines: readonly AnyPipeline[]): void => {
-  const seen = new Set<AnyPipeline>();
+  const seen = new Map<Assembly, readonly LinkedTarget[]>();
   const visit = (pipeline: AnyPipeline): void => {
-    if (seen.has(pipeline)) return;
     const assembly = assemblyOf(pipeline);
-    seen.add(pipeline);
-    for (const [name, slot] of Object.entries(assembly.targets)) {
-      if ('resolve' in slot) continue;
-      if (!slot.resolved) {
-        const { target } = slot;
-        const resolved = typeof target === 'function' ? staticResolutions.get(target) ?? target() : target;
-        assemblyOf(resolved);
-        if (typeof target === 'function') staticResolutions.set(target, resolved);
-        slot.resolved = resolved;
-        Object.freeze(slot);
-      }
-      for (const key of assembly.ending.into![name].response.needs) {
-        if (!slot.resolved.exit.includes(key)) {
+    if (assembly.linkedTargets || seen.has(assembly)) return;
+    const atEnding = new Set(pipeline.entry);
+    for (const stage of assembly.stages) {
+      if (stage.through) applySide(atEnding, stage.through.request);
+    }
+    const targets = assembly.targets.map(({ name, declaration, target }) => {
+      const linked = resolve(target);
+      for (const key of declaration.response.needs) {
+        if (!linked.exit.includes(key)) {
           throw new DeclarationViolationError(assembly.ending.name, 'up', `target "${name}" does not guarantee "${key}"`);
         }
       }
-      visit(slot.resolved);
-    }
+      const available = new Set(atEnding);
+      applySide(available, declaration.request);
+      for (const key of linked.entry) {
+        if (!available.has(key)) {
+          throw new DeclarationViolationError(assembly.ending.name, 'down', `target "${name}" requires "${key}"`);
+        }
+      }
+      return Object.freeze({ name, declaration, pipeline: linked });
+    });
+    seen.set(assembly, Object.freeze(targets));
+    for (const target of targets) visit(target.pipeline);
   };
   for (const pipeline of pipelines) visit(pipeline);
-  for (const pipeline of seen) assemblyOf(pipeline).linked = true;
-};
-
-const validatedSlots = new WeakMap<DynamicSlot, Map<unknown, WeakSet<AnyPipeline>>>();
-
-export const resolveSlot = (slot: Slot, key: unknown, services: any): AnyPipeline => {
-  if ('target' in slot) {
-    if (!slot.resolved) throw new Error('Unlinked static target');
-    return slot.resolved;
-  }
-  const pipeline = slot.resolve(key, services);
-  assemblyOf(pipeline);
-  let keys = validatedSlots.get(slot);
-  if (!keys) validatedSlots.set(slot, keys = new Map());
-  let validated = keys.get(key);
-  if (!validated) keys.set(key, validated = new WeakSet());
-  if (!validated.has(pipeline)) {
-    for (const name of pipeline.entry) {
-      if (!slot.entry.includes(name)) throw new DeclarationViolationError(pipeline.name, 'entry', `dynamic target needs unregistered "${name}"`);
-    }
-    for (const name of slot.exit) {
-      if (!pipeline.exit.includes(name)) throw new DeclarationViolationError(pipeline.name, 'up', `dynamic target does not guarantee "${name}"`);
-    }
-    validated.add(pipeline);
-  }
-  return pipeline;
+  for (const [assembly, targets] of seen) assembly.linkedTargets = targets;
 };

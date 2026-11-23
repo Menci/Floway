@@ -8,7 +8,17 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export type StageLogger = Readonly<Record<LogLevel, (message: string, fields?: Facts) => void>>;
 
-export interface StageEnv<S = {}> {
+interface StreamMethods<Self> {
+  readonly createStream: <T>(options: CreateStreamOptions<T, Self>) => ManagedStream<T>;
+  readonly wrapStream: {
+    <In, Out>(inner: ManagedStream<In>, options: WrapStreamOptions<In, Out, Self>): ManagedStream<Out>;
+    <Ins extends Record<string, unknown>, Out>(
+      inners: { readonly [K in keyof Ins]: ManagedStream<Ins[K]> }, options: WrapStreamsOptions<Ins, Out, Self>,
+    ): ManagedStream<Out>;
+  };
+}
+
+export interface Scope<S = {}> extends StreamMethods<Scope<S>> {
   readonly runId: string;
   readonly stageId: number;
   readonly stageName: string;
@@ -16,16 +26,21 @@ export interface StageEnv<S = {}> {
   readonly clock: () => number;
   readonly log: StageLogger;
   readonly services: Readonly<S>;
-  readonly createStream: <T>(options: CreateStreamOptions<T>) => ManagedStream<T>;
-  readonly wrapStream: {
-    <In, Out>(inner: ManagedStream<In>, options: WrapStreamOptions<In, Out>): ManagedStream<Out>;
-    <Ins extends Record<string, unknown>, Out>(
-      inners: { readonly [K in keyof Ins]: ManagedStream<Ins[K]> }, options: WrapStreamsOptions<Ins, Out>,
-    ): ManagedStream<Out>;
-  };
   readonly defer: <T>(name: string, work: Promise<T>) => Deferred<T>;
-  readonly deferred: <T>(name: string, owner: ManagedStream<unknown> | 'scope') => DeferredHandle<T>;
+  readonly deferred: <T>(name: string, owner: ManagedStream<unknown>) => DeferredHandle<T>;
   readonly run: <I, O, S2>(pipeline: Pipeline<I, O, S2> & Pipeline<I, O, S>, facts: I) => RunHandle<O>;
+}
+
+export interface StageScope<Down, Up, S = {}> extends Scope<S> {
+  readonly next: Next<Down, Up>;
+  readonly createStream: StreamMethods<StageScope<Down, Up, S>>['createStream'];
+  readonly wrapStream: StreamMethods<StageScope<Down, Up, S>>['wrapStream'];
+}
+
+export interface EndingScope<Targets extends TargetMap, S = {}> extends Scope<S> {
+  readonly into: IntoMap<Targets>;
+  readonly createStream: StreamMethods<EndingScope<Targets, S>>['createStream'];
+  readonly wrapStream: StreamMethods<EndingScope<Targets, S>>['wrapStream'];
 }
 
 export interface SideDecl {
@@ -50,7 +65,7 @@ export interface ChildOptions {
 export type Next<Down, Up> = <Actual extends Down>(facts: Actual, options?: ChildOptions) => Promise<Up>;
 
 type Execute<Rq, Down, Up, Rs, S> = (
-  facts: Rq, next: Next<Down, Up>, env: StageEnv<S>,
+  facts: Rq, scope: StageScope<Down, Up, S>,
 ) => Promise<Rs>;
 
 interface ThroughOptions<Rq, Down, Up, Rs, S> {
@@ -64,7 +79,7 @@ interface ReturnOptions<Rq, Rs, S> {
   readonly name: string;
   readonly through?: undefined;
   readonly return: ReturnDecl;
-  readonly execute: (facts: Rq, env: StageEnv<S>) => Promise<Rs>;
+  readonly execute: (facts: Rq, scope: Scope<S>) => Promise<Rs>;
 }
 
 interface ThroughStage<S> {
@@ -80,7 +95,7 @@ interface ReturnStage<S> {
   readonly name: string;
   readonly through?: undefined;
   readonly return: ReturnDecl;
-  readonly execute: (facts: Facts, env: StageEnv<S>) => Promise<Facts>;
+  readonly execute: (facts: Facts, scope: Scope<S>) => Promise<Facts>;
 }
 
 export type Stage<S = {}> = ThroughStage<S> | ReturnStage<S>;
@@ -93,7 +108,6 @@ const freezeSide = (side: SideDecl): SideDecl => Object.freeze({
 
 export function defineStage<Rq, Down, Up, Rs, S = {}>(options: ThroughOptions<Rq, Down, Up, Rs, S>): ThroughStage<S>;
 export function defineStage<Rq, Rs, S = {}>(options: ReturnOptions<Rq, Rs, S>): ReturnStage<S>;
-export function defineStage<Rq, _Down, _Up, Rs, S = {}>(options: ReturnOptions<Rq, Rs, S>): ReturnStage<S>;
 export function defineStage(
   options: ThroughOptions<any, any, any, any, any> | ReturnOptions<any, any, any>,
 ): Stage<any> {
@@ -119,10 +133,10 @@ type TransformSides<Rq, Down, Up, Rs> = (
 );
 
 export const transform = <Rq, Down, Up, Rs, S = {}>(
-  open: (env: StageEnv<S>) => TransformSides<Rq, Down, Up, Rs>,
-): Execute<Rq, Down, Up, Rs, S> => async (facts, next, env) => {
-  const { request, response } = open(env);
-  const back = await next(request ? await request(facts) : facts as Rq & Down);
+  open: (scope: Scope<S>) => TransformSides<Rq, Down, Up, Rs>,
+): Execute<Rq, Down, Up, Rs, S> => async (facts, scope) => {
+  const { request, response } = open(scope);
+  const back = await scope.next(request ? await request(facts) : facts as Rq & Down);
   return response ? await response(back) : back as Up & Rs;
 };
 
@@ -135,7 +149,7 @@ export interface Ending<T extends TargetMap = {}, S = {}> {
   readonly request: { readonly needs: readonly string[] };
   readonly into?: IntoDeclarations<T>;
   readonly return?: ReturnDecl;
-  readonly execute: (facts: Facts, into: IntoMap<T>, env: StageEnv<S>) => Promise<Facts>;
+  readonly execute: (facts: Facts, scope: EndingScope<T, S>) => Promise<Facts>;
   readonly [endingTargets]?: (targets: T) => T;
 }
 
@@ -146,7 +160,7 @@ type EndingOptions<T extends TargetMap> = keyof T extends never
 export const defineEnding = <Rq, Rs, Targets extends TargetMap = {}, S = {}>(options: {
   readonly name: string;
   readonly request: { readonly needs: readonly string[] };
-  readonly execute: (facts: Rq, into: IntoMap<Targets>, env: StageEnv<S>) => Promise<Rs>;
+  readonly execute: (facts: Rq, scope: EndingScope<Targets, S>) => Promise<Rs>;
 } & EndingOptions<Targets>): Ending<Targets, S> => {
   const { name, request, into, return: answer, execute } = options;
   if (!into && !answer) throw new TypeError(`Ending "${name}" needs an into or return declaration`);
@@ -158,6 +172,6 @@ export const defineEnding = <Rq, Rs, Targets extends TargetMap = {}, S = {}>(opt
     request: Object.freeze({ needs: Object.freeze([...request.needs]) }),
     ...(declarations ? { into: declarations } : {}),
     ...(answer ? { return: Object.freeze({ provides: Object.freeze([...answer.provides]) }) } : {}),
-    execute: (facts: Facts, calls: IntoMap<Targets>, env: StageEnv<S>) => execute(facts as Facts & Rq, calls, env) as Promise<Rs & Facts>,
+    execute: (facts: Facts, scope: EndingScope<Targets, S>) => execute(facts as Facts & Rq, scope) as Promise<Rs & Facts>,
   });
 };

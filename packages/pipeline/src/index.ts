@@ -1,6 +1,6 @@
 export { Bytes } from './bytes.ts';
 export { compose, link } from './compose.ts';
-export type { DynamicTarget, IntoMap, Pipeline, StaticTarget, TargetMap } from './compose.ts';
+export type { IntoMap, Pipeline, StaticTarget, TargetMap } from './compose.ts';
 export { deferredIdOf } from './deferred.ts';
 export * from './errors.ts';
 export type { RunEvent, RunEventSink, StageEdge } from './events.ts';

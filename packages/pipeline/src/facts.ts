@@ -17,6 +17,8 @@ export type FactValue = null | undefined | boolean | number | string | bigint
 const validated = new WeakSet<object>();
 const validatedData = new WeakSet<object>();
 const validatedByRun = new WeakMap<object, WeakSet<object>>();
+const frozen = new WeakSet<object>();
+const streamsBySubtree = new WeakMap<object, readonly ManagedStream<unknown>[]>();
 
 const isPlain = (value: object): boolean => {
   const prototype: unknown = Object.getPrototypeOf(value);
@@ -107,6 +109,7 @@ export const freezeValue = <T>(value: T, path = 'facts', policy?: object | 'data
   for (const object of visited) Object.freeze(object);
   for (const object of visited) {
     cache.add(object);
+    frozen.add(object);
     if (dataOnly) validatedData.add(object);
   }
   return value;
@@ -123,17 +126,34 @@ export const freezeFacts = (value: unknown, path: string, membership: object): F
 
 export const collectStreams = (facts: Facts): Set<ManagedStream<unknown>> => {
   const streams = new Set<ManagedStream<unknown>>();
-  const visited = new WeakSet<object>();
-  const visit = (value: unknown): void => {
-    if (typeof value !== 'object' || value === null || visited.has(value)) return;
+  const ancestors = new Map<object, number>();
+  const visit = (value: unknown, found: Set<ManagedStream<unknown>>): number => {
+    if (typeof value !== 'object' || value === null || validatedData.has(value)) return Infinity;
     if (isManagedStream(value)) {
-      streams.add(value);
-      return;
+      found.add(value);
+      return Infinity;
     }
-    if (isOpaque(value) || isDeferred(value)) return;
-    visited.add(value);
-    for (const key of Object.getOwnPropertyNames(value)) visit(Object.getOwnPropertyDescriptor(value, key)!.value);
+    if (isOpaque(value) || isDeferred(value)) return Infinity;
+    const cached = streamsBySubtree.get(value);
+    if (cached !== undefined) {
+      for (const stream of cached) found.add(stream);
+      return Infinity;
+    }
+    const ancestor = ancestors.get(value);
+    if (ancestor !== undefined) return ancestor;
+    const depth = ancestors.size;
+    ancestors.set(value, depth);
+    const local = new Set<ManagedStream<unknown>>();
+    let dependency = Infinity;
+    for (const key of Object.keys(value)) {
+      dependency = Math.min(dependency, visit(Object.getOwnPropertyDescriptor(value, key)!.value, local));
+    }
+    ancestors.delete(value);
+    // A cyclic subtree is cacheable once its walk covers all back edges.
+    if (dependency >= depth && frozen.has(value)) streamsBySubtree.set(value, [...local]);
+    for (const stream of local) found.add(stream);
+    return dependency < depth ? dependency : Infinity;
   };
-  visit(facts);
+  visit(facts, streams);
   return streams;
 };

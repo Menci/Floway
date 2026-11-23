@@ -3,6 +3,8 @@ import { ConcurrentStreamReadError, DuplicateStreamCloseError, StreamLeakError, 
 import { freezeData } from './facts.ts';
 import { managedStreams } from './handles.ts';
 import type { ManagedStream } from './handles.ts';
+import type { Scope } from './stage.ts';
+import type { Stop, StopDomain } from './stop.ts';
 
 export type StreamEnd = { readonly how: 'exhausted' | 'released' | 'leaked' }
   | { readonly how: 'cancelled'; readonly reason: unknown }
@@ -12,21 +14,21 @@ export interface ReleasingInner<T> extends AsyncIterableIterator<T, undefined> {
   close(): Promise<void>;
 }
 
-export interface CreateStreamOptions<T> {
+export interface CreateStreamOptions<T, SelfScope = Scope<any>> {
   readonly label: string;
-  readonly iterate: (signal: AbortSignal) => AsyncIterable<T>;
+  readonly iterate: (scope: SelfScope) => AsyncIterable<T>;
   readonly onClose?: (end: StreamEnd) => void | Promise<void>;
 }
 
-export interface WrapStreamOptions<In, Out> {
+export interface WrapStreamOptions<In, Out, SelfScope = Scope<any>> {
   readonly label: string;
-  readonly transform: (source: AsyncIterable<In>, signal: AbortSignal) => AsyncIterable<Out>;
+  readonly transform: (source: AsyncIterable<In>, scope: SelfScope) => AsyncIterable<Out>;
   readonly onClose?: (end: StreamEnd, inner: ReleasingInner<In> | null) => void | Promise<void>;
 }
 
-export interface WrapStreamsOptions<Ins extends Record<string, unknown>, Out> {
+export interface WrapStreamsOptions<Ins extends Record<string, unknown>, Out, SelfScope = Scope<any>> {
   readonly label: string;
-  readonly transform: (sources: { readonly [K in keyof Ins]: AsyncIterable<Ins[K]> }, signal: AbortSignal) => AsyncIterable<Out>;
+  readonly transform: (sources: { readonly [K in keyof Ins]: AsyncIterable<Ins[K]> }, scope: SelfScope) => AsyncIterable<Out>;
   readonly onClose?: (end: StreamEnd, inners: { readonly [K in keyof Ins]: ReleasingInner<Ins[K]> | null }) => void | Promise<void>;
 }
 
@@ -49,13 +51,17 @@ const raceAbort = async <T>(work: Promise<T>, signal: AbortSignal): Promise<T | 
 export class Custody {
   readonly streams = new Set<StreamResource<unknown>>();
 
-  constructor(readonly stageName: string, readonly signal: AbortSignal, readonly stopReading?: AbortSignal) {}
+  constructor(readonly stageName: string, readonly domain: StopDomain, readonly stopReading?: AbortSignal) {}
 
   async cleanup(): Promise<void> {
     const streams = [...this.streams];
-    const leaked = streams.filter(stream => !stream.ending && !stream.interruptedRead);
-    await Promise.allSettled(streams.map(stream => stream.stop({ how: stream.interruptedRead ? 'released' : 'leaked' })));
+    const leaked = streams.filter(stream => !stream.ending);
+    await Promise.allSettled(streams.map(stream => stream.stop({ how: 'leaked' })));
     if (leaked.length) throw new StreamLeakError(this.stageName, leaked.map(stream => stream.handle.label));
+  }
+
+  async drop(): Promise<void> {
+    await Promise.allSettled([...this.streams].map(stream => stream.stop({ how: 'released' })));
   }
 }
 
@@ -66,9 +72,9 @@ export interface StreamFailure {
 export interface StreamHooks {
   readonly membership: object;
   readonly id: number;
-  readonly pull: (stream: StreamResource<unknown>) => (() => void) | undefined;
-  readonly seal: (stream: StreamResource<unknown>, end: StreamEnd) => void;
-  readonly finish: (stream: StreamResource<unknown>) => void | Promise<void>;
+  readonly interruption: (error: unknown) => Stop | undefined;
+  readonly seal: (end: StreamEnd, stop?: Stop) => void;
+  readonly finish: () => void | Promise<void>;
   readonly frame: (value: unknown) => void;
   readonly end: (end: StreamEnd, diagnostic: StreamFailure | undefined, failure: StreamFailure | undefined) => void;
 }
@@ -83,6 +89,8 @@ const streamFailure = (errors: readonly unknown[]): StreamFailure | undefined =>
 
 type Source<T> = AsyncIterator<T, unknown, void>;
 type Pull<T> = IteratorResult<T, undefined>;
+type StreamSignals = { readonly reading: AbortSignal; readonly signal: AbortSignal };
+export type ResourceOptions<T> = CreateStreamOptions<T, StreamSignals>;
 const resources = new WeakMap<ManagedStream<unknown>, StreamResource<unknown>>();
 
 export const resourceOf = <T>(stream: ManagedStream<T>): StreamResource<T> => {
@@ -99,12 +107,12 @@ export class StreamResource<T> {
   readonly completion: Promise<void>;
   readonly #ended = Promise.withResolvers<void>();
   readonly #completed = Promise.withResolvers<void>();
-  readonly #controller = new AbortController();
-  readonly #birthSignal: AbortSignal;
+  readonly #readingStopped = new AbortController();
+  readonly #interrupted = new AbortController();
+  readonly #birth: StopDomain;
   readonly #onAbort: () => void;
   readonly #hooks: StreamHooks;
-  readonly #iterate: (signal: AbortSignal) => AsyncIterable<T>;
-  readonly #onClose: CreateStreamOptions<T>['onClose'];
+  readonly #options: ResourceOptions<T>;
   readonly #inners: readonly StreamResource<unknown>[];
   readonly #ownerEnded = new Set<() => OwnerDeferredFailure | undefined>();
   #owner: Custody | undefined;
@@ -112,21 +120,20 @@ export class StreamResource<T> {
   #read: Promise<IteratorResult<T, unknown>> | undefined;
   #reading = false;
   #consuming = false;
-  #interruptedRead = false;
   #wrapped = false;
   #releaseOwnsReads = false;
   #end: StreamEnd | undefined;
+  #stop: Stop | undefined;
   #finished = false;
 
-  constructor(owner: Custody, hooks: StreamHooks, options: CreateStreamOptions<T>, inners: readonly StreamResource<unknown>[] = []) {
+  constructor(owner: Custody, hooks: StreamHooks, options: ResourceOptions<T>, inners: readonly StreamResource<unknown>[] = []) {
     this.#hooks = hooks;
-    this.#iterate = options.iterate;
-    this.#onClose = options.onClose;
+    this.#options = options;
     this.#inners = inners;
-    this.#birthSignal = owner.signal;
+    this.#birth = owner.domain;
     this.#onAbort = () => {
-      const { reason } = this.#birthSignal.aborted ? this.#birthSignal : this.#owner!.signal;
-      void this.stop({ how: 'cancelled', reason });
+      const stop = this.#birth.stop ?? this.#owner?.domain.stop;
+      if (stop) this.interrupt(stop);
     };
     this.ended = this.#ended.promise;
     this.completion = this.#completed.promise;
@@ -138,28 +145,27 @@ export class StreamResource<T> {
     });
     managedStreams.set(this.handle, hooks.membership);
     resources.set(this.handle, this);
-    this.#birthSignal.addEventListener('abort', this.#onAbort, { once: true });
+    this.#birth.signal.addEventListener('abort', this.#onAbort, { once: true });
     this.move(owner);
   }
 
   get id(): number { return this.#hooks.id; }
   get ending(): boolean { return this.#end !== undefined; }
   get finished(): boolean { return this.#finished; }
-  get interruptedRead(): boolean { return this.#interruptedRead; }
 
   assertOwned(owner: Custody, operation: string): void {
     if (this.#owner !== owner || this.#consuming || this.ending) throw new StreamOwnershipError(this.handle.label, operation);
   }
 
   move(owner: Custody | undefined): void {
-    const signal = this.#owner?.signal;
-    if (signal !== this.#birthSignal) signal?.removeEventListener('abort', this.#onAbort);
+    const domain = this.#owner?.domain;
+    if (domain !== this.#birth) domain?.signal.removeEventListener('abort', this.#onAbort);
     this.#owner?.streams.delete(this);
     this.#owner = owner;
     if (owner) {
       owner.streams.add(this);
-      if (owner.signal !== this.#birthSignal) owner.signal.addEventListener('abort', this.#onAbort, { once: true });
-      if (owner.signal.aborted || this.#birthSignal.aborted) this.#onAbort();
+      if (owner.domain !== this.#birth) owner.domain.signal.addEventListener('abort', this.#onAbort, { once: true });
+      if (owner.domain.stop || this.#birth.stop) this.#onAbort();
     }
   }
 
@@ -207,7 +213,6 @@ export class StreamResource<T> {
     if (result !== aborted) return result;
     // The consumer has stopped. Its producer still owns the child's cleanup,
     // which runs after the producer's iterator and release hook finish.
-    this.#interruptedRead = true;
     void read.catch(() => undefined);
     return done;
   }
@@ -222,14 +227,13 @@ export class StreamResource<T> {
     if (this.#reading) throw new ConcurrentStreamReadError(this.handle.label);
     if (this.ending) return done;
     this.#reading = true;
-    const leavePull = this.#hooks.pull(this);
     try {
       this.#read = Promise.resolve().then(() => {
         if (this.ending) return done;
-        this.#source ??= this.#iterate(this.#controller.signal)[Symbol.asyncIterator]();
+        this.#source ??= this.#options.iterate({ reading: this.#readingStopped.signal, signal: this.#interrupted.signal })[Symbol.asyncIterator]();
         return this.#source.next();
       });
-      const result = await raceAbort(this.#read, this.#controller.signal);
+      const result = await raceAbort(this.#read, this.#readingStopped.signal);
       if (result === aborted || this.ending) return done;
       if (result.done) {
         this.#source = undefined;
@@ -241,34 +245,51 @@ export class StreamResource<T> {
       return { value, done: false };
     } catch (error) {
       if (this.ending && this.#end?.how !== 'exhausted') return done;
+      const interrupted = this.#hooks.interruption(error);
+      if (interrupted?.kind === 'cancel') {
+        this.interrupt(interrupted);
+        return done;
+      }
       await Promise.allSettled([this.stop({ how: 'errored', error })]);
       throw error;
     } finally {
-      leavePull?.();
       if (!this.ending) this.#read = undefined;
       this.#reading = false;
     }
   }
 
-  stop(end: StreamEnd): Promise<void> {
+  interrupt(stop: Stop): void {
+    const end: StreamEnd = stop.kind === 'cancel'
+      ? { how: 'cancelled', reason: stop.reason }
+      : { how: 'errored', error: stop.reason };
+    void this.stop(end, stop);
+  }
+
+  stop(end: StreamEnd, stop?: Stop): Promise<void> {
     if (this.#finished) return this.completion;
     if (this.#end) {
-      if (end.how === 'cancelled' && this.#end.how !== 'cancelled') {
+      if (stop && !this.#stop && this.#end.how !== 'errored') {
+        this.#stop = stop;
         this.#end = end;
-        this.#hooks.seal(this, end);
-        for (const inner of this.#inners) void inner.stop(end);
+        this.#hooks.seal(end, stop);
+        this.#interrupted.abort(stop.reason);
+        for (const inner of this.#inners) inner.interrupt(stop);
       }
       return this.completion;
     }
+    this.#stop = stop;
     this.#end = end;
     if (end.how === 'released') {
       for (const inner of this.#inners) inner.handOffReadFailures();
     }
     this.#ended.resolve();
-    this.#hooks.seal(this, end);
-    this.#controller.abort(end.how === 'cancelled' ? end.reason : end.how === 'errored' ? end.error : undefined);
-    if (end.how === 'cancelled') {
-      for (const inner of this.#inners) void inner.stop(end);
+    this.#hooks.seal(end, stop);
+    this.#readingStopped.abort();
+    if (end.how !== 'exhausted') {
+      this.#interrupted.abort(end.how === 'cancelled' ? end.reason : end.how === 'errored' ? end.error : undefined);
+    }
+    if (stop) {
+      for (const inner of this.#inners) inner.interrupt(stop);
     }
     void Promise.resolve().then(() => this.#finalize()).then(this.#completed.resolve, this.#completed.reject);
     return this.completion;
@@ -287,11 +308,11 @@ export class StreamResource<T> {
     await attempt(() => this.#source?.return?.());
     this.#read = undefined;
     this.#source = undefined;
-    await attempt(() => this.#onClose?.(this.#end!));
+    await attempt(() => this.#options.onClose?.(this.#end!));
     for (const inner of this.#inners) {
       if (!inner.finished) await attempt(() => inner.stop({ how: 'released' }));
     }
-    await attempt(() => this.#hooks.finish(this));
+    await attempt(() => this.#hooks.finish());
     const end = this.#end!;
     const cleanupErrors = [...errors];
     for (const ownerEnded of this.#ownerEnded) {
@@ -300,10 +321,10 @@ export class StreamResource<T> {
     }
     this.#ownerEnded.clear();
     const diagnostic = streamFailure(end.how === 'errored' ? [end.error, ...cleanupErrors] : cleanupErrors);
-    this.#hooks.end(end, diagnostic, this.#releaseOwnsReads ? streamFailure(cleanupErrors) : diagnostic);
     this.#finished = true;
-    this.#birthSignal.removeEventListener('abort', this.#onAbort);
+    this.#birth.signal.removeEventListener('abort', this.#onAbort);
     this.move(undefined);
+    this.#hooks.end(end, diagnostic, this.#releaseOwnsReads ? streamFailure(cleanupErrors) : diagnostic);
     if (errors.length) throw combineErrors(errors, `Closing stream "${this.handle.label}" failed`);
   }
 }
@@ -376,11 +397,13 @@ const cursorOf = <T>(inner: StreamResource<T>) => {
   };
 };
 
-export const wrapOptions = <In, Out>(inner: StreamResource<In>, options: WrapStreamOptions<In, Out>): CreateStreamOptions<Out> => {
+export const wrapOptions = <In, Out, Sc>(
+  inner: StreamResource<In>, options: WrapStreamOptions<In, Out, Sc>, scopeFor: (signal: AbortSignal) => Sc,
+): ResourceOptions<Out> => {
   const cursor = cursorOf(inner);
   return {
     label: options.label,
-    iterate: signal => options.transform(cursor.source(signal), signal),
+    iterate: ({ reading, signal }) => options.transform(cursor.source(reading), scopeFor(signal)),
     onClose: async end => {
       if (!options.onClose) return;
       try {
@@ -392,14 +415,18 @@ export const wrapOptions = <In, Out>(inner: StreamResource<In>, options: WrapStr
   };
 };
 
-export const wrapStreamsOptions = <Out>(
+export const wrapStreamsOptions = <Out, Sc>(
   inners: readonly (readonly [string, StreamResource<unknown>])[],
-  options: WrapStreamsOptions<Record<string, unknown>, Out>,
-): CreateStreamOptions<Out> => {
+  options: WrapStreamsOptions<Record<string, unknown>, Out, Sc>,
+  scopeFor: (signal: AbortSignal) => Sc,
+): ResourceOptions<Out> => {
   const cursors = inners.map(([name, inner]) => [name, cursorOf(inner)] as const);
   return {
     label: options.label,
-    iterate: signal => options.transform(Object.freeze(Object.fromEntries(cursors.map(([name, cursor]) => [name, cursor.source(signal)]))), signal),
+    iterate: ({ reading, signal }) => options.transform(
+      Object.freeze(Object.fromEntries(cursors.map(([name, cursor]) => [name, cursor.source(reading)]))),
+      scopeFor(signal),
+    ),
     onClose: async end => {
       if (!options.onClose) return;
       try {

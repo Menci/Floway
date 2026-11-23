@@ -1,9 +1,8 @@
-import { assemblyOf, resolveSlot } from './compose.ts';
-import type { Pipeline, Slot } from './compose.ts';
+import { assemblyOf } from './compose.ts';
+import type { IntoMap, Pipeline, TargetMap } from './compose.ts';
 import { checkDown, checkUp, requireKeys } from './declarations.ts';
 import type { Answer } from './declarations.ts';
 import { DeferredResource } from './deferred.ts';
-import type { OwnerDeferredFailure } from './deferred.ts';
 import { FinalizationTimeoutError, StageScopeClosedError, StreamOwnershipError } from './errors.ts';
 import { Trace } from './events.ts';
 import type { RunEventSink, StageEdge } from './events.ts';
@@ -12,12 +11,19 @@ import type { Facts } from './facts.ts';
 import { isManagedStream } from './handles.ts';
 import type { Deferred, DeferredHandle, ManagedStream } from './handles.ts';
 import type { ErrorSnapshot } from './snapshot-error.ts';
-import type { ChildOptions, LogLevel, SideDecl, StageEnv, ThroughDecl } from './stage.ts';
+import type { ChildOptions, EndingScope, LogLevel, Next, Scope, SideDecl, StageScope } from './stage.ts';
+import { StopDomain } from './stop.ts';
+import type { Stop } from './stop.ts';
 import { combineErrors, Custody, resourceOf, StreamResource, wrapOptions, wrapStreamsOptions } from './stream.ts';
-import type { CreateStreamOptions, StreamEnd, StreamFailure, StreamHooks, WrapStreamOptions, WrapStreamsOptions } from './stream.ts';
+import type { CreateStreamOptions, ResourceOptions, StreamEnd, StreamFailure, WrapStreamOptions, WrapStreamsOptions } from './stream.ts';
+
+export interface RootStreamScope {
+  readonly signal: AbortSignal;
+  readonly clock: () => number;
+}
 
 export interface RootEnv {
-  readonly createStream: <T>(options: CreateStreamOptions<T>) => ManagedStream<T>;
+  readonly createStream: <T>(options: CreateStreamOptions<T, RootStreamScope>) => ManagedStream<T>;
   readonly clock: () => number;
 }
 
@@ -25,6 +31,7 @@ export interface RunOptions<S> {
   readonly services: S;
   readonly signal?: AbortSignal;
   readonly events?: RunEventSink;
+  readonly onSinkError?: (error: unknown) => void;
   readonly finalizationTimeoutMs: number;
   readonly runId?: string;
   readonly clock?: () => number;
@@ -38,41 +45,40 @@ export interface RunHandle<out O> {
 export interface RunDone {
   readonly ok: boolean;
   readonly error?: ErrorSnapshot;
+  readonly diagnostics?: readonly ErrorSnapshot[];
 }
 
 type AnyPipeline = Pipeline<any, any, any>;
 type Resource = StreamResource<unknown>;
 type Failure = { readonly reason: unknown };
-type ProducerHooks = Pick<StreamHooks, 'pull' | 'seal' | 'finish'> & {
-  readonly end: (stream: Resource, failure: StreamFailure | undefined) => void;
-};
+
+const cancellation = (stop: Stop | undefined, error: unknown): Stop | undefined =>
+  stop?.kind === 'cancel' && Object.is(stop.reason, error) ? stop : undefined;
 
 class Finalization {
   readonly deferred = new Set<{ abort(error: unknown): void }>();
-  readonly #abort = new AbortController();
-  readonly signal = this.#abort.signal;
-  #expired = false;
+  readonly domain = new StopDomain();
 
-  get expired(): boolean { return this.#expired; }
+  get expired(): boolean { return this.domain.stop !== undefined; }
 
   async join(work: Promise<Failure | undefined>): Promise<Failure | undefined> {
-    if (this.signal.aborted) return { reason: this.signal.reason };
+    const { signal } = this.domain;
+    if (signal.aborted) return { reason: signal.reason };
     const timedOut = Promise.withResolvers<Failure>();
-    const expire = (): void => timedOut.resolve({ reason: this.signal.reason });
-    this.signal.addEventListener('abort', expire, { once: true });
+    const expire = (): void => timedOut.resolve({ reason: signal.reason });
+    signal.addEventListener('abort', expire, { once: true });
     try {
       return await Promise.race([work, timedOut.promise]);
     } finally {
-      this.signal.removeEventListener('abort', expire);
+      signal.removeEventListener('abort', expire);
     }
   }
 
   async afterDelivery(work: Promise<Failure | undefined>, timeoutMs: number): Promise<Failure | undefined> {
     const timer = setTimeout(() => {
       const reason = new FinalizationTimeoutError(timeoutMs);
-      this.#expired = true;
+      this.domain.abort({ kind: 'timeout', reason });
       for (const deferred of this.deferred) deferred.abort(reason);
-      this.#abort.abort(reason);
     }, timeoutMs);
     try {
       return await this.join(work);
@@ -85,11 +91,11 @@ class Finalization {
 class RunState {
   readonly work = new Set<Promise<unknown>>();
   readonly errors: unknown[] = [];
-  readonly signal: AbortSignal;
 
-  constructor(readonly trace: Trace, readonly runId: string, readonly options: RunOptions<any>, readonly finalization: Finalization) {
-    this.signal = options.signal ? AbortSignal.any([options.signal, finalization.signal]) : finalization.signal;
-  }
+  constructor(
+    readonly trace: Trace, readonly runId: string, readonly options: RunOptions<any>,
+    readonly finalization: Finalization,
+  ) {}
 
   track<T>(work: Promise<T>, capture = true): Promise<T> {
     this.work.add(work);
@@ -121,8 +127,6 @@ class RunState {
       const [settled] = await Promise.allSettled([result]);
       if (settled.status === 'fulfilled') {
         await Promise.all([...collectStreams(settled.value)].map(stream => resourceOf(stream).ended));
-      } else {
-        this.errors.unshift(settled.reason);
       }
       const work = joined();
       return root ? await this.finalization.afterDelivery(work, this.options.finalizationTimeoutMs) : await work;
@@ -131,95 +135,25 @@ class RunState {
   }
 }
 
-interface ChildDomain {
-  readonly signal: AbortSignal;
-  readonly settle: () => void;
-}
-
-class InvocationCustody extends Custody {
-  readonly #pending = new Set<Promise<unknown>>();
-  readonly #closed = new Set<Promise<unknown>>();
-
-  childDomain(signal?: AbortSignal): ChildDomain {
-    return { signal: signal ? AbortSignal.any([this.signal, signal]) : this.signal, settle: () => undefined };
-  }
-
-  track<T>(result: Promise<T>, closed: Promise<unknown>): Promise<T> {
-    this.#pending.add(result);
-    this.#closed.add(closed);
-    const finished = (): void => { this.#pending.delete(result); };
-    void result.then(finished, finished);
-    const drained = (): void => { this.#closed.delete(closed); };
-    void closed.then(drained, drained);
-    return result;
-  }
-
-  async release(): Promise<void> {
-    if (this.#pending.size) await Promise.allSettled(this.#pending);
-    await this.cleanup();
-  }
-
-  async join(): Promise<void> {
-    try {
-      await this.release();
-    } finally {
-      if (this.#closed.size) await Promise.allSettled(this.#closed);
-    }
-  }
-}
-
-class Producer extends InvocationCustody {
-  readonly #abort: AbortController;
-  readonly #stopReading: AbortController;
-  readonly #calls = new Set<AbortController>();
-  #sealed = false;
-
-  constructor(stageName: string, parentSignal: AbortSignal) {
-    const abort = new AbortController();
-    const stopReading = new AbortController();
-    super(stageName, AbortSignal.any([abort.signal, parentSignal]), stopReading.signal);
-    this.#abort = abort;
-    this.#stopReading = stopReading;
-  }
-
-  get sealed(): boolean { return this.#sealed; }
-
-  override childDomain(signal?: AbortSignal): ChildDomain {
-    const cancel = new AbortController();
-    this.#calls.add(cancel);
-    return {
-      signal: AbortSignal.any(signal ? [this.signal, cancel.signal, signal] : [this.signal, cancel.signal]),
-      settle: () => { this.#calls.delete(cancel); },
-    };
-  }
-
-  seal(end: StreamEnd): void {
-    this.#sealed = true;
-    this.#stopReading.abort();
-    if (end.how === 'cancelled') this.#abort.abort(end.reason);
-    if (end.how !== 'exhausted') {
-      const reason = end.how === 'cancelled' ? end.reason : end.how === 'errored' ? end.error : undefined;
-      for (const call of this.#calls) call.abort(reason);
-    }
-  }
+interface ProducerHooks {
+  readonly interruption: (error: unknown) => Stop | undefined;
+  readonly seal: (end: StreamEnd, stop?: Stop) => void;
+  readonly finish: () => Promise<void>;
+  readonly end: (stream: Resource, failure: StreamFailure | undefined) => void;
 }
 
 const createRuntimeStream = <T>(
-  state: RunState,
-  stageId: number,
-  owner: Custody,
-  options: CreateStreamOptions<T>,
-  inners: readonly Resource[] = [],
-  producer?: ProducerHooks,
+  state: RunState, stageId: number, owner: Custody, options: ResourceOptions<T>,
+  inners: readonly Resource[] = [], producer?: ProducerHooks,
 ): StreamResource<T> => {
   const { trace } = state;
   const streamId = trace.streamId();
   const resource = new StreamResource(owner, {
     membership: trace.membership,
     id: streamId,
-    pull: stream => producer?.pull(stream),
-    seal: (stream, end) => producer?.seal(stream, end),
-    finish: stream => producer?.finish(stream),
+    interruption: error => producer?.interruption(error),
+    seal: (end, stop) => producer?.seal(end, stop),
+    finish: () => producer?.finish(),
     frame: value => trace.emit({ k: 'frame', streamId, value }),
     end: (end, diagnostic, failure) => {
       trace.emit({ k: 'end', streamId, how: end.how, ...(diagnostic ? { error: trace.snapshot(diagnostic.reason) } : {}) });
@@ -232,59 +166,104 @@ const createRuntimeStream = <T>(
   return resource;
 };
 
-class Scope {
-  readonly finished: Promise<void>;
-  readonly custody: InvocationCustody;
-  readonly #closed = Promise.withResolvers<void>();
-  readonly #ownedDeferreds = new Set<{ ownerEnded(): OwnerDeferredFailure | undefined }>();
-  readonly #created = new Set<Resource>();
-  readonly #producers = new Map<Resource, Producer>();
-  readonly #pulling = new Set<Producer>();
-  readonly #failures: unknown[] = [];
-  #phase: 'executing' | 'draining' | 'closed' = 'executing';
-  #executionJoined = false;
-  #completed = false;
+type Calls = { readonly next?: Next<Facts, Facts>; readonly into?: IntoMap<TargetMap> };
+type RuntimeScope = Scope<any> & Calls;
+
+class Invocation extends Custody {
+  readonly #pending = new Map<StopDomain, Promise<unknown>>();
+  readonly #children = new Map<StopDomain, Promise<unknown>>();
+  readonly #cancellations = new Map<unknown, Stop>();
+  #sealed = false;
+  #released: Stop | undefined;
 
   constructor(
-    readonly state: RunState, readonly id: number, readonly name: string, readonly signal: AbortSignal,
+    readonly stage: StageExecution, domain: StopDomain, readonly readStop?: AbortController,
   ) {
-    this.custody = new InvocationCustody(name, signal);
-    this.finished = state.track(this.#closed.promise, false);
+    super(stage.name, domain, readStop?.signal);
   }
 
-  admit(operation: string, executingOnly = false): InvocationCustody {
-    if (this.state.finalization.expired || this.signal.aborted) throw new StageScopeClosedError(this.name, operation);
-    if (this.#phase === 'executing') return this.custody;
-    if (!executingOnly && this.#phase === 'draining' && this.#pulling.size === 1) {
-      const [producer] = this.#pulling;
-      if (!producer.sealed && !producer.signal.aborted) return producer;
+  admit(operation: string): void {
+    if (this.#sealed || this.domain.stop) throw new StageScopeClosedError(this.stage.name, operation);
+  }
+
+  interruption(error: unknown): Stop | undefined {
+    return cancellation(this.domain.stop, error) ?? this.#cancellations.get(error);
+  }
+
+  child<I>(domain: StopDomain, result: Promise<I>, closed: Promise<unknown>, interruption: () => Stop | undefined): Promise<I> {
+    const observed = result.then(value => value, (error: unknown) => {
+      const stop = interruption();
+      if (stop) this.#cancellations.set(error, stop);
+      throw error;
+    });
+    this.#pending.set(domain, observed);
+    this.#children.set(domain, closed);
+    const returned = (): void => { this.#pending.delete(domain); };
+    void observed.then(returned, returned);
+    const drained = (): void => { this.#children.delete(domain); };
+    void closed.then(drained, drained);
+    return observed;
+  }
+
+  seal(stop?: Stop): void {
+    this.#sealed = true;
+    this.readStop?.abort();
+    if (stop) this.domain.abort(stop);
+  }
+
+  sealProducer(end: StreamEnd, stop?: Stop): void {
+    if (end.how === 'errored') {
+      this.seal(stop ?? { kind: 'panic', reason: end.error });
+    } else if (end.how === 'cancelled') {
+      this.seal(stop ?? { kind: 'cancel', reason: end.reason });
+    } else {
+      this.seal();
+      if (end.how !== 'exhausted') {
+        const released = { kind: 'cancel', reason: new DOMException('The producer released its stream', 'AbortError') } satisfies Stop;
+        this.#released = released;
+        for (const domain of this.#pending.keys()) domain.abort(released);
+      }
     }
-    throw new StageScopeClosedError(this.name, operation);
   }
 
-  environment(): StageEnv<any> {
-    const { state, id, name, signal } = this;
-    const log = (level: LogLevel, message: string, fields?: Facts): void => {
-      state.trace.emit({ k: 'log', stageId: id, level, message, ...(fields === undefined ? {} : { fields: freezeFacts(fields, 'log.fields', state.trace.membership) }) });
-    };
-    const wrapStream: StageEnv<any>['wrapStream'] = <Out>(
+  async finish(normal: boolean, joinChildren: boolean): Promise<void> {
+    try {
+      if (this.#pending.size) await Promise.allSettled(this.#pending.values());
+      if (normal && !this.domain.stop && !this.#released) await this.cleanup();
+      else await this.drop();
+    } finally {
+      const released = this.#released;
+      // Child streams already returned to this producer retain layer-by-layer release.
+      if (released) {
+        for (const domain of this.#children.keys()) domain.abort(released);
+      }
+      if (joinChildren && this.#children.size) await Promise.allSettled(this.#children.values());
+    }
+  }
+
+  scope(signal: AbortSignal): RuntimeScope {
+    const { stage } = this;
+    const { state, id, name, log } = stage;
+    const wrapStream: Scope<any>['wrapStream'] = <Out>(
       inputs: ManagedStream<unknown> | Readonly<Record<string, ManagedStream<unknown>>>,
       options: WrapStreamOptions<any, Out> | WrapStreamsOptions<any, Out>,
     ): ManagedStream<Out> => {
-      const custody = this.admit('wrapStream');
+      this.admit('wrapStream');
       const single = isManagedStream(inputs);
       const entries = (single ? [['', inputs] as const] : Object.entries(inputs)).map(([key, handle]) => [key, resourceOf(handle)] as const);
       const inners = new Set<Resource>();
       for (const [, inner] of entries) {
-        inner.assertOwned(custody, 'wrapStream');
+        inner.assertOwned(this, 'wrapStream');
         if (inners.has(inner)) throw new StreamOwnershipError(inner.handle.label, 'wrapStream (duplicate input)');
         inners.add(inner);
       }
+      const producer = this.#producer();
+      const scopeFor = (signal: AbortSignal): RuntimeScope => producer.scope(signal);
       const wrapped = single
-        ? wrapOptions(entries[0][1], options as WrapStreamOptions<unknown, Out>)
-        : wrapStreamsOptions(entries, options as WrapStreamsOptions<Record<string, unknown>, Out>);
+        ? wrapOptions(entries[0][1], options as WrapStreamOptions<unknown, Out>, scopeFor)
+        : wrapStreamsOptions(entries, options as WrapStreamsOptions<Record<string, unknown>, Out>, scopeFor);
       for (const inner of inners) inner.adopt();
-      return this.#stream(custody, wrapped, [...inners]);
+      return this.#stream(producer, wrapped, [...inners]);
     };
     return Object.freeze({
       runId: state.runId,
@@ -292,117 +271,128 @@ class Scope {
       stageName: name,
       signal,
       clock: state.trace.clock,
-      log: Object.freeze({
-        debug: (message: string, fields?: Facts) => log('debug', message, fields),
-        info: (message: string, fields?: Facts) => log('info', message, fields),
-        warn: (message: string, fields?: Facts) => log('warn', message, fields),
-        error: (message: string, fields?: Facts) => log('error', message, fields),
-      }),
+      log,
       services: state.options.services,
-      createStream: <T>(options: CreateStreamOptions<T>) => this.#stream(this.admit('createStream'), options),
+      ...stage.calls(this),
+      createStream: <T>(options: CreateStreamOptions<T>): ManagedStream<T> => {
+        this.admit('createStream');
+        const producer = this.#producer();
+        return this.#stream(producer, { ...options, iterate: ({ signal }) => options.iterate(producer.scope(signal)) });
+      },
       wrapStream,
       defer: <T>(name: string, work: Promise<T>): Deferred<T> => {
-        this.admit('defer', true);
+        this.admit('defer');
         const deferred = state.admitDeferred<T>(name, id);
         deferred.attach(work);
         return deferred.handle.deferred;
       },
-      deferred: <T>(name: string, owner: ManagedStream<unknown> | 'scope'): DeferredHandle<T> => {
-        const custody = this.admit('deferred', true);
-        const stream = owner === 'scope' ? undefined : resourceOf(owner);
-        stream?.assertOwned(custody, 'deferred');
+      deferred: <T>(name: string, owner: ManagedStream<unknown>): DeferredHandle<T> => {
+        this.admit('deferred');
+        const stream = resourceOf(owner);
+        stream.assertOwned(this, 'deferred');
         const deferred = state.admitDeferred<T>(name, id);
-        if (stream) stream.bindDeferred(() => deferred.ownerEnded());
-        else this.#ownedDeferreds.add(deferred);
+        stream.bindDeferred(() => deferred.ownerEnded());
         return deferred.handle;
       },
       run: <I, O, S>(pipeline: Pipeline<I, O, S>, facts: I): RunHandle<O> => {
-        const custody = this.admit('run');
-        const domain = custody.childDomain();
-        const sub = startRun(pipeline, facts, { ...state.options, signal: domain.signal, runId: crypto.randomUUID() }, {
-          trace: state.trace, finalization: state.finalization, caller: custody, parentStageId: id,
+        this.admit('run');
+        const domain = new StopDomain(this.domain);
+        const sub = startRun(pipeline, facts, { ...state.options, runId: crypto.randomUUID() }, {
+          trace: state.trace, finalization: state.finalization, caller: this, domain, parentStageId: id,
         });
-        void sub.result.then(domain.settle, domain.settle);
-        const joined = state.track(Promise.all([sub.done, sub.failure]).then(([, failure]) => {
+        const joined = state.track(sub.failure.then(failure => {
           if (failure) throw failure.reason;
         }));
-        return Object.freeze({ result: custody.track(sub.result, joined), done: sub.done });
+        return Object.freeze({ result: this.child(domain, sub.result, joined, sub.interruption), done: sub.done });
       },
     });
   }
 
-  #stream<T>(owner: InvocationCustody, options: CreateStreamOptions<T>, inners?: readonly Resource[]): ManagedStream<T> {
-    const resource = createRuntimeStream(this.state, this.id, owner, options, inners, {
-      pull: stream => {
-        const producer = this.#producers.get(stream);
-        if (!producer || producer.sealed) return;
-        this.#pulling.add(producer);
-        return () => { this.#pulling.delete(producer); };
-      },
-      seal: (stream, end) => {
-        const producer = this.#producers.get(stream);
-        if (producer) {
-          this.#pulling.delete(producer);
-          producer.seal(end);
-        }
-      },
-      finish: stream => this.#producers.get(stream)?.join(),
-      end: (stream, failure) => {
-        if (this.#producers.has(stream)) {
-          if (failure) this.#failures.push(failure.reason);
-          this.#producers.delete(stream);
-          this.#completeIfDrained();
-        }
-      },
+  #producer(): Invocation {
+    return new Invocation(this.stage, new StopDomain(this.domain), new AbortController());
+  }
+
+  #stream<T>(producer: Invocation, options: ResourceOptions<T>, inners?: readonly Resource[]): ManagedStream<T> {
+    const { stage } = this;
+    const resource = createRuntimeStream(stage.state, stage.id, this, options, inners, {
+      interruption: error => producer.interruption(error),
+      seal: (end, stop) => producer.sealProducer(end, stop),
+      finish: () => producer.finish(true, true),
+      end: (stream, failure) => stage.streamEnded(stream, failure),
     });
-    if (owner === this.custody) this.#created.add(resource);
+    stage.streamCreated(resource);
     return resource.handle;
+  }
+}
+
+class StageExecution {
+  readonly outer: Invocation;
+  readonly log: Scope['log'];
+  readonly finished: Promise<void>;
+  readonly #closed = Promise.withResolvers<void>();
+  readonly #streams = new Set<Resource>();
+  readonly #failures: unknown[] = [];
+  #cleaned = false;
+
+  constructor(
+    readonly state: RunState, readonly id: number, readonly name: string,
+    domain: StopDomain, readonly calls: (owner: Invocation) => Calls,
+  ) {
+    this.outer = new Invocation(this, new StopDomain(domain));
+    this.finished = state.track(this.#closed.promise, false);
+    const emit = (level: LogLevel, message: string, fields?: Facts): void => {
+      state.trace.emit({ k: 'log', stageId: id, level, message, ...(fields === undefined ? {} : { fields: freezeFacts(fields, 'log.fields', state.trace.membership) }) });
+    };
+    this.log = Object.freeze({
+      debug: (message: string, fields?: Facts) => emit('debug', message, fields),
+      info: (message: string, fields?: Facts) => emit('info', message, fields),
+      warn: (message: string, fields?: Facts) => emit('warn', message, fields),
+      error: (message: string, fields?: Facts) => emit('error', message, fields),
+    });
+  }
+
+  streamCreated(stream: Resource): void { this.#streams.add(stream); }
+
+  streamEnded(stream: Resource, failure: StreamFailure | undefined): void {
+    if (failure) this.#failures.push(failure.reason);
+    this.#streams.delete(stream);
+    this.#complete();
   }
 
   answer(facts: Facts, recipient: Custody, baseChildId: number | undefined): void {
-    const handoff = ownedStreams(facts, this.custody, 'return');
-    this.signal.throwIfAborted();
-    for (const stream of handoff) {
-      if (this.#created.has(stream)) this.#producers.set(stream, new Producer(this.name, this.signal));
-    }
-    this.#created.clear();
-    this.#phase = this.#producers.size ? 'draining' : 'closed';
+    const handoff = ownedStreams(facts, this.outer, 'return');
+    this.outer.domain.signal.throwIfAborted();
     for (const stream of handoff) stream.move(recipient);
     this.state.trace.emit({ k: 'leave', stageId: this.id, facts, ...(baseChildId === undefined ? {} : { baseChildId }) });
-    this.#closeExecution();
+    this.#cleanup(true);
   }
 
-  fail(error: unknown, facts: Facts): void {
-    this.#phase = 'closed';
-    this.#created.clear();
-    this.#failures.push(error);
-    this.state.trace.emit({ k: 'fail', stageId: this.id, error: this.state.trace.snapshot(error), facts });
-    this.#closeExecution();
-  }
-
-  #closeExecution(): void {
-    const cleanup = async (): Promise<void> => {
-      try {
-        await this.custody.release();
-      } catch (error) {
-        this.#failures.push(error);
-        this.state.errors.push(error);
-      }
-      this.#executionJoined = true;
-      this.#completeIfDrained();
-    };
-    void cleanup();
-  }
-
-  #completeIfDrained(): void {
-    if (this.#completed || !this.#executionJoined || this.#producers.size) return;
-    this.#completed = true;
-    this.#phase = 'closed';
-    for (const deferred of this.#ownedDeferreds) {
-      const failure = deferred.ownerEnded();
-      if (failure) this.#failures.push(failure.error);
+  fail(error: unknown, facts: Facts, interrupted?: Stop): void {
+    if (interrupted) {
+      this.outer.seal(interrupted);
+    } else {
+      this.state.trace.emit({ k: 'fail', stageId: this.id, error: this.state.trace.snapshot(error), facts });
+      this.#failures.push(error);
+      this.state.errors.push(error);
+      this.outer.seal({ kind: 'panic', reason: error });
     }
-    this.#ownedDeferreds.clear();
+    this.#cleanup(false);
+  }
+
+  #cleanup(normal: boolean): void {
+    const finish = (): void => {
+      this.#cleaned = true;
+      this.#complete();
+    };
+    void this.outer.finish(normal, false).then(finish, error => {
+      this.#failures.push(error);
+      this.state.errors.push(error);
+      finish();
+    });
+  }
+
+  #complete(): void {
+    if (!this.#cleaned || this.#streams.size) return;
     const failed = this.#failures.length > 0;
     this.state.trace.emit({
       k: 'closed', stageId: this.id, ok: !failed,
@@ -424,13 +414,14 @@ const ownedStreams = (facts: Facts, owner: Custody, operation: string): Set<Reso
 
 const checkLinked = (pipeline: AnyPipeline): ReturnType<typeof assemblyOf> => {
   const assembly = assemblyOf(pipeline);
-  if (!assembly.linked && Object.keys(assembly.targets).length) throw new Error(`Pipeline "${pipeline.name}" has unlinked targets`);
+  if (!assembly.linkedTargets && assembly.targets.length) throw new Error(`Pipeline "${pipeline.name}" has unlinked targets`);
   return assembly;
 };
 
 interface Child {
   readonly result: Promise<Facts>;
   readonly closed: Promise<void>;
+  readonly interruption: () => Stop | undefined;
 }
 
 interface Caller {
@@ -439,7 +430,7 @@ interface Caller {
   readonly edge: StageEdge;
   readonly stageId: number | null;
   readonly childId: number;
-  readonly signal: AbortSignal;
+  readonly domain: StopDomain;
 }
 
 const invoke = (
@@ -448,144 +439,164 @@ const invoke = (
   const step = index < assembly.stages.length ? assembly.stages[index] : assembly.ending;
   const id = caller.childId;
   const { membership } = state.trace;
-  const scope = new Scope(state, id, step.name, caller.signal);
   const answers = new Set<Answer>();
+  let interrupted: Stop | undefined;
 
   const runChild = (
-    target: AnyPipeline, targetAssembly: ReturnType<typeof assemblyOf>, targetIndex: number, handed: Facts,
-    custody: InvocationCustody, edge: 'next' | 'into', declaration: SideDecl, options?: ChildOptions,
+    owner: Invocation, target: AnyPipeline, targetAssembly: ReturnType<typeof assemblyOf>, targetIndex: number, handed: Facts,
+    edge: 'next' | 'into', declaration: SideDecl, options?: ChildOptions,
   ): Promise<Facts> => {
     const childId = state.trace.stageId();
     const answer: Answer = { id: childId, declaration };
     answers.add(answer);
-    const domain = custody.childDomain(options?.signal);
-    const child = invoke(state, target, targetAssembly, targetIndex, handed, { custody, edge, stageId: id, childId, signal: domain.signal });
+    const domain = new StopDomain(owner.domain, options?.signal);
+    const child = invoke(state, target, targetAssembly, targetIndex, handed, { custody: owner, edge, stageId: id, childId, domain });
     const result = child.result.then(back => {
       requireKeys(step.name, 'up', back, declaration.needs);
       answer.facts = back;
       return back;
     });
-    void result.then(domain.settle, () => {
-      answers.delete(answer);
-      domain.settle();
-    });
-    return custody.track(result, child.closed);
+    return owner.child(domain, result, child.closed, child.interruption);
   };
 
+  const calls = (owner: Invocation): Calls => {
+    if (step.kind === 'stage') {
+      const through = step.through;
+      if (!through) return {};
+      return {
+        next: (input, options) => {
+          owner.admit('next');
+          const handed = freezeFacts(input, `${step.name}.next`, membership);
+          checkDown(step.name, facts, handed, through.request);
+          return runChild(owner, pipeline, assembly, index + 1, handed, 'next', through.response, options);
+        },
+      };
+    }
+    const into: Record<string, Next<Facts, Facts>> = Object.create(null);
+    for (const { name, declaration, pipeline: target } of assembly.linkedTargets ?? []) {
+      into[name] = (input, options) => {
+        owner.admit('into');
+        const handed = freezeFacts(input, `${step.name}.into`, membership);
+        requireKeys(step.name, 'entry', facts, declaration.request.needs);
+        checkDown(step.name, facts, handed, declaration.request);
+        return runChild(owner, target, checkLinked(target), 0, handed, 'into', declaration.response, options);
+      };
+    }
+    return { into: Object.freeze(into) };
+  };
+
+  const stage = new StageExecution(state, id, step.name, caller.domain, calls);
+  const { outer } = stage;
   const execute = async (): Promise<Facts> => {
     state.trace.emit({ k: 'enter', stageId: id, parentStageId: caller.stageId, edge: caller.edge, pipeline: pipeline.name, name: step.name, facts });
     try {
-      scope.signal.throwIfAborted();
-      for (const stream of ownedStreams(facts, caller.custody, 'request transfer')) stream.move(scope.custody);
+      outer.domain.signal.throwIfAborted();
+      for (const stream of ownedStreams(facts, caller.custody, 'request transfer')) stream.move(outer);
       if (index === 0) requireKeys(step.name, 'entry', facts, pipeline.entry);
-      const env = scope.environment();
-      let output: Facts;
-
-      if (step.kind === 'stage') {
-        const through = step.through;
-        if (through) {
-          requireKeys(step.name, 'entry', facts, through.request.needs);
-          const next = (input: Facts, options?: ChildOptions): Promise<Facts> => {
-            const custody = scope.admit('next');
-            const handed = freezeFacts(input, `${step.name}.next`, membership);
-            checkDown(step.name, facts, handed, through.request);
-            return runChild(pipeline, assembly, index + 1, handed, custody, 'next', through.response, options);
-          };
-          output = freezeFacts(await step.execute(facts, next, env), `${step.name}.return`, membership);
+      const scope = outer.scope(outer.domain.signal);
+      let value: Facts;
+      try {
+        if (step.kind === 'ending') {
+          requireKeys(step.name, 'entry', facts, step.request.needs);
+          value = await step.execute(facts, scope as EndingScope<TargetMap, any>);
+        } else if (step.through) {
+          requireKeys(step.name, 'entry', facts, step.through.request.needs);
+          value = await step.execute(facts, scope as StageScope<Facts, Facts, any>);
         } else {
-          output = freezeFacts(await step.execute(facts, env), `${step.name}.return`, membership);
+          value = await step.execute(facts, scope);
         }
-      } else {
-        requireKeys(step.name, 'entry', facts, step.request.needs);
-        const into: Record<string, ((...args: any[]) => Promise<Facts>)> = Object.create(null);
-        const enter = (slot: Slot, key: unknown, input: unknown, declaration: ThroughDecl, options?: ChildOptions): Promise<Facts> => {
-          const custody = scope.admit('into');
-          const handed = freezeFacts(input, `${step.name}.into`, membership);
-          requireKeys(step.name, 'entry', facts, declaration.request.needs);
-          checkDown(step.name, facts, handed, declaration.request);
-          const target = resolveSlot(slot, key, state.options.services);
-          return runChild(target, checkLinked(target), 0, handed, custody, 'into', declaration.response, options);
-        };
-        for (const [key, slot] of Object.entries(assembly.targets)) {
-          const declaration = step.into![key];
-          into[key] = 'resolve' in slot
-            ? (key: unknown, input: unknown, options?: ChildOptions) => enter(slot, key, input, declaration, options)
-            : (input: unknown, options?: ChildOptions) => enter(slot, undefined, input, declaration, options);
-        }
-        output = freezeFacts(await step.execute(facts, Object.freeze(into), env), `${step.name}.return`, membership);
+      } finally {
+        outer.seal();
       }
-
+      outer.domain.signal.throwIfAborted();
+      const output = freezeFacts(value, `${step.name}.return`, membership);
       const base = checkUp(step.name, step.return, output, answers);
-      scope.answer(output, caller.recipient ?? caller.custody, base);
+      if (index === 0) requireKeys(step.name, 'up', output, pipeline.exit);
+      stage.answer(output, caller.recipient ?? caller.custody, base);
       return output;
     } catch (error) {
-      scope.fail(error, facts);
+      interrupted = outer.interruption(error);
+      stage.fail(error, facts, interrupted);
       throw error;
     }
   };
-  return { result: state.track(execute(), false), closed: scope.finished };
+  return { result: state.track(execute(), false), closed: stage.finished, interruption: () => interrupted };
 };
 
 interface Subrun {
   readonly trace: Trace;
   readonly finalization: Finalization;
   readonly caller: Custody;
+  readonly domain: StopDomain;
   readonly parentStageId: number;
 }
 
 const startRun = <I, O, S>(pipeline: Pipeline<I, O, S>, input: I | ((root: RootEnv) => I), options: RunOptions<any>, sub?: Subrun): RunHandle<O> & {
   readonly failure: Promise<Failure | undefined>;
+  readonly interruption: () => Stop | undefined;
 } => {
   if (!Number.isFinite(options.finalizationTimeoutMs) || options.finalizationTimeoutMs < 0) {
     throw new RangeError('finalizationTimeoutMs must be a nonnegative finite number');
   }
   const start = performance.now();
-  const trace = sub?.trace ?? new Trace(options.clock ?? (() => performance.now() - start), options.events);
-  const state = new RunState(trace, options.runId ?? crypto.randomUUID(), options, sub?.finalization ?? new Finalization());
+  const trace = sub?.trace ?? new Trace(options.clock ?? (() => performance.now() - start), options.events, options.onSinkError);
+  const finalization = sub?.finalization ?? new Finalization();
+  const domain = sub?.domain ?? new StopDomain(finalization.domain, options.signal);
+  const state = new RunState(trace, options.runId ?? crypto.randomUUID(), options, finalization);
   if (!sub) trace.emit({ k: 'run', runId: state.runId, pipeline: pipeline.name, startedAt: Date.now() });
-  const execute = async (): Promise<Facts> => {
-    const assembly = checkLinked(pipeline);
-    state.signal.throwIfAborted();
-    const childId = trace.stageId();
-    if (sub) {
-      const facts = freezeFacts(input, `${pipeline.name}.input`, trace.membership);
-      return await invoke(state, pipeline, assembly, 0, facts, {
-        custody: sub.caller, edge: 'subrun', stageId: sub.parentStageId, childId, signal: state.signal,
-      }).result;
-    }
+  let interrupted: Stop | undefined;
 
-    const custody = new Custody(pipeline.name, state.signal);
-    const recipient = new Custody(pipeline.name, state.signal);
-    let open = true;
-    let child: Child;
+  const execute = async (): Promise<Facts> => {
+    let child: Child | undefined;
     try {
-      const root: RootEnv = Object.freeze({
-        clock: trace.clock,
-        createStream: <T>(options: CreateStreamOptions<T>): ManagedStream<T> => {
-          if (!open || state.signal.aborted) throw new StageScopeClosedError(pipeline.name, 'root.createStream');
-          return createRuntimeStream(state, childId, custody, options).handle;
-        },
-      });
-      const value = typeof input === 'function' ? (input as (root: RootEnv) => I)(root) : input;
-      open = false;
-      const facts = freezeFacts(value, `${pipeline.name}.input`, trace.membership);
-      child = invoke(state, pipeline, assembly, 0, facts, {
-        custody, recipient, edge: 'root', stageId: null, childId, signal: state.signal,
-      });
-    } finally {
-      open = false;
-      void state.track(custody.cleanup());
+      const assembly = checkLinked(pipeline);
+      domain.signal.throwIfAborted();
+      const childId = trace.stageId();
+      if (sub) {
+        const facts = freezeFacts(input, `${pipeline.name}.input`, trace.membership);
+        child = invoke(state, pipeline, assembly, 0, facts, {
+          custody: sub.caller, edge: 'subrun', stageId: sub.parentStageId, childId, domain,
+        });
+      } else {
+        const custody = new Custody(pipeline.name, domain);
+        const recipient = new Custody(pipeline.name, domain);
+        let open = true;
+        try {
+          const root: RootEnv = Object.freeze({
+            clock: trace.clock,
+            createStream: <T>(options: CreateStreamOptions<T, RootStreamScope>): ManagedStream<T> => {
+              if (!open || domain.stop) throw new StageScopeClosedError(pipeline.name, 'root.createStream');
+              return createRuntimeStream(state, childId, custody, {
+                ...options, iterate: ({ signal }) => options.iterate(Object.freeze({ signal, clock: trace.clock })),
+              }).handle;
+            },
+          });
+          const value = typeof input === 'function' ? (input as (root: RootEnv) => I)(root) : input;
+          open = false;
+          const facts = freezeFacts(value, `${pipeline.name}.input`, trace.membership);
+          child = invoke(state, pipeline, assembly, 0, facts, { custody, recipient, edge: 'root', stageId: null, childId, domain });
+        } finally {
+          open = false;
+          void state.track(child && !domain.stop ? custody.cleanup() : custody.drop());
+        }
+      }
+      return await child.result;
+    } catch (error) {
+      interrupted = child?.interruption() ?? cancellation(domain.stop, error);
+      if (!child && !interrupted) state.errors.push(error);
+      throw error;
     }
-    return await child.result;
   };
   const result = execute();
   const failure = state.finish(result, sub === undefined);
   const done = failure.then(failure => {
     const completion: RunDone = failure ? { ok: false, error: trace.snapshot(failure.reason) } : { ok: true };
     if (!sub) trace.emit({ k: 'done', ...completion });
-    return Object.freeze(completion);
+    return Object.freeze({
+      ...completion, ...(trace.diagnostics.length ? { diagnostics: Object.freeze([...trace.diagnostics]) } : {}),
+    });
   });
-  return { result: result as Promise<Facts & O>, done, failure };
+  return { result: result as Promise<Facts & O>, done, failure, interruption: () => interrupted };
 };
 
 export const run = <I, O, S>(pipeline: Pipeline<I, O, S>, input: I | ((root: RootEnv) => I), options: RunOptions<S>): RunHandle<O> => {

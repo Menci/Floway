@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { freezeValue } from '../src/facts.ts';
-import { Bytes, InvalidFactValueError, secret, snapshotError } from '../src/index.ts';
-import type { RawJson } from '../src/index.ts';
+import { collectStreams, freezeValue } from '../src/facts.ts';
+import { Bytes, compose, defineEnding, InvalidFactValueError, run, secret, snapshotError } from '../src/index.ts';
+import type { ManagedStream, RawJson } from '../src/index.ts';
 
 describe('fact values', () => {
   it('freezes the full graph by identity and memoizes validated objects', () => {
@@ -23,6 +23,49 @@ describe('fact values', () => {
     expect(enumerations).toBe(first);
     expect(Object.isFrozen(nested.key)).toBe(true);
     expect(nested.key[2]).toBe(raw);
+  });
+
+  it('enumerates a large frozen payload once even when it travels beside a stream', async () => {
+    type Output = { stream: ManagedStream<number> };
+    const pipeline = compose<Output>()('stream', {
+      entry: [], exit: ['stream'], stages: [],
+      ending: defineEnding<{}, Output>({
+        name: 'stream', request: { needs: [] }, return: { provides: ['stream'] },
+        execute: async (_facts, scope) => ({ stream: scope.createStream({ label: 'body', async *iterate() { yield 1; } }) }),
+      }),
+    });
+    const handle = run(pipeline, {}, { services: {}, finalizationTimeoutMs: 200 });
+    const { stream } = await handle.result;
+    let enumerations = 0;
+    const entries = Array.from({ length: 1_000 }, (_, index) => new Proxy({ index }, {
+      ownKeys: target => {
+        enumerations++;
+        return Reflect.ownKeys(target);
+      },
+    }));
+    type Payload = { entries: typeof entries; self?: Payload };
+    const payload = new Proxy<Payload>({ entries }, {
+      ownKeys: target => {
+        enumerations++;
+        return Reflect.ownKeys(target);
+      },
+    });
+    payload.self = payload;
+    try {
+      const facts = freezeValue({ payload, stream });
+      const beforeCollecting = enumerations;
+      expect(collectStreams(facts)).toEqual(new Set([stream]));
+      expect(enumerations - beforeCollecting).toBe(entries.length + 1);
+      const afterCollecting = enumerations;
+      for (let index = 0; index < 20; index++) {
+        expect(collectStreams(facts)).toEqual(new Set([stream]));
+        expect(collectStreams(freezeValue({ payload, stream, index }))).toEqual(new Set([stream]));
+      }
+      expect(enumerations).toBe(afterCollecting);
+    } finally {
+      await stream.close();
+      await handle.done;
+    }
   });
 
   it.each([

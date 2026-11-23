@@ -14,7 +14,7 @@ export interface ErrorSnapshot {
 const render = (value: unknown): string => {
   try {
     return String(value);
-  } catch {
+  } catch (_renderingError: unknown) {
     return '[unprintable value]';
   }
 };
@@ -56,7 +56,7 @@ export const snapshotErrorIn = (error: unknown, membership?: object): ErrorSnaps
   };
   try {
     return snapshot(error);
-  } catch {
+  } catch (_snapshotError: unknown) {
     return freezeValue({ name: 'Error', message: render(error) });
   }
 };

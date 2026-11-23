@@ -36,7 +36,11 @@ export class Trace {
   #deferredId = 0;
   #finished = false;
 
-  constructor(readonly clock: () => number, readonly sink: RunEventSink | undefined) {}
+  constructor(
+    readonly clock: () => number,
+    readonly sink: RunEventSink | undefined,
+    readonly onSinkError: (error: unknown) => void = error => console.error(error),
+  ) {}
 
   stageId(): number { return ++this.#stageId; }
   streamId(): number { return ++this.#streamId; }
@@ -60,6 +64,12 @@ export class Trace {
       this.sink(Object.freeze({ ...event, seq: ++this.#seq, tMs: this.#tMs }));
     } catch (error) {
       this.diagnostics.push(this.snapshot(error));
+      try {
+        this.onSinkError(error);
+      } catch (reportingError) {
+        this.diagnostics.push(this.snapshot(reportingError));
+        console.error(reportingError);
+      }
     }
   }
 }

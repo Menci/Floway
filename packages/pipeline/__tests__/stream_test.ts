@@ -14,35 +14,37 @@ import {
   StreamLeakError,
   StreamOwnershipError,
 } from '../src/index.ts';
-import type { Deferred, ManagedStream, Next, ReleasingInner, RootEnv, RunEvent, StageEnv, StaticTarget, StreamEnd } from '../src/index.ts';
+import type { Deferred, EndingScope, ManagedStream, Next, ReleasingInner, RootEnv, RunEvent, Scope, StageScope, StaticTarget, StreamEnd } from '../src/index.ts';
 
 type Body = { body: ManagedStream<number> };
 type Turn = { turn: number };
 const options = { services: {}, finalizationTimeoutMs: 200 };
 const empty = { needs: [], consumes: [], provides: [] };
 
-const bodyPipeline = (execute: (env: StageEnv) => Body | Promise<Body>) => compose<{}, Body, {}>('pipeline', {
+const bodyPipeline = (execute: (scope: Scope) => Body | Promise<Body>) => compose<Body>()('pipeline', {
+  entry: [], exit: ['body'],
   stages: [],
   ending: defineEnding<{}, Body>({
     name: 'stream stage', request: { needs: [] }, return: { provides: ['body'] },
-    execute: async (_facts, _into, env) => await execute(env),
+    execute: async (_facts, scope) => await execute(scope),
   }),
 });
 
 const echoTurn = defineEnding<Turn, Body>({
   name: 'echo', request: { needs: ['turn'] }, return: { provides: ['body'] },
-  execute: async ({ turn }, _into, env) => ({
-    body: env.createStream({ label: `turn ${turn}`, async *iterate() { yield turn; } }),
+  execute: async ({ turn }, scope) => ({
+    body: scope.createStream({ label: `turn ${turn}`, async *iterate() { yield turn; } }),
   }),
 });
 
 describe('stream release and cancellation', () => {
   it('lets onClose drain the inner after the wrapper iterator settles', async () => {
     const order: string[] = [];
-    const handle = run(bodyPipeline(env => {
-      const inner = env.createStream({
+    const handle = run(bodyPipeline(scope => {
+      const inner = scope.createStream({
         label: 'inner',
-        async *iterate(signal) {
+        async *iterate(scope) {
+          const { signal } = scope;
           yield 1;
           expect(signal.aborted).toBe(false);
           yield 2;
@@ -50,9 +52,10 @@ describe('stream release and cancellation', () => {
         },
         onClose: end => { order.push(`inner ${end.how}`); },
       });
-      const body = env.wrapStream(inner, {
+      const body = scope.wrapStream(inner, {
         label: 'wrapper',
-        async *transform(source, signal) {
+        async *transform(source, scope) {
+          const { signal } = scope;
           try {
             yield* source;
           } finally {
@@ -83,9 +86,10 @@ describe('stream release and cancellation', () => {
     const pulling = Promise.withResolvers<void>();
     const frame = Promise.withResolvers<number>();
     const events: string[] = [];
-    const handle = run(bodyPipeline(env => {
-      const inner = env.createStream({
-        label: 'inner', async *iterate(signal) {
+    const handle = run(bodyPipeline(scope => {
+      const inner = scope.createStream({
+        label: 'inner', async *iterate(scope) {
+          const { signal } = scope;
           pulling.resolve();
           yield await frame.promise;
           expect(signal.aborted).toBe(false);
@@ -93,7 +97,7 @@ describe('stream release and cancellation', () => {
         },
       });
       return {
-        body: env.wrapStream(inner, {
+        body: scope.wrapStream(inner, {
           label: 'wrapper',
           async *transform(source) {
             try { yield* source; } finally { events.push('settled'); }
@@ -118,16 +122,17 @@ describe('stream release and cancellation', () => {
 
   it('lets the release hook close the inner while its retained read is blocked', async () => {
     const pulling = Promise.withResolvers<AbortSignal>();
-    const handle = run(bodyPipeline(env => {
-      const inner = env.createStream({
-        label: 'blocked inner', async *iterate(signal) {
+    const handle = run(bodyPipeline(scope => {
+      const inner = scope.createStream({
+        label: 'blocked inner', async *iterate(scope) {
+          const { signal } = scope;
           pulling.resolve(signal);
           await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }));
           yield 1;
         },
       });
       return {
-        body: env.wrapStream(inner, {
+        body: scope.wrapStream(inner, {
           label: 'outer', transform: source => source,
           onClose: async (_end, inner) => {
             if (!inner) throw new Error('Expected the inner cursor');
@@ -156,8 +161,8 @@ describe('stream release and cancellation', () => {
     const innerEnded = Promise.withResolvers<Extract<RunEvent, { k: 'end' }>>();
     const readError = new Error('raw read failed');
     let innerId: number | undefined;
-    const handle = run(bodyPipeline(env => {
-      const inner = env.createStream({
+    const handle = run(bodyPipeline(scope => {
+      const inner = scope.createStream({
         label: 'inner', async *iterate() {
           pulling.resolve();
           yield await upstream.promise;
@@ -165,7 +170,7 @@ describe('stream release and cancellation', () => {
       });
       innerId = streamIdOf(inner);
       return {
-        body: env.wrapStream(inner, {
+        body: scope.wrapStream(inner, {
           label: 'outer', async *transform(source) {
             try {
               yield* source;
@@ -206,11 +211,11 @@ describe('stream release and cancellation', () => {
     const events: RunEvent[] = [];
     let innerId: number | undefined;
     let classification: string | undefined;
-    const handle = run(bodyPipeline(env => {
-      const inner = env.createStream<number>({ label: 'inner', async *iterate() { throw readError; } });
+    const handle = run(bodyPipeline(scope => {
+      const inner = scope.createStream<number>({ label: 'inner', async *iterate() { throw readError; } });
       innerId = streamIdOf(inner);
       return {
-        body: env.wrapStream(inner, {
+        body: scope.wrapStream(inner, {
           label: 'outer', transform: source => source,
           onClose: async (_end, inner) => {
             try {
@@ -240,9 +245,10 @@ describe('stream release and cancellation', () => {
 
   it('releases the inner by default after the outer hook, aborting its own signal', async () => {
     const order: string[] = [];
-    const handle = run(bodyPipeline(env => {
-      const inner = env.createStream({
-        label: 'inner', async *iterate(signal) {
+    const handle = run(bodyPipeline(scope => {
+      const inner = scope.createStream({
+        label: 'inner', async *iterate(scope) {
+          const { signal } = scope;
           signal.addEventListener('abort', () => order.push('inner abort'), { once: true });
           yield 1;
           throw new Error('An unobserved body was drained');
@@ -250,7 +256,7 @@ describe('stream release and cancellation', () => {
         onClose: end => { order.push(`inner ${end.how}`); },
       });
       return {
-        body: env.wrapStream(inner, {
+        body: scope.wrapStream(inner, {
           label: 'outer', transform: source => source,
           onClose: end => { order.push(`outer ${end.how}`); },
         }),
@@ -270,9 +276,10 @@ describe('stream release and cancellation', () => {
     const pulling = Promise.withResolvers<void>();
     const aborted: string[] = [];
     const ends: StreamEnd[] = [];
-    const handle = run(bodyPipeline(env => {
-      const inner = env.createStream({
-        label: 'inner', async *iterate(signal) {
+    const handle = run(bodyPipeline(scope => {
+      const inner = scope.createStream({
+        label: 'inner', async *iterate(scope) {
+          const { signal } = scope;
           pulling.resolve();
           await new Promise<void>(resolve => signal.addEventListener('abort', () => { aborted.push('inner'); resolve(); }, { once: true }));
           yield 1;
@@ -280,8 +287,9 @@ describe('stream release and cancellation', () => {
         onClose: end => { ends.push(end); },
       });
       return {
-        body: env.wrapStream(inner, {
-          label: 'outer', transform: (source, signal) => {
+        body: scope.wrapStream(inner, {
+          label: 'outer', transform: (source, scope) => {
+            const { signal } = scope;
             signal.addEventListener('abort', () => aborted.push('outer'), { once: true });
             return source;
           },
@@ -301,8 +309,8 @@ describe('stream release and cancellation', () => {
 
   it('rejects concurrent reads, duplicate closes and a second iterator', async () => {
     const frame = Promise.withResolvers<number>();
-    const handle = run(bodyPipeline(env => ({
-      body: env.createStream({
+    const handle = run(bodyPipeline(scope => ({
+      body: scope.createStream({
         label: 'body', async *iterate() { yield await frame.promise; },
       }),
     })), {}, options);
@@ -325,8 +333,8 @@ describe('stream release and cancellation', () => {
     const events: RunEvent[] = [];
     const ending = defineEnding<{}, { body: ManagedStream<typeof frame> }>({
       name: 'reader', request: { needs: [] }, return: { provides: ['body'] },
-      execute: async (_facts, _into, env) => ({
-        body: env.createStream({
+      execute: async (_facts, scope) => ({
+        body: scope.createStream({
           label: 'body', async *iterate() {
             yield frame;
             throw error;
@@ -334,7 +342,7 @@ describe('stream release and cancellation', () => {
         }),
       }),
     });
-    const pipeline = compose<{}, { body: ManagedStream<typeof frame> }, {}>('reader', { stages: [], ending });
+    const pipeline = compose<{ body: ManagedStream<typeof frame> }>()('reader', { entry: [], exit: ['body'], stages: [], ending });
     const handle = run(pipeline, {}, { ...options, events: event => events.push(event) });
     const { body } = await handle.result;
     const reader = body[Symbol.asyncIterator]();
@@ -352,14 +360,14 @@ describe('stream release and cancellation', () => {
     type Output = { nested: Nested; body: ManagedStream<{ nested: Nested }>; invalid: Deferred<unknown> };
     const ending = defineEnding<{}, Output>({
       name: 'handles', request: { needs: [] }, return: { provides: ['nested', 'body', 'invalid'] },
-      execute: async (_facts, _into, env) => {
-        const nested = { deferred: env.defer('value', Promise.resolve(1)) };
-        const body = env.createStream({ label: 'body', async *iterate() { yield { nested }; } });
-        const invalid = env.defer('body handle', Promise.resolve({ body }));
+      execute: async (_facts, scope) => {
+        const nested = { deferred: scope.defer('value', Promise.resolve(1)) };
+        const body = scope.createStream({ label: 'body', async *iterate() { yield { nested }; } });
+        const invalid = scope.defer('body handle', Promise.resolve({ body }));
         return { nested, body, invalid };
       },
     });
-    const pipeline = compose<{}, Output, {}>('handles', { stages: [], ending });
+    const pipeline = compose<Output>()('handles', { entry: [], exit: ['nested', 'body', 'invalid'], stages: [], ending });
     const handle = run(pipeline, {}, options);
     const { body, invalid, nested } = await handle.result;
     expect(Object.isFrozen(nested)).toBe(true);
@@ -369,55 +377,180 @@ describe('stream release and cancellation', () => {
   });
 
   it('fails leaked scopes by stream identity even when another run shares its stream ID', async () => {
-    const first = run(bodyPipeline(env => ({
-      body: env.createStream({
+    const first = run(bodyPipeline(scope => ({
+      body: scope.createStream({
         label: 'other run', async *iterate() { yield 1; },
       }),
     })), {}, options);
     const { body: foreign } = await first.result;
     const events: RunEvent[] = [];
-    const second = run(bodyPipeline(env => {
-      const leaked = env.createStream({ label: 'local leak', async *iterate() { yield 2; } });
+    const second = run(bodyPipeline(scope => {
+      const leaked = scope.createStream({ label: 'local leak', async *iterate() { yield 2; } });
       expect(streamIdOf(leaked)).toBe(streamIdOf(foreign));
       return { body: foreign };
     }), {}, { ...options, events: event => events.push(event) });
     await expect(second.result).rejects.toBeInstanceOf(StreamOwnershipError);
-    await expect(second.done).resolves.toMatchObject({
-      ok: false, error: {
-        errors: expect.arrayContaining([{
-          name: 'StreamLeakError', message: expect.stringContaining('local leak'), stack: expect.any(String),
-          fields: { name: 'StreamLeakError', stageName: 'stream stage', labels: ['local leak'] },
-        }]),
-      },
-    });
-    expect(events).toContainEqual(expect.objectContaining({ k: 'end', how: 'leaked' }));
+    await expect(second.done).resolves.toMatchObject({ ok: false, error: { name: 'StreamOwnershipError' } });
+    expect(events).toContainEqual(expect.objectContaining({ k: 'end', how: 'errored' }));
     await expect(Array.fromAsync(foreign)).resolves.toEqual([1]);
     await expect(first.done).resolves.toEqual({ ok: true });
   });
 });
 
 describe('producer custody', () => {
+  it('admits a producer’s lifecycle methods between pulls and seals the outer scope on return', async () => {
+    const gate = Promise.withResolvers<void>();
+    type Continuation = { body: ManagedStream<number>; value: Deferred<number> };
+    const admitted = Promise.withResolvers<{ work: Promise<Continuation> }>();
+    const child = compose<Turn & Body>()('sub-run', { entry: ['turn'], exit: ['body'], stages: [], ending: echoTurn });
+    let outer: StageScope<Turn, Body> | undefined;
+    let producer: StageScope<Turn, Body> | undefined;
+    const stage = defineStage<Turn, Turn, Body, Body>({
+      name: 'independent producer', through: { request: { ...empty, provides: ['turn'] }, response: { ...empty, needs: ['body'] } },
+      return: { provides: ['body'] },
+      execute: async (facts, scope) => {
+        outer = scope;
+        const body = scope.createStream({
+          label: 'turns',
+          async *iterate(scope) {
+            producer = scope;
+            const work = gate.promise.then(async () => {
+              const { body } = await scope.next({ ...facts, turn: 2 });
+              const sub = scope.run(child, { turn: 3 });
+              const third = (await sub.result).body;
+              const tail = scope.createStream({ label: 'tail', async *iterate() { yield 4; } });
+              const merged = scope.wrapStream({ body, third, tail }, {
+                label: 'continuation', async *transform(sources) {
+                  yield* sources.body;
+                  yield* sources.third;
+                  yield* sources.tail;
+                },
+              });
+              const value = scope.deferred<number>('total', merged);
+              value.resolve(await scope.defer('measure', Promise.resolve(5)).promise);
+              return { body: merged, value: value.deferred };
+            });
+            admitted.resolve({ work });
+            yield 1;
+            const { body, value } = await work;
+            yield* body;
+            yield await value.promise;
+          },
+        });
+        return { body };
+      },
+    });
+    const pipeline = compose<Turn & Body>()('turns', { entry: ['turn'], exit: ['body'], stages: [stage], ending: echoTurn });
+    const handle = run(pipeline, { turn: 1 }, options);
+    const { body } = await handle.result;
+    expect(() => outer!.next({ turn: 2 })).toThrow(StageScopeClosedError);
+    expect(() => outer!.run(child, { turn: 2 })).toThrow(StageScopeClosedError);
+    expect(() => outer!.createStream({ label: 'late', async *iterate() { yield 0; } })).toThrow(StageScopeClosedError);
+    expect(() => outer!.wrapStream(body, { label: 'late', transform: source => source })).toThrow(StageScopeClosedError);
+    expect(() => outer!.defer('late', Promise.resolve(0))).toThrow(StageScopeClosedError);
+    expect(() => outer!.deferred('late', body)).toThrow(StageScopeClosedError);
+    const reader = body[Symbol.asyncIterator]();
+    await expect(reader.next()).resolves.toEqual({ done: false, value: 1 });
+    gate.resolve();
+    const { work } = await admitted.promise;
+    await expect(work).resolves.toMatchObject({ body: { label: 'continuation' } });
+    expect(producer).not.toBe(outer);
+    const rest = await Array.fromAsync({ [Symbol.asyncIterator]: () => reader });
+    expect(rest).toEqual([2, 3, 4, 5]);
+    expect(() => producer!.next({ turn: 2 })).toThrow(StageScopeClosedError);
+    await expect(handle.done).resolves.toEqual({ ok: true });
+  });
+
+  it('rebinds an ending’s into calls to its producer scope', async () => {
+    type Targets = { child: StaticTarget<Turn, Body, {}> };
+    const child = compose<Turn & Body>()('echo', { entry: ['turn'], exit: ['body'], stages: [], ending: echoTurn });
+    let outer: EndingScope<Targets> | undefined;
+    const ending = defineEnding<Turn, Body, Targets>({
+      name: 'producer ending', request: { needs: ['turn'] },
+      into: { child: { request: empty, response: { ...empty, needs: ['body'] } } },
+      return: { provides: ['body'] },
+      execute: async (facts, scope) => {
+        outer = scope;
+        return {
+          body: scope.createStream({
+            label: 'ending body', async *iterate(scope) { yield* (await scope.into.child(facts)).body; },
+          }),
+        };
+      },
+    });
+    const pipeline = compose<Turn & Body>()('ending', {
+      entry: ['turn'], exit: ['body'], stages: [], ending, targets: { child },
+    });
+    link([pipeline]);
+    const handle = run(pipeline, { turn: 3 }, options);
+    const { body } = await handle.result;
+    expect(() => outer!.into.child({ turn: 3 })).toThrow(StageScopeClosedError);
+    await expect(Array.fromAsync(body)).resolves.toEqual([3]);
+    await expect(handle.done).resolves.toEqual({ ok: true });
+  });
+
+  it('interrupts a pending child with the producer panic and drops custody without a leak', async () => {
+    const boom = new Error('producer panic');
+    const stopped = Promise.withResolvers<unknown>();
+    const childEnd = Promise.withResolvers<StreamEnd>();
+    const ending = defineEnding<Turn, Body>({
+      name: 'pending child', request: { needs: ['turn'] }, return: { provides: ['body'] },
+      execute: async (_facts, scope) => {
+        scope.createStream({
+          label: 'child-owned', async *iterate() { yield 1; }, onClose: childEnd.resolve,
+        });
+        return await new Promise<never>((_resolve, reject) => {
+          scope.signal.addEventListener('abort', () => {
+            stopped.resolve(scope.signal.reason);
+            reject(scope.signal.reason);
+          }, { once: true });
+        });
+      },
+    });
+    const stage = defineStage<Turn, Turn, Body, Body>({
+      name: 'panicking producer', through: { request: empty, response: { ...empty, needs: ['body'] } },
+      return: { provides: ['body'] },
+      execute: async (facts, scope) => ({
+        body: scope.createStream<number>({
+          label: 'panicking stream',
+          async *iterate(scope) {
+            scope.createStream({ label: 'producer-owned', async *iterate() { yield 1; } });
+            void scope.next(facts);
+            throw boom;
+          },
+        }),
+      }),
+    });
+    const pipeline = compose<Turn & Body>()('panic', { entry: ['turn'], exit: ['body'], stages: [stage], ending });
+    const handle = run(pipeline, { turn: 1 }, options);
+    const { body } = await handle.result;
+    await expect(body[Symbol.asyncIterator]().next()).rejects.toBe(boom);
+    await expect(stopped.promise).resolves.toBe(boom);
+    await expect(childEnd.promise).resolves.toEqual({ how: 'errored', error: boom });
+    await expect(handle.done).resolves.toMatchObject({ ok: false, error: { name: 'Error', message: boom.message } });
+  });
+
   it('continues a ReAct turn in the wrapper transform after leave and drains both child streams', async () => {
     const events: RunEvent[] = [];
     const stage = defineStage<Turn, Turn, Body, Body>({
       name: 'tool loop', through: {
         request: { ...empty, provides: ['turn'] }, response: { ...empty, provides: ['body'] },
       },
-      execute: async (facts, next, env) => {
-        const first = await next(facts);
-        const body = env.wrapStream(first.body, {
+      execute: async (facts, scope) => {
+        const first = await scope.next(facts);
+        const body = scope.wrapStream(first.body, {
           label: 'tools',
-          async *transform(source) {
+          async *transform(source, scope) {
             yield* source;
-            const second = await next({ ...facts, turn: 2 });
+            const second = await scope.next({ ...facts, turn: 2 });
             yield* second.body;
           },
-          onClose: () => { expect(() => next(facts)).toThrow(StageScopeClosedError); },
+          onClose: () => { expect(() => scope.next(facts)).toThrow(StageScopeClosedError); },
         });
         return { ...first, body };
       },
     });
-    const pipeline = compose<Turn, Body, {}>('tools', { stages: [stage], ending: echoTurn });
+    const pipeline = compose<Turn & Body>()('tools', { entry: ['turn'], exit: ['body'], stages: [stage], ending: echoTurn });
     const handle = run(pipeline, { turn: 1 }, { ...options, events: event => events.push(event) });
     const { body } = await handle.result;
     expect(events).toContainEqual(expect.objectContaining({ k: 'leave', stageId: 1 }));
@@ -436,19 +569,19 @@ describe('producer custody', () => {
       name: 'tool loop', through: {
         request: { ...empty, provides: ['turn'] }, response: { ...empty, provides: ['body'] },
       },
-      execute: async (facts, next, env) => {
-        const first = await next(facts);
+      execute: async (facts, scope) => {
+        const first = await scope.next(facts);
         return {
-          body: env.wrapStream(first.body, {
-            label: 'tools', async *transform(source) {
+          body: scope.wrapStream(first.body, {
+            label: 'tools', async *transform(source, scope) {
               yield* source;
-              await next({ ...facts, turn: 2 });
+              await scope.next({ ...facts, turn: 2 });
             },
           }),
         };
       },
     });
-    const pipeline = compose<Turn, Body, {}>('tools', { stages: [stage], ending: echoTurn });
+    const pipeline = compose<Turn & Body>()('tools', { entry: ['turn'], exit: ['body'], stages: [stage], ending: echoTurn });
     const handle = run(pipeline, { turn: 1 }, options);
     const { body } = await handle.result;
     await expect(Array.fromAsync(body)).rejects.toBeInstanceOf(StreamLeakError);
@@ -460,9 +593,10 @@ describe('producer custody', () => {
     const order: string[] = [];
     const ending = defineEnding<Turn, Body>({
       name: 'turn', request: { needs: ['turn'] }, return: { provides: ['body'] },
-      execute: async ({ turn }, _into, env) => ({
-        body: env.createStream({
-          label: `turn ${turn}`, async *iterate(signal) {
+      execute: async ({ turn }, scope) => ({
+        body: scope.createStream({
+          label: `turn ${turn}`, async *iterate(scope) {
+            const { signal } = scope;
             if (turn === 1) {
               yield 1;
               return;
@@ -478,14 +612,14 @@ describe('producer custody', () => {
       name: 'tool loop', through: {
         request: { ...empty, provides: ['turn'] }, response: { ...empty, provides: ['body'] },
       },
-      execute: async (facts, next, env) => {
-        const first = await next(facts);
+      execute: async (facts, scope) => {
+        const first = await scope.next(facts);
         return {
-          body: env.wrapStream(first.body, {
-            label: 'tools', async *transform(source) {
+          body: scope.wrapStream(first.body, {
+            label: 'tools', async *transform(source, scope) {
               try {
                 yield* source;
-                const second = await next({ ...facts, turn: 2 });
+                const second = await scope.next({ ...facts, turn: 2 });
                 yield* second.body;
               } finally {
                 order.push('transform settled');
@@ -496,7 +630,7 @@ describe('producer custody', () => {
         };
       },
     });
-    const pipeline = compose<Turn, Body, {}>('tools', { stages: [stage], ending });
+    const pipeline = compose<Turn & Body>()('tools', { entry: ['turn'], exit: ['body'], stages: [stage], ending });
     const handle = run(pipeline, { turn: 1 }, options);
     const { body } = await handle.result;
     const reader = body[Symbol.asyncIterator]();
@@ -515,32 +649,32 @@ describe('producer custody', () => {
     const starting = Promise.withResolvers<AbortSignal>();
     const ending = defineEnding<Turn, Body>({
       name: 'turn', request: { needs: ['turn'] }, return: { provides: ['body'] },
-      execute: async ({ turn }, _into, env) => {
+      execute: async ({ turn }, scope) => {
         if (turn === 2) await new Promise<never>((_resolve, reject) => {
-          env.signal.addEventListener('abort', () => reject(env.signal.reason), { once: true });
-          starting.resolve(env.signal);
+          scope.signal.addEventListener('abort', () => reject(scope.signal.reason), { once: true });
+          starting.resolve(scope.signal);
         });
-        return { body: env.createStream({ label: 'first', async *iterate() { yield 1; } }) };
+        return { body: scope.createStream({ label: 'first', async *iterate() { yield 1; } }) };
       },
     });
     const stage = defineStage<Turn, Turn, Body, Body>({
       name: 'tool loop', through: {
         request: { ...empty, provides: ['turn'] }, response: { ...empty, provides: ['body'] },
       },
-      execute: async (facts, next, env) => {
-        const first = await next(facts);
+      execute: async (facts, scope) => {
+        const first = await scope.next(facts);
         return {
-          body: env.wrapStream(first.body, {
-            label: 'tools', async *transform(source) {
+          body: scope.wrapStream(first.body, {
+            label: 'tools', async *transform(source, scope) {
               yield* source;
-              const { body } = await next({ ...facts, turn: 2 });
+              const { body } = await scope.next({ ...facts, turn: 2 });
               yield* body;
             },
           }),
         };
       },
     });
-    const pipeline = compose<Turn, Body, {}>('tools', { stages: [stage], ending });
+    const pipeline = compose<Turn & Body>()('tools', { entry: ['turn'], exit: ['body'], stages: [stage], ending });
     const handle = run(pipeline, { turn: 1 }, options);
     const { body } = await handle.result;
     const reader = body[Symbol.asyncIterator]();
@@ -557,13 +691,13 @@ describe('producer custody', () => {
   it('closes a pass-through stage before its child-owned stream ends', async () => {
     let captured: Next<Turn, Body> | undefined;
     const stage = defineStage<Turn, Turn, Body, Body>({
-      name: 'pass-through', through: { request: empty, response: empty },
-      execute: async (facts, next) => {
-        captured = next;
-        return await next(facts);
+      name: 'pass-through', through: { request: empty, response: { ...empty, needs: ['body'] } },
+      execute: async (facts, scope) => {
+        captured = scope.next;
+        return await scope.next(facts);
       },
     });
-    const pipeline = compose<Turn, Body, {}>('pass-through', { stages: [stage], ending: echoTurn });
+    const pipeline = compose<Turn & Body>()('pass-through', { entry: ['turn'], exit: ['body'], stages: [stage], ending: echoTurn });
     const handle = run(pipeline, { turn: 1 }, options);
     const { body } = await handle.result;
     expect(() => captured!({ turn: 1 })).toThrow(StageScopeClosedError);
@@ -585,14 +719,15 @@ describe('host and child cancel domains', () => {
     };
     const child = defineEnding<ChildRequest, Body>({
       name: 'child', request: { needs: ['operation'] }, return: { provides: ['body'] },
-      execute: async ({ operation }, _into, env) => {
+      execute: async ({ operation }, scope) => {
         if (operation === 'headers') await new Promise<never>((_resolve, reject) => {
-          env.signal.addEventListener('abort', () => reject(env.signal.reason), { once: true });
-          headers.resolve(env.signal);
+          scope.signal.addEventListener('abort', () => reject(scope.signal.reason), { once: true });
+          headers.resolve(scope.signal);
         });
         return {
-          body: env.createStream({
-            label: 'generation', async *iterate(signal) {
+          body: scope.createStream({
+            label: 'generation', async *iterate(scope) {
+              const { signal } = scope;
               frames.resolve(signal);
               await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }));
               yield 1;
@@ -601,7 +736,7 @@ describe('host and child cancel domains', () => {
         };
       },
     });
-    const execute = async (facts: Request, call: Next<ChildRequest, Body>, env: StageEnv): Promise<Answer> => {
+    const execute = async (facts: Request, call: Next<ChildRequest, Body>, scope: Scope): Promise<Answer> => {
       const interrupt = new AbortController();
       const childOptions = { signal: interrupt.signal };
       const { body, ...response } = await call({ ...facts, operation: 'body' }, childOptions);
@@ -611,18 +746,20 @@ describe('host and child cancel domains', () => {
       interrupt.abort(reason);
       expect(fetchSignal.reason).toBe(reason);
       expect(bodySignal.reason).toBe(reason);
-      expect(env.signal.aborted).toBe(false);
+      expect(scope.signal.aborted).toBe(false);
       await expect(pending).rejects.toBe(reason);
       await expect(read).resolves.toMatchObject({ done: true });
       return { ...response, parent: 'continued' };
     };
-    const pipeline = edge === 'next' ? compose<Request, Answer, {}>('parent', {
-      stages: [defineStage<Request, ChildRequest, Body, Answer>({ name: 'parent', through: declaration, execute })], ending: child,
-    }) : compose<Request, Answer, {}, { child: StaticTarget<ChildRequest, Body, {}> }>('parent', {
-      stages: [], targets: { child: compose<ChildRequest, Body, {}>('child', { stages: [], ending: child }) },
+    const pipeline = edge === 'next' ? compose<Request & Answer>()('parent', {
+      entry: [], exit: ['parent'],
+      stages: [defineStage<Request, ChildRequest, Body, Answer>({ name: 'parent', through: declaration, execute: (facts, scope) => execute(facts, scope.next, scope) })], ending: child,
+    }) : compose<Request & Answer>()('parent', {
+      entry: [], exit: ['parent'],
+      stages: [], targets: { child: compose<ChildRequest & Body>()('child', { entry: ['operation'], exit: ['body'], stages: [], ending: child }) },
       ending: defineEnding<Request, Answer, { child: StaticTarget<ChildRequest, Body, {}> }>({
         name: 'parent', request: { needs: [] }, into: { child: declaration },
-        execute: async (facts, into, env) => await execute(facts, into.child, env),
+        execute: async (facts, scope) => await execute(facts, scope.into.child, scope),
       }),
     });
     link([pipeline]);
@@ -636,19 +773,20 @@ describe('host and child cancel domains', () => {
     let original: ManagedStream<number> | undefined;
     const events: RunEvent[] = [];
     const options = { services: {}, finalizationTimeoutMs: 200, events: (event: RunEvent) => events.push(event) };
-    const sub = compose<Body, Body, {}>('child', {
+    const sub = compose<Body>()('child', {
+      entry: ['body'], exit: ['body'],
       stages: [], ending: defineEnding<Body, Body>({
         name: 'child', request: { needs: ['body'] }, return: { provides: ['body'] }, execute: async facts => facts,
       }),
     });
     const end = defineEnding<Body, Body>({
       name: 'subrun', request: { needs: ['body'] }, return: { provides: ['body'] },
-      execute: async (facts, _into, env) => await env.run(sub, facts).result,
+      execute: async (facts, scope) => await scope.run(sub, facts).result,
     });
     const stage = defineStage<Body, Body, Body, Body>({
-      name: 'next', through: { request: empty, response: empty }, execute: async (facts, next) => await next(facts),
+      name: 'next', through: { request: empty, response: { ...empty, needs: ['body'] } }, execute: async (facts, scope) => await scope.next(facts),
     });
-    const pipeline = compose<Body, Body, {}>('parent', { stages: [stage], ending: end });
+    const pipeline = compose<Body>()('parent', { entry: ['body'], exit: ['body'], stages: [stage], ending: end });
     const handle = run(pipeline, root => {
       rootEnv = root;
       original = root.createStream({ label: 'input', async *iterate() { yield 1; } });
@@ -666,7 +804,7 @@ describe('host and child cancel domains', () => {
 
   it('does not spend the finalization budget while a healthy exported body is still open', async () => {
     const events: RunEvent[] = [];
-    const handle = run(bodyPipeline(env => ({ body: env.createStream({ label: 'body', async *iterate() { yield 1; } }) })), {}, {
+    const handle = run(bodyPipeline(scope => ({ body: scope.createStream({ label: 'body', async *iterate() { yield 1; } }) })), {}, {
       ...options, finalizationTimeoutMs: 10, events: event => events.push(event),
     });
     const { body } = await handle.result;
@@ -680,10 +818,10 @@ describe('host and child cancel domains', () => {
 describe('named stream merges', () => {
   it('adopts two typed inputs and interleaves their frames', async () => {
     const events: RunEvent[] = [];
-    const handle = run(bodyPipeline(env => {
-      const a = env.createStream<number>({ label: 'numbers', async *iterate() { yield 1; yield 3; } });
-      const b = env.createStream<string>({ label: 'strings', async *iterate() { yield '2'; yield '4'; } });
-      const body = env.wrapStream({ a, b }, {
+    const handle = run(bodyPipeline(scope => {
+      const a = scope.createStream<number>({ label: 'numbers', async *iterate() { yield 1; yield 3; } });
+      const b = scope.createStream<string>({ label: 'strings', async *iterate() { yield '2'; yield '4'; } });
+      const body = scope.wrapStream({ a, b }, {
         label: 'merge', async *transform(sources) {
           expectTypeOf(sources.a).toEqualTypeOf<AsyncIterable<number>>();
           expectTypeOf(sources.b).toEqualTypeOf<AsyncIterable<string>>();
@@ -720,17 +858,17 @@ describe('named stream merges', () => {
     const closingA = Promise.withResolvers<void>();
     const finishA = Promise.withResolvers<void>();
     const order: string[] = [];
-    const handle = run(bodyPipeline(env => {
-      const a = env.createStream({
-        label: 'a', async *iterate(signal) { signalA.resolve(signal); yield await frameA.promise; },
+    const handle = run(bodyPipeline(scope => {
+      const a = scope.createStream({
+        label: 'a', async *iterate(scope) { const { signal } = scope; signalA.resolve(signal); yield await frameA.promise; },
         onClose: async end => { order.push(`a ${end.how}`); closingA.resolve(); await finishA.promise; },
       });
-      const b = env.createStream({
-        label: 'b', async *iterate(signal) { signalB.resolve(signal); yield await frameB.promise; },
+      const b = scope.createStream({
+        label: 'b', async *iterate(scope) { const { signal } = scope; signalB.resolve(signal); yield await frameB.promise; },
         onClose: end => { order.push(`b ${end.how}`); },
       });
       return {
-        body: env.wrapStream({ a, b }, {
+        body: scope.wrapStream({ a, b }, {
           label: 'merge', async *transform(sources) {
             const first = sources.a[Symbol.asyncIterator]();
             const second = sources.b[Symbol.asyncIterator]();
@@ -769,16 +907,17 @@ describe('named stream merges', () => {
     const controller = new AbortController();
     const readyA = Promise.withResolvers<AbortSignal>();
     const readyB = Promise.withResolvers<AbortSignal>();
-    const handle = run(bodyPipeline(env => {
-      const input = (label: string, ready: ReturnType<typeof Promise.withResolvers<AbortSignal>>) => env.createStream({
-        label, async *iterate(signal) {
+    const handle = run(bodyPipeline(scope => {
+      const input = (label: string, ready: ReturnType<typeof Promise.withResolvers<AbortSignal>>) => scope.createStream({
+        label, async *iterate(scope) {
+          const { signal } = scope;
           ready.resolve(signal);
           await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }));
           yield 1;
         },
       });
       return {
-        body: env.wrapStream({ a: input('a', readyA), b: input('b', readyB) }, {
+        body: scope.wrapStream({ a: input('a', readyA), b: input('b', readyB) }, {
           label: 'merge', async *transform(sources) {
             const [a, b] = await Promise.all([sources.a[Symbol.asyncIterator]().next(), sources.b[Symbol.asyncIterator]().next()]);
             if (!a.done) yield a.value;
@@ -805,10 +944,10 @@ describe('named stream merges', () => {
     const first = new Error('first read failed');
     const second = new Error('second read failed');
     const events: RunEvent[] = [];
-    const handle = run(bodyPipeline(env => ({
-      body: env.wrapStream({
-        a: env.createStream<number>({ label: 'a', async *iterate() { throw first; } }),
-        b: env.createStream<number>({ label: 'b', async *iterate() { throw second; } }),
+    const handle = run(bodyPipeline(scope => ({
+      body: scope.wrapStream({
+        a: scope.createStream<number>({ label: 'a', async *iterate() { throw first; } }),
+        b: scope.createStream<number>({ label: 'b', async *iterate() { throw second; } }),
       }, {
         label: 'merge', transform: sources => sources.a,
         onClose: async (_end, { a, b }) => {
@@ -825,12 +964,12 @@ describe('named stream merges', () => {
   });
 
   it('preserves ownership when any input is unavailable or listed twice', async () => {
-    const handle = run(bodyPipeline(async env => {
-      const a = env.createStream({ label: 'a', async *iterate() { yield 1; } });
-      const b = env.createStream({ label: 'b', async *iterate() { yield 2; } });
+    const handle = run(bodyPipeline(async scope => {
+      const a = scope.createStream({ label: 'a', async *iterate() { yield 1; } });
+      const b = scope.createStream({ label: 'b', async *iterate() { yield 2; } });
       await b[Symbol.asyncIterator]().next();
-      expect(() => env.wrapStream({ a, b }, { label: 'unavailable', transform: sources => sources.a })).toThrow(StreamOwnershipError);
-      expect(() => env.wrapStream({ a, alias: a }, { label: 'duplicate', transform: sources => sources.a })).toThrow('duplicate input');
+      expect(() => scope.wrapStream({ a, b }, { label: 'unavailable', transform: sources => sources.a })).toThrow(StreamOwnershipError);
+      expect(() => scope.wrapStream({ a, alias: a }, { label: 'duplicate', transform: sources => sources.a })).toThrow('duplicate input');
       await b.close();
       return { body: a };
     }), {}, options);
@@ -841,10 +980,10 @@ describe('named stream merges', () => {
 
   it('rejects concurrent reads on one named source while another can advance', async () => {
     const frame = Promise.withResolvers<number>();
-    const handle = run(bodyPipeline(env => ({
-      body: env.wrapStream({
-        a: env.createStream({ label: 'a', async *iterate() { yield await frame.promise; } }),
-        b: env.createStream({ label: 'b', async *iterate() { yield 2; } }),
+    const handle = run(bodyPipeline(scope => ({
+      body: scope.wrapStream({
+        a: scope.createStream({ label: 'a', async *iterate() { yield await frame.promise; } }),
+        b: scope.createStream({ label: 'b', async *iterate() { yield 2; } }),
       }, {
         label: 'merge', async *transform(sources) {
           const a = sources.a[Symbol.asyncIterator]().next();
@@ -868,22 +1007,22 @@ describe('named stream merges', () => {
       name: 'merge turns', through: {
         request: { ...empty, provides: ['turn'] }, response: { ...empty, provides: ['body'] },
       },
-      execute: async (facts, next, env) => {
-        const first = await next(facts);
-        const controls = env.createStream({ label: 'controls', async *iterate() { yield 9; } });
+      execute: async (facts, scope) => {
+        const first = await scope.next(facts);
+        const controls = scope.createStream({ label: 'controls', async *iterate() { yield 9; } });
         return {
-          body: env.wrapStream({ generation: first.body, controls }, {
-            label: 'merge', async *transform(sources) {
+          body: scope.wrapStream({ generation: first.body, controls }, {
+            label: 'merge', async *transform(sources, scope) {
               yield* sources.generation;
               yield* sources.controls;
-              const { body } = await next({ ...facts, turn: 2 });
+              const { body } = await scope.next({ ...facts, turn: 2 });
               yield* body;
             },
           }),
         };
       },
     });
-    const pipeline = compose<Turn, Body, {}>('merge', { stages: [stage], ending: echoTurn });
+    const pipeline = compose<Turn & Body>()('merge', { entry: ['turn'], exit: ['body'], stages: [stage], ending: echoTurn });
     const handle = run(pipeline, { turn: 1 }, { ...options, events: event => events.push(event) });
     const { body } = await handle.result;
     await expect(Array.fromAsync(body)).resolves.toEqual([1, 9, 2]);
@@ -898,17 +1037,17 @@ describe('named stream merges', () => {
     const order: string[] = [];
     const ending = defineEnding<{}, {}>({
       name: 'lose merge', request: { needs: [] }, return: { provides: [] },
-      execute: async (_facts, _into, env) => {
-        const input = (label: string) => env.createStream({
+      execute: async (_facts, scope) => {
+        const input = (label: string) => scope.createStream({
           label, async *iterate() { yield label; }, onClose: end => { order.push(`${label} ${end.how}`); },
         });
-        env.wrapStream({ a: input('a'), b: input('b') }, {
+        scope.wrapStream({ a: input('a'), b: input('b') }, {
           label: 'merge', transform: sources => sources.a, onClose: end => { order.push(`merge ${end.how}`); },
         });
         return {};
       },
     });
-    const handle = run(compose<{}, {}, {}>('leak', { stages: [], ending }), {}, options);
+    const handle = run(compose()('leak', { entry: [], exit: [], stages: [], ending }), {}, options);
     await expect(handle.result).resolves.toEqual({});
     await expect(handle.done).resolves.toMatchObject({ ok: false, error: { name: 'StreamLeakError', fields: { labels: ['merge'] } } });
     expect(order).toEqual(['merge leaked', 'a released', 'b released']);
