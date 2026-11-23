@@ -11,7 +11,7 @@ import { cloudflareSocketDial } from './socket-dial.ts';
 import { timingSafeEqual } from './timing-safe-equal.ts';
 import { FileDumpStore, initDumpBroker, initDumpStore, initExecutionCellNamespace } from '@floway-dev/gateway';
 import { dumpCodec } from '@floway-dev/gateway/dump-codec';
-import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
+import type { DumpBrokerMessage } from '@floway-dev/gateway/dump-types';
 import {
   IMAGE_CACHE_POLICY,
   initEnv,
@@ -72,6 +72,6 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
   const executionCells = new DurableObjectExecutionCellNamespace(env.EXECUTION_DO);
   initExecutionCellNamespace(executionCells);
   initLogStreamStore(new DurableObjectLogStreamStore(env.LOG_STREAM_DO));
-  initDumpBroker(new ExecutionCellChannelBroker<DumpMetadata>(executionCells, dumpCodec));
+  initDumpBroker(new ExecutionCellChannelBroker<DumpBrokerMessage>(executionCells, dumpCodec));
   return { db: env.DB };
 };
