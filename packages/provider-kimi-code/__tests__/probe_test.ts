@@ -1,12 +1,12 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { config, profile, recentState, record, usage } from './fixtures.ts';
-import { callKimi, kimiInput } from './pipeline-fixture.ts';
+import { kimiInput, probeSettlements, streamKimiChat } from './pipeline-fixture.ts';
 import { refreshKimiCodeAccountProbe, refreshKimiCodeUsageProbe, runKimiCodeScheduledTask } from '../src/probe.ts';
-import { createKimiCodeProvider } from '../src/provider.ts';
+import { createKimiCodeService } from '../src/service.ts';
 import { readKimiCodeUpstreamState } from '../src/state.ts';
-import { isDeferred } from '@floway-dev/pipeline';
-import { initProviderRepo, type Fetcher, type UpstreamRecord } from '@floway-dev/provider';
+import type { RunEvent } from '@floway-dev/pipeline';
+import { initProviderRepo, type Fetcher } from '@floway-dev/provider';
 import { sseResponse, stubProviderModel, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
 
 const setupRepo = (initial: unknown = null) => {
@@ -19,7 +19,11 @@ const setupRepo = (initial: unknown = null) => {
       saveState: async (_id, update) => { state = update(state, 1); },
     },
   }));
-  return { read: () => readKimiCodeUpstreamState(state), metrics };
+  return {
+    read: () => readKimiCodeUpstreamState(state),
+    set: (fresh: unknown) => { state = fresh; },
+    metrics,
+  };
 };
 
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -81,26 +85,32 @@ test('scheduled quota refresh succeeds even when the optional account endpoint f
 });
 
 test('request-time debounce, opt-out and scheduled intervals issue only due reads', async () => {
-  setupRepo();
+  const repo = setupRepo(recentState());
   const calls: string[] = [];
   const fetcher: Fetcher = async url => { calls.push(url); return Response.json(url.endsWith('/usages') ? usage() : profile); };
   const model = stubProviderModel({ providerData: { standardModelId: 'kimi-for-coding' } });
-  const infer = (upstream: UpstreamRecord) => callKimi(
-    createKimiCodeProvider(upstream).pipelines.openaiChatCompletions,
-    kimiInput(model, { messages: [] }),
-    { fetcher: async (url, init) => url.endsWith('/chat/completions') ? sseResponse() : await fetcher(url, init) },
-  );
-  const recent = await infer(record());
-  expect(recent['response.http'].status).toBe(200);
+  const input = kimiInput(model, { messages: [] }, record({ state: null }));
+  const kimiCode = createKimiCodeService();
+  const infer = async () => {
+    const observed: RunEvent[] = [];
+    const result = await streamKimiChat(input, {
+      kimiCode,
+      fetcher: async (url, init) => url.endsWith('/chat/completions') ? sseResponse() : await fetcher(url, init),
+      events: event => { observed.push(event); },
+    });
+    expect(result['response.http'].status).toBe(200);
+    return probeSettlements(observed);
+  };
+  expect(await infer()).toEqual([]);
   expect(calls).toHaveLength(0);
-  const due = await infer(record({ state: null }));
-  const usageProbe = 'response.provider.usageProbe' in due && due['response.provider.usageProbe'];
-  const accountProbe = 'response.provider.accountProbe' in due && due['response.provider.accountProbe'];
-  if (!isDeferred(usageProbe) || !isDeferred(accountProbe)) throw new Error('Expected usage and account deferreds');
-  await expect(usageProbe.promise).resolves.toEqual({ persisted: true });
-  await expect(accountProbe.promise).resolves.toEqual({ persisted: true });
+  repo.set(null);
+  expect(await infer()).toMatchObject([
+    { name: 'kimiCode.usageProbe', settlement: { k: 'settled', ok: true, value: { persisted: true } } },
+    { name: 'kimiCode.accountProbe', settlement: { k: 'settled', ok: true, value: { persisted: true } } },
+  ]);
   expect(calls.map(url => new URL(url).pathname).sort()).toEqual(['/coding/v1/me', '/coding/v1/usages']);
   calls.length = 0;
+  expect(await infer()).toEqual([]);
   await runKimiCodeScheduledTask(record({ state: null, usageRefreshIntervalMinutes: 0 }), { fetcher: async () => fetcher });
   await runKimiCodeScheduledTask(record({ enabled: false, state: null, usageRefreshIntervalMinutes: 5 }), { fetcher: async () => fetcher });
   await runKimiCodeScheduledTask(record({ usageRefreshIntervalMinutes: 5 }), { fetcher: async () => fetcher });
