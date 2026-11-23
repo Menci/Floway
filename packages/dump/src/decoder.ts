@@ -69,7 +69,7 @@ export interface DecodedStreamEnd {
 export interface DecodedStreamNode {
   readonly streamId: number;
   readonly stageId: number;
-  readonly wraps?: number;
+  readonly wraps?: readonly number[];
   readonly label: string;
   readonly createdAtMs: number;
   readonly frames: readonly DecodedStreamFrame[];
@@ -300,7 +300,7 @@ export const createDumpDecoder = (): DumpDecoder => {
     case 'stream': {
       const { streamId, stageId, wraps, label, tMs } = event;
       if (streamNodes.has(streamId)) throw new Error(`Duplicate dump stream ${streamId}`);
-      if (wraps !== undefined) requireEntry(streamNodes, wraps, 'wrapped stream').derivedStreamIds.push(streamId);
+      for (const innerId of wraps ?? []) requireEntry(streamNodes, innerId, 'wrapped stream').derivedStreamIds.push(streamId);
       streamNodes.set(streamId, { streamId, stageId, wraps, label, createdAtMs: tMs, frames: [], derivedStreamIds: [] });
       // The input factory can announce streams for the reserved root id before enter.
       const ownerStreams = stages.get(stageId)?.createdStreamIds ?? pendingStreamsByStage.get(stageId);
@@ -388,12 +388,23 @@ export const createDumpDecoder = (): DumpDecoder => {
 };
 
 export const getStreamLineage = (model: DumpViewModel, streamId: number): readonly number[] => {
-  const ancestors: number[] = [];
-  for (let stream = model.streams.get(streamId); stream !== undefined;) {
-    ancestors.push(stream.streamId);
-    stream = stream.wraps === undefined ? undefined : model.streams.get(stream.wraps);
+  const stream = model.streams.get(streamId);
+  if (!stream) return [];
+  const lineage: number[] = [];
+  const seen = new Set<number>();
+  const addInputs = (node: DecodedStreamNode): void => {
+    if (seen.has(node.streamId)) return;
+    seen.add(node.streamId);
+    for (const innerId of node.wraps ?? []) addInputs(requireEntry(model.streams, innerId, 'wrapped stream'));
+    lineage.push(node.streamId);
+  };
+  addInputs(stream);
+  const descendants = [...stream.derivedStreamIds];
+  for (const id of descendants) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    lineage.push(id);
+    descendants.push(...requireEntry(model.streams, id, 'derived stream').derivedStreamIds);
   }
-  const descendants = [...(model.streams.get(streamId)?.derivedStreamIds ?? [])];
-  for (const id of descendants) descendants.push(...requireEntry(model.streams, id, 'derived stream').derivedStreamIds);
-  return [...ancestors.reverse(), ...descendants];
+  return lineage;
 };

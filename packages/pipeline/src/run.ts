@@ -4,16 +4,17 @@ import { checkDown, checkUp, requireKeys } from './declarations.ts';
 import type { Answer } from './declarations.ts';
 import { DeferredResource } from './deferred.ts';
 import type { OwnerDeferredFailure } from './deferred.ts';
-import { FinalizationTimeoutError, StageScopeClosedError } from './errors.ts';
+import { FinalizationTimeoutError, StageScopeClosedError, StreamOwnershipError } from './errors.ts';
 import { Trace } from './events.ts';
 import type { RunEventSink, StageEdge } from './events.ts';
 import { collectStreams, freezeFacts } from './facts.ts';
 import type { Facts } from './facts.ts';
+import { isManagedStream } from './handles.ts';
 import type { Deferred, DeferredHandle, ManagedStream } from './handles.ts';
 import type { ErrorSnapshot } from './snapshot-error.ts';
 import type { ChildOptions, LogLevel, SideDecl, StageEnv, ThroughDecl } from './stage.ts';
-import { combineErrors, Custody, resourceOf, StreamResource, wrapOptions } from './stream.ts';
-import type { CreateStreamOptions, StreamEnd, StreamFailure, StreamHooks, WrapStreamOptions } from './stream.ts';
+import { combineErrors, Custody, resourceOf, StreamResource, wrapOptions, wrapStreamsOptions } from './stream.ts';
+import type { CreateStreamOptions, StreamEnd, StreamFailure, StreamHooks, WrapStreamOptions, WrapStreamsOptions } from './stream.ts';
 
 export interface RootEnv {
   readonly createStream: <T>(options: CreateStreamOptions<T>) => ManagedStream<T>;
@@ -208,7 +209,7 @@ const createRuntimeStream = <T>(
   stageId: number,
   owner: Custody,
   options: CreateStreamOptions<T>,
-  inner?: Resource,
+  inners: readonly Resource[] = [],
   producer?: ProducerHooks,
 ): StreamResource<T> => {
   const { trace } = state;
@@ -225,9 +226,9 @@ const createRuntimeStream = <T>(
       if (failure) state.errors.push(failure.reason);
       producer?.end(resource, failure);
     },
-  }, options, inner);
+  }, options, inners);
   void state.track(resource.completion, false);
-  trace.emit({ k: 'stream', streamId, stageId, label: options.label, ...(inner ? { wraps: inner.id } : {}) });
+  trace.emit({ k: 'stream', streamId, stageId, label: options.label, ...(inners.length ? { wraps: inners.map(inner => inner.id) } : {}) });
   return resource;
 };
 
@@ -266,6 +267,25 @@ class Scope {
     const log = (level: LogLevel, message: string, fields?: Facts): void => {
       state.trace.emit({ k: 'log', stageId: id, level, message, ...(fields === undefined ? {} : { fields: freezeFacts(fields, 'log.fields', state.trace.membership) }) });
     };
+    const wrapStream: StageEnv<any>['wrapStream'] = <Out>(
+      inputs: ManagedStream<unknown> | Readonly<Record<string, ManagedStream<unknown>>>,
+      options: WrapStreamOptions<any, Out> | WrapStreamsOptions<any, Out>,
+    ): ManagedStream<Out> => {
+      const custody = this.admit('wrapStream');
+      const single = isManagedStream(inputs);
+      const entries = (single ? [['', inputs] as const] : Object.entries(inputs)).map(([key, handle]) => [key, resourceOf(handle)] as const);
+      const inners = new Set<Resource>();
+      for (const [, inner] of entries) {
+        inner.assertOwned(custody, 'wrapStream');
+        if (inners.has(inner)) throw new StreamOwnershipError(inner.handle.label, 'wrapStream (duplicate input)');
+        inners.add(inner);
+      }
+      const wrapped = single
+        ? wrapOptions(entries[0][1], options as WrapStreamOptions<unknown, Out>)
+        : wrapStreamsOptions(entries, options as WrapStreamsOptions<Record<string, unknown>, Out>);
+      for (const inner of inners) inner.adopt();
+      return this.#stream(custody, wrapped, [...inners]);
+    };
     return Object.freeze({
       runId: state.runId,
       stageId: id,
@@ -280,13 +300,7 @@ class Scope {
       }),
       services: state.options.services,
       createStream: <T>(options: CreateStreamOptions<T>) => this.#stream(this.admit('createStream'), options),
-      wrapStream: <In, Out>(inner: ManagedStream<In>, options: WrapStreamOptions<In, Out>) => {
-        const custody = this.admit('wrapStream');
-        const resource = resourceOf(inner);
-        resource.assertOwned(custody, 'wrapStream');
-        resource.adopt();
-        return this.#stream(custody, wrapOptions(resource, options), resource);
-      },
+      wrapStream,
       defer: <T>(name: string, work: Promise<T>): Deferred<T> => {
         this.admit('defer', true);
         const deferred = state.admitDeferred<T>(name, id);
@@ -317,8 +331,8 @@ class Scope {
     });
   }
 
-  #stream<T>(owner: InvocationCustody, options: CreateStreamOptions<T>, inner?: Resource): ManagedStream<T> {
-    const resource = createRuntimeStream(this.state, this.id, owner, options, inner, {
+  #stream<T>(owner: InvocationCustody, options: CreateStreamOptions<T>, inners?: readonly Resource[]): ManagedStream<T> {
+    const resource = createRuntimeStream(this.state, this.id, owner, options, inners, {
       pull: stream => {
         const producer = this.#producers.get(stream);
         if (!producer || producer.sealed) return;

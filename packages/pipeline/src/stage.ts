@@ -2,7 +2,7 @@ import type { IntoMap, Pipeline, TargetMap } from './compose.ts';
 import type { Facts } from './facts.ts';
 import type { Deferred, DeferredHandle, ManagedStream } from './handles.ts';
 import type { RunHandle } from './run.ts';
-import type { CreateStreamOptions, WrapStreamOptions } from './stream.ts';
+import type { CreateStreamOptions, WrapStreamOptions, WrapStreamsOptions } from './stream.ts';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -17,7 +17,12 @@ export interface StageEnv<S = {}> {
   readonly log: StageLogger;
   readonly services: Readonly<S>;
   readonly createStream: <T>(options: CreateStreamOptions<T>) => ManagedStream<T>;
-  readonly wrapStream: <In, Out>(inner: ManagedStream<In>, options: WrapStreamOptions<In, Out>) => ManagedStream<Out>;
+  readonly wrapStream: {
+    <In, Out>(inner: ManagedStream<In>, options: WrapStreamOptions<In, Out>): ManagedStream<Out>;
+    <Ins extends Record<string, unknown>, Out>(
+      inners: { readonly [K in keyof Ins]: ManagedStream<Ins[K]> }, options: WrapStreamsOptions<Ins, Out>,
+    ): ManagedStream<Out>;
+  };
   readonly defer: <T>(name: string, work: Promise<T>) => Deferred<T>;
   readonly deferred: <T>(name: string, owner: ManagedStream<unknown> | 'scope') => DeferredHandle<T>;
   readonly run: <I, O, S2>(pipeline: Pipeline<I, O, S2> & Pipeline<I, O, S>, facts: I) => RunHandle<O>;

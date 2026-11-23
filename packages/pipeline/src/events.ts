@@ -14,7 +14,7 @@ type Event =
   | { readonly k: 'fail'; readonly stageId: number; readonly error: ErrorSnapshot; readonly facts: Facts }
   | { readonly k: 'closed'; readonly stageId: number; readonly ok: boolean; readonly error?: ErrorSnapshot }
   | { readonly k: 'log'; readonly stageId: number; readonly level: LogLevel; readonly message: string; readonly fields?: Facts }
-  | { readonly k: 'stream'; readonly streamId: number; readonly stageId: number; readonly wraps?: number; readonly label: string }
+  | { readonly k: 'stream'; readonly streamId: number; readonly stageId: number; readonly wraps?: readonly number[]; readonly label: string }
   | { readonly k: 'frame'; readonly streamId: number; readonly value: unknown }
   | { readonly k: 'end'; readonly streamId: number; readonly how: StreamEnd['how']; readonly error?: ErrorSnapshot }
   | { readonly k: 'deferred'; readonly deferredId: number; readonly stageId: number; readonly name: string }

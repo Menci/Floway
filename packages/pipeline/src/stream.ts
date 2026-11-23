@@ -24,6 +24,12 @@ export interface WrapStreamOptions<In, Out> {
   readonly onClose?: (end: StreamEnd, inner: ReleasingInner<In> | null) => void | Promise<void>;
 }
 
+export interface WrapStreamsOptions<Ins extends Record<string, unknown>, Out> {
+  readonly label: string;
+  readonly transform: (sources: { readonly [K in keyof Ins]: AsyncIterable<Ins[K]> }, signal: AbortSignal) => AsyncIterable<Out>;
+  readonly onClose?: (end: StreamEnd, inners: { readonly [K in keyof Ins]: ReleasingInner<Ins[K]> | null }) => void | Promise<void>;
+}
+
 type Done = { readonly done: true; readonly value: undefined };
 const done: Done = Object.freeze({ done: true, value: undefined });
 const aborted = Symbol('aborted read');
@@ -99,7 +105,7 @@ export class StreamResource<T> {
   readonly #hooks: StreamHooks;
   readonly #iterate: (signal: AbortSignal) => AsyncIterable<T>;
   readonly #onClose: CreateStreamOptions<T>['onClose'];
-  readonly #inner?: StreamResource<unknown>;
+  readonly #inners: readonly StreamResource<unknown>[];
   readonly #ownerEnded = new Set<() => OwnerDeferredFailure | undefined>();
   #owner: Custody | undefined;
   #source: Source<T> | undefined;
@@ -112,11 +118,11 @@ export class StreamResource<T> {
   #end: StreamEnd | undefined;
   #finished = false;
 
-  constructor(owner: Custody, hooks: StreamHooks, options: CreateStreamOptions<T>, inner?: StreamResource<unknown>) {
+  constructor(owner: Custody, hooks: StreamHooks, options: CreateStreamOptions<T>, inners: readonly StreamResource<unknown>[] = []) {
     this.#hooks = hooks;
     this.#iterate = options.iterate;
     this.#onClose = options.onClose;
-    this.#inner = inner;
+    this.#inners = inners;
     this.#birthSignal = owner.signal;
     this.#onAbort = () => {
       const { reason } = this.#birthSignal.aborted ? this.#birthSignal : this.#owner!.signal;
@@ -169,7 +175,7 @@ export class StreamResource<T> {
   handOffReadFailures(): void {
     if (this.#releaseOwnsReads) return;
     if (!this.ending) this.#releaseOwnsReads = true;
-    this.#inner?.handOffReadFailures();
+    for (const inner of this.#inners) inner.handOffReadFailures();
   }
 
   #assertPublic(operation: string): void {
@@ -250,16 +256,20 @@ export class StreamResource<T> {
       if (end.how === 'cancelled' && this.#end.how !== 'cancelled') {
         this.#end = end;
         this.#hooks.seal(this, end);
-        void this.#inner?.stop(end);
+        for (const inner of this.#inners) void inner.stop(end);
       }
       return this.completion;
     }
     this.#end = end;
-    if (end.how === 'released') this.#inner?.handOffReadFailures();
+    if (end.how === 'released') {
+      for (const inner of this.#inners) inner.handOffReadFailures();
+    }
     this.#ended.resolve();
     this.#hooks.seal(this, end);
     this.#controller.abort(end.how === 'cancelled' ? end.reason : end.how === 'errored' ? end.error : undefined);
-    if (end.how === 'cancelled') void this.#inner?.stop(end);
+    if (end.how === 'cancelled') {
+      for (const inner of this.#inners) void inner.stop(end);
+    }
     void Promise.resolve().then(() => this.#finalize()).then(this.#completed.resolve, this.#completed.reject);
     return this.completion;
   }
@@ -278,7 +288,9 @@ export class StreamResource<T> {
     this.#read = undefined;
     this.#source = undefined;
     await attempt(() => this.#onClose?.(this.#end!));
-    await attempt(() => this.#inner?.stop({ how: 'released' }));
+    for (const inner of this.#inners) {
+      if (!inner.finished) await attempt(() => inner.stop({ how: 'released' }));
+    }
     await attempt(() => this.#hooks.finish(this));
     const end = this.#end!;
     const cleanupErrors = [...errors];
@@ -296,13 +308,11 @@ export class StreamResource<T> {
   }
 }
 
-export const wrapOptions = <In, Out>(inner: StreamResource<In>, options: WrapStreamOptions<In, Out>): CreateStreamOptions<Out> => {
-  let pending: Promise<Pull<In>> | undefined;
-  let transforming = false;
+const cursorOf = <T>(inner: StreamResource<T>) => {
+  let pending: Promise<Pull<T>> | undefined;
+  let reading: Promise<Pull<T>> | undefined;
   let releasing = false;
-  const next = async (signal?: AbortSignal): Promise<Pull<In>> => {
-    if (transforming) throw new ConcurrentStreamReadError(inner.handle.label);
-    transforming = true;
+  const read = async (signal?: AbortSignal): Promise<Pull<T>> => {
     try {
       const task = pending ??= inner.pull();
       const result = signal ? await raceAbort(task, signal) : await task;
@@ -315,14 +325,20 @@ export const wrapOptions = <In, Out>(inner: StreamResource<In>, options: WrapStr
     } catch (error) {
       pending = undefined;
       throw error;
-    } finally {
-      transforming = false;
     }
+  };
+  const next = (signal?: AbortSignal): Promise<Pull<T>> => {
+    if (signal?.aborted) return Promise.resolve(done);
+    if (reading !== undefined) return Promise.reject(new ConcurrentStreamReadError(inner.handle.label));
+    reading = read(signal);
+    const clear = (): void => { reading = undefined; };
+    void reading.then(clear, clear);
+    return reading;
   };
   const assertReleasing = (): void => {
     if (!releasing) throw new StreamOwnershipError(inner.handle.label, 'release hook');
   };
-  const loan: ReleasingInner<In> = {
+  const loan: ReleasingInner<T> = {
     [Symbol.asyncIterator]: () => {
       assertReleasing();
       return loan;
@@ -343,24 +359,54 @@ export const wrapOptions = <In, Out>(inner: StreamResource<In>, options: WrapStr
     },
   };
   return {
-    label: options.label,
-    // Retain a pending inner pull when the transform stops. The release hook can
-    // take that same result, without running a second read or cancelling the inner.
-    iterate: signal => options.transform({
+    source: (signal: AbortSignal): AsyncIterable<T> => ({
       [Symbol.asyncIterator]: () => ({ next: () => next(signal), return: async () => done }),
-    }, signal),
-    onClose: async end => {
-      if (!options.onClose) return;
-      if (end.how === 'cancelled' || (inner.ending && pending === undefined)) {
-        await options.onClose(end, null);
-        return;
-      }
+    }),
+    async release(end: StreamEnd): Promise<ReleasingInner<T> | null> {
+      if (end.how === 'cancelled') return null;
+      // A merge can exit after just one cursor wakes. Join this cursor's wait
+      // before lending it; its physical read remains available to the hook.
+      if (reading !== undefined) await Promise.allSettled([reading]);
+      if (inner.ending && pending === undefined) return null;
       inner.handOffReadFailures();
       releasing = true;
+      return loan;
+    },
+    revoke: () => { releasing = false; },
+  };
+};
+
+export const wrapOptions = <In, Out>(inner: StreamResource<In>, options: WrapStreamOptions<In, Out>): CreateStreamOptions<Out> => {
+  const cursor = cursorOf(inner);
+  return {
+    label: options.label,
+    iterate: signal => options.transform(cursor.source(signal), signal),
+    onClose: async end => {
+      if (!options.onClose) return;
       try {
-        await options.onClose(end, loan);
+        await options.onClose(end, await cursor.release(end));
       } finally {
-        releasing = false;
+        cursor.revoke();
+      }
+    },
+  };
+};
+
+export const wrapStreamsOptions = <Out>(
+  inners: readonly (readonly [string, StreamResource<unknown>])[],
+  options: WrapStreamsOptions<Record<string, unknown>, Out>,
+): CreateStreamOptions<Out> => {
+  const cursors = inners.map(([name, inner]) => [name, cursorOf(inner)] as const);
+  return {
+    label: options.label,
+    iterate: signal => options.transform(Object.freeze(Object.fromEntries(cursors.map(([name, cursor]) => [name, cursor.source(signal)]))), signal),
+    onClose: async end => {
+      if (!options.onClose) return;
+      try {
+        const loans = await Promise.all(cursors.map(async ([name, cursor]) => [name, await cursor.release(end)] as const));
+        await options.onClose(end, Object.freeze(Object.fromEntries(loans)));
+      } finally {
+        for (const [, cursor] of cursors) cursor.revoke();
       }
     },
   };

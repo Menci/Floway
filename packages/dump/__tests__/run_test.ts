@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { createDumpDecoder, getStreamLineage, isDecodedDeferredRef, isDecodedStreamRef } from '../src/browser.ts';
+import { createDumpDecoder, getStreamLineage, isDecodedDeferredRef, isDecodedStreamRef, projectWireExchanges } from '../src/browser.ts';
 import { createDumpPump } from '../src/pump.ts';
 import type { Deferred, ManagedStream } from '@floway-dev/pipeline';
 import { Bytes, compose, defineEnding, run } from '@floway-dev/pipeline';
@@ -62,4 +62,50 @@ it('records a real pipeline with a run-owned stream, a wrapper, and a deferred s
   expect(output.frames[1].value).toBe(input.frames[1].value);
   expect(output.end?.how).toBe('exhausted');
   expect(model.deferreds.get(usageRef.$deferred)?.settlement).toMatchObject({ ok: true, value: 2 });
+});
+
+it('round-trips both merge edges and projects only the merged body onto the wire', async () => {
+  type Input = { readonly a: ManagedStream<Bytes>; readonly b: ManagedStream<Bytes> };
+  type WireResponse = {
+    readonly status: number;
+    readonly statusText: string;
+    readonly headers: readonly [];
+    readonly body: ManagedStream<Bytes>;
+    readonly timing: { readonly startedAt: number; readonly headersAt: number };
+  };
+  type Output = { readonly 'response.http': WireResponse };
+  const ending = defineEnding<Input, Output>({
+    name: 'mergeBody', request: { needs: ['a', 'b'] }, return: { provides: ['response.http'] },
+    execute: async ({ a, b }, _into, env) => {
+      const body = env.wrapStream({ a, b }, {
+        label: 'merged', async *transform(sources) {
+          const [first, second] = await Promise.all([sources.a[Symbol.asyncIterator]().next(), sources.b[Symbol.asyncIterator]().next()]);
+          if (!first.done && !second.done) yield Bytes.concat([first.value, second.value]);
+        },
+      });
+      return { 'response.http': { status: 200, statusText: 'OK', headers: [], body, timing: { startedAt: 0, headersAt: 1 } } };
+    },
+  });
+  const pipeline = compose<Input, Output, {}>('merge', { stages: [], ending });
+  const pump = createDumpPump();
+  const decoder = createDumpDecoder();
+  const decode = pump.artifact.pipeTo(new WritableStream({ write: bytes => { decoder.push(bytes); } }));
+  const handle = run(pipeline, root => ({
+    a: root.createStream({ label: 'a', async *iterate() { yield Bytes.fromUtf8('a'); } }),
+    b: root.createStream({ label: 'b', async *iterate() { yield Bytes.fromUtf8('b'); } }),
+  }), { services: {}, events: pump.sink, finalizationTimeoutMs: 1_000 });
+  const { 'response.http': { body } } = await handle.result;
+  expect((await Array.fromAsync(body)).map(chunk => chunk.utf8())).toEqual(['ab']);
+  await expect(handle.done).resolves.toEqual({ ok: true });
+  await Promise.all([pump.completed, decode]);
+
+  const model = decoder.finish();
+  const [a, b, merge] = model.streams.values();
+  expect(merge.wraps).toEqual([a.streamId, b.streamId]);
+  expect(a.derivedStreamIds).toEqual([merge.streamId]);
+  expect(b.derivedStreamIds).toEqual([merge.streamId]);
+  expect(getStreamLineage(model, merge.streamId)).toEqual([a.streamId, b.streamId, merge.streamId]);
+  const response = projectWireExchanges(model).downstreamResponse;
+  expect(response?.stream).toBe(merge);
+  expect(response?.stream?.frames.map(frame => frame.value instanceof Bytes && frame.value.utf8())).toEqual(['ab']);
 });

@@ -228,6 +228,8 @@ function StreamCard({ model, streamId, tag }: { model: DumpViewModel; streamId: 
   const streamNode = model.streams.get(streamId);
   if (streamNode === undefined) return null;
   const lineage = getStreamLineage(model, streamId);
+  const lineageNodes = lineage.map(id => model.streams.get(id)!);
+  const linear = lineageNodes.slice(1).every((node, index) => node.wraps?.length === 1 && node.wraps[0] === lineage[index]);
   const recentFrames = streamNode.frames.slice(-4).map(frame => ({
     index: frame.index,
     tMs: frame.tMs,
@@ -241,9 +243,16 @@ function StreamCard({ model, streamId, tag }: { model: DumpViewModel; streamId: 
       <Text size={200} className="text-fui-fg3">{t('requests.pipeline.streamFrames', { count: streamNode.frames.length })}</Text>
     </div>
     <div className="flex flex-wrap items-center gap-1 text-fui-fg2 font-mono">
-      {lineage.map((lineageId, index) => <span key={lineageId} className="inline-flex items-center gap-1">
+      {linear ? lineage.map((lineageId, index) => <span key={lineageId} className="inline-flex items-center gap-1">
         {index > 0 && <span aria-hidden="true">→</span>}
         <span>{streamLabel(model, lineageId)}</span>
+      </span>) : lineageNodes.filter(node => node.wraps?.length).map(node => <span key={node.streamId} className="inline-flex items-center gap-1">
+        {node.wraps!.map((inputId, index) => <span key={inputId} className="inline-flex items-center gap-1">
+          {index > 0 && <span aria-hidden="true">+</span>}
+          <span>{streamLabel(model, inputId)}</span>
+        </span>)}
+        <span aria-hidden="true">→</span>
+        <span>{streamLabel(model, node.streamId)}</span>
       </span>)}
     </div>
     <JsonBlock code={formatDecodedJson(recentFrames)} label={t('requests.pipeline.tabs.streams')} tag={`${tag}-${streamId}`} />

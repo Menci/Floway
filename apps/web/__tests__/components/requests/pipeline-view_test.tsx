@@ -20,7 +20,7 @@ const events: EncodedDumpEvent[] = [
     facts: { model: 'after' },
   },
   { k: 'stream', seq: 4, tMs: 22, streamId: 7, stageId: 2, label: 'raw.bytes' },
-  { k: 'stream', seq: 5, tMs: 23, streamId: 8, stageId: 2, wraps: 7, label: 'protocol.events' },
+  { k: 'stream', seq: 5, tMs: 23, streamId: 8, stageId: 2, wraps: [7], label: 'protocol.events' },
   {
     k: 'frames',
     streamId: 8,
@@ -62,6 +62,19 @@ describe('pipeline perspective', () => {
     expect(screen.getAllByText('#8 protocol.events').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('radio', { name: 'Logs' }));
     expect(screen.getByText('selected upstream')).toBeTruthy();
+  });
+
+  it('shows both inputs converging on a merged stream', () => {
+    const encoded: EncodedDumpEvent[] = [
+      run, root,
+      { k: 'stream', seq: 3, tMs: 20, streamId: 7, stageId: 1, label: 'generation' },
+      { k: 'stream', seq: 4, tMs: 21, streamId: 8, stageId: 1, label: 'controls' },
+      { k: 'stream', seq: 5, tMs: 22, streamId: 9, stageId: 1, label: 'merged', wraps: [7, 8] },
+    ];
+    renderInApp(<PipelineView artifact={artifact(encoded)} selectedStageId={1} onSelectStage={vi.fn()} />);
+    fireEvent.click(screen.getByRole('radio', { name: 'Streams' }));
+    const merged = screen.getAllByText('#9 merged');
+    expect(merged.some(label => label.parentElement?.textContent === '#7 generation+#8 controls→#9 merged')).toBe(true);
   });
 
   it('keeps elapsed time running after leave and nests a later turn under the answered parent', async () => {

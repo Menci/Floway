@@ -14,4 +14,4 @@ export { snapshotError } from './snapshot-error.ts';
 export type { ErrorSnapshot } from './snapshot-error.ts';
 export * from './stage.ts';
 export { streamIdOf } from './stream.ts';
-export type { CreateStreamOptions, ReleasingInner, StreamEnd, WrapStreamOptions } from './stream.ts';
+export type { CreateStreamOptions, ReleasingInner, StreamEnd, WrapStreamOptions, WrapStreamsOptions } from './stream.ts';

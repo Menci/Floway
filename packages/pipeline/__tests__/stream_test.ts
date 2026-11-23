@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import {
   compose,
@@ -14,7 +14,7 @@ import {
   StreamLeakError,
   StreamOwnershipError,
 } from '../src/index.ts';
-import type { Deferred, ManagedStream, Next, RootEnv, RunEvent, StageEnv, StaticTarget, StreamEnd } from '../src/index.ts';
+import type { Deferred, ManagedStream, Next, ReleasingInner, RootEnv, RunEvent, StageEnv, StaticTarget, StreamEnd } from '../src/index.ts';
 
 type Body = { body: ManagedStream<number> };
 type Turn = { turn: number };
@@ -674,5 +674,243 @@ describe('host and child cancel domains', () => {
     expect(events.some(event => event.k === 'done')).toBe(false);
     await expect(Array.fromAsync(body)).resolves.toEqual([1]);
     await expect(handle.done).resolves.toEqual({ ok: true });
+  });
+});
+
+describe('named stream merges', () => {
+  it('adopts two typed inputs and interleaves their frames', async () => {
+    const events: RunEvent[] = [];
+    const handle = run(bodyPipeline(env => {
+      const a = env.createStream<number>({ label: 'numbers', async *iterate() { yield 1; yield 3; } });
+      const b = env.createStream<string>({ label: 'strings', async *iterate() { yield '2'; yield '4'; } });
+      const body = env.wrapStream({ a, b }, {
+        label: 'merge', async *transform(sources) {
+          expectTypeOf(sources.a).toEqualTypeOf<AsyncIterable<number>>();
+          expectTypeOf(sources.b).toEqualTypeOf<AsyncIterable<string>>();
+          const first = sources.a[Symbol.asyncIterator]();
+          const second = sources.b[Symbol.asyncIterator]();
+          while (true) {
+            const [a, b] = await Promise.all([first.next(), second.next()]);
+            if (a.done || b.done) return;
+            yield a.value;
+            yield Number(b.value);
+          }
+        },
+        onClose: (_end, inners) => {
+          expectTypeOf(inners.a).toEqualTypeOf<ReleasingInner<number> | null>();
+          expectTypeOf(inners.b).toEqualTypeOf<ReleasingInner<string> | null>();
+        },
+      });
+      expect(() => a[Symbol.asyncIterator]()).toThrow(StreamOwnershipError);
+      expect(() => b[Symbol.asyncIterator]()).toThrow(StreamOwnershipError);
+      return { body };
+    }), {}, { ...options, events: event => events.push(event) });
+    const { body } = await handle.result;
+    await expect(Array.fromAsync(body)).resolves.toEqual([1, 2, 3, 4]);
+    await expect(handle.done).resolves.toEqual({ ok: true });
+    const [a, b, merge] = events.filter(event => event.k === 'stream');
+    expect(merge).toMatchObject({ streamId: streamIdOf(body), wraps: [a.streamId, b.streamId] });
+  });
+
+  it('keeps both reads on release mid-race and stops the inners in declaration order', async () => {
+    const signalA = Promise.withResolvers<AbortSignal>();
+    const signalB = Promise.withResolvers<AbortSignal>();
+    const frameA = Promise.withResolvers<number>();
+    const frameB = Promise.withResolvers<number>();
+    const closingA = Promise.withResolvers<void>();
+    const finishA = Promise.withResolvers<void>();
+    const order: string[] = [];
+    const handle = run(bodyPipeline(env => {
+      const a = env.createStream({
+        label: 'a', async *iterate(signal) { signalA.resolve(signal); yield await frameA.promise; },
+        onClose: async end => { order.push(`a ${end.how}`); closingA.resolve(); await finishA.promise; },
+      });
+      const b = env.createStream({
+        label: 'b', async *iterate(signal) { signalB.resolve(signal); yield await frameB.promise; },
+        onClose: end => { order.push(`b ${end.how}`); },
+      });
+      return {
+        body: env.wrapStream({ a, b }, {
+          label: 'merge', async *transform(sources) {
+            const first = sources.a[Symbol.asyncIterator]();
+            const second = sources.b[Symbol.asyncIterator]();
+            const frame = await Promise.race([first.next(), second.next()]);
+            await Promise.all([first.return?.(), second.return?.()]);
+            order.push('transform settled');
+            if (!frame.done) yield frame.value;
+          },
+          onClose: async (_end, { a, b }) => {
+            order.push('merge hook');
+            expect((await signalA.promise).aborted).toBe(false);
+            expect((await signalB.promise).aborted).toBe(false);
+            frameA.resolve(1);
+            frameB.resolve(2);
+            await expect(Promise.all([a!.next(), b!.next()])).resolves.toEqual([{ value: 1, done: false }, { value: 2, done: false }]);
+          },
+        }),
+      };
+    }), {}, options);
+    const { body } = await handle.result;
+    const read = body[Symbol.asyncIterator]().next();
+    const [a, b] = await Promise.all([signalA.promise, signalB.promise]);
+    const release = body.close();
+    await closingA.promise;
+    expect(a.aborted).toBe(true);
+    expect(b.aborted).toBe(false);
+    finishA.resolve();
+    await release;
+    await expect(read).resolves.toMatchObject({ done: true });
+    expect(b.aborted).toBe(true);
+    expect(order).toEqual(['transform settled', 'merge hook', 'a released', 'b released']);
+    await expect(handle.done).resolves.toEqual({ ok: true });
+  });
+
+  it('cancels both inputs eagerly and supplies null loans', async () => {
+    const controller = new AbortController();
+    const readyA = Promise.withResolvers<AbortSignal>();
+    const readyB = Promise.withResolvers<AbortSignal>();
+    const handle = run(bodyPipeline(env => {
+      const input = (label: string, ready: ReturnType<typeof Promise.withResolvers<AbortSignal>>) => env.createStream({
+        label, async *iterate(signal) {
+          ready.resolve(signal);
+          await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }));
+          yield 1;
+        },
+      });
+      return {
+        body: env.wrapStream({ a: input('a', readyA), b: input('b', readyB) }, {
+          label: 'merge', async *transform(sources) {
+            const [a, b] = await Promise.all([sources.a[Symbol.asyncIterator]().next(), sources.b[Symbol.asyncIterator]().next()]);
+            if (!a.done) yield a.value;
+            if (!b.done) yield b.value;
+          },
+          onClose: (end, inners) => {
+            expect(end.how).toBe('cancelled');
+            expect(inners).toEqual({ a: null, b: null });
+          },
+        }),
+      };
+    }), {}, { ...options, signal: controller.signal });
+    const { body } = await handle.result;
+    const read = body[Symbol.asyncIterator]().next();
+    const [a, b] = await Promise.all([readyA.promise, readyB.promise]);
+    controller.abort();
+    expect(a.aborted).toBe(true);
+    expect(b.aborted).toBe(true);
+    await expect(read).resolves.toMatchObject({ done: true });
+    await expect(handle.done).resolves.toEqual({ ok: true });
+  });
+
+  it('lets the release hook classify read failures independently for each input', async () => {
+    const first = new Error('first read failed');
+    const second = new Error('second read failed');
+    const events: RunEvent[] = [];
+    const handle = run(bodyPipeline(env => ({
+      body: env.wrapStream({
+        a: env.createStream<number>({ label: 'a', async *iterate() { throw first; } }),
+        b: env.createStream<number>({ label: 'b', async *iterate() { throw second; } }),
+      }, {
+        label: 'merge', transform: sources => sources.a,
+        onClose: async (_end, { a, b }) => {
+          await Promise.all([expect(a!.next()).rejects.toBe(first), expect(b!.next()).rejects.toBe(second)]);
+        },
+      }),
+    })), {}, { ...options, events: event => events.push(event) });
+    const { body } = await handle.result;
+    await body.close();
+    await expect(handle.done).resolves.toEqual({ ok: true });
+    const errors = events.flatMap(event => event.k === 'end' && event.how === 'errored' ? [event.error?.message] : []);
+    expect(errors).toEqual(expect.arrayContaining([first.message, second.message]));
+    expect(errors).toHaveLength(2);
+  });
+
+  it('preserves ownership when any input is unavailable or listed twice', async () => {
+    const handle = run(bodyPipeline(async env => {
+      const a = env.createStream({ label: 'a', async *iterate() { yield 1; } });
+      const b = env.createStream({ label: 'b', async *iterate() { yield 2; } });
+      await b[Symbol.asyncIterator]().next();
+      expect(() => env.wrapStream({ a, b }, { label: 'unavailable', transform: sources => sources.a })).toThrow(StreamOwnershipError);
+      expect(() => env.wrapStream({ a, alias: a }, { label: 'duplicate', transform: sources => sources.a })).toThrow('duplicate input');
+      await b.close();
+      return { body: a };
+    }), {}, options);
+    const { body } = await handle.result;
+    await expect(Array.fromAsync(body)).resolves.toEqual([1]);
+    await expect(handle.done).resolves.toEqual({ ok: true });
+  });
+
+  it('rejects concurrent reads on one named source while another can advance', async () => {
+    const frame = Promise.withResolvers<number>();
+    const handle = run(bodyPipeline(env => ({
+      body: env.wrapStream({
+        a: env.createStream({ label: 'a', async *iterate() { yield await frame.promise; } }),
+        b: env.createStream({ label: 'b', async *iterate() { yield 2; } }),
+      }, {
+        label: 'merge', async *transform(sources) {
+          const a = sources.a[Symbol.asyncIterator]().next();
+          await expect(sources.a[Symbol.asyncIterator]().next()).rejects.toBeInstanceOf(ConcurrentStreamReadError);
+          const b = await sources.b[Symbol.asyncIterator]().next();
+          if (!b.done) yield b.value;
+          frame.resolve(1);
+          const first = await a;
+          if (!first.done) yield first.value;
+        },
+      }),
+    })), {}, options);
+    const { body } = await handle.result;
+    await expect(Array.fromAsync(body)).resolves.toEqual([2, 1]);
+    await expect(handle.done).resolves.toEqual({ ok: true });
+  });
+
+  it('admits next from a merge producer after the stage answers', async () => {
+    const events: RunEvent[] = [];
+    const stage = defineStage<Turn, Turn, Body, Body>({
+      name: 'merge turns', through: {
+        request: { ...empty, provides: ['turn'] }, response: { ...empty, provides: ['body'] },
+      },
+      execute: async (facts, next, env) => {
+        const first = await next(facts);
+        const controls = env.createStream({ label: 'controls', async *iterate() { yield 9; } });
+        return {
+          body: env.wrapStream({ generation: first.body, controls }, {
+            label: 'merge', async *transform(sources) {
+              yield* sources.generation;
+              yield* sources.controls;
+              const { body } = await next({ ...facts, turn: 2 });
+              yield* body;
+            },
+          }),
+        };
+      },
+    });
+    const pipeline = compose<Turn, Body, {}>('merge', { stages: [stage], ending: echoTurn });
+    const handle = run(pipeline, { turn: 1 }, { ...options, events: event => events.push(event) });
+    const { body } = await handle.result;
+    await expect(Array.fromAsync(body)).resolves.toEqual([1, 9, 2]);
+    await expect(handle.done).resolves.toEqual({ ok: true });
+    const leave = events.findIndex(event => event.k === 'leave' && event.stageId === 1);
+    const resumed = events.findIndex(event => event.k === 'enter' && event.parentStageId === 1 && event.facts.turn === 2);
+    expect(leave).toBeGreaterThan(-1);
+    expect(resumed).toBeGreaterThan(leave);
+  });
+
+  it('reports the leaking merge and releases its owned inputs', async () => {
+    const order: string[] = [];
+    const ending = defineEnding<{}, {}>({
+      name: 'lose merge', request: { needs: [] }, return: { provides: [] },
+      execute: async (_facts, _into, env) => {
+        const input = (label: string) => env.createStream({
+          label, async *iterate() { yield label; }, onClose: end => { order.push(`${label} ${end.how}`); },
+        });
+        env.wrapStream({ a: input('a'), b: input('b') }, {
+          label: 'merge', transform: sources => sources.a, onClose: end => { order.push(`merge ${end.how}`); },
+        });
+        return {};
+      },
+    });
+    const handle = run(compose<{}, {}, {}>('leak', { stages: [], ending }), {}, options);
+    await expect(handle.result).resolves.toEqual({});
+    await expect(handle.done).resolves.toMatchObject({ ok: false, error: { name: 'StreamLeakError', fields: { labels: ['merge'] } } });
+    expect(order).toEqual(['merge leaked', 'a released', 'b released']);
   });
 });
