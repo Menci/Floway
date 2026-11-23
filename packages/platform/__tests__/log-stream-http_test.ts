@@ -26,12 +26,17 @@ const collect = async (response: Response): Promise<Uint8Array[]> => {
   return chunks;
 };
 
-const responseFromPieces = (pieces: readonly Uint8Array[]): Response => new Response(new ReadableStream({
-  start(controller) {
-    for (const piece of pieces) controller.enqueue(piece);
-    controller.close();
-  },
-}));
+const responseFromPieces = (pieces: readonly Uint8Array[]): Response => {
+  const fragments = pieces[Symbol.iterator]();
+  // Keep the runtime's stream queue bounded even for highly fragmented frames.
+  return new Response(new ReadableStream<Uint8Array>({
+    pull(controller) {
+      const { done, value } = fragments.next();
+      if (done) controller.close();
+      else controller.enqueue(value);
+    },
+  }, { highWaterMark: 0 }));
+};
 
 test('a network interruption is reported as truncated with its original cause and the reader unlocked', async () => {
   const cause = new TypeError('connection reset');
