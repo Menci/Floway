@@ -14,15 +14,15 @@ import type { AuthVars } from '../../middleware/auth.ts';
 import { createGatewayHttpHandler } from '../pipeline/host.ts';
 import { PUBLIC_DATA_PLANE_ROUTES } from '@floway-dev/protocols/common';
 
-const responsesHttpOptions = { performanceOperation: 'chat', errorStatus: (): 502 => 502, errorBody: openAIResponsesInternalErrorBody } as const;
+const responsesHttpOptions = { errorStatus: (): 502 => 502, errorBody: openAIResponsesInternalErrorBody } as const;
 export const openaiResponsesHandler = createGatewayHttpHandler(openaiResponsesIngress, responsesHttpOptions);
 export const openaiResponsesCompactHandler = createGatewayHttpHandler(openaiResponsesCompactIngress, responsesHttpOptions);
 export const openaiResponsesWebSocketHandler = createOpenAIResponsesWebSocketHandler(openaiResponsesWsIngress);
 
-const openaiChatCompletionsHandler = createGatewayHttpHandler(openaiChatCompletionsIngress, { ...openaiChatCompletionsHttpOptions, performanceOperation: 'chat' });
-const anthropicMessagesHandler = createGatewayHttpHandler(anthropicMessagesIngress, { ...anthropicMessagesHttpOptions, performanceOperation: 'chat' });
+const openaiChatCompletionsHandler = createGatewayHttpHandler(openaiChatCompletionsIngress, openaiChatCompletionsHttpOptions);
+const anthropicMessagesHandler = createGatewayHttpHandler(anthropicMessagesIngress, anthropicMessagesHttpOptions);
 const anthropicMessagesCountHandler = createGatewayHttpHandler(anthropicMessagesCountIngress, anthropicMessagesHttpOptions);
-const geminiGenerateContentHandler = createGatewayHttpHandler(geminiGenerateContentRoute, { ...geminiGenerateContentHttpOptions, performanceOperation: 'chat' });
+const geminiGenerateContentHandler = createGatewayHttpHandler(geminiGenerateContentRoute, geminiGenerateContentHttpOptions);
 
 export const mountChatRoutes = (app: Hono<{ Variables: AuthVars }>) => {
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.openaiChatCompletions, (method, path) => app.on(method, path, openaiChatCompletionsHandler));

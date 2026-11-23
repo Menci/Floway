@@ -1,8 +1,13 @@
 import { describe, expect, test, vi } from 'vitest';
 
 import { enumerateModelCandidates, testGatewayServices } from './request-directory.ts';
+import type { HttpOutput } from '../../../src/data-plane/pipeline/edge-http.ts';
+import type { RenderFacts } from '../../../src/data-plane/pipeline/render.ts';
+import { createResolveCandidates, type ModelRequest } from '../../../src/data-plane/pipeline/resolve-candidates.ts';
+import type { GatewayServices } from '../../../src/data-plane/pipeline/services.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
-import { buildCustomUpstreamRecord, setupAppTest, warmModelsForTest } from '../../test-utils/app.ts';
+import { buildCustomUpstreamRecord, setupAppTest, testAdminUser, warmModelsForTest } from '../../test-utils/app.ts';
+import { compose, defineEnding, run } from '@floway-dev/pipeline';
 import { assertEquals, jsonResponse, withMockedFetch as withMockedFetchRaw } from '@floway-dev/test-utils';
 
 const withMockedFetch = <T>(
@@ -13,39 +18,48 @@ const withMockedFetch = <T>(
   return await fn();
 });
 
-const testScheduler = (promise: Promise<unknown>): void => {
-  promise.catch(err => console.error('[background]', err));
-};
-
 test('directory ports reject access before candidate resolution loads the snapshot', () => {
-  const services = testGatewayServices('TEST', testScheduler);
-  expect(() => services.providers.resolve('up_custom')).toThrow('Gateway provider directory was used before candidate resolution loaded it');
+  const services = testGatewayServices('TEST');
   expect(() => services.fetcher('up_custom')).toThrow('Gateway provider directory was used before candidate resolution loaded it');
 });
-test('a cold candidate read schedules refresh without waiting for upstream I/O', async () => {
+test('a cold candidate read defers refresh without waiting for upstream I/O', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord());
-  const background: Promise<unknown>[] = [];
   let releaseFetch: ((response: Response) => void) | undefined;
   const fetch = vi.fn(() => new Promise<Response>(resolve => { releaseFetch = resolve; }));
 
   await withMockedFetchRaw(
     fetch,
     async () => {
-      const result = await enumerateModelCandidates({
-        upstreamIds: null,
-        randomizeUpstreams: false,
-        model: 'eventual-model',
-        kind: 'chat',
-        scheduler: promise => { background.push(promise); },
-        runtimeLocation: 'TEST',
+      const pipeline = compose<ModelRequest & HttpOutput & RenderFacts, GatewayServices>()('test.resolve-cold', {
+        entry: ['request.auth.apiKeyId', 'request.auth.user', 'request.route.upstreamIds', 'request.route.randomizeUpstreams', 'request.route.runtimeLocation', 'request.model'] as const,
+        exit: ['response.http', 'response.render'] as const,
+        stages: [createResolveCandidates({
+          kind: 'chat',
+          sourceApi: '/v1/chat/completions',
+          select: candidates => candidates,
+        })],
+        ending: defineEnding<ModelRequest, HttpOutput & RenderFacts>({
+          name: 'unreachable',
+          request: { needs: [] },
+          return: { provides: ['response.http', 'response.render'] },
+          execute: async () => { throw new Error('expected 404 before ending'); },
+        }),
       });
-      expect(result.candidates).toEqual([]);
-      expect(background).toHaveLength(1);
+      const handle = run(pipeline, {
+        'request.auth.apiKeyId': 'key-directory',
+        'request.auth.user': { id: testAdminUser.id, isAdmin: testAdminUser.isAdmin },
+        'request.route.upstreamIds': null,
+        'request.route.randomizeUpstreams': false,
+        'request.route.runtimeLocation': 'TEST',
+        'request.model': 'eventual-model',
+      }, { services: testGatewayServices('TEST'), finalizationTimeoutMs: 5_000 });
+      const response = await handle.result;
+      expect(response['response.http'].status).toBe(404);
       await vi.waitFor(() => expect(fetch).toHaveBeenCalledOnce());
       releaseFetch!(jsonResponse({ object: 'list', data: [{ id: 'eventual-model' }] }));
-      await Promise.all(background);
+      expect(await handle.done).toEqual({ ok: true });
     },
   );
 
@@ -56,22 +70,27 @@ test('a cold candidate read schedules refresh without waiting for upstream I/O',
   });
 });
 
-test('scheduler registration failures propagate rather than looking like an upstream model-list failure', async () => {
+test('a failed modelsRefresh settles with an error receipt instead of rejecting enumeration', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord({
-    config: { baseUrl: 'https://custom.example.com', apiKey: '', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [], modelsFetch: { enabled: false, authStyle: 'bearer' }, models: [] },
+    config: { baseUrl: 'https://custom.example.com', apiKey: 'sk-x', endpoints: { openaiChatCompletions: {} }, ingressHeadersRules: [] },
   }));
-  const refreshes: Promise<unknown>[] = [];
-  await expect(enumerateModelCandidates({
-    model: 'model', kind: 'chat', runtimeLocation: 'TEST', upstreamIds: null, randomizeUpstreams: false,
-    scheduler: work => {
-      refreshes.push(work);
-      throw new Error('scheduler unavailable');
-    },
-  })).rejects.toThrow('scheduler unavailable');
-  expect(refreshes).toHaveLength(1);
-  await Promise.all(refreshes);
+  const services = testGatewayServices('TEST');
+  const result = await services.providers.enumerate({
+    'request.auth.apiKeyId': 'key-directory',
+    'request.auth.user': { id: testAdminUser.id, isAdmin: testAdminUser.isAdmin },
+    'request.route.upstreamIds': null,
+    'request.route.randomizeUpstreams': false,
+    'request.route.runtimeLocation': 'TEST',
+  }, 'model', 'chat');
+  expect(result.staleRefreshes).toHaveLength(1);
+  await withMockedFetchRaw(() => Promise.reject(new Error('network down')), async () => {
+    expect(await services.modelsRefresh(result.staleRefreshes[0]!)).toMatchObject({
+      refreshed: false,
+      error: { message: 'Provider model listing failed', cause: { message: 'network down' } },
+    });
+  });
 });
 
 test('randomizes upstream candidate groups without splitting or reordering a group', async () => {
@@ -103,7 +122,6 @@ test('randomizes upstream candidate groups without splitting or reordering a gro
           randomizeUpstreams: true,
           model: 'or/gpt-4o',
           kind: 'chat',
-          scheduler: testScheduler,
           runtimeLocation: 'TEST',
         });
         assertEquals(
@@ -150,7 +168,7 @@ test('provider directory: healthy upstream still resolves alongside a rejecting 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resolvedExisting = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'ok-model', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+      const resolvedExisting = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'ok-model', kind: 'chat', runtimeLocation: 'TEST' });
       assertEquals(resolvedExisting.candidates.map(m => m.upstreamId), ['up_ok']);
       assertEquals(resolvedExisting.candidates[0]?.modelId, 'ok-model');
       assertEquals(resolvedExisting.failedUpstreams, ['Broken upstream']);
@@ -159,7 +177,7 @@ test('provider directory: healthy upstream still resolves alongside a rejecting 
       // upstream's catalog error — the caller's failure renderer is the right
       // place to surface that, parenthetically, alongside the model-missing
       // body.
-      const resolvedMissing = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'unknown-model', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+      const resolvedMissing = await enumerateModelCandidates({ upstreamIds: null, randomizeUpstreams: false, model: 'unknown-model', kind: 'chat', runtimeLocation: 'TEST' });
       assertEquals(resolvedMissing.candidates.length, 0);
       assertEquals(resolvedMissing.failedUpstreams, ['Broken upstream']);
     },
@@ -222,7 +240,7 @@ describe('provider directory alias walk (flat + dedup)', () => {
       buildCatalogFetch({ up_a: ['gpt-5'], up_b: ['claude'] }),
       async () => {
         const resolved = await enumerateModelCandidates({
-          upstreamIds: null, randomizeUpstreams: false, model: 'interleaved-duplicates', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST',
+          upstreamIds: null, randomizeUpstreams: false, model: 'interleaved-duplicates', kind: 'chat', runtimeLocation: 'TEST',
         });
         expect(resolved.candidates.map(candidate => ({
           binding: `${candidate.modelId}@${candidate.upstreamId}`,

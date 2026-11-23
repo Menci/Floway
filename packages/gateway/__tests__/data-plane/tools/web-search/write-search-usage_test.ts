@@ -5,7 +5,10 @@ import { type SearchUsageRecords, type SearchUsageSettlementFacts, writeSearchUs
 import { compose, defineEnding, run } from '@floway-dev/pipeline';
 
 type Output = SearchUsageSettlementFacts & { readonly 'response.webSearch.result': string };
-const search = compose<object, Output, Pick<GatewayServices, 'searchUsageStore'>>('test.search', {
+const exit = ['response.webSearch.result', 'response.searchUsage.settlement'] as const;
+const search = compose<Output, Pick<GatewayServices, 'searchUsageStore'>>()('test.search', {
+  entry: [] as const,
+  exit,
   stages: [writeSearchUsage],
   ending: defineEnding<object, Pick<Output, 'response.webSearch.result'> & SearchUsageRecords>({
     name: 'search',

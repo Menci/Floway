@@ -1,10 +1,9 @@
 import { expect, test, vi } from 'vitest';
 
 import { installDumpStubs, MemoryLogStreamStore } from './test-fixtures.ts';
-import type { AnswerFacts } from '../../src/data-plane/pipeline/answer.ts';
+import type { CallRecordSummary } from '../../src/data-plane/pipeline/call-metering.ts';
 import { type HttpInput, type HttpOutput, jsonHttpResponse } from '../../src/data-plane/pipeline/edge-http.ts';
 import { failedRender, renderedNow, type RenderFacts } from '../../src/data-plane/pipeline/render.ts';
-import type { Settlement, SettlementFacts } from '../../src/data-plane/pipeline/settlement.ts';
 import { initDumpBroker, initDumpStore } from '../../src/dump/registry.ts';
 import { openDumpSession } from '../../src/dump/session.ts';
 import { dumpLiveStreamId } from '../../src/dump/types.ts';
@@ -28,6 +27,7 @@ test.each([
   { firstOutputAt: 250, render: failedRender('premature-eof', new Error('test response ended early')), error: { kind: 'failed', reason: 'test response ended early' } },
 ] as const)('dump session preserves raw/live HTTP and render metadata ($render.kind, first output $firstOutputAt)', async ({ firstOutputAt, render, error }) => {
   const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  findUpstream.mockResolvedValue(null);
   const log = new MemoryLogStreamStore();
   initLogStreamStore(log);
   const raw = Bytes.fromUtf8('{\r\n  "model": "test" ,"input": [1, 2]\r\n}\n');
@@ -38,21 +38,24 @@ test.each([
     },
   };
   const dump = openDumpSession(apiKey, input['request.http'], 'test')!;
-  type Output = HttpOutput & SettlementFacts & RenderFacts;
-  const pipeline = compose<HttpInput, Output, {}>('test.dump', {
+  type Output = HttpOutput & RenderFacts;
+  const entry = ['request.http'] as const;
+  const exit = ['response.http', 'response.render'] as const;
+  const pipeline = compose<HttpInput & Output, {}>()('test.dump', {
+    entry,
+    exit,
     stages: [],
     ending: defineEnding<HttpInput, Output>({
       name: 'answer',
       request: { needs: ['request.http'] },
-      return: { provides: ['response.http', 'response.render', 'response.settlement'] },
-      execute: async (_facts, _into, env) => ({
-        'response.http': jsonHttpResponse(201, { received: true }, env.clock()),
-        ...renderedNow(env, render),
-        'response.settlement': env.defer<Settlement>('settlement', Promise.resolve({
-          persisted: true, errors: [], usageWrites: [], status: 201, outcome: render.kind === 'completed' ? 'success' : 'failed', identity: null, tokenUsage: { input: 7, output: 2 },
-          firstOutputAt, streamEndedAt: null, upstreamStartedAt: 100, upstreamId: null, targetApi: null,
-        })),
-      }),
+      return: { provides: ['response.http', 'response.render'] },
+      execute: async (_facts, scope) => {
+        scope.defer<CallRecordSummary>('call.record', Promise.resolve({
+          persisted: true, errors: [], status: 201, failed: render.kind !== 'completed', identity: null, tokenUsage: { input: 7, output: 2 },
+          firstOutputAt, streamEndedAt: null, upstreamStartedAt: 100, upstreamId: 'upstream-test', targetApi: null,
+        }));
+        return { 'response.http': jsonHttpResponse(201, { received: true }, scope.clock()), ...renderedNow(scope, render) };
+      },
     }),
   });
   const handle = run(pipeline, input, { services: {}, events: dump.sink, runId: dump.recordId, finalizationTimeoutMs: 100 });
@@ -86,7 +89,11 @@ test('a failed run commits its host response status and the original crash trace
   };
   const dump = openDumpSession(apiKey, facts['request.http'])!;
   const failure = new Error('test gateway failure');
-  const pipeline = compose<HttpInput, HttpOutput, {}>('test.dump-crash', {
+  const entry = ['request.http'] as const;
+  const exit = ['response.http'] as const;
+  const pipeline = compose<HttpInput & HttpOutput, {}>()('test.dump-crash', {
+    entry,
+    exit,
     stages: [],
     ending: defineEnding<HttpInput, HttpOutput>({
       name: 'crash', request: { needs: ['request.http'] }, return: { provides: ['response.http'] },
@@ -116,22 +123,24 @@ test('a truncated 13 MiB request keeps the live 429 status and upstream attribut
     'request.http': { method: 'POST', url: { origin: 'https://floway.test', pathname: '/v1/test' }, headers: [], body: request },
   };
   const dump = openDumpSession(apiKey, input['request.http'])!;
-  type Output = HttpOutput & SettlementFacts & AnswerFacts;
   const http = jsonHttpResponse(429, { error: 'rate limited' }, 0);
-  const pipeline = compose<HttpInput, Output, {}>('test.dump-truncated', {
+  const entry = ['request.http'] as const;
+  const exit = ['response.http'] as const;
+  const pipeline = compose<HttpInput & HttpOutput, {}>()('test.dump-truncated', {
+    entry,
+    exit,
     stages: [],
-    ending: defineEnding<HttpInput, Output>({
+    ending: defineEnding<HttpInput, HttpOutput>({
       name: 'upstream-answer',
       request: { needs: ['request.http'] },
-      return: { provides: ['response.http', 'response.settlement', 'response.source'] },
-      execute: async (_facts, _into, env) => ({
-        'response.http': http,
-        'response.source': 'upstream',
-        'response.settlement': env.defer<Settlement>('settlement', Promise.resolve({
-          persisted: true, errors: [], usageWrites: [], status: 429, outcome: 'upstream-error', identity: null, tokenUsage: null,
+      return: { provides: ['response.http'] },
+      execute: async (_facts, scope) => {
+        scope.defer<CallRecordSummary>('call.record', Promise.resolve({
+          persisted: true, errors: [], status: 429, failed: true, identity: null, tokenUsage: null,
           firstOutputAt: null, streamEndedAt: null, upstreamStartedAt: 0, upstreamId: upstream.id, targetApi: null,
-        })),
-      }),
+        }));
+        return { 'response.http': { ...http, exchange: 'upstream' } };
+      },
     }),
   });
   const handle = run(pipeline, input, { services: {}, events: dump.sink, runId: dump.recordId, finalizationTimeoutMs: 100 });
@@ -146,4 +155,32 @@ test('a truncated 13 MiB request keeps the live 429 status and upstream attribut
   const decoder = createDumpDecoder();
   decoder.push(stubs.stored[0]!.artifact);
   expect(decoder.finish().rootStageIds).toEqual([]);
+});
+
+test.each([
+  { exchange: 'upstream' as const, status: 429, expected: { kind: 'upstream' } },
+  { exchange: undefined, status: 400, expected: { kind: 'gateway' } },
+])('unmetered non-2xx classifies by response.http.exchange ($exchange)', async ({ exchange, status, expected }) => {
+  const stubs = installDumpStubs(initDumpStore, initDumpBroker);
+  initLogStreamStore(new MemoryLogStreamStore());
+  const input: HttpInput = {
+    'request.http': { method: 'POST', url: { origin: 'https://floway.test', pathname: '/v1/messages/count_tokens' }, headers: [], body: Bytes.fromUtf8('{}') },
+  };
+  const dump = openDumpSession(apiKey, input['request.http'])!;
+  const pipeline = compose<HttpInput & HttpOutput, {}>()('test.dump-unmetered-error', {
+    entry: ['request.http'] as const,
+    exit: ['response.http'] as const,
+    stages: [],
+    ending: defineEnding<HttpInput, HttpOutput>({
+      name: 'answer',
+      request: { needs: ['request.http'] },
+      return: { provides: ['response.http'] },
+      execute: async () => ({ 'response.http': { ...jsonHttpResponse(status, { error: 'err' }, 0), ...(exchange === undefined ? {} : { exchange }) } }),
+    }),
+  });
+  const handle = run(pipeline, input, { services: {}, events: dump.sink, runId: dump.recordId, finalizationTimeoutMs: 100 });
+  expect((await handle.result)['response.http'].status).toBe(status);
+  expect(await handle.done).toEqual({ ok: true });
+  await dump.completed;
+  expect(stubs.stored[0]?.meta.error).toEqual(expected);
 });

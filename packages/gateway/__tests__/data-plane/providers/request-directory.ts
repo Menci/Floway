@@ -1,7 +1,6 @@
 import { createGatewayServices } from '../../../src/data-plane/pipeline/services.ts';
 import type { ApiKey } from '../../../src/repo/types.ts';
 import { testAdminUser } from '../../test-utils/app.ts';
-import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelKind } from '@floway-dev/protocols/common';
 
 const apiKey: ApiKey = {
@@ -10,7 +9,7 @@ const apiKey: ApiKey = {
   dumpRetentionSeconds: null, openaiResponsesRetentionSeconds: 0,
 };
 
-export const testGatewayServices = (runtimeLocation: string, scheduler: BackgroundScheduler) => createGatewayServices({ apiKey, runtimeLocation, scheduler });
+export const testGatewayServices = (runtimeLocation: string) => createGatewayServices({ apiKey, runtimeLocation });
 
 export const enumerateModelCandidates = (input: {
   readonly upstreamIds: readonly string[] | null;
@@ -18,8 +17,7 @@ export const enumerateModelCandidates = (input: {
   readonly model: string;
   readonly kind: ModelKind;
   readonly runtimeLocation: string;
-  readonly scheduler: BackgroundScheduler;
-}) => testGatewayServices(input.runtimeLocation, input.scheduler).providers.enumerate({
+}) => testGatewayServices(input.runtimeLocation).providers.enumerate({
   'request.auth.apiKeyId': apiKey.id,
   'request.auth.user': { id: testAdminUser.id, isAdmin: testAdminUser.isAdmin },
   'request.route.upstreamIds': input.upstreamIds,

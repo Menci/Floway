@@ -8,8 +8,8 @@ import { createGeminiGenerateContentRoute } from './gemini-generate-content/rout
 import { createOpenAIChatCompletionsBody } from './openai-chat-completions/body.ts';
 import { openaiChatCompletionsEgress } from './openai-chat-completions/egress.ts';
 import { createOpenAIChatCompletionsIngress } from './openai-chat-completions/ingress.ts';
-import { createOpenAIResponsesBody, createOpenAIResponsesCompactBody } from './openai-responses/body.ts';
-import { openaiResponsesCompactEgress, openaiResponsesEgress } from './openai-responses/egress.ts';
+import { createOpenAIResponsesBody } from './openai-responses/body.ts';
+import { openaiResponsesEgress } from './openai-responses/egress.ts';
 import { createOpenAIResponsesCompactIngress, createOpenAIResponsesIngress } from './openai-responses/ingress.ts';
 import { createOpenAIResponsesWsIngress } from './openai-responses/websocket-ingress.ts';
 import type { ChatBodyInput, ChatBodyOutput } from './shared/route-body.ts';
@@ -26,12 +26,6 @@ const chatCompletionsBody: Body<'openaiChatCompletions'> = createOpenAIChatCompl
 });
 const responsesBody: Body<'openaiResponses'> = createOpenAIResponsesBody({
   egress: openaiResponsesEgress,
-  messages: () => messagesBody,
-  chatCompletions: () => chatCompletionsBody,
-});
-const responsesCompactBody: Body<'openaiResponses'> = createOpenAIResponsesCompactBody({
-  egress: openaiResponsesCompactEgress,
-  generation: openaiResponsesEgress,
   messages: () => messagesBody,
   chatCompletions: () => chatCompletionsBody,
 });
@@ -54,7 +48,7 @@ const geminiCountBody = createGeminiGenerateContentCountBody({
 
 export const openaiChatCompletionsIngress = createOpenAIChatCompletionsIngress(chatCompletionsBody);
 export const openaiResponsesIngress = createOpenAIResponsesIngress(responsesBody);
-export const openaiResponsesCompactIngress = createOpenAIResponsesCompactIngress(responsesCompactBody);
+export const openaiResponsesCompactIngress = createOpenAIResponsesCompactIngress(responsesBody);
 export const openaiResponsesWsIngress = createOpenAIResponsesWsIngress(responsesBody);
 export const anthropicMessagesIngress = createAnthropicMessagesIngress(messagesBody);
 export const anthropicMessagesCountIngress = createAnthropicMessagesCountIngress(messagesCountBody);

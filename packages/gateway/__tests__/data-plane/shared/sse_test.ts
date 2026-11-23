@@ -1,19 +1,18 @@
 import { afterEach, expect, test, vi } from 'vitest';
 
 import { createEncode, type DeliveryFacts, type DeliveryIntent } from '../../../src/data-plane/chat/shared/encode.ts';
-import type { ChatFrameFacts } from '../../../src/data-plane/chat/shared/route-body.ts';
+import type { ChatOutcomeFacts } from '../../../src/data-plane/chat/shared/route-body.ts';
 import type { HttpOutput } from '../../../src/data-plane/pipeline/edge-http.ts';
-import type { AttemptResponse } from '../../../src/data-plane/pipeline/failover.ts';
-import { emptyUsageFacts, usageResponseKeys } from '../../../src/data-plane/pipeline/observe-usage.ts';
 import type { RenderFacts } from '../../../src/data-plane/pipeline/render.ts';
 import { createGatewayServices, type GatewayServices } from '../../../src/data-plane/pipeline/services.ts';
 import { serializeSseFrame, type SseProtocol } from '../../../src/data-plane/shared/sse.ts';
 import type { HttpResponseFacts } from '@floway-dev/http';
-import { Bytes, compose, defineEnding, isManagedStream, link, run } from '@floway-dev/pipeline';
+import { Bytes, compose, defineEnding, isManagedStream, link, run, type Scope, snapshotError } from '@floway-dev/pipeline';
 import { eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import type { ProtocolOutcome, ProviderFrame } from '@floway-dev/provider';
 
 type Frame = ProtocolFrame<string>;
-type ProviderAnswer = AttemptResponse & ChatFrameFacts<'openaiChatCompletions', string>;
+type ProviderAnswer = HttpOutput & ChatOutcomeFacts<'openaiChatCompletions', string>;
 type Encoded = HttpOutput & RenderFacts;
 const intervalMs = 10;
 
@@ -24,7 +23,6 @@ const services = createGatewayServices({
     dumpRetentionSeconds: null, openaiResponsesRetentionSeconds: 0,
   },
   runtimeLocation: 'test',
-  scheduler: () => {},
 });
 
 const okHead: HttpResponseFacts = { status: 200, statusText: '', body: null, headers: [], timing: { startedAt: 0, headersAt: 0 } };
@@ -37,11 +35,16 @@ const normalProtocol: SseProtocol<Frame> = {
 };
 
 const runEncode = (
-  iterate?: (signal: AbortSignal) => AsyncIterable<Frame>,
+  iterate?: (scope: Scope) => AsyncIterable<ProviderFrame<string>>,
   protocol = normalProtocol,
   http = okHead,
+  outcome?: ProtocolOutcome<string>,
 ) => {
-  const pipeline = compose<DeliveryFacts, Encoded, GatewayServices>('test SSE encoding', {
+  const entry = ['request.delivery'] as const;
+  const exit = ['response.http', 'response.render'] as const;
+  const pipeline = compose<DeliveryFacts & Encoded, GatewayServices>()('test SSE encoding', {
+    entry,
+    exit,
     stages: [createEncode<'openaiChatCompletions', DeliveryIntent, string>('openaiChatCompletions', {
       encodeJson: async () => ({ ok: true }), openSse: () => protocol,
       keepAlive: { intervalMs, frame: sseCommentFrame('keepalive') },
@@ -49,12 +52,14 @@ const runEncode = (
     ending: defineEnding<DeliveryFacts, ProviderAnswer>({
       name: 'stubProvider',
       request: { needs: [] },
-      return: { provides: ['response.http', 'response.source', 'response.openaiChatCompletions', ...usageResponseKeys] },
-      execute: async (_facts, _into, env) => ({
+      return: { provides: ['response.http', 'response.openaiChatCompletions'] },
+      execute: async (_facts, scope) => ({
         'response.http': http,
-        'response.source': 'upstream',
-        'response.openaiChatCompletions': iterate === undefined ? undefined : env.createStream({ label: 'provider frames', iterate }),
-        ...emptyUsageFacts(env),
+        'response.openaiChatCompletions': outcome ?? (
+          iterate === undefined
+            ? { kind: 'error', source: 'upstream', error: { error: 'upstream error' } }
+            : { kind: 'stream', events: scope.createStream({ label: 'provider frames', iterate }) }
+        ),
       }),
     }),
   });
@@ -67,6 +72,15 @@ const encoded = async (handle: ReturnType<typeof runEncode>) => {
   const body = response['response.http'].body;
   if (!isManagedStream(body)) throw new Error('Expected HTTP byte stream');
   return { body, render: response['response.render'].promise };
+};
+
+const readUtf8 = async (body: AsyncIterable<unknown>): Promise<string> => {
+  const chunks: Bytes[] = [];
+  for await (const chunk of body) {
+    if (!(chunk instanceof Bytes)) throw new Error('Expected Bytes chunk from downstream SSE stream');
+    chunks.push(chunk);
+  }
+  return Bytes.concat(chunks).utf8();
 };
 
 afterEach(() => { vi.useRealTimers(); });
@@ -100,9 +114,9 @@ test('releasing the body aborts a pending upstream read without emitting its rac
   const started = Promise.withResolvers<void>();
   const aborted = vi.fn();
   const failure = vi.fn(normalProtocol.failure);
-  const handle = runEncode(async function* (signal) {
+  const handle = runEncode(async function* (scope) {
     await new Promise<void>(resolve => {
-      signal.addEventListener('abort', () => { aborted(); resolve(); }, { once: true });
+      scope.signal.addEventListener('abort', () => { aborted(); resolve(); }, { once: true });
       started.resolve();
     });
     throw new Error('upstream read aborted');
@@ -124,7 +138,7 @@ test('writes raw output without SSE framing', async () => {
     ...normalProtocol, encode: () => ({ wire: serializeSseFrame({ type: 'sse-raw', data: 'unframed' }) }),
   });
   const { body, render } = await encoded(handle);
-  expect(Bytes.concat(await Array.fromAsync(body)).utf8()).toBe('unframed');
+  expect(await readUtf8(body)).toBe('unframed');
   expect(await render).toEqual({ kind: 'completed' });
   expect(await handle.done).toEqual({ ok: true });
 });
@@ -133,8 +147,20 @@ test('serializes every line of a named SSE event as data', () => {
   expect(serializeSseFrame(sseFrame('one\r\ntwo\nthree', 'named'))).toBe('event: named\ndata: one\ndata: two\ndata: three\n\n');
 });
 
-test.each(['read', 'encode', 'eof'] as const)('renders and settles a %s failure after initial output', async failureAt => {
-  const failure = new Error(`failed ${failureAt}`);
+test('renders and settles an upstream transport failure frame after initial output with done.ok === true', async () => {
+  const failure = new Error('upstream reset');
+  const handle = runEncode(async function* () {
+    yield eventFrame('initial');
+    yield { type: 'transport-error', error: snapshotError(failure) };
+  });
+  const { body, render } = await encoded(handle);
+  expect(await readUtf8(body)).toBe('data: initial\n\nevent: error\ndata: upstream reset\n\n');
+  expect(await render).toMatchObject({ kind: 'failed', reason: 'source-error', error: { message: failure.message } });
+  expect(await handle.done).toEqual({ ok: true });
+});
+
+test.each(['read', 'encode', 'eof'] as const)('unexpected %s throw panics through the stream and settles render as source-error', async failureAt => {
+  const failure = new Error(`panic ${failureAt}`);
   const handle = runEncode(async function* () {
     yield eventFrame('initial');
     if (failureAt === 'read') throw failure;
@@ -151,9 +177,9 @@ test.each(['read', 'encode', 'eof'] as const)('renders and settles a %s failure 
     },
   });
   const { body, render } = await encoded(handle);
-  expect(Bytes.concat(await Array.fromAsync(body)).utf8()).toBe(`data: initial\n\nevent: error\ndata: failed ${failureAt}\n\n`);
+  await expect(Array.fromAsync(body)).rejects.toBe(failure);
   expect(await render).toMatchObject({ kind: 'failed', reason: 'source-error', error: { message: failure.message } });
-  await handle.done;
+  expect((await handle.done).ok).toBe(false);
 });
 
 test('releases the iterator at a protocol terminal without reading past it', async () => {
@@ -168,21 +194,25 @@ test('releases the iterator at a protocol terminal without reading past it', asy
     ...normalProtocol, encode: () => ({ wire: 'last', end: { type: 'completed' } }),
   });
   const { body, render } = await encoded(handle);
-  expect(Bytes.concat(await Array.fromAsync(body)).utf8()).toBe('last');
+  expect(await readUtf8(body)).toBe('last');
   expect(await render).toEqual({ kind: 'completed' });
   expect(await handle.done).toEqual({ ok: true });
   expect(extra).not.toHaveBeenCalled();
   expect(released).toHaveBeenCalledOnce();
 });
 
-test.each([204, 205, 304, 429])('scalar response preserves status and null vs empty bytes (%i)', async status => {
-  const body = status === 429 ? Bytes.empty : null;
+test.each([400, 429, 502])('error outcome preserves status, filters headers, and serializes JSON (%i)', async status => {
+  const payload = { error: { message: `status ${status}` } };
   const handle = runEncode(undefined, normalProtocol, {
-    ...okHead, status, body,
+    ...okHead, status, body: null,
     headers: [['retry-after', '12'], ['request-id', 'req-scalar'], ['set-cookie', 'private'], ['content-length', '0']],
+  }, { kind: 'error', source: 'upstream', error: payload });
+  const response = (await handle.result)['response.http'];
+  expect(response).toMatchObject({
+    status,
+    headers: [['retry-after', '12'], ['request-id', 'req-scalar'], ['content-type', 'application/json']],
   });
-  expect((await handle.result)['response.http']).toMatchObject({
-    status, body, headers: [['retry-after', '12'], ['request-id', 'req-scalar']],
-  });
+  expect(response.body).toBeInstanceOf(Bytes);
+  expect((response.body as Bytes).utf8()).toBe(JSON.stringify(payload));
   expect(await handle.done).toEqual({ ok: true });
 });
