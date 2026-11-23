@@ -4,7 +4,8 @@ import type { HttpInput } from '../../../pipeline/edge-http.ts';
 import type { CandidateRequest } from '../../../pipeline/failover.ts';
 import type { CandidateError } from '../../../pipeline/resolve-candidates.ts';
 import type { GatewayServices, RouteCandidate } from '../../../pipeline/services.ts';
-import type { ChatEvent, ChatFrameFacts, ChatPayload, ChatPayloadFacts } from '../route-body.ts';
+import type { ChatEvent, ChatOutcomeFacts, ChatPayload, ChatPayloadFacts } from '../route-body.ts';
+import { wrapProtocolFrames } from '../stream-frames.ts';
 import type { ChatTargetPicker } from '../target-picker.ts';
 import { defineStage } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -35,9 +36,9 @@ export const createAnalyzeAffinity = <Api extends ChatTargetApi, Analysis extend
       request: { needs: [key], consumes: [], provides: ['request.affinity'] },
       response: { needs: [], consumes: [], provides: [] },
     },
-    execute: async (facts, next, env) => {
-      const analysis = await analyze(facts[key], env.services.affinityCodec);
-      return await next({ ...facts, 'request.affinity': analysis });
+    execute: async (facts, scope) => {
+      const analysis = await analyze(facts[key], scope.services.affinityCodec);
+      return await scope.next({ ...facts, 'request.affinity': analysis });
     },
   });
 };
@@ -56,7 +57,7 @@ export const createAffinity = <
   ) => AsyncIterable<ProtocolFrame<Event>>;
 }) => {
   type Request = ChatPayloadFacts<Api, Payload> & AffinityFacts<Analysis> & CandidateRequest & HttpInput;
-  type Response = Partial<ChatFrameFacts<Api, Event>>;
+  type Response = ChatOutcomeFacts<Api, Event>;
   const requestKey = `request.${api}` as const;
   const responseKey = `response.${api}` as const;
   const { wrap } = options;
@@ -67,20 +68,20 @@ export const createAffinity = <
       request: { needs: [requestKey, 'request.affinity', 'route.candidate', 'request.http'], consumes: ['request.affinity'], provides: [requestKey] },
       response: { needs: responseKeys, consumes: [], provides: responseKeys },
     },
-    execute: async (request, next, env) => {
+    execute: async (request, scope) => {
       const { 'request.affinity': analysis, ...facts } = request;
       const candidate = facts['route.candidate'];
       const evaluation = options.evaluate(analysis, candidate, request[requestKey]);
       if (evaluation.kind === 'rejected') throw new Error('Rejected affinity candidate reached an attempt');
       const payload = { ...evaluation.payload, model: candidate.modelId };
-      const response = await next({ ...facts, 'route.candidate': candidate, [requestKey]: payload });
+      const response = await scope.next({ ...facts, [requestKey]: payload });
       if (wrap === undefined) return response;
-      const events = response[responseKey];
-      if (events === undefined) return response;
-      const carrier = { codec: env.services.affinityCodec, affinity: affinityIdentityForCandidate(candidate) };
+      const outcome = response[responseKey];
+      if (outcome.kind !== 'stream') return response;
+      const carrier = { codec: scope.services.affinityCodec, affinity: affinityIdentityForCandidate(candidate) };
       return {
         ...response,
-        [responseKey]: env.wrapStream(events, { label: `${api} affinity`, transform: source => wrap(source, carrier, request) }),
+        [responseKey]: { kind: 'stream', events: wrapProtocolFrames(outcome.events, scope, `${api} affinity`, source => wrap(source, carrier, request)) },
       };
     },
   });
@@ -103,7 +104,7 @@ export const selectChatCandidates = <Analysis extends AffinityAnalysis, Payload>
   const compatible: RouteCandidate[] = [];
   const degrading: RouteCandidate[] = [];
   for (const candidate of candidates) {
-    if (!picker.canServe(candidate.endpoints)) continue;
+    if (!picker.canServe(candidate.endpoints, candidate.kind)) continue;
     const evaluation = score(analysis, candidate, payload);
     if ((evaluation.kind === 'accepted') !== requiredTargets.every(target => candidateSatisfiesAffinityIdentity(candidate, target))) {
       throw new Error('Affinity candidate evaluation disagrees with the request requirement analysis');

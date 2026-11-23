@@ -1,10 +1,10 @@
+import { billableCall, type BillableCall, type ObservedCallPerformance, type ObservedUsage, streamPerformance } from './call-metering.ts';
 import { forwardHttp, type MeteredHttpResponse, openAiApiError, scalarHttpAttempt } from './non-chat.ts';
-import { billableCall, type BillableCall, type ObservedUsage } from './observe-usage.ts';
 import { failedRender, type RenderOutcome } from './render.ts';
 import { openaiInternalErrorPayload } from '../shared/openai-error-payload.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, serializeSseFrame } from '../shared/sse.ts';
-import type { HttpResponseFacts } from '@floway-dev/http';
-import { Bytes, type StageEnv } from '@floway-dev/pipeline';
+import { type HttpResponseFacts, isTransportFailure, type TransportFailure } from '@floway-dev/http';
+import { Bytes, type Scope } from '@floway-dev/pipeline';
 import { sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { type TelemetryModelIdentity, toInternalDebugError } from '@floway-dev/provider';
 
@@ -70,24 +70,34 @@ const failureFrame = (error: unknown): Bytes =>
   Bytes.fromUtf8(serializeSseFrame(sseFrame(JSON.stringify(openaiInternalErrorPayload(toInternalDebugError(error))))));
 
 export const observeSse = <Frame>(
-  http: HttpResponseFacts, identity: TelemetryModelIdentity, env: StageEnv, dialect: SseDialect<Frame>,
+  http: HttpResponseFacts, identity: TelemetryModelIdentity, scope: Scope, dialect: SseDialect<Frame>,
 ): MeteredHttpResponse => {
   const { body } = http;
   const forwarded = forwardHttp(http);
   if (body === null) {
     const message = 'Upstream returned a streaming response with no body.';
-    const error = openAiApiError(502, message, env.clock());
+    const error = openAiApiError(502, message, scope.clock());
     const headers = forwarded.headers.filter(([name]) => name !== 'content-type');
-    return scalarHttpAttempt(env, { ...error, headers: [...headers, ...error.headers] }, identity, dialect.usage(), failedRender('source-error', new Error(message)));
+    return scalarHttpAttempt(scope, { ...http, status: error.status, statusText: '', headers: [...headers, ...error.headers], body: error.body }, identity, dialect.usage(), failedRender('source-error', new Error(message)));
   }
-  const source = body instanceof Bytes ? env.createStream({ label: 'buffered upstream SSE', async *iterate() { yield body; } }) : body;
+  const source = body instanceof Bytes ? scope.createStream({ label: 'buffered upstream SSE', async *iterate() { yield body; } }) : body;
   let outcome: RenderOutcome = { kind: 'completed' };
   let reachedTerminal = false;
-  const stream = env.wrapStream(source, {
+  const stream = scope.wrapStream(source, {
     label: 'downstream SSE frames',
-    async *transform(input, signal) {
+    async *transform(input, scope) {
+      let interruption: { readonly failure: TransportFailure; readonly error: Error } | undefined;
+      const bytes = async function* () {
+        for await (const chunk of input) {
+          if (isTransportFailure(chunk)) {
+            interruption = { failure: chunk, error: new Error(chunk.error.message) };
+            throw interruption.error;
+          }
+          yield chunk;
+        }
+      };
       try {
-        for await (const frame of withKeepAlive(dialect.frames(asReadable(input), signal), signal)) {
+        for await (const frame of withKeepAlive(dialect.frames(asReadable(bytes()), scope.signal), scope.signal)) {
           if (frame === keepAlive) {
             yield keepAliveFrame;
             continue;
@@ -98,40 +108,38 @@ export const observeSse = <Frame>(
           if (encoded.wire !== null) yield Bytes.fromUtf8(encoded.wire);
           if (reachedTerminal) return;
         }
-        if (!signal.aborted) {
+        if (!scope.signal.aborted) {
           const error = new Error(dialect.eofMessage);
           outcome = failedRender('premature-eof', error);
           yield failureFrame(error);
         }
       } catch (error) {
-        if (signal.aborted) return;
-        outcome = failedRender('source-error', error);
+        if (interruption === undefined || error !== interruption.error) throw error;
+        outcome = { kind: 'failed', reason: 'source-error', error: interruption.failure.error };
         yield failureFrame(error);
       }
     },
     onClose(end) {
-      streamEnd.resolve(env.clock());
       if (end.how === 'errored') outcome = failedRender('source-error', end.error);
       else if (end.how === 'leaked') outcome = failedRender('source-error');
       else if ((end.how === 'cancelled' || end.how === 'released') && !reachedTerminal && outcome.kind === 'completed') outcome = { kind: 'cancelled' };
       render.resolve(outcome);
-      const disposition = end.how === 'cancelled' ? 'cancelled' : outcome.kind === 'failed' ? 'stream-error' : reachedTerminal ? 'completed' : 'released';
-      try {
-        billing.resolve([billableCall(env, identity, disposition, dialect.usage())]);
-      } catch (error) {
-        billing.reject(error);
-      }
+      const disposition = outcome.kind === 'failed' ? 'stream-error' : reachedTerminal ? 'completed' : end.how === 'cancelled' ? 'cancelled' : 'released';
+      const usage = dialect.usage();
+      billing.resolve(billableCall(scope, identity, disposition, usage));
+      performance.resolve(streamPerformance(end, outcome.kind === 'failed', reachedTerminal, {
+        firstOutputAt: null, streamEndedAt: scope.clock(), upstreamStartedAt: http.timing.startedAt, outputTokens: usage.usage?.output ?? 0,
+      }));
     },
   });
-  const billing = env.deferred<readonly BillableCall[]>('billable call', stream);
-  const render = env.deferred<RenderOutcome>('render outcome', stream);
-  const streamEnd = env.deferred<number | null>('stream end', stream);
+  const billing = scope.deferred<BillableCall | null>('call.usage', stream);
+  const render = scope.deferred<RenderOutcome>('render outcome', stream);
+  const performance = scope.deferred<ObservedCallPerformance | null>('call.performance', stream);
   const headers = forwarded.headers.filter(([name]) => !['content-type', 'cache-control'].includes(name.toLowerCase()));
   return {
     'response.http': { ...forwarded, headers: [...headers, ['content-type', 'text/event-stream'], ['cache-control', 'no-cache'], ['connection', 'keep-alive']], body: stream },
     'response.render': render.deferred,
-    'response.usage.billable': billing.deferred,
-    'response.timing.firstOutputAt': env.defer('first output', Promise.resolve(null)),
-    'response.timing.streamEndedAt': streamEnd.deferred,
+    'response.call.usage': billing.deferred,
+    'response.call.performance': performance.deferred,
   };
 };

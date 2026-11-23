@@ -1,10 +1,9 @@
 import { getDumpBroker, getDumpStore } from './registry.ts';
 import { dumpMetadataSchema } from './schemas.ts';
 import { type DumpErrorMeta, type DumpLiveSummary, type DumpMetadata, dumpLiveStreamId } from './types.ts';
-import type { AnswerSource } from '../data-plane/pipeline/answer.ts';
+import type { CallRecordSummary } from '../data-plane/pipeline/call-metering.ts';
 import type { HttpDelivery } from '../data-plane/pipeline/edge-http.ts';
 import type { RenderOutcome } from '../data-plane/pipeline/render.ts';
-import type { Settlement } from '../data-plane/pipeline/settlement.ts';
 import { getRepo } from '../repo/index.ts';
 import type { ApiKey, TokenUsage } from '../repo/types.ts';
 import { ulid } from '../shared/ulid.ts';
@@ -30,22 +29,18 @@ const settledValue = async <T>(value: FactValue): Promise<T | undefined> => {
   return result.status === 'fulfilled' ? result.value as T : undefined;
 };
 
-interface FailedCandidate { readonly modelId: string; readonly upstreamId: string }
-
 interface HostFailure {
   readonly status: number;
   readonly error: DumpErrorMeta;
-  readonly candidate?: FailedCandidate;
 }
 
 interface LiveMetadata {
   readonly model: string | null;
   readonly status: number | undefined;
-  readonly source: AnswerSource | undefined;
   readonly responseBytes: number;
   readonly uploadError: ErrorSnapshot | undefined;
   readonly hostFailure: HostFailure | undefined;
-  readonly settlement: Settlement | undefined;
+  readonly call: CallRecordSummary | undefined;
   readonly render: RenderOutcome | undefined;
   readonly delivery: HttpDelivery | undefined;
 }
@@ -57,43 +52,39 @@ const renderFailureMessages = {
   'collect-error': 'Upstream response collection failed',
 } satisfies Record<Extract<RenderOutcome, { kind: 'failed' }>['reason'], string>;
 
-const dumpError = ({ status, source, settlement, uploadError, hostFailure, render, delivery }: LiveMetadata, summary: DumpCompletionSummary): DumpErrorMeta | null => {
+const dumpError = ({ status, call, uploadError, hostFailure, render, delivery }: LiveMetadata, summary: DumpCompletionSummary): DumpErrorMeta | null => {
   if (hostFailure !== undefined) return hostFailure.error;
   if (uploadError !== undefined) return { kind: 'failed', reason: oneLine(uploadError.message) };
   if (render?.kind === 'failed') return { kind: 'failed', reason: oneLine(render.error?.message ?? renderFailureMessages[render.reason]) };
   if (delivery?.kind === 'write-failed') return { kind: 'failed', reason: oneLine(delivery.error.message) };
   if (render?.kind === 'cancelled') return { kind: 'failed', reason: 'Downstream cancelled the SSE response' };
-  if (source !== undefined && status !== undefined && (status < 200 || status >= 300)) return { kind: source };
-  if (!summary.ok || settlement?.outcome === 'failed') {
+  const httpStatus = status ?? call?.status;
+  if (httpStatus !== undefined && (httpStatus < 200 || httpStatus >= 300)) return { kind: call?.failed ? 'upstream' : 'gateway' };
+  if (!summary.ok) {
     return { kind: 'failed', reason: summary.doneError?.message ?? 'Downstream response did not complete' };
   }
   return null;
 };
 
 const buildMetadata = async (started: DumpLiveSummary, values: LiveMetadata, summary: DumpCompletionSummary): Promise<DumpMetadata> => {
-  const { settlement, hostFailure } = values;
+  const { call, hostFailure } = values;
   const completedAt = Date.now();
-  const upstreamId = settlement?.upstreamId ?? hostFailure?.candidate?.upstreamId;
+  const upstreamId = call?.upstreamId;
   const record = upstreamId === undefined ? null : await getRepo().upstreams.getById(upstreamId);
-  const outcome = settlement?.outcome;
-  // WebSocket streaming turns have a request outcome in place of an HTTP
-  // response status. Error envelopes carry their own status.
-  const status = started.method === 'WS' && (outcome === 'success' || outcome === 'failed')
-    ? outcome === 'success' ? 200 : 500
-    : values.status ?? settlement?.status ?? (summary.ok ? 200 : 500);
+  const status = values.status ?? call?.status ?? (summary.ok ? 200 : 500);
   return dumpMetadataSchema.parse({
     ...started,
     completedAt,
     status: hostFailure?.status ?? status,
     upstream: record === null ? null : { id: record.id, name: record.name, kind: record.kind, hue: record.hue },
-    model: settlement?.identity?.model ?? hostFailure?.candidate?.modelId ?? values.model ?? started.model,
-    inputTokens: inputTokens(settlement?.tokenUsage),
-    outputTokens: settlement?.tokenUsage?.output ?? null,
+    model: call?.identity?.model ?? values.model ?? started.model,
+    inputTokens: inputTokens(call?.tokenUsage),
+    outputTokens: call?.tokenUsage?.output ?? null,
     responseBytes: values.responseBytes,
     durationMs: completedAt - started.startedAt,
-    ttftMs: settlement?.firstOutputAt == null || settlement.upstreamStartedAt === null ? null : Math.round(settlement.firstOutputAt - settlement.upstreamStartedAt),
+    ttftMs: call?.firstOutputAt == null ? null : Math.round(call.firstOutputAt - call.upstreamStartedAt),
     error: dumpError(values, summary),
-    targetApi: settlement?.targetApi ?? null,
+    targetApi: call?.targetApi ?? null,
     truncated: summary.truncated,
     droppedEvents: summary.droppedEvents,
   });
@@ -103,7 +94,7 @@ interface DumpSession {
   readonly recordId: string;
   readonly sink: RunEventSink;
   readonly completed: Promise<void>;
-  readonly hostFailure: (error: unknown, status: number, upstream: boolean, candidate?: FailedCandidate) => void;
+  readonly hostFailure: (error: unknown, status: number, upstream: boolean) => void;
 }
 
 export const openDumpSession = (apiKey: ApiKey, request: HttpRequestFacts, requestedModel?: string): DumpSession | null => {
@@ -142,11 +133,13 @@ export const openDumpSession = (apiKey: ApiKey, request: HttpRequestFacts, reque
   let responseStreamId: number | undefined;
   let responseBytes = 0;
   let status: number | undefined;
-  let source: AnswerSource | undefined;
   let model: string | null = null;
   let uploadError: ErrorSnapshot | undefined;
   let hostFailure: HostFailure | undefined;
-  let settlement: Promise<Settlement | undefined> | undefined;
+  const baseChildren = new Map<number, number>();
+  const pendingCalls = new Map<number, number>();
+  const calls = new Map<number, CallRecordSummary>();
+  let lastCall: CallRecordSummary | undefined;
   let render: Promise<RenderOutcome | undefined> | undefined;
   let delivery: Promise<HttpDelivery | undefined> | undefined;
   const sink: RunEventSink = event => {
@@ -157,16 +150,19 @@ export const openDumpSession = (apiKey: ApiKey, request: HttpRequestFacts, reque
       if (event.edge !== 'root') break;
       rootStageId = event.stageId;
       const http = event.facts['request.http'];
-      if (http !== null && typeof http === 'object' && 'body' in http && http.body instanceof Bytes) {
-        started = { ...started, requestBytes: http.body.byteLength };
+      if (http !== null && typeof http === 'object' && 'body' in http) {
+        const body = http.body;
+        if (body instanceof Bytes) started = { ...started, requestBytes: body.byteLength };
+        if (body !== null && typeof body === 'object' && 'kind' in body && body.kind === 'upload-error' && 'error' in body) {
+          uploadError = body.error as ErrorSnapshot;
+        }
       }
-      const error = event.facts['request.uploadError'];
-      if (error !== undefined) uploadError = error as ErrorSnapshot;
       if (model !== null && started.model === null) started = { ...started, model };
       void announce();
       break;
     }
     case 'leave': {
+      if (event.baseChildId !== undefined) baseChildren.set(event.stageId, event.baseChildId);
       if (event.stageId !== rootStageId) break;
       const http = event.facts['response.http'];
       if (http !== null && typeof http === 'object') {
@@ -174,11 +170,21 @@ export const openDumpSession = (apiKey: ApiKey, request: HttpRequestFacts, reque
         if ('body' in http && http.body instanceof Bytes) responseBytes = http.body.byteLength;
         if ('body' in http && isManagedStream(http.body)) responseStreamId = streamIdOf(http.body);
       }
-      const answerSource = event.facts['response.source'];
-      if (answerSource === 'upstream' || answerSource === 'gateway') source = answerSource;
-      settlement = settledValue<Settlement>(event.facts['response.settlement']);
       render = settledValue<RenderOutcome>(event.facts['response.render']);
       delivery = settledValue<HttpDelivery>(event.facts['response.delivery']);
+      break;
+    }
+    case 'deferred':
+      if (event.name === 'call.record') pendingCalls.set(event.deferredId, event.stageId);
+      break;
+    case 'settled': {
+      const stageId = pendingCalls.get(event.deferredId);
+      if (stageId === undefined) break;
+      pendingCalls.delete(event.deferredId);
+      if (event.ok) {
+        lastCall = event.value as CallRecordSummary;
+        calls.set(stageId, lastCall);
+      }
       break;
     }
     case 'frame': {
@@ -190,10 +196,14 @@ export const openDumpSession = (apiKey: ApiKey, request: HttpRequestFacts, reque
   };
 
   const completed = Promise.all([pump.completed, written]).then(async ([summary]) => {
-    const [settled, rendered, delivered] = await Promise.all([settlement, render, delivery]);
+    const [rendered, delivered] = await Promise.all([render, delivery]);
+    let call: CallRecordSummary | undefined;
+    for (let stageId = rootStageId; stageId !== undefined && call === undefined; stageId = baseChildren.get(stageId)) {
+      call = calls.get(stageId);
+    }
     const meta = await buildMetadata(started, {
-      status, source, model, responseBytes, uploadError, hostFailure,
-      settlement: settled, render: rendered, delivery: delivered,
+      status, model, responseBytes, uploadError, hostFailure,
+      call: call ?? lastCall, render: rendered, delivery: delivered,
     }, summary);
     await store.commitRecord(keyId, { meta, artifactKey });
     await announce();
@@ -208,8 +218,8 @@ export const openDumpSession = (apiKey: ApiKey, request: HttpRequestFacts, reque
     recordId,
     sink,
     completed,
-    hostFailure: (error, status, upstream, candidate) => {
-      hostFailure = { status, candidate, error: upstream ? { kind: 'upstream' } : { kind: 'failed', reason: oneLine(error) } };
+    hostFailure: (error, status, upstream) => {
+      hostFailure = { status, error: upstream ? { kind: 'upstream' } : { kind: 'failed', reason: oneLine(error) } };
     },
   };
 };

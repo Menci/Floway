@@ -10,18 +10,19 @@ export interface ModelsSnapshot {
   readonly lastError: UpstreamModelsCache['lastError'];
 }
 
+export const readUpstreamModelsSnapshot = (cache: UpstreamModelsCache | null): ModelsSnapshot => {
+  const cached = cache?.revision === MODEL_CATALOG_REVISION ? cache : null;
+  return { models: cached?.models ?? [], lastError: cached?.lastError ?? null };
+};
+
 // Capture one immutable snapshot before scheduling any refresh work so its
 // models and error metadata always describe the same durable snapshot.
 export const readUpstreamModelsSnapshotAndScheduleRefresh = (
   instance: GatewayProvider,
   scheduleRefresh: ModelsRefreshScheduler,
 ): ModelsSnapshot => {
-  const cached = instance.modelsCache?.revision === MODEL_CATALOG_REVISION ? instance.modelsCache : null;
-  const snapshot = {
-    models: cached?.models ?? [],
-    lastError: cached?.lastError ?? null,
-  };
-  if (shouldScheduleModelsRefresh(cached, Date.now())) {
+  const snapshot = readUpstreamModelsSnapshot(instance.modelsCache);
+  if (shouldScheduleModelsRefresh(instance.modelsCache, Date.now())) {
     scheduleRefresh({
       upstreamId: instance.upstreamId,
       configVersion: instance.configVersion,

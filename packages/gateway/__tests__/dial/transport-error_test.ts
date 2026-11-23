@@ -1,11 +1,16 @@
 import { expect, test } from 'vitest';
 
 import { isUpstreamTransportError, runUpstreamTransport, UpstreamTransportError } from '../../src/dial/transport-error.ts';
+import { isUpstreamTransportError as httpClassifies, UpstreamTransportError as HttpTransportError } from '@floway-dev/http';
 import { ProxyDialError } from '@floway-dev/proxy';
 
 test('network failures retain their original cause and successful responses retain their identity', async () => {
   const cause = new TypeError('connection reset');
-  await expect(runUpstreamTransport(async () => { throw cause; })).rejects.toMatchObject({ name: UpstreamTransportError.name, cause });
+  const failure = runUpstreamTransport(async () => { throw cause; });
+  expect(UpstreamTransportError).toBe(HttpTransportError);
+  expect(isUpstreamTransportError).toBe(httpClassifies);
+  await expect(failure).rejects.toBeInstanceOf(HttpTransportError);
+  await expect(failure).rejects.toMatchObject({ cause });
   const response = new Response('ok');
   expect(await runUpstreamTransport(async () => response)).toBe(response);
 });

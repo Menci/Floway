@@ -1,8 +1,6 @@
-import { type AnswerFacts, answerKeys, gatewayAnswer } from './answer.ts';
 import { type HttpOutput, jsonHttpResponse } from './edge-http.ts';
 import type { CandidatesRequest } from './failover.ts';
-import type { UsageFacts } from './observe-usage.ts';
-import type { RenderFacts } from './render.ts';
+import { localHttpAnswer, type RenderFacts } from './render.ts';
 import type { GatewayRouteFacts, GatewayServices, RouteCandidate } from './services.ts';
 import { appendFailedUpstreams } from '../shared/failed-upstreams.ts';
 import { defineStage } from '@floway-dev/pipeline';
@@ -20,8 +18,8 @@ export const createResolveCandidates = <Candidate extends RouteCandidate = Route
   readonly requestNeeds?: readonly string[];
 }) => {
   type Down = Request & { readonly 'route.candidates': readonly Candidate[] };
-  type Response = HttpOutput & UsageFacts & AnswerFacts & Partial<RenderFacts>;
-  return defineStage<Request, Down, Response, Response, Pick<GatewayServices, 'providers'>>({
+  type Response = HttpOutput & RenderFacts;
+  return defineStage<Request, Down, Response, Response, Pick<GatewayServices, 'providers' | 'modelsRefresh'>>({
     name: 'resolveCandidates',
     through: {
       request: {
@@ -31,14 +29,15 @@ export const createResolveCandidates = <Candidate extends RouteCandidate = Route
       },
       response: { needs: [], consumes: [], provides: [] },
     },
-    return: { provides: answerKeys },
-    execute: async (facts, next, env) => {
+    return: { provides: ['response.http', 'response.render'] },
+    execute: async (facts, scope) => {
       const model = facts['request.model'];
-      const { candidates, sawModel, failedUpstreams } = await env.services.providers.enumerate(facts, model, options.kind);
+      const { candidates, sawModel, failedUpstreams, staleRefreshes } = await scope.services.providers.enumerate(facts, model, options.kind);
+      for (const target of staleRefreshes) scope.defer('models.refresh', scope.services.modelsRefresh(target));
       const selection = options.select(candidates, facts);
       if (!('status' in selection) && selection.length > 0) {
         const request: Down & CandidatesRequest = { ...facts, 'route.candidates': selection };
-        return await next(request);
+        return await scope.next(request);
       }
       const error: CandidateError = 'status' in selection ? selection : {
         model,
@@ -49,7 +48,7 @@ export const createResolveCandidates = <Candidate extends RouteCandidate = Route
           : `Model ${model} is not available on any configured upstream.`, failedUpstreams),
       };
       const body = options.errorBody === undefined ? { error: { message: error.message, type: 'api_error' } } : options.errorBody(error);
-      return gatewayAnswer(env, jsonHttpResponse(error.status, body, env.clock()));
+      return localHttpAnswer(scope, jsonHttpResponse(error.status, body, scope.clock()));
     },
   });
 };

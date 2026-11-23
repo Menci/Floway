@@ -1,19 +1,17 @@
+import { removeFact } from './remove-fact.ts';
 import { SidecarDomain } from './sidecar-codec.ts';
+import { wrapProtocolFrames } from './stream-frames.ts';
 import type { TargetRequest } from './target-picker.ts';
-import { answerKeys, gatewayAnswer } from '../../pipeline/answer.ts';
-import { type HttpInput, jsonHttpResponse } from '../../pipeline/edge-http.ts';
-import type { AttemptResponse, CandidateRequest } from '../../pipeline/failover.ts';
-import { httpSucceeded, readHttpBytes } from '../../pipeline/non-chat.ts';
-import { usageResponseKeys } from '../../pipeline/observe-usage.ts';
+import { type HttpInput, type HttpOutput, jsonHttpResponse } from '../../pipeline/edge-http.ts';
+import type { CandidateRequest } from '../../pipeline/failover.ts';
 import type { GatewayRouteFacts, GatewayServices } from '../../pipeline/services.ts';
 import type { HttpResponseFacts } from '@floway-dev/http';
-import { Bytes, defineEnding, type ManagedStream, type StageEnv, type StaticTarget, type ThroughDecl } from '@floway-dev/pipeline';
+import { Bytes, defineEnding, type FactValue, type Scope, type StaticTarget, type ThroughDecl } from '@floway-dev/pipeline';
 import type { AnthropicMessagesPayload, AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentRequest, GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
-import type { OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import type { ChatTargetApi, OpenAIResponsesAction } from '@floway-dev/provider';
+import type { OpenAIResponsesCompactionResultEx, OpenAIResponsesRequestPayloadEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import type { ChatTargetApi, OpenAIResponsesAction, ProtocolOutcome, ProviderBaseOutput } from '@floway-dev/provider';
 import {
   routeAnthropicMessagesViaOpenAIChatCompletions,
   routeAnthropicMessagesViaOpenAIResponses,
@@ -25,40 +23,35 @@ import {
   routeOpenAIResponsesViaAnthropicMessages,
   routeOpenAIResponsesViaOpenAIChatCompletions,
   type TranslateInputError,
-  type TranslateTrip,
   type Translator,
 } from '@floway-dev/translate';
 
 interface ChatProtocols {
-  readonly anthropicMessages: [AnthropicMessagesPayload, AnthropicMessagesStreamEventEx];
-  readonly geminiGenerateContent: [GeminiGenerateContentRequest, GeminiGenerateContentStreamEvent];
-  readonly openaiChatCompletions: [OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent];
-  readonly openaiResponses: [OpenAIResponsesRequestPayloadEx & { model: string }, OpenAIResponsesStreamEventEx];
+  readonly anthropicMessages: [AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, never];
+  readonly geminiGenerateContent: [GeminiGenerateContentRequest, GeminiGenerateContentStreamEvent, never];
+  readonly openaiChatCompletions: [OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent, never];
+  readonly openaiResponses: [OpenAIResponsesRequestPayloadEx & { model: string }, OpenAIResponsesStreamEventEx, OpenAIResponsesCompactionResultEx];
 }
 
 export type ChatPayload<Api extends ChatTargetApi> = ChatProtocols[Api][0];
 export type ChatEvent<Api extends ChatTargetApi> = ChatProtocols[Api][1];
-export type ChatFrames<Event> = ManagedStream<ProtocolFrame<Event>> | undefined;
+export type ChatResult<Api extends ChatTargetApi> = ChatProtocols[Api][2];
 
 export type ChatPayloadFacts<Api extends ChatTargetApi, Payload = ChatPayload<Api>> = { readonly [K in `request.${Api}`]: Payload };
-export type ChatFrameFacts<Api extends ChatTargetApi, Event = ChatEvent<Api>> = { readonly [K in `response.${Api}`]: ChatFrames<Event> };
+export type ChatOutcomeFacts<Api extends ChatTargetApi, Event = ChatEvent<Api>, Result = ChatResult<Api>> =
+  Readonly<Record<`response.${Api}`, ProtocolOutcome<Event, Result>>>;
 
-export interface ChatProtocolExtras {
-  readonly 'request.anthropicBeta'?: readonly string[];
-  readonly 'request.action'?: OpenAIResponsesAction;
-}
+export type ChatProtocolExtras<Api extends ChatTargetApi> = Api extends 'anthropicMessages'
+  ? { readonly 'request.anthropicBeta': readonly string[] }
+  : Api extends 'openaiResponses' ? { readonly 'request.action': OpenAIResponsesAction } : {};
 
-type BodyRequest = HttpInput & CandidateRequest & GatewayRouteFacts & ChatProtocolExtras;
+type BodyRequest = HttpInput & CandidateRequest & GatewayRouteFacts;
 
-export type ChatBodyInput<Api extends ChatTargetApi> = BodyRequest & ChatPayloadFacts<Api>;
-export type ChatBodyOutput<Api extends ChatTargetApi> = AttemptResponse & ChatFrameFacts<Api> & {
-  readonly 'response.targetApi'?: ChatTargetApi;
-};
-export type ChatEgressInput<Api extends ChatTargetApi> = BodyRequest & { readonly 'request.payload': ChatPayload<Api> };
-export interface ChatEgressOutput<Api extends ChatTargetApi> extends AttemptResponse {
-  readonly 'response.events': ChatFrames<ChatEvent<Api>>;
-  readonly 'response.targetApi': ChatTargetApi;
-}
+export type ChatBodyInput<Api extends ChatTargetApi> = BodyRequest & ChatProtocolExtras<Api> & ChatPayloadFacts<Api>;
+export type ChatBodyOutput<Api extends ChatTargetApi> = HttpOutput & ChatOutcomeFacts<Api>;
+export type ChatEgressInput<Api extends ChatTargetApi> =
+  BodyRequest & ChatProtocolExtras<Api> & TargetRequest<Api> & { readonly 'request.payload': ChatPayload<Api> };
+export type ChatEgressOutput<Api extends ChatTargetApi> = ProviderBaseOutput & ChatOutcomeFacts<Api>;
 
 interface TranslatedApis {
   readonly messages: 'anthropicMessages';
@@ -76,54 +69,50 @@ export type ChatBodyTargets<Api extends ChatTargetApi> = {
   readonly [Slot in SlotsFor<Api>]: StaticTarget<ChatBodyInput<TranslatedApis[Slot]>, ChatBodyOutput<TranslatedApis[Slot]>, GatewayServices>;
 };
 
-export type OpenAIResponsesCompactBodyTargets = ChatBodyTargets<'openaiResponses'> & {
-  readonly generation: ChatBodyTargets<'openaiResponses'>['egress'];
-};
-
 type RouteServices = Pick<GatewayServices, 'sidecarCodecs'>;
 type TargetBodyRequest = BodyRequest & TargetRequest;
-type RouteRequest<Api extends ChatTargetApi> = BodyRequest & ChatPayloadFacts<Api> & TargetRequest<Api | TranslatedApis[SlotsFor<Api>]>;
+type RouteRequest<Api extends ChatTargetApi> = ChatBodyInput<Api> & TargetRequest<Api | TranslatedApis[SlotsFor<Api>]>;
 type InputErrorBody = (error: TranslateInputError) => unknown;
-type RouteReply<Event, Reply> = (response: AttemptResponse, events: ChatFrames<Event>) => Reply;
-type EnterEgress<Payload, Event> = (
-  facts: BodyRequest & { readonly 'request.payload': Payload },
-) => Promise<AttemptResponse & { readonly 'response.events': ChatFrames<Event> }>;
+type RouteReply<Event, Reply> = (http: HttpResponseFacts, outcome: ProtocolOutcome<Event>) => Reply;
 type EnterBody<Api extends ChatTargetApi> = (facts: ChatBodyInput<Api>) => Promise<ChatBodyOutput<Api>>;
-type TranslatedAnswer<Payload, Event> = (
+type TranslatedAnswer<Payload, Event, Result> = (
   facts: BodyRequest, payload: Payload,
-) => Promise<{ readonly response: AttemptResponse; readonly events: ChatFrames<Event> }>;
+) => Promise<{ readonly http: HttpResponseFacts; readonly outcome: ProtocolOutcome<Event, Result> }>;
 
-const responseDecl = (consumes: string, provides: string, passthrough: readonly string[]): ThroughDecl['response'] => ({
-  needs: ['response.http', 'response.source', ...usageResponseKeys, consumes, ...passthrough],
-  consumes: [consumes],
-  provides: ['response.http', provides],
-});
+const extrasFor = (target: ChatTargetApi): readonly string[] => {
+  if (target === 'anthropicMessages') return ['request.anthropicBeta'];
+  if (target === 'openaiResponses') return ['request.action'];
+  return [];
+};
 
 const egressSlot = (api: ChatTargetApi): ThroughDecl => {
   const request = `request.${api}`;
   return {
-    request: { needs: [request], consumes: [request], provides: ['request.payload'] },
-    response: responseDecl('response.events', `response.${api}`, ['response.targetApi']),
+    request: { needs: [request, ...extrasFor(api)], consumes: [request], provides: ['request.payload'] },
+    response: { needs: ['response.http', 'response.modelKey', `response.${api}`], consumes: ['response.modelKey'], provides: [] },
   };
 };
 
 const translationSlot = (source: ChatTargetApi, target: TranslatedApis[TranslationSlot]): ThroughDecl => {
   const request = `request.${source}`;
-  const extras = target === 'anthropicMessages' ? ['request.anthropicBeta'] : target === 'openaiResponses' ? ['request.action'] : [];
   return {
     request: {
       needs: [request],
       consumes: [request],
-      provides: [`request.${target}`, ...extras],
+      provides: [`request.${target}`, ...extrasFor(target)],
     },
-    response: responseDecl(`response.${target}`, `response.${source}`, []),
+    response: {
+      needs: ['response.http', `response.${target}`],
+      consumes: [`response.${target}`],
+      provides: ['response.http', `response.${source}`],
+    },
   };
 };
 
 const routeDefinition = (api: ChatTargetApi) => ({
   name: 'routeBody',
   request: { needs: [`request.${api}`, 'route.targetApi', 'route.candidate'] },
-  return: { provides: [...answerKeys, `response.${api}`] },
+  return: { provides: ['response.http', `response.${api}`] },
 });
 
 export const headersForRewrite = (headers: HttpResponseFacts['headers']): Headers => {
@@ -132,78 +121,71 @@ export const headersForRewrite = (headers: HttpResponseFacts['headers']): Header
   return result;
 };
 
-const rewriteTranslatedError = async (http: HttpResponseFacts, rewrite: TranslateTrip<unknown, unknown, unknown>['error']): Promise<HttpResponseFacts> => {
-  if (httpSucceeded(http) || http.body === null) return http;
-  const bytes = await readHttpBytes(http.body);
-  const rewritten = rewrite(http.status, headersForRewrite(http.headers), bytes.toUint8Array());
-  if (rewritten === undefined) return { ...http, body: bytes };
-  return {
-    ...http,
-    status: rewritten.status,
-    statusText: rewritten.status === http.status ? http.statusText : '',
-    headers: [...rewritten.headers],
-    body: Bytes.fromUtf8(JSON.stringify(rewritten.body)),
-  };
+const enterEgress = async <Api extends ChatTargetApi>(
+  facts: ChatEgressInput<Api>, enter: (facts: ChatEgressInput<Api>) => Promise<ChatEgressOutput<Api>>,
+): Promise<ChatBodyOutput<Api>> => {
+  return removeFact<ChatBodyOutput<Api>, 'response.modelKey'>(await enter(facts), 'response.modelKey');
 };
 
-const enterEgress = async <Payload, Event, Reply>(
-  facts: BodyRequest, payload: Payload, enter: EnterEgress<Payload, Event>, reply: RouteReply<Event, Reply>,
-): Promise<Reply> => {
-  const { 'response.events': events, ...response } = await enter({ ...facts, 'request.payload': payload });
-  return reply(response, events);
-};
-
-const translateInto = async <Payload extends object, Event, TargetPayload, TargetEvent, Reply>(
+const translateInto = async <Payload extends object, Event, TargetPayload, TargetEvent, TargetResult, Reply>(
   api: ChatTargetApi,
   facts: TargetBodyRequest,
   payload: Payload,
   translate: Translator<Payload, Event, TargetPayload, TargetEvent>,
-  enter: TranslatedAnswer<TargetPayload, TargetEvent>,
+  enter: TranslatedAnswer<TargetPayload, TargetEvent, TargetResult>,
   reply: RouteReply<Event, Reply>,
   inputError: InputErrorBody,
-  env: StageEnv<RouteServices>,
+  scope: Scope<RouteServices>,
 ): Promise<Reply> => {
   const targetApi = facts['route.targetApi'];
   const trip = await translate({ ...payload, stream: true }, {
-    sidecarCodec: env.services.sidecarCodecs.codecFor(SidecarDomain.TranslatedAssistantTurn),
+    sidecarCodec: scope.services.sidecarCodecs.codecFor(SidecarDomain.TranslatedAssistantTurn),
     fallbackMaxOutputTokens: facts['route.candidate'].limits.max_output_tokens,
   });
   if (trip.type === 'input-error') {
-    return reply(gatewayAnswer(env, jsonHttpResponse(400, inputError(trip), env.clock())), undefined);
+    const error = inputError(trip) as FactValue;
+    return reply(jsonHttpResponse(400, error, scope.clock()), { kind: 'error', source: 'local', error });
   }
-  const { response, events } = await enter(facts, trip.target);
-  return reply({
-    ...response,
-    'response.http': await rewriteTranslatedError(response['response.http'], trip.error),
-  }, events === undefined ? undefined : env.wrapStream(events, {
-    label: `${targetApi} → ${api}`,
-    transform: source => trip.events(source),
-  }));
+  const { http, outcome } = await enter(facts, trip.target);
+  switch (outcome.kind) {
+  case 'stream':
+    return reply(http, { kind: 'stream', events: wrapProtocolFrames(outcome.events, scope, `${targetApi} → ${api}`, trip.events) });
+  case 'result':
+    throw new Error(`The ${targetApi} generation pipeline returned a scalar result during translation`);
+  case 'error': {
+    const bytes = Bytes.fromUtf8(JSON.stringify(outcome.error));
+    const rewritten = http.transportError === undefined ? trip.error(http.status, headersForRewrite(http.headers), bytes.toUint8Array()) : undefined;
+    if (rewritten === undefined) return reply(http, outcome);
+    return reply({
+      ...http,
+      status: rewritten.status,
+      statusText: rewritten.status === http.status ? http.statusText : '',
+      headers: [...rewritten.headers],
+      body: null,
+    }, { ...outcome, error: rewritten.body as FactValue });
+  }
+  }
 };
 
-const intoMessages = (call: EnterBody<'anthropicMessages'>): TranslatedAnswer<AnthropicMessagesPayload, AnthropicMessagesStreamEventEx> => async (facts, payload) => {
-  const { 'response.anthropicMessages': events, ...response } = await call({
-    ...facts, 'request.anthropicMessages': payload, 'request.anthropicBeta': [],
-  });
-  return { response, events };
+const intoMessages = (call: EnterBody<'anthropicMessages'>): TranslatedAnswer<AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, never> => async (facts, payload) => {
+  const response = await call({ ...facts, 'request.anthropicMessages': payload, 'request.anthropicBeta': [] });
+  return { http: response['response.http'], outcome: response['response.anthropicMessages'] };
 };
 
-const intoResponses = (call: EnterBody<'openaiResponses'>): TranslatedAnswer<ChatPayload<'openaiResponses'>, OpenAIResponsesStreamEventEx> => async (facts, payload) => {
-  const { 'response.openaiResponses': events, ...response } = await call({
-    ...facts, 'request.openaiResponses': payload, 'request.action': 'generate',
-  });
-  return { response, events };
+const intoResponses = (call: EnterBody<'openaiResponses'>): TranslatedAnswer<ChatPayload<'openaiResponses'>, OpenAIResponsesStreamEventEx, ChatResult<'openaiResponses'>> => async (facts, payload) => {
+  const response = await call({ ...facts, 'request.openaiResponses': payload, 'request.action': 'generate' });
+  return { http: response['response.http'], outcome: response['response.openaiResponses'] };
 };
 
-const intoChatCompletions = (call: EnterBody<'openaiChatCompletions'>): TranslatedAnswer<OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent> => async (facts, payload) => {
-  const { 'response.openaiChatCompletions': events, ...response } = await call({ ...facts, 'request.openaiChatCompletions': payload });
-  return { response, events };
+const intoChatCompletions = (call: EnterBody<'openaiChatCompletions'>): TranslatedAnswer<OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent, never> => async (facts, payload) => {
+  const response = await call({ ...facts, 'request.openaiChatCompletions': payload });
+  return { http: response['response.http'], outcome: response['response.openaiChatCompletions'] };
 };
 
 export const createOpenAIChatCompletionsRouteBody = (inputError: InputErrorBody) => {
   const api = 'openaiChatCompletions';
   type Api = typeof api;
-  const reply: RouteReply<ChatEvent<Api>, ChatBodyOutput<Api>> = (response, events) => ({ ...response, 'response.openaiChatCompletions': events });
+  const reply: RouteReply<ChatEvent<Api>, ChatBodyOutput<Api>> = (http, outcome) => ({ 'response.http': http, 'response.openaiChatCompletions': outcome });
   return defineEnding<RouteRequest<Api>, ChatBodyOutput<Api>, ChatBodyTargets<Api>, RouteServices>({
     ...routeDefinition(api),
     into: {
@@ -211,11 +193,12 @@ export const createOpenAIChatCompletionsRouteBody = (inputError: InputErrorBody)
       messages: translationSlot(api, 'anthropicMessages'),
       responses: translationSlot(api, 'openaiResponses'),
     },
-    execute: async ({ 'request.openaiChatCompletions': payload, ...facts }, into, env) => {
-      switch (facts['route.targetApi']) {
-      case 'openaiChatCompletions': return await enterEgress(facts, payload, into.egress, reply);
-      case 'anthropicMessages': return await translateInto(api, facts, payload, routeOpenAIChatCompletionsViaAnthropicMessages, intoMessages(into.messages), reply, inputError, env);
-      case 'openaiResponses': return await translateInto(api, facts, payload, routeOpenAIChatCompletionsViaOpenAIResponses, intoResponses(into.responses), reply, inputError, env);
+    execute: async ({ 'request.openaiChatCompletions': payload, ...facts }, scope) => {
+      const targetApi = facts['route.targetApi'];
+      switch (targetApi) {
+      case 'openaiChatCompletions': return await enterEgress<Api>({ ...facts, 'route.targetApi': targetApi, 'request.payload': payload }, scope.into.egress);
+      case 'anthropicMessages': return await translateInto(api, facts, payload, routeOpenAIChatCompletionsViaAnthropicMessages, intoMessages(scope.into.messages), reply, inputError, scope);
+      case 'openaiResponses': return await translateInto(api, facts, payload, routeOpenAIChatCompletionsViaOpenAIResponses, intoResponses(scope.into.responses), reply, inputError, scope);
       }
     },
   });
@@ -224,7 +207,7 @@ export const createOpenAIChatCompletionsRouteBody = (inputError: InputErrorBody)
 export const createOpenAIResponsesRouteBody = (inputError: InputErrorBody) => {
   const api = 'openaiResponses';
   type Api = typeof api;
-  const reply: RouteReply<ChatEvent<Api>, ChatBodyOutput<Api>> = (response, events) => ({ ...response, 'response.openaiResponses': events });
+  const reply: RouteReply<ChatEvent<Api>, ChatBodyOutput<Api>> = (http, outcome) => ({ 'response.http': http, 'response.openaiResponses': outcome });
   return defineEnding<RouteRequest<Api>, ChatBodyOutput<Api>, ChatBodyTargets<Api>, RouteServices>({
     ...routeDefinition(api),
     into: {
@@ -232,39 +215,13 @@ export const createOpenAIResponsesRouteBody = (inputError: InputErrorBody) => {
       messages: translationSlot(api, 'anthropicMessages'),
       chatCompletions: translationSlot(api, 'openaiChatCompletions'),
     },
-    execute: async ({ 'request.openaiResponses': payload, ...facts }, into, env) => {
-      switch (facts['route.targetApi']) {
-      case 'openaiResponses': return await enterEgress(facts, payload, into.egress, reply);
-      case 'anthropicMessages': return await translateInto(api, facts, payload, routeOpenAIResponsesViaAnthropicMessages, intoMessages(into.messages), reply, inputError, env);
-      case 'openaiChatCompletions': return await translateInto(api, facts, payload, routeOpenAIResponsesViaOpenAIChatCompletions, intoChatCompletions(into.chatCompletions), reply, inputError, env);
-      }
-    },
-  });
-};
-
-export const createOpenAIResponsesCompactRouteBody = (inputError: InputErrorBody) => {
-  const api = 'openaiResponses';
-  type Api = typeof api;
-  type Request = RouteRequest<Api> & { readonly 'request.action': OpenAIResponsesAction };
-  const reply: RouteReply<ChatEvent<Api>, ChatBodyOutput<Api>> = (response, events) => ({ ...response, 'response.openaiResponses': events });
-  const definition = routeDefinition(api);
-  return defineEnding<Request, ChatBodyOutput<Api>, OpenAIResponsesCompactBodyTargets, RouteServices>({
-    ...definition,
-    request: { needs: [...definition.request.needs, 'request.action'] },
-    into: {
-      egress: egressSlot(api),
-      generation: egressSlot(api),
-      messages: translationSlot(api, 'anthropicMessages'),
-      chatCompletions: translationSlot(api, 'openaiChatCompletions'),
-    },
-    execute: async ({ 'request.openaiResponses': payload, ...facts }, into, env) => {
-      const target = facts['route.targetApi'];
-      const action = facts['request.action'];
-      if (target === api) return await enterEgress(facts, payload, action === 'generate' ? into.generation : into.egress, reply);
-      if (action !== 'generate') throw new Error('Responses compact reached a translation without the compact shim');
-      switch (target) {
-      case 'anthropicMessages': return await translateInto(api, facts, payload, routeOpenAIResponsesViaAnthropicMessages, intoMessages(into.messages), reply, inputError, env);
-      case 'openaiChatCompletions': return await translateInto(api, facts, payload, routeOpenAIResponsesViaOpenAIChatCompletions, intoChatCompletions(into.chatCompletions), reply, inputError, env);
+    execute: async ({ 'request.openaiResponses': payload, ...facts }, scope) => {
+      const targetApi = facts['route.targetApi'];
+      if (targetApi === api) return await enterEgress<Api>({ ...facts, 'route.targetApi': targetApi, 'request.payload': payload }, scope.into.egress);
+      if (facts['request.action'] !== 'generate') throw new Error('Responses compact reached a translation without the compact shim');
+      switch (targetApi) {
+      case 'anthropicMessages': return await translateInto(api, facts, payload, routeOpenAIResponsesViaAnthropicMessages, intoMessages(scope.into.messages), reply, inputError, scope);
+      case 'openaiChatCompletions': return await translateInto(api, facts, payload, routeOpenAIResponsesViaOpenAIChatCompletions, intoChatCompletions(scope.into.chatCompletions), reply, inputError, scope);
       }
     },
   });
@@ -273,7 +230,7 @@ export const createOpenAIResponsesCompactRouteBody = (inputError: InputErrorBody
 export const createAnthropicMessagesRouteBody = (inputError: InputErrorBody) => {
   const api = 'anthropicMessages';
   type Api = typeof api;
-  const reply: RouteReply<ChatEvent<Api>, ChatBodyOutput<Api>> = (response, events) => ({ ...response, 'response.anthropicMessages': events });
+  const reply: RouteReply<ChatEvent<Api>, ChatBodyOutput<Api>> = (http, outcome) => ({ 'response.http': http, 'response.anthropicMessages': outcome });
   return defineEnding<RouteRequest<Api>, ChatBodyOutput<Api>, ChatBodyTargets<Api>, RouteServices>({
     ...routeDefinition(api),
     into: {
@@ -281,11 +238,12 @@ export const createAnthropicMessagesRouteBody = (inputError: InputErrorBody) => 
       responses: translationSlot(api, 'openaiResponses'),
       chatCompletions: translationSlot(api, 'openaiChatCompletions'),
     },
-    execute: async ({ 'request.anthropicMessages': payload, ...facts }, into, env) => {
-      switch (facts['route.targetApi']) {
-      case 'anthropicMessages': return await enterEgress(facts, payload, into.egress, reply);
-      case 'openaiResponses': return await translateInto(api, facts, payload, routeAnthropicMessagesViaOpenAIResponses, intoResponses(into.responses), reply, inputError, env);
-      case 'openaiChatCompletions': return await translateInto(api, facts, payload, routeAnthropicMessagesViaOpenAIChatCompletions, intoChatCompletions(into.chatCompletions), reply, inputError, env);
+    execute: async ({ 'request.anthropicMessages': payload, ...facts }, scope) => {
+      const targetApi = facts['route.targetApi'];
+      switch (targetApi) {
+      case 'anthropicMessages': return await enterEgress<Api>({ ...facts, 'route.targetApi': targetApi, 'request.payload': payload }, scope.into.egress);
+      case 'openaiResponses': return await translateInto(api, facts, payload, routeAnthropicMessagesViaOpenAIResponses, intoResponses(scope.into.responses), reply, inputError, scope);
+      case 'openaiChatCompletions': return await translateInto(api, facts, payload, routeAnthropicMessagesViaOpenAIChatCompletions, intoChatCompletions(scope.into.chatCompletions), reply, inputError, scope);
       }
     },
   });
@@ -294,7 +252,7 @@ export const createAnthropicMessagesRouteBody = (inputError: InputErrorBody) => 
 export const createGeminiGenerateContentRouteBody = (inputError: InputErrorBody) => {
   const api = 'geminiGenerateContent';
   type Api = typeof api;
-  const reply: RouteReply<ChatEvent<Api>, ChatBodyOutput<Api>> = (response, events) => ({ ...response, 'response.geminiGenerateContent': events });
+  const reply: RouteReply<ChatEvent<Api>, ChatBodyOutput<Api>> = (http, outcome) => ({ 'response.http': http, 'response.geminiGenerateContent': outcome });
   return defineEnding<RouteRequest<Api>, ChatBodyOutput<Api>, ChatBodyTargets<Api>, RouteServices>({
     ...routeDefinition(api),
     into: {
@@ -303,12 +261,13 @@ export const createGeminiGenerateContentRouteBody = (inputError: InputErrorBody)
       responses: translationSlot(api, 'openaiResponses'),
       chatCompletions: translationSlot(api, 'openaiChatCompletions'),
     },
-    execute: async ({ 'request.geminiGenerateContent': payload, ...facts }, into, env) => {
-      switch (facts['route.targetApi']) {
-      case 'geminiGenerateContent': return await enterEgress(facts, payload, into.egress, reply);
-      case 'anthropicMessages': return await translateInto(api, facts, payload, routeGeminiGenerateContentViaAnthropicMessages, intoMessages(into.messages), reply, inputError, env);
-      case 'openaiResponses': return await translateInto(api, facts, payload, routeGeminiGenerateContentViaOpenAIResponses, intoResponses(into.responses), reply, inputError, env);
-      case 'openaiChatCompletions': return await translateInto(api, facts, payload, routeGeminiGenerateContentViaOpenAIChatCompletions, intoChatCompletions(into.chatCompletions), reply, inputError, env);
+    execute: async ({ 'request.geminiGenerateContent': payload, ...facts }, scope) => {
+      const targetApi = facts['route.targetApi'];
+      switch (targetApi) {
+      case 'geminiGenerateContent': return await enterEgress<Api>({ ...facts, 'route.targetApi': targetApi, 'request.payload': payload }, scope.into.egress);
+      case 'anthropicMessages': return await translateInto(api, facts, payload, routeGeminiGenerateContentViaAnthropicMessages, intoMessages(scope.into.messages), reply, inputError, scope);
+      case 'openaiResponses': return await translateInto(api, facts, payload, routeGeminiGenerateContentViaOpenAIResponses, intoResponses(scope.into.responses), reply, inputError, scope);
+      case 'openaiChatCompletions': return await translateInto(api, facts, payload, routeGeminiGenerateContentViaOpenAIChatCompletions, intoChatCompletions(scope.into.chatCompletions), reply, inputError, scope);
       }
     },
   });
@@ -318,22 +277,21 @@ export const enterChatBody = <Api extends ChatTargetApi>(api: Api) => {
   type Request = ChatBodyInput<Api>;
   type Response = ChatBodyOutput<Api>;
   type Targets = { body: StaticTarget<Request, Response, GatewayServices> };
-  const requestKey = `request.${api}`;
   return defineEnding<Request, Response, Targets>({
     name: 'enterBody',
-    request: { needs: [requestKey, 'route.candidate', 'request.http'] },
+    request: { needs: [`request.${api}`, 'route.candidate', 'request.http', ...extrasFor(api)] },
     into: {
       body: {
         request: { needs: [], consumes: [], provides: [] },
         response: responseDeclNoChanges(api),
       },
     },
-    execute: async (facts, into) => await into.body(facts),
+    execute: async (facts, scope) => await scope.into.body(facts),
   });
 };
 
 const responseDeclNoChanges = (api: ChatTargetApi): ThroughDecl['response'] => ({
-  needs: ['response.http', 'response.source', `response.${api}`, ...usageResponseKeys],
+  needs: ['response.http', `response.${api}`],
   consumes: [],
   provides: [],
 });

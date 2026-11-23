@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest';
 
-import { readUpstreamModelsSnapshotAndScheduleRefresh, MODEL_CATALOG_REVISION } from '../../../src/data-plane/providers/models-cache.ts';
+import { createGatewayServices } from '../../../src/data-plane/pipeline/services.ts';
+import { MODEL_CATALOG_REVISION, readUpstreamModelsSnapshot, readUpstreamModelsSnapshotAndScheduleRefresh } from '../../../src/data-plane/providers/models-cache.ts';
 import { createProvider } from '../../../src/data-plane/providers/registry.ts';
 import { createModelsRefreshScheduler, modelsRefreshTarget, refreshModels, refreshModelsExplicit } from '../../../src/execution/models-refresh.ts';
 import { modelsRefreshIdentity, seedModelsCache } from '../../repo/models-cache-fixture.ts';
@@ -9,13 +10,15 @@ import { buildChatGPTUpstreamRecord, buildCustomUpstreamRecord, setupAppTest } f
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import { jsonResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
+vi.mock('../../../src/app.ts', () => ({ app: null }));
+
 const setupCustom = async () => {
-  const { repo } = await setupAppTest();
+  const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await saveUpstreamForTest(repo.upstreams, buildCustomUpstreamRecord());
   const record = await repo.upstreams.getById('up_custom');
   if (record === null) throw new Error('custom upstream missing');
-  return { repo, record };
+  return { repo, record, apiKey };
 };
 
 const captureScheduled = () => {
@@ -27,7 +30,7 @@ const captureScheduled = () => {
 };
 
 test('a stale snapshot returns immediately and refreshes through the execution cell', async () => {
-  const { repo, record } = await setupCustom();
+  const { repo, record, apiKey } = await setupCustom();
   await seedModelsCache(repo.upstreams, record.id, modelsRefreshIdentity(record), {
     revision: MODEL_CATALOG_REVISION,
     fetchedAt: Date.now() - 11 * 60_000,
@@ -36,16 +39,32 @@ test('a stale snapshot returns immediately and refreshes through the execution c
   const stale = await repo.upstreams.getById(record.id);
   if (stale === null) throw new Error('stale upstream missing');
   const scheduled = captureScheduled();
+  const snapshot = readUpstreamModelsSnapshot(stale.modelsCache);
+  expect(snapshot.models.map(model => model.id)).toEqual(['stale']);
 
+  const fetch = vi.fn(() => jsonResponse({ object: 'list', data: [{ id: 'fresh' }] }));
   await withMockedFetch(
-    () => jsonResponse({ object: 'list', data: [{ id: 'fresh' }] }),
+    fetch,
     async () => {
-      const snapshot = readUpstreamModelsSnapshotAndScheduleRefresh(
+      const { providers } = createGatewayServices({ apiKey, runtimeLocation: 'TEST' });
+      const enumerated = await providers.enumerate({
+        'request.auth.apiKeyId': apiKey.id,
+        'request.auth.user': { id: 1, isAdmin: true },
+        'request.route.randomizeUpstreams': false,
+        'request.route.runtimeLocation': 'TEST',
+        'request.route.upstreamIds': null,
+      }, 'stale', 'chat');
+      expect(enumerated.candidates.map(candidate => candidate.modelId)).toEqual(['stale']);
+      expect(enumerated.staleRefreshes).toEqual([modelsRefreshTarget(stale)]);
+      expect(fetch).not.toHaveBeenCalled();
+
+      const scheduledSnapshot = readUpstreamModelsSnapshotAndScheduleRefresh(
         createProvider(stale),
         createModelsRefreshScheduler('TEST', scheduled.scheduler),
       );
-      expect(snapshot.models.map(model => model.id)).toEqual(['stale']);
+      expect(scheduledSnapshot).toEqual(snapshot);
       await Promise.all(scheduled.promises);
+      expect(fetch).toHaveBeenCalledOnce();
     },
   );
 

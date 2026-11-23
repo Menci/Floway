@@ -1,50 +1,82 @@
-import type { ChatEgressInput, ChatPayload } from './route-body.ts';
+import type { ChatEgressInput, ChatPayload, ChatProtocolExtras } from './route-body.ts';
+import type { HttpInput } from '../../pipeline/edge-http.ts';
+import type { CandidateRequest } from '../../pipeline/failover.ts';
 import type { GatewayServices } from '../../pipeline/services.ts';
-import { filterInboundHeaderEntries } from '../../shared/inbound-headers.ts';
-import { defineEnding, type DynamicTarget, type Pipeline } from '@floway-dev/pipeline';
-import type { ChatTargetApi, ProviderHttpOutput, ProviderInput, ProviderPipelines, ProviderServices } from '@floway-dev/provider';
+import type { UpstreamFacts } from '../../providers/upstreams.ts';
+import { defineEnding, type Next, type StaticTarget, type TargetMap, type ThroughDecl } from '@floway-dev/pipeline';
+import type { ChatTargetApi, ProviderBaseOutput, ProviderInput, ProviderPipelines } from '@floway-dev/provider';
 
-export const createProviderTarget = <Api extends ChatTargetApi, Output extends ProviderHttpOutput>(
-  api: Api,
-  operation: keyof ProviderPipelines,
-  select: (pipelines: ProviderPipelines) => Pipeline<ProviderInput<Omit<ChatPayload<Api>, 'model'>>, Output, ProviderServices> | undefined,
-  exit: readonly string[],
+type Kind = UpstreamFacts['kind'];
+type ForKind<K extends Kind> = Extract<UpstreamFacts, { readonly kind: K }>;
+
+export type ProviderTargets<Payload, Output, Extras> = {
+  readonly [K in Kind]?: StaticTarget<ProviderInput<ForKind<K>, Payload> & Extras, Output, GatewayServices>;
+};
+
+type ProviderCalls<Payload, Output, Extras> = {
+  readonly [K in Kind]?: Next<ProviderInput<ForKind<K>, Payload> & Extras, Output>;
+};
+
+export const createProviderEnding = <
+  Input extends HttpInput & CandidateRequest,
+  Payload,
+  Output extends ProviderBaseOutput,
+  Extras extends object,
+>(
+  outcomeKey: string,
+  targets: TargetMap<GatewayServices> & ProviderTargets<Payload, Output, Extras>,
+  prepare: (facts: Input) => { readonly 'request.payload': Payload } & Extras,
+  extraNeeds: readonly string[] = [],
 ) => {
-  type Input = ProviderInput<Omit<ChatPayload<Api>, 'model'>>;
-  type TargetApi = { readonly 'response.targetApi': Api; readonly 'response.source': 'upstream' };
-  type Targets = { provider: DynamicTarget<string, Input, Output, GatewayServices> };
-  const targets: Targets = {
-    provider: {
-      entry: ['provider.model', 'request.headers', 'request.payload'],
-      exit,
-      resolve: (upstreamId, { providers }) => {
-        const pipeline = select(providers.resolve(upstreamId).pipelines);
-        if (pipeline === undefined) throw new Error(`Upstream ${upstreamId} has no ${operation} pipeline`);
-        return pipeline;
-      },
-    },
+  const declaration: ThroughDecl = {
+    request: { needs: [], consumes: [], provides: ['provider.upstream', 'provider.model', 'request.payload'] },
+    response: { needs: ['response.http', 'response.modelKey', outcomeKey], consumes: [], provides: [] },
   };
-  const ending = defineEnding<ChatEgressInput<Api>, Output & TargetApi, Targets, Pick<GatewayServices, 'providers'>>({
+  const into = Object.fromEntries(Object.keys(targets).map(kind => [kind, declaration]));
+  return defineEnding<Input, Output, TargetMap<GatewayServices>, GatewayServices>({
     name: 'enterUpstream',
-    request: { needs: ['request.http', 'request.payload', 'route.candidate'] },
-    into: {
-      provider: {
-        request: { needs: [], consumes: ['request.http'], provides: ['provider.model', 'request.headers', 'request.payload'] },
-        response: { needs: exit, consumes: [], provides: ['response.targetApi', 'response.source'] },
-      },
-    },
-    execute: async ({ 'request.http': http, ...facts }, into, env) => {
+    request: { needs: ['request.http', 'request.payload', 'route.candidate', ...extraNeeds] },
+    into,
+    execute: async (facts, scope) => {
       const candidate = facts['route.candidate'];
-      const provider = env.services.providers.resolve(candidate.upstreamId);
-      const { model: _model, ...payload } = facts['request.payload'];
-      const response = await into.provider(candidate.upstreamId, {
-        ...facts,
-        'provider.model': candidate.providerModel,
-        'request.headers': filterInboundHeaderEntries(http.headers, provider.inboundHeaderAllowlist),
-        'request.payload': payload,
-      });
-      return { ...response, 'response.targetApi': api, 'response.source': 'upstream' };
+      const upstream = candidate.upstream;
+      const request = { ...facts, ...prepare(facts), 'provider.model': candidate.providerModel };
+      const calls: ProviderCalls<Payload, Output, Extras> = scope.into;
+      switch (upstream.kind) {
+      case 'azure': if (calls.azure) return await calls.azure({ ...request, 'provider.upstream': upstream }); break;
+      case 'chatgpt': if (calls.chatgpt) return await calls.chatgpt({ ...request, 'provider.upstream': upstream }); break;
+      case 'claude-code': if (calls['claude-code']) return await calls['claude-code']({ ...request, 'provider.upstream': upstream }); break;
+      case 'copilot': if (calls.copilot) return await calls.copilot({ ...request, 'provider.upstream': upstream }); break;
+      case 'custom': if (calls.custom) return await calls.custom({ ...request, 'provider.upstream': upstream }); break;
+      case 'kimi-code': if (calls['kimi-code']) return await calls['kimi-code']({ ...request, 'provider.upstream': upstream }); break;
+      case 'ollama': if (calls.ollama) return await calls.ollama({ ...request, 'provider.upstream': upstream }); break;
+      }
+      throw new Error(`Upstream ${upstream.id} does not support ${outcomeKey}`);
     },
   });
-  return { ending, targets };
 };
+
+type ChatOperation = ChatTargetApi | 'anthropicMessagesCountTokens' | 'geminiGenerateContentCountTokens';
+type ChatApi<Operation extends ChatOperation> =
+  Operation extends 'anthropicMessagesCountTokens' ? 'anthropicMessages' :
+    Operation extends 'geminiGenerateContentCountTokens' ? 'geminiGenerateContent' : Operation;
+type ProviderOutput<Operation extends ChatOperation> =
+  NonNullable<ProviderPipelines[Operation]> extends StaticTarget<infer _Input, infer Output extends ProviderBaseOutput, infer _Services>
+    ? Output : never;
+
+export const createChatProviderEnding = <
+  Api extends ChatOperation,
+  Targets extends TargetMap<GatewayServices>,
+>(
+  api: Api,
+  targets: Targets & ProviderTargets<Omit<ChatPayload<ChatApi<Api>>, 'model'>, ProviderOutput<Api>, ChatProtocolExtras<ChatApi<Api>>>,
+) => createProviderEnding<ChatEgressInput<ChatApi<Api>>, Omit<ChatPayload<ChatApi<Api>>, 'model'>, ProviderOutput<Api>, ChatProtocolExtras<ChatApi<Api>>>(
+  `response.${api}`,
+  targets,
+  facts => {
+    const { model: _model, ...payload } = facts['request.payload'];
+    return { ...facts, 'request.payload': payload };
+  },
+  api === 'openaiResponses' ? ['request.action']
+    : api === 'anthropicMessages' || api === 'anthropicMessagesCountTokens' ? ['request.anthropicBeta'] : [],
+);
