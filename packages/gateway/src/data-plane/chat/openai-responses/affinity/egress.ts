@@ -1,5 +1,5 @@
-import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
-import { isOpenAIResponsesCompactShimItem } from '../interceptors/compact-shim.ts';
+import type { AffinityEgressOptions } from '../../shared/affinity/carrier.ts';
+import { isOpenAIResponsesCompactShimItem } from '../compact-payload.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { createRandomOpenAIResponsesItemId, type OpenAIResponsesOutputItemEx, type OpenAIResponsesOutputReasoning, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
@@ -11,7 +11,7 @@ const carrierDomain = (itemType: string, slot: string): string =>
 
 const opaqueSlots = (item: OpenAIResponsesOutputItemEx): Array<{ key: string; value: string }> => {
   const slots: Array<{ key: string; value: string }> = [];
-  const record = item as unknown as Record<string, unknown>;
+  const record = item as OpenAIResponsesOutputItemEx & { encrypted_content?: unknown };
   if (typeof record.encrypted_content === 'string' && !isOpenAIResponsesCompactShimItem(item)) {
     slots.push({ key: 'encrypted_content', value: record.encrypted_content });
   }

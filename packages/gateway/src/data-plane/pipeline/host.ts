@@ -20,7 +20,10 @@ const FINALIZATION_TIMEOUT_MS = 30_000;
 const SECRET_QUERY_NAMES = new Set(['key', 'api_key', 'api-key', 'apikey', 'access_token', 'token', 'auth', 'sig', 'signature', 'session']);
 const SECRET_AUTH_HEADERS = new Set(['x-goog-api-key', 'x-floway-session']);
 
-export type GatewayHttpFacts = HttpInput & GatewayRouteFacts & { readonly 'request.uploadError'?: ErrorSnapshot };
+export type GatewayHttpFacts = HttpInput & GatewayRouteFacts & {
+  readonly 'request.uploadError'?: ErrorSnapshot;
+  readonly 'request.startedAt'?: number;
+};
 
 export const httpRequestFacts = (request: Request, body: Bytes | null, method = request.method): HttpRequestFacts => {
   const url = new URL(request.url);
@@ -204,9 +207,18 @@ export const createGatewayHttpHandler = <Out extends HttpOutput>(
     const raw = c.req.raw;
     const host = gatewayHostContext(c);
     const upload = await readUpload(raw);
+    const requestStartedAt = Date.now();
     const request = httpRequestFacts(raw, upload.body);
-    const input = { ...host.route, 'request.http': request, ...(upload.error === undefined ? {} : { 'request.uploadError': upload.error }) };
-    const services = createGatewayServices({ apiKey: host.apiKey, scheduler: host.scheduler, runtimeLocation: host.route['request.route.runtimeLocation'] });
+    const input = {
+      ...host.route, 'request.http': request, 'request.startedAt': requestStartedAt,
+      ...(upload.error === undefined ? {} : { 'request.uploadError': upload.error }),
+    };
+    const services = createGatewayServices({
+      apiKey: host.apiKey,
+      scheduler: host.scheduler,
+      runtimeLocation: host.route['request.route.runtimeLocation'],
+      requestStartedAt,
+    });
     const crashPerformance = options.performanceOperation === undefined ? undefined : {
       route: host.route, operation: options.performanceOperation, store: services.performanceStore,
     };

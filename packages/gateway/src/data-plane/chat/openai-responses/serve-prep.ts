@@ -2,7 +2,7 @@ import { analyzeOpenAIResponsesAffinity } from './affinity/ingress.ts';
 import { openaiResponsesTarget } from './attempt.ts';
 import { renderOpenAIResponsesFailure, type OpenAIResponsesServeFailure } from './errors.ts';
 import { hydrateOpenAIResponsesPayload } from './items/hydrate.ts';
-import type { OpenAIResponsesStatefulStore } from './items/store.ts';
+import { expandPreviousResponseId } from './items/previous-response.ts';
 import { enumerateModelCandidates } from '../../providers/resolution.ts';
 import type { AffinityCandidateSelection } from '../shared/affinity/index.ts';
 import { selectAffinityCandidates } from '../shared/affinity/index.ts';
@@ -12,52 +12,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { ModelCandidate, ExecuteResult } from '@floway-dev/provider';
 
-// Thrown when a request names a `previous_response_id` that the store cannot
-// resolve. The HTTP/WS entry layer catches this and renders the OpenAI-shaped
-// 400 body verbatim — clients (codex) compare it byte-for-byte against
-// upstream OpenAI's `previous_response_not_found` envelope, so the rendering
-// stays at the entry boundary instead of being folded into the generic
-// ChatServeFailure renderer.
-//
-// Verbatim payload cross-verified from real upstream captures:
-// - https://github.com/cline/cline/issues/9399
-// - https://github.com/microsoft/semantic-kernel/issues/13128
-// - https://github.com/router-for-me/CLIProxyAPI/issues/999
-// - https://github.com/openai/openai-agents-python/issues/2020
-export class PreviousResponseNotFoundError extends Error {
-  readonly previousResponseId: string;
-
-  constructor(previousResponseId: string) {
-    super(`Previous response with id '${previousResponseId}' not found.`);
-    this.name = 'PreviousResponseNotFoundError';
-    this.previousResponseId = previousResponseId;
-  }
-}
-
-// Stitches a previous turn's snapshot items in front of this turn's input,
-// then drops `previous_response_id` from the payload (the snapshot id is a
-// gateway concept and never reaches the upstream wire). Native-entry only:
-// translated payloads coming in from another protocol's attempt never carry
-// `previous_response_id`, so this prep runs in serve and not in attempt.
-export const expandPreviousResponseId = async (
-  payload: CanonicalOpenAIResponsesPayload,
-  store: OpenAIResponsesStatefulStore,
-): Promise<CanonicalOpenAIResponsesPayload> => {
-  const previousResponseId = payload.previous_response_id;
-  if (previousResponseId === undefined || previousResponseId === null) return payload;
-
-  const snapshot = await store.loadSnapshot(previousResponseId);
-  if (snapshot === null) throw new PreviousResponseNotFoundError(previousResponseId);
-
-  const { previous_response_id: _previous, ...rest } = payload;
-  return {
-    ...rest,
-    input: [
-      ...snapshot.itemIds.map(id => ({ type: 'item_reference' as const, id })),
-      ...payload.input,
-    ],
-  };
-};
+export { expandPreviousResponseId, PreviousResponseNotFoundError } from './items/previous-response.ts';
 
 export type OpenAIResponsesServePlan =
   | { readonly kind: 'failure'; readonly result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>> }

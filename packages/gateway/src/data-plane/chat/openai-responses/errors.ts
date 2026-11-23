@@ -6,6 +6,10 @@ import type { ApiErrorResult, ExecuteResult, PerformanceTelemetryContext } from 
 
 export type OpenAIResponsesServeFailure = ChatServeFailure | { readonly kind: 'item-not-found'; readonly itemId: string };
 
+export const responsesInputErrorBody = (error: InputErrorDetails) => ({
+  error: { message: error.message, type: 'invalid_request_error', param: error.param ?? 'input', code: error.code ?? null },
+});
+
 // Caller-input violations discovered by translation or the source affinity
 // membrane share the OpenAI Responses 400 envelope. `performance` retains candidate
 // attribution when validation fires after attempt dispatch.

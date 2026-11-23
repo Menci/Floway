@@ -5,7 +5,7 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { createModelsRefreshScheduler, type ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey, ModelAliasRecord, UsageRecord, User } from '../../repo/types.ts';
-import { createNonOpenAIResponsesSourceStore, type OpenAIResponsesStatefulStore } from '../chat/openai-responses/items/store.ts';
+import { createNonOpenAIResponsesSourceStore, createOpenAIResponsesHttpStore, type OpenAIResponsesStatefulStore } from '../chat/openai-responses/items/store.ts';
 import { AffinityCodec } from '../chat/shared/affinity/carrier.ts';
 import { resolveLegacyOpaqueBlobCompatibilityIdentity } from '../chat/shared/affinity/legacy.ts';
 import { createSidecarCodecFactory, type SidecarCodecFactory } from '../chat/shared/sidecar-codec.ts';
@@ -50,6 +50,12 @@ export interface GatewayProviders {
   readonly enumerate: (facts: GatewayRouteFacts, model: string, kind: ModelKind) => Promise<EnumeratedCandidates>;
 }
 
+export type ResponsesStoreMode =
+  | { readonly kind: 'http'; readonly store: boolean | undefined }
+  | { readonly kind: 'foreign' };
+
+export type OpenResponsesStore = (mode: ResponsesStoreMode) => OpenAIResponsesStatefulStore;
+
 export type { PerformanceRecord } from '../shared/telemetry/performance-record.ts';
 
 interface WebSearchProviderPort {
@@ -61,7 +67,7 @@ export interface GatewayServices extends ProviderServices {
   readonly providers: GatewayProviders;
   readonly affinityCodec: Pick<AffinityCodec, 'wrap' | 'unwrap'>;
   readonly sidecarCodecs: SidecarCodecFactory;
-  readonly responsesStore: OpenAIResponsesStatefulStore;
+  readonly responsesStore: OpenResponsesStore;
   readonly usageStore: { readonly record: (row: UsageRecord) => Promise<void> };
   readonly performanceStore: { readonly record: (record: PerformanceRecord) => Promise<void> };
   readonly webSearchProvider: WebSearchProviderPort;
@@ -202,9 +208,10 @@ export const createGatewayServices = (options: {
   readonly apiKey: ApiKey;
   readonly runtimeLocation: string;
   readonly scheduler: BackgroundScheduler;
-  readonly responsesStore?: OpenAIResponsesStatefulStore;
+  readonly requestStartedAt?: number;
+  readonly responsesStore?: OpenResponsesStore;
 }): GatewayServices => {
-  const { apiKey, runtimeLocation, scheduler, responsesStore } = options;
+  const { apiKey, runtimeLocation, scheduler, requestStartedAt = Date.now(), responsesStore } = options;
   let searchConfig: ReturnType<typeof loadWebSearchConfig> | undefined;
   const loadSearchConfig = () => searchConfig ??= loadWebSearchConfig();
   const webSearchProvider = Object.assign(
@@ -215,7 +222,9 @@ export const createGatewayServices = (options: {
     ...createRequestDirectory(runtimeLocation, createModelsRefreshScheduler(runtimeLocation, scheduler)),
     affinityCodec: new AffinityCodec(apiKey.serverSecret, resolveLegacyOpaqueBlobCompatibilityIdentity),
     sidecarCodecs: createSidecarCodecFactory(apiKey.serverSecret),
-    responsesStore: responsesStore ?? createNonOpenAIResponsesSourceStore(apiKey.id),
+    responsesStore: responsesStore ?? (mode => mode.kind === 'http'
+      ? createOpenAIResponsesHttpStore(apiKey, requestStartedAt, mode.store)
+      : createNonOpenAIResponsesSourceStore(apiKey.id)),
     usageStore: {
       record: async row => {
         await Promise.all([
