@@ -2,23 +2,20 @@ import { analyzeAnthropicMessagesAffinity, type AnthropicMessagesAffinityAnalysi
 import { wrapAnthropicMessagesAffinityEgress } from './affinity/egress.ts';
 import type { AnthropicMessagesCountBodyInput, AnthropicMessagesCountBodyOutput } from './body.ts';
 import { anthropicMessagesErrorBody, internalAnthropicMessagesErrorPayload } from './errors.ts';
-import { type AnswerFacts, answerKeys, gatewayAnswer } from '../../pipeline/answer.ts';
-import { edgeHttp, type HttpOutput, jsonHttpResponse } from '../../pipeline/edge-http.ts';
-import { failover } from '../../pipeline/failover.ts';
-import type { GatewayHttpFacts } from '../../pipeline/host.ts';
+import { edgeHttp, type HttpDeliveryFacts, type HttpOutput, jsonHttpResponse, stripFlowayAuth } from '../../pipeline/edge-http.ts';
+import { createFailover } from '../../pipeline/failover.ts';
+import { GATEWAY_HTTP_ENTRY, type GatewayHttpFacts, isUploadError } from '../../pipeline/host.ts';
 import { forwardHttp, header, requestBytes } from '../../pipeline/non-chat.ts';
-import { type UsageFacts, usageResponseKeys } from '../../pipeline/observe-usage.ts';
-import { type RenderFacts, renderedNow } from '../../pipeline/render.ts';
+import { localHttpAnswer, type RenderFacts, renderedNow } from '../../pipeline/render.ts';
 import { createResolveCandidates, type ModelRequest } from '../../pipeline/resolve-candidates.ts';
 import type { GatewayServices, RouteCandidate } from '../../pipeline/services.ts';
-import { priceUsage, type SettlementFacts, writeSettlement } from '../../pipeline/settlement.ts';
 import { serializeSseFrame } from '../../shared/sse.ts';
 import { type AffinityFacts, createAffinity, createAnalyzeAffinity, selectChatCandidates } from '../shared/affinity/stages.ts';
-import { createEncode, type DeliveryFacts } from '../shared/encode.ts';
+import { createEncode, type DeliveryFacts, transportErrorForDisplay } from '../shared/encode.ts';
 import { type ChatBodyInput, type ChatBodyOutput, enterChatBody } from '../shared/route-body.ts';
 import { serializeAnthropicMessagesStream, shouldSerializeStreamItems } from '../shared/stream-compatibility/index.ts';
 import { anthropicMessagesCountTokensTarget, anthropicMessagesGenerateTarget, type ChatTargetPicker } from '../shared/target-picker.ts';
-import { compose, defineEnding, defineStage, type Pipeline, type StaticTarget } from '@floway-dev/pipeline';
+import { Bytes, compose, defineEnding, defineStage, type Pipeline, type StaticTarget } from '@floway-dev/pipeline';
 import { ANTHROPIC_MESSAGES_MISSING_TERMINAL_MESSAGE, type AnthropicMessagesPayload, anthropicMessagesProtocolFrameToSSEFrame, collectAnthropicMessagesProtocolEventsToResult, parseAnthropicBetaHeader } from '@floway-dev/protocols/anthropic-messages';
 import { sseFrame } from '@floway-dev/protocols/common';
 
@@ -26,7 +23,9 @@ type Parsed = GatewayHttpFacts & ModelRequest & DeliveryFacts & {
   readonly 'request.anthropicMessages': AnthropicMessagesPayload;
   readonly 'request.anthropicBeta': readonly string[];
 };
-type Rendered = HttpOutput & UsageFacts & RenderFacts & AnswerFacts;
+type Rendered = HttpOutput & RenderFacts;
+type Space = GatewayHttpFacts & Rendered & HttpDeliveryFacts;
+const exit = ['response.http', 'response.render', 'response.delivery'] as const;
 
 const parsePayload = (allowsStreaming: boolean) => defineStage<GatewayHttpFacts, Parsed, Rendered, Rendered>({
   name: 'parsePayload',
@@ -37,28 +36,34 @@ const parsePayload = (allowsStreaming: boolean) => defineStage<GatewayHttpFacts,
     },
     response: { needs: [], consumes: [], provides: [] },
   },
-  return: { provides: answerKeys },
-  execute: async (facts, next, env) => {
+  return: { provides: ['response.http', 'response.render'] },
+  execute: async (facts, scope) => {
     const http = facts['request.http'];
+    const answer = (status: number, body: unknown) => localHttpAnswer(scope, jsonHttpResponse(status, body, scope.clock()));
+    if (isUploadError(http.body)) return answer(502, internalAnthropicMessagesErrorPayload(transportErrorForDisplay(http.body.error)));
+
     const body = requestBytes(http).utf8();
     let payload: AnthropicMessagesPayload;
     try {
       payload = JSON.parse(body) as AnthropicMessagesPayload;
     } catch (error) {
-      if (facts['request.uploadError'] === undefined) throw error;
-      return gatewayAnswer(env, jsonHttpResponse(502, internalAnthropicMessagesErrorPayload(error), env.clock()));
+      if (!(error instanceof SyntaxError)) throw error;
+      return answer(400, anthropicMessagesErrorBody('invalid_request_error', 'Anthropic Messages request body must be valid JSON.'));
+    }
+    if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+      return answer(400, anthropicMessagesErrorBody('invalid_request_error', 'Anthropic Messages request body must be an object.'));
     }
     const param = ['anthropic_beta', 'betas'].find(key => Object.hasOwn(payload, key));
     if (param !== undefined) {
-      return gatewayAnswer(env, jsonHttpResponse(400, {
+      return answer(400, {
         error: {
           message: `${param} in the Anthropic Messages request body is not supported; send Anthropic beta flags with the anthropic-beta HTTP header.`,
           type: 'invalid_request_error',
           param,
         },
-      }, env.clock()));
+      });
     }
-    return await next({
+    return await scope.next({
       ...facts,
       'request.model': payload.model,
       'request.anthropicMessages': payload,
@@ -89,11 +94,16 @@ const affinity = createAffinity('anthropicMessages', {
   },
 });
 const countAffinity = createAffinity('anthropicMessages', { evaluate: evaluateAnthropicMessagesAffinity });
+const generateCandidates = resolveCandidates(anthropicMessagesGenerateTarget, '/messages');
+const countCandidates = resolveCandidates(anthropicMessagesCountTokensTarget, '/messages/count_tokens');
+const failover = createFailover('response.anthropicMessages');
+const countFailover = createFailover('response.anthropicMessagesCountTokens');
 
 const encode = createEncode('anthropicMessages', {
   encodeJson: collectAnthropicMessagesProtocolEventsToResult,
   keepAlive: { frame: sseFrame(JSON.stringify({ type: 'ping' }), 'ping') },
   collectFailure: error => ({ status: 502, body: internalAnthropicMessagesErrorPayload(error) }),
+  transportError: error => ({ status: 502, body: internalAnthropicMessagesErrorPayload(error) }),
   openSse: () => ({
     encode: frame => {
       const output = anthropicMessagesProtocolFrameToSSEFrame(frame);
@@ -114,19 +124,34 @@ const encode = createEncode('anthropicMessages', {
   }),
 });
 
-const encodeCount = defineStage<object, object, HttpOutput, HttpOutput & RenderFacts>({
+const encodeCount = defineStage<object, object, AnthropicMessagesCountBodyOutput, Rendered>({
   name: 'encode',
   through: {
     request: { needs: [], consumes: [], provides: [] },
-    response: { needs: ['response.http'], consumes: [], provides: ['response.http', 'response.render'] },
+    response: {
+      needs: ['response.http', 'response.anthropicMessagesCountTokens'],
+      consumes: ['response.anthropicMessagesCountTokens'],
+      provides: ['response.http', 'response.render'],
+    },
   },
-  execute: async (facts, next, env) => {
-    const response = await next(facts);
-    return { ...response, 'response.http': forwardHttp(response['response.http'], null), ...renderedNow(env, { kind: 'completed' }) };
+  execute: async (facts, scope) => {
+    const { 'response.anthropicMessagesCountTokens': outcome, ...response } = await scope.next(facts);
+    const http = response['response.http'];
+    const render = renderedNow(scope, { kind: 'completed' });
+    if (outcome.kind === 'ok') return { ...response, 'response.http': forwardHttp(http, null), ...render };
+
+    const transport = http.transportError;
+    const status = transport === undefined ? http.status : 502;
+    const body = transport === undefined ? outcome.error : internalAnthropicMessagesErrorPayload(transportErrorForDisplay(transport));
+    const outgoing = forwardHttp({
+      ...http, status, statusText: status === http.status ? http.statusText : '',
+      headers: http.headers.filter(([name]) => name.toLowerCase() !== 'content-type'),
+      body: Bytes.fromUtf8(JSON.stringify(body)),
+    });
+    return { ...response, 'response.http': outgoing, ...render };
   },
 });
 
-type GenerateTargets = { readonly body: StaticTarget<ChatBodyInput<'anthropicMessages'>, ChatBodyOutput<'anthropicMessages'>, GatewayServices> };
 type CountTargets = { readonly body: StaticTarget<AnthropicMessagesCountBodyInput, AnthropicMessagesCountBodyOutput, GatewayServices> };
 
 const enterCountBody = defineEnding<AnthropicMessagesCountBodyInput, AnthropicMessagesCountBodyOutput, CountTargets>({
@@ -135,28 +160,26 @@ const enterCountBody = defineEnding<AnthropicMessagesCountBodyInput, AnthropicMe
   into: {
     body: {
       request: { needs: [], consumes: [], provides: [] },
-      response: { needs: ['response.http', 'response.source', 'response.targetApi', ...usageResponseKeys], consumes: [], provides: [] },
+      response: { needs: ['response.http', 'response.anthropicMessagesCountTokens'], consumes: [], provides: [] },
     },
   },
-  execute: async (facts, into) => await into.body(facts),
+  execute: async (facts, scope) => await scope.into.body(facts),
 });
 
 export const createAnthropicMessagesIngress = (body: Pipeline<ChatBodyInput<'anthropicMessages'>, ChatBodyOutput<'anthropicMessages'>, GatewayServices>) =>
-  compose<GatewayHttpFacts, HttpOutput & SettlementFacts, GatewayServices, GenerateTargets>('anthropicMessages.ingress', {
-    stages: [
-      writeSettlement('chat'), priceUsage, edgeHttp, parsePayload(true), analyzeAffinity,
-      resolveCandidates(anthropicMessagesGenerateTarget, '/messages'), encode, failover, affinity,
-    ],
+  compose<Space, GatewayServices>()('anthropicMessages.ingress', {
+    entry: GATEWAY_HTTP_ENTRY,
+    exit,
+    stages: [edgeHttp, stripFlowayAuth, parsePayload(true), analyzeAffinity, generateCandidates, encode, failover, affinity],
     ending: enterChatBody('anthropicMessages'),
     targets: { body },
   });
 
 export const createAnthropicMessagesCountIngress = (body: Pipeline<AnthropicMessagesCountBodyInput, AnthropicMessagesCountBodyOutput, GatewayServices>) =>
-  compose<GatewayHttpFacts, HttpOutput & SettlementFacts, GatewayServices, CountTargets>('anthropicMessagesCountTokens.ingress', {
-    stages: [
-      writeSettlement(null), priceUsage, edgeHttp, parsePayload(false), analyzeAffinity,
-      resolveCandidates(anthropicMessagesCountTokensTarget, '/messages/count_tokens'), encodeCount, failover, countAffinity,
-    ],
+  compose<Space, GatewayServices>()('anthropicMessagesCountTokens.ingress', {
+    entry: GATEWAY_HTTP_ENTRY,
+    exit,
+    stages: [edgeHttp, stripFlowayAuth, parsePayload(false), analyzeAffinity, countCandidates, encodeCount, countFailover, countAffinity],
     ending: enterCountBody,
     targets: { body },
   });

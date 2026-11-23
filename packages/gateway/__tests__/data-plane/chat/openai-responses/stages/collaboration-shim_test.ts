@@ -25,7 +25,8 @@ const runCollaboration = async (
       return reply();
     },
   });
-  const events = result['response.openaiResponses'];
+  const outcome = result['response.openaiResponses'];
+  const events = outcome.kind === 'stream' ? outcome.events : undefined;
   if (events === undefined) throw new Error('Expected collaboration events');
   return (async function* () {
     yield* events;

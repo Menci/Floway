@@ -10,7 +10,7 @@ import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 const codec = new AffinityCodec('22'.repeat(32));
 
-const candidate = (upstreamId: string) => messagesUpstream({ upstreamId, model: 'model' }).candidate;
+const candidate = (upstreamId: string) => messagesUpstream({ upstreamId, modelId: 'model' }).candidate;
 
 const frames = async function* (values: ProtocolFrame<AnthropicMessagesStreamEventEx>[]) {
   yield* values;

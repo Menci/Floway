@@ -3,10 +3,10 @@ import { vi } from 'vitest';
 import type { GatewayHttpFacts } from '../../../../../src/data-plane/pipeline/host.ts';
 import { createGatewayServices, createUsageStore, type GatewayServices, type RouteCandidate } from '../../../../../src/data-plane/pipeline/services.ts';
 import type { ApiKey, UsageRecord } from '../../../../../src/repo/types.ts';
-import type { HttpResponseFacts } from '@floway-dev/http';
-import { compose, defineEnding } from '@floway-dev/pipeline';
-import { type ProviderHttpOutput, type ProviderInput, type ProviderServices, toProviderModelFacts } from '@floway-dev/provider';
-import { stubModelCandidate, stubProviderModel } from '@floway-dev/test-utils';
+import type { FetchInit } from '@floway-dev/http';
+import { secret } from '@floway-dev/pipeline';
+import { toProviderModelFacts } from '@floway-dev/provider';
+import { stubProviderModel } from '@floway-dev/test-utils';
 
 export const config = { enabled: true, upstreamId: 'search-upstream', model: 'search-model' };
 const apiKey: ApiKey = {
@@ -22,42 +22,42 @@ export const facts: GatewayHttpFacts = {
   'request.route.runtimeLocation': 'TEST',
   'request.route.randomizeUpstreams': true,
   'request.http': { method: 'POST', url: { origin: 'https://floway.test', pathname: '/v1/responses' }, headers: [], body: null },
+  'request.startedAt': 0,
 };
 
 const model = toProviderModelFacts(stubProviderModel({ id: config.model, upstreamModelId: config.model }));
 export const candidate: RouteCandidate = {
-  upstreamId: config.upstreamId, upstreamName: 'Search', kind: 'chatgpt',
+  upstreamId: config.upstreamId, upstreamName: 'Search', kind: 'custom',
+  upstream: {
+    kind: 'custom', id: config.upstreamId, name: 'Search',
+    config: {
+      baseUrl: 'https://search.example.com',
+      apiKey: secret('search-token'),
+      ingressHeadersRules: [
+        { key: 'x-codex-turn-metadata', value: null },
+        { key: 'x-debug', value: null },
+      ],
+    },
+  },
   modelId: model.id, upstreamModelId: model.upstreamModelId, providerModel: model, endpoints: model.endpoints, limits: model.limits,
 };
 
-export const fixture = (answer: (input: ProviderInput<Record<string, unknown>>) => HttpResponseFacts, options: {
+export const fixture = (answer: () => Response, options: {
   readonly candidates?: readonly RouteCandidate[];
-  readonly unsupported?: boolean;
 } = {}) => {
-  const receive = vi.fn(answer);
-  type Input = ProviderInput<Record<string, unknown>>;
-  const pipeline = compose<Input, ProviderHttpOutput, ProviderServices>('test.alpha.provider', {
-    stages: [],
-    ending: defineEnding<Input, ProviderHttpOutput, {}, ProviderServices>({
-      name: 'alpha',
-      request: { needs: ['provider.model', 'request.headers', 'request.payload'] },
-      return: { provides: ['response.http', 'response.modelKey'] },
-      execute: async input => ({ 'response.http': receive(input), 'response.modelKey': model.upstreamModelId }),
-    }),
-  });
-  const provider = {
-    ...stubModelCandidate().provider, upstreamId: config.upstreamId, name: 'Search',
-    configVersion: 1, modelsRefreshInputHash: 'cache-key',
-    inboundHeaderAllowlist: ['x-codex-turn-metadata'],
-    pipelines: options.unsupported ? {} : { alphaSearch: pipeline },
-  };
+  const receive = vi.fn(async (_url: string, _init: FetchInit) => answer());
   const usage: UsageRecord[] = [];
-  const enumerate = vi.fn<GatewayServices['providers']['enumerate']>(async () => ({ candidates: options.candidates ?? [candidate], sawModel: true, failedUpstreams: [] }));
+  const enumerate = vi.fn<GatewayServices['providers']['enumerate']>(async () => ({
+    candidates: options.candidates ?? [candidate], sawModel: true, failedUpstreams: [], staleRefreshes: [],
+  }));
+  const recordPerformance = vi.fn<GatewayServices['performanceStore']['record']>(async () => {});
   const services = {
-    ...createGatewayServices({ apiKey, runtimeLocation: 'TEST', scheduler: () => {} }),
-    providers: { resolve: () => provider, enumerate },
+    ...createGatewayServices({ apiKey, runtimeLocation: 'TEST' }),
+    providers: { enumerate },
+    fetcher: () => receive,
     webSearchProvider: Object.assign(async () => ({ type: 'disabled' as const }), { alphaSearch: async () => config }),
     usageStore: createUsageStore(async row => { usage.push(row); }, async () => {}),
+    performanceStore: { record: recordPerformance },
   } satisfies GatewayServices;
-  return { receive, services, usage, enumerate };
+  return { receive, services, usage, enumerate, recordPerformance };
 };

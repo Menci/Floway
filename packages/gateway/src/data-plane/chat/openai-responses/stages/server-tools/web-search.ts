@@ -2,10 +2,7 @@ import { isEqual } from 'es-toolkit';
 
 import type { WebSearchUsageRecord } from '../../../../../repo/types.ts';
 import { shortId } from '../../../../../shared/short-id.ts';
-import { answerKeys, gatewayAnswer } from '../../../../pipeline/answer.ts';
-import type { HttpDelivery } from '../../../../pipeline/edge-http.ts';
 import type { GatewayServices, GatewayRouteFacts } from '../../../../pipeline/services.ts';
-import { priceUsage, writeSettlement } from '../../../../pipeline/settlement.ts';
 import { truncatePreservingCodePoints } from '../../../../shared/text.ts';
 import { executeAlphaSearchSubRun } from '../../../../tools/web-search/alpha-search/execution.ts';
 import { normalizeDomainEntry } from '../../../../tools/web-search/domain-normalize.ts';
@@ -33,9 +30,9 @@ import {
   type WebSearchFilters,
   type WebSearchOperation,
 } from '../../../../tools/web-search/operations.ts';
-import { type SearchUsageRecords, writeSearchUsage } from '../../../../tools/web-search/write-search-usage.ts';
+import { type SearchUsageRecords, type SearchUsageSettlementFacts, writeSearchUsage } from '../../../../tools/web-search/write-search-usage.ts';
 import type { ServerToolHistoryExpansion, ServerToolLoopState, ServerToolOutputItem, ServerToolRegistration } from '../server-tool-shim.ts';
-import { compose, defineEnding, type StageEnv } from '@floway-dev/pipeline';
+import { compose, defineEnding, link, type Scope } from '@floway-dev/pipeline';
 import type { OpenAIResponsesFunctionTool, OpenAIResponsesWebSearchTool, OpenAIResponsesInputWebSearchCall, OpenAIResponsesOutputWebSearchCall, OpenAIResponsesTool, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
 import { collectOpenAIResponsesToolEntries, createRandomOpenAIResponsesItemId, WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/openai-responses';
 
@@ -507,7 +504,7 @@ type LocalSearchOperation =
 type LocalSearchSettings = Pick<WebSearchExecutionSession, 'filters' | 'includeSearchActionSources' | 'responseLength'>;
 type PageEntries = readonly (readonly [url: string, value: PageCacheEntry])[];
 
-type LocalSearchInput = GatewayRouteFacts & {
+type LocalSearchInput = Pick<GatewayRouteFacts, 'request.auth.apiKeyId'> & {
   readonly 'request.webSearch.operation': LocalSearchOperation;
   readonly 'request.webSearch.settings': LocalSearchSettings;
   readonly 'request.webSearch.cachedPages': PageEntries;
@@ -517,24 +514,27 @@ interface LocalSearchOutput {
   readonly 'response.webSearch.cacheUpdates': PageEntries;
 }
 
-const localSearch = compose<LocalSearchInput, LocalSearchOutput, GatewayServices>('openai-responses.tool.local-web-search', {
-  stages: [writeSearchUsage, writeSettlement(null), priceUsage],
+const searchEntry = ['request.auth.apiKeyId', 'request.webSearch.operation', 'request.webSearch.settings', 'request.webSearch.cachedPages'] as const;
+const searchExit = ['response.webSearch.result', 'response.webSearch.cacheUpdates', 'response.searchUsage.settlement'] as const;
+const localSearch = compose<LocalSearchInput & LocalSearchOutput & SearchUsageSettlementFacts, GatewayServices>()('openai-responses.tool.local-web-search', {
+  entry: searchEntry,
+  exit: searchExit,
+  stages: [writeSearchUsage],
   ending: defineEnding<LocalSearchInput, LocalSearchOutput & SearchUsageRecords, {}, Pick<GatewayServices, 'webSearchProvider'>>({
     name: 'executeLocalSearch',
-    request: { needs: ['request.auth.apiKeyId', 'request.webSearch.operation', 'request.webSearch.settings', 'request.webSearch.cachedPages'] },
-    return: { provides: [...answerKeys, 'response.webSearch.result', 'response.webSearch.cacheUpdates', 'response.delivery', 'response.searchUsage.records'] },
-    execute: async (facts, _into, env) => {
-      const startedAt = env.clock();
+    request: { needs: searchEntry },
+    return: { provides: ['response.webSearch.result', 'response.webSearch.cacheUpdates', 'response.searchUsage.records'] },
+    execute: async (facts, scope) => {
       const operation = facts['request.webSearch.operation'];
       const cachedPages = new Map(facts['request.webSearch.cachedPages']);
       const records: WebSearchUsageRecord[] = [];
       const session: WebSearchExecutionSession = {
         ...facts['request.webSearch.settings'],
         apiKeyId: facts['request.auth.apiKeyId'],
-        getProvider: env.services.webSearchProvider,
+        getProvider: scope.services.webSearchProvider,
         recordUsage: row => { records.push(row); },
         pageCache: new Map(cachedPages),
-        signal: env.signal,
+        signal: scope.signal,
       };
       let result: WebSearchCallIR;
       if (operation.kind === 'multi') {
@@ -543,20 +543,19 @@ const localSearch = compose<LocalSearchInput, LocalSearchOutput, GatewayServices
         const batch = await startBatchFetch({ kind: 'ops', ops: [operation.operation] }, session);
         result = await executeOperationToIr(operation.operation, session, batch);
       }
-      const endedAt = env.clock();
       return {
-        ...gatewayAnswer(env, { status: 200, statusText: '', headers: [], body: null, timing: { startedAt, headersAt: endedAt } }),
         'response.webSearch.result': result,
         'response.webSearch.cacheUpdates': [...session.pageCache].filter(([url]) => !cachedPages.has(url)),
         'response.searchUsage.records': records,
-        'response.delivery': env.defer<HttpDelivery>('local search delivery', Promise.resolve({ kind: 'completed', endedAt })),
       };
     },
   }),
 });
 
-const executeLocalSearch = async (
-  env: StageEnv<GatewayServices>, facts: GatewayRouteFacts, operation: LocalSearchOperation,
+link([localSearch]);
+
+const streamWebSearch = async (
+  scope: Pick<Scope<GatewayServices>, 'run'>, facts: GatewayRouteFacts, operation: LocalSearchOperation,
   settings: LocalSearchSettings, pageCache: Map<string, PageCacheEntry>,
 ): Promise<WebSearchCallIR> => {
   const cachedPages: [string, PageCacheEntry][] = [];
@@ -567,12 +566,8 @@ const executeLocalSearch = async (
       if (cached !== undefined) cachedPages.push([op.url, cached]);
     }
   }
-  const result = await env.run(localSearch, {
+  const result = await scope.run(localSearch, {
     'request.auth.apiKeyId': facts['request.auth.apiKeyId'],
-    'request.auth.user': facts['request.auth.user'],
-    'request.route.upstreamIds': facts['request.route.upstreamIds'],
-    'request.route.randomizeUpstreams': facts['request.route.randomizeUpstreams'],
-    'request.route.runtimeLocation': facts['request.route.runtimeLocation'],
     'request.webSearch.operation': operation,
     'request.webSearch.settings': settings,
     'request.webSearch.cachedPages': cachedPages,
@@ -697,7 +692,7 @@ const planShimSlots = (
   };
 };
 
-export const webSearchServerTool: ServerToolRegistration = async (invocation, facts, env) => {
+export const webSearchServerTool: ServerToolRegistration = async (invocation, facts, scope) => {
   if (invocation.targetApi === 'openaiResponses' && !invocation.candidate.providerModel.enabledFlags.includes('openai-responses-web-search-shim')) {
     return { type: 'inactive' };
   }
@@ -718,23 +713,23 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, fa
   }
 
   const { filters } = prepared;
-  const passthrough = await env.services.webSearchProvider.alphaSearch();
+  const passthrough = await scope.services.webSearchProvider.alphaSearch();
   const includeArray = Array.isArray(invocation.payload.include) ? invocation.payload.include : [];
   const hosted = tools.filter(isHostedWebSearchTool).at(-1);
   const settings = alphaSearchSettingsFromHosted(hosted);
   const pageCache = new Map<string, PageCacheEntry>();
-  const state: ShimState = {
+  const sessionId = passthrough.enabled ? crypto.randomUUID() : undefined;
+  const stateFor = (scope: Scope<GatewayServices>): ShimState => ({
     includeSearchResults: includeArray.includes('web_search_call.results'),
-    executeLocal: (operation, responseLength) => executeLocalSearch(env, facts, operation, {
+    executeLocal: (operation, responseLength) => streamWebSearch(scope, facts, operation, {
       filters, responseLength, includeSearchActionSources: includeArray.includes('web_search_call.action.sources'),
     }, pageCache),
-  };
-  if (passthrough.enabled) {
-    const sessionId = crypto.randomUUID();
-    state.executeAlpha = (commands, action) => executeAlphaSearchSubRun(env, facts, {
-      sessionId, commands, settings, input: invocation.payload.input, action,
-    });
-  }
+    ...(sessionId === undefined ? {} : {
+      executeAlpha: (commands, action) => executeAlphaSearchSubRun(scope, facts, {
+        sessionId, commands, settings, input: invocation.payload.input, action,
+      }),
+    }),
+  });
 
   return {
     type: 'active',
@@ -748,7 +743,8 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, fa
             hostedTypes: WEB_SEARCH_HOSTED_TYPE_NAMES,
             recognizeHostedTool: recognizeWebSearchTool,
             buildFunctionTool: buildShimFunctionTool,
-            dispatcher: ({ intercepted, loopState }) => {
+            dispatcher: ({ intercepted, loopState }, scope) => {
+              const state = stateFor(scope);
               const commands = intercepted.parsedArguments ?? {};
               const responseLength = isSearchResponseLength(commands.response_length)
                 ? commands.response_length

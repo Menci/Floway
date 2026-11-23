@@ -1,11 +1,12 @@
 import { readJsonNumber } from '../../../../shared/json-helpers.ts';
 import type { CandidateRequest } from '../../../pipeline/failover.ts';
 import { foldsExclusiveCacheTokens } from '../../../shared/telemetry/usage.ts';
+import type { ChatOutcomeFacts } from '../../shared/route-body.ts';
 import { defineStage } from '@floway-dev/pipeline';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
-import type { ProviderResponsesOutput } from '@floway-dev/provider';
 
+type Outcome = ChatOutcomeFacts<'openaiResponses'>;
 type Usage = OpenAIResponsesResultEx['usage'];
 
 const normalizeUsage = (usage: Usage, exclusive: boolean, identity: string): Usage => {
@@ -21,23 +22,28 @@ const normalizeUsage = (usage: Usage, exclusive: boolean, identity: string): Usa
   return { ...usage, input_tokens: inputTokens + cacheRead + cacheWrite };
 };
 
-export const normalizeExclusiveCachedTokens = defineStage<CandidateRequest, CandidateRequest, ProviderResponsesOutput, ProviderResponsesOutput>({
+export const normalizeExclusiveCachedTokens = defineStage<CandidateRequest, CandidateRequest, Outcome, Outcome>({
   name: 'normalizeExclusiveCachedTokens',
   through: {
     request: { needs: ['route.candidate'], consumes: [], provides: [] },
-    response: { needs: ['response.events', 'response.result'], consumes: [], provides: ['response.events', 'response.result'] },
+    response: { needs: ['response.openaiResponses'], consumes: [], provides: ['response.openaiResponses'] },
   },
-  execute: async (facts, next, env) => {
+  execute: async (facts, scope) => {
     const candidate = facts['route.candidate'];
     const exclusive = candidate.providerModel.enabledFlags.includes('usage-exclusive-cached-tokens');
     const identity = `${candidate.upstreamId}/${candidate.modelId}`;
-    const response = await next(facts);
-    const { 'response.events': stream, 'response.result': result } = response;
+    const response = await scope.next(facts);
+    const outcome = response['response.openaiResponses'];
+    if (outcome.kind === 'error') return response;
     const mapUsage = <T extends { usage?: Usage }>(resource: T): T => {
       const usage = normalizeUsage(resource.usage, exclusive, identity);
       return usage === resource.usage ? resource : { ...resource, usage };
     };
-    const events = stream === undefined ? undefined : env.wrapStream(stream, {
+    if (outcome.kind === 'result') {
+      const result = mapUsage(outcome.result);
+      return result === outcome.result ? response : { ...response, 'response.openaiResponses': { kind: 'result', result } };
+    }
+    const events = scope.wrapStream(outcome.events, {
       label: 'normalized OpenAI Responses usage',
       async *transform(source) {
         for await (const frame of source) {
@@ -50,6 +56,6 @@ export const normalizeExclusiveCachedTokens = defineStage<CandidateRequest, Cand
         }
       },
     });
-    return { ...response, 'response.events': events, 'response.result': result === undefined ? undefined : mapUsage(result) };
+    return { ...response, 'response.openaiResponses': { kind: 'stream', events } };
   },
 });

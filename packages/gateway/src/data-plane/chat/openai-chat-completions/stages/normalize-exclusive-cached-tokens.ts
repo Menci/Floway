@@ -27,7 +27,7 @@ const restoreInclusiveTokens = (
 };
 
 export const normalizeExclusiveCachedTokens = rewriteChatFrames(
-  'normalizeExclusiveCachedTokens', 'response.events', ({ 'route.candidate': candidate }) => mapProtocolEvents<OpenAIChatCompletionsStreamEvent>(
+  'normalizeExclusiveCachedTokens', 'response.openaiChatCompletions', ({ 'route.candidate': candidate }) => mapProtocolEvents<OpenAIChatCompletionsStreamEvent>(
     event => restoreInclusiveTokens(event, candidate.providerModel.enabledFlags.includes('usage-exclusive-cached-tokens'), `${candidate.upstreamId}/${candidate.modelId}`),
   ),
 );

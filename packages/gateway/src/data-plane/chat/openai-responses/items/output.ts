@@ -14,7 +14,7 @@ import { isOpenAIResponsesCompactionItem, openaiResponsesResultToEvents, type Op
 // runtime. The caller mints its envelope id once, and this wrapper applies it
 // to every queued/created/in-progress and terminal response envelope without
 // changing any output item.
-export const wrapOpenAIResponsesClientOutput = async function* <Control extends { readonly type: 'control' } = never>(
+export const wrapOpenAIResponsesClientOutput = async function* <Control extends { readonly type: 'control' | 'transport-error' } = never>(
   frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx> | NoInfer<Control>>,
   args: {
     readonly store: OpenAIResponsesStatefulStore;
@@ -121,12 +121,12 @@ export const syntheticEventsFromResult = async function* (result: OpenAIResponse
   yield doneFrame();
 };
 
-// `OpenAIResponsesCompactionResult` states no `status`, so the terminal is stated
-// here rather than read off the body: a compaction that got this far is one the
-// upstream answered 200, and there is no spelling for a failed one. Widening it
-// back to `OpenAIResponsesResult` is safe because the expansion reads no
-// response-only field — it spreads whatever the body carried.
+// The native compact resource has no status. A compaction synthesized from a
+// generation may still carry the original terminal status.
 export const syntheticEventsFromCompaction = async function* (result: OpenAIResponsesCompactionResultEx): AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-  yield* openaiResponsesResultToEvents(result as OpenAIResponsesResultEx, { genericOutputItems: true, terminal: 'response.completed' });
+  yield* openaiResponsesResultToEvents(result as OpenAIResponsesResultEx, {
+    genericOutputItems: true,
+    ...('status' in result ? {} : { terminal: 'response.completed' }),
+  });
   yield doneFrame();
 };

@@ -15,12 +15,12 @@ import {
 } from '../../../../../../src/data-plane/chat/openai-responses/stages/server-tools/image-generation.ts';
 import type { GatewayHttpFacts } from '../../../../../../src/data-plane/pipeline/host.ts';
 import type { GatewayServices } from '../../../../../../src/data-plane/pipeline/services.ts';
+import { chatUpstream } from '../../../shared/fixture.ts';
 import { driveResponsesStage } from '../drive.ts';
-import { defineStage } from '@floway-dev/pipeline';
+import { defineStage, type Scope } from '@floway-dev/pipeline';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputImage, OpenAIResponsesInputImageGenerationCall, CanonicalOpenAIResponsesInputItem, OpenAIResponsesPayloadEx, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
-import { toProviderModelFacts } from '@floway-dev/provider';
-import { assert, assertEquals, assertFalse, assertThrows, stubProviderModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
 const PNG_B64 = 'aGVsbG8='; // "hello" — any decodable base64 works for source tests.
 const VALID_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/wEAAAAASUVORK5CYII=';
@@ -38,21 +38,18 @@ interface Invocation extends Omit<ServerToolInvocation, 'payload'> {
 }
 
 const makeInvocation = (payload: Partial<OpenAIResponsesPayloadEx>): Invocation => {
-  const providerModel = toProviderModelFacts(stubProviderModel({
-    id: 'm', endpoints: { openaiResponses: {} }, enabledFlags: new Set(['openai-responses-image-generation-shim']),
-  }));
+  const { candidate } = chatUpstream({ upstreamId: 'image-orchestrator', modelId: 'm', endpoints: { openaiResponses: {} }, flags: ['openai-responses-image-generation-shim'] });
   return {
-    candidate: {
-      upstreamId: 'image-orchestrator', upstreamName: 'Image Orchestrator', kind: 'custom',
-      modelId: providerModel.id, upstreamModelId: providerModel.upstreamModelId,
-      endpoints: providerModel.endpoints, limits: providerModel.limits, providerModel,
-    },
+    candidate,
     targetApi: 'openaiResponses',
     payload: { model: 'm', input: [], ...payload } as CanonicalOpenAIResponsesPayload,
   };
 };
 
-const verifyImageRegistration = async (invocation: Invocation): Promise<ServerToolPrepareResult> => {
+const verifyImageRegistration = async (
+  invocation: Invocation,
+  check?: (registration: ServerToolPrepareResult, scope: Scope<GatewayServices>) => void | Promise<void>,
+): Promise<ServerToolPrepareResult> => {
   let registration: ServerToolPrepareResult | undefined;
   const stage = defineStage<GatewayHttpFacts, GatewayHttpFacts, object, object, GatewayServices>({
     name: 'prepareImageTool',
@@ -60,9 +57,10 @@ const verifyImageRegistration = async (invocation: Invocation): Promise<ServerTo
       request: { needs: ['request.http'], consumes: [], provides: [] },
       response: { needs: [], consumes: [], provides: [] },
     },
-    execute: async (facts, next, env) => {
-      registration = await imageGenerationServerTool(invocation, facts, env);
-      return await next(facts);
+    execute: async (facts, scope) => {
+      registration = await imageGenerationServerTool(invocation, facts, scope);
+      await check?.(registration, scope);
+      return await scope.next(facts);
     },
   });
   const result = await driveResponsesStage(stage, invocation.payload);
@@ -375,43 +373,44 @@ test('imageGenerationServerTool rejects explicit edit without an input image', a
 
 test('image dispatcher exposes a newly introduced invalid edit source as an invariant failure', async () => {
   const invocation = makeInvocation({ tools: [{ type: 'image_generation', action: 'auto' }] });
-  const result = await verifyImageRegistration(invocation);
-  assert(result.type === 'active' && result.hosted !== undefined);
-
-  invocation.payload = {
-    ...invocation.payload,
-    input: [imageInputContainers.custom_output({
-      type: 'input_image', image_url: 'https://example.com/late.png', detail: 'auto',
-    })],
-  };
-  assertThrows(
-    () => result.hosted?.dispatcher({
-      intercepted: { functionCall: { type: 'function_call', call_id: 'call_live_invalid', name: SHIM_TOOL_NAME, arguments: '{"prompt":"edit it"}', status: 'completed' }, parsedArguments: { prompt: 'edit it' } },
-      loopState: { iterationCount: 2, remainingToolCalls: undefined },
-    }),
-    Error,
-    'image_generation live source invariant violated after request validation: remote image URL was not materialized',
-  );
+  await verifyImageRegistration(invocation, (result, scope) => {
+    assert(result.type === 'active' && result.hosted !== undefined);
+    invocation.payload = {
+      ...invocation.payload,
+      input: [imageInputContainers.custom_output({
+        type: 'input_image', image_url: 'https://example.com/late.png', detail: 'auto',
+      })],
+    };
+    assertThrows(
+      () => result.hosted?.dispatcher({
+        intercepted: { functionCall: { type: 'function_call', call_id: 'call_live_invalid', name: SHIM_TOOL_NAME, arguments: '{"prompt":"edit it"}', status: 'completed' }, parsedArguments: { prompt: 'edit it' } },
+        loopState: { iterationCount: 2, remainingToolCalls: undefined },
+      }, scope),
+      Error,
+      'image_generation live source invariant violated after request validation: remote image URL was not materialized',
+    );
+  });
 });
 
 // ── imageGenerationServerTool: per-response dispatch budget ──
 
 test('image dispatch budget caps real backend calls per response, not ReAct turns', async () => {
-  const result = await verifyImageRegistration(makeInvocation({ tools: [{ type: 'image_generation', action: 'generate' }] }));
-  assert(result.type === 'active' && result.hosted !== undefined);
-  const dispatch = result.hosted.dispatcher;
-  const intercepted = { functionCall: { type: 'function_call' as const, call_id: 'c', name: SHIM_TOOL_NAME, arguments: '{"prompt":"x"}', status: 'completed' }, parsedArguments: { prompt: 'x' } };
-  const loopState = { iterationCount: 1, remainingToolCalls: undefined };
+  await verifyImageRegistration(makeInvocation({ tools: [{ type: 'image_generation', action: 'generate' }] }), async (result, scope) => {
+    assert(result.type === 'active' && result.hosted !== undefined);
+    const dispatch = result.hosted.dispatcher;
+    const intercepted = { functionCall: { type: 'function_call' as const, call_id: 'c', name: SHIM_TOOL_NAME, arguments: '{"prompt":"x"}', status: 'completed' }, parsedArguments: { prompt: 'x' } };
+    const loopState = { iterationCount: 1, remainingToolCalls: undefined };
 
-  for (let i = 0; i < 10; i++) {
-    const slots = dispatch({ intercepted, loopState });
-    assertEquals(slots.length, 1);
-  }
-  const overBudget = dispatch({ intercepted, loopState });
-  const lifecycle = overBudget[0].run();
-  let step = await lifecycle.next();
-  while (!step.done) step = await lifecycle.next();
-  const item = step.value.item as { status?: string; error?: { code?: string } };
-  assertEquals(item.status, 'failed');
-  assertEquals(item.error?.code, 'tool_call_budget_exhausted');
+    for (let i = 0; i < 10; i++) {
+      const slots = dispatch({ intercepted, loopState }, scope);
+      assertEquals(slots.length, 1);
+    }
+    const overBudget = dispatch({ intercepted, loopState }, scope);
+    const lifecycle = overBudget[0].run();
+    let step = await lifecycle.next();
+    while (!step.done) step = await lifecycle.next();
+    const item = step.value.item as { status?: string; error?: { code?: string } };
+    assertEquals(item.status, 'failed');
+    assertEquals(item.error?.code, 'tool_call_budget_exhausted');
+  });
 });

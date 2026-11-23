@@ -1,20 +1,20 @@
 import { tokenUsageFromOpenAICompletionsUsage } from './usage.ts';
 import { createGatewayHttpHandler } from '../pipeline/host.ts';
-import { createNonChatPipeline, forwardHttp, httpSucceeded, measured, parseJsonModel, respondJsonUsage, scalarHttpAttempt } from '../pipeline/non-chat.ts';
+import { createNonChatPipeline, measured, parseJsonModel, respondJsonUsage } from '../pipeline/non-chat.ts';
 import { observeSse } from '../pipeline/observe-sse.ts';
+import { openaiCompletionsProviderTargets } from '../providers/upstreams.ts';
 import { isOpenAIErrorPayload } from '../shared/openai-error-payload.ts';
 import { serializeSseFrame } from '../shared/sse.ts';
 import { tokenUsageMeasurement } from '../shared/telemetry/usage.ts';
 import { isOpenAIUsageOnlyEventShape, parseSSEStream, parseTargetStreamFrames, sseFrame } from '@floway-dev/protocols/common';
 import type { OpenAICompletionsPayload } from '@floway-dev/protocols/openai-completions';
-import type { ProviderHttpOutput } from '@floway-dev/provider';
 
 const sourceApi = '/completions';
 type Payload = Omit<OpenAICompletionsPayload, 'model'>;
 type UsageEvent = { service_tier?: string | null; usage?: unknown };
 type ClientStreamOptions = { readonly include_usage?: unknown };
 
-const ingress = createNonChatPipeline<Payload, ProviderHttpOutput>({
+const ingress = createNonChatPipeline({
   name: 'openai-completions',
   sourceApi,
   operation: 'text_completion',
@@ -23,20 +23,20 @@ const ingress = createNonChatPipeline<Payload, ProviderHttpOutput>({
     const parsed = parseJsonModel(request, 'OpenAI Completions');
     return 'error' in parsed ? parsed : { model: parsed.model, payload: parsed.payload as Payload };
   },
-  provider: pipelines => pipelines.openaiCompletions,
+  outcomeKey: 'response.openaiCompletions',
+  targets: openaiCompletionsProviderTargets,
   prepareProviderPayload: payload => payload.stream === true
     ? { ...payload, stream_options: { ...(payload.stream_options as ClientStreamOptions | undefined), include_usage: true } }
     : payload,
   select: candidates => candidates.filter(candidate => candidate.endpoints.openaiCompletions !== undefined),
-  respond: (response, request, identity, env) => {
+  respond: (response, request, identity, scope) => {
     const http = response['response.http'];
-    if (!httpSucceeded(http)) return scalarHttpAttempt(env, forwardHttp(http), identity);
     const candidate = request['route.candidate'];
     const client = request['request.payload'];
     const declaredExclusive = candidate.providerModel.enabledFlags.includes('usage-exclusive-cached-tokens');
     const usageIdentity = `${candidate.upstreamId}/${candidate.modelId}`;
     if (client.stream !== true) {
-      return respondJsonUsage(http, identity, env, sourceApi, body => {
+      return respondJsonUsage(http, identity, scope, sourceApi, body => {
         if (body === null || typeof body !== 'object') return null;
         const { usage, service_tier: tier } = body as UsageEvent;
         return tokenUsageFromOpenAICompletionsUsage(usage, tier, declaredExclusive, usageIdentity);
@@ -46,7 +46,7 @@ const ingress = createNonChatPipeline<Payload, ProviderHttpOutput>({
     let usageBlock: unknown = null;
     let serviceTier: string | null | undefined;
     const includeUsage = (client.stream_options as ClientStreamOptions | undefined)?.include_usage === true;
-    return observeSse(http, identity, env, {
+    return observeSse(http, identity, scope, {
       frames: (body, signal) => parseTargetStreamFrames<unknown>(parseSSEStream(body, { signal }), { protocol: sourceApi }),
       encode: parsed => {
         if (parsed.type === 'done') return { wire: serializeSseFrame(sseFrame('[DONE]')), end: 'completed' };
@@ -68,4 +68,4 @@ const ingress = createNonChatPipeline<Payload, ProviderHttpOutput>({
   },
 });
 
-export const openaiCompletions = createGatewayHttpHandler(ingress, { errorStatus: () => 502, performanceOperation: 'text_completion' });
+export const openaiCompletions = createGatewayHttpHandler(ingress, { errorStatus: () => 502 });

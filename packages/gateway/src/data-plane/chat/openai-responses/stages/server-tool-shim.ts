@@ -3,18 +3,17 @@ import { jsonrepair } from 'jsonrepair';
 import type { ResponsesBodyBack, ResponsesBodyFacts } from './facts.ts';
 import { imageGenerationServerTool } from './server-tools/image-generation.ts';
 import { webSearchServerTool } from './server-tools/web-search.ts';
-import { answerKeys, gatewayAnswer } from '../../../pipeline/answer.ts';
-import { jsonHttpResponse } from '../../../pipeline/edge-http.ts';
 import type { GatewayHttpFacts } from '../../../pipeline/host.ts';
-import { readHttpBytes } from '../../../pipeline/non-chat.ts';
-import { mergeBillableCalls, type UsageFacts } from '../../../pipeline/observe-usage.ts';
 import type { GatewayServices, RouteCandidate } from '../../../pipeline/services.ts';
 import { SidecarDomain } from '../../shared/sidecar-codec.ts';
-import { defineStage, type StageEnv } from '@floway-dev/pipeline';
-import { eventFrame, isJsonObject, parseJSONWithRawNumbers, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { localResponsesError } from '../errors.ts';
+import { isTransportFailure, type TransportFailure } from '@floway-dev/http';
+import { defineStage, type Scope } from '@floway-dev/pipeline';
+import { eventFrame, isJsonObject, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   createRandomOpenAIResponsesItemId,
   isOpenAIResponsesAssistantInputItem,
+  isOpenAIResponsesErrorEvent,
   isOpenAIResponsesTerminalEvent,
   type CanonicalOpenAIResponsesPayload,
   type OpenAIResponsesFunctionTool,
@@ -30,7 +29,7 @@ import {
   type OpenAIResponsesTool,
   type OpenAIResponsesToolChoice,
 } from '@floway-dev/protocols/openai-responses';
-import { type ChatTargetApi, internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
+import type { ChatTargetApi, ProviderFrame } from '@floway-dev/provider';
 import type { SidecarCodec } from '@floway-dev/translate';
 
 export interface MergeUsage {
@@ -131,7 +130,7 @@ export interface ServerToolHostedDispatch {
   hostedTypes: readonly string[];
   recognizeHostedTool(raw: OpenAIResponsesTool): OpenAIResponsesHostedTool | undefined;
   buildFunctionTool(canonical: OpenAIResponsesHostedTool, toolName: string): OpenAIResponsesFunctionTool;
-  dispatcher: ServerToolDispatcher;
+  dispatcher: (args: Parameters<ServerToolDispatcher>[0], scope: Scope<GatewayServices>) => ServerToolResultSlot[];
 }
 
 export type ServerToolPrepareResult =
@@ -158,7 +157,7 @@ export interface ServerToolInvocation {
 }
 
 export type ServerToolRegistration = (
-  invocation: ServerToolInvocation, facts: GatewayHttpFacts, env: StageEnv<GatewayServices>,
+  invocation: ServerToolInvocation, facts: GatewayHttpFacts, scope: Scope<GatewayServices>,
 ) => ServerToolPrepareResult | Promise<ServerToolPrepareResult>;
 
 type ActiveServerTool = Extract<ServerToolPrepareResult, { type: 'active' }> & {
@@ -175,7 +174,10 @@ type ActiveServerTool = Extract<ServerToolPrepareResult, { type: 'active' }> & {
 // the loop can lift its error and usage. Error notifications remain separate
 // from a response resource, including when no resource follows. Distinct from
 // `SynthesizedTerminal`, which is the shim's own outgoing terminal.
+type Frame = ProviderFrame<OpenAIResponsesStreamEventEx>;
+
 export type UpstreamTerminal =
+  | { kind: 'transport-error'; failure: TransportFailure }
   | { kind: 'completed' }
   | { kind: 'failed'; response: OpenAIResponsesResultEx }
   | { kind: 'incomplete'; response: OpenAIResponsesResultEx }
@@ -297,7 +299,7 @@ const hostedToolChoiceToRestore = (
 
 const isForcedServerToolChoice = (
   choice: OpenAIResponsesToolChoice | null | undefined,
-  dispatchers: ReadonlyMap<string, ServerToolDispatcher>,
+  dispatchers: Pick<ReadonlyMap<string, ServerToolDispatcher>, 'has'>,
 ): boolean => {
   if (choice === 'required') return true;
   if (typeof choice !== 'object' || choice === null) return false;
@@ -669,43 +671,42 @@ const expandServerToolHistory = async (
 };
 
 const deferHostedCallBatch = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+  frames: AsyncIterable<Frame>,
   dispatchers: ReadonlyMap<string, ServerToolDispatcher>,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+): AsyncGenerator<Frame> {
   let deferring = false;
   const deferredIndexes = new Set<number>();
   const pending = new Map<number, ProtocolFrame<OpenAIResponsesStreamEventEx>[]>();
   // A hosted item combines a call and its result. Keep subsequent assistant
   // content ahead of that result, while preserving order inside the call batch.
   // Otherwise echoing the public output loses the assistant/tool boundaries.
-  try {
-    for await (const frame of frames) {
-      if (frame.type === 'done' || isOpenAIResponsesTerminalEvent(frame.event) || frame.event.type === 'error') {
-        for (const batch of pending.values()) yield* batch;
-        pending.clear();
-        yield frame;
-        continue;
-      }
-      const event = frame.event;
-      if (event.type === 'response.output_item.added') {
-        if (event.item.type === 'function_call' && event.item.namespace === undefined && dispatchers.has(event.item.name)) deferring = true;
-        if (deferring && (event.item.type === 'function_call' || event.item.type === 'custom_tool_call')) deferredIndexes.add(event.output_index);
-      }
-      if ('output_index' in event && typeof event.output_index === 'number' && deferredIndexes.has(event.output_index)) {
-        const batch = pending.get(event.output_index) ?? [];
-        batch.push(frame);
-        pending.set(event.output_index, batch);
-      } else yield frame;
+  for await (const frame of frames) {
+    if (isTransportFailure(frame)) {
+      yield frame;
+      return;
     }
-  } catch (error) {
-    for (const batch of pending.values()) yield* batch;
-    throw error;
+    if (frame.type === 'done' || isOpenAIResponsesTerminalEvent(frame.event) || frame.event.type === 'error') {
+      for (const batch of pending.values()) yield* batch;
+      pending.clear();
+      yield frame;
+      continue;
+    }
+    const event = frame.event;
+    if (event.type === 'response.output_item.added') {
+      if (event.item.type === 'function_call' && event.item.namespace === undefined && dispatchers.has(event.item.name)) deferring = true;
+      if (deferring && (event.item.type === 'function_call' || event.item.type === 'custom_tool_call')) deferredIndexes.add(event.output_index);
+    }
+    if ('output_index' in event && typeof event.output_index === 'number' && deferredIndexes.has(event.output_index)) {
+      const batch = pending.get(event.output_index) ?? [];
+      batch.push(frame);
+      pending.set(event.output_index, batch);
+    } else yield frame;
   }
   for (const batch of pending.values()) yield* batch;
 };
 
 export const consumeTurnStreaming = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+  frames: AsyncIterable<Frame>,
   merge: MergeState,
   isFirstTurn: boolean,
   dispatchers: ReadonlyMap<string, ServerToolDispatcher>,
@@ -741,6 +742,9 @@ export const consumeTurnStreaming = async function* (
     } as OpenAIResponsesStreamEventEx);
 
   for await (const frame of deferHostedCallBatch(frames, dispatchers)) {
+    if (isTransportFailure(frame)) {
+      return { dispatchedSlots, sawServerToolCall, sawClientToolCall, turnUsage, terminalStatus: { kind: 'transport-error', failure: frame } };
+    }
     if (frame.type === 'done') continue;
     const event = frame.event;
 
@@ -1067,121 +1071,117 @@ async function* materializeServerToolItems(
   }
 }
 
-type Billing = UsageFacts['response.usage.billable'];
-
 async function* runMultiTurnLoop(args: {
   turnPayload: { current: CanonicalOpenAIResponsesPayload };
   nextTurn: () => Promise<ResponsesBodyBack>;
   merge: MergeState;
   loopState: ServerToolLoopState;
   demoteForcedServerToolChoiceAfterFirstTurn: boolean;
-  first: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>;
+  first: AsyncIterable<Frame>;
   dispatchers: ReadonlyMap<string, ServerToolDispatcher>;
   replayCodec: SidecarCodec;
   canonicalInput: CanonicalOpenAIResponsesInputItem[];
   active: readonly ActiveServerTool[];
-  signal: AbortSignal;
-  calls: Billing[];
-}): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
-  const { turnPayload, nextTurn, merge, loopState, demoteForcedServerToolChoiceAfterFirstTurn, first, dispatchers, replayCodec, active, signal, calls } = args;
+}): AsyncGenerator<Frame> {
+  const { turnPayload, nextTurn, merge, loopState, demoteForcedServerToolChoiceAfterFirstTurn, first, dispatchers, replayCodec, active } = args;
   const baseInput = args.canonicalInput;
-  try {
-    let currentTurn: TurnSummary = yield* consumeTurnStreaming(first, merge, true, dispatchers, loopState, active);
-    merge.accumulatedUsage = sumUsage(merge.accumulatedUsage, currentTurn.turnUsage);
-    while (true) {
-      const turn = currentTurn;
-
-      if (turn.terminalStatus.kind === 'failed') {
-        if (turn.sawServerToolCall) yield* materializeServerToolItems(turn.dispatchedSlots, merge, replayCodec);
-        yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: turn.terminalStatus.response.error }, active);
-        return;
-      }
-      if (turn.terminalStatus.kind === 'incomplete') {
-        if (turn.sawServerToolCall) yield* materializeServerToolItems(turn.dispatchedSlots, merge, replayCodec);
-        yield synthesizeTerminalEnvelope(merge, { kind: 'incomplete', incompleteDetails: turn.terminalStatus.response.incomplete_details }, active);
-        return;
-      }
-      if (turn.terminalStatus.kind === 'error') {
-        if (turn.sawServerToolCall) yield* materializeServerToolItems(turn.dispatchedSlots, merge, replayCodec);
-        return;
-      }
-      if (turn.terminalStatus.kind === 'bare-error-pre-shell') {
-        yield synthesizeTerminalEnvelope(merge, {
-          kind: 'failed',
-          error: turn.terminalStatus.error,
-        }, active);
-        return;
-      }
-      if (!turn.sawServerToolCall && !turn.sawClientToolCall) {
-        yield synthesizeTerminalEnvelope(merge, { kind: 'completed' }, active);
-        return;
-      }
-
-      yield* materializeServerToolItems(turn.dispatchedSlots, merge, replayCodec);
-      if (turn.sawClientToolCall) {
-        yield synthesizeTerminalEnvelope(merge, { kind: 'completed' }, active);
-        return;
-      }
-
-      // Accumulated output items are fed back as the next turn's input.
-      // A OpenAI Responses output item is a structural superset of the matching
-      // input item for every shape we emit here (messages, reasoning,
-      // function_call / function_call_output, and the server-tool items
-      // the dispatchers produce), so the reuse is sound; the cast only
-      // bridges the output/input naming.
-      const nextCanonicalInput = [
-        ...baseInput,
-        ...materializeAccumulatedOutput(merge).map(item => item as CanonicalOpenAIResponsesInputItem),
-      ];
-      const nextPayload: CanonicalOpenAIResponsesPayload = { ...turnPayload.current, input: await expandServerToolHistory(nextCanonicalInput, active, replayCodec) };
-      if (loopState.remainingToolCalls !== undefined) {
-        nextPayload.max_tool_calls = Math.max(0, loopState.remainingToolCalls);
-      } else {
-        delete nextPayload.max_tool_calls;
-      }
-      turnPayload.current = nextPayload;
-
-      // OpenAI's allowed_tools mode "required" requires at least one listed tool;
-      // "auto" also permits a message.
-      // https://developers.openai.com/api/reference/resources/responses/methods/create
-      // After a server tool runs, Floway relaxes the forced choice for this internal
-      // continuation so the model can answer, keeping any allowed_tools subset.
-      if (demoteForcedServerToolChoiceAfterFirstTurn) {
-        const choice = turnPayload.current.tool_choice;
-        turnPayload.current = {
-          ...turnPayload.current,
-          tool_choice: typeof choice === 'object' && choice?.type === 'allowed_tools' ? { ...choice, mode: 'auto' } : 'auto',
-        };
-      }
-      loopState.iterationCount += 1;
-
-      const nextResult = await nextTurn();
-      calls.push(nextResult['response.usage.billable']);
-      const events = nextResult['response.openaiResponses'];
-      if (events === undefined) {
-        const payload = (await readHttpBytes(nextResult['response.http'].body)).utf8();
-        const body = parseJSONWithRawNumbers(payload) as Extract<OpenAIResponsesStreamEventEx, { type: 'error' }>;
-        const event = { ...body, type: 'error' as const, sequence_number: merge.sequenceNumber++ };
-        yield eventFrame(event);
-        yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: responseErrorFromEvent(event) }, active);
-        return;
-      }
-      currentTurn = yield* consumeTurnStreaming(events, merge, false, dispatchers, loopState, active);
-      merge.accumulatedUsage = sumUsage(merge.accumulatedUsage, currentTurn.turnUsage);
+  let currentTurn: TurnSummary = yield* consumeTurnStreaming(first, merge, true, dispatchers, loopState, active);
+  merge.accumulatedUsage = sumUsage(merge.accumulatedUsage, currentTurn.turnUsage);
+  while (true) {
+    const turn = currentTurn;
+    if (turn.terminalStatus.kind === 'transport-error') {
+      yield turn.terminalStatus.failure;
+      return;
     }
-  } catch (error) {
-    if (signal.aborted) return;
-    if (merge.lastSeenModel === null) throw error;
-    const failure = {
-      type: 'error' as const,
-      code: 'server_error',
-      message: `Upstream stream failed mid-response: ${error instanceof Error ? error.message : String(error)}`,
-      param: null,
-      provider_specific_fields: internalDebugErrorFields(toInternalDebugError(error)),
-      sequence_number: merge.sequenceNumber++,
-    };
-    yield eventFrame(failure);
-    yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: responseErrorFromEvent(failure) }, active);
+
+    if (turn.terminalStatus.kind === 'failed') {
+      if (turn.sawServerToolCall) yield* materializeServerToolItems(turn.dispatchedSlots, merge, replayCodec);
+      yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: turn.terminalStatus.response.error }, active);
+      return;
+    }
+    if (turn.terminalStatus.kind === 'incomplete') {
+      if (turn.sawServerToolCall) yield* materializeServerToolItems(turn.dispatchedSlots, merge, replayCodec);
+      yield synthesizeTerminalEnvelope(merge, { kind: 'incomplete', incompleteDetails: turn.terminalStatus.response.incomplete_details }, active);
+      return;
+    }
+    if (turn.terminalStatus.kind === 'error') {
+      if (turn.sawServerToolCall) yield* materializeServerToolItems(turn.dispatchedSlots, merge, replayCodec);
+      return;
+    }
+    if (turn.terminalStatus.kind === 'bare-error-pre-shell') {
+      yield synthesizeTerminalEnvelope(merge, {
+        kind: 'failed',
+        error: turn.terminalStatus.error,
+      }, active);
+      return;
+    }
+    if (!turn.sawServerToolCall && !turn.sawClientToolCall) {
+      yield synthesizeTerminalEnvelope(merge, { kind: 'completed' }, active);
+      return;
+    }
+
+    yield* materializeServerToolItems(turn.dispatchedSlots, merge, replayCodec);
+    if (turn.sawClientToolCall) {
+      yield synthesizeTerminalEnvelope(merge, { kind: 'completed' }, active);
+      return;
+    }
+
+    // Accumulated output items are fed back as the next turn's input.
+    // A OpenAI Responses output item is a structural superset of the matching
+    // input item for every shape we emit here (messages, reasoning,
+    // function_call / function_call_output, and the server-tool items
+    // the dispatchers produce), so the reuse is sound; the cast only
+    // bridges the output/input naming.
+    const nextCanonicalInput = [
+      ...baseInput,
+      ...materializeAccumulatedOutput(merge).map(item => item as CanonicalOpenAIResponsesInputItem),
+    ];
+    const nextPayload: CanonicalOpenAIResponsesPayload = { ...turnPayload.current, input: await expandServerToolHistory(nextCanonicalInput, active, replayCodec) };
+    if (loopState.remainingToolCalls !== undefined) {
+      nextPayload.max_tool_calls = Math.max(0, loopState.remainingToolCalls);
+    } else {
+      delete nextPayload.max_tool_calls;
+    }
+    turnPayload.current = nextPayload;
+
+    // OpenAI's allowed_tools mode "required" requires at least one listed tool;
+    // "auto" also permits a message.
+    // https://developers.openai.com/api/reference/resources/responses/methods/create
+    // After a server tool runs, Floway relaxes the forced choice for this internal
+    // continuation so the model can answer, keeping any allowed_tools subset.
+    if (demoteForcedServerToolChoiceAfterFirstTurn) {
+      const choice = turnPayload.current.tool_choice;
+      turnPayload.current = {
+        ...turnPayload.current,
+        tool_choice: typeof choice === 'object' && choice?.type === 'allowed_tools' ? { ...choice, mode: 'auto' } : 'auto',
+      };
+    }
+    loopState.iterationCount += 1;
+
+    const nextResult = await nextTurn();
+    const outcome = nextResult['response.openaiResponses'];
+    if (outcome.kind === 'error') {
+      const http = nextResult['response.http'];
+      if (http.transportError !== undefined) {
+        yield { type: 'transport-error', error: http.transportError };
+        return;
+      }
+      const body: Record<string, unknown> = isJsonObject(outcome.error) ? outcome.error : {};
+      const details = isJsonObject(body.error) ? body.error : body;
+      const candidate = { ...body, type: 'error' as const, sequence_number: merge.sequenceNumber++ };
+      const event: Extract<OpenAIResponsesStreamEventEx, { type: 'error' }> = isOpenAIResponsesErrorEvent(candidate) ? candidate : {
+        ...candidate,
+        code: typeof details.code === 'string' ? details.code : null,
+        message: typeof details.message === 'string' ? details.message : `OpenAI Responses continuation failed with HTTP ${http.status}.`,
+        param: typeof details.param === 'string' ? details.param : null,
+      };
+      yield eventFrame(event);
+      yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: responseErrorFromEvent(event) }, active);
+      return;
+    }
+    if (outcome.kind !== 'stream') throw new TypeError('OpenAI Responses continuation returned a scalar result');
+    currentTurn = yield* consumeTurnStreaming(outcome.events, merge, false, dispatchers, loopState, active);
+    merge.accumulatedUsage = sumUsage(merge.accumulatedUsage, currentTurn.turnUsage);
   }
 }
 
@@ -1201,13 +1201,13 @@ export const createServerToolShim = (registrations: readonly ServerToolRegistrat
         provides: ['request.openaiResponses'],
       },
       response: {
-        needs: ['response.openaiResponses', 'response.usage.billable'],
+        needs: ['response.http', 'response.openaiResponses'],
         consumes: [],
-        provides: ['response.openaiResponses', 'response.usage.billable', 'response.timing.streamEndedAt'],
+        provides: ['response.openaiResponses'],
       },
     },
-    return: { provides: [...answerKeys, 'response.openaiResponses'] },
-    execute: async (facts, next, env) => {
+    return: { provides: ['response.http', 'response.openaiResponses'] },
+    execute: async (facts, scope) => {
       const turnPayload = { current: facts['request.openaiResponses'] };
       const invocation: ServerToolInvocation = {
         candidate: facts['route.candidate'],
@@ -1219,22 +1219,19 @@ export const createServerToolShim = (registrations: readonly ServerToolRegistrat
       const preparedTools: Array<Extract<ServerToolPrepareResult, { type: 'active' }>> = [];
       // Validate before rewriting so tool-array indexes refer to the caller's payload.
       for (const register of registrations) {
-        const prepared = await register(invocation, facts, env);
+        const prepared = await register(invocation, facts, scope);
         if (prepared.type === 'inactive') continue;
         if (prepared.type === 'invalid-request') {
-          return {
-            ...gatewayAnswer(env, jsonHttpResponse(400, {
-              error: {
-                message: prepared.message, type: prepared.errorType ?? 'invalid_request_error',
-                param: prepared.param, code: prepared.code === undefined ? 'invalid_request_error' : prepared.code,
-              },
-            }, env.clock())),
-            'response.openaiResponses': undefined,
-          };
+          return localResponsesError(scope, 400, {
+            error: {
+              message: prepared.message, type: prepared.errorType ?? 'invalid_request_error',
+              param: prepared.param, code: prepared.code === undefined ? 'invalid_request_error' : prepared.code,
+            },
+          });
         }
         preparedTools.push(prepared);
       }
-      if (preparedTools.length === 0) return await next(facts);
+      if (preparedTools.length === 0) return await scope.next(facts);
 
       for (const prepared of preparedTools) {
         const currentTools = Array.isArray(turnPayload.current.tools) ? turnPayload.current.tools : [];
@@ -1284,7 +1281,7 @@ export const createServerToolShim = (registrations: readonly ServerToolRegistrat
       }
 
       const canonicalInput = turnPayload.current.input;
-      const replayCodec = env.services.sidecarCodecs.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall);
+      const replayCodec = scope.services.sidecarCodecs.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall);
       const nextInput = await expandServerToolHistory(canonicalInput, active, replayCodec);
       turnPayload.current = { ...turnPayload.current, input: nextInput };
 
@@ -1292,43 +1289,30 @@ export const createServerToolShim = (registrations: readonly ServerToolRegistrat
         (entry): entry is ActiveServerTool & { hosted: ServerToolHostedDispatch } =>
           entry.hosted !== undefined,
       );
-      if (hostedActive.length === 0) return await next(requestForTurn());
+      if (hostedActive.length === 0) return await scope.next(requestForTurn());
 
-      const dispatchers = new Map<string, ServerToolDispatcher>();
-      for (const entry of hostedActive) dispatchers.set(entry.toolName, entry.hosted.dispatcher);
       const loopState: ServerToolLoopState = {
         iterationCount: 1,
         remainingToolCalls: typeof turnPayload.current.max_tool_calls === 'number' ? turnPayload.current.max_tool_calls : undefined,
       };
-      const demoteForcedServerToolChoiceAfterFirstTurn = isForcedServerToolChoice(turnPayload.current.tool_choice, dispatchers);
+      const demoteForcedServerToolChoiceAfterFirstTurn = isForcedServerToolChoice(turnPayload.current.tool_choice, new Set(hostedActive.map(entry => entry.toolName)));
 
-      const first = await next(requestForTurn());
-      const stream = first['response.openaiResponses'];
-      if (stream === undefined) return first;
+      const first = await scope.next(requestForTurn());
+      const outcome = first['response.openaiResponses'];
+      if (outcome.kind !== 'stream') return first;
 
-      const calls = [first['response.usage.billable']];
-      const merge = createMergeState();
-      const sealedCalls = Promise.withResolvers<readonly Billing[]>();
-      const events = env.wrapStream(stream, {
+      const events = scope.wrapStream(outcome.events, {
         label: 'OpenAI Responses server-tool rounds',
-        transform: (source, signal) => runMultiTurnLoop({
-          turnPayload, nextTurn: () => next(requestForTurn()), merge, loopState, demoteForcedServerToolChoiceAfterFirstTurn,
-          first: source, dispatchers, replayCodec, canonicalInput, active, signal, calls,
-        }),
-        // A release closes the inner stream after this hook. Seal the list
-        // synchronously and let finalization wait for its individual calls.
-        onClose: () => {
-          sealedCalls.resolve(calls);
-          streamEnd.resolve(env.clock());
+        async *transform(source, scope) {
+          const dispatchers = new Map<string, ServerToolDispatcher>();
+          for (const entry of hostedActive) dispatchers.set(entry.toolName, args => entry.hosted.dispatcher(args, scope));
+          yield* runMultiTurnLoop({
+            turnPayload, nextTurn: () => scope.next(requestForTurn()), merge: createMergeState(), loopState, demoteForcedServerToolChoiceAfterFirstTurn,
+            first: source, dispatchers, replayCodec, canonicalInput, active,
+          });
         },
       });
-      const streamEnd = env.deferred<number | null>('server-tool stream end', events);
-      return {
-        ...first,
-        'response.openaiResponses': events,
-        'response.usage.billable': env.defer('server-tool rounds', sealedCalls.promise.then(mergeBillableCalls)),
-        'response.timing.streamEndedAt': streamEnd.deferred,
-      };
+      return { ...first, 'response.openaiResponses': { kind: 'stream', events } };
     },
   });
 

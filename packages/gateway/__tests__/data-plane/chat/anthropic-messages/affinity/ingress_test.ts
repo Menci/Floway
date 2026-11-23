@@ -8,7 +8,7 @@ import type { AnthropicMessagesAssistantContentBlock, AnthropicMessagesPayload }
 
 const codec = new AffinityCodec('22'.repeat(32));
 
-const candidate = (upstreamId: string) => messagesUpstream({ upstreamId, model: 'model' }).candidate;
+const candidate = (upstreamId: string) => messagesUpstream({ upstreamId, modelId: 'model' }).candidate;
 
 test('removes thinking and redacted blocks whose affinity belongs to another candidate', async () => {
   const candidateA = candidate('upstream-a');

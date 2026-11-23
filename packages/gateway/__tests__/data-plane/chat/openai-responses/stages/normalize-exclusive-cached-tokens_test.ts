@@ -1,7 +1,8 @@
 import { test } from 'vitest';
 
-import { driveResponsesStage } from './drive.ts';
 import { normalizeExclusiveCachedTokens } from '../../../../../src/data-plane/chat/openai-responses/stages/normalize-exclusive-cached-tokens.ts';
+import { driveChatStages } from '../../shared/drive-stages.ts';
+import { chatUpstream } from '../../shared/fixture.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { assert, assertEquals } from '@floway-dev/test-utils';
@@ -31,16 +32,12 @@ const completedEvent = (usage: NonNullable<OpenAIResponsesResultEx['usage']>): O
 });
 
 const run = async (usage: NonNullable<OpenAIResponsesResultEx['usage']>) => {
-  const { result, done } = await driveResponsesStage(normalizeExclusiveCachedTokens, { model: 'test-model', input: [] }, {
-    enabledFlags: new Set(['usage-exclusive-cached-tokens']),
-    wire: true,
-    async *upstream() { yield eventFrame(completedEvent(usage)); },
+  const { candidate } = chatUpstream({ flags: ['usage-exclusive-cached-tokens'], endpoints: { openaiResponses: {} } });
+  const result = await driveChatStages([normalizeExclusiveCachedTokens], { 'route.candidate': candidate }, {
+    key: 'response.openaiResponses', frames: [eventFrame(completedEvent(usage))],
   });
-  const events = result['response.events'];
-  assert(events !== undefined);
-  const frames = [];
-  for await (const frame of events) frames.push(frame);
-  assertEquals(await done, { ok: true });
+  assert('frames' in result && result.frames !== undefined);
+  const { frames } = result;
   assertEquals(frames.length, 1);
   const [frame] = frames;
   assert(frame.type === 'event' && 'response' in frame.event);

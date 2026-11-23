@@ -4,8 +4,9 @@ import { driveResponsesStage, type Frame, type UpstreamEvents, type UpstreamScal
 import { SUMMARY_PREFIX, expandShimCompactionItems } from '../../../../../src/data-plane/chat/openai-responses/compact-payload.ts';
 import { syntheticEventsFromCompaction } from '../../../../../src/data-plane/chat/openai-responses/items/output.ts';
 import { compactShim } from '../../../../../src/data-plane/chat/openai-responses/stages/compact-shim.ts';
+import { tokenCountsFromUsage } from '../../../../../src/repo/usage-metrics.ts';
 import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
-import { type BillableUsage, doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { type OpenAIResponsesCompactionItemEx, type OpenAIResponsesCompactionResultEx, collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesPayloadEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import type { ChatTargetApi, FlagId, OpenAIResponsesAction } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -17,13 +18,10 @@ interface Invocation {
   targetApi: ChatTargetApi;
 }
 
-const scriptedEvents = (events: AsyncIterable<Frame>, usage?: BillableUsage): UpstreamEvents => ({
-  events,
-  ...(usage === undefined ? {} : { usage: Promise.resolve(usage) }),
-});
+const scriptedEvents = (events: AsyncIterable<Frame>): UpstreamEvents => ({ events });
 
 const runCompact = async (invocation: Invocation, respond: () => Promise<UpstreamEvents | UpstreamScalar>) => {
-  const { result, done, logs } = await driveResponsesStage(compactShim, invocation.payload, {
+  const { result, done, logs, usage, performance } = await driveResponsesStage(compactShim, invocation.payload, {
     enabledFlags: invocation.enabledFlags, targetApi: invocation.targetApi, action: invocation.action,
     upstream: (payload, action) => {
       invocation.payload = payload;
@@ -31,14 +29,18 @@ const runCompact = async (invocation: Invocation, respond: () => Promise<Upstrea
       return respond();
     },
   });
-  const scalar = result['response.result'];
-  const stream = scalar === undefined ? result['response.openaiResponses'] : syntheticEventsFromCompaction(scalar);
-  if (stream === undefined) throw new Error('Expected compact events');
+  const outcome = result['response.openaiResponses'];
+  if (outcome.kind === 'error') throw new Error('Expected a successful compact result');
+  const stream = outcome.kind === 'stream' ? outcome.events : syntheticEventsFromCompaction(outcome.result);
   return {
-    billing: result['response.usage.billable'].promise,
+    usage,
+    performance,
     logs,
     events: (async function* () {
-      yield* stream;
+      for await (const frame of stream) {
+        if (frame.type === 'transport-error') throw new Error(frame.error.message);
+        yield frame;
+      }
       assertEquals(await done, { ok: true });
     })(),
   };
@@ -59,7 +61,7 @@ const makeInvocation = (
   };
 };
 
-const fakeUpstreamRun = (summaryText: string): () => Promise<UpstreamEvents> => {
+const fakeUpstreamRun = (summaryText: string, cached = 0): () => Promise<UpstreamEvents> => {
   const response: OpenAIResponsesResultEx = {
     id: 'resp_fake_upstream',
     object: 'response',
@@ -74,7 +76,7 @@ const fakeUpstreamRun = (summaryText: string): () => Promise<UpstreamEvents> => 
     }],
     error: null,
     incomplete_details: null,
-    usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
+    usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30, ...(cached ? { input_tokens_details: { cached_tokens: cached } } : {}) },
   };
   return () => Promise.resolve(scriptedEvents(
     (async function* (): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
@@ -192,11 +194,7 @@ test('compact + flag on: empty cache-sharing output warns, retries the legacy sy
   const result = await runCompact(inv, async () => {
     calls += 1;
     seenInputs.push(inv.payload.input);
-    const result = await fakeUpstreamRun(calls === 1 ? '   ' : 'LEGACY SUMMARY')();
-    return {
-      ...result,
-      usage: Promise.resolve({ input: 10, cacheRead: calls === 1 ? 8 : 0, cacheWrite: 0, cacheWrite1h: 0, output: 20 }),
-    };
+    return await fakeUpstreamRun(calls === 1 ? '   ' : 'LEGACY SUMMARY', calls === 1 ? 8 : 0)();
   });
 
   assertEquals(calls, 2);
@@ -214,8 +212,9 @@ test('compact + flag on: empty cache-sharing output warns, retries the legacy sy
   assertEquals(inv.payload.tools, [{ type: 'function', name: 'read_file', parameters: null, strict: null }]);
 
   const collected = await collectOpenAIResponsesProtocolEventsToResult(result.events);
-  assertEquals(collected.usage, { input_tokens: 20, output_tokens: 40, total_tokens: 60 });
-  assertEquals((await result.billing).map(call => call.usage?.cacheRead), [8, 0]);
+  assertEquals(collected.usage, { input_tokens: 20, output_tokens: 40, total_tokens: 60, input_tokens_details: { cached_tokens: 8 } });
+  assertEquals(result.usage.map(row => tokenCountsFromUsage(row).input_cache_read ?? 0), [8, 0]);
+  assertEquals(result.performance.length, 2);
 });
 
 test('compact decrypt: replays mixed compaction items individually and preserves their output positions', async () => {
@@ -251,7 +250,6 @@ test('compact decrypt: replays mixed compaction items individually and preserves
       assertEquals(inv.action, 'compact');
       return {
         result: nativeResponse,
-        usage: Promise.resolve({ input: 100, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 40 }),
       };
     }
 
@@ -276,11 +274,7 @@ test('compact decrypt: replays mixed compaction items individually and preserves
       type: 'input_text',
       text: 'Output only the exact summary text, with no preface, explanation, markdown fence, or changes.',
     }]);
-    const replay = await fakeUpstreamRun(`EXACT DECRYPTED SUMMARY ${calls - 1}`)();
-    return {
-      ...replay,
-      usage: Promise.resolve({ input: 10, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 20 }),
-    };
+    return await fakeUpstreamRun(`EXACT DECRYPTED SUMMARY ${calls - 1}`)();
   });
 
   assertEquals(calls, 3);
@@ -292,7 +286,8 @@ test('compact decrypt: replays mixed compaction items individually and preserves
   assertEquals(collected.output[1].id, 'cmp_native_1');
   assertEquals(collected.output[3].id, 'cmp_native_2');
   assertEquals(collected.usage, { input_tokens: 120, output_tokens: 80, total_tokens: 200 });
-  assertEquals((await result.billing).map(call => call.usage?.input), [100, 10, 10]);
+  assertEquals(result.usage.map(row => tokenCountsFromUsage(row).input), [100, 10, 10]);
+  assertEquals(result.performance.length, 3);
 
   const expanded = expandShimCompactionItems({
     model: 'm',
@@ -416,7 +411,6 @@ test('compact decrypt: decrypts provider-restored native compaction output with 
           yield eventFrame({ type: 'response.completed', sequence_number: 6, response: completedEnvelope });
           yield doneFrame();
         })(),
-        { input: 150, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 50 },
       );
     }
 

@@ -6,7 +6,7 @@ import { stripUnsupportedTools } from '../../../../../src/data-plane/chat/gemini
 import { suppressThoughtParts } from '../../../../../src/data-plane/chat/gemini-generate-content/stages/suppress-thought-parts.ts';
 import { driveChatStages } from '../../shared/drive-stages.ts';
 import { chatUpstream } from '../../shared/fixture.ts';
-import type { Stage } from '@floway-dev/pipeline';
+import { snapshotError, type Stage } from '@floway-dev/pipeline';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import type { GeminiGenerateContentRequest as Payload, GeminiGenerateContentStreamEvent as Event } from '@floway-dev/protocols/gemini-generate-content';
 import type { ChatTargetApi } from '@floway-dev/provider';
@@ -89,4 +89,12 @@ test('passes thought parts through on native routes or when includeThoughts is s
   const expected = [eventFrame(openThought), eventFrame(mixedThought), eventFrame(finishedThought), doneFrame()];
   expect(await runResponse(emptyRequest, 'geminiGenerateContent')).toEqual(expected);
   expect(await runResponse({ ...emptyRequest, generationConfig: { thinkingConfig: { includeThoughts: true } } }, 'anthropicMessages')).toEqual(expected);
+});
+
+test('preserves a transport failure after a filtered thought frame', async () => {
+  const failure = { type: 'transport-error', error: snapshotError(new Error('upstream disconnected')) } as const;
+  const output = await driveChatStages([suppressThoughtParts], request(emptyRequest, 'anthropicMessages'), {
+    key: 'response.geminiGenerateContent', frames: [eventFrame(openThought), failure],
+  });
+  expect(output.frames).toEqual([failure]);
 });

@@ -12,14 +12,20 @@ import { openaiChatCompletionsTarget, pickTarget } from '../shared/target-picker
 import { compose } from '@floway-dev/pipeline';
 
 type Api = 'openaiChatCompletions';
+type Space = ChatBodyInput<Api> & ChatBodyOutput<Api>;
 
-export const createOpenAIChatCompletionsBody = (targets: ChatBodyTargets<Api>) =>
-  compose<ChatBodyInput<Api>, ChatBodyOutput<Api>, GatewayServices, ChatBodyTargets<Api>>('openaiChatCompletions.body', {
+export const createOpenAIChatCompletionsBody = ({ egress, messages, responses }: ChatBodyTargets<Api>) =>
+  compose<Space, GatewayServices>()('openaiChatCompletions.body', {
+    entry: [
+      'request.http', 'request.auth.apiKeyId', 'request.auth.user', 'request.route.upstreamIds', 'request.route.randomizeUpstreams',
+      'request.route.runtimeLocation', 'route.candidate', 'request.openaiChatCompletions',
+    ],
+    exit: ['response.http', 'response.openaiChatCompletions'],
     stages: [
       pickTarget(openaiChatCompletionsTarget),
       includeUsageStreamOptions, normalizeUsage, disableReasoningOnForcedToolChoice, normalizeEmptyToolsToolChoice,
       stripPromptCacheKey, normalizeDeepSeekRequest, normalizeQwenRequest,
     ],
     ending: createOpenAIChatCompletionsRouteBody(openaiChatCompletionsInputError),
-    targets,
+    targets: { egress, messages, responses },
   });

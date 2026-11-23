@@ -329,10 +329,10 @@ export const collaborationShim = defineStage<ResponsesBodyFacts, ResponsesBodyFa
     request: responsesBodyRequest,
     response: { needs: ['response.openaiResponses'], consumes: [], provides: ['response.openaiResponses'] },
   },
-  execute: async (facts, next, env) => {
+  execute: async (facts, scope) => {
     const payload = facts['request.openaiResponses'];
     if (!facts['route.candidate'].providerModel.enabledFlags.includes('openai-responses-collaboration-shim')
-      || !hasCollaborationNamespace(payload)) return await next(facts);
+      || !hasCollaborationNamespace(payload)) return await scope.next(facts);
     const toolLists = toolInventories(payload);
     const names = new Set<string>();
     const flatNames = new Set<string>();
@@ -352,10 +352,10 @@ export const collaborationShim = defineStage<ResponsesBodyFacts, ResponsesBodyFa
       input: payload.input.map(item => requestItem(item, targetNamespace, names, flatNames)),
     };
     const restoreEvent = createClientEventRestorer(targetNamespace, names);
-    const response = await next({ ...facts, 'request.openaiResponses': rewritten });
-    const stream = response['response.openaiResponses'];
-    if (stream === undefined) return response;
-    const wrapped = env.wrapStream(stream, {
+    const response = await scope.next({ ...facts, 'request.openaiResponses': rewritten });
+    const outcome = response['response.openaiResponses'];
+    if (outcome.kind !== 'stream') return response;
+    const wrapped = scope.wrapStream(outcome.events, {
       label: 'collaboration events',
       async *transform(source) {
         for await (const frame of source) {
@@ -368,6 +368,6 @@ export const collaborationShim = defineStage<ResponsesBodyFacts, ResponsesBodyFa
         }
       },
     });
-    return { ...response, 'response.openaiResponses': wrapped };
+    return { ...response, 'response.openaiResponses': { kind: 'stream', events: wrapped } };
   },
 });

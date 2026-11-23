@@ -20,7 +20,7 @@ const normalizeKimiUsage = (chunk: OpenAIChatCompletionsStreamEvent): OpenAIChat
 };
 
 export const normalizeKimiResponse = rewriteChatFrames(
-  'normalizeKimiResponse', 'response.events', ({ 'route.candidate': { providerModel } }) => providerModel.enabledFlags.includes('vendor-kimi')
+  'normalizeKimiResponse', 'response.openaiChatCompletions', ({ 'route.candidate': { providerModel } }) => providerModel.enabledFlags.includes('vendor-kimi')
     ? mapProtocolEvents(normalizeKimiUsage)
     : undefined,
 );

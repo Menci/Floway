@@ -1,10 +1,11 @@
 import { test } from 'vitest';
 
-import { driveResponsesStage } from './drive.ts';
 import { nullUnresolvedFunctionCallNamespace } from '../../../../../src/data-plane/chat/openai-responses/stages/null-unresolved-function-call-namespace.ts';
+import { driveChatStages } from '../../shared/drive-stages.ts';
+import { chatUpstream } from '../../shared/fixture.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 import type { FlagId } from '@floway-dev/provider';
-import { assert, assertEquals } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
 const tool = (name: string) => ({ type: 'function' as const, name });
 const customTool = (name: string) => ({ type: 'custom' as const, name });
@@ -12,10 +13,13 @@ const namespace = (name: string, ...members: string[]) => ({ type: 'namespace' a
 const call = (name: string) => ({ type: 'function_call' as const, name, call_id: `call_${name}`, arguments: '{}', status: 'completed' as const });
 
 const rewrite = async (payload: CanonicalOpenAIResponsesPayload, enabledFlags: ReadonlySet<FlagId>) => {
-  const { seen, done } = await driveResponsesStage(nullUnresolvedFunctionCallNamespace, payload, { enabledFlags });
-  assert(seen !== undefined);
-  assertEquals(await done, { ok: true });
-  return seen;
+  const { candidate } = chatUpstream({ flags: [...enabledFlags], endpoints: { openaiResponses: {} } });
+  const { request } = await driveChatStages([nullUnresolvedFunctionCallNamespace], {
+    'request.openaiResponses': payload,
+    'route.candidate': candidate,
+    'route.targetApi': 'openaiResponses',
+  }, { key: 'response.openaiResponses' });
+  return request['request.openaiResponses'];
 };
 
 test('sends an explicit null namespace for unresolved calls to previously declared namespace tools when flagged', async () => {

@@ -1,13 +1,10 @@
 import { expect, test } from 'vitest';
 
-import { headers, http, key, providerResponses, responsesFixture, upstream } from './fixture.ts';
+import { headers, imageUpstream, key, readHttpBytes, readWireJson, responsesFixture, responsesUpstream, wireEvents, type WireRequest } from './fixture.ts';
 import { syntheticEventsFromResult } from '../../../../src/data-plane/chat/openai-responses/items/output.ts';
 import { LayeredOpenAIResponsesStatefulStore, MemoryOpenAIResponsesStatefulBacking } from '../../../../src/data-plane/chat/openai-responses/items/store.ts';
-import { readHttpBytes } from '../../../../src/data-plane/pipeline/non-chat.ts';
-import { Bytes, compose, defineEnding, type StageEnv } from '@floway-dev/pipeline';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
 import type { OpenAIResponsesOutputItemEx, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
-import type { ProviderHttpOutput, ProviderInput, ProviderResponsesInput, ProviderResponsesOutput, ProviderServices } from '@floway-dev/provider';
 
 const modelOutput = (output: OpenAIResponsesOutputItemEx[], usage = { input_tokens: 3, output_tokens: 4, total_tokens: 7 }): OpenAIResponsesResultEx => ({
   id: 'resp_upstream', object: 'response', model: 'test-model', status: 'completed', error: null, incomplete_details: null, output, usage,
@@ -17,21 +14,14 @@ const message = (text: string): OpenAIResponsesOutputItemEx => ({
   type: 'message', id: 'msg_1', role: 'assistant', status: 'completed', content: [{ type: 'output_text', annotations: [], text }],
 });
 
-const eventsReply = (env: StageEnv, response = modelOutput([message('answer')])): ProviderResponsesOutput => ({
-  ...http(),
-  'response.modelKey': 'native-responses',
-  'response.events': env.createStream({ label: 'stub Responses events', iterate: () => syntheticEventsFromResult(response) }),
-  'response.result': undefined,
-});
+const eventsReply = (response = modelOutput([message('answer')])) => wireEvents(syntheticEventsFromResult(response));
 
 test('HTTP Responses hydrates previous_response_id and commits only store-enabled turns', async () => {
   const backing = new MemoryOpenAIResponsesStatefulBacking();
-  const calls: ProviderResponsesInput[] = [];
-  const mock = responsesFixture([upstream('responses', {
-    openaiResponses: providerResponses((facts, env) => {
-      calls.push(facts);
-      return eventsReply(env);
-    }),
+  const calls: WireRequest[] = [];
+  const mock = responsesFixture([responsesUpstream('responses', request => {
+    calls.push(request);
+    return eventsReply();
   })], mode => {
     if (mode.kind !== 'http') throw new Error('Expected HTTP Responses mode');
     return new LayeredOpenAIResponsesStatefulStore({ apiKeyId: key, reads: [backing], writes: mode.store === false ? [] : [backing] });
@@ -50,9 +40,10 @@ test('HTTP Responses hydrates previous_response_id and commits only store-enable
   const secondBody = JSON.parse((await readHttpBytes((await second.result)['response.http'].body)).utf8());
   expect(secondBody.store).toBe(false);
   expect(await backing.lookupSnapshot(key, secondBody.id)).toBeNull();
-  expect(calls[0]?.['request.headers']).toEqual([['user-agent', 'Floway test']]);
-  expect(calls[1]?.['request.payload']).not.toHaveProperty('previous_response_id');
-  expect(calls[1]?.['request.payload'].input).toEqual([
+  expect(calls[0]?.headers.get('user-agent')).toBe('Floway test');
+  expect(calls[0]?.headers.has('x-ignored')).toBe(false);
+  expect(calls[1]?.payload).not.toHaveProperty('previous_response_id');
+  expect(calls[1]?.payload.input).toEqual([
     expect.objectContaining({ role: 'user', content: 'first prompt' }),
     expect.objectContaining({ role: 'assistant', id: 'msg_1' }),
     expect.objectContaining({ role: 'user', content: 'second prompt' }),
@@ -62,20 +53,14 @@ test('HTTP Responses hydrates previous_response_id and commits only store-enable
 });
 
 test('native HTTP compact reads scalar usage and preserves its compact resource', async () => {
-  const mock = responsesFixture([upstream('responses', {
-    openaiResponses: providerResponses(facts => {
-      expect(facts['request.action']).toBe('compact');
-      return {
-        ...http(),
-        'response.modelKey': 'native-compact',
-        'response.events': undefined,
-        'response.result': {
-          id: 'cmp_upstream', object: 'response.compaction',
-          output: [{ type: 'compaction', id: 'cmp_1', encrypted_content: 'upstream-opaque' }],
-          usage: { input_tokens: 8, output_tokens: 2, total_tokens: 10 },
-        },
-      };
-    }),
+  const mock = responsesFixture([responsesUpstream('responses', ({ action, payload }) => {
+    expect(action).toBe('compact');
+    expect(payload).not.toHaveProperty('stream');
+    return Response.json({
+      id: 'cmp_upstream', object: 'response.compaction',
+      output: [{ type: 'compaction', id: 'cmp_1', encrypted_content: 'upstream-opaque' }],
+      usage: { input_tokens: 8, output_tokens: 2, total_tokens: 10 },
+    });
   })]);
   const handle = mock.request({ model: 'test-model', input: 'compact', stream: true }, 'compact');
   const response = (await handle.result)['response.http'];
@@ -87,46 +72,42 @@ test('native HTTP compact reads scalar usage and preserves its compact resource'
     usage: { input_tokens: 8, output_tokens: 2, total_tokens: 10 },
   });
   expect(await handle.done).toEqual({ ok: true });
-  expect(mock.usage).toEqual([expect.objectContaining({ modelKey: 'native-compact', requests: 1 })]);
+  expect(mock.usage).toEqual([expect.objectContaining({ modelKey: 'test-model', requests: 1 })]);
   expect(mock.performance).toEqual([expect.objectContaining({ kind: 'neutral' })]);
   const entered = mock.events.filter(event => event.k === 'enter');
   expect(entered.map(event => event.pipeline)).toEqual(expect.arrayContaining([
-    'openai-responses.compact.ingress', 'openai-responses.compact.body', 'openai-responses.compact.egress',
+    'openai-responses.compact.ingress', 'openai-responses.body', 'openai-responses.egress',
   ]));
-  expect(entered.map(event => event.name)).not.toContain('answerWebSocketWarmup');
-  expect(entered.map(event => event.name)).not.toContain('serializeItems');
+  expect(entered.map(event => event.name)).toContain('answerWebSocketWarmup');
+  expect(entered.map(event => event.name)).toContain('serializeItems');
 });
 
 test('compact shim retries a textless turn, reports aggregate usage and records each call', async () => {
-  const calls: ProviderResponsesInput[] = [];
-  const mock = responsesFixture([upstream('responses', {
-    openaiResponses: providerResponses((facts, env) => {
-      calls.push(facts);
-      expect(facts['request.action']).toBe('generate');
-      expect(facts['request.payload'].store).toBe(false);
-      return eventsReply(env, modelOutput(calls.length === 1 ? [] : [message('summary')]));
-    }),
+  const calls: WireRequest[] = [];
+  const mock = responsesFixture([responsesUpstream('responses', request => {
+    calls.push(request);
+    expect(request.action).toBe('generate');
+    expect(request.payload.store).toBe(false);
+    return eventsReply(modelOutput(calls.length === 1 ? [] : [message('summary')]));
   }, ['openai-responses-compact-shim'])]);
   const handle = mock.request({ model: 'test-model', input: 'make compact' }, 'compact');
   const response = (await handle.result)['response.http'];
   expect(response.status).toBe(200);
   const body = JSON.parse((await readHttpBytes(response.body)).utf8());
   expect(body.usage).toMatchObject({ input_tokens: 6, output_tokens: 8, total_tokens: 14 });
-  expect(calls[0]?.['request.payload'].input[0]).toMatchObject({ role: 'user', content: 'make compact' });
-  expect(calls[1]?.['request.payload'].input[0]).toMatchObject({ role: 'system' });
+  expect(calls[0]?.payload.input[0]).toMatchObject({ role: 'user', content: 'make compact' });
+  expect(calls[1]?.payload.input[0]).toMatchObject({ role: 'system' });
   expect(await handle.done).toEqual({ ok: true });
   expect(mock.usage.map(row => row.requests)).toEqual([1, 1]);
-  expect(mock.performance).toHaveLength(1);
+  expect(mock.performance).toHaveLength(2);
   const entered = mock.events.filter(event => event.k === 'enter');
   const egresses = entered.filter(event => event.edge === 'into' && event.pipeline.endsWith('.egress'));
   expect(egresses.map(event => event.pipeline)).toEqual(['openai-responses.egress', 'openai-responses.egress']);
 });
 
 test('a provider stream failure keeps its JSON resource and marks performance failed', async () => {
-  const mock = responsesFixture([upstream('responses', {
-    openaiResponses: providerResponses((_facts, env) =>
-      eventsReply(env, { ...modelOutput([]), status: 'failed', error: { code: 'server_error', message: 'mock failure' } })),
-  })]);
+  const mock = responsesFixture([responsesUpstream('responses', () =>
+    eventsReply({ ...modelOutput([]), status: 'failed', error: { code: 'server_error', message: 'mock failure' } }))]);
   const handle = mock.request({ model: 'test-model', input: 'try' });
   const response = (await handle.result)['response.http'];
   expect(response.status).toBe(200);
@@ -137,7 +118,7 @@ test('a provider stream failure keeps its JSON resource and marks performance fa
 });
 
 test('streamed Responses includes the reasoning marker, terminal resource and done trailer', async () => {
-  const mock = responsesFixture([upstream('responses', { openaiResponses: providerResponses((_facts, env) => eventsReply(env)) })]);
+  const mock = responsesFixture([responsesUpstream('responses', () => eventsReply())]);
   const handle = mock.request({ model: 'test-model', input: 'stream', stream: true });
   const response = (await handle.result)['response.http'];
   expect(response.status).toBe(200);
@@ -150,46 +131,27 @@ test('streamed Responses includes the reasoning marker, terminal resource and do
 });
 
 test('a ReAct image call retries 429, streams previews and settles separately from both chat rounds', async () => {
-  type ImagesInput = ProviderInput<Omit<OpenAIImagesGenerationsPayload, 'model'>>;
-  const imageRequests: ImagesInput[] = [];
-  const imagePipeline = compose<ImagesInput, ProviderHttpOutput, ProviderServices>('test.images', {
-    stages: [],
-    ending: defineEnding<ImagesInput, ProviderHttpOutput>({
-      name: 'stubImages',
-      request: { needs: ['provider.model', 'request.headers', 'request.payload'] },
-      return: { provides: ['response.http', 'response.modelKey'] },
-      execute: async facts => {
-        imageRequests.push(facts);
-        if (imageRequests.length === 1) {
-          const response = http(429, Bytes.fromUtf8('{"error":{"code":"rate_limit_exceeded","message":"retry"}}'))['response.http'];
-          return {
-            'response.http': { ...response, headers: [['retry-after-ms', '1']] },
-            'response.modelKey': 'native-image',
-          };
-        }
-        return {
-          ...http(200, Bytes.fromUtf8([
-            'data: {"type":"image_generation.partial_image","partial_image_index":0,"b64_json":"cHJldmlldw=="}\n\n',
-            'data: {"type":"image_generation.completed","b64_json":"ZmluYWw=","usage":{"input_tokens":3,"output_tokens":5,"total_tokens":8}}\n\n',
-          ].join(''))),
-          'response.modelKey': 'native-image',
-        };
-      },
-    }),
+  const imageRequests: OpenAIImagesGenerationsPayload[] = [];
+  const images = imageUpstream('images', 'test-model', async (_url, init) => {
+    imageRequests.push(await readWireJson(init.body));
+    if (imageRequests.length === 1) {
+      return Response.json({ error: { code: 'rate_limit_exceeded', message: 'retry' } }, { status: 429, headers: { 'retry-after-ms': '1' } });
+    }
+    return new Response([
+      'data: {"type":"image_generation.partial_image","partial_image_index":0,"b64_json":"cHJldmlldw=="}\n\n',
+      'data: {"type":"image_generation.completed","b64_json":"ZmluYWw=","usage":{"input_tokens":3,"output_tokens":5,"total_tokens":8}}\n\n',
+    ].join(''), { headers: { 'content-type': 'text/event-stream' } });
   });
-  const turns: ProviderResponsesInput[] = [];
-  const responsesPipeline = providerResponses((facts, env) => {
-    turns.push(facts);
-    if (turns.length === 2) return eventsReply(env, modelOutput([message('The image is ready.')]));
-    return eventsReply(env, modelOutput([{
+  const turns: WireRequest[] = [];
+  const chat = responsesUpstream('chat', request => {
+    turns.push(request);
+    if (turns.length === 2) return eventsReply(modelOutput([message('The image is ready.')]));
+    return eventsReply(modelOutput([{
       type: 'function_call', id: 'fc_test', call_id: 'call_test', status: 'completed',
       name: 'image_generation', arguments: '{"prompt":"an apple"}',
     }]));
-  });
-  const mock = responsesFixture([
-    upstream('chat', { openaiResponses: responsesPipeline }, ['openai-responses-image-generation-shim']),
-    upstream('images', { openaiImagesGenerations: imagePipeline }, [], 'image'),
-  ]);
+  }, ['openai-responses-image-generation-shim']);
+  const mock = responsesFixture([chat, images]);
   const handle = mock.request({
     model: 'test-model', input: 'draw something', stream: true,
     tools: [{ type: 'image_generation', model: 'test-model', partial_images: 1 }],
@@ -201,15 +163,21 @@ test('a ReAct image call retries 429, streams previews and settles separately fr
   expect(body).toContain('cHJldmlldw==');
   expect(body).toContain('ZmluYWw=');
   expect(body).toContain('The image is ready.');
-  expect(imageRequests.map(call => call['request.payload'])).toEqual([
+  expect(imageRequests).toEqual([
     expect.objectContaining({ prompt: 'an apple', stream: true, partial_images: 1 }),
     expect.objectContaining({ prompt: 'an apple', stream: true, partial_images: 1 }),
   ]);
-  expect(turns[1]?.['request.payload'].input).toContainEqual(expect.objectContaining({ type: 'function_call_output', call_id: 'call_test' }));
+  expect(turns[1]?.payload.input).toContainEqual(expect.objectContaining({ type: 'function_call_output', call_id: 'call_test' }));
   expect(await handle.done).toEqual({ ok: true });
-  expect(mock.usage.map(row => row.modelKey).sort()).toEqual(['native-image', 'native-responses', 'native-responses']);
+  expect(mock.usage.map(row => row.upstream).sort()).toEqual(['chat', 'chat', 'images', 'images']);
+  expect(mock.performance).toHaveLength(4);
+  const recordIds = mock.events.flatMap(event => event.k === 'deferred' && event.name === 'call.record' ? [event.deferredId] : []);
+  const records = mock.events.flatMap(event => event.k === 'settled' && event.ok && recordIds.includes(event.deferredId) ? [event.value] : []);
+  expect(records).toHaveLength(4);
+  expect(records).toContainEqual(expect.objectContaining({ upstreamId: 'images', status: 429, failed: true }));
   expect(mock.performance).toEqual(expect.arrayContaining([
     expect.objectContaining({ kind: 'neutral', dimensions: expect.objectContaining({ operation: 'image_generation' }) }),
+    expect.objectContaining({ kind: 'zero-output-error', dimensions: expect.objectContaining({ operation: 'image_generation' }) }),
     expect.objectContaining({ sample: expect.objectContaining({ operation: 'chat' }) }),
   ]));
 });

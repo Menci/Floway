@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { driveResponsesStage } from './drive.ts';
 import { agentMessageShim } from '../../../../../src/data-plane/chat/openai-responses/stages/agent-message-shim.ts';
-import { readHttpBytes } from '../../../../../src/data-plane/pipeline/non-chat.ts';
+import { readHttpBytes } from '../fixture.ts';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputAgentMessageItem } from '@floway-dev/protocols/openai-responses';
 import type { FlagId } from '@floway-dev/provider';
 import { assert, assertEquals } from '@floway-dev/test-utils';

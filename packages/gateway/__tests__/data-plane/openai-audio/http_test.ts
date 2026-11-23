@@ -155,12 +155,14 @@ test('/v1/audio/transcriptions opens SSE with 200 and streams through transcript
   decoder.push(dumps.stored[0].artifact);
   const stages = [...decoder.finish().stages.values()];
   const failover = stages.find(stage => stage.name === 'failover');
-  const encode = stages.find(stage => stage.name === 'encode');
+  const upstream = stages.find(stage => stage.name === 'http');
+  const observe = stages.find(stage => stage.name === 'observeHttpCall');
   assertExists(failover);
-  assertExists(encode);
-  expect(failover.parentStageId).toBe(encode.stageId);
-  expect(failover.responseFacts).toMatchObject({ 'response.http': { status: 201 } });
-  expect(encode.responseFacts).toMatchObject({ 'response.http': { status: 200 } });
+  assertExists(upstream);
+  assertExists(observe);
+  expect(upstream.responseFacts).toMatchObject({ 'response.http': { status: 201, exchange: 'upstream' } });
+  expect(observe.responseFacts).toMatchObject({ 'response.http': { status: 200 } });
+  expect(failover.responseFacts).toMatchObject({ 'response.http': { status: 200 } });
 });
 
 test('/v1/audio/transcriptions completes and cancels an upstream kept open after transcript.text.done', async () => {
@@ -190,7 +192,7 @@ test('/v1/audio/transcriptions completes and cancels an upstream kept open after
   assertEquals(upstreamCancelled, true);
 });
 
-test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/audio/transcriptions sends a data-only failure after partial output on %s', async mode => {
+test.each(['read error', 'premature EOF', 'native error', 'malformed JSON'] as const)('/v1/audio/transcriptions sends a data-only failure after partial output on %s', async mode => {
   const { apiKey, repo } = await setupAppTest();
   await registerAudioModel(repo);
   const partial = 'data: {"type":"transcript.text.delta","delta":"partial"}\n\n';
@@ -214,10 +216,12 @@ test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/audio/t
       const native = `data: ${JSON.stringify({ error: { code: 'vendor_failure', message } })}\n\n`;
       if (mode === 'read error') upstream.error(new Error(message));
       else if (mode === 'premature EOF') upstream.close();
+      else if (mode === 'malformed JSON') upstream.enqueue(new TextEncoder().encode('data: {broken}\n\n'));
       else upstream.enqueue(new TextEncoder().encode(native));
       const failure = decode.decode((await reader.read()).value);
       assertEquals(failure.startsWith('data: {"error":'), true);
-      if (mode !== 'premature EOF') assertEquals(JSON.parse(failure.slice('data: '.length)).error.message, message);
+      if (mode === 'read error' || mode === 'native error') assertEquals(JSON.parse(failure.slice('data: '.length)).error.message, message);
+      if (mode === 'malformed JSON') assertEquals(JSON.parse(failure.slice('data: '.length)).error.message, 'Malformed upstream /audio/transcriptions SSE JSON: {broken}');
       if (mode === 'native error') assertEquals(failure, native);
       assertEquals((await reader.read()).done, true);
     },

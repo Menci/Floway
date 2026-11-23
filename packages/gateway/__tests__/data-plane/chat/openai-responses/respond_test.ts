@@ -1,31 +1,23 @@
 import { expect, test } from 'vitest';
 
-import { http, providerResponses, responsesFixture, upstream } from './fixture.ts';
+import { responsesFixture, responsesUpstream, wireEvents } from './fixture.ts';
 import { openAIResponsesInternalErrorBody } from '../../../../src/data-plane/chat/openai-responses/encode.ts';
 import { OPENAI_RESPONSES_REASONING_INCLUDED_HEADER } from '../../../../src/data-plane/chat/openai-responses/response-headers.ts';
 import { writeHttpResponse } from '../../../../src/data-plane/shared/http-writer.ts';
 import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
-import type { HeaderEntry } from '@floway-dev/http';
-import { Bytes, type StageEnv } from '@floway-dev/pipeline';
-import { doneFrame, eventFrame, parseSSEStream, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventOutcome, httpReply, stubEgressPipeline } from '../shared/fixture.ts';
+import { snapshotError } from '@floway-dev/pipeline';
+import { doneFrame, eventFrame, parseSSEStream } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, parseOpenAIResponsesStream, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import type { ProviderResponsesOutput } from '@floway-dev/provider';
+import type { ProviderFrame } from '@floway-dev/provider';
 
-const frameReply = (
-  env: StageEnv, frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
-  headers: readonly HeaderEntry[] = [],
-): ProviderResponsesOutput => ({
-  ...http(),
-  'response.http': { ...http()['response.http'], headers },
-  'response.modelKey': 'native-responses',
-  'response.events': env.createStream({ label: 'stub Responses events', iterate: () => frames }),
-  'response.result': undefined,
-});
-
-const render = async (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>, stream: boolean, headers?: readonly HeaderEntry[]) => {
-  const mock = responsesFixture([upstream('responses', {
-    openaiResponses: providerResponses((_facts, env) => frameReply(env, frames, headers)),
-  })]);
+const render = async (frames: AsyncIterable<ProviderFrame<OpenAIResponsesStreamEventEx>>, stream: boolean, headers: ReadonlyArray<readonly [string, string]> = []) => {
+  const candidate = responsesUpstream('responses', () => { throw new Error('Unexpected upstream fetch'); });
+  const egress = stubEgressPipeline('openaiResponses', async (_facts, scope) => ({
+    ...await httpReply(scope, new Response(null, { headers: headers.map(([name, value]) => [name, value]) })),
+    outcome: eventOutcome(scope, frames),
+  }));
+  const mock = responsesFixture([candidate], undefined, { egress });
   return writeHttpResponse((await mock.request({ model: 'test-model', input: [], stream }).result)['response.http']);
 };
 
@@ -74,7 +66,7 @@ test('Responses SSE failures keep the announced resource, completed items, wire 
     yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.added', sequence_number: 5, output_index: 0, item });
     yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.done', sequence_number: 6, output_index: 0, item });
     yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.added', sequence_number: 7, output_index: 1, item: { ...item, id: 'rs_pending' } });
-    throw internalFailure();
+    yield { type: 'transport-error' as const, error: snapshotError(internalFailure()) };
   };
   const response = await render(frames(), true);
   expect(response.status).toBe(200);
@@ -101,7 +93,7 @@ test('Responses SSE failures keep the announced resource, completed items, wire 
   await expect(collectOpenAIResponsesProtocolEventsToResult(parseOpenAIResponsesStream(new Response(wire).body!))).rejects.toMatchObject({ message: 'broken', cause: error });
 });
 
-test('Responses sends a failed terminal when the next event cannot be serialized as SSE', async () => {
+test('Responses propagates an SSE encoding exception', async () => {
   const upstream = new Response([
     { type: 'response.created', sequence_number: 4, response: { id: 'upstream', object: 'response', model: 'm', status: 'in_progress', output: [], error: null, incomplete_details: null } },
     { type: 'vendor:event\nbad', sequence_number: 5 },
@@ -109,19 +101,7 @@ test('Responses sends a failed terminal when the next event cannot be serialized
   const source = parseOpenAIResponsesStream(upstream.body!);
   const response = await render(source, true);
   expect(response.status).toBe(200);
-  const events = [];
-  for await (const frame of parseSSEStream(response.body!)) {
-    if (frame.type === 'sse') events.push(frame);
-  }
-  expect(events.map(frame => frame.event)).toEqual(['response.created', 'error', 'response.failed', undefined]);
-  const [created, error, failed, done] = events;
-  expect(JSON.parse(error.data)).toMatchObject({
-    sequence_number: 5, error: { message: 'SSE event name cannot contain CR or LF' },
-  });
-  expect(JSON.parse(failed.data)).toMatchObject({
-    sequence_number: 6, response: { id: JSON.parse(created.data).response.id, status: 'failed' },
-  });
-  expect(done.data).toBe('[DONE]');
+  await expect(response.text()).rejects.toThrow('SSE event name cannot contain CR or LF');
 });
 
 test('Responses finishes an announced resource when a native error is followed by EOF', async () => {
@@ -241,7 +221,7 @@ test('Responses non-streaming failure drains the failed resource, preserves erro
     readFailedResource = true;
     yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.failed', sequence_number: 4, response: failed });
   };
-  const mock = responsesFixture([upstream('continuation-upstream', { openaiResponses: providerResponses((_facts, env) => frameReply(env, frames())) })]);
+  const mock = responsesFixture([responsesUpstream('continuation-upstream', () => wireEvents(frames()))]);
   const handle = mock.request({ model: 'test-model', input: [] });
   const response = writeHttpResponse((await handle.result)['response.http']);
   expect(response.status).toBe(502);
@@ -257,14 +237,9 @@ test('Responses non-streaming failure drains the failed resource, preserves erro
 
 test('Responses native upstream HTTP error is forwarded without diagnostic restructuring', async () => {
   const raw = '{"error":{"message":"native","stack":"provider-owned","custom":true}}';
-  const mock = responsesFixture([upstream('responses', {
-    openaiResponses: providerResponses(() => ({
-      'response.http': { ...http(429, Bytes.fromUtf8(raw))['response.http'], headers: [['content-type', 'application/json'], ['x-native', 'trace']] },
-      'response.modelKey': 'native-responses',
-      'response.events': undefined,
-      'response.result': undefined,
-    })),
-  })]);
+  const mock = responsesFixture([responsesUpstream('responses', () => new Response(raw, {
+    status: 429, headers: { 'content-type': 'application/json', 'x-native': 'trace' },
+  }))]);
   const handle = mock.request({ model: 'test-model', input: [] });
   const response = writeHttpResponse((await handle.result)['response.http']);
   await expect(handle.done).resolves.toEqual({ ok: true });

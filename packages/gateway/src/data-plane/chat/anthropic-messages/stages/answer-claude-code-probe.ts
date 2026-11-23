@@ -1,5 +1,4 @@
 import type { AnthropicMessagesFrame, AnthropicMessagesRequest } from './facts.ts';
-import { answerKeys, gatewayAnswer } from '../../../pipeline/answer.ts';
 import type { HttpInput } from '../../../pipeline/edge-http.ts';
 import { header } from '../../../pipeline/non-chat.ts';
 import type { ChatBodyOutput } from '../../shared/route-body.ts';
@@ -59,17 +58,20 @@ export const answerClaudeCodeProbe = defineStage<Request, Request, Answer, Answe
     request: { needs: ['request.anthropicMessages', 'request.http'], consumes: [], provides: [] },
     response: { needs: [], consumes: [], provides: [] },
   },
-  return: { provides: [...answerKeys, 'response.anthropicMessages'] },
-  execute: async (facts, next, env) => {
-    if (!isClaudeCodeProbe(facts)) return await next(facts);
-    const now = env.clock();
+  return: { provides: ['response.http', 'response.anthropicMessages'] },
+  execute: async (facts, scope) => {
+    if (!isClaudeCodeProbe(facts)) return await scope.next(facts);
+    const now = scope.clock();
     const http = { status: 200, statusText: '', headers: [], body: null, timing: { startedAt: now, headersAt: now } };
     return {
-      ...gatewayAnswer(env, http),
-      'response.anthropicMessages': env.createStream({
-        label: 'Claude Code probe',
-        iterate: () => probeFrames(facts['request.anthropicMessages'].model),
-      }),
+      'response.http': http,
+      'response.anthropicMessages': {
+        kind: 'stream',
+        events: scope.createStream({
+          label: 'Claude Code probe',
+          iterate: () => probeFrames(facts['request.anthropicMessages'].model),
+        }),
+      },
     };
   },
 });

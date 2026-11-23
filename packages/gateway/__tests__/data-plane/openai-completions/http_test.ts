@@ -86,7 +86,7 @@ test('/v1/completions streaming forwards usage chunk when the client opted in', 
 // openai-chat-completions does (no interceptor framework to feed), so the two
 // paths really do exercise different scaffold branches and the assertions
 // here keep them honest.
-test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/completions sends a data-only failure after partial output on %s', async mode => {
+test.each(['read error', 'premature EOF', 'native error', 'malformed JSON'] as const)('/v1/completions sends a data-only failure after partial output on %s', async mode => {
   const { apiKey, repo } = await setupAppTest();
   await registerOpenAICompletionsUpstream(repo);
   const partial = 'data: {"choices":[{"index":0,"text":"partial"}]}\n\n';
@@ -112,15 +112,39 @@ test.each(['read error', 'premature EOF', 'native error'] as const)('/v1/complet
       const native = `data: ${JSON.stringify({ error: { code: 'vendor_failure', message } })}\n\n`;
       if (mode === 'read error') upstream.error(new Error(message));
       else if (mode === 'premature EOF') upstream.close();
+      else if (mode === 'malformed JSON') upstream.enqueue(new TextEncoder().encode('data: {broken}\n\n'));
       else upstream.enqueue(new TextEncoder().encode(native));
       const failure = decode.decode((await reader.read()).value);
       assertEquals(failure.startsWith('data: {"error":'), true);
-      if (mode !== 'premature EOF') assertEquals(JSON.parse(failure.slice('data: '.length)).error.message, message);
+      if (mode === 'read error' || mode === 'native error') assertEquals(JSON.parse(failure.slice('data: '.length)).error.message, message);
+      if (mode === 'malformed JSON') assertEquals(JSON.parse(failure.slice('data: '.length)).error.message, 'Malformed upstream /completions SSE JSON: {broken}');
       if (mode === 'native error') assertEquals(failure, native);
       assertEquals((await reader.read()).done, true);
     },
   );
   await flushAsyncWork();
+  const [performance] = await repo.performance.listAll();
+  assertEquals(performance.errorsNoOutput, 1);
+});
+
+test('/v1/completions records an unexpected upstream MIME type on a streaming request as a failed call', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerOpenAICompletionsUpstream(repo);
+  await withMockedFetch(
+    () => Response.json({ result: 'upstream ignored streaming' }),
+    async () => {
+      const response = await requestAppWithWarmModels('/v1/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
+      });
+      assertEquals(response.status, 502);
+      assertEquals((await response.text()).includes('application/json'), true);
+    },
+  );
+  await flushAsyncWork();
+  const [usage] = await repo.usage.listAll();
+  assertEquals(usage.requests, 1);
   const [performance] = await repo.performance.listAll();
   assertEquals(performance.errorsNoOutput, 1);
 });

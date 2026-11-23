@@ -1,7 +1,8 @@
 import { expect, test } from 'vitest';
 
-import { generateProvider, generateReply, httpReply, messagesFixture, messagesPayload, messagesUpstream } from './fixture.ts';
-import { Bytes } from '@floway-dev/pipeline';
+import { generateReply, messagesFixture, messagesPayload, messagesUpstream } from './fixture.ts';
+import { stubEgressPipeline } from '../shared/fixture.ts';
+import { jsonResponse } from '@floway-dev/test-utils';
 
 const nestedFailure = () => {
   const cause = new TypeError('nested');
@@ -18,10 +19,7 @@ const diagnostic = {
 
 test('Anthropic Messages SSE render failures preserve transport shape and namespaced diagnostics', async () => {
   const fixture = messagesFixture([messagesUpstream({
-    pipelines: {
-      anthropicMessages: generateProvider((_facts, env) =>
-        generateReply(env, async function* () { throw nestedFailure(); })),
-    },
+    fetcher: async () => generateReply((async function* () { throw nestedFailure(); })()),
   })]);
   const { response, done } = await fixture.send(messagesPayload({ stream: true }));
   expect(response.status).toBe(200);
@@ -29,18 +27,13 @@ test('Anthropic Messages SSE render failures preserve transport shape and namesp
   const data = wire.split('\n').find(line => line.startsWith('data: '));
   expect(wire).toContain('event: error');
   expect(JSON.parse(data!.slice(6))).toEqual({ type: 'error', error: { type: 'api_error', message: 'broken', provider_specific_fields: diagnostic } });
-  await done;
+  expect(await done).toMatchObject({ ok: true });
 });
 
 test('Anthropic Messages internal HTTP failures preserve transport shape and namespaced diagnostics', async () => {
   const body = { type: 'error', error: { type: 'internal_error', message: 'broken', provider_specific_fields: { ...diagnostic, target_api: 'anthropicMessages' } } };
   const fixture = messagesFixture([messagesUpstream({
-    pipelines: {
-      anthropicMessages: generateProvider(() => ({
-        ...httpReply(503, Bytes.fromUtf8(JSON.stringify(body)), [['content-type', 'application/json']]),
-        'response.modelKey': 'test-model-key', 'response.events': undefined,
-      })),
-    },
+    fetcher: async () => jsonResponse(body, 503),
   })]);
   const { response, done } = await fixture.send(messagesPayload());
   expect(response.status).toBe(503);
@@ -50,13 +43,21 @@ test('Anthropic Messages internal HTTP failures preserve transport shape and nam
 
 test('Anthropic Messages collecting a broken stream retains the nested error cause in an HTTP 502', async () => {
   const fixture = messagesFixture([messagesUpstream({
-    pipelines: {
-      anthropicMessages: generateProvider((_facts, env) =>
-        generateReply(env, async function* () { throw nestedFailure(); })),
-    },
+    fetcher: async () => generateReply((async function* () { throw nestedFailure(); })()),
   })]);
   const { response, done } = await fixture.send(messagesPayload());
   expect(response.status).toBe(502);
   expect(await response.json()).toEqual({ type: 'error', error: { type: 'internal_error', message: 'broken', provider_specific_fields: diagnostic } });
-  await done;
+  expect(await done).toMatchObject({ ok: true });
+});
+
+test('Anthropic Messages lets an egress panic propagate through failover', async () => {
+  const failure = nestedFailure();
+  const fixture = messagesFixture(undefined, {
+    egress: stubEgressPipeline('anthropicMessages', () => { throw failure; }),
+  });
+  await expect(fixture.send(messagesPayload())).rejects.toBe(failure);
+  expect(fixture.events.filter(event => event.k === 'enter' && event.name === 'stubEgress')).toHaveLength(1);
+  expect(fixture.usage).toEqual([]);
+  expect(fixture.performance).toEqual([]);
 });

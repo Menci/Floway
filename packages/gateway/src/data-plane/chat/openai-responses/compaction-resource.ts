@@ -1,5 +1,5 @@
 import { completeUsage } from './response-resource.ts';
-import type { ClientOpenAIResponsesCompaction, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
+import type { ClientOpenAIResponsesCompaction, OpenAIResponsesCompactionResultEx } from '@floway-dev/protocols/openai-responses';
 
 // `Usage` requires the three totals, and this resource's slot has no `null`
 // alternative, so an upstream that reported no token counts — `usage` absent,
@@ -11,9 +11,8 @@ import type { ClientOpenAIResponsesCompaction, OpenAIResponsesResultEx } from '@
 // zero totals are never a true statement about one, and a client reading them
 // as the turn's cost would be reading a number Floway invented. The absence is
 // also not ours to paper over: no stage between the provider and this line
-// drops a count — the compact route's round trip through item persistence puts
-// the whole result on the terminal event and reassembles that object verbatim,
-// rewriting only `id`, and the shim's synthesized envelope spreads its
+// drops a count — the compact route preserves the upstream usage through item persistence,
+// and the shim's synthesized envelope spreads its
 // summarization turn. So an upstream that states nothing here has left us
 // unable to answer, and that is what gets reported.
 const missingUsage = (): never => {
@@ -33,7 +32,7 @@ const missingUsage = (): never => {
 // dropping a field a client may already read is a user-visible removal with
 // nothing to gain.
 export const completeOpenAIResponsesCompaction = (
-  upstream: OpenAIResponsesResultEx,
+  upstream: OpenAIResponsesCompactionResultEx,
   createdAt: number,
 ): ClientOpenAIResponsesCompaction => ({
   ...upstream,

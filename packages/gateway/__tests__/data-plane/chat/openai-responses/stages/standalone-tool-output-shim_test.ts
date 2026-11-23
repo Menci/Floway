@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { driveResponsesStage } from './drive.ts';
 import { standaloneToolOutputShim } from '../../../../../src/data-plane/chat/openai-responses/stages/standalone-tool-output-shim.ts';
-import { readHttpBytes } from '../../../../../src/data-plane/pipeline/non-chat.ts';
+import { readHttpBytes } from '../fixture.ts';
 import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 import type { FlagId } from '@floway-dev/provider';
 import { assert, assertEquals } from '@floway-dev/test-utils';

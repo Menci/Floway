@@ -1,6 +1,6 @@
 import { expect, test, vi } from 'vitest';
 
-import { http, key, providerResponses, responsesFixture, upstream } from './fixture.ts';
+import { key, responsesFixture, responsesUpstream, wireEvents } from './fixture.ts';
 import { testOpenAIResponsesStatePolicy } from './test-policy.ts';
 import { missingRequiredCompactionKeys, responseOnlyKeysAdded } from './test-required-resource-keys.ts';
 import { syntheticEventsFromResult } from '../../../../src/data-plane/chat/openai-responses/items/output.ts';
@@ -9,9 +9,9 @@ import type { OpenResponsesStore } from '../../../../src/data-plane/pipeline/ser
 import { writeHttpResponse } from '../../../../src/data-plane/shared/http-writer.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { Bytes, snapshotError, type StageEnv } from '@floway-dev/pipeline';
+import { Bytes, snapshotError } from '@floway-dev/pipeline';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesRequestPayloadEx, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
-import type { ProviderResponsesInput, ProviderResponsesOutput } from '@floway-dev/provider';
+import type { ProviderResponsesInput } from '@floway-dev/provider';
 
 const installRepo = async () => {
   const repo = new InMemoryRepo();
@@ -29,21 +29,13 @@ const installRepo = async () => {
   return { repo, responsesStore };
 };
 
-const completed = (env: StageEnv): ProviderResponsesOutput => ({
-  ...http(),
-  'response.modelKey': 'native-responses',
-  'response.result': undefined,
-  'response.events': env.createStream({
-    label: 'model response',
-    iterate: () => syntheticEventsFromResult({
-      id: 'resp_test', object: 'response', model: 'test-model', status: 'completed', error: null, incomplete_details: null,
-      output: [{
-        type: 'message', id: 'msg_1', role: 'assistant', status: 'completed',
-        content: [{ type: 'output_text', annotations: [], text: 'answer' }],
-      }],
-    }),
-  }),
-});
+const completed = () => wireEvents(syntheticEventsFromResult({
+  id: 'resp_test', object: 'response', model: 'test-model', status: 'completed', error: null, incomplete_details: null,
+  output: [{
+    type: 'message', id: 'msg_1', role: 'assistant', status: 'completed',
+    content: [{ type: 'output_text', annotations: [], text: 'answer' }],
+  }],
+}));
 
 test('Responses Lite input items keep their position and metadata across HTTP continuation', async () => {
   const { responsesStore } = await installRepo();
@@ -63,11 +55,9 @@ test('Responses Lite input items keep their position and metadata across HTTP co
     { type: 'message', role: 'user', content: 'First turn' },
   ];
   const payloads: ProviderResponsesInput['request.payload'][] = [];
-  const fixture = responsesFixture([upstream('responses', {
-    openaiResponses: providerResponses((facts, env) => {
-      payloads.push(facts['request.payload']);
-      return completed(env);
-    }),
+  const fixture = responsesFixture([responsesUpstream('responses', ({ payload }) => {
+    payloads.push(payload);
+    return completed();
   })], responsesStore);
   const send = async (payload: Partial<OpenAIResponsesRequestPayloadEx>) => {
     const handle = fixture.request({ model: 'test-model', store: true, ...payload }, 'generate',
@@ -89,8 +79,8 @@ test('Responses Lite input items keep their position and metadata across HTTP co
 
 test('POST /v1/responses streams a successful SSE body', async () => {
   const { responsesStore } = await installRepo();
-  const respond = vi.fn((_facts: ProviderResponsesInput, env: StageEnv) => completed(env));
-  const fixture = responsesFixture([upstream('responses', { openaiResponses: providerResponses(respond) })], responsesStore);
+  const respond = vi.fn(completed);
+  const fixture = responsesFixture([responsesUpstream('responses', respond)], responsesStore);
   const handle = fixture.request({ model: 'test-model', input: 'hello', stream: true });
   const response = writeHttpResponse((await handle.result)['response.http']);
   expect(response.status).toBe(200);
@@ -109,28 +99,21 @@ test('POST /v1/responses streams a successful SSE body', async () => {
 test('POST /v1/responses terminates an SSE stream with error when an output item cannot be persisted', async () => {
   const { repo, responsesStore } = await installRepo();
   vi.spyOn(repo.openaiResponsesItems, 'insertMany').mockRejectedValue(new Error('simulated item persistence failure'));
-  const fixture = responsesFixture([upstream('responses', { openaiResponses: providerResponses((_facts, env) => completed(env)) })], responsesStore);
+  const fixture = responsesFixture([responsesUpstream('responses', completed)], responsesStore);
   const handle = fixture.request({ model: 'test-model', input: 'hello', stream: true });
   const response = writeHttpResponse((await handle.result)['response.http']);
   expect(response.status).toBe(200);
-  const body = await response.text();
-  expect(body).toContain('event: error');
-  expect(body).toContain('simulated item persistence failure');
-  expect(body).not.toContain('event: response.output_item.done');
-  expect(body).not.toContain('event: response.completed');
-  expect(body.endsWith('data: [DONE]\n\n')).toBe(true);
-  await handle.done;
+  await expect(response.text()).rejects.toThrow('simulated item persistence failure');
+  expect(await handle.done).toMatchObject({ ok: false });
 });
 
-test('POST /v1/responses returns 502 when the response snapshot cannot be persisted', async () => {
+test('POST /v1/responses propagates a response snapshot persistence exception', async () => {
   const { repo, responsesStore } = await installRepo();
   vi.spyOn(repo.openaiResponsesSnapshots, 'insert').mockRejectedValue(new Error('simulated snapshot persistence failure'));
-  const fixture = responsesFixture([upstream('responses', { openaiResponses: providerResponses((_facts, env) => completed(env)) })], responsesStore);
+  const fixture = responsesFixture([responsesUpstream('responses', completed)], responsesStore);
   const handle = fixture.request({ model: 'test-model', input: 'hello' });
-  const response = writeHttpResponse((await handle.result)['response.http']);
-  expect(response.status).toBe(502);
-  expect(await response.json()).toMatchObject({ error: { message: 'simulated snapshot persistence failure' } });
-  await handle.done;
+  await expect(handle.result).rejects.toThrow('simulated snapshot persistence failure');
+  expect(await handle.done).toMatchObject({ ok: false });
 });
 
 const compactTurn = async (usage: OpenAIResponsesResultEx['usage'], requestFields: Partial<OpenAIResponsesRequestPayloadEx> = {}) => {
@@ -139,11 +122,9 @@ const compactTurn = async (usage: OpenAIResponsesResultEx['usage'], requestField
     output: [{ type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' }],
     usage,
   };
-  const fixture = responsesFixture([upstream('responses', {
-    openaiResponses: providerResponses(facts => {
-      expect(facts['request.action']).toBe('compact');
-      return { ...http(), 'response.modelKey': 'native-compact', 'response.result': result, 'response.events': undefined };
-    }),
+  const fixture = responsesFixture([responsesUpstream('responses', ({ action }) => {
+    expect(action).toBe('compact');
+    return Response.json(result);
   })]);
   const handle = fixture.request({ model: 'test-model', input: 'kept', store: false, ...requestFields }, 'compact');
   const response = writeHttpResponse((await handle.result)['response.http']);
@@ -170,20 +151,15 @@ test('POST /v1/responses/compact reports upstream compaction without usage', asy
   expect(await response.json()).toMatchObject({ error: { type: 'internal_error', message: expect.stringContaining('no token usage') } });
 });
 
-test.each(['generate', 'compact'] as const)('HTTP %s uses the malformed-body envelope for interrupted uploads', async action => {
+test.each(['generate', 'compact'] as const)('HTTP %s renders local parsing and upload failures', async action => {
   const fixture = responsesFixture([]);
   const readFailure = snapshotError(new Error('Client disconnected during upload'));
   const malformed = fixture.requestRaw(Bytes.empty, action);
   const interrupted = fixture.requestRaw(Bytes.empty, action, undefined, readFailure);
-  for (const handle of [malformed, interrupted]) {
+  for (const [handle, message] of [[malformed, 'Unexpected end of JSON input'], [interrupted, 'Client disconnected during upload']] as const) {
     const response = writeHttpResponse((await handle.result)['response.http']);
     expect(response.status).toBe(502);
-    expect(await response.json()).toMatchObject({
-      error: {
-        type: 'internal_error', message: 'Unexpected end of JSON input',
-        provider_specific_fields: { name: 'SyntaxError', stack: expect.stringContaining('JSON.parse') },
-      },
-    });
+    expect(await response.json()).toMatchObject({ error: { type: 'internal_error', message } });
     expect(await handle.done).toEqual({ ok: true });
   }
   expect(fixture.requestedModels).toEqual([]);

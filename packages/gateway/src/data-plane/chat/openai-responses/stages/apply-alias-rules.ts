@@ -13,11 +13,11 @@ export const applyAliasRules = defineStage<Request, Request, object, object>({
     request: { needs: ['request.payload', 'route.candidate'], consumes: [], provides: ['request.payload'] },
     response: { needs: [], consumes: [], provides: [] },
   },
-  execute: async (facts, next) => {
+  execute: async (facts, scope) => {
     const rules = facts['route.candidate'].rules;
-    if (rules === undefined) return await next(facts);
+    if (rules === undefined) return await scope.next(facts);
     const payload = { ...facts['request.payload'] };
     applyRulesToUpstreamOpenAIResponses(payload, rules);
-    return await next({ ...facts, 'request.payload': payload });
+    return await scope.next({ ...facts, 'request.payload': payload });
   },
 });

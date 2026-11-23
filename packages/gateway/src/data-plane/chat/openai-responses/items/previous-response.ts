@@ -7,25 +7,15 @@ import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/open
 // - https://github.com/microsoft/semantic-kernel/issues/13128
 // - https://github.com/router-for-me/CLIProxyAPI/issues/999
 // - https://github.com/openai/openai-agents-python/issues/2020
-export class PreviousResponseNotFoundError extends Error {
-  readonly previousResponseId: string;
-
-  constructor(previousResponseId: string) {
-    super(`Previous response with id '${previousResponseId}' not found.`);
-    this.name = 'PreviousResponseNotFoundError';
-    this.previousResponseId = previousResponseId;
-  }
-}
-
 export const expandPreviousResponseId = async (
   payload: CanonicalOpenAIResponsesPayload,
   store: OpenAIResponsesStatefulStore,
-): Promise<CanonicalOpenAIResponsesPayload> => {
+): Promise<CanonicalOpenAIResponsesPayload | { readonly previousResponseNotFound: string }> => {
   const previousResponseId = payload.previous_response_id;
   if (previousResponseId === undefined || previousResponseId === null) return payload;
 
   const snapshot = await store.loadSnapshot(previousResponseId);
-  if (snapshot === null) throw new PreviousResponseNotFoundError(previousResponseId);
+  if (snapshot === null) return { previousResponseNotFound: previousResponseId };
 
   const { previous_response_id: _previous, ...rest } = payload;
   return {

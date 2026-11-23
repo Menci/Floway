@@ -2,6 +2,7 @@ import type { AnthropicMessagesTargetRequest } from './facts.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import type { WebSearchProviderRequest, WebSearchProviderResult } from '../../../tools/web-search/types.ts';
+import { isTransportFailure } from '@floway-dev/http';
 import type {
   AnthropicMessagesAssistantContentBlock,
   AnthropicMessagesAssistantInputContentBlock,
@@ -22,6 +23,7 @@ import type {
 } from '@floway-dev/protocols/anthropic-messages';
 import { ANTHROPIC_MESSAGES_WEB_SEARCH_ERROR_CODES } from '@floway-dev/protocols/anthropic-messages';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ProviderFrame } from '@floway-dev/provider';
 
 const MAX_QUERY_LENGTH = 1000;
 const WEB_SEARCH_TOOL_NAME = 'web_search';
@@ -649,7 +651,8 @@ const runWebSearchStopHandler = async function* (
     try {
       const parsed = JSON.parse(block.inputJson);
       return isJsonObject(parsed) ? parsed : null;
-    } catch {
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error;
       return null;
     }
   })();
@@ -681,18 +684,14 @@ const runWebSearchStopHandler = async function* (
     shimState.executedSearchCount += 1;
     shimState.currentSearchUseCount += 1;
 
-    try {
-      const request = {
-        query,
-        allowedDomains: state.allowedDomains,
-        blockedDomains: state.blockedDomains,
-        userLocation: state.userLocation,
-      };
-      const providerResult = await search(request);
-      return buildNativeWebSearchResultBlockFromProviderResult(providerResult, block.upstreamToolUseId);
-    } catch {
-      return buildNativeWebSearchErrorResultBlock(block.upstreamToolUseId, 'unavailable');
-    }
+    const request = {
+      query,
+      allowedDomains: state.allowedDomains,
+      blockedDomains: state.blockedDomains,
+      userLocation: state.userLocation,
+    };
+    const providerResult = await search(request);
+    return buildNativeWebSearchResultBlockFromProviderResult(providerResult, block.upstreamToolUseId);
   })();
 
   yield eventFrame({
@@ -710,10 +709,10 @@ const runWebSearchStopHandler = async function* (
 };
 
 export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
-  frames: AsyncIterable<ProtocolFrame<AnthropicMessagesStreamEventEx>>,
+  frames: AsyncIterable<ProviderFrame<AnthropicMessagesStreamEventEx>>,
   state: AnthropicMessagesWebSearchShimState,
   search?: AnthropicMessagesSearch,
-): AsyncGenerator<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
+): AsyncGenerator<ProviderFrame<AnthropicMessagesStreamEventEx>> {
   if (state.mode === 'inactive') {
     yield* frames;
     return;
@@ -816,11 +815,11 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
       if (activeBlock === undefined) throw new Error(`upstream Anthropic Messages SSE emitted content_block_stop for unopened block ${event.index}.`);
 
       if (activeBlock.kind === 'web-search-tool-use') {
-        if (state.mode !== 'active') {
+        if (state.mode !== 'active' || search === undefined) {
           throw new Error('web-search shim entered intercept path without active state.');
         }
 
-        yield* runWebSearchStopHandler(activeBlock, shimState, state, search!);
+        yield* runWebSearchStopHandler(activeBlock, shimState, state, search);
         activeBlocks.delete(event.index);
         activeWebSearchIndex = undefined;
         const resume = deferredFrames;
@@ -868,6 +867,10 @@ export const rewriteAnthropicMessagesWebSearchEventsToNative = async function* (
   };
 
   for await (const frame of frames) {
+    if (isTransportFailure(frame)) {
+      yield frame;
+      return;
+    }
     yield* processFrame(frame);
     if (terminated) return;
   }

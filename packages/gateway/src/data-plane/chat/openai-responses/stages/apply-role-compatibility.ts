@@ -13,13 +13,13 @@ export const applyRoleCompatibility = defineStage<Request, Request, object, obje
     request: { needs: ['request.payload', 'route.candidate'], consumes: [], provides: ['request.payload'] },
     response: { needs: [], consumes: [], provides: [] },
   },
-  execute: async (facts, next) => {
+  execute: async (facts, scope) => {
     const payload = facts['request.payload'];
     const flags = facts['route.candidate'].providerModel.enabledFlags;
     const rewriteSystemToDeveloper = flags.includes('rewrite-system-to-developer');
     const rewriteDeveloperToSystem = flags.includes('rewrite-developer-to-system');
     const rewriteMidConvSystemToUser = flags.includes('rewrite-mid-conv-system-to-user');
-    if (!rewriteSystemToDeveloper && !rewriteDeveloperToSystem && !rewriteMidConvSystemToUser) return await next(facts);
+    if (!rewriteSystemToDeveloper && !rewriteDeveloperToSystem && !rewriteMidConvSystemToUser) return await scope.next(facts);
 
     let crossedLeadingSystemRun = false;
     const input = payload.input.map(item => {
@@ -37,6 +37,6 @@ export const applyRoleCompatibility = defineStage<Request, Request, object, obje
       }
       return mapped;
     });
-    return await next({ ...facts, 'request.payload': { ...payload, input } });
+    return await scope.next({ ...facts, 'request.payload': { ...payload, input } });
   },
 });

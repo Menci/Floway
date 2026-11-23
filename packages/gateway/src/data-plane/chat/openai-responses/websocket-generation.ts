@@ -1,14 +1,16 @@
 import type { ResponsesRequest } from './ingress.ts';
 import type { ResponsesTurnBack } from './stages/stateful-turn.ts';
 import type { WebSocketInterrupt, WebSocketInterruptAccepted } from './websocket-wire.ts';
-import { defineStage, type ManagedStream, type StageEnv } from '@floway-dev/pipeline';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { isTransportFailure } from '@floway-dev/http';
+import { defineStage, type ManagedStream, type Scope } from '@floway-dev/pipeline';
+import { eventFrame } from '@floway-dev/protocols/common';
 import {
   isOpenAIResponsesTerminalEvent,
   type OpenAIResponsesOutputItemEx,
   type OpenAIResponsesResultEx,
   type OpenAIResponsesStreamEventEx,
 } from '@floway-dev/protocols/openai-responses';
+import type { ProviderFrame } from '@floway-dev/provider';
 
 export const INTERRUPT_UPSTREAM_ABORT_WARNING_MS = 5_000;
 
@@ -17,7 +19,7 @@ export interface WebSocketGenerationRequest extends ResponsesRequest {
   readonly 'request.ws.controls': ManagedStream<WebSocketInterrupt>;
 }
 
-type Frame = ProtocolFrame<OpenAIResponsesStreamEventEx>;
+type Frame = ProviderFrame<OpenAIResponsesStreamEventEx>;
 type Read = { readonly kind: 'event'; readonly result: IteratorResult<Frame> }
   | { readonly kind: 'control'; readonly result: IteratorResult<WebSocketInterrupt> }
   | { readonly kind: 'error'; readonly error: unknown };
@@ -81,6 +83,10 @@ const mergeGeneration = async function* (
       if (read.kind === 'error') throw read.error;
       if (read.result.done) return;
       const frame = read.result.value;
+      if (isTransportFailure(frame)) {
+        yield frame;
+        return;
+      }
       if (frame.type === 'event') {
         const event = frame.event;
         if (typeof event.sequence_number === 'number') nextSequence = Math.max(nextSequence, event.sequence_number + 1);
@@ -100,7 +106,7 @@ const mergeGeneration = async function* (
   } finally {
     signal.removeEventListener('abort', onAbort);
   }
-  if (signal.aborted) return;
+  if (!interrupted || signal.aborted) return;
   for (const [outputIndex, itemId] of [...pendingItems].sort(([left], [right]) => left - right)) {
     yield eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'response.output_item.interrupted',
@@ -127,7 +133,7 @@ const mergeGeneration = async function* (
 };
 
 const cancelGeneration = (
-  generation: AbortController, ended: Promise<number | null>, log: StageEnv['log'], responseId: string, model: string,
+  generation: AbortController, ended: Promise<void>, log: Scope['log'], responseId: string, model: string,
 ) => {
   const requestedAt = Date.now();
   const warning = setTimeout(() => {
@@ -142,42 +148,41 @@ const cancelGeneration = (
 };
 
 export const interruptWebSocketGeneration = defineStage<
-  WebSocketGenerationRequest, ResponsesRequest, ResponsesTurnBack, ResponsesTurnBack<WebSocketInterruptAccepted>
+  WebSocketGenerationRequest, Omit<WebSocketGenerationRequest, 'request.ws.controls'>, ResponsesTurnBack, ResponsesTurnBack<WebSocketInterruptAccepted>
 >({
   name: 'interruptGeneration',
   through: {
     request: {
       needs: ['request.openaiResponses', 'request.ws.controls', 'request.ws.responseId'],
-      consumes: ['request.ws.controls', 'request.ws.responseId'],
+      consumes: ['request.ws.controls'],
       provides: [],
     },
-    response: { needs: ['response.timing.streamEndedAt'], consumes: [], provides: ['response.openaiResponses'] },
+    response: { needs: ['response.openaiResponses'], consumes: [], provides: ['response.openaiResponses'] },
   },
-  execute: async ({ 'request.ws.responseId': responseId, 'request.ws.controls': controls, ...facts }, next, env) => {
+  execute: async ({ 'request.ws.controls': controls, ...facts }, scope) => {
     const generation = new AbortController();
-    const closeControls = async () => {
-      if (!env.signal.aborted) await controls.close();
-    };
-    const response = await next(facts, { signal: generation.signal }).catch(async (error: unknown) => {
-      await closeControls();
-      throw error;
-    });
-    const events = response['response.openaiResponses'];
-    if (events === undefined) {
-      await closeControls();
-      return { ...response, 'response.openaiResponses': undefined };
+    const response = await scope.next(facts, { signal: generation.signal });
+    const outcome = response['response.openaiResponses'];
+    if (outcome.kind !== 'stream') {
+      await controls.close();
+      return response;
     }
     const model = facts['request.openaiResponses'].model;
-    const ended = response['response.timing.streamEndedAt'].promise;
+    const responseId = facts['request.ws.responseId'];
+    const ended = Promise.withResolvers<void>();
     return {
       ...response,
-      'response.openaiResponses': env.wrapStream({ events, controls }, {
-        label: 'interruptible Responses generation',
-        transform: (sources, signal) => mergeGeneration(
-          sources.events, sources.controls, signal, responseId, model,
-          () => cancelGeneration(generation, ended, env.log, responseId, model),
-        ),
-      }),
+      'response.openaiResponses': {
+        kind: 'stream',
+        events: scope.wrapStream({ events: outcome.events, controls }, {
+          label: 'interruptible Responses generation',
+          transform: (sources, scope) => mergeGeneration(
+            sources.events, sources.controls, scope.signal, responseId, model,
+            () => cancelGeneration(generation, ended.promise, scope.log, responseId, model),
+          ),
+          onClose: () => ended.resolve(),
+        }),
+      },
     };
   },
 });

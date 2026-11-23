@@ -237,7 +237,7 @@ const createConnection = (c: AuthedContext, ingress: WebSocketIngress): OpenAIRe
     const host = gatewayHostContext(c, scheduler);
     const request = httpRequestFacts(c.req.raw, bytes, 'WS');
     const services = createGatewayServices({
-      apiKey: host.apiKey, scheduler, runtimeLocation: host.route['request.route.runtimeLocation'], requestStartedAt: startedAt,
+      apiKey: host.apiKey, runtimeLocation: host.route['request.route.runtimeLocation'], requestStartedAt: startedAt,
       responsesStore: mode => mode.kind === 'http'
         ? session.createStore(host.apiKey, startedAt, mode.store)
         : createNonOpenAIResponsesSourceStore(host.apiKey.id),
@@ -256,13 +256,12 @@ const createConnection = (c: AuthedContext, ingress: WebSocketIngress): OpenAIRe
         'request.model': payload.model,
         'request.openaiResponses': payload,
         'request.action': 'generate',
-        'request.delivery': { stream: true, transport: 'websocket', createdAt: Math.floor(startedAt / 1000) },
+        'request.delivery': { stream: true, createdAt: Math.floor(startedAt / 1000) },
         'request.ws.responseId': turn.id,
         'request.ws.eventId': eventId,
-        'request.ws.controls': root.createStream({ label: 'Responses WebSocket client controls', iterate: turn.controls.iterate }),
+        'request.ws.controls': root.createStream({ label: 'Responses WebSocket client controls', iterate: scope => turn.controls.iterate(scope.signal) }),
       }), {
         ...host, request, services, signal, requestedModel: payload.model, errorStatus: () => 500,
-        crashPerformance: { route: host.route, operation: 'chat', store: services.performanceStore },
       });
       const result = await handle.result;
       const { body, status } = result['response.http'];
@@ -270,6 +269,7 @@ const createConnection = (c: AuthedContext, ingress: WebSocketIngress): OpenAIRe
       for await (const frame of body) {
         if (signal.aborted) break;
         try {
+          if (!(frame instanceof Bytes)) throw new TypeError('Responses WebSocket encoder must emit bytes');
           sendFrame(socket, frame);
         } catch (error) {
           turn.abort.abort(error);

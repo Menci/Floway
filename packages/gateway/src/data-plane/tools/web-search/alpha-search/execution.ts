@@ -1,10 +1,11 @@
 import { alphaSearchIngress } from '../../../alpha-search/pipeline.ts';
 import type { GatewayHttpFacts } from '../../../pipeline/host.ts';
-import { httpSucceeded, readHttpBytes } from '../../../pipeline/non-chat.ts';
+import { httpSucceeded } from '../../../pipeline/non-chat.ts';
 import type { GatewayServices } from '../../../pipeline/services.ts';
 import { type WebSearchCallIR, UNSUPPORTED_LOCAL_WEB_SEARCH_FEATURE_ERROR_NAME, unsupportedLocalWebSearchFeatureIr } from '../operations.ts';
-import { Bytes, type StageEnv } from '@floway-dev/pipeline';
+import { Bytes, type Scope } from '@floway-dev/pipeline';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
+import { readHttpBody } from '@floway-dev/provider';
 
 interface UpstreamErrorDetails {
   message: string;
@@ -15,7 +16,8 @@ const upstreamErrorDetails = (raw: string): UpstreamErrorDetails | undefined => 
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
-  } catch {
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
     return undefined;
   }
   if (parsed === null || typeof parsed !== 'object') return undefined;
@@ -30,7 +32,7 @@ const upstreamErrorDetails = (raw: string): UpstreamErrorDetails | undefined => 
 };
 
 export const executeAlphaSearchSubRun = async (
-  env: StageEnv<GatewayServices>, facts: GatewayHttpFacts, args: {
+  scope: Scope<GatewayServices>, facts: GatewayHttpFacts, args: {
     sessionId: string;
     commands: Record<string, unknown>;
     settings: Record<string, unknown>;
@@ -39,12 +41,18 @@ export const executeAlphaSearchSubRun = async (
   },
 ): Promise<WebSearchCallIR> => {
   const { sessionId, commands, settings, input, action } = args;
-  const run = env.run(alphaSearchIngress, {
+  const failure = (message: string): WebSearchCallIR => ({
+    action,
+    results: [{ type: 'text_result', url: '', title: 'Search failed', snippet: message }],
+    outputText: message,
+  });
+  const run = scope.run(alphaSearchIngress, {
     'request.auth.apiKeyId': facts['request.auth.apiKeyId'],
     'request.auth.user': facts['request.auth.user'],
     'request.route.upstreamIds': facts['request.route.upstreamIds'],
     'request.route.randomizeUpstreams': facts['request.route.randomizeUpstreams'],
     'request.route.runtimeLocation': facts['request.route.runtimeLocation'],
+    'request.startedAt': scope.clock(),
     'request.http': {
       method: 'POST',
       url: { origin: facts['request.http'].url.origin, pathname: '/alpha/search' },
@@ -53,23 +61,26 @@ export const executeAlphaSearchSubRun = async (
     },
   });
   const { 'response.http': response } = await run.result;
-  const raw = (await readHttpBytes(response.body)).utf8();
+  const read = await readHttpBody(response.body);
+  if (!read.ok) return failure(read.error.message);
+  const raw = read.bytes.utf8();
   if (!httpSucceeded(response)) {
     const upstreamError = upstreamErrorDetails(raw);
     if (upstreamError?.name === UNSUPPORTED_LOCAL_WEB_SEARCH_FEATURE_ERROR_NAME) {
       return unsupportedLocalWebSearchFeatureIr(action, upstreamError.message);
     }
-    throw new Error(upstreamError?.message ?? `OpenAI search upstream returned HTTP ${response.status}: ${raw}`);
+    return failure(upstreamError?.message ?? `OpenAI search upstream returned HTTP ${response.status}: ${raw}`);
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
-  } catch {
-    throw new Error('OpenAI search upstream returned a non-JSON success body');
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
+    return failure('OpenAI search upstream returned a non-JSON success body');
   }
   if (parsed === null || typeof parsed !== 'object' || typeof (parsed as { output?: unknown }).output !== 'string') {
-    throw new Error('OpenAI search upstream response must include an output string');
+    return failure('OpenAI search upstream response must include an output string');
   }
   const body = parsed as { output: string };
   return {

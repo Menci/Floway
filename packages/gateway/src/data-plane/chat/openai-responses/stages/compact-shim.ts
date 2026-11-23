@@ -1,16 +1,15 @@
 import { type ResponsesBodyBack, type ResponsesBodyFacts, responsesBodyRequest } from './facts.ts';
-import { mergeBillableCalls, type UsageFacts } from '../../../pipeline/observe-usage.ts';
 import { CACHE_SHARING_SUMMARIZATION_PROMPT, encodeShimCompactionPayload, EXACT_REPEAT_PREFIX, EXACT_REPEAT_SUFFIX, expandShimCompactionItems, SUMMARIZATION_PROMPT, SUMMARY_PREFIX } from '../compact-payload.ts';
-import { syntheticEventsFromCompaction, syntheticEventsFromResult } from '../items/output.ts';
-import { defineStage, type Next, type StageEnv } from '@floway-dev/pipeline';
-import { collectOpenAIResponsesProtocolEventsToResult, createRandomOpenAIResponsesItemId, isOpenAIResponsesCompactionItem, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesOutputItemEx, type OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
+import { collectFailure } from '../encode.ts';
+import { syntheticEventsFromCompaction } from '../items/output.ts';
+import { isTransportFailure } from '@floway-dev/http';
+import { defineStage, type FactValue, type StageScope } from '@floway-dev/pipeline';
+import { createRandomOpenAIResponsesItemId, isOpenAIResponsesCompactionItem, OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesCompactionResultEx, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx, type OpenAIResponsesStoredItem } from '@floway-dev/protocols/openai-responses';
 import type { OpenAIResponsesAction } from '@floway-dev/provider';
 
 interface Request extends ResponsesBodyFacts {
   readonly 'request.action': OpenAIResponsesAction;
 }
-
-type NextTurn = Next<Request, ResponsesBodyBack>;
 
 type ResponseUsage = NonNullable<OpenAIResponsesResultEx['usage']>;
 
@@ -44,10 +43,10 @@ const sumResponseUsage = (left: ResponseUsage | null | undefined, right: Respons
   };
 };
 
-const summaryTextFrom = (items: readonly OpenAIResponsesOutputItemEx[]): string => {
+const summaryTextFrom = (items: readonly OpenAIResponsesStoredItem[]): string => {
   const parts: string[] = [];
   for (const item of items) {
-    if (item.type !== 'message') continue;
+    if (item.type !== 'message' || !Array.isArray(item.content)) continue;
     for (const block of item.content) {
       if (block.type === 'output_text') parts.push(block.text);
     }
@@ -61,52 +60,83 @@ const summarizationUserMessage = (text: string): CanonicalOpenAIResponsesInputIt
   content: [{ type: 'input_text', text }],
 });
 
-const eventsForCompaction = (env: StageEnv, response: OpenAIResponsesCompactionResultEx | OpenAIResponsesResultEx) =>
-  env.createStream({
-    label: 'compaction events',
-    iterate: () => syntheticEventsFromCompaction(response),
-  });
+type TurnScope = Pick<StageScope<Request, ResponsesBodyBack>, 'next' | 'log' | 'createStream'>;
 
-const mergeCalls = (env: StageEnv, back: ResponsesBodyBack, calls: readonly UsageFacts['response.usage.billable'][]): ResponsesBodyBack => ({
-  ...back,
-  'response.usage.billable': env.defer('compaction calls', mergeBillableCalls(calls)),
-});
+const collectTurn = async (back: ResponsesBodyBack): Promise<
+  { readonly kind: 'result'; readonly result: OpenAIResponsesCompactionResultEx } |
+  { readonly kind: 'error'; readonly response: ResponsesBodyBack }
+> => {
+  const outcome = back['response.openaiResponses'];
+  if (outcome.kind === 'error') return { kind: 'error', response: back };
+  if (outcome.kind === 'result') return outcome;
+  const http = back['response.http'];
+  let error: Extract<OpenAIResponsesStreamEventEx, { type: 'error' }> | undefined;
+  for await (const frame of outcome.events) {
+    if (isTransportFailure(frame)) {
+      return {
+        kind: 'error',
+        response: {
+          ...back,
+          'response.http': { ...http, status: 502, statusText: '', transportError: frame.error },
+          'response.openaiResponses': { kind: 'error', source: 'upstream', error: frame.error },
+        },
+      };
+    }
+    if (frame.type === 'done') continue;
+    const event = frame.event;
+    if (event.type === 'error') error = event;
+    if (event.type === 'response.completed' || event.type === 'response.incomplete' || event.type === 'response.failed') {
+      if (event.type === 'response.failed' && error !== undefined) break;
+      return { kind: 'result', result: event.response };
+    }
+  }
+  const failure = error === undefined
+    ? collectFailure(new Error(OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE))
+    : collectFailure(new Error('OpenAI Responses compaction received a protocol error', { cause: error }));
+  return {
+    kind: 'error',
+    response: {
+      ...back,
+      'response.http': { ...http, status: failure.status, statusText: '' },
+      'response.openaiResponses': { kind: 'error', source: 'upstream', error: failure.body as FactValue },
+    },
+  };
+};
 
-const simulateCompaction = async (facts: Request, next: NextTurn, env: StageEnv): Promise<ResponsesBodyBack> => {
+const simulateCompaction = async (facts: Request, scope: TurnScope): Promise<ResponsesBodyBack> => {
   const payload = facts['request.openaiResponses'];
   const history = payload.input.filter(item => item.type !== 'compaction_trigger');
-  const runGenerate = (input: CanonicalOpenAIResponsesInputItem[]) => next({
+  const runGenerate = (input: CanonicalOpenAIResponsesInputItem[]) => scope.next({
     ...facts,
     'request.action': 'generate',
     'request.openaiResponses': { ...payload, input, store: false },
   });
   const first = await runGenerate([...history, summarizationUserMessage(CACHE_SHARING_SUMMARIZATION_PROMPT)]);
-  if (first['response.openaiResponses'] === undefined) return first;
+  const collected = await collectTurn(first);
+  if (collected.kind === 'error') return collected.response;
 
-  const firstResult = await collectOpenAIResponsesProtocolEventsToResult(first['response.openaiResponses']);
-  let response = firstResult;
+  let response = collected.result;
   let text = summaryTextFrom(response.output);
   let base = first;
   if (text.trim().length === 0) {
-    env.log.warn('Floway: OpenAI Responses compact shim cache-sharing summarization returned no assistant text; retrying with the legacy system-prompt summarizer');
+    scope.log.warn('Floway: OpenAI Responses compact shim cache-sharing summarization returned no assistant text; retrying with the legacy system-prompt summarizer');
     const fallback = await runGenerate([
       { type: 'message', role: 'system', content: [{ type: 'input_text', text: SUMMARIZATION_PROMPT }] },
       ...history,
       summarizationUserMessage('<system-reminder>Produce the handoff summary now per the instructions above.</system-reminder>'),
     ]);
-    base = mergeCalls(env, fallback, [first['response.usage.billable'], fallback['response.usage.billable']]);
-    if (fallback['response.openaiResponses'] === undefined) return base;
-
-    const fallbackResult = await collectOpenAIResponsesProtocolEventsToResult(fallback['response.openaiResponses']);
-    text = summaryTextFrom(fallbackResult.output);
+    base = fallback;
+    const fallbackResult = await collectTurn(fallback);
+    if (fallbackResult.kind === 'error') return fallbackResult.response;
+    text = summaryTextFrom(fallbackResult.result.output);
     if (text.trim().length === 0) {
       throw new Error('OpenAI Responses compact shim: the summarization turn closed no assistant text to summarize');
     }
-    const combinedUsage = sumResponseUsage(firstResult.usage, fallbackResult.usage);
-    response = { ...fallbackResult, ...(combinedUsage === undefined ? {} : { usage: combinedUsage }) };
+    const combinedUsage = sumResponseUsage(response.usage, fallbackResult.result.usage);
+    response = { ...fallbackResult.result, ...(combinedUsage === undefined ? {} : { usage: combinedUsage }) };
   }
 
-  const compaction = {
+  const result = {
     ...response,
     id: `resp_compact_shim_${crypto.randomUUID()}`,
     object: 'response.compaction',
@@ -116,19 +146,25 @@ const simulateCompaction = async (facts: Request, next: NextTurn, env: StageEnv)
       encrypted_content: encodeShimCompactionPayload(`${SUMMARY_PREFIX}\n${text}`),
     }],
   };
-  return {
-    ...base,
-    'response.openaiResponses': env.createStream({ label: 'compaction events', iterate: () => syntheticEventsFromResult(compaction) }),
-  };
+  return answerCompaction(facts, scope, base, result);
 };
 
-const decryptNativeCompaction = async (facts: Request, next: NextTurn, env: StageEnv): Promise<ResponsesBodyBack> => {
-  const native = await next(facts);
-  const events = native['response.openaiResponses'];
-  const result = events === undefined ? native['response.result'] : await collectOpenAIResponsesProtocolEventsToResult(events);
-  if (result === undefined) return native;
+const answerCompaction = (
+  facts: Request, scope: TurnScope, base: ResponsesBodyBack, result: OpenAIResponsesCompactionResultEx,
+): ResponsesBodyBack => ({
+  ...base,
+  'response.openaiResponses': facts['request.action'] === 'compact'
+    ? { kind: 'result', result }
+    : { kind: 'stream', events: scope.createStream({ label: 'compaction events', iterate: () => syntheticEventsFromCompaction(result) }) },
+});
 
-  const calls = [native['response.usage.billable']];
+const decryptNativeCompaction = async (facts: Request, scope: TurnScope): Promise<ResponsesBodyBack> => {
+  const native = await scope.next(facts);
+  const collected = await collectTurn(native);
+  if (collected.kind === 'error') return collected.response;
+  const { result } = collected;
+
+  let replayed = false;
   let usage = result.usage;
   const output: OpenAIResponsesCompactionResultEx['output'] = [];
   for (const item of result.output) {
@@ -136,7 +172,7 @@ const decryptNativeCompaction = async (facts: Request, next: NextTurn, env: Stag
       output.push(item);
       continue;
     }
-    const replay = await next({
+    const replay = await scope.next({
       ...facts,
       'request.action': 'generate',
       'request.openaiResponses': {
@@ -149,27 +185,17 @@ const decryptNativeCompaction = async (facts: Request, next: NextTurn, env: Stag
         store: false,
       },
     });
-    calls.push(replay['response.usage.billable']);
-    if (replay['response.openaiResponses'] === undefined) return mergeCalls(env, replay, calls);
-    const replayResult = await collectOpenAIResponsesProtocolEventsToResult(replay['response.openaiResponses']);
-    const text = summaryTextFrom(replayResult.output);
+    replayed = true;
+    const replayResult = await collectTurn(replay);
+    if (replayResult.kind === 'error') return replayResult.response;
+    const text = summaryTextFrom(replayResult.result.output);
     if (text.length === 0) throw new Error('OpenAI Responses compact decryption: the replay turn closed no assistant text');
-    usage = sumResponseUsage(usage, replayResult.usage);
+    usage = sumResponseUsage(usage, replayResult.result.usage);
     output.push({ ...item, encrypted_content: encodeShimCompactionPayload(text) });
   }
-  if (calls.length === 1) throw new Error('OpenAI Responses compact decryption: native compaction returned no compaction output item');
+  if (!replayed) throw new Error('OpenAI Responses compact decryption: native compaction returned no compaction output item');
 
-  const base = mergeCalls(env, native, calls);
-  if (events === undefined) {
-    return { ...base, 'response.result': { ...result, output, ...(usage === undefined ? {} : { usage }) } };
-  }
-  const response = { ...result, output, ...(usage === undefined ? {} : { usage }) };
-  return {
-    ...base,
-    'response.openaiResponses': facts['request.action'] === 'compact'
-      ? eventsForCompaction(env, response)
-      : env.createStream({ label: 'decrypted compaction events', iterate: () => syntheticEventsFromResult(response as OpenAIResponsesResultEx) }),
-  };
+  return answerCompaction(facts, scope, native, { ...result, output, ...(usage === undefined ? {} : { usage }) });
 };
 
 export const containsCompactionTrigger = (input: readonly CanonicalOpenAIResponsesInputItem[]): boolean =>
@@ -184,26 +210,23 @@ export const compactShim = defineStage<Request, Request, ResponsesBodyBack, Resp
       provides: [...responsesBodyRequest.provides, 'request.action'],
     },
     response: {
-      needs: ['response.openaiResponses', 'response.usage.billable'],
+      needs: ['response.http', 'response.openaiResponses'],
       consumes: [],
-      provides: ['response.openaiResponses', 'response.result', 'response.usage.billable'],
+      provides: ['response.http', 'response.openaiResponses'],
     },
   },
-  execute: async (facts, next, env) => {
+  execute: async (facts, scope) => {
     const payload = expandShimCompactionItems(facts['request.openaiResponses']);
     const request = { ...facts, 'request.openaiResponses': payload };
     const flags = facts['route.candidate'].providerModel.enabledFlags;
     if (facts['request.action'] === 'compact' || containsCompactionTrigger(payload.input)) {
       if (facts['route.targetApi'] !== 'openaiResponses' || flags.includes('openai-responses-compact-shim')) {
-        const back = await simulateCompaction(request, next, env);
-        return { ...back, 'response.result': back['response.result'] };
+        return await simulateCompaction(request, scope);
       }
       if (flags.includes('openai-responses-compact-decrypt')) {
-        const back = await decryptNativeCompaction(request, next, env);
-        return { ...back, 'response.result': back['response.result'] };
+        return await decryptNativeCompaction(request, scope);
       }
     }
-    const back = await next(request);
-    return { ...back, 'response.result': back['response.result'] };
+    return await scope.next(request);
   },
 });

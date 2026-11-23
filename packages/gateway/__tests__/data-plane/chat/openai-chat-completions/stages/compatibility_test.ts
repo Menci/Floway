@@ -37,7 +37,8 @@ const bodyRequest = async (stage: Stage, body: Payload, flags: readonly FlagId[]
   (await driveChatStages([stage], request(body, flags), { key: 'response.openaiChatCompletions' })).request['request.openaiChatCompletions'];
 
 const egressEvents = async (stages: readonly Stage[], events: readonly Event[], flags: readonly FlagId[] = []) => {
-  const result = await driveChatStages(stages, request(payload(), flags), { key: 'response.events', frames: events.map(eventFrame) });
+  const result = await driveChatStages(stages, request(payload(), flags), { key: 'response.openaiChatCompletions', frames: events.map(eventFrame) });
+  if (result.frames === undefined) throw new TypeError('Expected Chat Completions frames');
   return result.frames.flatMap(frame => frame.type === 'event' ? [frame.event] : []);
 };
 
@@ -81,7 +82,7 @@ test.each([
       { role: 'system', content: 'base' }, { role: 'developer', content: 'developer' }, user, { role: 'system', content: 'inline' },
     ],
   });
-  const { request: observed } = await driveChatStages([applyRoleCompatibility], request(source, flags), { key: 'response.events' });
+  const { request: observed } = await driveChatStages([applyRoleCompatibility], request(source, flags), { key: 'response.openaiChatCompletions' });
   expect(observed['request.payload'].messages.map(message => message.role)).toEqual(roles);
 });
 

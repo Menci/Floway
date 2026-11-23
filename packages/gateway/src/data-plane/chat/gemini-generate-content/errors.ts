@@ -1,5 +1,5 @@
+import type { ErrorSnapshot } from '@floway-dev/pipeline';
 import { geminiGenerateContentStatusForHttpStatus, type GeminiGenerateContentErrorResponse } from '@floway-dev/protocols/gemini-generate-content';
-import { internalDebugErrorFields, type InternalDebugError } from '@floway-dev/provider';
 
 // Google RPC Status envelope, used by Gemini's `error` channel everywhere
 // (HTTP body, SSE-tunnelled error event).
@@ -22,8 +22,8 @@ export const gatewayErrorStatus = (status: number): string => {
 // ProtoJSON Any encodes the well-known Struct's arbitrary JSON under value.
 // https://protobuf.dev/programming-guides/json/#any
 // https://github.com/googleapis/googleapis/blob/e09e85d32ca349e1b205514a412817a7692595c6/google/rpc/error_details.proto#L97-L104
-export const geminiGenerateContentInternalErrorPayload = (status: number, error: InternalDebugError): GeminiGenerateContentErrorResponse => {
-  const { stack, ...fields } = internalDebugErrorFields(error);
+export const geminiGenerateContentInternalErrorPayload = (status: number, error: ErrorSnapshot) => {
+  const { name, stack, cause } = error;
   return {
     error: {
       code: status,
@@ -31,7 +31,7 @@ export const geminiGenerateContentInternalErrorPayload = (status: number, error:
       status: gatewayErrorStatus(status),
       details: [
         ...(stack === undefined ? [] : [{ '@type': 'type.googleapis.com/google.rpc.DebugInfo', stackEntries: stack.split('\n') }]),
-        { '@type': 'type.googleapis.com/google.protobuf.Struct', value: { type: error.type, ...fields } },
+        { '@type': 'type.googleapis.com/google.protobuf.Struct', value: { type: 'internal_error', name, ...(cause === undefined ? {} : { cause }) } },
       ],
     },
   };
@@ -39,7 +39,7 @@ export const geminiGenerateContentInternalErrorPayload = (status: number, error:
 
 export const googleRpcHttpStatusCode = (status: number): number => (Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500);
 
-export const geminiGenerateContentRpcErrorPayload = (status: number, message: string): GeminiGenerateContentErrorResponse => {
+export const geminiGenerateContentRpcErrorPayload = (status: number, message: string) => {
   const code = googleRpcHttpStatusCode(status);
   return {
     error: { code, message, status: gatewayErrorStatus(code) },

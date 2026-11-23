@@ -29,7 +29,7 @@ const registerOpenAIEmbeddingsUpstream = async (
   }));
 };
 
-test('an interrupted embeddings upload runs the parser, returns its 400, and finishes the dump', async () => {
+test.each(['/v1/embeddings', '/v1/completions', '/v1/audio/transcriptions'])('an interrupted upload to %s returns 502 and finishes the run and dump', async path => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   const dumps = installDumpStubs(initDumpStore, initDumpBroker);
@@ -43,15 +43,22 @@ test('an interrupted embeddings upload runs the parser, returns its 400, and fin
       },
     });
     const init: RequestInit & { duplex: 'half' } = {
-      method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key }, body, duplex: 'half',
+      method: 'POST',
+      headers: {
+        'content-type': path === '/v1/audio/transcriptions' ? 'multipart/form-data; boundary=fixture' : 'application/json',
+        'x-api-key': apiKey.key,
+      },
+      body, duplex: 'half',
     };
-    const response = await app.fetch(new Request('https://floway.test/v1/embeddings', init));
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: { type: 'api_error', message: 'OpenAI Embeddings request body must be valid JSON.' } });
+    const response = await app.fetch(new Request(`https://floway.test${path}`, init));
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({ error: { message: 'client upload interrupted' } });
     expect(tasks.length).toBeGreaterThanOrEqual(2);
-    await Promise.all(tasks);
+    expect(await Promise.all(tasks)).toContainEqual({ ok: true });
     expect(dumps.stored).toHaveLength(1);
-    expect(dumps.stored[0]!.meta).toMatchObject({ status: 400, requestBytes: 0, error: { kind: 'failed', reason: 'client upload interrupted' } });
+    expect(dumps.stored[0]!.meta).toMatchObject({ status: 502, requestBytes: 0, error: { kind: 'failed', reason: 'client upload interrupted' } });
+    expect(await repo.usage.listAll()).toEqual([]);
+    expect(await repo.performance.listAll()).toEqual([]);
   } finally {
     initBackgroundSchedulerResolver(() => trackBackground);
   }
@@ -172,7 +179,20 @@ const registerTwoOpenAIEmbeddingsUpstreams = async (repo: Awaited<ReturnType<typ
   }));
 };
 
-test('non-chat ingress: 5xx from the first candidate falls through to the next successful upstream', async () => {
+test.each([
+  {
+    failure: 'HTTP rejection',
+    firstResponse: () => new Response('upstream boom', { status: 503 }),
+    billed: ['up_b'],
+  },
+  {
+    failure: 'body transport failure after a 2xx',
+    firstResponse: () => new Response(new ReadableStream({
+      start(controller) { controller.error(new Error('fixture upstream body disconnected')); },
+    }), { headers: { 'content-type': 'application/json' } }),
+    billed: ['up_a', 'up_b'],
+  },
+])('non-chat ingress: records both attempts after $failure on the first candidate', async ({ firstResponse, billed }) => {
   const { apiKey, repo } = await setupAppTest();
   await registerTwoOpenAIEmbeddingsUpstreams(repo);
 
@@ -186,7 +206,7 @@ test('non-chat ingress: 5xx from the first candidate falls through to the next s
       }
       if (url.hostname === 'up-a.example.com' && url.pathname === '/v1/embeddings') {
         firstOpenAIEmbeddingsCalls += 1;
-        return new Response('upstream boom', { status: 503 });
+        return firstResponse();
       }
       if (url.hostname === 'up-b.example.com' && url.pathname === '/v1/embeddings') {
         secondOpenAIEmbeddingsCalls += 1;
@@ -215,6 +235,15 @@ test('non-chat ingress: 5xx from the first candidate falls through to the next s
 
   assertEquals(firstOpenAIEmbeddingsCalls, 1);
   assertEquals(secondOpenAIEmbeddingsCalls, 1);
+  const usage = (await repo.usage.listAll()).map(({ upstream, requests }) => ({ upstream, requests }));
+  expect(usage).toHaveLength(billed.length);
+  expect(usage).toEqual(expect.arrayContaining(billed.map(upstream => ({ upstream, requests: 1 }))));
+  const performance = await repo.performance.listAll();
+  expect(performance).toHaveLength(2);
+  expect(performance).toEqual(expect.arrayContaining([
+    expect.objectContaining({ upstream: 'up_a', requests: 1, errorsNoOutput: 1 }),
+    expect.objectContaining({ upstream: 'up_b', requests: 1, errorsNoOutput: 0 }),
+  ]));
 });
 
 test('non-chat ingress: when every candidate returns non-2xx the most recent upstream response is forwarded verbatim', async () => {
@@ -309,9 +338,7 @@ test.each([
   );
 });
 
-// A throw during candidate rollover attributes the error row to the
-// throwing candidate, not the previously-succeeded one.
-test('non-chat ingress: throw during rollover attributes the error perf row to the throwing candidate, not the previous one', async () => {
+test('non-chat ingress: HTTP and transport errors each record a failed call', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerTwoOpenAIEmbeddingsUpstreams(repo);
 
@@ -344,10 +371,13 @@ test('non-chat ingress: throw during rollover attributes the error perf row to t
       },
     );
 
-    const perfRows = await repo.performance.listAll();
-    const errorRows = perfRows.filter(row => row.errorsNoOutput + row.errorsWithOutput > 0);
-    assertEquals(errorRows.length, 1);
-    assertEquals(errorRows[0].upstream, 'up_b');
+    const performance = await repo.performance.listAll();
+    expect(performance).toHaveLength(2);
+    expect(performance).toEqual(expect.arrayContaining([
+      expect.objectContaining({ upstream: 'up_a', requests: 1, errorsNoOutput: 1 }),
+      expect.objectContaining({ upstream: 'up_b', requests: 1, errorsNoOutput: 1 }),
+    ]));
+    expect(await repo.usage.listAll()).toEqual([]);
   } finally {
     errorSpy.mockRestore();
   }

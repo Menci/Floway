@@ -1,19 +1,17 @@
+import { applyRoleCompatibility } from './stages/apply-role-compatibility.ts';
+import { priceCall, recordCall } from '../../pipeline/call-metering.ts';
 import type { GatewayServices } from '../../pipeline/services.ts';
-import { filterInboundHeaderEntries } from '../../shared/inbound-headers.ts';
+import { anthropicMessagesCountTokensProviderTargets, anthropicMessagesProviderTargets } from '../../providers/upstreams.ts';
 import { applyRulesToUpstreamAnthropicMessages } from '../shared/alias-rules.ts';
-import { observeAnthropicMessagesUsage } from '../shared/observe-usage.ts';
+import { createChatProviderEnding } from '../shared/enter-upstream.ts';
+import { observeAnthropicMessagesCall } from '../shared/observe-usage.ts';
 import type { ChatEgressInput, ChatEgressOutput } from '../shared/route-body.ts';
-import { compose, defineEnding, defineStage, type DynamicTarget, type Pipeline, transform } from '@floway-dev/pipeline';
-import type { AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import type { ProviderAnthropicInput, ProviderHttpOutput, ProviderPipelines, ProviderServices, ProviderStreamOutput } from '@floway-dev/provider';
+import { compose, defineStage, transform } from '@floway-dev/pipeline';
+import type { ProviderAnthropicCountTokensOutput } from '@floway-dev/provider';
 
 type EgressInput = ChatEgressInput<'anthropicMessages'>;
-type ProviderRequest = EgressInput & Pick<ProviderAnthropicInput, 'request.anthropicBeta'>;
-interface UpstreamAnswer {
-  readonly 'response.targetApi': 'anthropicMessages';
-  readonly 'response.source': 'upstream';
-}
-export type AnthropicMessagesCountEgressOutput = ProviderHttpOutput & UpstreamAnswer;
+type EgressOutput = ChatEgressOutput<'anthropicMessages'>;
+export type AnthropicMessagesCountEgressOutput = ProviderAnthropicCountTokensOutput;
 
 const applyAliasRules = defineStage<EgressInput, EgressInput, object, object>({
   name: 'applyAliasRules',
@@ -32,59 +30,24 @@ const applyAliasRules = defineStage<EgressInput, EgressInput, object, object>({
   })),
 });
 
-const providerTarget = <Output extends ProviderHttpOutput>(
-  operation: 'anthropicMessages' | 'anthropicMessagesCountTokens',
-  select: (pipelines: ProviderPipelines) => Pipeline<ProviderAnthropicInput, Output, ProviderServices> | undefined,
-  exit: readonly string[],
-) => {
-  type Targets = { provider: DynamicTarget<string, ProviderAnthropicInput, Output, GatewayServices> };
-  const targets: Targets = {
-    provider: {
-      entry: ['provider.model', 'request.headers', 'request.payload', 'request.anthropicBeta'],
-      exit,
-      resolve: (upstreamId, { providers }) => {
-        const pipeline = select(providers.resolve(upstreamId).pipelines);
-        if (pipeline === undefined) throw new Error(`Upstream ${upstreamId} has no ${operation} pipeline`);
-        return pipeline;
-      },
-    },
-  };
-  const ending = defineEnding<ProviderRequest, Output & UpstreamAnswer, Targets, Pick<GatewayServices, 'providers'>>({
-    name: 'enterUpstream',
-    request: { needs: ['request.http', 'request.payload', 'request.anthropicBeta', 'route.candidate'] },
-    into: {
-      provider: {
-        request: { needs: [], consumes: ['request.http'], provides: ['provider.model', 'request.headers', 'request.payload'] },
-        response: { needs: exit, consumes: [], provides: ['response.targetApi', 'response.source'] },
-      },
-    },
-    execute: async ({ 'request.http': http, ...facts }, into, env) => {
-      const candidate = facts['route.candidate'];
-      const provider = env.services.providers.resolve(candidate.upstreamId);
-      const { model: _model, ...payload } = facts['request.payload'];
-      const response = await into.provider(candidate.upstreamId, {
-        ...facts,
-        'provider.model': candidate.providerModel,
-        'request.headers': filterInboundHeaderEntries(http.headers, provider.inboundHeaderAllowlist),
-        'request.payload': payload,
-      });
-      return { ...response, 'response.targetApi': 'anthropicMessages', 'response.source': 'upstream' };
-    },
-  });
-  return { ending, targets };
-};
+const entry = [
+  'request.http', 'request.auth.apiKeyId', 'request.auth.user', 'request.route.upstreamIds',
+  'request.route.randomizeUpstreams', 'request.route.runtimeLocation', 'route.candidate',
+  'route.targetApi', 'request.payload', 'request.anthropicBeta',
+] as const;
+const exit = ['response.http', 'response.modelKey', 'response.anthropicMessages'] as const;
+const countExit = ['response.http', 'response.modelKey', 'response.anthropicMessagesCountTokens'] as const;
 
-const generate = providerTarget<ProviderStreamOutput<AnthropicMessagesStreamEventEx>>(
-  'anthropicMessages', pipelines => pipelines.anthropicMessages, ['response.http', 'response.modelKey', 'response.events'],
-);
-const count = providerTarget<ProviderHttpOutput>(
-  'anthropicMessagesCountTokens', pipelines => pipelines.anthropicMessagesCountTokens, ['response.http', 'response.modelKey'],
-);
+export const anthropicMessagesEgress = compose<EgressInput & EgressOutput, GatewayServices>()('anthropicMessages.egress', {
+  entry, exit,
+  stages: [recordCall('chat'), priceCall, observeAnthropicMessagesCall, applyRoleCompatibility, applyAliasRules],
+  ending: createChatProviderEnding('anthropicMessages', anthropicMessagesProviderTargets),
+  targets: anthropicMessagesProviderTargets,
+});
 
-export const anthropicMessagesEgress = compose<EgressInput, ChatEgressOutput<'anthropicMessages'>, GatewayServices, typeof generate.targets>(
-  'anthropicMessages.egress', { ...generate, stages: [observeAnthropicMessagesUsage, applyAliasRules] },
-);
-
-export const anthropicMessagesCountEgress = compose<EgressInput, AnthropicMessagesCountEgressOutput, GatewayServices, typeof count.targets>(
-  'anthropicMessagesCountTokens.egress', { ...count, stages: [applyAliasRules] },
-);
+export const anthropicMessagesCountEgress = compose<EgressInput & AnthropicMessagesCountEgressOutput, GatewayServices>()('anthropicMessagesCountTokens.egress', {
+  entry, exit: countExit,
+  stages: [applyRoleCompatibility, applyAliasRules],
+  ending: createChatProviderEnding('anthropicMessagesCountTokens', anthropicMessagesCountTokensProviderTargets),
+  targets: anthropicMessagesCountTokensProviderTargets,
+});

@@ -4,26 +4,24 @@ import { createAnthropicMessagesCountIngress, createAnthropicMessagesIngress } f
 import type { AnthropicMessagesFrame } from '../../../../src/data-plane/chat/anthropic-messages/stages/facts.ts';
 import { createNonOpenAIResponsesSourceStore } from '../../../../src/data-plane/chat/openai-responses/items/store.ts';
 import { AffinityCodec } from '../../../../src/data-plane/chat/shared/affinity/carrier.ts';
-import type { ChatBodyInput, ChatBodyOutput, ChatBodyTargets } from '../../../../src/data-plane/chat/shared/route-body.ts';
+import type { ChatBodyTargets, ChatOutcomeFacts } from '../../../../src/data-plane/chat/shared/route-body.ts';
 import { createSidecarCodecFactory } from '../../../../src/data-plane/chat/shared/sidecar-codec.ts';
 import type { HttpOutput } from '../../../../src/data-plane/pipeline/edge-http.ts';
-import { type GatewayHttpFacts, httpRequestFacts } from '../../../../src/data-plane/pipeline/host.ts';
-import { type GatewayServices, type RouteCandidate } from '../../../../src/data-plane/pipeline/services.ts';
+import { type GatewayHttpFacts, httpRequestFacts, startGatewayRun } from '../../../../src/data-plane/pipeline/host.ts';
+import type { GatewayServices } from '../../../../src/data-plane/pipeline/services.ts';
+import { createProviderRuntimeServices } from '../../../../src/data-plane/providers/upstreams.ts';
 import { writeHttpResponse } from '../../../../src/data-plane/shared/http-writer.ts';
-import type { HttpResponseFacts } from '@floway-dev/http';
-import { Bytes, compose, defineEnding, type ErrorSnapshot, link, type Pipeline, run, type RunEvent, type StageEnv } from '@floway-dev/pipeline';
-import { createAnthropicMessagesUsage, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx, toAnthropicMessagesUsageDelta } from '@floway-dev/protocols/anthropic-messages';
+import { serializeSseFrame } from '../../../../src/data-plane/shared/sse.ts';
+import { chatUpstream, fetcherFrom, providersFrom } from '../shared/fixture.ts';
+import type { FetchInit } from '@floway-dev/http';
+import { Bytes, compose, defineEnding, type ErrorSnapshot, link, type RunEvent } from '@floway-dev/pipeline';
+import { type AnthropicMessagesPayload, anthropicMessagesProtocolFrameToSSEFrame, createAnthropicMessagesUsage, toAnthropicMessagesUsageDelta } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
-import { type ChatTargetApi, type FlagId, type ProviderAnthropicInput, type ProviderHttpOutput, type ProviderPipelines, type ProviderStreamOutput, toProviderModelFacts } from '@floway-dev/provider';
-import { stubProvider, stubProviderModel, testFetcher } from '@floway-dev/test-utils';
+import { jsonResponse } from '@floway-dev/test-utils';
 
 const secret = '22'.repeat(32);
 export const messagesPayload = (overrides: Partial<AnthropicMessagesPayload> = {}): AnthropicMessagesPayload => ({
   model: 'test-model', max_tokens: 32, messages: [{ role: 'user', content: 'hello' }], ...overrides,
-});
-
-export const httpReply = (status: number, body: HttpResponseFacts['body'] = null, headers: HttpResponseFacts['headers'] = []): HttpOutput => ({
-  'response.http': { status, statusText: '', body, headers, timing: { startedAt: 1, headersAt: 2 } },
 });
 
 export const defaultFrames = async function* (): AsyncGenerator<AnthropicMessagesFrame> {
@@ -42,108 +40,78 @@ export const defaultFrames = async function* (): AsyncGenerator<AnthropicMessage
   yield doneFrame();
 };
 
-type GenerateOutput = ProviderStreamOutput<AnthropicMessagesStreamEventEx>;
-export const generateReply = (env: StageEnv, frames: () => AsyncIterable<AnthropicMessagesFrame> = defaultFrames): GenerateOutput => ({
-  ...httpReply(200),
-  'response.modelKey': 'test-model-key',
-  'response.events': env.createStream({ label: 'provider frames', iterate: frames }),
-});
-
-const providerRequest = { needs: ['provider.model', 'request.headers', 'request.payload', 'request.anthropicBeta'] };
-
-export const generateProvider = (respond: (facts: ProviderAnthropicInput, env: StageEnv) => GenerateOutput | Promise<GenerateOutput> = (_facts, env) => generateReply(env)) =>
-  compose<ProviderAnthropicInput, GenerateOutput, {}>('test messages provider', {
-    stages: [],
-    ending: defineEnding<ProviderAnthropicInput, GenerateOutput>({
-      name: 'generate', request: providerRequest,
-      return: { provides: ['response.http', 'response.modelKey', 'response.events'] },
-      execute: async (facts, _into, env) => await respond(facts, env),
-    }),
-  });
-
-export const countProvider = (respond: (facts: ProviderAnthropicInput, env: StageEnv) => HttpOutput | Promise<HttpOutput> = () =>
-  httpReply(200, Bytes.fromUtf8('{"input_tokens":42}'), [['content-type', 'application/json']])) =>
-  compose<ProviderAnthropicInput, ProviderHttpOutput, {}>('test messages count provider', {
-    stages: [],
-    ending: defineEnding<ProviderAnthropicInput, ProviderHttpOutput>({
-      name: 'count', request: providerRequest,
-      return: { provides: ['response.http', 'response.modelKey'] },
-      execute: async (facts, _into, env) => ({ ...await respond(facts, env), 'response.modelKey': 'test-model-key' }),
-    }),
-  });
-
-export const messagesUpstream = (options: {
-  upstreamId?: string;
-  model?: string;
-  flags?: readonly FlagId[];
-  endpoints?: RouteCandidate['endpoints'];
-  rules?: RouteCandidate['rules'];
-  pipelines?: ProviderPipelines;
-} = {}) => {
-  const upstreamId = options.upstreamId ?? 'test-upstream';
-  const modelId = options.model ?? 'test-model';
-  const endpoints = options.endpoints ?? { anthropicMessages: {} };
-  const provider: ReturnType<GatewayServices['providers']['resolve']> = {
-    upstreamId, kind: 'custom', name: upstreamId, modelsCache: null,
-    disabledPublicModelIds: [], modelPrefix: null, inboundHeaderAllowlist: ['anthropic-beta'],
-    configVersion: 1, modelsRefreshInputHash: '',
-    instance: stubProvider(),
-    pipelines: options.pipelines ?? { anthropicMessages: generateProvider(), anthropicMessagesCountTokens: countProvider() },
+export const generateReply = (frames: AsyncIterable<AnthropicMessagesFrame> | Iterable<AnthropicMessagesFrame> = defaultFrames()): Response => {
+  const iterate = async function* () {
+    for await (const frame of frames) {
+      const wire = anthropicMessagesProtocolFrameToSSEFrame(frame);
+      if (wire !== null) yield new TextEncoder().encode(serializeSseFrame(wire));
+    }
   };
-  const candidate: RouteCandidate = {
-    upstreamId, upstreamName: upstreamId, kind: provider.kind, modelId, upstreamModelId: modelId,
-    endpoints, limits: {},
-    providerModel: toProviderModelFacts(stubProviderModel({
-      id: modelId, upstreamModelId: modelId, endpoints, enabledFlags: new Set(options.flags),
-    })),
-    ...(options.rules === undefined ? {} : { rules: options.rules }),
-  };
-  return { candidate, provider };
+  const iterator = iterate();
+  const stream = new ReadableStream<Uint8Array<ArrayBuffer>>({
+    async pull(controller) {
+      const { done, value } = await iterator.next();
+      if (done) controller.close();
+      else controller.enqueue(value);
+    },
+    async cancel() {
+      await iterator.return(undefined);
+    },
+  });
+  return new Response(stream, { headers: { 'content-type': 'text/event-stream' } });
 };
 
-export const unusedBody = <Api extends ChatTargetApi>(api: Api): Pipeline<ChatBodyInput<Api>, ChatBodyOutput<Api>, GatewayServices> =>
-  compose<ChatBodyInput<Api>, ChatBodyOutput<Api>, GatewayServices>(`unused ${api}`, {
-    stages: [],
-    ending: defineEnding<ChatBodyInput<Api>, ChatBodyOutput<Api>>({
-      name: 'unexpected', request: { needs: [] },
-      return: { provides: ['response.http', 'response.source', `response.${api}`, 'response.usage.billable', 'response.timing.firstOutputAt', 'response.timing.streamEndedAt'] },
-      execute: async () => { throw new Error(`Unexpected translation into ${api}`); },
-    }),
-  });
+export const requestPayload = <Payload = AnthropicMessagesPayload>(init: FetchInit): Payload => {
+  if (!(init.body instanceof Uint8Array)) throw new TypeError('Expected buffered JSON bytes');
+  return JSON.parse(new TextDecoder().decode(init.body)) as Payload;
+};
+
+export const messagesUpstream = (options: Partial<Parameters<typeof chatUpstream>[0]> = {}) => chatUpstream({
+  endpoints: { anthropicMessages: {} },
+  fetcher: async url => new URL(url).pathname.endsWith('/count_tokens') ? jsonResponse({ input_tokens: 42 }) : generateReply(),
+  ...options,
+});
+
+type UnusedSpace = HttpOutput & ChatOutcomeFacts<'anthropicMessages'> & ChatOutcomeFacts<'openaiResponses'> & ChatOutcomeFacts<'openaiChatCompletions'>;
+const unusedExit = ['response.http', 'response.anthropicMessages', 'response.openaiResponses', 'response.openaiChatCompletions'] as const;
+export const unusedBody = compose<UnusedSpace, GatewayServices>()('unused translation body', {
+  entry: [], exit: unusedExit, stages: [],
+  ending: defineEnding({
+    name: 'unexpected', request: { needs: [] },
+    return: { provides: unusedExit },
+    execute: async () => { throw new Error('Unexpected translation'); },
+  }),
+});
 
 export const messagesFixture = (upstreams = [messagesUpstream()], options: {
+  readonly egress?: ChatBodyTargets<'anthropicMessages'>['egress'];
   readonly responses?: ChatBodyTargets<'anthropicMessages'>['responses'];
   readonly webSearchProvider?: GatewayServices['webSearchProvider'];
   readonly recordSearchUsage?: GatewayServices['searchUsageStore']['record'];
   readonly failedUpstreams?: readonly string[];
-  readonly sawModel?: boolean;
+  readonly dumpRetentionSeconds?: number;
 } = {}) => {
   const events: RunEvent[] = [];
-  const usage: Parameters<GatewayServices['usageStore']['record']>[1][] = [];
+  const usage: Parameters<GatewayServices['usageStore']['record']>[0][] = [];
   const performance: Parameters<GatewayServices['performanceStore']['record']>[0][] = [];
   const requestedModels: string[] = [];
+  const directory = providersFrom(upstreams);
   const services: GatewayServices = {
+    ...createProviderRuntimeServices(),
     providers: {
-      resolve: id => {
-        const upstream = upstreams.find(upstream => upstream.provider.upstreamId === id);
-        if (upstream === undefined) throw new Error(`Unexpected upstream ${id}`);
-        return upstream.provider;
-      },
-      enumerate: async (_facts, model) => {
-        requestedModels.push(model);
-        return {
-          candidates: upstreams.map(value => value.candidate),
-          sawModel: options.sawModel ?? upstreams.length > 0,
-          failedUpstreams: options.failedUpstreams ?? [],
-        };
+      enumerate: async (...facts) => {
+        requestedModels.push(facts[1]);
+        const result = await directory.enumerate(...facts);
+        return { ...result, failedUpstreams: options.failedUpstreams ?? result.failedUpstreams };
       },
     },
-    fetcher: () => testFetcher,
+    modelsRefresh: async () => { throw new Error('Unexpected refresh'); },
+    fetcher: fetcherFrom(upstreams),
     affinityCodec: new AffinityCodec(secret),
     sidecarCodecs: createSidecarCodecFactory(secret),
     responsesStore: () => createNonOpenAIResponsesSourceStore('test-key'),
     usageStore: {
-      record: async (_callId, row) => {
+      record: async row => {
         usage.push(row);
         return { usage: 'written', lastUsedAt: 'written' };
       },
@@ -156,30 +124,45 @@ export const messagesFixture = (upstreams = [messagesUpstream()], options: {
     ),
   };
   const body = createAnthropicMessagesBody({
-    egress: anthropicMessagesEgress,
-    responses: options.responses ?? unusedBody('openaiResponses'),
-    chatCompletions: unusedBody('openaiChatCompletions'),
+    egress: options.egress ?? anthropicMessagesEgress,
+    responses: options.responses ?? unusedBody,
+    chatCompletions: unusedBody,
   });
   const countBody = createAnthropicMessagesCountBody({ egress: anthropicMessagesCountEgress });
   const generate = createAnthropicMessagesIngress(body);
   const count = createAnthropicMessagesCountIngress(countBody);
   link([generate, count]);
 
-  const send = async (payload: unknown, opts: { readonly count?: boolean; readonly headers?: HeadersInit; readonly uploadError?: ErrorSnapshot } = {}) => {
+  const send = async (payload: unknown, opts: {
+    readonly count?: boolean; readonly headers?: HeadersInit; readonly uploadError?: ErrorSnapshot; readonly rawBody?: string;
+  } = {}) => {
     const path = opts.count ? '/v1/messages/count_tokens' : '/v1/messages';
     const request = new Request(`https://gateway.test${path}`, { method: 'POST', headers: opts.headers });
     const input: GatewayHttpFacts = {
-      'request.http': httpRequestFacts(request, opts.uploadError === undefined ? Bytes.fromUtf8(JSON.stringify(payload)) : Bytes.empty),
-      ...(opts.uploadError === undefined ? {} : { 'request.uploadError': opts.uploadError }),
+      'request.http': httpRequestFacts(request, opts.uploadError === undefined
+        ? Bytes.fromUtf8(opts.rawBody ?? JSON.stringify(payload))
+        : { kind: 'upload-error', error: opts.uploadError }),
       'request.auth.apiKeyId': 'test-key',
       'request.auth.user': { id: 1, isAdmin: false },
       'request.route.upstreamIds': null,
       'request.route.randomizeUpstreams': false,
       'request.route.runtimeLocation': 'SJC',
+      'request.startedAt': Date.now(),
     };
-    const handle = run(opts.count ? count : generate, input, { services, finalizationTimeoutMs: 1_000, events: event => { events.push(event); } });
+    const background: Promise<unknown>[] = [];
+    const handle = startGatewayRun(opts.count ? count : generate, input, {
+      apiKey: {
+        id: 'test-key', userId: 1, name: 'Test key', key: 'sk-test', serverSecret: secret,
+        createdAt: '2026-01-01T00:00:00.000Z', upstreamIds: null, randomizeUpstreams: false, deletedAt: null,
+        dumpRetentionSeconds: options.dumpRetentionSeconds ?? null, openaiResponsesRetentionSeconds: 0,
+      },
+      request: input['request.http'],
+      scheduler: task => { background.push(task); },
+      services, finalizationTimeoutMs: 1_000, events: event => { events.push(event); },
+    });
     const facts = await handle.result;
-    return { facts, response: writeHttpResponse(facts['response.http']), done: handle.done };
+    const done = Promise.all(background).then(() => handle.done);
+    return { facts, response: writeHttpResponse(facts['response.http']), done };
   };
 
   return { send, events, usage, performance, requestedModels };

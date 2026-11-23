@@ -1,14 +1,11 @@
 import { expect, test, vi } from 'vitest';
 
-import { http, providerResponses, responsesFixture, upstream } from './fixture.ts';
+import { readHttpBytes, responsesFixture, responsesUpstream, wireEvents, type WireRequest } from './fixture.ts';
 import { syntheticEventsFromResult } from '../../../../src/data-plane/chat/openai-responses/items/output.ts';
-import { readHttpBytes } from '../../../../src/data-plane/pipeline/non-chat.ts';
-import type { StageEnv } from '@floway-dev/pipeline';
-import type { ProviderResponsesInput } from '@floway-dev/provider';
 
 test('generate filters out candidates whose endpoints do not satisfy the Responses preference', async () => {
   const respond = vi.fn(() => { throw new Error('Unexpected provider call'); });
-  const source = upstream('unsupported', { openaiResponses: providerResponses(respond) });
+  const source = responsesUpstream('unsupported', respond);
   const fixture = responsesFixture([{ ...source, candidate: { ...source.candidate, endpoints: { openaiCompletions: {} } } }]);
   const handle = fixture.request({ model: 'wrong-endpoint-model', input: 'hello' });
   const { 'response.http': response } = await handle.result;
@@ -21,18 +18,10 @@ test('generate filters out candidates whose endpoints do not satisfy the Respons
 });
 
 test('alias resolution passes the target model and overlays rules onto the native Responses payload', async () => {
-  const respond = vi.fn((_facts: ProviderResponsesInput, env: StageEnv) => ({
-    ...http(),
-    'response.modelKey': 'gpt-5.4',
-    'response.result': undefined,
-    'response.events': env.createStream({
-      label: 'alias output',
-      iterate: () => syntheticEventsFromResult({
-        id: 'response', object: 'response', model: 'gpt-5.4', output: [], status: 'completed', error: null, incomplete_details: null,
-      }),
-    }),
-  }));
-  const source = upstream('responses', { openaiResponses: providerResponses(respond) });
+  const respond = vi.fn((_request: WireRequest) => wireEvents(syntheticEventsFromResult({
+    id: 'response', object: 'response', model: 'gpt-5.4', output: [], status: 'completed', error: null, incomplete_details: null,
+  })));
+  const source = responsesUpstream('responses', respond);
   const fixture = responsesFixture([{
     ...source,
     candidate: {
@@ -46,10 +35,9 @@ test('alias resolution passes the target model and overlays rules onto the nativ
   expect(response.status).toBe(200);
   expect(fixture.requestedModels).toEqual(['gpt-fast']);
   const request = respond.mock.calls[0]?.[0];
-  expect(request?.['provider.model'].id).toBe('gpt-5.4');
-  expect(request?.['request.payload']).toMatchObject({
+  expect(request?.payload.model).toBe('gpt-5.4');
+  expect(request?.payload).toMatchObject({
     reasoning: { effort: 'high', summary: 'detailed' }, text: { verbosity: 'medium' }, service_tier: 'priority',
   });
-  expect(request?.['request.payload']).not.toHaveProperty('model');
   expect(await handle.done).toEqual({ ok: true });
 });

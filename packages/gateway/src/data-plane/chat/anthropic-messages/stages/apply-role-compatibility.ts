@@ -1,4 +1,4 @@
-import type { AnthropicMessagesTargetRequest } from './facts.ts';
+import type { ChatEgressInput } from '../../shared/route-body.ts';
 import { defineStage, transform } from '@floway-dev/pipeline';
 import type { AnthropicMessagesMessage } from '@floway-dev/protocols/anthropic-messages';
 
@@ -44,27 +44,26 @@ const disallowedContentSystemMessageIndexes = (messages: readonly AnthropicMessa
   return invalid;
 };
 
-type Request = AnthropicMessagesTargetRequest;
+type Request = Pick<ChatEgressInput<'anthropicMessages'>, 'request.payload' | 'route.candidate'>;
 
 export const applyRoleCompatibility = defineStage<Request, Request, object, object>({
   name: 'applyRoleCompatibility',
   through: {
-    request: { needs: ['request.anthropicMessages', 'route.candidate', 'route.targetApi'], consumes: [], provides: ['request.anthropicMessages'] },
+    request: { needs: ['request.payload', 'route.candidate'], consumes: [], provides: ['request.payload'] },
     response: { needs: [], consumes: [], provides: [] },
   },
   execute: transform(() => ({
     request: facts => {
-      if (facts['route.targetApi'] !== 'anthropicMessages') return facts;
       const flags = facts['route.candidate'].providerModel.enabledFlags;
       const rewriteAll = flags.includes('rewrite-mid-conv-system-to-user');
       const rewriteDisallowed = flags.includes('rewrite-disallowed-mid-conv-system-to-user');
       if (!rewriteAll && !rewriteDisallowed) return facts;
 
-      const payload = facts['request.anthropicMessages'];
+      const payload = facts['request.payload'];
       const disallowed = rewriteDisallowed ? disallowedContentSystemMessageIndexes(payload.messages) : new Set<number>();
       return {
         ...facts,
-        'request.anthropicMessages': {
+        'request.payload': {
           ...payload,
           messages: payload.messages.map((message, index) =>
             message.role === 'system' && (rewriteAll || disallowed.has(index)) ? { role: 'user', content: message.content } : message),

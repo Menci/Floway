@@ -2,17 +2,18 @@ import { beforeEach, test } from 'vitest';
 
 import { createServerToolShim } from '../../../../../../src/data-plane/chat/openai-responses/stages/server-tool-shim.ts';
 import { imageGenerationServerTool } from '../../../../../../src/data-plane/chat/openai-responses/stages/server-tools/image-generation.ts';
-import type { GatewayServices, RouteCandidate } from '../../../../../../src/data-plane/pipeline/services.ts';
-import { UpstreamTransportError } from '../../../../../../src/dial/transport-error.ts';
-import { upstream } from '../../fixture.ts';
+import type { GatewayServices } from '../../../../../../src/data-plane/pipeline/services.ts';
+import { fetcherFrom } from '../../../shared/fixture.ts';
+import { fetchBody, imageUpstream, readWireJson } from '../../fixture.ts';
 import { driveResponsesStage, type Frame } from '../drive.ts';
-import { Bytes, compose, defineEnding } from '@floway-dev/pipeline';
+import { UpstreamTransportError } from '@floway-dev/http';
+import { Bytes } from '@floway-dev/pipeline';
 import { createInMemoryImageProcessor, initExternalResourceFetcher, initImageProcessor } from '@floway-dev/platform';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
 import type { CanonicalOpenAIResponsesInputItem, CanonicalOpenAIResponsesPayload, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx, OpenAIResponsesToolChoice } from '@floway-dev/protocols/openai-responses';
-import type { OpenAIImagesEditsRequest, ProviderHttpOutput, ProviderInput, ProviderServices } from '@floway-dev/provider';
-import { assert, assertEquals, assertStringIncludes, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
+import type { OpenAIImagesEditsRequest } from '@floway-dev/provider';
+import { assert, assertEquals, assertStringIncludes } from '@floway-dev/test-utils';
 
 interface Invocation { payload: CanonicalOpenAIResponsesPayload }
 
@@ -27,43 +28,31 @@ const stub = {
   nextResolutionOverride: undefined as Resolution | undefined,
 };
 
-const backendPipeline = <Payload>(name: string, respond: (payload: Payload) => Response | Error | undefined) =>
-  compose<ProviderInput<Payload>, ProviderHttpOutput, ProviderServices>(name, {
-    stages: [],
-    ending: defineEnding<ProviderInput<Payload>, ProviderHttpOutput>({
-      name: 'stubImageProvider',
-      request: { needs: ['provider.model', 'request.headers', 'request.payload'] },
-      return: { provides: ['response.http', 'response.modelKey'] },
-      execute: async facts => {
-        const response = respond(facts['request.payload']);
-        if (response === undefined) throw new Error('Test did not enqueue an image provider response');
-        if (response instanceof Error) throw response;
-        return {
-          'response.modelKey': 'gpt-image-2',
-          'response.http': {
-            status: response.status, statusText: response.statusText, headers: [...response.headers],
-            body: Bytes.adopt(new Uint8Array(await response.arrayBuffer())), timing: { startedAt: 0, headersAt: 1 },
-          },
-        };
-      },
-    }),
-  });
-const base = upstream('image-backend', {
-  openaiImagesGenerations: backendPipeline<GenerationPayload>('test.image-generation', payload => {
+const imageBackend = imageUpstream('image-backend', 'gpt-image-2', async (url, init) => {
+  const request = new URL(url);
+  let response: Response | Error | undefined;
+  if (request.pathname.endsWith('/generations')) {
+    const { model, ...payload } = await readWireJson<OpenAIImagesGenerationsPayload>(init.body);
+    assertEquals(model, 'gpt-image-2');
     stub.generationsCalls.push(payload);
-    return stub.nextGenerations.shift();
-  }),
-  openaiImagesEdits: backendPipeline<OpenAIImagesEditsRequest>('test.image-edit', payload => {
-    stub.editsRequests.push(payload);
-    return stub.nextEdits.shift();
-  }),
-}, [], 'image');
-const imageProvider = { ...base.provider, instance: stubProvider() };
-const endpoints = { openaiImagesGenerations: {}, openaiImagesEdits: {} };
-const imageCandidate: RouteCandidate = {
-  ...base.candidate, modelId: 'gpt-image-2', upstreamModelId: 'gpt-image-2', endpoints,
-  providerModel: { ...stubProviderModel({ kind: 'image', id: 'gpt-image-2', upstreamModelId: 'gpt-image-2', endpoints }), enabledFlags: [] },
-};
+    response = stub.nextGenerations.shift();
+  } else {
+    assert(request.pathname.endsWith('/edits'));
+    const form = await new Response(fetchBody(init.body), { headers: init.headers }).formData();
+    const upload = async (entry: FormDataEntryValue) => {
+      assert(entry instanceof File);
+      return { type: 'upload' as const, filename: entry.name, contentType: entry.type, bytes: Bytes.adopt(new Uint8Array(await entry.arrayBuffer())) };
+    };
+    const images = await Promise.all([...form.getAll('image'), ...form.getAll('image[]')].map(upload));
+    const mask = form.get('mask');
+    stub.editsRequests.push({ images, ...(mask === null ? {} : { mask: await upload(mask) }), parameters: {} });
+    response = stub.nextEdits.shift();
+  }
+  if (response === undefined) throw new Error('Test did not enqueue an image provider response');
+  if (response instanceof Error) throw response;
+  return response;
+});
+const imageCandidate = imageBackend.candidate;
 const imageShim = createServerToolShim([imageGenerationServerTool]);
 
 const emptyResult = (status: OpenAIResponsesResultEx['status']): OpenAIResponsesResultEx => ({
@@ -131,17 +120,18 @@ const shim = async (invocation: Invocation, respond: () => AsyncIterable<Frame> 
     enabledFlags: new Set(['openai-responses-image-generation-shim']),
     services: {
       providers: {
-        resolve(id) {
-          if (id !== imageProvider.upstreamId) throw new Error(`Unexpected image upstream ${id}`);
-          return imageProvider;
-        },
         enumerate: async () => {
           const override = stub.nextResolutionOverride;
           stub.nextResolutionOverride = undefined;
-          return override ?? { candidates: [imageCandidate], sawModel: true, failedUpstreams: [] };
+          return override ?? { candidates: [imageCandidate], sawModel: true, failedUpstreams: [], staleRefreshes: [] };
         },
       },
-      performanceStore: { record: async row => { stub.performance.push(row); } },
+      fetcher: fetcherFrom([imageBackend]),
+      performanceStore: {
+        record: async row => {
+          if ((row.kind === 'sample' ? row.sample : row.dimensions).operation !== 'chat') stub.performance.push(row);
+        },
+      },
     },
     upstream(payload) {
       invocation.payload = payload;
@@ -151,7 +141,8 @@ const shim = async (invocation: Invocation, respond: () => AsyncIterable<Frame> 
 };
 
 const drain = async (reply: Awaited<ReturnType<typeof shim>>): Promise<OpenAIResponsesStreamEventEx[]> => {
-  const events = reply.result['response.openaiResponses'];
+  const outcome = reply.result['response.openaiResponses'];
+  const events = outcome.kind === 'stream' ? outcome.events : undefined;
   assert(events !== undefined);
   const frames: OpenAIResponsesStreamEventEx[] = [];
   for await (const frame of events) if (frame.type === 'event') frames.push(frame.event);
@@ -357,7 +348,7 @@ test('retries on 429 and surfaces the eventual success', async () => {
 // from existing-but-unsupported.
 
 test('resolveImageCandidate renders model_not_found when no upstream knows the model id', async () => {
-  stub.nextResolutionOverride = { candidates: [], sawModel: false, failedUpstreams: [] };
+  stub.nextResolutionOverride = { candidates: [], sawModel: false, failedUpstreams: [], staleRefreshes: [] };
   const result = await shim(makePayload([{ type: 'message', role: 'user', content: 'draw' }]), scriptedRun([
     callTurn(0, 'call_1', 'a cat'),
     messageTurn('sorry'),
@@ -379,7 +370,7 @@ test('resolveImageCandidate renders model_not_supported when image-kind candidat
   stub.nextResolutionOverride = {
     candidates: [{ ...imageCandidate, endpoints: { openaiImagesEdits: {} } }],
     sawModel: true,
-    failedUpstreams: [],
+    failedUpstreams: [], staleRefreshes: [],
   };
   const result = await shim(makePayload([{ type: 'message', role: 'user', content: 'draw' }]), scriptedRun([
     callTurn(0, 'call_1', 'a cat'),
@@ -425,4 +416,31 @@ test('image provider transport failure preserves the tool error and its performa
   assertStringIncludes(JSON.stringify(image.item), 'image connection lost');
   assertEquals(stub.performance.length, 1);
   assertEquals(stub.performance[0].kind, 'zero-output-error');
+});
+
+test('image preview transport failure preserves the preview and settles the failed attempt', async () => {
+  const preview = new TextEncoder().encode('data: {"type":"image_generation.partial_image","partial_image_index":0,"b64_json":"cHJldmlldw=="}\n\n');
+  let sentPreview = false;
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (sentPreview) {
+        controller.error(new UpstreamTransportError(new Error('image preview connection lost')));
+      } else {
+        sentPreview = true;
+        controller.enqueue(preview);
+      }
+    },
+  }, { highWaterMark: 0 });
+  stub.nextGenerations = [new Response(body, { headers: { 'content-type': 'text/event-stream' } })];
+  const result = await shim(makePayload([], 'generate', { partial_images: 1 }), scriptedRun([
+    callTurn(0, 'call_1', 'a cat'),
+    messageTurn('replacement instructions'),
+  ]));
+  const events = await drain(result);
+  assert(events.some(event => event.type === 'response.image_generation_call.partial_image'));
+  const terminal = events.find(event => event.type === 'response.output_item.done' && event.item.type === 'image_generation_call');
+  assert(terminal?.type === 'response.output_item.done' && terminal.item.type === 'image_generation_call');
+  assertEquals(terminal.item.status, 'failed');
+  assertStringIncludes(JSON.stringify(terminal.item), 'image preview connection lost');
+  assertEquals(stub.performance.map(row => row.kind), ['zero-output-error']);
 });

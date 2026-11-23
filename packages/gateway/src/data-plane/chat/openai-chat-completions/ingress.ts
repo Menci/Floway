@@ -1,22 +1,20 @@
 import { decodeOpenAIChatCompletionsAffinity, evaluateOpenAIChatCompletionsAffinity, type OpenAIChatCompletionsAffinityAnalysis, scoreOpenAIChatCompletionsAffinity } from './affinity/analysis.ts';
 import { wrapOpenAIChatCompletionsAffinityEgress } from './affinity/egress.ts';
-import { answerKeys, gatewayAnswer } from '../../pipeline/answer.ts';
-import { edgeHttp, type HttpOutput, jsonHttpResponse } from '../../pipeline/edge-http.ts';
-import { failover } from '../../pipeline/failover.ts';
-import type { GatewayHttpFacts } from '../../pipeline/host.ts';
-import { requestBytes } from '../../pipeline/non-chat.ts';
-import type { UsageFacts } from '../../pipeline/observe-usage.ts';
-import type { RenderFacts } from '../../pipeline/render.ts';
+import { openaiChatCompletionsInputError } from './errors.ts';
+import { edgeHttp, type HttpDeliveryFacts, type HttpOutput, jsonHttpResponse, stripFlowayAuth } from '../../pipeline/edge-http.ts';
+import { createFailover } from '../../pipeline/failover.ts';
+import { GATEWAY_HTTP_ENTRY, type GatewayHttpFacts, isUploadError } from '../../pipeline/host.ts';
+import { parseJsonModel } from '../../pipeline/non-chat.ts';
+import { localHttpAnswer, type RenderFacts } from '../../pipeline/render.ts';
 import { createResolveCandidates, type ModelRequest } from '../../pipeline/resolve-candidates.ts';
 import type { GatewayServices, RouteCandidate } from '../../pipeline/services.ts';
-import { priceUsage, type SettlementFacts, writeSettlement } from '../../pipeline/settlement.ts';
 import { openaiInternalErrorPayload } from '../../shared/openai-error-payload.ts';
 import { serializeSseFrame } from '../../shared/sse.ts';
 import { type AffinityFacts, createAffinity, createAnalyzeAffinity, isAffinityRoutingFailure, selectChatCandidates } from '../shared/affinity/stages.ts';
-import { createEncode, type DeliveryFacts, type DeliveryIntent } from '../shared/encode.ts';
+import { createEncode, type DeliveryFacts, type DeliveryIntent, transportErrorForDisplay } from '../shared/encode.ts';
 import { type ChatBodyInput, type ChatBodyOutput, type ChatPayloadFacts, enterChatBody } from '../shared/route-body.ts';
 import { openaiChatCompletionsTarget } from '../shared/target-picker.ts';
-import { compose, defineStage, type Pipeline, type StaticTarget } from '@floway-dev/pipeline';
+import { compose, defineStage, type Pipeline } from '@floway-dev/pipeline';
 import { sseFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIChatCompletionsProtocolEventsToResult, type OpenAIChatCompletionsPayloadEx, openaiChatCompletionsErrorPayloadMessage, openaiChatCompletionsProtocolFrameToSSEFrame } from '@floway-dev/protocols/openai-chat-completions';
 import { toInternalDebugError } from '@floway-dev/provider';
@@ -28,7 +26,7 @@ interface ChatCompletionsDelivery extends DeliveryIntent {
   readonly expectedChoices: number;
 }
 type Parsed = GatewayHttpFacts & ModelRequest & ChatPayloadFacts<Api> & DeliveryFacts<ChatCompletionsDelivery>;
-type Rendered = HttpOutput & UsageFacts & RenderFacts;
+type Rendered = HttpOutput & RenderFacts;
 
 const parsePayload = defineStage<GatewayHttpFacts, Parsed, Rendered, Rendered>({
   name: 'parsePayload',
@@ -39,28 +37,32 @@ const parsePayload = defineStage<GatewayHttpFacts, Parsed, Rendered, Rendered>({
     },
     response: { needs: [], consumes: [], provides: [] },
   },
-  return: { provides: answerKeys },
-  execute: async (facts, next, env) => {
-    const body = requestBytes(facts['request.http']).utf8();
-    let payload: OpenAIChatCompletionsPayloadEx;
-    try {
-      payload = JSON.parse(body) as OpenAIChatCompletionsPayloadEx;
-    } catch (error) {
-      if (facts['request.uploadError'] === undefined) throw error;
-      return gatewayAnswer(env, jsonHttpResponse(502, openaiChatCompletionsHttpOptions.errorBody(error), env.clock()));
+  return: { provides: ['response.http', 'response.render'] },
+  execute: async (facts, scope) => {
+    const http = facts['request.http'];
+    if (isUploadError(http.body)) {
+      const error = transportErrorForDisplay(http.body.error);
+      return localHttpAnswer(scope, jsonHttpResponse(502, openaiChatCompletionsHttpOptions.errorBody(error), scope.clock()));
     }
+    const parsed = parseJsonModel(http, 'Chat Completions');
+    if ('error' in parsed) {
+      const body = { error: { message: parsed.error, type: 'invalid_request_error', param: null, code: null } };
+      return localHttpAnswer(scope, jsonHttpResponse(400, body, scope.clock()));
+    }
+    const payload = { ...parsed.payload, model: parsed.model } as OpenAIChatCompletionsPayloadEx;
     const nullableField = payload.prompt_cache_options === null ? 'prompt_cache_options' : payload.user === null ? 'user' : undefined;
     if (nullableField !== undefined) {
-      return gatewayAnswer(env, jsonHttpResponse(400, {
-        error: {
-          message: `Invalid '${nullableField}': expected ${nullableField === 'user' ? 'a string' : 'an object'} when present.`,
-          type: 'invalid_request_error',
-          param: nullableField,
-          code: null,
-        },
-      }, env.clock()));
+      const body = openaiChatCompletionsInputError({
+        message: `Invalid '${nullableField}': expected ${nullableField === 'user' ? 'a string' : 'an object'} when present.`,
+        param: nullableField,
+      });
+      return localHttpAnswer(scope, jsonHttpResponse(400, body, scope.clock()));
     }
-    return await next({
+    if (!Array.isArray(payload.messages)) {
+      const body = openaiChatCompletionsInputError({ message: "Invalid 'messages': expected an array." });
+      return localHttpAnswer(scope, jsonHttpResponse(400, body, scope.clock()));
+    }
+    return await scope.next({
       ...facts,
       'request.model': payload.model,
       'request.openaiChatCompletions': payload,
@@ -97,6 +99,7 @@ const resolveCandidates = createResolveCandidates<RouteCandidate, Parsed & Affin
 
 const encode = createEncode<Api, ChatCompletionsDelivery>(api, {
   encodeJson: collectOpenAIChatCompletionsProtocolEventsToResult,
+  transportError: error => ({ status: 502, body: openaiChatCompletionsHttpOptions.errorBody(error) }),
   openSse: ({ includeUsageChunk, expectedChoices }) => {
     const finishedChoices = new Set<number>();
     return {
@@ -120,11 +123,14 @@ const encode = createEncode<Api, ChatCompletionsDelivery>(api, {
   },
 });
 
-type BodyTargets = { readonly body: StaticTarget<ChatBodyInput<Api>, ChatBodyOutput<Api>, GatewayServices> };
+const failover = createFailover('response.openaiChatCompletions');
+type Space = GatewayHttpFacts & Rendered & HttpDeliveryFacts;
 
 export const createOpenAIChatCompletionsIngress = (body: Pipeline<ChatBodyInput<Api>, ChatBodyOutput<Api>, GatewayServices>) =>
-  compose<GatewayHttpFacts, HttpOutput & SettlementFacts, GatewayServices, BodyTargets>('openaiChatCompletions.ingress', {
-    stages: [writeSettlement('chat'), priceUsage, edgeHttp, parsePayload, analyzeAffinity, resolveCandidates, encode, failover, affinity],
+  compose<Space, GatewayServices>()('openaiChatCompletions.ingress', {
+    entry: GATEWAY_HTTP_ENTRY,
+    exit: ['response.http', 'response.render', 'response.delivery'],
+    stages: [edgeHttp, stripFlowayAuth, parsePayload, analyzeAffinity, resolveCandidates, encode, failover, affinity],
     ending: enterChatBody(api),
     targets: { body },
   });

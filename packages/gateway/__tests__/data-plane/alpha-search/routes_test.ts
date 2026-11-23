@@ -224,6 +224,8 @@ describe('/alpha/search data plane', () => {
       const usage = await repo.webSearchUsage.listAll();
       expect(usage).toHaveLength(1);
       expect(usage[0]).toMatchObject({ provider: 'tavily', keyId: apiKey.id, action: 'search', requests: 1 });
+      expect(await repo.usage.listAll()).toEqual([]);
+      expect(await repo.performance.listAll()).toEqual([]);
     });
 
     it('maps response_length and query-level filters onto the provider request', async () => {

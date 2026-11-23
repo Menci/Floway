@@ -41,7 +41,7 @@ const normalizeDeepSeekDeltas = (chunk: OpenAIChatCompletionsStreamEvent): OpenA
 };
 
 export const normalizeDeepSeekResponse = rewriteChatFrames(
-  'normalizeDeepSeekResponse', 'response.events', ({ 'route.candidate': { providerModel } }) => providerModel.enabledFlags.includes('vendor-deepseek')
+  'normalizeDeepSeekResponse', 'response.openaiChatCompletions', ({ 'route.candidate': { providerModel } }) => providerModel.enabledFlags.includes('vendor-deepseek')
     ? mapProtocolEvents<OpenAIChatCompletionsStreamEvent>(event => normalizeDeepSeekUsage(normalizeDeepSeekDeltas(event)))
     : undefined,
 );

@@ -4,11 +4,10 @@ import { routeCandidate } from './fixture.ts';
 import { wrapOpenAIResponsesAffinityEgress } from '../../../../../src/data-plane/chat/openai-responses/affinity/egress.ts';
 import { analyzeOpenAIResponsesAffinity, evaluateOpenAIResponsesCandidate } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
 import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/carrier.ts';
-import { run } from '@floway-dev/pipeline';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { link, run } from '@floway-dev/pipeline';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesOutputItemEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { initProviderRepo, providerModelOf, toProviderModelFacts, type UpstreamRecord } from '@floway-dev/provider';
-import { clearInProcessCopilotTokenCache, copilotProviderModule } from '@floway-dev/provider-copilot';
+import { initProviderRepo, type ProviderFrame, providerModelOf, toProviderModelFacts, type UpstreamRecord } from '@floway-dev/provider';
+import { copilotPipelines, copilotProviderModule, createCopilotService, toCopilotUpstreamFacts } from '@floway-dev/provider-copilot';
 import { sseResponse, stubModelCandidate, stubProvider, testFetcher, withMockedFetch } from '@floway-dev/test-utils';
 
 const upstream: UpstreamRecord = {
@@ -55,7 +54,7 @@ const sseBody = (events: OpenAIResponsesStreamEventEx[]): string =>
   `${events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join('')}data: [DONE]\n\n`;
 
 const collectEvents = async (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+  frames: AsyncIterable<ProviderFrame<OpenAIResponsesStreamEventEx>>,
 ): Promise<OpenAIResponsesStreamEventEx[]> => {
   const events: OpenAIResponsesStreamEventEx[] = [];
   for await (const frame of frames) {
@@ -65,14 +64,12 @@ const collectEvents = async (
 };
 
 test('Copilot item-id and generic affinity trailers compose and unwrap in boundary order', async () => {
+  const record = { ...upstream, configVersion: 1 };
+  const providerFacts = toCopilotUpstreamFacts(record);
   initProviderRepo(() => ({
     recordUpstreamMetric: async () => {},
-    upstreams: {
-      getById: async () => ({ ...upstream, configVersion: 1 }),
-      saveState: async () => {},
-    },
+    upstreams: { getById: async () => record, saveState: async () => {} },
   }));
-  clearInProcessCopilotTokenCache();
   const provider = copilotProviderModule.create(upstream);
   const rawModel = { id: 'gpt-test', supported_endpoints: ['/responses'] };
   const candidate = stubModelCandidate({
@@ -85,11 +82,9 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       upstreamId: 'up-other',
       kind: 'custom',
       name: 'Other',
-      inboundHeaderAllowlist: [],
       disabledPublicModelIds: [],
       modelPrefix: null,
       modelsCache: null,
-      pipelines: {},
       instance: stubProvider(),
     },
     model: { id: 'gpt-test', endpoints: { openaiResponses: {} } },
@@ -121,18 +116,26 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       return sseResponse();
     },
     async () => {
-      const pipeline = provider.pipelines.openaiResponses;
-      if (pipeline === undefined) throw new Error('Expected Copilot Responses pipeline');
+      const pipeline = copilotPipelines.openaiResponses;
+      link([pipeline]);
       const invoke = (payload: Omit<CanonicalOpenAIResponsesPayload, 'model'>) => run(pipeline, {
         'provider.model': toProviderModelFacts(providerModelOf(candidate)),
-        'request.headers': [], 'request.action': 'generate', 'request.payload': payload,
-      }, { services: { fetcher: () => testFetcher }, finalizationTimeoutMs: 2000 });
+        'provider.upstream': providerFacts,
+        'request.http': { method: 'POST', url: { origin: 'https://floway.test', pathname: '/responses' }, headers: [], body: null },
+        'request.action': 'generate', 'request.payload': payload,
+      }, { services: { fetcher: () => testFetcher, copilot: createCopilotService() }, finalizationTimeoutMs: 2000 });
       const first = invoke({ input: [], stream: true, store: false });
-      const { 'response.events': firstEvents } = await first.result;
-      if (firstEvents === undefined) throw new Error('Expected first Copilot stream');
+      const firstOutcome = (await first.result)['response.openaiResponses'];
+      if (firstOutcome.kind !== 'stream') throw new Error('Expected first Copilot stream');
+      const firstEvents = async function* () {
+        for await (const frame of firstOutcome.events) {
+          if (frame.type === 'transport-error') throw new Error(frame.error.message);
+          yield frame;
+        }
+      };
 
       const codec = new AffinityCodec('00'.repeat(32));
-      const publicEvents = await collectEvents(wrapOpenAIResponsesAffinityEgress(firstEvents, {
+      const publicEvents = await collectEvents(wrapOpenAIResponsesAffinityEgress(firstEvents(), {
         codec,
         affinity: {
           upstreamId: provider.upstreamId,
@@ -155,7 +158,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
         store: false,
       };
       const prepared = await analyzeOpenAIResponsesAffinity(payload, codec);
-      const accepted = evaluateOpenAIResponsesCandidate(prepared, routeCandidate(candidate), payload);
+      const accepted = evaluateOpenAIResponsesCandidate(prepared, routeCandidate(candidate, providerFacts), payload);
       const degraded = evaluateOpenAIResponsesCandidate(prepared, routeCandidate(otherCandidate), payload);
       if (accepted.kind !== 'accepted' || degraded.kind !== 'accepted') throw new Error('Expected both candidate projections');
       const exact = accepted.payload;
@@ -165,9 +168,9 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
 
       const { model: _model, ...exactBody } = exact;
       const second = invoke(exactBody);
-      const { 'response.events': replayEvents } = await second.result;
-      if (replayEvents === undefined) throw new Error('Expected replay Copilot stream');
-      await replayEvents.close();
+      const replay = (await second.result)['response.openaiResponses'];
+      if (replay.kind !== 'stream') throw new Error('Expected replay Copilot stream');
+      await replay.events.close();
       expect(await second.done).toEqual({ ok: true });
     },
   );

@@ -18,7 +18,6 @@ import { internalDebugErrorFields, toInternalDebugError } from '@floway-dev/prov
 
 export interface ResponsesDelivery extends DeliveryIntent {
   readonly createdAt: number;
-  readonly transport: 'http' | 'websocket';
 }
 
 const ERROR_HTTP_STATUS = new Map<string, number>([
@@ -56,7 +55,7 @@ export const openAIResponsesInternalErrorBody = (error: unknown) => {
   return { error: { type: debug.type, message: debug.message, provider_specific_fields: internalDebugErrorFields(debug) } };
 };
 
-const collectFailure = (error: unknown) => {
+export const collectFailure = (error: unknown) => {
   if (error instanceof Error && isOpenAIResponsesErrorEvent(error.cause)) {
     const { sequence_number: _sequenceNumber, ...body } = error.cause;
     return { status: openAIResponsesErrorHttpStatus(error.cause), body, reason: 'protocol-error' as const };
@@ -126,6 +125,7 @@ const openaiResponsesSseProtocol = (): SseProtocol<ProtocolFrame<ClientOpenAIRes
 
 export const encodeResponses = createEncode<'openaiResponses', ResponsesDelivery, ClientOpenAIResponsesStreamEvent>('openaiResponses', {
   collectFailure,
+  transportError: error => ({ status: 502, body: openAIResponsesInternalErrorBody(error) }),
   openSse: openaiResponsesSseProtocol,
   encodeJson: collectOpenAIResponsesProtocolEventsToResult,
   jsonOutcome: json => isJsonObject(json) && json.status === 'failed' ? failedRender('protocol-error') : { kind: 'completed' },
@@ -133,6 +133,8 @@ export const encodeResponses = createEncode<'openaiResponses', ResponsesDelivery
 
 export const encodeResponsesCompact = createEncode<'openaiResponses', ResponsesDelivery, OpenAIResponsesStreamEventEx>('openaiResponses', {
   collectFailure,
+  transportError: error => ({ status: 502, body: openAIResponsesInternalErrorBody(error) }),
+  encodeScalar: (result, delivery) => completeOpenAIResponsesCompaction(result, delivery.createdAt),
   async encodeJson(source, delivery) {
     const result = await collectOpenAIResponsesProtocolEventsToResult(source);
     return completeOpenAIResponsesCompaction(result, delivery.createdAt);

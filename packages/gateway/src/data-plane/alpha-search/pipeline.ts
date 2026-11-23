@@ -1,21 +1,21 @@
 import { z } from 'zod';
 
 import type { WebSearchUsageRecord } from '../../repo/types.ts';
-import { answerKeys, gatewayAnswer } from '../pipeline/answer.ts';
-import { edgeHttp, type HttpOutput, jsonHttpResponse } from '../pipeline/edge-http.ts';
-import { type CandidateRequest, type CandidatesRequest, failover } from '../pipeline/failover.ts';
-import type { GatewayHttpFacts } from '../pipeline/host.ts';
-import { forwardHttp, header, openAiApiError, type RenderedAttemptResponse, requestBytes, scalarHttpAttempt } from '../pipeline/non-chat.ts';
-import { observeIdentity } from '../pipeline/observe-usage.ts';
+import { createProviderEnding } from '../chat/shared/enter-upstream.ts';
+import { billableCall, type CallPerformanceFacts, type CallUsageFacts, observedTokenUsage, observeIdentity, priceCall, recordCall, scalarCallFacts } from '../pipeline/call-metering.ts';
+import { edgeHttp, type HttpDeliveryFacts, type HttpInput, type HttpOutput, jsonHttpResponse, stripFlowayAuth } from '../pipeline/edge-http.ts';
+import { type CandidateRequest, type CandidatesRequest, createFailover } from '../pipeline/failover.ts';
+import { GATEWAY_HTTP_ENTRY, type GatewayHttpFacts, isUploadError } from '../pipeline/host.ts';
+import { forwardHttp, header, openAiApiError, requestBytes } from '../pipeline/non-chat.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
-import { priceUsage, type SettlementFacts, writeSettlement } from '../pipeline/settlement.ts';
-import { filterInboundHeaderEntries } from '../shared/inbound-headers.ts';
-import { resolveAlphaSearchRouteCandidate } from '../tools/web-search/alpha-search/upstream.ts';
+import { alphaSearchProviderTargets } from '../providers/upstreams.ts';
+import { resolveAlphaSearchRoute } from '../tools/web-search/alpha-search/upstream.ts';
 import { assertLocalWebSearchSupport, executeOperationToText, isSearchResponseLength, maxResultsForContextSize, parseWebSearchOperations, startBatchFetch, UnsupportedLocalWebSearchFeatureError, type WebSearchExecutionSession, type WebSearchFilters } from '../tools/web-search/operations.ts';
 import { type SearchUsageRecords, writeSearchUsage } from '../tools/web-search/write-search-usage.ts';
-import { compose, defineEnding, defineStage, type DynamicTarget, link } from '@floway-dev/pipeline';
+import type { HttpResponseFacts } from '@floway-dev/http';
+import { Bytes, compose, defineEnding, defineStage, link } from '@floway-dev/pipeline';
 import { isJsonMediaType } from '@floway-dev/protocols/common';
-import type { ProviderHttpOutput, ProviderInput } from '@floway-dev/provider';
+import type { ProviderAlphaSearchOutput } from '@floway-dev/provider';
 
 const domainListSchema = z.array(z.string());
 
@@ -113,92 +113,126 @@ type Payload = Record<string, unknown>;
 interface PayloadFacts { readonly 'request.payload': Payload }
 type Resolved = GatewayHttpFacts & PayloadFacts & CandidatesRequest;
 type Attempt = GatewayHttpFacts & PayloadFacts & CandidateRequest;
-type AlphaPorts = Pick<GatewayServices, 'providers' | 'webSearchProvider'>;
-type Targets = { provider: DynamicTarget<string, ProviderInput<Payload>, ProviderHttpOutput, GatewayServices> };
-type AlphaAnswer = RenderedAttemptResponse & SearchUsageRecords;
-const alphaAnswerKeys = [...answerKeys, 'response.searchUsage.records'];
+type AlphaAnswer = HttpOutput & SearchUsageRecords;
+const outcomeKey = 'response.alphaSearch';
+const callEntry = [...GATEWAY_HTTP_ENTRY, 'request.payload', 'route.candidate'] as const;
+const callExit = ['response.http', 'response.modelKey', outcomeKey] as const;
+const alphaAnswerKeys = ['response.http', 'response.searchUsage.records'] as const;
 
-const prepareAlphaSearch = defineStage<GatewayHttpFacts, Resolved, AlphaAnswer, AlphaAnswer, AlphaPorts>({
+const prepareAlphaSearch = defineStage<GatewayHttpFacts, Resolved, ProviderAlphaSearchOutput, AlphaAnswer, Pick<GatewayServices, 'providers' | 'modelsRefresh' | 'webSearchProvider'>>({
   name: 'prepareAlphaSearch',
   through: {
     request: {
       needs: ['request.http', 'request.auth.apiKeyId', 'request.auth.user', 'request.route.upstreamIds', 'request.route.runtimeLocation'],
       consumes: [], provides: ['request.payload', 'route.candidates'],
     },
-    response: { needs: [], consumes: [], provides: [] },
+    response: {
+      needs: callExit,
+      consumes: ['response.modelKey', outcomeKey],
+      provides: alphaAnswerKeys,
+    },
   },
   return: { provides: alphaAnswerKeys },
-  execute: async (facts, next, env) => {
+  execute: async (facts, scope) => {
     const http = facts['request.http'];
     const records: WebSearchUsageRecord[] = [];
-    const reply = (response: RenderedAttemptResponse['response.http']): AlphaAnswer => ({
-      ...gatewayAnswer(env, response),
+    const reply = (response: HttpResponseFacts): AlphaAnswer => ({
+      'response.http': response,
       'response.searchUsage.records': records,
     });
+    if (isUploadError(http.body)) return reply(openAiApiError(502, http.body.error.message, scope.clock()));
     let body: unknown = {};
     if (isJsonMediaType(header(http.headers, 'content-type'))) {
       try {
         body = JSON.parse(requestBytes(http).utf8());
-      } catch {
-        return reply(jsonHttpResponse(400, { error: 'Malformed JSON in request body' }, env.clock()));
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+        return reply(jsonHttpResponse(400, { error: 'Malformed JSON in request body' }, scope.clock()));
       }
     }
     const parsed = alphaSearchRequestSchema.safeParse(body);
-    if (!parsed.success) return reply(jsonHttpResponse(400, { error: parsed.error.issues[0]?.message ?? 'Invalid input' }, env.clock()));
+    if (!parsed.success) return reply(jsonHttpResponse(400, { error: parsed.error.issues[0]?.message ?? 'Invalid input' }, scope.clock()));
 
-    const config = await env.services.webSearchProvider.alphaSearch();
+    const config = await scope.services.webSearchProvider.alphaSearch();
     if (!config.enabled) {
-      const body = await localSearch(parsed.data, facts['request.auth.apiKeyId'], env.services.webSearchProvider, env.signal, row => { records.push(row); });
-      return reply(jsonHttpResponse(200, body, env.clock()));
+      const body = await localSearch(parsed.data, facts['request.auth.apiKeyId'], scope.services.webSearchProvider, scope.signal, row => { records.push(row); });
+      return reply(jsonHttpResponse(200, body, scope.clock()));
     }
-    const candidate = await resolveAlphaSearchRouteCandidate(env.services.providers, facts, config);
-    if (candidate === undefined) return reply(openAiApiError(404, 'Search model not found.', env.clock()));
+    const { candidate, staleRefreshes } = await resolveAlphaSearchRoute(scope.services.providers, facts, config);
+    for (const target of staleRefreshes) scope.defer('models.refresh', scope.services.modelsRefresh(target));
+    if (candidate === undefined) return reply(openAiApiError(404, 'Search model not found.', scope.clock()));
     const { model: _clientModel, ...payload } = parsed.data;
-    return await next({ ...facts, 'request.payload': payload, 'route.candidates': [candidate] });
+    const {
+      'response.http': response,
+      'response.modelKey': _modelKey,
+      [outcomeKey]: outcome,
+      ...result
+    } = await scope.next({ ...facts, 'request.payload': payload, 'route.candidates': [candidate] });
+    const forwarded = forwardHttp(response, null);
+    const outgoing = outcome.kind === 'error' && forwarded.body === null && (forwarded.transportError !== undefined || outcome.source === 'local')
+      ? { ...forwarded, headers: [...forwarded.headers.filter(([name]) => name.toLowerCase() !== 'content-type'), ['content-type', 'application/json'] as const], body: Bytes.fromUtf8(JSON.stringify(outcome.error)) }
+      : forwarded;
+    return { ...result, ...reply(outgoing) };
   },
 });
 
-const enterUpstream = defineEnding<Attempt, AlphaAnswer, Targets, Pick<GatewayServices, 'providers'>>({
-  name: 'enterUpstream',
-  request: { needs: ['request.http', 'request.payload', 'route.candidate'] },
-  into: {
-    provider: {
-      request: { needs: [], consumes: ['request.http'], provides: ['provider.model', 'request.headers'] },
-      response: { needs: ['response.http', 'response.modelKey'], consumes: [], provides: alphaAnswerKeys },
-    },
+const observeAlphaSearchCall = defineStage<Attempt, Attempt, ProviderAlphaSearchOutput, ProviderAlphaSearchOutput & CallUsageFacts & CallPerformanceFacts>({
+  name: 'observeAlphaSearchCall',
+  through: {
+    request: { needs: ['route.candidate'], consumes: [], provides: [] },
+    response: { needs: callExit, consumes: [], provides: ['response.call.usage', 'response.call.performance'] },
   },
-  execute: async ({ 'request.http': http, ...facts }, into, env) => {
-    const candidate = facts['route.candidate'];
-    const provider = env.services.providers.resolve(candidate.upstreamId);
+  execute: async (facts, scope) => {
+    const response = await scope.next(facts);
+    const call = response[outcomeKey].kind === 'ok'
+      ? billableCall(scope, observeIdentity(facts['route.candidate'], response['response.modelKey']), 'completed', observedTokenUsage(null))
+      : null;
+    return { ...response, ...scalarCallFacts(scope, call, null) };
+  },
+});
+
+const keepCodexTurnMetadata = defineStage<HttpInput, HttpInput, HttpOutput, HttpOutput>({
+  name: 'keepCodexTurnMetadata',
+  through: {
+    request: { needs: ['request.http'], consumes: [], provides: ['request.http'] },
+    response: { needs: [], consumes: [], provides: [] },
+  },
+  execute: async (facts, scope) => {
+    const http = facts['request.http'];
+    // https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/endpoint/search.rs
     const headers = http.headers.filter(([name]) => name.toLowerCase() === 'x-codex-turn-metadata');
-    const result = await into.provider(candidate.upstreamId, {
-      ...facts,
-      'provider.model': candidate.providerModel,
-      'request.headers': filterInboundHeaderEntries(headers, provider.inboundHeaderAllowlist),
-    });
-    const identity = observeIdentity(candidate, result['response.modelKey']);
-    return {
-      ...result, ...scalarHttpAttempt(env, forwardHttp(result['response.http'], null), identity),
-      'response.source': 'upstream',
-      'response.searchUsage.records': [],
-    };
+    return await scope.next(headers.length === http.headers.length ? facts : { ...facts, 'request.http': { ...http, headers } });
   },
 });
 
-export const alphaSearchIngress = compose<GatewayHttpFacts, HttpOutput & SettlementFacts, GatewayServices, Targets>('alpha-search.ingress', {
-  stages: [writeSearchUsage, writeSettlement(null), priceUsage, edgeHttp, prepareAlphaSearch, failover],
-  targets: {
-    provider: {
-      entry: ['provider.model', 'request.headers', 'request.payload'],
-      exit: ['response.http', 'response.modelKey'],
-      resolve(upstreamId, { providers }) {
-        const pipeline = providers.resolve(upstreamId).pipelines.alphaSearch;
-        if (pipeline === undefined) throw new Error('Selected upstream does not support OpenAI search passthrough');
-        return pipeline;
+const call = compose<Attempt & ProviderAlphaSearchOutput, GatewayServices>()('alpha-search.egress', {
+  entry: callEntry,
+  exit: callExit,
+  stages: [recordCall(null), priceCall, observeAlphaSearchCall, keepCodexTurnMetadata],
+  targets: alphaSearchProviderTargets,
+  ending: createProviderEnding<Attempt, Payload, ProviderAlphaSearchOutput, {}>(
+    outcomeKey,
+    alphaSearchProviderTargets,
+    facts => ({ 'request.payload': facts['request.payload'] }),
+  ),
+});
+
+export const alphaSearchIngress = compose<GatewayHttpFacts & HttpOutput & HttpDeliveryFacts, GatewayServices>()('alpha-search.ingress', {
+  entry: GATEWAY_HTTP_ENTRY,
+  exit: ['response.http', 'response.delivery'] as const,
+  stages: [writeSearchUsage, edgeHttp, stripFlowayAuth, prepareAlphaSearch, createFailover(outcomeKey)],
+  targets: { call },
+  ending: defineEnding<Attempt, ProviderAlphaSearchOutput, { call: typeof call }, GatewayServices>({
+    name: 'enterCall',
+    request: { needs: callEntry },
+    into: {
+      call: {
+        request: { needs: [], consumes: [], provides: [] },
+        response: { needs: callExit, consumes: [], provides: [] },
       },
     },
-  },
-  ending: enterUpstream,
+    execute: async (facts, scope) => await scope.into.call(facts),
+  }),
 });
 
 link([alphaSearchIngress]);

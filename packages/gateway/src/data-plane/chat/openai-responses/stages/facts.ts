@@ -2,7 +2,7 @@ import type { RouteCandidate } from '../../../pipeline/services.ts';
 import type { ChatBodyOutput } from '../../shared/route-body.ts';
 import { defineStage } from '@floway-dev/pipeline';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
-import type { ChatTargetApi, ProviderResponsesOutput } from '@floway-dev/provider';
+import type { ChatTargetApi } from '@floway-dev/provider';
 
 export interface ResponsesBodyFacts {
   readonly 'request.openaiResponses': CanonicalOpenAIResponsesPayload;
@@ -10,7 +10,7 @@ export interface ResponsesBodyFacts {
   readonly 'route.targetApi': ChatTargetApi;
 }
 
-export type ResponsesBodyBack = ChatBodyOutput<'openaiResponses'> & Partial<Pick<ProviderResponsesOutput, 'response.result'>>;
+export type ResponsesBodyBack = ChatBodyOutput<'openaiResponses'>;
 
 export const responsesBodyRequest = {
   needs: ['request.openaiResponses', 'route.candidate', 'route.targetApi'],
@@ -27,7 +27,7 @@ export const responsesPayloadStage = (
     request: responsesBodyRequest,
     response: { needs: [], consumes: [], provides: [] },
   },
-  execute: async (facts, next) => await next({
+  execute: async (facts, scope) => await scope.next({
     ...facts,
     'request.openaiResponses': rewrite(facts['request.openaiResponses'], facts),
   }),

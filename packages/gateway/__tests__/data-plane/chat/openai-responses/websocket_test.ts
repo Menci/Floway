@@ -1108,7 +1108,7 @@ test.each([
         client.send(JSON.stringify({ type: 'response.create', event_id: 'evt_after_error', response: { model: 'gpt-direct-responses', input: 'next turn' } }));
         assert((await nextTurn).every(message => message.event_id === 'evt_after_error'));
         assertEquals(responseCalls, 2);
-        await vi.waitFor(() => assertEquals(dumps.stored.map(({ meta }) => meta.status), [500, 200]));
+        await vi.waitFor(() => assertEquals(dumps.stored.map(({ meta }) => meta.status), [200, 200]));
       } finally {
         raw.stop();
         client.close();
@@ -1317,7 +1317,7 @@ test.each(['socket close', 'send failure'] as const)('OpenAI Responses WebSocket
       // deliberately without flushing background work first: the interrupted
       // turn's dump has to be stored by then, not merely scheduled.
       assertEquals(dumps.stored.length, 1);
-      assertEquals(dumps.stored[0]?.meta.status, 500);
+      assertEquals(dumps.stored[0]?.meta.status, 200);
       if (trigger === 'send failure') {
         assertEquals(dumps.stored[0]?.meta.error, { kind: 'failed', reason: 'Failed to send a Responses WebSocket frame' });
       }
@@ -1325,17 +1325,17 @@ test.each(['socket close', 'send failure'] as const)('OpenAI Responses WebSocket
   );
 });
 
-test('OpenAI Responses WebSocket records a failed performance sample attributed to the throwing candidate', async () => {
+test('OpenAI Responses WebSocket reports a provider panic and keeps performance for measured calls', async () => {
   const { apiKey, repo } = await setupAppTest();
   const createServices = gatewayServices.createGatewayServices;
   const failure = new Error('simulated mid-attempt provider throw');
   failure.stack = undefined;
-  const resolve = vi.fn(() => { throw failure; });
+  const fetcher = vi.fn(() => async () => { throw failure; });
   const services = vi.spyOn(gatewayServices, 'createGatewayServices').mockImplementation(options => {
     const services = createServices(options);
     return {
       ...services,
-      providers: { ...services.providers, resolve },
+      fetcher,
     };
   });
 
@@ -1372,14 +1372,9 @@ test('OpenAI Responses WebSocket records a failed performance sample attributed 
 
     await flushAsyncWork();
 
-    expect(resolve).toHaveBeenCalledWith('up_copilot');
+    expect(fetcher).toHaveBeenCalledWith('up_copilot');
     const perfRows = (await repo.performance.listAll()).filter(row => row.upstream === 'up_copilot');
-    assertEquals(perfRows.length, 1);
-    assertEquals(perfRows[0]?.upstream, 'up_copilot');
-    assertEquals(perfRows[0]?.model, 'gpt-direct-responses');
-    assertEquals(perfRows[0]?.operation, 'chat');
-    assertEquals(perfRows[0]?.errorsNoOutput, 1);
-    assertEquals(perfRows[0]?.requests, 1);
+    assertEquals(perfRows, []);
   } finally {
     services.mockRestore();
   }

@@ -1,11 +1,12 @@
 import { createGatewayHttpHandler } from '../pipeline/host.ts';
 import { createNonChatPipeline, header, parseJsonModel, type ParsedOperation, requestBytes, respondJsonUsage } from '../pipeline/non-chat.ts';
+import { openaiImagesEditsProviderTargets, openaiImagesGenerationsProviderTargets } from '../providers/upstreams.ts';
 import { tokenUsageFromOpenAIImagesBody } from '../shared/telemetry/usage.ts';
 import type { HttpRequestFacts } from '@floway-dev/http';
 import { Bytes } from '@floway-dev/pipeline';
 import { isJsonMediaType, isMultipartFormDataMediaType } from '@floway-dev/protocols/common';
 import type { OpenAIImageEditReference, OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
-import { isBase64ImageDataUrl, type OpenAIImagesEditsRequest, type OpenAIImagesEditsSource, type ProviderHttpOutput } from '@floway-dev/provider';
+import { isBase64ImageDataUrl, type OpenAIImagesEditsRequest, type OpenAIImagesEditsSource } from '@floway-dev/provider';
 
 type PreparedOpenAIImagesEdit =
   | { type: 'ok'; request: OpenAIImagesEditsRequest }
@@ -68,10 +69,12 @@ const parseImageEdits = async (http: HttpRequestFacts): Promise<ParsedOperation<
   if (!isMultipartFormDataMediaType(contentType)) {
     return { error: 'OpenAI Images Edits request body must use application/json or multipart/form-data.' };
   }
+  const bytes = requestBytes(http);
   let form: FormData;
   try {
-    form = await new Response(requestBytes(http).toUint8Array() as Uint8Array<ArrayBuffer>, { headers: { 'content-type': contentType } }).formData();
-  } catch {
+    form = await new Response(bytes.toUint8Array() as Uint8Array<ArrayBuffer>, { headers: { 'content-type': contentType } }).formData();
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error;
     return { error: 'OpenAI Images Edits request body must be valid multipart/form-data.' };
   }
   const model = form.get('model');
@@ -104,7 +107,7 @@ const parseImageEdits = async (http: HttpRequestFacts): Promise<ParsedOperation<
 };
 
 type GenerationsPayload = Omit<OpenAIImagesGenerationsPayload, 'model'>;
-export const openaiImagesGenerationsIngress = createNonChatPipeline<GenerationsPayload, ProviderHttpOutput>({
+export const openaiImagesGenerationsIngress = createNonChatPipeline({
   name: 'openai-images-generations',
   sourceApi: '/images/generations',
   kind: 'image',
@@ -113,21 +116,23 @@ export const openaiImagesGenerationsIngress = createNonChatPipeline<GenerationsP
     const parsed = parseJsonModel(http, 'OpenAI Images Generations');
     return 'error' in parsed ? parsed : { model: parsed.model, payload: parsed.payload as GenerationsPayload };
   },
-  provider: pipelines => pipelines.openaiImagesGenerations,
+  outcomeKey: 'response.openaiImagesGenerations',
+  targets: openaiImagesGenerationsProviderTargets,
   select: candidates => candidates.filter(candidate => candidate.endpoints.openaiImagesGenerations !== undefined),
-  respond: (response, _request, identity, env) => respondJsonUsage(response['response.http'], identity, env, '/images/generations', tokenUsageFromOpenAIImagesBody),
+  respond: (response, _request, identity, scope) => respondJsonUsage(response['response.http'], identity, scope, '/images/generations', tokenUsageFromOpenAIImagesBody),
 });
 
-const imagesEditsIngress = createNonChatPipeline<OpenAIImagesEditsRequest, ProviderHttpOutput>({
+const imagesEditsIngress = createNonChatPipeline({
   name: 'openai-images-edits',
   sourceApi: '/images/edits',
   kind: 'image',
   operation: 'image_edit',
   parse: parseImageEdits,
-  provider: pipelines => pipelines.openaiImagesEdits,
+  outcomeKey: 'response.openaiImagesEdits',
+  targets: openaiImagesEditsProviderTargets,
   select: candidates => candidates.filter(candidate => candidate.endpoints.openaiImagesEdits !== undefined),
-  respond: (response, _request, identity, env) => respondJsonUsage(response['response.http'], identity, env, '/images/edits', tokenUsageFromOpenAIImagesBody),
+  respond: (response, _request, identity, scope) => respondJsonUsage(response['response.http'], identity, scope, '/images/edits', tokenUsageFromOpenAIImagesBody),
 });
 
-export const openaiImagesGenerations = createGatewayHttpHandler(openaiImagesGenerationsIngress, { errorStatus: () => 502, performanceOperation: 'image_generation' });
-export const openaiImagesEdits = createGatewayHttpHandler(imagesEditsIngress, { errorStatus: () => 502, performanceOperation: 'image_edit' });
+export const openaiImagesGenerations = createGatewayHttpHandler(openaiImagesGenerationsIngress, { errorStatus: () => 502 });
+export const openaiImagesEdits = createGatewayHttpHandler(imagesEditsIngress, { errorStatus: () => 502 });

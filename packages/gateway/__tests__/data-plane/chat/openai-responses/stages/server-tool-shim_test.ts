@@ -14,8 +14,6 @@ import {
 import { imageGenerationServerTool, expandImageGenerationCall } from '../../../../../src/data-plane/chat/openai-responses/stages/server-tools/image-generation.ts';
 import { SHIM_TOOL_NAME, expandWebSearchCall, webSearchServerTool } from '../../../../../src/data-plane/chat/openai-responses/stages/server-tools/web-search.ts';
 import { createSidecarCodecFactory, SidecarDomain } from '../../../../../src/data-plane/chat/shared/sidecar-codec.ts';
-import { readHttpBytes } from '../../../../../src/data-plane/pipeline/non-chat.ts';
-import type { BillableCall } from '../../../../../src/data-plane/pipeline/observe-usage.ts';
 import type { GatewayServices } from '../../../../../src/data-plane/pipeline/services.ts';
 import { executeAlphaSearchSubRun } from '../../../../../src/data-plane/tools/web-search/alpha-search/execution.ts';
 import { loadWebSearchConfig } from '../../../../../src/data-plane/tools/web-search/config.ts';
@@ -30,10 +28,12 @@ import type {
   WebSearchProviderResult,
 } from '../../../../../src/data-plane/tools/web-search/types.ts';
 import { getRepo, initRepo } from '../../../../../src/repo/index.ts';
+import { tokenCountsFromUsage } from '../../../../../src/repo/usage-metrics.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
-import { Bytes, type RunDone } from '@floway-dev/pipeline';
+import { readHttpBytes } from '../fixture.ts';
+import { Bytes, type RunDone, snapshotError } from '@floway-dev/pipeline';
 import { decodeCanonicalBase64, encodeBase64, eventFrame } from '@floway-dev/protocols/common';
-import type { BillableUsage, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type {
   CanonicalOpenAIResponsesPayload,
@@ -47,7 +47,7 @@ import type {
   OpenAIResponsesToolChoice,
   OpenAIResponsesWebSearchAction,
 } from '@floway-dev/protocols/openai-responses';
-import type { ChatTargetApi, FlagId, TelemetryModelIdentity } from '@floway-dev/provider';
+import type { ChatTargetApi, FlagId, ProviderFrame, TelemetryModelIdentity } from '@floway-dev/provider';
 import { assert, assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
 import { routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
@@ -67,23 +67,22 @@ interface ScriptedEvents<T> {
   readonly type: 'events';
   readonly events: AsyncIterable<T>;
   readonly modelIdentity: TelemetryModelIdentity;
-  readonly usage?: Promise<BillableUsage>;
 }
 
 interface ScriptedFailure {
   readonly type: 'api-error';
-  readonly source: 'upstream' | 'gateway';
+  readonly source: 'upstream' | 'local';
   readonly http: { readonly status: number; readonly headers: Headers };
   readonly body: Uint8Array;
 }
 
 type ScriptedReply<T> = ScriptedEvents<T> | ScriptedFailure;
-const scriptEvents = <T>(events: AsyncIterable<T>, modelIdentity: TelemetryModelIdentity, options?: Pick<ScriptedEvents<T>, 'usage'>): ScriptedEvents<T> => ({
-  type: 'events', events, modelIdentity, ...options,
+const scriptEvents = <T>(events: AsyncIterable<T>, modelIdentity: TelemetryModelIdentity): ScriptedEvents<T> => ({
+  type: 'events', events, modelIdentity,
 });
 
 const scriptInputError = (error: { message: string; param?: string; code?: string }): ScriptedFailure => ({
-  type: 'api-error', source: 'gateway', http: { status: 400, headers: new Headers({ 'content-type': 'application/json' }) },
+  type: 'api-error', source: 'local', http: { status: 400, headers: new Headers({ 'content-type': 'application/json' }) },
   body: new TextEncoder().encode(JSON.stringify({
     error: {
       message: error.message, type: 'invalid_request_error', param: error.param ?? 'input', code: error.code ?? null,
@@ -91,16 +90,18 @@ const scriptInputError = (error: { message: string; param?: string; code?: strin
   })),
 });
 
+type ToolFrame = ProviderFrame<OpenAIResponsesStreamEventEx>;
+
 type ToolReply =
-  | { readonly type: 'events'; readonly events: AsyncIterable<Frame>; readonly billing: Promise<readonly BillableCall[]>; readonly done: Promise<RunDone> }
+  | { readonly type: 'events'; readonly events: AsyncIterable<ToolFrame>; readonly usage: readonly Parameters<GatewayServices['usageStore']['record']>[0][]; readonly done: Promise<RunDone> }
   | { readonly type: 'api-error'; readonly http: { readonly status: number }; readonly body: Bytes };
 
-type ToolHarness = (invocation: Invocation, fixture: ToolFixture, respond: () => Promise<ScriptedReply<Frame>>) => Promise<ToolReply>;
+type ToolHarness = (invocation: Invocation, fixture: ToolFixture, respond: () => Promise<ScriptedReply<ToolFrame>>) => Promise<ToolReply>;
 
 const openToolTurn = (registrations: readonly ServerToolRegistration[]): ToolHarness => {
   const stage = createServerToolShim(registrations);
   return async (invocation, fixture, respond) => {
-    const { result, done } = await driveResponsesStage(stage, invocation.payload, {
+    const { result, done, usage } = await driveResponsesStage(stage, invocation.payload, {
       apiKeyId: fixture.apiKeyId, signal: fixture.signal, services: fixture.services,
       enabledFlags: invocation.enabledFlags, targetApi: invocation.targetApi,
       async upstream(payload) {
@@ -110,12 +111,12 @@ const openToolTurn = (registrations: readonly ServerToolRegistration[]): ToolHar
         return {
           events: reply.events,
           modelKey: reply.modelIdentity.modelKey,
-          ...(reply.usage === undefined ? {} : { usage: reply.usage }),
         };
       },
     });
-    const stream = result['response.openaiResponses'];
-    if (stream !== undefined) return { type: 'events', events: stream, billing: result['response.usage.billable'].promise, done };
+    const outcome = result['response.openaiResponses'];
+    if (outcome.kind === 'stream') return { type: 'events', events: outcome.events, usage, done };
+    await done;
     const http = result['response.http'];
     return { type: 'api-error', http, body: await readHttpBytes(http.body) };
   };
@@ -592,10 +593,10 @@ const runShimAndDrain = async (
   run: () => Promise<ScriptedReply<ProtocolFrame<OpenAIResponsesStreamEventEx>>>,
 ): Promise<{
   result: ToolReply;
-  frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[];
+  frames: ToolFrame[];
 }> => {
   const result = await shim(inv, gatewayCtx, run);
-  const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = result.type === 'events'
+  const frames: ToolFrame[] = result.type === 'events'
     ? await collectFrames(result.events)
     : [];
   return { result, frames };
@@ -663,10 +664,10 @@ const openCallTurn = (outputIndex: number, callId: string, url: string): Scripte
 const findCallTurn = (outputIndex: number, callId: string, url: string, pattern: string): ScriptedTurn =>
   fcTurn(outputIndex, callId, SHIM_TOOL_NAME, JSON.stringify({ find: [{ ref_id: url, pattern }] }));
 
-const eventPayloads = (frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): OpenAIResponsesStreamEventEx[] =>
+const eventPayloads = (frames: ToolFrame[]): OpenAIResponsesStreamEventEx[] =>
   frames.filter(f => f.type === 'event').map(f => (f as { type: 'event'; event: OpenAIResponsesStreamEventEx }).event);
 
-const outputItemDoneEvents = (frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[]): Array<Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }>> =>
+const outputItemDoneEvents = (frames: ToolFrame[]): Array<Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }>> =>
   eventPayloads(frames)
     .filter((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.output_item.done' }> => e.type === 'response.output_item.done');
 
@@ -1340,39 +1341,19 @@ test('upstream sends an error event after response.created: shim forwards both e
   assert(error.provider_specific_fields === diagnostics);
 });
 
-test('turn-1 iterator throws AFTER response.created: synthesizes response.failed with synthesized id + last-seen model', async () => {
+test('turn-1 transport failure follows response.created and stops the server-tool loop', async () => {
   makeStubDeps();
-  const shim = openWebSearchTurn;
-  const inv = makeInvocation();
-  const cause = { socket: 'upstream-1' };
-  const streamError = new Error('connection reset by peer', { cause });
-  const failingMidStream: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
-    yield mkResponseCreated('upstream_mid');
-    throw streamError;
-  })();
-  const run = async (): Promise<ScriptedReply<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => ({
-    type: 'events',
-    events: failingMidStream,
-    modelIdentity: testTelemetryModelIdentity,
-  });
-
-  const result = await shim(inv, makeToolFixture(), run);
+  const streamError = snapshotError(new Error('connection reset by peer', { cause: { socket: 'upstream-1' } }));
+  const result = await openWebSearchTurn(makeInvocation(), makeToolFixture(), async () =>
+    scriptEvents((async function* () {
+      yield mkResponseCreated('upstream_mid');
+      yield { type: 'transport-error' as const, error: streamError };
+    })(), testTelemetryModelIdentity));
   assert(result.type === 'events');
-  const events = eventPayloads(await collectFrames(result.events));
-  const terminal = events[events.length - 1];
-  assertEquals(terminal.type, 'response.failed');
-  const failed = terminal as Extract<OpenAIResponsesStreamEventEx, { type: 'response.failed' }>;
-  assertEquals(failed.response.status, 'failed');
-  assert(failed.response.id.startsWith('resp_shim_'));
-  assertEquals(failed.response.model, 'test-model');
-  assertEquals(failed.response.error?.code, 'server_error');
-  assert(failed.response.error?.message.includes('connection reset by peer'));
-  const diagnostics = failed.response.error?.provider_specific_fields;
-  assertEquals(diagnostics?.name, 'Error');
-  assertEquals(diagnostics?.stack, streamError.stack);
-  assert(diagnostics?.cause === cause);
-  assertFalse('stack' in (failed.response.error as object));
-  assertFalse('type' in (failed.response.error as object));
+  const frames = await Array.fromAsync(result.events);
+  assertEquals(frames.map(frame => frame.type), ['event', 'transport-error']);
+  assertEquals(frames.at(-1), { type: 'transport-error', error: streamError });
+  assertEquals(await result.done, { ok: true });
 });
 
 // ── Snapshot pass-through preserves upstream-owned envelope fields ──
@@ -1797,7 +1778,9 @@ test('responses target preserves a missing-model failure once a search runs', as
   } satisfies WebSearchConfig);
   const failure = new Error('Configured Alpha Search model is unavailable');
   mockExecuteAlpha.mockClear();
-  mockExecuteAlpha.mockRejectedValue(failure);
+  mockExecuteAlpha.mockImplementation(async (_scope, _facts, { action }) => ({
+    action, results: [{ type: 'text_result', url: '', title: 'Search failed', snippet: failure.message }], outputText: failure.message,
+  }));
   const inv = makeInvocation({
     targetApi: 'openaiResponses',
     enabledFlags: new Set<FlagId>(['openai-responses-web-search-shim']),
@@ -1807,12 +1790,11 @@ test('responses target preserves a missing-model failure once a search runs', as
     messageTurn('done', 0),
   ]);
   const { frames } = await runShimAndDrain(openWebSearchTurn, inv, makeToolFixture(), script.run);
-  const failed = eventPayloads(frames).find(event => event.type === 'response.failed');
-  assert(failed !== undefined);
-  assertEquals(failed.response.status, 'failed');
-  assertEquals(failed.response.error?.provider_specific_fields?.name, 'Error');
-  assertEquals(failed.response.error?.provider_specific_fields?.stack, failure.stack);
-  assertEquals(script.callCount(), 1);
+  assertEquals(findResponseCompleted(frames).response.status, 'completed');
+  const feedback = inv.payload.input.find(item => item.type === 'function_call_output');
+  assert(feedback?.type === 'function_call_output' && typeof feedback.output === 'string');
+  assert(feedback.output.includes(failure.message));
+  assertEquals(script.callCount(), 2);
   assertEquals(mockExecuteAlpha.mock.calls.length, 1);
 });
 
@@ -2326,7 +2308,7 @@ const mkResponseCompletedWithTools = (
   });
 
 const findResponseCompleted = (
-  frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[],
+  frames: ToolFrame[],
 ): Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }> => {
   for (const f of frames) {
     if (f.type === 'event' && f.event.type === 'response.completed') {
@@ -2375,18 +2357,22 @@ test('duplicate hosted web_search declarations collapse to the last complete dec
   assertEquals((completed.response.tools![0] as { filters: typeof lastFilters }).filters, lastFilters);
 });
 
+const withTurnUsage = async function* (frames: readonly Frame[], tokens: number): AsyncGenerator<Frame> {
+  for (const frame of frames) {
+    if (frame.type === 'event' && frame.event.type === 'response.completed') {
+      yield eventFrame({ ...frame.event, response: { ...frame.event.response, usage: { input_tokens: tokens, output_tokens: tokens, total_tokens: tokens * 2 } } });
+    } else yield frame;
+  }
+};
+
 test('continuation streams settle billable calls with their own model attribution', async () => {
   const { backend } = makeStubDeps();
   const turns = [searchCallTurn(0, 'first', 'first search'), searchCallTurn(0, 'second', 'second search'), messageTurn('done')];
   let runCalls = 0;
   const result = await openWebSearchTurn(makeInvocation(), makeToolFixture(), async () => {
     const frames = turns[runCalls++];
-    const billableUsage: BillableUsage = { input: runCalls, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: runCalls };
-    const usage = Promise.withResolvers<BillableUsage>();
-    return scriptEvents((async function* () {
-      for (const frame of frames) yield frame;
-      usage.resolve(billableUsage);
-    })(), { ...testTelemetryModelIdentity, modelKey: `round-${runCalls}` }, { usage: usage.promise });
+    const tokens = runCalls;
+    return scriptEvents(withTurnUsage(frames, tokens), { ...testTelemetryModelIdentity, modelKey: `round-${tokens}` });
   });
 
   assert(result.type === 'events');
@@ -2394,37 +2380,29 @@ test('continuation streams settle billable calls with their own model attributio
   assertEquals(findResponseCompleted(frames).response.status, 'completed');
   assertEquals(runCalls, 3);
   assertEquals(backend.calls.length, 2);
-  const billed = await result.billing;
-  assertEquals(billed.map(call => call.usage?.input), [1, 2, 3]);
-  assertEquals(billed.map(call => call.identity.modelKey), ['round-1', 'round-2', 'round-3']);
+  assertEquals(await result.done, { ok: true });
+  assertEquals(result.usage.map(row => tokenCountsFromUsage(row).input), [1, 2, 3]);
+  assertEquals(result.usage.map(row => row.modelKey), ['round-1', 'round-2', 'round-3']);
 }, 1_000);
 
-test('the shim retains observed billing when a later turn throws after its usage', async () => {
+test('the shim retains observed billing when a later turn has a transport failure after its usage', async () => {
   makeStubDeps();
   let runCalls = 0;
-  const streamError = new Error('stream interrupted after usage');
+  const streamError = snapshotError(new Error('stream interrupted after usage'));
   const result = await openWebSearchTurn(makeInvocation(), makeToolFixture(), async () => {
     const fails = ++runCalls === 2;
-    const usage = Promise.withResolvers<BillableUsage>();
-    const billableUsage: BillableUsage = { input: 10, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 2 };
     return scriptEvents((async function* () {
-      try {
-        const frames = fails ? [mkResponseCreated(), mkResponseCompleted()] : searchCallTurn(0, 'first', 'first search');
-        for (const frame of frames) yield frame;
-        if (fails) throw streamError;
-      } finally {
-        usage.resolve(billableUsage);
-      }
-    })(), testTelemetryModelIdentity, { usage: usage.promise });
+      const frames = fails ? [mkResponseCreated(), mkResponseCompleted()] : searchCallTurn(0, 'first', 'first search');
+      yield* withTurnUsage(frames, 10);
+      if (fails) yield { type: 'transport-error' as const, error: streamError };
+    })(), testTelemetryModelIdentity);
   });
-
   assert(result.type === 'events');
-  const frames = await collectFrames(result.events);
-  const failed = eventPayloads(frames).find(event => event.type === 'response.failed');
-  assert(failed?.type === 'response.failed');
-  assert(failed.response.error?.message.includes(streamError.message));
+  const frames = await Array.fromAsync(result.events);
+  assertEquals(frames.at(-1), { type: 'transport-error', error: streamError });
   assertEquals(runCalls, 2);
-  assertEquals((await result.billing).map(call => call.usage?.input), [10, 10]);
+  assertEquals(await result.done, { ok: true });
+  assertEquals(result.usage.map(row => tokenCountsFromUsage(row).input), [10, 10]);
 }, 1_000);
 
 test('helper allocation reserves names across callable scopes, history and search-loaded tools without moving declarations', () => {
@@ -2630,7 +2608,7 @@ test('helper echoes distinguish namespaced functions and rewrite hosted allowed_
   assertEquals(findResponseCompleted(frames).response.tool_choice, choice);
 });
 
-test('server-tool loop preserves internal failure diagnostics on the failed resource', async () => {
+test('server-tool loop propagates an internal continuation exception', async () => {
   makeStubDeps();
   const cause = { operation: 'translated upstream dispatch' };
   const failure = new TypeError('Cannot translate tool input', { cause });
@@ -2642,13 +2620,7 @@ test('server-tool loop preserves internal failure diagnostics on the failed reso
   };
   const result = await openWebSearchTurn(makeInvocation(), makeToolFixture(), run);
   assert(result.type === 'events');
-  const events = eventPayloads(await collectFrames(result.events));
-  const terminal = events.at(-1);
-  assert(terminal?.type === 'response.failed');
+  await expect(Array.fromAsync(result.events)).rejects.toBe(failure);
   assertEquals(runCalls, 2);
-  assertEquals(terminal.response.error?.code, 'server_error');
-  assert(terminal.response.error?.message.includes(failure.message));
-  assertEquals(terminal.response.error?.provider_specific_fields, { name: failure.name, stack: failure.stack, cause });
-
-  assertFalse('stack' in (terminal.response.error as object));
+  expect(await result.done).toEqual({ ok: false, error: snapshotError(failure) });
 });

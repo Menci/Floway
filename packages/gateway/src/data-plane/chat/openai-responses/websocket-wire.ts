@@ -1,15 +1,19 @@
+import { syntheticEventsFromCompaction } from './items/output.ts';
 import type { ResponsesTurnBack } from './stages/stateful-turn.ts';
 import type { HttpDelivery, HttpDeliveryFacts, HttpOutput } from '../../pipeline/edge-http.ts';
-import { header, readHttpBytes } from '../../pipeline/non-chat.ts';
+import { header } from '../../pipeline/non-chat.ts';
 import { failedRender, type RenderFacts, type RenderOutcome } from '../../pipeline/render.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../shared/sse.ts';
-import { Bytes, defineStage, type ManagedStream, snapshotError, type StageEnv, type StreamEnd } from '@floway-dev/pipeline';
-import { isJsonMediaType, isJsonObject, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { transportErrorForDisplay } from '../shared/encode.ts';
+import { isTransportFailure } from '@floway-dev/http';
+import { Bytes, defineStage, type ManagedStream, snapshotError, type Scope, type StreamEnd } from '@floway-dev/pipeline';
+import { isJsonObject } from '@floway-dev/protocols/common';
 import {
-  type ClientOpenAIResponsesStreamEvent,
+  type OpenAIResponsesStreamEventEx,
   isOpenAIResponsesTerminalEvent,
   OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE,
 } from '@floway-dev/protocols/openai-responses';
+import type { ProviderFrame } from '@floway-dev/provider';
 import { internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
 
 // Only the prefixed extension type and sequence number are required.
@@ -45,23 +49,14 @@ export interface WebSocketInterruptAccepted {
   readonly interrupt: WebSocketInterrupt;
 }
 
-type Frame = ProtocolFrame<ClientOpenAIResponsesStreamEvent> | WebSocketInterruptAccepted;
-type WebSocketFrame = ReturnType<typeof webSocketError> | ClientOpenAIResponsesStreamEvent;
+type Frame = ProviderFrame<OpenAIResponsesStreamEventEx> | WebSocketInterruptAccepted;
+type WebSocketFrame = ReturnType<typeof webSocketError> | OpenAIResponsesStreamEventEx;
 export type WebSocketEncodedTurn = HttpOutput & RenderFacts & HttpDeliveryFacts;
 
 export const encodeWebSocketFrame = (frame: object, eventId: string | undefined) =>
   Bytes.fromUtf8(JSON.stringify(eventId === undefined ? frame : { ...frame, event_id: eventId }));
 
-const decodeApiError = async (http: HttpOutput['response.http']) => {
-  const text = (await readHttpBytes(http.body)).utf8();
-  let value: unknown = { message: text };
-  if (isJsonMediaType(header(http.headers, 'content-type') ?? null)) {
-    try {
-      value = JSON.parse(text);
-    } catch {
-      // Some providers attach a JSON content type to plain-text errors.
-    }
-  }
+const decodeApiError = (http: HttpOutput['response.http'], value: unknown) => {
   const source = isJsonObject(value) ? isJsonObject(value.error) ? value.error : value : {};
   const type = typeof source.type === 'string' ? source.type : http.status >= 500 ? 'server_error' : 'invalid_request_error';
   return webSocketError(http.status, {
@@ -72,38 +67,37 @@ const decodeApiError = async (http: HttpOutput['response.http']) => {
   }, header(http.headers, 'retry-after'));
 };
 
-const encodeWebSocketResponse = async (
-  env: StageEnv, http: HttpOutput['response.http'], eventId: string | undefined, events: ManagedStream<Frame> | undefined,
-): Promise<WebSocketEncodedTurn> => {
+const encodeWebSocketResponse = (
+  scope: Pick<Scope, 'clock' | 'createStream' | 'wrapStream' | 'deferred'>,
+  http: HttpOutput['response.http'], eventId: string | undefined, outcomeValue: Source['response.openaiResponses'],
+): WebSocketEncodedTurn => {
   let outcome: RenderOutcome = { kind: 'completed' };
   const onClose = (end: StreamEnd) => {
-    const endedAt = env.clock();
+    const endedAt = scope.clock();
     const failure = end.how === 'errored' ? end.error : end.how === 'cancelled' && end.reason instanceof WebSocketSendError ? end.reason : undefined;
-    render.resolve(end.how === 'exhausted' || failure !== undefined ? outcome : { kind: 'cancelled' });
+    render.resolve(end.how === 'errored' || end.how === 'leaked' ? failedRender('source-error', failure)
+      : end.how === 'exhausted' ? outcome : { kind: 'cancelled' });
     delivery.resolve(failure === undefined
       ? { kind: end.how === 'exhausted' ? 'completed' : 'client-cancelled', endedAt }
       : { kind: 'write-failed', endedAt, error: snapshotError(failure) });
   };
   const frames = async function* (source: AsyncIterable<Frame>, signal: AbortSignal) {
-    let terminal: ClientOpenAIResponsesStreamEvent | undefined;
-    try {
-      for await (const frame of source) {
-        if (terminal !== undefined || frame.type === 'done') continue;
-        if (frame.type === 'control') {
-          yield frame;
-          continue;
-        }
-        const event = frame.event;
-        if (event.type === 'error' || event.type === 'response.failed') outcome = failedRender('protocol-error');
-        if (isOpenAIResponsesTerminalEvent(event)) terminal = event;
-        else yield event;
+    let terminal: OpenAIResponsesStreamEventEx | undefined;
+    for await (const frame of source) {
+      if (terminal !== undefined || frame.type === 'done') continue;
+      if (isTransportFailure(frame)) {
+        outcome = { kind: 'failed', reason: 'source-error', error: frame.error };
+        yield { ...webSocketServerError(transportErrorForDisplay(frame.error)), status: 502 };
+        return;
       }
-    } catch (error) {
-      if (!signal.aborted) {
-        outcome = failedRender('source-error', error);
-        yield webSocketServerError(error);
+      if (frame.type === 'control') {
+        yield frame;
+        continue;
       }
-      return;
+      const event = frame.event;
+      if (event.type === 'error' || event.type === 'response.failed') outcome = failedRender('protocol-error');
+      if (isOpenAIResponsesTerminalEvent(event)) terminal = event;
+      else yield event;
     }
     if (signal.aborted) return;
     // Persistence commits before a terminal is yielded. Drain the
@@ -116,18 +110,25 @@ const encodeWebSocketResponse = async (
     }
   };
   let stream: ManagedStream<Bytes>;
-  if (events === undefined) {
-    const error = encodeWebSocketFrame(await decodeApiError(http), eventId);
-    stream = env.createStream({ label: 'Responses WebSocket error', async *iterate() { yield error; }, onClose });
+  if (outcomeValue.kind === 'error') {
+    const wire = http.transportError === undefined
+      ? decodeApiError(http, outcomeValue.error)
+      : { ...webSocketServerError(transportErrorForDisplay(http.transportError)), status: http.status };
+    const error = encodeWebSocketFrame(wire, eventId);
+    stream = scope.createStream({ label: 'Responses WebSocket error', async *iterate() { yield error; }, onClose });
   } else {
-    stream = env.wrapStream(events, {
+    const events = outcomeValue.kind === 'stream' ? outcomeValue.events : scope.createStream<Frame>({
+      label: 'Responses WebSocket scalar result',
+      iterate: () => syntheticEventsFromCompaction(outcomeValue.result),
+    });
+    stream = scope.wrapStream(events, {
       label: 'Responses WebSocket frames',
-      transform: (source, signal) => encodeFrames(frames(source, signal), eventId, signal),
+      transform: (source, scope) => encodeFrames(frames(source, scope.signal), eventId, scope.signal),
       onClose,
     });
   }
-  const render = env.deferred<RenderOutcome>('Responses WebSocket rendering', stream);
-  const delivery = env.deferred<HttpDelivery>('Responses WebSocket delivery', stream);
+  const render = scope.deferred<RenderOutcome>('Responses WebSocket rendering', stream);
+  const delivery = scope.deferred<HttpDelivery>('Responses WebSocket delivery', stream);
   return {
     'response.http': { ...http, body: stream },
     'response.render': render.deferred,
@@ -135,11 +136,10 @@ const encodeWebSocketResponse = async (
   };
 };
 
-type Back = Omit<ResponsesTurnBack, 'response.openaiResponses'>;
-type Source = Back & { readonly 'response.openaiResponses': ManagedStream<Frame> | undefined };
+type Source = ResponsesTurnBack<WebSocketInterruptAccepted>;
 interface Request { readonly 'request.ws.eventId': string | undefined }
 
-export const encodeWebSocketTurn = defineStage<Request, object, Source, Back & WebSocketEncodedTurn>({
+export const encodeWebSocketTurn = defineStage<Request, object, Source, WebSocketEncodedTurn>({
   name: 'encode',
   through: {
     request: { needs: ['request.ws.eventId'], consumes: ['request.ws.eventId'], provides: [] },
@@ -149,9 +149,9 @@ export const encodeWebSocketTurn = defineStage<Request, object, Source, Back & W
       provides: ['response.http', 'response.render', 'response.delivery'],
     },
   },
-  execute: async ({ 'request.ws.eventId': eventId, ...facts }, next, env) => {
-    const { 'response.openaiResponses': events, ...back } = await next(facts);
-    return { ...back, ...await encodeWebSocketResponse(env, back['response.http'], eventId, events) };
+  execute: async ({ 'request.ws.eventId': eventId, ...facts }, scope) => {
+    const { 'response.openaiResponses': events, ...back } = await scope.next(facts);
+    return { ...back, ...encodeWebSocketResponse(scope, back['response.http'], eventId, events) };
   },
 });
 

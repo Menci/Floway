@@ -1,34 +1,31 @@
 import { expect, test, vi } from 'vitest';
 
-import { http, providerResponses, responsesFixture, unusedBody, upstream } from './fixture.ts';
+import { readHttpBytes, readWireJson, responsesFixture, responsesUpstream, unusedBody, wireEvents, type WireRequest } from './fixture.ts';
 import { createAnthropicMessagesBody } from '../../../../src/data-plane/chat/anthropic-messages/body.ts';
 import { anthropicMessagesEgress } from '../../../../src/data-plane/chat/anthropic-messages/egress.ts';
 import { createOpenAIChatCompletionsBody } from '../../../../src/data-plane/chat/openai-chat-completions/body.ts';
 import { openaiChatCompletionsEgress } from '../../../../src/data-plane/chat/openai-chat-completions/egress.ts';
 import { syntheticEventsFromResult } from '../../../../src/data-plane/chat/openai-responses/items/output.ts';
 import { SidecarDomain } from '../../../../src/data-plane/chat/shared/sidecar-codec.ts';
-import { readHttpBytes } from '../../../../src/data-plane/pipeline/non-chat.ts';
 import { encodeBase64UrlJson } from '../../../../src/shared/base64url-json.ts';
-import { generateProvider } from '../anthropic-messages/fixture.ts';
-import { compose, defineEnding, type StageEnv } from '@floway-dev/pipeline';
+import { chatUpstream } from '../shared/fixture.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayloadEx, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
-import type { FlagId, ProviderInput, ProviderResponsesInput, ProviderResponsesOutput, ProviderStreamOutput } from '@floway-dev/provider';
+import type { FlagId } from '@floway-dev/provider';
 
 const chatCompletions = createOpenAIChatCompletionsBody({
   egress: openaiChatCompletionsEgress,
-  messages: unusedBody('anthropicMessages'),
-  responses: unusedBody('openaiResponses'),
+  messages: unusedBody,
+  responses: unusedBody,
 });
 const messages = createAnthropicMessagesBody({
   egress: anthropicMessagesEgress,
-  responses: unusedBody('openaiResponses'),
-  chatCompletions: unusedBody('openaiChatCompletions'),
+  responses: unusedBody,
+  chatCompletions: unusedBody,
 });
-type ChatInput = ProviderInput<Omit<OpenAIChatCompletionsPayloadEx, 'model'>>;
-type ChatOutput = ProviderStreamOutput<OpenAIChatCompletionsStreamEvent>;
+type ChatInput = OpenAIChatCompletionsPayloadEx;
 
 const textChunks = async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
   const base = { id: 'chat_test', object: 'chat.completion.chunk' as const, model: 'test-model', created: 0 };
@@ -37,68 +34,48 @@ const textChunks = async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCo
   yield doneFrame();
 };
 
-const chatProvider = (respond: (facts: ChatInput, env: StageEnv) => AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>) =>
-  compose<ChatInput, ChatOutput, {}>('test.chat-completions', {
-    stages: [],
-    ending: defineEnding<ChatInput, ChatOutput>({
-      name: 'stubChatCompletions',
-      request: { needs: ['provider.model', 'request.headers', 'request.payload'] },
-      return: { provides: ['response.http', 'response.modelKey', 'response.events'] },
-      execute: async (facts, _into, env) => ({
-        ...http(),
-        'response.modelKey': 'native-chat',
-        'response.events': env.createStream({ label: 'stub Chat Completions events', iterate: () => respond(facts, env) }),
-      }),
-    }),
-  });
-
 const chatFixture = (
-  respond: (facts: ChatInput, env: StageEnv) => AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
+  respond: (payload: ChatInput) => AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
   flags: readonly FlagId[] = [],
 ) => {
-  const target = upstream('chat', { openaiChatCompletions: chatProvider(respond) }, flags);
-  const endpoints = { openaiChatCompletions: {} };
-  return responsesFixture([{
-    ...target,
-    candidate: { ...target.candidate, endpoints, providerModel: { ...target.candidate.providerModel, endpoints } },
-  }], undefined, { chatCompletions });
+  const target = chatUpstream({
+    upstreamId: 'chat', endpoints: { openaiChatCompletions: {} }, flags,
+    fetcher: async (_url, init) => wireEvents(respond(await readWireJson(init.body))),
+  });
+  return responsesFixture([target], undefined, { chatCompletions });
 };
 
-const completed = (env: StageEnv): ProviderResponsesOutput => ({
-  ...http(),
-  'response.result': undefined,
-  'response.modelKey': 'native-responses',
-  'response.events': env.createStream({
-    label: 'native Responses events',
-    iterate: () => syntheticEventsFromResult({
-      id: 'resp_upstream', object: 'response', model: 'test-model', status: 'completed', output: [], error: null, incomplete_details: null,
-    }),
-  }),
-});
+const completed = (_request: WireRequest) => wireEvents(syntheticEventsFromResult({
+  id: 'resp_upstream', object: 'response', model: 'test-model', status: 'completed', output: [], error: null, incomplete_details: null,
+}));
 
 test('native provider request facts preserve own JSON property names and freeze nested data', async () => {
   const metadata = JSON.parse('{"__proto__":{"retained":true},"nested":{"value":"source"}}') as Record<string, string>;
   const source = { model: 'test-model', input: [{ type: 'message' as const, role: 'user' as const, content: 'hello' }], metadata };
-  const respond = vi.fn((facts: ProviderResponsesInput, env: StageEnv) => {
-    const body = facts['request.payload'];
-    expect(Object.hasOwn(body.metadata ?? {}, '__proto__')).toBe(true);
-    expect(Object.isFrozen(body.metadata?.nested)).toBe(true);
-    expect(Object.isFrozen(body.input[0])).toBe(true);
-    return completed(env);
-  });
-  const fixture = responsesFixture([upstream('responses', { openaiResponses: providerResponses(respond) })]);
+  const respond = vi.fn(completed);
+  const fixture = responsesFixture([responsesUpstream('responses', respond)]);
   const handle = fixture.request(source);
   expect((await handle.result)['response.http'].status).toBe(200);
   expect(await handle.done).toEqual({ ok: true });
+  const providerEntry = fixture.events.find(event => event.k === 'enter' && event.edge === 'into' && Object.hasOwn(event.facts, 'provider.upstream'));
+  if (providerEntry?.k !== 'enter') throw new Error('Expected the native provider to receive request facts');
+  const body = providerEntry.facts['request.payload'];
+  expect(body).toMatchObject({ metadata: { nested: { value: 'source' } }, input: [expect.objectContaining({ type: 'message' })] });
+  if (typeof body !== 'object' || body === null || !('metadata' in body) || !('input' in body)) throw new Error('Expected canonical payload facts');
+  const { metadata: providerMetadata, input } = body;
+  if (typeof providerMetadata !== 'object' || providerMetadata === null || !('nested' in providerMetadata) || !Array.isArray(input)) throw new Error('Expected nested payload facts');
+  expect(Object.hasOwn(providerMetadata, '__proto__')).toBe(true);
+  expect(Object.isFrozen(providerMetadata.nested)).toBe(true);
+  expect(Object.isFrozen(input[0])).toBe(true);
   expect(respond).toHaveBeenCalledTimes(1);
   expect(source.metadata.nested).toEqual({ value: 'source' });
   expect(source.input[0].role).toBe('user');
 });
 
 test('a translated source reaches the Responses body without opening storage or unwrapping native affinity', async () => {
-  const respond = vi.fn((_facts: ProviderResponsesInput, env: StageEnv) => completed(env));
+  const respond = vi.fn(completed);
   const openStore = vi.fn(() => { throw new Error('Unexpected durable store access from a foreign source'); });
-  const target = upstream('responses', { openaiResponses: providerResponses(respond) });
+  const target = responsesUpstream('responses', respond);
   const fixture = responsesFixture([target], openStore);
   const codec = fixture.services.affinityCodec;
   const carrier = await codec.wrap(undefined, {
@@ -108,13 +85,13 @@ test('a translated source reaches the Responses body without opening storage or 
   const unwrap = vi.spyOn(codec, 'unwrap');
   const input = [{ type: 'reasoning' as const, id: 'rs_source_edge', summary: [], encrypted_content: carrier }];
   const handle = fixture.invokeBody({ model: 'test-model', input }, target.candidate);
-  const events = (await handle.result)['response.openaiResponses'];
-  if (events === undefined) throw new Error('Expected Responses events');
-  for await (const event of events) void event;
+  const outcome = (await handle.result)['response.openaiResponses'];
+  if (outcome.kind !== 'stream') throw new Error('Expected Responses events');
+  await Array.fromAsync(outcome.events);
   expect(await handle.done).toEqual({ ok: true });
   expect(openStore).toHaveBeenCalledTimes(0);
   expect(unwrap).toHaveBeenCalledTimes(0);
-  expect(respond.mock.calls[0]?.[0]['request.payload'].input).toEqual(input);
+  expect(respond.mock.calls[0]?.[0].payload.input).toEqual(input);
 });
 
 test('the role rewrite applies on the Chat Completions wire after translation', async () => {
@@ -130,7 +107,7 @@ test('the role rewrite applies on the Chat Completions wire after translation', 
   });
   expect((await handle.result)['response.http'].status).toBe(200);
   expect(await handle.done).toEqual({ ok: true });
-  expect(respond.mock.calls[0]?.[0]['request.payload'].messages).toEqual([
+  expect(respond.mock.calls[0]?.[0].messages).toEqual([
     { role: 'developer', content: 'base instructions' },
     { role: 'user', content: 'hello' },
     { role: 'developer', content: 'inline instructions' },
@@ -139,54 +116,44 @@ test('the role rewrite applies on the Chat Completions wire after translation', 
 
 test('translation to Anthropic Messages filters source headers and keeps a remote image URL', async () => {
   initExternalResourceFetcher(() => { throw new Error('Unexpected download of an Anthropic URL image'); });
-  const captured: Parameters<NonNullable<Parameters<typeof generateProvider>[0]>>[0][] = [];
-  const target = upstream('messages', {
-    anthropicMessages: generateProvider((facts, env) => {
-      captured.push(facts);
-      return {
-        ...http(),
-        'response.modelKey': 'messages',
-        'response.events': env.createStream({
-          label: 'stub Messages events',
-          async *iterate() {
-            yield eventFrame({
-              type: 'message_start',
-              message: {
-                type: 'message', role: 'assistant', id: 'msg_1', model: 'test-model', content: [], stop_reason: null, stop_sequence: null,
-                container: null, diagnostics: null, stop_details: null,
-                usage: {
-                  input_tokens: 1, output_tokens: 0, cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null,
-                  inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null,
-                },
-              },
-            });
-            yield eventFrame({ type: 'message_stop' });
+  const captured: { headers: Headers; payload: { messages: unknown[] } }[] = [];
+  const target = chatUpstream({
+    upstreamId: 'messages', endpoints: { anthropicMessages: {} }, ingressHeadersRules: [],
+    fetcher: async (_url, init) => {
+      captured.push({ headers: new Headers(init.headers), payload: await readWireJson(init.body) });
+      return wireEvents((async function* () {
+        yield eventFrame({
+          type: 'message_start',
+          message: {
+            type: 'message', role: 'assistant', id: 'msg_1', model: 'test-model', content: [], stop_reason: null, stop_sequence: null,
+            container: null, diagnostics: null, stop_details: null,
+            usage: {
+              input_tokens: 1, output_tokens: 0, cache_creation: null, cache_creation_input_tokens: null, cache_read_input_tokens: null,
+              inference_geo: null, output_tokens_details: null, server_tool_use: null, service_tier: null,
+            },
           },
-        }),
-      };
-    }),
+        });
+        yield eventFrame({ type: 'message_stop' });
+      })());
+    },
   });
-  const endpoints = { anthropicMessages: {} };
-  const fixture = responsesFixture([{
-    ...target,
-    candidate: { ...target.candidate, endpoints, providerModel: { ...target.candidate.providerModel, endpoints } },
-  }], undefined, { messages });
+  const fixture = responsesFixture([target], undefined, { messages });
   const handle = fixture.request({
     model: 'test-model',
     input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'https://example.com/image.png', detail: 'auto' }] }],
   }, 'generate', [['anthropic-beta', 'source-only'], ['x-test', 'abc']]);
   expect((await handle.result)['response.http'].status).toBe(200);
   expect(await handle.done).toEqual({ ok: true });
-  expect(captured[0]?.['request.headers']).toEqual([]);
-  expect(captured[0]?.['request.anthropicBeta']).toEqual([]);
-  expect(captured[0]?.['request.payload'].messages).toEqual([expect.objectContaining({
+  expect(captured[0]?.headers.has('x-test')).toBe(false);
+  expect(captured[0]?.headers.has('anthropic-beta')).toBe(false);
+  expect(captured[0]?.payload.messages).toEqual([expect.objectContaining({
     role: 'user', content: expect.arrayContaining([expect.objectContaining({ type: 'image', source: { type: 'url', url: 'https://example.com/image.png' } })]),
   })]);
 });
 
 test('Responses restores signed hosted-tool replay data without durable state', async () => {
-  const respond = vi.fn((_facts: ProviderResponsesInput, env: StageEnv) => completed(env));
-  const target = upstream('responses', { openaiResponses: providerResponses(respond) }, ['openai-responses-web-search-shim']);
+  const respond = vi.fn(completed);
+  const target = responsesUpstream('responses', respond, ['openai-responses-web-search-shim']);
   const fixture = responsesFixture([target]);
   const action = { type: 'search' as const, query: 'example', queries: ['example'] };
   const replay = await fixture.services.sidecarCodecs.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall).encode({
@@ -208,10 +175,10 @@ test('Responses restores signed hosted-tool replay data without durable state', 
   });
   expect((await handle.result)['response.http'].status).toBe(200);
   expect(await handle.done).toEqual({ ok: true });
-  expect(respond.mock.calls[0]?.[0]['request.payload'].input).toContainEqual(expect.objectContaining({
+  expect(respond.mock.calls[0]?.[0].payload.input).toContainEqual(expect.objectContaining({
     type: 'function_call', call_id: 'call_orig_xyz', name: 'web_search', arguments: '{"search_query":[{"q":"example"}]}',
   }));
-  expect(respond.mock.calls[0]?.[0]['request.payload'].input).toContainEqual(expect.objectContaining({
+  expect(respond.mock.calls[0]?.[0].payload.input).toContainEqual(expect.objectContaining({
     type: 'function_call_output', call_id: 'call_orig_xyz', output: expect.stringContaining('CACHED_SNIPPET_BODY'),
   }));
 });
@@ -248,9 +215,9 @@ test('namespace wire mapping follows compact expansion across independent dispat
     expect(await handle.done).toEqual({ ok: true });
   }
   expect(respond.mock.calls).toHaveLength(2);
-  const body = respond.mock.calls[0]?.[0]['request.payload'];
+  const body = respond.mock.calls[0]?.[0];
   expect(JSON.stringify(body?.messages)).toContain('files_read_2');
-  expect(respond.mock.calls[1]?.[0]['request.payload']).toEqual(body);
+  expect(respond.mock.calls[1]?.[0]).toEqual(body);
   expect(payload).toEqual(original);
 });
 
@@ -268,7 +235,7 @@ test('standalone function outputs become external user context before Chat Compl
   });
   expect((await handle.result)['response.http'].status).toBe(200);
   expect(await handle.done).toEqual({ ok: true });
-  expect(respond.mock.calls[0]?.[0]['request.payload'].messages).toEqual([
+  expect(respond.mock.calls[0]?.[0].messages).toEqual([
     { role: 'user', content: 'Write unit tests' },
     { role: 'assistant', content: null, tool_calls: [{ id: 'call_goal', type: 'function', function: { name: 'create_goal', arguments: '{"objective":"Write unit tests"}' } }] },
     { role: 'tool', tool_call_id: 'call_goal', content: '{"goal":{"status":"active"}}' },

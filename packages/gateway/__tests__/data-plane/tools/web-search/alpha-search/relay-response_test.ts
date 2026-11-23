@@ -1,25 +1,28 @@
 import { expect, test } from 'vitest';
 
-import { forwardHttp } from '../../../../../src/data-plane/pipeline/non-chat.ts';
+import { facts, fixture } from './fixture.ts';
+import { alphaSearchIngress } from '../../../../../src/data-plane/alpha-search/pipeline.ts';
 import { writeHttpResponse } from '../../../../../src/data-plane/shared/http-writer.ts';
-import { wrapSensitiveHeaderEntries } from '@floway-dev/http';
-import { Bytes } from '@floway-dev/pipeline';
+import { run } from '@floway-dev/pipeline';
 
-test('Alpha Search relays decoded bytes and representation-safe upstream headers', async () => {
-  const body = JSON.stringify({ output: 'decoded' });
-  const response = writeHttpResponse(forwardHttp({
-    status: 202,
-    statusText: 'Accepted upstream',
-    timing: { startedAt: 0, headersAt: 1 },
-    body: Bytes.fromUtf8(body),
-    headers: wrapSensitiveHeaderEntries([
+test.each([
+  { status: 202, statusText: 'Accepted upstream', body: '{"output":"decoded"}', contentType: 'application/json' },
+  { status: 503, statusText: 'Unavailable upstream', body: 'upstream error', contentType: 'text/plain' },
+])('Alpha Search relays decoded bytes and representation-safe headers for upstream HTTP $status', async ({ status, statusText, body, contentType }) => {
+  const { services } = fixture(() => new Response(body, {
+    status,
+    statusText,
+    headers: [
       ['connection', 'close'], ['content-encoding', 'gzip'], ['content-length', '999'],
-      ['content-type', 'application/json'], ['set-cookie', 'session=upstream-secret'],
+      ['content-type', contentType], ['set-cookie', 'session=upstream-secret'],
       ['transfer-encoding', 'chunked'], ['x-oai-request-id', 'req_search_1'],
-    ]),
-  }, null));
-  expect(response.status).toBe(202);
-  expect(response.statusText).toBe('Accepted upstream');
+    ],
+  }));
+  const handle = run(alphaSearchIngress, facts, { services, finalizationTimeoutMs: 100 });
+  const response = writeHttpResponse((await handle.result)['response.http']);
+  expect(response.status).toBe(status);
+  expect(response.statusText).toBe(statusText);
   expect(await response.text()).toBe(body);
-  expect([...response.headers]).toEqual([['content-type', 'application/json'], ['x-oai-request-id', 'req_search_1']]);
+  expect([...response.headers]).toEqual([['content-type', contentType], ['x-oai-request-id', 'req_search_1']]);
+  expect(await handle.done).toEqual({ ok: true });
 });
