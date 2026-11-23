@@ -1,3 +1,11 @@
+export class UpstreamStreamProtocolError extends Error {
+  override readonly name = 'UpstreamStreamProtocolError';
+
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+  }
+}
+
 import type { SseFrame, SseRawFrame } from './sse.ts';
 
 export interface ParseTargetStreamFramesOptions {
@@ -38,7 +46,7 @@ export const parseTargetStreamFrames = async function* <TEvent>(frames: AsyncIte
     } catch (error) {
       const eventName = (frame.type === 'sse' ? frame.event : undefined) ?? options.malformedJsonEventName;
       const eventContext = eventName ? ` for event "${eventName}"` : '';
-      throw new Error(`Malformed upstream ${options.protocol} SSE JSON${eventContext}: ${data}`, { cause: error });
+      throw new UpstreamStreamProtocolError(`Malformed upstream ${options.protocol} SSE JSON${eventContext}: ${data}`, { cause: error });
     }
 
     yield frame.type === 'sse-raw'

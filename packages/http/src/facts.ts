@@ -21,11 +21,21 @@ export interface HttpRequestFacts {
   readonly body: HttpRequestBody;
 }
 
-export interface HttpResponseFacts {
+export interface TransportFailure {
+  readonly type: 'transport-error';
+  readonly error: ErrorSnapshot;
+}
+
+export const isTransportFailure = (value: unknown): value is TransportFailure =>
+  typeof value === 'object' && value !== null && (value as { readonly type?: unknown }).type === 'transport-error';
+
+export type HttpResponseBodyChunk = Bytes | TransportFailure;
+
+export interface HttpResponseFacts<Chunk = HttpResponseBodyChunk> {
   readonly status: number;
   readonly statusText: string;
   readonly headers: readonly HeaderEntry[];
-  readonly body: ManagedStream<Bytes> | Bytes | null;
+  readonly body: ManagedStream<Chunk> | Bytes | null;
   readonly timing: { readonly startedAt: number; readonly headersAt: number };
   readonly exchange?: 'upstream';
   readonly transportError?: ErrorSnapshot;

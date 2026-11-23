@@ -1,6 +1,6 @@
 import { openaiChatCompletionsErrorPayloadMessage } from './errors.ts';
 import type { OpenAIChatCompletionsStreamEvent } from './index.ts';
-import { parseTargetStreamFrames } from '../common/parse-events.ts';
+import { parseTargetStreamFrames, UpstreamStreamProtocolError } from '../common/parse-events.ts';
 import { parseSSEStream } from '../common/parse-sse.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
 
@@ -23,7 +23,7 @@ export const parseOpenAIChatCompletionsStream = (
     // instead of an HTTP failure; bubble as a thrown Error so the target
     // boundary 502s.
     const errorMessage = openaiChatCompletionsErrorPayloadMessage(frame.data);
-    if (errorMessage) throw new Error(`Upstream OpenAI Chat Completions SSE error: ${errorMessage}`);
+    if (errorMessage) throw new UpstreamStreamProtocolError(`Upstream OpenAI Chat Completions SSE error: ${errorMessage}`);
     yield eventFrame(frame.data);
   }
 })();
