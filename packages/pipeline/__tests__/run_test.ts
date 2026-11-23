@@ -104,6 +104,93 @@ describe('declarations during execution', () => {
     await expect(run(compose('invalid', { stages: [invalid], ending: leaf }), { branch: undefined }, options).result).rejects.toThrow('removed undeclared "preserve"');
   });
 
+  describe('rejected children', () => {
+    const failure = new Error('transport unavailable');
+    const through = { request: { ...identity, provides: ['branch'] }, response: identity };
+    const ending = defineEnding<Facts, Facts>({
+      name: 'child', request: { needs: ['branch'] }, return: { provides: ['response'] },
+      execute: async facts => {
+        if (facts.branch !== 'answered') throw failure;
+        return { response: 'answered' };
+      },
+    });
+
+    it.each([true, false])('checks return after all children reject (declared: %s)', async declared => {
+      const stage = defineStage<Facts, Facts, Facts, Facts>({
+        name: 'parent', through, ...(declared ? { return: { provides: ['response'] } } : {}),
+        execute: async (facts, next) => {
+          await expect(next({ ...facts, branch: 'first' })).rejects.toBe(failure);
+          await expect(next({ ...facts, branch: 'second' })).rejects.toBe(failure);
+          return { response: 'unavailable' };
+        },
+      });
+      const events: RunEvent[] = [];
+      const handle = run(compose('all failed', { stages: [stage], ending }), {}, { ...options, events: event => events.push(event) });
+      if (!declared) {
+        await expect(handle.result).rejects.toMatchObject({
+          name: 'DeclarationViolationError', direction: 'up', detail: 'returned without a child response or a return declaration',
+        });
+        return;
+      }
+      await expect(handle.result).resolves.toEqual({ response: 'unavailable' });
+      await expect(handle.done).resolves.toEqual({ ok: true });
+      const leave = events.find(event => event.k === 'leave' && event.stageId === 1);
+      expect(leave).toBeDefined();
+      expect(leave).not.toHaveProperty('baseChildId');
+      expect(events.filter(event => event.k === 'closed' && !event.ok)).toEqual([
+        expect.objectContaining({ stageId: 2, error: expect.objectContaining({ message: failure.message }) }),
+        expect.objectContaining({ stageId: 3, error: expect.objectContaining({ message: failure.message }) }),
+      ]);
+    });
+
+    it.each([true, false])('requires an answered child as the base (uses its facts: %s)', async usesBase => {
+      const stage = defineStage<Facts, Facts, Facts, Facts>({
+        name: 'parent', through, return: { provides: ['response'] },
+        execute: async (facts, next) => {
+          await expect(next({ ...facts, branch: 'failed' })).rejects.toBe(failure);
+          const answered = await next({ ...facts, branch: 'answered' });
+          return usesBase ? answered : { response: 'synthetic' };
+        },
+      });
+      const events: RunEvent[] = [];
+      const handle = run(compose('mixed', { stages: [stage], ending }), {}, { ...options, events: event => events.push(event) });
+      if (!usesBase) {
+        await expect(handle.result).rejects.toMatchObject({
+          name: 'DeclarationViolationError', direction: 'up', detail: 'changed or removed undeclared "response"',
+        });
+        return;
+      }
+      await expect(handle.result).resolves.toEqual({ response: 'answered' });
+      await expect(handle.done).resolves.toEqual({ ok: true });
+      expect(events).toContainEqual(expect.objectContaining({ k: 'leave', stageId: 1, baseChildId: 3 }));
+    });
+
+    it('requires a base while a child still has a pending response', async () => {
+      const release = Promise.withResolvers<void>();
+      const pending = defineEnding<Facts, Facts>({
+        name: 'pending', request: { needs: [] }, return: { provides: ['response'] },
+        execute: async () => {
+          await release.promise;
+          return { response: 'late' };
+        },
+      });
+      const stage = defineStage<Facts, Facts, Facts, Facts>({
+        name: 'parent', through, return: { provides: ['response'] },
+        execute: async (facts, next) => {
+          void next({ ...facts, branch: 'pending' });
+          return { response: 'synthetic' };
+        },
+      });
+      const handle = run(compose('pending', { stages: [stage], ending: pending }), {}, options);
+      try {
+        await expect(handle.result).rejects.toThrow('response matches no child');
+      } finally {
+        release.resolve();
+        await handle.done;
+      }
+    });
+  });
+
   it('uses own keys and Object.is at each handover', async () => {
     const pass = defineStage<Facts, Facts, Facts, Facts>({
       name: 'pass', through: { request: identity, response: identity },

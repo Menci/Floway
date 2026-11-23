@@ -39,8 +39,8 @@ export interface Answer {
   facts?: Facts;
 }
 
-export const checkUp = (stage: string, answer: ReturnDecl | undefined, handed: Facts, calls: readonly Answer[]): number | undefined => {
-  if (calls.length === 0) {
+export const checkUp = (stage: string, answer: ReturnDecl | undefined, handed: Facts, calls: ReadonlySet<Answer>): number | undefined => {
+  if (calls.size === 0) {
     if (!answer) throw new DeclarationViolationError(stage, 'up', 'returned without a child response or a return declaration');
     requireKeys(stage, 'up', handed, answer.provides);
     return undefined;

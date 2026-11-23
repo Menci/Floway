@@ -449,7 +449,7 @@ const invoke = (
   const id = caller.childId;
   const { membership } = state.trace;
   const scope = new Scope(state, id, step.name, caller.signal);
-  const answers: Answer[] = [];
+  const answers = new Set<Answer>();
 
   const runChild = (
     target: AnyPipeline, targetAssembly: ReturnType<typeof assemblyOf>, targetIndex: number, handed: Facts,
@@ -457,7 +457,7 @@ const invoke = (
   ): Promise<Facts> => {
     const childId = state.trace.stageId();
     const answer: Answer = { id: childId, declaration };
-    answers.push(answer);
+    answers.add(answer);
     const domain = custody.childDomain(options?.signal);
     const child = invoke(state, target, targetAssembly, targetIndex, handed, { custody, edge, stageId: id, childId, signal: domain.signal });
     const result = child.result.then(back => {
@@ -465,7 +465,10 @@ const invoke = (
       answer.facts = back;
       return back;
     });
-    void result.then(domain.settle, domain.settle);
+    void result.then(domain.settle, () => {
+      answers.delete(answer);
+      domain.settle();
+    });
     return custody.track(result, child.closed);
   };
 
