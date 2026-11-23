@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { callCustom, customInput } from './pipeline-fixture.ts';
 import { assertCustomUpstreamRecord } from '../src/config.ts';
 import { customFetchModels } from '../src/fetch.ts';
-import { createCustomProvider } from '../src/provider.ts';
+import { customPipelines } from '../src/pipelines.ts';
 import { directFetcher, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, sseResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -34,10 +34,10 @@ const baseRecord: UpstreamRecord = {
 };
 
 const model = stubProviderModel();
-const messages = { ...customInput(model, { max_tokens: 10, messages: [] }), 'request.anthropicBeta': [] };
+const messages = (record: UpstreamRecord) => ({ ...customInput(record, model, { max_tokens: 10, messages: [] }), 'request.anthropicBeta': [] });
 
 test('admin pathOverrides replace defaults and propagate to derived sub-paths', async () => {
-  const { pipelines } = createCustomProvider({
+  const record = {
     ...baseRecord,
     config: {
       ...baseConfig,
@@ -47,7 +47,7 @@ test('admin pathOverrides replace defaults and propagate to derived sub-paths', 
         '/alpha/search': '/api/search',
       },
     },
-  });
+  };
   const seen: string[] = [];
   await withMockedFetch(
     request => {
@@ -56,11 +56,11 @@ test('admin pathOverrides replace defaults and propagate to derived sub-paths', 
       return pathname.endsWith('/messages') || pathname.endsWith('/chat/completions') ? sseResponse() : jsonResponse({});
     },
     async () => {
-      await callCustom(pipelines.anthropicMessages, messages);
-      await callCustom(pipelines.anthropicMessagesCountTokens, messages);
-      await callCustom(pipelines.openaiResponses, { ...customInput(model, { input: [] }), 'request.action': 'compact' });
-      await callCustom(pipelines.alphaSearch, customInput(model, { query: 'hi' }));
-      await callCustom(pipelines.openaiChatCompletions, customInput(model, { messages: [] }));
+      await callCustom(customPipelines.anthropicMessages, messages(record));
+      await callCustom(customPipelines.anthropicMessagesCountTokens, messages(record));
+      await callCustom(customPipelines.openaiResponses, { ...customInput(record, model, { input: [] }), 'request.action': 'compact' });
+      await callCustom(customPipelines.alphaSearch, customInput(record, model, { query: 'hi' }));
+      await callCustom(customPipelines.openaiChatCompletions, customInput(record, model, { messages: [] }));
     },
   );
 
@@ -83,7 +83,6 @@ test('the catalog uses modelsFetch.authStyle independently from the inference pr
     },
   };
   const { config } = assertCustomUpstreamRecord(record);
-  const { pipelines } = createCustomProvider(record);
   const observed: { hostname: string; authorization: string | null; xApiKey: string | null }[] = [];
   await withMockedFetch(
     request => {
@@ -96,7 +95,7 @@ test('the catalog uses modelsFetch.authStyle independently from the inference pr
     },
     async () => {
       await customFetchModels(config, directFetcher);
-      await callCustom(pipelines.anthropicMessages, messages);
+      await callCustom(customPipelines.anthropicMessages, messages(record));
     },
   );
 
@@ -107,10 +106,10 @@ test('the catalog uses modelsFetch.authStyle independently from the inference pr
 });
 
 test('an empty apiKey omits Authorization, x-api-key, and anthropic-version', async () => {
-  const { pipelines } = createCustomProvider({
+  const record = {
     ...baseRecord,
     config: { ...baseConfig, baseUrl: 'https://internal.example.com', apiKey: '' },
-  });
+  };
   const authorization: (string | null)[] = [];
   const xApiKey: (string | null)[] = [];
   const anthropicVersion: (string | null)[] = [];
@@ -122,12 +121,39 @@ test('an empty apiKey omits Authorization, x-api-key, and anthropic-version', as
       return sseResponse();
     },
     async () => {
-      await callCustom(pipelines.openaiChatCompletions, customInput(model, { messages: [] }));
-      await callCustom(pipelines.anthropicMessages, messages);
+      await callCustom(customPipelines.openaiChatCompletions, customInput(record, model, { messages: [] }));
+      await callCustom(customPipelines.anthropicMessages, messages(record));
     },
   );
 
   assertEquals(authorization, [null, null]);
   assertEquals(xApiKey, [null, null]);
   assertEquals(anthropicVersion, [null, null]);
+});
+
+test('configured Anthropic versions replace the default and beta comes from the protocol fact', async () => {
+  const record = {
+    ...baseRecord,
+    config: {
+      ...baseConfig,
+      ingressHeadersRules: [
+        { key: 'anthropic-version', value: 'test-version' },
+        { key: 'anthropic-version', value: 'extended-version' },
+      ],
+    },
+  };
+  const input = customInput(record, model, { max_tokens: 10, messages: [] }, [
+    ['Anthropic-Version', 'client-version'],
+    ['Anthropic-Beta', 'client-beta'],
+    ['X-Api-Key', 'client-api-key'],
+  ]);
+  const responses: string[][] = [];
+
+  await callCustom(customPipelines.anthropicMessages, { ...input, 'request.anthropicBeta': ['first', 'second'] }, async (url, init) => {
+    const request = new Request(url, { method: init.method, headers: init.headers });
+    responses.push([...request.headers.values()]);
+    return sseResponse();
+  });
+
+  assertEquals(responses, [['first,second', 'test-version, extended-version', 'application/json', 'sk-test']]);
 });

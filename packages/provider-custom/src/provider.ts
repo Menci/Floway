@@ -2,7 +2,6 @@ import { assertCustomUpstreamRecord } from './config.ts';
 import { CUSTOM_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchCustomModels, type CustomModelsResponse, type CustomRawModel } from './fetch-models.ts';
 import { inferEndpointsFromModelId } from './infer-endpoints.ts';
-import { createCustomPipelines } from './pipelines.ts';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { publicModelId, resolveEffectiveFlags, type FlagId, type Provider, type ProviderModel, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 
@@ -148,11 +147,9 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     upstreamId: record.id,
     kind: 'custom',
     name: record.name,
-    inboundHeaderAllowlist: config.ingressHeadersRules.flatMap(rule => rule.value === null ? [rule.key] : []),
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     modelsCache: record.modelsCache,
-    pipelines: createCustomPipelines(record.id, config),
     instance: {
       runScheduledTask: async () => {},
       getProvidedModels: async fetcher => {

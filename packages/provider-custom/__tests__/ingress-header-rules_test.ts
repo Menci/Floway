@@ -2,10 +2,12 @@ import { test } from 'vitest';
 
 import { callCustom, customInput } from './pipeline-fixture.ts';
 import type { CustomIngressHeaderRule } from '../src/config.ts';
+import { customPipelines } from '../src/pipelines.ts';
 import { createCustomProvider } from '../src/provider.ts';
 import { Bytes } from '@floway-dev/pipeline';
+import { parseDecisionRequest } from '@floway-dev/protocols/decision';
 import { parseRerankRequest } from '@floway-dev/protocols/rerank';
-import { directFetcher, type Fetcher, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
+import { directFetcher, type Fetcher, type HeaderEntry, type UpstreamModelConfig, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, assertExists, jsonResponse, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const HEADER = 'x-route';
@@ -46,12 +48,9 @@ const RULES: Record<string, CustomIngressHeaderRule[]> = {
   'empty beside a value': [{ key: HEADER, value: '' }, { key: HEADER, value: 'one' }],
 };
 
-// What the client sent. A name the upstream admits arrives combined into one
-// field value, which is how both runtimes and the gateway's own filter hand a
-// repeated name to a provider.
-const ADMITTED: Record<string, string | null> = {
-  'client sends nothing': null,
-  'client sends two values': 'client-a, client-b',
+const INCOMING: Record<string, readonly HeaderEntry[]> = {
+  'client sends nothing': [],
+  'client sends two values': [[HEADER, 'client-a'], ['X-Route', 'client-b']],
 };
 
 // The upstream's `x-route` field lines for each pair, stated from the rule
@@ -71,19 +70,12 @@ const EXPECTED: Record<string, Record<string, string[]>> = {
   },
 };
 
-// The bag a provider receives has already passed the gateway's admission
-// filter, so a name the instance does not admit never carries a client value.
-const admittedBag = (allowlist: readonly unknown[], admitted: string | null): Headers => {
-  const headers = new Headers({ 'x-untouched': 'kept' });
-  if (admitted !== null && allowlist.includes(HEADER)) headers.set(HEADER, admitted);
-  return headers;
-};
-
 // The provider hands the transport field lines, so the lines themselves are
 // what these cases read — a `Request`'s `Headers` would merge a repeated name
 // back into one value and hide exactly what is under test.
-const upstreamLines = async (rules: CustomIngressHeaderRule[], admitted: string | null): Promise<[string, string][]> => {
-  const provider = createCustomProvider(buildCustomUpstream(rules, CHAT_MODEL));
+const upstreamLines = async (rules: CustomIngressHeaderRule[], incoming: readonly HeaderEntry[]): Promise<[string, string][]> => {
+  const record = buildCustomUpstream(rules, CHAT_MODEL);
+  const provider = createCustomProvider(record);
   let observed: [string, string][] | undefined;
   const fetcher: Fetcher = (_url, init) => {
     observed = init.headers as [string, string][];
@@ -93,8 +85,8 @@ const upstreamLines = async (rules: CustomIngressHeaderRule[], admitted: string 
   const [model] = await provider.instance.getProvidedModels(directFetcher);
   assertExists(model);
   await callCustom(
-    provider.pipelines.openaiChatCompletions,
-    customInput(model, { messages: [] }, [...admittedBag(provider.inboundHeaderAllowlist, admitted)]),
+    customPipelines.openaiChatCompletions,
+    customInput(record, model, { messages: [] }, [...incoming, ['x-untouched', 'removed']]),
     fetcher,
   );
 
@@ -106,25 +98,28 @@ const valuesFor = (lines: readonly (readonly [string, string])[], name: string):
   lines.flatMap(([candidate, value]) => candidate.toLowerCase() === name ? [value] : []);
 
 for (const [ruleName, rules] of Object.entries(RULES)) {
-  for (const [clientName, admitted] of Object.entries(ADMITTED)) {
+  for (const [clientName, incoming] of Object.entries(INCOMING)) {
     test(`${ruleName}: ${clientName}`, async () => {
-      const lines = await upstreamLines(rules, admitted);
+      const lines = await upstreamLines(rules, incoming);
 
       assertEquals(valuesFor(lines, HEADER), EXPECTED[ruleName][clientName]);
-      assertEquals(valuesFor(lines, 'x-untouched'), ['kept']);
+      assertEquals(valuesFor(lines, 'x-untouched'), []);
     });
   }
 }
 
-test('a name is admitted once however many values it sends', () => {
-  const provider = createCustomProvider(buildCustomUpstream([
+test('one passthrough value and multiple configured values reach the transport in rule order', async () => {
+  const lines = await upstreamLines([
     { key: HEADER, value: null },
     { key: HEADER, value: 'one' },
     { key: 'x-configured', value: 'two' },
     { key: 'x-configured', value: 'three' },
-  ], CHAT_MODEL));
+  ], [[HEADER, 'client'], ['x-configured', 'removed'], ['Authorization', 'Bearer client'], ['content-type', 'text/plain']]);
 
-  assertEquals([...provider.inboundHeaderAllowlist], [HEADER]);
+  assertEquals(valuesFor(lines, HEADER), ['client', 'one']);
+  assertEquals(valuesFor(lines, 'x-configured'), ['two', 'three']);
+  assertEquals(valuesFor(lines, 'authorization'), ['Bearer sk-test']);
+  assertEquals(valuesFor(lines, 'content-type'), ['application/json']);
 });
 
 test('every endpoint resolves the same rules', async () => {
@@ -132,7 +127,7 @@ test('every endpoint resolves the same rules', async () => {
     { key: HEADER, value: null },
     { key: HEADER, value: 'appended' },
   ];
-  const provider = createCustomProvider(buildCustomUpstream(rules, [
+  const record = buildCustomUpstream(rules, [
     {
       upstreamModelId: 'chat', kind: 'chat', endpoints: {
         openaiAudioTranscriptions: {},
@@ -142,53 +137,77 @@ test('every endpoint resolves the same rules', async () => {
         openaiImagesEdits: {},
         openaiImagesGenerations: {},
         anthropicMessages: {},
+        geminiGenerateContent: {},
         openaiResponses: {},
       },
     },
     { upstreamModelId: 'reranker', kind: 'rerank', endpoints: { rerank: {} }, rerankTarget: { protocol: 'cohere-v2' } },
-  ]));
+    { upstreamModelId: 'decider', kind: 'decision', endpoints: { decision: {} }, decisionTarget: { protocol: 'typesafe-systemone' } },
+  ]);
+  const provider = createCustomProvider(record);
   const observed: Record<string, string | null> = {};
 
   await withMockedFetch(
     request => {
       const { pathname } = new URL(request.url);
       observed[pathname] = request.headers.get(HEADER);
-      if (pathname === '/v1/chat/completions' || pathname === '/v1/responses' || pathname === '/v1/messages') return sseResponse();
+      if (pathname === '/v1/chat/completions' || pathname === '/v1/responses' || pathname === '/v1/messages' || pathname.endsWith(':streamGenerateContent')) return sseResponse();
       return jsonResponse({});
     },
     async () => {
       const models = await provider.instance.getProvidedModels(directFetcher);
-      const model = models.find(candidate => candidate.kind !== 'rerank');
-      const rerankModel = models.find(candidate => candidate.kind === 'rerank');
+      const model = models.find(candidate => candidate.upstreamModelId === 'chat');
+      const rerankModel = models.find(candidate => candidate.upstreamModelId === 'reranker');
+      const decisionModel = models.find(candidate => candidate.upstreamModelId === 'decider');
       assertExists(model);
       assertExists(rerankModel);
-      const headers = [...admittedBag(provider.inboundHeaderAllowlist, 'client-a')];
-      const input = <Payload>(payload: Payload) => customInput(model, payload, headers);
+      assertExists(decisionModel);
+      const headers = [[HEADER, 'client-a']] as const;
+      const input = <Payload>(payload: Payload) => customInput(record, model, payload, headers);
       const messages = {
         ...input({ max_tokens: 10, messages: [{ role: 'user' as const, content: 'hi' }] }),
         'request.anthropicBeta': [],
       };
 
-      await callCustom(provider.pipelines.alphaSearch, input({ query: 'hi' }));
-      await callCustom(provider.pipelines.openaiChatCompletions, input({ messages: [] }));
-      await callCustom(provider.pipelines.openaiCompletions, input({ prompt: 'hi' }));
-      await callCustom(provider.pipelines.openaiResponses, { ...input({ input: [] }), 'request.action': 'generate' });
-      await callCustom(provider.pipelines.openaiResponses, { ...input({ input: [] }), 'request.action': 'compact' });
-      await callCustom(provider.pipelines.anthropicMessages, messages);
-      await callCustom(provider.pipelines.anthropicMessagesCountTokens, messages);
-      await callCustom(provider.pipelines.openaiEmbeddings, input({ input: 'hi' }));
-      await callCustom(provider.pipelines.openaiImagesGenerations, input({ prompt: 'hi' }));
-      await callCustom(provider.pipelines.openaiImagesEdits, input({
+      const alphaSearch = await callCustom(customPipelines.alphaSearch, input({ query: 'hi' }));
+      assertEquals(alphaSearch['response.alphaSearch'].kind, 'ok');
+      const chat = await callCustom(customPipelines.openaiChatCompletions, input({ messages: [] }));
+      assertEquals(chat['response.openaiChatCompletions'].kind, 'stream');
+      const completions = await callCustom(customPipelines.openaiCompletions, input({ prompt: 'hi' }));
+      assertEquals(completions['response.openaiCompletions'].kind, 'ok');
+      const generate = await callCustom(customPipelines.openaiResponses, { ...input({ input: [] }), 'request.action': 'generate' });
+      assertEquals(generate['response.openaiResponses'].kind, 'stream');
+      const compact = await callCustom(customPipelines.openaiResponses, { ...input({ input: [] }), 'request.action': 'compact' });
+      assertEquals(compact['response.openaiResponses'].kind, 'result');
+      const anthropic = await callCustom(customPipelines.anthropicMessages, messages);
+      assertEquals(anthropic['response.anthropicMessages'].kind, 'stream');
+      const anthropicCount = await callCustom(customPipelines.anthropicMessagesCountTokens, messages);
+      assertEquals(anthropicCount['response.anthropicMessagesCountTokens'].kind, 'ok');
+      const gemini = await callCustom(customPipelines.geminiGenerateContent, input({ contents: [] }));
+      assertEquals(gemini['response.geminiGenerateContent'].kind, 'stream');
+      const geminiCount = await callCustom(customPipelines.geminiGenerateContentCountTokens, input({ contents: [] }));
+      assertEquals(geminiCount['response.geminiGenerateContentCountTokens'].kind, 'ok');
+      const embeddings = await callCustom(customPipelines.openaiEmbeddings, input({ input: 'hi' }));
+      assertEquals(embeddings['response.openaiEmbeddings'].kind, 'ok');
+      const images = await callCustom(customPipelines.openaiImagesGenerations, input({ prompt: 'hi' }));
+      assertEquals(images['response.openaiImagesGenerations'].kind, 'ok');
+      const edits = await callCustom(customPipelines.openaiImagesEdits, input({
         parameters: { prompt: 'hi' },
         images: [{ type: 'upload', bytes: Bytes.fromUtf8('photo'), filename: 'photo.png', contentType: 'image/png' }],
       }));
-      await callCustom(provider.pipelines.openaiAudioTranscriptions, input({
+      assertEquals(edits['response.openaiImagesEdits'].kind, 'ok');
+      const audio = await callCustom(customPipelines.openaiAudioTranscriptions, input({
         entries: [{ kind: 'file', name: 'file', bytes: Bytes.fromUtf8('voice'), filename: 'voice.ogg', contentType: 'audio/ogg' }],
       }));
-      await callCustom(
-        provider.pipelines.rerank,
-        customInput(rerankModel, parseRerankRequest('cohere-v1', { model: 'reranker', query: 'query', documents: ['one'] }).request, headers),
-      );
+      assertEquals(audio['response.openaiAudioTranscriptions'].kind, 'ok');
+      const rerank = parseRerankRequest('cohere-v1', { model: 'reranker', query: 'query', documents: ['one'] }).request;
+      const ranked = await callCustom(customPipelines.rerank, customInput(record, rerankModel, rerank, headers));
+      assertEquals(ranked['response.rerank'], { kind: 'ok', target: { protocol: 'cohere-v2' } });
+      const decision = parseDecisionRequest('typesafe-systemone', {
+        model: 'decider', state: 'evidence', questions: { yes: { type: 'noul', instructions: 'Is it true?' } },
+      }).request;
+      const decided = await callCustom(customPipelines.decision, customInput(record, decisionModel, decision, headers));
+      assertEquals(decided['response.decision'], { kind: 'ok', target: { protocol: 'typesafe-systemone' } });
     },
   );
 
@@ -204,6 +223,9 @@ test('every endpoint resolves the same rules', async () => {
     '/v1/messages/count_tokens': 'client-a, appended',
     '/v1/responses': 'client-a, appended',
     '/v1/responses/compact': 'client-a, appended',
+    '/v1/systemone': 'client-a, appended',
     '/v2/rerank': 'client-a, appended',
+    '/v1beta/models/chat:countTokens': 'client-a, appended',
+    '/v1beta/models/chat:streamGenerateContent': 'client-a, appended',
   });
 });

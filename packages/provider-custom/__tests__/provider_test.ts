@@ -1,12 +1,13 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { callCustom, customInput } from './pipeline-fixture.ts';
+import { customPipelines } from '../src/pipelines.ts';
 import { createCustomProvider } from '../src/provider.ts';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { parseRerankRequest } from '@floway-dev/protocols/rerank';
 import type { UpstreamModelConfig, UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, jsonResponse, sseResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 interface BuildOptions {
   ingressHeadersRules?: { key: string; value: string | null }[];
@@ -135,7 +136,7 @@ test('auto-fetched rerank models stay out of the routable provider catalog', asy
 });
 
 test('rerank uses the model target protocol, raw model id, and canonical path', async () => {
-  const instance = createCustomProvider(buildCustomUpstream({
+  const record = buildCustomUpstream({
     modelsFetchEnabled: false,
     models: [{
       upstreamModelId: 'raw-reranker',
@@ -144,7 +145,8 @@ test('rerank uses the model target protocol, raw model id, and canonical path', 
       endpoints: { rerank: {} },
       rerankTarget: { protocol: 'cohere-v2' },
     }],
-  }));
+  });
+  const instance = createCustomProvider(record);
   const [model] = await instance.instance.getProvidedModels(directFetcher);
   assertExists(model);
   let requestUrl: string | undefined;
@@ -157,8 +159,8 @@ test('rerank uses the model target protocol, raw model id, and canonical path', 
     },
     async () => {
       const { request } = parseRerankRequest('cohere-v1', { model: 'public-reranker', query: 'query', documents: ['one'], top_n: 1 });
-      const result = await callCustom(instance.pipelines.rerank, customInput(model, request));
-      assertEquals(result['response.target'], { protocol: 'cohere-v2' });
+      const result = await callCustom(customPipelines.rerank, customInput(record, model, request));
+      assertEquals(result['response.rerank'], { kind: 'ok', target: { protocol: 'cohere-v2' } });
       assertEquals(result['response.modelKey'], 'raw-reranker');
     },
   );
@@ -167,7 +169,8 @@ test('rerank uses the model target protocol, raw model id, and canonical path', 
 });
 
 test('Custom provider forces stream=true for streaming endpoints and leaves count-tokens/embeddings alone', async () => {
-  const provider = createCustomProvider(buildCustomUpstream());
+  const record = buildCustomUpstream();
+  const provider = createCustomProvider(record);
   const bodies: Record<string, Record<string, unknown>> = {};
   const betas: Record<string, string | null> = {};
 
@@ -191,14 +194,14 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
       const [model] = await provider.instance.getProvidedModels(directFetcher);
       assertExists(model);
       const anthropic = {
-        ...customInput(model, { max_tokens: 10, messages: [{ role: 'user' as const, content: 'hi' }] }),
+        ...customInput(record, model, { max_tokens: 10, messages: [{ role: 'user' as const, content: 'hi' }] }),
         'request.anthropicBeta': ['context-1m', 'advanced-tool-use'],
       };
-      await callCustom(provider.pipelines.openaiChatCompletions, customInput(model, { messages: [{ role: 'user', content: 'hi' }] }));
-      await callCustom(provider.pipelines.openaiResponses, { ...customInput(model, { input: [] }), 'request.action': 'generate' });
-      await callCustom(provider.pipelines.anthropicMessages, anthropic);
-      await callCustom(provider.pipelines.anthropicMessagesCountTokens, anthropic);
-      await callCustom(provider.pipelines.openaiEmbeddings, customInput(model, { input: 'hi' }));
+      await callCustom(customPipelines.openaiChatCompletions, customInput(record, model, { messages: [{ role: 'user', content: 'hi' }] }));
+      await callCustom(customPipelines.openaiResponses, { ...customInput(record, model, { input: [] }), 'request.action': 'generate' });
+      await callCustom(customPipelines.anthropicMessages, anthropic);
+      await callCustom(customPipelines.anthropicMessagesCountTokens, anthropic);
+      await callCustom(customPipelines.openaiEmbeddings, customInput(record, model, { input: 'hi' }));
     },
   );
 
@@ -210,4 +213,63 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
   assertEquals(betas['/v1/messages'], 'context-1m,advanced-tool-use');
   assertEquals(betas['/v1/messages/count_tokens'], 'context-1m,advanced-tool-use');
   assertEquals(betas['/v1/chat/completions'], null);
+});
+
+test('a non-2xx chat response returns the upstream JSON error and metadata', async () => {
+  const record = buildCustomUpstream();
+  const error = { error: { type: 'rate_limit', message: 'try later' } };
+  const result = await callCustom(
+    customPipelines.openaiChatCompletions,
+    customInput(record, stubProviderModel(), { messages: [] }),
+    async () => new Response(JSON.stringify(error), { status: 429, headers: { 'retry-after': '5' } }),
+  );
+
+  expect(result['response.openaiChatCompletions']).toEqual({ kind: 'error', source: 'upstream', error });
+  expect(result['response.http']).toMatchObject({ status: 429, headers: expect.arrayContaining([['retry-after', '5']]), body: null });
+});
+
+test('a transport failure while reading the upstream error body returns a 502 outcome', async () => {
+  const record = buildCustomUpstream();
+  const result = await callCustom(
+    customPipelines.openaiEmbeddings,
+    customInput(record, stubProviderModel(), { input: 'hi' }),
+    async () => new Response(new ReadableStream({
+      pull(controller) {
+        controller.error(new Error('connection reset'));
+      },
+    }), { status: 503 }),
+  );
+
+  expect(result['response.openaiEmbeddings']).toEqual({
+    kind: 'error', source: 'upstream', error: { error: { type: 'upstream_transport_error', message: 'connection reset' } },
+  });
+  expect(result['response.http']).toMatchObject({ status: 502, body: null, transportError: { message: 'connection reset' } });
+});
+
+test('rerank rejects invalid success JSON and preserves bytes for valid success JSON', async () => {
+  const record = buildCustomUpstream();
+  const model = { ...stubProviderModel(), rerankTarget: { protocol: 'cohere-v2' as const } };
+  const { request } = parseRerankRequest('cohere-v1', { model: 'm', query: 'query', documents: ['one'] });
+  const facts = customInput(record, model, request);
+  const invalid = await callCustom(customPipelines.rerank, facts, async () => new Response('<html>'));
+  const raw = '{ "results": [{ "index": 0, "relevance_score": 1.0 }] }';
+  const valid = await callCustom(customPipelines.rerank, facts, async () => new Response(raw));
+
+  expect(invalid['response.http'].status).toBe(502);
+  expect(invalid['response.rerank']).toMatchObject({
+    kind: 'error', source: 'upstream', error: { error: { type: 'upstream_invalid_json' } },
+  });
+  expect(valid['response.rerank']).toEqual({ kind: 'ok', target: { protocol: 'cohere-v2' } });
+  expect(valid.body.utf8()).toBe(raw);
+});
+
+test('OpenAI Completions preserves a successful non-JSON upstream response', async () => {
+  const result = await callCustom(
+    customPipelines.openaiCompletions,
+    customInput(buildCustomUpstream(), stubProviderModel(), { prompt: 'hi' }),
+    async () => new Response('raw upstream body', { headers: { 'content-type': 'text/plain' } }),
+  );
+
+  expect(result['response.openaiCompletions']).toEqual({ kind: 'ok' });
+  expect(result.body.utf8()).toBe('raw upstream body');
 });

@@ -1,11 +1,12 @@
 import { test } from 'vitest';
 
 import { callCustom, customInput } from './pipeline-fixture.ts';
+import { customPipelines } from '../src/pipelines.ts';
 import { createCustomProvider } from '../src/provider.ts';
 import { isSecret, type RunEvent } from '@floway-dev/pipeline';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { assertEquals, assertExists, jsonResponse, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, jsonResponse, sseResponse, stubProviderModel, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildUpstream = (baseUrl = 'https://generativelanguage.googleapis.com'): UpstreamRecord => ({
   id: 'up_gemini',
@@ -34,7 +35,8 @@ const buildUpstream = (baseUrl = 'https://generativelanguage.googleapis.com'): U
 });
 
 test('Gemini generation posts to the model action path with alt=sse and the x-goog-api-key header', async () => {
-  const provider = createCustomProvider(buildUpstream());
+  const record = buildUpstream();
+  const provider = createCustomProvider(record);
   let request: Request | undefined;
   const events: RunEvent[] = [];
 
@@ -46,8 +48,8 @@ test('Gemini generation posts to the model action path with alt=sse and the x-go
     async () => {
       const [model] = await provider.instance.getProvidedModels(directFetcher);
       await callCustom(
-        provider.pipelines.geminiGenerateContent,
-        customInput(model, { contents: [{ role: 'user', parts: [{ text: 'hello' }] }] }),
+        customPipelines.geminiGenerateContent,
+        customInput(record, model, { contents: [{ role: 'user', parts: [{ text: 'hello' }] }] }),
         directFetcher,
         event => events.push(event),
       );
@@ -72,14 +74,15 @@ test('Gemini generation posts to the model action path with alt=sse and the x-go
 test('baseUrl places the generation root, and a stored models/ prefix is stripped', async () => {
   // The root itself is fixed; a deployment that serves the API under a prefix
   // states it once in baseUrl, which the catalog fetch shares.
-  const record = buildUpstream('https://gemini-proxy.example.com/api/gemini');
-  const provider = createCustomProvider({
-    ...record,
+  const base = buildUpstream('https://gemini-proxy.example.com/api/gemini');
+  const record = {
+    ...base,
     config: {
-      ...(record.config as Record<string, unknown>),
+      ...(base.config as Record<string, unknown>),
       models: [{ upstreamModelId: 'models/gemini-3-flash', kind: 'chat', endpoints: { geminiGenerateContent: {} } }],
     },
-  });
+  };
+  const provider = createCustomProvider(record);
   let request: Request | undefined;
 
   await withMockedFetch(
@@ -89,7 +92,7 @@ test('baseUrl places the generation root, and a stored models/ prefix is strippe
     },
     async () => {
       const [model] = await provider.instance.getProvidedModels(directFetcher);
-      await callCustom(provider.pipelines.geminiGenerateContent, customInput(model, { contents: [] }));
+      await callCustom(customPipelines.geminiGenerateContent, customInput(record, model, { contents: [] }));
     },
   );
 
@@ -98,7 +101,8 @@ test('baseUrl places the generation root, and a stored models/ prefix is strippe
 });
 
 test('countTokens posts the generate payload inside the generateContentRequest envelope', async () => {
-  const provider = createCustomProvider(buildUpstream());
+  const record = buildUpstream();
+  const provider = createCustomProvider(record);
   let request: Request | undefined;
 
   await withMockedFetch(
@@ -109,10 +113,11 @@ test('countTokens posts the generate payload inside the generateContentRequest e
     async () => {
       const [model] = await provider.instance.getProvidedModels(directFetcher);
       const result = await callCustom(
-        provider.pipelines.geminiGenerateContentCountTokens,
-        customInput(model, { contents: [{ role: 'user', parts: [{ text: 'hello' }] }], systemInstruction: { parts: [{ text: 'be brief' }] } }),
+        customPipelines.geminiGenerateContentCountTokens,
+        customInput(record, model, { contents: [{ role: 'user', parts: [{ text: 'hello' }] }], systemInstruction: { parts: [{ text: 'be brief' }] } }),
       );
       assertEquals(result['response.http'].status, 200);
+      assertEquals(result['response.geminiGenerateContentCountTokens'], { kind: 'ok' });
       assertEquals(JSON.parse(result.body.utf8()), { totalTokens: 12 });
     },
   );
@@ -127,6 +132,32 @@ test('countTokens posts the generate payload inside the generateContentRequest e
       systemInstruction: { parts: [{ text: 'be brief' }] },
       model: 'models/gemini-3-flash',
     },
+  });
+});
+
+test('Gemini emits a native error body for an upstream non-JSON failure', async () => {
+  const result = await callCustom(
+    customPipelines.geminiGenerateContent,
+    customInput(buildUpstream(), stubProviderModel(), { contents: [] }),
+    async () => new Response('  resource exhausted  ', { status: 429 }),
+  );
+
+  assertEquals(result['response.http'].status, 429);
+  assertEquals(result['response.geminiGenerateContent'], {
+    kind: 'error', source: 'upstream', error: { error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'resource exhausted' } },
+  });
+});
+
+test('Gemini countTokens rejects an invalid JSON success response', async () => {
+  const result = await callCustom(
+    customPipelines.geminiGenerateContentCountTokens,
+    customInput(buildUpstream(), stubProviderModel(), { contents: [] }),
+    async () => new Response('unavailable'),
+  );
+
+  assertEquals(result['response.http'].status, 502);
+  assertEquals(result['response.geminiGenerateContentCountTokens'], {
+    kind: 'error', source: 'upstream', error: { error: { code: 502, status: 'UNAVAILABLE', message: 'Upstream returned invalid Gemini countTokens JSON.' } },
   });
 });
 
