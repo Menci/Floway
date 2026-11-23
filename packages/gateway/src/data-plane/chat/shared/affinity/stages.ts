@@ -15,6 +15,13 @@ export interface AffinityFacts<Analysis extends AffinityAnalysis> {
   readonly 'request.affinity': Analysis;
 }
 
+interface AffinityRoutingFailure extends CandidateError {
+  readonly kind: 'routing-unavailable';
+}
+
+export const isAffinityRoutingFailure = (error: CandidateError): error is AffinityRoutingFailure =>
+  'kind' in error && error.kind === 'routing-unavailable';
+
 export const createAnalyzeAffinity = <Api extends ChatTargetApi, Analysis extends AffinityAnalysis, Payload = ChatPayload<Api>>(
   api: Api,
   analyze: (payload: Payload, codec: AffinityServices['affinityCodec']) => Promise<Analysis>,
@@ -88,13 +95,12 @@ export const selectChatCandidates = <Analysis extends AffinityAnalysis, Payload>
   payload: Payload,
   evaluate: EvaluateAffinity<Analysis, Payload>,
   model: string,
-): readonly RouteCandidate[] | CandidateError => {
+): readonly RouteCandidate[] | AffinityRoutingFailure => {
   const { requiredTargets } = analysis;
-  const unavailable = (message: string): CandidateError => ({ status: 400, message, model, failedUpstreams: [] });
+  const unavailable = (message: string): AffinityRoutingFailure => ({ kind: 'routing-unavailable', status: 400, message, model, failedUpstreams: [] });
   if (requiredTargets.length > 1) {
     return unavailable(`Client-carried state requires multiple incompatible targets: ${requiredTargets.map(target => `'${target.upstreamId}/${target.modelId}'`).join(', ')}.`);
   }
-  const accepted: RouteCandidate[] = [];
   const preferred: RouteCandidate[] = [];
   const compatible: RouteCandidate[] = [];
   const degrading: RouteCandidate[] = [];
@@ -105,14 +111,13 @@ export const selectChatCandidates = <Analysis extends AffinityAnalysis, Payload>
       throw new Error('Affinity candidate evaluation disagrees with the request requirement analysis');
     }
     if (evaluation.kind === 'rejected') continue;
-    accepted.push(candidate);
     if (evaluation.degrades) degrading.push(candidate);
     else if (evaluation.preferred === false) compatible.push(candidate);
     else preferred.push(candidate);
   }
-  if (requiredTargets.length === 1 && accepted.length === 0) {
+  if (requiredTargets.length === 1 && preferred.length === 0 && compatible.length === 0 && degrading.length === 0) {
     const [required] = requiredTargets;
     return unavailable(`Client-carried state requires unavailable target '${required.upstreamId}/${required.modelId}'.`);
   }
-  return preferred.length === 0 && compatible.length === 0 ? accepted : [...preferred, ...compatible, ...degrading];
+  return [...preferred, ...compatible, ...degrading];
 };
