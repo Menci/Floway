@@ -1,11 +1,12 @@
 import { openaiResponsesItemId } from './identity.ts';
 import type { OpenAIResponsesStatefulStore } from './store.ts';
-import { throwChatServeFailure } from '../../shared/errors.ts';
 import type { CanonicalOpenAIResponsesPayload, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 
-export interface ResponsesItemNotFound {
-  readonly kind: 'item-not-found';
-  readonly itemId: string;
+export class ResponsesItemNotFoundError extends Error {
+  constructor(itemId: string) {
+    super(`Item with id '${itemId}' not found.`);
+    this.name = 'ResponsesItemNotFoundError';
+  }
 }
 
 const hydrateItem = (item: CanonicalOpenAIResponsesInputItem, store: OpenAIResponsesStatefulStore): CanonicalOpenAIResponsesInputItem => {
@@ -13,7 +14,7 @@ const hydrateItem = (item: CanonicalOpenAIResponsesInputItem, store: OpenAIRespo
   if (id === null) return item;
   const stored = store.getItemById(id);
   if (stored === undefined) {
-    if (item.type === 'item_reference') throwChatServeFailure<ResponsesItemNotFound>({ kind: 'item-not-found', itemId: id });
+    if (item.type === 'item_reference') throw new ResponsesItemNotFoundError(id);
     return item;
   }
   return stored.payload.item as CanonicalOpenAIResponsesInputItem;

@@ -1,20 +1,20 @@
+import type { ResponsesBodyBack } from './facts.ts';
 import { jsonHttpResponse } from '../../../pipeline/edge-http.ts';
 import type { SelectedAttemptResponse } from '../../../pipeline/failover.ts';
 import { emptyUsageFacts, usageResponseKeys } from '../../../pipeline/observe-usage.ts';
 import type { GatewayServices } from '../../../pipeline/services.ts';
 import { affinityIdentityForCandidate } from '../../shared/affinity/selection.ts';
 import type { DeliveryFacts } from '../../shared/encode.ts';
-import { tryCatchChatServeFailure } from '../../shared/errors.ts';
 import { wrapOpenAIResponsesAffinityEgress } from '../affinity/egress.ts';
 import type { ResponsesDelivery } from '../encode.ts';
-import { hydrateOpenAIResponsesPayload, type ResponsesItemNotFound } from '../items/hydrate.ts';
+import { responsesInputErrorBody } from '../errors.ts';
+import { hydrateOpenAIResponsesPayload, ResponsesItemNotFoundError } from '../items/hydrate.ts';
 import { syntheticEventsFromCompaction, wrapOpenAIResponsesClientOutput } from '../items/output.ts';
 import { expandPreviousResponseId, PreviousResponseNotFoundError } from '../items/previous-response.ts';
 import type { OpenAIResponsesStatefulStore } from '../items/store.ts';
 import { OPENAI_RESPONSES_REASONING_INCLUDED_HEADER, OPENAI_RESPONSES_REASONING_INCLUDED_VALUE } from '../response-headers.ts';
 import { createOpenAIResponsesResponseId } from '../response-id.ts';
 import { wrapResponseResourceCompletion } from '../response-resource.ts';
-import type { ResponsesBodyBack } from './facts.ts';
 import { defineStage, type StageEnv } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
@@ -32,10 +32,6 @@ const previousNotFound = (id: string) => ({
     param: 'previous_response_id',
     code: 'previous_response_not_found',
   },
-});
-
-const inputItemNotFound = (id: string) => ({
-  error: { message: `Item with id '${id}' not found.`, type: 'invalid_request_error', param: 'input', code: null },
 });
 
 export const prepareResponsesTurn = async (
@@ -56,8 +52,7 @@ export const prepareResponsesTurn = async (
     hydrated = hydrateOpenAIResponsesPayload(prepared, store);
   } catch (error) {
     if (error instanceof PreviousResponseNotFoundError) return errorResponse(400, previousNotFound(error.previousResponseId));
-    const failure = tryCatchChatServeFailure<ResponsesItemNotFound>(error);
-    if (failure?.kind === 'item-not-found') return errorResponse(404, inputItemNotFound(failure.itemId));
+    if (error instanceof ResponsesItemNotFoundError) return errorResponse(404, responsesInputErrorBody(error));
     throw error;
   }
   await store.stageInputItems(original.input);

@@ -1,4 +1,4 @@
-import { throwChatServeFailure } from '../../shared/errors.ts';
+import { ResponsesInputError } from '../errors.ts';
 import { isCodexAudioReference, type OpenAIResponsesInputAgentMessageItem, type OpenAIResponsesInputContent, type OpenAIResponsesInputImage } from '@floway-dev/protocols/openai-responses';
 
 interface AgentContentFields {
@@ -12,14 +12,14 @@ interface AgentContentFields {
 
 const requiredString = (value: unknown, path: string): string => {
   if (typeof value !== 'string') {
-    return throwChatServeFailure({ kind: 'invalid-input', message: `Invalid type for '${path}': expected a string.`, param: path });
+    throw new ResponsesInputError({ message: `Invalid type for '${path}': expected a string.`, param: path });
   }
   return value;
 };
 
 const nullableString = (value: unknown, path: string): string | null | undefined => {
   if (value !== undefined && value !== null && typeof value !== 'string') {
-    return throwChatServeFailure({ kind: 'invalid-input', message: `Invalid type for '${path}': expected a string or null.`, param: path });
+    throw new ResponsesInputError({ message: `Invalid type for '${path}': expected a string or null.`, param: path });
   }
   return value;
 };
@@ -99,7 +99,7 @@ export const agentMessageContent = (
       content.push({ ...part, type: 'input_file' });
       break;
     case 'input_audio':
-      if (!isCodexAudioReference(part)) return throwChatServeFailure({ kind: 'invalid-input', message: `Expected one audio_url or file_id in '${path}'.`, param: path });
+      if (!isCodexAudioReference(part)) throw new ResponsesInputError({ message: `Expected one audio_url or file_id in '${path}'.`, param: path });
       content.push({ ...part, type: 'input_audio' });
       break;
     case 'computer_screenshot':
@@ -111,7 +111,7 @@ export const agentMessageContent = (
       });
       break;
     default:
-      return throwChatServeFailure({ kind: 'invalid-input', message: `Invalid value: '${part.type}' for '${path}.type'.`, param: `${path}.type` });
+      throw new ResponsesInputError({ message: `Invalid value: '${part.type}' for '${path}.type'.`, param: `${path}.type` });
     }
   }
 

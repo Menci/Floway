@@ -1,8 +1,7 @@
 import { type ResponsesBodyBack, type ResponsesBodyFacts, responsesBodyRequest } from './facts.ts';
 import { answerKeys, gatewayAnswer } from '../../../pipeline/answer.ts';
 import { jsonHttpResponse } from '../../../pipeline/edge-http.ts';
-import { tryCatchChatServeFailure, type InputErrorDetails } from '../../shared/errors.ts';
-import { responsesInputErrorBody } from '../errors.ts';
+import { ResponsesInputError, responsesInputErrorBody } from '../errors.ts';
 import { defineStage } from '@floway-dev/pipeline';
 import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 import type { FlagId } from '@floway-dev/provider';
@@ -25,10 +24,9 @@ export const responsesInputShim = (
     try {
       input = payload.input.map(lower);
     } catch (error) {
-      const failure = tryCatchChatServeFailure<InputErrorDetails & { readonly kind: 'invalid-input' }>(error);
-      if (failure === null) throw error;
+      if (!(error instanceof ResponsesInputError)) throw error;
       return {
-        ...gatewayAnswer(env, jsonHttpResponse(400, responsesInputErrorBody(failure), env.clock())),
+        ...gatewayAnswer(env, jsonHttpResponse(400, responsesInputErrorBody(error.details), env.clock())),
         'response.openaiResponses': undefined,
       };
     }

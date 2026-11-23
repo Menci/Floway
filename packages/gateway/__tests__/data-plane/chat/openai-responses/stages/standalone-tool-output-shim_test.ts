@@ -60,6 +60,19 @@ test('forwards standalone outputs verbatim to a native OpenAI Responses target w
   assertEquals(seen.input, [...createGoalTurn, goalObjective]);
 });
 
+test('joins text from frozen standalone output after an image', async () => {
+  const image = { type: 'input_image' as const, image_url: 'https://example.com/image.png', detail: 'auto' };
+  const { seen, done } = await lower([{
+    type: 'function_call_output', name: 'context',
+    output: [image, { type: 'input_text', text: 'first' }, { type: 'input_text', text: ' second' }],
+  }], { enabledFlags: FLAG });
+  assertEquals(await done, { ok: true });
+  assertEquals(seen?.input, [{
+    type: 'message', role: 'user',
+    content: [{ type: 'input_text', text: '<external_context>' }, image, { type: 'input_text', text: 'first second</external_context>' }],
+  }]);
+});
+
 test('returns an input error without running downstream when a standalone output has no name', async () => {
   const { result, seen } = await lower([
     { type: 'message', role: 'user', content: 'hi' },
