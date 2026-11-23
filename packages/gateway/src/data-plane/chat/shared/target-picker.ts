@@ -3,12 +3,12 @@ import { defineStage } from '@floway-dev/pipeline';
 import type { ModelEndpoints } from '@floway-dev/protocols/common';
 import type { ChatTargetApi } from '@floway-dev/provider';
 
-export interface ChatTargetPicker {
+export interface ChatTargetPicker<Api extends ChatTargetApi = ChatTargetApi> {
   canServe: (endpoints: ModelEndpoints) => boolean;
-  pick: (endpoints: ModelEndpoints) => ChatTargetApi;
+  pick: (endpoints: ModelEndpoints) => Api;
 }
 
-export const chatTargetPicker = (preference: readonly ChatTargetApi[]): ChatTargetPicker => {
+export const chatTargetPicker = <Api extends ChatTargetApi>(preference: readonly Api[]): ChatTargetPicker<Api> => {
   const find = (endpoints: ModelEndpoints) => preference.find(key => endpoints[key]);
   return {
     canServe: endpoints => find(endpoints) !== undefined,
@@ -27,11 +27,11 @@ export const anthropicMessagesCountTokensTarget = chatTargetPicker(['anthropicMe
 export const geminiGenerateContentGenerateTarget = chatTargetPicker(['geminiGenerateContent', 'openaiChatCompletions', 'anthropicMessages', 'openaiResponses']);
 export const geminiGenerateContentCountTokensTarget = chatTargetPicker(['geminiGenerateContent', 'anthropicMessages']);
 
-export interface TargetRequest extends CandidateRequest {
-  readonly 'route.targetApi': ChatTargetApi;
+export interface TargetRequest<Api extends ChatTargetApi = ChatTargetApi> extends CandidateRequest {
+  readonly 'route.targetApi': Api;
 }
 
-export const pickTarget = (picker: ChatTargetPicker) => defineStage<CandidateRequest, TargetRequest, object, object>({
+export const pickTarget = <Api extends ChatTargetApi>(picker: ChatTargetPicker<Api>) => defineStage<CandidateRequest, TargetRequest<Api>, object, object>({
   name: 'pickTarget',
   through: {
     request: { needs: ['route.candidate'], consumes: [], provides: ['route.targetApi'] },

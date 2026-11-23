@@ -128,7 +128,7 @@ export const responsesFixture = (
   };
   return {
     usage, performance, requestedModels, services, events, requestRaw,
-    invokeBody(payload: CanonicalOpenAIResponsesPayload, candidate: RouteCandidate, translationSource: ChatTargetApi) {
+    invokeBody(payload: CanonicalOpenAIResponsesPayload, candidate: RouteCandidate) {
       return run(body, {
         'request.http': { method: 'POST', url: { origin: 'https://floway.test', pathname: '/v1/test' }, headers: [], body: null },
         'request.auth.apiKeyId': key,
@@ -137,7 +137,6 @@ export const responsesFixture = (
         'request.route.upstreamIds': null,
         'request.route.randomizeUpstreams': false,
         'route.candidate': candidate,
-        'route.translationSource': translationSource,
         'request.action': 'generate',
         'request.openaiResponses': payload,
       }, { services, finalizationTimeoutMs: 2000 });

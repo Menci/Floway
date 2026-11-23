@@ -1,4 +1,5 @@
 import { SidecarDomain } from './sidecar-codec.ts';
+import type { TargetRequest } from './target-picker.ts';
 import { answerKeys, gatewayAnswer } from '../../pipeline/answer.ts';
 import { type HttpInput, jsonHttpResponse } from '../../pipeline/edge-http.ts';
 import type { AttemptResponse, CandidateRequest } from '../../pipeline/failover.ts';
@@ -47,9 +48,7 @@ export interface ChatProtocolExtras {
   readonly 'request.action'?: OpenAIResponsesAction;
 }
 
-type BodyRequest = HttpInput & CandidateRequest & GatewayRouteFacts & ChatProtocolExtras & {
-  readonly 'route.translationSource'?: ChatTargetApi;
-};
+type BodyRequest = HttpInput & CandidateRequest & GatewayRouteFacts & ChatProtocolExtras;
 
 export type ChatBodyInput<Api extends ChatTargetApi> = BodyRequest & ChatPayloadFacts<Api>;
 export type ChatBodyOutput<Api extends ChatTargetApi> = AttemptResponse & ChatFrameFacts<Api> & {
@@ -82,8 +81,8 @@ export type OpenAIResponsesCompactBodyTargets = ChatBodyTargets<'openaiResponses
 };
 
 type RouteServices = Pick<GatewayServices, 'sidecarCodecs'>;
-type TargetBodyRequest = BodyRequest & { readonly 'route.targetApi': ChatTargetApi };
-type RouteRequest<Api extends ChatTargetApi> = TargetBodyRequest & ChatPayloadFacts<Api>;
+type TargetBodyRequest = BodyRequest & TargetRequest;
+type RouteRequest<Api extends ChatTargetApi> = BodyRequest & ChatPayloadFacts<Api> & TargetRequest<Api | TranslatedApis[SlotsFor<Api>]>;
 type InputErrorBody = (error: TranslateInputError) => unknown;
 type RouteReply<Event, Reply> = (response: AttemptResponse, events: ChatFrames<Event>) => Reply;
 type EnterEgress<Payload, Event> = (
@@ -115,7 +114,7 @@ const translationSlot = (source: ChatTargetApi, target: TranslatedApis[Translati
     request: {
       needs: [request],
       consumes: [request],
-      provides: [`request.${target}`, 'route.translationSource', ...extras],
+      provides: [`request.${target}`, ...extras],
     },
     response: responseDecl(`response.${target}`, `response.${source}`, []),
   };
@@ -165,8 +164,6 @@ const translateInto = async <Payload extends object, Event, TargetPayload, Targe
   env: StageEnv<RouteServices>,
 ): Promise<Reply> => {
   const targetApi = facts['route.targetApi'];
-  const source = facts['route.translationSource'];
-  if (source !== undefined) throw new Error(`Chat request from ${source} reached a second translation from ${api} to ${targetApi}`);
   const trip = await translate({ ...payload, stream: true }, {
     sidecarCodec: env.services.sidecarCodecs.codecFor(SidecarDomain.TranslatedAssistantTurn),
     fallbackMaxOutputTokens: facts['route.candidate'].limits.max_output_tokens,
@@ -174,7 +171,7 @@ const translateInto = async <Payload extends object, Event, TargetPayload, Targe
   if (trip.type === 'input-error') {
     return reply(gatewayAnswer(env, jsonHttpResponse(400, inputError(trip), env.clock())), undefined);
   }
-  const { response, events } = await enter({ ...facts, 'route.translationSource': api }, trip.target);
+  const { response, events } = await enter(facts, trip.target);
   return reply({
     ...response,
     'response.http': await rewriteTranslatedError(response['response.http'], trip.error),
@@ -203,10 +200,6 @@ const intoChatCompletions = (call: EnterBody<'openaiChatCompletions'>): Translat
   return { response, events };
 };
 
-const noRoute = (api: ChatTargetApi, targetApi: ChatTargetApi): never => {
-  throw new Error(`Chat protocol ${api} has no route to ${targetApi}`);
-};
-
 export const createOpenAIChatCompletionsRouteBody = (inputError: InputErrorBody) => {
   const api = 'openaiChatCompletions';
   type Api = typeof api;
@@ -223,7 +216,6 @@ export const createOpenAIChatCompletionsRouteBody = (inputError: InputErrorBody)
       case 'openaiChatCompletions': return await enterEgress(facts, payload, into.egress, reply);
       case 'anthropicMessages': return await translateInto(api, facts, payload, routeOpenAIChatCompletionsViaAnthropicMessages, intoMessages(into.messages), reply, inputError, env);
       case 'openaiResponses': return await translateInto(api, facts, payload, routeOpenAIChatCompletionsViaOpenAIResponses, intoResponses(into.responses), reply, inputError, env);
-      default: return noRoute(api, facts['route.targetApi']);
       }
     },
   });
@@ -245,7 +237,6 @@ export const createOpenAIResponsesRouteBody = (inputError: InputErrorBody) => {
       case 'openaiResponses': return await enterEgress(facts, payload, into.egress, reply);
       case 'anthropicMessages': return await translateInto(api, facts, payload, routeOpenAIResponsesViaAnthropicMessages, intoMessages(into.messages), reply, inputError, env);
       case 'openaiChatCompletions': return await translateInto(api, facts, payload, routeOpenAIResponsesViaOpenAIChatCompletions, intoChatCompletions(into.chatCompletions), reply, inputError, env);
-      default: return noRoute(api, facts['route.targetApi']);
       }
     },
   });
@@ -274,7 +265,6 @@ export const createOpenAIResponsesCompactRouteBody = (inputError: InputErrorBody
       switch (target) {
       case 'anthropicMessages': return await translateInto(api, facts, payload, routeOpenAIResponsesViaAnthropicMessages, intoMessages(into.messages), reply, inputError, env);
       case 'openaiChatCompletions': return await translateInto(api, facts, payload, routeOpenAIResponsesViaOpenAIChatCompletions, intoChatCompletions(into.chatCompletions), reply, inputError, env);
-      default: return noRoute(api, target);
       }
     },
   });
@@ -296,7 +286,6 @@ export const createAnthropicMessagesRouteBody = (inputError: InputErrorBody) => 
       case 'anthropicMessages': return await enterEgress(facts, payload, into.egress, reply);
       case 'openaiResponses': return await translateInto(api, facts, payload, routeAnthropicMessagesViaOpenAIResponses, intoResponses(into.responses), reply, inputError, env);
       case 'openaiChatCompletions': return await translateInto(api, facts, payload, routeAnthropicMessagesViaOpenAIChatCompletions, intoChatCompletions(into.chatCompletions), reply, inputError, env);
-      default: return noRoute(api, facts['route.targetApi']);
       }
     },
   });

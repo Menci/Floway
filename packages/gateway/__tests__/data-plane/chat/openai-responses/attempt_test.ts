@@ -107,7 +107,7 @@ test('a translated source reaches the Responses body without opening storage or 
   }, 'openai-responses.reasoning.encrypted_content');
   const unwrap = vi.spyOn(codec, 'unwrap');
   const input = [{ type: 'reasoning' as const, id: 'rs_source_edge', summary: [], encrypted_content: carrier }];
-  const handle = fixture.invokeBody({ model: 'test-model', input }, target.candidate, 'anthropicMessages');
+  const handle = fixture.invokeBody({ model: 'test-model', input }, target.candidate);
   const events = (await handle.result)['response.openaiResponses'];
   if (events === undefined) throw new Error('Expected Responses events');
   for await (const event of events) void event;

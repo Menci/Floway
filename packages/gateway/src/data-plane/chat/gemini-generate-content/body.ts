@@ -65,7 +65,9 @@ const reshapeCount = async (http: HttpResponseFacts, now: number): Promise<HttpR
     : geminiJsonBody(http, { totalTokens });
 };
 
-const routeCount = defineEnding<ChatBodyInput<Api> & TargetRequest, GeminiCountBodyOutput, GeminiCountBodyTargets, Pick<GatewayServices, 'sidecarCodecs'>>({
+type CountRequest = ChatBodyInput<Api> & TargetRequest<ReturnType<typeof geminiGenerateContentCountTokensTarget.pick>>;
+
+const routeCount = defineEnding<CountRequest, GeminiCountBodyOutput, GeminiCountBodyTargets, Pick<GatewayServices, 'sidecarCodecs'>>({
   name: 'routeBody',
   request: { needs: ['request.geminiGenerateContent', 'route.candidate', 'route.targetApi'] },
   into: {
@@ -75,19 +77,17 @@ const routeCount = defineEnding<ChatBodyInput<Api> & TargetRequest, GeminiCountB
     },
     messagesCount: {
       request: {
-        needs: [], consumes: ['request.geminiGenerateContent'], provides: ['request.anthropicMessages', 'request.anthropicBeta', 'route.translationSource'],
+        needs: [], consumes: ['request.geminiGenerateContent'], provides: ['request.anthropicMessages', 'request.anthropicBeta'],
       },
       response: { needs: ['response.http', 'response.targetApi', 'response.source', ...usageResponseKeys], consumes: [], provides: ['response.http'] },
     },
   },
   return: { provides: [...answerKeys, 'response.performance.operation'] },
   execute: async ({ 'request.geminiGenerateContent': payload, ...facts }, into, env) => {
-    const api = facts['route.targetApi'];
-    if (api === 'geminiGenerateContent') {
+    if (facts['route.targetApi'] === 'geminiGenerateContent') {
       const response = await into.egress({ ...facts, 'request.payload': payload });
       return { ...response, ...emptyUsageFacts(env) };
     }
-    if (api !== 'anthropicMessages' || facts['route.translationSource'] !== undefined) throw new Error(`Invalid Gemini count route to ${api}`);
     const trip = await routeGeminiGenerateContentViaAnthropicMessages(payload, {
       sidecarCodec: env.services.sidecarCodecs.codecFor(SidecarDomain.TranslatedAssistantTurn),
       fallbackMaxOutputTokens: facts['route.candidate'].limits.max_output_tokens,
@@ -97,7 +97,7 @@ const routeCount = defineEnding<ChatBodyInput<Api> & TargetRequest, GeminiCountB
     }
     const { stream: _stream, ...messages } = trip.target;
     const response = await into.messagesCount({
-      ...facts, 'request.anthropicMessages': messages, 'request.anthropicBeta': [], 'route.translationSource': 'geminiGenerateContent',
+      ...facts, 'request.anthropicMessages': messages, 'request.anthropicBeta': [],
     });
     return { ...response, 'response.http': await reshapeCount(response['response.http'], env.clock()) };
   },

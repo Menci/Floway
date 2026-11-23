@@ -1,8 +1,11 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
+import { initDumpBroker, initDumpStore } from '../../../src/dump/registry.ts';
+import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import type { InMemoryRepo } from '../../repo/memory.ts';
 import { saveUpstreamForTest } from '../../repo/upstreams.ts';
 import { flushAsyncWork, MOCKED_FETCH_EGRESS, requestAppWithWarmModels, setupAppTest } from '../../test-utils/app.ts';
+import { createDumpDecoder } from '@floway-dev/dump';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { withMockedFetch, assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -114,6 +117,8 @@ test('/v1/audio/transcriptions preserves multipart fields, headers, JSON body, a
 
 test('/v1/audio/transcriptions opens SSE with 200 and streams through transcript.text.done', async () => {
   const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
   await registerAudioModel(repo, {
     entries: [{ rates: { input_audio_tokens: '0.000001', output_tokens: '0.000001' } }],
   });
@@ -145,6 +150,17 @@ test('/v1/audio/transcriptions opens SSE with 200 and streams through transcript
   const [performance] = await repo.performance.listAll();
   assertEquals(performance.neutral, 1);
   assertEquals(performance.errorsNoOutput, 0);
+  expect(dumps.stored).toHaveLength(1);
+  const decoder = createDumpDecoder();
+  decoder.push(dumps.stored[0].artifact);
+  const stages = [...decoder.finish().stages.values()];
+  const failover = stages.find(stage => stage.name === 'failover');
+  const encode = stages.find(stage => stage.name === 'encode');
+  assertExists(failover);
+  assertExists(encode);
+  expect(failover.parentStageId).toBe(encode.stageId);
+  expect(failover.responseFacts).toMatchObject({ 'response.http': { status: 201 } });
+  expect(encode.responseFacts).toMatchObject({ 'response.http': { status: 200 } });
 });
 
 test('/v1/audio/transcriptions completes and cancels an upstream kept open after transcript.text.done', async () => {

@@ -1,8 +1,8 @@
 import { answerKeys, gatewayAnswer } from './answer.ts';
 import { edgeHttp, type HttpInput, type HttpOutput, jsonHttpResponse } from './edge-http.ts';
-import { type AttemptResponse, type CandidateRequest, failover } from './failover.ts';
+import { type AttemptResponse, type CandidateRequest, failoverHttp, type SelectedAttemptResponse } from './failover.ts';
 import type { GatewayHttpFacts } from './host.ts';
-import { billableCall, observedTokenUsage, type ObservedUsage, observeIdentity, scalarUsageFacts } from './observe-usage.ts';
+import { billableCall, observedTokenUsage, type ObservedUsage, observeIdentity, scalarUsageFacts, usageResponseKeys } from './observe-usage.ts';
 import { renderedNow, type RenderFacts, type RenderOutcome } from './render.ts';
 import { type CandidateError, createResolveCandidates, type ModelRequest } from './resolve-candidates.ts';
 import type { GatewayServices, RouteCandidate } from './services.ts';
@@ -49,6 +49,9 @@ export const invalidUpstreamResponse = (error: unknown, now: number): HttpRespon
 export const createNonChatPipeline = <Payload, ProviderOutput extends ProviderHttpOutput>(plan: NonChatPlan<Payload, ProviderOutput>) => {
   type Request = OperationRequest<Payload>;
   type Attempt = Request & CandidateRequest;
+  type UpstreamResponse = ProviderOutput & { readonly 'response.source': 'upstream' };
+  type Selected = UpstreamResponse & Pick<SelectedAttemptResponse, 'response.route.candidate'>;
+  type Rendered = RenderedAttemptResponse & Pick<SelectedAttemptResponse, 'response.usage.selected'>;
   type Targets = { provider: DynamicTarget<string, ProviderInput<Payload>, ProviderOutput, GatewayServices> };
   const providerExit = [...PROVIDER_EXIT, ...(plan.providerExit ?? [])];
 
@@ -66,13 +69,32 @@ export const createNonChatPipeline = <Payload, ProviderOutput extends ProviderHt
     },
   });
 
-  const enterUpstream = defineEnding<Attempt, RenderedAttemptResponse, Targets, Pick<GatewayServices, 'providers'>>({
+  const encode = defineStage<Request, Request, Selected, Rendered>({
+    name: 'encode',
+    through: {
+      request: { needs: ['request.http', 'request.model', 'request.payload'], consumes: [], provides: [] },
+      response: {
+        needs: [...providerExit, 'response.source', 'response.route.candidate'],
+        consumes: [],
+        provides: ['response.http', 'response.render', ...usageResponseKeys, 'response.usage.selected'],
+      },
+    },
+    execute: async (request, next, env) => {
+      const response = await next(request);
+      const candidate = response['response.route.candidate'];
+      const identity = observeIdentity(candidate, response['response.modelKey']);
+      const rendered = await plan.respond(response, { ...request, 'route.candidate': candidate }, identity, env);
+      return { ...response, ...rendered, 'response.usage.selected': rendered['response.usage.billable'] };
+    },
+  });
+
+  const enterUpstream = defineEnding<Attempt, UpstreamResponse, Targets, Pick<GatewayServices, 'providers'>>({
     name: 'enterUpstream',
     request: { needs: ['request.http', 'request.payload', 'route.candidate'] },
     into: {
       provider: {
         request: { needs: [], consumes: ['request.http'], provides: ['provider.model', 'request.headers', ...(plan.prepareProviderPayload === undefined ? [] : ['request.payload'])] },
-        response: { needs: providerExit, consumes: [], provides: [...answerKeys, 'response.attempt.status'] },
+        response: { needs: providerExit, consumes: [], provides: ['response.source'] },
       },
     },
     execute: async (request, into, env) => {
@@ -85,8 +107,7 @@ export const createNonChatPipeline = <Payload, ProviderOutput extends ProviderHt
         'request.headers': filterInboundHeaderEntries(http.headers, provider.inboundHeaderAllowlist),
         ...(plan.prepareProviderPayload === undefined ? {} : { 'request.payload': plan.prepareProviderPayload(facts['request.payload']) }),
       });
-      const identity = observeIdentity(candidate, result['response.modelKey']);
-      return { ...result, ...await plan.respond(result, request, identity, env), 'response.source': 'upstream', 'response.attempt.status': result['response.http'].status };
+      return { ...result, 'response.source': 'upstream' };
     },
   });
 
@@ -97,7 +118,7 @@ export const createNonChatPipeline = <Payload, ProviderOutput extends ProviderHt
         kind: plan.kind, sourceApi: plan.sourceApi, select: plan.select, unsupportedMessage: plan.unsupportedMessage,
         requestNeeds: ['request.payload'],
       }),
-      failover,
+      encode, failoverHttp,
     ],
     targets: {
       provider: {
