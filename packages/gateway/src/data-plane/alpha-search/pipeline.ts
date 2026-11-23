@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import type { WebSearchUsageRecord } from '../../repo/types.ts';
 import { answerKeys, gatewayAnswer } from '../pipeline/answer.ts';
 import { edgeHttp, type HttpOutput, jsonHttpResponse } from '../pipeline/edge-http.ts';
 import { type CandidateRequest, type CandidatesRequest, failover } from '../pipeline/failover.ts';
@@ -11,6 +12,7 @@ import { priceUsage, type SettlementFacts, writeSettlement } from '../pipeline/s
 import { filterInboundHeaderEntries } from '../shared/inbound-headers.ts';
 import { resolveAlphaSearchRouteCandidate } from '../tools/web-search/alpha-search/upstream.ts';
 import { assertLocalWebSearchSupport, executeOperationToText, isSearchResponseLength, maxResultsForContextSize, parseWebSearchOperations, startBatchFetch, UnsupportedLocalWebSearchFeatureError, type WebSearchExecutionSession, type WebSearchFilters } from '../tools/web-search/operations.ts';
+import { type SearchUsageRecords, writeSearchUsage } from '../tools/web-search/write-search-usage.ts';
 import { compose, defineEnding, defineStage, type DynamicTarget, link } from '@floway-dev/pipeline';
 import { isJsonMediaType } from '@floway-dev/protocols/common';
 import type { ProviderHttpOutput, ProviderInput } from '@floway-dev/provider';
@@ -76,6 +78,7 @@ const filtersFromSettings = (settings: AlphaSearchRequest['settings']): WebSearc
 
 const localSearch = async (
   body: AlphaSearchRequest, apiKeyId: string, getProvider: GatewayServices['webSearchProvider'], signal: AbortSignal,
+  recordUsage: WebSearchExecutionSession['recordUsage'],
 ): Promise<{ encrypted_output: null; output: string }> => {
   try {
     assertLocalWebSearchSupport(body.commands ?? {});
@@ -90,6 +93,7 @@ const localSearch = async (
     getProvider,
     filters: filtersFromSettings(body.settings),
     apiKeyId,
+    recordUsage,
     pageCache: new Map(),
     includeSearchActionSources: false,
     signal,
@@ -111,8 +115,10 @@ type Resolved = GatewayHttpFacts & PayloadFacts & CandidatesRequest;
 type Attempt = GatewayHttpFacts & PayloadFacts & CandidateRequest;
 type AlphaPorts = Pick<GatewayServices, 'providers' | 'webSearchProvider'>;
 type Targets = { provider: DynamicTarget<string, ProviderInput<Payload>, ProviderHttpOutput, GatewayServices> };
+type AlphaAnswer = RenderedAttemptResponse & SearchUsageRecords;
+const alphaAnswerKeys = [...answerKeys, 'response.searchUsage.records'];
 
-const prepareAlphaSearch = defineStage<GatewayHttpFacts, Resolved, RenderedAttemptResponse, RenderedAttemptResponse, AlphaPorts>({
+const prepareAlphaSearch = defineStage<GatewayHttpFacts, Resolved, AlphaAnswer, AlphaAnswer, AlphaPorts>({
   name: 'prepareAlphaSearch',
   through: {
     request: {
@@ -121,10 +127,14 @@ const prepareAlphaSearch = defineStage<GatewayHttpFacts, Resolved, RenderedAttem
     },
     response: { needs: [], consumes: [], provides: [] },
   },
-  return: { provides: answerKeys },
+  return: { provides: alphaAnswerKeys },
   execute: async (facts, next, env) => {
     const http = facts['request.http'];
-    const reply = (response: RenderedAttemptResponse['response.http']): RenderedAttemptResponse => gatewayAnswer(env, response);
+    const records: WebSearchUsageRecord[] = [];
+    const reply = (response: RenderedAttemptResponse['response.http']): AlphaAnswer => ({
+      ...gatewayAnswer(env, response),
+      'response.searchUsage.records': records,
+    });
     let body: unknown = {};
     if (isJsonMediaType(header(http.headers, 'content-type'))) {
       try {
@@ -138,7 +148,8 @@ const prepareAlphaSearch = defineStage<GatewayHttpFacts, Resolved, RenderedAttem
 
     const config = await env.services.webSearchProvider.alphaSearch();
     if (!config.enabled) {
-      return reply(jsonHttpResponse(200, await localSearch(parsed.data, facts['request.auth.apiKeyId'], env.services.webSearchProvider, env.signal), env.clock()));
+      const body = await localSearch(parsed.data, facts['request.auth.apiKeyId'], env.services.webSearchProvider, env.signal, row => { records.push(row); });
+      return reply(jsonHttpResponse(200, body, env.clock()));
     }
     const candidate = await resolveAlphaSearchRouteCandidate(env.services.providers, facts, config);
     if (candidate === undefined) return reply(openAiApiError(404, 'Search model not found.', env.clock()));
@@ -147,13 +158,13 @@ const prepareAlphaSearch = defineStage<GatewayHttpFacts, Resolved, RenderedAttem
   },
 });
 
-const enterUpstream = defineEnding<Attempt, RenderedAttemptResponse, Targets, Pick<GatewayServices, 'providers'>>({
+const enterUpstream = defineEnding<Attempt, AlphaAnswer, Targets, Pick<GatewayServices, 'providers'>>({
   name: 'enterUpstream',
   request: { needs: ['request.http', 'request.payload', 'route.candidate'] },
   into: {
     provider: {
       request: { needs: [], consumes: ['request.http'], provides: ['provider.model', 'request.headers'] },
-      response: { needs: ['response.http', 'response.modelKey'], consumes: [], provides: answerKeys },
+      response: { needs: ['response.http', 'response.modelKey'], consumes: [], provides: alphaAnswerKeys },
     },
   },
   execute: async ({ 'request.http': http, ...facts }, into, env) => {
@@ -166,12 +177,16 @@ const enterUpstream = defineEnding<Attempt, RenderedAttemptResponse, Targets, Pi
       'request.headers': filterInboundHeaderEntries(headers, provider.inboundHeaderAllowlist),
     });
     const identity = observeIdentity(candidate, result['response.modelKey']);
-    return { ...result, ...scalarHttpAttempt(env, forwardHttp(result['response.http'], null), identity), 'response.source': 'upstream' };
+    return {
+      ...result, ...scalarHttpAttempt(env, forwardHttp(result['response.http'], null), identity),
+      'response.source': 'upstream',
+      'response.searchUsage.records': [],
+    };
   },
 });
 
 export const alphaSearchIngress = compose<GatewayHttpFacts, HttpOutput & SettlementFacts, GatewayServices, Targets>('alpha-search.ingress', {
-  stages: [writeSettlement(null), priceUsage, edgeHttp, prepareAlphaSearch, failover],
+  stages: [writeSearchUsage, writeSettlement(null), priceUsage, edgeHttp, prepareAlphaSearch, failover],
   targets: {
     provider: {
       entry: ['provider.model', 'request.headers', 'request.payload'],

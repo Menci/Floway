@@ -5,9 +5,9 @@
 // this engine only in its default local-provider mode.
 
 import { normalizeDomainList } from './domain-normalize.ts';
-import { fetchPageAndRecordUsage } from './fetch-page.ts';
-import { runWebSearchAndRecordUsage } from './search.ts';
 import type { ConfiguredWebSearchProvider, WebSearchProvider, WebSearchProviderName } from './types.ts';
+import type { WebSearchUsageRecord } from '../../../repo/types.ts';
+import { currentHour } from '../../shared/telemetry/hour.ts';
 import { truncatePreservingCodePoints } from '../../shared/text.ts';
 import type { OpenAIResponsesWebSearchAction, OpenAIResponsesWebSearchTextResult } from '@floway-dev/protocols/openai-responses';
 import { isAbortError } from '@floway-dev/provider';
@@ -314,7 +314,7 @@ export const parseWebSearchOperations = (args: Record<string, unknown> | null): 
 
 // ── Execution session ──
 
-interface PageCacheEntry {
+export interface PageCacheEntry {
   content: string;
   truncated: boolean;
   fullContentBytes: number;
@@ -335,6 +335,7 @@ export interface WebSearchExecutionSession {
   getProvider: () => Promise<ConfiguredWebSearchProvider>;
   filters: WebSearchFilters;
   apiKeyId: string;
+  recordUsage: (row: WebSearchUsageRecord) => void;
   pageCache: Map<string, PageCacheEntry>;
   // Whether to populate `action.sources` on search IRs. Native OpenAI Responses
   // gates the field on `include: ["web_search_call.action.sources"]`; the
@@ -463,6 +464,20 @@ export const actionSearchQueries = (action: Extract<OpenAIResponsesWebSearchActi
   if (action.queries !== undefined) return action.queries;
   if (action.query !== undefined) return [action.query];
   return [];
+};
+
+const observeSearchAction = async <T>(
+  session: WebSearchExecutionSession,
+  provider: WebSearchProviderName,
+  action: WebSearchUsageRecord['action'],
+  requests: number,
+  call: () => Promise<T>,
+): Promise<T> => {
+  try {
+    return await call();
+  } finally {
+    session.recordUsage({ provider, keyId: session.apiKeyId, action, hour: currentHour(), requests });
+  }
 };
 
 // Numeric `[N]` references in the snippet body let the model cite specific
@@ -643,12 +658,8 @@ const runOneSearchQuery = async (
       ...(op.recencyDays !== undefined ? { recencyDays: op.recencyDays } : {}),
       ...(session.signal !== undefined ? { signal: session.signal } : {}),
     };
-    const result = await runWebSearchAndRecordUsage({
-      provider: active.provider,
-      providerName: active.providerName,
-      keyId: session.apiKeyId,
-      request: searchRequest,
-    });
+    const result = await observeSearchAction(session, active.providerName, 'search', 1,
+      () => active.provider.search(searchRequest));
 
     if (result.type === 'error') {
       const msg = result.message ?? result.errorCode;
@@ -697,7 +708,7 @@ const runBackendSearch = async (
 // (concatenated in entry order). Per-query failures interleave as error
 // snippets so the model sees which queries succeeded.
 export const runBackendSearchMulti = async (
-  ops: Array<Extract<WebSearchOperation, { kind: 'search' }>>,
+  ops: readonly Extract<WebSearchOperation, { kind: 'search' }>[],
   session: WebSearchExecutionSession,
 ): Promise<WebSearchCallIR> => {
   const queries = ops.map(op => op.query);
@@ -766,12 +777,9 @@ const runBatchFetch = async (
       urls: needFetch,
       ...(session.signal !== undefined ? { signal: session.signal } : {}),
     };
-    const result = await fetchPageAndRecordUsage({
-      provider: active.provider,
-      providerName: active.providerName,
-      keyId: session.apiKeyId,
-      request: fetchRequest,
-    });
+    // Providers bill per URL even when the client batches a page fetch.
+    const result = await observeSearchAction(session, active.providerName, 'fetch_page', needFetch.length,
+      () => active.provider.fetchPage(fetchRequest));
 
     if (result.type === 'error') {
       const msg = result.message ?? result.errorCode;

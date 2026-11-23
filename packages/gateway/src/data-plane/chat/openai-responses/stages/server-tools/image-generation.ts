@@ -1252,20 +1252,36 @@ const observeImageStream = (
   };
 };
 
-const executeImageCall = defineEnding<ImageDispatch, ImageBack, {}, GatewayServices>({
+type ImageTargets = {
+  generation: DynamicTarget<string, ProviderInput<GenerationPayload>, ProviderHttpOutput, GatewayServices>;
+  edit: DynamicTarget<string, ProviderInput<OpenAIImagesEditsRequest>, ProviderHttpOutput, GatewayServices>;
+};
+const providerEntry = ['provider.model', 'request.headers', 'request.payload'];
+const providerExit = ['response.http', 'response.modelKey'];
+const providerSlot = {
+  request: { needs: [], consumes: ['request.image'], provides: providerEntry },
+  response: { needs: providerExit, consumes: [], provides: responseKeys },
+};
+
+const executeImageCall = defineEnding<ImageDispatch, ImageBack, ImageTargets>({
   name: 'executeImageCall',
-  request: { needs: ['route.candidate', 'request.image.partials'] },
+  request: { needs: ['route.candidate', 'request.image', 'request.image.partials'] },
+  into: { generation: providerSlot, edit: providerSlot },
   return: { provides: responseKeys },
-  execute: async (facts, _into, env) => {
+  execute: async ({ 'request.image': request, ...facts }, into, env) => {
+    const candidate = facts['route.candidate'];
+    const forwarded = { ...facts, 'provider.model': candidate.providerModel, 'request.headers': [] };
     let response: ProviderHttpOutput;
     try {
-      response = await env.run(imageDispatch, facts).result;
+      response = await (request.action === 'generate'
+        ? into.generation(candidate.upstreamId, { ...forwarded, 'request.payload': request.payload })
+        : into.edit(candidate.upstreamId, { ...forwarded, 'request.payload': request.payload }));
     } catch (error) {
       if (env.signal.aborted || !isUpstreamTransportError(error)) throw error;
       return toolFailure(env, error);
     }
     const http = response['response.http'];
-    const identity = observeIdentity(facts['route.candidate'], response['response.modelKey']);
+    const identity = observeIdentity(candidate, response['response.modelKey']);
     if (httpSucceeded(http) && facts['request.image.partials']) return { ...response, ...observeImageStream(http, identity, env) };
 
     const text = (await readHttpBytes(http.body)).utf8();
@@ -1312,63 +1328,35 @@ const retryImageCall = defineStage<ImageDispatch, ImageDispatch, ImageBack, Imag
   },
 });
 
-type ImageTargets = {
-  generation: DynamicTarget<string, ProviderInput<GenerationPayload>, ProviderHttpOutput, GatewayServices>;
-  edit: DynamicTarget<string, ProviderInput<OpenAIImagesEditsRequest>, ProviderHttpOutput, GatewayServices>;
-};
-const providerEntry = ['provider.model', 'request.headers', 'request.payload'];
-const providerExit = ['response.http', 'response.modelKey'];
-const providerSlot = {
-  request: { needs: [], consumes: ['request.image'], provides: providerEntry },
-  response: { needs: providerExit, consumes: [], provides: [] },
-};
-const enterImageProvider = defineEnding<ImageDispatch, ProviderHttpOutput, ImageTargets>({
-  name: 'enterImageProvider',
-  request: { needs: ['request.image', 'route.candidate'] },
-  into: { generation: providerSlot, edit: providerSlot },
-  execute: async ({ 'request.image': request, ...facts }, into) => {
-    const candidate = facts['route.candidate'];
-    const forwarded = {
-      ...facts, 'provider.model': candidate.providerModel, 'request.headers': [],
-    };
-    return await (request.action === 'generate'
-      ? into.generation(candidate.upstreamId, { ...forwarded, 'request.payload': request.payload })
-      : into.edit(candidate.upstreamId, { ...forwarded, 'request.payload': request.payload }));
-  },
-});
-
-const imageDispatch = compose<ImageDispatch, ProviderHttpOutput, GatewayServices, ImageTargets>('openai-responses.tool.image-dispatch', {
-  stages: [],
-  targets: {
-    generation: {
-      entry: providerEntry, exit: providerExit,
-      resolve(upstreamId, { providers }) {
-        const pipeline = providers.resolve(upstreamId).pipelines.openaiImagesGenerations;
-        if (pipeline === undefined) throw new Error(`Upstream ${upstreamId} has no image generations pipeline`);
-        return pipeline;
-      },
-    },
-    edit: {
-      entry: providerEntry, exit: providerExit,
-      resolve(upstreamId, { providers }) {
-        const pipeline = providers.resolve(upstreamId).pipelines.openaiImagesEdits;
-        if (pipeline === undefined) throw new Error(`Upstream ${upstreamId} has no image edits pipeline`);
-        return pipeline;
-      },
+const imageTargets: ImageTargets = {
+  generation: {
+    entry: providerEntry, exit: providerExit,
+    resolve(upstreamId, { providers }) {
+      const pipeline = providers.resolve(upstreamId).pipelines.openaiImagesGenerations;
+      if (pipeline === undefined) throw new Error(`Upstream ${upstreamId} has no image generations pipeline`);
+      return pipeline;
     },
   },
-  ending: enterImageProvider,
-});
+  edit: {
+    entry: providerEntry, exit: providerExit,
+    resolve(upstreamId, { providers }) {
+      const pipeline = providers.resolve(upstreamId).pipelines.openaiImagesEdits;
+      if (pipeline === undefined) throw new Error(`Upstream ${upstreamId} has no image edits pipeline`);
+      return pipeline;
+    },
+  },
+};
 
 const imageSubRun = (operation: 'image_generation' | 'image_edit') =>
-  compose<ImageInput, ImageBack, GatewayServices>(`openai-responses.tool.${operation}`, {
+  compose<ImageInput, ImageBack, GatewayServices, ImageTargets>(`openai-responses.tool.${operation}`, {
     stages: [writeSettlement(operation), priceUsage, resolveImageCandidate, prepareImageRequest, retryImageCall],
+    targets: imageTargets,
     ending: executeImageCall,
   });
 
 const imageGeneration = imageSubRun('image_generation');
 const imageEdit = imageSubRun('image_edit');
-link([imageDispatch, imageGeneration, imageEdit]);
+link([imageGeneration, imageEdit]);
 
 const streamImageGeneration = async function* (
   prompt: string, action: 'generate' | 'edit', sources: readonly ImageSource[],

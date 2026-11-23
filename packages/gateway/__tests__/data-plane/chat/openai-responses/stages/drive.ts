@@ -4,7 +4,7 @@ import { createSidecarCodecFactory } from '../../../../../src/data-plane/chat/sh
 import { type HttpOutput, jsonHttpResponse } from '../../../../../src/data-plane/pipeline/edge-http.ts';
 import type { GatewayHttpFacts } from '../../../../../src/data-plane/pipeline/host.ts';
 import { billableCall, emptyUsageFacts, observeIdentity, observedTokenUsage, type UsageFacts, usageResponseKeys } from '../../../../../src/data-plane/pipeline/observe-usage.ts';
-import type { GatewayServices, RouteCandidate } from '../../../../../src/data-plane/pipeline/services.ts';
+import { createUsageStore, type GatewayServices, type RouteCandidate } from '../../../../../src/data-plane/pipeline/services.ts';
 import type { HeaderEntry } from '@floway-dev/http';
 import { type Bytes, compose, defineEnding, type ManagedStream, run, type Stage } from '@floway-dev/pipeline';
 import type { BillableUsage, ProtocolFrame } from '@floway-dev/protocols/common';
@@ -61,8 +61,9 @@ const services: GatewayServices = {
   affinityCodec: new AffinityCodec(secret),
   sidecarCodecs: createSidecarCodecFactory(secret),
   responsesStore: () => createNonOpenAIResponsesSourceStore('test-key'),
-  usageStore: { record: async () => {} },
+  usageStore: createUsageStore(async () => {}, async () => {}),
   performanceStore: { record: async () => {} },
+  searchUsageStore: { record: async () => {} },
   webSearchProvider: Object.assign(
     async () => ({ type: 'disabled' as const }),
     { alphaSearch: async () => ({ enabled: false, model: '', upstreamId: '' }) },

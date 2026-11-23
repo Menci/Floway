@@ -1,5 +1,5 @@
-import { createOpenAIResponsesBody } from '../../../../src/data-plane/chat/openai-responses/body.ts';
-import { openaiResponsesEgress } from '../../../../src/data-plane/chat/openai-responses/egress.ts';
+import { createOpenAIResponsesBody, createOpenAIResponsesCompactBody } from '../../../../src/data-plane/chat/openai-responses/body.ts';
+import { openaiResponsesCompactEgress, openaiResponsesEgress } from '../../../../src/data-plane/chat/openai-responses/egress.ts';
 import { createOpenAIResponsesCompactIngress, createOpenAIResponsesIngress } from '../../../../src/data-plane/chat/openai-responses/ingress.ts';
 import { createNonOpenAIResponsesSourceStore } from '../../../../src/data-plane/chat/openai-responses/items/store.ts';
 import { AffinityCodec } from '../../../../src/data-plane/chat/shared/affinity/carrier.ts';
@@ -7,10 +7,10 @@ import type { ChatBodyInput, ChatBodyOutput, ChatBodyTargets } from '../../../..
 import { createSidecarCodecFactory } from '../../../../src/data-plane/chat/shared/sidecar-codec.ts';
 import type { HttpOutput } from '../../../../src/data-plane/pipeline/edge-http.ts';
 import type { GatewayHttpFacts } from '../../../../src/data-plane/pipeline/host.ts';
-import type { GatewayServices, OpenResponsesStore, RouteCandidate } from '../../../../src/data-plane/pipeline/services.ts';
+import { createUsageStore, type GatewayServices, type OpenResponsesStore, type RouteCandidate } from '../../../../src/data-plane/pipeline/services.ts';
 import type { GatewayProvider } from '../../../../src/data-plane/providers/registry.ts';
 import type { HeaderEntry, HttpResponseFacts } from '@floway-dev/http';
-import { Bytes, compose, defineEnding, link, type Pipeline, run, type StageEnv } from '@floway-dev/pipeline';
+import { Bytes, compose, defineEnding, type ErrorSnapshot, link, type Pipeline, run, type RunEvent, type StageEnv } from '@floway-dev/pipeline';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesRequestPayloadEx } from '@floway-dev/protocols/openai-responses';
 import { type ChatTargetApi, type FlagId, type ProviderPipelines, type ProviderResponsesInput, type ProviderResponsesOutput, type ProviderServices, toProviderModelFacts } from '@floway-dev/provider';
 import { stubProvider, stubProviderModel, testFetcher } from '@floway-dev/test-utils';
@@ -65,9 +65,10 @@ export const responsesFixture = (
   openStore: OpenResponsesStore = () => createNonOpenAIResponsesSourceStore(key),
   targets: Partial<Omit<ChatBodyTargets<'openaiResponses'>, 'egress'>> = {},
 ) => {
-  const usage: Parameters<GatewayServices['usageStore']['record']>[0][] = [];
+  const usage: Parameters<GatewayServices['usageStore']['record']>[1][] = [];
   const performance: Parameters<GatewayServices['performanceStore']['record']>[0][] = [];
   const requestedModels: string[] = [];
+  const events: RunEvent[] = [];
   const services: GatewayServices = {
     providers: {
       resolve(id) {
@@ -85,24 +86,48 @@ export const responsesFixture = (
     affinityCodec: new AffinityCodec(serverSecret),
     sidecarCodecs: createSidecarCodecFactory(serverSecret),
     responsesStore: openStore,
-    usageStore: { record: async row => { usage.push(row); } },
+    usageStore: createUsageStore(async row => { usage.push(row); }, async () => {}),
     performanceStore: { record: async row => { performance.push(row); } },
+    searchUsageStore: { record: async () => {} },
     webSearchProvider: Object.assign(
       async () => ({ type: 'disabled' as const }),
       { alphaSearch: async () => ({ enabled: false, model: '', upstreamId: '' }) },
     ),
   };
-  const body = createOpenAIResponsesBody({
-    egress: openaiResponsesEgress,
+  const translationTargets = {
     messages: unusedBody('anthropicMessages'),
     chatCompletions: unusedBody('openaiChatCompletions'),
     ...targets,
+  };
+  const body = createOpenAIResponsesBody({ ...translationTargets, egress: openaiResponsesEgress });
+  const compactBody = createOpenAIResponsesCompactBody({
+    ...translationTargets, egress: openaiResponsesCompactEgress, generation: openaiResponsesEgress,
   });
   const generate = createOpenAIResponsesIngress(body);
-  const compact = createOpenAIResponsesCompactIngress(body);
+  const compact = createOpenAIResponsesCompactIngress(compactBody);
   link([generate, compact]);
+  const requestRaw = (body: Bytes, action: 'generate' | 'compact', requestHeaders?: readonly HeaderEntry[], uploadError?: ErrorSnapshot) => {
+    const input: GatewayHttpFacts = {
+      'request.startedAt': Date.now(),
+      'request.http': {
+        method: 'POST',
+        url: { origin: 'https://floway.test', pathname: action === 'compact' ? '/v1/responses/compact' : '/v1/responses' },
+        headers: requestHeaders ?? [['user-agent', 'Floway test'], ['x-ignored', 'ignored']],
+        body,
+      },
+      'request.auth.apiKeyId': key,
+      'request.auth.user': { id: 1, isAdmin: true },
+      'request.route.runtimeLocation': 'TEST',
+      'request.route.upstreamIds': null,
+      'request.route.randomizeUpstreams': false,
+      ...(uploadError === undefined ? {} : { 'request.uploadError': uploadError }),
+    };
+    return run(action === 'generate' ? generate : compact, input, {
+      services, finalizationTimeoutMs: 2000, events: event => { events.push(event); },
+    });
+  };
   return {
-    usage, performance, requestedModels, services,
+    usage, performance, requestedModels, services, events, requestRaw,
     invokeBody(payload: CanonicalOpenAIResponsesPayload, candidate: RouteCandidate, translationSource: ChatTargetApi) {
       return run(body, {
         'request.http': { method: 'POST', url: { origin: 'https://floway.test', pathname: '/v1/test' }, headers: [], body: null },
@@ -118,21 +143,7 @@ export const responsesFixture = (
       }, { services, finalizationTimeoutMs: 2000 });
     },
     request(payload: OpenAIResponsesRequestPayloadEx, action: 'generate' | 'compact' = 'generate', requestHeaders?: readonly HeaderEntry[]) {
-      const input: GatewayHttpFacts = {
-        'request.startedAt': Date.now(),
-        'request.http': {
-          method: 'POST',
-          url: { origin: 'https://floway.test', pathname: action === 'compact' ? '/v1/responses/compact' : '/v1/responses' },
-          headers: requestHeaders ?? [['user-agent', 'Floway test'], ['x-ignored', 'ignored']],
-          body: Bytes.fromUtf8(JSON.stringify(payload)),
-        },
-        'request.auth.apiKeyId': key,
-        'request.auth.user': { id: 1, isAdmin: true },
-        'request.route.runtimeLocation': 'TEST',
-        'request.route.upstreamIds': null,
-        'request.route.randomizeUpstreams': false,
-      };
-      return run(action === 'generate' ? generate : compact, input, { services, finalizationTimeoutMs: 2000 });
+      return requestRaw(Bytes.fromUtf8(JSON.stringify(payload)), action, requestHeaders);
     },
   };
 };

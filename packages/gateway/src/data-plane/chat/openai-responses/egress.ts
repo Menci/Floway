@@ -10,9 +10,8 @@ import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/open
 import type { OpenAIResponsesAction, ProviderResponsesInput, ProviderResponsesOutput } from '@floway-dev/provider';
 
 type EgressInput = ChatEgressInput<'openaiResponses'>;
-type Request = Omit<EgressInput, 'request.payload' | 'request.action'> & {
+type Request = Omit<EgressInput, 'request.payload'> & {
   readonly 'request.payload': CanonicalOpenAIResponsesPayload;
-  readonly 'request.action': OpenAIResponsesAction;
 };
 type EgressOutput = ChatEgressOutput<'openaiResponses'> & Pick<ProviderResponsesOutput, 'response.result'>;
 type ProviderBack = ProviderResponsesOutput & {
@@ -24,12 +23,12 @@ type Targets = { provider: DynamicTarget<string, ProviderResponsesInput, Provide
 const providerEntry = ['provider.model', 'request.headers', 'request.payload', 'request.action'];
 const providerExit = ['response.http', 'response.modelKey', 'response.events', 'response.result'];
 
-const enterUpstream = defineEnding<Request, ProviderBack, Targets, Pick<GatewayServices, 'providers'>>({
+const enterUpstream = (action: OpenAIResponsesAction) => defineEnding<Request, ProviderBack, Targets, Pick<GatewayServices, 'providers'>>({
   name: 'enterUpstream',
-  request: { needs: ['request.http', 'request.payload', 'request.action', 'route.candidate'] },
+  request: { needs: ['request.http', 'request.payload', 'route.candidate'] },
   into: {
     provider: {
-      request: { needs: [], consumes: ['request.http'], provides: ['provider.model', 'request.headers', 'request.payload'] },
+      request: { needs: [], consumes: ['request.http'], provides: providerEntry },
       response: { needs: providerExit, consumes: [], provides: ['response.source', 'response.targetApi'] },
     },
   },
@@ -42,23 +41,29 @@ const enterUpstream = defineEnding<Request, ProviderBack, Targets, Pick<GatewayS
       'provider.model': candidate.providerModel,
       'request.headers': filterInboundHeaderEntries(http.headers, provider.inboundHeaderAllowlist),
       'request.payload': wirePayload,
+      'request.action': action,
     });
     return { ...response, 'response.source': 'upstream', 'response.targetApi': 'openaiResponses' };
   },
 });
 
-export const openaiResponsesEgress = compose<EgressInput, EgressOutput, GatewayServices, Targets>('openai-responses.egress', {
-  stages: [observeOpenAIResponsesUsage, applyRoleCompatibility, normalizeExclusiveCachedTokens, applyAliasRules],
-  targets: {
-    provider: {
-      entry: providerEntry,
-      exit: providerExit,
-      resolve(upstreamId, { providers }) {
-        const pipeline = providers.resolve(upstreamId).pipelines.openaiResponses;
-        if (pipeline === undefined) throw new Error(`Upstream ${upstreamId} has no OpenAI Responses pipeline`);
-        return pipeline;
-      },
+const targets: Targets = {
+  provider: {
+    entry: providerEntry,
+    exit: providerExit,
+    resolve(upstreamId, { providers }) {
+      const pipeline = providers.resolve(upstreamId).pipelines.openaiResponses;
+      if (pipeline === undefined) throw new Error(`Upstream ${upstreamId} has no OpenAI Responses pipeline`);
+      return pipeline;
     },
   },
-  ending: enterUpstream,
+};
+
+const responsesEgress = (name: string, action: OpenAIResponsesAction) => compose<EgressInput, EgressOutput, GatewayServices, Targets>(name, {
+  stages: [observeOpenAIResponsesUsage, applyRoleCompatibility, normalizeExclusiveCachedTokens, applyAliasRules],
+  targets,
+  ending: enterUpstream(action),
 });
+
+export const openaiResponsesEgress = responsesEgress('openai-responses.egress', 'generate');
+export const openaiResponsesCompactEgress = responsesEgress('openai-responses.compact.egress', 'compact');

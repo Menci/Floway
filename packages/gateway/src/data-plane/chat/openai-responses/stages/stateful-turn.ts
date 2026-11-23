@@ -71,7 +71,10 @@ export const persistResponsesEvents = (
   },
 );
 
-export const statefulTurn = defineStage<Request, Request, ResponsesTurnBack, ResponsesTurnBack, Pick<GatewayServices, 'affinityCodec' | 'responsesStore'>>({
+type StoreServices = Pick<GatewayServices, 'responsesStore'>;
+type ProjectTurn<S> = (response: ResponsesTurnBack, request: Request, store: OpenAIResponsesStatefulStore, env: StageEnv<S>) => ResponsesTurnBack;
+
+const createStatefulTurn = <S extends StoreServices>(project: ProjectTurn<S>) => defineStage<Request, Request, ResponsesTurnBack, ResponsesTurnBack, S>({
   name: 'statefulTurn',
   through: {
     request: { needs: ['request.openaiResponses', 'request.delivery'], consumes: [], provides: ['request.openaiResponses'] },
@@ -80,47 +83,61 @@ export const statefulTurn = defineStage<Request, Request, ResponsesTurnBack, Res
   return: { provides: ['response.http', 'response.openaiResponses', 'response.source', ...usageResponseKeys] },
   execute: async (facts, next, env) => {
     const original = facts['request.openaiResponses'];
-    const delivery = facts['request.delivery'];
     const store = env.services.responsesStore({ kind: 'http', store: original.store ?? undefined });
     const prepared = await prepareResponsesTurn(original, store, env);
     if ('failure' in prepared) return prepared.failure;
 
     const response = await next({ ...facts, 'request.openaiResponses': prepared.payload });
-    const http = response['response.http'];
-    const received = response['response.openaiResponses'];
-    const compact = response['response.result'];
-    if (received === undefined && compact === undefined) return { ...response, 'response.openaiResponses': undefined };
+    return project(response, facts, store, env);
+  },
+});
 
+export const statefulTurn = createStatefulTurn((response, request, store, env) => {
+  const events = response['response.openaiResponses'];
+  if (events === undefined) {
+    if (response['response.result'] !== undefined) throw new Error('A generation returned an OpenAI Responses compact result');
+    return { ...response, 'response.openaiResponses': undefined };
+  }
+  const http = response['response.http'];
+  const responseId = createOpenAIResponsesResponseId();
+  return {
+    ...response,
+    'response.http': {
+      ...http,
+      headers: [...http.headers.filter(([name]) => name.toLowerCase() !== OPENAI_RESPONSES_REASONING_INCLUDED_HEADER),
+        [OPENAI_RESPONSES_REASONING_INCLUDED_HEADER, OPENAI_RESPONSES_REASONING_INCLUDED_VALUE]],
+    },
+    'response.openaiResponses': env.wrapStream(events, {
+      label: 'stored OpenAI Responses events',
+      transform: source => persistResponsesEvents(source, store, responseId, request['request.openaiResponses'], request['request.delivery']),
+    }),
+  };
+});
+
+export const compactStatefulTurn = createStatefulTurn<Pick<GatewayServices, 'affinityCodec' | 'responsesStore'>>((response, _request, store, env) => {
+  const events = response['response.openaiResponses'];
+  if (events !== undefined) {
     const responseId = createOpenAIResponsesResponseId();
-    if (received === undefined) {
-      if (compact === undefined || delivery.action !== 'compact') throw new Error('A generation returned an OpenAI Responses compact result');
-      const candidate = response['response.route.candidate'];
-      if (candidate === undefined) throw new Error('OpenAI Responses compact result has no selected candidate');
-      const affinity = affinityIdentityForCandidate(candidate);
-      return {
-        ...response,
-        'response.openaiResponses': env.createStream({
-          label: 'stored OpenAI Responses compact result',
-          iterate: () => wrapOpenAIResponsesClientOutput(wrapOpenAIResponsesAffinityEgress(syntheticEventsFromCompaction(compact), {
-            codec: env.services.affinityCodec, affinity,
-          }), { store, responseId }),
-        }),
-      };
-    }
-
     return {
       ...response,
-      'response.http': delivery.action === 'compact' ? http : {
-        ...http,
-        headers: [...http.headers.filter(([name]) => name.toLowerCase() !== OPENAI_RESPONSES_REASONING_INCLUDED_HEADER),
-          [OPENAI_RESPONSES_REASONING_INCLUDED_HEADER, OPENAI_RESPONSES_REASONING_INCLUDED_VALUE]],
-      },
-      'response.openaiResponses': env.wrapStream(received, {
-        label: 'stored OpenAI Responses events',
-        transform: source => delivery.action === 'compact'
-          ? wrapOpenAIResponsesClientOutput(source, { store, responseId })
-          : persistResponsesEvents(source, store, responseId, original, delivery),
+      'response.openaiResponses': env.wrapStream(events, {
+        label: 'stored OpenAI Responses compact events',
+        transform: source => wrapOpenAIResponsesClientOutput(source, { store, responseId }),
       }),
     };
-  },
+  }
+
+  const compact = response['response.result'];
+  if (compact === undefined) return { ...response, 'response.openaiResponses': undefined };
+  const candidate = response['response.route.candidate'];
+  if (candidate === undefined) throw new Error('OpenAI Responses compact result has no selected candidate');
+  const options = { codec: env.services.affinityCodec, affinity: affinityIdentityForCandidate(candidate) };
+  const responseId = createOpenAIResponsesResponseId();
+  return {
+    ...response,
+    'response.openaiResponses': env.createStream({
+      label: 'stored OpenAI Responses compact result',
+      iterate: () => wrapOpenAIResponsesClientOutput(wrapOpenAIResponsesAffinityEgress(syntheticEventsFromCompaction(compact), options), { store, responseId }),
+    }),
+  };
 });

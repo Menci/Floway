@@ -13,18 +13,28 @@ import { stripPromptCacheKey } from './stages/strip-prompt-cache-key.ts';
 import { vendorDeepSeekNormalize } from './stages/vendor-deepseek-normalize.ts';
 import { vendorQwenNormalize } from './stages/vendor-qwen-normalize.ts';
 import type { GatewayServices } from '../../pipeline/services.ts';
-import { type ChatBodyInput, type ChatBodyOutput, type ChatBodyTargets, createOpenAIResponsesRouteBody } from '../shared/route-body.ts';
+import { type ChatBodyInput, type ChatBodyOutput, type ChatBodyTargets, createOpenAIResponsesCompactRouteBody, createOpenAIResponsesRouteBody, type OpenAIResponsesCompactBodyTargets } from '../shared/route-body.ts';
 import { openaiResponsesTarget, pickTarget } from '../shared/target-picker.ts';
 import { compose } from '@floway-dev/pipeline';
 
 type Api = 'openaiResponses';
+const selectTarget = pickTarget(openaiResponsesTarget);
+const requestStages = [
+  agentMessageShim, standaloneToolOutputShim, compactShim, collaborationShim, serverToolShim,
+  disableReasoningOnForcedToolChoice, normalizeEmptyToolsToolChoice,
+  stripPromptCacheKey, forceStoreFalse, vendorDeepSeekNormalize, vendorQwenNormalize,
+];
+
 export const createOpenAIResponsesBody = (targets: ChatBodyTargets<Api>) =>
   compose<ChatBodyInput<Api>, ChatBodyOutput<Api>, GatewayServices, ChatBodyTargets<Api>>('openai-responses.body', {
-    stages: [
-      pickTarget(openaiResponsesTarget), prepare, answerWebSocketWarmup, agentMessageShim, standaloneToolOutputShim,
-      compactShim, collaborationShim, serverToolShim, disableReasoningOnForcedToolChoice, normalizeEmptyToolsToolChoice,
-      stripPromptCacheKey, forceStoreFalse, vendorDeepSeekNormalize, vendorQwenNormalize,
-    ],
+    stages: [selectTarget, prepare, answerWebSocketWarmup, ...requestStages],
     targets,
     ending: createOpenAIResponsesRouteBody(responsesInputErrorBody),
+  });
+
+export const createOpenAIResponsesCompactBody = (targets: OpenAIResponsesCompactBodyTargets) =>
+  compose<ChatBodyInput<Api>, ChatBodyOutput<Api>, GatewayServices, OpenAIResponsesCompactBodyTargets>('openai-responses.compact.body', {
+    stages: [selectTarget, prepare, ...requestStages],
+    targets,
+    ending: createOpenAIResponsesCompactRouteBody(responsesInputErrorBody),
   });

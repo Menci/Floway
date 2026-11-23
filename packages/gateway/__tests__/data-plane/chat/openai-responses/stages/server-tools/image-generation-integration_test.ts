@@ -150,12 +150,12 @@ const shim = async (invocation: Invocation, respond: () => AsyncIterable<Frame> 
   });
 };
 
-const drain = async (reply: Awaited<ReturnType<typeof shim>>, successfulRun = true): Promise<OpenAIResponsesStreamEventEx[]> => {
+const drain = async (reply: Awaited<ReturnType<typeof shim>>): Promise<OpenAIResponsesStreamEventEx[]> => {
   const events = reply.result['response.openaiResponses'];
   assert(events !== undefined);
   const frames: OpenAIResponsesStreamEventEx[] = [];
   for await (const frame of events) if (frame.type === 'event') frames.push(frame.event);
-  assertEquals((await reply.done).ok, successfulRun);
+  assertEquals(await reply.done, { ok: true });
   return frames;
 };
 
@@ -418,7 +418,7 @@ test('image provider transport failure preserves the tool error and its performa
     callTurn(0, 'call_1', 'a cat'),
     messageTurn('replacement instructions'),
   ]));
-  const events = await drain(result, false);
+  const events = await drain(result);
   const image = events.find(event => event.type === 'response.output_item.done' && event.item.type === 'image_generation_call');
   assert(image?.type === 'response.output_item.done' && image.item.type === 'image_generation_call');
   assertEquals(image.item.status, 'failed');

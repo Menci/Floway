@@ -1,8 +1,9 @@
 import { isEqual } from 'es-toolkit';
 
+import type { WebSearchUsageRecord } from '../../../../../repo/types.ts';
 import { shortId } from '../../../../../shared/short-id.ts';
 import { answerKeys, gatewayAnswer } from '../../../../pipeline/answer.ts';
-import { jsonHttpResponse } from '../../../../pipeline/edge-http.ts';
+import type { HttpDelivery } from '../../../../pipeline/edge-http.ts';
 import type { GatewayServices, GatewayRouteFacts } from '../../../../pipeline/services.ts';
 import { priceUsage, writeSettlement } from '../../../../pipeline/settlement.ts';
 import { truncatePreservingCodePoints } from '../../../../shared/text.ts';
@@ -26,11 +27,13 @@ import {
   UnsupportedLocalWebSearchFeatureError,
   unsupportedLocalWebSearchFeatureIr,
   type ParsedWebSearchOperations,
+  type PageCacheEntry,
   type WebSearchCallIR,
   type WebSearchExecutionSession,
   type WebSearchFilters,
   type WebSearchOperation,
 } from '../../../../tools/web-search/operations.ts';
+import { type SearchUsageRecords, writeSearchUsage } from '../../../../tools/web-search/write-search-usage.ts';
 import type { ServerToolHistoryExpansion, ServerToolLoopState, ServerToolOutputItem, ServerToolRegistration } from '../server-tool-shim.ts';
 import { compose, defineEnding, type StageEnv } from '@floway-dev/pipeline';
 import type { OpenAIResponsesFunctionTool, OpenAIResponsesWebSearchTool, OpenAIResponsesInputWebSearchCall, OpenAIResponsesOutputWebSearchCall, OpenAIResponsesTool, OpenAIResponsesWebSearchAction } from '@floway-dev/protocols/openai-responses';
@@ -487,47 +490,95 @@ export const expandWebSearchCall = (
 
 // The shim's execution session plus the one wire-shaping flag that lives
 // only on the OpenAI Responses side.
-interface ShimState extends WebSearchExecutionSession {
+interface ShimState {
   // Set when the client passed `include: ["web_search_call.results"]` on
   // the request. Native OpenAI Responses gates the `results` field on this
   // include token; the shim follows suit on the wire item — but the IR
   // replay data always carries the real results, regardless of include.
   includeSearchResults: boolean;
   executeAlpha?: (commands: Record<string, unknown>, action: OpenAIResponsesWebSearchAction) => Promise<WebSearchCallIR>;
-  executeLocal: (commands: Record<string, unknown>, work: (signal: AbortSignal) => Promise<WebSearchCallIR>) => Promise<WebSearchCallIR>;
+  executeLocal: (operation: LocalSearchOperation, responseLength: SearchResponseLength | undefined) => Promise<WebSearchCallIR>;
 }
 
+type SearchQuery = Extract<WebSearchOperation, { kind: 'search' }>;
+type LocalSearchOperation =
+  | { readonly kind: 'single'; readonly operation: WebSearchOperation }
+  | { readonly kind: 'multi'; readonly operations: readonly SearchQuery[] };
+type LocalSearchSettings = Pick<WebSearchExecutionSession, 'filters' | 'includeSearchActionSources' | 'responseLength'>;
+type PageEntries = readonly (readonly [url: string, value: PageCacheEntry])[];
+
+type LocalSearchInput = GatewayRouteFacts & {
+  readonly 'request.webSearch.operation': LocalSearchOperation;
+  readonly 'request.webSearch.settings': LocalSearchSettings;
+  readonly 'request.webSearch.cachedPages': PageEntries;
+};
+interface LocalSearchOutput {
+  readonly 'response.webSearch.result': WebSearchCallIR;
+  readonly 'response.webSearch.cacheUpdates': PageEntries;
+}
+
+const localSearch = compose<LocalSearchInput, LocalSearchOutput, GatewayServices>('openai-responses.tool.local-web-search', {
+  stages: [writeSearchUsage, writeSettlement(null), priceUsage],
+  ending: defineEnding<LocalSearchInput, LocalSearchOutput & SearchUsageRecords, {}, Pick<GatewayServices, 'webSearchProvider'>>({
+    name: 'executeLocalSearch',
+    request: { needs: ['request.auth.apiKeyId', 'request.webSearch.operation', 'request.webSearch.settings', 'request.webSearch.cachedPages'] },
+    return: { provides: [...answerKeys, 'response.webSearch.result', 'response.webSearch.cacheUpdates', 'response.delivery', 'response.searchUsage.records'] },
+    execute: async (facts, _into, env) => {
+      const startedAt = env.clock();
+      const operation = facts['request.webSearch.operation'];
+      const cachedPages = new Map(facts['request.webSearch.cachedPages']);
+      const records: WebSearchUsageRecord[] = [];
+      const session: WebSearchExecutionSession = {
+        ...facts['request.webSearch.settings'],
+        apiKeyId: facts['request.auth.apiKeyId'],
+        getProvider: env.services.webSearchProvider,
+        recordUsage: row => { records.push(row); },
+        pageCache: new Map(cachedPages),
+        signal: env.signal,
+      };
+      let result: WebSearchCallIR;
+      if (operation.kind === 'multi') {
+        result = await runBackendSearchMulti(operation.operations, session);
+      } else {
+        const batch = await startBatchFetch({ kind: 'ops', ops: [operation.operation] }, session);
+        result = await executeOperationToIr(operation.operation, session, batch);
+      }
+      const endedAt = env.clock();
+      return {
+        ...gatewayAnswer(env, { status: 200, statusText: '', headers: [], body: null, timing: { startedAt, headersAt: endedAt } }),
+        'response.webSearch.result': result,
+        'response.webSearch.cacheUpdates': [...session.pageCache].filter(([url]) => !cachedPages.has(url)),
+        'response.searchUsage.records': records,
+        'response.delivery': env.defer<HttpDelivery>('local search delivery', Promise.resolve({ kind: 'completed', endedAt })),
+      };
+    },
+  }),
+});
+
 const executeLocalSearch = async (
-  env: StageEnv<GatewayServices>, facts: GatewayRouteFacts, commands: Record<string, unknown>,
-  work: (signal: AbortSignal) => Promise<WebSearchCallIR>,
+  env: StageEnv<GatewayServices>, facts: GatewayRouteFacts, operation: LocalSearchOperation,
+  settings: LocalSearchSettings, pageCache: Map<string, PageCacheEntry>,
 ): Promise<WebSearchCallIR> => {
-  type Input = GatewayRouteFacts & { readonly 'request.webSearch.commands': Record<string, unknown> };
-  type Output = { readonly 'response.webSearch.result': WebSearchCallIR };
-  const search = compose<Input, Output, GatewayServices>('openai-responses.tool.local-web-search', {
-    stages: [writeSettlement(null), priceUsage],
-    ending: defineEnding<Input, Output>({
-      name: 'executeLocalSearch',
-      request: { needs: ['request.webSearch.commands'] },
-      return: { provides: [...answerKeys, 'response.webSearch.result', 'response.delivery'] },
-      execute: async (_facts, _into, child) => {
-        const result = await work(child.signal);
-        return {
-          ...gatewayAnswer(child, jsonHttpResponse(200, result, child.clock())),
-          'response.webSearch.result': result,
-          'response.delivery': child.defer('local search delivery', Promise.resolve({ kind: 'completed', endedAt: child.clock() })),
-        };
-      },
-    }),
-  });
-  const child = env.run(search, {
+  const cachedPages: [string, PageCacheEntry][] = [];
+  if (operation.kind === 'single') {
+    const op = operation.operation;
+    if ((op.kind === 'open' || op.kind === 'find') && op.error === undefined) {
+      const cached = pageCache.get(op.url);
+      if (cached !== undefined) cachedPages.push([op.url, cached]);
+    }
+  }
+  const result = await env.run(localSearch, {
     'request.auth.apiKeyId': facts['request.auth.apiKeyId'],
     'request.auth.user': facts['request.auth.user'],
     'request.route.upstreamIds': facts['request.route.upstreamIds'],
     'request.route.randomizeUpstreams': facts['request.route.randomizeUpstreams'],
     'request.route.runtimeLocation': facts['request.route.runtimeLocation'],
-    'request.webSearch.commands': commands,
-  });
-  return (await child.result)['response.webSearch.result'];
+    'request.webSearch.operation': operation,
+    'request.webSearch.settings': settings,
+    'request.webSearch.cachedPages': cachedPages,
+  }).result;
+  for (const [url, page] of result['response.webSearch.cacheUpdates']) pageCache.set(url, page);
+  return result['response.webSearch.result'];
 };
 
 const ITERATION_CAP = 30;
@@ -552,12 +603,6 @@ const planShimSlots = (
   loopState: ServerToolLoopState,
   responseLength: SearchResponseLength | undefined,
 ): { id: string; resolve: () => Promise<WebSearchCallIR> } => {
-  // Bind the call's response-length budget into this dispatch. The slot's
-  // `resolve` runs after `planShimSlots` returns, so reading a mutable
-  // session field here would let a later call change an earlier slot.
-  const callState: ShimState = responseLength === undefined
-    ? state
-    : { ...state, responseLength };
   if (loopState.iterationCount > ITERATION_CAP) {
     return {
       id: synthesizeWebSearchCallId(),
@@ -622,11 +667,10 @@ const planShimSlots = (
   // only same-kind shape that fits in one wsc. Require every entry to
   // parse cleanly; one malformed entry forces the model to fix all of
   // them rather than silently dropping a search.
-  if (parsed.ops.length > 1 && parsed.ops.every(op => op.kind === 'search' && op.error === undefined)) {
-    const searchOps = parsed.ops as Array<Extract<WebSearchOperation, { kind: 'search' }>>;
+  if (parsed.ops.length > 1 && parsed.ops.every((op): op is SearchQuery => op.kind === 'search' && op.error === undefined)) {
     return {
       id: synthesizeWebSearchCallId(),
-      resolve: eagerResolver(state.executeLocal(commands, signal => runBackendSearchMulti(searchOps, { ...callState, signal }))),
+      resolve: eagerResolver(state.executeLocal({ kind: 'multi', operations: parsed.ops }, responseLength)),
     };
   }
 
@@ -649,11 +693,7 @@ const planShimSlots = (
 
   return {
     id: synthesizeWebSearchCallId(),
-    resolve: eagerResolver(state.executeLocal(commands, async signal => {
-      const session = { ...callState, signal };
-      const batch = await startBatchFetch(parsed, session);
-      return await executeOperationToIr(parsed.ops[0], session, batch);
-    })),
+    resolve: eagerResolver(state.executeLocal({ kind: 'single', operation: parsed.ops[0] }, responseLength)),
   };
 };
 
@@ -682,15 +722,12 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, fa
   const includeArray = Array.isArray(invocation.payload.include) ? invocation.payload.include : [];
   const hosted = tools.filter(isHostedWebSearchTool).at(-1);
   const settings = alphaSearchSettingsFromHosted(hosted);
+  const pageCache = new Map<string, PageCacheEntry>();
   const state: ShimState = {
-    filters,
-    pageCache: new Map(),
-    getProvider: env.services.webSearchProvider,
-    apiKeyId: facts['request.auth.apiKeyId'],
     includeSearchResults: includeArray.includes('web_search_call.results'),
-    includeSearchActionSources: includeArray.includes('web_search_call.action.sources'),
-    signal: env.signal,
-    executeLocal: (commands, work) => executeLocalSearch(env, facts, commands, work),
+    executeLocal: (operation, responseLength) => executeLocalSearch(env, facts, operation, {
+      filters, responseLength, includeSearchActionSources: includeArray.includes('web_search_call.action.sources'),
+    }, pageCache),
   };
   if (passthrough.enabled) {
     const sessionId = crypto.randomUUID();

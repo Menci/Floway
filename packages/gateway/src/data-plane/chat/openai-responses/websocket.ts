@@ -256,7 +256,7 @@ const createConnection = (c: AuthedContext, ingress: WebSocketIngress): OpenAIRe
         'request.model': payload.model,
         'request.openaiResponses': payload,
         'request.action': 'generate',
-        'request.delivery': { action: 'generate', stream: true, transport: 'websocket', createdAt: Math.floor(startedAt / 1000) },
+        'request.delivery': { stream: true, transport: 'websocket', createdAt: Math.floor(startedAt / 1000) },
         'request.ws.responseId': turn.id,
         'request.ws.eventId': eventId,
         'request.ws.controls': root.createStream({ label: 'Responses WebSocket client controls', iterate: turn.controls.iterate }),

@@ -9,7 +9,7 @@ import type { OpenResponsesStore } from '../../../../src/data-plane/pipeline/ser
 import { writeHttpResponse } from '../../../../src/data-plane/shared/http-writer.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import type { StageEnv } from '@floway-dev/pipeline';
+import { Bytes, snapshotError, type StageEnv } from '@floway-dev/pipeline';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesRequestPayloadEx, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
 import type { ProviderResponsesInput, ProviderResponsesOutput } from '@floway-dev/provider';
 
@@ -168,4 +168,23 @@ test('POST /v1/responses/compact reports upstream compaction without usage', asy
   const { response } = await compactTurn(null);
   expect(response.status).toBe(502);
   expect(await response.json()).toMatchObject({ error: { type: 'internal_error', message: expect.stringContaining('no token usage') } });
+});
+
+test.each(['generate', 'compact'] as const)('HTTP %s uses the malformed-body envelope for interrupted uploads', async action => {
+  const fixture = responsesFixture([]);
+  const readFailure = snapshotError(new Error('Client disconnected during upload'));
+  const malformed = fixture.requestRaw(Bytes.empty, action);
+  const interrupted = fixture.requestRaw(Bytes.empty, action, undefined, readFailure);
+  for (const handle of [malformed, interrupted]) {
+    const response = writeHttpResponse((await handle.result)['response.http']);
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({
+      error: {
+        type: 'internal_error', message: 'Unexpected end of JSON input',
+        provider_specific_fields: { name: 'SyntaxError', stack: expect.stringContaining('JSON.parse') },
+      },
+    });
+    expect(await handle.done).toEqual({ ok: true });
+  }
+  expect(fixture.requestedModels).toEqual([]);
 });

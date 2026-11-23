@@ -14,10 +14,9 @@ import {
   type OpenAIResponsesErrorEx,
   type OpenAIResponsesStreamEventEx,
 } from '@floway-dev/protocols/openai-responses';
-import { internalDebugErrorFields, type OpenAIResponsesAction, toInternalDebugError } from '@floway-dev/provider';
+import { internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
 
 export interface ResponsesDelivery extends DeliveryIntent {
-  readonly action: OpenAIResponsesAction;
   readonly createdAt: number;
   readonly transport: 'http' | 'websocket';
 }
@@ -128,9 +127,15 @@ const openaiResponsesSseProtocol = (): SseProtocol<ProtocolFrame<ClientOpenAIRes
 export const encodeResponses = createEncode<'openaiResponses', ResponsesDelivery, ClientOpenAIResponsesStreamEvent>('openaiResponses', {
   collectFailure,
   openSse: openaiResponsesSseProtocol,
+  encodeJson: collectOpenAIResponsesProtocolEventsToResult,
+  jsonOutcome: json => isJsonObject(json) && json.status === 'failed' ? failedRender('protocol-error') : { kind: 'completed' },
+});
+
+export const encodeResponsesCompact = createEncode<'openaiResponses', ResponsesDelivery, OpenAIResponsesStreamEventEx>('openaiResponses', {
+  collectFailure,
   async encodeJson(source, delivery) {
     const result = await collectOpenAIResponsesProtocolEventsToResult(source);
-    return delivery.action === 'compact' ? completeOpenAIResponsesCompaction(result, delivery.createdAt) : result;
+    return completeOpenAIResponsesCompaction(result, delivery.createdAt);
   },
   jsonOutcome: json => isJsonObject(json) && json.status === 'failed' ? failedRender('protocol-error') : { kind: 'completed' },
 });

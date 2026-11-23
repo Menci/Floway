@@ -89,6 +89,12 @@ test('native HTTP compact reads scalar usage and preserves its compact resource'
   expect(await handle.done).toEqual({ ok: true });
   expect(mock.usage).toEqual([expect.objectContaining({ modelKey: 'native-compact', requests: 1 })]);
   expect(mock.performance).toEqual([expect.objectContaining({ kind: 'neutral' })]);
+  const entered = mock.events.filter(event => event.k === 'enter');
+  expect(entered.map(event => event.pipeline)).toEqual(expect.arrayContaining([
+    'openai-responses.compact.ingress', 'openai-responses.compact.body', 'openai-responses.compact.egress',
+  ]));
+  expect(entered.map(event => event.name)).not.toContain('answerWebSocketWarmup');
+  expect(entered.map(event => event.name)).not.toContain('serializeItems');
 });
 
 test('compact shim retries a textless turn, reports aggregate usage and records each call', async () => {
@@ -111,6 +117,9 @@ test('compact shim retries a textless turn, reports aggregate usage and records 
   expect(await handle.done).toEqual({ ok: true });
   expect(mock.usage.map(row => row.requests)).toEqual([1, 1]);
   expect(mock.performance).toHaveLength(1);
+  const entered = mock.events.filter(event => event.k === 'enter');
+  const egresses = entered.filter(event => event.edge === 'into' && event.pipeline.endsWith('.egress'));
+  expect(egresses.map(event => event.pipeline)).toEqual(['openai-responses.egress', 'openai-responses.egress']);
 });
 
 test('a provider stream failure keeps its JSON resource and marks performance failed', async () => {

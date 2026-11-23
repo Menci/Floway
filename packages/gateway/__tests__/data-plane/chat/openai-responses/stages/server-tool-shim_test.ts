@@ -31,7 +31,7 @@ import type {
 } from '../../../../../src/data-plane/tools/web-search/types.ts';
 import { getRepo, initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
-import { Bytes } from '@floway-dev/pipeline';
+import { Bytes, type RunDone } from '@floway-dev/pipeline';
 import { decodeCanonicalBase64, encodeBase64, eventFrame } from '@floway-dev/protocols/common';
 import type { BillableUsage, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
@@ -60,7 +60,7 @@ interface Invocation {
 interface ToolFixture {
   readonly apiKeyId: string;
   readonly signal?: AbortSignal;
-  readonly services: Pick<GatewayServices, 'sidecarCodecs' | 'webSearchProvider'>;
+  readonly services: Pick<GatewayServices, 'sidecarCodecs' | 'webSearchProvider'> & Partial<Pick<GatewayServices, 'searchUsageStore'>>;
 }
 
 interface ScriptedEvents<T> {
@@ -92,7 +92,7 @@ const scriptInputError = (error: { message: string; param?: string; code?: strin
 });
 
 type ToolReply =
-  | { readonly type: 'events'; readonly events: AsyncIterable<Frame>; readonly billing: Promise<readonly BillableCall[]> }
+  | { readonly type: 'events'; readonly events: AsyncIterable<Frame>; readonly billing: Promise<readonly BillableCall[]>; readonly done: Promise<RunDone> }
   | { readonly type: 'api-error'; readonly http: { readonly status: number }; readonly body: Bytes };
 
 type ToolHarness = (invocation: Invocation, fixture: ToolFixture, respond: () => Promise<ScriptedReply<Frame>>) => Promise<ToolReply>;
@@ -100,7 +100,7 @@ type ToolHarness = (invocation: Invocation, fixture: ToolFixture, respond: () =>
 const openToolTurn = (registrations: readonly ServerToolRegistration[]): ToolHarness => {
   const stage = createServerToolShim(registrations);
   return async (invocation, fixture, respond) => {
-    const { result } = await driveResponsesStage(stage, invocation.payload, {
+    const { result, done } = await driveResponsesStage(stage, invocation.payload, {
       apiKeyId: fixture.apiKeyId, signal: fixture.signal, services: fixture.services,
       enabledFlags: invocation.enabledFlags, targetApi: invocation.targetApi,
       async upstream(payload) {
@@ -115,7 +115,7 @@ const openToolTurn = (registrations: readonly ServerToolRegistration[]): ToolHar
       },
     });
     const stream = result['response.openaiResponses'];
-    if (stream !== undefined) return { type: 'events', events: stream, billing: result['response.usage.billable'].promise };
+    if (stream !== undefined) return { type: 'events', events: stream, billing: result['response.usage.billable'].promise, done };
     const http = result['response.http'];
     return { type: 'api-error', http, body: await readHttpBytes(http.body) };
   };
@@ -871,11 +871,18 @@ test('find_in_page reuses cache when same URL was opened first', async () => {
     messageTurn('done', 0),
   ]);
 
-  await runShimAndDrain(shim, inv, makeToolFixture(), script.run);
+  const fixture = makeToolFixture();
+  const record = vi.fn(async () => {});
+  const { result } = await runShimAndDrain(shim, inv, {
+    ...fixture, services: { ...fixture.services, searchUsageStore: { record } },
+  }, script.run);
+  assert(result.type === 'events');
+  assertEquals(await result.done, { ok: true });
 
-  // open issues fetchPage; find reuses cache → still 1 fetchPage call.
+  // Open fetches the page; find uses the cache handed back by that sub-run.
   const fetchCalls = backend.calls.filter(c => c.kind === 'fetchPage');
   assertEquals(fetchCalls.length, 1);
+  expect(record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ action: 'fetch_page', requests: 1 }));
 });
 
 // ── Iteration cap exhausted ───────────────────────────────────────────
