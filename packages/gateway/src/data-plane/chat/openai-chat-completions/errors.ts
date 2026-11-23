@@ -4,6 +4,10 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
 
+export const openaiChatCompletionsInputError = (error: InputErrorDetails) => ({
+  error: { message: error.message, type: 'invalid_request_error', param: error.param ?? 'messages', code: null },
+});
+
 // Validation failures retain the telemetry of the candidate whose attempt rejected the request.
 export const inputErrorResult = (
   error: InputErrorDetails,

@@ -1,9 +1,8 @@
 import { expect, test } from 'vitest';
 
+import { decodeGeminiGenerateContentAffinity, evaluateGeminiGenerateContentAffinity } from '../../../../../src/data-plane/chat/gemini-generate-content/affinity/analysis.ts';
 import { wrapGeminiGenerateContentAffinityEgress } from '../../../../../src/data-plane/chat/gemini-generate-content/affinity/egress.ts';
-import { analyzeGeminiGenerateContentAffinity } from '../../../../../src/data-plane/chat/gemini-generate-content/affinity/ingress.ts';
 import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { reassembleGeminiGenerateContentEvents, type GeminiGenerateContentContent, type GeminiGenerateContentStreamEvent } from '@floway-dev/protocols/gemini-generate-content';
 import type { ModelCandidate } from '@floway-dev/provider';
@@ -59,14 +58,15 @@ test('a carrier a real codec emits on thoughtSignature decodes on the next turn'
     }),
   ]), { codec, affinity: targetFor(candidateA) }));
 
-  const prepared = await analyzeGeminiGenerateContentAffinity({ contents }, codec);
+  const payload = { model: 'model', contents };
+  const prepared = await decodeGeminiGenerateContentAffinity(payload, codec);
 
-  const projectionA = acceptedAffinityEvaluation(prepared, candidateA);
-  const projectionB = acceptedAffinityEvaluation(prepared, candidateB);
+  const projectionA = evaluateGeminiGenerateContentAffinity(prepared, candidateA, payload);
+  const projectionB = evaluateGeminiGenerateContentAffinity(prepared, candidateB, payload);
   expect(projectionA.degrades).toBe(false);
   expect(projectionB.degrades).toBe(true);
-  expect(projectionA.materialize().contents?.[0].parts).toEqual([
+  expect(projectionA.payload.contents?.[0].parts).toEqual([
     { text: 'visible', thoughtSignature: 'upstream-signature' },
   ]);
-  expect(projectionB.materialize().contents?.[0].parts).toEqual([{ text: 'visible' }]);
+  expect(projectionB.payload.contents?.[0].parts).toEqual([{ text: 'visible' }]);
 });

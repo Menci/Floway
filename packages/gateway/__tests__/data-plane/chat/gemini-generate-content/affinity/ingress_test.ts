@@ -1,8 +1,7 @@
 import { expect, test } from 'vitest';
 
-import { analyzeGeminiGenerateContentAffinity } from '../../../../../src/data-plane/chat/gemini-generate-content/affinity/ingress.ts';
+import { decodeGeminiGenerateContentAffinity, evaluateGeminiGenerateContentAffinity } from '../../../../../src/data-plane/chat/gemini-generate-content/affinity/analysis.ts';
 import { AffinityCodec, type AffinityIdentity } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
-import { acceptedAffinityEvaluation } from '../../shared/affinity/helpers.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -28,7 +27,8 @@ const candidateB = candidate('upstream-b');
 
 test('removes originless affinity by protocol shape and preserves visible content and foreign signatures', async () => {
   const synthetic = await codec.wrap(undefined, targetFor(candidateA), 'gemini-generate-content.part.thoughtSignature');
-  const prepared = await analyzeGeminiGenerateContentAffinity({
+  const payload = {
+    model: 'model',
     contents: [{
       role: 'model',
       parts: [
@@ -38,9 +38,10 @@ test('removes originless affinity by protocol shape and preserves visible conten
         { text: 'foreign', thoughtSignature: 'not-floway' },
       ],
     }],
-  }, codec);
+  };
+  const prepared = await decodeGeminiGenerateContentAffinity(payload, codec);
 
-  expect(acceptedAffinityEvaluation(prepared, candidateA).materialize().contents?.[0].parts).toEqual([
+  expect(evaluateGeminiGenerateContentAffinity(prepared, candidateA, payload).payload.contents?.[0].parts).toEqual([
     { text: 'answer' },
     { text: 'synthetic on content' },
     { text: 'foreign', thoughtSignature: 'not-floway' },
@@ -52,11 +53,13 @@ test.each([
   { thought: true },
 ])('removes metadata-only remnants after stripping an incompatible owned signature', async metadata => {
   const owned = await codec.wrap('natural', targetFor(candidateA), 'gemini-generate-content.part.thoughtSignature');
-  const prepared = await analyzeGeminiGenerateContentAffinity({
+  const payload = {
+    model: 'model',
     contents: [{ role: 'model', parts: [{ ...metadata, thoughtSignature: owned }] }],
-  }, codec);
+  };
+  const prepared = await decodeGeminiGenerateContentAffinity(payload, codec);
 
-  expect(acceptedAffinityEvaluation(prepared, candidateB).materialize().contents).toEqual([]);
+  expect(evaluateGeminiGenerateContentAffinity(prepared, candidateB, payload).payload.contents).toEqual([]);
 });
 
 test('drops incompatible thought parts and preserves ordinary text and tool calls', async () => {
@@ -65,7 +68,8 @@ test('drops incompatible thought parts and preserves ordinary text and tool call
   const answer = { text: 'answer' };
   const tool = { functionCall: { name: 'lookup', args: {} } };
   const foreign = { text: 'foreign thought', thought: true, thoughtSignature: 'not-floway' };
-  const prepared = await analyzeGeminiGenerateContentAffinity({
+  const payload = {
+    model: 'model',
     contents: [{
       role: 'model',
       parts: [
@@ -76,12 +80,13 @@ test('drops incompatible thought parts and preserves ordinary text and tool call
         { ...tool, thoughtSignature: native },
       ],
     }],
-  }, codec);
+  };
+  const prepared = await decodeGeminiGenerateContentAffinity(payload, codec);
 
-  const compatible = acceptedAffinityEvaluation(prepared, candidateA);
-  const incompatible = acceptedAffinityEvaluation(prepared, candidateB);
+  const compatible = evaluateGeminiGenerateContentAffinity(prepared, candidateA, payload);
+  const incompatible = evaluateGeminiGenerateContentAffinity(prepared, candidateB, payload);
   expect(compatible.degrades).toBe(false);
-  expect(compatible.materialize().contents?.[0].parts).toEqual([
+  expect(compatible.payload.contents?.[0].parts).toEqual([
     answer,
     { text: 'reasoning with no separate signature', thought: true },
     { text: 'reasoning with a signature', thought: true, thoughtSignature: 'native' },
@@ -89,5 +94,5 @@ test('drops incompatible thought parts and preserves ordinary text and tool call
     { ...tool, thoughtSignature: 'native' },
   ]);
   expect(incompatible.degrades).toBe(true);
-  expect(incompatible.materialize().contents?.[0].parts).toEqual([answer, foreign, tool]);
+  expect(incompatible.payload.contents?.[0].parts).toEqual([answer, foreign, tool]);
 });

@@ -173,9 +173,19 @@ export const uniqueRequiredAffinityTargets = (targets: readonly AffinityIdentity
     existing.opaqueBlobCompatibilityIdentity, target.opaqueBlobCompatibilityIdentity,
   )) === index);
 
-export type AffinityEvaluation<Payload> =
-  | { readonly kind: 'rejected' }
-  | { readonly kind: 'accepted'; readonly degrades: boolean; readonly preferred?: boolean; readonly payload: Payload };
+interface AcceptedAffinity {
+  readonly kind: 'accepted';
+  readonly degrades: boolean;
+  readonly preferred?: boolean;
+}
+
+interface RejectedAffinity { readonly kind: 'rejected' }
+
+export type AffinityScore = RejectedAffinity | AcceptedAffinity;
+export type AffinityEvaluation<Payload> = RejectedAffinity | (AcceptedAffinity & { readonly payload: Payload });
+
+export type ScoreAffinity<Analysis extends AffinityAnalysis, Payload> =
+  (analysis: Analysis, candidate: RouteCandidate, payload: Payload) => AffinityScore;
 
 export type EvaluateAffinity<Analysis extends AffinityAnalysis, Payload> =
   (analysis: Analysis, candidate: RouteCandidate, payload: Payload) => AffinityEvaluation<Payload>;

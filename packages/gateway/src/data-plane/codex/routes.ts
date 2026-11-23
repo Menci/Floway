@@ -23,8 +23,7 @@ import type { Hono } from 'hono';
 
 import type { AuthVars } from '../../middleware/auth.ts';
 import { mountAlphaSearchRoute } from '../alpha-search/routes.ts';
-import { openaiResponsesHttp } from '../chat/openai-responses/http.ts';
-import { openaiResponsesWebSocket } from '../chat/openai-responses/websocket.ts';
+import { openaiResponsesCompactHandler, openaiResponsesHandler, openaiResponsesWebSocketHandler } from '../chat/routes.ts';
 import { serveModels } from '../models/http.ts';
 import { openaiImagesEdits, openaiImagesGenerations } from '../openai-images/http.ts';
 import { mountPublicRoute } from '../public-route.ts';
@@ -35,9 +34,9 @@ export const mountCodexRoutes = (app: Hono<{ Variables: AuthVars }>) => {
   // alpha-search handler.
   // https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/endpoint/search.rs#L31-L47
   mountAlphaSearchRoute(app, PUBLIC_DATA_PLANE_ROUTES.codexAlphaSearch);
-  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexOpenAIResponses, (method, path) => app.on(method, path, openaiResponsesHttp.generate));
-  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexOpenAIResponsesCompact, (method, path) => app.on(method, path, openaiResponsesHttp.compact));
-  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexOpenAIResponsesWebSocket, (method, path) => app.on(method, path, openaiResponsesWebSocket));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexOpenAIResponses, (method, path) => app.on(method, path, openaiResponsesHandler));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexOpenAIResponsesCompact, (method, path) => app.on(method, path, openaiResponsesCompactHandler));
+  mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexOpenAIResponsesWebSocket, (method, path) => app.on(method, path, openaiResponsesWebSocketHandler));
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexOpenAIImagesGenerations, (method, path) => app.on(method, path, openaiImagesGenerations));
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexOpenAIImagesEdits, (method, path) => app.on(method, path, openaiImagesEdits));
   mountPublicRoute(PUBLIC_DATA_PLANE_ROUTES.codexModels, (method, path) => app.on(method, path, serveModels));

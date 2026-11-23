@@ -1,8 +1,9 @@
 import { SidecarDomain } from './sidecar-codec.ts';
+import { answerKeys, gatewayAnswer } from '../../pipeline/answer.ts';
 import { type HttpInput, jsonHttpResponse } from '../../pipeline/edge-http.ts';
 import type { AttemptResponse, CandidateRequest } from '../../pipeline/failover.ts';
 import { httpSucceeded, readHttpBytes } from '../../pipeline/non-chat.ts';
-import { emptyUsageFacts, usageResponseKeys } from '../../pipeline/observe-usage.ts';
+import { usageResponseKeys } from '../../pipeline/observe-usage.ts';
 import type { GatewayRouteFacts, GatewayServices } from '../../pipeline/services.ts';
 import type { HttpResponseFacts } from '@floway-dev/http';
 import { Bytes, defineEnding, type ManagedStream, type StageEnv, type StaticTarget, type ThroughDecl } from '@floway-dev/pipeline';
@@ -90,7 +91,7 @@ type TranslatedAnswer<Payload, Event> = (
 ) => Promise<{ readonly response: AttemptResponse; readonly events: ChatFrames<Event> }>;
 
 const responseDecl = (consumes: string, provides: string, passthrough: readonly string[]): ThroughDecl['response'] => ({
-  needs: ['response.http', ...usageResponseKeys, consumes, ...passthrough],
+  needs: ['response.http', 'response.source', ...usageResponseKeys, consumes, ...passthrough],
   consumes: [consumes],
   provides: ['response.http', provides],
 });
@@ -119,7 +120,7 @@ const translationSlot = (source: ChatTargetApi, target: TranslatedApis[Translati
 const routeDefinition = (api: ChatTargetApi) => ({
   name: 'routeBody',
   request: { needs: [`request.${api}`, 'route.targetApi', 'route.candidate'] },
-  return: { provides: ['response.http', `response.${api}`, ...usageResponseKeys] },
+  return: { provides: [...answerKeys, `response.${api}`] },
 });
 
 export const headersForRewrite = (headers: HttpResponseFacts['headers']): Headers => {
@@ -168,7 +169,7 @@ const translateInto = async <Payload extends object, Event, TargetPayload, Targe
     fallbackMaxOutputTokens: facts['route.candidate'].limits.max_output_tokens,
   });
   if (trip.type === 'input-error') {
-    return reply({ 'response.http': jsonHttpResponse(400, inputError(trip), env.clock()), ...emptyUsageFacts(env) }, undefined);
+    return reply(gatewayAnswer(env, jsonHttpResponse(400, inputError(trip), env.clock())), undefined);
   }
   const { response, events } = await enter({ ...facts, 'route.translationSource': api }, trip.target);
   return reply({
@@ -311,7 +312,7 @@ export const enterChatBody = <Api extends ChatTargetApi>(api: Api) => {
 };
 
 const responseDeclNoChanges = (api: ChatTargetApi): ThroughDecl['response'] => ({
-  needs: ['response.http', `response.${api}`, ...usageResponseKeys],
+  needs: ['response.http', 'response.source', `response.${api}`, ...usageResponseKeys],
   consumes: [],
   provides: [],
 });

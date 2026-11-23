@@ -1,10 +1,11 @@
 import type { AffinityEgressOptions } from './carrier.ts';
-import { type AffinityAnalysis, affinityIdentityForCandidate, candidateSatisfiesAffinityIdentity, type EvaluateAffinity } from './selection.ts';
+import { type AffinityAnalysis, affinityIdentityForCandidate, candidateSatisfiesAffinityIdentity, type EvaluateAffinity, type ScoreAffinity } from './selection.ts';
 import type { HttpInput } from '../../../pipeline/edge-http.ts';
 import type { CandidateRequest } from '../../../pipeline/failover.ts';
 import type { CandidateError } from '../../../pipeline/resolve-candidates.ts';
 import type { GatewayServices, RouteCandidate } from '../../../pipeline/services.ts';
 import type { ChatEvent, ChatFrameFacts, ChatPayload, ChatPayloadFacts } from '../route-body.ts';
+import { protocolCompletionKey, type StreamCompletionFacts } from '../stream-completion.ts';
 import type { ChatTargetPicker } from '../target-picker.ts';
 import { defineStage } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -54,18 +55,26 @@ export const createAffinity = <
     options: AffinityEgressOptions,
     request: HttpInput & CandidateRequest,
   ) => AsyncIterable<ProtocolFrame<Event>>;
+  readonly observeCompletion?: () => {
+    readonly frame: (frame: ProtocolFrame<Event>) => void;
+    readonly completed: () => boolean;
+  };
 }) => {
   type Request = ChatPayloadFacts<Api, Payload> & AffinityFacts<Analysis> & CandidateRequest & HttpInput;
-  type Response = Partial<ChatFrameFacts<Api, Event>>;
+  type Response = Partial<ChatFrameFacts<Api, Event>> & StreamCompletionFacts;
   const requestKey = `request.${api}` as const;
   const responseKey = `response.${api}` as const;
-  const { wrap } = options;
+  const { wrap, observeCompletion } = options;
+  if (wrap === undefined && observeCompletion !== undefined) throw new TypeError('Observing protocol completion requires a stream affinity wrapper');
   const responseKeys = wrap === undefined ? [] : [responseKey];
   return defineStage<Request, CandidateRequest, Response, Response, AffinityServices>({
     name: 'affinity',
     through: {
       request: { needs: [requestKey, 'request.affinity', 'route.candidate', 'request.http'], consumes: ['request.affinity'], provides: [requestKey] },
-      response: { needs: responseKeys, consumes: [], provides: responseKeys },
+      response: {
+        needs: responseKeys, consumes: [],
+        provides: observeCompletion === undefined ? responseKeys : [...responseKeys, protocolCompletionKey],
+      },
     },
     execute: async (request, next, env) => {
       const { 'request.affinity': analysis, ...facts } = request;
@@ -76,13 +85,29 @@ export const createAffinity = <
       const response = await next({ ...facts, 'route.candidate': candidate, [requestKey]: payload });
       if (wrap === undefined) return response;
       const events = response[responseKey];
-      if (events === undefined) return response;
+      if (events === undefined) return observeCompletion === undefined ? response : { ...response, [protocolCompletionKey]: undefined };
+      const carrier = { codec: env.services.affinityCodec, affinity: affinityIdentityForCandidate(candidate) };
+      const label = `${api} affinity`;
+      if (observeCompletion === undefined) {
+        return { ...response, [responseKey]: env.wrapStream(events, { label, transform: source => wrap(source, carrier, request) }) };
+      }
+      const observer = observeCompletion();
+      const observe = async function* (source: AsyncIterable<ProtocolFrame<Event>>) {
+        for await (const frame of source) {
+          observer.frame(frame);
+          yield frame;
+        }
+      };
+      const wrapped = env.wrapStream(events, {
+        label,
+        transform: source => wrap(observe(source), carrier, request),
+        onClose: (): void => { completion.resolve(observer.completed()); },
+      });
+      const completion = env.deferred<boolean>('protocol completion', wrapped);
       return {
         ...response,
-        [responseKey]: env.wrapStream(events, {
-          label: `${api} affinity`,
-          transform: source => wrap(source, { codec: env.services.affinityCodec, affinity: affinityIdentityForCandidate(candidate) }, request),
-        }),
+        [responseKey]: wrapped,
+        [protocolCompletionKey]: completion.deferred,
       };
     },
   });
@@ -93,7 +118,7 @@ export const selectChatCandidates = <Analysis extends AffinityAnalysis, Payload>
   picker: ChatTargetPicker,
   analysis: Analysis,
   payload: Payload,
-  evaluate: EvaluateAffinity<Analysis, Payload>,
+  score: ScoreAffinity<Analysis, Payload>,
   model: string,
 ): readonly RouteCandidate[] | AffinityRoutingFailure => {
   const { requiredTargets } = analysis;
@@ -106,7 +131,7 @@ export const selectChatCandidates = <Analysis extends AffinityAnalysis, Payload>
   const degrading: RouteCandidate[] = [];
   for (const candidate of candidates) {
     if (!picker.canServe(candidate.endpoints)) continue;
-    const evaluation = evaluate(analysis, candidate, payload);
+    const evaluation = score(analysis, candidate, payload);
     if ((evaluation.kind === 'accepted') !== requiredTargets.every(target => candidateSatisfiesAffinityIdentity(candidate, target))) {
       throw new Error('Affinity candidate evaluation disagrees with the request requirement analysis');
     }
