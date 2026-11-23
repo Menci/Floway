@@ -574,9 +574,10 @@ const runStreamingShim = (
     ),
   );
 
-test('webSearchShim runs a tool search as its own sub-run and preserves separate usage', async () => {
+test.each(['success', 'failure'] as const)('webSearchShim runs a %s tool search as its own sub-run and preserves separate usage', async outcome => {
   const repo = new InMemoryRepo();
   initRepo(repo);
+  const search = outcome === 'success' ? fakeProviderOk : searchOnlyProvider(async () => { throw new Error('test search failure'); });
   const upstreamEvents = [
     upstreamMessageStart(),
     ...upstreamWebSearchBlock(0, 'toolu_search', 'react docs'),
@@ -585,7 +586,7 @@ test('webSearchShim runs a tool search as its own sub-run and preserves separate
   const fixture = messagesFixture([messagesUpstream({
     flags: ['anthropic-messages-web-search-shim'],
     pipelines: { anthropicMessages: generateProvider((_facts, env) => generateReply(env, () => toAsyncIterable(upstreamEvents.map(eventFrame)))) },
-  })], { webSearchProvider: webSearchProvider(fakeProviderOk) });
+  })], { webSearchProvider: webSearchProvider(search) });
 
   const { response, done } = await fixture.send({
     model: 'test-model', max_tokens: 32, messages: [{ role: 'user', content: 'search' }],
@@ -593,7 +594,15 @@ test('webSearchShim runs a tool search as its own sub-run and preserves separate
   });
   expect(response.status).toBe(200);
   expect(await response.json()).toMatchObject({
-    content: expect.arrayContaining([expect.objectContaining({ type: 'server_tool_use' }), expect.objectContaining({ type: 'web_search_tool_result' })]),
+    content: expect.arrayContaining([
+      expect.objectContaining({ type: 'server_tool_use' }),
+      expect.objectContaining({
+        type: 'web_search_tool_result',
+        content: outcome === 'success'
+          ? expect.arrayContaining([expect.objectContaining({ type: 'web_search_result', url: 'https://react.dev' })])
+          : { type: 'web_search_tool_result_error', error_code: 'unavailable' },
+      }),
+    ]),
     stop_reason: 'pause_turn',
     usage: { server_tool_use: { web_search_requests: 1 } },
   });

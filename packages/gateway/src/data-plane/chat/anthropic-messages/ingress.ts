@@ -158,6 +158,6 @@ export const createAnthropicMessagesCountIngress = (body: Pipeline<AnthropicMess
   });
 
 export const anthropicMessagesHttpOptions = {
-  errorStatus: () => 502,
+  errorStatus: (): 502 => 502,
   errorBody: internalAnthropicMessagesErrorPayload,
 } as const;
