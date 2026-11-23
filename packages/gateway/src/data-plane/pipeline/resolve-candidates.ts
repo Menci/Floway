@@ -1,7 +1,8 @@
+import { type AnswerFacts, answerKeys, gatewayAnswer } from './answer.ts';
 import { type HttpOutput, jsonHttpResponse } from './edge-http.ts';
 import type { CandidatesRequest } from './failover.ts';
-import { emptyUsageFacts, type UsageFacts, usageResponseKeys } from './observe-usage.ts';
-import { renderedNow, type RenderFacts } from './render.ts';
+import type { UsageFacts } from './observe-usage.ts';
+import type { RenderFacts } from './render.ts';
 import type { GatewayRouteFacts, GatewayServices, RouteCandidate } from './services.ts';
 import { appendFailedUpstreams } from '../shared/failed-upstreams.ts';
 import { defineStage } from '@floway-dev/pipeline';
@@ -19,7 +20,7 @@ export const createResolveCandidates = <Candidate extends RouteCandidate = Route
   readonly requestNeeds?: readonly string[];
 }) => {
   type Down = Request & { readonly 'route.candidates': readonly Candidate[] };
-  type Response = HttpOutput & UsageFacts & Partial<RenderFacts>;
+  type Response = HttpOutput & UsageFacts & AnswerFacts & Partial<RenderFacts>;
   return defineStage<Request, Down, Response, Response, Pick<GatewayServices, 'providers'>>({
     name: 'resolveCandidates',
     through: {
@@ -30,7 +31,7 @@ export const createResolveCandidates = <Candidate extends RouteCandidate = Route
       },
       response: { needs: [], consumes: [], provides: [] },
     },
-    return: { provides: ['response.http', 'response.render', ...usageResponseKeys] },
+    return: { provides: answerKeys },
     execute: async (facts, next, env) => {
       const model = facts['request.model'];
       const { candidates, sawModel, failedUpstreams } = await env.services.providers.enumerate(facts, model, options.kind);
@@ -48,7 +49,7 @@ export const createResolveCandidates = <Candidate extends RouteCandidate = Route
           : `Model ${model} is not available on any configured upstream.`, failedUpstreams),
       };
       const body = options.errorBody === undefined ? { error: { message: error.message, type: 'api_error' } } : options.errorBody(error);
-      return { ...emptyUsageFacts(env), ...renderedNow(env, { kind: 'completed' }), 'response.http': jsonHttpResponse(error.status, body, env.clock()) };
+      return gatewayAnswer(env, jsonHttpResponse(error.status, body, env.clock()));
     },
   });
 };

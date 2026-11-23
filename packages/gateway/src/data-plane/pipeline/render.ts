@@ -1,6 +1,7 @@
 import { type Deferred, type ErrorSnapshot, snapshotError, type StageEnv } from '@floway-dev/pipeline';
 
 export type RenderOutcome = { readonly kind: 'completed' }
+  | { readonly kind: 'cancelled' }
   | {
     readonly kind: 'failed';
     readonly reason: 'protocol-error' | 'premature-eof' | 'source-error' | 'collect-error';

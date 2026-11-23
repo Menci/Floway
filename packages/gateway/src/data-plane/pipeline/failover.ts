@@ -1,5 +1,6 @@
 import parseHttpDate from 'http-dates';
 
+import type { AnswerFacts } from './answer.ts';
 import { mergeBillableCalls, type UsageFacts } from './observe-usage.ts';
 import type { RouteCandidate } from './services.ts';
 import { isUpstreamTransportError } from '../../dial/transport-error.ts';
@@ -9,7 +10,7 @@ import { isAbortError } from '@floway-dev/provider';
 
 export interface CandidateRequest { readonly 'route.candidate': RouteCandidate }
 export interface CandidatesRequest { readonly 'route.candidates': readonly RouteCandidate[] }
-export interface AttemptResponse extends UsageFacts {
+export interface AttemptResponse extends UsageFacts, AnswerFacts {
   readonly 'response.http': HttpResponseFacts;
   readonly 'response.events'?: ManagedStream<unknown>;
   readonly 'response.attempt.status'?: number;
@@ -55,7 +56,7 @@ export const failover = defineStage<CandidatesRequest, CandidateRequest, Attempt
   name: 'failover',
   through: {
     request: { needs: ['route.candidates'], consumes: ['route.candidates'], provides: ['route.candidate'] },
-    response: { needs: ['response.http', 'response.usage.billable'], consumes: [], provides: ['response.usage.billable', 'response.usage.selected', 'response.route.candidate'] },
+    response: { needs: ['response.http', 'response.source', 'response.usage.billable'], consumes: [], provides: ['response.usage.billable', 'response.usage.selected', 'response.route.candidate'] },
   },
   execute: async ({ 'route.candidates': candidates, ...facts }, next, env) => {
     let selected: { readonly response: AttemptResponse; readonly candidate: RouteCandidate } | undefined;

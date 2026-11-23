@@ -1,6 +1,7 @@
 import { expect, test, vi } from 'vitest';
 
 import { installDumpStubs, MemoryLogStreamStore } from './test-fixtures.ts';
+import type { AnswerFacts } from '../../src/data-plane/pipeline/answer.ts';
 import { type HttpInput, type HttpOutput, jsonHttpResponse } from '../../src/data-plane/pipeline/edge-http.ts';
 import { failedRender, renderedNow, type RenderFacts } from '../../src/data-plane/pipeline/render.ts';
 import type { Settlement, SettlementFacts } from '../../src/data-plane/pipeline/settlement.ts';
@@ -115,16 +116,17 @@ test('a truncated 13 MiB request keeps the live 429 status and upstream attribut
     'request.http': { method: 'POST', url: { origin: 'https://floway.test', pathname: '/v1/test' }, headers: [], body: request },
   };
   const dump = openDumpSession(apiKey, input['request.http'])!;
-  type Output = HttpOutput & SettlementFacts;
+  type Output = HttpOutput & SettlementFacts & AnswerFacts;
   const http = jsonHttpResponse(429, { error: 'rate limited' }, 0);
   const pipeline = compose<HttpInput, Output, {}>('test.dump-truncated', {
     stages: [],
     ending: defineEnding<HttpInput, Output>({
       name: 'upstream-answer',
       request: { needs: ['request.http'] },
-      return: { provides: ['response.http', 'response.settlement'] },
+      return: { provides: ['response.http', 'response.settlement', 'response.source'] },
       execute: async (_facts, _into, env) => ({
         'response.http': http,
+        'response.source': 'upstream',
         'response.settlement': env.defer<Settlement>('settlement', Promise.resolve({
           persisted: true, errors: [], status: 429, outcome: 'upstream-error', identity: null, tokenUsage: null,
           firstOutputAt: null, streamEndedAt: null, upstreamStartedAt: 0, upstreamId: upstream.id, targetApi: null,

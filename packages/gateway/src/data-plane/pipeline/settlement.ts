@@ -1,3 +1,4 @@
+import type { AnswerFacts } from './answer.ts';
 import type { HttpDeliveryFacts, HttpOutput } from './edge-http.ts';
 import type { SelectedAttemptResponse } from './failover.ts';
 import type { BillableCall, UsageFacts } from './observe-usage.ts';
@@ -58,7 +59,7 @@ export interface SettlementFacts { readonly 'response.settlement': Deferred<Sett
 
 type SettlementServices = Pick<GatewayServices, 'usageStore' | 'performanceStore'>;
 type SettlementInput = Pick<GatewayRouteFacts, 'request.auth.apiKeyId' | 'request.route.runtimeLocation'>;
-type SettlementResponse = HttpOutput & UsageFacts & PricedUsageFacts & HttpDeliveryFacts & RenderFacts
+type SettlementResponse = HttpOutput & UsageFacts & PricedUsageFacts & HttpDeliveryFacts & RenderFacts & AnswerFacts
   & Partial<Pick<SelectedAttemptResponse, 'response.route.candidate' | 'response.usage.selected'>> & {
     readonly 'response.targetApi'?: ChatTargetApi;
   };
@@ -97,17 +98,18 @@ const persist = async (
   const selectedIds = new Set(selected?.map(call => call.callId));
   const selectedCalls = calls.filter(call => selectedIds.has(call.callId));
   const last = selectedCalls.at(-1);
-  const outcome = render.kind === 'failed' || delivery.kind !== 'completed'
+  const outcome = render.kind !== 'completed' || delivery.kind === 'write-failed'
     ? 'failed'
-    : http.status < 200 || http.status >= 300 ? candidate === undefined ? 'gateway-error' : 'upstream-error' : 'success';
+    : http.status < 200 || http.status >= 300 ? response['response.source'] === 'gateway' ? 'gateway-error' : 'upstream-error' : 'success';
   const keyId = request['request.auth.apiKeyId'];
+  const performanceOperation = response['response.performance.operation'] ?? operation;
   const writePerformance = async (): Promise<ErrorSnapshot | undefined> => {
-    if (candidate === undefined || operation === null) return;
+    if (candidate === undefined || performanceOperation === null) return;
     const outputTokens = render.kind === 'failed' && render.reason === 'collect-error'
       ? 0
       : selectedCalls.reduce((sum, call) => sum + (call.dumpTokenUsage?.output ?? 0), 0);
     const record = performanceRecord({
-      dimensions: { keyId, hour: currentHour(), model: candidate.modelId, upstream: candidate.upstreamId, operation, runtimeLocation: request['request.route.runtimeLocation'] },
+      dimensions: { keyId, hour: currentHour(), model: candidate.modelId, upstream: candidate.upstreamId, operation: performanceOperation, runtimeLocation: request['request.route.runtimeLocation'] },
       firstOutputAt,
       streamEndedAt,
       upstreamStartedAt: http.timing.startedAt,
@@ -150,7 +152,7 @@ export const writeSettlement = (operation: PerformanceOperation | null) =>
     through: {
       request: { needs: ['request.auth.apiKeyId', 'request.route.runtimeLocation'], consumes: [], provides: [] },
       response: {
-        needs: ['response.http', 'response.delivery', 'response.render', 'response.usage.priced', 'response.timing.firstOutputAt', 'response.timing.streamEndedAt'],
+        needs: ['response.http', 'response.source', 'response.delivery', 'response.render', 'response.usage.priced', 'response.timing.firstOutputAt', 'response.timing.streamEndedAt'],
         consumes: [],
         provides: ['response.settlement'],
       },

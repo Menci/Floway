@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
 import { expect, test, vi } from 'vitest';
 
+import { type AnswerSource, answerKeys, gatewayAnswer } from '../../../src/data-plane/pipeline/answer.ts';
 import { edgeHttp, type HttpInput, type HttpOutput, jsonHttpResponse } from '../../../src/data-plane/pipeline/edge-http.ts';
 import { type AttemptResponse, type CandidateRequest, type CandidatesRequest, failover } from '../../../src/data-plane/pipeline/failover.ts';
 import { createGatewayHttpHandler, type GatewayHttpFacts, startGatewayRun } from '../../../src/data-plane/pipeline/host.ts';
-import { billableCall, type BillableCall, observedTokenUsage, observeIdentity, scalarUsageFacts, usageResponseKeys } from '../../../src/data-plane/pipeline/observe-usage.ts';
+import { billableCall, type BillableCall, observedTokenUsage, observeIdentity, scalarUsageFacts } from '../../../src/data-plane/pipeline/observe-usage.ts';
 import { failedRender, renderedNow, type RenderFacts, type RenderOutcome } from '../../../src/data-plane/pipeline/render.ts';
 import type { GatewayServices, RouteCandidate } from '../../../src/data-plane/pipeline/services.ts';
 import { priceUsage, type SettlementFacts, writeSettlement } from '../../../src/data-plane/pipeline/settlement.ts';
@@ -43,21 +44,22 @@ const request = {
 
 type RenderedAttempt = AttemptResponse & RenderFacts;
 type Attempt = (candidate: RouteCandidate, env: StageEnv) => RenderedAttempt;
-const endpoint = (attempt: Attempt) => defineEnding<CandidateRequest, RenderedAttempt>({
+const endpoint = (attempt: Attempt, provides: readonly string[] = []) => defineEnding<CandidateRequest, RenderedAttempt>({
   name: 'upstream',
   request: { needs: ['route.candidate'] },
-  return: { provides: ['response.http', 'response.render', ...usageResponseKeys] },
+  return: { provides: [...answerKeys, ...provides] },
   execute: async (facts, _into, env) => attempt(facts['route.candidate'], env),
 });
 
 const counted = (
   model: RouteCandidate, env: StageEnv, status: number, output: number,
-  disposition: BillableCall['disposition'] = status === 200 ? 'completed' : 'api-error', render: RenderOutcome = { kind: 'completed' },
+  disposition: BillableCall['disposition'] = status === 200 ? 'completed' : 'api-error', render: RenderOutcome = { kind: 'completed' }, source: AnswerSource = 'upstream',
 ): RenderedAttempt => ({
   ...scalarUsageFacts(env, billableCall(env, observeIdentity(model, model.upstreamModelId), disposition,
     observedTokenUsage({ input: 5, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output }))),
   ...renderedNow(env, render),
   'response.http': jsonHttpResponse(status, { variant: model.upstreamModelId }, 10),
+  'response.source': source,
 });
 
 test.each([200, 429])('scalar HTTP %s bills one accepted call and skips an unmetered API error', async status => {
@@ -67,6 +69,7 @@ test.each([200, 429])('scalar HTTP %s bills one accepted call and skips an unmet
       ...scalarUsageFacts(env, billableCall(env, observeIdentity(model, model.upstreamModelId), status === 200 ? 'completed' : 'api-error', observedTokenUsage(null))),
       ...renderedNow(env, { kind: 'completed' }),
       'response.http': jsonHttpResponse(status, {}, env.clock()),
+      'response.source': 'upstream',
     })),
   });
   const handle = run(pipeline, { 'route.candidate': candidate('unmetered') }, { services: {}, finalizationTimeoutMs: 100 });
@@ -219,18 +222,19 @@ test('crash attribution keeps the deepest candidate on the last failing sibling 
 });
 
 test.each([
-  { disposition: 'completed', render: failedRender('premature-eof', new Error('source frames ended')), status: 200, outcome: 'failed', record: { kind: 'sample', sample: { success: false } } },
-  { disposition: 'stream-error', render: { kind: 'completed' }, status: 200, outcome: 'success', record: { kind: 'sample', sample: { success: true } } },
-  { disposition: 'completed', render: failedRender('collect-error', new Error('response collection failed')), status: 502, outcome: 'failed', record: { kind: 'zero-output-error' } },
-  { disposition: 'api-error', render: { kind: 'completed' }, status: 429, outcome: 'upstream-error', record: { kind: 'zero-output-error' } },
-] as const)('settlement classifies $outcome from the rendered outcome and HTTP status', async ({ disposition, render, status, outcome, record }) => {
+  { disposition: 'completed', render: failedRender('premature-eof', new Error('source frames ended')), status: 200, source: 'upstream', outcome: 'failed', record: { kind: 'sample', sample: { success: false } } },
+  { disposition: 'stream-error', render: { kind: 'completed' }, status: 200, source: 'upstream', outcome: 'success', record: { kind: 'sample', sample: { success: true } } },
+  { disposition: 'completed', render: failedRender('collect-error', new Error('response collection failed')), status: 502, source: 'upstream', outcome: 'failed', record: { kind: 'zero-output-error' } },
+  { disposition: 'api-error', render: { kind: 'completed' }, status: 429, source: 'upstream', outcome: 'upstream-error', record: { kind: 'zero-output-error' } },
+  { disposition: 'api-error', render: { kind: 'completed' }, status: 400, source: 'gateway', outcome: 'gateway-error', record: { kind: 'zero-output-error' } },
+] as const)('settlement classifies $outcome from render and answer source', async ({ disposition, render, status, source, outcome, record }) => {
   const usageStore = { record: vi.fn(async () => {}) };
   const performanceStore = { record: vi.fn<GatewayServices['performanceStore']['record']>(async () => {}) };
   const services = { usageStore, performanceStore };
   const pipeline = compose<GatewayHttpFacts & CandidatesRequest, HttpOutput & SettlementFacts, typeof services>('test.render-settlement', {
     stages: [writeSettlement('chat'), priceUsage, edgeHttp, failover],
     ending: endpoint((model, env) => ({
-      ...counted(model, env, status, 3, disposition, render),
+      ...counted(model, env, status, 3, disposition, render, source),
       'response.timing.firstOutputAt': env.defer('ttft', Promise.resolve(disposition === 'api-error' ? null : 20)),
       'response.timing.streamEndedAt': env.defer('end', Promise.resolve(disposition === 'api-error' ? null : 50)),
     })),
@@ -245,12 +249,33 @@ test.each([
   expect(usageStore.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ requests: 1 }));
 });
 
-test('a cancelled downstream delivery records an error even when render completed', async () => {
+test('a gateway answer can override a disabled performance operation', async () => {
+  const services = { usageStore: { record: vi.fn(async () => {}) }, performanceStore: { record: vi.fn(async () => {}) } };
+  const pipeline = compose<GatewayHttpFacts & CandidatesRequest, HttpOutput & SettlementFacts, typeof services>('test.operation-override', {
+    stages: [writeSettlement(null), priceUsage, edgeHttp, failover],
+    ending: endpoint((_model, env) => gatewayAnswer(env, jsonHttpResponse(400, { error: 'invalid input' }, 0), {
+      'response.performance.operation': 'chat' as const,
+    }), ['response.performance.operation']),
+  });
+  const handle = run(pipeline, { ...request, 'route.candidates': [candidate('selected')] }, { services, finalizationTimeoutMs: 100 });
+  const response = await handle.result;
+  expect(await response['response.settlement'].promise).toMatchObject({ outcome: 'gateway-error' });
+  expect(await handle.done).toEqual({ ok: true });
+  expect(services.usageStore.record).not.toHaveBeenCalled();
+  expect(services.performanceStore.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+    kind: 'zero-output-error', dimensions: expect.objectContaining({ operation: 'chat' }),
+  }));
+});
+
+test.each([
+  { render: { kind: 'completed' }, outcome: 'success', performance: 'neutral' },
+  { render: { kind: 'cancelled' }, outcome: 'failed', performance: 'zero-output-error' },
+] as const)('client-cancelled delivery after $render.kind render settles as $outcome', async ({ render, outcome, performance }) => {
   const services = { usageStore: { record: vi.fn(async () => {}) }, performanceStore: { record: vi.fn(async () => {}) } };
   const pipeline = compose<GatewayHttpFacts & CandidatesRequest, HttpOutput & SettlementFacts, typeof services>('test.delivery-settlement', {
     stages: [writeSettlement('chat'), priceUsage, edgeHttp, failover],
     ending: endpoint((model, env) => {
-      const result = counted(model, env, 200, 0);
+      const result = counted(model, env, 200, 0, 'completed', render);
       const body = env.createStream({ label: 'unread body', async *iterate() { yield Bytes.fromUtf8('answer'); } });
       return { ...result, 'response.http': { ...result['response.http'], body } };
     }),
@@ -260,9 +285,9 @@ test('a cancelled downstream delivery records an error even when render complete
   const { body } = response['response.http'];
   if (body === null || body instanceof Bytes) throw new Error('Expected the managed downstream body');
   await body.close();
-  expect(await response['response.settlement'].promise).toMatchObject({ outcome: 'failed' });
+  expect(await response['response.settlement'].promise).toMatchObject({ outcome });
   expect(await handle.done).toEqual({ ok: true });
-  expect(services.performanceStore.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ kind: 'zero-output-error' }));
+  expect(services.performanceStore.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ kind: performance }));
 });
 
 test('settlement bills losing attempts and samples only the selected attempt even when identities match', async () => {

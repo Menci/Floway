@@ -1,11 +1,11 @@
 import { z } from 'zod';
 
+import { answerKeys, gatewayAnswer } from '../pipeline/answer.ts';
 import { edgeHttp, type HttpOutput, jsonHttpResponse } from '../pipeline/edge-http.ts';
 import { type CandidateRequest, type CandidatesRequest, failover } from '../pipeline/failover.ts';
 import type { GatewayHttpFacts } from '../pipeline/host.ts';
 import { forwardHttp, header, openAiApiError, type RenderedAttemptResponse, requestBytes, scalarHttpAttempt } from '../pipeline/non-chat.ts';
-import { emptyUsageFacts, observeIdentity, usageResponseKeys } from '../pipeline/observe-usage.ts';
-import { renderedNow } from '../pipeline/render.ts';
+import { observeIdentity } from '../pipeline/observe-usage.ts';
 import type { GatewayServices } from '../pipeline/services.ts';
 import { priceUsage, type SettlementFacts, writeSettlement } from '../pipeline/settlement.ts';
 import { filterInboundHeaderEntries } from '../shared/inbound-headers.ts';
@@ -121,12 +121,10 @@ const prepareAlphaSearch = defineStage<GatewayHttpFacts, Resolved, RenderedAttem
     },
     response: { needs: [], consumes: [], provides: [] },
   },
-  return: { provides: ['response.http', 'response.render', ...usageResponseKeys] },
+  return: { provides: answerKeys },
   execute: async (facts, next, env) => {
     const http = facts['request.http'];
-    const reply = (response: RenderedAttemptResponse['response.http']): RenderedAttemptResponse => ({
-      ...emptyUsageFacts(env), ...renderedNow(env, { kind: 'completed' }), 'response.http': response,
-    });
+    const reply = (response: RenderedAttemptResponse['response.http']): RenderedAttemptResponse => gatewayAnswer(env, response);
     let body: unknown = {};
     if (isJsonMediaType(header(http.headers, 'content-type'))) {
       try {
@@ -155,7 +153,7 @@ const enterUpstream = defineEnding<Attempt, RenderedAttemptResponse, Targets, Pi
   into: {
     provider: {
       request: { needs: [], consumes: ['request.http'], provides: ['provider.model', 'request.headers'] },
-      response: { needs: ['response.http', 'response.modelKey'], consumes: [], provides: ['response.http', 'response.render', ...usageResponseKeys] },
+      response: { needs: ['response.http', 'response.modelKey'], consumes: [], provides: answerKeys },
     },
   },
   execute: async ({ 'request.http': http, ...facts }, into, env) => {
@@ -168,7 +166,7 @@ const enterUpstream = defineEnding<Attempt, RenderedAttemptResponse, Targets, Pi
       'request.headers': filterInboundHeaderEntries(headers, provider.inboundHeaderAllowlist),
     });
     const identity = observeIdentity(candidate, result['response.modelKey']);
-    return { ...result, ...scalarHttpAttempt(env, forwardHttp(result['response.http'], null), identity) };
+    return { ...result, ...scalarHttpAttempt(env, forwardHttp(result['response.http'], null), identity), 'response.source': 'upstream' };
   },
 });
 

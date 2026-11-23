@@ -1,6 +1,7 @@
 import { getDumpBroker, getDumpStore } from './registry.ts';
 import { dumpMetadataSchema } from './schemas.ts';
 import { type DumpErrorMeta, type DumpLiveSummary, type DumpMetadata, dumpLiveStreamId } from './types.ts';
+import type { AnswerSource } from '../data-plane/pipeline/answer.ts';
 import type { HttpDelivery } from '../data-plane/pipeline/edge-http.ts';
 import type { RenderOutcome } from '../data-plane/pipeline/render.ts';
 import type { Settlement } from '../data-plane/pipeline/settlement.ts';
@@ -40,6 +41,7 @@ interface HostFailure {
 interface LiveMetadata {
   readonly model: string | null;
   readonly status: number | undefined;
+  readonly source: AnswerSource | undefined;
   readonly responseBytes: number;
   readonly uploadError: ErrorSnapshot | undefined;
   readonly hostFailure: HostFailure | undefined;
@@ -55,14 +57,13 @@ const renderFailureMessages = {
   'collect-error': 'Upstream response collection failed',
 } satisfies Record<Extract<RenderOutcome, { kind: 'failed' }>['reason'], string>;
 
-const dumpError = ({ settlement, uploadError, hostFailure, render, delivery }: LiveMetadata, summary: DumpCompletionSummary): DumpErrorMeta | null => {
+const dumpError = ({ status, source, settlement, uploadError, hostFailure, render, delivery }: LiveMetadata, summary: DumpCompletionSummary): DumpErrorMeta | null => {
   if (hostFailure !== undefined) return hostFailure.error;
   if (uploadError !== undefined) return { kind: 'failed', reason: oneLine(uploadError.message) };
-  if (settlement?.outcome === 'gateway-error') return { kind: 'gateway' };
-  if (settlement?.outcome === 'upstream-error') return { kind: 'upstream' };
   if (render?.kind === 'failed') return { kind: 'failed', reason: oneLine(render.error?.message ?? renderFailureMessages[render.reason]) };
-  if (delivery?.kind === 'client-cancelled') return { kind: 'failed', reason: 'Downstream cancelled the SSE response' };
   if (delivery?.kind === 'write-failed') return { kind: 'failed', reason: oneLine(delivery.error.message) };
+  if (render?.kind === 'cancelled') return { kind: 'failed', reason: 'Downstream cancelled the SSE response' };
+  if (source !== undefined && status !== undefined && (status < 200 || status >= 300)) return { kind: source };
   if (!summary.ok || settlement?.outcome === 'failed') {
     return { kind: 'failed', reason: summary.doneError?.message ?? 'Downstream response did not complete' };
   }
@@ -74,10 +75,16 @@ const buildMetadata = async (started: DumpLiveSummary, values: LiveMetadata, sum
   const completedAt = Date.now();
   const upstreamId = settlement?.upstreamId ?? hostFailure?.candidate?.upstreamId;
   const record = upstreamId === undefined ? null : await getRepo().upstreams.getById(upstreamId);
+  const outcome = settlement?.outcome;
+  // WebSocket streaming turns have a request outcome in place of an HTTP
+  // response status. Error envelopes carry their own status.
+  const status = started.method === 'WS' && (outcome === 'success' || outcome === 'failed')
+    ? outcome === 'success' ? 200 : 500
+    : values.status ?? settlement?.status ?? (summary.ok ? 200 : 500);
   return dumpMetadataSchema.parse({
     ...started,
     completedAt,
-    status: hostFailure?.status ?? values.status ?? settlement?.status ?? (summary.ok ? 200 : 500),
+    status: hostFailure?.status ?? status,
     upstream: record === null ? null : { id: record.id, name: record.name, kind: record.kind, hue: record.hue },
     model: settlement?.identity?.model ?? hostFailure?.candidate?.modelId ?? values.model ?? started.model,
     inputTokens: inputTokens(settlement?.tokenUsage),
@@ -135,6 +142,7 @@ export const openDumpSession = (apiKey: ApiKey, request: HttpRequestFacts, reque
   let responseStreamId: number | undefined;
   let responseBytes = 0;
   let status: number | undefined;
+  let source: AnswerSource | undefined;
   let model: string | null = null;
   let uploadError: ErrorSnapshot | undefined;
   let hostFailure: HostFailure | undefined;
@@ -166,6 +174,8 @@ export const openDumpSession = (apiKey: ApiKey, request: HttpRequestFacts, reque
         if ('body' in http && http.body instanceof Bytes) responseBytes = http.body.byteLength;
         if ('body' in http && isManagedStream(http.body)) responseStreamId = streamIdOf(http.body);
       }
+      const answerSource = event.facts['response.source'];
+      if (answerSource === 'upstream' || answerSource === 'gateway') source = answerSource;
       settlement = settledValue<Settlement>(event.facts['response.settlement']);
       render = settledValue<RenderOutcome>(event.facts['response.render']);
       delivery = settledValue<HttpDelivery>(event.facts['response.delivery']);
@@ -182,7 +192,7 @@ export const openDumpSession = (apiKey: ApiKey, request: HttpRequestFacts, reque
   const completed = Promise.all([pump.completed, written]).then(async ([summary]) => {
     const [settled, rendered, delivered] = await Promise.all([settlement, render, delivery]);
     const meta = await buildMetadata(started, {
-      status, model, responseBytes, uploadError, hostFailure,
+      status, source, model, responseBytes, uploadError, hostFailure,
       settlement: settled, render: rendered, delivery: delivered,
     }, summary);
     await store.commitRecord(keyId, { meta, artifactKey });

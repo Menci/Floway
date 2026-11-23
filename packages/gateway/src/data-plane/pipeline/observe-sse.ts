@@ -1,4 +1,4 @@
-import { forwardHttp, openAiApiError, type RenderedAttemptResponse, scalarHttpAttempt } from './non-chat.ts';
+import { forwardHttp, type MeteredHttpResponse, openAiApiError, scalarHttpAttempt } from './non-chat.ts';
 import { billableCall, type BillableCall, type ObservedUsage } from './observe-usage.ts';
 import { failedRender, type RenderOutcome } from './render.ts';
 import { openaiInternalErrorPayload } from '../shared/openai-error-payload.ts';
@@ -71,7 +71,7 @@ const failureFrame = (error: unknown): Bytes =>
 
 export const observeSse = <Frame>(
   http: HttpResponseFacts, identity: TelemetryModelIdentity, env: StageEnv, dialect: SseDialect<Frame>,
-): RenderedAttemptResponse => {
+): MeteredHttpResponse => {
   const { body } = http;
   const forwarded = forwardHttp(http);
   if (body === null) {
@@ -113,6 +113,7 @@ export const observeSse = <Frame>(
       streamEnd.resolve(env.clock());
       if (end.how === 'errored') outcome = failedRender('source-error', end.error);
       else if (end.how === 'leaked') outcome = failedRender('source-error');
+      else if ((end.how === 'cancelled' || end.how === 'released') && !reachedTerminal && outcome.kind === 'completed') outcome = { kind: 'cancelled' };
       render.resolve(outcome);
       const disposition = end.how === 'cancelled' ? 'cancelled' : outcome.kind === 'failed' ? 'stream-error' : reachedTerminal ? 'completed' : 'released';
       try {

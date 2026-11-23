@@ -1,7 +1,8 @@
+import { answerKeys, gatewayAnswer } from './answer.ts';
 import { edgeHttp, type HttpInput, type HttpOutput, jsonHttpResponse } from './edge-http.ts';
 import { type AttemptResponse, type CandidateRequest, failover } from './failover.ts';
 import type { GatewayHttpFacts } from './host.ts';
-import { billableCall, emptyUsageFacts, observedTokenUsage, type ObservedUsage, observeIdentity, scalarUsageFacts, usageResponseKeys } from './observe-usage.ts';
+import { billableCall, observedTokenUsage, type ObservedUsage, observeIdentity, scalarUsageFacts } from './observe-usage.ts';
 import { renderedNow, type RenderFacts, type RenderOutcome } from './render.ts';
 import { type CandidateError, createResolveCandidates, type ModelRequest } from './resolve-candidates.ts';
 import type { GatewayServices, RouteCandidate } from './services.ts';
@@ -16,6 +17,7 @@ import { type PerformanceOperation, type ProviderHttpOutput, type ProviderInput,
 
 export type ParsedOperation<Payload> = { readonly model: string; readonly payload: Payload } | { readonly error: string };
 export type RenderedAttemptResponse = AttemptResponse & RenderFacts;
+export type MeteredHttpResponse = Omit<RenderedAttemptResponse, 'response.source'>;
 
 interface OperationRequest<Payload> extends ModelRequest, HttpInput {
   readonly 'request.payload': Payload;
@@ -32,7 +34,7 @@ interface NonChatPlan<Payload, Output extends ProviderHttpOutput> {
   readonly prepareProviderPayload?: (payload: Payload) => Payload;
   readonly select: (candidates: readonly RouteCandidate[], request: OperationRequest<Payload>) => readonly RouteCandidate[] | CandidateError;
   readonly unsupportedMessage?: (model: string) => string;
-  readonly respond: (response: Output, request: OperationRequest<Payload> & CandidateRequest, identity: TelemetryModelIdentity, env: StageEnv) => RenderedAttemptResponse | Promise<RenderedAttemptResponse>;
+  readonly respond: (response: Output, request: OperationRequest<Payload> & CandidateRequest, identity: TelemetryModelIdentity, env: StageEnv) => MeteredHttpResponse | Promise<MeteredHttpResponse>;
 }
 
 const PROVIDER_ENTRY = ['provider.model', 'request.headers', 'request.payload'];
@@ -56,10 +58,10 @@ export const createNonChatPipeline = <Payload, ProviderOutput extends ProviderHt
       request: { needs: ['request.http'], consumes: [], provides: ['request.model', 'request.payload'] },
       response: { needs: [], consumes: [], provides: [] },
     },
-    return: { provides: ['response.http', 'response.render', ...usageResponseKeys] },
+    return: { provides: answerKeys },
     execute: async (facts, next, env) => {
       const request = await plan.parse(facts['request.http']);
-      if ('error' in request) return { ...emptyUsageFacts(env), ...renderedNow(env, { kind: 'completed' }), 'response.http': openAiApiError(400, request.error, env.clock()) };
+      if ('error' in request) return gatewayAnswer(env, openAiApiError(400, request.error, env.clock()));
       return await next({ ...facts, 'request.model': request.model, 'request.payload': request.payload });
     },
   });
@@ -70,7 +72,7 @@ export const createNonChatPipeline = <Payload, ProviderOutput extends ProviderHt
     into: {
       provider: {
         request: { needs: [], consumes: ['request.http'], provides: ['provider.model', 'request.headers', ...(plan.prepareProviderPayload === undefined ? [] : ['request.payload'])] },
-        response: { needs: providerExit, consumes: [], provides: ['response.http', 'response.attempt.status', 'response.render', ...usageResponseKeys] },
+        response: { needs: providerExit, consumes: [], provides: [...answerKeys, 'response.attempt.status'] },
       },
     },
     execute: async (request, into, env) => {
@@ -84,7 +86,7 @@ export const createNonChatPipeline = <Payload, ProviderOutput extends ProviderHt
         ...(plan.prepareProviderPayload === undefined ? {} : { 'request.payload': plan.prepareProviderPayload(facts['request.payload']) }),
       });
       const identity = observeIdentity(candidate, result['response.modelKey']);
-      return { ...result, ...await plan.respond(result, request, identity, env), 'response.attempt.status': result['response.http'].status };
+      return { ...result, ...await plan.respond(result, request, identity, env), 'response.source': 'upstream', 'response.attempt.status': result['response.http'].status };
     },
   });
 
@@ -171,8 +173,8 @@ export const measured = (measurement: UsageMeasurement): ObservedUsage => {
 
 export const scalarHttpAttempt = (
   env: StageEnv, http: HttpResponseFacts, identity: TelemetryModelIdentity, usage = observedTokenUsage(null), outcome: RenderOutcome = { kind: 'completed' },
-): RenderedAttemptResponse => {
-  const disposition = outcome.kind === 'failed'
+): MeteredHttpResponse => {
+  const disposition = outcome.kind === 'cancelled' ? 'cancelled' : outcome.kind === 'failed'
     ? outcome.reason === 'collect-error' ? 'completed' : 'stream-error'
     : httpSucceeded(http) ? 'completed' : 'api-error';
   return {
@@ -185,7 +187,7 @@ export const scalarHttpAttempt = (
 export const respondJsonUsage = async (
   http: HttpResponseFacts, identity: TelemetryModelIdentity, env: StageEnv, sourceApi: string,
   extract: (body: unknown) => ReturnType<typeof tokenUsageMeasurement>['dumpTokenUsage'],
-): Promise<RenderedAttemptResponse> => {
+): Promise<MeteredHttpResponse> => {
   const response = forwardHttp(http);
   if (!httpSucceeded(http)) return scalarHttpAttempt(env, response, identity);
   const bytes = await readHttpBytes(response.body);
