@@ -44,7 +44,7 @@ test('POST /v1/messages/count_tokens forwards an upstream rate limit and retry h
     ['content-type', 'application/json'], ['retry-after', '17'], ['request-id', 'req-count'], ['set-cookie', 'private=1'],
   ]));
   const fixture = messagesFixture([messagesUpstream({ pipelines: { anthropicMessagesCountTokens: countProvider(upstream) } })]);
-  const { response, done } = await fixture.send({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }] }, { count: true });
+  const { facts, response, done } = await fixture.send({ model: 'test-model', messages: [{ role: 'user', content: 'hello' }] }, { count: true });
   expect(upstream).toHaveBeenCalledOnce();
   expect(response.status).toBe(429);
   expect(response.headers.get('retry-after')).toBe('17');
@@ -52,6 +52,7 @@ test('POST /v1/messages/count_tokens forwards an upstream rate limit and retry h
   expect(response.headers.get('set-cookie')).toBeNull();
   expect(await response.text()).toBe(body);
   expect(await done).toMatchObject({ ok: true });
+  expect(await facts['response.settlement'].promise).toMatchObject({ outcome: 'upstream-error' });
   expect(fixture.usage).toEqual([]);
 });
 

@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { analyzeAnthropicMessagesAffinity, evaluateAnthropicMessagesAffinity } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/analysis.ts';
+import { analyzeAnthropicMessagesAffinity, evaluateAnthropicMessagesAffinity, scoreAnthropicMessagesAffinity } from '../../../../../src/data-plane/chat/anthropic-messages/affinity/analysis.ts';
 import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/carrier.ts';
 import { affinityIdentityForCandidate as targetFor } from '../../../../../src/data-plane/chat/shared/affinity/selection.ts';
 import { messagesUpstream } from '../fixture.ts';
@@ -71,6 +71,8 @@ test('discards marker-only and unsigned thinking on an incompatible turn', async
 
   const compatible = evaluateAnthropicMessagesAffinity(prepared, candidateA, payload);
   const incompatible = evaluateAnthropicMessagesAffinity(prepared, candidateB, payload);
+  expect(scoreAnthropicMessagesAffinity(prepared, candidateA, payload)).toEqual({ kind: 'accepted', degrades: false, preferred: true });
+  expect(scoreAnthropicMessagesAffinity(prepared, candidateB, payload)).toEqual({ kind: 'accepted', degrades: true, preferred: true });
   expect(compatible.degrades).toBe(false);
   expect(compatible.payload.messages[0].content).toEqual([
     { type: 'thinking', thinking: 'marked reasoning' },

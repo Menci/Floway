@@ -1,12 +1,13 @@
-import { analyzeAnthropicMessagesAffinity, type AnthropicMessagesAffinityAnalysis, evaluateAnthropicMessagesAffinity } from './affinity/analysis.ts';
+import { analyzeAnthropicMessagesAffinity, type AnthropicMessagesAffinityAnalysis, evaluateAnthropicMessagesAffinity, scoreAnthropicMessagesAffinity } from './affinity/analysis.ts';
 import { wrapAnthropicMessagesAffinityEgress } from './affinity/egress.ts';
 import type { AnthropicMessagesCountBodyInput, AnthropicMessagesCountBodyOutput } from './body.ts';
 import { anthropicMessagesErrorBody, internalAnthropicMessagesErrorPayload } from './errors.ts';
+import { type AnswerFacts, answerKeys, gatewayAnswer } from '../../pipeline/answer.ts';
 import { edgeHttp, type HttpOutput, jsonHttpResponse } from '../../pipeline/edge-http.ts';
 import { failover } from '../../pipeline/failover.ts';
 import type { GatewayHttpFacts } from '../../pipeline/host.ts';
 import { forwardHttp, header, requestBytes } from '../../pipeline/non-chat.ts';
-import { emptyUsageFacts, type UsageFacts, usageResponseKeys } from '../../pipeline/observe-usage.ts';
+import { type UsageFacts, usageResponseKeys } from '../../pipeline/observe-usage.ts';
 import { type RenderFacts, renderedNow } from '../../pipeline/render.ts';
 import { createResolveCandidates, type ModelRequest } from '../../pipeline/resolve-candidates.ts';
 import type { GatewayServices, RouteCandidate } from '../../pipeline/services.ts';
@@ -25,7 +26,7 @@ type Parsed = GatewayHttpFacts & ModelRequest & DeliveryFacts & {
   readonly 'request.anthropicMessages': AnthropicMessagesPayload;
   readonly 'request.anthropicBeta': readonly string[];
 };
-type Rendered = HttpOutput & UsageFacts & RenderFacts;
+type Rendered = HttpOutput & UsageFacts & RenderFacts & AnswerFacts;
 
 const parsePayload = (allowsStreaming: boolean) => defineStage<GatewayHttpFacts, Parsed, Rendered, Rendered>({
   name: 'parsePayload',
@@ -36,23 +37,19 @@ const parsePayload = (allowsStreaming: boolean) => defineStage<GatewayHttpFacts,
     },
     response: { needs: [], consumes: [], provides: [] },
   },
-  return: { provides: ['response.http', 'response.render', ...usageResponseKeys] },
+  return: { provides: answerKeys },
   execute: async (facts, next, env) => {
     const http = facts['request.http'];
     const payload = JSON.parse(requestBytes(http).utf8()) as AnthropicMessagesPayload;
     const param = ['anthropic_beta', 'betas'].find(key => Object.hasOwn(payload, key));
     if (param !== undefined) {
-      return {
-        'response.http': jsonHttpResponse(400, {
-          error: {
-            message: `${param} in the Anthropic Messages request body is not supported; send Anthropic beta flags with the anthropic-beta HTTP header.`,
-            type: 'invalid_request_error',
-            param,
-          },
-        }, env.clock()),
-        ...emptyUsageFacts(env),
-        ...renderedNow(env, { kind: 'completed' }),
-      };
+      return gatewayAnswer(env, jsonHttpResponse(400, {
+        error: {
+          message: `${param} in the Anthropic Messages request body is not supported; send Anthropic beta flags with the anthropic-beta HTTP header.`,
+          type: 'invalid_request_error',
+          param,
+        },
+      }, env.clock()));
     }
     return await next({
       ...facts,
@@ -71,7 +68,7 @@ const resolveCandidates = (picker: ChatTargetPicker, path: string) =>
     sourceApi: path,
     requestNeeds: ['request.affinity', 'request.anthropicMessages'],
     select: (candidates, facts) => selectChatCandidates(
-      candidates, picker, facts['request.affinity'], facts['request.anthropicMessages'], evaluateAnthropicMessagesAffinity, facts['request.model'],
+      candidates, picker, facts['request.affinity'], facts['request.anthropicMessages'], scoreAnthropicMessagesAffinity, facts['request.model'],
     ),
     errorBody: error => anthropicMessagesErrorBody(error.status === 404 ? 'not_found_error' : 'invalid_request_error', error.message),
   });
@@ -131,7 +128,7 @@ const enterCountBody = defineEnding<AnthropicMessagesCountBodyInput, AnthropicMe
   into: {
     body: {
       request: { needs: [], consumes: [], provides: [] },
-      response: { needs: ['response.http', 'response.targetApi', ...usageResponseKeys], consumes: [], provides: [] },
+      response: { needs: ['response.http', 'response.source', 'response.targetApi', ...usageResponseKeys], consumes: [], provides: [] },
     },
   },
   execute: async (facts, into) => await into.body(facts),

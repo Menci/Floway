@@ -9,6 +9,7 @@ import { prepareGenerate } from './stages/prepare-generate.ts';
 import { prepareWebSearchCount } from './stages/prepare-web-search-count.ts';
 import { stripBillingAttribution } from './stages/strip-billing-attribution.ts';
 import { webSearchShim } from './stages/web-search-shim.ts';
+import type { AnswerFacts } from '../../pipeline/answer.ts';
 import type { HttpOutput } from '../../pipeline/edge-http.ts';
 import { emptyUsageFacts, type UsageFacts, usageResponseKeys } from '../../pipeline/observe-usage.ts';
 import type { GatewayServices } from '../../pipeline/services.ts';
@@ -32,7 +33,7 @@ export const createAnthropicMessagesBody = (targets: MessagesBodyTargets) =>
 export type AnthropicMessagesCountBodyInput = MessagesBodyInput & {
   readonly 'request.anthropicBeta': readonly string[];
 };
-export type AnthropicMessagesCountBodyOutput = HttpOutput & UsageFacts & {
+export type AnthropicMessagesCountBodyOutput = HttpOutput & UsageFacts & AnswerFacts & {
   readonly 'response.targetApi': 'anthropicMessages';
 };
 type CountTargets = {
@@ -45,7 +46,7 @@ const routeCount = defineEnding<AnthropicMessagesCountBodyInput, AnthropicMessag
   into: {
     egress: {
       request: { needs: [], consumes: ['request.anthropicMessages'], provides: ['request.payload'] },
-      response: { needs: ['response.http', 'response.targetApi'], consumes: [], provides: [...usageResponseKeys] },
+      response: { needs: ['response.http', 'response.source', 'response.targetApi'], consumes: [], provides: [...usageResponseKeys] },
     },
   },
   execute: async ({ 'request.anthropicMessages': payload, ...facts }, into, env) => {

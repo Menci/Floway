@@ -359,7 +359,7 @@ test('count_tokens returns a native error response for invalid web-search tools'
     flags: ['anthropic-messages-web-search-shim'],
     pipelines: { anthropicMessagesCountTokens: countProvider(() => { throw new Error('unexpected provider call'); }) },
   })]);
-  const { response, done } = await fixture.send({
+  const { facts, response, done } = await fixture.send({
     model: 'claude-test',
     max_tokens: 64,
     messages: [{ role: 'user', content: 'search' }],
@@ -369,6 +369,7 @@ test('count_tokens returns a native error response for invalid web-search tools'
   assertEquals(response.status, 400);
   expect(await response.json()).toMatchObject({ type: 'error', error: { type: 'invalid_request_error' } });
   expect(await done).toMatchObject({ ok: true });
+  expect(await facts['response.settlement'].promise).toMatchObject({ outcome: 'gateway-error' });
 });
 
 const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<AnthropicMessagesStreamEventEx>[]> => {
@@ -419,7 +420,7 @@ test('webSearchShim returns an internal 500 when the request requires disabled s
     flags: ['anthropic-messages-web-search-shim'],
     pipelines: { anthropicMessages: generateProvider(() => { throw new Error('unexpected provider call'); }) },
   })]);
-  const { response, done } = await fixture.send({
+  const { facts, response, done } = await fixture.send({
     model: 'claude-test',
     max_tokens: 64,
     messages: [{ role: 'user', content: 'latest React docs' }],
@@ -428,6 +429,7 @@ test('webSearchShim returns an internal 500 when the request requires disabled s
   assertEquals(response.status, 500);
   expect(await response.json()).toMatchObject({ type: 'error', error: { type: 'internal_error', message: expect.stringContaining('requires an enabled search provider') } });
   expect(await done).toMatchObject({ ok: true });
+  expect(await facts['response.settlement'].promise).toMatchObject({ outcome: 'gateway-error' });
 });
 
 test('webSearchShim emits native-like citation deltas for replay-only history', async () => {

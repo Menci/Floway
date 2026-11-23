@@ -1,8 +1,9 @@
 import type { AnthropicMessagesFrame, AnthropicMessagesRequest } from './facts.ts';
-import type { HttpInput, HttpOutput } from '../../../pipeline/edge-http.ts';
+import { answerKeys, gatewayAnswer } from '../../../pipeline/answer.ts';
+import type { HttpInput } from '../../../pipeline/edge-http.ts';
 import { header } from '../../../pipeline/non-chat.ts';
-import { emptyUsageFacts, type UsageFacts, usageResponseKeys } from '../../../pipeline/observe-usage.ts';
-import { defineStage, type ManagedStream } from '@floway-dev/pipeline';
+import type { ChatBodyOutput } from '../../shared/route-body.ts';
+import { defineStage } from '@floway-dev/pipeline';
 import { createAnthropicMessagesUsage, generateAnthropicId, toAnthropicMessagesUsageDelta } from '@floway-dev/protocols/anthropic-messages';
 import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 
@@ -13,9 +14,7 @@ const CLAUDE_CODE_USER_AGENT = /^claude-cli\/\d+\.\d+\.\d+/i;
 const PROBE_PROMPTS: ReadonlySet<string> = new Set(['Hi', 'test']);
 
 type Request = AnthropicMessagesRequest & HttpInput;
-type Answer = HttpOutput & UsageFacts & {
-  readonly 'response.anthropicMessages': ManagedStream<AnthropicMessagesFrame> | undefined;
-};
+type Answer = ChatBodyOutput<'anthropicMessages'>;
 
 const isClaudeCodeProbe = (facts: Request): boolean => {
   const { max_tokens, tools, messages } = facts['request.anthropicMessages'];
@@ -60,17 +59,17 @@ export const answerClaudeCodeProbe = defineStage<Request, Request, Answer, Answe
     request: { needs: ['request.anthropicMessages', 'request.http'], consumes: [], provides: [] },
     response: { needs: [], consumes: [], provides: [] },
   },
-  return: { provides: ['response.http', 'response.anthropicMessages', ...usageResponseKeys] },
+  return: { provides: [...answerKeys, 'response.anthropicMessages'] },
   execute: async (facts, next, env) => {
     if (!isClaudeCodeProbe(facts)) return await next(facts);
     const now = env.clock();
+    const http = { status: 200, statusText: '', headers: [], body: null, timing: { startedAt: now, headersAt: now } };
     return {
-      'response.http': { status: 200, statusText: '', headers: [], body: null, timing: { startedAt: now, headersAt: now } },
+      ...gatewayAnswer(env, http),
       'response.anthropicMessages': env.createStream({
         label: 'Claude Code probe',
         iterate: () => probeFrames(facts['request.anthropicMessages'].model),
       }),
-      ...emptyUsageFacts(env),
     };
   },
 });

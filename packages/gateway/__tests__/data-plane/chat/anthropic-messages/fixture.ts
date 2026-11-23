@@ -106,7 +106,7 @@ export const unusedBody = <Api extends ChatTargetApi>(api: Api): Pipeline<ChatBo
     stages: [],
     ending: defineEnding<ChatBodyInput<Api>, ChatBodyOutput<Api>>({
       name: 'unexpected', request: { needs: [] },
-      return: { provides: ['response.http', `response.${api}`, 'response.usage.billable', 'response.timing.firstOutputAt', 'response.timing.streamEndedAt'] },
+      return: { provides: ['response.http', 'response.source', `response.${api}`, 'response.usage.billable', 'response.timing.firstOutputAt', 'response.timing.streamEndedAt'] },
       execute: async () => { throw new Error(`Unexpected translation into ${api}`); },
     }),
   });

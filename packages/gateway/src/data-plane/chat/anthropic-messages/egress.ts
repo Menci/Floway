@@ -9,8 +9,11 @@ import type { ProviderAnthropicInput, ProviderHttpOutput, ProviderPipelines, Pro
 
 type EgressInput = ChatEgressInput<'anthropicMessages'>;
 type ProviderRequest = EgressInput & Pick<ProviderAnthropicInput, 'request.anthropicBeta'>;
-type TargetApi = { readonly 'response.targetApi': 'anthropicMessages' };
-export type AnthropicMessagesCountEgressOutput = ProviderHttpOutput & TargetApi;
+interface UpstreamAnswer {
+  readonly 'response.targetApi': 'anthropicMessages';
+  readonly 'response.source': 'upstream';
+}
+export type AnthropicMessagesCountEgressOutput = ProviderHttpOutput & UpstreamAnswer;
 
 const applyAliasRules = defineStage<EgressInput, EgressInput, object, object>({
   name: 'applyAliasRules',
@@ -46,13 +49,13 @@ const providerTarget = <Output extends ProviderHttpOutput>(
       },
     },
   };
-  const ending = defineEnding<ProviderRequest, Output & TargetApi, Targets, Pick<GatewayServices, 'providers'>>({
+  const ending = defineEnding<ProviderRequest, Output & UpstreamAnswer, Targets, Pick<GatewayServices, 'providers'>>({
     name: 'enterUpstream',
     request: { needs: ['request.http', 'request.payload', 'request.anthropicBeta', 'route.candidate'] },
     into: {
       provider: {
         request: { needs: [], consumes: ['request.http'], provides: ['provider.model', 'request.headers', 'request.payload'] },
-        response: { needs: exit, consumes: [], provides: ['response.targetApi'] },
+        response: { needs: exit, consumes: [], provides: ['response.targetApi', 'response.source'] },
       },
     },
     execute: async ({ 'request.http': http, ...facts }, into, env) => {
@@ -65,7 +68,7 @@ const providerTarget = <Output extends ProviderHttpOutput>(
         'request.headers': filterInboundHeaderEntries(http.headers, provider.inboundHeaderAllowlist),
         'request.payload': payload,
       });
-      return { ...response, 'response.targetApi': 'anthropicMessages' };
+      return { ...response, 'response.targetApi': 'anthropicMessages', 'response.source': 'upstream' };
     },
   });
   return { ending, targets };

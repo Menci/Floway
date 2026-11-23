@@ -1,7 +1,7 @@
 import type { AnthropicMessagesTargetRequest } from './facts.ts';
 import { type AnthropicMessagesSearch, invalidWebSearchRequest, prepareAnthropicMessagesWebSearchForTarget, rewriteAnthropicMessagesWebSearchEventsToNative } from './web-search-protocol.ts';
+import { answerKeys, gatewayAnswer } from '../../../pipeline/answer.ts';
 import { jsonHttpResponse } from '../../../pipeline/edge-http.ts';
-import { emptyUsageFacts, usageResponseKeys } from '../../../pipeline/observe-usage.ts';
 import type { GatewayRouteFacts, GatewayServices } from '../../../pipeline/services.ts';
 import { runWebSearchAndRecordUsage } from '../../../tools/web-search/search.ts';
 import type { ConfiguredWebSearchProvider, WebSearchProviderRequest, WebSearchProviderResult } from '../../../tools/web-search/types.ts';
@@ -62,13 +62,12 @@ export const webSearchShim = defineStage<Request & SearchAuth, Request, Generate
     },
     response: { needs: ['response.anthropicMessages'], consumes: [], provides: ['response.anthropicMessages'] },
   },
-  return: { provides: ['response.http', 'response.anthropicMessages', ...usageResponseKeys] },
+  return: { provides: [...answerKeys, 'response.anthropicMessages'] },
   execute: async (facts, next, env) => {
     const prepared = prepareAnthropicMessagesWebSearchForTarget(facts);
     const errorAnswer = (status: number, body: unknown): GenerateAnswer => ({
-      'response.http': jsonHttpResponse(status, body, env.clock()),
+      ...gatewayAnswer(env, jsonHttpResponse(status, body, env.clock())),
       'response.anthropicMessages': undefined,
-      ...emptyUsageFacts(env),
     });
     if (prepared.type === 'invalid-request') return errorAnswer(400, invalidWebSearchRequest(prepared.message));
     if (prepared.state.mode === 'inactive') return await next(facts);

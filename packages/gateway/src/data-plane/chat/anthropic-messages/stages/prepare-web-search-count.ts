@@ -1,7 +1,7 @@
 import type { AnthropicMessagesTargetRequest } from './facts.ts';
 import { invalidWebSearchRequest, prepareAnthropicMessagesWebSearchForTarget } from './web-search-protocol.ts';
+import { answerKeys, gatewayAnswer } from '../../../pipeline/answer.ts';
 import { jsonHttpResponse } from '../../../pipeline/edge-http.ts';
-import { emptyUsageFacts, usageResponseKeys } from '../../../pipeline/observe-usage.ts';
 import type { AnthropicMessagesCountBodyOutput } from '../body.ts';
 import { defineStage } from '@floway-dev/pipeline';
 
@@ -18,14 +18,13 @@ export const prepareWebSearchCount = defineStage<Request, Request, Response, Res
     },
     response: { needs: [], consumes: [], provides: [] },
   },
-  return: { provides: ['response.http', 'response.targetApi', ...usageResponseKeys] },
+  return: { provides: [...answerKeys, 'response.targetApi'] },
   execute: async (facts, next, env) => {
     const prepared = prepareAnthropicMessagesWebSearchForTarget(facts);
     if (prepared.type === 'invalid-request') {
       return {
-        'response.http': jsonHttpResponse(400, invalidWebSearchRequest(prepared.message), env.clock()),
+        ...gatewayAnswer(env, jsonHttpResponse(400, invalidWebSearchRequest(prepared.message), env.clock())),
         'response.targetApi': 'anthropicMessages',
-        ...emptyUsageFacts(env),
       };
     }
     return await next({ ...facts, 'request.anthropicMessages': prepared.payload });
