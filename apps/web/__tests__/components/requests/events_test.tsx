@@ -8,17 +8,17 @@ import { renderInApp } from '../../render';
 
 const events: StreamFrameEntry[] = Array.from({ length: 120 }, (_, i) => ({
   ts: i * 15,
-  ...(i === 0 ? {} : { deltaMs: 15 }),
-  frame: {
-    type: 'event', event: {
+  deltaMs: i === 0 ? 0 : 15,
+  sse: {
+    type: 'sse', data: JSON.stringify({
       id: 'demo', object: 'chat.completion.chunk', created: 1, model: 'm',
       choices: [{  index: 0, delta: { content: i === 99 ? 'needle <script>alert(1)</script>' : `chunk ${i + 1}` }, finish_reason: null }],
-    },
+    }),
   },
 }));
-events.push({ ts: 1800, frame: { type: 'done' } });
+events.push({ ts: 1800, deltaMs: 15, sse: { type: 'sse', data: '[DONE]' } });
 
-const renderEvents = () => renderInApp(<EventList events={events} kind="openai-chat-completions" toolbarStart={<span>View selector</span>} />);
+const renderEvents = () => renderInApp(<EventList events={events} toolbarStart={<span>View selector</span>} />);
 
 describe('per-event view', () => {
 
@@ -38,7 +38,7 @@ describe('per-event view', () => {
   });
 
   it('shows the delta beside the absolute timestamp', () => {
-    renderInApp(<EventList events={events.slice(0, 2)} kind="openai-chat-completions" toolbarStart={<span>View selector</span>} />);
+    renderInApp(<EventList events={events.slice(0, 2)} toolbarStart={<span>View selector</span>} />);
     expect(screen.getByText('Δ15ms')).toBeTruthy();
   });
 });

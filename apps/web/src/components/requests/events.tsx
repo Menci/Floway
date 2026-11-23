@@ -2,7 +2,7 @@ import { ChevronDownRegular, ChevronRightRegular, DismissRegular, MoreHorizontal
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { List, useDynamicRowHeight, type ListImperativeAPI, type RowComponentProps } from 'react-window';
 
-import { renderStreamEvents, streamEventsCopyText, type CollectKind, type RenderedStreamEvent, type StreamFrameEntry } from './stream-render';
+import { renderStreamEvents, streamEventsCopyText, type RenderedStreamEvent, type StreamFrameEntry } from './stream-render';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
 import { CodeBlock } from '../ui/code-block';
@@ -40,14 +40,14 @@ function EventRow({ index, style, ariaAttributes, events, collapsed, toggle, wra
       header={<div className="flex flex-wrap items-center gap-2 min-w-0 flex-1">
         <Button appearance="subtle" size="small" icon={closed ? <ChevronRightRegular /> : <ChevronDownRegular />} aria-expanded={!closed} onClick={() => toggle(event.index)}>{label}</Button>
         <Text size={100} className="font-mono text-fui-fg3">+{event.timestamp.toFixed(event.timestamp < 1 ? 3 : 0)}ms</Text>
-        {event.deltaMs !== undefined && event.index > 0 && <Text size={100} className="font-mono text-fui-fg3">Δ{event.deltaMs.toFixed(event.deltaMs < 1 ? 3 : 0)}ms</Text>}
+        {event.index > 0 && <Text size={100} className="font-mono text-fui-fg3">Δ{event.deltaMs.toFixed(event.deltaMs < 1 ? 3 : 0)}ms</Text>}
         {event.parseError && <Text size={100}>{t('requests.eventParseError')}</Text>}
       </div>}
     />
   </div>;
 }
 
-export function EventList({ events, kind, toolbarStart }: { events: readonly StreamFrameEntry[]; kind: CollectKind | null; toolbarStart: ReactNode }) {
+export function EventList({ events, toolbarStart }: { events: readonly StreamFrameEntry[]; toolbarStart: ReactNode }) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -58,7 +58,7 @@ export function EventList({ events, kind, toolbarStart }: { events: readonly Str
   const { hostProps } = useScrollAreaHost({ axes: 'vertical', noTabIndex: true, viewport: list?.element ?? null });
   const { copy, outcomeFor } = useCopyToClipboard();
   const copyLabel = useCopyLabel();
-  const rendered = useMemo(() => renderStreamEvents(kind, events).map((event, index) => ({ ...event, index })), [events, kind]);
+  const rendered = useMemo(() => renderStreamEvents(events).map((event, index) => ({ ...event, index })), [events]);
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     return needle ? rendered.filter(event => `${event.index + 1} ${event.event ?? ''} ${event.text}`.toLocaleLowerCase().includes(needle)) : rendered;
@@ -80,7 +80,7 @@ export function EventList({ events, kind, toolbarStart }: { events: readonly Str
       <div className="min-w-0">{toolbarStart}</div>
       <div className="ml-auto flex items-center gap-2 shrink-0">
         <TooltipIconButton icon={<SearchRegular />} label={t('requests.findEvents')} onClick={() => { setSearchOpen(true); requestAnimationFrame(() => inputRef.current?.focus()); }} />
-        <TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('common.copy.action'))} onClick={() => copy(streamEventsCopyText(kind, events))} />
+        <TooltipIconButton icon={copyOutcomeIcon(outcomeFor())} label={copyLabel(outcomeFor(), t('common.copy.action'))} onClick={() => copy(streamEventsCopyText(events))} />
         <Menu checkedValues={{ wrap: wrap ? ['on'] : [] }} onCheckedValueChange={(_, data) => setWrap(data.checkedItems.includes('on'))}>
           <MenuTrigger disableButtonEnhancement><Button appearance="subtle" size="small" icon={<MoreHorizontalRegular />} aria-label={t('requests.eventOptions')} /></MenuTrigger>
           <MenuPopover><MenuList>

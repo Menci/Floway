@@ -289,7 +289,7 @@ export function WireView({ artifact, isLiveStreaming, onInspectStage }: WireView
     <div className={`${PANEL_BAND_CLASS} flex flex-wrap items-center gap-2 min-w-0 shrink-0 border-b border-b-solid border-b-[var(--winui-divider-stroke-default)]`}>{toolbar}</div>
     <div className="flex-1 min-h-0">
       {availableView === 'events'
-        ? <EventList events={streamFrames} kind={kind} toolbarStart={warnings} />
+        ? <EventList events={streamFrames} toolbarStart={warnings} />
         : availableView === 'raw' && raw !== null
           ? <div className="h-full min-h-0 flex flex-col">
               {warnings && <div className="p-3">{warnings}</div>}

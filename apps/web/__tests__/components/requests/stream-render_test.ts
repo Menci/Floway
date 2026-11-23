@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
-import { detectCollectKind, extractRawWireBytes, extractWireStreamFrames, renderStreamEvents, streamEventsCopyText, type StreamFrameEntry } from '../../../src/components/requests/stream-render';
+import { collectStream, detectCollectKind, extractRawWireBytes, extractWireStreamFrames, renderStreamEvents, streamEventsCopyText, type StreamFrameEntry } from '../../../src/components/requests/stream-render';
 import type { ProjectedWireResponse } from '@floway-dev/dump/browser';
 import { createDumpDecoder, isDecodedStreamRef } from '@floway-dev/dump/browser';
 import { Bytes } from '@floway-dev/pipeline/browser';
 
-const event = (frame: StreamFrameEntry['frame'], ts = 1): StreamFrameEntry => ({ frame, ts });
+const event = (sse: StreamFrameEntry['sse'], ts = 1, deltaMs = 0): StreamFrameEntry => ({ sse, ts, deltaMs });
 
 describe('GenerateContent bare errors', () => {
   const error = { error: { code: 500, status: 'INTERNAL', message: 'failure' } };
   it('copies the bare JSON error after normal SSE chunks', () => {
     const chunk = { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'partial' }] } }] };
-    expect(streamEventsCopyText('gemini-generate-content', [event({ type: 'event', event: chunk }), event({ type: 'event', event: error })])).toBe(`data: ${JSON.stringify(chunk)}\n\n${JSON.stringify(error)}`);
+    expect(streamEventsCopyText([event({ type: 'sse', data: JSON.stringify(chunk) }), event({ type: 'sse-raw', data: JSON.stringify(error) })]))
+      .toBe(`data: ${JSON.stringify(chunk)}\n\n${JSON.stringify(error)}`);
   });
 });
 
@@ -33,21 +34,27 @@ describe('wire stream extraction', () => {
     };
     const frames = extractWireStreamFrames(responseWithSse);
     expect(frames).toHaveLength(2);
-    expect(frames[0]?.frame).toEqual({ type: 'event', event: { text: 'hello' } });
-    expect(frames[1]?.frame).toEqual({ type: 'done' });
+    expect(frames[0]?.sse).toEqual({ type: 'sse', event: 'delta', data: '{"text":"hello"}' });
+    expect(frames[1]?.sse).toMatchObject({ type: 'sse', data: '[DONE]' });
     expect(frames.map(({ ts, deltaMs }) => [ts, deltaMs])).toEqual([[7, 0], [9, 2]]);
-    expect(renderStreamEvents(null, frames)[0]).toMatchObject({ event: 'delta', text: '{\n  "text": "hello"\n}', parseError: null });
-    expect(streamEventsCopyText(null, frames)).toBe('event: delta\ndata: {"text":"hello"}\n\ndata: [DONE]\n');
+    expect(renderStreamEvents(frames)[0]).toMatchObject({ event: 'delta', text: '{\n  "text": "hello"\n}', parseError: null });
+    expect(streamEventsCopyText(frames)).toBe('event: delta\ndata: {"text":"hello"}\n\ndata: [DONE]\n');
     expect(extractRawWireBytes(responseWithSse)).not.toBeNull();
     expect(new TextDecoder().decode(extractRawWireBytes(responseWithSse)!)).toContain(': keepalive\n\ndata: [DONE]');
   });
 
   it('renders generic SSE frames and records per-frame deltas', () => {
-    const frames = [event({ type: 'event', event: { hello: 'world' } }, 4), event({ type: 'done' }, 10)];
-    expect(renderStreamEvents(null, frames)).toEqual([
-      { event: null, text: '{\n  "hello": "world"\n}', parseError: null, timestamp: 4 },
-      { event: '[DONE]', text: '[DONE]', parseError: null, timestamp: 10 },
+    const frames = [event({ type: 'sse', data: '{"hello":"world"}' }, 4), event({ type: 'sse', data: '[DONE]' }, 10, 6)];
+    expect(renderStreamEvents(frames)).toEqual([
+      { event: null, text: '{\n  "hello": "world"\n}', parseError: null, timestamp: 4, deltaMs: 0 },
+      { event: '[DONE]', text: '[DONE]', parseError: null, timestamp: 10, deltaMs: 6 },
     ]);
+  });
+
+  it('collects an exhausted Gemini stream without a synthetic done frame', async () => {
+    const chunk = { candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'hello' }] }, finishReason: 'STOP' }] };
+    const completed = await collectStream('gemini-generate-content', [event({ type: 'sse', data: JSON.stringify(chunk) })], true);
+    expect(completed).toMatchObject({ result: chunk, truncated: false, error: null });
   });
 
   it('detects each supported protocol from its path', () => {

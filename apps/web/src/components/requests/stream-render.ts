@@ -1,19 +1,13 @@
 import { contentTypeOf } from './body-render';
-import { sanitizeDecodedForJson } from './format-value';
 import { errorMessage } from '../../lib/error-message';
 import type { DecodedStreamNode, ProjectedWireResponse } from '@floway-dev/dump/browser';
 import { Bytes } from '@floway-dev/pipeline/browser';
 import {
-  anthropicMessagesProtocolFrameToSSEFrame,
   collectAnthropicMessagesProtocolEventsToResult,
   collectGeminiGenerateContentProtocolEventsToResult,
   collectOpenAIChatCompletionsProtocolEventsToResult,
   collectOpenAIResponsesProtocolEventsToResult,
   createSSEFrameParser,
-  geminiGenerateContentProtocolFrameToSSEFrame,
-  openaiChatCompletionsProtocolFrameToSSEFrame,
-  openaiCompletionsProtocolFrameToSSEFrame,
-  openaiResponsesProtocolFrameToSSEFrame,
   reassembleOpenAICompletionsEvents,
   type GeminiGenerateContentStreamEvent,
   type OpenAICompletionsStreamEvent,
@@ -25,11 +19,9 @@ import {
 export type CollectKind = 'openai-completions' | 'openai-chat-completions' | 'anthropic-messages' | 'openai-responses' | 'gemini-generate-content';
 
 export interface StreamFrameEntry {
-  readonly frame: ProtocolFrame<unknown>;
+  readonly sse: SseFrame | SseRawFrame;
   readonly ts: number;
-  readonly deltaMs?: number;
-  readonly sseEvent?: string;
-  readonly capturedSse?: SseFrame | SseRawFrame;
+  readonly deltaMs: number;
 }
 
 export interface CollectedStream {
@@ -43,7 +35,7 @@ export interface RenderedStreamEvent {
   text: string;
   parseError: string | null;
   timestamp: number;
-  deltaMs?: number;
+  deltaMs: number;
 }
 
 export const detectCollectKind = (path: string): CollectKind | null => {
@@ -59,8 +51,7 @@ export const detectCollectKind = (path: string): CollectKind | null => {
   return null;
 };
 
-// The upstream view uses meta.targetApi, stamped by dump completion, because
-// meta.path identifies the client protocol.
+// The recorded target protocol covers upstream paths that carry no protocol name.
 export const collectKindFromTargetApi = (api: string | null | undefined): CollectKind | null => {
   if (api === 'anthropicMessages') return 'anthropic-messages';
   if (api === 'geminiGenerateContent') return 'gemini-generate-content';
@@ -78,15 +69,8 @@ const parseSseFrames = (stream: DecodedStreamNode): StreamFrameEntry[] => {
   const decoder = new TextDecoder();
   const entries: StreamFrameEntry[] = [];
   let timestamp = stream.createdAtMs;
-  const parser = createSSEFrameParser(capturedSse => {
-    const text = capturedSse.data;
-    let frame: ProtocolFrame<unknown> = { type: 'done' };
-    if (text.trim() !== '[DONE]') {
-      let payload: unknown = text;
-      try { payload = JSON.parse(text) as unknown; } catch { /* Raw payloads remain visible. */ }
-      frame = { type: 'event', event: payload };
-    }
-    entries.push({ frame, ts: timestamp, deltaMs: timestamp - (entries.at(-1)?.ts ?? timestamp), capturedSse });
+  const parser = createSSEFrameParser(sse => {
+    entries.push({ sse, ts: timestamp, deltaMs: timestamp - (entries.at(-1)?.ts ?? timestamp) });
   });
   for (const frame of stream.frames) {
     timestamp = frame.tMs;
@@ -104,17 +88,20 @@ export const extractRawWireBytes = (response: ProjectedWireResponse | null): Uin
   response?.body instanceof Bytes ? response.body.toUint8Array()
     : response?.stream?.frames.length ? Bytes.concat(response.stream.frames.map(frame => bytesFrame(frame.value))).toUint8Array() : null;
 
-export const streamEndedCleanly = (events: readonly StreamFrameEntry[]): boolean =>
-  events.at(-1)?.frame.type === 'done';
-
 const complete = (result: unknown, ended: boolean): CollectedStream =>
   ({ result, error: null, truncated: !ended });
 
 const frames = async function* (events: readonly StreamFrameEntry[]): AsyncGenerator<ProtocolFrame<unknown>> {
-  for (const event of events) yield event.frame;
+  for (const { sse } of events) {
+    if (sse.type === 'sse' && sse.data.trim() === '[DONE]') {
+      yield { type: 'done' };
+    } else {
+      yield { type: 'event', event: JSON.parse(sse.data) as unknown };
+    }
+  }
 };
 
-export const collectStream = async (kind: CollectKind, events: readonly StreamFrameEntry[], ended = streamEndedCleanly(events)): Promise<CollectedStream> => {
+export const collectStream = async (kind: CollectKind, events: readonly StreamFrameEntry[], ended: boolean): Promise<CollectedStream> => {
   try {
     switch (kind) {
     case 'openai-chat-completions':
@@ -127,7 +114,7 @@ export const collectStream = async (kind: CollectKind, events: readonly StreamFr
       return complete(await collectGeminiGenerateContentProtocolEventsToResult(frames(events) as AsyncIterable<ProtocolFrame<GeminiGenerateContentStreamEvent>>), ended);
     case 'openai-completions': {
       const stream = (async function* () {
-        for (const { frame } of events) {
+        for await (const frame of frames(events)) {
           const typed = frame as ProtocolFrame<OpenAICompletionsStreamEvent>;
           if (typed.type === 'event') yield typed.event;
         }
@@ -140,49 +127,22 @@ export const collectStream = async (kind: CollectKind, events: readonly StreamFr
   }
 };
 
-export const renderStreamEvents = (kind: CollectKind | null, events: readonly StreamFrameEntry[]): RenderedStreamEvent[] => {
-  return events.map(({ frame, ts, deltaMs, sseEvent, capturedSse }) => {
-    const sse = capturedSse ?? frameToSse(kind, frame, sseEvent);
-    const timing = deltaMs === undefined ? {} : { deltaMs };
-    if (!sse) return { event: null, text: '', parseError: null, timestamp: ts, ...timing };
+export const renderStreamEvents = (events: readonly StreamFrameEntry[]): RenderedStreamEvent[] => {
+  return events.map(({ sse, ts, deltaMs }) => {
     const event = sse.type === 'sse' ? sse.event ?? null : null;
-    if (frame.type === 'done') return { event: event ?? '[DONE]', text: sse.data, parseError: null, timestamp: ts, ...timing };
+    if (sse.type === 'sse' && sse.data.trim() === '[DONE]')
+      return { event: event ?? '[DONE]', text: sse.data, parseError: null, timestamp: ts, deltaMs };
     try {
-      return { event, text: JSON.stringify(JSON.parse(sse.data) as unknown, null, 2), parseError: null, timestamp: ts, ...timing };
+      return { event, text: JSON.stringify(JSON.parse(sse.data) as unknown, null, 2), parseError: null, timestamp: ts, deltaMs };
     } catch (error) {
-      return { event, text: sse.data, parseError: errorMessage(error), timestamp: ts, ...timing };
+      return { event, text: sse.data, parseError: errorMessage(error), timestamp: ts, deltaMs };
     }
   });
 };
 
-export const streamEventsCopyText = (kind: CollectKind | null, events: readonly StreamFrameEntry[]): string => {
-  return events.map(({ frame, sseEvent, capturedSse }) => {
-    const sse = capturedSse ?? frameToSse(kind, frame, sseEvent);
-    if (!sse) return '';
+export const streamEventsCopyText = (events: readonly StreamFrameEntry[]): string => {
+  return events.map(({ sse }) => {
     if (sse.type === 'sse-raw') return sse.data;
     return `${sse.event ? `event: ${sse.event}\n` : ''}${sse.data.split('\n').map(line => `data: ${line}\n`).join('')}`;
-  }).filter(Boolean).join('\n');
-};
-
-const withFallbackEvent = (sse: SseFrame | SseRawFrame | null, sseEvent?: string): SseFrame | SseRawFrame | null =>
-  sse?.type === 'sse' && sse.event === undefined && sseEvent !== undefined ? { ...sse, event: sseEvent } : sse;
-
-const frameToSse = (kind: CollectKind | null, frame: ProtocolFrame<unknown>, sseEvent?: string): SseFrame | SseRawFrame | null => {
-  try {
-    switch (kind) {
-    case 'openai-chat-completions': return withFallbackEvent(openaiChatCompletionsProtocolFrameToSSEFrame(frame as never, { includeUsageChunk: true }), sseEvent);
-    case 'openai-completions': return withFallbackEvent(openaiCompletionsProtocolFrameToSSEFrame(frame as never), sseEvent);
-    case 'anthropic-messages': return withFallbackEvent(anthropicMessagesProtocolFrameToSSEFrame(frame as never), sseEvent);
-    case 'openai-responses': return withFallbackEvent(openaiResponsesProtocolFrameToSSEFrame(frame as never), sseEvent);
-    case 'gemini-generate-content': return withFallbackEvent(geminiGenerateContentProtocolFrameToSSEFrame(frame as never), sseEvent);
-    default:
-      if (frame.type === 'done') return withFallbackEvent({ type: 'sse', data: '[DONE]' }, sseEvent);
-      return withFallbackEvent({
-        type: 'sse',
-        data: typeof frame.event === 'string' ? frame.event : JSON.stringify(sanitizeDecodedForJson(frame.event)),
-      }, sseEvent);
-    }
-  } catch (error) {
-    return { type: 'sse', event: 'serialize_error', data: errorMessage(error) };
-  }
+  }).join('\n');
 };

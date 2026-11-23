@@ -19,7 +19,7 @@ const decodedBytes = (value: Bytes): unknown => {
   }
 };
 
-export const sanitizeDecodedForJson = (value: unknown): unknown => {
+const sanitizeDecodedForJson = (value: unknown): unknown => {
   const ancestors = new WeakSet<object>();
   const visit = (candidate: unknown): unknown => {
     if (isDecodedSecret(candidate)) {
