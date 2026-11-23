@@ -203,10 +203,10 @@ export const completeResponseResource = (
 // validates too. The narrowed yield type propagates the guarantee, so a stage
 // inserted between this one and a client-facing exit must preserve it or fail
 // to compile.
-export const wrapResponseResourceCompletion = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+export const wrapResponseResourceCompletion = async function* <Control extends { readonly type: 'control' } = never>(
+  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx> | NoInfer<Control>>,
   sources: ResponseResourceSources,
-): AsyncGenerator<ProtocolFrame<ClientOpenAIResponsesStreamEvent>> {
+): AsyncGenerator<ProtocolFrame<ClientOpenAIResponsesStreamEvent> | Control> {
   for await (const frame of frames) {
     if (frame.type !== 'event') {
       yield frame;

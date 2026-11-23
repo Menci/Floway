@@ -15,15 +15,21 @@ import type { OpenAIResponsesStatefulStore } from '../items/store.ts';
 import { OPENAI_RESPONSES_REASONING_INCLUDED_HEADER, OPENAI_RESPONSES_REASONING_INCLUDED_VALUE } from '../response-headers.ts';
 import { createOpenAIResponsesResponseId } from '../response-id.ts';
 import { wrapResponseResourceCompletion } from '../response-resource.ts';
-import { defineStage, type StageEnv } from '@floway-dev/pipeline';
+import type { WebSocketInterrupt, WebSocketInterruptAccepted } from '../websocket-wire.ts';
+import { defineStage, type ManagedStream, type StageEnv } from '@floway-dev/pipeline';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 
 type Request = DeliveryFacts<ResponsesDelivery> & {
   readonly 'request.openaiResponses': CanonicalOpenAIResponsesPayload;
+  readonly 'request.ws.controls'?: ManagedStream<WebSocketInterrupt>;
+  readonly 'request.ws.responseId'?: string;
 };
-export type ResponsesTurnBack = Omit<ResponsesBodyBack, 'response.openaiResponses'> & Partial<Pick<ResponsesBodyBack, 'response.openaiResponses'>> &
-  Partial<Pick<SelectedAttemptResponse, 'response.route.candidate'>>;
+type ControlFrame = { readonly type: 'control' };
+export type ResponsesTurnBack<Control extends ControlFrame = never> = Omit<ResponsesBodyBack, 'response.openaiResponses'> &
+  Partial<Pick<SelectedAttemptResponse, 'response.route.candidate'>> & {
+    readonly 'response.openaiResponses'?: ManagedStream<ProtocolFrame<OpenAIResponsesStreamEventEx> | Control>;
+  };
 
 const previousNotFound = (id: string) => ({
   error: {
@@ -34,7 +40,7 @@ const previousNotFound = (id: string) => ({
   },
 });
 
-export const prepareResponsesTurn = async (
+const prepareResponsesTurn = async (
   original: CanonicalOpenAIResponsesPayload, store: OpenAIResponsesStatefulStore, env: StageEnv,
 ): Promise<{ readonly payload: CanonicalOpenAIResponsesPayload } | { readonly failure: ResponsesTurnBack }> => {
   const errorResponse = (status: number, body: unknown) => ({
@@ -59,22 +65,26 @@ export const prepareResponsesTurn = async (
   return { payload: hydrated };
 };
 
-export const persistResponsesEvents = (
-  source: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+const persistResponsesEvents = <Control extends ControlFrame>(
+  source: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx> | Control>,
   store: OpenAIResponsesStatefulStore,
   responseId: string,
   original: CanonicalOpenAIResponsesPayload,
   delivery: ResponsesDelivery,
-) => wrapResponseResourceCompletion(
-  wrapOpenAIResponsesClientOutput(source, { store, responseId }), {
+) => wrapResponseResourceCompletion<Control>(
+  wrapOpenAIResponsesClientOutput<Control>(source, { store, responseId }), {
     request: original, createdAt: delivery.createdAt, stored: store.writesState,
   },
 );
 
 type StoreServices = Pick<GatewayServices, 'responsesStore'>;
-type ProjectTurn<S> = (response: ResponsesTurnBack, request: Request, store: OpenAIResponsesStatefulStore, env: StageEnv<S>) => ResponsesTurnBack;
+type ProjectTurn<S, Control extends ControlFrame> = (
+  response: ResponsesTurnBack<Control>, request: Request, store: OpenAIResponsesStatefulStore, env: StageEnv<S>,
+) => ResponsesTurnBack<Control>;
 
-const createStatefulTurn = <S extends StoreServices>(project: ProjectTurn<S>) => defineStage<Request, Request, ResponsesTurnBack, ResponsesTurnBack, S>({
+const createStatefulTurn = <S extends StoreServices, Control extends ControlFrame = never>(
+  project: ProjectTurn<S, Control>,
+) => defineStage<Request, Request, ResponsesTurnBack<Control>, ResponsesTurnBack<Control>, S>({
   name: 'statefulTurn',
   through: {
     request: { needs: ['request.openaiResponses', 'request.delivery'], consumes: [], provides: ['request.openaiResponses'] },
@@ -84,25 +94,34 @@ const createStatefulTurn = <S extends StoreServices>(project: ProjectTurn<S>) =>
   execute: async (facts, next, env) => {
     const original = facts['request.openaiResponses'];
     const store = env.services.responsesStore({ kind: 'http', store: original.store ?? undefined });
-    const prepared = await prepareResponsesTurn(original, store, env);
-    if ('failure' in prepared) return prepared.failure;
+    const closeControls = async () => {
+      if (!env.signal.aborted) await facts['request.ws.controls']?.close();
+    };
+    const prepared = await prepareResponsesTurn(original, store, env).catch(async (error: unknown) => {
+      await closeControls();
+      throw error;
+    });
+    if ('failure' in prepared) {
+      await closeControls();
+      return prepared.failure;
+    }
 
     const response = await next({ ...facts, 'request.openaiResponses': prepared.payload });
     return project(response, facts, store, env);
   },
 });
 
-export const statefulTurn = createStatefulTurn((response, request, store, env) => {
+export const statefulTurn = createStatefulTurn<StoreServices, WebSocketInterruptAccepted>((response, request, store, env) => {
   const events = response['response.openaiResponses'];
   if (events === undefined) {
     if (response['response.result'] !== undefined) throw new Error('A generation returned an OpenAI Responses compact result');
     return { ...response, 'response.openaiResponses': undefined };
   }
   const http = response['response.http'];
-  const responseId = createOpenAIResponsesResponseId();
+  const responseId = request['request.ws.responseId'] ?? createOpenAIResponsesResponseId();
   return {
     ...response,
-    'response.http': {
+    'response.http': request['request.delivery'].transport === 'websocket' ? http : {
       ...http,
       headers: [...http.headers.filter(([name]) => name.toLowerCase() !== OPENAI_RESPONSES_REASONING_INCLUDED_HEADER),
         [OPENAI_RESPONSES_REASONING_INCLUDED_HEADER, OPENAI_RESPONSES_REASONING_INCLUDED_VALUE]],
@@ -122,7 +141,7 @@ export const compactStatefulTurn = createStatefulTurn<Pick<GatewayServices, 'aff
       ...response,
       'response.openaiResponses': env.wrapStream(events, {
         label: 'stored OpenAI Responses compact events',
-        transform: source => wrapOpenAIResponsesClientOutput(source, { store, responseId }),
+        transform: source => wrapOpenAIResponsesClientOutput<never>(source, { store, responseId }),
       }),
     };
   }
@@ -137,7 +156,7 @@ export const compactStatefulTurn = createStatefulTurn<Pick<GatewayServices, 'aff
     ...response,
     'response.openaiResponses': env.createStream({
       label: 'stored OpenAI Responses compact result',
-      iterate: () => wrapOpenAIResponsesClientOutput(wrapOpenAIResponsesAffinityEgress(syntheticEventsFromCompaction(compact), options), { store, responseId }),
+      iterate: () => wrapOpenAIResponsesClientOutput<never>(wrapOpenAIResponsesAffinityEgress(syntheticEventsFromCompaction(compact), options), { store, responseId }),
     }),
   };
 });

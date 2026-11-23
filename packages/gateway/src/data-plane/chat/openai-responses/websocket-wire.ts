@@ -1,14 +1,14 @@
+import type { ResponsesTurnBack } from './stages/stateful-turn.ts';
 import type { HttpDelivery, HttpDeliveryFacts, HttpOutput } from '../../pipeline/edge-http.ts';
 import { header, readHttpBytes } from '../../pipeline/non-chat.ts';
 import { failedRender, type RenderFacts, type RenderOutcome } from '../../pipeline/render.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../shared/sse.ts';
-import { Bytes, type ManagedStream, snapshotError, type StageEnv, type StreamEnd } from '@floway-dev/pipeline';
+import { Bytes, defineStage, type ManagedStream, snapshotError, type StageEnv, type StreamEnd } from '@floway-dev/pipeline';
 import { isJsonMediaType, isJsonObject, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   type ClientOpenAIResponsesStreamEvent,
   isOpenAIResponsesTerminalEvent,
   OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE,
-  type OpenAIResponsesStreamEventEx,
 } from '@floway-dev/protocols/openai-responses';
 import { internalDebugErrorFields, toInternalDebugError } from '@floway-dev/provider';
 
@@ -40,6 +40,12 @@ export interface WebSocketInterrupt {
   readonly event_id: string | undefined;
 }
 
+export interface WebSocketInterruptAccepted {
+  readonly type: 'control';
+  readonly interrupt: WebSocketInterrupt;
+}
+
+type Frame = ProtocolFrame<ClientOpenAIResponsesStreamEvent> | WebSocketInterruptAccepted;
 type WebSocketFrame = ReturnType<typeof webSocketError> | ClientOpenAIResponsesStreamEvent;
 export type WebSocketEncodedTurn = HttpOutput & RenderFacts & HttpDeliveryFacts;
 
@@ -66,18 +72,8 @@ const decodeApiError = async (http: HttpOutput['response.http']) => {
   }, header(http.headers, 'retry-after'));
 };
 
-interface StreamTurn {
-  readonly events: ManagedStream<ProtocolFrame<OpenAIResponsesStreamEventEx>>;
-  readonly controls: ManagedStream<WebSocketInterrupt>;
-  readonly persist: (
-    source: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>, signal: AbortSignal,
-  ) => AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>;
-  readonly startInterrupt: () => boolean;
-  readonly cancelGeneration: () => void;
-}
-
-export const encodeWebSocketTurn = async (
-  env: StageEnv, http: HttpOutput['response.http'], eventId: string | undefined, turn?: StreamTurn,
+const encodeWebSocketResponse = async (
+  env: StageEnv, http: HttpOutput['response.http'], eventId: string | undefined, events: ManagedStream<Frame> | undefined,
 ): Promise<WebSocketEncodedTurn> => {
   let outcome: RenderOutcome = { kind: 'completed' };
   const onClose = (end: StreamEnd) => {
@@ -88,11 +84,15 @@ export const encodeWebSocketTurn = async (
       ? { kind: end.how === 'exhausted' ? 'completed' : 'client-cancelled', endedAt }
       : { kind: 'write-failed', endedAt, error: snapshotError(failure) });
   };
-  const frames = async function* (source: AsyncIterable<ProtocolFrame<ClientOpenAIResponsesStreamEvent>>, signal: AbortSignal) {
+  const frames = async function* (source: AsyncIterable<Frame>, signal: AbortSignal) {
     let terminal: ClientOpenAIResponsesStreamEvent | undefined;
     try {
       for await (const frame of source) {
-        if (frame.type !== 'event' || terminal !== undefined) continue;
+        if (terminal !== undefined || frame.type === 'done') continue;
+        if (frame.type === 'control') {
+          yield frame;
+          continue;
+        }
         const event = frame.event;
         if (event.type === 'error' || event.type === 'response.failed') outcome = failedRender('protocol-error');
         if (isOpenAIResponsesTerminalEvent(event)) terminal = event;
@@ -116,15 +116,13 @@ export const encodeWebSocketTurn = async (
     }
   };
   let stream: ManagedStream<Bytes>;
-  if (turn === undefined) {
+  if (events === undefined) {
     const error = encodeWebSocketFrame(await decodeApiError(http), eventId);
     stream = env.createStream({ label: 'Responses WebSocket error', async *iterate() { yield error; }, onClose });
   } else {
-    stream = env.wrapStream({ generation: turn.events, controls: turn.controls }, {
+    stream = env.wrapStream(events, {
       label: 'Responses WebSocket frames',
-      transform({ generation, controls }, signal) {
-        return encodeFrames(frames(turn.persist(generation, signal), signal), controls, eventId, signal, turn);
-      },
+      transform: (source, signal) => encodeFrames(frames(source, signal), eventId, signal),
       onClose,
     });
   }
@@ -136,6 +134,26 @@ export const encodeWebSocketTurn = async (
     'response.delivery': delivery.deferred,
   };
 };
+
+type Back = Omit<ResponsesTurnBack, 'response.openaiResponses'>;
+type Source = Back & { readonly 'response.openaiResponses': ManagedStream<Frame> | undefined };
+interface Request { readonly 'request.ws.eventId': string | undefined }
+
+export const encodeWebSocketTurn = defineStage<Request, object, Source, Back & WebSocketEncodedTurn>({
+  name: 'encode',
+  through: {
+    request: { needs: ['request.ws.eventId'], consumes: ['request.ws.eventId'], provides: [] },
+    response: {
+      needs: ['response.http', 'response.openaiResponses'],
+      consumes: ['response.openaiResponses'],
+      provides: ['response.http', 'response.render', 'response.delivery'],
+    },
+  },
+  execute: async ({ 'request.ws.eventId': eventId, ...facts }, next, env) => {
+    const { 'response.openaiResponses': events, ...back } = await next(facts);
+    return { ...back, ...await encodeWebSocketResponse(env, back['response.http'], eventId, events) };
+  },
+});
 
 // Keep-alives and interrupt acknowledgements occupy the same sequence as the
 // upstream events. Each number is assigned at send time, in wire order.
@@ -159,19 +177,15 @@ const createWebSocketSequence = () => {
   };
 };
 
-type Read = { readonly kind: 'event'; readonly result: IteratorResult<WebSocketFrame> }
-  | { readonly kind: 'control'; readonly result: IteratorResult<WebSocketInterrupt> }
+type Read = { readonly kind: 'event'; readonly result: IteratorResult<WebSocketFrame | WebSocketInterruptAccepted> }
   | { readonly kind: 'error'; readonly error: unknown };
 
 const encodeFrames = async function* (
-  source: AsyncIterable<WebSocketFrame>,
-  controls: AsyncIterable<WebSocketInterrupt>,
+  source: AsyncIterable<WebSocketFrame | WebSocketInterruptAccepted>,
   eventId: string | undefined,
   signal: AbortSignal,
-  turn: Pick<StreamTurn, 'startInterrupt' | 'cancelGeneration'>,
 ) {
   const events = source[Symbol.asyncIterator]();
-  const control = controls[Symbol.asyncIterator]();
   const sequence = createWebSocketSequence();
   let streamed = false;
   const ready: Read[] = [];
@@ -201,10 +215,6 @@ const encodeFrames = async function* (
   signal.addEventListener('abort', onAbort, { once: true });
   try {
     readEvent();
-    void control.next().then(
-      result => receive({ kind: 'control', result }),
-      (error: unknown) => receive({ kind: 'error', error }),
-    );
     while (!signal.aborted) {
       if (ready.length === 0) await wait();
       if (signal.aborted) return;
@@ -213,15 +223,16 @@ const encodeFrames = async function* (
         if (streamed) yield encodeWebSocketFrame(sequence.keepAlive(), eventId);
       } else if (next.kind === 'error') {
         throw next.error;
-      } else if (next.kind === 'control') {
-        if (!next.result.done && turn.startInterrupt()) {
-          yield encodeWebSocketFrame(sequence.interruptAccepted(next.result.value.response_id), next.result.value.event_id);
-          turn.cancelGeneration();
-        }
       } else {
         if (next.result.done) return;
-        streamed = true;
-        yield encodeWebSocketFrame(sequence.renumber(next.result.value), eventId);
+        const frame = next.result.value;
+        if (frame.type === 'control') {
+          const { response_id: responseId, event_id: interruptId } = frame.interrupt;
+          yield encodeWebSocketFrame(sequence.interruptAccepted(responseId), interruptId);
+        } else {
+          streamed = true;
+          yield encodeWebSocketFrame(sequence.renumber(frame), eventId);
+        }
         readEvent();
       }
     }
