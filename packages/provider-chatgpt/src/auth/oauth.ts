@@ -52,7 +52,7 @@ export const buildChatGPTAuthorizeUrl = (input: { state: string; codeChallenge: 
 // from generic OAuth 4xx so callers can react to session-termination
 // separately from a transient upstream message. `code` carries the raw OAuth
 // `error` value (`invalid_grant`, `app_session_terminated`, etc.) so the
-// refresh-race recovery in the access-token module can single out
+// refresh-race recovery in the ChatGPT service can single out
 // `invalid_grant` — the only terminal code that might mean "a sibling
 // worker just rotated the refresh token, and our copy is stale" — from
 // codes that signal genuine credential death under any race scenario.
@@ -65,6 +65,10 @@ export class ChatGPTOAuthSessionTerminatedError extends Error {
     this.code = args.code;
     this.upstreamMessage = args.message;
   }
+}
+
+export class ChatGPTOAuthResponseError extends Error {
+  override readonly name = 'ChatGPTOAuthResponseError';
 }
 
 // Terminal codes accepted on the authorization-code exchange. This is OUR
@@ -85,7 +89,7 @@ const EXCHANGE_TERMINAL_OAUTH_CODES: ReadonlySet<string> = new Set([
 // (backend/internal/service/token_refresh_service.go:429-451), which shares
 // the same list across OpenAI/Claude/Gemini OAuth — Codex is OpenAI OAuth,
 // so the set carries over verbatim. `invalid_grant` is included even though
-// the refresh-race recovery in access-token.ts may re-classify it
+// the refresh-race recovery in the ChatGPT service may re-classify it
 // when a sibling rotation is detected; from the OAuth wire's perspective
 // it is still a terminal signal.
 const REFRESH_TERMINAL_OAUTH_CODES: ReadonlySet<string> = new Set([
@@ -116,7 +120,8 @@ const chatgptTokenRequest = async (
   let parsed: unknown;
   try {
     parsed = rawText.length > 0 ? JSON.parse(rawText) : {};
-  } catch {
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
     parsed = { _nonJsonBody: rawText };
   }
 
@@ -139,17 +144,17 @@ const chatgptTokenRequest = async (
     if (code && terminalCodes.has(code)) {
       throw new ChatGPTOAuthSessionTerminatedError({ code, message });
     }
-    throw new Error(`ChatGPT OAuth /token returned ${response.status}: ${message}`);
+    throw new ChatGPTOAuthResponseError(`ChatGPT OAuth /token returned ${response.status}: ${message}`);
   }
 
-  if (root === null) throw new Error('ChatGPT OAuth /token response is not an object');
+  if (root === null) throw new ChatGPTOAuthResponseError('ChatGPT OAuth /token response is not an object');
   for (const key of ['access_token', 'refresh_token'] as const) {
     if (typeof root[key] !== 'string' || root[key] === '') {
-      throw new Error(`ChatGPT OAuth /token response missing ${key}`);
+      throw new ChatGPTOAuthResponseError(`ChatGPT OAuth /token response missing ${key}`);
     }
   }
   if (typeof root.expires_in !== 'number' || !Number.isFinite(root.expires_in)) {
-    throw new Error('ChatGPT OAuth /token response missing expires_in');
+    throw new ChatGPTOAuthResponseError('ChatGPT OAuth /token response missing expires_in');
   }
   return {
     access_token: root.access_token as string,
@@ -202,7 +207,7 @@ export const refreshChatGPTAccessToken = async (refreshToken: string, fetcher: F
   // OAuth `invalid_grant` on the refresh path is ambiguous on its own — it
   // can mean a genuinely revoked/expired refresh_token, *or* that a sibling
   // worker raced us, won the rotation, and our copy is now stale. The
-  // access-token module's `recoverFromRefreshRace` distinguishes by re-reading
+  // ChatGPT service distinguishes by re-reading
   // upstream state; the other codes here always mean credential death.
   const tokens = await chatgptTokenRequest(body, REFRESH_TERMINAL_OAUTH_CODES, fetcher);
   // A refresh only re-mints the bearer. Whatever identity the account has was

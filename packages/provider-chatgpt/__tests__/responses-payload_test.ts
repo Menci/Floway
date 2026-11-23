@@ -9,7 +9,9 @@ import { stubProviderModel } from '@floway-dev/test-utils';
 type Payload = ProviderResponsesInput['request.payload'];
 type PayloadFacts = Pick<ProviderResponsesInput, 'request.payload'>;
 
-const payloadPipeline = compose<ProviderResponsesInput, PayloadFacts, ProviderServices>('responses.payload', {
+const payloadPipeline = compose<ProviderResponsesInput, ProviderServices>()('responses.payload', {
+  entry: ['provider.model', 'request.payload'],
+  exit: ['request.payload'],
   stages: [injectDefaultInstructions, stripUnsupportedFields],
   ending: defineEnding<PayloadFacts, PayloadFacts, {}, ProviderServices>({
     name: 'capture-payload',
@@ -25,8 +27,6 @@ const shapePayload = async (payload: Payload, useResponsesLite = false): Promise
   const handle = run(payloadPipeline, {
     'provider.model': toProviderModelFacts(stubProviderModel({ endpoints: { openaiResponses: {} }, providerData: { useResponsesLite } })),
     'request.payload': payload,
-    'request.headers': [],
-    'request.action': 'generate',
   }, {
     services: { fetcher: () => { throw new Error('unexpected network request'); } },
     finalizationTimeoutMs: 1000,

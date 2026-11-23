@@ -1,5 +1,5 @@
 import { defineStage, transform } from '@floway-dev/pipeline';
-import type { ProviderResponsesInput, ProviderResponsesOutput, ProviderServices } from '@floway-dev/provider';
+import type { ProviderResponsesInput, ProviderOpenAIResponsesOutput, ProviderServices } from '@floway-dev/provider';
 
 // ChatGPT backend rejects requests carrying any of these fields with a
 // `Unsupported parameter: <name>` 4xx. They are regular OpenAI Responses API
@@ -21,7 +21,7 @@ const CHATGPT_UNSUPPORTED_BODY_FIELDS = [
   'stream_options',
 ] as const;
 
-export const stripUnsupportedFields = defineStage<ProviderResponsesInput, ProviderResponsesInput, ProviderResponsesOutput, ProviderResponsesOutput, ProviderServices>({
+export const stripUnsupportedFields = defineStage<ProviderResponsesInput, ProviderResponsesInput, ProviderOpenAIResponsesOutput, ProviderOpenAIResponsesOutput, ProviderServices>({
   name: 'chatgpt.responses.strip-unsupported-fields',
   through: {
     request: { needs: ['request.payload'], consumes: [], provides: ['request.payload'] },

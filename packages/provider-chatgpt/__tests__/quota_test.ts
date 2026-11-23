@@ -2,14 +2,15 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
 import {
-  getChatGPTQuota,
   parseChatGPTQuotaHeaders,
-  putChatGPTQuota,
 } from '../src/quota.ts';
+import { createChatGPTService } from '../src/service.ts';
 import type { ChatGPTQuotaSnapshot, ChatGPTQuotaSnapshotEntryMap, ChatGPTUpstreamState } from '../src/state.ts';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 
 const accountId = 'acc_1';
+const service = createChatGPTService();
+
 const upstreamId = 'up_a';
 
 const makeRecord = (state: ChatGPTUpstreamState): UpstreamRecord => ({
@@ -169,7 +170,7 @@ describe('getChatGPTQuota', () => {
     const { ratelimited_until: _neitherUntil, ...neitherReading } = neither;
     const { ratelimited_until: _untimedUntil, ...untimedReading } = untimed;
     const { ratelimited_until: _invalidUntil, ...invalidReading } = invalid;
-    expect(await getChatGPTQuota(upstreamId, accountId)).toEqual({
+    expect(await service.getQuota(upstreamId, accountId)).toEqual({
       primary: { ...primary, ratelimited_until: primary.primary_reset_after_at },
       secondary,
       unknown: unknownReading,
@@ -190,13 +191,13 @@ describe('putChatGPTQuota', () => {
     const premium: ChatGPTQuotaSnapshot = { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'premium', primary_used_percent: 10 };
     current = makeRecord({ accounts: [{ ...baseAccount, quotaSnapshot: { premium: { fetchedAt: 1, data: premium } } }] });
     const bengalfox: ChatGPTQuotaSnapshot = { observed_at: '2026-06-05T01:00:00.000Z', active_limit: 'codex_bengalfox', primary_used_percent: 20 };
-    await putChatGPTQuota(upstreamId, accountId, bengalfox);
+    await service.putQuota(upstreamId, accountId, bengalfox);
     let written = (current!.state as ChatGPTUpstreamState).accounts[0].quotaSnapshot;
     expect(written?.premium.data).toEqual(premium);
     expect(written?.codex_bengalfox.data).toEqual(bengalfox);
 
     const nextPremium: ChatGPTQuotaSnapshot = { observed_at: '2026-06-05T02:00:00.000Z', active_limit: 'premium', primary_used_percent: 30 };
-    await putChatGPTQuota(upstreamId, accountId, nextPremium);
+    await service.putQuota(upstreamId, accountId, nextPremium);
     written = (current!.state as ChatGPTUpstreamState).accounts[0].quotaSnapshot;
     expect(Object.keys(written ?? {}).sort()).toEqual(['codex_bengalfox', 'premium']);
     expect(written?.premium.data).toEqual(nextPremium);
@@ -209,8 +210,8 @@ test('publishes self-contained usage observations with capture timestamps and re
   const recordUpstreamMetric = vi.fn().mockRejectedValueOnce(failure).mockResolvedValue(undefined);
   initProviderRepo(() => ({ upstreams: repo, recordUpstreamMetric }));
   const snapshot = { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'codex', primary_used_percent: 42, primary_window_minutes: 300 };
-  await expect(putChatGPTQuota(upstreamId, accountId, snapshot)).rejects.toBe(failure);
-  await putChatGPTQuota(upstreamId, accountId, snapshot);
+  await expect(service.putQuota(upstreamId, accountId, snapshot)).rejects.toBe(failure);
+  await service.putQuota(upstreamId, accountId, snapshot);
   expect(recordUpstreamMetric).toHaveBeenCalledTimes(2);
   expect(recordUpstreamMetric).toHaveBeenLastCalledWith(upstreamId, 'quota.window.used_percent', { limit: 'codex', window_seconds: 18_000 }, 42, Date.parse(snapshot.observed_at));
 });

@@ -1,24 +1,19 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createUpstreamStateRepoStub } from './upstream-state-repo.ts';
+import { toChatGPTUpstreamFacts, type ChatGPTUpstreamFacts } from '../src/config.ts';
 import { CHATGPT_CLI_VERSION, CHATGPT_ORIGINATOR, CHATGPT_RESPONSES_LITE_CLIENT_METADATA_KEY, CHATGPT_RESPONSES_LITE_HEADER, CHATGPT_USER_AGENT } from '../src/constants.ts';
-import { createChatGPTPipelines, type ChatGPTCallEffects } from '../src/pipelines.ts';
+import { chatgptPipelines } from '../src/pipelines.ts';
 import * as responsesLite from '../src/responses-lite.ts';
+import { createChatGPTService } from '../src/service.ts';
 import type { ChatGPTAccessTokenEntry, ChatGPTAccountCredential, ChatGPTQuotaSnapshotEntryMap, ChatGPTUpstreamState } from '../src/state.ts';
 import { isManagedStream, run, type RunDone, type RunEvent } from '@floway-dev/pipeline';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
 import { type OpenAIResponsesCompactionItemEx, collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesInputItem, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { directFetcher, getProviderRepo, initProviderRepo, readHttpBody, toProviderModelFacts, type ProviderHttpOutput, type ProviderInput, type ProviderResponsesInput, type UpstreamRecord } from '@floway-dev/provider';
+import { directFetcher, getProviderRepo, httpUrl, initProviderRepo, toProviderModelFacts, UpstreamTransportError, type ProviderBaseOutput, type ProviderFrame, type ProviderInput, type ProviderOpenAIResponsesOutput, type ProviderResponsesInput, type UpstreamRecord } from '@floway-dev/provider';
 import { readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
 
-const makeEffects = (): ChatGPTCallEffects => ({
-  persistRefreshTokenRotation: vi.fn(async () => {}),
-  persistTerminalState: vi.fn(async () => {}),
-});
-
 const activeAccount: ChatGPTAccountCredential = { chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: null, quotaSnapshot: null };
-const accessOnlyAccount: ChatGPTAccountCredential = { ...activeAccount, refresh_token: null };
 const model = stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } });
 const liteModel = stubProviderModel({ id: 'future-lite-model', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite: true } });
 const imageModel = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
@@ -62,33 +57,36 @@ const seedAccountState = (overrides: Partial<ChatGPTAccountCredential>): void =>
   currentRecord = makeRecord({ accounts: [{ ...activeAccount, ...overrides }] });
 };
 
-const readQuotaEntry = (): ChatGPTQuotaSnapshotEntryMap | null =>
-  (currentRecord.state as ChatGPTUpstreamState).accounts[0].quotaSnapshot;
+const storedAccount = (): ChatGPTAccountCredential =>
+  (currentRecord.state as ChatGPTUpstreamState).accounts[0];
+const readQuotaEntry = (): ChatGPTQuotaSnapshotEntryMap | null => storedAccount().quotaSnapshot;
+
+const expectPersistenceFailure = (trace: RunEvent[], name: string, message: string): void => {
+  const deferred = trace.find(event => event.k === 'deferred' && event.name === name);
+  if (deferred?.k !== 'deferred') throw new Error(`expected deferred ${name}`);
+  expect(trace).toContainEqual(expect.objectContaining({
+    k: 'settled', deferredId: deferred.deferredId, ok: true, value: expect.objectContaining({ persisted: false, error: expect.objectContaining({ message }) }),
+  }));
+  expect(trace).toContainEqual(expect.objectContaining({ k: 'log', level: 'warn', message: `${name} persistence failed` }));
+};
 
 interface RunInput<Payload> {
   upstreamId: string;
-  account: ChatGPTAccountCredential;
   model: ReturnType<typeof stubProviderModel>;
   body: Payload;
   headers: Headers;
-  effects: ChatGPTCallEffects;
-  fallbackPlanType?: string;
   events?: (event: RunEvent) => void;
 }
 
 const setup = <Payload>(options: RunInput<Payload>) => ({
-  pipelines: createChatGPTPipelines({
-    upstreamId: options.upstreamId,
-    readAccount: async () => options.account,
-    ...options.effects,
-    ...(options.fallbackPlanType === undefined ? {} : { fallbackPlanType: options.fallbackPlanType }),
-  }),
+  pipelines: chatgptPipelines,
   facts: {
     'provider.model': toProviderModelFacts(structuredClone(options.model)),
-    'request.headers': [...options.headers],
+    'provider.upstream': toChatGPTUpstreamFacts({ ...makeRecord({ accounts: [activeAccount] }), id: options.upstreamId }),
+    'request.http': { method: 'POST', url: httpUrl('http://floway.test'), headers: [...options.headers], body: null },
     'request.payload': options.body,
-  } satisfies ProviderInput<Payload>,
-  options: { services: { fetcher: () => directFetcher }, finalizationTimeoutMs: 1000, ...(options.events ? { events: options.events } : {}) },
+  } satisfies ProviderInput<ChatGPTUpstreamFacts, Payload>,
+  options: { services: { fetcher: () => directFetcher, chatgpt: createChatGPTService() }, finalizationTimeoutMs: 1000, ...(options.events ? { events: options.events } : {}) },
 });
 
 type ResponsesBody = ProviderResponsesInput['request.payload'];
@@ -110,14 +108,28 @@ const runAlphaSearch = async (input: RunInput<Record<string, unknown>>) => {
   const handle = run(pipelines.alphaSearch, facts, options);
   return { ...await handle.result, done: handle.done };
 };
-const successful = ({ 'response.http': { status } }: ProviderHttpOutput): boolean => status >= 200 && status < 300;
-const headersOf = ({ 'response.http': { headers } }: ProviderHttpOutput): Headers =>
+const successful = ({ 'response.http': { status } }: ProviderBaseOutput): boolean => status >= 200 && status < 300;
+const headersOf = ({ 'response.http': { headers } }: ProviderBaseOutput): Headers =>
   new Headers(headers.map(([name, value]): [string, string] => [name, typeof value === 'string' ? value : value.reveal()]));
-const release = async (result: ProviderHttpOutput & { done: Promise<RunDone>; 'response.events'?: unknown }) => {
-  const body = result['response.events'] ?? result['response.http'].body;
+const release = async (result: ProviderBaseOutput & Partial<ProviderOpenAIResponsesOutput> & { done: Promise<RunDone> }) => {
+  const outcome = result['response.openaiResponses'];
+  const body = outcome?.kind === 'stream' ? outcome.events : result['response.http'].body;
   if (isManagedStream(body)) await body.close();
   expect(await result.done).toEqual({ ok: true });
 };
+const responsesEvents = (result: ProviderOpenAIResponsesOutput) => {
+  const outcome = result['response.openaiResponses'];
+  if (outcome.kind !== 'stream') throw new Error('expected a Responses stream');
+  return outcome.events;
+};
+
+const protocolEvents = async function* (result: ProviderOpenAIResponsesOutput) {
+  for await (const frame of responsesEvents(result)) {
+    if (frame.type === 'transport-error') throw new Error(frame.error.message);
+    yield frame;
+  }
+};
+
 const inspectResponsesWire = async (input: RunInput<ResponsesBody>) => {
   await release(await runResponses(input));
 };
@@ -178,18 +190,32 @@ const idToken = (planType = 'plus'): string => [
 ].join('.');
 
 describe('ChatGPT Responses gates', () => {
-  test('refuses non-active state with synthetic 503', async () => {
+  test('refuses non-active stored state with a local 503', async () => {
+    seedAccountState({ state: 'session_terminated' });
+    const fetch = vi.spyOn(globalThis, 'fetch');
     const result = await runResponses({
-      upstreamId, account: { ...activeAccount, state: 'session_terminated' },
-      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(),
+      upstreamId,
+      model, body: { input: [], stream: true }, headers: new Headers(),
     });
     expect(successful(result)).toBe(false);
     if (!successful(result)) expect(result['response.http'].status).toBe(503);
+    expect(result['response.openaiResponses']).toMatchObject({ kind: 'error', source: 'local' });
     await release(result);
+    expect(fetch).not.toHaveBeenCalled();
   });
 
-  test('replaces the same family after success despite a future cached restriction, preserving other families', async () => {
-    const until = new Date(Date.now() + 4 * 24 * 60 * 60 * 1000).toISOString();
+  test('refuses a deleted upstream before any network request', async () => {
+    vi.spyOn(getProviderRepo().upstreams, 'getById').mockResolvedValueOnce(null);
+    const fetch = vi.spyOn(globalThis, 'fetch');
+    const result = await runResponses({ upstreamId, model, body: { input: [] }, headers: new Headers() });
+    expect(result['response.http'].status).toBe(503);
+    expect(result['response.openaiResponses']).toMatchObject({ kind: 'error', source: 'local' });
+    await release(result);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  test('replaces the same family after a local restriction expires, preserving other families', async () => {
+    const until = new Date(Date.now() - 1000).toISOString();
     const unrelated = { fetchedAt: 1, data: { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'other', primary_used_percent: 100, ratelimited_until: until } };
     seedAccountState({
       accessToken: farFutureAccessToken,
@@ -203,8 +229,8 @@ describe('ChatGPT Responses gates', () => {
     });
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const result = await runResponses({
-      upstreamId, account: activeAccount,
-      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(),
+      upstreamId,
+      model, body: { input: [], stream: true }, headers: new Headers(),
     });
     expect(successful(result)).toBe(true);
     await release(result);
@@ -219,12 +245,11 @@ describe('ChatGPT Responses gates', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const trace: RunEvent[] = [];
     const result = await runResponses({
-      upstreamId, account: activeAccount,
-      model, body: { input: [] }, headers: new Headers(), effects: makeEffects(), events: event => { trace.push(event); },
+      upstreamId,
+      model, body: { input: [] }, headers: new Headers(), events: event => { trace.push(event); },
     });
-    expect(await result['response.chatgpt.quota']?.promise).toMatchObject({ persisted: false, error: { message: 'quota write failed' } });
     await release(result);
-    expect(trace).toContainEqual(expect.objectContaining({ k: 'log', level: 'warn', message: 'chatgpt_quota_persist_failed' }));
+    expectPersistenceFailure(trace, 'chatgpt-quota', 'quota write failed');
   });
 });
 
@@ -248,23 +273,22 @@ describe('ChatGPT terminal output recovery', () => {
         { type: 'response.output_item.done', output_index: 0, item },
         { type: 'response.completed', response: terminal },
       ]));
-      const effects = makeEffects();
       const result = await runResponses({
-        upstreamId, account: activeAccount, model,
+        upstreamId, model,
         body: { input: [{ type: 'compaction_trigger' } as unknown as CanonicalOpenAIResponsesInputItem], stream },
-        headers: new Headers(), effects,
+        headers: new Headers(),
       });
       if (!successful(result)) throw new Error('expected a successful native compaction stream');
       if (stream) {
-        const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-        for await (const frame of result['response.events']!) frames.push(frame);
+        const frames: ProviderFrame<OpenAIResponsesStreamEventEx>[] = [];
+        for await (const frame of responsesEvents(result)) frames.push(frame);
         expect(frames[0]).toMatchObject({ event: { response: { output: [], status: 'in_progress' } } });
         expect(frames[3]).toMatchObject({ event: { type: 'response.compaction.compacting', item_id: item.id } });
         expect(frames[4]).toMatchObject({ event: { type: 'response.output_item.done', output_index: 0, item } });
         expect(frames[5]).toMatchObject({ event: { type: 'response.completed', response: { ...terminal, output: [item] } } });
         expect(frames[6]).toEqual({ type: 'done' });
       } else {
-        expect(await collectOpenAIResponsesProtocolEventsToResult(result['response.events']!)).toMatchObject({ ...terminal, output: [item] });
+        expect(await collectOpenAIResponsesProtocolEventsToResult(protocolEvents(result))).toMatchObject({ ...terminal, output: [item] });
       }
       expect(await result.done).toEqual({ ok: true });
       fetchSpy.mockRestore();
@@ -300,9 +324,9 @@ describe('Codex Responses wire selection', () => {
         const headers = new Headers(marker === undefined ? {} : { [CHATGPT_RESPONSES_LITE_HEADER]: marker });
         const call = action === 'generate' ? runResponses : runCompact;
         const result = await call({
-          upstreamId, account: activeAccount,
+          upstreamId,
           model: { ...model, providerData: { useResponsesLite } },
-          body, headers, effects: makeEffects(),
+          body, headers,
         });
         if (!successful(result)) throw new Error('expected a successful response');
         const [url, init] = fetchSpy.mock.lastCall!;
@@ -333,7 +357,7 @@ describe('Codex Responses wire selection', () => {
           expect(wire.parallel_tool_calls).toBe(true);
           expect(wire.reasoning).toEqual(body.reasoning);
         }
-        if (result['response.events'] !== undefined) {
+        if (result['response.openaiResponses'].kind === 'stream') {
           expect(wire.client_metadata).toMatchObject({ retained: { future: true } });
           expect(wire.client_metadata).not.toHaveProperty(CHATGPT_RESPONSES_LITE_CLIENT_METADATA_KEY);
           expect(wire.tool_choice).toBe('auto');
@@ -345,7 +369,8 @@ describe('Codex Responses wire selection', () => {
         } else {
           for (const field of ['stream', 'store', 'client_metadata', 'temperature', 'tool_choice']) expect(wire).not.toHaveProperty(field);
           expect(result['response.http'].body).toBeNull();
-          expect(result['response.result']).toBeDefined();
+          expect(result['response.openaiResponses'].kind).toBe('result');
+          expect(await result.done).toEqual({ ok: true });
         }
       }
     }
@@ -372,14 +397,14 @@ describe('Codex Responses wire selection', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(upstream);
     const body = { input: [], instructions: 'Base', tools: [tool], parallel_tool_calls: true, reasoning: { effort: 'low', context: 'current_turn' }, stream: true };
     const result = await runResponses({
-      upstreamId, account: activeAccount, model: liteModel, body, headers: new Headers(), effects: makeEffects(),
+      upstreamId, model: liteModel, body, headers: new Headers(),
     });
     if (!successful(result)) throw new Error('expected successful Responses stream');
     expect(headersOf(result).get('content-type')).toBe('text/event-stream');
     expect(headersOf(result).has(CHATGPT_RESPONSES_LITE_HEADER)).toBe(true);
     expect(upstream.headers.get(CHATGPT_RESPONSES_LITE_HEADER)).toBe('true');
-    const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-    for await (const frame of result['response.events']!) frames.push(frame);
+    const frames: ProviderFrame<OpenAIResponsesStreamEventEx>[] = [];
+    for await (const frame of responsesEvents(result)) frames.push(frame);
     expect(frames[0]).toMatchObject({ type: 'event', event: { item: wireCall } });
     expect(frames[1]).toEqual({ type: 'event', event: future });
     expect(frames[2]).toMatchObject({ type: 'event', event: { item: wireCall } });
@@ -407,10 +432,10 @@ describe('Codex Responses wire selection', () => {
       expect(String(url)).toContain('/compact');
       return Response.json({ id: 'cmp_resource', object: 'response.compaction', output: [...wire.input as unknown[], opaque] });
     });
-    const opts = { upstreamId, account: activeAccount, model: liteModel, headers: new Headers({ 'thread-id': 'compact-replay-thread' }), effects: makeEffects() };
+    const opts = { upstreamId, model: liteModel, headers: new Headers({ 'thread-id': 'compact-replay-thread' }) };
     const compact = await runCompact({ ...opts, body });
     if (!successful(compact)) throw new Error('expected successful compact response');
-    expect(compact['response.result']?.output).toEqual([...sentInput!, opaque]);
+    expect(compact['response.openaiResponses']).toMatchObject({ kind: 'result', result: { output: [...sentInput!, opaque] } });
     await release(compact);
   });
 
@@ -432,8 +457,8 @@ describe('Codex Responses wire selection', () => {
     });
     const call = action === 'generate' ? runResponses : runCompact;
     const result = await call({
-      upstreamId, account: activeAccount, model: selectedModel,
-      body: { input: [], tools: [tool], instructions: 'Base' }, headers: new Headers(), effects: makeEffects(),
+      upstreamId, model: selectedModel,
+      body: { input: [], tools: [tool], instructions: 'Base' }, headers: new Headers(),
     });
     expect(successful(result)).toBe(true);
     expect(fetchSpy).toHaveBeenCalledTimes(3);
@@ -451,7 +476,7 @@ describe('Codex Responses wire selection', () => {
     await release(result);
   });
 
-  test.each(['generate', 'compact'] as const)('%s returns non-OK upstream Responses unchanged, including Lite markers', async action => {
+  test.each(['generate', 'compact'] as const)('%s preserves non-OK upstream status and headers with a synthesized protocol error', async action => {
     seedFreshAccessToken();
     for (const status of [400, 429, 503]) {
       for (const marker of [undefined, 'true', 'false']) {
@@ -461,17 +486,16 @@ describe('Codex Responses wire selection', () => {
         vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(upstream);
         const call = action === 'generate' ? runResponses : runCompact;
         const result = await call({
-          upstreamId, account: activeAccount, model: liteModel, body: { input: [] },
-          headers: new Headers({ [CHATGPT_RESPONSES_LITE_HEADER]: 'false' }), effects: makeEffects(),
+          upstreamId, model: liteModel, body: { input: [] },
+          headers: new Headers({ [CHATGPT_RESPONSES_LITE_HEADER]: 'false' }),
         });
         if (successful(result)) throw new Error('expected upstream error');
         expect(result['response.http'].status).toBe(status);
-        expect(result['response.events']).toBeUndefined();
-        expect(result['response.result']).toBeUndefined();
         expect(headersOf(result).get(CHATGPT_RESPONSES_LITE_HEADER)).toBe(marker ?? null);
         expect(headersOf(result).get('content-type')).toBe('application/problem+json');
         expect(result['response.http'].statusText).toBe('Upstream failure');
-        expect((await readHttpBody(result['response.http'].body)).utf8()).toBe('upstream bytes\nnot necessarily JSON');
+        expect(result['response.openaiResponses']).toEqual({ kind: 'error', source: 'upstream', error: { error: { type: 'upstream_error', message: 'upstream bytes\nnot necessarily JSON' } } });
+        expect(result['response.http'].body).toBeNull();
         expect(await result.done).toEqual({ ok: true });
       }
     }
@@ -483,7 +507,7 @@ describe('ChatGPT Responses upstream classification', () => {
     seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     await inspectResponsesWire({
-      upstreamId, account: activeAccount,
+      upstreamId,
       model,
       body: {
         input: [],
@@ -504,7 +528,6 @@ describe('ChatGPT Responses upstream classification', () => {
         'x-codex-window-id': 'downstream-window',
         'x-real-ip': '203.0.113.10',
       }),
-      effects: makeEffects(),
     });
 
     const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
@@ -553,10 +576,9 @@ describe('ChatGPT Responses upstream classification', () => {
     seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => sseResponse());
     const request = {
-      upstreamId, account: activeAccount, model,
+      upstreamId, model,
       body: { input: [], stream: true },
       headers: new Headers({ 'session-id': 'stable-session' }),
-      effects: makeEffects(),
     } satisfies Parameters<typeof runResponses>[0];
 
     await inspectResponsesWire(request);
@@ -581,22 +603,19 @@ describe('ChatGPT Responses upstream classification', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => sseResponse());
 
     await inspectResponsesWire({
-      upstreamId, account: activeAccount, model,
+      upstreamId, model,
       body: { input: [], stream: true },
       headers: new Headers({ 'session-id': 'cache-session' }),
-      effects: makeEffects(),
     });
     await inspectResponsesWire({
-      upstreamId, account: activeAccount, model,
+      upstreamId, model,
       body: { input: [], stream: true, prompt_cache_key: 'caller-cache-key' },
       headers: new Headers({ 'session-id': 'cache-session' }),
-      effects: makeEffects(),
     });
     await inspectResponsesWire({
-      upstreamId, account: activeAccount, model,
+      upstreamId, model,
       body: { input: [], stream: true, prompt_cache_key: null },
       headers: new Headers({ 'session-id': 'cache-session' }),
-      effects: makeEffects(),
     });
 
     const injectedBody = await readJsonRequest(fetchSpy.mock.calls[0][1] as RequestInit) as Record<string, unknown>;
@@ -611,7 +630,7 @@ describe('ChatGPT Responses upstream classification', () => {
     seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     await inspectResponsesWire({
-      upstreamId, account: activeAccount, model,
+      upstreamId, model,
       body: {
         input: [], stream: true,
         client_metadata: {
@@ -636,7 +655,6 @@ describe('ChatGPT Responses upstream classification', () => {
           turn_started_at_unix_ms: 1700000000000,
         }),
       }),
-      effects: makeEffects(),
     });
 
     const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
@@ -656,7 +674,7 @@ describe('ChatGPT Responses upstream classification', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const toolNamespacesInfo = { namespaces: [{ name: 'shell', tools: ['exec'] }] };
     await inspectResponsesWire({
-      upstreamId, account: activeAccount, model,
+      upstreamId, model,
       body: {
         input: [], stream: true,
         client_metadata: {
@@ -664,7 +682,6 @@ describe('ChatGPT Responses upstream classification', () => {
         },
       } as unknown as Parameters<typeof runResponses>[0]['body'],
       headers: new Headers({ 'session-id': 'sess' }),
-      effects: makeEffects(),
     });
 
     const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
@@ -683,15 +700,15 @@ describe('ChatGPT Responses upstream classification', () => {
   test('401 token_invalidated → persistTerminalState session_terminated, return 503', async () => {
     seedFreshAccessToken();
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(401, { error: { code: 'token_invalidated', message: 'session ended' } }));
-    const effects = makeEffects();
     const result = await runResponses({
-      upstreamId, account: activeAccount,
-      model, body: { input: [], stream: true }, headers: new Headers(), effects,
+      upstreamId,
+      model, body: { input: [], stream: true }, headers: new Headers(),
     });
     expect(successful(result)).toBe(false);
     if (!successful(result)) expect(result['response.http'].status).toBe(503);
-    expect(effects.persistTerminalState).toHaveBeenCalledWith('session_terminated', expect.stringMatching(/session ended/));
+    expect(result['response.openaiResponses']).toMatchObject({ kind: 'error', source: 'upstream' });
     await release(result);
+    expect(storedAccount()).toMatchObject({ state: 'session_terminated', state_message: 'session ended', accessToken: null });
   });
 
   test('access-only 401 preserves the upstream response and does not refresh', async () => {
@@ -701,21 +718,22 @@ describe('ChatGPT Responses upstream classification', () => {
     });
     const upstreamBody = { error: { code: 'token_invalidated', message: 're-import required' } };
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(401, upstreamBody, { 'x-upstream-marker': 'kept' }));
-    const persistTerminalState = vi.fn(async () => { throw new Error('state write failed'); });
+    vi.spyOn(getProviderRepo().upstreams, 'saveState').mockRejectedValueOnce(new Error('state write failed'));
+    const trace: RunEvent[] = [];
     const result = await runResponses({
-      upstreamId, account: accessOnlyAccount,
+      upstreamId,
       model, body: { input: [], stream: true }, headers: new Headers(),
-      effects: { ...makeEffects(), persistTerminalState },
+      events: event => { trace.push(event); },
     });
     expect(successful(result)).toBe(false);
     if (!successful(result)) {
       expect(result['response.http'].status).toBe(401);
       expect(headersOf(result).get('x-upstream-marker')).toBe('kept');
-      expect(JSON.parse((await readHttpBody(result['response.http'].body)).utf8())).toEqual(upstreamBody);
+      expect(result['response.openaiResponses']).toEqual({ kind: 'error', source: 'upstream', error: upstreamBody });
     }
     expect(fetchSpy).toHaveBeenCalledTimes(1);
-    expect(persistTerminalState).toHaveBeenCalledWith('session_terminated', 're-import required');
     expect(await result.done).toEqual({ ok: true });
+    expectPersistenceFailure(trace, 'chatgpt-terminal-state', 'state write failed');
   });
 
   test('401 other → refresh + retry once, then bubble persistent 401', async () => {
@@ -724,20 +742,70 @@ describe('ChatGPT Responses upstream classification', () => {
       .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'expired' } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at2', refresh_token: 'rt_v2', id_token: idToken(), expires_in: 600 }), { status: 200 }))
       .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'still expired' } }));
-    const effects = makeEffects();
     const result = await runResponses({
-      upstreamId, account: activeAccount,
-      model, body: { input: [], stream: true }, headers: new Headers(), effects,
+      upstreamId,
+      model, body: { input: [], stream: true }, headers: new Headers(),
     });
     expect(successful(result)).toBe(false);
     if (!successful(result)) expect(result['response.http'].status).toBe(401);
-    expect(effects.persistRefreshTokenRotation).toHaveBeenCalledWith('rt_v2');
+    expect(result['response.openaiResponses']).toMatchObject({ kind: 'error', source: 'upstream' });
+    expect(storedAccount()).toMatchObject({ refresh_token: 'rt_v2', accessToken: { token: 'at2' } });
+    await release(result);
+  });
+
+  test('OAuth session failure returns an upstream error and persists terminal state', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(errorJson(400, {
+      error: { code: 'invalid_grant', message: 'refresh credential revoked' },
+    }));
+    const result = await runResponses({ upstreamId, model, body: { input: [] }, headers: new Headers() });
+    expect(result['response.http'].status).toBe(503);
+    expect(result['response.openaiResponses']).toMatchObject({ kind: 'error', source: 'upstream' });
+    await release(result);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(storedAccount()).toMatchObject({ state: 'refresh_failed', state_message: 'refresh credential revoked', accessToken: null });
+  });
+
+  test.each(['oauth', 'first response', '401 body', 'retry oauth', 'retry response'] as const)(
+    '%s transport failure completes with an upstream error',
+    async where => {
+      if (where !== 'oauth') seedFreshAccessToken();
+      const error = new UpstreamTransportError(new Error('socket dropped'));
+      const fetch = vi.spyOn(globalThis, 'fetch');
+      if (where === '401 body') {
+        fetch.mockResolvedValueOnce(new Response(new ReadableStream({ start: controller => controller.error(error) }), { status: 401 }));
+      } else {
+        if (where === 'retry oauth' || where === 'retry response') {
+          fetch.mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token' } }));
+        }
+        if (where === 'retry response') {
+          fetch.mockResolvedValueOnce(errorJson(200, { access_token: 'at_retry', refresh_token: 'rt_retry', expires_in: 600 }));
+        }
+        fetch.mockRejectedValueOnce(error);
+      }
+
+      const result = await runResponses({ upstreamId, model, body: { input: [] }, headers: new Headers() });
+      expect(result['response.http']).toMatchObject({ status: 502, body: null, transportError: { message: 'socket dropped' } });
+      expect(result['response.openaiResponses']).toMatchObject({ kind: 'error', source: 'upstream' });
+      await release(result);
+      expect(fetch).toHaveBeenCalledTimes(where === 'retry response' ? 3 : where === 'retry oauth' ? 2 : 1);
+      expect(storedAccount().state).toBe('active');
+    },
+  );
+
+  test.each(['generate', 'compact'] as const)('%s invalid 2xx payload completes with an upstream error', async action => {
+    seedFreshAccessToken();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('broken upstream payload', { headers: { 'content-type': 'text/plain' } }));
+    const result = await runResponsesAction({ upstreamId, model, body: { input: [] }, headers: new Headers() }, action);
+    expect(result['response.http'].status).toBe(502);
+    expect(result['response.openaiResponses']).toMatchObject({
+      kind: 'error', source: 'upstream', error: { error: { message: expect.stringContaining('broken upstream payload') } },
+    });
     await release(result);
   });
 
   test('429 → quota with ratelimited_until, return upstream 429', async () => {
     seedFreshAccessToken();
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(429, { error: { type: 'usage_limit_reached', message: 'cap reached', resets_in_seconds: 7200 } }, {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(errorJson(429, { error: { type: 'usage_limit_reached', message: 'cap reached', resets_in_seconds: 7200 } }, {
       'x-codex-primary-used-percent': '100',
       'x-codex-secondary-used-percent': '35',
       'x-codex-active-limit': 'premium',
@@ -745,14 +813,23 @@ describe('ChatGPT Responses upstream classification', () => {
       'x-codex-secondary-reset-after-seconds': '7200',
     }));
     const result = await runResponses({
-      upstreamId, account: activeAccount,
-      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(),
+      upstreamId,
+      model, body: { input: [], stream: true }, headers: new Headers(),
     });
     expect(successful(result)).toBe(false);
     if (!successful(result)) expect(result['response.http'].status).toBe(429);
+    expect(result['response.openaiResponses']).toMatchObject({ kind: 'error', source: 'upstream' });
     await release(result);
     const stored = readQuotaEntry();
     expect(stored?.premium.data.ratelimited_until).toBe(new Date(Date.parse(stored!.premium.data.observed_at) + 3600 * 1000).toISOString());
+    const blocked = await runResponses({ upstreamId, model, body: { input: [] }, headers: new Headers() });
+    expect(blocked['response.http'].status).toBe(429);
+    const retryAfter = Number(headersOf(blocked).get('retry-after'));
+    expect(retryAfter).toBeGreaterThan(0);
+    expect(retryAfter).toBeLessThanOrEqual(3600);
+    expect(blocked['response.openaiResponses']).toMatchObject({ kind: 'error', source: 'local' });
+    await release(blocked);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
 });
@@ -769,16 +846,13 @@ describe('ChatGPT image generation', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorJson(200, { created: 1, data: [{ b64_json: 'aW1hZ2U=' }] }));
     const result = await runImages({
       upstreamId,
-      account: (currentRecord.state as ChatGPTUpstreamState).accounts[0],
       model: imageModel,
       body: { prompt: 'an orange circle' },
-      fallbackPlanType: 'plus',
       headers: new Headers(),
-      effects: makeEffects(),
     });
     expect(result['response.http'].status).toBe(200);
     expect(readQuotaEntry()).toEqual(quotaSnapshot);
-    expect(result['response.chatgpt.quota']).toBeUndefined();
+    expect(result['response.openaiImagesGenerations']).toEqual({ kind: 'ok' });
     await release(result);
   });
 
@@ -789,12 +863,9 @@ describe('ChatGPT image generation', () => {
     }));
     const result = await runImages({
       upstreamId,
-      account: (currentRecord.state as ChatGPTUpstreamState).accounts[0],
       model: imageModel,
       body: { prompt: 'an orange circle' },
-      fallbackPlanType: 'plus',
       headers: new Headers(),
-      effects: makeEffects(),
     });
     expect(result['response.http'].status).toBe(403);
     await release(result);
@@ -817,12 +888,9 @@ describe('ChatGPT image generation', () => {
     });
     const result = await runImages({
       upstreamId,
-      account: { ...activeAccount, accessToken: { ...farFutureAccessToken, token: 'at_failed', planType: 'plus' } },
       model: imageModel,
       body: { prompt: 'an orange circle' },
-      fallbackPlanType: 'plus',
       headers: new Headers(),
-      effects: makeEffects(),
     });
     expect(result['response.http'].status).toBe(403);
     await release(result);
@@ -860,11 +928,9 @@ describe('ChatGPT Alpha Search', () => {
 
     const result = await runAlphaSearch({
       upstreamId,
-      account: activeAccount,
       model,
       body: { id: 'search-session', commands: { search_query: [{ q: 'Floway' }] } },
       headers: new Headers({ 'x-codex-turn-metadata': '{"turn_id":"turn-search"}' }),
-      effects: makeEffects(),
     });
 
     expect(result['response.http'].status).toBe(200);

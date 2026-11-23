@@ -1,5 +1,5 @@
 import { assertAllowedObjectKeys, assertStringOrNull } from './auth/guards.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
+import type { ProviderUpstreamBase, UpstreamRecord } from '@floway-dev/provider';
 
 // One ChatGPT account's operator-managed identity, derived from explicit import
 // fields and whatever claims the supplied tokens happen to carry. Mutating
@@ -29,6 +29,17 @@ export interface ChatGPTUpstreamConfig {
 export type ChatGPTUpstreamRecord = UpstreamRecord & {
   kind: 'chatgpt';
   config: ChatGPTUpstreamConfig;
+};
+
+export interface ChatGPTUpstreamConfigFacts {
+  readonly account: ChatGPTAccountIdentity;
+}
+
+export type ChatGPTUpstreamFacts = ProviderUpstreamBase<'chatgpt', ChatGPTUpstreamConfigFacts>;
+
+export const toChatGPTUpstreamFacts = (record: UpstreamRecord): ChatGPTUpstreamFacts => {
+  assertChatGPTUpstreamRecord(record);
+  return { kind: 'chatgpt', id: record.id, name: record.name, config: { account: record.config.accounts[0] } };
 };
 
 const IDENTITY_KEYS: readonly (keyof ChatGPTAccountIdentity)[] = ['email', 'chatgptAccountId', 'chatgptUserId', 'planType'];

@@ -1,8 +1,9 @@
 import { expect, test } from 'vitest';
 
 import { restoreChatGPTResponsesOutput } from '../src/responses-output.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesOutputItemEx, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import type { ProviderFrame } from '@floway-dev/provider';
 
 const reasoning: OpenAIResponsesOutputItemEx = { type: 'reasoning', id: 'rs_0', summary: [], encrypted_content: 'reasoning' };
 const message: OpenAIResponsesOutputItemEx = {
@@ -15,12 +16,12 @@ const response = (output: OpenAIResponsesOutputItemEx[], status: OpenAIResponses
   usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
 });
 
-const restore = async (events: OpenAIResponsesStreamEventEx[]): Promise<ProtocolFrame<OpenAIResponsesStreamEventEx>[]> => {
+const restore = async (events: OpenAIResponsesStreamEventEx[]): Promise<ProviderFrame<OpenAIResponsesStreamEventEx>[]> => {
   const source = async function* () {
     for (const event of events) yield eventFrame(event);
     yield doneFrame();
   };
-  const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
+  const frames: ProviderFrame<OpenAIResponsesStreamEventEx>[] = [];
   for await (const frame of restoreChatGPTResponsesOutput(source())) frames.push(frame);
   return frames;
 };

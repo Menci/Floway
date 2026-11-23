@@ -72,7 +72,8 @@ const parseClientTurnMetadataJson = (raw: string | null): Record<string, unknown
   try {
     const parsed = JSON.parse(raw) as unknown;
     return isObject(parsed) ? parsed : null;
-  } catch {
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) throw error;
     return null;
   }
 };

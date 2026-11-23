@@ -1,6 +1,5 @@
 import { v5 as uuidV5 } from 'uuid';
 
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
   CanonicalOpenAIResponsesPayload,
   OpenAIResponsesInputAdditionalToolsItem,
@@ -9,6 +8,7 @@ import type {
   OpenAIResponsesStreamEventEx,
   OpenAIResponsesTool,
 } from '@floway-dev/protocols/openai-responses';
+import type { ProviderFrame } from '@floway-dev/provider';
 
 export type ChatGPTResponsesBody = Omit<CanonicalOpenAIResponsesPayload, 'model'>;
 
@@ -190,9 +190,9 @@ export const encodeChatGPTResponsesLiteRequest = (
 // and all other response fields. Positional Lite callers move no top-level
 // fields and bypass this projection entirely.
 export const projectMovedChatGPTResponsesFields = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+  frames: AsyncIterable<ProviderFrame<OpenAIResponsesStreamEventEx>>,
   movedFields: ChatGPTResponsesLiteRequest['movedFields'],
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+): AsyncGenerator<ProviderFrame<OpenAIResponsesStreamEventEx>> {
   for await (const frame of frames) {
     if (frame.type !== 'event') {
       yield frame;

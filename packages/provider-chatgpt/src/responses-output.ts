@@ -1,5 +1,6 @@
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesOutputItemEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import type { ProviderFrame } from '@floway-dev/provider';
 
 // Codex can close messages and native compaction items but omit them from its
 // terminal snapshot. Its CLI consumes output_item.done independently of that
@@ -10,8 +11,8 @@ import type { OpenAIResponsesOutputItemEx, OpenAIResponsesStreamEventEx } from '
 // https://github.com/openai/codex/blob/0a2eb4696c/codex-rs/codex-api/src/sse/responses.rs#L357-L362
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/public/openapi/openapi.json#L2864-L2889
 export const restoreChatGPTResponsesOutput = async function* (
-  frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
-): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+  frames: AsyncIterable<ProviderFrame<OpenAIResponsesStreamEventEx>>,
+): AsyncGenerator<ProviderFrame<OpenAIResponsesStreamEventEx>> {
   const closedItems = new Map<number, OpenAIResponsesOutputItemEx>();
   const itemIndices = new Map<string, number>();
   const indexedIds = new Map<number, string>();

@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
+import { toChatGPTUpstreamFacts } from '../src/config.ts';
+import { chatgptPipelines } from '../src/pipelines.ts';
 import { createChatGPTProvider } from '../src/provider.ts';
+import { createChatGPTService } from '../src/service.ts';
 import type { ChatGPTAccessTokenEntry, ChatGPTUpstreamState } from '../src/state.ts';
 import { Bytes, isSecret, run, type RunEvent } from '@floway-dev/pipeline';
-import { directFetcher, initProviderRepo, readHttpBody, toProviderModelFacts, type HttpRequestFacts, type UpstreamRecord } from '@floway-dev/provider';
+import { directFetcher, httpUrl, initProviderRepo, readHttpBody, toProviderModelFacts, type HttpRequestFacts, type UpstreamRecord } from '@floway-dev/provider';
 import { readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
@@ -89,8 +92,7 @@ const oauthTokenResponse = (overrides: Partial<{ access_token: string; refresh_t
 describe('createChatGPTProvider', () => {
   test('getProvidedModels uses the cached access token when fresh and surfaces every catalog entry', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
-    const instance = createChatGPTProvider(baseRecord);
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    const models = await createChatGPTProvider(baseRecord).instance.getProvidedModels(directFetcher);
     // Provider surfaces both visible and hidden upstream models — operators
     // can dispatch to `codex-auto-review` even though ChatGPT's UI hides it.
     expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review', 'gpt-image-2']);
@@ -108,17 +110,12 @@ describe('createChatGPTProvider', () => {
       if (url.includes('/codex/models')) return modelsResponse();
       throw new Error(`unexpected fetch ${url}`);
     });
-    const instance = createChatGPTProvider(baseRecord);
-    const models = await instance.instance.getProvidedModels(directFetcher);
+    const models = await createChatGPTProvider(baseRecord).instance.getProvidedModels(directFetcher);
     expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review', 'gpt-image-2']);
     const urls = fetchSpy.mock.calls.map(c => typeof c[0] === 'string' ? c[0] : (c[0] as URL | Request).toString());
     expect(urls.some(u => u.includes('/oauth/token'))).toBe(true);
     expect(urls.some(u => u.includes('/codex/models'))).toBe(true);
-    // A mint writes twice into the same account slot: the rotated
-    // refresh_token from the OAuth response, then the freshly minted access
-    // token. Both changes must survive for the next caller to see a usable
-    // credential pair, which is what the second write applying on top of the
-    // first proves.
+    expect(repo.writes).toHaveLength(1);
     const account = (current!.state as ChatGPTUpstreamState).accounts[0];
     expect(account.refresh_token).toBe('rt_v2');
     expect(account.accessToken?.token).toBe('at_minted');
@@ -141,12 +138,12 @@ describe('createChatGPTProvider', () => {
 
   test('Responses preserves developer messages and sends the bearer only through the HTTP terminal', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
-    const instance = createChatGPTProvider(baseRecord);
     const trace: RunEvent[] = [];
-    const handle = run(instance.pipelines.openaiResponses!, {
+    const handle = run(chatgptPipelines.openaiResponses, {
+      'provider.upstream': toChatGPTUpstreamFacts(baseRecord),
       'provider.model': toProviderModelFacts(stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} } })),
       'request.action': 'generate',
-      'request.headers': [],
+      'request.http': { method: 'POST', url: httpUrl('https://floway.test'), headers: [], body: null },
       'request.payload': {
         input: [
           { type: 'message', role: 'developer', content: 'base instructions' },
@@ -155,10 +152,12 @@ describe('createChatGPTProvider', () => {
         ],
         stream: true,
       },
-    }, { services: { fetcher: () => directFetcher }, finalizationTimeoutMs: 1000, events: event => { trace.push(event); } });
+    }, { services: { fetcher: () => directFetcher, chatgpt: createChatGPTService() }, finalizationTimeoutMs: 1000, events: event => { trace.push(event); } });
     const result = await handle.result;
     expect(result['response.http'].status).toBe(200);
-    await result['response.events']!.close();
+    const outcome = result['response.openaiResponses'];
+    if (outcome.kind !== 'stream') throw new Error('expected Responses stream');
+    await outcome.events.close();
     expect(await handle.done).toEqual({ ok: true });
     const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
     if (init === undefined) throw new Error('expected a ChatGPT upstream request');
@@ -180,19 +179,20 @@ describe('createChatGPTProvider', () => {
       created: 1,
       data: [{ b64_json: 'ZWRpdA==' }],
     }), { status: 200, headers: { 'content-type': 'application/json' } }));
-    const instance = createChatGPTProvider(baseRecord);
     const model = stubProviderModel({ id: 'gpt-image-2', display_name: 'GPT-Image-2', kind: 'image', endpoints: { openaiImagesGenerations: {}, openaiImagesEdits: {} } });
-    const handle = run(instance.pipelines.openaiImagesEdits!, {
+    const handle = run(chatgptPipelines.openaiImagesEdits, {
+      'provider.upstream': toChatGPTUpstreamFacts(baseRecord),
       'provider.model': toProviderModelFacts(model),
-      'request.headers': [['originator', 'chatgpt_cca']],
+      'request.http': { method: 'POST', url: httpUrl('https://floway.test'), headers: [['originator', 'chatgpt_cca']], body: null },
       'request.payload': {
         images: [{ type: 'upload', bytes: Bytes.fromUtf8('image'), filename: 'image.png', contentType: 'image/png' }],
         parameters: { prompt: 'make it blue' },
       },
-    }, { services: { fetcher: () => directFetcher }, finalizationTimeoutMs: 1000 });
+    }, { services: { fetcher: () => directFetcher, chatgpt: createChatGPTService() }, finalizationTimeoutMs: 1000 });
     const result = await handle.result;
     expect(result['response.http'].status).toBe(200);
-    await readHttpBody(result['response.http'].body);
+    expect(result['response.openaiImagesEdits']).toEqual({ kind: 'ok' });
+    expect(await readHttpBody(result['response.http'].body)).toMatchObject({ ok: true });
     expect(await handle.done).toEqual({ ok: true });
     const [url, init] = fetchSpy.mock.calls[0];
     expect(url).toBe('https://chatgpt.com/backend-api/codex/images/edits');

@@ -1,7 +1,5 @@
 import { isUnsafeObjectKey } from './auth/guards.ts';
-import { findChatGPTAccountIndex, readChatGPTUpstreamState, replaceChatGPTAccount, type ChatGPTQuotaSnapshot, type ChatGPTQuotaSnapshotMap } from './state.ts';
-import { chatgptMetrics } from './upstream-metrics.ts';
-import { recordUpstreamMetrics, getProviderRepo } from '@floway-dev/provider';
+import type { ChatGPTQuotaSnapshot } from './state.ts';
 
 export const CHATGPT_QUOTA_UNKNOWN_ACTIVE_LIMIT = 'unknown';
 
@@ -27,7 +25,7 @@ const chatgptQuotaRestrictionUntil = (snapshot: ChatGPTQuotaSnapshot): string | 
   return resets.length > 0 ? new Date(Math.max(...resets)).toISOString() : undefined;
 };
 
-const projectChatGPTQuota = (snapshot: ChatGPTQuotaSnapshot): ChatGPTQuotaSnapshot => {
+export const projectChatGPTQuota = (snapshot: ChatGPTQuotaSnapshot): ChatGPTQuotaSnapshot => {
   if (snapshot.ratelimited_until === undefined) return snapshot;
   const { ratelimited_until: _legacyUntil, ...reading } = snapshot;
   const until = chatgptQuotaRestrictionUntil(reading);
@@ -121,59 +119,4 @@ export const parseChatGPTQuotaHeaders = (headers: Headers, options: ParseChatGPT
 export const hasChatGPTQuotaReading = (snapshot: ChatGPTQuotaSnapshot): boolean => {
   const { observed_at: _observationTime, ...reading } = snapshot;
   return Object.keys(reading).length > 0;
-};
-
-// Every quota snapshot this account has observed, keyed by active limit.
-//
-// No TTL, which is the rule the other three providers state at their own slots:
-// a reading rendered with the instant it was taken tells an operator more than
-// an empty card does, and any traffic on the upstream replaces it. Only the
-// dashboard reads this -- the data plane routes without consulting it -- so
-// withholding a reading buys nothing and costs the page the only answer it has.
-export const getChatGPTQuota = async (
-  upstreamId: string,
-  accountId: string | null,
-): Promise<ChatGPTQuotaSnapshotMap | null> => {
-  const fresh = await getProviderRepo().upstreams.getById(upstreamId);
-  if (!fresh) return null;
-  const state = readChatGPTUpstreamState(fresh.state);
-  const account = state.accounts.find(a => a.chatgptAccountId === accountId);
-  const snapshots = account?.quotaSnapshot;
-  if (!snapshots || Object.keys(snapshots).length === 0) return null;
-  return Object.fromEntries(Object.entries(snapshots).map(([key, entry]) => [key, projectChatGPTQuota(entry.data)]));
-};
-
-export const putChatGPTQuota = async (
-  upstreamId: string,
-  accountId: string | null,
-  snapshot: ChatGPTQuotaSnapshot,
-): Promise<void> => {
-  const fetchedAt = Date.parse(snapshot.observed_at);
-  await getProviderRepo().upstreams.saveState(upstreamId, current => {
-    const state = readChatGPTUpstreamState(current);
-    const idx = findChatGPTAccountIndex(state, accountId);
-    if (idx < 0) throw new Error(`putChatGPTQuota: ChatGPT account ${accountId} not found in upstream ${upstreamId}`);
-    return replaceChatGPTAccount(state, idx, account => ({
-      ...account,
-      quotaSnapshot: { ...account.quotaSnapshot ?? {}, [chatgptQuotaActiveLimitKey(snapshot)]: { fetchedAt, data: snapshot } },
-    }));
-  });
-  await recordUpstreamMetrics(upstreamId, chatgptMetrics(snapshot), fetchedAt);
-};
-
-// A successful earned reset invalidates every locally observed window. Do not
-// synthesize zeroes: OpenAI explicitly requires clients to refetch limits after
-// redemption, and the next ChatGPT response will repopulate the same slot.
-// https://github.com/openai/codex/blob/ac7634b9f73ec1bf96466be7a5869f0949d20b30/codex-rs/app-server/README.md#8-earned-rate-limit-resets-chatgpt
-export const clearChatGPTQuota = async (
-  upstreamId: string,
-  accountId: string | null,
-): Promise<void> => {
-  await getProviderRepo().upstreams.saveState(upstreamId, current => {
-    const state = readChatGPTUpstreamState(current);
-    const idx = findChatGPTAccountIndex(state, accountId);
-    if (idx < 0) throw new Error(`clearChatGPTQuota: ChatGPT account ${accountId} not found in upstream ${upstreamId}`);
-    if (state.accounts[idx].quotaSnapshot === null) return current;
-    return replaceChatGPTAccount(state, idx, account => ({ ...account, quotaSnapshot: null }));
-  });
 };

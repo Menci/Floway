@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import { createUpstreamStateRepoStub } from './upstream-state-repo.ts';
-import { createChatGPTProvider } from '../src/provider.ts';
+import { toChatGPTUpstreamFacts } from '../src/config.ts';
+import { chatgptPipelines } from '../src/pipelines.ts';
+import { createChatGPTService } from '../src/service.ts';
 import { run } from '@floway-dev/pipeline';
-import { directFetcher, initProviderRepo, toProviderModelFacts, type UpstreamRecord } from '@floway-dev/provider';
+import { directFetcher, httpUrl, initProviderRepo, toProviderModelFacts, type UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, readJsonRequest, stubProviderModel } from '@floway-dev/test-utils';
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
@@ -62,10 +64,10 @@ test('ChatGPT projects compact after catalog-selected Lite encoding', async () =
     throw new Error(`unexpected fetch ${url}`);
   });
 
-  const instance = createChatGPTProvider(baseRecord);
-  const handle = run(instance.pipelines.openaiResponses!, {
+  const handle = run(chatgptPipelines.openaiResponses, {
+    'provider.upstream': toChatGPTUpstreamFacts(baseRecord),
     'provider.model': toProviderModelFacts(stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { openaiResponses: {} }, providerData: { useResponsesLite: true } })),
-    'request.headers': [],
+    'request.http': { method: 'POST', url: httpUrl('https://floway.test'), headers: [], body: null },
     'request.action': 'compact',
     'request.payload': {
       input: [{ type: 'message', role: 'user', content: 'hi' }],
@@ -80,12 +82,11 @@ test('ChatGPT projects compact after catalog-selected Lite encoding', async () =
       stream: true,
       parallel_tool_calls: false,
     },
-  }, { services: { fetcher: () => directFetcher }, finalizationTimeoutMs: 1000 });
+  }, { services: { fetcher: () => directFetcher, chatgpt: createChatGPTService() }, finalizationTimeoutMs: 1000 });
   const result = await handle.result;
 
   expect(result['response.http'].status).toBe(200);
-  expect(result['response.events']).toBeUndefined();
-  expect(result['response.result']?.output).toEqual([{ id: 'cmp_x', type: 'compaction', encrypted_content: 'BLOB' }]);
+  expect(result['response.openaiResponses']).toMatchObject({ kind: 'result', result: { output: [{ id: 'cmp_x', type: 'compaction', encrypted_content: 'BLOB' }] } });
   expect(await handle.done).toEqual({ ok: true });
 
   if (compactUrl === undefined) throw new Error('expected /codex/responses/compact to be hit');

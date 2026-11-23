@@ -3,7 +3,6 @@
 // and replays the mutator whenever a concurrent writer wins.
 
 import { assertAllowedObjectKeys, assertStringOrNull, isUnsafeObjectKey } from './auth/guards.ts';
-import { getProviderRepo } from '@floway-dev/provider';
 
 export type ChatGPTAccountCredentialHealth = 'active' | 'session_terminated' | 'refresh_failed';
 
@@ -75,7 +74,7 @@ export interface ChatGPTAccountCredential {
   state: ChatGPTAccountCredentialHealth;
   state_message?: string;
   // ISO 8601, written on every state transition (initial import, rotation,
-  // terminal-state flip). The mutation paths in routes.ts and provider.ts
+  // terminal-state flip). Credential mutations
   // always set it together with `state`, so it's required on the wire.
   state_updated_at: string;
   // Stable per-account installation id, surfaced to the ChatGPT upstream as
@@ -256,84 +255,4 @@ export const readChatGPTUpstreamState = (raw: unknown): ChatGPTUpstreamState => 
       quotaSnapshot: account.quotaSnapshot ?? null,
     })),
   };
-};
-
-// State-transition writes for both planes. The operator-facing refresh handler
-// in the gateway delegates to these so the provider owns its own state writes,
-// and the data plane's createChatGPTProvider routes the same fields through the
-// same helpers. The control plane no-ops on a missing account rather than
-// throw, matching the refresh contract that a state slot it cannot address
-// should be left alone (saveState skips the write when the mutator returns
-// state unchanged), while the data plane passes onMissing:'throw' so a lost
-// credential fails loudly instead of silently persisting nothing.
-
-// Shared state-write scaffold: stamps state_updated_at on every successful
-// account patch and no-ops on a missing account, so the transitions below
-// can't silently drop the write timestamp or address a state slot they can't
-// find. Pass { onMissing: 'throw' } to fail loudly on a missing account.
-const updateChatGPTAccountState = async (
-  upstreamId: string,
-  accountId: string | null,
-  stamp: string,
-  patch: (account: ChatGPTAccountCredential) => ChatGPTAccountCredential,
-  options?: { onMissing: 'noop' | 'throw' },
-): Promise<void> => {
-  await getProviderRepo().upstreams.saveState(upstreamId, current => {
-    const state = readChatGPTUpstreamState(current);
-    const idx = findChatGPTAccountIndex(state, accountId);
-    if (idx < 0) {
-      if (options?.onMissing === 'throw') {
-        throw new TypeError(`ChatGPT upstream ${upstreamId} state has no credential for account ${accountId}`);
-      }
-      return current;
-    }
-    return replaceChatGPTAccount(state, idx, account => ({ ...patch(account), state_updated_at: stamp }));
-  });
-};
-
-export const persistChatGPTRefreshTokenRotation = async (
-  upstreamId: string,
-  accountId: string | null,
-  newRefreshToken: string,
-  options?: { onMissing: 'noop' | 'throw' },
-): Promise<void> => {
-  // OpenAI rotates the refresh_token on every /oauth/token call. Stamped
-  // before the write so a replay against a winning sibling produces the same
-  // document rather than a later timestamp.
-  const rotatedAt = new Date().toISOString();
-  await updateChatGPTAccountState(upstreamId, accountId, rotatedAt, account => ({
-    ...account,
-    refresh_token: newRefreshToken,
-  }), options);
-};
-
-export const persistChatGPTRefreshFailure = async (
-  upstreamId: string,
-  accountId: string | null,
-  message: string,
-): Promise<void> => {
-  return await persistChatGPTTerminalState(upstreamId, accountId, 'refresh_failed', message);
-};
-
-export const persistChatGPTTerminalState = async (
-  upstreamId: string,
-  accountId: string | null,
-  state: 'session_terminated' | 'refresh_failed',
-  message: string,
-  options?: { onMissing: 'noop' | 'throw' },
-): Promise<void> => {
-  // Stamped before the write so a replay against a winning sibling produces
-  // the same document rather than a later timestamp.
-  const flippedAt = new Date().toISOString();
-  await updateChatGPTAccountState(upstreamId, accountId, flippedAt, account => {
-    // Clear any cached access token on the terminal flip — once the
-    // credential is dead the cached token is dead too, and leaving it would
-    // confuse the dashboard's status panel.
-    return {
-      ...account,
-      state,
-      state_message: message,
-      accessToken: null,
-    };
-  }, options);
 };

@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { createUpstreamStateRepoStub, type UpstreamStateRepoStub } from './upstream-state-repo.ts';
 import {
-  ensureChatGPTAccessToken,
   mintChatGPTAccessToken,
-  putChatGPTAccessToken,
   type ChatGPTAccessTokenEntry,
 } from '../src/access-token.ts';
 import { ChatGPTOAuthSessionTerminatedError } from '../src/auth/oauth.ts';
+import { toChatGPTUpstreamFacts } from '../src/config.ts';
+import { createChatGPTService, type ChatGPTService } from '../src/service.ts';
 import type { ChatGPTUpstreamState } from '../src/state.ts';
 import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 
@@ -47,8 +47,10 @@ const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
 
 let current: UpstreamRecord | null;
 let repo: UpstreamStateRepoStub;
+let service: ChatGPTService;
 
 beforeEach(() => {
+  service = createChatGPTService();
   current = makeRecord({ accounts: [{ ...baseAccount }] });
   // Write-through, so a subsequent read observes what the last write landed.
   repo = createUpstreamStateRepoStub(() => current, state => {
@@ -76,7 +78,7 @@ describe('putChatGPTAccessToken', () => {
       refreshedAt: '2026-08-10T00:00:01.000Z',
       planType: 'team',
     };
-    const effective = await putChatGPTAccessToken(upstreamId, accountId, older);
+    const effective = await service.putAccessToken(upstreamId, accountId, older);
     const expected = { ...newer, planObservedAt: newer.refreshedAt };
     expect(effective).toEqual(expected);
     expect(storedState().accounts[0].accessToken).toEqual(expected);
@@ -88,15 +90,15 @@ describe('putChatGPTAccessToken', () => {
       expiresAt: farFutureMs,
       refreshedAt: '2026-08-10T00:00:03.000Z',
     };
-    await putChatGPTAccessToken(upstreamId, accountId, tokenOnly);
-    await putChatGPTAccessToken(upstreamId, accountId, {
+    await service.putAccessToken(upstreamId, accountId, tokenOnly);
+    await service.putAccessToken(upstreamId, accountId, {
       token: 'at_t1',
       expiresAt: farFutureMs,
       refreshedAt: '2026-08-10T00:00:01.000Z',
       planType: 'free',
       planObservedAt: '2026-08-10T00:00:01.000Z',
     });
-    const effective = await putChatGPTAccessToken(upstreamId, accountId, {
+    const effective = await service.putAccessToken(upstreamId, accountId, {
       token: 'at_t2',
       expiresAt: farFutureMs,
       refreshedAt: '2026-08-10T00:00:02.000Z',
@@ -114,7 +116,7 @@ describe('putChatGPTAccessToken', () => {
   test('propagates storage failures so the request path surfaces them', async () => {
     repo.saveState.mockRejectedValueOnce(new Error('D1 boom'));
     const entry: ChatGPTAccessTokenEntry = { token: 'at_new', expiresAt: farFutureMs, refreshedAt: 'now' };
-    await expect(putChatGPTAccessToken(upstreamId, accountId, entry)).rejects.toThrow('D1 boom');
+    await expect(service.putAccessToken(upstreamId, accountId, entry)).rejects.toThrow('D1 boom');
   });
 
 });
@@ -124,7 +126,7 @@ describe('ensureChatGPTAccessToken', () => {
     const entry: ChatGPTAccessTokenEntry = { token: 'at_only', expiresAt: Date.now() + 60_000, refreshedAt: 'now' };
     current = makeRecord({ accounts: [{ ...baseAccount, refresh_token: null, accessToken: entry }] });
     const mint = vi.fn();
-    expect(await ensureChatGPTAccessToken(upstreamId, accountId, mint)).toEqual(entry);
+    expect(await service.ensureAccessToken(upstreamId, accountId, mint)).toEqual(entry);
     expect(mint).not.toHaveBeenCalled();
   });
 
@@ -133,7 +135,7 @@ describe('ensureChatGPTAccessToken', () => {
     current = makeRecord({ accounts: [{ ...baseAccount, accessToken: entry }] });
     const minted: ChatGPTAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'now' };
     const mint = vi.fn().mockResolvedValue(minted);
-    expect(await ensureChatGPTAccessToken(upstreamId, accountId, mint)).toEqual(minted);
+    expect(await service.ensureAccessToken(upstreamId, accountId, mint)).toEqual(minted);
     expect(mint).toHaveBeenCalledWith('rt_v1');
   });
 
@@ -141,15 +143,15 @@ describe('ensureChatGPTAccessToken', () => {
     const entry: ChatGPTAccessTokenEntry = { token: 'at_only', expiresAt: null, refreshedAt: 'now' };
     current = makeRecord({ accounts: [{ ...baseAccount, refresh_token: null, accessToken: entry }] });
     const mint = vi.fn();
-    await expect(ensureChatGPTAccessToken(upstreamId, accountId, mint, true)).rejects.toThrow();
+    await expect(service.ensureAccessToken(upstreamId, accountId, mint, true)).rejects.toThrow();
     expect(mint).not.toHaveBeenCalled();
   });
 
   test('keeps a null account id in a different in-flight slot from the string "null"', async () => {
     current = makeRecord({ accounts: [{ ...baseAccount, chatgptAccountId: null }] });
     const minted: ChatGPTAccessTokenEntry = { token: 'at_minted', expiresAt: farFutureMs, refreshedAt: 'now' };
-    const nullAccountEnsure = ensureChatGPTAccessToken(upstreamId, null, vi.fn().mockResolvedValue(minted));
-    await expect(ensureChatGPTAccessToken(upstreamId, 'null', vi.fn())).rejects.toThrow();
+    const nullAccountEnsure = service.ensureAccessToken(upstreamId, null, vi.fn().mockResolvedValue(minted));
+    await expect(service.ensureAccessToken(upstreamId, 'null', vi.fn())).rejects.toThrow();
     await expect(nullAccountEnsure).resolves.toEqual(minted);
   });
 
@@ -166,7 +168,7 @@ describe('ensureChatGPTAccessToken', () => {
     });
     const mint = vi.fn().mockRejectedValue(new ChatGPTOAuthSessionTerminatedError({ code: 'invalid_grant', message: 'replayed' }));
 
-    const out = await ensureChatGPTAccessToken(upstreamId, accountId, mint);
+    const out = await service.ensureAccessToken(upstreamId, accountId, mint);
     expect(out).toEqual(siblingEntry);
     // Recovery returns the sibling's cached token; no fresh persist from us.
     expect(repo.writes).toEqual([]);
@@ -177,7 +179,7 @@ describe('ensureChatGPTAccessToken', () => {
     // is dead. The cache surfaces the original error; the data-plane / control-
     // plane caller is responsible for the terminal-state flip.
     const mint = vi.fn().mockRejectedValue(new ChatGPTOAuthSessionTerminatedError({ code: 'invalid_grant', message: 'revoked' }));
-    await expect(ensureChatGPTAccessToken(upstreamId, accountId, mint)).rejects.toBeInstanceOf(ChatGPTOAuthSessionTerminatedError);
+    await expect(service.ensureAccessToken(upstreamId, accountId, mint)).rejects.toBeInstanceOf(ChatGPTOAuthSessionTerminatedError);
     expect(repo.writes).toEqual([]);
   });
 });
@@ -196,4 +198,30 @@ describe('mintChatGPTAccessToken', () => {
     await expect(mintChatGPTAccessToken('rt_v1', directFetcher, persistRotation)).rejects.toThrow();
     expect(persistRotation).toHaveBeenCalledWith('rt_v2');
   });
+});
+
+test('one cancelled waiter leaves a shared OAuth rotation available to another waiter', async () => {
+  const upstream = toChatGPTUpstreamFacts(current!);
+  const oauth = Promise.withResolvers<Response>();
+  const fetcher = vi.fn(() => oauth.promise);
+  const controller = new AbortController();
+  const request = { upstream, fetcher, now: Date.now(), operation: 'codex' as const };
+
+  const first = service.access({ ...request, signal: controller.signal });
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+  const second = service.access(request);
+  await vi.waitFor(() => expect(repo.getById).toHaveBeenCalledTimes(2));
+
+  const cancellation = new Error('client disconnected');
+  const cancelled = expect(first).rejects.toBe(cancellation);
+  controller.abort(cancellation);
+  await cancelled;
+  oauth.resolve(Response.json({ access_token: 'at_shared', refresh_token: 'rt_shared', expires_in: 600 }));
+  const decision = await second;
+
+  expect(decision.kind).toBe('active');
+  if (decision.kind === 'active') expect(decision.token.reveal()).toBe('at_shared');
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(repo.writes).toHaveLength(1);
+  expect(storedState().accounts[0]).toMatchObject({ refresh_token: 'rt_shared', accessToken: { token: 'at_shared' } });
 });

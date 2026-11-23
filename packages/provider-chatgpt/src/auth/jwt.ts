@@ -16,6 +16,10 @@ export interface ChatGPTTokenClaims {
   expiresAt: number | null;
 }
 
+export class ChatGPTTokenClaimsError extends Error {
+  override readonly name = 'ChatGPTTokenClaimsError';
+}
+
 export const parseChatGPTTokenClaims = (token: string, label = 'token'): ChatGPTTokenClaims => {
   const payload = decodeJwtPayload(token, label);
   const auth = payload['https://api.openai.com/auth'];
@@ -42,7 +46,8 @@ export const parseChatGPTTokenClaims = (token: string, label = 'token'): ChatGPT
 export const tryParseChatGPTAccessTokenClaims = (accessToken: string): ChatGPTTokenClaims | null => {
   try {
     return parseChatGPTTokenClaims(accessToken, 'access_token');
-  } catch {
+  } catch (error) {
+    if (!(error instanceof ChatGPTTokenClaimsError)) throw error;
     return null;
   }
 };
@@ -56,24 +61,24 @@ export const parseChatGPTIdTokenPlanType = (idToken: string): string | undefined
   const payload = decodeJwtPayload(idToken, 'id_token');
   const auth = payload['https://api.openai.com/auth'];
   if (auth === undefined) return undefined;
-  if (!isObject(auth)) throw new Error('id_token https://api.openai.com/auth claim is not an object');
+  if (!isObject(auth)) throw new ChatGPTTokenClaimsError('id_token https://api.openai.com/auth claim is not an object');
   const planType = auth.chatgpt_plan_type;
   if (planType === undefined) return undefined;
-  if (typeof planType !== 'string' || planType === '') throw new Error('id_token has malformed chatgpt_plan_type claim');
+  if (typeof planType !== 'string' || planType === '') throw new ChatGPTTokenClaimsError('id_token has malformed chatgpt_plan_type claim');
   return planType;
 };
 
 const decodeJwtPayload = (token: string, label: string): Record<string, unknown> => {
   const segments = token.split('.');
-  if (segments.length !== 3) throw new Error(`${label} must have 3 segments, got ${segments.length}`);
+  if (segments.length !== 3) throw new ChatGPTTokenClaimsError(`${label} must have 3 segments, got ${segments.length}`);
 
   let payload: unknown;
   try {
     payload = JSON.parse(decodeBase64UrlToUtf8(segments[1]));
   } catch (cause) {
-    throw new Error(`${label} payload is not base64url-encoded JSON`, { cause: cause as Error });
+    throw new ChatGPTTokenClaimsError(`${label} payload is not base64url-encoded JSON`, { cause });
   }
-  if (!isObject(payload)) throw new Error(`${label} payload is not an object`);
+  if (!isObject(payload)) throw new ChatGPTTokenClaimsError(`${label} payload is not an object`);
   return payload;
 };
 
