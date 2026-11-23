@@ -72,6 +72,23 @@ interface StartOptions<S> {
 
 interface CrashCandidate { readonly modelId: string; readonly upstreamId: string }
 
+const isErrorSnapshot = (value: unknown): value is ErrorSnapshot => value !== null && typeof value === 'object'
+  && 'name' in value && typeof value.name === 'string' && 'message' in value && typeof value.message === 'string';
+
+const errorChain = (error: unknown): readonly ErrorSnapshot[] => {
+  const pending = [snapshotError(error)];
+  const chain = new Set<ErrorSnapshot>();
+  for (const snapshot of pending) {
+    if (chain.has(snapshot)) continue;
+    chain.add(snapshot);
+    if (isErrorSnapshot(snapshot.cause)) pending.push(snapshot.cause);
+    if (Array.isArray(snapshot.errors)) for (const child of snapshot.errors) {
+      if (isErrorSnapshot(child)) pending.push(child);
+    }
+  }
+  return [...chain];
+};
+
 const crashCandidate = (facts: Facts): CrashCandidate | undefined => {
   const candidate = facts['route.candidate'];
   if (candidate === null || typeof candidate !== 'object'
@@ -81,56 +98,44 @@ const crashCandidate = (facts: Facts): CrashCandidate | undefined => {
 };
 
 const observeRun = () => {
-  const parents = new Map<number, number | null>();
+  const depths = new Map<number, number>();
   const billings = new Set<Deferred<readonly BillableCall[]>>();
-  const settlements = new Set<Deferred<unknown>>();
-  const covered = new Set<Deferred<readonly BillableCall[]>>();
-  let crash: { readonly stageId: number; readonly candidate: CrashCandidate | undefined } | undefined;
-
-  const isAncestor = (ancestor: number, stage: number): boolean => {
-    for (let parent = parents.get(stage); parent != null; parent = parents.get(parent)) {
-      if (parent === ancestor) return true;
-    }
-    return false;
-  };
+  const failures: { readonly depth: number; readonly candidate: CrashCandidate; readonly error: ErrorSnapshot }[] = [];
 
   const observe = (event: RunEvent): void => {
     switch (event.k) {
-    case 'enter': parents.set(event.stageId, event.parentStageId); break;
+    case 'enter': depths.set(event.stageId, event.parentStageId === null ? 0 : depths.get(event.parentStageId)! + 1); break;
     case 'fail': {
-      if (crash === undefined || !isAncestor(event.stageId, crash.stageId)) {
-        crash = { stageId: event.stageId, candidate: crashCandidate(event.facts) };
-      } else if (crash.candidate === undefined) {
-        crash = { ...crash, candidate: crashCandidate(event.facts) };
-      }
+      const candidate = crashCandidate(event.facts);
+      if (candidate !== undefined) failures.push({ depth: depths.get(event.stageId)!, candidate, error: event.error });
       break;
     }
     case 'leave': {
       const billing = event.facts['response.usage.billable'];
-      if (!isDeferred(billing)) break;
-      const observed = billing as Deferred<readonly BillableCall[]>;
-      billings.add(observed);
-      const settlement = event.facts['response.settlement'];
-      // The settlement takes responsibility even if finalization ends before its write returns.
-      if (isDeferred(settlement) && !settlements.has(settlement)) {
-        settlements.add(settlement);
-        covered.add(observed);
-      }
+      if (isDeferred(billing)) billings.add(billing as Deferred<readonly BillableCall[]>);
     }
     }
   };
 
   const sweep = async (keyId: string, usageStore: GatewayServices['usageStore']): Promise<void> => {
     if (billings.size === 0) return;
-    const [calls, assigned] = await Promise.all([
-      mergeBillableCalls([...billings]),
-      mergeBillableCalls([...covered]),
-    ]);
-    const callIds = new Set(assigned.map(call => call.callId));
-    await persistBillableCalls(priceCalls(calls.filter(call => !callIds.has(call.callId))), keyId, usageStore);
+    const calls = await mergeBillableCalls([...billings]);
+    await persistBillableCalls(priceCalls(calls), keyId, usageStore);
   };
 
-  return { observe, sweep, candidate: () => crash?.candidate };
+  const candidate = (error: unknown): CrashCandidate | undefined => {
+    const chain = errorChain(error);
+    let crash: typeof failures[number] | undefined;
+    for (const failure of failures) {
+      if (crash !== undefined && crash.depth > failure.depth) continue;
+      if (chain.some(snapshot => snapshot.name === failure.error.name && snapshot.message === failure.error.message && snapshot.stack === failure.error.stack)) {
+        crash = failure;
+      }
+    }
+    return crash?.candidate;
+  };
+
+  return { observe, sweep, candidate };
 };
 
 export const startGatewayRun = <In, Out, S>(
@@ -157,7 +162,7 @@ export const startGatewayRun = <In, Out, S>(
   if (usageStore !== undefined) options.scheduler(handle.done.then(() => observed.sweep(options.apiKey.id, usageStore)));
   if (dump !== null) options.scheduler(dump.completed);
   void handle.result.catch(error => {
-    const candidate = observed.candidate();
+    const candidate = observed.candidate(error);
     if (dump !== null) {
       const upstream = error instanceof ProviderModelsUnavailableError ? error.httpResponse : null;
       dump.hostFailure(error, upstream?.status ?? (options.errorStatus ?? gatewayErrorStatus)(error), upstream !== null, candidate);

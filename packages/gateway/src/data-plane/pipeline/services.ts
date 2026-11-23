@@ -4,7 +4,7 @@ import { checkMany } from '../../access-control/check.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { createModelsRefreshScheduler, type ModelsRefreshScheduler } from '../../execution/models-refresh.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { ApiKey, ModelAliasRecord, UsageRecord, User } from '../../repo/types.ts';
+import type { ApiKey, ModelAliasRecord, UsageRecord, User, WebSearchUsageRecord } from '../../repo/types.ts';
 import { createNonOpenAIResponsesSourceStore, createOpenAIResponsesHttpStore, type OpenAIResponsesStatefulStore } from '../chat/openai-responses/items/store.ts';
 import { AffinityCodec } from '../chat/shared/affinity/carrier.ts';
 import { resolveLegacyOpaqueBlobCompatibilityIdentity } from '../chat/shared/affinity/legacy.ts';
@@ -15,6 +15,7 @@ import type { PerformanceRecord } from '../shared/telemetry/performance-record.t
 import { loadWebSearchConfig } from '../tools/web-search/config.ts';
 import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
 import type { ConfiguredWebSearchProvider, WebSearchConfig } from '../tools/web-search/types.ts';
+import { type ErrorSnapshot, snapshotError } from '@floway-dev/pipeline';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelKind } from '@floway-dev/protocols/common';
 import { toProviderModelFacts, type ProviderModelFacts, type ProviderServices } from '@floway-dev/provider';
@@ -63,15 +64,53 @@ interface WebSearchProviderPort {
   readonly alphaSearch: () => Promise<WebSearchConfig['passthroughOpenAiSearch']>;
 }
 
+export type UsageWriteOutcome = 'written' | { readonly error: ErrorSnapshot };
+
+export interface UsageWriteReceipt {
+  readonly usage: UsageWriteOutcome;
+  readonly lastUsedAt: UsageWriteOutcome;
+}
+
 export interface GatewayServices extends ProviderServices {
   readonly providers: GatewayProviders;
   readonly affinityCodec: Pick<AffinityCodec, 'wrap' | 'unwrap'>;
   readonly sidecarCodecs: SidecarCodecFactory;
   readonly responsesStore: OpenResponsesStore;
-  readonly usageStore: { readonly record: (row: UsageRecord) => Promise<void> };
+  readonly usageStore: { readonly record: (callId: string, row: UsageRecord) => Promise<UsageWriteReceipt> };
   readonly performanceStore: { readonly record: (record: PerformanceRecord) => Promise<void> };
+  readonly searchUsageStore: { readonly record: (row: WebSearchUsageRecord) => Promise<void> };
   readonly webSearchProvider: WebSearchProviderPort;
 }
+
+export const createUsageStore = (
+  writeUsage: (row: UsageRecord) => Promise<void>, touchKey: (keyId: string) => Promise<void>,
+): GatewayServices['usageStore'] => {
+  const writes = new Map<string, Promise<UsageWriteReceipt>>();
+  const write = async (label: string, effect: () => Promise<void>): Promise<UsageWriteOutcome> => {
+    try {
+      await effect();
+      return 'written';
+    } catch (error) {
+      console.error(label, error);
+      return { error: snapshotError(error) };
+    }
+  };
+  return {
+    record(callId, row) {
+      const existing = writes.get(callId);
+      if (existing !== undefined) return existing;
+      const pending = Promise.resolve().then(async () => {
+        const [usage, lastUsedAt] = await Promise.all([
+          write('Failed to record usage:', () => writeUsage(row)),
+          write('Failed to update API key lastUsedAt:', () => touchKey(row.keyId)),
+        ]);
+        return Object.freeze({ usage, lastUsedAt });
+      });
+      writes.set(callId, pending);
+      return pending;
+    },
+  };
+};
 
 const shuffled = <T>(items: readonly T[]): T[] => {
   const result = [...items];
@@ -225,14 +264,10 @@ export const createGatewayServices = (options: {
     responsesStore: responsesStore ?? (mode => mode.kind === 'http'
       ? createOpenAIResponsesHttpStore(apiKey, requestStartedAt, mode.store)
       : createNonOpenAIResponsesSourceStore(apiKey.id)),
-    usageStore: {
-      record: async row => {
-        await Promise.all([
-          getRepo().usage.record(row),
-          getRepo().apiKeys.update(row.keyId, { lastUsedAt: new Date().toISOString() }),
-        ]);
-      },
-    },
+    usageStore: createUsageStore(
+      row => getRepo().usage.record(row),
+      async keyId => { await getRepo().apiKeys.update(keyId, { lastUsedAt: new Date().toISOString() }); },
+    ),
     performanceStore: {
       record: async record => {
         const { performance } = getRepo();
@@ -243,6 +278,7 @@ export const createGatewayServices = (options: {
         }
       },
     },
+    searchUsageStore: { record: row => getRepo().webSearchUsage.record(row) },
     webSearchProvider,
   });
 };

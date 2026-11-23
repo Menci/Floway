@@ -1,7 +1,7 @@
 import { vi } from 'vitest';
 
 import type { GatewayHttpFacts } from '../../../../../src/data-plane/pipeline/host.ts';
-import { createGatewayServices, type GatewayServices, type RouteCandidate } from '../../../../../src/data-plane/pipeline/services.ts';
+import { createGatewayServices, createUsageStore, type GatewayServices, type RouteCandidate } from '../../../../../src/data-plane/pipeline/services.ts';
 import type { ApiKey, UsageRecord } from '../../../../../src/repo/types.ts';
 import type { HttpResponseFacts } from '@floway-dev/http';
 import { compose, defineEnding } from '@floway-dev/pipeline';
@@ -57,7 +57,7 @@ export const fixture = (answer: (input: ProviderInput<Record<string, unknown>>) 
     ...createGatewayServices({ apiKey, runtimeLocation: 'TEST', scheduler: () => {} }),
     providers: { resolve: () => provider, enumerate },
     webSearchProvider: Object.assign(async () => ({ type: 'disabled' as const }), { alphaSearch: async () => config }),
-    usageStore: { record: async row => { usage.push(row); } },
+    usageStore: createUsageStore(async row => { usage.push(row); }, async () => {}),
   } satisfies GatewayServices;
   return { receive, services, usage, enumerate };
 };

@@ -1,17 +1,17 @@
 import { Hono } from 'hono';
 import { expect, test, vi } from 'vitest';
 
-import { type AnswerSource, answerKeys, gatewayAnswer } from '../../../src/data-plane/pipeline/answer.ts';
+import { type AnswerFacts, type AnswerSource, answerKeys, gatewayAnswer } from '../../../src/data-plane/pipeline/answer.ts';
 import { edgeHttp, type HttpInput, type HttpOutput, jsonHttpResponse } from '../../../src/data-plane/pipeline/edge-http.ts';
 import { type AttemptResponse, type CandidateRequest, type CandidatesRequest, failover } from '../../../src/data-plane/pipeline/failover.ts';
 import { createGatewayHttpHandler, type GatewayHttpFacts, startGatewayRun } from '../../../src/data-plane/pipeline/host.ts';
-import { billableCall, type BillableCall, observedTokenUsage, observeIdentity, scalarUsageFacts } from '../../../src/data-plane/pipeline/observe-usage.ts';
+import { billableCall, type BillableCall, emptyUsageFacts, observedTokenUsage, observeIdentity, scalarUsageFacts, type UsageFacts } from '../../../src/data-plane/pipeline/observe-usage.ts';
 import { failedRender, renderedNow, type RenderFacts, type RenderOutcome } from '../../../src/data-plane/pipeline/render.ts';
-import type { GatewayServices, RouteCandidate } from '../../../src/data-plane/pipeline/services.ts';
+import { createUsageStore, type GatewayServices, type RouteCandidate } from '../../../src/data-plane/pipeline/services.ts';
 import { priceUsage, type SettlementFacts, writeSettlement } from '../../../src/data-plane/pipeline/settlement.ts';
 import { UpstreamTransportError } from '../../../src/dial/transport-error.ts';
 import type { AuthVars } from '../../../src/middleware/auth.ts';
-import type { ApiKey } from '../../../src/repo/types.ts';
+import type { ApiKey, UsageRecord } from '../../../src/repo/types.ts';
 import { initBackgroundSchedulerResolver } from '../../../src/runtime/background.ts';
 import { Bytes, compose, defineEnding, defineStage, type RunEvent, run, type StageEnv } from '@floway-dev/pipeline';
 
@@ -41,6 +41,35 @@ const request = {
   'request.route.randomizeUpstreams': false,
   'request.route.upstreamIds': null,
 } satisfies GatewayHttpFacts;
+
+const usageFixture = () => {
+  const record = vi.fn<(row: UsageRecord) => Promise<void>>(async () => {});
+  return { record, store: createUsageStore(record, async () => {}) };
+};
+
+test.each(['usage', 'lastUsedAt'] as const)('a call shares its write and reports a $0 failure separately', async failing => {
+  const failure = new Error(`${failing} unavailable`);
+  const writeUsage = vi.fn(async () => { if (failing === 'usage') throw failure; });
+  const touchKey = vi.fn(async () => { if (failing === 'lastUsedAt') throw failure; });
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const store = createUsageStore(writeUsage, touchKey);
+  const row: UsageRecord = {
+    keyId: apiKey.id, model: 'public', upstream: 'upstream', modelKey: 'wire-key', hour: '2026-01-01T00', pricingSelector: {}, requests: 1, metrics: [],
+  };
+  try {
+    const first = store.record('run/1', row);
+    expect(store.record('run/1', row)).toBe(first);
+    const receipt = await first;
+    expect(receipt[failing]).toMatchObject({ error: { name: failure.name, message: failure.message } });
+    expect(receipt[failing === 'usage' ? 'lastUsedAt' : 'usage']).toBe('written');
+    expect(store.record('run/1', row)).toBe(first);
+    expect(writeUsage).toHaveBeenCalledExactlyOnceWith(row);
+    expect(touchKey).toHaveBeenCalledExactlyOnceWith(row.keyId);
+    expect(log).toHaveBeenCalledOnce();
+  } finally {
+    log.mockRestore();
+  }
+});
 
 type RenderedAttempt = AttemptResponse & RenderFacts;
 type Attempt = (candidate: RouteCandidate, env: StageEnv) => RenderedAttempt;
@@ -79,9 +108,9 @@ test.each([200, 429])('scalar HTTP %s bills one accepted call and skips an unmet
 });
 
 test('a rejected losing billing deferred fails done while the winner settles usage and performance', async () => {
-  const usageStore = { record: vi.fn(async () => {}) };
+  const usageStore = usageFixture();
   const performanceStore = { record: vi.fn(async () => {}) };
-  const services = { usageStore, performanceStore };
+  const services = { usageStore: usageStore.store, performanceStore };
   const lost = new Error('original losing billing error');
   const pipeline = compose<GatewayHttpFacts & CandidatesRequest, HttpOutput & SettlementFacts, typeof services>('test.lose-billing', {
     stages: [writeSettlement('chat'), priceUsage, edgeHttp, failover],
@@ -96,16 +125,18 @@ test('a rejected losing billing deferred fails done while the winner settles usa
   const handle = run(pipeline, { ...request, 'route.candidates': [candidate('loser'), candidate('winner')] }, { services, finalizationTimeoutMs: 100 });
   const response = await handle.result;
   expect(response['response.http'].status).toBe(200);
-  expect(await response['response.settlement'].promise).toMatchObject({ outcome: 'success' });
+  expect(await response['response.settlement'].promise).toMatchObject({
+    outcome: 'success', usageWrites: [{ callId: expect.any(String), receipt: { usage: 'written', lastUsedAt: 'written' } }],
+  });
   expect(await handle.done).toMatchObject({ ok: false, error: { message: lost.message } });
   expect(usageStore.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ modelKey: 'winner', requests: 1 }));
   expect(performanceStore.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ kind: 'neutral' }));
 });
 
 test.each([false, true])('the host writes each observed billable call once (outer throw %s)', async shouldThrow => {
-  const usageStore = { record: vi.fn(async () => {}) };
+  const usageStore = usageFixture();
   const performanceStore = { record: vi.fn(async () => {}) };
-  const services = { usageStore, performanceStore };
+  const services = { usageStore: usageStore.store, performanceStore };
   type Input = GatewayHttpFacts & CandidatesRequest;
   const failure = new Error('failed after observing the selected call');
   const render = defineStage<Input, Input, RenderedAttempt, RenderedAttempt>({
@@ -137,10 +168,11 @@ test.each([false, true])('the host writes each observed billable call once (oute
   expect(performanceStore.record).toHaveBeenCalledTimes(shouldThrow ? 0 : 1);
 });
 
-test('a pending settlement usage write still owns the call after finalization times out', async () => {
+test('a pending settlement usage write is shared with the host sweep after finalization times out', async () => {
   const pendingWrite = Promise.withResolvers<void>();
-  const usageStore = { record: vi.fn(async () => {}).mockImplementationOnce(() => pendingWrite.promise) };
-  const services = { usageStore, performanceStore: { record: async () => {} } };
+  const usageStore = usageFixture();
+  usageStore.record.mockImplementationOnce(() => pendingWrite.promise);
+  const services = { usageStore: usageStore.store, performanceStore: { record: async () => {} } };
   type Input = GatewayHttpFacts & CandidatesRequest;
   const pipeline = compose<Input, HttpOutput & SettlementFacts, typeof services>('test.usage-ownership', {
     stages: [writeSettlement('chat'), priceUsage, edgeHttp, failover],
@@ -153,6 +185,7 @@ test('a pending settlement usage write still owns the call after finalization ti
   try {
     expect((await handle.result)['response.http'].status).toBe(200);
     expect(await handle.done).toMatchObject({ ok: false, error: { name: 'FinalizationTimeoutError' } });
+    pendingWrite.resolve();
     await Promise.all(tasks);
     expect(usageStore.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ modelKey: 'selected', requests: 1 }));
   } finally {
@@ -160,31 +193,101 @@ test('a pending settlement usage write still owns the call after finalization ti
   }
 });
 
-test('the billing sweep honors a sub-run settlement that never reached the root', async () => {
-  const usageStore = { record: vi.fn(async () => {}) };
-  const services = { usageStore, performanceStore: { record: vi.fn(async () => {}) } };
+test('forwarding a settled sub-run response to a parent settlement writes its call once', async () => {
+  const usageStore = usageFixture();
+  const services = { usageStore: usageStore.store, performanceStore: { record: vi.fn(async () => {}) } };
   type Input = GatewayHttpFacts & CandidatesRequest;
-  const sub = compose<Input, HttpOutput & SettlementFacts, typeof services>('test.usage-sub-run', {
+  type Settled = HttpOutput & SettlementFacts & AnswerFacts & RenderFacts;
+  const sub = compose<Input, Settled, typeof services>('test.usage-sub-run', {
     stages: [writeSettlement(null), priceUsage, edgeHttp, failover],
     ending: endpoint((model, env) => counted(model, env, 200, 3)),
   });
-  const root = compose<Input, HttpOutput, typeof services>('test.parent-run', {
-    stages: [],
-    ending: defineEnding<Input, HttpOutput, {}, typeof services>({
+  const root = compose<Input, Settled, typeof services>('test.parent-run', {
+    stages: [writeSettlement(null), priceUsage, edgeHttp],
+    ending: defineEnding<Input, Settled & UsageFacts, {}, typeof services>({
       name: 'invoke',
       request: { needs: ['request.http', 'route.candidates'] },
-      return: { provides: ['response.http'] },
-      execute: async (facts, _into, env) => ({ 'response.http': (await env.run(sub, facts).result)['response.http'] }),
+      return: { provides: [...answerKeys, 'response.settlement'] },
+      execute: async (facts, _into, env) => {
+        const response = await env.run(sub, facts).result;
+        expect(Object.hasOwn(response, 'response.usage.billable')).toBe(false);
+        expect(Object.hasOwn(response, 'response.usage.priced')).toBe(false);
+        return { ...response, ...emptyUsageFacts(env) };
+      },
     }),
   });
   const tasks: Promise<unknown>[] = [];
   const handle = startGatewayRun(root, { ...request, 'route.candidates': [candidate('sub-run')] }, {
     apiKey, request: request['request.http'], services, scheduler: task => tasks.push(task),
   });
-  expect((await handle.result)['response.http'].status).toBe(200);
+  const response = await handle.result;
+  expect(response['response.http'].status).toBe(200);
+  expect(Object.hasOwn(response, 'response.usage.billable')).toBe(false);
+  expect(Object.hasOwn(response, 'response.usage.priced')).toBe(false);
+  expect(await response['response.settlement'].promise).toMatchObject({ usageWrites: [] });
   expect(await handle.done).toEqual({ ok: true });
   await Promise.all(tasks);
   expect(usageStore.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ modelKey: 'sub-run', requests: 1 }));
+});
+
+test('usage is written while render is pending and remains a single write when render rejects', async () => {
+  const usageStore = usageFixture();
+  const performanceStore = { record: vi.fn(async () => {}) };
+  const services = { usageStore: usageStore.store, performanceStore };
+  const render = Promise.withResolvers<RenderOutcome>();
+  const failure = new Error('render rejected after billing');
+  type Input = GatewayHttpFacts & CandidatesRequest;
+  const pipeline = compose<Input, HttpOutput & SettlementFacts, typeof services>('test.rejected-render', {
+    stages: [writeSettlement('chat'), priceUsage, edgeHttp, failover],
+    ending: endpoint((model, env) => ({ ...counted(model, env, 200, 3), 'response.render': env.defer('test render', render.promise) })),
+  });
+  const tasks: Promise<unknown>[] = [];
+  const handle = startGatewayRun(pipeline, { ...request, 'route.candidates': [candidate('selected')] }, {
+    apiKey, request: request['request.http'], services, scheduler: task => tasks.push(task),
+  });
+  const response = await handle.result;
+  try {
+    await vi.waitFor(() => expect(usageStore.record).toHaveBeenCalledOnce());
+  } finally {
+    render.reject(failure);
+  }
+  await expect(response['response.settlement'].promise).rejects.toBe(failure);
+  expect(await handle.done).toMatchObject({ ok: false, error: { message: failure.message } });
+  await Promise.all(tasks);
+  expect(usageStore.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ modelKey: 'selected', requests: 1 }));
+  expect(performanceStore.record).not.toHaveBeenCalled();
+});
+
+test.each([false, true])('a handled child determines crash attribution only when it causes the terminal error (%s)', async caused => {
+  const handled = new Error('handled branch error');
+  const terminal = new Error('terminal request error', caused ? { cause: handled } : undefined);
+  const outer = { ...candidate('terminal'), modelId: 'terminal' };
+  const inner = { ...candidate('handled'), modelId: 'handled' };
+  const catcher = defineStage<CandidateRequest, CandidateRequest, RenderedAttempt, RenderedAttempt>({
+    name: 'catcher',
+    through: {
+      request: { needs: ['route.candidate'], consumes: [], provides: ['route.candidate'] },
+      response: { needs: [], consumes: [], provides: [] },
+    },
+    execute: async (facts, next) => {
+      await expect(next({ ...facts, 'route.candidate': inner })).rejects.toBe(handled);
+      throw terminal;
+    },
+  });
+  const pipeline = compose<CandidateRequest, HttpOutput, {}>('test.terminal-crash', {
+    stages: [catcher], ending: endpoint(() => { throw handled; }),
+  });
+  const tasks: Promise<unknown>[] = [];
+  const store = { record: vi.fn(async () => {}) };
+  const handle = startGatewayRun(pipeline, { 'route.candidate': outer }, {
+    apiKey, request: request['request.http'], services: {}, scheduler: task => tasks.push(task),
+    crashPerformance: { route: request, operation: 'chat', store },
+  });
+  await expect(handle.result).rejects.toBe(terminal);
+  await Promise.all(tasks);
+  expect(store.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+    kind: 'zero-output-error', dimensions: expect.objectContaining({ model: caused ? 'handled' : 'terminal' }),
+  }));
 });
 
 test('crash attribution keeps the deepest candidate on the last failing sibling chain', async () => {
@@ -228,9 +331,9 @@ test.each([
   { disposition: 'api-error', render: { kind: 'completed' }, status: 429, source: 'upstream', outcome: 'upstream-error', record: { kind: 'zero-output-error' } },
   { disposition: 'api-error', render: { kind: 'completed' }, status: 400, source: 'gateway', outcome: 'gateway-error', record: { kind: 'zero-output-error' } },
 ] as const)('settlement classifies $outcome from render and answer source', async ({ disposition, render, status, source, outcome, record }) => {
-  const usageStore = { record: vi.fn(async () => {}) };
+  const usageStore = usageFixture();
   const performanceStore = { record: vi.fn<GatewayServices['performanceStore']['record']>(async () => {}) };
-  const services = { usageStore, performanceStore };
+  const services = { usageStore: usageStore.store, performanceStore };
   const pipeline = compose<GatewayHttpFacts & CandidatesRequest, HttpOutput & SettlementFacts, typeof services>('test.render-settlement', {
     stages: [writeSettlement('chat'), priceUsage, edgeHttp, failover],
     ending: endpoint((model, env) => ({
@@ -250,7 +353,8 @@ test.each([
 });
 
 test('a gateway answer can override a disabled performance operation', async () => {
-  const services = { usageStore: { record: vi.fn(async () => {}) }, performanceStore: { record: vi.fn(async () => {}) } };
+  const usageStore = usageFixture();
+  const services = { usageStore: usageStore.store, performanceStore: { record: vi.fn(async () => {}) } };
   const pipeline = compose<GatewayHttpFacts & CandidatesRequest, HttpOutput & SettlementFacts, typeof services>('test.operation-override', {
     stages: [writeSettlement(null), priceUsage, edgeHttp, failover],
     ending: endpoint((_model, env) => gatewayAnswer(env, jsonHttpResponse(400, { error: 'invalid input' }, 0), {
@@ -261,7 +365,7 @@ test('a gateway answer can override a disabled performance operation', async () 
   const response = await handle.result;
   expect(await response['response.settlement'].promise).toMatchObject({ outcome: 'gateway-error' });
   expect(await handle.done).toEqual({ ok: true });
-  expect(services.usageStore.record).not.toHaveBeenCalled();
+  expect(usageStore.record).not.toHaveBeenCalled();
   expect(services.performanceStore.record).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
     kind: 'zero-output-error', dimensions: expect.objectContaining({ operation: 'chat' }),
   }));
@@ -271,7 +375,8 @@ test.each([
   { render: { kind: 'completed' }, outcome: 'success', performance: 'neutral' },
   { render: { kind: 'cancelled' }, outcome: 'failed', performance: 'zero-output-error' },
 ] as const)('client-cancelled delivery after $render.kind render settles as $outcome', async ({ render, outcome, performance }) => {
-  const services = { usageStore: { record: vi.fn(async () => {}) }, performanceStore: { record: vi.fn(async () => {}) } };
+  const usageStore = usageFixture();
+  const services = { usageStore: usageStore.store, performanceStore: { record: vi.fn(async () => {}) } };
   const pipeline = compose<GatewayHttpFacts & CandidatesRequest, HttpOutput & SettlementFacts, typeof services>('test.delivery-settlement', {
     stages: [writeSettlement('chat'), priceUsage, edgeHttp, failover],
     ending: endpoint((model, env) => {
@@ -291,9 +396,9 @@ test.each([
 });
 
 test('settlement bills losing attempts and samples only the selected attempt even when identities match', async () => {
-  const usageStore = { record: vi.fn(async () => {}) };
+  const usageStore = usageFixture();
   const performanceStore = { record: vi.fn(async () => {}) };
-  const services = { usageStore, performanceStore };
+  const services = { usageStore: usageStore.store, performanceStore };
   const released = vi.fn();
   const pipeline = compose<GatewayHttpFacts & CandidatesRequest, HttpOutput & SettlementFacts, typeof services>('test.usage', {
     stages: [writeSettlement('chat'), priceUsage, edgeHttp, failover],
