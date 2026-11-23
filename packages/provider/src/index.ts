@@ -62,7 +62,7 @@ export { parseErrorBody, parseHttpOutcomeStage, parseResponsesStage, parseSseBod
 export { discardUpstreamResponse, readHttpBody, type HttpBodyReadResult } from './response-body.ts';
 export type { JsonRequestBody, MultipartFile, MultipartField, MultipartRequestBody, ProviderRequestBody } from './request-body.ts';
 export type { HeaderEntry, HttpRequestBody, HttpRequestFacts, HttpResponseBodyChunk, HttpResponseFacts, HttpUrl, TransportFailure } from '@floway-dev/http';
-export { httpUrl, isTransportFailure, wrapSensitiveHeaderEntries } from '@floway-dev/http';
+export { httpUrl, isTransportFailure, isUpstreamTransportError, UpstreamTransportError, wrapSensitiveHeaderEntries } from '@floway-dev/http';
 export { headersForAnthropicMessagesCall, setAnthropicBetaHeader } from './anthropic-messages.ts';
 export type { OpenAIImagesEditsRequest, OpenAIImagesEditsSource } from './images.ts';
 export { serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
