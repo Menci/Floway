@@ -1,12 +1,12 @@
 import { expect, test, vi } from 'vitest';
 
-import { wrapOpenAIResponsesStatefulOutput } from '../../../../../src/data-plane/chat/openai-responses/client-output.ts';
+import { wrapOpenAIResponsesAffinityEgress } from '../../../../../src/data-plane/chat/openai-responses/affinity/egress.ts';
 import { openaiResponsesItemId } from '../../../../../src/data-plane/chat/openai-responses/items/identity.ts';
 import { wrapOpenAIResponsesClientOutput } from '../../../../../src/data-plane/chat/openai-responses/items/output.ts';
-import { createOpenAIResponsesHttpStore } from '../../../../../src/data-plane/chat/openai-responses/items/store.ts';
+import { createNonOpenAIResponsesSourceStore, createOpenAIResponsesHttpStore } from '../../../../../src/data-plane/chat/openai-responses/items/store.ts';
+import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/carrier.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
-import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy } from '../test-policy.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesOutputItemEx, OpenAIResponsesOutputReasoning, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
@@ -59,7 +59,13 @@ test('stateless client egress retains terminal-only output without applying a pr
     yield eventFrame({ type: 'response.completed', response });
   };
   const frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[] = [];
-  for await (const frame of wrapOpenAIResponsesStatefulOutput(events(), mockChatGatewayCtx())) frames.push(frame);
+  const withAffinity = wrapOpenAIResponsesAffinityEgress(events(), {
+    codec: new AffinityCodec('22'.repeat(32)),
+    affinity: { upstreamId: 'test-upstream', modelId: 'model', opaqueBlobCompatibilityIdentity: { upstreamId: 'test-upstream', key: 'model' } },
+  });
+  for await (const frame of wrapOpenAIResponsesClientOutput(withAffinity, {
+    store: createNonOpenAIResponsesSourceStore('test-key'), responseId: 'resp_public',
+  })) frames.push(frame);
   const terminal = frames.at(-1);
   if (terminal?.type !== 'event' || terminal.event.type !== 'response.completed') throw new Error('expected completed response');
   expect(terminal.event.response.output).toHaveLength(2);

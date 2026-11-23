@@ -3,10 +3,11 @@ import { jsonrepair } from 'jsonrepair';
 import type { ResponsesBodyBack, ResponsesBodyFacts } from './facts.ts';
 import { imageGenerationServerTool } from './server-tools/image-generation.ts';
 import { webSearchServerTool } from './server-tools/web-search.ts';
+import { answerKeys, gatewayAnswer } from '../../../pipeline/answer.ts';
 import { jsonHttpResponse } from '../../../pipeline/edge-http.ts';
 import type { GatewayHttpFacts } from '../../../pipeline/host.ts';
 import { readHttpBytes } from '../../../pipeline/non-chat.ts';
-import { emptyUsageFacts, mergeBillableCalls, type UsageFacts, usageResponseKeys } from '../../../pipeline/observe-usage.ts';
+import { mergeBillableCalls, type UsageFacts } from '../../../pipeline/observe-usage.ts';
 import type { GatewayServices, RouteCandidate } from '../../../pipeline/services.ts';
 import { SidecarDomain } from '../../shared/sidecar-codec.ts';
 import { defineStage, type StageEnv } from '@floway-dev/pipeline';
@@ -67,10 +68,12 @@ export interface ServerToolSlotResult {
   replayData?: unknown;
 }
 
+type ReplayFunctionCall = Extract<CanonicalOpenAIResponsesInputItem, { type: 'function_call' }>;
+
 interface OpenAIResponsesHostedToolCallPayload {
   v: 1;
   type: string;
-  functionCall: OpenAIResponsesOutputFunctionCallEx;
+  functionCall: ReplayFunctionCall;
   data?: unknown;
 }
 
@@ -613,13 +616,13 @@ const expandServerToolHistory = async (
         throw new TypeError('Invalid hosted-tool replay data');
       }
       const { functionCall } = value;
-      const { type, call_id, name, status, arguments: args } = functionCall;
-      if (type !== 'function_call' || typeof call_id !== 'string' || typeof name !== 'string' || typeof args !== 'string' || typeof status !== 'string') {
+      const { type, call_id, name, arguments: args } = functionCall;
+      if (type !== 'function_call' || typeof call_id !== 'string' || typeof name !== 'string' || typeof args !== 'string') {
         throw new TypeError('Invalid hosted-tool replay data');
       }
       replays.push({
         v: SERVER_TOOL_REPLAY_VERSION, type: value.type, data: value.data,
-        functionCall: { ...functionCall, type, call_id, name, status, arguments: args },
+        functionCall: { ...functionCall, type, call_id, name, arguments: args },
       });
     }
 
@@ -640,7 +643,7 @@ const expandServerToolHistory = async (
       }
       if (ownedExpansion !== undefined) {
         const { toolName, expansion } = ownedExpansion;
-        let functionCall: OpenAIResponsesOutputFunctionCallEx;
+        let functionCall: ReplayFunctionCall;
         if (expansion.callSource === 'replay') {
           if (replay === undefined) throw new TypeError('Hosted-tool history expansion matched an absent replay');
           functionCall = replay.functionCall;
@@ -1203,7 +1206,7 @@ export const createServerToolShim = (registrations: readonly ServerToolRegistrat
         provides: ['response.openaiResponses', 'response.usage.billable', 'response.timing.streamEndedAt'],
       },
     },
-    return: { provides: ['response.http', 'response.openaiResponses', ...usageResponseKeys] },
+    return: { provides: [...answerKeys, 'response.openaiResponses'] },
     execute: async (facts, next, env) => {
       const turnPayload = { current: facts['request.openaiResponses'] };
       const invocation: ServerToolInvocation = {
@@ -1220,14 +1223,13 @@ export const createServerToolShim = (registrations: readonly ServerToolRegistrat
         if (prepared.type === 'inactive') continue;
         if (prepared.type === 'invalid-request') {
           return {
-            'response.http': jsonHttpResponse(400, {
+            ...gatewayAnswer(env, jsonHttpResponse(400, {
               error: {
                 message: prepared.message, type: prepared.errorType ?? 'invalid_request_error',
                 param: prepared.param, code: prepared.code === undefined ? 'invalid_request_error' : prepared.code,
               },
-            }, env.clock()),
+            }, env.clock())),
             'response.openaiResponses': undefined,
-            ...emptyUsageFacts(env),
           };
         }
         preparedTools.push(prepared);

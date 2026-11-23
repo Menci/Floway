@@ -1,27 +1,24 @@
 import { expect, test } from 'vitest';
 
+import { affinityCandidate } from './fixture.ts';
 import { wrapOpenAIResponsesAffinityEgress } from '../../../../../src/data-plane/chat/openai-responses/affinity/egress.ts';
-import { analyzeOpenAIResponsesAffinity } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
-import { expandShimCompactionItems } from '../../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
+import { analyzeOpenAIResponsesAffinity, evaluateOpenAIResponsesCandidate, scoreOpenAIResponsesCandidate } from '../../../../../src/data-plane/chat/openai-responses/affinity/ingress.ts';
+import { expandShimCompactionItems } from '../../../../../src/data-plane/chat/openai-responses/compact-payload.ts';
 import { hydrateOpenAIResponsesPayload } from '../../../../../src/data-plane/chat/openai-responses/items/hydrate.ts';
 import { wrapOpenAIResponsesClientOutput } from '../../../../../src/data-plane/chat/openai-responses/items/output.ts';
 import { createOpenAIResponsesHttpStore } from '../../../../../src/data-plane/chat/openai-responses/items/store.ts';
-import { AffinityCodec, selectAffinityCandidates } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
+import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/carrier.ts';
+import { affinityIdentityForCandidate } from '../../../../../src/data-plane/chat/shared/affinity/selection.ts';
+import { selectChatCandidates } from '../../../../../src/data-plane/chat/shared/affinity/stages.ts';
+import { openaiResponsesTarget } from '../../../../../src/data-plane/chat/shared/target-picker.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';
 import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { TEST_OPENAI_RESPONSES_RETENTION_SECONDS, testOpenAIResponsesStatePolicy } from '../test-policy.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesResultEx, OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { stubModelCandidate } from '@floway-dev/test-utils';
 
-const modelCandidate = (upstream: string) => {
-  const base = stubModelCandidate();
-  return stubModelCandidate({
-    provider: { ...base.provider, upstreamId: upstream },
-    model: { id: 'model-a' },
-  });
-};
+const modelCandidate = affinityCandidate;
 
 test('affinity selects the route while item storage preserves the exact emitted id', async () => {
   const repo = new InMemoryRepo();
@@ -60,11 +57,7 @@ test('affinity selects the route while item storage preserves the exact emitted 
   };
   const withAffinity = wrapOpenAIResponsesAffinityEgress(source(), {
     codec,
-    affinity: {
-      upstreamId: candidateA.provider.upstreamId,
-      modelId: candidateA.model.id,
-      opaqueBlobCompatibilityIdentity: { upstreamId: candidateA.provider.upstreamId, key: candidateA.model.id },
-    },
+    affinity: affinityIdentityForCandidate(candidateA),
   });
   const client = wrapOpenAIResponsesClientOutput(withAffinity, {
     store,
@@ -80,21 +73,18 @@ test('affinity selects the route while item storage preserves the exact emitted 
   if (publicProgram.type !== 'program_output') throw new Error('Expected program output');
   expect(publicProgram.id).toBe(programOutput.id);
 
-  const input = clientResponse.output as unknown as CanonicalOpenAIResponsesInputItem[];
+  const input = clientResponse.output as CanonicalOpenAIResponsesInputItem[];
   await store.loadInputItems(input, input);
   const hydrated = hydrateOpenAIResponsesPayload({ model: 'model-a', input }, store);
   const affinity = await analyzeOpenAIResponsesAffinity(hydrated, codec);
-  expect(affinity.requiredTargets).toEqual([{
-    upstreamId: candidateA.provider.upstreamId,
-    modelId: candidateA.model.id,
-    opaqueBlobCompatibilityIdentity: { upstreamId: candidateA.provider.upstreamId, key: candidateA.model.id },
-  }]);
-  expect(affinity.evaluateCandidate(candidateA)).toMatchObject({ kind: 'accepted', degrades: false });
-  expect(affinity.evaluateCandidate(candidateB)).toMatchObject({ kind: 'rejected' });
-  const selection = selectAffinityCandidates([candidateB, candidateA], affinity);
-  if ('kind' in selection) throw new Error(`Expected affinity selection, received ${selection.kind}`);
-  expect(selection.candidates).toEqual([candidateA]);
-  expect(selection.payloadFor(candidateA).input).toEqual([programOutput]);
+  expect(affinity.requiredTargets).toEqual([affinityIdentityForCandidate(candidateA)]);
+  expect(evaluateOpenAIResponsesCandidate(affinity, candidateA, hydrated)).toMatchObject({ kind: 'accepted', degrades: false });
+  expect(evaluateOpenAIResponsesCandidate(affinity, candidateB, hydrated)).toMatchObject({ kind: 'rejected' });
+  const selection = selectChatCandidates([candidateB, candidateA], openaiResponsesTarget, affinity, hydrated, scoreOpenAIResponsesCandidate, hydrated.model);
+  expect(selection).toEqual([candidateA]);
+  const projection = evaluateOpenAIResponsesCandidate(affinity, candidateA, hydrated);
+  if (projection.kind === 'rejected') throw new Error('Expected accepted program history');
+  expect(projection.payload.input).toEqual([programOutput]);
 });
 
 test('compaction_summary carrier authenticates after alias canonicalization without rewriting its id', async () => {
@@ -104,7 +94,7 @@ test('compaction_summary carrier authenticates after alias canonicalization with
     type: 'compaction_summary',
     id: 'cmp_upstream',
     encrypted_content: 'opaque',
-  } as unknown as OpenAIResponsesResultEx['output'][number];
+  } as OpenAIResponsesResultEx['output'][number];
   const response: OpenAIResponsesResultEx = {
     id: 'resp_upstream',
     object: 'response',
@@ -120,11 +110,7 @@ test('compaction_summary carrier authenticates after alias canonicalization with
   let wrapped: string | undefined;
   for await (const frame of wrapOpenAIResponsesAffinityEgress(source(), {
     codec,
-    affinity: {
-      upstreamId: candidate.provider.upstreamId,
-      modelId: candidate.model.id,
-      opaqueBlobCompatibilityIdentity: { upstreamId: candidate.provider.upstreamId, key: candidate.model.id },
-    },
+    affinity: affinityIdentityForCandidate(candidate),
   })) {
     if (frame.type === 'event' && frame.event.type === 'response.completed') {
       wrapped = (frame.event.response.output[0] as { encrypted_content?: string }).encrypted_content;
@@ -132,16 +118,13 @@ test('compaction_summary carrier authenticates after alias canonicalization with
   }
   if (wrapped === undefined) throw new Error('Expected wrapped compaction summary');
 
-  const canonical = { type: 'compaction', id: 'cmp_public', encrypted_content: wrapped } as unknown as CanonicalOpenAIResponsesInputItem;
-  const prepared = await analyzeOpenAIResponsesAffinity({ model: 'model-a', input: [canonical] }, codec);
-  expect(prepared.requiredTargets).toEqual([{
-    upstreamId: candidate.provider.upstreamId,
-    modelId: candidate.model.id,
-    opaqueBlobCompatibilityIdentity: { upstreamId: candidate.provider.upstreamId, key: candidate.model.id },
-  }]);
-  const evaluation = prepared.evaluateCandidate(candidate);
+  const canonical = { type: 'compaction', id: 'cmp_public', encrypted_content: wrapped } as CanonicalOpenAIResponsesInputItem;
+  const input = { model: 'model-a', input: [canonical] };
+  const prepared = await analyzeOpenAIResponsesAffinity(input, codec);
+  expect(prepared.requiredTargets).toEqual([affinityIdentityForCandidate(candidate)]);
+  const evaluation = evaluateOpenAIResponsesCandidate(prepared, candidate, input);
   if (evaluation.kind === 'rejected') throw new Error('Expected candidate affinity evaluation to be accepted');
-  expect(evaluation.materialize().input[0]).toMatchObject({
+  expect(evaluation.payload.input[0]).toMatchObject({
     type: 'compaction',
     id: 'cmp_public',
     encrypted_content: 'opaque',
@@ -190,11 +173,7 @@ test('gateway-owned compaction round-trips across affinity targets and expands w
   const events: OpenAIResponsesStreamEventEx[] = [];
   for await (const frame of wrapOpenAIResponsesAffinityEgress(source(), {
     codec,
-    affinity: {
-      upstreamId: candidateA.provider.upstreamId,
-      modelId: candidateA.model.id,
-      opaqueBlobCompatibilityIdentity: { upstreamId: candidateA.provider.upstreamId, key: candidateA.model.id },
-    },
+    affinity: affinityIdentityForCandidate(candidateA),
   })) if (frame.type === 'event') events.push(frame.event);
 
   expect(events.map(event => event.sequence_number)).toEqual([0, 1, 2, 3, 4, 5]);
@@ -213,15 +192,13 @@ test('gateway-owned compaction round-trips across affinity targets and expands w
   expect(terminal.response.output[0]).toMatchObject({ type: 'reasoning' });
   expect(terminal.response.output[1]).toEqual(compaction);
 
-  const prepared = await analyzeOpenAIResponsesAffinity({
-    model: 'model-a',
-    input: terminal.response.output as unknown as CanonicalOpenAIResponsesInputItem[],
-  }, codec);
+  const input = { model: 'model-a', input: terminal.response.output as CanonicalOpenAIResponsesInputItem[] };
+  const prepared = await analyzeOpenAIResponsesAffinity(input, codec);
   expect(prepared.requiredTargets).toEqual([]);
-  const evaluation = prepared.evaluateCandidate(candidateB);
+  const evaluation = evaluateOpenAIResponsesCandidate(prepared, candidateB, input);
   expect(evaluation).toMatchObject({ kind: 'accepted', degrades: false });
   if (evaluation.kind === 'rejected') throw new Error('Expected portable compaction to be accepted');
-  const materialized = evaluation.materialize();
+  const materialized = evaluation.payload;
   expect(materialized.input).toEqual([compaction]);
   expect(expandShimCompactionItems(materialized).input).toEqual(recovered);
 });

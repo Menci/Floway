@@ -1,9 +1,7 @@
+import type { RouteCandidate } from '../../../pipeline/services.ts';
 import { type AffinityCodec, type AffinityIdentity, affinityIdentityOf, type DecodedAffinityBlob } from '../../shared/affinity/carrier.ts';
 import {
-  type AffinityCandidate,
-  type AffinityRequestAnalysis,
   candidateSatisfiesAffinityIdentity,
-  defineAffinityRequest,
   isIncompatibleAffinityProjection,
   type OptionalAffinityBlobProjection,
   projectOptionalAffinityBlob,
@@ -170,14 +168,14 @@ const materializeOpenAIResponsesPayload = (
   return { ...payload, input };
 };
 
-export const evaluateOpenAIResponsesCandidate = (
+const planOpenAIResponsesCandidate = (
   analysis: OpenAIResponsesRequestAnalysis,
-  candidate: AffinityCandidate,
-  payload: CanonicalOpenAIResponsesPayload,
+  candidate: RouteCandidate,
 ) => {
   const unsatisfiedTargets: AffinityIdentity[] = [];
   const projectionsByItem = new Map<number, readonly OpenAIResponsesBlobCandidateProjection[] | null>();
   let degrades = false;
+  const { upstreamId, modelId } = candidate;
 
   for (const item of analysis.items) {
     if (
@@ -214,32 +212,34 @@ export const evaluateOpenAIResponsesCandidate = (
       if (item.inheritedRequiredTarget !== undefined) {
         const target = item.inheritedRequiredTarget;
         if (
-          ('providerModel' in candidate ? candidate.upstreamId : candidate.provider.upstreamId) !== target.upstreamId
-          || ('providerModel' in candidate ? candidate.modelId : candidate.model.id) !== target.modelId
+          upstreamId !== target.upstreamId
+          || modelId !== target.modelId
         ) return false;
       }
       return (projectionsByItem.get(item.itemIndex) ?? []).every(projection => projection.projection.preferred);
     }),
-    payload: materializeOpenAIResponsesPayload(payload, projectionsByItem),
+    projectionsByItem,
   };
 };
 
-export const analyzeOpenAIResponsesAffinityFacts = async (
+export const scoreOpenAIResponsesCandidate = (analysis: OpenAIResponsesRequestAnalysis, candidate: RouteCandidate) => {
+  const plan = planOpenAIResponsesCandidate(analysis, candidate);
+  return plan.kind === 'rejected' ? plan : { kind: plan.kind, degrades: plan.degrades, preferred: plan.preferred };
+};
+
+export const evaluateOpenAIResponsesCandidate = (
+  analysis: OpenAIResponsesRequestAnalysis,
+  candidate: RouteCandidate,
+  payload: CanonicalOpenAIResponsesPayload,
+) => {
+  const plan = planOpenAIResponsesCandidate(analysis, candidate);
+  if (plan.kind === 'rejected') return plan;
+  const { projectionsByItem, ...score } = plan;
+  return { ...score, payload: materializeOpenAIResponsesPayload(payload, projectionsByItem) };
+};
+
+export const analyzeOpenAIResponsesAffinity = async (
   payload: CanonicalOpenAIResponsesPayload,
   codec: Pick<AffinityCodec, 'unwrap'>,
 ): Promise<OpenAIResponsesRequestAnalysis> =>
   analyzeOpenAIResponsesRequest(payload.input, await opaqueBlobLocations(payload.input, codec));
-
-export const analyzeOpenAIResponsesAffinity = async (
-  payload: CanonicalOpenAIResponsesPayload,
-  codec: AffinityCodec,
-): Promise<AffinityRequestAnalysis<CanonicalOpenAIResponsesPayload>> => {
-  const analysis = await analyzeOpenAIResponsesAffinityFacts(payload, codec);
-  return defineAffinityRequest(
-    analysis.requiredTargets,
-    candidate => {
-      const evaluated = evaluateOpenAIResponsesCandidate(analysis, candidate, payload);
-      return evaluated.kind === 'rejected' ? evaluated : { ...evaluated, materialize: () => evaluated.payload };
-    },
-  );
-};

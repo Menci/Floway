@@ -1,9 +1,8 @@
 import { isEqual } from 'es-toolkit';
 
 import { shortId } from '../../../../../shared/short-id.ts';
+import { answerKeys, gatewayAnswer } from '../../../../pipeline/answer.ts';
 import { jsonHttpResponse } from '../../../../pipeline/edge-http.ts';
-import { emptyUsageFacts, usageResponseKeys } from '../../../../pipeline/observe-usage.ts';
-import { renderedNow } from '../../../../pipeline/render.ts';
 import type { GatewayServices, GatewayRouteFacts } from '../../../../pipeline/services.ts';
 import { priceUsage, writeSettlement } from '../../../../pipeline/settlement.ts';
 import { truncatePreservingCodePoints } from '../../../../shared/text.ts';
@@ -509,14 +508,12 @@ const executeLocalSearch = async (
     ending: defineEnding<Input, Output>({
       name: 'executeLocalSearch',
       request: { needs: ['request.webSearch.commands'] },
-      return: { provides: ['response.webSearch.result', 'response.http', 'response.render', 'response.delivery', ...usageResponseKeys] },
+      return: { provides: [...answerKeys, 'response.webSearch.result', 'response.delivery'] },
       execute: async (_facts, _into, child) => {
         const result = await work(child.signal);
         return {
+          ...gatewayAnswer(child, jsonHttpResponse(200, result, child.clock())),
           'response.webSearch.result': result,
-          'response.http': jsonHttpResponse(200, result, child.clock()),
-          ...emptyUsageFacts(child),
-          ...renderedNow(child, { kind: 'completed' }),
           'response.delivery': child.defer('local search delivery', Promise.resolve({ kind: 'completed', endedAt: child.clock() })),
         };
       },

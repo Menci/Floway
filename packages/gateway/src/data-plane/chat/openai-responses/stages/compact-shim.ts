@@ -118,9 +118,7 @@ const simulateCompaction = async (facts: Request, next: NextTurn, env: StageEnv)
   };
   return {
     ...base,
-    'response.openaiResponses': facts['request.action'] === 'compact'
-      ? eventsForCompaction(env, compaction)
-      : env.createStream({ label: 'compaction events', iterate: () => syntheticEventsFromResult(compaction) }),
+    'response.openaiResponses': env.createStream({ label: 'compaction events', iterate: () => syntheticEventsFromResult(compaction) }),
   };
 };
 

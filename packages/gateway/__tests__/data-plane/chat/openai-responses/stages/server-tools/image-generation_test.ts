@@ -1,5 +1,6 @@
-import { beforeEach, expect, test } from 'vitest';
+import { expect, test } from 'vitest';
 
+import type { ServerToolInvocation, ServerToolPrepareResult } from '../../../../../../src/data-plane/chat/openai-responses/stages/server-tool-shim.ts';
 import {
   inspectImageSources,
   DEFAULT_IMAGE_MODEL,
@@ -11,14 +12,15 @@ import {
   resolveImageOperation,
   SHIM_TOOL_NAME,
   expandImageGenerationCall,
-} from '../../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/image-generation.ts';
-import type { OpenAIResponsesInvocation } from '../../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
-import { initRepo } from '../../../../../../src/repo/index.ts';
-import { InMemoryRepo } from '../../../../../repo/memory.ts';
-import { mockChatGatewayCtx } from '../../../../../test-utils/gateway-ctx.ts';
+} from '../../../../../../src/data-plane/chat/openai-responses/stages/server-tools/image-generation.ts';
+import type { GatewayHttpFacts } from '../../../../../../src/data-plane/pipeline/host.ts';
+import type { GatewayServices } from '../../../../../../src/data-plane/pipeline/services.ts';
+import { driveResponsesStage } from '../drive.ts';
+import { defineStage } from '@floway-dev/pipeline';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesInputImage, OpenAIResponsesInputImageGenerationCall, CanonicalOpenAIResponsesInputItem, OpenAIResponsesPayloadEx, OpenAIResponsesTool } from '@floway-dev/protocols/openai-responses';
-import { assert, assertEquals, assertFalse, assertThrows, stubModelCandidate } from '@floway-dev/test-utils';
+import { toProviderModelFacts } from '@floway-dev/provider';
+import { assert, assertEquals, assertFalse, assertThrows, stubProviderModel } from '@floway-dev/test-utils';
 
 const PNG_B64 = 'aGVsbG8='; // "hello" — any decodable base64 works for source tests.
 const VALID_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/wEAAAAASUVORK5CYII=';
@@ -31,22 +33,43 @@ const paddedPngResponse = (byteLength: number): Response => {
   return new Response(bytes, { headers: { 'content-type': 'image/png' } });
 };
 
-// The registration only reads targetApi / enabledFlags / payload off the invocation.
-const makeCtx = (payload: Partial<OpenAIResponsesPayloadEx>): OpenAIResponsesInvocation => ({
-  candidate: stubModelCandidate({
-    enabledFlags: new Set(['openai-responses-image-generation-shim']),
-    model: { id: 'm', endpoints: { openaiResponses: {} } },
-  }),
-  targetApi: 'openaiResponses',
-  payload: { model: 'm', input: [], ...payload } as CanonicalOpenAIResponsesPayload,
-  headers: new Headers(),
-  action: 'generate',
-});
-const gatewayCtx = () => mockChatGatewayCtx({ wantsStream: true });
+interface Invocation extends Omit<ServerToolInvocation, 'payload'> {
+  payload: CanonicalOpenAIResponsesPayload;
+}
 
-beforeEach(() => {
-  initRepo(new InMemoryRepo());
-});
+const makeInvocation = (payload: Partial<OpenAIResponsesPayloadEx>): Invocation => {
+  const providerModel = toProviderModelFacts(stubProviderModel({
+    id: 'm', endpoints: { openaiResponses: {} }, enabledFlags: new Set(['openai-responses-image-generation-shim']),
+  }));
+  return {
+    candidate: {
+      upstreamId: 'image-orchestrator', upstreamName: 'Image Orchestrator', kind: 'custom',
+      modelId: providerModel.id, upstreamModelId: providerModel.upstreamModelId,
+      endpoints: providerModel.endpoints, limits: providerModel.limits, providerModel,
+    },
+    targetApi: 'openaiResponses',
+    payload: { model: 'm', input: [], ...payload } as CanonicalOpenAIResponsesPayload,
+  };
+};
+
+const verifyImageRegistration = async (invocation: Invocation): Promise<ServerToolPrepareResult> => {
+  let registration: ServerToolPrepareResult | undefined;
+  const stage = defineStage<GatewayHttpFacts, GatewayHttpFacts, object, object, GatewayServices>({
+    name: 'prepareImageTool',
+    through: {
+      request: { needs: ['request.http'], consumes: [], provides: [] },
+      response: { needs: [], consumes: [], provides: [] },
+    },
+    execute: async (facts, next, env) => {
+      registration = await imageGenerationServerTool(invocation, facts, env);
+      return await next(facts);
+    },
+  });
+  const result = await driveResponsesStage(stage, invocation.payload);
+  assertEquals(await result.done, { ok: true });
+  assert(registration !== undefined);
+  return registration;
+};
 
 const imageInputContainers = {
   message: (image: OpenAIResponsesInputImage): CanonicalOpenAIResponsesInputItem => ({ type: 'message', role: 'user', content: [image] }),
@@ -224,15 +247,14 @@ test('imageGenerationServerTool enforces the aggregate limit across distinct suc
     return Promise.resolve(paddedPngResponse(26 * 1024 * 1024));
   });
 
-  const result = await imageGenerationServerTool(
-    makeCtx({
+  const result = await verifyImageRegistration(
+    makeInvocation({
       tools: [{ type: 'image_generation', action: 'edit' }],
       input: [
         imageInputContainers.message({ type: 'input_image', image_url: 'https://example.com/first.png', detail: 'auto' }),
         imageInputContainers.message({ type: 'input_image', image_url: 'https://example.com/second.png', detail: 'auto' }),
       ],
     }),
-    gatewayCtx(),
   );
 
   assert(result.type === 'invalid-request');
@@ -252,12 +274,11 @@ test.each([
   },
 ])('imageGenerationServerTool mirrors the native remote-source error for $name', async ({ fetcher }) => {
   initExternalResourceFetcher(fetcher);
-  const result = await imageGenerationServerTool(
-    makeCtx({
+  const result = await verifyImageRegistration(
+    makeInvocation({
       tools: [{ type: 'image_generation', action: 'edit' }],
       input: [imageInputContainers.message({ type: 'input_image', image_url: 'https://example.invalid/source.png', detail: 'auto' })],
     }),
-    gatewayCtx(),
   );
 
   assert(result.type === 'invalid-request');
@@ -268,16 +289,14 @@ test.each([
 
 test('imageGenerationServerTool materializes a remote mask and mirrors its download error', async () => {
   initExternalResourceFetcher(() => Promise.resolve(validPngResponse()));
-  const accepted = await imageGenerationServerTool(
-    makeCtx({ tools: [{ type: 'image_generation', action: 'generate', input_image_mask: { image_url: 'https://example.com/mask.png' } }] }),
-    gatewayCtx(),
+  const accepted = await verifyImageRegistration(
+    makeInvocation({ tools: [{ type: 'image_generation', action: 'generate', input_image_mask: { image_url: 'https://example.com/mask.png' } }] }),
   );
   assert(accepted.type === 'active');
 
   initExternalResourceFetcher(() => Promise.resolve(new Response(null, { status: 404 })));
-  const rejected = await imageGenerationServerTool(
-    makeCtx({ tools: [{ type: 'image_generation', action: 'edit', input_image_mask: { image_url: 'https://example.com/missing.png' } }] }),
-    gatewayCtx(),
+  const rejected = await verifyImageRegistration(
+    makeInvocation({ tools: [{ type: 'image_generation', action: 'edit', input_image_mask: { image_url: 'https://example.com/missing.png' } }] }),
   );
   assert(rejected.type === 'invalid-request');
   assertEquals(rejected.errorType, 'invalid_request_error');
@@ -291,15 +310,14 @@ test('imageGenerationServerTool validates a remote mask before applying the Flow
     requests += 1;
     return Promise.resolve(validPngResponse());
   });
-  const result = await imageGenerationServerTool(
-    makeCtx({
+  const result = await verifyImageRegistration(
+    makeInvocation({
       tools: [{
         type: 'image_generation',
         action: 'edit',
         input_image_mask: { file_id: 'file_123', image_url: 'https://example.com/mask.png' },
       }],
     }),
-    gatewayCtx(),
   );
 
   assert(result.type === 'invalid-request');
@@ -311,9 +329,8 @@ test('imageGenerationServerTool validates a remote mask before applying the Flow
 test.each(unresolvableSourceCases)(
   'imageGenerationServerTool handles $source images in $container for action $action',
   async ({ source, action, input, path }) => {
-    const result = await imageGenerationServerTool(
-      makeCtx({ tools: [{ type: 'image_generation', action }], input: [input] }),
-      gatewayCtx(),
+    const result = await verifyImageRegistration(
+      makeInvocation({ tools: [{ type: 'image_generation', action }], input: [input] }),
     );
     if (source !== 'malformed' && action === 'generate') {
       assert(result.type === 'active');
@@ -347,9 +364,8 @@ test.each([
 });
 
 test('imageGenerationServerTool rejects explicit edit without an input image', async () => {
-  const result = await imageGenerationServerTool(
-    makeCtx({ tools: [{ type: 'image_generation', action: 'edit' }] }),
-    gatewayCtx(),
+  const result = await verifyImageRegistration(
+    makeInvocation({ tools: [{ type: 'image_generation', action: 'edit' }] }),
   );
   assert(result.type === 'invalid-request');
   assertEquals(result.errorType, 'image_generation_user_error');
@@ -358,8 +374,8 @@ test('imageGenerationServerTool rejects explicit edit without an input image', a
 });
 
 test('image dispatcher exposes a newly introduced invalid edit source as an invariant failure', async () => {
-  const invocation = makeCtx({ tools: [{ type: 'image_generation', action: 'auto' }] });
-  const result = await imageGenerationServerTool(invocation, gatewayCtx());
+  const invocation = makeInvocation({ tools: [{ type: 'image_generation', action: 'auto' }] });
+  const result = await verifyImageRegistration(invocation);
   assert(result.type === 'active' && result.hosted !== undefined);
 
   invocation.payload = {
@@ -381,7 +397,7 @@ test('image dispatcher exposes a newly introduced invalid edit source as an inva
 // ── imageGenerationServerTool: per-response dispatch budget ──
 
 test('image dispatch budget caps real backend calls per response, not ReAct turns', async () => {
-  const result = await imageGenerationServerTool(makeCtx({ tools: [{ type: 'image_generation', action: 'generate' }] }), gatewayCtx());
+  const result = await verifyImageRegistration(makeInvocation({ tools: [{ type: 'image_generation', action: 'generate' }] }));
   assert(result.type === 'active' && result.hosted !== undefined);
   const dispatch = result.hosted.dispatcher;
   const intercepted = { functionCall: { type: 'function_call' as const, call_id: 'c', name: SHIM_TOOL_NAME, arguments: '{"prompt":"x"}', status: 'completed' }, parsedArguments: { prompt: 'x' } };

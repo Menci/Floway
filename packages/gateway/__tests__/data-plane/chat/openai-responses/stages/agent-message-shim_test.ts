@@ -1,40 +1,15 @@
 import { test } from 'vitest';
 
-import { withOpenAIResponsesAgentMessageShim } from '../../../../../src/data-plane/chat/openai-responses/interceptors/agent-message-shim.ts';
-import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
-import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
-import { doneFrame } from '@floway-dev/protocols/common';
-import type { OpenAIResponsesInputAgentMessageItem, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
-import { decodeResponseBody, eventResult, type FlagId } from '@floway-dev/provider';
-import { assert, assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
-
-const gatewayCtx = mockChatGatewayCtx();
-const okEvents = () => Promise.resolve(eventResult((async function* () { yield doneFrame(); })(), testTelemetryModelIdentity));
+import { driveResponsesStage } from './drive.ts';
+import { agentMessageShim } from '../../../../../src/data-plane/chat/openai-responses/stages/agent-message-shim.ts';
+import { readHttpBytes } from '../../../../../src/data-plane/pipeline/non-chat.ts';
+import type { CanonicalOpenAIResponsesInputItem, OpenAIResponsesInputAgentMessageItem } from '@floway-dev/protocols/openai-responses';
+import type { FlagId } from '@floway-dev/provider';
+import { assert, assertEquals } from '@floway-dev/test-utils';
 
 const FLAG = new Set<FlagId>(['openai-responses-agent-message-shim']);
-
-const lower = async (
-  input: CanonicalOpenAIResponsesInputItem[],
-  { enabledFlags = new Set<FlagId>(), targetApi = 'openaiResponses' }: {
-    enabledFlags?: ReadonlySet<FlagId>;
-    targetApi?: OpenAIResponsesInvocation['targetApi'];
-  } = {},
-) => {
-  const invocation: OpenAIResponsesInvocation = {
-    payload: { model: 'test-model', input },
-    candidate: stubModelCandidate({ enabledFlags }),
-    targetApi,
-    headers: new Headers(),
-    action: 'generate',
-  };
-  const before = invocation.payload;
-  let seen: OpenAIResponsesInvocation['payload'] | undefined;
-  const result = await withOpenAIResponsesAgentMessageShim(invocation, gatewayCtx, () => {
-    seen = invocation.payload;
-    return okEvents();
-  });
-  return { before, seen, result };
-};
+const lower = (input: CanonicalOpenAIResponsesInputItem[], options?: Parameters<typeof driveResponsesStage>[2]) =>
+  driveResponsesStage(agentMessageShim, { model: 'test-model', input }, options);
 
 const newTask: OpenAIResponsesInputAgentMessageItem = {
   type: 'agent_message',
@@ -114,8 +89,7 @@ test('returns an input error without running downstream when agent content canno
     content: [{ type: 'encrypted_content', encrypted_content: 'opaque' }],
   }], { enabledFlags: FLAG });
   assertEquals(seen, undefined);
-  assert(result.type === 'api-error');
-  assertEquals(result.http.status, 400);
-  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { param: string } };
+  assertEquals(result['response.http'].status, 400);
+  const body = JSON.parse((await readHttpBytes(result['response.http'].body)).utf8()) as { error: { param: string } };
   assertEquals(body.error.param, 'agent_message.content[0].type');
 });

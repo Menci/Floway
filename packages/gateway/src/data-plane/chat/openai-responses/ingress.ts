@@ -1,18 +1,19 @@
 import { wrapOpenAIResponsesAffinityEgress } from './affinity/egress.ts';
-import { analyzeOpenAIResponsesAffinityFacts, evaluateOpenAIResponsesCandidate, type OpenAIResponsesRequestAnalysis } from './affinity/ingress.ts';
+import { analyzeOpenAIResponsesAffinity, evaluateOpenAIResponsesCandidate, type OpenAIResponsesRequestAnalysis, scoreOpenAIResponsesCandidate } from './affinity/ingress.ts';
 import { encodeResponses, type ResponsesDelivery } from './encode.ts';
 import { responsesInputErrorBody } from './errors.ts';
 import { statefulTurn } from './stages/stateful-turn.ts';
+import { answerKeys, gatewayAnswer } from '../../pipeline/answer.ts';
 import { edgeHttp, type HttpOutput, jsonHttpResponse } from '../../pipeline/edge-http.ts';
 import { failover } from '../../pipeline/failover.ts';
 import type { GatewayHttpFacts } from '../../pipeline/host.ts';
 import { requestBytes } from '../../pipeline/non-chat.ts';
-import { emptyUsageFacts, type UsageFacts, usageResponseKeys } from '../../pipeline/observe-usage.ts';
-import { renderedNow, type RenderFacts } from '../../pipeline/render.ts';
+import type { UsageFacts } from '../../pipeline/observe-usage.ts';
+import type { RenderFacts } from '../../pipeline/render.ts';
 import { createResolveCandidates, type ModelRequest } from '../../pipeline/resolve-candidates.ts';
 import type { GatewayServices, RouteCandidate } from '../../pipeline/services.ts';
 import { priceUsage, type SettlementFacts, writeSettlement } from '../../pipeline/settlement.ts';
-import { type AffinityFacts, createAffinity, createAnalyzeAffinity, selectChatCandidates } from '../shared/affinity/stages.ts';
+import { type AffinityFacts, createAffinity, createAnalyzeAffinity, isAffinityRoutingFailure, selectChatCandidates } from '../shared/affinity/stages.ts';
 import type { DeliveryFacts } from '../shared/encode.ts';
 import { type ChatBodyInput, type ChatBodyOutput, enterChatBody } from '../shared/route-body.ts';
 import { serializeOpenAIResponsesStream } from '../shared/stream-compatibility/index.ts';
@@ -40,17 +41,13 @@ const parsePayload = (action: OpenAIResponsesAction) => defineStage<HttpRequest,
     request: { needs: ['request.http', 'request.startedAt'], consumes: [], provides: ['request.model', 'request.openaiResponses', 'request.action', 'request.delivery'] },
     response: { needs: [], consumes: [], provides: [] },
   },
-  return: { provides: ['response.http', 'response.render', ...usageResponseKeys] },
+  return: { provides: answerKeys },
   execute: async (facts, next, env) => {
     const uploaded = facts['request.uploadError'];
     const parsed = uploaded === undefined
       ? canonicalizeOpenAIResponsesPayload(JSON.parse(requestBytes(facts['request.http']).utf8()))
       : { error: { message: uploaded.message } };
-    if ('error' in parsed) return {
-      'response.http': jsonHttpResponse(400, responsesInputErrorBody(parsed.error), env.clock()),
-      ...emptyUsageFacts(env),
-      ...renderedNow(env, { kind: 'completed' }),
-    };
+    if ('error' in parsed) return gatewayAnswer(env, jsonHttpResponse(400, responsesInputErrorBody(parsed.error), env.clock()));
     return await next({
       ...facts,
       'request.model': parsed.model,
@@ -66,7 +63,7 @@ const parsePayload = (action: OpenAIResponsesAction) => defineStage<HttpRequest,
   },
 });
 
-export const analyzeResponsesAffinity = createAnalyzeAffinity('openaiResponses', analyzeOpenAIResponsesAffinityFacts);
+export const analyzeResponsesAffinity = createAnalyzeAffinity('openaiResponses', analyzeOpenAIResponsesAffinity);
 export const responsesAffinity = createAffinity('openaiResponses', {
   evaluate: evaluateOpenAIResponsesCandidate,
   wrap: wrapOpenAIResponsesAffinityEgress,
@@ -78,15 +75,14 @@ export const resolveResponsesCandidates = createResolveCandidates<RouteCandidate
   sourceApi: '/responses',
   requestNeeds: ['request.openaiResponses', 'request.affinity'],
   select(candidates, facts) {
-    const selection = selectChatCandidates(candidates, openaiResponsesTarget, facts['request.affinity'], facts['request.openaiResponses'],
-      evaluateOpenAIResponsesCandidate, facts['request.model']);
-    return 'status' in selection ? { ...selection, code: 'responses_item_routing_unavailable' } : selection;
+    return selectChatCandidates(candidates, openaiResponsesTarget, facts['request.affinity'], facts['request.openaiResponses'],
+      scoreOpenAIResponsesCandidate, facts['request.model']);
   },
   errorBody: error => ({
     error: {
       message: error.message,
       type: 'invalid_request_error',
-      ...('code' in error ? { param: 'input', code: error.code } : {}),
+      ...(isAffinityRoutingFailure(error) ? { param: 'input', code: 'responses_item_routing_unavailable' } : {}),
     },
   }),
 });

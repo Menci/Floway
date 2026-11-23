@@ -1,7 +1,7 @@
 import { beforeEach, expect, test, vi } from 'vitest';
 
-import { inputErrorResult } from '../../../../../src/data-plane/chat/openai-responses/errors.ts';
-import { withOpenAIResponsesServerToolShim } from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tool-shim.ts';
+import { driveResponsesStage, type Frame } from './drive.ts';
+import { createServerToolShim } from '../../../../../src/data-plane/chat/openai-responses/stages/server-tool-shim.ts';
 import {
   consumeTurnStreaming,
   createMergeState,
@@ -10,14 +10,15 @@ import {
   type ServerToolResultSlot,
   type ServerToolRegistration,
   type TurnSummary,
-} from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tool-shim.ts';
-import { imageGenerationServerTool, expandImageGenerationCall } from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/image-generation.ts';
-import { SHIM_TOOL_NAME, expandWebSearchCall, webSearchServerTool } from '../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/web-search.ts';
-import type { OpenAIResponsesInterceptor, OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
-import type { ChatGatewayCtx } from '../../../../../src/data-plane/chat/shared/gateway-ctx.ts';
-import { SidecarDomain } from '../../../../../src/data-plane/chat/shared/sidecar-codec.ts';
-import { resolveAlphaSearchDispatcher } from '../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts';
-import type { AlphaSearchDispatcher } from '../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts';
+} from '../../../../../src/data-plane/chat/openai-responses/stages/server-tool-shim.ts';
+import { imageGenerationServerTool, expandImageGenerationCall } from '../../../../../src/data-plane/chat/openai-responses/stages/server-tools/image-generation.ts';
+import { SHIM_TOOL_NAME, expandWebSearchCall, webSearchServerTool } from '../../../../../src/data-plane/chat/openai-responses/stages/server-tools/web-search.ts';
+import { createSidecarCodecFactory, SidecarDomain } from '../../../../../src/data-plane/chat/shared/sidecar-codec.ts';
+import { readHttpBytes } from '../../../../../src/data-plane/pipeline/non-chat.ts';
+import type { BillableCall } from '../../../../../src/data-plane/pipeline/observe-usage.ts';
+import type { GatewayServices } from '../../../../../src/data-plane/pipeline/services.ts';
+import { executeAlphaSearchSubRun } from '../../../../../src/data-plane/tools/web-search/alpha-search/execution.ts';
+import { loadWebSearchConfig } from '../../../../../src/data-plane/tools/web-search/config.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../../../src/data-plane/tools/web-search/provider.ts';
 import type {
   ConfiguredWebSearchProvider,
@@ -30,7 +31,7 @@ import type {
 } from '../../../../../src/data-plane/tools/web-search/types.ts';
 import { getRepo, initRepo } from '../../../../../src/repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
-import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
+import { Bytes } from '@floway-dev/pipeline';
 import { decodeCanonicalBase64, encodeBase64, eventFrame } from '@floway-dev/protocols/common';
 import type { BillableUsage, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
@@ -46,11 +47,81 @@ import type {
   OpenAIResponsesToolChoice,
   OpenAIResponsesWebSearchAction,
 } from '@floway-dev/protocols/openai-responses';
-import { decodeResponseBody, eventResult, type EventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
-import { assert, assertEquals, assertFalse, assertRejects, stubModelCandidate } from '@floway-dev/test-utils';
+import type { ChatTargetApi, FlagId, TelemetryModelIdentity } from '@floway-dev/provider';
+import { assert, assertEquals, assertFalse, assertRejects } from '@floway-dev/test-utils';
 import { routeOpenAIResponsesViaAnthropicMessages, routeOpenAIResponsesViaOpenAIChatCompletions } from '@floway-dev/translate';
 
-const withOpenAIResponsesWebSearchShim = withOpenAIResponsesServerToolShim([webSearchServerTool]);
+interface Invocation {
+  payload: CanonicalOpenAIResponsesPayload;
+  enabledFlags?: ReadonlySet<FlagId>;
+  targetApi: ChatTargetApi;
+}
+
+interface ToolFixture {
+  readonly apiKeyId: string;
+  readonly signal?: AbortSignal;
+  readonly services: Pick<GatewayServices, 'sidecarCodecs' | 'webSearchProvider'>;
+}
+
+interface ScriptedEvents<T> {
+  readonly type: 'events';
+  readonly events: AsyncIterable<T>;
+  readonly modelIdentity: TelemetryModelIdentity;
+  readonly usage?: Promise<BillableUsage>;
+}
+
+interface ScriptedFailure {
+  readonly type: 'api-error';
+  readonly source: 'upstream' | 'gateway';
+  readonly http: { readonly status: number; readonly headers: Headers };
+  readonly body: Uint8Array;
+}
+
+type ScriptedReply<T> = ScriptedEvents<T> | ScriptedFailure;
+const scriptEvents = <T>(events: AsyncIterable<T>, modelIdentity: TelemetryModelIdentity, options?: Pick<ScriptedEvents<T>, 'usage'>): ScriptedEvents<T> => ({
+  type: 'events', events, modelIdentity, ...options,
+});
+
+const scriptInputError = (error: { message: string; param?: string; code?: string }): ScriptedFailure => ({
+  type: 'api-error', source: 'gateway', http: { status: 400, headers: new Headers({ 'content-type': 'application/json' }) },
+  body: new TextEncoder().encode(JSON.stringify({
+    error: {
+      message: error.message, type: 'invalid_request_error', param: error.param ?? 'input', code: error.code ?? null,
+    },
+  })),
+});
+
+type ToolReply =
+  | { readonly type: 'events'; readonly events: AsyncIterable<Frame>; readonly billing: Promise<readonly BillableCall[]> }
+  | { readonly type: 'api-error'; readonly http: { readonly status: number }; readonly body: Bytes };
+
+type ToolHarness = (invocation: Invocation, fixture: ToolFixture, respond: () => Promise<ScriptedReply<Frame>>) => Promise<ToolReply>;
+
+const openToolTurn = (registrations: readonly ServerToolRegistration[]): ToolHarness => {
+  const stage = createServerToolShim(registrations);
+  return async (invocation, fixture, respond) => {
+    const { result } = await driveResponsesStage(stage, invocation.payload, {
+      apiKeyId: fixture.apiKeyId, signal: fixture.signal, services: fixture.services,
+      enabledFlags: invocation.enabledFlags, targetApi: invocation.targetApi,
+      async upstream(payload) {
+        invocation.payload = payload;
+        const reply = await respond();
+        if (reply.type === 'api-error') return { failure: { status: reply.http.status, headers: [...reply.http.headers], body: Bytes.copy(reply.body), source: reply.source } };
+        return {
+          events: reply.events,
+          modelKey: reply.modelIdentity.modelKey,
+          ...(reply.usage === undefined ? {} : { usage: reply.usage }),
+        };
+      },
+    });
+    const stream = result['response.openaiResponses'];
+    if (stream !== undefined) return { type: 'events', events: stream, billing: result['response.usage.billable'].promise };
+    const http = result['response.http'];
+    return { type: 'api-error', http, body: await readHttpBytes(http.body) };
+  };
+};
+
+const openWebSearchTurn = openToolTurn([webSearchServerTool]);
 
 const replaySearch: ServerToolRegistration = () => ({
   type: 'active', baseToolName: 'web_search',
@@ -59,11 +130,11 @@ const replaySearch: ServerToolRegistration = () => ({
 const replayImage: ServerToolRegistration = () => ({ type: 'active', baseToolName: 'image_generation', expandHistoryItem: (item, replay) => item.type === 'image_generation_call' ? expandImageGenerationCall(item, replay) : undefined });
 
 const searchHistory = async (
-  ctx: ChatGatewayCtx,
+  ctx: ToolFixture,
   id: string,
   item: Extract<CanonicalOpenAIResponsesInputItem, { type: 'web_search_call' | 'image_generation_call' }> = { type: 'web_search_call', id, status: 'completed', action: { type: 'search', queries: [id] } },
 ): Promise<CanonicalOpenAIResponsesInputItem[]> => {
-  const encoded = await ctx.sidecarCodecFactory.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall).encode({
+  const encoded = await ctx.services.sidecarCodecs.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall).encode({
     v: 1,
     type: item.type,
     functionCall: { type: 'function_call', call_id: id, name: item.type === 'web_search_call' ? 'web_search' : 'image_generation', arguments: '{}', status: 'completed' },
@@ -92,10 +163,10 @@ test.each([
   { change: 'search query', original: boundSearchItem, changed: { ...boundSearchItem, action: { type: 'search' as const, queries: ['different'] } } },
   { change: 'search to image', original: boundSearchItem, changed: boundImageItem },
 ])('shim rejects the ordinal replay candidate when call inputs change: $change', async ({ original, changed }) => {
-  const ctx = makeGatewayCtx();
+  const ctx = makeToolFixture();
   const [carrier] = await searchHistory(ctx, 'signed_original', original);
   const inv = makeInvocation({ payload: { input: [carrier, changed] } });
-  await runShimAndDrain(withOpenAIResponsesServerToolShim([replaySearch, replayImage]), inv, ctx, async () => {
+  await runShimAndDrain(openToolTurn([replaySearch, replayImage]), inv, ctx, async () => {
     const calls = inv.payload.input.filter(item => item.type === 'function_call');
     assertEquals(calls.length, 1);
     assertFalse(calls[0].call_id === 'signed_original');
@@ -111,10 +182,10 @@ test.each([
 test.each([
   { change: 'search results', original: boundSearchItem, changed: { ...boundSearchItem, results: [] } },
 ])('shim retains replay when only call outputs change: $change', async ({ original, changed }) => {
-  const ctx = makeGatewayCtx();
+  const ctx = makeToolFixture();
   const [carrier] = await searchHistory(ctx, 'signed_original', original);
   const inv = makeInvocation({ payload: { input: [carrier, changed] } });
-  await runShimAndDrain(withOpenAIResponsesServerToolShim([replaySearch, replayImage]), inv, ctx, async () => {
+  await runShimAndDrain(openToolTurn([replaySearch, replayImage]), inv, ctx, async () => {
     assertEquals(inv.payload.input.filter(item => item.type === 'function_call').map(item => item.call_id), ['signed_original']);
     assertEquals(inv.payload.input.filter(item => item.type === 'function_call_output').map(item => item.call_id), ['signed_original']);
     return await scriptedRun([messageTurn('done')]).run();
@@ -122,10 +193,10 @@ test.each([
 });
 
 test('hosted history pairs replay sidecars by ordinal within a turn', async () => {
-  const ctx = makeGatewayCtx();
-  const codec = ctx.sidecarCodecFactory.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall);
+  const ctx = makeToolFixture();
+  const codec = ctx.services.sidecarCodecs.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall);
   const decode = vi.spyOn(codec, 'decode');
-  const codecFor = vi.spyOn(ctx.sidecarCodecFactory, 'codecFor').mockReturnValue(codec);
+  const codecFor = vi.spyOn(ctx.services.sidecarCodecs, 'codecFor').mockReturnValue(codec);
   const [firstReplay, firstCall] = await searchHistory(ctx, 'first');
   const secondCall = { type: 'image_generation_call' as const, id: 'public-image', status: 'completed' as const, result: 'aGVsbG8=', revised_prompt: 'second' };
   const [secondReplay] = await searchHistory(ctx, 'second', secondCall);
@@ -145,7 +216,7 @@ test('hosted history pairs replay sidecars by ordinal within a turn', async () =
     },
   });
   const inv = makeInvocation({ payload: { input } });
-  await runShimAndDrain(withOpenAIResponsesServerToolShim([registration]), inv, ctx, async () => {
+  await runShimAndDrain(openToolTurn([registration]), inv, ctx, async () => {
     assertEquals(seen, ['first', 'second']);
     assertEquals(inv.payload.input.filter(item => item.type === 'function_call').map(item => item.call_id), ['first', 'second']);
     assertEquals(inv.payload.input.filter(item => item.type === 'function_call_output').map(item => item.call_id), ['first', 'second']);
@@ -159,12 +230,12 @@ test('hosted history pairs replay sidecars by ordinal within a turn', async () =
 });
 
 test('hosted replay ordinals reset at a user-side boundary', async () => {
-  const ctx = makeGatewayCtx();
+  const ctx = makeToolFixture();
   const [orphan] = await searchHistory(ctx, 'orphan');
   const [replay, call] = await searchHistory(ctx, 'next');
   const boundary: CanonicalOpenAIResponsesInputItem = { type: 'function_call_output', call_id: 'client', output: 'result' };
   const inv = makeInvocation({ payload: { input: [orphan, boundary, call, replay] } });
-  await runShimAndDrain(withOpenAIResponsesServerToolShim([replaySearch]), inv, ctx, async () => {
+  await runShimAndDrain(openToolTurn([replaySearch]), inv, ctx, async () => {
     assertEquals(historyShape(inv.payload.input), ['function_call_output:client', 'function_call:next', 'function_call_output:next']);
     assertEquals(inv.payload.input[0], boundary);
     return await scriptedRun([messageTurn('done')]).run();
@@ -172,7 +243,7 @@ test('hosted replay ordinals reset at a user-side boundary', async () => {
 });
 
 test('hosted history preserves a tampered replay carrier', async () => {
-  const ctx = makeGatewayCtx();
+  const ctx = makeToolFixture();
   const history = await searchHistory(ctx, 'original');
   const carrier = history[0];
   assert(carrier.type === 'reasoning' && typeof carrier.encrypted_content === 'string');
@@ -188,7 +259,7 @@ test('hosted history preserves a tampered replay carrier', async () => {
       return expandWebSearchCall(item, replayData);
     },
   });
-  await runShimAndDrain(withOpenAIResponsesServerToolShim([registration]), inv, ctx, async () => {
+  await runShimAndDrain(openToolTurn([registration]), inv, ctx, async () => {
     assertEquals(inv.payload.input[0], carrier);
     const [, call, output] = inv.payload.input;
     assert(call.type === 'function_call' && output.type === 'function_call_output');
@@ -202,8 +273,8 @@ test.each([
   null,
   { type: 'web_search_call', functionCall: { type: 'function_call', call_id: 'call', name: 'web_search', arguments: 1 } },
 ])('authenticated invalid hosted replay data exposes the producer error: %j', async payload => {
-  const ctx = makeGatewayCtx();
-  const encrypted_content = await ctx.sidecarCodecFactory.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall).encode(payload);
+  const ctx = makeToolFixture();
+  const encrypted_content = await ctx.services.sidecarCodecs.codecFor(SidecarDomain.OpenAIResponsesHostedToolCall).encode(payload);
   const inv = makeInvocation({
     payload: {
       input: [
@@ -213,13 +284,13 @@ test.each([
     },
   });
   await assertRejects(
-    () => runShimAndDrain(withOpenAIResponsesServerToolShim([replaySearch]), inv, ctx, async () => { throw new Error('Must fail before upstream'); }),
+    () => runShimAndDrain(openToolTurn([replaySearch]), inv, ctx, async () => { throw new Error('Must fail before upstream'); }),
     TypeError,
   );
 });
 
 test('history places mixed hosted results after the call batch and preserves tool inventories', async () => {
-  const ctx = makeGatewayCtx();
+  const ctx = makeToolFixture();
   const tail: CanonicalOpenAIResponsesInputItem = { type: 'reasoning', id: 'rs_tail', summary: [], encrypted_content: 'opaque' };
   const additional: CanonicalOpenAIResponsesInputItem = { type: 'additional_tools', role: 'developer', tools: [] };
   const loaded: CanonicalOpenAIResponsesInputItem = { type: 'tool_search_output', call_id: 'load', execution: 'client', tools: [] };
@@ -234,7 +305,7 @@ test('history places mixed hosted results after the call batch and preserves too
   ];
   const original = structuredClone(source);
   const inv = makeInvocation({ payload: { input: source } });
-  const shim = withOpenAIResponsesServerToolShim([replayImage, replaySearch]);
+  const shim = openToolTurn([replayImage, replaySearch]);
   await runShimAndDrain(shim, inv, ctx, async () => {
     assertEquals(historyShape(inv.payload.input), [
       'message:user', 'reasoning', 'message:assistant', 'function_call:search', 'function_call:cc_from_ig_1',
@@ -345,7 +416,7 @@ const mkMessageDone = (outputIndex: number, text: string, itemId = `msg_${output
 // test stub. Tests that need a specific configured state set
 // `mockResolveConfigured.mockReturnValue(...)` per call.
 vi.mock('../../../../../src/data-plane/tools/web-search/provider.ts');
-vi.mock('../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts');
+vi.mock('../../../../../src/data-plane/tools/web-search/alpha-search/execution.ts');
 
 const mkResponseCompleted = (
   usage?: OpenAIResponsesResultEx['usage'],
@@ -437,14 +508,14 @@ interface DepsOverrides {
 }
 
 const mockResolveConfigured = vi.mocked(resolveConfiguredWebSearchProvider);
-const mockResolveAlpha = vi.mocked(resolveAlphaSearchDispatcher);
+const mockExecuteAlpha = vi.mocked(executeAlphaSearchSubRun);
 
 // Seed a per-test InMemoryRepo and a default tavily search config so
 // `loadWebSearchConfig()` returns a non-default value. The actual provider
 // construction is short-circuited by the module mock above; tests
 // override `mockResolveConfigured` to point at a stub backend.
 beforeEach(() => {
-  mockResolveAlpha.mockReset();
+  mockExecuteAlpha.mockReset();
   const repo = new InMemoryRepo();
   initRepo(repo);
   void repo.webSearchConfig.save({
@@ -475,11 +546,8 @@ interface InvocationOverrides {
   payload?: Partial<OpenAIResponsesPayloadEx>;
 }
 
-const makeInvocation = (overrides: InvocationOverrides = {}): OpenAIResponsesInvocation => ({
-  candidate: stubModelCandidate({
-    ...(overrides.enabledFlags ? { enabledFlags: overrides.enabledFlags } : {}),
-    model: { id: 'claude-x', endpoints: { openaiChatCompletions: {}, openaiResponses: {}, anthropicMessages: {} } },
-  }),
+const makeInvocation = (overrides: InvocationOverrides = {}): Invocation => ({
+  enabledFlags: overrides.enabledFlags,
   // Default openai-chat-completions so existing tests exercise the
   // function_call_output path. Tests that care about a specific target
   // set targetApi explicitly.
@@ -495,12 +563,18 @@ const makeInvocation = (overrides: InvocationOverrides = {}): OpenAIResponsesInv
     include: ['web_search_call.results'],
     ...overrides.payload,
   } as CanonicalOpenAIResponsesPayload,
-  headers: new Headers(),
-  action: 'generate',
 });
 
-const makeGatewayCtx = (apiKeyId: string = 'k1') =>
-  mockChatGatewayCtx({ apiKeyId, wantsStream: true });
+const makeToolFixture = (apiKeyId = 'k1', signal?: AbortSignal): ToolFixture => ({
+  apiKeyId, signal,
+  services: {
+    sidecarCodecs: createSidecarCodecFactory('00'.repeat(32)),
+    webSearchProvider: Object.assign(
+      async () => resolveConfiguredWebSearchProvider(await loadWebSearchConfig()),
+      { alphaSearch: async () => (await loadWebSearchConfig()).passthroughOpenAiSearch },
+    ),
+  },
+});
 
 const collectFrames = async <T>(iter: AsyncIterable<T>): Promise<T[]> => {
   const out: T[] = [];
@@ -512,12 +586,12 @@ const collectFrames = async <T>(iter: AsyncIterable<T>): Promise<T[]> => {
 // subsequent run() calls all happen inside the events generator. Tests
 // asserting on side-effects MUST drain the events stream first.
 const runShimAndDrain = async (
-  shim: OpenAIResponsesInterceptor,
-  inv: OpenAIResponsesInvocation,
-  gatewayCtx: ChatGatewayCtx,
-  run: () => Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>>,
+  shim: ToolHarness,
+  inv: Invocation,
+  gatewayCtx: ToolFixture,
+  run: () => Promise<ScriptedReply<ProtocolFrame<OpenAIResponsesStreamEventEx>>>,
 ): Promise<{
-  result: ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>;
+  result: ToolReply;
   frames: ProtocolFrame<OpenAIResponsesStreamEventEx>[];
 }> => {
   const result = await shim(inv, gatewayCtx, run);
@@ -532,7 +606,7 @@ const runShimAndDrain = async (
 type ScriptedTurn = ProtocolFrame<OpenAIResponsesStreamEventEx>[];
 
 interface ScriptedRun {
-  run: () => Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>>;
+  run: () => Promise<ScriptedReply<ProtocolFrame<OpenAIResponsesStreamEventEx>>>;
   callCount: () => number;
 }
 
@@ -545,7 +619,7 @@ const scriptedRun = (turns: ScriptedTurn[]): ScriptedRun => {
       const iterable: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
         for (const f of frames) yield f;
       })();
-      const result: EventResult<ProtocolFrame<OpenAIResponsesStreamEventEx>> = {
+      const result: ScriptedEvents<ProtocolFrame<OpenAIResponsesStreamEventEx>> = {
         type: 'events',
         events: iterable,
         modelIdentity: testTelemetryModelIdentity,
@@ -617,7 +691,7 @@ test('shim rewrites hosted tools inside additional_tools at their input position
   const args = JSON.stringify({ search_query: [{ q: 'test' }] });
   const script = scriptedRun([fcTurn(0, 'call_1', SHIM_TOOL_NAME, args), messageTurn('done')]);
 
-  await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), script.run);
+  await runShimAndDrain(openWebSearchTurn, inv, makeToolFixture(), script.run);
 
   assertEquals(inv.payload.tools, undefined);
   assertEquals(inv.payload.tool_choice, 'auto');
@@ -634,7 +708,7 @@ test('shim rewrites hosted tools inside additional_tools at their input position
 
 test('shim propagates filters / user_location / search_context_size to backend', async () => {
   const { backend } = makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation({
     payload: {
       tools: [
@@ -652,7 +726,7 @@ test('shim propagates filters / user_location / search_context_size to backend',
     messageTurn('summary', 0),
   ]);
 
-  await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
+  await runShimAndDrain(shim, inv, makeToolFixture(), script.run);
 
   assertEquals(backend.calls.length, 1);
   const searchCall = backend.calls[0].request as WebSearchProviderRequest;
@@ -666,7 +740,7 @@ test('shim propagates filters / user_location / search_context_size to backend',
 test('public output and internal continuations replay complete assistant/tool turns through the same expansion', async () => {
   const { backend } = makeStubDeps();
   const inv = makeInvocation();
-  const ctx = makeGatewayCtx();
+  const ctx = makeToolFixture();
   const inputs: CanonicalOpenAIResponsesInputItem[][] = [];
   const searchTurn = (id: string): ScriptedTurn => {
     const tail: OpenAIResponsesOutputItemEx = { type: 'reasoning', id: `rs_${id}`, summary: [], encrypted_content: `opaque_${id}`, status: 'completed' };
@@ -678,7 +752,7 @@ test('public output and internal continuations replay complete assistant/tool tu
     ];
   };
   const script = scriptedRun([searchTurn('first'), searchTurn('second'), messageTurn('answer')]);
-  const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, ctx, async () => {
+  const { frames } = await runShimAndDrain(openWebSearchTurn, inv, ctx, async () => {
     inputs.push(structuredClone(inv.payload.input));
     return await script.run();
   });
@@ -699,7 +773,7 @@ test('public output and internal continuations replay complete assistant/tool tu
       ],
     },
   });
-  await runShimAndDrain(withOpenAIResponsesWebSearchShim, next, makeGatewayCtx(), async () => {
+  await runShimAndDrain(openWebSearchTurn, next, makeToolFixture(), async () => {
     assertEquals(historyShape(next.payload.input), ['message:user', ...firstTurn, ...secondTurn, 'message:assistant', 'message:user']);
     return await scriptedRun([messageTurn('followup')]).run();
   });
@@ -709,7 +783,7 @@ test('public output and internal continuations replay complete assistant/tool tu
 test.each([{ hostedFirst: true, interleaved: true }, { hostedFirst: false, interleaved: false }])('hosted output preserves mixed parallel call order on client replay (hosted first: $hostedFirst, interleaved: $interleaved)', async ({ hostedFirst, interleaved }) => {
   const { backend } = makeStubDeps();
   const inv = makeInvocation();
-  const ctx = makeGatewayCtx();
+  const ctx = makeToolFixture();
   const hosted = { type: 'function_call' as const, id: 'fc_hosted', call_id: 'hosted', name: SHIM_TOOL_NAME, arguments: '{"search_query":[{"q":"test"}]}', status: 'completed' as const };
   const client = { type: 'function_call' as const, id: 'fc_client', call_id: 'client', name: 'client_tool', arguments: '{}', status: 'completed' as const };
   const calls = hostedFirst ? [hosted, client] : [client, hosted];
@@ -723,7 +797,7 @@ test.each([{ hostedFirst: true, interleaved: true }, { hostedFirst: false, inter
     eventFrame({ type: 'response.output_item.done', output_index: 2, item: tail }),
     mkResponseCompleted(),
   );
-  const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, ctx, scriptedRun([events]).run);
+  const { frames } = await runShimAndDrain(openWebSearchTurn, inv, ctx, scriptedRun([events]).run);
   const output = findResponseCompleted(frames).response.output;
   const hostedIndex = output.findIndex(item => item.type === 'web_search_call');
   assert(hostedIndex > 0 && output[hostedIndex - 1].type === 'reasoning');
@@ -731,7 +805,7 @@ test.each([{ hostedFirst: true, interleaved: true }, { hostedFirst: false, inter
   const next = makeInvocation({
     payload: { input: [...output as CanonicalOpenAIResponsesInputItem[], { type: 'function_call_output', call_id: 'client', output: 'client result' }] },
   });
-  await runShimAndDrain(withOpenAIResponsesWebSearchShim, next, makeGatewayCtx(), async () => {
+  await runShimAndDrain(openWebSearchTurn, next, makeToolFixture(), async () => {
     assertEquals(next.payload.input.filter(item => item.type === 'function_call').map(item => item.call_id), calls.map(item => item.call_id));
     assertEquals(next.payload.input.filter(item => item.type === 'function_call_output').map(item => item.call_id), ['hosted', 'client']);
     const lastCall = next.payload.input.findLastIndex(item => item.type === 'function_call');
@@ -747,10 +821,10 @@ test.each([
 ])('hosted search executes parsed arguments while replaying the original string: $raw', async ({ raw, query }) => {
   const { backend } = makeStubDeps();
   const inv = makeInvocation();
-  const ctx = makeGatewayCtx();
+  const ctx = makeToolFixture();
   const script = scriptedRun([fcTurn(0, 'call_raw', SHIM_TOOL_NAME, raw), messageTurn('answer')]);
   const inputs: CanonicalOpenAIResponsesInputItem[][] = [];
-  const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, ctx, async () => {
+  const { frames } = await runShimAndDrain(openWebSearchTurn, inv, ctx, async () => {
     inputs.push(structuredClone(inv.payload.input));
     return await script.run();
   });
@@ -762,7 +836,7 @@ test.each([
   assertEquals(restored.arguments, raw);
   const output = JSON.parse(JSON.stringify(findResponseCompleted(frames).response.output)) as CanonicalOpenAIResponsesInputItem[];
   const next = makeInvocation({ payload: { input: [...output, { type: 'message', role: 'user', content: 'next' }] } });
-  await runShimAndDrain(withOpenAIResponsesWebSearchShim, next, makeGatewayCtx(), async () => {
+  await runShimAndDrain(openWebSearchTurn, next, makeToolFixture(), async () => {
     assertEquals(next.payload.input.find(item => item.type === 'function_call'), restored);
     return await scriptedRun([messageTurn('done')]).run();
   });
@@ -789,7 +863,7 @@ test('find_in_page reuses cache when same URL was opened first', async () => {
       },
     },
   });
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation();
   const script = scriptedRun([
     openCallTurn(0, 'call_o', 'https://example.com/p'),
@@ -797,7 +871,7 @@ test('find_in_page reuses cache when same URL was opened first', async () => {
     messageTurn('done', 0),
   ]);
 
-  await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
+  await runShimAndDrain(shim, inv, makeToolFixture(), script.run);
 
   // open issues fetchPage; find reuses cache → still 1 fetchPage call.
   const fetchCalls = backend.calls.filter(c => c.kind === 'fetchPage');
@@ -808,7 +882,7 @@ test('find_in_page reuses cache when same URL was opened first', async () => {
 
 test('iteration cap returns the iteration-cap notice without backend call on cap+1', async () => {
   const { backend } = makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation();
   const searchTurns: ScriptedTurn[] = [];
   for (let i = 0; i < 30; i++) {
@@ -818,7 +892,7 @@ test('iteration cap returns the iteration-cap notice without backend call on cap
   searchTurns.push(messageTurn('done', 0));
   const script = scriptedRun(searchTurns);
 
-  const result = await shim(inv, makeGatewayCtx(), script.run);
+  const result = await shim(inv, makeToolFixture(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
 
@@ -853,7 +927,7 @@ test('iteration cap returns the iteration-cap notice without backend call on cap
 // with a multi-query search action — see the collapse tests below.
 
 const assertAmbiguousShimRejection = async (args: string, backend: { calls: unknown[] }): Promise<void> => {
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation();
   const turn: ScriptedTurn = [
     mkResponseCreated(),
@@ -864,7 +938,7 @@ const assertAmbiguousShimRejection = async (args: string, backend: { calls: unkn
     mkResponseCompleted(),
   ];
   const script = scriptedRun([turn, messageTurn('done', 0)]);
-  const result = await shim(inv, makeGatewayCtx(), script.run);
+  const result = await shim(inv, makeToolFixture(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   assertEquals(backend.calls.length, 0);
@@ -905,7 +979,7 @@ test('multi-`search_query` entries collapse into one web_search_call with a mult
       },
     },
   });
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation();
   const args = JSON.stringify({ search_query: [{ q: 'q1' }, { q: 'q2' }, { q: 'q3' }] });
   const turn: ScriptedTurn = [
@@ -917,7 +991,7 @@ test('multi-`search_query` entries collapse into one web_search_call with a mult
     mkResponseCompleted(),
   ];
   const script = scriptedRun([turn, messageTurn('done', 0)]);
-  const result = await shim(inv, makeGatewayCtx(), script.run);
+  const result = await shim(inv, makeToolFixture(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
 
@@ -945,7 +1019,7 @@ test('multi-`search_query` entries collapse into one web_search_call with a mult
 // ── Domain filter input validation ────────────────────────────────────
 
 test('invalid request registration preserves an upstream error type and null code', async () => {
-  const shim = withOpenAIResponsesServerToolShim([() => ({
+  const shim = openToolTurn([() => ({
     type: 'invalid-request',
     message: 'native image error',
     param: 'input',
@@ -954,11 +1028,11 @@ test('invalid request registration preserves an upstream error type and null cod
   })]);
   const result = await shim(
     makeInvocation(),
-    makeGatewayCtx(),
+    makeToolFixture(),
     () => Promise.reject(new Error('run should not be called')),
   );
   assert(result.type === 'api-error');
-  const body = JSON.parse(decodeResponseBody(result.body)) as {
+  const body = JSON.parse(result.body.utf8()) as {
     error: { message: string; type: string; param: string | null; code: string | null };
   };
   assertEquals(body.error, {
@@ -985,14 +1059,14 @@ test('later hosted validation keeps original paths before another tool rewrites 
     },
   });
   const originalInput = structuredClone(inv.payload.input);
-  const shim = withOpenAIResponsesServerToolShim([webSearchServerTool, imageGenerationServerTool]);
+  const shim = openToolTurn([webSearchServerTool, imageGenerationServerTool]);
 
-  const result = await shim(inv, makeGatewayCtx(), async () => {
+  const result = await shim(inv, makeToolFixture(), async () => {
     throw new Error('Invalid request reached upstream');
   });
 
   assert(result.type === 'api-error');
-  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { param: string } };
+  const body = JSON.parse(result.body.utf8()) as { error: { param: string } };
   assertEquals(body.error.param, 'input[0].tools[2].size');
   assertEquals(inv.payload.input, originalInput);
 });
@@ -1012,7 +1086,7 @@ const runShimWithDomainEntry = async (
   raw: unknown,
 ) => {
   const { backend } = makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation({
     payload: {
       tools: [
@@ -1024,7 +1098,7 @@ const runShimWithDomainEntry = async (
     },
   });
   const script = scriptedRun([messageTurn('never reached', 0)]);
-  const result = await shim(inv, makeGatewayCtx(), script.run);
+  const result = await shim(inv, makeToolFixture(), script.run);
   return { result, backend, script };
 };
 
@@ -1036,7 +1110,7 @@ test.each([
   assertEquals(result.http.status, 400);
   assertEquals(script.callCount(), 0);
   assertEquals(backend.calls.length, 0);
-  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { type: string; param: string } };
+  const body = JSON.parse(result.body.utf8()) as { error: { type: string; param: string } };
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.param, 'tools');
 });
@@ -1052,7 +1126,7 @@ test('find blocked by domain filter emits wire-side find_in_page (not open_page)
   // model's intent (e.g. a UI that draws a "searched inside <url>
   // for <pattern>" badge for find ops only).
   const { backend } = makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation({
     payload: {
       tools: [{ type: 'web_search', filters: { blocked_domains: ['blocked.com'] } }],
@@ -1063,7 +1137,7 @@ test('find blocked by domain filter emits wire-side find_in_page (not open_page)
     messageTurn('done', 0),
   ]);
 
-  const { frames } = await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
+  const { frames } = await runShimAndDrain(shim, inv, makeToolFixture(), script.run);
 
   assertEquals(backend.calls.length, 0);
   // Wire-side: the synthesized output_item.done for the web_search_call
@@ -1085,7 +1159,7 @@ test('find blocked by domain filter emits wire-side find_in_page (not open_page)
 
 test('multi-turn merge: output_index unique, sequence_number monotonic, response.created once', async () => {
   makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation();
   const script = scriptedRun([
     searchCallTurn(0, 'call_1', 'q1'),
@@ -1093,7 +1167,7 @@ test('multi-turn merge: output_index unique, sequence_number monotonic, response
     messageTurn('done', 0),
   ]);
 
-  const result = await shim(inv, makeGatewayCtx(), script.run);
+  const result = await shim(inv, makeToolFixture(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
 
@@ -1131,7 +1205,7 @@ test('shim refuses to synthesize a response envelope when upstream response.crea
   // (which reports it upward) rather than being silently swallowed
   // or papered over with `ctx.payload.model`.
   makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation({ payload: { model: 'gpt-5' } });
 
   const modelless = eventFrame<OpenAIResponsesStreamEventEx>({
@@ -1140,7 +1214,7 @@ test('shim refuses to synthesize a response envelope when upstream response.crea
   });
   const script = scriptedRun([[modelless, mkResponseCompleted()]]);
 
-  const result = await shim(inv, makeGatewayCtx(), script.run);
+  const result = await shim(inv, makeToolFixture(), script.run);
   assert(result.type === 'events');
   let thrown: unknown = undefined;
   try {
@@ -1158,7 +1232,7 @@ test('usage cached_tokens reported on one turn carries through (last-turn omissi
   // turn 2 omits it. Final usage must still surface cached_tokens
   // (turn 1's value).
   makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation();
 
   const turn1Args = JSON.stringify({ search_query: [{ q: 'q1' }] });
@@ -1184,7 +1258,7 @@ test('usage cached_tokens reported on one turn carries through (last-turn omissi
     mkResponseCompleted({ input_tokens: 50, output_tokens: 10, total_tokens: 60 }),
   ];
 
-  const result = await shim(inv, makeGatewayCtx(), scriptedRun([turn1, turn2]).run);
+  const result = await shim(inv, makeToolFixture(), scriptedRun([turn1, turn2]).run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   const completed = events.find((e): e is Extract<OpenAIResponsesStreamEventEx, { type: 'response.completed' }> => e.type === 'response.completed');
@@ -1199,7 +1273,7 @@ test('usage cached_tokens reported on one turn carries through (last-turn omissi
 
 test('upstream sends an error event before response.created: shim forwards it without inventing a response', async () => {
   makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation();
   const error = {
     type: 'error' as const,
@@ -1212,7 +1286,7 @@ test('upstream sends an error event before response.created: shim forwards it wi
   ];
   const script = scriptedRun([errorOnlyTurn]);
 
-  const result = await shim(inv, makeGatewayCtx(), script.run);
+  const result = await shim(inv, makeToolFixture(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   assertEquals(events.length, 1);
@@ -1223,7 +1297,7 @@ test('upstream sends an error event before response.created: shim forwards it wi
 
 test('upstream sends an error event after response.created: shim forwards both events without synthesizing a terminal resource', async () => {
   makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation();
   const createdWith = eventFrame<OpenAIResponsesStreamEventEx>({
     type: 'response.created',
@@ -1248,7 +1322,7 @@ test('upstream sends an error event after response.created: shim forwards both e
     }),
   ]]);
 
-  const result = await shim(inv, makeGatewayCtx(), script.run);
+  const result = await shim(inv, makeToolFixture(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   assertEquals(events.map(event => event.type), ['response.created', 'error']);
@@ -1261,7 +1335,7 @@ test('upstream sends an error event after response.created: shim forwards both e
 
 test('turn-1 iterator throws AFTER response.created: synthesizes response.failed with synthesized id + last-seen model', async () => {
   makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation();
   const cause = { socket: 'upstream-1' };
   const streamError = new Error('connection reset by peer', { cause });
@@ -1269,13 +1343,13 @@ test('turn-1 iterator throws AFTER response.created: synthesizes response.failed
     yield mkResponseCreated('upstream_mid');
     throw streamError;
   })();
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => ({
+  const run = async (): Promise<ScriptedReply<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => ({
     type: 'events',
     events: failingMidStream,
     modelIdentity: testTelemetryModelIdentity,
   });
 
-  const result = await shim(inv, makeGatewayCtx(), run);
+  const result = await shim(inv, makeToolFixture(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   const terminal = events[events.length - 1];
@@ -1342,11 +1416,11 @@ test('snapshot pass-through: upstream tools/tool_choice/temperature/parallel_too
     } as OpenAIResponsesResultEx,
   });
   makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation();
   const script = scriptedRun([[createdWith, mkMessageAdded(0), mkMessageDone(0, 'done'), completedWith]]);
 
-  const result = await shim(inv, makeGatewayCtx(), script.run);
+  const result = await shim(inv, makeToolFixture(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   const created = events.find(e => e.type === 'response.created') as Extract<OpenAIResponsesStreamEventEx, { type: 'response.created' }>;
@@ -1374,51 +1448,6 @@ test('snapshot pass-through: upstream tools/tool_choice/temperature/parallel_too
   assertEquals((completed.response as unknown as Record<string, unknown>).completed_at, 1735689700);
 });
 
-// ── finalMetadata follows the latest turn's modelIdentity ──────────────
-
-test('finalMetadata resolves with the LATEST turn modelIdentity, not turn 1', async () => {
-  // The source responder reads modelIdentity from finalMetadata when
-  // recording usage / performance. A multi-turn run where upstream
-  // serves a different dated variant on a later turn (Copilot
-  // raw-variant selection) must report the latest variant — passing
-  // through firstResult.finalMetadata would freeze it to turn 1's
-  // modelKey.
-  makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
-  const inv = makeInvocation();
-
-  let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
-    runCalls += 1;
-    const frames = runCalls === 1
-      ? searchCallTurn(0, 'call_1', 'q1')
-      : messageTurn('done', 0);
-    const iterable: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
-      for (const f of frames) yield f;
-    })();
-    return {
-      type: 'events',
-      events: iterable,
-      // Distinct modelKey per turn so we can prove which one
-      // finalMetadata observed.
-      modelIdentity: {
-        model: 'gpt-5',
-        upstream: 'test-upstream',
-        modelKey: `turn-${runCalls}-key`,
-        pricing: null,
-      },
-    };
-  };
-
-  const result = await shim(inv, makeGatewayCtx(), run);
-  assert(result.type === 'events');
-  // Drain so the multi-turn loop completes and finalMetadata resolves.
-  await collectFrames(result.events);
-  assert(result.finalMetadata !== undefined);
-  const meta = await result.finalMetadata;
-  assertEquals(meta.modelIdentity.modelKey, 'turn-2-key');
-});
-
 test('include: ["web_search_call.action.sources"] populates action.sources with search-result URLs', async () => {
   // Native OpenAI Responses gates `action.sources` on this exact include
   // token. Clients reading `web_search_call.action.sources` against
@@ -1438,7 +1467,7 @@ test('include: ["web_search_call.action.sources"] populates action.sources with 
       },
     },
   });
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation({
     payload: { include: ['web_search_call.action.sources'] },
   });
@@ -1447,7 +1476,7 @@ test('include: ["web_search_call.action.sources"] populates action.sources with 
     messageTurn('done', 0),
   ]);
 
-  const result = await shim(inv, makeGatewayCtx(), script.run);
+  const result = await shim(inv, makeToolFixture(), script.run);
   assert(result.type === 'events');
   const doneEvents = outputItemDoneEvents(await collectFrames(result.events));
   const wsCallDone = doneEvents.find(e => e.item.type === 'web_search_call');
@@ -1476,7 +1505,7 @@ test('input preprocessor: web_search_call without an action is replaced by a pla
   // weren't preserved. Same idea as the no-payload-with-action path
   // for partial echoes.
   makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation({
     payload: {
       input: [
@@ -1490,7 +1519,7 @@ test('input preprocessor: web_search_call without an action is replaced by a pla
     },
   });
   const script = scriptedRun([messageTurn('done')]);
-  await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
+  await runShimAndDrain(shim, inv, makeToolFixture(), script.run);
 
   const input = inv.payload.input as CanonicalOpenAIResponsesInputItem[];
   // user message + placeholder function_call + placeholder function_call_output.
@@ -1517,11 +1546,11 @@ test('disabled search provider: dispatched op surfaces explanation snippet (no 5
   makeStubDeps({
     configured: { type: 'disabled' },
   });
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation();
   const script = scriptedRun([searchCallTurn(0, 'call_1', 'q'), messageTurn('done', 0)]);
 
-  const { result, frames } = await runShimAndDrain(shim, inv, makeGatewayCtx(), script.run);
+  const { result, frames } = await runShimAndDrain(shim, inv, makeToolFixture(), script.run);
 
   assertEquals(result.type, 'events');
   // Two upstream turns still ran — replay-only / mid-conversation
@@ -1547,7 +1576,7 @@ test('turn 1 pure-text response streams BEFORE upstream terminal (no TTFT regres
   // `response.created` is captured; everything else (output_text deltas,
   // terminal) streams live through the same iterator.
   makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation();
   // Gate the upstream terminal frame so a buffered implementation would
   // be stuck waiting on it before yielding any byte downstream.
@@ -1555,7 +1584,7 @@ test('turn 1 pure-text response streams BEFORE upstream terminal (no TTFT regres
   const terminalGate = new Promise<void>(resolve => {
     releaseTerminal = resolve;
   });
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
+  const run = async (): Promise<ScriptedReply<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
       yield mkResponseCreated();
       yield mkResponseInProgress();
@@ -1574,7 +1603,7 @@ test('turn 1 pure-text response streams BEFORE upstream terminal (no TTFT regres
     return { type: 'events', events: frames, modelIdentity: testTelemetryModelIdentity };
   };
 
-  const result = await shim(inv, makeGatewayCtx(), run);
+  const result = await shim(inv, makeToolFixture(), run);
   assert(result.type === 'events');
   const iter = result.events[Symbol.asyncIterator]();
 
@@ -1628,11 +1657,11 @@ test.each([
   },
 ] as const)('mid-stream HTTP error body becomes a lossless error event followed by response.failed: $body', async ({ body, responseError }) => {
   makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation();
 
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
+  const run = async (): Promise<ScriptedReply<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
     runCalls += 1;
     if (runCalls === 1) {
       const frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> = (async function* () {
@@ -1648,7 +1677,7 @@ test.each([
     };
   };
 
-  const result = await shim(inv, makeGatewayCtx(), run);
+  const result = await shim(inv, makeToolFixture(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   const errorIndex = events.findIndex(event => event.type === 'error');
@@ -1668,7 +1697,7 @@ test.each([
 
 test('upstream response.incomplete after a server tool call keeps synthesized tool output in the terminal response', async () => {
   makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation();
   const argsJson = JSON.stringify({ search_query: [{ q: 'q1' }] });
   const incompleteTurn: ScriptedTurn = [
@@ -1683,7 +1712,7 @@ test('upstream response.incomplete after a server tool call keeps synthesized to
   ];
   const script = scriptedRun([incompleteTurn]);
 
-  const result = await shim(inv, makeGatewayCtx(), script.run);
+  const result = await shim(inv, makeToolFixture(), script.run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   const terminal = events.at(-1) as Extract<OpenAIResponsesStreamEventEx, { type: 'response.incomplete' }>;
@@ -1711,12 +1740,10 @@ test('responses target with OpenAI passthrough forwards the complete alpha-searc
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_codex', model: 'gpt-search' },
   } satisfies WebSearchConfig);
-  const call = vi.fn<AlphaSearchDispatcher>(async () => new Response(JSON.stringify({
-    encrypted_output: null,
-    output: 'alpha output',
-    results: [{ type: 'text_result', url: 'https://example.com', title: 'Example', snippet: 'alpha snippet' }],
-  }), { status: 200, headers: { 'content-type': 'application/json' } }));
-  mockResolveAlpha.mockResolvedValue(call);
+  mockExecuteAlpha.mockImplementation(async (_env, _facts, args) => ({
+    action: args.action, results: [{ type: 'text_result', url: 'https://example.com', title: 'Example', snippet: 'alpha snippet' }],
+    outputText: 'alpha output',
+  }));
   const inv = makeInvocation({
     targetApi: 'openaiResponses',
     enabledFlags: new Set<FlagId>(['openai-responses-web-search-shim']),
@@ -1740,11 +1767,11 @@ test('responses target with OpenAI passthrough forwards the complete alpha-searc
     messageTurn('done', 0),
   ]);
 
-  await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), script.run);
+  await runShimAndDrain(openWebSearchTurn, inv, makeToolFixture(), script.run);
 
   assertEquals(lastFunctionCallOutput(inv.payload.input as CanonicalOpenAIResponsesInputItem[]), 'alpha output');
-  assertEquals(call.mock.calls[0]?.[0].commands, commands);
-  assertEquals(call.mock.calls[0]?.[0].settings, {
+  assertEquals(mockExecuteAlpha.mock.calls[0]?.[2].commands, commands);
+  assertEquals(mockExecuteAlpha.mock.calls[0]?.[2].settings, {
     user_location: { type: 'approximate', country: 'SG' },
     image_settings: { max_results: 4, caption: true },
     allowed_callers: ['direct'],
@@ -1761,10 +1788,9 @@ test('responses target preserves a missing-model failure once a search runs', as
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_codex', model: 'gpt-missing' },
   } satisfies WebSearchConfig);
-  const { AlphaSearchModelNotFoundError } = await vi.importActual<typeof import('../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts')>('../../../../../src/data-plane/tools/web-search/alpha-search/upstream.ts');
-  const failure = new AlphaSearchModelNotFoundError();
-  mockResolveAlpha.mockClear();
-  mockResolveAlpha.mockRejectedValue(failure);
+  const failure = new Error('Configured Alpha Search model is unavailable');
+  mockExecuteAlpha.mockClear();
+  mockExecuteAlpha.mockRejectedValue(failure);
   const inv = makeInvocation({
     targetApi: 'openaiResponses',
     enabledFlags: new Set<FlagId>(['openai-responses-web-search-shim']),
@@ -1773,14 +1799,14 @@ test('responses target preserves a missing-model failure once a search runs', as
     fcTurn(0, 'call_missing_search_model', SHIM_TOOL_NAME, JSON.stringify({ search_query: [{ q: 'Floway' }] })),
     messageTurn('done', 0),
   ]);
-  const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), script.run);
+  const { frames } = await runShimAndDrain(openWebSearchTurn, inv, makeToolFixture(), script.run);
   const failed = eventPayloads(frames).find(event => event.type === 'response.failed');
   assert(failed !== undefined);
   assertEquals(failed.response.status, 'failed');
-  assertEquals(failed.response.error?.provider_specific_fields?.name, 'AlphaSearchModelNotFoundError');
+  assertEquals(failed.response.error?.provider_specific_fields?.name, 'Error');
   assertEquals(failed.response.error?.provider_specific_fields?.stack, failure.stack);
   assertEquals(script.callCount(), 1);
-  assertEquals(mockResolveAlpha.mock.calls.length, 1);
+  assertEquals(mockExecuteAlpha.mock.calls.length, 1);
 });
 
 // ── Forced tool_choice demotes after turn 1 ───────────────────────────
@@ -1789,7 +1815,7 @@ test('tool_choice "required" demotes to "auto" after first intercepted turn', as
   // Without demote: the model is required to call a tool every turn,
   // never produces a terminal message, loops until the iteration cap.
   makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation({ payload: { tool_choice: 'required' } });
   // Capture tool_choice on each run() call so we can verify the payload
   // mutation before draining events.
@@ -1803,7 +1829,7 @@ test('tool_choice "required" demotes to "auto" after first intercepted turn', as
     return await baseScript.run();
   };
 
-  await runShimAndDrain(shim, inv, makeGatewayCtx(), wrappedRun);
+  await runShimAndDrain(shim, inv, makeToolFixture(), wrappedRun);
 
   assertEquals(seenToolChoices[0], 'required');
   assertEquals(seenToolChoices[1], 'auto');
@@ -1837,7 +1863,7 @@ test('a forced namespaced client tool choice is not mistaken for the hosted shim
     return await script.run();
   };
 
-  await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), run);
+  await runShimAndDrain(openWebSearchTurn, inv, makeToolFixture(), run);
 
   assertEquals(seenToolChoices, [choice, choice]);
   assertEquals(backend.calls.length, 1);
@@ -1845,7 +1871,7 @@ test('a forced namespaced client tool choice is not mistaken for the hosted shim
 
 test('max_tool_calls is forwarded to upstream turns but does not locally bypass server tools', async () => {
   const { backend } = makeStubDeps();
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation({ payload: { max_tool_calls: 1 } });
   const seenMaxToolCalls: unknown[] = [];
   const baseScript = scriptedRun([
@@ -1858,7 +1884,7 @@ test('max_tool_calls is forwarded to upstream turns but does not locally bypass 
     return await baseScript.run();
   };
 
-  const result = await shim(inv, makeGatewayCtx(), run);
+  const result = await shim(inv, makeToolFixture(), run);
   assert(result.type === 'events');
   await collectFrames(result.events);
   assertEquals(seenMaxToolCalls, [1, 0, 0]);
@@ -1887,14 +1913,14 @@ test('lifecycle start frames yield BEFORE backend resolves, giving searching rea
       },
     },
   });
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation();
   const script = scriptedRun([
     searchCallTurn(0, 'call_1', 'gated-q'),
     messageTurn('done', 0),
   ]);
 
-  const result = await shim(inv, makeGatewayCtx(), script.run);
+  const result = await shim(inv, makeToolFixture(), script.run);
   assert(result.type === 'events');
   const iter = result.events[Symbol.asyncIterator]();
 
@@ -1956,7 +1982,7 @@ test('terminal response.completed.output is in output_index order, not completio
       },
     },
   });
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation();
   const wsArgs = JSON.stringify({ search_query: [{ q: 'q' }] });
   // Shim call at upstream index 0, client tool at upstream index 1. The
@@ -1975,7 +2001,7 @@ test('terminal response.completed.output is in output_index order, not completio
     mkResponseCompleted(),
   ];
   const script = scriptedRun([mixedTurn]);
-  const result = await shim(inv, makeGatewayCtx(), script.run);
+  const result = await shim(inv, makeToolFixture(), script.run);
   assert(result.type === 'events');
   // Release the gate so the shim call end frames + terminal can resolve.
   releaseSearch!();
@@ -2010,13 +2036,9 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
       },
     },
   });
-  const shim = withOpenAIResponsesWebSearchShim;
+  const shim = openWebSearchTurn;
   const inv = makeInvocation();
-  const gatewayCtx = mockChatGatewayCtx({
-    apiKeyId: 'k1',
-    wantsStream: true,
-    abortSignal: controller.signal,
-  });
+  const gatewayCtx = makeToolFixture('k1', controller.signal);
   const script = scriptedRun([
     searchCallTurn(0, 'call_1', 'will-be-aborted'),
   ]);
@@ -2032,14 +2054,11 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
   while (observedSignal === undefined) {
     await new Promise<void>(resolve => setTimeout(resolve, 0));
   }
-  // Same instance identity — not a clone.
-  assertEquals(observedSignal, controller.signal);
   assertFalse(observedSignal.aborted);
 
-  // Abort and let the drain complete (the rejected backend promise
-  // will surface as a mid-stream synthesized response.failed).
   controller.abort();
   await drainPromise;
+  assertEquals(observedSignal.aborted, true);
   // Only the one search was attempted; no follow-up turn fired.
   assertEquals(backend.calls.length, 1);
 });
@@ -2335,7 +2354,7 @@ test('duplicate hosted web_search declarations collapse to the last complete dec
     mkResponseCompletedWithTools(upstreamEchoedTools),
   ]]);
 
-  const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), script.run);
+  const { frames } = await runShimAndDrain(openWebSearchTurn, inv, makeToolFixture(), script.run);
 
   // Request side: only one function tool was sent upstream.
   assertEquals(inv.payload.tools?.length, 1);
@@ -2349,19 +2368,18 @@ test('duplicate hosted web_search declarations collapse to the last complete dec
   assertEquals((completed.response.tools![0] as { filters: typeof lastFilters }).filters, lastFilters);
 });
 
-test('the shim drains continuation streams before awaiting billable metadata', async () => {
+test('continuation streams settle billable calls with their own model attribution', async () => {
   const { backend } = makeStubDeps();
   const turns = [searchCallTurn(0, 'first', 'first search'), searchCallTurn(0, 'second', 'second search'), messageTurn('done')];
   let runCalls = 0;
-  const result = await withOpenAIResponsesWebSearchShim(makeInvocation(), makeGatewayCtx(), async () => {
+  const result = await openWebSearchTurn(makeInvocation(), makeToolFixture(), async () => {
     const frames = turns[runCalls++];
     const billableUsage: BillableUsage = { input: runCalls, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: runCalls };
-    let resolveFinal!: (metadata: { modelIdentity: typeof testTelemetryModelIdentity; billableUsage: BillableUsage }) => void;
-    const finalMetadata = new Promise<{ modelIdentity: typeof testTelemetryModelIdentity; billableUsage: BillableUsage }>(resolve => { resolveFinal = resolve; });
-    return eventResult((async function* () {
+    const usage = Promise.withResolvers<BillableUsage>();
+    return scriptEvents((async function* () {
       for (const frame of frames) yield frame;
-      resolveFinal({ modelIdentity: testTelemetryModelIdentity, billableUsage });
-    })(), testTelemetryModelIdentity, { finalMetadata });
+      usage.resolve(billableUsage);
+    })(), { ...testTelemetryModelIdentity, modelKey: `round-${runCalls}` }, { usage: usage.promise });
   });
 
   assert(result.type === 'events');
@@ -2369,27 +2387,28 @@ test('the shim drains continuation streams before awaiting billable metadata', a
   assertEquals(findResponseCompleted(frames).response.status, 'completed');
   assertEquals(runCalls, 3);
   assertEquals(backend.calls.length, 2);
-  assertEquals((await result.finalMetadata!).billableUsage, { input: 6, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 6 });
+  const billed = await result.billing;
+  assertEquals(billed.map(call => call.usage?.input), [1, 2, 3]);
+  assertEquals(billed.map(call => call.identity.modelKey), ['round-1', 'round-2', 'round-3']);
 }, 1_000);
 
 test('the shim retains observed billing when a later turn throws after its usage', async () => {
   makeStubDeps();
   let runCalls = 0;
   const streamError = new Error('stream interrupted after usage');
-  const result = await withOpenAIResponsesWebSearchShim(makeInvocation(), makeGatewayCtx(), async () => {
+  const result = await openWebSearchTurn(makeInvocation(), makeToolFixture(), async () => {
     const fails = ++runCalls === 2;
-    let resolveFinal!: (metadata: { modelIdentity: typeof testTelemetryModelIdentity; billableUsage: BillableUsage }) => void;
-    const finalMetadata = new Promise<{ modelIdentity: typeof testTelemetryModelIdentity; billableUsage: BillableUsage }>(resolve => { resolveFinal = resolve; });
+    const usage = Promise.withResolvers<BillableUsage>();
     const billableUsage: BillableUsage = { input: 10, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 2 };
-    return eventResult((async function* () {
+    return scriptEvents((async function* () {
       try {
         const frames = fails ? [mkResponseCreated(), mkResponseCompleted()] : searchCallTurn(0, 'first', 'first search');
         for (const frame of frames) yield frame;
         if (fails) throw streamError;
       } finally {
-        resolveFinal({ modelIdentity: testTelemetryModelIdentity, billableUsage });
+        usage.resolve(billableUsage);
       }
-    })(), testTelemetryModelIdentity, { finalMetadata });
+    })(), testTelemetryModelIdentity, { usage: usage.promise });
   });
 
   assert(result.type === 'events');
@@ -2398,7 +2417,7 @@ test('the shim retains observed billing when a later turn throws after its usage
   assert(failed?.type === 'response.failed');
   assert(failed.response.error?.message.includes(streamError.message));
   assertEquals(runCalls, 2);
-  assertEquals((await result.finalMetadata!).billableUsage, { input: 20, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0, output: 4 });
+  assertEquals((await result.billing).map(call => call.usage?.input), [10, 10]);
 }, 1_000);
 
 test('helper allocation reserves names across callable scopes, history and search-loaded tools without moving declarations', () => {
@@ -2439,9 +2458,9 @@ for (const targetApi of ['openaiChatCompletions', 'openaiResponses'] as const) {
         tools: [{ type: 'web_search' }, { type: 'namespace', name: 'functions', description: '', tools: [{ type: 'function', name: SHIM_TOOL_NAME, parameters: { type: 'object' } }] }],
       },
     });
-    const ctx = makeGatewayCtx();
+    const ctx = makeToolFixture();
     let turns = 0;
-    const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, ctx, async () => {
+    const { frames } = await runShimAndDrain(openWebSearchTurn, inv, ctx, async () => {
       turns++;
       assertEquals(inv.payload.tools?.[0], { ...inv.payload.tools?.[0], name: `${SHIM_TOOL_NAME}_2` });
       if (targetApi === 'openaiResponses') {
@@ -2453,15 +2472,15 @@ for (const targetApi of ['openaiChatCompletions', 'openaiResponses'] as const) {
           mkResponseCompleted(),
         ]]).run();
       }
-      const trip = await routeOpenAIResponsesViaOpenAIChatCompletions(inv.payload, { sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) });
-      if (trip.type === 'input-error') return inputErrorResult(trip);
+      const trip = await routeOpenAIResponsesViaOpenAIChatCompletions(inv.payload, { sidecarCodec: ctx.services.sidecarCodecs.codecFor(SidecarDomain.TranslatedAssistantTurn) });
+      if (trip.type === 'input-error') return scriptInputError(trip);
       const client = trip.target.tools?.[1];
       assert(client?.type === 'function');
       const events = (async function* (): AsyncGenerator<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
         yield eventFrame({ id: 'chat', object: 'chat.completion.chunk', created: 0, model: 'm', choices: [{  index: 0, delta: { tool_calls: [{ index: 0, id: 'client', type: 'function', function: { name: client.function.name, arguments: '{}' } }] }, finish_reason: null }] });
         yield eventFrame({ id: 'chat', object: 'chat.completion.chunk', created: 0, model: 'm', choices: [{  index: 0, delta: {}, finish_reason: 'tool_calls' }] });
       })();
-      return eventResult(trip.events(events), testTelemetryModelIdentity);
+      return scriptEvents(trip.events(events), testTelemetryModelIdentity);
     });
     assertEquals(turns, 1);
     assertEquals(backend.calls, []);
@@ -2493,25 +2512,25 @@ for (const [target, mode] of [
       choices.push(structuredClone(inv.payload.tool_choice));
       const before = structuredClone(inv.payload);
       const trip = target === 'openaiChatCompletions'
-        ? await routeOpenAIResponsesViaOpenAIChatCompletions(inv.payload, { sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) })
-        : await routeOpenAIResponsesViaAnthropicMessages(inv.payload, { sidecarCodec: mockChatGatewayCtx().sidecarCodecFactory.codecFor(SidecarDomain.TranslatedAssistantTurn) });
-      if (trip.type === 'input-error') return inputErrorResult(trip);
+        ? await routeOpenAIResponsesViaOpenAIChatCompletions(inv.payload, { sidecarCodec: makeToolFixture().services.sidecarCodecs.codecFor(SidecarDomain.TranslatedAssistantTurn) })
+        : await routeOpenAIResponsesViaAnthropicMessages(inv.payload, { sidecarCodec: makeToolFixture().services.sidecarCodecs.codecFor(SidecarDomain.TranslatedAssistantTurn) });
+      if (trip.type === 'input-error') return scriptInputError(trip);
       const wire = JSON.parse(JSON.stringify(trip.target)) as { tools: Array<{ name?: string; function?: { name: string } }> };
       assert(wire.tools.some(tool => (tool.function?.name ?? tool.name) === alias), 'the complete declaration list must retain the helper alias');
       assertEquals(inv.payload, before, 'repeated translation must preserve the outer loop payload');
       return await script.run();
     };
     if (target === 'anthropicMessages' && mode === 'auto') {
-      const { result } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), run);
+      const { result } = await runShimAndDrain(openWebSearchTurn, inv, makeToolFixture(), run);
       assert(result.type === 'api-error');
       assertEquals(result.http.status, 400);
-      assert(decodeResponseBody(result.body).includes('allowed_tools'));
+      assert(result.body.utf8().includes('allowed_tools'));
       assertEquals(script.callCount(), 0);
       assertEquals(backend.calls.length, 0);
       assertEquals(choices, [{ type: 'allowed_tools', mode: 'auto', tools: [{ type: 'function', name: alias }] }]);
       return;
     }
-    const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), run);
+    const { frames } = await runShimAndDrain(openWebSearchTurn, inv, makeToolFixture(), run);
     const renamed = { type: 'function', name: alias };
     assertEquals(choices, mode === 'forced' ? [renamed, 'auto'] : [
       { type: 'allowed_tools', mode, tools: [renamed] },
@@ -2545,7 +2564,7 @@ test('a forced helper alias never captures an unqualified client function from h
   const choice: OpenAIResponsesToolChoice = { type: 'function', name: SHIM_TOOL_NAME };
   const inv = makeInvocation({ payload: { tools, input, tool_choice: choice } });
   const script = scriptedRun([fcTurn(0, 'client', SHIM_TOOL_NAME, '{}')]);
-  const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), async () => {
+  const { frames } = await runShimAndDrain(openWebSearchTurn, inv, makeToolFixture(), async () => {
     assertEquals(inv.payload.tool_choice, choice);
     const helper = inv.payload.tools?.[0];
     assert(helper?.type === 'function');
@@ -2570,7 +2589,7 @@ test('required allowed_tools demotes only its mode after hosted execution', asyn
   const script = scriptedRun([searchCallTurn(0, 'hosted', 'query'), messageTurn('done')]);
   const choices: unknown[] = [];
   const declarations: Array<CanonicalOpenAIResponsesPayload['tools']> = [];
-  const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), async () => {
+  const { frames } = await runShimAndDrain(openWebSearchTurn, inv, makeToolFixture(), async () => {
     choices.push(inv.payload.tool_choice);
     declarations.push(inv.payload.tools);
     return await script.run();
@@ -2590,7 +2609,7 @@ test('helper echoes distinguish namespaced functions and rewrite hosted allowed_
   const choice: OpenAIResponsesToolChoice = { type: 'allowed_tools', mode: 'required', tools: [{ type: 'web_search' }] };
   const inv = makeInvocation({ payload: { tool_choice: structuredClone(choice) } });
   const qualified = { type: 'function' as const, name: SHIM_TOOL_NAME, namespace: 'client' };
-  const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), async () => {
+  const { frames } = await runShimAndDrain(openWebSearchTurn, inv, makeToolFixture(), async () => {
     assertEquals(inv.payload.tool_choice, { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: SHIM_TOOL_NAME }] });
     return await scriptedRun([[
       mkResponseCreated(),
@@ -2607,22 +2626,22 @@ test('helper echoes distinguish namespaced functions and rewrite hosted allowed_
 test('server-tool loop preserves internal failure diagnostics on the failed resource', async () => {
   makeStubDeps();
   const cause = { operation: 'translated upstream dispatch' };
-  const failure = { type: 'internal_error' as const, name: 'TypeError', message: 'Cannot translate tool input', stack: 'TypeError: Cannot translate tool input', cause, target_api: 'anthropicMessages' };
+  const failure = new TypeError('Cannot translate tool input', { cause });
   let runCalls = 0;
-  const run = async (): Promise<ExecuteResult<ProtocolFrame<OpenAIResponsesStreamEventEx>>> => {
+  const run = async (): Promise<ScriptedReply<Frame>> => {
     runCalls += 1;
     if (runCalls === 1) return { type: 'events', events: framesOf(...searchCallTurn(0, 'call_1', 'q1')), modelIdentity: testTelemetryModelIdentity };
-    return { type: 'internal-error', http: { status: 502, headers: new Headers() }, error: failure };
+    throw failure;
   };
-  const result = await withOpenAIResponsesWebSearchShim(makeInvocation(), makeGatewayCtx(), run);
+  const result = await openWebSearchTurn(makeInvocation(), makeToolFixture(), run);
   assert(result.type === 'events');
   const events = eventPayloads(await collectFrames(result.events));
   const terminal = events.at(-1);
   assert(terminal?.type === 'response.failed');
   assertEquals(runCalls, 2);
   assertEquals(terminal.response.error?.code, 'server_error');
-  assertEquals(terminal.response.error?.message, failure.message);
-  assertEquals(terminal.response.error?.provider_specific_fields, { name: failure.name, stack: failure.stack, cause, target_api: failure.target_api });
-  assert(terminal.response.error?.provider_specific_fields?.cause === cause);
+  assert(terminal.response.error?.message.includes(failure.message));
+  assertEquals(terminal.response.error?.provider_specific_fields, { name: failure.name, stack: failure.stack, cause });
+
   assertFalse('stack' in (terminal.response.error as object));
 });

@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { expandWebSearchCall } from '../../../../../../src/data-plane/chat/openai-responses/interceptors/server-tools/web-search.ts';
+import { expandWebSearchCall } from '../../../../../../src/data-plane/chat/openai-responses/stages/server-tools/web-search.ts';
 import { assertLocalWebSearchSupport, UnsupportedLocalWebSearchFeatureError, findMatches, isUrlAllowed, parseWebSearchOperations, type WebSearchOperation } from '../../../../../../src/data-plane/tools/web-search/operations.ts';
 import { assert, assertEquals, assertThrows } from '@floway-dev/test-utils';
 

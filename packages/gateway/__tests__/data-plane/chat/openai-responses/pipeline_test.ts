@@ -1,32 +1,13 @@
 import { expect, test } from 'vitest';
 
-import { createOpenAIResponsesBody } from '../../../../src/data-plane/chat/openai-responses/body.ts';
-import { openaiResponsesEgress } from '../../../../src/data-plane/chat/openai-responses/egress.ts';
-import { createOpenAIResponsesCompactIngress, createOpenAIResponsesIngress } from '../../../../src/data-plane/chat/openai-responses/ingress.ts';
+import { headers, http, key, providerResponses, responsesFixture, upstream } from './fixture.ts';
 import { syntheticEventsFromResult } from '../../../../src/data-plane/chat/openai-responses/items/output.ts';
-import { createNonOpenAIResponsesSourceStore, LayeredOpenAIResponsesStatefulStore, MemoryOpenAIResponsesStatefulBacking } from '../../../../src/data-plane/chat/openai-responses/items/store.ts';
-import { AffinityCodec } from '../../../../src/data-plane/chat/shared/affinity/carrier.ts';
-import type { ChatBodyInput, ChatBodyOutput } from '../../../../src/data-plane/chat/shared/route-body.ts';
-import { createSidecarCodecFactory } from '../../../../src/data-plane/chat/shared/sidecar-codec.ts';
-import type { HttpOutput } from '../../../../src/data-plane/pipeline/edge-http.ts';
-import type { GatewayHttpFacts } from '../../../../src/data-plane/pipeline/host.ts';
+import { LayeredOpenAIResponsesStatefulStore, MemoryOpenAIResponsesStatefulBacking } from '../../../../src/data-plane/chat/openai-responses/items/store.ts';
 import { readHttpBytes } from '../../../../src/data-plane/pipeline/non-chat.ts';
-import type { GatewayServices, OpenResponsesStore, RouteCandidate } from '../../../../src/data-plane/pipeline/services.ts';
-import type { GatewayProvider } from '../../../../src/data-plane/providers/registry.ts';
-import type { HttpResponseFacts } from '@floway-dev/http';
-import { Bytes, compose, defineEnding, link, type Pipeline, run, type StageEnv } from '@floway-dev/pipeline';
+import { Bytes, compose, defineEnding, type StageEnv } from '@floway-dev/pipeline';
 import type { OpenAIImagesGenerationsPayload } from '@floway-dev/protocols/openai-images';
-import type { OpenAIResponsesOutputItemEx, OpenAIResponsesRequestPayloadEx, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
-import { type ChatTargetApi, type FlagId, type ProviderHttpOutput, type ProviderInput, type ProviderPipelines, type ProviderResponsesInput, type ProviderResponsesOutput, type ProviderServices, toProviderModelFacts } from '@floway-dev/provider';
-import { stubProvider, stubProviderModel, testFetcher } from '@floway-dev/test-utils';
-
-const key = 'responses-key';
-const serverSecret = '41'.repeat(32);
-const headers = [['x-upstream-test', 'present']] as const;
-
-const http = (status = 200, body: HttpResponseFacts['body'] = null): HttpOutput => ({
-  'response.http': { status, statusText: '', body, headers, timing: { startedAt: 0, headersAt: 1 } },
-});
+import type { OpenAIResponsesOutputItemEx, OpenAIResponsesResultEx } from '@floway-dev/protocols/openai-responses';
+import type { ProviderHttpOutput, ProviderInput, ProviderResponsesInput, ProviderResponsesOutput, ProviderServices } from '@floway-dev/provider';
 
 const modelOutput = (output: OpenAIResponsesOutputItemEx[], usage = { input_tokens: 3, output_tokens: 4, total_tokens: 7 }): OpenAIResponsesResultEx => ({
   id: 'resp_upstream', object: 'response', model: 'test-model', status: 'completed', error: null, incomplete_details: null, output, usage,
@@ -43,106 +24,10 @@ const eventsReply = (env: StageEnv, response = modelOutput([message('answer')]))
   'response.result': undefined,
 });
 
-const providerResponses = (reply: (facts: ProviderResponsesInput, env: StageEnv) => ProviderResponsesOutput | Promise<ProviderResponsesOutput>) =>
-  compose<ProviderResponsesInput, ProviderResponsesOutput, ProviderServices>('test.openai-responses', {
-    stages: [],
-    ending: defineEnding<ProviderResponsesInput, ProviderResponsesOutput>({
-      name: 'stubResponses',
-      request: { needs: ['provider.model', 'request.headers', 'request.payload', 'request.action'] },
-      return: { provides: ['response.http', 'response.modelKey', 'response.events', 'response.result'] },
-      execute: async (facts, _into, env) => await reply(facts, env),
-    }),
-  });
-
-const upstream = (id: string, pipelines: ProviderPipelines, flags: readonly FlagId[] = [], kind: 'chat' | 'image' = 'chat') => {
-  const endpoints = kind === 'chat' ? { openaiResponses: {} } : { openaiImagesGenerations: {} };
-  const provider: GatewayProvider = {
-    upstreamId: id, kind: 'custom', name: id, modelsCache: null,
-    pipelines, instance: stubProvider(), disabledPublicModelIds: [], modelPrefix: null,
-    inboundHeaderAllowlist: ['user-agent'], configVersion: 1, modelsRefreshInputHash: '',
-  };
-  const providerModel = toProviderModelFacts(stubProviderModel({ kind, endpoints, enabledFlags: new Set(flags) }));
-  const candidate: RouteCandidate = {
-    upstreamId: id, upstreamName: id, kind: provider.kind, modelId: providerModel.id,
-    upstreamModelId: providerModel.upstreamModelId, endpoints, limits: {}, providerModel,
-  };
-  return { provider, candidate };
-};
-
-const unusedBody = <Api extends ChatTargetApi>(api: Api): Pipeline<ChatBodyInput<Api>, ChatBodyOutput<Api>, GatewayServices> =>
-  compose<ChatBodyInput<Api>, ChatBodyOutput<Api>, GatewayServices>(`unused.${api}`, {
-    stages: [],
-    ending: defineEnding<ChatBodyInput<Api>, ChatBodyOutput<Api>>({
-      name: 'unexpectedTranslation',
-      request: { needs: [] },
-      return: { provides: ['response.http', `response.${api}`, 'response.usage.billable', 'response.timing.firstOutputAt', 'response.timing.streamEndedAt'] },
-      execute: async () => { throw new Error(`Unexpected translation into ${api}`); },
-    }),
-  });
-
-const fixture = (
-  upstreams: ReturnType<typeof upstream>[],
-  openStore: OpenResponsesStore = () => createNonOpenAIResponsesSourceStore(key),
-) => {
-  const usage: Parameters<GatewayServices['usageStore']['record']>[0][] = [];
-  const performance: Parameters<GatewayServices['performanceStore']['record']>[0][] = [];
-  const services: GatewayServices = {
-    providers: {
-      resolve(id) {
-        const match = upstreams.find(value => value.provider.upstreamId === id);
-        if (match === undefined) throw new Error(`Unexpected provider ${id}`);
-        return match.provider;
-      },
-      async enumerate(_facts, _model, kind) {
-        const candidates = upstreams.map(value => value.candidate).filter(value => value.providerModel.kind === kind);
-        return { candidates, sawModel: candidates.length > 0, failedUpstreams: [] };
-      },
-    },
-    fetcher: () => testFetcher,
-    affinityCodec: new AffinityCodec(serverSecret),
-    sidecarCodecs: createSidecarCodecFactory(serverSecret),
-    responsesStore: openStore,
-    usageStore: { record: async row => { usage.push(row); } },
-    performanceStore: { record: async row => { performance.push(row); } },
-    webSearchProvider: Object.assign(
-      async () => ({ type: 'disabled' as const }),
-      { alphaSearch: async () => ({ enabled: false, model: '', upstreamId: '' }) },
-    ),
-  };
-  const body = createOpenAIResponsesBody({
-    egress: openaiResponsesEgress,
-    messages: unusedBody('anthropicMessages'),
-    chatCompletions: unusedBody('openaiChatCompletions'),
-  });
-  const generate = createOpenAIResponsesIngress(body);
-  const compact = createOpenAIResponsesCompactIngress(body);
-  link([generate, compact]);
-  return {
-    usage, performance,
-    request(payload: OpenAIResponsesRequestPayloadEx, action: 'generate' | 'compact' = 'generate') {
-      const input: GatewayHttpFacts = {
-        'request.startedAt': Date.now(),
-        'request.http': {
-          method: 'POST',
-          url: { origin: 'https://floway.test', pathname: action === 'compact' ? '/v1/responses/compact' : '/v1/responses' },
-          headers: [['user-agent', 'Floway test'], ['x-ignored', 'ignored']],
-          body: Bytes.fromUtf8(JSON.stringify(payload)),
-        },
-        'request.auth.apiKeyId': key,
-        'request.auth.user': { id: 1, isAdmin: true },
-        'request.route.runtimeLocation': 'TEST',
-        'request.route.upstreamIds': null,
-        'request.route.randomizeUpstreams': false,
-      };
-      return run(action === 'generate' ? generate : compact, input, { services, finalizationTimeoutMs: 2000 });
-    },
-  };
-};
-
 test('HTTP Responses hydrates previous_response_id and commits only store-enabled turns', async () => {
   const backing = new MemoryOpenAIResponsesStatefulBacking();
   const calls: ProviderResponsesInput[] = [];
-  const mock = fixture([upstream('responses', {
+  const mock = responsesFixture([upstream('responses', {
     openaiResponses: providerResponses((facts, env) => {
       calls.push(facts);
       return eventsReply(env);
@@ -177,7 +62,7 @@ test('HTTP Responses hydrates previous_response_id and commits only store-enable
 });
 
 test('native HTTP compact reads scalar usage and preserves its compact resource', async () => {
-  const mock = fixture([upstream('responses', {
+  const mock = responsesFixture([upstream('responses', {
     openaiResponses: providerResponses(facts => {
       expect(facts['request.action']).toBe('compact');
       return {
@@ -208,7 +93,7 @@ test('native HTTP compact reads scalar usage and preserves its compact resource'
 
 test('compact shim retries a textless turn, reports aggregate usage and records each call', async () => {
   const calls: ProviderResponsesInput[] = [];
-  const mock = fixture([upstream('responses', {
+  const mock = responsesFixture([upstream('responses', {
     openaiResponses: providerResponses((facts, env) => {
       calls.push(facts);
       expect(facts['request.action']).toBe('generate');
@@ -229,7 +114,7 @@ test('compact shim retries a textless turn, reports aggregate usage and records 
 });
 
 test('a provider stream failure keeps its JSON resource and marks performance failed', async () => {
-  const mock = fixture([upstream('responses', {
+  const mock = responsesFixture([upstream('responses', {
     openaiResponses: providerResponses((_facts, env) =>
       eventsReply(env, { ...modelOutput([]), status: 'failed', error: { code: 'server_error', message: 'mock failure' } })),
   })]);
@@ -243,7 +128,7 @@ test('a provider stream failure keeps its JSON resource and marks performance fa
 });
 
 test('streamed Responses includes the reasoning marker, terminal resource and done trailer', async () => {
-  const mock = fixture([upstream('responses', { openaiResponses: providerResponses((_facts, env) => eventsReply(env)) })]);
+  const mock = responsesFixture([upstream('responses', { openaiResponses: providerResponses((_facts, env) => eventsReply(env)) })]);
   const handle = mock.request({ model: 'test-model', input: 'stream', stream: true });
   const response = (await handle.result)['response.http'];
   expect(response.status).toBe(200);
@@ -292,7 +177,7 @@ test('a ReAct image call retries 429, streams previews and settles separately fr
       name: 'image_generation', arguments: '{"prompt":"an apple"}',
     }]));
   });
-  const mock = fixture([
+  const mock = responsesFixture([
     upstream('chat', { openaiResponses: responsesPipeline }, ['openai-responses-image-generation-shim']),
     upstream('images', { openaiImagesGenerations: imagePipeline }, [], 'image'),
   ]);

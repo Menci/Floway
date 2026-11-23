@@ -1,40 +1,15 @@
 import { test } from 'vitest';
 
-import { withOpenAIResponsesStandaloneToolOutputShim } from '../../../../../src/data-plane/chat/openai-responses/interceptors/standalone-tool-output-shim.ts';
-import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
-import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
-import { doneFrame } from '@floway-dev/protocols/common';
+import { driveResponsesStage } from './drive.ts';
+import { standaloneToolOutputShim } from '../../../../../src/data-plane/chat/openai-responses/stages/standalone-tool-output-shim.ts';
+import { readHttpBytes } from '../../../../../src/data-plane/pipeline/non-chat.ts';
 import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
-import { decodeResponseBody, eventResult, type FlagId } from '@floway-dev/provider';
-import { assert, assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
-
-const gatewayCtx = mockChatGatewayCtx();
-const okEvents = () => Promise.resolve(eventResult((async function* () { yield doneFrame(); })(), testTelemetryModelIdentity));
+import type { FlagId } from '@floway-dev/provider';
+import { assert, assertEquals } from '@floway-dev/test-utils';
 
 const FLAG = new Set<FlagId>(['openai-responses-standalone-tool-output-shim']);
-
-const lower = async (
-  input: CanonicalOpenAIResponsesInputItem[],
-  { enabledFlags = new Set<FlagId>(), targetApi = 'openaiResponses' }: {
-    enabledFlags?: ReadonlySet<FlagId>;
-    targetApi?: OpenAIResponsesInvocation['targetApi'];
-  } = {},
-) => {
-  const invocation: OpenAIResponsesInvocation = {
-    payload: { model: 'test-model', input },
-    candidate: stubModelCandidate({ enabledFlags }),
-    targetApi,
-    headers: new Headers(),
-    action: 'generate',
-  };
-  const before = invocation.payload;
-  let seen: OpenAIResponsesInvocation['payload'] | undefined;
-  const result = await withOpenAIResponsesStandaloneToolOutputShim(invocation, gatewayCtx, () => {
-    seen = invocation.payload;
-    return okEvents();
-  });
-  return { before, seen, result };
-};
+const lower = (input: CanonicalOpenAIResponsesInputItem[], options?: Parameters<typeof driveResponsesStage>[2]) =>
+  driveResponsesStage(standaloneToolOutputShim, { model: 'test-model', input }, options);
 
 // The item Codex appends after a successful `create_goal` call.
 // https://github.com/openai/codex/blob/8011b92bc82d4cc1b6dc3f35c0cd28768c797c97/codex-rs/ext/goal/src/steering.rs#L57-L70
@@ -91,8 +66,7 @@ test('returns an input error without running downstream when a standalone output
     { type: 'function_call_output', output: 'orphan' },
   ], { targetApi: 'anthropicMessages' });
   assertEquals(seen, undefined);
-  assert(result.type === 'api-error');
-  assertEquals(result.http.status, 400);
-  const body = JSON.parse(decodeResponseBody(result.body)) as { error: { param: string } };
+  assertEquals(result['response.http'].status, 400);
+  const body = JSON.parse((await readHttpBytes(result['response.http'].body)).utf8()) as { error: { param: string } };
   assertEquals(body.error.param, 'input[1].name');
 });

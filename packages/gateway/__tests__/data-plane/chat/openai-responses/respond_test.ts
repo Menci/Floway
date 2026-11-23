@@ -1,18 +1,33 @@
-import { Hono } from 'hono';
-import { beforeEach, expect, test } from 'vitest';
+import { expect, test } from 'vitest';
 
-import { respondOpenAIResponses, respondOpenAIResponsesFailure } from '../../../../src/data-plane/chat/openai-responses/respond.ts';
+import { http, providerResponses, responsesFixture, upstream } from './fixture.ts';
+import { openAIResponsesInternalErrorBody } from '../../../../src/data-plane/chat/openai-responses/encode.ts';
 import { OPENAI_RESPONSES_REASONING_INCLUDED_HEADER } from '../../../../src/data-plane/chat/openai-responses/response-headers.ts';
-import { initRepo } from '../../../../src/repo/index.ts';
+import { writeHttpResponse } from '../../../../src/data-plane/shared/http-writer.ts';
 import { tokenCountsFromUsage } from '../../../../src/repo/usage-metrics.ts';
-import { InMemoryRepo } from '../../../repo/memory.ts';
-import { mockChatGatewayCtx } from '../../../test-utils/gateway-ctx.ts';
-import { doneFrame, eventFrame, parseSSEStream } from '@floway-dev/protocols/common';
+import type { HeaderEntry } from '@floway-dev/http';
+import { Bytes, type StageEnv } from '@floway-dev/pipeline';
+import { doneFrame, eventFrame, parseSSEStream, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectOpenAIResponsesProtocolEventsToResult, parseOpenAIResponsesStream, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
-import { eventResult, internalErrorResult, toInternalDebugError, type EventResultMetadata } from '@floway-dev/provider';
-import { mockPerfTelemetryContext, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import type { ProviderResponsesOutput } from '@floway-dev/provider';
 
-beforeEach(() => { initRepo(new InMemoryRepo()); });
+const frameReply = (
+  env: StageEnv, frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>,
+  headers: readonly HeaderEntry[] = [],
+): ProviderResponsesOutput => ({
+  ...http(),
+  'response.http': { ...http()['response.http'], headers },
+  'response.modelKey': 'native-responses',
+  'response.events': env.createStream({ label: 'stub Responses events', iterate: () => frames }),
+  'response.result': undefined,
+});
+
+const render = async (frames: AsyncIterable<ProtocolFrame<OpenAIResponsesStreamEventEx>>, stream: boolean, headers?: readonly HeaderEntry[]) => {
+  const mock = responsesFixture([upstream('responses', {
+    openaiResponses: providerResponses((_facts, env) => frameReply(env, frames, headers)),
+  })]);
+  return writeHttpResponse((await mock.request({ model: 'test-model', input: [], stream }).result)['response.http']);
+};
 
 const internalFailure = () => {
   const cause = new TypeError('nested'); cause.stack = 'TypeError: nested\n  at nested';
@@ -39,26 +54,17 @@ const successfulFrames = async function* () {
 
 test.each([false, true])('Responses success declares historical reasoning accounting when stream=%s', async wantsStream => {
   const upstreamHeaders = new Headers({ 'x-reasoning-included': 'upstream-value', 'x-native': 'trace' });
-  const app = new Hono().get('/', c => respondOpenAIResponses(
-    c,
-    eventResult(successfulFrames(), testTelemetryModelIdentity, { http: { status: 200, headers: upstreamHeaders } }),
-    wantsStream,
-    mockChatGatewayCtx(),
-    { model: 'm', input: [] },
-  ));
-  const response = await app.request('/');
+  const response = await render(successfulFrames(), wantsStream, [...upstreamHeaders]);
   expect(response.status).toBe(200);
   expect(response.headers.get(OPENAI_RESPONSES_REASONING_INCLUDED_HEADER)).toBe('true');
   expect(response.headers.get('x-native')).toBe('trace');
   await response.body?.cancel();
 });
 
-test('Responses HTTP internal errors keep status and native error fields while namespacing diagnostics', async () => {
-  const response = respondOpenAIResponsesFailure(internalErrorResult(503, toInternalDebugError(internalFailure(), 'anthropicMessages')), mockChatGatewayCtx());
-  expect(response.status).toBe(503);
-  expect(await response.json()).toEqual({ error: { type: 'internal_error', message: 'broken', provider_specific_fields: { ...fields, target_api: 'anthropicMessages' } } });
-  const minimal = respondOpenAIResponsesFailure(internalErrorResult(502, { type: 'internal_error', name: 'Error', message: 'minimal' }), mockChatGatewayCtx());
-  expect(await minimal.json()).toEqual({ error: { type: 'internal_error', message: 'minimal', provider_specific_fields: { name: 'Error' } } });
+test('Responses internal errors keep native error fields and namespace diagnostics', () => {
+  expect(openAIResponsesInternalErrorBody(internalFailure())).toEqual({
+    error: { type: 'internal_error', message: 'broken', provider_specific_fields: fields },
+  });
 });
 
 test('Responses SSE failures keep the announced resource, completed items, wire sequence and diagnostics', async () => {
@@ -70,8 +76,7 @@ test('Responses SSE failures keep the announced resource, completed items, wire 
     yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.added', sequence_number: 7, output_index: 1, item: { ...item, id: 'rs_pending' } });
     throw internalFailure();
   };
-  const app = new Hono().get('/', c => respondOpenAIResponses(c, eventResult(frames(), testTelemetryModelIdentity), true, mockChatGatewayCtx(), { model: 'm', input: [] }));
-  const response = await app.request('/');
+  const response = await render(frames(), true);
   expect(response.status).toBe(200);
   const wire = await response.text();
   const events: OpenAIResponsesStreamEventEx[] = [];
@@ -102,8 +107,7 @@ test('Responses sends a failed terminal when the next event cannot be serialized
     { type: 'vendor:event\nbad', sequence_number: 5 },
   ].map(event => `data: ${JSON.stringify(event)}\n\n`).join(''));
   const source = parseOpenAIResponsesStream(upstream.body!);
-  const app = new Hono().get('/', c => respondOpenAIResponses(c, eventResult(source, testTelemetryModelIdentity), true, mockChatGatewayCtx(), { model: 'm', input: [] }));
-  const response = await app.request('/');
+  const response = await render(source, true);
   expect(response.status).toBe(200);
   const events = [];
   for await (const frame of parseSSEStream(response.body!)) {
@@ -126,8 +130,7 @@ test('Responses finishes an announced resource when a native error is followed b
     yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.created', sequence_number: 3, response: { id: 'upstream', object: 'response', model: 'm', status: 'in_progress', output: [], error: null, incomplete_details: null } });
     yield eventFrame<OpenAIResponsesStreamEventEx>(error);
   };
-  const app = new Hono().get('/', c => respondOpenAIResponses(c, eventResult(frames(), testTelemetryModelIdentity), true, mockChatGatewayCtx(), { model: 'm', input: [] }));
-  const wire = await (await app.request('/')).text();
+  const wire = await (await render(frames(), true)).text();
   const events: OpenAIResponsesStreamEventEx[] = [];
   for await (const frame of parseSSEStream(new Response(wire).body!)) {
     if (frame.data !== '[DONE]') events.push(JSON.parse(frame.data));
@@ -158,8 +161,7 @@ test.each([false, true])('Responses HTTP consumes an upstream error followed by 
     yield eventFrame<OpenAIResponsesStreamEventEx>(error);
     yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.failed', sequence_number: 4, response: failed });
   };
-  const app = new Hono().get('/', c => respondOpenAIResponses(c, eventResult(frames(), testTelemetryModelIdentity), wantsStream, mockChatGatewayCtx(), { model: 'm', input: [] }));
-  const response = await app.request('/');
+  const response = await render(frames(), wantsStream);
   expect(response.status).toBe(wantsStream ? 200 : 502);
   if (!wantsStream) {
     const { sequence_number: _sequenceNumber, ...body } = error;
@@ -189,8 +191,7 @@ test.each([
 ])('Responses HTTP preserves a standalone upstream error event %j', async error => {
   for (const wantsStream of [false, true]) {
     const frames = async function* () { yield eventFrame<OpenAIResponsesStreamEventEx>(error); yield doneFrame(); };
-    const app = new Hono().get('/', c => respondOpenAIResponses(c, eventResult(frames(), testTelemetryModelIdentity), wantsStream, mockChatGatewayCtx(), { model: 'm', input: [] }));
-    const response = await app.request('/');
+    const response = await render(frames(), wantsStream);
     expect(response.status).toBe(wantsStream ? 200 : 502);
     if (wantsStream) {
       const wire = await response.text();
@@ -216,8 +217,7 @@ test.each([
     yield eventFrame<OpenAIResponsesStreamEventEx>(error);
     yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.failed', sequence_number: 1, response: failed });
   };
-  const app = new Hono().get('/', c => respondOpenAIResponses(c, eventResult(frames(), testTelemetryModelIdentity), false, mockChatGatewayCtx(), { model: 'm', input: [] }));
-  const response = await app.request('/');
+  const response = await render(frames(), false);
 
   expect(response.status).toBe(status);
   const { sequence_number: _sequenceNumber, ...body } = error;
@@ -226,59 +226,48 @@ test.each([
 
 test('Responses non-streaming failure drains the failed resource, preserves error fields, and records usage once', async () => {
   const error = { type: 'error' as const, sequence_number: 3, code: null, param: 'tools', message: 'rate limited', vendor: { retryable: true } };
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const background: Promise<unknown>[] = [];
-  const modelIdentity = { ...testTelemetryModelIdentity, upstream: 'continuation-upstream' };
-  const telemetry = mockPerfTelemetryContext({ keyId: 'key_test', upstream: modelIdentity.upstream, runtimeLocation: 'TEST' });
-  let resolveMetadata!: (metadata: EventResultMetadata) => void;
-  const finalMetadata = new Promise<EventResultMetadata>(resolve => { resolveMetadata = resolve; });
   let readFailedResource = false;
   const item = { type: 'reasoning' as const, id: 'rs_complete', summary: [] };
   const failed = {
     id: 'resp_aggregate', object: 'response' as const, model: 'm', status: 'failed' as const,
     output: [item], error: null, incomplete_details: null,
-    usage: { input_tokens: 15, output_tokens: 2, total_tokens: 17 },
+    usage: { input_tokens: 15, output_tokens: 2, total_tokens: 17, input_tokens_details: { cached_tokens: 3, cache_write_tokens: 2 } },
   };
   const frames = async function* () {
-    try {
-      yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.created', sequence_number: 0, response: { ...failed, status: 'in_progress', output: [] } });
-      yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.added', sequence_number: 1, output_index: 0, item });
-      yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.done', sequence_number: 2, output_index: 0, item });
-      yield eventFrame<OpenAIResponsesStreamEventEx>(error);
-      readFailedResource = true;
-      yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.failed', sequence_number: 4, response: failed });
-    } finally {
-      resolveMetadata({ modelIdentity, performance: telemetry, billableUsage: { input: 10, cacheRead: 3, cacheWrite: 2, cacheWrite1h: 0, output: 2 } });
-    }
+    yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.created', sequence_number: 0, response: { ...failed, status: 'in_progress', output: [], usage: null } });
+    yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.added', sequence_number: 1, output_index: 0, item });
+    yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.output_item.done', sequence_number: 2, output_index: 0, item });
+    yield eventFrame<OpenAIResponsesStreamEventEx>(error);
+    readFailedResource = true;
+    yield eventFrame<OpenAIResponsesStreamEventEx>({ type: 'response.failed', sequence_number: 4, response: failed });
   };
-  const ctx = mockChatGatewayCtx({
-    backgroundScheduler: promise => { background.push(promise); },
-    attempt: { timing: { upstreamCallStartedAt: 0, firstOutputTokenAt: 1 }, telemetry },
-  });
-  const result = eventResult(frames(), testTelemetryModelIdentity, {
-    performance: telemetry,
-    finalMetadata,
-  });
-  const app = new Hono().get('/', c => respondOpenAIResponses(c, result, false, ctx, { model: 'm', input: [] }));
-  const response = await app.request('/');
+  const mock = responsesFixture([upstream('continuation-upstream', { openaiResponses: providerResponses((_facts, env) => frameReply(env, frames())) })]);
+  const handle = mock.request({ model: 'test-model', input: [] });
+  const response = writeHttpResponse((await handle.result)['response.http']);
   expect(response.status).toBe(502);
   expect(readFailedResource).toBe(true);
   const { sequence_number: _sequenceNumber, ...body } = error;
   expect(await response.json()).toEqual(body);
-  await Promise.all(background);
-  const usage = await repo.usage.listAll();
-  expect(usage).toHaveLength(1);
-  expect(usage[0]).toMatchObject({ requests: 1, upstream: modelIdentity.upstream });
-  expect(tokenCountsFromUsage(usage[0])).toEqual({ input: 10, input_cache_read: 3, input_cache_write: 2, output: 2 });
-  const performance = await repo.performance.listAll();
-  expect(performance).toHaveLength(1);
-  expect(performance[0]).toMatchObject({ requests: 1, errorsWithOutput: 1, errorsNoOutput: 0, ttftSamplesOk: 0, tpotSamples: 1 });
+  expect(await handle.done).toEqual({ ok: true });
+  expect(mock.usage).toHaveLength(1);
+  expect(mock.usage[0]).toMatchObject({ requests: 1, upstream: 'continuation-upstream' });
+  expect(tokenCountsFromUsage(mock.usage[0])).toEqual({ input: 10, input_cache_read: 3, input_cache_write: 2, output: 2 });
+  expect(mock.performance).toEqual([expect.objectContaining({ kind: 'sample', sample: expect.objectContaining({ success: false }) })]);
 });
 
 test('Responses native upstream HTTP error is forwarded without diagnostic restructuring', async () => {
   const raw = '{"error":{"message":"native","stack":"provider-owned","custom":true}}';
-  const response = respondOpenAIResponsesFailure({ type: 'api-error', source: 'upstream', http: { status: 429, headers: new Headers({ 'content-type': 'application/json', 'x-native': 'trace' }) }, body: new TextEncoder().encode(raw) }, mockChatGatewayCtx());
+  const mock = responsesFixture([upstream('responses', {
+    openaiResponses: providerResponses(() => ({
+      'response.http': { ...http(429, Bytes.fromUtf8(raw))['response.http'], headers: [['content-type', 'application/json'], ['x-native', 'trace']] },
+      'response.modelKey': 'native-responses',
+      'response.events': undefined,
+      'response.result': undefined,
+    })),
+  })]);
+  const handle = mock.request({ model: 'test-model', input: [] });
+  const response = writeHttpResponse((await handle.result)['response.http']);
+  await expect(handle.done).resolves.toEqual({ ok: true });
   expect(response.status).toBe(429);
   expect(response.headers.get('x-native')).toBe('trace');
   expect(response.headers.get(OPENAI_RESPONSES_REASONING_INCLUDED_HEADER)).toBeNull();

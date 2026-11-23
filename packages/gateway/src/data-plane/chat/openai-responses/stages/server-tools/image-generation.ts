@@ -2,6 +2,7 @@ import { isEqual } from 'es-toolkit';
 
 import { isUpstreamTransportError } from '../../../../../dial/transport-error.ts';
 import { sleep } from '../../../../../shared/sleep.ts';
+import type { AnswerFacts } from '../../../../pipeline/answer.ts';
 import { jsonHttpResponse, type HttpDelivery, type HttpDeliveryFacts } from '../../../../pipeline/edge-http.ts';
 import type { GatewayHttpFacts } from '../../../../pipeline/host.ts';
 import { httpSucceeded, measured, readHttpBytes } from '../../../../pipeline/non-chat.ts';
@@ -105,10 +106,8 @@ export const isHostedImageGenerationTool = (tool: OpenAIResponsesTool): tool is 
 export const recognizeImageGenerationTool = (raw: OpenAIResponsesTool): OpenAIResponsesImageGenerationTool | undefined =>
   isHostedImageGenerationTool(raw) ? raw : undefined;
 
-// A base64-data-URL or bare-base64 image source bound for an edit call.
-// Bytes are held in a concrete ArrayBuffer so they can be wrapped in a Blob.
 interface ImageSource {
-  bytes: ArrayBuffer;
+  bytes: Bytes;
   mimeType: string;
 }
 
@@ -136,7 +135,7 @@ const prepareEditSources = async (sources: readonly ImageSource[]): Promise<read
 
     let keyPromise = keyBySource.get(source);
     if (keyPromise === undefined) {
-      keyPromise = crypto.subtle.digest('SHA-256', source.bytes).then(buffer => {
+      keyPromise = crypto.subtle.digest('SHA-256', source.bytes.toUint8Array() as Uint8Array<ArrayBuffer>).then(buffer => {
         const digest = encodeHex(new Uint8Array(buffer));
         return `${source.mimeType}\u0000${digest}`;
       });
@@ -150,20 +149,15 @@ const prepareEditSources = async (sources: readonly ImageSource[]): Promise<read
       // preprocessing, while the standalone edits endpoint accepts only
       // PNG/JPEG/WebP. Re-encode locally to preserve the hosted-tool behavior.
       // https://github.com/openai/openai-node/blob/ec2f57fd0d66e94782656b986d7b3eb03225369c/src/resources/images.ts#L560-L572
-      prepared = getImageProcessor().compressToWebp(new Uint8Array(source.bytes), null).then(encoded => {
-        const bytes = encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength) as ArrayBuffer;
-        return { bytes, mimeType: 'image/webp' } satisfies PreparedImageSource;
-      });
+      prepared = getImageProcessor().compressToWebp(source.bytes.toUint8Array(), null)
+        .then(encoded => ({ bytes: Bytes.adopt(encoded), mimeType: 'image/webp' } satisfies PreparedImageSource));
       preparedByContent.set(key, prepared);
     }
     return await prepared;
   }));
 };
 
-const base64ToArrayBuffer = (b64: string): ArrayBuffer => {
-  const bytes = decodeForgivingBase64(b64);
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-};
+const base64ToImageBytes = (b64: string): Bytes => Bytes.adopt(decodeForgivingBase64(b64));
 
 // Parse a `data:<mime>;base64,<payload>` URL or a bare base64 string (as
 // emitted in `image_generation_call.result`) into raw bytes. Remote URLs are
@@ -194,7 +188,7 @@ const decodeInlineImage = (
 
   let decoded: ImageSource | null;
   try {
-    decoded = { bytes: base64ToArrayBuffer(payload), mimeType };
+    decoded = { bytes: base64ToImageBytes(payload), mimeType };
   } catch {
     decoded = null;
   }
@@ -237,7 +231,7 @@ const decodeInputImageDataUrl = (
   }
 
   try {
-    const source = { bytes: base64ToArrayBuffer(payload), mimeType };
+    const source = { bytes: base64ToImageBytes(payload), mimeType };
     decodedSources.set(cacheKey, source);
     return { ok: true, source };
   } catch {
@@ -637,12 +631,7 @@ const createRemoteImageMaterializer = (requestSignal: AbortSignal | undefined) =
     }
 
     materializedBytes += fetched.data.byteLength;
-    const bytes = fetched.data.byteOffset === 0
-      && fetched.data.buffer instanceof ArrayBuffer
-      && fetched.data.byteLength === fetched.data.buffer.byteLength
-      ? fetched.data.buffer
-      : Uint8Array.from(fetched.data).buffer;
-    const result = { bytes, mimeType };
+    const result = { bytes: Bytes.copy(fetched.data), mimeType };
     materializedByData.set(fetched.data, result);
     return { ok: true, source: result };
   };
@@ -939,10 +928,10 @@ const buildEditsRequest = (
   };
   const images = sources.map((source, index) => ({
     type: 'upload' as const,
-    bytes: Bytes.copy(new Uint8Array(source.bytes)), filename: `image_${index}.${editFileExt(source.mimeType)}`, contentType: source.mimeType,
+    bytes: source.bytes, filename: `image_${index}.${editFileExt(source.mimeType)}`, contentType: source.mimeType,
   }));
   const maskFile = mask === undefined ? undefined : {
-    type: 'upload' as const, bytes: Bytes.copy(new Uint8Array(mask.bytes)), filename: `mask.${editFileExt(mask.mimeType)}`, contentType: mask.mimeType,
+    type: 'upload' as const, bytes: mask.bytes, filename: `mask.${editFileExt(mask.mimeType)}`, contentType: mask.mimeType,
   };
   return {
     images,
@@ -1075,28 +1064,35 @@ export const parseImageStreamEvent = (data: string): ImageStreamSignal => {
   return null;
 };
 
-type ImageRequest =
+type ImageDispatchRequest =
   | { readonly action: 'generate'; readonly payload: GenerationPayload }
   | { readonly action: 'edit'; readonly payload: OpenAIImagesEditsRequest };
 
 type ImageInput = GatewayHttpFacts & {
-  readonly 'request.image': ImageRequest;
+  readonly 'request.image': {
+    readonly prompt: string;
+    readonly action: 'generate' | 'edit';
+    readonly sources: readonly ImageSource[];
+    readonly config: MaterializedImageGenerationConfig;
+  };
   readonly 'request.model': string;
   readonly 'request.image.partials': boolean;
 };
 type ImageAttempt = ImageInput & { readonly 'route.candidate': RouteCandidate };
-type ImageBack = Pick<ProviderHttpOutput, 'response.http'> & UsageFacts & RenderFacts & HttpDeliveryFacts & {
+type ImageDispatch = Omit<ImageAttempt, 'request.image'> & { readonly 'request.image': ImageDispatchRequest };
+type ImageBack = Pick<ProviderHttpOutput, 'response.http'> & UsageFacts & RenderFacts & HttpDeliveryFacts & AnswerFacts & {
   readonly 'response.image.outcome': Deferred<ImageOutcome>;
   readonly 'response.image.partials': ManagedStream<ServerToolLifecycleEvent> | undefined;
   readonly 'response.route.candidate'?: RouteCandidate;
   readonly 'response.usage.selected'?: UsageFacts['response.usage.billable'];
 };
 
-const responseKeys = ['response.http', 'response.render', 'response.delivery', 'response.image.outcome', 'response.image.partials', ...usageResponseKeys];
+const responseKeys = ['response.http', 'response.source', 'response.render', 'response.delivery', 'response.image.outcome', 'response.image.partials', ...usageResponseKeys];
 type OutcomeEnv = Pick<StageEnv, 'defer' | 'clock'>;
-const scalarImage = (env: OutcomeEnv, http: HttpResponseFacts, outcome: ImageOutcome, usage: UsageFacts): ImageBack => ({
+const scalarImage = (env: OutcomeEnv, http: HttpResponseFacts, outcome: ImageOutcome, usage: UsageFacts, source: AnswerFacts['response.source']): ImageBack => ({
   ...usage,
   'response.http': http,
+  'response.source': source,
   ...renderedNow(env, outcome.ok ? { kind: 'completed' } : failedRender('protocol-error', outcome.error)),
   'response.delivery': env.defer<HttpDelivery>('image delivery', Promise.resolve({ kind: 'completed', endedAt: env.clock() })),
   'response.image.outcome': env.defer('image outcome', Promise.resolve(outcome)),
@@ -1110,6 +1106,11 @@ const imageFailure = (message: string): ImageOutcome => ({
 const imageApiFailure = (text: string, status: number): ImageOutcome => {
   const { type, code, message } = errorFromBody(text, status);
   return { ok: false, error: { type: type ?? 'image_generation_error', code, message, retryable: isRetryableImageError(code, type) } };
+};
+
+const toolFailure = (env: OutcomeEnv, error: unknown): ImageBack => {
+  const outcome: ImageOutcome = { ok: false, error: serverError(error) };
+  return scalarImage(env, jsonHttpResponse(502, outcome, env.clock()), outcome, emptyUsageFacts(env), 'gateway');
 };
 
 const resolveImageCandidate = defineStage<ImageInput, ImageAttempt, ImageBack, ImageBack, Pick<GatewayServices, 'providers'>>({
@@ -1130,14 +1131,7 @@ const resolveImageCandidate = defineStage<ImageInput, ImageAttempt, ImageBack, I
     const resolution = await env.services.providers.enumerate(facts, model, 'image');
     const candidate = resolution.candidates.find(candidate => candidate.endpoints[endpoint] !== undefined);
     if (candidate !== undefined) {
-      let response: ImageBack;
-      try {
-        response = await next({ ...facts, 'route.candidate': candidate });
-      } catch (error) {
-        if (env.signal.aborted || !isUpstreamTransportError(error)) throw error;
-        const outcome: ImageOutcome = { ok: false, error: serverError(error) };
-        response = scalarImage(env, jsonHttpResponse(502, outcome, env.clock()), outcome, emptyUsageFacts(env));
-      }
+      const response = await next({ ...facts, 'route.candidate': candidate });
       return { ...response, 'response.route.candidate': candidate, 'response.usage.selected': response['response.usage.billable'] };
     }
     const message = !resolution.sawModel ? `No upstream provides model '${model}'.` : resolution.candidates.length === 0
@@ -1150,7 +1144,35 @@ const resolveImageCandidate = defineStage<ImageInput, ImageAttempt, ImageBack, I
         code: resolution.sawModel ? 'model_not_supported' : 'model_not_found', retryable: false,
       },
     };
-    return scalarImage(env, jsonHttpResponse(resolution.sawModel ? 400 : 404, outcome, env.clock()), outcome, emptyUsageFacts(env));
+    return scalarImage(env, jsonHttpResponse(resolution.sawModel ? 400 : 404, outcome, env.clock()), outcome, emptyUsageFacts(env), 'gateway');
+  },
+});
+
+const prepareImageRequest = defineStage<ImageAttempt, ImageDispatch, ImageBack, ImageBack>({
+  name: 'prepareImageRequest',
+  through: {
+    request: { needs: ['request.image', 'request.image.partials'], consumes: [], provides: ['request.image'] },
+    response: { needs: responseKeys, consumes: [], provides: [] },
+  },
+  return: { provides: responseKeys },
+  execute: async (facts, next, env) => {
+    const { action, prompt, config, sources } = facts['request.image'];
+    const stream = facts['request.image.partials'];
+    if (action === 'generate') {
+      return await next({ ...facts, 'request.image': { action, payload: buildGenerationsBody(prompt, config, stream) } });
+    }
+
+    let prepared: Awaited<ReturnType<typeof prepareEditRequest>>;
+    try {
+      prepared = await prepareEditRequest(sources, config);
+    } catch (error) {
+      if (env.signal.aborted) throw error;
+      return toolFailure(env, error);
+    }
+    return await next({
+      ...facts,
+      'request.image': { action, payload: buildEditsRequest(prompt, config, prepared.sources, prepared.mask, stream) },
+    });
   },
 });
 
@@ -1172,7 +1194,7 @@ const observeImageStream = (
   if (http.body === null) {
     const outcome = imageFailure('Image backend returned a streaming response with no body.');
     const usage = scalarUsageFacts(env, billableCall(env, identity, 'stream-error', measured(tokenUsageMeasurement(null))));
-    return scalarImage(env, http, outcome, usage);
+    return scalarImage(env, http, outcome, usage, 'upstream');
   }
   const bytes = http.body;
   const source = bytes instanceof Bytes
@@ -1219,6 +1241,7 @@ const observeImageStream = (
   const delivery = env.deferred<HttpDelivery>('image delivery', frames);
   return {
     'response.http': { ...http, body: null },
+    'response.source': 'upstream',
     'response.usage.billable': billing.deferred,
     'response.timing.firstOutputAt': env.defer('first image output', Promise.resolve(null)),
     'response.timing.streamEndedAt': streamEnd.deferred,
@@ -1229,14 +1252,18 @@ const observeImageStream = (
   };
 };
 
-const observeImageCall = defineStage<ImageAttempt, ImageAttempt, ProviderHttpOutput, ImageBack>({
-  name: 'observeImageCall',
-  through: {
-    request: { needs: ['route.candidate', 'request.image.partials'], consumes: [], provides: [] },
-    response: { needs: ['response.http', 'response.modelKey'], consumes: [], provides: responseKeys },
-  },
-  execute: async (facts, next, env) => {
-    const response = await next(facts);
+const executeImageCall = defineEnding<ImageDispatch, ImageBack, {}, GatewayServices>({
+  name: 'executeImageCall',
+  request: { needs: ['route.candidate', 'request.image.partials'] },
+  return: { provides: responseKeys },
+  execute: async (facts, _into, env) => {
+    let response: ProviderHttpOutput;
+    try {
+      response = await env.run(imageDispatch, facts).result;
+    } catch (error) {
+      if (env.signal.aborted || !isUpstreamTransportError(error)) throw error;
+      return toolFailure(env, error);
+    }
     const http = response['response.http'];
     const identity = observeIdentity(facts['route.candidate'], response['response.modelKey']);
     if (httpSucceeded(http) && facts['request.image.partials']) return { ...response, ...observeImageStream(http, identity, env) };
@@ -1257,11 +1284,11 @@ const observeImageCall = defineStage<ImageAttempt, ImageAttempt, ProviderHttpOut
     const usage = measured(tokenUsageMeasurement(tokenUsageFromOpenAIImagesBody(parsed)));
     const billing = scalarUsageFacts(env, billableCall(env, identity,
       httpSucceeded(http) ? outcome.ok ? 'completed' : 'stream-error' : 'api-error', usage));
-    return { ...response, ...scalarImage(env, { ...http, body: null }, outcome, billing) };
+    return { ...response, ...scalarImage(env, { ...http, body: null }, outcome, billing, 'upstream') };
   },
 });
 
-const retryImageCall = defineStage<ImageAttempt, ImageAttempt, ImageBack, ImageBack>({
+const retryImageCall = defineStage<ImageDispatch, ImageDispatch, ImageBack, ImageBack>({
   name: 'retryImageCall',
   through: {
     request: { needs: [], consumes: [], provides: [] },
@@ -1295,7 +1322,7 @@ const providerSlot = {
   request: { needs: [], consumes: ['request.image'], provides: providerEntry },
   response: { needs: providerExit, consumes: [], provides: [] },
 };
-const enterImageProvider = defineEnding<ImageAttempt, ProviderHttpOutput, ImageTargets>({
+const enterImageProvider = defineEnding<ImageDispatch, ProviderHttpOutput, ImageTargets>({
   name: 'enterImageProvider',
   request: { needs: ['request.image', 'route.candidate'] },
   into: { generation: providerSlot, edit: providerSlot },
@@ -1310,50 +1337,44 @@ const enterImageProvider = defineEnding<ImageAttempt, ProviderHttpOutput, ImageT
   },
 });
 
-const imageSubRun = (operation: 'image_generation' | 'image_edit') =>
-  compose<ImageInput, ImageBack, GatewayServices, ImageTargets>(`openai-responses.tool.${operation}`, {
-    stages: [writeSettlement(operation), priceUsage, resolveImageCandidate, retryImageCall, observeImageCall],
-    targets: {
-      generation: {
-        entry: providerEntry, exit: providerExit,
-        resolve(upstreamId, { providers }) {
-          const pipeline = providers.resolve(upstreamId).pipelines.openaiImagesGenerations;
-          if (pipeline === undefined) throw new Error(`Upstream ${upstreamId} has no image generations pipeline`);
-          return pipeline;
-        },
-      },
-      edit: {
-        entry: providerEntry, exit: providerExit,
-        resolve(upstreamId, { providers }) {
-          const pipeline = providers.resolve(upstreamId).pipelines.openaiImagesEdits;
-          if (pipeline === undefined) throw new Error(`Upstream ${upstreamId} has no image edits pipeline`);
-          return pipeline;
-        },
+const imageDispatch = compose<ImageDispatch, ProviderHttpOutput, GatewayServices, ImageTargets>('openai-responses.tool.image-dispatch', {
+  stages: [],
+  targets: {
+    generation: {
+      entry: providerEntry, exit: providerExit,
+      resolve(upstreamId, { providers }) {
+        const pipeline = providers.resolve(upstreamId).pipelines.openaiImagesGenerations;
+        if (pipeline === undefined) throw new Error(`Upstream ${upstreamId} has no image generations pipeline`);
+        return pipeline;
       },
     },
-    ending: enterImageProvider,
+    edit: {
+      entry: providerEntry, exit: providerExit,
+      resolve(upstreamId, { providers }) {
+        const pipeline = providers.resolve(upstreamId).pipelines.openaiImagesEdits;
+        if (pipeline === undefined) throw new Error(`Upstream ${upstreamId} has no image edits pipeline`);
+        return pipeline;
+      },
+    },
+  },
+  ending: enterImageProvider,
+});
+
+const imageSubRun = (operation: 'image_generation' | 'image_edit') =>
+  compose<ImageInput, ImageBack, GatewayServices>(`openai-responses.tool.${operation}`, {
+    stages: [writeSettlement(operation), priceUsage, resolveImageCandidate, prepareImageRequest, retryImageCall],
+    ending: executeImageCall,
   });
 
 const imageGeneration = imageSubRun('image_generation');
 const imageEdit = imageSubRun('image_edit');
-link([imageGeneration, imageEdit]);
+link([imageDispatch, imageGeneration, imageEdit]);
 
 const streamImageGeneration = async function* (
   prompt: string, action: 'generate' | 'edit', sources: readonly ImageSource[],
   config: MaterializedImageGenerationConfig, facts: GatewayHttpFacts, env: StageEnv<GatewayServices>,
 ): AsyncGenerator<ServerToolLifecycleEvent, ServerToolSlotResult> {
   const partials = (config.partial_images ?? 0) > 0;
-  let request: ImageRequest;
-  try {
-    if (action === 'edit') {
-      const prepared = await prepareEditRequest(sources, config);
-      request = { action, payload: buildEditsRequest(prompt, config, prepared.sources, prepared.mask, partials) };
-    } else {
-      request = { action, payload: buildGenerationsBody(prompt, config, partials) };
-    }
-  } catch (error) {
-    return imageTerminal(prompt, action, { ok: false, error: serverError(error) });
-  }
   const result = await env.run(action === 'edit' ? imageEdit : imageGeneration, {
     ...facts,
     'request.http': {
@@ -1363,7 +1384,7 @@ const streamImageGeneration = async function* (
       body: null,
     },
     'request.model': config.model,
-    'request.image': request,
+    'request.image': { action, prompt, config, sources },
     'request.image.partials': partials,
   }).result;
   const frames = result['response.image.partials'];

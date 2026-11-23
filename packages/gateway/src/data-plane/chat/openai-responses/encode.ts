@@ -60,7 +60,7 @@ export const openAIResponsesInternalErrorBody = (error: unknown) => {
 const collectFailure = (error: unknown) => {
   if (error instanceof Error && isOpenAIResponsesErrorEvent(error.cause)) {
     const { sequence_number: _sequenceNumber, ...body } = error.cause;
-    return { status: openAIResponsesErrorHttpStatus(error.cause), body };
+    return { status: openAIResponsesErrorHttpStatus(error.cause), body, reason: 'protocol-error' as const };
   }
   return { status: 502, body: openAIResponsesInternalErrorBody(error) };
 };

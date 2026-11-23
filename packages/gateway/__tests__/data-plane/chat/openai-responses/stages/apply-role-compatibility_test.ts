@@ -1,30 +1,16 @@
 import { test } from 'vitest';
 
-import { withRoleCompatibilityApplied } from '../../../../../src/data-plane/chat/openai-responses/interceptors/apply-role-compatibility.ts';
-import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
-import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
-import { doneFrame } from '@floway-dev/protocols/common';
+import { driveResponsesStage } from './drive.ts';
+import { applyRoleCompatibility } from '../../../../../src/data-plane/chat/openai-responses/stages/apply-role-compatibility.ts';
 import type { CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
-import { eventResult, type FlagId } from '@floway-dev/provider';
-import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import type { FlagId } from '@floway-dev/provider';
+import { assert, assertEquals } from '@floway-dev/test-utils';
 
-const gatewayCtx = mockChatGatewayCtx();
-const okEvents = () => Promise.resolve(eventResult((async function* () { yield doneFrame(); })(), testTelemetryModelIdentity));
-
-const applyRoles = async (
-  input: CanonicalOpenAIResponsesInputItem[],
-  enabledFlags: ReadonlySet<FlagId>,
-  targetApi: OpenAIResponsesInvocation['targetApi'] = 'openaiResponses',
-): Promise<CanonicalOpenAIResponsesInputItem[]> => {
-  const invocation: OpenAIResponsesInvocation = {
-    payload: { model: 'test-model', input },
-    candidate: stubModelCandidate({ enabledFlags }),
-    targetApi,
-    headers: new Headers(),
-    action: 'generate',
-  };
-  await withRoleCompatibilityApplied(invocation, gatewayCtx, okEvents);
-  return invocation.payload.input;
+const applyRoles = async (input: CanonicalOpenAIResponsesInputItem[], enabledFlags: ReadonlySet<FlagId>) => {
+  const { seen, done } = await driveResponsesStage(applyRoleCompatibility, { model: 'test-model', input }, { enabledFlags, wire: true });
+  assert(seen !== undefined);
+  assertEquals(await done, { ok: true });
+  return seen.input;
 };
 
 test('uses non-message items as the boundary before rewriting later system', async () => {

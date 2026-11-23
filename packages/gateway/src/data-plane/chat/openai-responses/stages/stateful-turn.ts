@@ -7,8 +7,7 @@ import type { DeliveryFacts } from '../../shared/encode.ts';
 import { tryCatchChatServeFailure } from '../../shared/errors.ts';
 import { wrapOpenAIResponsesAffinityEgress } from '../affinity/egress.ts';
 import type { ResponsesDelivery } from '../encode.ts';
-import type { OpenAIResponsesServeFailure } from '../errors.ts';
-import { hydrateOpenAIResponsesPayload } from '../items/hydrate.ts';
+import { hydrateOpenAIResponsesPayload, type ResponsesItemNotFound } from '../items/hydrate.ts';
 import { syntheticEventsFromCompaction, wrapOpenAIResponsesClientOutput } from '../items/output.ts';
 import { expandPreviousResponseId, PreviousResponseNotFoundError } from '../items/previous-response.ts';
 import type { OpenAIResponsesStatefulStore } from '../items/store.ts';
@@ -57,7 +56,7 @@ export const prepareResponsesTurn = async (
     hydrated = hydrateOpenAIResponsesPayload(prepared, store);
   } catch (error) {
     if (error instanceof PreviousResponseNotFoundError) return errorResponse(400, previousNotFound(error.previousResponseId));
-    const failure = tryCatchChatServeFailure<OpenAIResponsesServeFailure>(error);
+    const failure = tryCatchChatServeFailure<ResponsesItemNotFound>(error);
     if (failure?.kind === 'item-not-found') return errorResponse(404, inputItemNotFound(failure.itemId));
     throw error;
   }

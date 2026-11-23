@@ -1,3 +1,4 @@
+import { readJsonNumber } from '../../../../shared/json-helpers.ts';
 import type { CandidateRequest } from '../../../pipeline/failover.ts';
 import { foldsExclusiveCacheTokens } from '../../../shared/telemetry/usage.ts';
 import { defineStage } from '@floway-dev/pipeline';
@@ -9,10 +10,12 @@ type Usage = OpenAIResponsesResultEx['usage'];
 
 const normalizeUsage = (usage: Usage, exclusive: boolean, identity: string): Usage => {
   if (!usage) return usage;
-  const { input_tokens: inputTokens, output_tokens: outputTokens, total_tokens: totalTokens } = usage;
-  if (typeof inputTokens !== 'number' || typeof outputTokens !== 'number') return usage;
-  const cacheRead = usage.input_tokens_details?.cached_tokens ?? 0;
-  const cacheWrite = usage.input_tokens_details?.cache_write_tokens ?? 0;
+  const inputTokens = readJsonNumber(usage.input_tokens);
+  const outputTokens = readJsonNumber(usage.output_tokens);
+  if (inputTokens == null || outputTokens == null) return usage;
+  const totalTokens = readJsonNumber(usage.total_tokens) ?? undefined;
+  const cacheRead = readJsonNumber(usage.input_tokens_details?.cached_tokens) ?? 0;
+  const cacheWrite = readJsonNumber(usage.input_tokens_details?.cache_write_tokens) ?? 0;
   if (cacheRead === 0 && cacheWrite === 0) return usage;
   if (!foldsExclusiveCacheTokens(exclusive, { inputTokens, outputTokens, totalTokens, cacheRead, cacheWrite }, identity)) return usage;
   return { ...usage, input_tokens: inputTokens + cacheRead + cacheWrite };
