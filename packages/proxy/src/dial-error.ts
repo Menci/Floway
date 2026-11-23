@@ -1,3 +1,5 @@
+import { UPSTREAM_TRANSPORT_ERROR } from '@floway-dev/http';
+
 // Surfaced by every protocol runner when the dial / proxy-handshake /
 // inner-TLS handshake fails — i.e. when the upstream server has not
 // observed any byte of our request yet.
@@ -22,6 +24,10 @@
 
 export class ProxyDialError extends Error {
   override readonly name = 'ProxyDialError';
+
+  get [UPSTREAM_TRANSPORT_ERROR](): boolean {
+    return this.stage !== 'config';
+  }
 
   constructor(
     message: string,

@@ -1,4 +1,4 @@
-import { secret, type Bytes, type ManagedStream, type Secret } from '@floway-dev/pipeline';
+import { secret, type Bytes, type ErrorSnapshot, type ManagedStream, type Secret } from '@floway-dev/pipeline';
 
 export type HeaderEntry = readonly [name: string, value: string | Secret<string>];
 
@@ -8,11 +8,17 @@ export interface HttpUrl {
   readonly query?: readonly (readonly [name: string, value: string | Secret<string>])[];
 }
 
+export type HttpRequestBody =
+  | Bytes
+  | ManagedStream<Bytes>
+  | { readonly kind: 'upload-error'; readonly error: ErrorSnapshot }
+  | null;
+
 export interface HttpRequestFacts {
   readonly method: string;
   readonly url: HttpUrl;
   readonly headers: readonly HeaderEntry[];
-  readonly body: Bytes | ManagedStream<Bytes> | null;
+  readonly body: HttpRequestBody;
 }
 
 export interface HttpResponseFacts {
@@ -21,6 +27,8 @@ export interface HttpResponseFacts {
   readonly headers: readonly HeaderEntry[];
   readonly body: ManagedStream<Bytes> | Bytes | null;
   readonly timing: { readonly startedAt: number; readonly headersAt: number };
+  readonly exchange?: 'upstream';
+  readonly transportError?: ErrorSnapshot;
 }
 
 export const httpUrl = (url: string | URL, sensitiveQueryNames: readonly string[] = []): HttpUrl => {
