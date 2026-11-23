@@ -115,7 +115,8 @@ export function AliasDialog({ aliases, mode, models, onOpenChange, open, onSaved
     }
   };
 
-  return <>{discardConfirmation}<DialogShell
+  return <DialogShell
+    nestedDialogs={discardConfirmation}
     width="editor"
     open={open}
     onOpenChange={(_, data) => { if (!data.open && !saving) requestClose(); }}
@@ -162,5 +163,5 @@ export function AliasDialog({ aliases, mode, models, onOpenChange, open, onSaved
       icon={<Eye24Regular />}
     />
     {serverError && <OutcomeMessageBar onDismiss={() => setServerError(null)}>{serverError}</OutcomeMessageBar>}
-  </DialogShell></>;
+  </DialogShell>;
 }
