@@ -46,6 +46,7 @@ export const prepareResponsesTurn = async (
     failure: {
       'response.http': jsonHttpResponse(status, body, env.clock()),
       'response.openaiResponses': undefined,
+      'response.source': 'gateway' as const,
       ...emptyUsageFacts(env),
     },
   });
@@ -82,7 +83,7 @@ export const statefulTurn = defineStage<Request, Request, ResponsesTurnBack, Res
     request: { needs: ['request.openaiResponses', 'request.delivery'], consumes: [], provides: ['request.openaiResponses'] },
     response: { needs: ['response.http'], consumes: [], provides: ['response.http', 'response.openaiResponses'] },
   },
-  return: { provides: ['response.http', 'response.openaiResponses', ...usageResponseKeys] },
+  return: { provides: ['response.http', 'response.openaiResponses', 'response.source', ...usageResponseKeys] },
   execute: async (facts, next, env) => {
     const original = facts['request.openaiResponses'];
     const delivery = facts['request.delivery'];
