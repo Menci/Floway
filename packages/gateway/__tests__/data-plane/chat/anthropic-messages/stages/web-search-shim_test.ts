@@ -8,7 +8,7 @@ import {
   type AnthropicMessagesWebSearchShimState,
   prepareAnthropicMessagesWebSearchShimRequest,
   rewriteAnthropicMessagesWebSearchEventsToNative,
-} from '../../../../../src/data-plane/chat/anthropic-messages/stages/web-search-events.ts';
+} from '../../../../../src/data-plane/chat/anthropic-messages/stages/web-search-protocol.ts';
 import type { GatewayServices } from '../../../../../src/data-plane/pipeline/services.ts';
 import type { WebSearchProvider } from '../../../../../src/data-plane/tools/web-search/types.ts';
 import { initRepo } from '../../../../../src/repo/index.ts';

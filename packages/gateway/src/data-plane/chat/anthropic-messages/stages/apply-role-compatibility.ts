@@ -1,7 +1,6 @@
-import type { AnthropicMessagesCandidateRequest } from './facts.ts';
+import type { AnthropicMessagesTargetRequest } from './facts.ts';
 import { defineStage, transform } from '@floway-dev/pipeline';
 import type { AnthropicMessagesMessage } from '@floway-dev/protocols/anthropic-messages';
-import type { ChatTargetApi } from '@floway-dev/provider';
 
 const SERVER_TOOL_RESULT_TYPES = new Set([
   'advisor_tool_result',
@@ -45,7 +44,7 @@ const disallowedContentSystemMessageIndexes = (messages: readonly AnthropicMessa
   return invalid;
 };
 
-type Request = AnthropicMessagesCandidateRequest & { readonly 'route.targetApi': ChatTargetApi };
+type Request = AnthropicMessagesTargetRequest;
 
 export const applyRoleCompatibility = defineStage<Request, Request, object, object>({
   name: 'applyRoleCompatibility',

@@ -2,7 +2,7 @@ import type { HttpInput } from '../../../pipeline/edge-http.ts';
 import { defineStage, transform } from '@floway-dev/pipeline';
 
 // Beta flags are carried separately so translated routes never forward Anthropic's wire header.
-const prepareHeaders = (name: string) => defineStage<HttpInput, HttpInput, object, object>({
+export const createPrepareAnthropicHeaders = (name: string) => defineStage<HttpInput, HttpInput, object, object>({
   name,
   through: {
     request: { needs: ['request.http'], consumes: [], provides: ['request.http'] },
@@ -17,5 +17,4 @@ const prepareHeaders = (name: string) => defineStage<HttpInput, HttpInput, objec
   })),
 });
 
-export const prepareGenerate = prepareHeaders('prepareGenerate');
-export const prepareCount = prepareHeaders('prepareCount');
+export const prepareGenerate = createPrepareAnthropicHeaders('prepareGenerate');

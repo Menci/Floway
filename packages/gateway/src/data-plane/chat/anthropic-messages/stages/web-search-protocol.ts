@@ -1,3 +1,4 @@
+import type { AnthropicMessagesTargetRequest } from './facts.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import type { WebSearchProviderRequest, WebSearchProviderResult } from '../../../tools/web-search/types.ts';
@@ -94,6 +95,19 @@ export type PrepareAnthropicMessagesWebSearchShimRequestResult =
     type: 'invalid-request';
     message: string;
   };
+
+export const prepareAnthropicMessagesWebSearchForTarget = (facts: AnthropicMessagesTargetRequest): PrepareAnthropicMessagesWebSearchShimRequestResult => {
+  const payload = facts['request.anthropicMessages'];
+  if (facts['route.targetApi'] === 'anthropicMessages' && !facts['route.candidate'].providerModel.enabledFlags.includes('anthropic-messages-web-search-shim')) {
+    return { type: 'ok', payload, state: { mode: 'inactive' } };
+  }
+  return prepareAnthropicMessagesWebSearchShimRequest(payload);
+};
+
+export const invalidWebSearchRequest = (message: string) => ({
+  type: 'error',
+  error: { type: 'invalid_request_error', message },
+});
 
 // Official Anthropic API exposes native web_search to the model with this
 // description and query-only input schema, and requires the native tool name to

@@ -1,16 +1,15 @@
-import type { AnthropicMessagesCandidateRequest } from './facts.ts';
-import { type AnthropicMessagesSearch, type PrepareAnthropicMessagesWebSearchShimRequestResult, prepareAnthropicMessagesWebSearchShimRequest, rewriteAnthropicMessagesWebSearchEventsToNative } from './web-search-events.ts';
-import { type HttpOutput, jsonHttpResponse } from '../../../pipeline/edge-http.ts';
-import { emptyUsageFacts, type UsageFacts, usageResponseKeys } from '../../../pipeline/observe-usage.ts';
+import type { AnthropicMessagesTargetRequest } from './facts.ts';
+import { type AnthropicMessagesSearch, invalidWebSearchRequest, prepareAnthropicMessagesWebSearchForTarget, rewriteAnthropicMessagesWebSearchEventsToNative } from './web-search-protocol.ts';
+import { jsonHttpResponse } from '../../../pipeline/edge-http.ts';
+import { emptyUsageFacts, usageResponseKeys } from '../../../pipeline/observe-usage.ts';
 import type { GatewayRouteFacts, GatewayServices } from '../../../pipeline/services.ts';
 import { runWebSearchAndRecordUsage } from '../../../tools/web-search/search.ts';
 import type { ConfiguredWebSearchProvider, WebSearchProviderRequest, WebSearchProviderResult } from '../../../tools/web-search/types.ts';
 import type { ChatBodyOutput } from '../../shared/route-body.ts';
 import { internalAnthropicMessagesErrorPayload } from '../errors.ts';
 import { compose, defineEnding, defineStage, link, snapshotError } from '@floway-dev/pipeline';
-import type { ChatTargetApi } from '@floway-dev/provider';
 
-type Request = AnthropicMessagesCandidateRequest & { readonly 'route.targetApi': ChatTargetApi };
+type Request = AnthropicMessagesTargetRequest;
 type SearchAuth = Pick<GatewayRouteFacts, 'request.auth.apiKeyId'>;
 type SearchInput = SearchAuth & { readonly 'request.webSearch': Omit<WebSearchProviderRequest, 'signal'> };
 type SearchOutput = { readonly 'response.webSearch': WebSearchProviderResult };
@@ -49,21 +48,6 @@ const searchPipeline = compose<SearchInput, SearchOutput, SearchServices>('webSe
 });
 link([searchPipeline]);
 
-const prepareRequest = (facts: Request): PrepareAnthropicMessagesWebSearchShimRequestResult => {
-  const payload = facts['request.anthropicMessages'];
-  if (facts['route.targetApi'] === 'anthropicMessages' && !facts['route.candidate'].providerModel.enabledFlags.includes('anthropic-messages-web-search-shim')) {
-    return { type: 'ok', payload, state: { mode: 'inactive' } };
-  }
-  return prepareAnthropicMessagesWebSearchShimRequest(payload);
-};
-
-const invalidRequest = (message: string) => ({ type: 'error', error: { type: 'invalid_request_error', message } });
-const requestChange = {
-  needs: ['request.anthropicMessages', 'route.candidate', 'route.targetApi'],
-  consumes: [],
-  provides: ['request.anthropicMessages'],
-};
-
 type GenerateAnswer = ChatBodyOutput<'anthropicMessages'>;
 
 // Translated targets need an ordinary client tool. Native targets use the shim
@@ -71,18 +55,22 @@ type GenerateAnswer = ChatBodyOutput<'anthropicMessages'>;
 export const webSearchShim = defineStage<Request & SearchAuth, Request, GenerateAnswer, GenerateAnswer, SearchServices>({
   name: 'webSearchShim',
   through: {
-    request: { ...requestChange, needs: [...requestChange.needs, 'request.auth.apiKeyId'] },
+    request: {
+      needs: ['request.anthropicMessages', 'route.candidate', 'route.targetApi', 'request.auth.apiKeyId'],
+      consumes: [],
+      provides: ['request.anthropicMessages'],
+    },
     response: { needs: ['response.anthropicMessages'], consumes: [], provides: ['response.anthropicMessages'] },
   },
   return: { provides: ['response.http', 'response.anthropicMessages', ...usageResponseKeys] },
   execute: async (facts, next, env) => {
-    const prepared = prepareRequest(facts);
+    const prepared = prepareAnthropicMessagesWebSearchForTarget(facts);
     const errorAnswer = (status: number, body: unknown): GenerateAnswer => ({
       'response.http': jsonHttpResponse(status, body, env.clock()),
       'response.anthropicMessages': undefined,
       ...emptyUsageFacts(env),
     });
-    if (prepared.type === 'invalid-request') return errorAnswer(400, invalidRequest(prepared.message));
+    if (prepared.type === 'invalid-request') return errorAnswer(400, invalidWebSearchRequest(prepared.message));
     if (prepared.state.mode === 'inactive') return await next(facts);
 
     let search: AnthropicMessagesSearch | undefined;
@@ -108,27 +96,5 @@ export const webSearchShim = defineStage<Request & SearchAuth, Request, Generate
         transform: source => rewriteAnthropicMessagesWebSearchEventsToNative(source, prepared.state, search),
       }),
     };
-  },
-});
-
-type CountAnswer = HttpOutput & UsageFacts & { readonly 'response.targetApi': 'anthropicMessages' };
-
-export const prepareWebSearchCount = defineStage<Request, Request, CountAnswer, CountAnswer>({
-  name: 'prepareWebSearchCount',
-  through: {
-    request: requestChange,
-    response: { needs: [], consumes: [], provides: [] },
-  },
-  return: { provides: ['response.http', 'response.targetApi', ...usageResponseKeys] },
-  execute: async (facts, next, env) => {
-    const prepared = prepareRequest(facts);
-    if (prepared.type === 'invalid-request') {
-      return {
-        'response.http': jsonHttpResponse(400, invalidRequest(prepared.message), env.clock()),
-        'response.targetApi': 'anthropicMessages',
-        ...emptyUsageFacts(env),
-      };
-    }
-    return await next({ ...facts, 'request.anthropicMessages': prepared.payload });
   },
 });
