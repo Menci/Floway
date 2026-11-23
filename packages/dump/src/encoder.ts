@@ -125,32 +125,40 @@ export const createDumpEncoder = ({
     }
   };
 
+  const encodeGroup = (events: readonly (RunEvent | undefined)[], start: number, end: number) => {
+    const from = nextId;
+    const event = events[start]!;
+    let nextIndex = start + 1;
+    let encoded: EncodedDumpEvent;
+    if (event.k === 'frame') {
+      const { streamId } = event;
+      const frames: StoredFrame[] = [{ seq: event.seq, tMs: event.tMs, v: encodeValue(event.value) }];
+      while (nextIndex < end) {
+        const next = events[nextIndex]!;
+        if (next.k !== 'frame' || next.streamId !== streamId) break;
+        frames.push({ seq: next.seq, tMs: next.tMs, v: encodeValue(next.value) });
+        nextIndex++;
+      }
+      encoded = { k: 'frames', streamId, frames };
+    } else {
+      encoded = encodeEvent(event);
+    }
+
+    const definitions = nodes;
+    nodes = [];
+    const group: readonly EncodedDumpEvent[] = definitions.length === 0 ? [encoded] : [{ k: 'obj', from, nodes: definitions }, encoded];
+    return { group, count: nextIndex - start };
+  };
+
   function* encodeGroups(events: readonly RunEvent[]): Generator<readonly EncodedDumpEvent[]> {
     for (let index = 0; index < events.length;) {
-      const from = nextId;
-      const event = events[index++]!;
-      let encoded: EncodedDumpEvent;
-      if (event.k === 'frame') {
-        const { streamId } = event;
-        const frames: StoredFrame[] = [{ seq: event.seq, tMs: event.tMs, v: encodeValue(event.value) }];
-        while (index < events.length) {
-          const next = events[index]!;
-          if (next.k !== 'frame' || next.streamId !== streamId) break;
-          frames.push({ seq: next.seq, tMs: next.tMs, v: encodeValue(next.value) });
-          index++;
-        }
-        encoded = { k: 'frames', streamId, frames };
-      } else {
-        encoded = encodeEvent(event);
-      }
-
-      const definitions = nodes;
-      nodes = [];
-      yield definitions.length === 0 ? [encoded] : [{ k: 'obj', from, nodes: definitions }, encoded];
+      const { group, count } = encodeGroup(events, index, events.length);
+      index += count;
+      yield group;
     }
   }
 
   const encodeBatch = (events: readonly RunEvent[]): EncodedDumpEvent[] => [...encodeGroups(events)].flat();
 
-  return { encodeBatch, encodeGroups, registerSecretPlaintext };
+  return { encodeBatch, encodeGroup, encodeGroups, registerSecretPlaintext };
 };

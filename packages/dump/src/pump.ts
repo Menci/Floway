@@ -14,6 +14,7 @@ export interface DumpCompletionSummary {
 export interface DumpPumpOptions {
   readonly encoderOptions?: DumpEncoderOptions;
   readonly batchSize?: number;
+  readonly maxQueuedEvents?: number;
   readonly maxArtifactBytes?: number;
   readonly maxLiveBufferedBytes?: number;
   readonly onLiveChunk?: (offset: number, bytes: Uint8Array) => Promise<void> | void;
@@ -29,6 +30,7 @@ export interface DumpPump {
 }
 
 type DoneEvent = Extract<RunEvent, { k: 'done' }>;
+type RunHeader = Extract<RunEvent, { k: 'run' }>;
 type TruncationEvent = Extract<EncodedDumpEvent, { k: 'truncated' }>;
 
 const nextTurn = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
@@ -74,14 +76,14 @@ const createLiveDelivery = ({ maxLiveBufferedBytes = 4 * 1024 * 1024, onLiveChun
         await onLiveChunk?.(entry.offset, entry.bytes);
         bufferedBytes -= length;
       }
-    } catch {
+    } catch (_observerError: unknown) {
       drop();
     }
     if (ended && !notifiedEnd) {
       notifiedEnd = true;
       try {
         await onLiveEnd?.();
-      } catch {
+      } catch (_observerError: unknown) {
         drop();
       }
     }
@@ -113,12 +115,13 @@ const ndjson = (events: readonly EncodedDumpEvent[]): Uint8Array =>
 
 // Reserve space for both terminal lines with the widest possible JSON numbers.
 const footerReserve = ndjson([
-  { k: 'truncated', seq: 0, tMs: 0, reason: 'size-limit' },
+  { k: 'truncated', seq: 0, tMs: 0, reason: 'queue-limit' },
   { k: 'done', seq: 0, tMs: 0, ok: false },
 ]).byteLength + 4 * (25 - 1);
 
 export const createDumpPump = (options: DumpPumpOptions = {}): DumpPump => {
   const batchSize = positiveInteger(options.batchSize ?? 128, 'batchSize');
+  const maxQueuedEvents = positiveInteger(options.maxQueuedEvents ?? 4_096, 'maxQueuedEvents');
   const maxBytes = positiveInteger(options.maxArtifactBytes ?? 16 * 1024 * 1024, 'maxArtifactBytes');
   let encoder: ReturnType<typeof createDumpEncoder> | undefined = createDumpEncoder(options.encoderOptions);
   const live = createLiveDelivery(options);
@@ -126,11 +129,14 @@ export const createDumpPump = (options: DumpPumpOptions = {}): DumpPump => {
   const writer = writable.getWriter();
   const completion = Promise.withResolvers<DumpCompletionSummary>();
 
-  let queue: RunEvent[] = [];
+  let queue: (RunEvent | undefined)[] = [];
   let head = 0;
   let writing = false;
   let failed = false;
   let totalBytes = 0;
+  let receivedEvents = 0;
+  let writtenEvents = 0;
+  let pendingHeader: RunHeader | undefined;
   let done: DoneEvent | undefined;
   let truncation: TruncationEvent | undefined;
 
@@ -141,8 +147,10 @@ export const createDumpPump = (options: DumpPumpOptions = {}): DumpPump => {
     totalBytes += length;
   };
 
-  const truncate = (event: RunEvent): void => {
-    truncation = { k: 'truncated', seq: event.seq, tMs: event.tMs, reason: 'size-limit' };
+  const truncate = (event: RunEvent, reason: TruncationEvent['reason']): void => {
+    truncation = { k: 'truncated', seq: event.seq, tMs: event.tMs, reason };
+    const first = queue[head];
+    if (first?.k === 'run') pendingHeader = first;
     encoder = undefined;
     queue = [];
     head = 0;
@@ -152,6 +160,7 @@ export const createDumpPump = (options: DumpPumpOptions = {}): DumpPump => {
     if (failed) return;
     failed = true;
     encoder = undefined;
+    pendingHeader = undefined;
     queue = [];
     head = 0;
     live.end();
@@ -162,37 +171,45 @@ export const createDumpPump = (options: DumpPumpOptions = {}): DumpPump => {
     writing = true;
     try {
       await nextTurn();
-      while (head < queue.length && encoder !== undefined) {
-        const batch = queue.slice(head, head + batchSize);
-        head += batch.length;
-        if (head === queue.length) {
-          queue = [];
-          head = 0;
-        } else if (head >= 1_024 && head * 2 >= queue.length) {
-          queue = queue.slice(head);
-          head = 0;
-        }
-        let index = 0;
-        for (const group of encoder.encodeGroups(batch)) {
+      if (pendingHeader !== undefined) {
+        const bytes = ndjson([pendingHeader]);
+        if (bytes.byteLength + footerReserve > maxBytes) throw new RangeError('maxArtifactBytes cannot hold the run header and footer');
+        pendingHeader = undefined;
+        await write(bytes);
+        writtenEvents++;
+      }
+      while (queue.length > head && encoder !== undefined) {
+        let remaining = Math.min(batchSize, queue.length - head);
+        while (remaining > 0 && encoder !== undefined) {
+          const event = queue[head]!;
+          const { group, count } = encoder.encodeGroup(queue, head, head + remaining);
           const bytes = ndjson(group);
-          const event = batch[index]!;
           if (totalBytes + bytes.byteLength + footerReserve > maxBytes) {
             if (event.k === 'run') throw new RangeError('maxArtifactBytes cannot hold the run header and footer');
-            truncate(event);
+            truncate(event, 'size-limit');
             break;
           }
-          const last = group.at(-1)!;
-          index += last.k === 'frames' ? last.frames.length : 1;
+          const end = head + count;
+          while (head < end) queue[head++] = undefined;
+          remaining -= count;
+          if (head === queue.length) {
+            queue = [];
+            head = 0;
+          } else if (head >= 1_024 && head * 2 >= queue.length) {
+            queue = queue.slice(head);
+            head = 0;
+          }
           await write(bytes);
+          writtenEvents += count;
         }
-        if (head < queue.length) await nextTurn();
+        if (queue.length > head) await nextTurn();
       }
       if (!failed && done !== undefined) {
         const { error, ...bareDone } = done;
         let footer = ndjson(encoder === undefined ? [bareDone] : encoder.encodeBatch([done]));
         encoder = undefined;
         if (totalBytes + footer.byteLength > maxBytes) {
-          truncate(done);
+          truncate(done, 'size-limit');
           footer = ndjson([bareDone]);
         }
         if (truncation !== undefined) await write(ndjson([truncation]));
@@ -202,7 +219,7 @@ export const createDumpPump = (options: DumpPumpOptions = {}): DumpPump => {
         completion.resolve({
           totalBytes,
           truncated: truncation !== undefined,
-          droppedEvents: truncation === undefined ? 0 : done.seq - truncation.seq,
+          droppedEvents: receivedEvents - writtenEvents,
           ok: done.ok,
           ...(error === undefined ? {} : { doneError: error }),
         });
@@ -220,9 +237,14 @@ export const createDumpPump = (options: DumpPumpOptions = {}): DumpPump => {
   const sink: RunEventSink = event => {
     if (done !== undefined) throw new Error('Cannot record events after done');
     if (failed) return;
-    if (event.k === 'done') done = event;
-    else if (truncation === undefined) queue.push(event);
-    else return;
+    if (event.k === 'done') {
+      done = event;
+    } else {
+      receivedEvents++;
+      if (truncation !== undefined) return;
+      if (queue.length - head >= maxQueuedEvents) truncate(event, 'queue-limit');
+      else queue.push(event);
+    }
     if (!writing) void drain();
   };
 

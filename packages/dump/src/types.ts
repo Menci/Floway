@@ -20,4 +20,4 @@ export interface StoredFrame {
 export type EncodedDumpEvent = StoredRunEvent
   | { readonly k: 'obj'; readonly from: number; readonly nodes: readonly StoredValue[] }
   | { readonly k: 'frames'; readonly streamId: number; readonly frames: readonly StoredFrame[] }
-  | { readonly k: 'truncated'; readonly seq: number; readonly tMs: number; readonly reason: 'size-limit' };
+  | { readonly k: 'truncated'; readonly seq: number; readonly tMs: number; readonly reason: 'size-limit' | 'queue-limit' };

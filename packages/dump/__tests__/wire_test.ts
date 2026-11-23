@@ -14,11 +14,13 @@ const request = (pathname: string, body = Bytes.fromUtf8('input')) => ({
 const response = (status: number, body: Bytes | null = null) => ({
   status, statusText: '', headers: [], body, timing: { startedAt: 1, headersAt: 2 },
 });
+const upstreamResponse = (status: number, body?: Bytes) => ({ ...response(status, body), exchange: 'upstream' as const });
 
 it('projects root HTTP facts and leaf exchanges across failover and a translated route', () => {
   const original = request('/v1/responses');
   const downstream = response(200, Bytes.fromUtf8('translated output'));
   const failed = { upstreamId: 'native', targetApi: 'openai-responses' };
+  const failure = { ...upstreamResponse(503), transportError: { name: 'Error', message: 'connection closed' } };
   const selected = { upstreamId: 'translated', targetApi: 'anthropic-messages' };
   const decoder = createDumpDecoder();
   decoder.pushEvents(createDumpEncoder().encodeBatch([
@@ -26,14 +28,14 @@ it('projects root HTTP facts and leaf exchanges across failover and a translated
     enter(2, 1, { 'request.http': original }),
     enter(3, 2, { 'route.candidate': failed, 'request.http': original }, 1, 'next'),
     enter(4, 3, { 'request.http': request('/reject') }, 2, 'into'),
-    leave(5, 3, { 'response.http': response(503) }),
+    leave(5, 3, { 'response.http': failure }),
     closed(6, 3),
-    leave(7, 2, { 'response.http': response(503) }, 3),
+    leave(7, 2, { 'response.http': failure }, 3),
     closed(8, 2),
     enter(9, 4, { 'route.candidate': selected }, 1, 'next'),
     enter(10, 5, { 'request.http': request('/translated') }, 4, 'into'),
     enter(11, 6, { 'request.http': request('/v1/messages') }, 5, 'into'),
-    leave(12, 6, { 'response.http': response(200, Bytes.fromUtf8('upstream output')) }),
+    leave(12, 6, { 'response.http': upstreamResponse(200, Bytes.fromUtf8('upstream output')) }),
     closed(13, 6),
     leave(14, 5, { 'response.http': downstream }, 6),
     closed(15, 5),
@@ -51,10 +53,36 @@ it('projects root HTTP facts and leaf exchanges across failover and a translated
     [3, '/reject', 503],
     [6, '/v1/messages', 200],
   ]);
+  expect(wire.upstreamExchanges[0].response.transportError).toEqual(failure.transportError);
   expect(wire.upstreamGroups).toMatchObject([
     { candidateStageId: 2, candidate: failed, exchanges: [{ stageId: 3 }] },
     { candidateStageId: 4, candidate: selected, exchanges: [{ stageId: 6 }] },
   ]);
+});
+
+it('preserves downstream HTTP facts for a local answer', () => {
+  const input = {
+    ...request('/v1/responses'),
+    body: { kind: 'upload-error', error: { name: 'Error', message: 'client upload failed' } },
+  };
+  const output = response(400);
+  const decoder = createDumpDecoder();
+  decoder.pushEvents(createDumpEncoder().encodeBatch([
+    runEvent,
+    enter(2, 1, { 'request.http': input }),
+    enter(3, 2, { 'request.http': input }, 1, 'next'),
+    leave(4, 2, { 'response.http': output }),
+    closed(5, 2),
+    leave(6, 1, { 'response.http': output }, 2),
+    closed(7, 1),
+    done(8),
+  ]));
+
+  const wire = projectWireExchanges(decoder.finish());
+  expect(wire.downstreamRequest).toMatchObject({ ...input, stageId: 1 });
+  expect(wire.downstreamResponse).toEqual(output);
+  expect(wire.upstreamExchanges).toEqual([]);
+  expect(wire.upstreamGroups).toEqual([]);
 });
 
 it('groups retries under the stage where their shared candidate entered', () => {
@@ -68,10 +96,10 @@ it('groups retries under the stage where their shared candidate entered', () => 
     enter(3, 2, route, 1, 'next'),
     enter(4, 3, route, 2, 'into'),
     enter(5, 4, candidateRequest, 3, 'next'),
-    leave(6, 4, { 'response.http': response(401) }),
+    leave(6, 4, { 'response.http': upstreamResponse(401) }),
     enter(7, 5, route, 2, 'into'),
     enter(8, 6, candidateRequest, 5, 'next'),
-    leave(9, 6, { 'response.http': response(200) }),
+    leave(9, 6, { 'response.http': upstreamResponse(200) }),
   ]));
   const wire = projectWireExchanges(decoder.model);
   expect(wire.upstreamGroups).toMatchObject([

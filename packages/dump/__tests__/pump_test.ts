@@ -101,6 +101,48 @@ it('drops no events when only the done error exceeds the artifact cap', async ()
   ]);
 });
 
+it('preserves the run header when the queue fills before the first drain', async () => {
+  const pump = createDumpPump({ maxQueuedEvents: 1 });
+  for (const event of [runEvent, enter(2, 1, {}), done(3)]) pump.sink(event);
+
+  const [written, summary] = await Promise.all([collect(pump.artifact), pump.completed]);
+  expect(lines(written)).toEqual([
+    runEvent,
+    { k: 'truncated', seq: 2, tMs: 2, reason: 'queue-limit' },
+    done(3),
+  ]);
+  expect(summary).toMatchObject({ truncated: true, droppedEvents: 1, ok: true });
+  const decoder = createDumpDecoder();
+  decoder.pushNdjsonChunk(written);
+  expect(decoder.finish().run).toMatchObject({ truncated: { reason: 'queue-limit' }, done: { ok: true } });
+});
+
+it('counts and drops all pending events when the artifact consumer stalls', async () => {
+  const headerInFlight = Promise.withResolvers<void>();
+  const reads = vi.fn();
+  const facts = new Proxy(Object.freeze({ observed: 1 }), {
+    ownKeys(target) {
+      reads();
+      return Reflect.ownKeys(target);
+    },
+  });
+  const pump = createDumpPump({ maxQueuedEvents: 2, onLiveChunk: () => headerInFlight.resolve() });
+  pump.sink(runEvent);
+  pump.sink(enter(2, 1, facts));
+  await headerInFlight.promise;
+  expect(reads).not.toHaveBeenCalled();
+
+  for (const event of [leave(3, 1, {}), closed(4, 1), enter(5, 2, facts), done(6)]) pump.sink(event);
+  const [written, summary] = await Promise.all([collect(pump.artifact), pump.completed]);
+  expect(reads).not.toHaveBeenCalled();
+  expect(lines(written)).toEqual([
+    runEvent,
+    { k: 'truncated', seq: 4, tMs: 4, reason: 'queue-limit' },
+    done(6),
+  ]);
+  expect(summary).toEqual({ totalBytes: new TextEncoder().encode(written).byteLength, truncated: true, droppedEvents: 4, ok: true });
+});
+
 it('rejects completion with the original artifact cancellation reason', async () => {
   const pump = createDumpPump();
   const error = new Error('writer failed');

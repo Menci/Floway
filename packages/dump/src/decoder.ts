@@ -15,7 +15,7 @@ export interface DecodedRunSummary {
   readonly pipeline: string;
   readonly startedAt: number;
   readonly done?: { readonly tMs: number; readonly ok: boolean; readonly error?: unknown };
-  readonly truncated?: { readonly tMs: number; readonly reason: 'size-limit' };
+  readonly truncated?: Pick<Extract<EncodedDumpEvent, { k: 'truncated' }>, 'tMs' | 'reason'>;
 }
 
 export interface DecodedStageLog {

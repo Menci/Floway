@@ -2,12 +2,13 @@ import { base64 } from '@scure/base';
 
 import { isDecodedSecret, isDecodedStreamRef } from './decoder.ts';
 import type { DecodedSecret, DecodedStageNode, DecodedStreamNode, DecodedStreamRef, DumpViewModel } from './decoder.ts';
-import type { Secret } from '@floway-dev/pipeline/browser';
+import type { ErrorSnapshot, Secret } from '@floway-dev/pipeline/browser';
 import { Bytes, isSecret } from '@floway-dev/pipeline/browser';
 
 type WireString = string | DecodedSecret | Secret<string>;
 type WireEntry = readonly [name: string, value: WireString];
-type WireBody = Bytes | DecodedStreamRef | null;
+type WireResponseBody = Bytes | DecodedStreamRef | null;
+type WireBody = WireResponseBody | { readonly kind: 'upload-error'; readonly error: ErrorSnapshot };
 
 export interface WireHttpUrl {
   readonly origin: string;
@@ -26,8 +27,10 @@ export interface WireHttpResponse {
   readonly status: number;
   readonly statusText: string;
   readonly headers: readonly WireEntry[];
-  readonly body: WireBody;
+  readonly body: WireResponseBody;
   readonly timing: { readonly startedAt: number; readonly headersAt: number };
+  readonly exchange?: 'upstream';
+  readonly transportError?: ErrorSnapshot;
 }
 
 export interface ProjectedWireRequest extends WireHttpRequest {
@@ -97,7 +100,7 @@ export const projectWireExchanges = (model: DumpViewModel): WireProjection => {
     if (stage.childStageIds.length !== 0) continue;
     const request = getRequest(stage, model);
     const response = getResponse(stage, model);
-    if (request === null || response === null) continue;
+    if (request === null || response?.exchange !== 'upstream') continue;
     const exchange = { stageId: stage.stageId, request, response };
     upstreamExchanges.push(exchange);
 

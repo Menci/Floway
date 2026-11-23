@@ -12,17 +12,17 @@ it('records a real pipeline with a run-owned stream, a wrapper, and a deferred s
     name: 'wrapBody',
     request: { needs: ['body'] },
     return: { provides: ['body', 'usage'] },
-    execute: async ({ body }, _into, env) => {
-      const wrapped = env.wrapStream(body, {
+    execute: async ({ body }, scope) => {
+      const wrapped = scope.wrapStream(body, {
         label: 'wrapped',
         transform: source => source,
         onClose: (): void => usage.resolve(2),
       });
-      const usage = env.deferred<number>('usage', wrapped);
+      const usage = scope.deferred<number>('usage', wrapped);
       return { body: wrapped, usage: usage.deferred };
     },
   });
-  const pipeline = compose<Input, Output, {}>('dump-fixture', { stages: [], ending });
+  const pipeline = compose<Input & Output>()('dump-fixture', { entry: ['body'], exit: ['body', 'usage'], stages: [], ending });
   const pump = createDumpPump();
   const decoder = createDumpDecoder();
   const decode = pump.artifact.pipeTo(new WritableStream({ write: bytes => { decoder.push(bytes); } }));
@@ -76,8 +76,8 @@ it('round-trips both merge edges and projects only the merged body onto the wire
   type Output = { readonly 'response.http': WireResponse };
   const ending = defineEnding<Input, Output>({
     name: 'mergeBody', request: { needs: ['a', 'b'] }, return: { provides: ['response.http'] },
-    execute: async ({ a, b }, _into, env) => {
-      const body = env.wrapStream({ a, b }, {
+    execute: async ({ a, b }, scope) => {
+      const body = scope.wrapStream({ a, b }, {
         label: 'merged', async *transform(sources) {
           const [first, second] = await Promise.all([sources.a[Symbol.asyncIterator]().next(), sources.b[Symbol.asyncIterator]().next()]);
           if (!first.done && !second.done) yield Bytes.concat([first.value, second.value]);
@@ -86,7 +86,7 @@ it('round-trips both merge edges and projects only the merged body onto the wire
       return { 'response.http': { status: 200, statusText: 'OK', headers: [], body, timing: { startedAt: 0, headersAt: 1 } } };
     },
   });
-  const pipeline = compose<Input, Output, {}>('merge', { stages: [], ending });
+  const pipeline = compose<Input & Output>()('merge', { entry: ['a', 'b'], exit: ['response.http'], stages: [], ending });
   const pump = createDumpPump();
   const decoder = createDumpDecoder();
   const decode = pump.artifact.pipeTo(new WritableStream({ write: bytes => { decoder.push(bytes); } }));
