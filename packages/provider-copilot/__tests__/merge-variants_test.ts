@@ -86,3 +86,19 @@ test('mergeCopilotVariants merges 4.7 base + high + xhigh + 1m-internal', () => 
   assertEquals(capabilities.limits?.max_output_tokens, 64_000);
   assertSameSet(capabilities.supports?.reasoning_effort, ['low', 'medium', 'high', 'xhigh']);
 });
+
+test('mergeCopilotVariants omits capabilities that no variant states with a usable value', () => {
+  const rawModel: CopilotRawModel = JSON.parse(`{
+    "id": "claude-opus-4.7",
+    "capabilities": {
+      "limits": { "max_context_window_tokens": null, "max_prompt_tokens": "168000", "max_output_tokens": null },
+      "supports": { "reasoning_effort": null, "vision": true }
+    }
+  }`);
+  const [model] = mergeCopilotVariants(copilotVariantIndex([rawModel]));
+  assertEquals(model.capabilities?.limits?.max_context_window_tokens, undefined);
+  assertEquals(model.capabilities?.limits?.max_prompt_tokens, undefined);
+  assertEquals(model.capabilities?.limits?.max_output_tokens, undefined);
+  assertEquals(model.capabilities?.supports?.reasoning_effort, undefined);
+  assertEquals(model.capabilities?.supports?.vision, true);
+});

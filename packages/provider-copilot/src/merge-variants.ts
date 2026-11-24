@@ -45,8 +45,13 @@ const pickBase = (publicId: string, variants: CopilotRawModel[]): CopilotRawMode
 const mergeVariantGroup = (publicId: string, variants: CopilotRawModel[]): CopilotRawModel => {
   const base = pickBase(publicId, variants);
   const displayName = base.display_name ?? base.name ?? publicId;
-  const limits = base.capabilities?.limits ?? {};
-  const supports = base.capabilities?.supports ?? {};
+  const {
+    max_context_window_tokens: _baseContextWindow,
+    max_prompt_tokens: _basePromptTokens,
+    max_output_tokens: _baseOutputTokens,
+    ...limits
+  } = base.capabilities?.limits ?? {};
+  const { reasoning_effort: _baseReasoningEffort, ...supports } = base.capabilities?.supports ?? {};
   const maxContextWindowTokens = maxOf(...variants.map(v => v.capabilities?.limits?.max_context_window_tokens));
   const maxPromptTokens = maxOf(...variants.map(v => v.capabilities?.limits?.max_prompt_tokens));
   const maxOutputTokens = maxOf(...variants.map(v => v.capabilities?.limits?.max_output_tokens));
