@@ -135,7 +135,7 @@ describe('usage dimension controls', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
       requests.push(url);
-      if (url.pathname === '/api/upstream-reset-cycles') return Response.json(history);
+      if (url.pathname === '/api/upstream-reset-cycles') return Response.json({ ...history, quota: { kind: 'estimated', usd: '123.5' } });
       if (url.pathname === '/api/token-usage/overview') return Response.json({
         cursor: 'first', reset: true, start: url.searchParams.get('start'), end: url.searchParams.get('end'),
         buckets: [], scope: { actorId: 1, ownedKeyIds: [], visibility: 'all' },
@@ -157,6 +157,7 @@ describe('usage dimension controls', () => {
     expect(overview?.searchParams.get('end')).toBe('2026-08-05T04');
     const { unmount } = renderPage(selected);
     expect(screen.getByRole('radio', { name: 'By Reset Cycle' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByText('Estimated cycle quota: $123.50')).toBeTruthy();
     unmount();
 
     for (const upstream of [[], ['upstream:up-1', 'upstream:up-2']]) {

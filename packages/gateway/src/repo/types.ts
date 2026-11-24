@@ -366,6 +366,8 @@ export interface UsageRepo {
   // snapshot; later writes that share the row keep it unchanged.
   record(record: UsageRecord): Promise<void>;
   query(opts: { keyIds?: readonly string[]; start: string; end: string }): Promise<UsageRecord[]>;
+  // Null if any recorded consumption in these UTC hours is missing its cost.
+  queryUpstreamCost(upstreamId: string, start: string, end: string): Promise<DecimalString | null>;
   queryOverview(opts: UsageOverviewQueryOptions): Promise<UsageOverviewResult[]>;
   listAll(): Promise<UsageRecord[]>;
   // Replacement upsert: quantities and unit prices are overwritten from the record.
@@ -650,6 +652,7 @@ export interface UpstreamMetricsRepo {
   // The latest sample of each series in every `step`-wide bucket counted from
   // `start`, which is Prometheus's range-query semantics for gauges.
   query(upstreamId: string, start: number, end: number, step: number): Promise<UpstreamMetricRecord[]>;
+  latestSample(upstreamId: string, identity: UpstreamMetricIdentity, start: number, end: number): Promise<Pick<UpstreamMetricRecord, 'timestamp' | 'value'> | null>;
   listIdentities(upstreamId: string, before: number): Promise<UpstreamMetricIdentity[]>;
   queryResetStarts(upstreamId: string, identity: UpstreamMetricIdentity, threshold: UpstreamMetricResetThreshold, before: number): Promise<number[]>;
 }

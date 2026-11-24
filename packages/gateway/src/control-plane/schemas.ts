@@ -924,4 +924,6 @@ export const upstreamMetricsQuery = z.object({
 export const upstreamResetCyclesQuery = z.object({
   upstream_id: z.string().min(1),
   before: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().positive()),
-});
+  cycle_metric: z.string().min(1).optional(),
+  cycle_start: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().nonnegative()).optional(),
+}).refine(query => query.cycle_start === undefined || query.cycle_metric !== undefined, { message: 'A cycle start requires a metric identity' });

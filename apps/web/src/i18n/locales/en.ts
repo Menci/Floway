@@ -1578,6 +1578,17 @@ const en = {
           ago: '{{count, number}} cycles ago',
           waiting: 'No quota resets observed yet',
           apply: 'Apply',
+          quota: {
+            estimated: 'Estimated cycle quota: {{amount}}',
+            reported: 'Cycle quota: {{amount}}',
+            unavailable: 'Estimated cycle quota unavailable',
+            credits: '{{count, number}} credits',
+            estimateHint: 'API-equivalent value based on hourly usage recorded by Floway and the observed quota consumption. Usage outside Floway can affect the estimate.',
+            reportedHint: 'Allowance reported by the upstream at the start of the selected cycle.',
+            noObservations: 'Not enough recorded usage and quota observations in this cycle.',
+            noPrices: 'Some usage in the estimation window does not have a recorded price.',
+            differentScope: 'This quota window does not cover all usage on the upstream.',
+          },
         },
       },
       charts: {

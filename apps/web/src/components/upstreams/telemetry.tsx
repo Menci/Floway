@@ -5,6 +5,7 @@ import type { UpstreamRecord } from '../../api/types';
 import { useTranslation } from '../../i18n/translation';
 import { useUserPreferences } from '../../lib/use-preferences';
 import { LinkedChartHoverProvider } from '../charts/linked-hover';
+import { CycleQuota } from '../telemetry/cycle-quota';
 import { TelemetryFilterFields } from '../telemetry/dimension-controls';
 import { changeTelemetryFilter, changeTelemetryGroupBy } from '../telemetry/filter-state';
 import { loadWithResetCycles, type ResetCycleHistory } from '../telemetry/reset-cycles';
@@ -101,6 +102,7 @@ function UpstreamTelemetryPanel({ data, record, busy, currentUserId, onQueryChan
     };
   }, [data.metrics, preferences.quotaDisplay, record, t]);
   return <LinkedChartHoverProvider><div className={`${PANEL_INSET_CLASS} ${PANEL_STACK_CLASS} min-w-0`} id={`upstream-telemetry-${encodeURIComponent(record.id)}`}>
+    <CycleQuota range={query.range} quota={data.resetCycles?.quota} />
     <div className="flex items-end gap-3 min-w-0 flex-wrap">
       <UsageGrouping disabled={busy} dimensions={dimensions} groupBy={query.groupBy} onChange={groupBy => onQueryChange({ ...query, ...changeTelemetryGroupBy(query, groupBy, identityContext) })} />
       <TelemetryFilterFields disabled={busy} dimensions={dimensions} filters={query.filters} groupBy={query.groupBy}

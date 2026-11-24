@@ -27,6 +27,7 @@ export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIde
       axisPriority: upstreamMetricAxisPriority.subscriptionQuota,
       windowSeconds: session ? null : 604_800,
       tracksResets: session || labels.window === 'weekly',
+      quotaCostScope: session || labels.window === 'weekly' ? 'upstream' : undefined,
       emptyValue: null,
       form: 'area',
     });

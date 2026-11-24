@@ -8,6 +8,7 @@ import { revalidateOnPathnameChange } from './revalidation';
 import type { GlobalError } from '../api/client';
 import { sameDashboardRange } from '../components/charts/dashboard-time';
 import { SEARCH_PROVIDER_LABEL_KEYS } from '../components/search/provider';
+import { CycleQuota } from '../components/telemetry/cycle-quota';
 import { TelemetryFilterFields } from '../components/telemetry/dimension-controls';
 import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
 import { TelemetryTimeRange } from '../components/telemetry/time-range';
@@ -166,6 +167,7 @@ export default function DashboardMonitorUsage({ loaderData }: Route.ComponentPro
     {error && <OutcomeMessageBar onDismiss={() => setError(null)}>{error.message}</OutcomeMessageBar>}
 
     <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
+      <CycleQuota range={loadedQuery.range} quota={resetCycles?.quota} />
       <div className="flex items-end gap-3 min-w-0 flex-wrap">
         {availableDimensions && <UsageGrouping disabled={refreshing} dimensions={availableDimensions} groupBy={loadedQuery.groupBy} onChange={changeGroupBy} />}
         <TelemetryTimeRange

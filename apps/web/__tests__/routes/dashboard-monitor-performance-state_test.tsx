@@ -93,15 +93,18 @@ describe('Performance table state', () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
       requests.push(url);
-      if (url.pathname === '/api/upstream-reset-cycles') return Response.json(history);
+      if (url.pathname === '/api/upstream-reset-cycles') return Response.json({ ...history, quota: { kind: 'estimated', usd: '42' } });
       if (url.pathname === '/api/performance/overview') return Response.json(overview);
       throw new Error(`Unexpected request to ${url.pathname}`);
     }));
     const { router } = renderPage('fu=up-1', overview, history);
+    expect(screen.queryByText('Estimated cycle quota: $42.00')).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: 'By Reset Cycle' }));
     fireEvent.click(screen.getByRole('button', { name: 'Older cycle' }));
     fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
     await waitFor(() => expect(urlSearch(router).get('r')).toBe('reset-cycle'));
+    expect(screen.getByText('Estimated cycle quota: $42.00')).toBeTruthy();
+    expect(requests.find(url => url.pathname === '/api/upstream-reset-cycles')?.searchParams.get('cycle_start')).toBe(String(history.metrics[0]!.starts[1]));
     const readings = requests.find(url => url.pathname === '/api/performance/overview');
     expect(readings?.searchParams.get('filter_upstream')).toBe('up-1');
     expect(readings?.searchParams.get('start')).toBe('2026-08-05T04');
@@ -112,6 +115,7 @@ describe('Performance table state', () => {
     fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'All upstreams' }));
     await waitFor(() => expect(screen.queryByRole('radio', { name: 'By Reset Cycle' })).toBeNull());
     await waitFor(() => expect(urlSearch(router).has('r')).toBe(false));
+    expect(screen.queryByText('Estimated cycle quota: $42.00')).toBeNull();
     expect(requests.map(url => url.pathname)).toEqual(['/api/performance/overview']);
   });
 

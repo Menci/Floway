@@ -29,6 +29,7 @@ import {
 } from '../components/performance/overview';
 import { buildPerformanceChart, performanceBuckets } from '../components/performance/plot';
 import { PerformanceTable } from '../components/performance/table';
+import { CycleQuota } from '../components/telemetry/cycle-quota';
 import { TelemetryFilterFields, TelemetryGroupByField, type TelemetryDimension } from '../components/telemetry/dimension-controls';
 import { changeTelemetryFilter, changeTelemetryGroupBy, scopeTelemetryIdentity } from '../components/telemetry/filter-state';
 import { loadWithResetCycles, singleTelemetryUpstream, type ResetCycleHistory } from '../components/telemetry/reset-cycles';
@@ -309,6 +310,7 @@ export default function DashboardMonitorPerformance({ loaderData }: Route.Compon
       if (activeBreakdown === undefined) throw new RangeError('Performance overview has no available breakdown dimension');
       return <>
         <Panel className={`${PANEL_STACK_CLASS} min-w-0`}>
+          <CycleQuota range={loadedQuery.range} quota={resetCycles?.quota} />
           <div className="flex items-end gap-3 min-w-0 flex-wrap">
             <TelemetryGroupByField
               disabled={refreshing}

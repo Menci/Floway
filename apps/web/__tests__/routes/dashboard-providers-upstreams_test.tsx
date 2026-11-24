@@ -84,7 +84,10 @@ const stubGateway = (
   const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost');
   if (url.pathname === '/api/upstreams') return Response.json(pageData.upstreams);
   if (url.pathname === '/api/models') return Response.json({ data: [] });
-  if (url.pathname === '/api/upstream-reset-cycles') return Response.json(resetHistory(Date.UTC(2026, 7, 5, 12), url.searchParams.get('upstream_id')!));
+  if (url.pathname === '/api/upstream-reset-cycles') return Response.json({
+    ...resetHistory(Date.UTC(2026, 7, 5, 12), url.searchParams.get('upstream_id')!),
+    ...(url.searchParams.has('cycle_metric') && { quota: { kind: 'reported', amount: 300, unit: 'count' } }),
+  });
   return await handler(url, init?.signal as AbortSignal | undefined);
 }));
 
@@ -143,6 +146,7 @@ it('uses exact reset observations for the upstream metrics query and hour bucket
   expect(usageQuery.get('start')).toBe('2026-08-05T04');
   expect(usageQuery.get('end')).toBe('2026-08-05T09');
   await waitFor(() => expect(screen.getByRole('radio', { name: 'By Reset Cycle' }).getAttribute('aria-checked')).toBe('true'));
+  expect(screen.getByText('Cycle quota: 300')).toBeTruthy();
 });
 
 it('opens telemetry and the read-only editor for an audit-only row while keeping mutations unavailable', async () => {

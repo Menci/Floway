@@ -1561,6 +1561,17 @@ const zhHansCN = {
           ago: '前 {{count, number}} 个周期',
           waiting: '尚未观测到额度重置',
           apply: '应用',
+          quota: {
+            estimated: '预估本周期总额度：{{amount}}',
+            reported: '本周期总额度：{{amount}}',
+            unavailable: '暂无本周期总额度估算',
+            credits: '{{count, number}} 积分',
+            estimateHint: '基于 Floway 按小时记录的用量与观测到的额度消耗，折算为 API 等价金额。经由其他渠道产生的用量可能影响估算。',
+            reportedHint: '上游在所选周期开始时上报的总额度。',
+            noObservations: '本周期没有足够的用量和额度采样记录。',
+            noPrices: '估算区间内有部分用量没有记录单价。',
+            differentScope: '此额度窗口未覆盖该上游的全部用量。',
+          },
         },
       },
       charts: {

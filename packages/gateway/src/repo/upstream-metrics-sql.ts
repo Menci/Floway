@@ -78,6 +78,15 @@ export class SqlUpstreamMetricsRepo implements UpstreamMetricsRepo {
     return results.map(({ name, labelsJson }) => normalizeUpstreamMetricIdentity(name, JSON.parse(labelsJson)));
   }
 
+  async latestSample(upstreamId: string, identity: UpstreamMetricIdentity, start: number, end: number) {
+    const { name, labelsJson } = encodeIdentity(identity);
+    return await this.db.prepare(`
+      SELECT timestamp, value FROM upstream_metrics
+      WHERE upstream_id = ? AND metric_name = ? AND metric_labels = ? AND timestamp >= ? AND timestamp < ?
+      ORDER BY timestamp DESC LIMIT 1
+    `).bind(upstreamId, name, labelsJson, start, end).first<Pick<UpstreamMetricRecord, 'timestamp' | 'value'>>();
+  }
+
   async queryResetStarts(upstreamId: string, identity: UpstreamMetricIdentity, threshold: UpstreamMetricResetThreshold, before: number): Promise<number[]> {
     const metric = encodeIdentity(identity);
     const allowance = typeof threshold.full === 'number' ? null : encodeIdentity(threshold.full);

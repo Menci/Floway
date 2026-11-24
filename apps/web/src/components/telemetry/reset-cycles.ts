@@ -40,7 +40,14 @@ export const loadWithResetCycles = async <T>(
 }> => {
   const range = isResetRange(requested) && requested.upstreamId !== upstreamId ? 'today' : requested;
   if (upstreamId === null) return { data: await load(range), range, resetCycles: null, error: null };
-  const history = callApi(() => api.api['upstream-reset-cycles'].$get({ query: { upstream_id: upstreamId, before: at } }, { init: { signal } }));
+  const selected = isResetRange(range) ? range : null;
+  const history = callApi(() => api.api['upstream-reset-cycles'].$get({
+    query: {
+      upstream_id: upstreamId, before: at,
+      cycle_metric: selected === null ? undefined : upstreamMetricIdentityKey(selected.metric),
+      cycle_start: selected?.end == null ? undefined : selected.start,
+    },
+  }, { init: { signal } }));
   if (!isResetRange(range)) {
     const [data, result] = await Promise.all([load(range), history]);
     return { data, range, resetCycles: result.data?.supported ? result.data : null, error: result.error ?? null };

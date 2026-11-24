@@ -21,6 +21,7 @@ export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIde
     labelKey: options.quotaDisplay === 'used' ? window.used : window.remaining,
     axisPriority: upstreamMetricAxisPriority.subscriptionQuota,
     windowSeconds: KIMI_CODE_WINDOW_SECONDS[labels.window as KimiCodeQuotaWindow['id']],
+    quotaCostScope: 'upstream',
     emptyValue: null,
     form: 'area',
   });
