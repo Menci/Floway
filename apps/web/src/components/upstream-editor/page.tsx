@@ -28,6 +28,7 @@ import { api, callApi } from '../../api/client';
 import type { UpstreamRecord } from '../../api/types';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
+import { canonicalJson } from '../../lib/canonical-json';
 import { useEntryRewrite } from '../../lib/page-navigation';
 import { BackNavigationButton } from '../ui/back-navigation-button';
 import { ConfirmDialog } from '../ui/confirm-dialog';
@@ -39,11 +40,6 @@ import { useDialogInvocation } from '../ui/use-dialog-invocation';
 import { useRefresh } from '../ui/use-refresh';
 
 const { Button, Spinner, Text } = fluentComponents;
-
-const canonicalJson = (value: unknown): string => JSON.stringify(value, (_key, item) =>
-  item !== null && typeof item === 'object' && !Array.isArray(item)
-    ? Object.fromEntries(Object.keys(item).toSorted().map(key => [key, item[key]]))
-    : item);
 
 export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData }) {
   const { t } = useTranslation();
