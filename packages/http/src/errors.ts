@@ -31,11 +31,11 @@ export class HttpProtocolError extends Error {
   override readonly name = 'HttpProtocolError';
   readonly code: HttpProtocolErrorCode;
   /** RFC reference whose grammar / framing rule the violation maps to. */
-  readonly rfc?: string;
+  readonly rfc: string | undefined;
 
   constructor(message: string, code: HttpProtocolErrorCode, opts?: { cause?: unknown; rfc?: string }) {
     super(message, opts);
     this.code = code;
-    if (opts?.rfc !== undefined) this.rfc = opts.rfc;
+    this.rfc = opts?.rfc;
   }
 }
