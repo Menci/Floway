@@ -60,12 +60,15 @@
 -- `models_cache_json` is left alone throughout: it is a derived catalog cache,
 -- and `MODEL_CATALOG_REVISION` is bumped in the same change so older rows go
 -- cold.
+-- Re-tag scalar-subquery results with json() before passing them as values to
+-- json_set: SQLite 3.54.1 otherwise quotes the model array as a JSON string.
+-- https://www.sqlite.org/json1.html#value_arguments
 
 UPDATE upstreams
 SET config_json = json_set(
   config_json,
   '$.models',
-  (
+  json((
     SELECT json_group_array(json(
       CASE WHEN json_type(model.value, '$.endpoints') = 'object'
         THEN json_set(
@@ -93,7 +96,7 @@ SET config_json = json_set(
       END
     ))
     FROM json_each(json_extract(upstreams.config_json, '$.models')) AS model
-  )
+  ))
 )
 WHERE json_type(config_json, '$.models') = 'array'
   AND json_array_length(json_extract(config_json, '$.models')) > 0;
@@ -147,7 +150,7 @@ UPDATE upstreams
 SET config_json = json_set(
   config_json,
   '$.models',
-  (
+  json((
     SELECT json_group_array(json(
       CASE WHEN json_type(model.value, '$.flagOverrides') = 'object'
         THEN json_set(
@@ -175,7 +178,7 @@ SET config_json = json_set(
       END
     ))
     FROM json_each(json_extract(upstreams.config_json, '$.models')) AS model
-  )
+  ))
 )
 WHERE json_type(config_json, '$.models') = 'array'
   AND json_array_length(json_extract(config_json, '$.models')) > 0;

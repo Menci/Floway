@@ -23,7 +23,7 @@ SET config_json = (
   SELECT json_set(
     config_json,
     '$.deployments',
-    (
+    json((
       SELECT json_group_array(
         json_patch(
           json_remove(deployment.value, '$.capabilities'),
@@ -46,7 +46,7 @@ SET config_json = (
         )
       )
       FROM json_each(json_extract(upstreams.config_json, '$.deployments')) AS deployment
-    )
+    ))
   )
 )
 WHERE provider = 'azure';

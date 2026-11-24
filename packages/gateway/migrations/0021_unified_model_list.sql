@@ -27,7 +27,7 @@ UPDATE upstreams
 SET config_json = json_set(
   json_remove(config_json, '$.deployments'),
   '$.models',
-  (
+  json((
     SELECT json_group_array(
       json_set(
         json_remove(d.value, '$.deployment'),
@@ -35,7 +35,7 @@ SET config_json = json_set(
       )
     )
     FROM json_each(json_extract(upstreams.config_json, '$.deployments')) AS d
-  )
+  ))
 )
 WHERE provider = 'azure'
   AND json_extract(config_json, '$.deployments') IS NOT NULL;

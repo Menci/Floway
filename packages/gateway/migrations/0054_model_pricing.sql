@@ -2,7 +2,7 @@ UPDATE upstreams AS upstream
 SET config_json = json_set(
   upstream.config_json,
   '$.models',
-  (
+  json((
     SELECT json_group_array(
       json(
         CASE
@@ -141,6 +141,6 @@ SET config_json = json_set(
       )
     )
     FROM json_each(json_extract(upstream.config_json, '$.models')) AS model
-  )
+  ))
 )
 WHERE json_type(upstream.config_json, '$.models') = 'array';

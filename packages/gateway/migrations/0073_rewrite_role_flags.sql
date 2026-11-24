@@ -56,7 +56,7 @@ UPDATE upstreams
 SET config_json = json_set(
   config_json,
   '$.models',
-  (
+  json((
     SELECT json_group_array(
       CASE
         WHEN json_type(model.value, '$.flagOverrides."demote-interleaved-system-to-user"') IS NOT NULL
@@ -76,7 +76,7 @@ SET config_json = json_set(
       END
     )
     FROM json_each(json_extract(upstreams.config_json, '$.models')) AS model
-  )
+  ))
 )
 WHERE json_valid(config_json)
   AND json_type(config_json, '$.models') = 'array'
@@ -90,7 +90,7 @@ UPDATE upstreams
 SET config_json = json_set(
   config_json,
   '$.models',
-  (
+  json((
     SELECT json_group_array(
       CASE
         WHEN json_type(model.value, '$.flagOverrides."demote-developer-to-system"') IS NOT NULL
@@ -110,7 +110,7 @@ SET config_json = json_set(
       END
     )
     FROM json_each(json_extract(upstreams.config_json, '$.models')) AS model
-  )
+  ))
 )
 WHERE json_valid(config_json)
   AND json_type(config_json, '$.models') = 'array'
@@ -124,7 +124,7 @@ UPDATE upstreams
 SET config_json = json_set(
   config_json,
   '$.models',
-  (
+  json((
     SELECT json_group_array(
       CASE
         WHEN json_type(model.value, '$.flagOverrides."promote-system-to-developer"') IS NOT NULL
@@ -144,7 +144,7 @@ SET config_json = json_set(
       END
     )
     FROM json_each(json_extract(upstreams.config_json, '$.models')) AS model
-  )
+  ))
 )
 WHERE json_valid(config_json)
   AND json_type(config_json, '$.models') = 'array'
