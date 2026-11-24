@@ -14,7 +14,7 @@ UPDATE upstreams
 SET config_json = json_set(
   config_json,
   '$.models',
-  (
+  json((
     SELECT json_group_array(
       json_set(
         json_remove(model.value, '$.supportedEndpoints'),
@@ -43,7 +43,7 @@ SET config_json = json_set(
       )
     )
     FROM json_each(json_extract(upstreams.config_json, '$.models')) AS model
-  )
+  ))
 )
 WHERE provider IN ('azure', 'custom')
   AND json_type(config_json, '$.models') = 'array'

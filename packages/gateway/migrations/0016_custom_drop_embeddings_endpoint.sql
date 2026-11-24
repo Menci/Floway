@@ -15,14 +15,14 @@ UPDATE upstreams
 SET config_json = json_set(
   config_json,
   '$.supportedEndpoints',
-  COALESCE(
+  json(COALESCE(
     (
       SELECT json_group_array(endpoint.value)
       FROM json_each(json_extract(upstreams.config_json, '$.supportedEndpoints')) AS endpoint
       WHERE endpoint.value NOT IN ('/embeddings', '/v1/embeddings')
     ),
     json('[]')
-  )
+  ))
 )
 WHERE provider = 'custom'
   AND EXISTS (
