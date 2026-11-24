@@ -77,7 +77,7 @@ export function UpstreamConfigSidebar({
               render={({ field }) => (
                 <Field
                   validationMessage={errors.name?.message ? t(errors.name.message) : undefined}
-                  validationState={errors.name ? 'error' : undefined}
+                  validationState={errors.name ? 'error' : 'none'}
                 >
                   <Input
                     aria-label={t('upstreams.editor.fields.name')}
@@ -122,7 +122,7 @@ export function UpstreamConfigSidebar({
               <Field
                 label={{ children: infoLabelSlot(t('upstreams.editor.usageRefresh.interval'), usageRefreshInfo) }}
                 validationMessage={errors.usageRefreshIntervalMinutes?.message ? t(errors.usageRefreshIntervalMinutes.message) : undefined}
-                validationState={errors.usageRefreshIntervalMinutes ? 'error' : undefined}
+                validationState={errors.usageRefreshIntervalMinutes ? 'error' : 'none'}
               >
                 <Input
                   type="number"
@@ -289,7 +289,7 @@ function ModelPrefixEditor({ readOnly }: { readOnly: boolean }) {
     const update = (next: string) => commit(next ? { prefix: next, addressable: value?.addressable ?? ['unprefixed'], listed: value?.listed ?? ['unprefixed'] } : null);
     return <div className="grid gap-3">
       <Field
-        validationState={errors.modelPrefix ? 'error' : undefined}
+        validationState={errors.modelPrefix ? 'error' : 'none'}
         validationMessage={errors.modelPrefix?.message ? t(errors.modelPrefix.message, { max: MODEL_PREFIX_MAX_LENGTH }) : undefined}
       >
         <Input aria-label={t('upstreams.editor.sections.prefix')} value={prefix} onChange={(_, data) => update(data.value)} className="font-mono" placeholder="openrouter/" readOnly={readOnly} />

@@ -11,7 +11,7 @@ import { useNow } from '../../lib/use-now';
 import { useDangerActionClasses, useDangerTextClass } from '../ui/danger';
 import { ResourceListEmptyState } from '../ui/resource-list';
 import { ScrollArea } from '../ui/scroll-area';
-import { TABLE_ACTIONS_WITH_LEADING_WIDTH, TableActions, TableActionsHeader, stopRowSelection } from '../ui/table-actions';
+import { sortDirectionProps, TABLE_ACTIONS_WITH_LEADING_WIDTH, TableActions, TableActionsHeader, stopRowSelection } from '../ui/table-actions';
 import { TableColumns } from '../ui/table-columns';
 import { TooltipIconButton } from '../ui/tooltip-icon-button';
 import { TruncationTooltip } from '../ui/truncation-tooltip';
@@ -162,15 +162,15 @@ export function KeysTable({
               radioIndicator={null}
               type="radio"
             />
-            <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'name')} sortDirection={sort.getSortDirection('name')} sortable>
+            <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'name')} {...sortDirectionProps(sort.getSortDirection('name'))} sortable>
               {t('apiKeys.table.name')}
             </TableHeaderCell>
             <TableHeaderCell>{t('apiKeys.table.upstreams')}</TableHeaderCell>
             <TableHeaderCell>{t('apiKeys.table.upstreamOrder')}</TableHeaderCell>
-            <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'created')} sortDirection={sort.getSortDirection('created')} sortable>
+            <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'created')} {...sortDirectionProps(sort.getSortDirection('created'))} sortable>
               {t('apiKeys.table.created')}
             </TableHeaderCell>
-            <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'lastUsed')} sortDirection={sort.getSortDirection('lastUsed')} sortable>
+            <TableHeaderCell onClick={event => sort.toggleColumnSort(event, 'lastUsed')} {...sortDirectionProps(sort.getSortDirection('lastUsed'))} sortable>
               {t('apiKeys.table.lastUsed')}
             </TableHeaderCell>
             <TableActionsHeader />

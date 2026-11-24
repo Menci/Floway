@@ -17,7 +17,7 @@ export function EditorIconButton({
   label,
   onClick,
 }: {
-  className?: string;
+  className?: string | undefined;
   icon: ReactElement;
   label: string;
   onClick: (event: MouseEvent<HTMLButtonElement>) => void;

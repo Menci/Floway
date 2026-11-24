@@ -6,7 +6,7 @@ import type { ChartSeries } from './series-legends';
 // the callout still reports every bucket the model aggregated.
 export const visibleSeriesData = (entries: readonly ChartSeries[], data: ChartProps, hidden: ReadonlySet<string>): ChartProps => {
   const visible = new Set(entries.filter(entry => !hidden.has(entry.id)).map(entry => entry.legend));
-  return { ...data, lineChartData: data.lineChartData?.filter(series => visible.has(series.legend)) };
+  return data.lineChartData === undefined ? data : { ...data, lineChartData: data.lineChartData.filter(series => visible.has(series.legend)) };
 };
 
 export const toggledSeries = (hidden: ReadonlySet<string>, id: string): Set<string> => {

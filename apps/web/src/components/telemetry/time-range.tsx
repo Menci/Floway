@@ -89,7 +89,7 @@ export function TelemetryTimeRange({ addressOf, ariaLabel, loadedAt, onChange, o
       if (data.open) return;
       if (event.type === 'keydown' && 'key' in event && event.key === 'Escape') close();
       else if (!owns(event.target)) close();
-    }} positioning={{ target: anchor ?? undefined, position: 'below', align: 'end', fallbackPositions: ['above'] }}>
+    }} positioning={{ ...(anchor === null ? {} : { target: anchor }), position: 'below', align: 'end', fallbackPositions: ['above'] }}>
       <PopoverSurface aria-label={t('monitoring.controls.range.choose')} className="floway-date-range-surface" id={popupId} onBlurCapture={event => blur(event.relatedTarget)} ref={surfaceRef}>
         <CalendarRange autoFocus displayDate={session.date} key={session.serial} onChange={select} value={draft} />
       </PopoverSurface>

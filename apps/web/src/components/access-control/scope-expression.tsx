@@ -44,10 +44,10 @@ export function ScopeEditor(props: Omit<ComponentProps<typeof ScopeExpression>, 
 
 function ScopeEditorSurface({ children, className, expressionRef, onActivate, onRemove, readOnly }: {
   children: ReactNode;
-  className?: string;
+  className?: string | undefined;
   expressionRef: RefObject<HTMLDivElement | null>;
   onActivate: () => void;
-  onRemove?: () => void;
+  onRemove?: (() => void) | undefined;
   readOnly: boolean;
 }) {
   const { t } = useTranslation();
@@ -71,13 +71,13 @@ function ScopeEditorSurface({ children, className, expressionRef, onActivate, on
 }
 
 export function ScopeExpression({ className, data, framed = false, onChange, onNavigate, purpose = 'scope', readOnly = false, value }: {
-  className?: string;
+  className?: string | undefined;
   data: ScopeExpressionData;
-  framed?: boolean;
-  onChange?: (value: AccessScope | null) => void;
-  onNavigate?: (value: AccessScope | null) => void;
-  purpose?: 'scope' | 'filter';
-  readOnly?: boolean;
+  framed?: boolean | undefined;
+  onChange?: ((value: AccessScope | null) => void) | undefined;
+  onNavigate?: ((value: AccessScope | null) => void) | undefined;
+  purpose?: 'scope' | 'filter' | undefined;
+  readOnly?: boolean | undefined;
   value: AccessScope | null;
 }) {
   const { t } = useTranslation();
@@ -288,7 +288,7 @@ function Segment({ active, children, dirty, input, interactive, keyboardNavigate
   interactive: boolean;
   keyboardNavigatedRef: RefObject<boolean>;
   onActivate: () => void;
-  onBackspace?: () => void;
+  onBackspace?: (() => void) | undefined;
   onCancel: () => void;
   onEnter: () => void;
   part: Part;
@@ -392,13 +392,13 @@ function AppendTrigger({ label }: { label: string }) {
     : <button aria-label={label} className={className} onClick={onActivate} ref={triggerRef} type="button"><MoreHorizontal16Regular /></button>;
 }
 
-function Slash({ onActivate }: { onActivate?: () => void }) {
+function Slash({ onActivate }: { onActivate?: (() => void) | undefined }) {
   return <span aria-hidden="true" className="floway-scope-expression-slash" onClick={onActivate} onMouseDown={onActivate ? event => event.preventDefault() : undefined}><span className="floway-control-label">/</span></span>;
 }
 
 function PartToken({ children, className }: {
   children: ReactNode;
-  className?: string;
+  className?: string | undefined;
 }) {
   const { onActivate, readOnly, triggerRef } = useContext(SegmentContext)!;
   const classes = mergeClasses('floway-scope-expression-part', className);
@@ -543,7 +543,7 @@ function RegexPattern({ pattern }: { pattern: string }) {
 
 function UnknownPart({ description, icon }: {
   description: string;
-  icon?: ReactNode;
+  icon?: ReactNode | undefined;
 }) {
   const { t } = useTranslation();
   const { readOnly } = useContext(SegmentContext)!;

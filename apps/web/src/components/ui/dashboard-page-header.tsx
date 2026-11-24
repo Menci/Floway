@@ -6,9 +6,9 @@ import { fluentComponents } from '../../fluent';
 const { Text, mergeClasses } = fluentComponents;
 
 export function DashboardPageHeader({ actions, className, description, title }: {
-  actions?: ReactNode;
-  className?: string;
-  description?: string;
+  actions?: ReactNode | undefined;
+  className?: string | undefined;
+  description?: string | undefined;
   title: string;
 }) {
   return <header className={mergeClasses(HEADER_ROW_CLASS, 'gap-[18px]', className)}>

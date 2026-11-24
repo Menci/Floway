@@ -6,7 +6,7 @@ import type { AccessRecord } from '../../api/types';
 import type { AccessPermission, AccessPrincipal, AccessResolution, AccessScope, AccessValues, PermissionDecisions, ResolveScope, UpstreamEditLevel } from '@floway-dev/gateway/browser';
 
 const EDIT_LEVEL_RANK: Record<UpstreamEditLevel, number> = { off: 0, models: 1, full: 2 };
-const valueRank = (value: NonNullable<AccessValues[AccessPermission]>) => typeof value === 'boolean' ? Number(value) : EDIT_LEVEL_RANK[value];
+const valueRank = (value: Required<AccessValues>[AccessPermission]) => typeof value === 'boolean' ? Number(value) : EDIT_LEVEL_RANK[value];
 const precedenceDepth = (scope: AccessScope) => scope.kind === 'user' ? 3 : scopeDepth(scope);
 
 const matchesResolveScope = (recordScope: AccessScope, target: ResolveScope, targetGroups: ReadonlySet<number>, isSelfUser: boolean): boolean =>
@@ -18,7 +18,7 @@ const matchesResolveScope = (recordScope: AccessScope, target: ResolveScope, tar
 
 export const resolveAccess = ({ data, excludeRecordId, principal, records, scope }: {
   data: Pick<ScopeExpressionData, 'users'>;
-  excludeRecordId?: number;
+  excludeRecordId?: number | undefined;
   principal: AccessPrincipal | null;
   records: readonly AccessRecord[];
   scope: AccessScope | null;
@@ -61,33 +61,36 @@ export const resolveAccess = ({ data, excludeRecordId, principal, records, scope
 
   const decisions = new Map<number, PermissionDecisions>(applicable.map(record => [record.id, {}]));
   const values: AccessValues = {};
-  for (const permission of permissions) {
-    if (isSelfUser && permission === 'User.Audit') {
-      values[permission] = true;
-      continue;
-    }
-    let selection: { winners: AccessRecord[]; representative: AccessRecord } | null = null;
+  const resolvePermission = <Permission extends AccessPermission>(permission: Permission, fallback: NonNullable<AccessValues[Permission]>) => {
+    let selection: { winners: AccessRecord[]; representative: { record: AccessRecord; value: NonNullable<AccessValues[Permission]> } } | null = null;
     for (const bucket of buckets) {
-      const eligible = bucket.rows.filter(row => row.values[permission] !== undefined
-        && !(scope.kind === 'user' && row.scope.kind === 'group' && (permission !== 'User.Audit' || targetGroups.size === 0)));
+      const eligible = bucket.rows.flatMap(record => {
+        const value = record.values[permission];
+        if (value === undefined || (scope.kind === 'user' && record.scope.kind === 'group' && (permission !== 'User.Audit' || targetGroups.size === 0))) return [];
+        return [{ record, value }];
+      });
       if (eligible.length === 0) continue;
-      const personal = eligible.filter(row => row.principal.kind === 'user');
+      const personal = eligible.filter(row => row.record.principal.kind === 'user');
       const winners = personal.length > 0 ? personal : eligible;
-      const representative = winners.reduce((current, row) => valueRank(row.values[permission]!) > valueRank(current.values[permission]!) ? row : current);
-      selection = { winners, representative };
+      const representative = winners.reduce((current, row) => valueRank(row.value) > valueRank(current.value) ? row : current);
+      selection = { winners: winners.map(row => row.record), representative };
       break;
     }
-    if (permission === 'Upstream.Edit') values[permission] = selection === null ? 'off' : selection.representative.values[permission];
-    else values[permission] = selection === null ? false : selection.representative.values[permission];
-    if (selection === null) continue;
+    values[permission] = selection === null ? fallback : selection.representative.value;
+    if (selection === null) return;
     const active = new Set(selection.winners.map(record => record.id));
     for (const record of applicable) {
       if (record.values[permission] === undefined) continue;
       if (scope.kind === 'user' && record.scope.kind === 'group' && (permission !== 'User.Audit' || targetGroups.size === 0)) continue;
       decisions.get(record.id)![permission] = active.has(record.id)
         ? { kind: 'effective' }
-        : { kind: 'overridden', by: selection.representative };
+        : { kind: 'overridden', by: selection.representative.record };
     }
+  };
+  for (const permission of permissions) {
+    if (isSelfUser && permission === 'User.Audit') values[permission] = true;
+    else if (permission === 'Upstream.Edit') resolvePermission(permission, 'off');
+    else resolvePermission(permission, false);
   }
   return {
     values,

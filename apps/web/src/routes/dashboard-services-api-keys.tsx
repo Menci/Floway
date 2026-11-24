@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-services-api-keys';
 import { requireDashboardSession } from './guards';
-import { api, callApi } from '../api/client';
+import { abortOptions, api, callApi } from '../api/client';
 import { mapResult, mergeResults } from '../api/partial-results';
 import type { ApiKey, ControlPlaneModel, UpstreamOption } from '../api/types';
 import type { AgentSetupLease } from '../components/api-keys/agent-setup';
@@ -45,9 +45,9 @@ const loadPageData = async (
   signal?: AbortSignal,
 ): Promise<ApiKeysPageData> => {
   const [keysRes, upstreamsRes, modelsRes] = await Promise.all([
-    callApi(() => api.api.keys.$get(undefined, { init: { signal } })),
-    callApi(() => api.api['upstream-options'].$get({ query: { view: 'key' } }, { init: { signal } })),
-    callApi(() => api.api.models.$get({ query: { include_unlisted: 'true' } }, { init: { signal } })),
+    callApi(() => api.api.keys.$get(undefined, abortOptions(signal))),
+    callApi(() => api.api['upstream-options'].$get({ query: { view: 'key' } }, abortOptions(signal))),
+    callApi(() => api.api.models.$get({ query: { include_unlisted: 'true' } }, abortOptions(signal))),
   ]);
   const { values, error } = mergeResults(current, {
     keys: keysRes,

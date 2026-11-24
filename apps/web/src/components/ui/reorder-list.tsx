@@ -241,16 +241,16 @@ export function useReorderList({ busy = false, disabled = false, grabOnly = fals
    * focus, so a keyboard move does not throw the operator back to the document
    * between steps -- the same line `TooltipIconButton` draws.
    */
-  busy?: boolean;
-  disabled?: boolean;
+  busy?: boolean | undefined;
+  disabled?: boolean | undefined;
   /** Render a pick-up state that cannot move an item, for a one-item segment. */
-  grabOnly?: boolean;
+  grabOnly?: boolean | undefined;
   length: number;
-  onDragStart?: () => void;
+  onDragStart?: (() => void) | undefined;
   /** Starts an asynchronous write as soon as the pointer is released. */
-  onDrop?: (from: number, to: number) => Promise<void>;
+  onDrop?: ((from: number, to: number) => Promise<void>) | undefined;
   /** Runs after the visual preview has rolled back from a rejected write. */
-  onDropError?: (error: unknown, from: number, to: number) => void | Promise<void>;
+  onDropError?: ((error: unknown, from: number, to: number) => void | Promise<void>) | undefined;
   onReorder: (from: number, to: number) => void;
 }) {
   const styles = useStyles();

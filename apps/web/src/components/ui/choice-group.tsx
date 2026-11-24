@@ -185,7 +185,7 @@ export function ChoiceGroup({
   value,
 }: {
   ariaLabel: string;
-  disabled?: boolean;
+  disabled?: boolean | undefined;
   items: ChoiceGroupItem[];
   onChange: (value: string) => void;
   /**
@@ -193,7 +193,7 @@ export function ChoiceGroup({
    * disabled, which says the choice is not available at all. It keeps its own
    * appearance and pointer states, takes focus, and refuses the selection.
    */
-  readOnly?: boolean;
+  readOnly?: boolean | undefined;
   value: string;
 }) {
   const styles = useStyles();

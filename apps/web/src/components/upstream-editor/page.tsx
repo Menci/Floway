@@ -170,10 +170,10 @@ export function UpstreamEditorPage({ data }: { data: UpstreamEditorLoaderData })
     // the persisted connection. Draft previews exist for the admin create flow
     // and for Full editors previewing unsaved connection changes.
     const catalog = saved !== null
-      ? await fetchSavedModelCatalog(saved, { signal })
+      ? await fetchSavedModelCatalog(saved, signal)
       : isPersisted(record) && (editLevel === 'models' || !discoveryInputsDirty)
-        ? await fetchSavedModelCatalog(record, { signal })
-        : await previewDraftModelCatalog(record, getValues(), { signal });
+        ? await fetchSavedModelCatalog(record, signal)
+        : await previewDraftModelCatalog(record, getValues(), signal);
     if (signal.aborted) return;
     setModelsError(catalog.modelsError);
     if (catalog.discovered !== null) {

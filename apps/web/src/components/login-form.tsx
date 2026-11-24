@@ -105,7 +105,7 @@ export function LoginForm() {
             <Field
               label={t('auth.login.username')}
               validationMessage={usernameError ? t(usernameError) : undefined}
-              validationState={usernameError ? 'error' : undefined}
+              validationState={usernameError ? 'error' : 'none'}
             >
               <Input
                 {...field}
@@ -125,7 +125,7 @@ export function LoginForm() {
             <Field
               label={t('auth.login.password')}
               validationMessage={passwordMessage === null ? undefined : t(passwordMessage)}
-              validationState={passwordMessage === null ? undefined : 'error'}
+              validationState={passwordMessage === null ? 'none' : 'error'}
             >
               <Input
                 {...field}

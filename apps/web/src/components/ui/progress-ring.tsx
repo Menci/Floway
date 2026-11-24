@@ -70,10 +70,10 @@ const useStyles = makeStyles({
 // height, so this holds at any size and under any font.
 // https://drafts.csswg.org/css-values-4/#cap
 export function ProgressRing({ className, percent, size = 16, tone }: {
-  className?: string;
+  className?: string | undefined;
   /** Clamped to the ring: past 100 the arc is closed, not wound a second time. */
   percent: number;
-  size?: number;
+  size?: number | undefined;
   tone: ProgressRingTone;
 }) {
   const styles = useStyles();

@@ -39,7 +39,7 @@ export function ModelLimitsFields({
   readOnly: boolean;
   t: TFunction;
   kind: ModelKind;
-  errorFor?: (key: ModelLimitKey) => string | undefined;
+  errorFor?: ((key: ModelLimitKey) => string | undefined) | undefined;
 }) {
   const keys = limitKeysForKind(kind);
   if (keys.length === 0) return null;

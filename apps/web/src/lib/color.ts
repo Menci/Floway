@@ -63,6 +63,8 @@ export const readableTone = (hex: string, surface: string): string => {
   if (wcagContrast(linearRgb(parseHexColor(opaqueHex)), surfaceLinear) >= TEXT_CONTRAST_FLOOR) return opaqueHex;
 
   const { h, s, v } = convertRgbToHsv(rgb);
+  // An achromatic color has no hue.
+  const hue = h === undefined ? {} : { h };
   // Which extreme actually clears the floor, not whether the surface is light:
   // between luminance 0.183 and 0.5 white misses the floor while black clears
   // it, so a lightness test would search the direction that cannot arrive.
@@ -78,7 +80,7 @@ export const readableTone = (hex: string, surface: string): string => {
     while (first <= last) {
       const step = Math.floor((first + last) / 2);
       const value = darken ? v * (1 - step / STEPS) : v + (1 - v) * (step / STEPS);
-      const candidate = convertHsvToRgb({ h, s: saturation, v: value });
+      const candidate = convertHsvToRgb({ ...hue, s: saturation, v: value });
       const candidateHex = formatHex(candidate).toUpperCase();
       if (wcagContrast(linearRgb(parseHexColor(candidateHex)), surfaceLinear) >= TEXT_CONTRAST_FLOOR) {
         readable = candidateHex;

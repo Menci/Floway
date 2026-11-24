@@ -67,7 +67,7 @@ export const createUsageOverviewLoader = (): UsageOverviewLoader => {
     const query = buildUsageOverviewQuery(range, groupBy, filters, loadedAt);
     let previous = latest && sameUsageQuery(latest.query, query) ? latest.snapshot : undefined;
     const cursor = usageOverviewCursor(previous, query.start, query.end);
-    const load = (cursor: string | undefined) => callApi(() => api.api['token-usage'].overview.$get({ query: { ...query, cursor } }, { init: { signal } }));
+    const load = (cursor: string | undefined) => callApi(() => api.api['token-usage'].overview.$get({ query: cursor === undefined ? query : { ...query, cursor } }, { init: { signal } }));
     let result = await load(cursor);
     if (result.error) return result;
     if (previous && !result.data.reset && JSON.stringify(previous.scope) !== JSON.stringify(result.data.scope)) {

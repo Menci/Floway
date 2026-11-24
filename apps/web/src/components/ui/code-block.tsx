@@ -86,14 +86,14 @@ const useStyles = makeStyles({
 
 export function CodeBlock({ code, collapsed = false, copyOutcome, disabled = false, header, language, onCopy, wrap = false }: {
   code: string;
-  collapsed?: boolean;
+  collapsed?: boolean | undefined;
   copyOutcome: CopyOutcome;
-  disabled?: boolean;
+  disabled?: boolean | undefined;
   /** Replaces the language caption in the header bar, for switchers that pick which code this block shows. */
-  header?: ReactNode;
+  header?: ReactNode | undefined;
   language: string;
   onCopy: () => void;
-  wrap?: boolean;
+  wrap?: boolean | undefined;
 }) {
   const { t } = useTranslation();
   const styles = useStyles();

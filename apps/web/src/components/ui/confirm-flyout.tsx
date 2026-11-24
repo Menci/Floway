@@ -8,7 +8,7 @@ const { Button, Popover, PopoverSurface, PopoverTrigger, Text, Tooltip } = fluen
 
 export function ConfirmFlyout({ actionLabel, disabled = false, icon, message, onConfirm, title, triggerLabel }: {
   actionLabel: string;
-  disabled?: boolean;
+  disabled?: boolean | undefined;
   icon: ReactElement;
   message: string;
   onConfirm: () => Promise<string | null>;

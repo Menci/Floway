@@ -158,7 +158,7 @@ const createToastContainer = (components: FluentComponents) => {
     // https://github.com/microsoft/fluentui/blob/6dee27b023a2d989f032b4adacb2135d336a67fb/packages/react-components/react-toast/library/src/components/ToastContainer/useToastContainer.ts#L131-L134
     return <ToastContainerContextProvider value={contextValues.toast}>
       <div className={STACK_ITEM_CLASS} role="presentation">
-        <ToastPresence appear onMotionFinish={state.onMotionFinish} unmountOnExit visible={state.visible}>
+        <ToastPresence appear {...(state.onMotionFinish === undefined ? {} : { onMotionFinish: state.onMotionFinish })} unmountOnExit visible={state.visible}>
           <div {...root} className={[toastContainerClassNames.root, root.className].filter(Boolean).join(' ')}>
             {children}
             <Countdown key={state.updateId} onTimeout={onTimeout} running={running} timeout={timeout} />
@@ -351,7 +351,7 @@ export const withWinuiToaster = (components: FluentComponents): FluentComponents
       {toasts.map(toast => <ToastContainer
         {...toast}
         announce={announceToast}
-        intent={toast.intent}
+        intent={toast.intent ?? 'info'}
         key={toast.toastId}
         tryRestoreFocus={tryRestoreFocus}
         visible={isToastVisible(toast.toastId)}
@@ -388,7 +388,16 @@ export const withWinuiToaster = (components: FluentComponents): FluentComponents
       playAllToasts,
       toastsToRender,
       tryRestoreFocus,
-    } = useToaster({ limit, pauseOnHover, pauseOnWindowBlur, position, priority, shortcuts, timeout, toasterId });
+    } = useToaster({
+      ...(limit === undefined ? {} : { limit }),
+      ...(pauseOnHover === undefined ? {} : { pauseOnHover }),
+      ...(pauseOnWindowBlur === undefined ? {} : { pauseOnWindowBlur }),
+      ...(position === undefined ? {} : { position }),
+      ...(priority === undefined ? {} : { priority }),
+      ...(shortcuts === undefined ? {} : { shortcuts }),
+      ...(timeout === undefined ? {} : { timeout }),
+      ...(toasterId === undefined ? {} : { toasterId }),
+    });
 
     const stacks = STACK_POSITIONS.filter(stackPosition => toastsToRender.has(stackPosition)).map(stackPosition => <ToastStack
       announce={announceProp ?? announce}
@@ -408,7 +417,7 @@ export const withWinuiToaster = (components: FluentComponents): FluentComponents
 
     return <>
       {announceProp ? null : <AriaLive announceRef={announceRef} />}
-      {inline ? stacks : <Portal mountNode={mountNode}>{stacks}</Portal>}
+      {inline ? stacks : <Portal {...(mountNode === undefined ? {} : { mountNode })}>{stacks}</Portal>}
     </>;
   };
 

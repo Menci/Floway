@@ -183,7 +183,7 @@ export function KeyDialog(props: KeyDialogProps) {
           <Field
             label={t('apiKeys.form.name')}
             validationMessage={errors.name?.message ? t(errors.name.message) : undefined}
-            validationState={errors.name ? 'error' : undefined}
+            validationState={errors.name ? 'error' : 'none'}
           >
             <Input {...field} disabled={saving} />
           </Field>

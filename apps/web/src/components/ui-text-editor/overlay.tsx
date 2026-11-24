@@ -225,7 +225,7 @@ function HighlightShape({
   );
 }
 
-export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme?: Theme }) {
+export default function UiTextEditorOverlay({ theme = winuiLightTheme }: { theme?: Theme | undefined }) {
   const { t, i18n } = useEditorTranslation();
   const ensureInitialized = useUiTextEditorStore(state => state.ensureInitialized);
   const entries = useUiTextEditorStore(state => state.entries);

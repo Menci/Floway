@@ -10,6 +10,6 @@ const Initials = ({ children }: { children: ReactNode }) => <span className="flo
 const renderInitials: SlotRenderFunction<ComponentProps<'span'>> = (Component, slotProps) =>
   <Component {...slotProps}><Initials>{slotProps.children}</Initials></Component>;
 
-export function IdentityAvatar({ initials, ...props }: Omit<AvatarProps, 'initials'> & { initials?: string }) {
+export function IdentityAvatar({ initials, ...props }: Omit<AvatarProps, 'initials'> & { initials?: string | undefined }) {
   return <Avatar {...props} initials={{ children: initials === undefined ? renderInitials : <Initials>{initials}</Initials> }} />;
 }

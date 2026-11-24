@@ -63,9 +63,9 @@ export const providerLabel = (kind: UpstreamProviderKind) => providerLabels[kind
 // no underline, at rest or under the pointer: the chip is the affordance, and
 // ../ui/row-title.tsx already keeps a row's name off the hyperlink treatment.
 export function ProviderBadge({ label, title, to, upstream }: {
-  label?: string;
-  title?: string;
-  to?: string;
+  label?: string | undefined;
+  title?: string | undefined;
+  to?: string | undefined;
   upstream: { hue: number; kind: UpstreamProviderKind };
 }) {
   const { t } = useTranslation();

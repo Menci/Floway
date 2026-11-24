@@ -51,17 +51,17 @@ export function ConfirmDialog({
   open,
   title,
 }: {
-  actionIntent?: 'danger' | 'primary';
+  actionIntent?: 'danger' | 'primary' | undefined;
   actionLabel: string;
-  busy?: boolean;
-  cancelLabel?: string;
-  error?: string | null;
+  busy?: boolean | undefined;
+  cancelLabel?: string | undefined;
+  error?: string | null | undefined;
   message: string;
-  onCancel?: () => void;
+  onCancel?: (() => void) | undefined;
   onConfirm: () => void;
-  onDismissError?: () => void;
+  onDismissError?: (() => void) | undefined;
   /** See DialogShell: the deed a confirmation does to its own tree goes here. */
-  onExited?: () => void;
+  onExited?: (() => void) | undefined;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   title: string;

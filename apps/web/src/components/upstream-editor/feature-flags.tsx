@@ -45,9 +45,9 @@ export function FeatureFlagsEditor({
   value,
 }: {
   defaults: FlagDefaults;
-  inherited?: FlagOverrides;
+  inherited?: FlagOverrides | undefined;
   onChange: (value: FlagOverrides) => void;
-  readOnly?: boolean;
+  readOnly?: boolean | undefined;
   value: FlagOverrides;
 }) {
   const { t } = useTranslation();

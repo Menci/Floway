@@ -27,7 +27,7 @@ const useStyles = makeStyles({
 
 export function PermissionFields({ disabled, inherited, onChange, permissions, values }: {
   disabled: boolean;
-  inherited?: AccessValues;
+  inherited?: AccessValues | undefined;
   onChange: (permission: AccessPermission, value: Value) => void;
   permissions: readonly AccessPermission[];
   values: AccessValues;
@@ -93,7 +93,7 @@ function PermissionField({ disabled, inherited, levelColumns, onChange, permissi
                 if (inheriting) choose(choice); else onChange(undefined);
               }
             },
-          }} key={choice} root={root} value={choice}
+          }} key={choice} {...(root === undefined ? {} : { root })} value={choice}
           label={<span className="inline-flex items-center gap-1 min-w-0">
             <span className="floway-control-label whitespace-nowrap">{t(`permissions.states.${choice}`)}</span>
             {choice === inheritedChoice && <span aria-hidden className="inline-flex flex-none" data-inherited-value-icon="branch" data-inheritance-active={inheriting} data-inheritance-glyph={inheriting ? 'filled' : 'regular'} style={{ color: inheriting ? tokens.colorBrandForeground1 : tokens.colorNeutralForeground2 }}><Marker style={{ width: 16, height: 16 }} /></span>}

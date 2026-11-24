@@ -155,8 +155,9 @@ export const rateLimitedUntil = (
 export const accountStatus = (lookup: CredentialLookup, windows: WindowRow[], now: number): AccountStatus => {
   if (lookup.kind === 'uuid-mismatch') return { tone: 'danger', reason: 'uuid-mismatch' };
   const { credential } = lookup;
-  if (credential.state === 'session_terminated') return { tone: 'danger', reason: 'session-terminated', detail: credential.stateMessage };
-  if (credential.state === 'refresh_failed') return { tone: 'danger', reason: 'refresh-failed', detail: credential.stateMessage };
+  const detail = credential.stateMessage === undefined ? {} : { detail: credential.stateMessage };
+  if (credential.state === 'session_terminated') return { tone: 'danger', reason: 'session-terminated', ...detail };
+  if (credential.state === 'refresh_failed') return { tone: 'danger', reason: 'refresh-failed', ...detail };
   if (rateLimitedUntil(credential.quotaSnapshot, now) !== null) return { tone: 'danger', reason: 'exhausted' };
   return usageStatusFromHeaviest(heaviestPercent(windows.map(row => row.percent)));
 };

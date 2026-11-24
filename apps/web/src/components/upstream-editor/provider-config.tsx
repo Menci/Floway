@@ -76,8 +76,8 @@ export function ProviderConfigSection({
   onPatch,
   onRefreshModels,
 }: {
-  readOnly?: boolean;
-  modelsFetchReadOnly?: boolean;
+  readOnly?: boolean | undefined;
+  modelsFetchReadOnly?: boolean | undefined;
   record: UpstreamRecord;
   onPatch: (patch: { config?: unknown; state?: unknown }, persisted?: boolean) => void;
   onRefreshModels: () => void;

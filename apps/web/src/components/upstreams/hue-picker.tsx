@@ -16,7 +16,7 @@ export function HuePicker({ hue, kind, onChange, readOnly = false }: {
   hue: number;
   kind: UpstreamProviderKind;
   onChange: (hue: number) => void;
-  readOnly?: boolean;
+  readOnly?: boolean | undefined;
 }) {
   const { t } = useTranslation();
   const styles = useStyles();
@@ -45,7 +45,7 @@ export function HuePicker({ hue, kind, onChange, readOnly = false }: {
           // colour under it.
           rail={{ style: { backgroundImage: HUE_RAIL_GRADIENT } }}
           // The rail's own maximum is 360°, which is 0° under another name.
-          onChange={readOnly ? undefined : (_, data) => onChange(Math.round(data.color.h) % 360)}
+          {...(readOnly ? {} : { onChange: (_: unknown, data: { color: { h: number } }) => onChange(Math.round(data.color.h) % 360) })}
         />
       </PopoverSurface>
     </Popover>

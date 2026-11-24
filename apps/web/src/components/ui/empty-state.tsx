@@ -14,10 +14,10 @@ const ALIGN_CLASS = {
 } as const;
 
 export function EmptyState({ action, align = 'center', className, description, title }: {
-  action?: ReactNode;
-  align?: keyof typeof ALIGN_CLASS;
-  className?: string;
-  description?: ReactNode;
+  action?: ReactNode | undefined;
+  align?: keyof typeof ALIGN_CLASS | undefined;
+  className?: string | undefined;
+  description?: ReactNode | undefined;
   title: ReactNode;
 }) {
   return <div className={mergeClasses('grid place-items-center min-h-[180px]', className)}>
@@ -33,6 +33,6 @@ export function EmptyState({ action, align = 'center', className, description, t
 
 // No inset of its own: a flush panel, a section body and a legend row each hold
 // their content off their edge by a different measure.
-export function EmptyStateLine({ children, className }: { children: ReactNode; className?: string }) {
+export function EmptyStateLine({ children, className }: { children: ReactNode; className?: string | undefined }) {
   return <Text block size={300} className={mergeClasses('text-fui-fg2', className)}>{children}</Text>;
 }

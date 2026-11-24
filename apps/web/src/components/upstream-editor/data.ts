@@ -173,22 +173,22 @@ const listingFailure = (error: { message: string; raw?: unknown }): ModelCatalog
 export const previewDraftModelCatalog = async (
   record: UpstreamRecord,
   values: UpstreamEditorValues,
-  init?: RequestInit,
+  signal: AbortSignal,
 ): Promise<ModelCatalogFetch> => {
   if (!canFetchModelCatalog(record, values.config)) return { discovered: null, modelsError: null, modelsCache: null };
   const result = await callApi(() => api.api.upstreams['preview-models'].$post({
     json: { record: previewRecord(record, values) },
-  }, { init }));
+  }, { init: { signal } }));
   if (result.error) return listingFailure(result.error);
   return { discovered: result.data.data, modelsError: null, modelsCache: null };
 };
 
 export const fetchSavedModelCatalog = async (
   record: UpstreamRecord,
-  init?: RequestInit,
+  signal: AbortSignal,
 ): Promise<ModelCatalogFetch> => {
   if (!canFetchModelCatalog(record, record.config)) return { discovered: null, modelsError: null, modelsCache: null };
-  const result = await callApi(() => api.api.upstreams[':id']['list-models'].$post({ param: { id: record.id } }, { init }));
+  const result = await callApi(() => api.api.upstreams[':id']['list-models'].$post({ param: { id: record.id } }, { init: { signal } }));
   if (result.error) return listingFailure(result.error);
   return { discovered: result.data.data, modelsError: null, modelsCache: result.data.modelsCache };
 };

@@ -377,7 +377,7 @@ const useStyles = makeStyles({
   readoutDisabled: { color: 'var(--winui-text-fill-disabled)' },
 });
 
-function CardText({ description, header, icon, id }: { description?: string; header: ReactNode; icon?: ReactNode; id?: string }) {
+function CardText({ description, header, icon, id }: { description?: string | undefined; header: ReactNode; icon?: ReactNode | undefined; id?: string | undefined }) {
   const styles = useStyles();
   return <>
     {icon !== undefined && <span aria-hidden className={styles.icon} {...{ [ICON_MARKER]: '' }}>{icon}</span>}
@@ -390,7 +390,7 @@ function CardText({ description, header, icon, id }: { description?: string; hea
 
 export function SettingsSwitch({ checked, disabled, label, onChange }: {
   checked: boolean;
-  disabled?: boolean;
+  disabled?: boolean | undefined;
   label: string;
   onChange: (checked: boolean) => void;
 }) {
@@ -409,12 +409,12 @@ export function SettingsSwitch({ checked, disabled, label, onChange }: {
 // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.Properties.cs#L55-L62
 // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsCard/SettingsCard.xaml#L459-L474
 export function SettingsCard({ action, description, header, icon, onClick }: {
-  action?: ReactNode;
-  description?: string;
+  action?: ReactNode | undefined;
+  description?: string | undefined;
   header: ReactNode;
-  icon?: ReactNode;
+  icon?: ReactNode | undefined;
   /** Makes the row itself the control that runs this action. */
-  onClick?: () => void;
+  onClick?: (() => void) | undefined;
 }) {
   const styles = useStyles();
   if (onClick !== undefined && action !== undefined) {
@@ -445,27 +445,27 @@ export function SettingsCard({ action, description, header, icon, onClick }: {
 // not do on its own.
 // https://github.com/CommunityToolkit/Windows/blob/c076d3dd722e43204ffbeb16057090f8498c8166/components/SettingsControls/src/SettingsExpander/SettingsExpander.xaml
 export function SettingsExpander({ action, children, defaultOpen = false, description, disclosureDisabled = false, header, icon, revealOn, toggledOn }: {
-  action?: ReactNode;
+  action?: ReactNode | undefined;
   children: ReactNode;
-  defaultOpen?: boolean;
-  description?: string;
+  defaultOpen?: boolean | undefined;
+  description?: string | undefined;
   /** Disable the disclosure while leaving a trailing action operable. */
-  disclosureDisabled?: boolean;
+  disclosureDisabled?: boolean | undefined;
   header: ReactNode;
-  icon?: ReactNode;
+  icon?: ReactNode | undefined;
   /**
    * Whether the region currently holds something that has to be seen -- a
    * validation message that refused a submit. Rising, it opens the row.
    * Falling, it does nothing: closing the row mid-correction would take the
    * editing surface off the screen.
    */
-  revealOn?: boolean;
+  revealOn?: boolean | undefined;
   /**
    * The state of the switch in `action`, when there is one. It moves the
    * disclosure in both directions -- what the switch admits is what the region
    * configures -- while the row stays independently openable by hand.
    */
-  toggledOn?: boolean;
+  toggledOn?: boolean | undefined;
 }) {
   const styles = useStyles();
   const [open, setOpen] = useState(defaultOpen);

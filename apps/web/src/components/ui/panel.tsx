@@ -19,7 +19,7 @@ const PADDING_CLASS = {
   flush: '!p-0',
 } as const;
 
-export type PanelProps = CardProps & { padding?: keyof typeof PADDING_CLASS };
+export type PanelProps = CardProps & { padding?: keyof typeof PADDING_CLASS | undefined };
 
 // Griffel's sheet is injected after the utility sheet at the same specificity, so
 // a utility overriding a `Card` style — padding, display, gap — needs `!` to win.

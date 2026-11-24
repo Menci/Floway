@@ -18,13 +18,13 @@ const { InfoButton, Text, mergeClasses } = fluentComponents;
 const TITLE_SIZE = { 2: 500, 3: 400, 4: 300 } as const;
 
 export function SectionHeader({ actions, description, info, level, title, titleId, truncate = false }: {
-  actions?: ReactNode;
-  description?: ReactNode;
-  info?: InfoButtonProps['info'];
+  actions?: ReactNode | undefined;
+  description?: ReactNode | undefined;
+  info?: InfoButtonProps['info'] | undefined;
   level: 2 | 3 | 4;
   title: ReactNode;
-  titleId?: string;
-  truncate?: boolean;
+  titleId?: string | undefined;
+  truncate?: boolean | undefined;
 }) {
   // Fluent's `truncate` contributes the ellipsis alone; the clip and the single
   // line come from `wrap={false}`, so a title that trims needs both.

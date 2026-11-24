@@ -29,12 +29,12 @@ type ChipTriggerProps = Omit<
 // https://github.com/microsoft/fluentui/blob/4aa1084999a8c1ac7245724ad6c76210fe80acf6/packages/react-components/react-tags/library/src/components/Tag/useTagStyles.styles.ts#L127-L135
 export function Chip({ children, className, icon, style, textRef, ...trigger }: {
   children: ReactNode;
-  className?: string;
-  icon?: ReactElement;
-  style?: CSSProperties;
+  className?: string | undefined;
+  icon?: ReactElement | undefined;
+  style?: CSSProperties | undefined;
   // The text slot is the box that clips, so it is the one a caller has to
   // reach to measure what the chip shows.
-  textRef?: Ref<HTMLSpanElement>;
+  textRef?: Ref<HTMLSpanElement> | undefined;
 } & ChipTriggerProps) {
   const styles = useStyles();
 
