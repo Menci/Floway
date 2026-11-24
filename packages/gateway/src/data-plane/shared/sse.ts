@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import { type SSEStreamingApi, streamSSE } from 'hono/streaming';
 
 import { prepareSseResponse } from './upstream-response.ts';
-import { type SseWritableFrame, sseCommentFrame } from '@floway-dev/protocols/common';
+import { sseFrame, type SseWritableFrame } from '@floway-dev/protocols/common';
 import type { HttpHead } from '@floway-dev/provider';
 
 export const DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS = 15_000;
@@ -168,7 +168,7 @@ const drainSse = async <T>(
 export const serveSse = <T>(c: Context, options: SseStreamOptions<T>): Response => {
   const keepAlive = {
     intervalMs: options.keepAlive?.intervalMs ?? DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS,
-    wire: serializeSseFrame(options.keepAlive?.frame ?? sseCommentFrame('keepalive')),
+    wire: serializeSseFrame(options.keepAlive?.frame ?? sseFrame(JSON.stringify({ type: 'ping' }), 'ping')),
   };
   if (!Number.isFinite(keepAlive.intervalMs) || keepAlive.intervalMs <= 0) {
     throw new Error('SSE keepalive interval must be a positive number');

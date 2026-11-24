@@ -137,6 +137,27 @@ test('SSE egress emits comment keepalive frames while idle', async () => {
   }
 });
 
+test('SSE egress emits a data keepalive frame by default', async () => {
+  const time = new FakeTime();
+  const idle = createIdleSSEEvents();
+
+  try {
+    const response = await requestSSE(idle.events, {});
+    const reader = response.body!.getReader();
+
+    await waitForIteratorStart(idle);
+    const read = reader.read();
+    await time.tickAsync(15_000);
+
+    const chunk = await read;
+    assertEquals(decodeChunk(chunk.value), 'event: ping\ndata: {"type":"ping"}\n\n');
+
+    await reader.cancel();
+  } finally {
+    time.restore();
+  }
+});
+
 test('SSE egress settles cancellation once without rendering a racing iterator error', async () => {
   const idle = createIdleSSEEvents();
   const settle = vi.fn<(outcome: SseOutcome) => void>();
