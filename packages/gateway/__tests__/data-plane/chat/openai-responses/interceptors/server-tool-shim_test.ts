@@ -472,8 +472,10 @@ const makeStubDeps = (overrides: DepsOverrides = {}): {
 interface InvocationOverrides {
   targetApi?: 'openaiResponses' | 'anthropicMessages' | 'openaiChatCompletions';
   enabledFlags?: ReadonlySet<FlagId>;
-  // An undefined field removes the default payload's value for that key.
-  payload?: { [K in keyof OpenAIResponsesPayloadEx]?: OpenAIResponsesPayloadEx[K] | undefined };
+  // Drops the default top-level hosted tool so a test can declare tools only
+  // inside input carriers.
+  withoutTools?: true;
+  payload?: Partial<OpenAIResponsesPayloadEx>;
 }
 
 const makeInvocation = (overrides: InvocationOverrides = {}): OpenAIResponsesInvocation => ({
@@ -489,7 +491,7 @@ const makeInvocation = (overrides: InvocationOverrides = {}): OpenAIResponsesInv
     model: 'claude-x',
     stream: true,
     input: [{ type: 'message', role: 'user', content: 'hi' }],
-    tools: [{ type: 'web_search' }],
+    ...(overrides.withoutTools ? {} : { tools: [{ type: 'web_search' }] }),
     // Opt the wire item into `results` so most tests can inspect them
     // directly; the new include-gating tests explicitly omit this and
     // assert the wire-item shape without `results`.
@@ -605,8 +607,8 @@ test('shim rewrites hosted tools inside additional_tools at their input position
   const inv = makeInvocation({
     targetApi: 'openaiResponses',
     enabledFlags: new Set<FlagId>(['openai-responses-web-search-shim']),
+    withoutTools: true,
     payload: {
-      tools: undefined,
       tool_choice: { type: 'web_search' },
       input: [
         { type: 'message', role: 'user', content: 'before' },
@@ -973,8 +975,8 @@ test('invalid request registration preserves an upstream error type and null cod
 test('later hosted validation keeps original paths before another tool rewrites the carrier', async () => {
   makeStubDeps();
   const inv = makeInvocation({
+    withoutTools: true,
     payload: {
-      tools: undefined,
       input: [{
         type: 'additional_tools', role: 'developer',
         tools: [
