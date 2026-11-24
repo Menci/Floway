@@ -19,7 +19,7 @@ patchedDependencies:
     hash: 417a079919ce252b1c003999de6ff7a4279810d4a351e194b20141bc13b0bcba
     path: patches/@fluentui__react-charts@9.3.22.patch
   '@fluentui/react-utilities@9.26.5':
-    hash: 1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0
+    hash: 0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f
     path: patches/@fluentui__react-utilities@9.26.5.patch
   '@hono/node-server@2.0.4':
     hash: d2d7dd723760eafc47699c25680db2e507c1fcc890db0a16cdac5ee44a0b8b39
@@ -6453,7 +6453,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6471,7 +6471,7 @@ snapshots:
       '@fluentui/react-jsx-runtime': 9.4.4(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6487,7 +6487,7 @@ snapshots:
       '@fluentui/react-jsx-runtime': 9.4.4(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
       '@types/react-dom': 19.2.3(@types/react@19.2.17)
@@ -6505,7 +6505,7 @@ snapshots:
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
       '@fluentui/react-tooltip': 9.10.3(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6521,7 +6521,7 @@ snapshots:
       '@fluentui/react-jsx-runtime': 9.4.4(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6539,7 +6539,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6556,7 +6556,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6572,7 +6572,7 @@ snapshots:
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-text': 9.6.18(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6591,7 +6591,7 @@ snapshots:
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
       '@fluentui/react-tooltip': 9.10.3(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6616,7 +6616,7 @@ snapshots:
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
       '@fluentui/react-tooltip': 9.10.3(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/tokens': 1.0.0-alpha.23
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
@@ -6658,7 +6658,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6676,7 +6676,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6699,7 +6699,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6769,7 +6769,7 @@ snapshots:
       '@fluentui/react-toolbar': 9.8.3(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)
       '@fluentui/react-tooltip': 9.10.3(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-tree': 9.16.3(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-virtualizer': 9.0.0-alpha.114(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
@@ -6782,7 +6782,7 @@ snapshots:
 
   '@fluentui/react-context-selector@9.2.18(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)':
     dependencies:
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
       '@types/react-dom': 19.2.3(@types/react@19.2.17)
@@ -6803,7 +6803,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6818,7 +6818,7 @@ snapshots:
       '@fluentui/react-jsx-runtime': 9.4.4(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6836,7 +6836,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6854,7 +6854,7 @@ snapshots:
       '@fluentui/react-label': 9.4.3(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6875,7 +6875,7 @@ snapshots:
       '@fluentui/react-jsx-runtime': 9.4.4(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6891,7 +6891,7 @@ snapshots:
       '@fluentui/react-popover': 9.14.4(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6910,7 +6910,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6926,7 +6926,7 @@ snapshots:
       '@fluentui/react-jsx-runtime': 9.4.4(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6938,7 +6938,7 @@ snapshots:
 
   '@fluentui/react-jsx-runtime@9.4.4(@types/react@19.2.17)(react@19.2.8)':
     dependencies:
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
       react: 19.2.8
@@ -6948,7 +6948,7 @@ snapshots:
       '@fluentui/react-jsx-runtime': 9.4.4(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6963,7 +6963,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -6980,7 +6980,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7004,7 +7004,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7024,7 +7024,7 @@ snapshots:
       '@fluentui/react-motion-components-preview': 0.15.6(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7035,7 +7035,7 @@ snapshots:
   '@fluentui/react-motion-components-preview@0.15.6(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@fluentui/react-motion': 9.16.1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
       '@types/react-dom': 19.2.3(@types/react@19.2.17)
@@ -7045,7 +7045,7 @@ snapshots:
   '@fluentui/react-motion@9.16.1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
       '@types/react-dom': 19.2.3(@types/react@19.2.17)
@@ -7067,7 +7067,7 @@ snapshots:
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
       '@fluentui/react-tooltip': 9.10.3(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7082,7 +7082,7 @@ snapshots:
       '@fluentui/priority-overflow': 9.4.1
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7097,7 +7097,7 @@ snapshots:
       '@fluentui/react-jsx-runtime': 9.4.4(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7120,7 +7120,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7134,7 +7134,7 @@ snapshots:
     dependencies:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7148,7 +7148,7 @@ snapshots:
       '@floating-ui/dom': 1.7.6
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7164,7 +7164,7 @@ snapshots:
       '@fluentui/react-motion': 9.16.1(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7181,7 +7181,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/core': 1.21.3
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
@@ -7198,7 +7198,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7215,7 +7215,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7230,7 +7230,7 @@ snapshots:
       '@fluentui/react-jsx-runtime': 9.4.4(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7247,7 +7247,7 @@ snapshots:
       '@fluentui/react-jsx-runtime': 9.4.4(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7270,7 +7270,7 @@ snapshots:
       '@fluentui/react-jsx-runtime': 9.4.4(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7287,7 +7287,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7305,7 +7305,7 @@ snapshots:
       '@fluentui/react-jsx-runtime': 9.4.4(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7321,7 +7321,7 @@ snapshots:
       '@fluentui/react-label': 9.4.3(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7338,7 +7338,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7357,7 +7357,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7380,7 +7380,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7397,7 +7397,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7411,7 +7411,7 @@ snapshots:
     dependencies:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7436,7 +7436,7 @@ snapshots:
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-tags': 9.9.2(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7456,7 +7456,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7477,7 +7477,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7493,7 +7493,7 @@ snapshots:
       '@fluentui/react-jsx-runtime': 9.4.4(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7507,7 +7507,7 @@ snapshots:
       '@fluentui/react-jsx-runtime': 9.4.4(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7534,7 +7534,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7552,7 +7552,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7571,7 +7571,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7595,7 +7595,7 @@ snapshots:
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-tabster': 9.26.16(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fluentui/react-theme': 9.2.1
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17
@@ -7605,7 +7605,7 @@ snapshots:
     transitivePeerDependencies:
       - scheduler
 
-  '@fluentui/react-utilities@9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)':
+  '@fluentui/react-utilities@9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)':
     dependencies:
       '@fluentui/keyboard-keys': 9.0.8
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
@@ -7617,7 +7617,7 @@ snapshots:
     dependencies:
       '@fluentui/react-jsx-runtime': 9.4.4(@types/react@19.2.17)(react@19.2.8)
       '@fluentui/react-shared-contexts': 9.26.2(@types/react@19.2.17)(react@19.2.8)
-      '@fluentui/react-utilities': 9.26.5(patch_hash=1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0)(@types/react@19.2.17)(react@19.2.8)
+      '@fluentui/react-utilities': 9.26.5(patch_hash=0c610ff310608cd54436a47c36f85f1dade518595e05d2a07d46e3ef8a79793f)(@types/react@19.2.17)(react@19.2.8)
       '@griffel/react': 1.7.6(react@19.2.8)
       '@swc/helpers': 0.5.21
       '@types/react': 19.2.17

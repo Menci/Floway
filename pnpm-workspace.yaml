@@ -71,6 +71,11 @@ onlyBuiltDependencies:
 # element type. The upstream report was closed by the stale bot unfixed.
 # https://github.com/microsoft/fluentui/issues/25993
 # https://github.com/microsoft/fluentui/blob/d0f2372099cfd0b50ba067977e1356c618ada747/packages/react-components/react-utilities/src/compose/types.ts#L237-L241
+# The same patch lets an optional slot prop take `undefined`. `slot.optional`
+# already treats `undefined` as an omitted slot, but `Slot` admits only `null`,
+# and `null` hides a slot that would otherwise render by default.
+# https://github.com/microsoft/fluentui/blob/d0f2372099cfd0b50ba067977e1356c618ada747/packages/react-components/react-utilities/src/compose/slot.ts#L67-L75
+# https://github.com/microsoft/fluentui/blob/d0f2372099cfd0b50ba067977e1356c618ada747/packages/react-components/react-utilities/src/compose/types.ts#L138-L157
 # @hono/node-server stubs the `ws` server it accepts as `WebSocketServerLike`,
 # declaring `options.noServer?: boolean` and the send option
 # `compress?: boolean`, while @types/ws declares both with `| undefined`. Under

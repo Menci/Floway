@@ -1,5 +1,5 @@
 diff --git a/dist/index.d.ts b/dist/index.d.ts
-index 08ba5a2b903950feb976aa4597dfd93a67339807..363cadc5c828d5e2d272cb8835d6534596fbcbe5 100644
+index 08ba5a2b903950feb976aa4597dfd93a67339807..757e8fb9e0440b4921c7e200aeea4b8ad676d629 100644
 --- a/dist/index.d.ts
 +++ b/dist/index.d.ts
 @@ -413,7 +413,7 @@ export declare const IdPrefixProvider: React_2.Provider<string | undefined>;
@@ -11,3 +11,12 @@ index 08ba5a2b903950feb976aa4597dfd93a67339807..363cadc5c828d5e2d272cb8835d65345
  
  /**
   * Helper type for {@link Slot}. Modifies `JSXIntrinsicElements<Type>`:
+@@ -858,7 +858,7 @@ export declare type Slot<Type extends JSXIntrinsicElementKeys | ComponentType<an
+     as?: Type;
+ } & WithSlotRenderFunction<IntrinsicElementProps<Type>> : Type extends ComponentType<infer Props> ? Props extends UnknownSlotProps ? Props : WithSlotRenderFunction<Props> : Type> | (AlternateAs extends unknown ? {
+     as: AlternateAs;
+-} & WithSlotRenderFunction<IntrinsicElementProps<AlternateAs>> : never) | null : 'Error: First parameter to Slot must not be not a union of types. See documentation of Slot type.';
++} & WithSlotRenderFunction<IntrinsicElementProps<AlternateAs>> : never) | null | undefined : 'Error: First parameter to Slot must not be not a union of types. See documentation of Slot type.';
+ 
+ declare namespace slot {
+     export {
