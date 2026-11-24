@@ -29,7 +29,7 @@ export const resolveUpstreamMetricDisplay = ({ name, labels }: UpstreamMetricIde
     labelKey: limit === 'codex'
       ? options.quotaDisplay === 'used' ? 'monitoring.upstreams.series.usage' : 'monitoring.upstreams.series.remaining'
       : `monitoring.upstreams.series.named${options.quotaDisplay === 'used' ? 'Usage' : 'Remaining'}`,
-    labelValues: limit === 'codex' ? undefined : { name: limit },
+    ...(limit === 'codex' ? {} : { labelValues: { name: limit } }),
     axisPriority: upstreamMetricAxisPriority.subscriptionQuota,
     windowSeconds,
     emptyValue: null,

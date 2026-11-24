@@ -41,7 +41,7 @@ export interface CallClaudeCodeAnthropicMessagesOptions {
   // payload's system blocks / metadata / model id — replace headers with
   // the pinned CC set so the wire shape matches end-to-end.
   shaped: boolean;
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
   call: AnthropicMessagesUpstreamCallOptions;
 }
 

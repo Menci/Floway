@@ -47,6 +47,10 @@ const mergeVariantGroup = (publicId: string, variants: CopilotRawModel[]): Copil
   const displayName = base.display_name ?? base.name ?? publicId;
   const limits = base.capabilities?.limits ?? {};
   const supports = base.capabilities?.supports ?? {};
+  const maxContextWindowTokens = maxOf(...variants.map(v => v.capabilities?.limits?.max_context_window_tokens));
+  const maxPromptTokens = maxOf(...variants.map(v => v.capabilities?.limits?.max_prompt_tokens));
+  const maxOutputTokens = maxOf(...variants.map(v => v.capabilities?.limits?.max_output_tokens));
+  const reasoningEffort = unionStrings(...variants.map(v => v.capabilities?.supports?.reasoning_effort));
 
   return {
     ...base,
@@ -58,13 +62,13 @@ const mergeVariantGroup = (publicId: string, variants: CopilotRawModel[]): Copil
       ...base.capabilities,
       limits: {
         ...limits,
-        max_context_window_tokens: maxOf(...variants.map(v => v.capabilities?.limits?.max_context_window_tokens)),
-        max_prompt_tokens: maxOf(...variants.map(v => v.capabilities?.limits?.max_prompt_tokens)),
-        max_output_tokens: maxOf(...variants.map(v => v.capabilities?.limits?.max_output_tokens)),
+        ...(maxContextWindowTokens === undefined ? {} : { max_context_window_tokens: maxContextWindowTokens }),
+        ...(maxPromptTokens === undefined ? {} : { max_prompt_tokens: maxPromptTokens }),
+        ...(maxOutputTokens === undefined ? {} : { max_output_tokens: maxOutputTokens }),
       },
       supports: {
         ...supports,
-        reasoning_effort: unionStrings(...variants.map(v => v.capabilities?.supports?.reasoning_effort)),
+        ...(reasoningEffort === undefined ? {} : { reasoning_effort: reasoningEffort }),
       },
     },
   };

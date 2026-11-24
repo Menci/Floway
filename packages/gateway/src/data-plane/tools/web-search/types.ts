@@ -34,7 +34,7 @@ export interface WebSearchProviderRequest {
   // pass this through to the underlying HTTP fetch so a cancelled
   // request stops generating upstream load instead of running to
   // completion.
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 export type WebSearchProviderResult =
@@ -65,7 +65,7 @@ export interface WebSearchFetchPageRequest {
   // See WebSearchProviderRequest.signal — same semantics: providers
   // must thread this into their underlying fetch / sleep so a
   // disconnected client cancels in-flight upstream work.
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 export type WebSearchFetchPageResult =

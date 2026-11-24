@@ -52,7 +52,7 @@ interface ChatGPTBackendCallBase {
   account: ChatGPTAccountCredential;
   model: ProviderModel;
   headers: Headers;
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
   effects: ChatGPTCallEffects;
   call: UpstreamCallOptions;
 }

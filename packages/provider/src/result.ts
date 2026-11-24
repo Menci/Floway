@@ -72,9 +72,9 @@ export interface PlainResult extends BufferedHttpResult {
 export type ExecuteResult<T> = EventResult<T> | ApiErrorResult | InternalErrorResult;
 
 export interface EventResultOptions {
-  performance?: PerformanceTelemetryContext;
+  performance?: PerformanceTelemetryContext | undefined;
   finalMetadata?: Promise<EventResultMetadata>;
-  http?: HttpHead;
+  http?: HttpHead | undefined;
 }
 
 export const eventResult = <T>(

@@ -7,7 +7,7 @@ export const CONTEXT_1M_BETA = 'context-1m-2025-08-07';
 
 export interface ModelSelectionHints {
   context1m?: boolean;
-  reasoningEffort?: string;
+  reasoningEffort?: string | undefined;
   fast?: boolean;
 }
 

@@ -51,7 +51,7 @@ export interface ChatGPTRawModel {
 // dial chain configured for request-time traffic. A null account id omits the
 // header entirely — the upstream reads an absent header as "whichever account
 // this bearer belongs to", where an empty one is a malformed value.
-export const fetchChatGPTCatalog = async (opts: { accessToken: string; accountId: string | null; signal?: AbortSignal; fetcher: Fetcher }): Promise<ChatGPTRawModel[]> => {
+export const fetchChatGPTCatalog = async (opts: { accessToken: string; accountId: string | null; signal?: AbortSignal | undefined; fetcher: Fetcher }): Promise<ChatGPTRawModel[]> => {
   const response = await opts.fetcher(`${CHATGPT_BACKEND_BASE}${CHATGPT_MODELS_PATH}?client_version=${CHATGPT_CLI_VERSION}`, {
     method: 'GET',
     headers: {

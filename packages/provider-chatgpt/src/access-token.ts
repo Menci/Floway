@@ -85,7 +85,7 @@ interface PersistChatGPTAccessTokenOptions {
   accountId: string | null;
   entry: ChatGPTAccessTokenEntry | null;
   where: string;
-  fallbackPlan?: ChatGPTPlanObservation;
+  fallbackPlan?: ChatGPTPlanObservation | undefined;
 }
 
 // The whole change is expressed against the state the repo hands us, so a

@@ -343,7 +343,7 @@ export interface WebSearchExecutionSession {
   // Aborted when the downstream client disconnects. Threaded into every
   // backend provider call so a cancelled request stops generating upstream
   // load instead of running to completion.
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 // ── IR construction ──
