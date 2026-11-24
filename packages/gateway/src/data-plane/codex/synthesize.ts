@@ -77,7 +77,7 @@ export const synthesizeCatalogEntry = (
   base?: CatalogModel,
   capabilities: CodexCatalogCapabilities = {},
   catalogServiceTiers: readonly CodexServiceTier[] = [],
-  { metadata: codexMetadata, serviceTiers }: { metadata?: ChatGPTCodexModelMetadata; serviceTiers?: CodexServiceTier[] } = {},
+  { metadata: codexMetadata, serviceTiers }: { metadata?: ChatGPTCodexModelMetadata | undefined; serviceTiers?: CodexServiceTier[] | undefined } = {},
 ): CatalogModel => {
   const source: CatalogModel = { ...(base ?? BASELINE), ...codexMetadata };
 
@@ -134,7 +134,7 @@ export const synthesizeCatalogEntry = (
     service_tiers: serviceTiers ?? deriveServiceTiers(model, source.service_tiers ?? [], catalogServiceTiers),
     ...(serviceTiers === undefined ? {} : { additional_speed_tiers: serviceTiers.some(tier => tier.id === 'priority') ? ['fast'] : [] }),
     context_window: contextWindow,
-    max_context_window: maxContextWindow,
+    ...(maxContextWindow === undefined ? {} : { max_context_window: maxContextWindow }),
   };
 
   // Codex uses the advertised version to select the local agent tools for a new thread.

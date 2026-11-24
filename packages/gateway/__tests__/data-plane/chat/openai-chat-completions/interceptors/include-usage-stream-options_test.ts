@@ -25,7 +25,7 @@ test('preserves sibling stream_options keys while forcing include_usage on', asy
   const input = invocation({
     model: 'm',
     messages: [],
-    stream_options: { extra: 'keep-me', include_usage: false } as unknown as OpenAIChatCompletionsPayloadEx['stream_options'],
+    stream_options: { extra: 'keep-me', include_usage: false } as unknown as NonNullable<OpenAIChatCompletionsPayloadEx['stream_options']>,
   });
 
   await withUsageStreamOptionsIncluded(input, stubCtx, okEvents);

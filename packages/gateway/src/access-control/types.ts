@@ -22,7 +22,7 @@ export type AccessTarget = Extract<ResolveScope, { kind: 'upstream' | 'upstreamM
 
 export interface AccessEvaluation {
   targetGroups: ReadonlySet<number>;
-  subjectUserId?: number;
+  subjectUserId?: number | undefined;
 }
 
 export type AccessPermission = 'Model.Use' | 'Upstream.Audit' | 'Upstream.Edit' | 'User.Audit' | 'Permission.Audit';

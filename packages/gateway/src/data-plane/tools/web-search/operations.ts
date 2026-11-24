@@ -832,7 +832,7 @@ const runBatchFetch = async (
         content: page.content,
         truncated: page.truncated,
         fullContentBytes: page.fullContentBytes,
-        title: page.title,
+        ...(page.title === undefined ? {} : { title: page.title }),
       };
       session.pageCache.set(url, entry);
       perUrl.set(url, { ok: true, cached: entry });

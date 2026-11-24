@@ -15,21 +15,21 @@ export type WebSearchProviderErrorCode = Exclude<AnthropicMessagesWebSearchError
 
 export interface WebSearchProviderRequest {
   query: string;
-  allowedDomains?: string[];
-  blockedDomains?: string[];
+  allowedDomains?: string[] | undefined;
+  blockedDomains?: string[] | undefined;
   userLocation?: {
-    city?: string;
-    region?: string;
-    country?: string;
-    timezone?: string;
-  };
+    city?: string | undefined;
+    region?: string | undefined;
+    country?: string | undefined;
+    timezone?: string | undefined;
+  } | undefined;
   // When undefined, the provider applies its own default count. The OpenAI Responses
   // shim populates this from the client tool's `search_context_size` field.
-  maxResults?: number;
+  maxResults?: number | undefined;
   // OpenAI Codex `SearchQuery.recency`: only results published or updated
   // within this many days are relevant. Providers without a native date
   // filter treat this as a ranking hint.
-  recencyDays?: number;
+  recencyDays?: number | undefined;
   // Aborted when the downstream client disconnects. Providers MUST
   // pass this through to the underlying HTTP fetch so a cancelled
   // request stops generating upstream load instead of running to

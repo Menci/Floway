@@ -126,7 +126,7 @@ export interface DialResult {
 
 export interface DialOptions {
   /** Runtime response codecs used by the HTTP request runners after dialing. */
-  contentDecoders?: HttpContentDecoders;
+  contentDecoders?: HttpContentDecoders | undefined;
   /** Caller-supplied cancellation, threaded through every dial leg. */
   signal?: AbortSignal | undefined;
   /** Per-call dial-stage deadline override (ms). Falls back to

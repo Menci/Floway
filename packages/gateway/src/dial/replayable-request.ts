@@ -100,7 +100,7 @@ const buildPreparedRequest = async (url: string, init: FetchInit): Promise<Prepa
     method: init.method ?? 'GET',
     path: `${u.pathname}${u.search}`,
     headers,
-    body: preparedBody?.body,
+    ...(preparedBody === undefined ? {} : { body: preparedBody.body }),
   };
   return { target, request };
 };
@@ -150,8 +150,8 @@ const prepareBody = async (
   if (body instanceof FormData || body instanceof URLSearchParams) {
     const req = new Request('https://internal/', { method: 'POST', body });
     const buffer = new Uint8Array(await req.arrayBuffer());
-    const contentType = req.headers.get('content-type') ?? undefined;
-    return { body: buffer, contentType };
+    const contentType = req.headers.get('content-type');
+    return { body: buffer, ...(contentType === null ? {} : { contentType }) };
   }
   throw new Error('unsupported BodyInit shape for dial request');
 };

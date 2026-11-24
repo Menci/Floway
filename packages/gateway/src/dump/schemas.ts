@@ -83,7 +83,7 @@ export const dumpCaptureSchema = z.object({
     response: rawCaptureSchema.extend({ status: z.number(), headers: dumpHeadersSchema }).nullable(),
     error: z.string().nullable(),
   }).strict()),
-  response: rawCaptureSchema.optional(),
+  response: rawCaptureSchema.exactOptional(),
 }).strict();
 
 export const dumpCaptureEnvelopeSchema = z.object({
@@ -97,7 +97,7 @@ export const dumpCaptureEnvelopeSchema = z.object({
       z.object({ type: z.literal('bytes'), body: rawBodySchema }).strict(),
       z.object({ type: z.literal('none') }).strict(),
     ]),
-  }).optional(),
+  }).exactOptional(),
 }).strict();
 
 export const dumpBrokerFrameSchema = z.object({

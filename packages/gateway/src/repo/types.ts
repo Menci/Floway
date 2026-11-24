@@ -375,7 +375,7 @@ export interface UsageRepo {
 
 export interface WebSearchUsageRepo {
   record(args: { provider: WebSearchProviderName; keyId: string; action: WebSearchUsageAction; hour: string; requests: number }): Promise<void>;
-  query(opts: { provider?: WebSearchProviderName; keyId?: string; action?: WebSearchUsageAction; start: string; end: string }): Promise<WebSearchUsageRecord[]>;
+  query(opts: { provider?: WebSearchProviderName | undefined; keyId?: string | undefined; action?: WebSearchUsageAction; start: string; end: string }): Promise<WebSearchUsageRecord[]>;
   listAll(): Promise<WebSearchUsageRecord[]>;
   set(record: WebSearchUsageRecord): Promise<void>;
   deleteAll(): Promise<void>;

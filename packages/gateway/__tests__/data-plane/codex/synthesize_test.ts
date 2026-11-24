@@ -79,7 +79,7 @@ describe('synthesizeCatalogEntry', () => {
 
   test('audio requires native Responses and audio input on every chat fallback', () => {
     const primary = stubProviderModel({ endpoints: { openaiResponses: {} }, chat: { modalities: { input: ['text', 'audio'], output: ['text'] } } });
-    const listed = (fallback: ProviderModel) => synthesizeCatalogEntry({ ...base, endpoints: primary.endpoints, chat: primary.chat, providerModels: { primary, fallback } }, undefined, { audioInput: true }).input_modalities;
+    const listed = (fallback: ProviderModel) => synthesizeCatalogEntry({ ...base, endpoints: primary.endpoints, chat: primary.chat!, providerModels: { primary, fallback } }, undefined, { audioInput: true }).input_modalities;
     expect(listed(primary)).toEqual(['text', 'audio']);
     expect(listed({ ...primary, endpoints: { anthropicMessages: {} } })).toEqual(['text']);
     expect(listed({ ...primary, chat: { modalities: { input: ['text'], output: ['text'] } } })).toEqual(['text']);
@@ -96,7 +96,7 @@ describe('synthesizeCatalogEntry', () => {
     const rejecting = providerModel(undefined);
 
     for (const providerModels of [{ accepting, rejecting }, { rejecting, accepting }]) {
-      const entry = synthesizeCatalogEntry({ ...base, chat: accepting.chat, providerModels }, bundledBase);
+      const entry = synthesizeCatalogEntry({ ...base, chat: accepting.chat!, providerModels }, bundledBase);
       expect(entry.supports_image_detail_original).toBe(false);
     }
   });

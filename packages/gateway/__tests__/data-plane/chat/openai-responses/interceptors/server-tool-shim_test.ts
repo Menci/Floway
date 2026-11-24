@@ -472,7 +472,8 @@ const makeStubDeps = (overrides: DepsOverrides = {}): {
 interface InvocationOverrides {
   targetApi?: 'openaiResponses' | 'anthropicMessages' | 'openaiChatCompletions';
   enabledFlags?: ReadonlySet<FlagId>;
-  payload?: Partial<OpenAIResponsesPayloadEx>;
+  // An undefined field removes the default payload's value for that key.
+  payload?: { [K in keyof OpenAIResponsesPayloadEx]?: OpenAIResponsesPayloadEx[K] | undefined };
 }
 
 const makeInvocation = (overrides: InvocationOverrides = {}): OpenAIResponsesInvocation => ({
@@ -2115,11 +2116,12 @@ test('consumeTurn uses the completed call namespace before executing a hosted to
     id: 'fc_client', call_id: 'call_client', namespace: 'client', name: SHIM_TOOL_NAME,
     arguments: '{"client":true}', status: 'completed',
   };
+  const { namespace: _namespace, ...completedWithoutNamespace } = completed;
   const result = await consumeTurn(framesOf(
     mkResponseCreated(),
     eventFrame<OpenAIResponsesStreamEventEx>({
       type: 'response.output_item.added', output_index: 0,
-      item: { ...completed, namespace: undefined, arguments: '', status: 'in_progress' },
+      item: { ...completedWithoutNamespace, arguments: '', status: 'in_progress' },
     }),
     mkFunctionCallArgsDelta(0, completed.arguments, completed.id),
     mkFunctionCallArgsDone(0, completed.arguments, completed.id),
@@ -2594,7 +2596,7 @@ test('helper echoes distinguish namespaced functions and rewrite hosted allowed_
     assertEquals(inv.payload.tool_choice, { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: SHIM_TOOL_NAME }] });
     return await scriptedRun([[
       mkResponseCreated(),
-      eventFrame({ type: 'response.completed', response: { ...emptyResult('upstream', 'completed'), tools: [qualified, { type: 'function', name: SHIM_TOOL_NAME }], tool_choice: inv.payload.tool_choice } }),
+      eventFrame({ type: 'response.completed', response: { ...emptyResult('upstream', 'completed'), tools: [qualified, { type: 'function', name: SHIM_TOOL_NAME }], tool_choice: inv.payload.tool_choice! } }),
     ]]).run();
   });
   const tools = findResponseCompleted(frames).response.tools;

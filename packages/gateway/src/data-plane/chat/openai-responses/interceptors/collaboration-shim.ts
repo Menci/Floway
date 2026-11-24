@@ -114,12 +114,12 @@ const rewriteIdentity = <T extends { namespace?: unknown; name?: unknown }>(
 };
 
 const rewriteToolChoice = (
-  toolChoice: OpenAIResponsesToolChoice | null | undefined,
+  toolChoice: OpenAIResponsesToolChoice | null,
   fromNamespace: string,
   toNamespace: string,
   names: ReadonlySet<string>,
   flatNames: ReadonlySet<string>,
-): OpenAIResponsesToolChoice | null | undefined => {
+): OpenAIResponsesToolChoice | null => {
   if (!isRecord(toolChoice)) return toolChoice;
   const rewrite = (value: Record<string, unknown>): Record<string, unknown> => {
     if (value.type === 'namespace' && value.name === fromNamespace) return { ...value, name: toNamespace };
@@ -340,10 +340,11 @@ export const withOpenAIResponsesCollaborationShim: OpenAIResponsesInterceptor = 
     if ((item.type === 'function_call' || item.type === 'custom_tool_call') && item.namespace === CLIENT_NAMESPACE) names.add(item.name);
   }
   const targetNamespace = upstreamNamespace(namespaceNames(ctx.payload));
+  const { tools, tool_choice: toolChoice } = ctx.payload;
   ctx.payload = {
     ...ctx.payload,
-    tools: ctx.payload.tools == null ? ctx.payload.tools : rewriteTools(ctx.payload.tools, CLIENT_NAMESPACE, targetNamespace),
-    tool_choice: rewriteToolChoice(ctx.payload.tool_choice, CLIENT_NAMESPACE, targetNamespace, names, flatNames),
+    ...(tools == null ? {} : { tools: rewriteTools(tools, CLIENT_NAMESPACE, targetNamespace) }),
+    ...(toolChoice === undefined ? {} : { tool_choice: rewriteToolChoice(toolChoice, CLIENT_NAMESPACE, targetNamespace, names, flatNames) }),
     input: ctx.payload.input.map(item => requestItem(item, targetNamespace, names, flatNames)),
   };
 

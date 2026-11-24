@@ -63,8 +63,9 @@ const resolveBuckets = (
   for (const permission of permissionsForScope(scope)) {
     const selection = winningSelection(buckets, scope, permission, targetGroups);
     const representative = selection?.representative ?? null;
-    if (permission === 'Upstream.Edit') values[permission] = representative === null ? 'off' : representative.record.values[permission];
-    else values[permission] = representative === null ? false : representative.record.values[permission];
+    // eligibleRows admits only rows that state this permission.
+    if (permission === 'Upstream.Edit') values[permission] = representative === null ? 'off' : representative.record.values[permission]!;
+    else values[permission] = representative === null ? false : representative.record.values[permission]!;
     if (selection === null) continue;
     const active = new Set(selection.winners.map(row => row.record.id));
     for (const { record } of applicable) {
@@ -192,7 +193,7 @@ export const resolveEffectiveAssignments = ({ records, scope, targetGroups, isAd
   scope: ResolveScope;
   targetGroups: ReadonlySet<number>;
   isAdmin: boolean;
-  subjectUserId?: number;
+  subjectUserId?: number | undefined;
 }): AccessResolution => {
   const resolution = resolveAssignments(records, scope, { targetGroups, subjectUserId });
   if (isAdmin) return { ...resolution, values: administratorAccessValues(scope), decisions: [] };

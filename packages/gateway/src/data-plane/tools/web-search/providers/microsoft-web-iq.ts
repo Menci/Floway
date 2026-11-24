@@ -57,7 +57,7 @@ const normalizeResult = (value: unknown): Extract<WebSearchProviderResult, { typ
   return {
     source: value.url,
     title: value.title,
-    pageAge,
+    ...(pageAge === undefined ? {} : { pageAge }),
     content: toWebSearchTextBlocks(value.content),
   };
 };

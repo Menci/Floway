@@ -16,7 +16,7 @@ const bundled = {
 
 const chat = (id: string, displayName?: string, ctx = 100000): Extract<InternalModel, { providerModels: unknown }> => ({
   id,
-  display_name: displayName,
+  ...(displayName === undefined ? {} : { display_name: displayName }),
   kind: 'chat',
   limits: { max_context_window_tokens: ctx },
   endpoints: { openaiChatCompletions: {} },

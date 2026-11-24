@@ -64,7 +64,9 @@ export const applyRulesToUpstreamAnthropicMessages = (body: AnthropicMessagesPay
       // Adaptive auto-determines the budget; strip any client-set
       // `budget_tokens` so the alias rule's mode isn't accompanied by a
       // sibling budget the operator didn't ask for.
-      const priorThinking = body.thinking?.type === 'enabled' ? { display: body.thinking.display } : body.thinking;
+      const priorThinking = body.thinking?.type === 'enabled'
+        ? body.thinking.display === undefined ? {} : { display: body.thinking.display }
+        : body.thinking;
       body.thinking = { ...priorThinking, type: 'adaptive', ...displayPart };
     } else if (budget_tokens !== undefined) {
       body.thinking = { ...body.thinking, type: 'enabled', budget_tokens, ...displayPart };

@@ -182,7 +182,8 @@ export class FileDumpStore implements DumpStore {
 
     let upstreamDescriptor: DumpBodyDescriptor | null = null;
     if (record.capture !== undefined) {
-      const envelope = dumpCaptureEnvelopeSchema.parse({ version: 1, capture: record.capture, upstream: upstreamResponseToWire(record.response.upstream) });
+      const upstream = record.response.upstream;
+      const envelope = dumpCaptureEnvelopeSchema.parse({ version: 1, capture: record.capture, ...(upstream === undefined ? {} : { upstream: upstreamResponseToWire(upstream) }) });
       upstreamDescriptor = await putRawBody(this.files, upstreamFileKey!, new TextEncoder().encode(JSON.stringify(envelope)), 'capture');
     } else if (upstreamBody !== undefined) {
       if (upstreamBody.type === 'bytes') {

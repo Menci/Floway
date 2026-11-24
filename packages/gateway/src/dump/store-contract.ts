@@ -6,7 +6,7 @@ import type { DumpMetadata, DumpRecordId, DumpWriteRecord, PreparedDumpRequestBo
 
 export interface DumpListOptions {
   before?: DumpRecordId;
-  q?: string;
+  q?: string | undefined;
   failures?: boolean;
   limit: number;
 }

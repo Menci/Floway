@@ -1308,7 +1308,7 @@ test('OpenAI Responses WebSocket outer catch records a failed perf sample attrib
       operation: 'chat',
       runtimeLocation: 'TEST',
     };
-    const failure = new Error('simulated mid-attempt provider throw'); failure.stack = undefined; throw failure;
+    const failure = new Error('simulated mid-attempt provider throw'); delete failure.stack; throw failure;
   });
 
   try {

@@ -51,10 +51,10 @@ const parseEnvelope = (payload: unknown): JinaEnvelope | null => {
   if (typeof payload.code !== 'number') return null;
   return {
     code: payload.code,
-    status: typeof payload.status === 'number' ? payload.status : undefined,
+    ...(typeof payload.status === 'number' ? { status: payload.status } : {}),
     data: payload.data,
-    name: typeof payload.name === 'string' ? payload.name : undefined,
-    message: typeof payload.message === 'string' ? payload.message : undefined,
+    ...(typeof payload.name === 'string' ? { name: payload.name } : {}),
+    ...(typeof payload.message === 'string' ? { message: payload.message } : {}),
   };
 };
 
@@ -86,7 +86,7 @@ const normalizeSearchResult = (value: unknown): Extract<WebSearchProviderResult,
   return {
     source: entry.url,
     title: entry.title,
-    pageAge: typeof entry.publishedTime === 'string' && entry.publishedTime.trim().length > 0 ? entry.publishedTime : undefined,
+    ...(typeof entry.publishedTime === 'string' && entry.publishedTime.trim().length > 0 ? { pageAge: entry.publishedTime } : {}),
     content: toWebSearchTextBlocks(text),
   };
 };

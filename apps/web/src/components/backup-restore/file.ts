@@ -22,7 +22,7 @@ const backupFileSchema = z.object({
     usage: z.array(z.unknown()),
     searchUsage: z.array(z.unknown()),
     upstreamMetrics: z.array(z.unknown()),
-    performance: z.array(z.unknown()).optional(),
+    performance: z.array(z.unknown()).exactOptional(),
     performanceIncluded: z.boolean(),
     searchConfig: z.unknown(),
     siteSettings: z.object({ siteName: z.string().nullable() }).strict(),

@@ -18,7 +18,7 @@ export interface TelemetryOverviewWindow {
   start: string;
   end: string;
   bucket: TelemetryBucketGranularity;
-  timeZone?: string;
+  timeZone?: string | undefined;
   timezoneOffsetMinutes: number;
 }
 

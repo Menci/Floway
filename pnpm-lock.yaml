@@ -21,6 +21,9 @@ patchedDependencies:
   '@fluentui/react-utilities@9.26.5':
     hash: 1dcca389fe62733d5649aa7bf834021e72e17713d0cdce262186770d39e5b0b0
     path: patches/@fluentui__react-utilities@9.26.5.patch
+  '@hono/node-server@2.0.4':
+    hash: d2d7dd723760eafc47699c25680db2e507c1fcc890db0a16cdac5ee44a0b8b39
+    path: patches/@hono__node-server@2.0.4.patch
   '@reclaimprotocol/tls@0.1.5':
     hash: fd75b05b0a643883395d9f7204121ee76c22bb1532313f14e27b1e06fe4af70e
     path: patches/@reclaimprotocol__tls@0.1.5.patch
@@ -128,7 +131,7 @@ importers:
         version: link:../../packages/platform
       '@hono/node-server':
         specifier: ^2.0.4
-        version: 2.0.4(hono@4.12.22)
+        version: 2.0.4(patch_hash=d2d7dd723760eafc47699c25680db2e507c1fcc890db0a16cdac5ee44a0b8b39)(hono@4.12.22)
       hono:
         specifier: ^4
         version: 4.12.22
@@ -7649,7 +7652,7 @@ snapshots:
     dependencies:
       csstype: 3.2.3
 
-  '@hono/node-server@2.0.4(hono@4.12.22)':
+  '@hono/node-server@2.0.4(patch_hash=d2d7dd723760eafc47699c25680db2e507c1fcc890db0a16cdac5ee44a0b8b39)(hono@4.12.22)':
     dependencies:
       hono: 4.12.22
 

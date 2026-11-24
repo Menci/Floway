@@ -7,7 +7,7 @@ type NamedTelemetryBucket = typeof telemetryBucketGranularities[number];
 export type TelemetryBucketGranularity = NamedTelemetryBucket | `${number}d`;
 
 interface TelemetryBucketZone {
-  timeZone?: string;
+  timeZone?: string | undefined;
   timezoneOffsetMinutes: number;
 }
 export type TelemetryBucketOptions = TelemetryBucketZone & (

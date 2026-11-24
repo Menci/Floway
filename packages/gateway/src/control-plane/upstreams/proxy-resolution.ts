@@ -9,8 +9,8 @@ import type { Fetcher, ProxyFallbackEntry } from '@floway-dev/provider';
 // override is an unsaved policy even when the form edits a saved upstream, so
 // its dials leave that upstream's proxy backoff state alone.
 export const resolveControlPlaneFetcher = async (opts: {
-  override?: readonly ProxyFallbackEntry[];
-  upstreamId?: string;
+  override?: readonly ProxyFallbackEntry[] | undefined;
+  upstreamId?: string | undefined;
   runtimeLocation: string;
 }): Promise<Fetcher> => {
   if (opts.override !== undefined) return await createDetachedFetcher(opts.override, opts.runtimeLocation);

@@ -33,7 +33,7 @@ const usageChunk = (usage: Record<string, unknown>): OpenAIChatCompletionsStream
   created: 0,
   model: 'kimi-k3',
   choices: [],
-  usage: usage as unknown as OpenAIChatCompletionsStreamEvent['usage'],
+  usage: usage as unknown as NonNullable<OpenAIChatCompletionsStreamEvent['usage']>,
 });
 
 const run = async (ctx: OpenAIChatCompletionsInvocation, usage: Record<string, unknown>): Promise<Record<string, unknown>> => {

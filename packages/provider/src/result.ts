@@ -22,17 +22,17 @@ export interface EventResult<T> {
   type: 'events';
   events: AsyncIterable<T>;
   modelIdentity: TelemetryModelIdentity;
-  performance?: PerformanceTelemetryContext;
+  performance?: PerformanceTelemetryContext | undefined;
   finalMetadata?: Promise<EventResultMetadata>;
   http?: HttpHead;
 }
 
 export interface EventResultMetadata {
   modelIdentity: TelemetryModelIdentity;
-  performance?: PerformanceTelemetryContext;
+  performance?: PerformanceTelemetryContext | undefined;
   // What the upstream turn cost, read from the upstream's own usage. Absent
   // until the stream that reports it has been consumed.
-  billableUsage?: BillableUsage;
+  billableUsage?: BillableUsage | undefined;
 }
 
 // HTTP-shaped error envelope the respond layer forwards to the client
@@ -47,7 +47,7 @@ export interface EventResultMetadata {
 export interface ApiErrorResult extends BufferedHttpResult {
   type: 'api-error';
   source: 'upstream' | 'gateway';
-  performance?: PerformanceTelemetryContext;
+  performance?: PerformanceTelemetryContext | undefined;
   upstreamId?: string;
 }
 
@@ -59,7 +59,7 @@ export interface InternalErrorResult {
   type: 'internal-error';
   http: HttpHead;
   error: InternalDebugError;
-  performance?: PerformanceTelemetryContext;
+  performance?: PerformanceTelemetryContext | undefined;
 }
 
 // A buffered HTTP body for a measurement endpoint. The responder emits the
