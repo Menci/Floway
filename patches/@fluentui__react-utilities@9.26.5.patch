@@ -1,7 +1,16 @@
 diff --git a/dist/index.d.ts b/dist/index.d.ts
-index 08ba5a2b903950feb976aa4597dfd93a67339807..757e8fb9e0440b4921c7e200aeea4b8ad676d629 100644
+index 08ba5a2b903950feb976aa4597dfd93a67339807..047d14437d898acaf3449b8a86cfa4a82d6a42be 100644
 --- a/dist/index.d.ts
 +++ b/dist/index.d.ts
+@@ -94,7 +94,7 @@ export declare type ComponentState<Slots extends SlotPropsRecord> = {
+         [Key in keyof Slots]-?: React_2.ElementType;
+     };
+ } & {
+-    [Key in keyof Slots]: ReplaceNullWithUndefined<WithoutSlotRenderFunction<Exclude<Slots[Key], SlotShorthandValue | (Key extends 'root' ? null : never)>>>;
++    [Key in keyof Slots]: ReplaceNullWithUndefined<WithoutSlotRenderFunction<Exclude<Slots[Key], SlotShorthandValue | (Key extends 'root' ? null | undefined : never)>>>;
+ };
+ 
+ /**
 @@ -413,7 +413,7 @@ export declare const IdPrefixProvider: React_2.Provider<string | undefined>;
  /**
   * Infers the element type from props that are declared using ComponentProps.
