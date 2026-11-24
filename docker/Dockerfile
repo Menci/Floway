@@ -1,6 +1,5 @@
 # syntax=docker/dockerfile:1
 
-# https://nodejs.org/en/blog/vulnerability/november-2026-security-releases
 ARG NODE_VERSION=22.23.5
 
 # `node:22-*-slim` omits armv7, so we base off Debian directly and drop in
