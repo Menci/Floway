@@ -67,6 +67,12 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.max_context_window).toBe(936000);
   });
 
+  test('private Codex metadata can leave the maximum context window unstated', () => {
+    const entry = synthesizeCatalogEntry(base, bundledBase, {}, [], { metadata: { context_window: 200_000 } });
+    expect(entry.context_window).toBe(200_000);
+    expect(entry.max_context_window).toBeUndefined();
+  });
+
   test('a matching client snapshot alone cannot grant audio input', () => {
     const entry = synthesizeCatalogEntry(base, { ...bundledBase, input_modalities: ['text', 'audio'] }, { audioInput: true });
     expect(entry.input_modalities).toEqual(['text']);
