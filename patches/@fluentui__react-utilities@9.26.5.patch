@@ -1,0 +1,13 @@
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 08ba5a2b903950feb976aa4597dfd93a67339807..363cadc5c828d5e2d272cb8835d6534596fbcbe5 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -413,7 +413,7 @@ export declare const IdPrefixProvider: React_2.Provider<string | undefined>;
+ /**
+  * Infers the element type from props that are declared using ComponentProps.
+  */
+-export declare type InferredElementRefType<Props> = ObscureEventName extends keyof Props ? Required<Props>[ObscureEventName] extends React_2.PointerEventHandler<infer Element> ? Element : never : never;
++export declare type InferredElementRefType<Props> = ObscureEventName extends keyof Props ? NonNullable<Props[ObscureEventName]> extends React_2.PointerEventHandler<infer Element> ? Element : never : never;
+ 
+ /**
+  * Helper type for {@link Slot}. Modifies `JSXIntrinsicElements<Type>`:
