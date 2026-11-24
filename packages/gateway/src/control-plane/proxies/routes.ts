@@ -72,12 +72,11 @@ export const updateProxy = async (c: CtxWithJson<typeof updateProxyBody>) => {
 
   const repo = getRepo();
   const result = await repo.proxies.patch(id, {
-    name: body.name,
-    url: body.url,
+    ...(body.name === undefined ? {} : { name: body.name }),
+    ...(body.url === undefined ? {} : { url: body.url }),
     // Forward the absent / null distinction so the repo can tell "leave it"
-    // from "clear it back to default" — Object.hasOwn carries the bit
-    // through the spread below.
-    ...(Object.hasOwn(body, 'dial_timeout_seconds') ? { dialTimeoutSeconds: body.dial_timeout_seconds } : {}),
+    // from "clear it back to default".
+    ...(body.dial_timeout_seconds === undefined ? {} : { dialTimeoutSeconds: body.dial_timeout_seconds }),
   });
   if (!result) return c.json({ error: 'Proxy not found' }, 404);
 

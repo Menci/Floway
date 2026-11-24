@@ -8,6 +8,7 @@ export const usageFromIR = (usage: IROutputUsage): GeminiGenerateContentUsageMet
   const input = count('input_tokens_inclusive') ?? 0;
   const output = count('output_tokens_inclusive') ?? 0;
   const reasoning = count('reasoning_tokens');
+  const cached = count('cached_input_tokens');
   const split = splitInclusiveOutputTokens(output, reasoning);
   const modalityTokens = (keys: readonly (readonly [modality: string, key: keyof IROutputUsage])[]): GeminiGenerateContentModalityTokenCount[] =>
     keys.flatMap(([modality, key]) => usage[key] === undefined ? [] : [{ modality, tokenCount: requireTokenCount(key, usage[key]) }]);
@@ -17,7 +18,7 @@ export const usageFromIR = (usage: IROutputUsage): GeminiGenerateContentUsageMet
     promptTokenCount: input,
     candidatesTokenCount: split.output,
     totalTokenCount: count('total_tokens') ?? input + output,
-    ...(usage.cached_input_tokens === undefined ? {} : { cachedContentTokenCount: count('cached_input_tokens') }),
+    ...(cached === undefined ? {} : { cachedContentTokenCount: cached }),
     ...(reasoning === undefined ? {} : { thoughtsTokenCount: reasoning }),
     ...(promptDetails.length === 0 ? {} : { promptTokensDetails: promptDetails }),
     ...(candidatesDetails.length === 0 ? {} : { candidatesTokensDetails: candidatesDetails }),

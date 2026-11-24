@@ -1,7 +1,7 @@
 // Vendored Fluent System Icons `ic_fluent_local_language_zi_24_regular` ("A" + "字")
 // because `@fluentui/react-icons` does not export this glyph.
 // https://github.com/microsoft/fluentui-system-icons/blob/ff10c8eb2b6bf011a430588b63df634ec74548b6/assets/Local%20Language%20Zi/SVG/ic_fluent_local_language_zi_24_regular.svg
-export function LocalLanguageZiIcon({ size = 24 }: { size?: 16 | 24 }) {
+export function LocalLanguageZiIcon({ size = 24 }: { size?: 16 | 24 | undefined }) {
   return (
     <svg
       aria-hidden="true"

@@ -1,4 +1,4 @@
-import type { TableCellProps, TableHeaderCellProps } from '@fluentui/react-components';
+import type { SortDirection, TableCellProps, TableHeaderCellProps } from '@fluentui/react-components';
 import type { MouseEvent, ReactNode } from 'react';
 
 import { fluentComponents } from '../../fluent';
@@ -23,6 +23,10 @@ const useStyles = makeStyles({
     '& .fui-TableHeaderCell__button': { justifyContent: 'center' },
   },
 });
+
+// A sortable header that is not the sort column states no direction at all.
+export const sortDirectionProps = (direction: SortDirection | undefined): Pick<TableHeaderCellProps, 'sortDirection'> =>
+  direction === undefined ? {} : { sortDirection: direction };
 
 export function TableTrailingHeader({ className, ...props }: TableHeaderCellProps) {
   const styles = useStyles();
@@ -64,7 +68,7 @@ export const TABLE_ACTIONS_WIDTH = `calc(3 * ${ACTION_BUTTON_SIZE} + 2 * ${ACTIO
 
 export const TABLE_ACTIONS_WITH_LEADING_WIDTH = `calc(4 * ${ACTION_BUTTON_SIZE} + 3 * ${ACTION_GAP} + var(--spacingHorizontalS) + var(--floway-panel-inset))`;
 
-export function TableActions({ children, leading }: { children: ReactNode; leading?: ReactNode }) {
+export function TableActions({ children, leading }: { children: ReactNode; leading?: ReactNode | undefined }) {
   return <div className="flex items-center justify-end" style={{ gap: ACTION_GAP }} {...stopRowSelection}>
     {leading}
     {children}

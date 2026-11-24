@@ -1,6 +1,6 @@
 import type { DumpCapture } from './types.ts';
 import { encodeBodyForWire } from './wire.ts';
-import { isReplayableBody, type Fetcher } from '@floway-dev/http';
+import { isReplayableBody, toRequestInit, type Fetcher } from '@floway-dev/http';
 
 const errorText = (error: unknown): string => error instanceof Error ? error.stack ?? error.message : String(error);
 
@@ -10,7 +10,8 @@ export class HttpCapture {
   wrapFetcher(fetcher: Fetcher, upstreamId: string): Fetcher {
     return async (url, init) => {
       const body = isReplayableBody(init.body) ? init.body.open() : init.body;
-      const request = new Request(url, { ...init, body, duplex: 'half' } as RequestInit);
+      const requestInit: RequestInit & { duplex: 'half' } = { ...toRequestInit(init, body), duplex: 'half' };
+      const request = new Request(url, requestInit);
       const bytes = new Uint8Array(await request.arrayBuffer());
       const exchange: DumpCapture['exchanges'][number] = {
         upstreamId,

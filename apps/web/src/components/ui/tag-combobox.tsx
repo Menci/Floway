@@ -9,7 +9,7 @@ const { TagPicker, TagPickerControl, TagPickerGroup, TagPickerInput, TagPickerLi
 export interface TagComboboxOption { value: string; label: string }
 
 export function TagCombobox({ disabled, emptyMessage, label, onChange, options, placeholder, renderOption, renderTag, value }: {
-  disabled?: boolean;
+  disabled?: boolean | undefined;
   emptyMessage: string;
   label: string;
   onChange: (value: string[]) => void;

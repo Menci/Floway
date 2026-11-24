@@ -115,7 +115,7 @@ export const fetchChatGPTRateLimitResetCredits = async (opts: {
   accessToken: string;
   accountId: string | null;
   fetcher: Fetcher;
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }): Promise<ChatGPTRateLimitResetCredits> => {
   const response = await opts.fetcher(`${CHATGPT_BACKEND_BASE}${CHATGPT_RATE_LIMIT_RESET_CREDITS_PATH}`, {
     method: 'GET',
@@ -131,7 +131,7 @@ export const consumeChatGPTRateLimitResetCredit = async (opts: {
   creditId: string;
   idempotencyKey: string;
   fetcher: Fetcher;
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }): Promise<ChatGPTRateLimitResetOutcome> => {
   const headers = headersFor(opts.accessToken, opts.accountId);
   headers.set('content-type', 'application/json');

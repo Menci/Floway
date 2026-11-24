@@ -31,13 +31,13 @@ export function AccessRecordDialog({ data, principalData, records, initialPrinci
   data: ScopeExpressionData;
   principalData: ScopeExpressionData;
   records: readonly AccessRecord[];
-  initialPrincipal?: AccessPrincipal;
-  initialScope?: AccessScope;
+  initialPrincipal?: AccessPrincipal | undefined;
+  initialScope?: AccessScope | undefined;
   onOpenChange: (open: boolean) => void;
   onSaved: () => Promise<void>;
   open: boolean;
-  record?: AccessRecord;
-  suggestedSortOrder?: number;
+  record?: AccessRecord | undefined;
+  suggestedSortOrder?: number | undefined;
 }) {
   const { t } = useTranslation();
   const toasts = useOutcomeToasts();
@@ -163,7 +163,7 @@ export function AccessRecordDialog({ data, principalData, records, initialPrinci
     </Field>} />
     {administratorBypass && <OutcomeMessageBar intent="info">{t('permissions.administratorBypass')}</OutcomeMessageBar>}
 
-    <Field className="min-w-0" label={{ children: renderScopeHeader }} validationMessage={scopeError ?? undefined} validationState={scopeError ? 'error' : undefined}>
+    <Field className="min-w-0" label={{ children: renderScopeHeader }} validationMessage={scopeError ?? undefined} validationState={scopeError ? 'error' : 'none'}>
       <div className="min-w-0" hidden={scopeMode !== 'visual'}><ScopeEditor className="!w-full" data={data} onChange={changeScope} readOnly={saving} value={scope} /></div>
       <JsonEditor active={scopeMode === 'json'} invalid={scopeError !== null} label={t('permissions.scope.json')} onChange={changeScopeJson} readOnly={saving} value={scopeJson} />
     </Field>

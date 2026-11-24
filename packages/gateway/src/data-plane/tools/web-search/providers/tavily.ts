@@ -36,7 +36,7 @@ const normalizeResult = (value: unknown): Extract<WebSearchProviderResult, { typ
   return {
     source: value.url,
     title: value.title,
-    pageAge: typeof value.published_date === 'string' && value.published_date.trim().length > 0 ? value.published_date : undefined,
+    ...(typeof value.published_date === 'string' && value.published_date.trim().length > 0 ? { pageAge: value.published_date } : {}),
     content: toWebSearchTextBlocks(value.content),
   };
 };

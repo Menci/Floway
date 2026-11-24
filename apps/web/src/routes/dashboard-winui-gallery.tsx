@@ -845,7 +845,7 @@ function ToastSection() {
 
   const fire = (content: React.ReactNode, intent?: (typeof toastIntents)[number]) => {
     const toastId = `${toasterId}-${sequence.current++}`;
-    dispatchToast(content, { intent, timeout: TOAST_TIMEOUT_MS, toastId });
+    dispatchToast(content, { ...(intent === undefined ? {} : { intent }), timeout: TOAST_TIMEOUT_MS, toastId });
     return toastId;
   };
 

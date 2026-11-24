@@ -9,12 +9,12 @@ import type { QuotaDisplay } from '@floway-dev/protocols/browser';
 const { ProgressBar, Text } = fluentComponents;
 
 export function QuotaProgressRow({ footer, label, percent, quotaDisplay, right }: {
-  footer?: ReactNode;
+  footer?: ReactNode | undefined;
   label: ReactNode;
   /** Used percent as the upstream reports it. */
   percent: number;
   quotaDisplay: QuotaDisplay;
-  right?: ReactNode;
+  right?: ReactNode | undefined;
 }) {
   const { t } = useTranslation();
   const used = clampPercent(percent);
@@ -30,7 +30,7 @@ export function QuotaProgressRow({ footer, label, percent, quotaDisplay, right }
         {right}
       </div>
     </div>
-    <ProgressBar color={quotaBarColor(used)} max={100} thickness="large" value={shown ?? undefined} />
+    <ProgressBar color={quotaBarColor(used)} max={100} thickness="large" {...(shown === null ? {} : { value: shown })} />
     {footer}
   </div>;
 }

@@ -12,10 +12,12 @@ const LIST_LIMIT_DEFAULT = 100;
 const LIST_LIMIT_MAX = 200;
 
 const listQuery = z.object({
-  limit: z.coerce.number().int().positive().max(LIST_LIMIT_MAX).optional(),
-  before: z.string().min(1).optional(),
-  q: z.string().trim().max(200).optional(),
-  failures: z.enum(['true', 'false']).optional(),
+  // A coercion turns an absent key into a value, so only a present one is coerced.
+  // https://github.com/colinhacks/zod/issues/6236
+  limit: z.preprocess(value => value === undefined ? undefined : Number(value), z.number().int().positive().max(LIST_LIMIT_MAX)).exactOptional(),
+  before: z.string().min(1).exactOptional(),
+  q: z.string().trim().max(200).exactOptional(),
+  failures: z.enum(['true', 'false']).exactOptional(),
 });
 
 const ownedKey = async (c: Context): Promise<{ id: string; error: null } | { id: null; error: string }> => {

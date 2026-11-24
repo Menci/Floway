@@ -209,7 +209,7 @@ export async function exchangeCopilotToken(githubHost: string, githubToken: stri
 }
 
 export interface CopilotFetchOptions {
-  headers?: HttpHeaderLines;
+  headers?: HttpHeaderLines | undefined;
   /** Per-request proxy-aware indirection. Used for both the data-plane
    *  request and the selected GitHub host's token exchange so a single
    *  fallback chain covers both paths under restricted egress. */

@@ -3,6 +3,7 @@ import { useCallback, useRef, useState } from 'react';
 import { ConfirmDialog } from './confirm-dialog';
 import { useDialogInvocation } from './use-dialog-invocation';
 import { useTranslation } from '../../i18n/translation';
+import { canonicalJson } from '../../lib/canonical-json';
 
 /**
  * Answers every dismissal of a dialog that holds a draft. Esc, the scrim and
@@ -14,14 +15,16 @@ import { useTranslation } from '../../i18n/translation';
  * react-hook-form's own `isDirty`: these forms write most of their fields
  * through `setValue`, which leaves that flag saying whatever the last caller
  * remembered to ask for. Each dialog is mounted per invocation, so the values
- * of the first render are the ones it opened with.
+ * of the first render are the ones it opened with. An editor that clears an
+ * optional field removes its key, so restoring the field writes the key back
+ * in a new position; the comparison ignores key order.
  */
 export const useDiscardGuard = <T,>({ onClose, values }: { onClose: () => void; values: T }) => {
   const { t } = useTranslation();
   const prompt = useDialogInvocation<void>();
   const discarding = useRef(false);
-  const [openedWith] = useState(() => JSON.stringify(values));
-  const dirty = JSON.stringify(values) !== openedWith;
+  const [openedWith] = useState(() => canonicalJson(values));
+  const dirty = canonicalJson(values) !== openedWith;
 
   const requestClose = useCallback(() => {
     if (dirty) prompt.open(); else onClose();

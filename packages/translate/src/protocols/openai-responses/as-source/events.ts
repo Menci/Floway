@@ -345,7 +345,7 @@ export const writeOpenAIResponsesEvents = async function* (
     };
   };
 
-  const response = (state: IROutput, status: OpenAIResponsesResultEx['status'], usage: OpenAIResponsesResultEx['usage']): OpenAIResponsesResultEx => ({
+  const response = (state: IROutput, status: OpenAIResponsesResultEx['status'], usage: Exclude<OpenAIResponsesResultEx['usage'], undefined>): OpenAIResponsesResultEx => ({
     id: metadata.id,
     object: 'response',
     created_at: metadata.created,

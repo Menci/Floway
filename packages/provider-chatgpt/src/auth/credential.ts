@@ -7,13 +7,13 @@ import { parseChatGPTTokenClaims, tryParseChatGPTAccessTokenClaims, type ChatGPT
 // what they know here and let one place decide what the account's identity is.
 export interface ChatGPTCredentialInput {
   accessToken: string;
-  refreshToken?: string | null;
-  idToken?: string | null;
-  expiresAt?: number | null;
-  chatgptAccountId?: string | null;
-  email?: string | null;
-  chatgptUserId?: string | null;
-  planType?: string | null;
+  refreshToken?: string | null | undefined;
+  idToken?: string | null | undefined;
+  expiresAt?: number | null | undefined;
+  chatgptAccountId?: string | null | undefined;
+  email?: string | null | undefined;
+  chatgptUserId?: string | null | undefined;
+  planType?: string | null | undefined;
 }
 
 export interface NormalizedChatGPTCredential {

@@ -62,14 +62,60 @@ onlyBuiltDependencies:
 # https://www.iana.org/assignments/cbor-tags/tags.csv
 # https://github.com/svaarala/cbor-specs/blob/b85ac24ada38c1bdeb8e141be416d8d290dcd41b/cbor-nonutf8-string-tags.rst
 # https://github.com/Menci/Floway/blob/54a8e2c783ed2ff1c166270c228821fa32aea252/patches/cbor-x%401.6.6.patch
+# @fluentui/react-utilities infers a component's ref element from
+# `Required<Props>['onLostPointerCaptureCapture']`. @types/react declares that
+# handler as `?: PointerEventHandler<T> | undefined`, and under
+# `exactOptionalPropertyTypes` `Required` keeps the explicit `undefined`, so the
+# inference collapses to `never` and every `ref` on a Fluent component fails to
+# type-check. Inferring from the handler with `undefined` removed restores the
+# element type. The upstream report was closed by the stale bot unfixed.
+# https://github.com/microsoft/fluentui/issues/25993
+# https://github.com/microsoft/fluentui/blob/d0f2372099cfd0b50ba067977e1356c618ada747/packages/react-components/react-utilities/src/compose/types.ts#L237-L241
+# The same patch lets an optional slot prop take `undefined`. `slot.optional`
+# already treats `undefined` as an omitted slot, but `Slot` admits only `null`,
+# and `null` hides a slot that would otherwise render by default.
+# `ComponentState` strips `null` from the always-rendered `root` slot, and it
+# now strips `undefined` beside it, so a resolved root stays required.
+# https://github.com/microsoft/fluentui/blob/d0f2372099cfd0b50ba067977e1356c618ada747/packages/react-components/react-utilities/src/compose/slot.ts#L67-L75
+# https://github.com/microsoft/fluentui/blob/d0f2372099cfd0b50ba067977e1356c618ada747/packages/react-components/react-utilities/src/compose/types.ts#L138-L157
+# https://github.com/microsoft/fluentui/blob/d0f2372099cfd0b50ba067977e1356c618ada747/packages/react-components/react-utilities/src/compose/types.ts#L213-L218
+# @hono/node-server stubs the `ws` server it accepts as `WebSocketServerLike`,
+# declaring `options.noServer?: boolean` and the send option
+# `compress?: boolean`, while @types/ws declares both with `| undefined`. Under
+# `exactOptionalPropertyTypes` a real `WebSocketServer` is then not assignable
+# to the stub, so the stub admits the explicit `undefined` its source types
+# already carry.
+# https://github.com/honojs/node-server/blob/3c196345fe048ee219a4ff05ea616488858fbdfb/src/websocket-types.ts#L16-L34
+# https://github.com/DefinitelyTyped/DefinitelyTyped/blob/2bb69f9ac09fce7b6c84c835358fd6790e151005/types/ws/index.d.ts#L97
+# https://github.com/DefinitelyTyped/DefinitelyTyped/blob/2bb69f9ac09fce7b6c84c835358fd6790e151005/types/ws/index.d.ts#L343
+# hono's `JSONParsed` widens every optional property of a response to
+# `T | undefined`, so under `exactOptionalPropertyTypes` an RPC response is
+# no longer assignable to the type it was serialized from. The hono patch
+# backports the upstream fix, which keeps an optional property optional and
+# reserves `| undefined` for a required property whose value may be dropped.
+# Droppable once hono reaches 4.13.20.
+# https://github.com/honojs/hono/pull/5664
+# https://github.com/honojs/hono/blob/01b43fbb1b61147f9965fa14f32e2c2326610166/src/utils/types.ts#L100-L106
+# rolldown's `ExistingRawSourceMap` declares its optional fields without
+# `| undefined`, while magic-string's `SourceMap` carries explicit
+# `undefined`, so under `exactOptionalPropertyTypes` a plugin cannot return
+# `generateMap()` as a transform's map. The rolldown patch backports the
+# upstream fix, released in 1.2.19, which the vite release we use does not
+# reach through its `~1.1.5` range.
+# https://github.com/rolldown/rolldown/pull/10355
+# https://github.com/rolldown/rolldown/blob/c9e81914c25b3d099ddddfd61b9057566e26f116/packages/rolldown/src/types/sourcemap.ts#L5-L14
 patchedDependencies:
   'cbor-x@1.6.6': patches/cbor-x@1.6.6.patch
   '@discoveryjs/json-ext@1.1.0': patches/@discoveryjs__json-ext@1.1.0.patch
   'klona@2.0.6': patches/klona@2.0.6.patch
   '@fluentui/react-charts@9.3.22': patches/@fluentui__react-charts@9.3.22.patch
+  '@fluentui/react-utilities@9.26.5': patches/@fluentui__react-utilities@9.26.5.patch
+  '@hono/node-server@2.0.4': patches/@hono__node-server@2.0.4.patch
   '@reclaimprotocol/tls@0.1.5': patches/@reclaimprotocol__tls@0.1.5.patch
   'overlayscrollbars@2.13.0': patches/overlayscrollbars@2.13.0.patch
+  'rolldown@1.1.5': patches/rolldown@1.1.5.patch
   'eventsource-parser@3.1.0': patches/eventsource-parser@3.1.0.patch
+  'hono@4.12.22': patches/hono@4.12.22.patch
 
 # eventsource-parser drops a line it cannot read as an SSE field. Some upstreams
 # end a stream that already produced events with a bare JSON error body — no

@@ -31,7 +31,7 @@ const {
 export function ClaudeCodeAccountCard({ onRefreshQuota, probing, readOnly = false, record }: {
   onRefreshQuota: () => void;
   probing: boolean;
-  readOnly?: boolean;
+  readOnly?: boolean | undefined;
   record: ClaudeCodeRecord;
 }) {
   const { t } = useTranslation();

@@ -81,7 +81,7 @@ export const testWebSearchConfigConnection = async (config: WebSearchConfig): Pr
   const previews = result.results.slice(0, 3).map(entry => ({
     title: entry.title,
     url: entry.source,
-    pageAge: entry.pageAge,
+    ...(entry.pageAge === undefined ? {} : { pageAge: entry.pageAge }),
     previewText: toPreviewText(entry.content),
   }));
 

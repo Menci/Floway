@@ -149,10 +149,11 @@ describe('getChatGPTQuota', () => {
       ratelimited_until: '2026-06-09T00:00:00.000Z',
     };
     const secondary: ChatGPTQuotaSnapshot = { ...primary, primary_used_percent: 35, secondary_used_percent: 100 };
-    const unknown: ChatGPTQuotaSnapshot = { ...primary, primary_used_percent: undefined, secondary_used_percent: undefined };
-    const partial: ChatGPTQuotaSnapshot = { ...secondary, primary_used_percent: 100, secondary_reset_after_at: undefined };
+    const { primary_used_percent: _primaryUsed, secondary_used_percent: _secondaryUsed, ...unknown } = primary;
+    const { secondary_reset_after_at: _secondaryReset, ...partialBase } = secondary;
+    const partial: ChatGPTQuotaSnapshot = { ...partialBase, primary_used_percent: 100 };
     const neither: ChatGPTQuotaSnapshot = { ...primary, primary_used_percent: 35 };
-    const untimed: ChatGPTQuotaSnapshot = { ...primary, primary_reset_after_at: undefined };
+    const { primary_reset_after_at: _primaryReset, ...untimed } = primary;
     const invalid: ChatGPTQuotaSnapshot = { ...primary, primary_reset_after_at: 'invalid' };
     const { ratelimited_until: _until, ...successful } = primary;
     current = makeRecord({

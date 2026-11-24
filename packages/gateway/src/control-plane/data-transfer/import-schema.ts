@@ -109,7 +109,7 @@ const proxyFallbackEntrySchema = z.object({
   id: z.string({ error: 'proxy_fallback_list entry .id must be a string' }),
   colos: z.array(z.string({ error: 'proxy_fallback_list entry .colos members must be strings' }), {
     error: 'proxy_fallback_list entry .colos must be an array',
-  }).optional(),
+  }).exactOptional(),
 }, { error: 'proxy_fallback_list entries must be objects' });
 
 const proxyFallbackListSchema = z.array(proxyFallbackEntrySchema, { error: 'proxy_fallback_list must be an array' })

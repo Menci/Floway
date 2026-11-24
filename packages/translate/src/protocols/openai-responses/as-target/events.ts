@@ -30,7 +30,7 @@ interface WriteTarget {
 }
 
 interface ResponsesTextTarget extends WriteTarget {
-  fieldState?: ReadFieldStates['text'];
+  fieldState?: ReadFieldStates['text'] | undefined;
 }
 
 interface ResponsesOutputTextPartState extends ResponsesTextTarget {
@@ -59,7 +59,7 @@ interface ResponsesItemStateBase {
   // The declaration group the item opened with, kept so a later snapshot cannot
   // silently state a call from a different group under the same id.
   readonly namespace?: string;
-  item?: IRItemHandle;
+  item: IRItemHandle | undefined;
   readonly parts: Map<number, ResponsesPartState>;
   readonly reasoning: Record<'summary' | 'content', ResponsesTextTarget[]>;
   readonly logprobs: Map<number, { readonly index: number; length: number }>;

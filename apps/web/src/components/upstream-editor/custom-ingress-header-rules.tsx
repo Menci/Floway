@@ -23,7 +23,7 @@ type CustomValues = Omit<UpstreamEditorValues, 'config'> & {
   config: Extract<UpstreamRecord, { kind: 'custom' }>['config'];
 };
 
-export function CustomIngressHeaderRules({ readOnly = false }: { readOnly?: boolean } = {}) {
+export function CustomIngressHeaderRules({ readOnly = false }: { readOnly?: boolean | undefined } = {}) {
   const { t } = useTranslation();
   const { control } = useFormContext<CustomValues>();
   const { append, fields, remove } = useFieldArray({ control, name: 'config.ingressHeadersRules' });
@@ -90,7 +90,7 @@ function IngressHeaderRuleRow({
       render={({ field }) => <Field
         className="min-w-0"
         validationMessage={keyValidationMessage}
-        validationState={ruleErrors?.key ? 'error' : undefined}
+        validationState={ruleErrors?.key ? 'error' : 'none'}
       >
         <Input
           aria-label={t('upstreams.editor.headers.keyForRow', { number: rowNumber })}
@@ -121,15 +121,17 @@ function IngressHeaderRuleRow({
       name={valueName}
       render={({ field }) => {
         const custom = field.value !== null && field.value !== '';
-        const placeholder = field.value === null
-          ? t('upstreams.editor.headers.passthrough')
-          : field.value === ''
-            ? t('upstreams.editor.headers.empty')
-            : undefined;
+        const placeholder = valueDisabled
+          ? undefined
+          : field.value === null
+            ? t('upstreams.editor.headers.passthrough')
+            : field.value === ''
+              ? t('upstreams.editor.headers.empty')
+              : undefined;
         return <Field
           className="min-w-0"
           validationMessage={valueValidationMessage}
-          validationState={ruleErrors?.value ? 'error' : undefined}
+          validationState={ruleErrors?.value ? 'error' : 'none'}
         >
           <Combobox
             aria-label={t('upstreams.editor.headers.valueForRow', { number: rowNumber })}
@@ -143,7 +145,7 @@ function IngressHeaderRuleRow({
               if (data.optionValue === PASSTHROUGH_OPTION) field.onChange(null);
               if (data.optionValue === EMPTY_OPTION) field.onChange('');
             }}
-            placeholder={valueDisabled ? undefined : placeholder}
+            {...(placeholder === undefined ? {} : { placeholder })}
             readOnly={readOnly}
             ref={field.ref}
             selectedOptions={field.value === null ? [PASSTHROUGH_OPTION] : field.value === '' ? [EMPTY_OPTION] : []}

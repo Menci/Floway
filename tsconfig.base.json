@@ -5,6 +5,7 @@
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "strict": true,
+    "exactOptionalPropertyTypes": true,
     "skipLibCheck": true,
     "types": []
   }

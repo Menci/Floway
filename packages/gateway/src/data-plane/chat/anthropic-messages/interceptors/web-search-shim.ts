@@ -82,15 +82,10 @@ export type AnthropicMessagesWebSearchShimState =
   | ({
     mode: 'active';
     toolVersion: AnthropicMessagesNativeWebSearchTool['type'];
-    maxUses?: number;
-    allowedDomains?: string[];
-    blockedDomains?: string[];
-    userLocation?: {
-      city?: string;
-      region?: string;
-      country?: string;
-      timezone?: string;
-    };
+    maxUses: number | undefined;
+    allowedDomains: string[] | undefined;
+    blockedDomains: string[] | undefined;
+    userLocation: WebSearchProviderRequest['userLocation'];
   } & ReplayAwareAnthropicMessagesWebSearchShimState);
 
 export type PrepareAnthropicMessagesWebSearchShimRequestResult =

@@ -26,10 +26,10 @@ export function PrincipalIdentity({ data, principal }: { data: ScopeExpressionDa
 }
 
 export function PrincipalPicker({ clearable = false, data, disabled = false, includeAll = false, label, onChange, value }: {
-  clearable?: boolean;
+  clearable?: boolean | undefined;
   data: ScopeExpressionData;
-  disabled?: boolean;
-  includeAll?: boolean;
+  disabled?: boolean | undefined;
+  includeAll?: boolean | undefined;
   label: string;
   onChange: (value: AccessPrincipal | null) => void;
   value: AccessPrincipal | null;

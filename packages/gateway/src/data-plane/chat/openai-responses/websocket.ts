@@ -91,8 +91,8 @@ interface ActiveOpenAIResponsesWebSocketTurn {
   created: boolean;
   interrupted: boolean;
   terminal: boolean;
-  interruptWaitWarning?: ReturnType<typeof setTimeout>;
-  requestInterrupt?: (eventId: string | undefined) => void;
+  interruptWaitWarning?: ReturnType<typeof setTimeout> | undefined;
+  requestInterrupt?: ((eventId: string | undefined) => void) | undefined;
 }
 
 export const openaiResponsesWebSocket = async (c: AuthedContext): Promise<Response> => {

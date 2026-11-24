@@ -76,15 +76,15 @@ export interface TlsUpgradeOptions {
   /** TLS peer identity; also the certificate identity unless `verifyHost` is set. */
   host: string;
   /** Reference identity the certificate chain must prove. Defaults to `host`. */
-  verifyHost?: string;
+  verifyHost?: string | undefined;
   /** ALPN protocols to offer, in preference order. */
-  alpn?: string[];
+  alpn?: string[] | undefined;
   /** Accept any peer certificate. Self-signed proxy leaves only. */
-  insecure?: boolean;
+  insecure?: boolean | undefined;
   /** Bytes to write to the transport before the handshake starts. */
-  prefix?: Uint8Array;
+  prefix?: Uint8Array | undefined;
   /** Cancellation, honoured during and after the handshake. */
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 export interface SocketDial {
@@ -109,7 +109,7 @@ export interface DialedSocket {
 // agnostic and the platform's impl is assignable by structural typing.
 export interface SocketDialOptions {
   tls?: boolean;
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 /**
@@ -126,9 +126,9 @@ export interface DialResult {
 
 export interface DialOptions {
   /** Runtime response codecs used by the HTTP request runners after dialing. */
-  contentDecoders?: HttpContentDecoders;
+  contentDecoders?: HttpContentDecoders | undefined;
   /** Caller-supplied cancellation, threaded through every dial leg. */
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
   /** Per-call dial-stage deadline override (ms). Falls back to
    *  DEFAULT_DIAL_DEADLINE_MS when absent. */
   dialTimeoutMs?: number;

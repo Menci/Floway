@@ -17,7 +17,7 @@ import type { Route } from './+types/dashboard-providers-upstreams';
 import { useDashboardOutletContext } from './dashboard';
 import { requireDashboardUser } from './guards';
 import { revalidateOnPathnameChange } from './revalidation';
-import { api, callApi } from '../api/client';
+import { abortOptions, api, callApi } from '../api/client';
 import type { ControlPlaneModel, ListedUpstreamRecord } from '../api/types';
 import { ConfirmDialog } from '../components/ui/confirm-dialog';
 import { DashboardPageHeader } from '../components/ui/dashboard-page-header';
@@ -114,10 +114,10 @@ const upstreamCopyPath = (record: ListedUpstreamRecord) => `/dashboard/providers
 
 const loadPageData = async (signal?: AbortSignal): Promise<LoaderData> => {
   const [upstreamsResult, modelsResult] = await Promise.all([
-    callApi(() => api.api.upstreams.$get(undefined, { init: { signal } })),
+    callApi(() => api.api.upstreams.$get(undefined, abortOptions(signal))),
     callApi(() => api.api.models.$get(
       { query: { aliases: 'false', include_unlisted: 'true' } },
-      { init: { signal } },
+      abortOptions(signal),
     )),
   ]);
   return {

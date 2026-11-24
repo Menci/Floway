@@ -139,7 +139,7 @@ export function UserDialog(props: UserDialogProps) {
             hint={t('directory.users.form.usernameHint')}
             label={t('directory.users.form.username')}
             validationMessage={errors.username?.message ? t(errors.username.message) : undefined}
-            validationState={errors.username ? 'error' : undefined}
+            validationState={errors.username ? 'error' : 'none'}
           >
             <Input {...field} autoComplete="off" disabled={saving} spellCheck={false} />
           </Field>
@@ -154,7 +154,7 @@ export function UserDialog(props: UserDialogProps) {
             <Field
               label={t('directory.users.form.password')}
               validationMessage={errors.password?.message ? t(errors.password.message) : undefined}
-              validationState={errors.password ? 'error' : undefined}
+              validationState={errors.password ? 'error' : 'none'}
             >
               <Input {...field} autoComplete="new-password" disabled={saving} type="password" />
             </Field>

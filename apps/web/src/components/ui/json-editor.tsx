@@ -7,10 +7,10 @@ import { DARK_SCHEME_QUERY, useMediaQuery } from '../../lib/use-media-query';
 
 export function JsonEditor({ active, invalid, label, onChange, readOnly = false, value }: {
   active: boolean;
-  invalid?: boolean;
+  invalid?: boolean | undefined;
   label: string;
   onChange: (value: string) => void;
-  readOnly?: boolean;
+  readOnly?: boolean | undefined;
   value: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);

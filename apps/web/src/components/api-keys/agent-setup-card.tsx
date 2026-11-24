@@ -346,7 +346,7 @@ function AgentRetryField({ agent, retry, onChange }: {
 
 function ModelSelect({ family, info, label, models, onChange, picker, value }: {
   family: 'claude' | 'codex' | 'pi' | 'omp';
-  info?: string;
+  info?: string | undefined;
   label: string;
   models: ControlPlaneModel[];
   onChange: (value: string | null) => void;

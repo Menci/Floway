@@ -39,6 +39,10 @@ export const authFetch = async (
 
 export const api = hc<AppType>('/', { fetch: authFetch });
 
+// Loaders run both with a caller's cancellation and without one; the request
+// carries the signal only when there is one.
+export const abortOptions = (signal: AbortSignal | undefined) => signal === undefined ? {} : { init: { signal } };
+
 type SuccessfulJson<TResponse extends Response> = TResponse extends {
   status: infer Status;
   json(): Promise<infer Body>;

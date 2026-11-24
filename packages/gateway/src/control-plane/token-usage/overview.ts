@@ -2,9 +2,9 @@ import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { UsageOverviewGroupBy } from '../../repo/types.ts';
 import type { tokenUsageOverviewQuery } from '../schemas.ts';
-import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata, telemetryUpstreamMetadata } from '../shared/telemetry-overview.ts';
+import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata, telemetryUpstreamMetadata, type TelemetryOverviewWindow } from '../shared/telemetry-overview.ts';
 import type { TokenUsageOverviewResponse } from '../usage-types.ts';
-import { createTelemetryBucket, parseTelemetryHour, TELEMETRY_HOUR_MS, telemetryHourKey, type TelemetryBucketGranularity, usageUpstreamFromDimensionValue } from '@floway-dev/protocols/common';
+import { createTelemetryBucket, parseTelemetryHour, TELEMETRY_HOUR_MS, telemetryHourKey, usageUpstreamFromDimensionValue } from '@floway-dev/protocols/common';
 
 type Ctx = CtxWithQuery<typeof tokenUsageOverviewQuery>;
 
@@ -15,13 +15,8 @@ interface UsageFilters {
   upstream: ReadonlySet<string>;
 }
 
-interface UsageOverviewParams {
-  start: string;
-  end: string;
+interface UsageOverviewParams extends TelemetryOverviewWindow {
   groupBy: UsageOverviewGroupBy;
-  bucket: TelemetryBucketGranularity;
-  timeZone?: string;
-  timezoneOffsetMinutes: number;
   filters: UsageFilters;
   cursor: string | undefined;
 }

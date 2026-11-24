@@ -62,7 +62,7 @@ const roundTrip = async (
 
   const messages: PlaygroundMessage[] = [
     { id: 'user-1', role: 'user', text: 'hello' },
-    { id: 'assistant-1', role: 'assistant', text: first.text, assistantOutput: first.output ?? undefined },
+    { id: 'assistant-1', role: 'assistant', text: first.text, ...(first.output === null ? {} : { assistantOutput: first.output }) },
     { id: 'user-2', role: 'user', text: 'again' },
   ];
   await collectWithOutput(streamPlaygroundText({ ...base, messages }));

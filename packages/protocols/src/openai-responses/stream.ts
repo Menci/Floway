@@ -4,7 +4,7 @@ import { parseSSEStream } from '../common/parse-sse.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
 
 export interface ParseOpenAIResponsesStreamOptions {
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 // Lifecycle wrappers, resource terminals, and error notifications carry no
@@ -32,14 +32,14 @@ const projectSseJsonEvent = (event: OpenAIResponsesStreamEventEx, eventName: str
 // without colliding.
 const sequencer = () => {
   let next = 0;
-  return (event: OpenAIResponsesStreamEventEx): OpenAIResponsesStreamEventEx => {
-    if (event.sequence_number !== undefined) {
+  const stampNext = (event: OpenAIResponsesStreamEventEx): OpenAIResponsesStreamEventEx => ({ ...event, sequence_number: next++ });
+  return {
+    stampNext,
+    stamp(event: OpenAIResponsesStreamEventEx): OpenAIResponsesStreamEventEx {
+      if (event.sequence_number === undefined) return stampNext(event);
       if (event.sequence_number >= next) next = event.sequence_number + 1;
       return event;
-    }
-    const stamped: OpenAIResponsesStreamEventEx = { ...event, sequence_number: next };
-    next++;
-    return stamped;
+    },
   };
 };
 
@@ -56,7 +56,7 @@ export const parseOpenAIResponsesStream = (
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEventEx>> => (async function* () {
   let sawStructured = false;
   const sentWrapperTypes = new Set<OpenAIResponsesStreamEventEx['type']>();
-  const stamp = sequencer();
+  const { stamp, stampNext } = sequencer();
 
   for await (const frame of parseTargetStreamFrames<OpenAIResponsesStreamEventEx>(parseSSEStream(body, options), {
     protocol: 'OpenAI Responses',
@@ -88,8 +88,7 @@ export const parseOpenAIResponsesStream = (
       // through the per-stream sequencer so they continue the same sequence.
       for (const expanded of openaiResponsesResultToEvents((event as { response: OpenAIResponsesResultEx }).response)) {
         if (sentWrapperTypes.has(expanded.event.type)) continue;
-        const restamped = { ...expanded.event, sequence_number: undefined } as OpenAIResponsesStreamEventEx;
-        yield eventFrame(stamp(restamped));
+        yield eventFrame(stampNext(expanded.event));
       }
       sawStructured = true;
       continue;

@@ -1,0 +1,26 @@
+diff --git a/dist/shared/define-config-BhJ90aEv.d.mts b/dist/shared/define-config-BhJ90aEv.d.mts
+index 2a033d067bdd36a7476e6045f3f16c301089e543..8185f6df87b2f2446849afe8f3b523bc23cd51f5 100644
+--- a/dist/shared/define-config-BhJ90aEv.d.mts
++++ b/dist/shared/define-config-BhJ90aEv.d.mts
+@@ -2553,14 +2553,14 @@ interface OutputBundle {
+ //#region src/types/sourcemap.d.ts
+ /** @category Plugin APIs */
+ interface ExistingRawSourceMap {
+-  file?: string | null;
++  file?: string | null | undefined;
+   mappings: string;
+-  names?: string[];
+-  sources?: (string | null)[];
+-  sourcesContent?: (string | null | undefined)[];
+-  sourceRoot?: string;
+-  version?: number;
+-  x_google_ignoreList?: number[];
++  names?: string[] | undefined;
++  sources?: (string | null)[] | undefined;
++  sourcesContent?: (string | null | undefined)[] | undefined;
++  sourceRoot?: string | undefined;
++  version?: number | undefined;
++  x_google_ignoreList?: number[] | undefined;
+ }
+ /** @inline @category Plugin APIs */
+ type SourceMapInput = ExistingRawSourceMap | string | null;

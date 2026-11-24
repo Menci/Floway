@@ -45,7 +45,7 @@ test('rewrites flat cached_tokens into prompt_tokens_details.cached_tokens', asy
             total_tokens: 120,
             cached_tokens: 50,
             prompt_tokens_details: { upstream_metric: 'preserved' },
-          } as unknown as OpenAIChatCompletionsStreamEvent['usage'],
+          } as unknown as NonNullable<OpenAIChatCompletionsStreamEvent['usage']>,
         });
       })(),
       testTelemetryModelIdentity,

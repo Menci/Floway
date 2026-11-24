@@ -60,7 +60,7 @@ const rewriteInboundUsage = (
   if (!fold) return chunk;
 
   const next: JsonObject = { ...usage, prompt_tokens: inputTokens + cacheRead + cacheWrite };
-  return { ...chunk, usage: next as unknown as OpenAIChatCompletionsStreamEvent['usage'] };
+  return { ...chunk, usage: next as unknown as NonNullable<OpenAIChatCompletionsStreamEvent['usage']> };
 };
 
 export const withExclusiveCachedTokensNormalized: OpenAIChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {

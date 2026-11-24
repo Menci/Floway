@@ -432,7 +432,7 @@ const validateHostedImageGenerationEntry = (
       ...(typeof size === 'string' ? { size } : {}),
       ...(typeof quality === 'string' ? { quality } : {}),
       ...(typeof outputFormat === 'string' ? { output_format: outputFormat as 'png' | 'jpeg' } : {}),
-      ...(typeof background === 'string' ? { background: background as ImageGenerationConfig['background'] } : {}),
+      ...(typeof background === 'string' ? { background: background as NonNullable<ImageGenerationConfig['background']> } : {}),
       ...(typeof moderation === 'string' ? { moderation: moderation as 'auto' | 'low' } : {}),
       ...(typeof tool.output_compression === 'number' ? { output_compression: tool.output_compression } : {}),
       ...(typeof tool.partial_images === 'number' ? { partial_images: tool.partial_images } : {}),

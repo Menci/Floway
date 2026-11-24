@@ -52,13 +52,13 @@ const UNTRANSLATED_BLOCK_TYPES: readonly string[] = [
 type MessagesBlockFieldState = NonNullable<NonNullable<AnthropicMessagesInputAssistantTurnState<ReadFieldStates>['content']>[number]>;
 
 interface MessagesBlockState {
-  readonly item?: IRItemHandle;
-  readonly part?: IRPartHandle;
-  readonly tool?: 'function' | 'custom';
-  annotationCount?: number;
-  textField?: ReadFieldState<'text'>;
+  readonly item: IRItemHandle | undefined;
+  readonly part: IRPartHandle | undefined;
+  readonly tool: 'function' | 'custom' | undefined;
+  annotationCount: number | undefined;
+  textField: ReadFieldState<'text'> | undefined;
   jsonField?: ReadFieldState<'json'>;
-  fieldState?: MessagesBlockFieldState;
+  fieldState: MessagesBlockFieldState | undefined;
   wrappedInput: string;
 }
 

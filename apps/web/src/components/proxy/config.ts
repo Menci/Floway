@@ -124,7 +124,10 @@ export const proxyDraftIssues = (values: ProxyFormValues): ProxyDraftIssues => {
   // A parse failure outranks the draft's "still empty": there is text in the
   // field, and what is wrong is the text.
   if (!url) issues.url = 'proxies.validation.urlRequired';
-  else issues.url = parseProxyInput(url).error ?? undefined;
+  else {
+    const { error } = parseProxyInput(url);
+    if (error !== null) issues.url = error;
+  }
   if (!config.host.trim()) issues.config.host = 'proxies.validation.hostRequired';
   if (!isValidPort(config.port)) issues.config.port = 'proxies.validation.portInvalid';
   switch (config.kind) {

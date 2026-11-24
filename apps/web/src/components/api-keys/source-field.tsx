@@ -19,7 +19,7 @@ export function KeySourceControl({
 }: {
   customKey: string;
   disabled: boolean;
-  error?: string;
+  error?: string | undefined;
   onCustomKeyChange: (value: string) => void;
   onSourceChange: (value: KeySource) => void;
   source: KeySource;

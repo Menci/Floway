@@ -12,7 +12,7 @@ const POLICY: ImageCachePolicy = {
 interface PutCall {
   key: string;
   value: Uint8Array;
-  options?: { expirationTtl?: number; metadata?: { writtenAt: number } };
+  options: { expirationTtl?: number; metadata?: { writtenAt: number } } | undefined;
 }
 
 const recordingKv = (initial?: { value: Uint8Array; metadata: { writtenAt: number } | null }): {

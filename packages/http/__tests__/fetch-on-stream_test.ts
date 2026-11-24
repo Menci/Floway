@@ -316,7 +316,7 @@ describe('fetchOnStream — writer-lock release on rejected calls', () => {
     await expect(
       fetchOnStream(
         { readable: fake.readable, writable: fake.writable },
-        { method: 'POST', path: '/', headers: [['X\rEvil', 'v']], body: undefined },
+        { method: 'POST', path: '/', headers: [['X\rEvil', 'v']] },
       ),
     ).rejects.toMatchObject({ code: 'BAD_HEADERS' });
     // After rejection, the writable must be unlocked so the caller can

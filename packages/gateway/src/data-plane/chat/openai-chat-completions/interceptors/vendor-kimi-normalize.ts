@@ -34,7 +34,7 @@ const rewriteInboundUsage = (chunk: OpenAIChatCompletionsStreamEvent): OpenAICha
       cached_tokens: cached,
     },
   };
-  return { ...chunk, usage: next as unknown as OpenAIChatCompletionsStreamEvent['usage'] };
+  return { ...chunk, usage: next as unknown as NonNullable<OpenAIChatCompletionsStreamEvent['usage']> };
 };
 
 export const withVendorKimiOpenAIChatCompletionsNormalize: OpenAIChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {

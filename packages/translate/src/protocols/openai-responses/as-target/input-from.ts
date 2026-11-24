@@ -173,7 +173,7 @@ export const openaiResponsesConversationFromIR = (
     });
   });
 
-  return { instructions, input };
+  return { ...(instructions === undefined ? {} : { instructions }), input };
 };
 
 const requireSchema = (format: IRInputOutputFormat): Readonly<Record<string, unknown>> => {

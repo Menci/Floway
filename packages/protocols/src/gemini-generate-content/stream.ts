@@ -4,7 +4,7 @@ import { parseSSEStream } from '../common/parse-sse.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
 
 export interface ParseGeminiGenerateContentStreamOptions {
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 // `streamGenerateContent?alt=sse` writes one JSON GenerateContentResponse per

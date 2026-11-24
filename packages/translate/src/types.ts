@@ -5,7 +5,7 @@ export interface TranslateOptions {
   readonly sidecarCodec: SidecarCodec;
   // The upstream's own output limit, when the operator knows it. A target that
   // requires a ceiling uses it when the source stated none.
-  readonly fallbackMaxOutputTokens?: number;
+  readonly fallbackMaxOutputTokens?: number | undefined;
 }
 
 export type ApiErrorTranslator = (status: number, headers: Headers, body: Uint8Array) => {

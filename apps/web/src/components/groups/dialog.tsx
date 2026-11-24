@@ -19,7 +19,7 @@ const { Button, ColorSlider, DialogActions, DialogTitle, Field } = fluentCompone
 interface GroupForm { name: string; hue: number }
 
 export function GroupDialog({ group, groups, onOpenChange, onSaved, open }: {
-  group?: ControlPlaneGroup;
+  group?: ControlPlaneGroup | undefined;
   groups: ControlPlaneGroup[];
   onOpenChange: (open: boolean) => void;
   onSaved: (id: number) => Promise<void>;
@@ -68,7 +68,7 @@ export function GroupDialog({ group, groups, onOpenChange, onSaved, open }: {
     open={open}
     title={<DialogTitle>{t(group ? 'directory.groups.dialog.editTitle' : 'directory.groups.dialog.createTitle', { name: group?.name ?? '' })}</DialogTitle>}
   >
-    <Controller control={control} name="name" render={({ field }) => <Field label={t('directory.groups.fields.name')} validationState={errors.name ? 'error' : undefined} validationMessage={errors.name ? t('directory.groups.invalidName') : undefined}><Input {...field} autoComplete="off" disabled={saving} maxLength={64} spellCheck={false} /></Field>} />
+    <Controller control={control} name="name" render={({ field }) => <Field label={t('directory.groups.fields.name')} validationState={errors.name ? 'error' : 'none'} validationMessage={errors.name ? t('directory.groups.invalidName') : undefined}><Input {...field} autoComplete="off" disabled={saving} maxLength={64} spellCheck={false} /></Field>} />
     <Controller control={control} name="hue" render={({ field }) => <Field label={t('directory.groups.fields.hue')}>
       <ColorSlider
         aria-label={t('directory.groups.fields.hue')}

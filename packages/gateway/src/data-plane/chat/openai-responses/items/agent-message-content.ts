@@ -24,6 +24,18 @@ const nullableString = (value: unknown, path: string): string | null | undefined
   return value;
 };
 
+const inputImage = (part: AgentContentFields, path: string): OpenAIResponsesInputImage => {
+  const imageUrl = nullableString(part.image_url, `${path}.image_url`);
+  const fileId = nullableString(part.file_id, `${path}.file_id`);
+  const detail = nullableString(part.detail, `${path}.detail`);
+  return {
+    type: 'input_image',
+    ...(imageUrl === undefined ? {} : { image_url: imageUrl }),
+    ...(fileId === undefined ? {} : { file_id: fileId }),
+    ...(detail === undefined ? {} : { detail }),
+  };
+};
+
 const escapeXmlText = (value: string): string =>
   value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
@@ -88,12 +100,7 @@ export const agentMessageContent = (
       pushTypedTextPart(content, part.type, requiredString((part as AgentContentFields).refusal, `${path}.refusal`));
       break;
     case 'input_image':
-      content.push({
-        type: 'input_image',
-        image_url: nullableString((part as AgentContentFields).image_url, `${path}.image_url`),
-        file_id: nullableString((part as AgentContentFields).file_id, `${path}.file_id`),
-        detail: nullableString((part as AgentContentFields).detail, `${path}.detail`),
-      });
+      content.push(inputImage(part, path));
       break;
     case 'input_file':
       content.push({ ...part, type: 'input_file' });
@@ -103,12 +110,7 @@ export const agentMessageContent = (
       content.push({ ...part, type: 'input_audio' });
       break;
     case 'computer_screenshot':
-      pushTypedImagePart(content, part.type, {
-        type: 'input_image',
-        image_url: nullableString((part as AgentContentFields).image_url, `${path}.image_url`),
-        file_id: nullableString((part as AgentContentFields).file_id, `${path}.file_id`),
-        detail: nullableString((part as AgentContentFields).detail, `${path}.detail`),
-      });
+      pushTypedImagePart(content, part.type, inputImage(part, path));
       break;
     default:
       return throwChatServeFailure({ kind: 'invalid-input', message: `Invalid value: '${part.type}' for '${path}.type'.`, param: `${path}.type` });

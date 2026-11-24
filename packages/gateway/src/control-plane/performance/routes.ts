@@ -10,8 +10,8 @@ import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { PerformanceOverviewGroupBy } from '../../repo/types.ts';
 import type { performanceQuery } from '../schemas.ts';
-import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata, telemetryUpstreamMetadata } from '../shared/telemetry-overview.ts';
-import { createTelemetryBucket, type TelemetryBucketGranularity } from '@floway-dev/protocols/common';
+import { loadTelemetryOverviewIdentity, readTelemetryOverviewWindow, telemetryIdentityError, telemetryIdentityMetadata, telemetryUpstreamMetadata, type TelemetryOverviewWindow } from '../shared/telemetry-overview.ts';
+import { createTelemetryBucket } from '@floway-dev/protocols/common';
 
 type Ctx = CtxWithQuery<typeof performanceQuery>;
 
@@ -24,13 +24,8 @@ interface PerformanceFilters {
   keyId: ReadonlySet<string>;
 }
 
-interface PerformanceQueryParams {
-  start: string;
-  end: string;
-  bucket: TelemetryBucketGranularity;
+interface PerformanceQueryParams extends TelemetryOverviewWindow {
   groupBy: PerformanceOverviewGroupBy;
-  timeZone?: string;
-  timezoneOffsetMinutes: number;
   filters: PerformanceFilters;
 }
 

@@ -20,7 +20,7 @@ import { readKimiCodeUsage } from '@floway-dev/provider-kimi-code/browser';
 
 const { Text } = fluentComponents;
 
-export function KimiCodeUsageCard({ probeRecord, readOnly = false, record }: { probeRecord: UpstreamRecordEnvelope; readOnly?: boolean; record: KimiCodeRecord }) {
+export function KimiCodeUsageCard({ probeRecord, readOnly = false, record }: { probeRecord: UpstreamRecordEnvelope; readOnly?: boolean | undefined; record: KimiCodeRecord }) {
   const { t } = useTranslation();
   const preferences = useUserPreferences();
   const locale = useLocale();

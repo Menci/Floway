@@ -147,7 +147,7 @@ const toApiKey = (row: ApiKeyRow): ApiKey => ({
   key: row.key,
   serverSecret: parseServerSecret(row.server_secret, `api_keys.server_secret for id=${row.id}`),
   createdAt: row.created_at,
-  lastUsedAt: row.last_used_at ?? undefined,
+  ...(row.last_used_at === null ? {} : { lastUsedAt: row.last_used_at }),
   upstreamIds: parseUpstreamIds(row.upstream_ids, `api_keys.id=${row.id}`),
   randomizeUpstreams: row.randomize_upstreams === 1,
   deletedAt: row.deleted_at,

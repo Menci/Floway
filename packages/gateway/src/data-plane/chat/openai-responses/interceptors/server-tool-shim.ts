@@ -243,9 +243,9 @@ const usageOf = (usage: OpenAIResponsesResultEx['usage']): MergeUsage => {
 };
 
 const rewriteHostedToolChoice = (
-  toolChoice: OpenAIResponsesToolChoice | null | undefined,
+  toolChoice: OpenAIResponsesToolChoice | null,
   active: readonly ActiveServerTool[],
-): OpenAIResponsesToolChoice | null | undefined => {
+): OpenAIResponsesToolChoice | null => {
   if (toolChoice == null || typeof toolChoice === 'string') return toolChoice;
   if (toolChoice.type === 'allowed_tools' && Array.isArray(toolChoice.tools)) {
     const tools = toolChoice.tools.map(selector => {
@@ -1251,8 +1251,7 @@ export const withOpenAIResponsesServerToolShim = (
     const toolName = resolveServerToolName(prepared.baseToolName, currentTools, ctx.payload.input, ctx.payload.tool_choice);
     const { hosted } = prepared;
     const choice = ctx.payload.tool_choice;
-    let helperFunctionChoice: Exclude<OpenAIResponsesToolChoice, string> | undefined;
-    let rewrittenHelperChoice = choice;
+    let helperFunctionChoice: { original: Exclude<OpenAIResponsesToolChoice, string>; rewritten: Exclude<OpenAIResponsesToolChoice, string> } | undefined;
     if (hosted !== undefined && toolName !== prepared.baseToolName
       && typeof choice === 'object' && choice !== null) {
       // Forced and allowed-tools selectors share the same ownership rule. A
@@ -1268,11 +1267,12 @@ export const withOpenAIResponsesServerToolShim = (
             || ('namespace' in selector && selector.namespace !== undefined)) return selector;
           return { ...selector, name: toolName };
         };
+        let rewritten = choice;
         if (choice.type === 'allowed_tools' && Array.isArray(choice.tools)) {
           const tools = choice.tools.map(rebaseSelector);
-          if (tools.some((tool, index) => tool !== choice.tools[index])) rewrittenHelperChoice = { ...choice, tools };
-        } else rewrittenHelperChoice = rebaseSelector(choice);
-        if (rewrittenHelperChoice !== choice) helperFunctionChoice = choice;
+          if (tools.some((tool, index) => tool !== choice.tools[index])) rewritten = { ...choice, tools };
+        } else rewritten = rebaseSelector(choice);
+        if (rewritten !== choice) helperFunctionChoice = { original: choice, rewritten };
       }
     }
     let canonicalHostedTool: OpenAIResponsesHostedTool | undefined = undefined;
@@ -1281,16 +1281,16 @@ export const withOpenAIResponsesServerToolShim = (
       canonicalHostedTool = rewrite.canonicalTopLevelHostedTool;
       ctx.payload = rewrite.payload;
     }
-    const originalToolChoice = helperFunctionChoice ?? hostedToolChoiceToRestore(choice, hosted, toolName);
+    const originalToolChoice = helperFunctionChoice?.original ?? hostedToolChoiceToRestore(choice, hosted, toolName);
     if (helperFunctionChoice !== undefined) {
-      ctx.payload = { ...ctx.payload, tool_choice: rewrittenHelperChoice };
+      ctx.payload = { ...ctx.payload, tool_choice: helperFunctionChoice.rewritten };
     }
     active.push({ ...prepared, toolName, canonicalHostedTool, originalToolChoice });
   }
 
-  const rewrittenToolChoice = rewriteHostedToolChoice(ctx.payload.tool_choice, active);
-  if (rewrittenToolChoice !== ctx.payload.tool_choice) {
-    ctx.payload = { ...ctx.payload, tool_choice: rewrittenToolChoice };
+  if (ctx.payload.tool_choice !== undefined) {
+    const rewrittenToolChoice = rewriteHostedToolChoice(ctx.payload.tool_choice, active);
+    if (rewrittenToolChoice !== ctx.payload.tool_choice) ctx.payload = { ...ctx.payload, tool_choice: rewrittenToolChoice };
   }
 
   const canonicalInput = ctx.payload.input;

@@ -25,10 +25,11 @@ describe('OMP model declarations', () => {
   });
 
   it('registers supported auxiliary runners and omits unsupported endpoint families', () => {
+    const { chat: _chat, ...withoutChat } = model;
     const data = [
       model,
-      { ...model, id: 'embedding', kind: 'embedding' as const, endpoints: { openaiEmbeddings: {} }, chat: undefined },
-      { ...model, id: 'image', kind: 'image' as const, endpoints: { openaiImagesGenerations: {} }, chat: undefined },
+      { ...withoutChat, id: 'embedding', kind: 'embedding' as const, endpoints: { openaiEmbeddings: {} } },
+      { ...withoutChat, id: 'image', kind: 'image' as const, endpoints: { openaiImagesGenerations: {} } },
       { ...model, id: 'rerank', kind: 'rerank' as const },
       { ...model, id: 'transcription', kind: 'transcription' as const },
     ];

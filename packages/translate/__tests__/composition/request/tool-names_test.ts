@@ -38,20 +38,21 @@ test('distinct structured identities with the same dotted spelling get distinct 
 });
 
 test.each([undefined, 'files'])('allocates distinct names per callable kind in namespace %s independently of selection', namespace => {
+  const grouped = namespace === undefined ? {} : { namespace };
   const tools: IRInputTool[] = [
-    { type: 'function', namespace, name: 'edit', parameters: { type: 'object' } },
-    { type: 'custom', namespace, name: 'edit' },
+    { type: 'function', ...grouped, name: 'edit', parameters: { type: 'object' } },
+    { type: 'custom', ...grouped, name: 'edit' },
     { type: 'function', name: 'edit_2', parameters: { type: 'object' } },
   ];
   const turns: IRInputTurnWithCallIds[] = [{
     kind: 'assistant', items: [
-      { type: 'function_call', namespace, name: 'edit', call_id: 'f', arguments: '{}' },
-      { type: 'custom_tool_call', namespace, name: 'edit', call_id: 'c', input: 'raw' },
-      { type: 'custom_tool_call', namespace, name: 'edit', call_id: 'c2', input: 'again' },
+      { type: 'function_call', ...grouped, name: 'edit', call_id: 'f', arguments: '{}' },
+      { type: 'custom_tool_call', ...grouped, name: 'edit', call_id: 'c', input: 'raw' },
+      { type: 'custom_tool_call', ...grouped, name: 'edit', call_id: 'c2', input: 'again' },
     ],
   }];
   const baseline = allocateToolNames({ ...request(tools), tool_choice: 'auto' }, turns);
-  const selected = allocateToolNames({ ...request(tools), tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', namespace, name: 'edit' }] } }, turns);
+  const selected = allocateToolNames({ ...request(tools), tool_choice: { type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', ...grouped, name: 'edit' }] } }, turns);
   const first = namespace === undefined ? 'edit' : 'files_edit';
   const second = namespace === undefined ? 'edit_3' : 'files_edit_2';
   assertEquals(baseline.request.tools?.map(tool => tool.name), [first, second, 'edit_2']);

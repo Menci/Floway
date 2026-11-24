@@ -76,7 +76,9 @@ export const mockPerfTelemetryContext = (overrides: Partial<PerformanceTelemetry
   ...overrides,
 });
 
-export const stubProvider = (overrides: Partial<ProviderInstance> = {}): ProviderInstance => ({
+// An undefined override keeps the stub's default, so a test can forward its
+// own optional handler without branching on whether it was supplied.
+export const stubProvider = (overrides: { [K in keyof ProviderInstance]?: ProviderInstance[K] | undefined } = {}): ProviderInstance => ({
   runScheduledTask: overrides.runScheduledTask ?? (() => Promise.resolve()),
   getProvidedModels: overrides.getProvidedModels ?? (() => Promise.resolve([])),
   callAlphaSearch: overrides.callAlphaSearch ?? (() => Promise.reject(new Error('stubProvider.callAlphaSearch was called'))),

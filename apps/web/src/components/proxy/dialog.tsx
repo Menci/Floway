@@ -109,7 +109,7 @@ export function ProxyDialog({ backoffs, onOpenChange, open, onSaved, record }: {
     clearDiagnostics();
     revalidate();
   }, [clearDiagnostics, clearErrors, getValues, revalidate, setValue]);
-  const handleKindChange = useCallback((_: unknown, data: { optionValue?: string }) => {
+  const handleKindChange = useCallback((_: unknown, data: { optionValue?: string | undefined }) => {
     if (!data.optionValue) return;
     const next = data.optionValue as FormKind;
     updateStructuredConfig(previous => defaultsFor(next, { host: previous.host, port: previous.port, name: previous.name }));

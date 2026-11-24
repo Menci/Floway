@@ -44,7 +44,7 @@ function AddressedBackButton({ children, to }: { children: ReactNode; to: string
   return <BackButton {...address}>{children}</BackButton>;
 }
 
-function BackButton({ children, href, onClick }: { children: ReactNode; href?: string; onClick?: (event: MouseEvent<HTMLElement>) => void }) {
+function BackButton({ children, href, onClick }: { children: ReactNode; href?: string | undefined; onClick?: ((event: MouseEvent<HTMLElement>) => void) | undefined }) {
   const styles = useStyles();
   const shared = { appearance: 'subtle', className: styles.root, icon: <ArrowLeftRegular />, onClick } as const;
   return href === undefined

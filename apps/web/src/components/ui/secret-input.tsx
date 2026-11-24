@@ -8,9 +8,9 @@ type InputProps = ComponentProps<typeof Input>;
 // opt-out attributes are advisory — each manager honours a different one. The
 // field additionally stays readOnly, which is not a fill target, until the user
 // reaches for it, re-arming on blur while still empty.
-export function SecretInput({ onChange, revealed = false, value, ...rest }: InputProps & { revealed?: boolean }) {
+export function SecretInput({ revealed = false, ...rest }: InputProps & { revealed?: boolean | undefined }) {
   const [guardLocked, setGuardLocked] = useState(true);
-  const hasValue = String(value ?? '').length > 0;
+  const hasValue = String(rest.value ?? '').length > 0;
   const unlock = () => setGuardLocked(false);
 
   return <Input
@@ -26,7 +26,6 @@ export function SecretInput({ onChange, revealed = false, value, ...rest }: Inpu
       if (!hasValue) setGuardLocked(true);
       rest.onBlur?.(event);
     }}
-    onChange={onChange}
     onFocus={event => {
       unlock();
       rest.onFocus?.(event);
@@ -46,6 +45,5 @@ export function SecretInput({ onChange, revealed = false, value, ...rest }: Inpu
     readOnly={rest.readOnly ?? (!rest.disabled && guardLocked && !hasValue)}
     spellCheck={false}
     type={revealed ? 'text' : 'password'}
-    value={value}
   />;
 }

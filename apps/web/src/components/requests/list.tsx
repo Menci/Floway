@@ -164,9 +164,9 @@ const useStyles = makeStyles({
 });
 
 interface RequestListProps {
-  q?: string;
-  failures?: boolean;
-  onFilterChange?: (q: string, failures: boolean) => void;
+  q?: string | undefined;
+  failures?: boolean | undefined;
+  onFilterChange?: ((q: string, failures: boolean) => void) | undefined;
   /** Where the record a row opens is read, so the row can be opened in a second tab. */
   addressOfRecord: (recordId: string) => string;
   apiKeys: ApiKey[];

@@ -15,12 +15,12 @@ const { Text } = fluentComponents;
 // instead.
 export function EditorSection({ children, description, error, hint, info, inline = false, level = 2, title }: {
   children: ReactNode;
-  description?: string;
-  error?: string;
-  hint?: string;
-  info?: InfoButtonProps['info'];
-  inline?: boolean;
-  level?: 2 | 3;
+  description?: string | undefined;
+  error?: string | undefined;
+  hint?: string | undefined;
+  info?: InfoButtonProps['info'] | undefined;
+  inline?: boolean | undefined;
+  level?: 2 | 3 | undefined;
   title: string;
 }) {
   const dangerText = useDangerTextClass();

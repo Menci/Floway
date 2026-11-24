@@ -21,9 +21,9 @@ export interface GatewayCtx {
   readonly requestStartedAt: number;
   readonly upstreamIds: readonly string[] | null;
   readonly randomizeUpstreams: boolean;
-  readonly abortSignal?: AbortSignal;
+  readonly abortSignal?: AbortSignal | undefined;
   readonly wantsStream: boolean;
-  readonly downstreamAbortController?: AbortController;
+  readonly downstreamAbortController?: AbortController | undefined;
   readonly backgroundScheduler: BackgroundScheduler;
   readonly attempt: AttemptState;
   // The deployment colo / region, used both as the `runtimeLocation`

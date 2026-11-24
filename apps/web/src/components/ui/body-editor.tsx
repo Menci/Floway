@@ -14,7 +14,7 @@ import { DARK_SCHEME_QUERY, useMediaQuery } from '../../lib/use-media-query';
 
 const { Button, Menu, MenuItem, MenuItemCheckbox, MenuList, MenuPopover, MenuTrigger } = fluentComponents;
 
-export default function BodyEditor({ text, json, label, toolbarStart, emptyText }: { text: string; json: boolean; label: string; toolbarStart?: ReactNode; emptyText?: string }) {
+export default function BodyEditor({ text, json, label, toolbarStart, emptyText }: { text: string; json: boolean; label: string; toolbarStart?: ReactNode | undefined; emptyText?: string | undefined }) {
   const { t } = useTranslation();
   const [wrap, setWrap] = useState(true);
   const { copy, outcomeFor } = useCopyToClipboard();

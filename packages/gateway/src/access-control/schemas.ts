@@ -36,11 +36,11 @@ export const accessTargetScopeSchema = z.discriminatedUnion('kind', [
 ]);
 
 export const accessValuesSchema = z.object({
-  'Model.Use': z.boolean().optional(),
-  'Upstream.Audit': z.boolean().optional(),
-  'Upstream.Edit': z.enum(['off', 'models', 'full']).optional(),
-  'User.Audit': z.boolean().optional(),
-  'Permission.Audit': z.boolean().optional(),
+  'Model.Use': z.boolean().exactOptional(),
+  'Upstream.Audit': z.boolean().exactOptional(),
+  'Upstream.Edit': z.enum(['off', 'models', 'full']).exactOptional(),
+  'User.Audit': z.boolean().exactOptional(),
+  'Permission.Audit': z.boolean().exactOptional(),
 }).strict();
 
 export const accessRecordInputSchema = z.object({

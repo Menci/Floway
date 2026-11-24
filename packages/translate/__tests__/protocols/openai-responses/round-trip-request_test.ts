@@ -157,7 +157,7 @@ it.each(['additional_tools', 'tool_search_output'] as const)('restores assistant
     const original = structuredClone(source);
     const result = target === 'openaiChatCompletions'
       ? { target: await buildTargetPayloadFor(pairs.responsesToChat[0], pairs.responsesToChat[1], source, { sidecarCodec: codec }) }
-      : await buildMessagesRequest(source, codec, { fallbackMaxOutputTokens: undefined });
+      : await buildMessagesRequest(source, codec);
 
     expect(result.target.messages).toEqual(nativeTurns);
     expect(result.target.tools).toHaveLength(1);

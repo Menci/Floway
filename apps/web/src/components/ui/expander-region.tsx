@@ -43,7 +43,7 @@ const useStyles = makeStyles({
   contentBody: { height: 'fit-content', minHeight: 0 },
 });
 
-export function ExpanderRegion({ open, children, onCollapsed }: { open: boolean; children: ReactNode; onCollapsed?: () => void }) {
+export function ExpanderRegion({ open, children, onCollapsed }: { open: boolean; children: ReactNode; onCollapsed?: (() => void) | undefined }) {
   const styles = useStyles();
   return <div className={mergeClasses(styles.contentFrame, open && styles.contentFrameOpen)} inert={!open}
     onTransitionEnd={event => { if (event.target === event.currentTarget && !open) onCollapsed?.(); }}>

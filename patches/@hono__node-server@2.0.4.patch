@@ -1,0 +1,44 @@
+diff --git a/dist/index.d.cts b/dist/index.d.cts
+index d3c55ce9943c631d1bf280ebd1b5ef34bfc804e9..7bdc8d8f344c1e7e1edf5ad368feb2d73819915e 100644
+--- a/dist/index.d.cts
++++ b/dist/index.d.cts
+@@ -9,7 +9,7 @@ import { UpgradeWebSocket } from "hono/ws";
+ type WSReadyState = 0 | 1 | 2 | 3;
+ type WebSocketData = string | ArrayBuffer | Uint8Array | readonly Uint8Array[];
+ type WebSocketSendOptions = {
+-  compress?: boolean;
++  compress?: boolean | undefined;
+ };
+ interface WebSocketLike {
+   protocol: string;
+@@ -23,7 +23,7 @@ interface WebSocketLike {
+ }
+ interface WebSocketServerLike {
+   options: {
+-    noServer?: boolean;
++    noServer?: boolean | undefined;
+   };
+   on(event: 'connection', listener: (ws: WebSocketLike, request: IncomingMessage) => void): this;
+   on(event: 'headers', listener: (headers: string[]) => void): this;
+diff --git a/dist/index.d.mts b/dist/index.d.mts
+index a815b86f007cc51dab8cdf0665f4bd49fd78f31e..bbdcfdb241048342651755bfc94648c7cbc49c62 100644
+--- a/dist/index.d.mts
++++ b/dist/index.d.mts
+@@ -9,7 +9,7 @@ import { ServerOptions as ServerOptions$2, createServer as createServer$2 } from
+ type WSReadyState = 0 | 1 | 2 | 3;
+ type WebSocketData = string | ArrayBuffer | Uint8Array | readonly Uint8Array[];
+ type WebSocketSendOptions = {
+-  compress?: boolean;
++  compress?: boolean | undefined;
+ };
+ interface WebSocketLike {
+   protocol: string;
+@@ -23,7 +23,7 @@ interface WebSocketLike {
+ }
+ interface WebSocketServerLike {
+   options: {
+-    noServer?: boolean;
++    noServer?: boolean | undefined;
+   };
+   on(event: 'connection', listener: (ws: WebSocketLike, request: IncomingMessage) => void): this;
+   on(event: 'headers', listener: (headers: string[]) => void): this;

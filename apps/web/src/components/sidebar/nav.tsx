@@ -62,7 +62,7 @@ const NAV_INDICATOR_INSET = 0;
 function SidebarLink({ children, icon, onNavigate, pending, to }: {
   children: ReactNode;
   icon: NavItemProps['icon'];
-  onNavigate?: () => void;
+  onNavigate?: (() => void) | undefined;
   pending: boolean;
   to: string;
 }) {
@@ -87,7 +87,7 @@ function SidebarLink({ children, icon, onNavigate, pending, to }: {
 
 const AccountIcon = accountPage.icon;
 
-export function Sidebar({ onNavigate, user }: { onNavigate?: () => void; user: AuthUser }) {
+export function Sidebar({ onNavigate, user }: { onNavigate?: (() => void) | undefined; user: AuthUser }) {
   const { t } = useTranslation();
   const { pathname } = useLocation();
   const navigation = useNavigation();

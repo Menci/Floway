@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { mergeCopilotVariants } from '../src/merge-variants.ts';
 import { copilotVariantIndex } from '../src/model-variants.ts';
@@ -85,4 +85,17 @@ test('mergeCopilotVariants merges 4.7 base + high + xhigh + 1m-internal', () => 
   assertEquals(capabilities.limits?.max_prompt_tokens, 936_000);
   assertEquals(capabilities.limits?.max_output_tokens, 64_000);
   assertSameSet(capabilities.supports?.reasoning_effort, ['low', 'medium', 'high', 'xhigh']);
+});
+
+test('mergeCopilotVariants omits capabilities that no variant states with a usable value', () => {
+  const rawModel: CopilotRawModel = JSON.parse(`{
+    "id": "claude-opus-4.7",
+    "capabilities": {
+      "limits": { "max_context_window_tokens": null, "max_prompt_tokens": "168000", "max_output_tokens": null },
+      "supports": { "reasoning_effort": null, "vision": true }
+    }
+  }`);
+  const [model] = mergeCopilotVariants(copilotVariantIndex([rawModel]));
+  expect(model.capabilities?.limits).toStrictEqual({});
+  expect(model.capabilities?.supports).toStrictEqual({ vision: true });
 });

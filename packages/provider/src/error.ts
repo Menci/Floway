@@ -12,11 +12,11 @@ export interface InternalDebugError {
   target_api?: string;
 }
 
-export const internalDebugErrorFields = (error: InternalDebugError): Pick<InternalDebugError, 'name' | 'stack' | 'cause' | 'target_api'> => ({
-  name: error.name,
-  stack: error.stack,
-  cause: error.cause,
-  target_api: error.target_api,
+export const internalDebugErrorFields = ({ name, stack, cause, target_api }: InternalDebugError): Pick<InternalDebugError, 'name' | 'stack' | 'cause' | 'target_api'> => ({
+  name,
+  ...(stack === undefined ? {} : { stack }),
+  cause,
+  ...(target_api === undefined ? {} : { target_api }),
 });
 
 const serializeCause = (cause: unknown): unknown => {
@@ -37,7 +37,7 @@ export const toInternalDebugError = (error: unknown, targetApi?: string): Intern
     type: 'internal_error',
     name: known.name,
     message: known.message,
-    stack: known.stack,
+    ...(known.stack === undefined ? {} : { stack: known.stack }),
     cause: serializeCause(known.cause),
     ...(targetApi ? { target_api: targetApi } : {}),
   };

@@ -1,5 +1,5 @@
 import type { IRInputTurnWithCallIds } from './call-ids.ts';
-import type { IRInputRequestHeader, IRInputTool, IRInputToolChoice, IRInputToolSelector } from '../../ir/input/types.ts';
+import type { IRInputCustomToolCallItem, IRInputFunctionCallItem, IRInputRequestHeader, IRInputTool, IRInputToolChoice, IRInputToolSelector } from '../../ir/input/types.ts';
 import { TranslateInputException } from '../../shared/input-error.ts';
 import type { RestoredAssistantTurn } from '../reading.ts';
 
@@ -14,6 +14,12 @@ const customNamesOf = (request: IRInputRequestHeader): ReadonlySet<string> =>
     .flatMap(tool => tool.type === 'custom' ? [tool.name] : []));
 
 const callableKey = ({ type, namespace, name }: IRInputToolSelector): string => JSON.stringify([type, namespace, name]);
+
+const callSelector = (item: IRInputFunctionCallItem | IRInputCustomToolCallItem): IRInputToolSelector => ({
+  type: item.type === 'function_call' ? 'function' : 'custom',
+  name: item.name,
+  ...(item.namespace === undefined ? {} : { namespace: item.namespace }),
+});
 
 /**
  * States this target's request and conversation with wireNames callable names.
@@ -38,9 +44,7 @@ export const allocateToolNames = <Restored>(
   const callables = [
     ...(request.tools ?? []),
     ...inputTurns.flatMap(turn => turn.kind === 'restored' ? [] : turn.items.flatMap(item =>
-      item.type === 'function_call' || item.type === 'custom_tool_call'
-        ? [{ type: item.type === 'function_call' ? 'function' as const : 'custom' as const, namespace: item.namespace, name: item.name }]
-        : [])),
+      item.type === 'function_call' || item.type === 'custom_tool_call' ? [callSelector(item)] : [])),
   ];
   const reserved = new Set(callables.flatMap(callable => callable.namespace === undefined ? [callable.name] : []));
   const wireNames = assignToolNames(callables, reserved);
@@ -86,7 +90,7 @@ export const allocateToolNames = <Restored>(
         return {
           kind: 'assistant',
           items: turn.items.map(item => item.type === 'function_call' || item.type === 'custom_tool_call'
-            ? { ...item, name: wireNameOf({ type: item.type === 'function_call' ? 'function' : 'custom', namespace: item.namespace, name: item.name }) }
+            ? { ...item, name: wireNameOf(callSelector(item)) }
             : item),
         };
       }

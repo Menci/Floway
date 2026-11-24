@@ -53,8 +53,8 @@ const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefin
       }
     }
     for (const field of ['adaptive', 'mandatory'] as const) {
-      const values = new Set(blocks.map(block => block[field]));
-      if (values.size === 1 && [...values][0] !== undefined) reasoning[field] = [...values][0];
+      const [value, ...others] = new Set(blocks.map(block => block[field]));
+      if (value !== undefined && others.length === 0) reasoning[field] = value;
     }
     if (Object.keys(reasoning).length) result.reasoning = reasoning;
   }
@@ -78,6 +78,9 @@ export const computeAnnouncedMetadata = (
   const out: AnnouncedMetadata = {};
   if (Object.keys(limits).length) out.limits = limits;
   const chats = available.map(({ target, model }) => effectiveChat(model.chat, target.rules));
-  if (chats.every((chat): chat is ChatModelInfo => chat !== undefined)) out.chat = intersectChat(chats);
+  if (chats.every((chat): chat is ChatModelInfo => chat !== undefined)) {
+    const chat = intersectChat(chats);
+    if (chat !== undefined) out.chat = chat;
+  }
   return out;
 };

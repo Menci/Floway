@@ -465,9 +465,9 @@ type ModelServerMode = 'ok' | 'adaptive' | 'installer-html' | 'installer-codex-p
 interface ModelServerRequest {
   method: string;
   path: string;
-  userAgent?: string;
-  authorization?: string;
-  endpoint?: string;
+  userAgent: string | undefined;
+  authorization: string | undefined;
+  endpoint: string | undefined;
   headers: Record<string, string | string[] | undefined>;
   body?: Record<string, unknown>;
 }

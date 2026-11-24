@@ -4,7 +4,7 @@ import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 interface OpenBlock {
   readonly type: string;
-  readonly initialSignature?: string;
+  readonly initialSignature: string | undefined;
   signatureEvent?: SignatureDeltaEvent;
 }
 

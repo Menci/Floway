@@ -14,15 +14,15 @@ const SCROLL_AREA_HOST_CLASS = 'floway-scroll-area relative overflow-hidden';
 
 interface ScrollAreaProps extends PropsWithChildren {
   axes: ScrollAxes;
-  className?: string;
-  contentClassName?: string;
-  noTabIndex?: boolean;
+  className?: string | undefined;
+  contentClassName?: string | undefined;
+  noTabIndex?: boolean | undefined;
   /**
    * Styles the scrollport itself -- the box that clips. Padding on the host is
    * outside the clip, so a shadow, focus ring or outline drawn inside the
    * scroller is cut at the scrollport's edge; padding here keeps the overhang.
    */
-  viewportClassName?: string;
+  viewportClassName?: string | undefined;
 }
 
 let nativeScrollbarSize = 0;

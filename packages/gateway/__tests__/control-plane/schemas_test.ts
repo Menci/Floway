@@ -61,6 +61,10 @@ describe('upstreamModelSchema chat', () => {
   });
 });
 
+test('upstream creation leaves omitted upstream and model flag overrides absent', () => {
+  expect(createUpstreamBody.parse(baseAzure)).toStrictEqual(baseAzure);
+});
+
 describe('upstreamModelSchema rerank', () => {
   const customRerank = () => ({
     kind: 'custom' as const,

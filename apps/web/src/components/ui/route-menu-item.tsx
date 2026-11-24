@@ -25,8 +25,8 @@ const useStyles = makeStyles({
 
 export function RouteMenuItem({ children, icon, subText, to }: {
   children: ReactNode;
-  icon?: ComponentProps<typeof MenuItem>['icon'];
-  subText?: ComponentProps<typeof MenuItem>['subText'];
+  icon?: ComponentProps<typeof MenuItem>['icon'] | undefined;
+  subText?: ComponentProps<typeof MenuItem>['subText'] | undefined;
   to: string;
 }) {
   const styles = useStyles();

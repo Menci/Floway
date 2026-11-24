@@ -105,7 +105,7 @@ export default function DashboardAdminSiteSettings({ loaderData }: Route.Compone
                   render={({ field }) => (
                     <Field
                       validationMessage={errors.siteName?.message ? t(errors.siteName.message, { max: SITE_NAME_MAX_LENGTH }) : undefined}
-                      validationState={errors.siteName ? 'error' : undefined}
+                      validationState={errors.siteName ? 'error' : 'none'}
                     >
                       <Input
                         {...field}

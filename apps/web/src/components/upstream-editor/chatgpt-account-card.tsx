@@ -17,7 +17,7 @@ import { WALL_CLOCK_REFRESH_MS } from '../upstreams/subscription-quota';
 
 const { Badge, Text } = fluentComponents;
 
-export function ChatGPTAccountCard({ readOnly = false, record }: { readOnly?: boolean; record: ChatGPTRecord }) {
+export function ChatGPTAccountCard({ readOnly = false, record }: { readOnly?: boolean | undefined; record: ChatGPTRecord }) {
   const { t } = useTranslation();
   const preferences = useUserPreferences();
   const now = useNow(WALL_CLOCK_REFRESH_MS);

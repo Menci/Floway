@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from '../i18n/translation';
 import type { Route } from './+types/dashboard-providers-model-aliases';
 import { requireDashboardAdmin } from './guards';
-import { api, callApi, callApiNoContent } from '../api/client';
+import { abortOptions, api, callApi, callApiNoContent } from '../api/client';
 import { mapResult, mergeResults } from '../api/partial-results';
 import type { ControlPlaneModel } from '../api/types';
 import { AliasDialog } from '../components/model-alias/dialog';
@@ -45,8 +45,8 @@ type AliasEditorInvocation =
 
 const loadPageData = async (current: LoaderData['catalog'], signal?: AbortSignal): Promise<LoaderData> => {
   const [aliasResult, modelResult] = await Promise.all([
-    callApi(() => api.api.aliases.$get(undefined, { init: { signal } })),
-    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } }, { init: { signal } })),
+    callApi(() => api.api.aliases.$get(undefined, abortOptions(signal))),
+    callApi(() => api.api.models.$get({ query: { aliases: 'false', include_unlisted: 'true' } }, abortOptions(signal))),
   ]);
   const { values, errors } = mergeResults(current, {
     aliases: aliasResult,
