@@ -33,6 +33,9 @@ patchedDependencies:
   eventsource-parser@3.1.0:
     hash: 86168a3936fdfb1a4487d8d4d76c438e545ed6c2b45bd72410df3e5cc0baed78
     path: patches/eventsource-parser@3.1.0.patch
+  hono@4.12.22:
+    hash: 89545d942d239e5b8026173d9584be3be03181743f649c25593adebd79af8fe1
+    path: patches/hono@4.12.22.patch
   klona@2.0.6:
     hash: 86c99277c7bbba3650a877ecb839518955a3fdb068579ba6ec957d107e310dd2
     path: patches/klona@2.0.6.patch
@@ -112,7 +115,7 @@ importers:
         version: link:../../packages/platform
       hono:
         specifier: ^4
-        version: 4.12.22
+        version: 4.12.22(patch_hash=89545d942d239e5b8026173d9584be3be03181743f649c25593adebd79af8fe1)
     devDependencies:
       '@floway-dev/test-utils':
         specifier: workspace:*
@@ -131,10 +134,10 @@ importers:
         version: link:../../packages/platform
       '@hono/node-server':
         specifier: ^2.0.4
-        version: 2.0.4(patch_hash=d2d7dd723760eafc47699c25680db2e507c1fcc890db0a16cdac5ee44a0b8b39)(hono@4.12.22)
+        version: 2.0.4(patch_hash=d2d7dd723760eafc47699c25680db2e507c1fcc890db0a16cdac5ee44a0b8b39)(hono@4.12.22(patch_hash=89545d942d239e5b8026173d9584be3be03181743f649c25593adebd79af8fe1))
       hono:
         specifier: ^4
-        version: 4.12.22
+        version: 4.12.22(patch_hash=89545d942d239e5b8026173d9584be3be03181743f649c25593adebd79af8fe1)
       sharp:
         specifier: ^0.35.3
         version: 0.35.3(@types/node@22.19.19)
@@ -222,7 +225,7 @@ importers:
         version: 3.2.0
       hono:
         specifier: ^4
-        version: 4.12.22
+        version: 4.12.22(patch_hash=89545d942d239e5b8026173d9584be3be03181743f649c25593adebd79af8fe1)
       i18next:
         specifier: ^26.3.6
         version: 26.3.6(typescript@5.9.3)
@@ -358,10 +361,10 @@ importers:
         version: link:../protocols
       '@hono/zod-validator':
         specifier: ^0.8.0
-        version: 0.8.0(hono@4.12.22)(zod@4.4.3)
+        version: 0.8.0(hono@4.12.22(patch_hash=89545d942d239e5b8026173d9584be3be03181743f649c25593adebd79af8fe1))(zod@4.4.3)
       hono:
         specifier: ^4
-        version: 4.12.22
+        version: 4.12.22(patch_hash=89545d942d239e5b8026173d9584be3be03181743f649c25593adebd79af8fe1)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -422,7 +425,7 @@ importers:
         version: link:../translate
       '@hono/zod-validator':
         specifier: ^0.8.0
-        version: 0.8.0(hono@4.12.22)(zod@4.4.3)
+        version: 0.8.0(hono@4.12.22(patch_hash=89545d942d239e5b8026173d9584be3be03181743f649c25593adebd79af8fe1))(zod@4.4.3)
       cbor-x:
         specifier: ^1.6.6
         version: 1.6.6(patch_hash=fe60080adce8d75e0431840c40fc8086df2ac5625589179e5ddab432216c33a7)
@@ -431,7 +434,7 @@ importers:
         version: 1.49.0
       hono:
         specifier: ^4
-        version: 4.12.22
+        version: 4.12.22(patch_hash=89545d942d239e5b8026173d9584be3be03181743f649c25593adebd79af8fe1)
       http-dates:
         specifier: 1.2.0
         version: 1.2.0
@@ -7652,13 +7655,13 @@ snapshots:
     dependencies:
       csstype: 3.2.3
 
-  '@hono/node-server@2.0.4(patch_hash=d2d7dd723760eafc47699c25680db2e507c1fcc890db0a16cdac5ee44a0b8b39)(hono@4.12.22)':
+  '@hono/node-server@2.0.4(patch_hash=d2d7dd723760eafc47699c25680db2e507c1fcc890db0a16cdac5ee44a0b8b39)(hono@4.12.22(patch_hash=89545d942d239e5b8026173d9584be3be03181743f649c25593adebd79af8fe1))':
     dependencies:
-      hono: 4.12.22
+      hono: 4.12.22(patch_hash=89545d942d239e5b8026173d9584be3be03181743f649c25593adebd79af8fe1)
 
-  '@hono/zod-validator@0.8.0(hono@4.12.22)(zod@4.4.3)':
+  '@hono/zod-validator@0.8.0(hono@4.12.22(patch_hash=89545d942d239e5b8026173d9584be3be03181743f649c25593adebd79af8fe1))(zod@4.4.3)':
     dependencies:
-      hono: 4.12.22
+      hono: 4.12.22(patch_hash=89545d942d239e5b8026173d9584be3be03181743f649c25593adebd79af8fe1)
       zod: 4.4.3
 
   '@hookform/resolvers@5.5.7(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.83.0(react@19.2.8))(valibot@1.4.2(typescript@5.9.3))(zod@4.4.3)':
@@ -9852,7 +9855,7 @@ snapshots:
     dependencies:
       hermes-estree: 0.25.1
 
-  hono@4.12.22: {}
+  hono@4.12.22(patch_hash=89545d942d239e5b8026173d9584be3be03181743f649c25593adebd79af8fe1): {}
 
   hookified@1.15.1: {}
 

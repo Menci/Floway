@@ -85,6 +85,14 @@ onlyBuiltDependencies:
 # https://github.com/honojs/node-server/blob/3c196345fe048ee219a4ff05ea616488858fbdfb/src/websocket-types.ts#L16-L34
 # https://github.com/DefinitelyTyped/DefinitelyTyped/blob/2bb69f9ac09fce7b6c84c835358fd6790e151005/types/ws/index.d.ts#L97
 # https://github.com/DefinitelyTyped/DefinitelyTyped/blob/2bb69f9ac09fce7b6c84c835358fd6790e151005/types/ws/index.d.ts#L343
+# hono's `JSONParsed` widens every optional property of a response to
+# `T | undefined`, so under `exactOptionalPropertyTypes` an RPC response is
+# no longer assignable to the type it was serialized from. The hono patch
+# backports the upstream fix, which keeps an optional property optional and
+# reserves `| undefined` for a required property whose value may be dropped.
+# Droppable once hono reaches 4.13.20.
+# https://github.com/honojs/hono/pull/5664
+# https://github.com/honojs/hono/blob/01b43fbb1b61147f9965fa14f32e2c2326610166/src/utils/types.ts#L100-L106
 patchedDependencies:
   'cbor-x@1.6.6': patches/cbor-x@1.6.6.patch
   '@discoveryjs/json-ext@1.1.0': patches/@discoveryjs__json-ext@1.1.0.patch
@@ -95,6 +103,7 @@ patchedDependencies:
   '@reclaimprotocol/tls@0.1.5': patches/@reclaimprotocol__tls@0.1.5.patch
   'overlayscrollbars@2.13.0': patches/overlayscrollbars@2.13.0.patch
   'eventsource-parser@3.1.0': patches/eventsource-parser@3.1.0.patch
+  'hono@4.12.22': patches/hono@4.12.22.patch
 
 # eventsource-parser drops a line it cannot read as an SSE field. Some upstreams
 # end a stream that already produced events with a bare JSON error body — no
