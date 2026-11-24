@@ -16,7 +16,7 @@
     "@floway-dev/http": "workspace:*",
     "@floway-dev/platform": "workspace:*",
     "@hono/node-server": "^2.0.4",
-    "hono": "^4",
+    "hono": "^4.13.20",
     "sharp": "^0.35.3",
     "tsx": "^4",
     "undici": "^8.3.0",

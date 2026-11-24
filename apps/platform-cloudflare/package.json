@@ -10,7 +10,7 @@
     "@floway-dev/gateway": "workspace:*",
     "@floway-dev/http": "workspace:*",
     "@floway-dev/platform": "workspace:*",
-    "hono": "^4"
+    "hono": "^4.13.20"
   },
   "devDependencies": {
     "@floway-dev/test-utils": "workspace:*"
