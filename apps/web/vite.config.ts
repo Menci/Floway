@@ -6,9 +6,9 @@ import { reactRouter } from '@react-router/dev/vite';
 import MagicString from 'magic-string';
 import { defineConfig, runnerImport, type Plugin } from 'vite';
 
-import { assertLegacyCss, legacyCssBuild } from './css-compatibility';
-import { wranglerProxiedPaths } from './gateway-paths';
-import { supportedLanguages } from './src/i18n/languages';
+import { assertLegacyCss, legacyCssBuild } from './css-compatibility.ts';
+import { wranglerProxiedPaths } from './gateway-paths.ts';
+import { supportedLanguages } from './src/i18n/languages.ts';
 
 // Part of the app's CSS is authored in TypeScript, because its rules spend
 // values the running app spends too: the WinUI layer under src/winui
