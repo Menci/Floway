@@ -100,7 +100,7 @@ export const agentMessageContent = (
       pushTypedTextPart(content, part.type, requiredString((part as AgentContentFields).refusal, `${path}.refusal`));
       break;
     case 'input_image':
-      content.push(inputImage(part as AgentContentFields, path));
+      content.push(inputImage(part, path));
       break;
     case 'input_file':
       content.push({ ...part, type: 'input_file' });
@@ -110,7 +110,7 @@ export const agentMessageContent = (
       content.push({ ...part, type: 'input_audio' });
       break;
     case 'computer_screenshot':
-      pushTypedImagePart(content, part.type, inputImage(part as AgentContentFields, path));
+      pushTypedImagePart(content, part.type, inputImage(part, path));
       break;
     default:
       return throwChatServeFailure({ kind: 'invalid-input', message: `Invalid value: '${part.type}' for '${path}.type'.`, param: `${path}.type` });

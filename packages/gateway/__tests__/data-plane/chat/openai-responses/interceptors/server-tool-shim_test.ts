@@ -2593,10 +2593,12 @@ test('helper echoes distinguish namespaced functions and rewrite hosted allowed_
   const inv = makeInvocation({ payload: { tool_choice: structuredClone(choice) } });
   const qualified = { type: 'function' as const, name: SHIM_TOOL_NAME, namespace: 'client' };
   const { frames } = await runShimAndDrain(withOpenAIResponsesWebSearchShim, inv, makeGatewayCtx(), async () => {
-    assertEquals(inv.payload.tool_choice, { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: SHIM_TOOL_NAME }] });
+    const echoedChoice = inv.payload.tool_choice;
+    assert(echoedChoice !== undefined);
+    assertEquals(echoedChoice, { type: 'allowed_tools', mode: 'required', tools: [{ type: 'function', name: SHIM_TOOL_NAME }] });
     return await scriptedRun([[
       mkResponseCreated(),
-      eventFrame({ type: 'response.completed', response: { ...emptyResult('upstream', 'completed'), tools: [qualified, { type: 'function', name: SHIM_TOOL_NAME }], tool_choice: inv.payload.tool_choice! } }),
+      eventFrame({ type: 'response.completed', response: { ...emptyResult('upstream', 'completed'), tools: [qualified, { type: 'function', name: SHIM_TOOL_NAME }], tool_choice: echoedChoice } }),
     ]]).run();
   });
   const tools = findResponseCompleted(frames).response.tools;
