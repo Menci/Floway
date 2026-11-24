@@ -246,6 +246,15 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   // https://ai.google.dev/gemini-api/docs/pricing#gemini-4-argon
   // https://github.com/anomalyco/models.dev/blob/03312cc3c02d44bac48abd405d181fcc9c85881d/models/google/gemini-4-argon.toml
   ['gemini-4-argon', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.1', output_tokens: '10' })],
+  // Gemini 4 Carbon, Hydrogen, and Neon are GA on GitHub Copilot and quoted on
+  // GitHub's billing reference as single Default tiers (no >200k threshold)
+  // with implicit caching only. models.dev agrees on all three rates for each
+  // model.
+  // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
+  // https://models.dev/api.json
+  ['gemini-4-carbon', tokenBasePricing({ input_tokens: '2', input_cache_read_tokens: '0.1', output_tokens: '10' })],
+  ['gemini-4-hydrogen', tokenBasePricing({ input_tokens: '1.5', input_cache_read_tokens: '0.075', output_tokens: '7.5' })],
+  ['gemini-4-neon', tokenBasePricing({ input_tokens: '3', input_cache_read_tokens: '0.15', output_tokens: '15' })],
   // xAI reprices the whole request at 2× once the prompt reaches 200k tokens.
   // Cached-read is xAI's own published $0.30/$0.60; Copilot's catalog and
   // LiteLLM both carry $0.50/$1.00 for that metric, which the vendor contradicts.
