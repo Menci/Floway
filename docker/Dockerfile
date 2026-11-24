@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 
-ARG NODE_VERSION=22.23.4
+# https://nodejs.org/en/blog/vulnerability/november-2026-security-releases
+ARG NODE_VERSION=22.23.5
 
 # `node:22-*-slim` omits armv7, so we base off Debian directly and drop in
 # the official Node.js tarball keyed on TARGETPLATFORM.
