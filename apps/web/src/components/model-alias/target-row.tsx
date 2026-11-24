@@ -10,6 +10,7 @@ import {
 } from './warnings';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
+import { applyFieldPatch, type FieldPatch } from '../../lib/field-patch';
 import { filterModelOptions } from '../../lib/model-query';
 import type { CatalogIndex } from '../models/catalog-index';
 import { useDangerTextClass } from '../ui/danger';
@@ -32,11 +33,11 @@ export function AliasTargetRow({
   catalog, disabled, error, handleProps, index, isSole, itemProps, kind, onChange, onRemove, target, targetIds,
 }: {
   disabled: boolean;
-  error?: string;
+  error?: string | undefined;
   handleProps: ReorderHandleProps;
   index: number;
   isSole: boolean;
-  itemProps: { className?: string; style?: CSSProperties };
+  itemProps: { className?: string | undefined; style?: CSSProperties | undefined };
   kind: ModelKind;
   catalog: CatalogIndex;
   onChange: (target: AliasTarget) => void;
@@ -52,10 +53,9 @@ export function AliasTargetRow({
   const modelWarning = computeModelWarning(target.target_model_id, model, kind);
   const ruleWarnings = computeRuleWarnings(target.rules, model);
   const options = useMemo(() => filterModelOptions(targetIds.map(id => ({ value: id, label: catalog.get(id)!.display_name })), target.target_model_id), [catalog, target.target_model_id, targetIds]);
-  const patchRules = (patch: Partial<AliasTarget['rules']>) => onChange({ ...target, rules: { ...target.rules, ...patch } });
-  const patchReasoning = (patch: Partial<NonNullable<AliasTarget['rules']['reasoning']>>) => {
-    const reasoning = { ...(target.rules.reasoning ?? {}), ...patch };
-    for (const [key, value] of Object.entries(reasoning)) if (value === undefined || value === '') delete (reasoning as Record<string, unknown>)[key];
+  const patchRules = (patch: FieldPatch<AliasTarget['rules']>) => onChange({ ...target, rules: applyFieldPatch(target.rules, patch) });
+  const patchReasoning = (patch: FieldPatch<NonNullable<AliasTarget['rules']['reasoning']>>) => {
+    const reasoning = applyFieldPatch(target.rules.reasoning ?? {}, patch);
     patchRules({ reasoning: Object.keys(reasoning).length ? reasoning : undefined });
   };
   const warningFor = (field: RuleWarningField) => ruleWarnings.find(warning => warning.field === field);
@@ -110,10 +110,10 @@ export function AliasTargetRow({
       {expanded && kind === 'chat' && (
         <div className={`${TWO_COLUMN_FORM_CLASS} gap-3 ml-10 py-3`}>
           <RuleCombobox label={t('models.aliases.rules.effort')} value={target.rules.reasoning?.effort ?? ''} items={suggestions.effort} disabled={disabled} warning={warningFor('reasoning.effort')} onChange={value => patchReasoning({ effort: value || undefined })} />
-          <Field label={t('models.aliases.rules.budget')} validationMessage={budgetWarning ? modelAliasWarningText(budgetWarning, t) : undefined} validationState={budgetWarning ? 'warning' : undefined}>
+          <Field label={t('models.aliases.rules.budget')} validationMessage={budgetWarning ? modelAliasWarningText(budgetWarning, t) : undefined} validationState={budgetWarning ? 'warning' : 'none'}>
             <Input disabled={disabled} inputMode="numeric" min={0} type="number" value={target.rules.reasoning?.budget_tokens?.toString() ?? ''} onChange={(_, data) => patchReasoning({ budget_tokens: data.value === '' ? undefined : Number(data.value) })} />
           </Field>
-          <Field label={t('models.aliases.rules.adaptive')} validationMessage={adaptiveWarning ? modelAliasWarningText(adaptiveWarning, t) : undefined} validationState={adaptiveWarning ? 'warning' : undefined}>
+          <Field label={t('models.aliases.rules.adaptive')} validationMessage={adaptiveWarning ? modelAliasWarningText(adaptiveWarning, t) : undefined} validationState={adaptiveWarning ? 'warning' : 'none'}>
             <Dropdown
               disabled={disabled}
               selectedOptions={[adaptive]}
@@ -133,7 +133,7 @@ export function AliasTargetRow({
   );
 }
 
-function RuleCombobox({ disabled, items, label, onChange, value, warning }: { disabled: boolean; items: readonly string[]; label: string; onChange: (value: string) => void; value: string; warning?: RuleWarning }) {
+function RuleCombobox({ disabled, items, label, onChange, value, warning }: { disabled: boolean; items: readonly string[]; label: string; onChange: (value: string) => void; value: string; warning?: RuleWarning | undefined }) {
   const { t } = useTranslation();
-  return <Field label={label} validationMessage={warning ? modelAliasWarningText(warning, t) : undefined} validationState={warning ? 'warning' : undefined}><Combobox disabled={disabled} freeform value={value} onChange={event => onChange(event.target.value)} onOptionSelect={(_, data) => onChange(data.optionText ?? '')}>{items.map(item => <Option key={item}>{item}</Option>)}</Combobox></Field>;
+  return <Field label={label} validationMessage={warning ? modelAliasWarningText(warning, t) : undefined} validationState={warning ? 'warning' : 'none'}><Combobox disabled={disabled} freeform value={value} onChange={event => onChange(event.target.value)} onOptionSelect={(_, data) => onChange(data.optionText ?? '')}>{items.map(item => <Option key={item}>{item}</Option>)}</Combobox></Field>;
 }

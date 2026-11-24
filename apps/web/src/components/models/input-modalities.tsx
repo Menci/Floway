@@ -2,15 +2,16 @@ import { useId } from 'react';
 
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
+import type { FieldPatch } from '../../lib/field-patch';
 import { Switch } from '../ui/fluent-form-controls';
 import type { ChatModelInfo } from '@floway-dev/protocols/browser';
 
 const { Text } = fluentComponents;
 
 export function ModelInputFields({ chat, onChange, disabled = false, readOnly }: {
-  chat?: ChatModelInfo;
-  onChange: (patch: Pick<ChatModelInfo, 'modalities' | 'image_detail_original'>) => void;
-  disabled?: boolean;
+  chat?: ChatModelInfo | undefined;
+  onChange: (patch: FieldPatch<Pick<ChatModelInfo, 'modalities' | 'image_detail_original'>>) => void;
+  disabled?: boolean | undefined;
   readOnly: boolean;
 }) {
   const { t } = useTranslation();

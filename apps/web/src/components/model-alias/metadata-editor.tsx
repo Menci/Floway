@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { AnnouncedMetadataField, AnnouncedMetadataIssues } from './validation';
 import { fluentComponents } from '../../fluent';
 import { useTranslation } from '../../i18n/translation';
+import { applyFieldPatch, type FieldPatch } from '../../lib/field-patch';
 import { ModelInputFields } from '../models/input-modalities';
 import type { ModelLimitKey } from '../models/limits';
 import { ModelLimitsFields } from '../models/limits-editor';
@@ -28,17 +29,15 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
 }) {
   const { t } = useTranslation();
   const patchLimit = (key: ModelLimitKey, raw: string) => {
-    const limits = { ...(value.limits ?? {}), [key]: numberValue(raw) };
-    if (limits[key] === undefined) delete limits[key];
-    onChange({ ...value, limits: Object.keys(limits).length ? limits : undefined });
+    const limits = applyFieldPatch(value.limits ?? {}, { [key]: numberValue(raw) });
+    onChange(applyFieldPatch(value, { limits: Object.keys(limits).length ? limits : undefined }));
   };
-  const patchChat = (patch: Partial<NonNullable<AnnouncedMetadata['chat']>>) => {
-    const chat = { ...(value.chat ?? {}), ...patch };
-    onChange({ ...value, chat: chat.image_detail_original !== undefined || chat.modalities || chat.reasoning ? chat : undefined });
+  const patchChat = (patch: FieldPatch<NonNullable<AnnouncedMetadata['chat']>>) => {
+    const chat = applyFieldPatch(value.chat ?? {}, patch);
+    onChange(applyFieldPatch(value, { chat: chat.image_detail_original !== undefined || chat.modalities || chat.reasoning ? chat : undefined }));
   };
-  const patchReasoning = (patch: Record<string, unknown>) => {
-    const reasoning = { ...(value.chat?.reasoning ?? {}), ...patch } as NonNullable<NonNullable<AnnouncedMetadata['chat']>['reasoning']>;
-    for (const [key, item] of Object.entries(reasoning)) if (item === undefined) delete (reasoning as Record<string, unknown>)[key];
+  const patchReasoning = (patch: FieldPatch<NonNullable<NonNullable<AnnouncedMetadata['chat']>['reasoning']>>) => {
+    const reasoning = applyFieldPatch(value.chat?.reasoning ?? {}, patch);
     patchChat({ reasoning: Object.keys(reasoning).length ? reasoning : undefined });
   };
   const effort = value.chat?.reasoning?.effort;
@@ -86,8 +85,8 @@ export function MetadataEditor({ disabled, issues, kind, onChange, readOnly, val
             <Field label={t('models.aliases.metadata.defaultEffort')}><Dropdown disabled={disabled || effort.supported.length === 0} readOnly={readOnly} selectedOptions={[effort.default]} value={effort.default} onOptionSelect={(_, data) => data.optionValue !== undefined && patchReasoning({ effort: { supported: effort.supported, default: data.optionValue } })}>{effort.supported.map(item => <Option key={item} value={item}>{item}</Option>)}</Dropdown></Field>
           </div>}
           {budget && <div className={`${TWO_COLUMN_FORM_CLASS} gap-3`}>
-            <Field label={t('models.aliases.metadata.minBudget')} {...issueProps('budgetMin')}><Input disabled={disabled} min={0} readOnly={readOnly} type="number" value={budget.min?.toString() ?? ''} onChange={(_, data) => patchReasoning({ budget_tokens: { ...budget, min: numberValue(data.value) } })} /></Field>
-            <Field label={t('models.aliases.metadata.maxBudget')} {...issueProps('budgetMax')}><Input disabled={disabled} min={0} readOnly={readOnly} type="number" value={budget.max?.toString() ?? ''} onChange={(_, data) => patchReasoning({ budget_tokens: { ...budget, max: numberValue(data.value) } })} /></Field>
+            <Field label={t('models.aliases.metadata.minBudget')} {...issueProps('budgetMin')}><Input disabled={disabled} min={0} readOnly={readOnly} type="number" value={budget.min?.toString() ?? ''} onChange={(_, data) => patchReasoning({ budget_tokens: applyFieldPatch(budget, { min: numberValue(data.value) }) })} /></Field>
+            <Field label={t('models.aliases.metadata.maxBudget')} {...issueProps('budgetMax')}><Input disabled={disabled} min={0} readOnly={readOnly} type="number" value={budget.max?.toString() ?? ''} onChange={(_, data) => patchReasoning({ budget_tokens: applyFieldPatch(budget, { max: numberValue(data.value) }) })} /></Field>
           </div>}
         </section>
       </>}
