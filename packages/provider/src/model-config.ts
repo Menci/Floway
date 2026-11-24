@@ -310,11 +310,6 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   const chat = chatField(value.chat, `${label}.chat`);
   const rerankTarget = rerankTargetField(value.rerankTarget, `${label}.rerankTarget`);
   const decisionTarget = decisionTargetField(value.decisionTarget, `${label}.decisionTarget`);
-  const displayName = optionalStringField(value.display_name, `${label}.display_name`);
-  const limits = limitsField(value.limits, `${label}.limits`);
-  const opaqueBlobCompatibilityScope = opaqueBlobCompatibilityScopeField(value.opaqueBlobCompatibilityScope, `${label}.opaqueBlobCompatibilityScope`);
-  const configuredPublicModelId = optionalStringField(value.publicModelId, `${label}.publicModelId`);
-  const flagOverrides = flagOverridesField(value.flagOverrides, `${label}.flagOverrides`);
   if (chat !== undefined && kind !== 'chat') {
     throw new Error(`Malformed ${label}: chat field is only allowed when kind === 'chat'`);
   }
@@ -327,6 +322,12 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   if (effectiveKind !== 'decision' && decisionTarget !== undefined) {
     throw new Error(`Malformed ${label}: decisionTarget is only allowed when endpoints select decision`);
   }
+  const displayName = optionalStringField(value.display_name, `${label}.display_name`);
+  const limits = limitsField(value.limits, `${label}.limits`);
+  const opaqueBlobCompatibilityScope = opaqueBlobCompatibilityScopeField(value.opaqueBlobCompatibilityScope, `${label}.opaqueBlobCompatibilityScope`);
+  const upstreamModelId = nonEmptyStringField(value.upstreamModelId, `${label}.upstreamModelId`);
+  const configuredPublicModelId = optionalStringField(value.publicModelId, `${label}.publicModelId`);
+  const flagOverrides = flagOverridesField(value.flagOverrides, `${label}.flagOverrides`);
   return {
     kind,
     endpoints,
@@ -337,7 +338,7 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
     ...(rerankTarget ? { rerankTarget } : {}),
     ...(decisionTarget ? { decisionTarget } : {}),
     ...(opaqueBlobCompatibilityScope !== undefined ? { opaqueBlobCompatibilityScope } : {}),
-    upstreamModelId: nonEmptyStringField(value.upstreamModelId, `${label}.upstreamModelId`),
+    upstreamModelId,
     ...(configuredPublicModelId !== undefined ? { publicModelId: configuredPublicModelId } : {}),
     ...(flagOverrides !== undefined ? { flagOverrides } : {}),
   };
