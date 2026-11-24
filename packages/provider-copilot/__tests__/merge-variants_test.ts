@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { mergeCopilotVariants } from '../src/merge-variants.ts';
 import { copilotVariantIndex } from '../src/model-variants.ts';
@@ -96,9 +96,6 @@ test('mergeCopilotVariants omits capabilities that no variant states with a usab
     }
   }`);
   const [model] = mergeCopilotVariants(copilotVariantIndex([rawModel]));
-  assertEquals(model.capabilities?.limits?.max_context_window_tokens, undefined);
-  assertEquals(model.capabilities?.limits?.max_prompt_tokens, undefined);
-  assertEquals(model.capabilities?.limits?.max_output_tokens, undefined);
-  assertEquals(model.capabilities?.supports?.reasoning_effort, undefined);
-  assertEquals(model.capabilities?.supports?.vision, true);
+  expect(model.capabilities?.limits).toStrictEqual({});
+  expect(model.capabilities?.supports).toStrictEqual({ vision: true });
 });

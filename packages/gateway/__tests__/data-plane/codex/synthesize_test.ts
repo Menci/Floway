@@ -70,7 +70,7 @@ describe('synthesizeCatalogEntry', () => {
   test('private Codex metadata can leave the maximum context window unstated', () => {
     const entry = synthesizeCatalogEntry(base, bundledBase, {}, [], { metadata: { context_window: 200_000 } });
     expect(entry.context_window).toBe(200_000);
-    expect(entry.max_context_window).toBeUndefined();
+    expect(Object.hasOwn(entry, 'max_context_window')).toBe(false);
   });
 
   test('a matching client snapshot alone cannot grant audio input', () => {

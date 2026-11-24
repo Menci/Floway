@@ -111,8 +111,13 @@ test('parseOpenAIResponsesStream continues the upstream sequence through a fast-
     sseFrame('[DONE]'),
   ));
 
-  const sequence = frames.flatMap(frame => frame.type === 'event' ? [frame.event.sequence_number] : []);
-  assertEquals(sequence, sequence.map((_, index) => index));
+  const events = frames.flatMap(frame => frame.type === 'event' ? [frame.event] : []);
+  assertEquals(events.map(event => event.type), [
+    'response.created', 'error', 'response.in_progress', 'response.output_item.added',
+    'response.content_part.added', 'response.output_text.delta', 'response.output_text.done',
+    'response.content_part.done', 'response.output_item.done', 'response.completed',
+  ]);
+  assertEquals(events.map(event => event.sequence_number), events.map((_, index) => index));
 });
 
 test('parseOpenAIResponsesStream fast-paths when ping interleaves the wrappers', async () => {
