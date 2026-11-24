@@ -88,7 +88,8 @@ export const parseOpenAIResponsesStream = (
       // through the per-stream sequencer so they continue the same sequence.
       for (const expanded of openaiResponsesResultToEvents((event as { response: OpenAIResponsesResultEx }).response)) {
         if (sentWrapperTypes.has(expanded.event.type)) continue;
-        yield eventFrame(stamp(expanded.event));
+        const { sequence_number: _local, ...unstamped } = expanded.event;
+        yield eventFrame(stamp(unstamped as OpenAIResponsesStreamEventEx));
       }
       sawStructured = true;
       continue;
