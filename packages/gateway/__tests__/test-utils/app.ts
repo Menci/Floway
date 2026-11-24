@@ -200,7 +200,7 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   const adminKey = 'adminKey' in options ? options.adminKey : 'admin-test-key';
   initEnv(name => {
     if (name !== 'ADMIN_KEY') return '';
-    return adminKey === null ? undefined : adminKey;
+    return adminKey ?? undefined;
   });
 
   clearInProcessCopilotTokenCache();
