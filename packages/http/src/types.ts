@@ -15,8 +15,12 @@ export interface ReplayableBody {
   open(): ReadableStream<Uint8Array>;
 }
 
-export type FetchInit = Omit<RequestInit, 'body'> & {
+// Callers thread cancellation as `AbortSignal | undefined`, so the slot admits
+// an explicit `undefined`; `toRequestInit` drops it before a runtime `fetch`,
+// whose own `RequestInit` does not.
+export type FetchInit = Omit<RequestInit, 'body' | 'signal'> & {
   body?: BodyInit | ReplayableBody | null;
+  signal?: AbortSignal | null | undefined;
 };
 
 export type Fetcher = (url: string, init: FetchInit) => Promise<Response>;

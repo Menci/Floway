@@ -149,14 +149,14 @@ const SYSTEMONE_TOP_LEVEL_FIELDS = new Set(['model', 'state', 'questions', 'asse
 // asset reference becomes that image. Omitted and null both mean "no
 // instructions": both SDKs type it as optional and nullable, so a question may
 // carry its whole meaning in `criteria`.
-const typesafeSystemOneInstructions = (value: unknown, field: string, assets: unknown): DecisionInstructions | undefined => {
-  if (value === undefined || value === null) return undefined;
+const typesafeSystemOneInstructions = (value: unknown, field: string, assets: unknown): { instructions?: DecisionInstructions } => {
+  if (value === undefined || value === null) return {};
   if (typeof value === 'string') {
     const image = typesafeSystemOneAssetImage(value, assets);
-    return image === undefined ? value : [image];
+    return { instructions: image === undefined ? value : [image] };
   }
-  if (isRecord(value)) return value;
-  if (Array.isArray(value)) return value;
+  if (isRecord(value)) return { instructions: value };
+  if (Array.isArray(value)) return { instructions: value };
   throw new Error(`${field} must be a string, an object, an array, or null`);
 };
 
@@ -177,7 +177,7 @@ const typesafeSystemOneState = (state: unknown, assets: unknown): DecisionState 
 const typesafeSystemOneNoul = (name: string, value: Record<string, unknown>, assets: unknown): DecisionNoulQuestion => {
   const instructions = typesafeSystemOneInstructions(value.instructions, `questions.${name}.instructions`, assets);
   // `null` is the SDK's explicit "no criteria", equivalent to omitting it.
-  if (value.criteria === undefined || value.criteria === null) return { type: 'noul', name, instructions };
+  if (value.criteria === undefined || value.criteria === null) return { type: 'noul', name, ...instructions };
   if (!isRecord(value.criteria)) throw new Error(`questions.${name}.criteria must be an object`);
   const trueCriterion = value.criteria.true;
   const falseCriterion = value.criteria.false;
@@ -190,7 +190,7 @@ const typesafeSystemOneNoul = (name: string, value: Record<string, unknown>, ass
   return {
     type: 'noul',
     name,
-    instructions,
+    ...instructions,
     criteria: {
       ...(trueCriterion === undefined ? {} : { true: trueCriterion as DecisionEntry }),
       ...(falseCriterion === undefined ? {} : { false: falseCriterion as DecisionEntry }),
@@ -211,7 +211,7 @@ const typesafeSystemOneChoice = (name: string, value: Record<string, unknown>, a
   if (options.length < CHOICE_OPTION_MIN || options.length > CHOICE_OPTION_MAX) {
     throw new Error(`questions.${name}.criteria must have ${CHOICE_OPTION_MIN}-${CHOICE_OPTION_MAX} options`);
   }
-  return { type: 'choice', name, instructions, options };
+  return { type: 'choice', name, ...instructions, options };
 };
 
 const typesafeSystemOneScore = (name: string, value: Record<string, unknown>, assets: unknown): DecisionScoreQuestion => {
@@ -226,7 +226,7 @@ const typesafeSystemOneScore = (name: string, value: Record<string, unknown>, as
     }
     return { label: level as DecisionEntry };
   });
-  return { type: 'score', name, instructions, levels };
+  return { type: 'score', name, ...instructions, levels };
 };
 
 const parseSystemOneQuestion = (name: string, value: unknown, assets: unknown): DecisionQuestion => {

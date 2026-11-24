@@ -4,7 +4,7 @@ import { parseSSEStream } from '../common/parse-sse.ts';
 import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '../common/sse.ts';
 
 export interface ParseAnthropicMessagesStreamOptions {
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
   onSseFrame?: (frame: SseFrame) => void;
 }
 

@@ -11,8 +11,8 @@ export const usageFromIR = (usage: IROutputUsage): OpenAIResponsesUsage => {
   const output = count('output_tokens_inclusive') ?? 0;
   const inputDetails: Partial<OpenAIResponsesInputTokensDetails> = {};
   const reasoning = count('reasoning_tokens');
-  if (usage.cached_input_tokens !== undefined) inputDetails.cached_tokens = count('cached_input_tokens');
-  if (usage.cache_creation_input_tokens !== undefined) inputDetails.cache_write_tokens = count('cache_creation_input_tokens');
+  if (usage.cached_input_tokens !== undefined) inputDetails.cached_tokens = requireTokenCount('cached_input_tokens', usage.cached_input_tokens);
+  if (usage.cache_creation_input_tokens !== undefined) inputDetails.cache_write_tokens = requireTokenCount('cache_creation_input_tokens', usage.cache_creation_input_tokens);
 
   return {
     input_tokens: input,

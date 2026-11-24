@@ -85,13 +85,15 @@ export type ClientOpenAIResponsesTool =
 // Named for the schema's own `ResponseResource`, hence the singular `Response`
 // where the protocol-shaped siblings above carry `OpenAI Responses`.
 //
-// `-?` preserves declared nullability, which is exactly the distinction the two
-// key unions draw: a stated key wrapped in `NonNullable` becomes present and
-// non-null, a nullable key becomes present and possibly null.
+// Reading an optional key yields its declared type plus `undefined`, and `-?`
+// over a key union outside `keyof` does not take that `undefined` back out, so
+// each mapping removes it explicitly. What remains is exactly the distinction
+// the two key unions draw: a stated key becomes present and non-null, a
+// nullable key becomes present and possibly null.
 export type ClientResponseResource =
   Omit<OpenAIResponsesResultEx, ResponseResourceStatedKey | ResponseResourceNullableKey>
   & { [K in ResponseResourceStatedKey]-?: NonNullable<OpenAIResponsesResultEx[K]> }
-  & { [K in ResponseResourceNullableKey]-?: OpenAIResponsesResultEx[K] | null }
+  & { [K in ResponseResourceNullableKey]-?: Exclude<OpenAIResponsesResultEx[K], undefined> | null }
   & {
     tools: ClientOpenAIResponsesTool[];
     text: ClientOpenAIResponsesTextField;

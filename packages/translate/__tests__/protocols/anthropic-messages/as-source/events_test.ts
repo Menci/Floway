@@ -114,6 +114,6 @@ test.each(['{"x":1,}', '{"x": 1}'])('tracks the emitted canonical JSON view with
       return 'sidecar';
     },
   };
-  for await (const _frame of writeAnthropicMessagesEvents((async function* () { yield* source.drain(); })(), { roundTrip, parseToolArguments: original.endsWith(',}') ? () => ({ x: 1 }) : undefined })) {}
+  for await (const _frame of writeAnthropicMessagesEvents((async function* () { yield* source.drain(); })(), { roundTrip, ...(original.endsWith(',}') ? { parseToolArguments: () => ({ x: 1 }) } : {}) })) {}
   expect(prepared).toBe(true);
 });

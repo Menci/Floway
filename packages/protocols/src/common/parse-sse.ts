@@ -3,7 +3,7 @@ import { createParser } from 'eventsource-parser';
 import { type SseReadableFrame, sseFrame, sseRawFrame } from './sse.ts';
 
 interface ParseSSEStreamOptions {
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 export const parseSSEStream = async function* (body: ReadableStream<Uint8Array>, options: ParseSSEStreamOptions = {}): AsyncGenerator<SseReadableFrame> {

@@ -4,7 +4,7 @@ import { parseSSEStream } from '../common/parse-sse.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '../common/sse.ts';
 
 export interface ParseOpenAIResponsesStreamOptions {
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
 }
 
 // Lifecycle wrappers, resource terminals, and error notifications carry no
@@ -88,8 +88,7 @@ export const parseOpenAIResponsesStream = (
       // through the per-stream sequencer so they continue the same sequence.
       for (const expanded of openaiResponsesResultToEvents((event as { response: OpenAIResponsesResultEx }).response)) {
         if (sentWrapperTypes.has(expanded.event.type)) continue;
-        const restamped = { ...expanded.event, sequence_number: undefined } as OpenAIResponsesStreamEventEx;
-        yield eventFrame(stamp(restamped));
+        yield eventFrame(stamp(expanded.event));
       }
       sawStructured = true;
       continue;

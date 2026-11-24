@@ -27,9 +27,7 @@ const source = (tool_choice: OpenAIResponsesToolChoice): OpenAIResponsesRequestP
 for (const target of ['chat', 'messages'] as const) {
   const build = async (payload: OpenAIResponsesRequestPayloadEx) => target === 'chat'
     ? await buildChat(payload, createTestSidecarCodec())
-    : await buildMessages(payload, createTestSidecarCodec(), {
-        fallbackMaxOutputTokens: undefined,
-      });
+    : await buildMessages(payload, createTestSidecarCodec());
   test(`${target} preserves declarations or rejects an unrepresentable required subset`, async () => {
     const payload = source({ type: 'allowed_tools', mode: 'required', tools: [{ type: 'custom', name: 'edit' }, { type: 'function', name: 'read' }] });
     const original = structuredClone(payload);

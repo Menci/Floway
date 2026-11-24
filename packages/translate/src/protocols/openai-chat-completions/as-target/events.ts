@@ -102,12 +102,12 @@ interface ChatChoiceState {
   textContent: string;
   readonly annotatedParts: Set<IRPartHandle>;
   coordinateIndex?: TextCoordinateIndex;
-  reasoningField?: ChatReasoningField;
-  message?: IRItemHandle;
-  text?: IRPartHandle;
-  refusal?: IRPartHandle;
-  audio?: IRPartHandle;
-  reasoning?: IRItemHandle;
+  reasoningField?: ChatReasoningField | undefined;
+  message?: IRItemHandle | undefined;
+  text?: IRPartHandle | undefined;
+  refusal?: IRPartHandle | undefined;
+  audio?: IRPartHandle | undefined;
+  reasoning?: IRItemHandle | undefined;
   readonly items: IRItemHandle[];
   readonly tools: Map<number, ChatToolState>;
   currentTool?: ChatToolState;

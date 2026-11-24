@@ -37,7 +37,7 @@ export type ProtocolFrame<TEvent> = EventFrame<TEvent> | DoneFrame;
 
 export const sseFrame = (data: string, event?: string): SseFrame => ({
   type: 'sse',
-  event,
+  ...(event === undefined ? {} : { event }),
   data,
 });
 

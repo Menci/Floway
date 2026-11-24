@@ -123,7 +123,7 @@ test('buildTargetPayload merges reasoning_effort with structured-output format o
 
 test.each([false])('maps parallel_tool_calls %s into Messages tool choice', async parallel => {
   for (const tool_choice of [undefined, 'auto', 'required', 'none'] as const) {
-    const result = await buildWithTestSidecar(mkPayload({ messages: [], tools: [{ type: 'function', function: { name: 'f', parameters: { type: 'object', properties: {} } } }], tool_choice, parallel_tool_calls: parallel }));
+    const result = await buildWithTestSidecar(mkPayload({ messages: [], tools: [{ type: 'function', function: { name: 'f', parameters: { type: 'object', properties: {} } } }], ...(tool_choice === undefined ? {} : { tool_choice }), parallel_tool_calls: parallel }));
     assertEquals(result.tool_choice, tool_choice === 'none' ? { type: 'none' } : { type: tool_choice === 'required' ? 'any' : 'auto', disable_parallel_tool_use: !parallel });
   }
 });

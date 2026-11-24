@@ -35,9 +35,9 @@ const reasoningDetailsMaterial = (turn: OpenAIChatCompletionsSourceAssistantTurn
   return materials;
 };
 
-const messageContentMaterial = (turn: OpenAIChatCompletionsSourceAssistantTurn): IRJSONValue | undefined => {
-  if (typeof turn.content === 'string' || turn.content === null || turn.content === undefined) return turn.content;
-  const channels = collectTextGroups(turn.content, chatCompletionsTextGroup);
+const messageContentMaterial = (content: Exclude<OpenAIChatCompletionsSourceAssistantTurn['content'], undefined>): IRJSONValue => {
+  if (typeof content === 'string' || content === null) return content;
+  const channels = collectTextGroups(content, chatCompletionsTextGroup);
   const parts: IRJSONObject[] = [];
   const text = channels.get('text');
   const refusal = channels.get('refusal');
@@ -61,7 +61,7 @@ const reasoningTextMaterial = (turn: OpenAIChatCompletionsSourceAssistantTurn): 
 };
 
 const chatTurnDigestMaterialV1 = (turn: OpenAIChatCompletionsSourceAssistantTurn): IRJSONObject => ({
-  ...(Object.hasOwn(turn, 'content') && turn.content !== undefined ? { content: messageContentMaterial(turn) } : {}),
+  ...(Object.hasOwn(turn, 'content') && turn.content !== undefined ? { content: messageContentMaterial(turn.content) } : {}),
   ...(Object.hasOwn(turn, 'refusal') && turn.refusal !== undefined ? { refusal: turn.refusal } : {}),
   ...(turn.function_call != null
     ? { function_call: { name: turn.function_call.name, arguments: turn.function_call.arguments } }

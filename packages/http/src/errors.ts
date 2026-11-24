@@ -36,6 +36,6 @@ export class HttpProtocolError extends Error {
   constructor(message: string, code: HttpProtocolErrorCode, opts?: { cause?: unknown; rfc?: string }) {
     super(message, opts);
     this.code = code;
-    this.rfc = opts?.rfc;
+    if (opts?.rfc !== undefined) this.rfc = opts.rfc;
   }
 }

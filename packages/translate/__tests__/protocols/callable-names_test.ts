@@ -10,10 +10,13 @@ import { iterate } from '../shared/iterables.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 
-const request = (namespace: string | undefined): IRInputRequestHeader => ({
-  settings: { model: 'm', stream: true },
-  tools: [{ type: 'function', namespace, name: 'edit', parameters: { type: 'object', properties: {} } }, { type: 'custom', namespace, name: 'edit' }],
-});
+const request = (namespace: string | undefined): IRInputRequestHeader => {
+  const grouped = namespace === undefined ? {} : { namespace };
+  return {
+    settings: { model: 'm', stream: true },
+    tools: [{ type: 'function', ...grouped, name: 'edit', parameters: { type: 'object', properties: {} } }, { type: 'custom', ...grouped, name: 'edit' }],
+  };
+};
 
 const expectOriginalCalls = async (records: AsyncIterable<IRRecord>, namespace: string | undefined): Promise<void> => {
   let completed = false;

@@ -1,4 +1,4 @@
-import { isReplayableBody, type Fetcher } from '@floway-dev/http';
+import { isReplayableBody, toRequestInit, type Fetcher } from '@floway-dev/http';
 
 interface FixedLengthStreamConstructor {
   new(contentLength: number): {
@@ -11,7 +11,7 @@ declare const FixedLengthStream: FixedLengthStreamConstructor;
 
 export const cloudflareFetch: Fetcher = (url, init) => {
   const body = init.body;
-  if (!isReplayableBody(body)) return fetch(url, { ...init, body });
+  if (!isReplayableBody(body)) return fetch(url, toRequestInit(init, body));
   if (!Number.isSafeInteger(body.contentLength) || body.contentLength < 0) {
     return Promise.reject(new RangeError('Replayable body content length must be a non-negative safe integer'));
   }
@@ -25,5 +25,5 @@ export const cloudflareFetch: Fetcher = (url, init) => {
   // observing a later pump rejection prevents an unhandled rejection without
   // replacing the settled result.
   void transfer.catch(() => undefined);
-  return fetch(url, { ...init, body: fixed.readable });
+  return fetch(url, toRequestInit(init, fixed.readable));
 };
