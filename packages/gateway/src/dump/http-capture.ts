@@ -10,7 +10,8 @@ export class HttpCapture {
   wrapFetcher(fetcher: Fetcher, upstreamId: string): Fetcher {
     return async (url, init) => {
       const body = isReplayableBody(init.body) ? init.body.open() : init.body;
-      const request = new Request(url, { ...toRequestInit(init, body), duplex: 'half' } as RequestInit);
+      const requestInit: RequestInit & { duplex: 'half' } = { ...toRequestInit(init, body), duplex: 'half' };
+      const request = new Request(url, requestInit);
       const bytes = new Uint8Array(await request.arrayBuffer());
       const exchange: DumpCapture['exchanges'][number] = {
         upstreamId,

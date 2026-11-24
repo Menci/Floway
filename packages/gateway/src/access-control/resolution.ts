@@ -16,7 +16,12 @@ interface AccessBucket {
   id: number;
 }
 
-const valueRank = (value: NonNullable<AccessValues[AccessPermission]>) => typeof value === 'boolean' ? Number(value) : upstreamEditLevelRank[value];
+interface EligibleAccessRow<Permission extends AccessPermission> {
+  record: AccessRecord;
+  value: NonNullable<AccessValues[Permission]>;
+}
+
+const valueRank = (value: Required<AccessValues>[AccessPermission]) => typeof value === 'boolean' ? Number(value) : upstreamEditLevelRank[value];
 // A concrete user outranks membership scopes; exact model ids and regexes share
 // one ordered level. Only model-pattern precedence is operator-controlled.
 const precedenceDepth = (scope: AccessScope) => scope.kind === 'user' ? 3 : accessScopeDepth(scope);
@@ -24,28 +29,30 @@ const isSelfUserScope = (scope: ResolveScope, subjectUserId?: number): boolean =
   scope.kind === 'user' && scope.userId === subjectUserId;
 const isGroupScope = (scope: AccessScope): boolean => scope.kind === 'group';
 
-const eligibleRows = (bucket: AccessBucket, target: ResolveScope, permission: AccessPermission, targetGroups: ReadonlySet<number>): PreparedAccessRecord[] =>
-  bucket.rows.filter(row => row.record.values[permission] !== undefined
-    && !(target.kind === 'user' && isGroupScope(row.record.scope)
-      && (!groupRuleAppliesToMembers[permission] || targetGroups.size === 0)));
+const eligibleRows = <Permission extends AccessPermission>(bucket: AccessBucket, target: ResolveScope, permission: Permission, targetGroups: ReadonlySet<number>): EligibleAccessRow<Permission>[] =>
+  bucket.rows.flatMap(({ record }) => {
+    const value = record.values[permission];
+    if (value === undefined || (target.kind === 'user' && isGroupScope(record.scope)
+      && (!groupRuleAppliesToMembers[permission] || targetGroups.size === 0))) return [];
+    return [{ record, value }];
+  });
 
-const selectRepresentative = (rows: readonly PreparedAccessRecord[], permission: AccessPermission) => {
+const selectRepresentative = <Permission extends AccessPermission>(rows: readonly EligibleAccessRow<Permission>[]) => {
   const personal = rows.filter(row => row.record.principal.kind === 'user');
   const winners = personal.length > 0 ? personal : rows;
-  const representative = winners.reduce((best, row) =>
-    valueRank(row.record.values[permission]!) > valueRank(best.record.values[permission]!) ? row : best);
+  const representative = winners.reduce((best, row) => valueRank(row.value) > valueRank(best.value) ? row : best);
   return { winners, representative };
 };
 
-const winningSelection = (
+const winningSelection = <Permission extends AccessPermission>(
   buckets: readonly AccessBucket[],
   target: ResolveScope,
-  permission: AccessPermission,
+  permission: Permission,
   targetGroups: ReadonlySet<number>,
 ) => {
   for (const bucket of buckets) {
     const rows = eligibleRows(bucket, target, permission, targetGroups);
-    if (rows.length > 0) return selectRepresentative(rows, permission);
+    if (rows.length > 0) return selectRepresentative(rows);
   }
   return null;
 };
@@ -60,13 +67,10 @@ const resolveBuckets = (
   const applicable = prepared.filter(row => applicableIds.has(row.record.id));
   const decisions = new Map<number, PermissionDecisions>(applicable.map(({ record }) => [record.id, {}]));
   const values: AccessValues = {};
-  for (const permission of permissionsForScope(scope)) {
+  const resolvePermission = <Permission extends AccessPermission>(permission: Permission, fallback: NonNullable<AccessValues[Permission]>) => {
     const selection = winningSelection(buckets, scope, permission, targetGroups);
-    const representative = selection?.representative ?? null;
-    // eligibleRows admits only rows that state this permission.
-    if (permission === 'Upstream.Edit') values[permission] = representative === null ? 'off' : representative.record.values[permission]!;
-    else values[permission] = representative === null ? false : representative.record.values[permission]!;
-    if (selection === null) continue;
+    values[permission] = selection === null ? fallback : selection.representative.value;
+    if (selection === null) return;
     const active = new Set(selection.winners.map(row => row.record.id));
     for (const { record } of applicable) {
       if (record.values[permission] === undefined) continue;
@@ -76,6 +80,10 @@ const resolveBuckets = (
         ? { kind: 'effective' }
         : { kind: 'overridden', by: selection.representative.record };
     }
+  };
+  for (const permission of permissionsForScope(scope)) {
+    if (permission === 'Upstream.Edit') resolvePermission(permission, 'off');
+    else resolvePermission(permission, false);
   }
   return { values, records: applicable.map(({ record }) => record), decisions: [...decisions].map(([recordId, permissions]) => ({ recordId, permissions })) };
 };
@@ -176,7 +184,7 @@ export const createAccessResolver = (records: readonly AccessRecord[]): AccessRe
     },
     satisfies(scope, requirement, evaluation) {
       const selection = winningSelection(candidatesFor(scope, evaluation), scope, requirement.permission, evaluation.targetGroups);
-      return selection !== null && accessValueSatisfied(selection.representative.record.values[requirement.permission], requirement);
+      return selection !== null && accessValueSatisfied(selection.representative.value, requirement);
     },
   };
 };
