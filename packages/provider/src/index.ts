@@ -65,7 +65,7 @@ export type {
 } from './provider.ts';
 export { headersForAnthropicMessagesCall } from './anthropic-messages.ts';
 export type { OpenAIImagesEditsRequest, OpenAIImagesEditsSource } from './images.ts';
-export { serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
+export { serializeOpenAIImagesEditsBody, serializeOpenAIImagesEditsJsonBody, serializeOpenAIImagesEditsJsonPayload, serializeOpenAIImagesEditsRequest } from './images.ts';
 export type { OpenAIAudioTranscriptionFormEntry, OpenAIAudioTranscriptionRequest } from './audio.ts';
 export { serializeModelFieldOpenAIAudioTranscriptionRequest, serializeModelPathOpenAIAudioTranscriptionRequest } from './audio.ts';
 export type { ProviderStreamParser } from './streaming.ts';

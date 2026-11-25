@@ -7,6 +7,7 @@ import { decodeAnthropicMessagesStream } from '@floway-dev/protocols/anthropic-m
 import { isJsonObject } from '@floway-dev/protocols/common';
 import { decodeOpenAIAudioSpeechStream } from '@floway-dev/protocols/openai-audio';
 import { decodeOpenAIChatCompletionsStream } from '@floway-dev/protocols/openai-chat-completions';
+import { parseRerankResponse } from '@floway-dev/protocols/rerank';
 
 const { compose, defineStage } = factSpace<GatewayFacts & HttpTerminalFacts, ProviderServices>();
 const entry = ['request.http', 'provider.upstream'] as const;
@@ -21,7 +22,7 @@ const host = (fetcher: Fetcher, signal = new AbortController().signal) => ({
   services: { fetcher: () => async (url: string, init: Parameters<Fetcher>[1]) => ({ response: await fetcher(url, init) }) },
 });
 
-const dial = (operation: 'alphaSearch' | 'anthropicMessages' | 'openaiChatCompletions' | 'openaiAudioSpeech') => {
+const dial = (operation: 'alphaSearch' | 'anthropicMessages' | 'openaiChatCompletions' | 'openaiAudioSpeech' | 'rerank') => {
   const outcome = `response.${operation}` as const;
   return defineStage({
     name: 'prepare-dial',
@@ -80,7 +81,12 @@ const speech = compose('openai-audio-speech.provider', {
     parseHttpResponse('openaiAudioSpeech', {
       select: payload => payload.stream_format === 'sse' ? 'stream' : 'result',
       stream: decodeOpenAIAudioSpeechStream,
-      result: bytes => ({ ok: true, value: bytes }),
+      needs: ['provider.upstream'] as const,
+      result: (bytes, _http, facts) => {
+        expectTypeOf(facts).toEqualTypeOf<Pick<GatewayFacts, 'provider.upstream'>>();
+        expect(Object.keys(facts)).toEqual(['provider.upstream']);
+        return { ok: true, value: bytes };
+      },
       format,
     }),
     dial('openaiAudioSpeech'),
@@ -93,6 +99,106 @@ describe('provider HTTP return path', () => {
     expectTypeOf<Parameters<typeof parseSseResponse<'anthropicMessages' | 'openaiChatCompletions'>>[0]>().toBeNever();
     expectTypeOf<Parameters<typeof parseResultResponse<'alphaSearch' | 'openaiEmbeddings'>>[0]>().toBeNever();
     expectTypeOf<Parameters<typeof parseHttpResponse<'openaiAudioSpeech' | 'openaiAudioTranscriptions'>>[0]>().toBeNever();
+  });
+
+  it.each(['local', 'upstream'] as const)('checks the %s error accompanying a null-body HTTP answer', async source => {
+    const answer: Pick<GatewayFacts, 'response.http' | 'response.alphaSearch'> = {
+      'response.http': { status: 429, statusText: 'Too Many Requests', headers: [['Retry-After', '15']], body: null },
+      'response.alphaSearch': { kind: 'error', source, error: format(429, 'rate limited') },
+    };
+    const decode = vi.fn(() => { throw new Error('an authored outcome should not be decoded'); });
+    const pipeline = compose('rate-limited', {
+      entry: [],
+      exit: ['response.http', 'response.alphaSearch'],
+      stages: [parseResultResponse('alphaSearch', decode, format)],
+      ending: defineStage({
+        name: 'rate-limit', request: { needs: [] }, return: { provides: ['response.http', 'response.alphaSearch'] },
+        async execute() { return answer; },
+      }),
+    });
+    const running = run(pipeline, {}, host(() => { throw new Error('rate limiting does not dial'); }));
+    if (source === 'local') {
+      await expect(running.result).resolves.toBe(answer);
+      await running.done;
+    } else {
+      await expect(running.result).rejects.toThrow('expected an unparsed HTTP response or an explicit local error');
+      await expect(running.done).rejects.toThrow('expected an unparsed HTTP response or an explicit local error');
+    }
+    expect(decode).not.toHaveBeenCalled();
+  });
+
+  it('still rejects a bodyless upstream response to a streaming request', async () => {
+    const running = run(chat, request, host(() => Promise.resolve(new Response(null, { status: 204 }))));
+    await expect(running.result).resolves.toMatchObject({
+      'response.http': { status: 204, body: null },
+      'response.openaiChatCompletions': { kind: 'error', source: 'upstream' },
+    });
+    await running.done;
+  });
+
+  it('passes the captured request facts and no others to the result decoder', async () => {
+    const stage = parseResultResponse('alphaSearch', {
+      needs: ['request.alphaSearch'] as const,
+      decode(_bytes, _http, facts) {
+        expectTypeOf(facts).toEqualTypeOf<Pick<GatewayFacts, 'request.alphaSearch'>>();
+        expect(Object.keys(facts)).toEqual(['request.alphaSearch']);
+        return { ok: true, value: facts['request.alphaSearch'] };
+      },
+      format,
+    });
+    const rewrite = defineStage({
+      name: 'rewrite-search',
+      through: {
+        request: { needs: ['request.alphaSearch'], provides: ['request.alphaSearch'], consumes: [] },
+        response: { needs: [], provides: [], consumes: [] },
+      },
+      async execute(facts, scope) { return await scope.next({ ...facts, 'request.alphaSearch': { query: 'changed' } }); },
+    });
+    const pipeline = compose('captured-request', {
+      entry: [...entry, 'request.alphaSearch'],
+      exit: ['response.http', 'response.alphaSearch'],
+      stages: [stage, rewrite, dial('alphaSearch')],
+      ending: httpTerminal,
+    });
+    const original = { query: 'original' };
+    const running = run(pipeline, { ...request, 'request.alphaSearch': original }, host(() => Promise.resolve(new Response('{}'))));
+    const outcome = (await running.result)['response.alphaSearch'];
+    if (outcome.kind !== 'result') throw new Error('Expected a scalar outcome');
+    expect(outcome.result).toBe(original);
+    await running.done;
+  });
+
+  it.each(['same', 'cross', 'malformed'] as const)('keeps the appropriate rerank outcome for a %s dialect response', async kind => {
+    const stage = parseResultResponse('rerank', {
+      needs: ['request.rerank'] as const,
+      format,
+      decode(bytes, _http, facts) {
+        const parsed = parseJsonBody(bytes);
+        if (!parsed.ok) return parsed;
+        try {
+          const canonical = parseRerankResponse('cohere-v2', parsed.value);
+          return { ok: true, value: facts['request.rerank'].sourceProtocol === 'cohere-v2' ? bytes : canonical };
+        } catch (error) {
+          return { ok: false, error };
+        }
+      },
+    });
+    const pipeline = compose('rerank-result', {
+      entry: [...entry, 'request.rerank'],
+      exit: ['response.http', 'response.rerank'],
+      stages: [stage, dial('rerank')],
+      ending: httpTerminal,
+    });
+    const bytes = new TextEncoder().encode(kind === 'malformed' ? '{"future":true}' : ' { "results": [{"index":0,"relevance_score":0.9}], "future": {"weight":1.00} }\n');
+    const running = run(pipeline, {
+      ...request,
+      'request.rerank': { sourceProtocol: kind === 'cross' ? 'cohere-v1' : 'cohere-v2', raw: {}, query: 'test', documents: ['a'] },
+    }, host(() => Promise.resolve(new Response(bytes))));
+    const outcome = (await running.result)['response.rerank'];
+    if (kind === 'same') expect(outcome).toEqual({ kind: 'result', result: bytes });
+    else if (kind === 'cross') expect(outcome).toMatchObject({ kind: 'result', result: { results: [{ index: 0, relevanceScore: 0.9 }] } });
+    else expect(outcome).toMatchObject({ kind: 'error', source: 'upstream' });
+    await running.done;
   });
 
   it.each([false, true])('assigns the pre-header error source when cancelled=%s and consumes the HTTP error fact', async cancelled => {

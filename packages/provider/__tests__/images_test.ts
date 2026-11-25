@@ -1,6 +1,7 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
-import { serializeOpenAIImagesEditsRequest } from '../src/images.ts';
+import { serializeOpenAIImagesEditsBody, serializeOpenAIImagesEditsJsonBody, serializeOpenAIImagesEditsRequest } from '../src/images.ts';
+import type { OpenAIImagesEditsPayload } from '../src/pipeline-facts.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const parseJsonBody = async (body: Awaited<ReturnType<typeof serializeOpenAIImagesEditsRequest>>): Promise<unknown> => {
@@ -51,4 +52,48 @@ test('serializeOpenAIImagesEditsRequest uses the singular field for one upload a
   assertEquals(multipleForm.getAll('image[]'), [first, second]);
   assertEquals(multipleForm.get('image'), null);
   assertEquals(multipleForm.get('model'), 'gpt-image');
+});
+
+const upload = (name: string, mediaType: string, data: string): OpenAIImagesEditsPayload['images'][number] => ({
+  type: 'upload', file: { name, mediaType, bytes: new TextEncoder().encode(data) },
+});
+
+test('byte image edits preserve repeated multipart file names, types and data', async () => {
+  const { body, contentType } = await serializeOpenAIImagesEditsBody({
+    images: [upload('first.png', 'image/png', 'first'), upload('second.webp', 'image/webp', 'second')],
+    mask: upload('mask.png', 'image/png', 'mask'),
+    parameters: { prompt: 'edit', n: 1 },
+  }, 'gpt-image');
+  expect(contentType).toMatch(/^multipart\/form-data; boundary=/);
+  const form = await new Response(body, { headers: { 'content-type': contentType } }).formData();
+  const files = [...form.getAll('image[]'), form.get('mask')];
+  const actual = await Promise.all(files.map(async file => {
+    if (!(file instanceof File)) throw new Error('Expected a multipart file');
+    return [file.name, file.type, await file.text()];
+  }));
+  expect(actual).toEqual([['first.png', 'image/png', 'first'], ['second.webp', 'image/webp', 'second'], ['mask.png', 'image/png', 'mask']]);
+  expect(form.get('model')).toBe('gpt-image');
+  expect(form.get('prompt')).toBe('edit');
+  expect(form.get('n')).toBe('1');
+});
+
+test('byte image edits keep incompatible parameters and reference fields on the JSON path', async () => {
+  const request: OpenAIImagesEditsPayload = {
+    images: [upload('first.png', 'image/png', 'first'), { type: 'reference', reference: { image_url: 'https://example.test/a.png', detail: 'forwarded' } }],
+    parameters: { prompt: 'edit', background: null },
+  };
+  const { body, contentType } = await serializeOpenAIImagesEditsBody(request, 'gpt-image');
+  expect(contentType).toBe('application/json');
+  expect(JSON.parse(new TextDecoder().decode(body))).toEqual({
+    prompt: 'edit', background: null, model: 'gpt-image',
+    images: [{ image_url: 'data:image/png;base64,Zmlyc3Q=' }, { image_url: 'https://example.test/a.png', detail: 'forwarded' }],
+  });
+});
+
+test('the byte-aware JSON sibling can force upload-only edits to JSON', async () => {
+  const { body, contentType } = await serializeOpenAIImagesEditsJsonBody({
+    images: [upload('first.png', 'image/png', 'first')], parameters: {},
+  }, 'gpt-image');
+  expect(contentType).toBe('application/json');
+  expect(JSON.parse(new TextDecoder().decode(body))).toEqual({ model: 'gpt-image', images: [{ image_url: 'data:image/png;base64,Zmlyc3Q=' }] });
 });

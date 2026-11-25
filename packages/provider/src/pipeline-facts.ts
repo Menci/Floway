@@ -78,7 +78,7 @@ interface Operations {
   alphaSearch: Operation<JsonObject, never, JsonObject>;
   anthropicMessages: Operation<AnthropicMessagesPayload, AnthropicMessagesStreamEventEx, never>;
   anthropicMessagesCountTokens: Operation<AnthropicMessagesCountTokensPayload, never, AnthropicMessagesCountTokensResult>;
-  decision: Operation<CanonicalDecisionRequest, never, CanonicalDecisionResponse>;
+  decision: Operation<CanonicalDecisionRequest, never, Uint8Array | CanonicalDecisionResponse>;
   geminiGenerateContent: Operation<GeminiGenerateContentPayload, GeminiGenerateContentStreamEvent, never>;
   geminiGenerateContentCountTokens: Operation<GeminiCountTokensPayload, never, GeminiGenerateContentCountTokensResult>;
   openaiAudioSpeech: Operation<OpenAIAudioSpeechPayload, OpenAIAudioSpeechStreamEvent, Uint8Array>;
@@ -90,7 +90,7 @@ interface Operations {
   openaiImagesGenerations: Operation<OpenAIImagesGenerationsPayload, OpenAIImagesStreamEvent, JsonObject>;
   openaiResponses: Operation<CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEventEx, never>;
   openaiResponsesCompact: Operation<CanonicalOpenAIResponsesCompactPayload, never, OpenAIResponsesCompactionResultEx>;
-  rerank: Operation<CanonicalRerankRequest, never, CanonicalRerankResponse>;
+  rerank: Operation<CanonicalRerankRequest, never, Uint8Array | CanonicalRerankResponse>;
 }
 
 interface CollectedChatResults {

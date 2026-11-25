@@ -146,21 +146,31 @@ const requireDialError = (value: unknown): ProtocolError => {
   return value;
 };
 
-type ResultDecoder<Op extends ProviderOperation> = (body: Uint8Array, http: HttpResponseFact) => Result<ProviderResult<Op>, unknown>;
-type ParseMode<Op extends ProviderOperation> =
-  | { kind: 'stream'; decode: ProtocolStreamDecoder<ProviderEvent<Op>> }
-  | { kind: 'result'; decode: ResultDecoder<Op> };
+type RequestFactKey = Exclude<keyof GatewayFacts, `response.${string}`>;
+type RequestNeeds = readonly RequestFactKey[];
+type RequestedFacts<Needs extends RequestNeeds> = Pick<GatewayFacts, Needs[number]>;
 
-const parseSuccess = async <Op extends ProviderOperation>(
+type ResultDecoder<Op extends ProviderOperation, Needs extends RequestNeeds = readonly []> = (
+  body: Uint8Array,
+  http: HttpResponseFact,
+  requestFacts: RequestedFacts<Needs>,
+) => Result<ProviderResult<Op>, unknown>;
+
+type ParseMode<Op extends ProviderOperation, Needs extends RequestNeeds> =
+  | { kind: 'stream'; decode: ProtocolStreamDecoder<ProviderEvent<Op>> }
+  | { kind: 'result'; decode: ResultDecoder<Op, Needs> };
+
+const parseSuccess = async <Op extends ProviderOperation, Needs extends RequestNeeds>(
   http: UpstreamHttpResponse,
   scope: BodyProducer,
-  mode: ParseMode<Op>,
+  mode: ParseMode<Op, Needs>,
   format: FormatProtocolError,
+  requestFacts: RequestedFacts<Needs>,
 ): Promise<ParsedOutcome<Op>> => {
   if (mode.kind === 'result') {
     const body = await readBody(http.body, scope);
     if (!body.ok) return ioError(body.error, http.status, format);
-    const result = mode.decode(body.value, http);
+    const result = mode.decode(body.value, http, requestFacts);
     return result.ok
       ? { kind: 'result', result: result.value }
       : { kind: 'error', source: 'upstream', error: format(http.status, messageOf(result.error)) };
@@ -179,23 +189,26 @@ const parseSuccess = async <Op extends ProviderOperation>(
   return { kind: 'stream', stream };
 };
 
-interface HttpResponseParsers<Op extends ProviderOperation> {
+interface HttpResponseParsers<Op extends ProviderOperation, Needs extends RequestNeeds = readonly []> {
   select(request: GatewayFacts[`request.${Op}`], head: Omit<HttpResponseFact, 'body'>): 'stream' | 'result';
   stream: ProtocolStreamDecoder<ProviderEvent<Op>>;
-  result: ResultDecoder<Op>;
+  result: ResultDecoder<Op, Needs>;
   format: FormatProtocolError;
 }
 
-type ResponseParser<Op extends ProviderOperation> = { operation: Op; format: FormatProtocolError } & (
-  ParseMode<Op> | (HttpResponseParsers<Op> & { kind: 'select' })
+type ResponseParser<Op extends ProviderOperation, Needs extends RequestNeeds> = { operation: Op; format: FormatProtocolError; needs: Needs } & (
+  ParseMode<Op, Needs> | (HttpResponseParsers<Op, Needs> & { kind: 'select' })
 );
 
-const responseParser = <Op extends ProviderOperation>(parser: ResponseParser<Op>) => {
+const requestedFacts = <Needs extends RequestNeeds>(needs: Needs, facts: Facts): RequestedFacts<Needs> =>
+  Object.fromEntries(needs.map(key => [key, facts[key]])) as RequestedFacts<Needs>;
+
+const responseParser = <Op extends ProviderOperation, Needs extends RequestNeeds>(parser: ResponseParser<Op, Needs>) => {
   const { operation } = parser;
   const payload = `request.${operation}` as const;
   const outcome = `response.${operation}` as const;
-  const requestNeeds: readonly string[] = parser.kind === 'select' ? [payload] : [];
-  const responseNeeds: readonly string[] = ['response.http', `${outcome}?`];
+  const requestNeeds: readonly string[] = parser.kind === 'select' ? [...new Set([payload, ...parser.needs])] : parser.needs;
+  const responseNeeds: readonly string[] = ['response.http', 'response.http.error?', `${outcome}?`];
   const responseProvides: readonly string[] = ['response.http', outcome];
   const through = {
     request: { needs: requestNeeds, provides: [], consumes: [] },
@@ -207,9 +220,15 @@ const responseParser = <Op extends ProviderOperation>(parser: ResponseParser<Op>
     name: `${operation}.parse-response`,
     through,
     async execute(facts, scope) {
+      const requestFacts = requestedFacts(parser.needs, facts);
       const back = await scope.next(facts);
       const http = back['response.http'] as GatewayFacts['response.http'];
-      if (http === null) return answer({ ...back, 'response.http': http }, requireDialError(back[outcome]));
+      const supplied = back[outcome];
+      if (http === null) return answer({ ...back, 'response.http': http }, requireDialError(supplied));
+      if (isProtocolError(supplied) && supplied.source === 'local' && http.body === null && !Object.hasOwn(back, 'response.http.error')) return back;
+      if (Object.hasOwn(back, outcome) || Object.hasOwn(back, 'response.http.error')) {
+        throw new Error('The provider response parser expected an unparsed HTTP response or an explicit local error with no HTTP body');
+      }
 
       const { body, ...head } = http;
       if (body instanceof Uint8Array) throw new Error('The provider response parser requires an unopened HTTP body stream');
@@ -217,7 +236,7 @@ const responseParser = <Op extends ProviderOperation>(parser: ResponseParser<Op>
       const response = { ...back, 'response.http': { ...head, body: null } };
       if (!isSuccessful(http)) return answer(response, await parseErrorBody(upstream, scope, parser.format));
 
-      let mode: ParseMode<Op>;
+      let mode: ParseMode<Op, Needs>;
       if (parser.kind === 'select') {
         const request = facts[payload] as GatewayFacts[typeof payload];
         mode = parser.select(request, head) === 'stream'
@@ -226,7 +245,7 @@ const responseParser = <Op extends ProviderOperation>(parser: ResponseParser<Op>
       } else {
         mode = parser;
       }
-      return answer(response, await parseSuccess(upstream, scope, mode, parser.format));
+      return answer(response, await parseSuccess(upstream, scope, mode, parser.format, requestFacts));
     },
   });
 };
@@ -235,15 +254,46 @@ export const parseSseResponse = <Op extends StreamOperation>(
   operation: Op & SingleOperation<Op>,
   decode: ProtocolStreamDecoder<ProviderEvent<NoInfer<Op>>>,
   format: FormatProtocolError,
-) => responseParser<Op>({ operation, kind: 'stream', decode, format });
+) => responseParser<Op, readonly []>({ operation, kind: 'stream', decode, format, needs: [] });
 
-export const parseResultResponse = <Op extends ResultOperation>(
+type ParseResponseStage = ReturnType<typeof responseParser>;
+
+interface ContextualResultDecoder<Op extends ProviderOperation, Needs extends RequestNeeds> {
+  needs: Needs;
+  decode: ResultDecoder<Op, Needs>;
+  format: FormatProtocolError;
+}
+
+export function parseResultResponse<Op extends ResultOperation>(
   operation: Op & SingleOperation<Op>,
   decode: ResultDecoder<NoInfer<Op>>,
   format: FormatProtocolError,
-) => responseParser<Op>({ operation, kind: 'result', decode, format });
+): ParseResponseStage;
+export function parseResultResponse<Op extends ResultOperation, const Needs extends RequestNeeds>(
+  operation: Op & SingleOperation<Op>,
+  options: ContextualResultDecoder<NoInfer<Op>, Needs>,
+): ParseResponseStage;
+export function parseResultResponse<Op extends ResultOperation, const Needs extends RequestNeeds>(
+  operation: Op & SingleOperation<Op>,
+  ...args: [decode: ResultDecoder<NoInfer<Op>>, format: FormatProtocolError] | [options: ContextualResultDecoder<NoInfer<Op>, Needs>]
+): ParseResponseStage {
+  if (args.length === 1) return responseParser<Op, Needs>({ operation, kind: 'result', ...args[0] });
+  const [decode, format] = args;
+  return responseParser<Op, readonly []>({ operation, kind: 'result', decode, format, needs: [] });
+}
 
-export const parseHttpResponse = <Op extends MixedOperation>(
+export function parseHttpResponse<Op extends MixedOperation, const Needs extends RequestNeeds>(
+  operation: Op & SingleOperation<Op>,
+  parsers: { needs: Needs } & HttpResponseParsers<NoInfer<Op>, NoInfer<Needs>>,
+): ParseResponseStage;
+export function parseHttpResponse<Op extends MixedOperation>(
   operation: Op & SingleOperation<Op>,
   parsers: HttpResponseParsers<NoInfer<Op>>,
-) => responseParser<Op>({ ...parsers, operation, kind: 'select' });
+): ParseResponseStage;
+export function parseHttpResponse<Op extends MixedOperation, const Needs extends RequestNeeds>(
+  operation: Op & SingleOperation<Op>,
+  parsers: HttpResponseParsers<NoInfer<Op>> | (HttpResponseParsers<NoInfer<Op>, Needs> & { needs: Needs }),
+): ParseResponseStage {
+  if ('needs' in parsers) return responseParser<Op, Needs>({ ...parsers, operation, kind: 'select' });
+  return responseParser<Op, readonly []>({ ...parsers, operation, kind: 'select', needs: [] });
+}
